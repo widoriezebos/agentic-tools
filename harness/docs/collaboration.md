@@ -20,8 +20,8 @@ Lead every completion report with where to look first: the riskiest hunk, the de
 A user correction of a convention, preference, or fact ("we use X here", "never touch Y") is an instruction defect, not just a task fix:
 
 1. Apply the correction to the work at hand.
-2. Record it in its one owning document — usually `docs/project-rules.md`; a workflow lesson may belong to a skill or design doc per `wow.md`.
-3. Say where it was recorded so the human can veto or refine it.
+2. Persist it to its one owning document — usually `docs/project-rules.md`; a workflow lesson may belong to a skill or design doc per `wow.md` — but only when the task already authorizes repository edits. In review-only or explain-only work, do not edit files: propose the exact capture (file and wording) in the report instead.
+3. Say where it was recorded or proposed so the human can veto or refine it. If unsure whether a correction is personal preference or durable project policy, ask before persisting.
 
 One rule, one home still applies: update the owner, do not scatter copies. A correction repeated across sessions means the capture failed — fix the instruction, not just the code.
 

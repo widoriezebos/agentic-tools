@@ -53,7 +53,7 @@ Immediately classify the result:
 - `contract-improved`: the user contract or named invariant became true.
 - `falsified-continue`: a leading theory is ruled out and a new viable owner/mechanism is identified.
 - `falsified-dead-end`: the mechanism is exhausted or no owner has the required facts; stop.
-- `no-progress`: neither contract nor theory set improved; stop stacking changes.
+- `no-progress`: neither contract nor theory set improved. One such result blocks another attempt in the same mechanism; a second no-progress cycle anywhere triggers stop-loss.
 - `invalid-run`: parity/environment/timeout prevents interpretation; repair validity, not behavior.
 
 Only `contract-improved` and `falsified-continue` authorize another cycle without user direction.

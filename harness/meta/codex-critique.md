@@ -237,3 +237,11 @@ Current readiness: **good engineering assistant baseline, not yet the intended u
 | Machine-enforced guarantees | Narrower than claimed |
 
 This critique is based on the complete harness contents and a successful run of `scripts/validate-harness.sh` from the harness root.
+
+## Disposition (2026-07-16)
+
+Reviewed against the harness change gate with an explicit anti-over-engineering constraint from the user.
+
+- Implemented: #1 refactor mode (landed independently in the same session, before this review was read); #3 as a one-bullet ambiguity ladder in `AGENTS.md`; #4 scope-safe correction capture in `AGENTS.md` and `docs/collaboration.md`; #6's no-progress clarification in the step-back skill; #7's stale receipts amended in `meta/harness-design.md`.
+- Deferred with named triggers, not rejected: #7 link/routing checks (first broken link or restructure regression); #8 adoption automation (observed friction during the first real adoption); #5 decision records (first project accumulating decisions worth indexing); #2 DDD guidance (first domain-rich adoption).
+- Rejected: #6's always-on task preflight — ceremony without an observed failure; the design questions and default completion check already own that space.
