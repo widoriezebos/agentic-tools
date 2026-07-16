@@ -32,6 +32,15 @@ If the evaluation cannot be run on demand, the first deliverable is the evaluati
 - A delta within the noise floor is noise. Do not count it as progress; repeat the run or increase the effect before believing it. A guard-metric regression is never averaged away by a primary-metric gain.
 - After a falsified experiment, revert the behavior and keep the learning in the plan. Never stack experiments on unreverted falsified changes.
 
+## Evaluation Types
+
+The loop in this skill is the same for every optimization problem. What changes per problem type is how the evaluation must be built. Declare the type together with the evaluation in `docs/project-rules.md`.
+
+- **Deterministic search** (design choices, algorithms, architectures validated by tests and benchmarks). The evaluation is the test and benchmark suite, and the noise floor is small. Explore candidates as separate branches or worktrees, one design decision per experiment, and let frontier challenges prune the losers.
+- **Stochastic systems** (randomized load, chaos scenarios, sampled inputs). A single run proves nothing. The evaluation command must aggregate over enough seeded scenarios to produce a stable statistic. Measure the noise floor by re-running the unchanged baseline several times, and set guard metrics on the tail (worst case, high percentiles), never only on the average.
+- **Hidden information** (security, recommendations, anything where real feedback is partial). Build the on-demand evaluation as a simulator or a replay of recorded traces, and add a standing guard: reconcile simulator results against live outcomes on a declared cadence. When simulator and reality diverge, stop optimizing; the evaluation is broken, and fixing it re-baselines the frontier.
+- **Dynamic systems** (live traffic, changing conditions, evolving targets). Frontier scores expire when the environment shifts: compare candidates only within the same measurement window, and re-baseline with the reason recorded when conditions change. The ledger stores the recording time, so a project can enforce its window deterministically. Use offline or replay evaluation as the fast inner loop and live measurement as the slow outer confirmation. Anything that touches production runs under the reserved decisions in `docs/project-rules.md`, never as an unsupervised experiment loop.
+
 ## Anti-Overfitting
 
 - The evaluation is a proxy; the contract is the user or production outcome. A gain needs a mechanism you can explain. An unexplainable gain is treated as noise or overfitting until independently reproduced.

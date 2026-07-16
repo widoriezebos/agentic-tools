@@ -69,7 +69,7 @@ Never mix refactor and improve in the same change. Refactor promises the score s
 
 **Why it exists.** Chasing a score invites specific kinds of self-deception: treating random noise as progress, losing your best version by tinkering past it, and optimizing for the test instead of the thing the test stands for.
 
-**What it is for.** Benchmark scores, quality evaluations, latency and cost budgets. Any goal a runnable evaluation can measure. If no such evaluation exists, building one is the first task.
+**What it is for.** Benchmark scores, quality evaluations, latency and cost budgets. Any goal a runnable evaluation can measure. If no such evaluation exists, building one is the first task. The same loop covers deterministic test suites, randomized scenario testing, simulator or replay evaluation for systems with hidden feedback, and windowed live measurement for dynamic systems; the improve skill describes how to shape the evaluation for each.
 
 **How it works.**
 
