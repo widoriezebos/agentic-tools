@@ -16,6 +16,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Investigation stop-loss | `skills/take-a-step-back/SKILL.md` | Work is stuck, repetitive, expensive, or premise is uncertain |
 | Worked examples | `docs/examples/` | A template above is unclear in practice |
 | Adoption and harness tuning | `docs/project-adaptation.md` | Starting a new repository, or `scripts/receipt.sh check` says a retro is due |
+| Reconciling an existing repository | `docs/harness-reconciliation.md` | Installing or upgrading the harness where instructions, skills, or prompts already exist |
 | Opt-in specialist skills | `optional-skills/` | Only when enabled during adaptation (e.g. `debug-java` for JVM repositories) |
 | Harness maintenance and rationale | `meta/` | Changing the harness itself; never copied into adopting projects |
 

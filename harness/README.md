@@ -93,17 +93,13 @@ Canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.m
 6. Record the template commit SHA you adopted from (a line in `docs/project-rules.md`) — it makes future migration a diff instead of archaeology.
 7. Work normally. Each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence — early routing errors are the cheapest to fix.
 
-Adopting in an **existing** repository works the same way, plus: fold any existing `CLAUDE.md`/`AGENTS.md` content into its correct owner (commands → `project-rules.md`, workflow rules → the owning skill or doc, incident history → delete or archive as task evidence). Do not keep parallel instruction files; compatibility files should contain only a pointer.
+Adopting in an **existing** repository — one that already has agent instructions, skills, prompts, or rule files — follows the reconciliation manual instead: [`docs/harness-reconciliation.md`](docs/harness-reconciliation.md). It inventories every instruction asset, dispositions each rule into its canonical owner or deletes it (with a ledger as the human's review guide), and cuts over with no parallel instruction sources left behind.
 
 ## Updating and Migrating
 
 **Tuning an adopted harness (the normal path).** Instruction changes should come from the receipts-and-retro loop: patterns in receipts → proposals through the change gate → human veto → recorded retro. Corrections captured mid-task go straight to their owning document. Resist editing the contract from a single anecdote — that is the failure mode this harness exists to prevent.
 
-**Pulling template updates into a project.** Diff your project against the template at the recorded adoption SHA, then apply in three buckets:
-
-- *Project-owned, never overwrite:* `docs/project-rules.md`, `plans/` (handoff notes, receipts ledger), registered runtime profiles, anything your retros changed.
-- *Template-owned, take upstream:* `scripts/`, `docs/examples/`, skills you have not locally tuned.
-- *Merge deliberately:* `AGENTS.md`, `wow.md`, and any doc your retros modified — re-apply your retro-driven deltas on top of the new template text, then run `scripts/validate-harness.sh` and record the migration as a retro entry with the new template SHA.
+**Pulling template updates into a project.** Diff against the recorded adoption SHA and apply the three-bucket rule — project-owned (never overwrite), template-owned (take upstream), merge deliberately (local deltas re-applied on top of new template text). The procedure is owned by [`docs/harness-reconciliation.md`](docs/harness-reconciliation.md); finish with `scripts/validate-harness.sh` and a retro entry recording the new template SHA.
 
 **Changing the template itself.** Applies to this repository only: every addition answers the change gate in [`meta/harness-architecture.md`](meta/harness-architecture.md) (template repo only), keep/remove decisions are recorded in `meta/source-analysis.md`, structural claims must pass `scripts/validate-harness.sh`, and external critiques get a written disposition — implemented, deferred with a named revisit trigger, or rejected — rather than wholesale adoption.
 

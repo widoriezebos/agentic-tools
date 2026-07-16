@@ -1,5 +1,7 @@
 # Project Adaptation
 
+These steps assume a repository without existing agent instruction assets. If the repository already has agent contracts, skills, prompts, or rule files, follow `docs/harness-reconciliation.md`, which wraps these steps with inventory, classification, and cutover.
+
 1. Copy the harness contents into the new repository root, excluding `meta/` — it documents harness maintenance and must not ship with adopting projects.
 2. Replace `docs/project-rules.md` with verified project facts and commands, including any project-specific delegation facts (see `docs/orchestration.md`), the team's additions to the decisions reserved for humans, and the refactor acceptance gate with its cadence backstop.
 3. Enable optional skills only where they apply: move `optional-skills/debug-java` into `skills/` only for repositories with a JVM runtime, and configure its launcher path in the skill reference. Leave the rest of `optional-skills/` out.
