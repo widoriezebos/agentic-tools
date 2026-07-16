@@ -8,6 +8,7 @@ Illustration only, not policy. Context: an integration test fails roughly one ru
 - Reproduction and exact state: CI runs on `main@4f2c91d`, no local changes; fails ~1/5; not yet reproduced locally.
 - Success/non-goals: deterministic pass with cause named. Non-goal: general CI speedup.
 - Budget and stop conditions: 4 cycles or one working day; standard stop-loss.
+- Cycle budget: 4
 
 ## Existing Evidence
 

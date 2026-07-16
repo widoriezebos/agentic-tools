@@ -8,6 +8,7 @@
 - Reproduction and exact state:
 - Success/non-goals:
 - Budget and stop conditions:
+- Cycle budget: <number, parsed by scripts/assert-stop-loss.sh>
 
 ## Existing Evidence
 | Artifact | Fact established | Reliability/limits |

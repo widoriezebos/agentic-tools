@@ -60,6 +60,8 @@ Only `contract-improved` and `falsified-continue` authorize another cycle withou
 
 ## Stop-Loss
 
+Record every cycle and its classification in the ledger, and run `scripts/assert-stop-loss.sh --file <ledger>` before contracting a new cycle. It blocks on the machine-checkable triggers below (a dead end, two no-progress cycles, the declared cycle budget); the remaining triggers stay your judgment. Do not argue with the check.
+
 Stop when any applies:
 
 - two no-progress cycles;

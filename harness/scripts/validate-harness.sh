@@ -50,6 +50,7 @@ for link in \
   scripts/receipt.sh \
   scripts/enforcement/github-actions-harness.yml \
   scripts/enforcement/claude-code-hooks.json \
+  scripts/assert-stop-loss.sh \
   docs/project-adaptation.md \
   docs/harness-reconciliation.md \
   docs/working-modes.md \
@@ -143,6 +144,23 @@ if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-old" >/dev/nul
 fi
 printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-nowindow"
 scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-nowindow" >/dev/null
+
+scripts/assert-stop-loss.sh --file docs/examples/step-back-ledger.md >/dev/null
+printf '### Cycle C1\n- Classification: no-progress\n### Cycle C2\n- Classification: no-progress\n' >"$tmp/stuck.md"
+if scripts/assert-stop-loss.sh --file "$tmp/stuck.md" >/dev/null 2>&1; then
+  echo "stop-loss check allowed a third cycle after two no-progress results" >&2
+  exit 1
+fi
+printf '- Cycle budget: 2\n### Cycle C1\n- Classification: contract-improved\n### Cycle C2\n- Classification: falsified-continue\n' >"$tmp/spent.md"
+if scripts/assert-stop-loss.sh --file "$tmp/spent.md" >/dev/null 2>&1; then
+  echo "stop-loss check ignored an exhausted cycle budget" >&2
+  exit 1
+fi
+printf '### Cycle C1\n- Classification: falsified-dead-end\n' >"$tmp/deadend.md"
+if scripts/assert-stop-loss.sh --file "$tmp/deadend.md" >/dev/null 2>&1; then
+  echo "stop-loss check allowed cycles after a dead end" >&2
+  exit 1
+fi
 
 rfile="$tmp/receipts.log"
 scripts/receipt.sh add --type implement --outcome shipped --file "$rfile" >/dev/null

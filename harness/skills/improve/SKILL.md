@@ -31,6 +31,7 @@ If the evaluation cannot be run on demand, the first deliverable is the evaluati
 - Cheapest rejection first: run the canary or subset evaluation before the full suite whenever the project's evaluation supports it.
 - A delta within the noise floor is noise. Do not count it as progress; repeat the run or increase the effect before believing it. A guard-metric regression is never averaged away by a primary-metric gain.
 - After a falsified experiment, revert the behavior and keep the learning in the plan. Never stack experiments on unreverted falsified changes.
+- Record each experiment as a ledger cycle with its classification line, and run `scripts/assert-stop-loss.sh --file <plan>` before contracting the next one. It blocks on a dead end, repeated no-progress, or an exhausted cycle budget.
 
 ## Evaluation Types
 

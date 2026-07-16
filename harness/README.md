@@ -86,6 +86,7 @@ meta/                template maintenance and rationale, never copied to project
 | `scripts/refactor-baseline.sh` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
 | `scripts/frontier.sh` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions, `challenge` enforces the noise floor, and both refuse comparisons against a frontier older than its declared measurement window |
 | `scripts/receipt.sh` | Task receipts, retro cadence check, comparable period stats, retro marker |
+| `scripts/assert-stop-loss.sh` | Blocks new investigation cycles once the ledger records a dead end, two no-progress cycles, or an exhausted cycle budget |
 | `scripts/enforcement/` | Shipped CI workflow and Claude Code hooks so the checks run without anyone remembering them |
 
 Scripts check structure and declared state. They cannot prove that a named test or receipt is truthful. That gap is covered by the human veto at retro time and by git history as a cross-check.
