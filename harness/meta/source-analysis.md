@@ -55,6 +55,8 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Minimum-viable harness subset for small repositories | First adoption where the full harness is disproportionate |
 | Monorepo stance (per-directory project rules and ownership) | First monorepo adoption |
 | Codebase-learning recipe for unfamiliar repositories | Receipts show repeated exploration waste at session start |
+| PR/CI-shaped workflow guidance (post-push failures, review comments) | Receipts show failures in the PR loop |
+| Session-capacity guidance (context exhaustion and compaction mid-task) | Receipts or handoff notes show work lost to exhausted context |
 
 ## Ideal Harness Judgment
 

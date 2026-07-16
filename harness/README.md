@@ -44,7 +44,7 @@ The day-to-day system is a set of **working modes** — implement, design, refac
 
 Underneath the modes sit five design bets, each enforced rather than merely stated:
 
-1. **Progressive disclosure.** Only `AGENTS.md` + `wow.md` load on every task; everything else loads at the phase where it helps. `scripts/audit-harness.sh` fails the build if the always-loaded word count exceeds its cap.
+1. **Progressive disclosure.** Only `AGENTS.md` + `wow.md` load on every task; everything else loads at the phase where it helps. `scripts/audit-harness.sh` fails the build if the always-loaded word count exceeds its cap. Phase-loaded files such as `docs/project-rules.md` sit outside the cap — bounded by review discipline, not by the audit.
 2. **One rule, one home, one owner.** Every control has exactly one canonical document; other files link to it and may state the trigger, but never paraphrase the rule. Routing lives only in `wow.md`. One declared exception: `docs/working-modes.md` restates rules in plain English for teaching, constants included — it is explicitly non-normative and loses on any conflict.
 3. **Hard checks for hard requirements.** Binary properties are scripts, not prose. Prose that could be a script is a defect.
 4. **Evidence before prose.** New instructions must pass a change gate: name the observed failure, show the model cannot infer it, find the owner, prefer executable enforcement. Task-local plans, ledgers, and incident notes never become global policy without deliberate promotion.
@@ -95,7 +95,7 @@ Canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.m
 1. Copy the harness contents into the repository root — **excluding `meta/`**.
 2. Replace `docs/project-rules.md` with verified facts: commands, invariants, reserved decisions, the refactor acceptance gate, delegation facts.
 3. Enable optional skills only where they apply (move `optional-skills/debug-java` into `skills/` only for JVM repos).
-4. Register subagent profiles for the runtimes in use: `skills/<name>/agents/claude.md` → `.claude/agents/<name>.md`, `skills/<name>/agents/devin/AGENT.md` → `.devin/agents/<name>/AGENT.md`.
+4. Register the skills with the runtimes (e.g. `skills/<name>/` → `.claude/skills/<name>/` so auto-triggering works), then the subagent profiles: `skills/<name>/agents/claude-profile.md` → `.claude/agents/<name>.md`, `skills/<name>/agents/devin/AGENT.md` → `.devin/agents/<name>/AGENT.md`.
 5. Run `scripts/validate-harness.sh`, then a focused project build/test.
 6. Record the template commit SHA you adopted from (a line in `docs/project-rules.md`) — it makes future migration a diff instead of archaeology.
 7. Work normally. Each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence — early routing errors are the cheapest to fix.

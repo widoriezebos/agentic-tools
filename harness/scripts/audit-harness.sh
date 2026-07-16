@@ -11,9 +11,15 @@ for file in "${required[@]}"; do
   [[ -f "$file" ]] || { echo "missing required file: $file" >&2; exit 1; }
 done
 
+# Scope the outside-reference check to harness-owned files only: adopted
+# repositories legitimately contain ../ in their own source and docs.
 outside_pattern='/'"Users/"'|\.\.'"/"
-if rg -n "$outside_pattern" . --glob '!scripts/audit-harness.sh'; then
-  echo "references outside the harness are forbidden" >&2
+scan=()
+for p in AGENTS.md CLAUDE.md wow.md docs skills optional-skills meta scripts plans/README.md plans/instruction-ledger.md; do
+  [[ -e "$p" ]] && scan+=("$p")
+done
+if rg -n "$outside_pattern" "${scan[@]}" --glob '!scripts/audit-harness.sh'; then
+  echo "references outside the harness are forbidden in harness-owned files" >&2
   exit 1
 fi
 
@@ -31,9 +37,11 @@ if rg -n 'TODO|TBD|<one paragraph>|<command>|<paths' AGENTS.md wow.md "${skill_d
   exit 1
 fi
 
-# Adopted repositories exclude meta/; in that mode project-rules.md must be
-# filled in — the template repository keeps its placeholders and keeps meta/.
-if [[ ! -d meta ]]; then
+# Template detection uses a positive marker, not the mere absence of a meta/
+# directory (any project may have one of those): only the template repository
+# carries meta/harness-design.md. Everywhere else, project-rules.md must be
+# filled in.
+if [[ ! -f meta/harness-design.md ]]; then
   if rg -n '<[a-z][a-z -]*>' docs/project-rules.md; then
     echo "adopted repository has unreplaced placeholders in docs/project-rules.md" >&2
     exit 1

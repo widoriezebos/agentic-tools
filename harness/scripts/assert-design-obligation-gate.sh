@@ -15,6 +15,14 @@ done
 header='| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |'
 grep -Fq "$header" "$file" || { echo "missing obligation matrix header" >&2; exit 1; }
 
+all_rows=$(awk -F'|' '
+  /^\|/ {
+    sev=$3;
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", sev);
+    if (sev == "CRITICAL" || sev == "HIGH" || sev == "MEDIUM" || sev == "LOW") print sev;
+  }' "$file")
+[[ -n "$all_rows" ]] || { echo "no obligation rows" >&2; exit 1; }
+
 rows=$(awk -F'|' '
   /^\|/ {
     sev=$3; status=$10;
@@ -22,7 +30,10 @@ rows=$(awk -F'|' '
     gsub(/^[[:space:]]+|[[:space:]]+$/, "", status);
     if (sev == "CRITICAL" || sev == "HIGH") print status;
   }' "$file")
-[[ -n "$rows" ]] || { echo "no critical/high obligation rows" >&2; exit 1; }
+if [[ -z "$rows" ]]; then
+  echo "design obligation gate passed: no critical/high rows; medium/low rows are reported, not gated"
+  exit 0
+fi
 
 if grep -Eq '^(MISSING|PARTIAL|CONTRADICTED|BLOCKED)$' <<<"$rows"; then
   echo "critical/high obligations are not ready" >&2

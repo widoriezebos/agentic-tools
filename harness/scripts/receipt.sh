@@ -132,6 +132,10 @@ case "$cmd" in
     [[ "$ref_epoch" =~ ^[0-9]+$ ]] || { echo "receipts file is malformed: $file" >&2; exit 2; }
     receipts=$(grep -c '|RECEIPT|' <<<"$since" || true)
     age_days=$(( (now_epoch - ref_epoch) / 86400 ))
+    if (( receipts == 0 )); then
+      echo "retro not due: no receipts this period, nothing to mine"
+      exit 0
+    fi
     if (( receipts > max_receipts )); then
       echo "harness retro due: $receipts receipts since the last retro (max $max_receipts)" >&2
       exit 1

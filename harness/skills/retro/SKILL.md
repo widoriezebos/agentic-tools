@@ -36,11 +36,13 @@ Each proposal passes the change gate in `docs/project-adaptation.md` and lands a
 | --- | --- | --- | --- | --- | --- | --- | --- |
 ```
 
-The expected effect must be falsifiable — "fewer rework receipts on refactor tasks", "correction X never repeats" — not aspirational ("better quality"). Route every change to its one owning document; prune with the same energy as adding. Flag lessons that look portable beyond this project as upstream proposals to the harness template.
+The expected effect must be falsifiable — "fewer rework receipts on refactor tasks", "correction X never repeats" — not aspirational ("better quality"). New rows enter with status `ADOPTED` and `Review by` set to the next retro; the Step 1 verdicts replace that status at review. Route every change to its one owning document; prune with the same energy as adding. Flag lessons that look portable beyond this project as upstream proposals to the harness template.
 
 ## Step 4 — Apply and Close
 
 Present verdicts and proposals for human veto — an accept/veto list, not an essay. Apply the accepted rows, update the ledger, then record the marker: `scripts/receipt.sh retro` with a one-line summary. A retro that forgets its marker breaks the cadence for the next one.
+
+With peer agents active, run retros at a quiet point on the integration branch: accepted changes land through the normal review flow, agents mid-task finish under the rules they started with, and new rules apply from their next session.
 
 ## Automation
 

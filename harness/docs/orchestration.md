@@ -23,7 +23,8 @@ Every delegation states: the goal, the inputs it may rely on, the expected retur
 Top-level agents sharing one repository (e.g. Claude Code and Codex CLI, or two concurrent sessions) are peers, not subagents: nothing coordinates them unless the team does. Rules:
 
 - One branch or worktree per agent per stream. Never work directly on a branch another agent has in flight.
-- Claim a stream through its handoff note in `plans/` (shape in `plans/README.md`). Do not advance a stream whose note another agent owns; hand over by updating the note's owner.
+- Claim a stream through its handoff note in `plans/` (shape in `plans/README.md`). A claim exists only where peers can see it: commit and push the note to the shared default branch before starting — a note that lives only on your feature branch claims nothing. Do not advance a stream whose note another agent owns; hand over by updating the note's owner.
+- Receipts written on unmerged branches are invisible to the shared retro cadence; run retros from the integration branch, after merging.
 - Integrate through the normal review flow. Merge conflicts between peer agents are a human decision, not something either agent resolves by force.
 - A peer's output is unverified claims, exactly like a subagent's: verify against the contract before building on it or certifying it.
 - These rules are conventions, not mechanisms: distributed git has no atomic cross-clone claim, so simultaneous claims surface as merge conflicts for the human. Keep streams disjoint rather than trusting a claim to lock anything.

@@ -1,6 +1,6 @@
 # Plans
 
-Task-local plans, obligation matrices, and investigation ledgers live here while work is in flight. They are evidence, not policy: promote a stable lesson into its canonical owner via `wow.md`, then delete or archive the plan. Generated run artifacts belong in a gitignored artifact directory, not here.
+Task-local plans, obligation matrices, and investigation ledgers live here while work is in flight. They are evidence, not policy: promote a stable lesson into its canonical owner via `wow.md`, then delete or archive the plan. Generated run artifacts belong in the gitignored `artifacts/` directory at the repository root, never here.
 
 Four files are standing ledgers, not task-local evidence, and are exempt from delete-when-shipped: `receipts.log` (task receipts feeding the retro), `instruction-ledger.md` (instruction changes with expected effects and verdicts), `refactor-baseline` (last gate-accepted state), and `frontier` (best-known improvement state). They stay committed and current for the life of the project.
 

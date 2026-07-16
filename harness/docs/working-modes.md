@@ -57,7 +57,7 @@ One rule matters more than any other: **never mix refactor and improve in the sa
 
 **How it works, in plain words.**
 
-- *Trusted baseline*: the last version that passed the project's full behavior-preservation proof (its "acceptance gate" — full suite, benchmark, or golden run). Everything after it is unproven until the gate passes again. `scripts/refactor-baseline.sh check` blocks new work when you have drifted too far from proven ground (default: 24 hours or 40 commits).
+- *Trusted baseline*: the last version that passed the project's full behavior-preservation proof (its "acceptance gate" — full suite, benchmark, or golden run). Everything after it is unproven until the gate passes again. `scripts/refactor-baseline.sh check` blocks new work when you have drifted too far from proven ground (default: 24 hours or 40 commits — projects tune these, and the script's answer always wins over the numbers printed here).
 - *Tests before restructuring*: if a unit carries real behavior and weak tests, write the tests first, then refactor against them. If a test must change for your refactor to pass, that is not a refactor anymore — stop and escalate.
 - *Batch sizing*: work in clusters big enough to matter and small enough to diagnose — several related classes, one coherent package — never a one-class ritual, and never "everything at once." Each unit is one commit that can be replayed alone.
 - *Spend proof wisely*: focused tests often, compiles when signatures change, the full gate only at cluster boundaries or when risk demands it.

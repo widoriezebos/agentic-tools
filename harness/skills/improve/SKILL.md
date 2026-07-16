@@ -21,7 +21,7 @@ If the evaluation cannot be run on demand, the first deliverable is the evaluati
 ## Frontier Ledger
 
 - The frontier is the best-known state: exact SHA, score, evaluation command, and run artifact. Manage it with `scripts/frontier.sh` (record, challenge, status).
-- Record the baseline frontier before the first experiment.
+- Record the baseline frontier before the first experiment. Where the evaluation's output is machine-parseable, wrap it in a project script that runs the eval and calls `scripts/frontier.sh record` with the parsed score — declaration becomes mechanical instead of remembered.
 - When a run beats the frontier (`scripts/frontier.sh challenge` passes — more than the noise floor above the recorded score), stop other work and preserve that exact state first: commit, re-record the frontier, and follow the project's push/tag policy. Only then iterate further.
 - A score without provenance — SHA, configuration, run artifact — is not a frontier. Never update the ledger from memory, a partial run, or a stale artifact.
 

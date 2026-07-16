@@ -48,6 +48,8 @@ for link in \
   scripts/refactor-baseline.sh \
   scripts/frontier.sh \
   scripts/receipt.sh \
+  scripts/enforcement/github-actions-harness.yml \
+  scripts/enforcement/claude-code-hooks.json \
   docs/project-adaptation.md \
   docs/harness-reconciliation.md \
   docs/working-modes.md \
@@ -86,6 +88,12 @@ if scripts/assert-design-obligation-gate.sh --file "$tmp/bad.md" >/dev/null 2>&1
   echo "obligation gate accepted a missing high obligation" >&2
   exit 1
 fi
+
+sed 's/| HIGH |/| MEDIUM |/; s/| DONE |/| PARTIAL |/' "$tmp/good.md" >"$tmp/medium.md"
+scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/medium.md" >/dev/null || {
+  echo "obligation gate rejected a valid medium-only matrix" >&2
+  exit 1
+}
 
 scripts/assert-design-obligation-gate.sh --runtime-required --file docs/examples/design-obligation-matrix.md >/dev/null 2>&1 && {
   echo "example matrix with READY_FOR_RUNTIME passed --runtime-required; negative fixture broken" >&2
@@ -143,6 +151,11 @@ if scripts/receipt.sh add --type bogus --outcome shipped --file "$rfile" >/dev/n
   echo "receipt add accepted an invalid type" >&2
   exit 1
 fi
+printf '1|1970-01-01T00:00:01Z|RETRO|note=aged\n' >"$tmp/receipts-aged.log"
+scripts/receipt.sh check --max-age-days 0 --file "$tmp/receipts-aged.log" >/dev/null || {
+  echo "receipt check demanded a retro over an empty period" >&2
+  exit 1
+}
 scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "$rfile" >/dev/null
 scripts/receipt.sh stats --file "$rfile" | grep -q '^receipts=1$' || { echo "receipt stats miscounted the post-retro period" >&2; exit 1; }
 scripts/receipt.sh stats --file "$rfile" | grep -q '^type_improve=1$' || { echo "receipt stats missed the improve type" >&2; exit 1; }

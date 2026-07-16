@@ -1,0 +1,15 @@
+{
+  "_comment": "Shipped enforcement example: merge the hooks block into the project's .claude/settings.json during adaptation. The Stop hook surfaces retro-due state at the end of every Claude Code turn, so cadence detection does not depend on anyone running the check by hand.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/receipt.sh check || true"
+          }
+        ]
+      }
+    ]
+  }
+}
