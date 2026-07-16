@@ -45,12 +45,12 @@ The day-to-day system is a set of **working modes** — implement, design, refac
 Underneath the modes sit five design bets, each enforced rather than merely stated:
 
 1. **Progressive disclosure.** Only `AGENTS.md` + `wow.md` load on every task; everything else loads at the phase where it helps. `scripts/audit-harness.sh` fails the build if the always-loaded word count exceeds its cap.
-2. **One rule, one home, one owner.** Every control has exactly one canonical document; other files link to it and may state the trigger, but never paraphrase the rule. Routing lives only in `wow.md`.
+2. **One rule, one home, one owner.** Every control has exactly one canonical document; other files link to it and may state the trigger, but never paraphrase the rule. Routing lives only in `wow.md`. One declared exception: `docs/working-modes.md` restates rules in plain English for teaching, constants included — it is explicitly non-normative and loses on any conflict.
 3. **Hard checks for hard requirements.** Binary properties are scripts, not prose. Prose that could be a script is a defect.
 4. **Evidence before prose.** New instructions must pass a change gate: name the observed failure, show the model cannot infer it, find the owner, prefer executable enforcement. Task-local plans, ledgers, and incident notes never become global policy without deliberate promotion.
 5. **The harness measures itself.** Every repo-changing task appends a receipt; a cadence check triggers a retro; retros change instructions through the change gate — with pruning weighted equal to adding. Each adopted change carries a falsifiable expected effect in an instruction ledger, and the next retro reviews it against evidence: kept, amended, or reverted. Rule changes are experiments, and unsupported ones die by default.
 
-Runtime portability is handled by splitting intent from mechanism: skills and docs are runtime-neutral; each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (`claude.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location.
+Runtime portability is handled by splitting intent from mechanism: skills and docs are runtime-neutral; each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (`claude-profile.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location.
 
 ### Layout
 
@@ -78,7 +78,7 @@ meta/                template maintenance + rationale — NOT copied to projects
 
 | Script | Job |
 | --- | --- |
-| `scripts/validate-harness.sh` | Full self-check: audit, skill validation, routed assets, positive and negative fixture tests for every gate script |
+| `scripts/validate-harness.sh` | Full self-check: audit, skill validation, routed assets, positive and negative fixture tests for the gate scripts; holds in both the template and adopted repositories |
 | `scripts/audit-harness.sh` | Required files, no outside references, placeholder leakage, always-loaded word cap |
 | `scripts/validate-skill.sh` | Skill frontmatter and naming rules |
 | `scripts/assert-design-obligation-gate.sh` | Structure and declared state of an obligation matrix |

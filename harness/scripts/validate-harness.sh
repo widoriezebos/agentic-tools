@@ -23,21 +23,28 @@ for link in \
   docs/design/design-obligation-gate.md \
   docs/examples/design-obligation-matrix.md \
   docs/examples/step-back-ledger.md \
+  .gitattributes \
+  plans/instruction-ledger.md \
   skills/take-a-step-back/SKILL.md \
-  skills/take-a-step-back/agents/claude.md \
+  skills/take-a-step-back/agents/claude-profile.md \
   skills/take-a-step-back/agents/devin/AGENT.md \
+  skills/take-a-step-back/agents/openai.yaml \
   skills/verify/SKILL.md \
-  skills/verify/agents/claude.md \
+  skills/verify/agents/claude-profile.md \
   skills/verify/agents/devin/AGENT.md \
+  skills/verify/agents/openai.yaml \
   skills/refactor/SKILL.md \
-  skills/refactor/agents/claude.md \
+  skills/refactor/agents/claude-profile.md \
   skills/refactor/agents/devin/AGENT.md \
+  skills/refactor/agents/openai.yaml \
   skills/improve/SKILL.md \
-  skills/improve/agents/claude.md \
+  skills/improve/agents/claude-profile.md \
   skills/improve/agents/devin/AGENT.md \
+  skills/improve/agents/openai.yaml \
   skills/retro/SKILL.md \
-  skills/retro/agents/claude.md \
+  skills/retro/agents/claude-profile.md \
   skills/retro/agents/devin/AGENT.md \
+  skills/retro/agents/openai.yaml \
   scripts/refactor-baseline.sh \
   scripts/frontier.sh \
   scripts/receipt.sh \
@@ -58,6 +65,11 @@ for preflight in optional-skills/debug-java/scripts/preflight.sh skills/debug-ja
   if [[ -x "$preflight" ]]; then
     touch "$tmp/source" "$tmp/artifact"
     "$preflight" --source "$tmp/source" --artifact "$tmp/artifact" >/dev/null
+    touch -t 202001010000 "$tmp/artifact"
+    if "$preflight" --source "$tmp/source" --artifact "$tmp/artifact" >/dev/null 2>&1; then
+      echo "debug preflight accepted a stale artifact" >&2
+      exit 1
+    fi
     break
   fi
 done
@@ -99,16 +111,17 @@ if (cd "$repo" && "$root/scripts/refactor-baseline.sh" check --max-commits 0 >/d
   exit 1
 fi
 
-(cd "$repo" && "$root/scripts/frontier.sh" record --score 80 --eval "declared eval" >/dev/null)
+(cd "$repo" && "$root/scripts/frontier.sh" record --score 80 --min-delta 1 --eval "declared eval" >/dev/null)
 if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 79 >/dev/null 2>&1); then
   echo "frontier challenge accepted a score below the frontier" >&2
   exit 1
 fi
-if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 80.5 --min-delta 1 >/dev/null 2>&1); then
-  echo "frontier challenge ignored the noise floor" >&2
+if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 80.5 >/dev/null 2>&1); then
+  echo "frontier challenge forgot the stored noise floor" >&2
   exit 1
 fi
-(cd "$repo" && "$root/scripts/frontier.sh" challenge --score 82 --min-delta 1 >/dev/null)
+(cd "$repo" && "$root/scripts/frontier.sh" challenge --score 80.5 --min-delta 0 >/dev/null)
+(cd "$repo" && "$root/scripts/frontier.sh" challenge --score 82 >/dev/null)
 git -C "$repo" add plans/frontier
 git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm frontier
 if (cd "$repo" && "$root/scripts/frontier.sh" record --score 75 --eval "declared eval" >/dev/null 2>&1); then

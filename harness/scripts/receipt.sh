@@ -72,6 +72,7 @@ case "$cmd" in
     printf '%s|%s|RECEIPT|type=%s|outcome=%s|skills=%s|verify=%s|corrections=%s|stop_loss=%s|note=%s\n' \
       "$now_epoch" "$now_utc" "$type" "$outcome" "${skills//|/;}" "$verify" "$corrections" "$stop_loss" "${note//|/;}" >>"$file"
     echo "receipt recorded in $file"
+    "$0" check --file "$file" >/dev/null 2>&1 || echo "note: a harness retro is due — run skills/retro (scripts/receipt.sh check for details)" >&2
     ;;
   retro)
     [[ -n "$summary" ]] || { echo "retro requires a summary of the instruction changes made" >&2; exit 2; }

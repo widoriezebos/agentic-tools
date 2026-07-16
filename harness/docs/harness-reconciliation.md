@@ -47,6 +47,8 @@ Disposition every rule with the table below. A file is not the unit of decision 
 
 Default when torn between keep-as-delta and drop: drop and record it in the ledger. The receipts-and-retro loop will re-add a rule reality asks for; restoring from the ledger is cheaper than carrying an unused rule in every context window.
 
+Known template-level gaps and their reopen triggers live in the template repository's `meta/source-analysis.md`; consult it before concluding a missing capability is yours to invent.
+
 ## Phase 2 — Install or Upgrade
 
 **First installation:** copy the harness payload excluding `meta/`, then follow `docs/project-adaptation.md` steps 2–9, filling `docs/project-rules.md` from the Phase 1 harvest rather than from scratch.
@@ -65,7 +67,7 @@ Clean cutover per the design principles: the same change that installs a harness
 
 ## Phase 4 — Prove and Hand Over
 
-1. `scripts/validate-harness.sh` passes in the repository (this also proves placeholders were replaced and the always-loaded cap holds).
+1. `scripts/validate-harness.sh` passes in the repository. In adopted repositories — detected by the absence of `meta/` — the audit also fails on unreplaced `docs/project-rules.md` placeholders, alongside the always-loaded cap.
 2. The commands recorded in `docs/project-rules.md` each actually ran — at minimum the focused test and build.
 3. A final sweep finds no orphaned instruction files and no dangling references to deleted ones.
 4. Report ledger-first: dispositions by bucket, deletions with reasons, conflicts escalated, deltas kept, upstream proposals for the template. Append a receipt (`scripts/receipt.sh add`), and recommend the first retro after a handful of tasks rather than at the default cadence.

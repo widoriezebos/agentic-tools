@@ -4,6 +4,8 @@ Task-local plans, obligation matrices, and investigation ledgers live here while
 
 Four files are standing ledgers, not task-local evidence, and are exempt from delete-when-shipped: `receipts.log` (task receipts feeding the retro), `instruction-ledger.md` (instruction changes with expected effects and verdicts), `refactor-baseline` (last gate-accepted state), and `frontier` (best-known improvement state). They stay committed and current for the life of the project.
 
+With peer agents on parallel branches: `receipts.log` merges by union (the shipped `.gitattributes` rule), so concurrent appends do not conflict. Concurrent changes to `refactor-baseline` or `frontier` are real races — two competing claims about trusted state — and those merge conflicts go to the human by design.
+
 ## Handoff Notes
 
 Any stream of work expected to span more than one session keeps a note at `plans/handoff-<stream>.md`, updated before the session ends. Its job is to make the next session start warm instead of re-deriving context:

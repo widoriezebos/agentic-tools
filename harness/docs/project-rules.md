@@ -20,6 +20,7 @@ Replace this file when adopting the harness. Keep facts concrete and repository-
 - Local run: `<command>`
 - Refactor acceptance gate: `<command>` — the full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate; state its cadence backstop if it differs from the defaults owned by `scripts/refactor-baseline.sh`
 - Improvement evaluation: `<command>` — the on-demand evaluation for improvement goals; state the primary metric, guard metrics with floors, the noise floor (minimum meaningful delta), any cheaper canary/subset variant, and the holdout or case-rotation policy
+- Frontier preservation policy: `<policy>` — how a new best-known state is preserved: tag pattern, push target, and who may move it
 
 State realistic timeouts and prerequisites here. Do not repeat these commands in skills or root instructions.
 
@@ -38,6 +39,13 @@ These require explicit in-task approval even when technically easy. Default set,
 - Publishing anything outside the repository.
 
 Project-specific additions: `<list them here>`
+
+## Security Posture
+
+- Untrusted content sources agents will read (web, issues, third-party code) and how to handle them: `<sources and handling>`
+- Commands and paths forbidden beyond the runtime's own defaults: `<forbidden list>`
+- Network egress expectations for agent sessions: `<policy>`
+- Where secrets live and how they are provided to builds and tests; they never enter commits, logs, or plans: `<location>`
 
 ## External State and Ownership
 

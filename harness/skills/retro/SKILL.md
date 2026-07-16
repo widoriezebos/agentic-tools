@@ -44,4 +44,4 @@ Present verdicts and proposals for human veto — an accept/veto list, not an es
 
 ## Automation
 
-Evidence collection, due-detection, and period stats are automatic (`scripts/receipt.sh`); wiring `scripts/receipt.sh check` into CI or the runtime's scheduler removes the last manual nudge. The apply step is deliberately not automatic: changing the instructions is a reserved decision the harness applies to itself.
+Due-detection and period stats are automatic: `receipt.sh add` warns when a retro is due, and wiring `scripts/receipt.sh check` into CI or the runtime's scheduler removes the last manual nudge. Evidence collection is not automatic — it is a contract duty of the agent being measured, kept honest by the git cross-check and the human spot-check, and a gap in receipts is itself a retro finding. The apply step is deliberately not automatic: changing the instructions is a reserved decision the harness applies to itself.

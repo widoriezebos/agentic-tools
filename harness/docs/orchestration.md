@@ -26,6 +26,7 @@ Top-level agents sharing one repository (e.g. Claude Code and Codex CLI, or two 
 - Claim a stream through its handoff note in `plans/` (shape in `plans/README.md`). Do not advance a stream whose note another agent owns; hand over by updating the note's owner.
 - Integrate through the normal review flow. Merge conflicts between peer agents are a human decision, not something either agent resolves by force.
 - A peer's output is unverified claims, exactly like a subagent's: verify against the contract before building on it or certifying it.
+- These rules are conventions, not mechanisms: distributed git has no atomic cross-clone claim, so simultaneous claims surface as merge conflicts for the human. Keep streams disjoint rather than trusting a claim to lock anything.
 
 ## Runtime Mechanics (pointers only)
 
@@ -35,4 +36,4 @@ Top-level agents sharing one repository (e.g. Claude Code and Codex CLI, or two 
 | Devin CLI | `run_subagent`; built-in `subagent_explore` (read-only) and `subagent_general` | `.devin/agents/<name>/AGENT.md` |
 | Other | Consult the runtime manual | Adapt the templates below |
 
-Per-runtime profile templates for this harness's skills live in `skills/<name>/agents/` (`claude.md`, `devin/AGENT.md`); copy them into the runtime's profile location during adaptation. Project-specific delegation facts (a slow suite worth backgrounding, a directory worth pre-exploring) belong in `docs/project-rules.md`, not here.
+Per-runtime profile templates for this harness's skills live in `skills/<name>/agents/` (`claude-profile.md`, `devin/AGENT.md`, plus `openai.yaml` carrying invocation metadata for OpenAI-style skill launchers); copy them into the runtime's profile location during adaptation. Project-specific delegation facts (a slow suite worth backgrounding, a directory worth pre-exploring) belong in `docs/project-rules.md`, not here.

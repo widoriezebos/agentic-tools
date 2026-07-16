@@ -22,6 +22,6 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Harness retro | `skills/retro/SKILL.md` | `scripts/receipt.sh check` reports a retro due, or the human asks for one |
 | Reconciling an existing repository | `docs/harness-reconciliation.md` | Installing or upgrading the harness where instructions, skills, or prompts already exist |
 | Opt-in specialist skills | `optional-skills/` | Only when enabled during adaptation (e.g. `debug-java` for JVM repositories) |
-| Harness maintenance and rationale | `meta/` | Changing the harness itself; never copied into adopting projects |
+| Harness maintenance and rationale | `meta/` (template repository only) | Changing the harness template itself; this directory is absent in adopting projects |
 
 Task-local plans, ledgers, receipts, benchmark artifacts, and incident notes are evidence. They must not become global policy unless a stable lesson is deliberately promoted into one canonical owner above. Worked examples illustrate templates; they are not policy either.
