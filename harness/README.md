@@ -33,6 +33,7 @@ The harness exists to convert each of those failure classes into either a routed
 | Investigation stop-loss: evidence-first diagnosis, cycle contracts, classifications, hard stop conditions | [`skills/take-a-step-back/`](skills/take-a-step-back/SKILL.md) |
 | Delegation judgment: when to fan out to subagents, when not to, peer-agent coexistence | [`docs/orchestration.md`](docs/orchestration.md) |
 | Human collaboration: reviewable increments, review-guide-first reports, correction capture, escalation shape | [`docs/collaboration.md`](docs/collaboration.md) |
+| The human's guide: handing over work, reviewing, making corrections stick, running multiple agents, recurring duties | [`docs/working-with-agents.md`](docs/working-with-agents.md) |
 | Session continuity: owned handoff notes for multi-session streams | [`plans/README.md`](plans/README.md) |
 | Measurement and learning: per-task receipts, cadence-triggered retro, evidence-based tuning and pruning | [`docs/project-adaptation.md`](docs/project-adaptation.md) + `scripts/receipt.sh` |
 | Specialist opt-ins (e.g. live Java/JDWP debugging) | [`optional-skills/`](optional-skills/) |
@@ -60,6 +61,7 @@ wow.md               the single routing index
 docs/
   project-rules.md   project facts — replaced on adoption
   working-modes.md   plain-English guide to all working modes
+  working-with-agents.md  the human teammate's guide
   orchestration.md   delegation and peer-agent judgment
   collaboration.md   the human side: review, corrections, escalation
   project-adaptation.md  adoption steps + receipts-and-retro loop
@@ -97,6 +99,8 @@ Canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.m
 5. Run `scripts/validate-harness.sh`, then a focused project build/test.
 6. Record the template commit SHA you adopted from (a line in `docs/project-rules.md`) — it makes future migration a diff instead of archaeology.
 7. Work normally. Each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence — early routing errors are the cheapest to fix.
+
+For the engineers on the team: [`docs/working-with-agents.md`](docs/working-with-agents.md) is your manual — how to hand over work (mode words are load-bearing), what comes back to you, how to review, how to make corrections stick, and how to run several agents without collisions.
 
 Adopting in an **existing** repository — one that already has agent instructions, skills, prompts, or rule files — follows the reconciliation manual instead: [`docs/harness-reconciliation.md`](docs/harness-reconciliation.md). It inventories every instruction asset, dispositions each rule into its canonical owner or deletes it (with a ledger as the human's review guide), and cuts over with no parallel instruction sources left behind.
 

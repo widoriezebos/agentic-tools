@@ -8,6 +8,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Project commands and constraints | `docs/project-rules.md` | Before editing or validation |
 | Delegation, parallel work, peer agents | `docs/orchestration.md` | Work splits into independent parts, needs broad exploration, runs long, or shares the repo with another agent |
 | Working with the human team | `docs/collaboration.md` | Committing, preparing changes for review, or receiving a correction |
+| The human teammate's manual | `docs/working-with-agents.md` | The user asks how to work with agents under this harness |
 | Session handoff and task-local state | `plans/README.md` | Starting or ending a session on a multi-session stream |
 | Architecture/design judgment | `docs/design/design-principles.md` | Design, refactor, or consequential change |
 | Completion check and design proof | `docs/design/design-obligation-gate.md` | Finishing any change; full matrix only on its listed triggers |

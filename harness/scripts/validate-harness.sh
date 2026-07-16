@@ -39,6 +39,7 @@ for link in \
   docs/project-adaptation.md \
   docs/harness-reconciliation.md \
   docs/working-modes.md \
+  docs/working-with-agents.md \
   plans/README.md; do
   [[ -e "$link" ]] || { echo "missing routed asset: $link" >&2; exit 1; }
 done
