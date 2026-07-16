@@ -9,7 +9,7 @@ These steps assume a repository without existing agent instruction assets. If th
 5. Keep only design principles relevant to the system's risk. Do not weaken ownership, invariant, failure, or proof rules without documenting why.
 6. Add project-specific skills only for specialist workflows used repeatedly. Initialize and validate each skill; keep detailed references one hop from `SKILL.md`.
 7. Put task state in `plans/`, generated evidence in a gitignored artifact directory, and durable decisions in code/docs—not in root prompt history.
-8. Run `scripts/validate-harness.sh`, then a focused project build/test.
+8. Run `scripts/validate-harness.sh`, then a focused project build/test. Wire `scripts/audit-harness.sh .` (and the gate scripts the project uses) into CI or a pre-merge hook — hard checks must not depend on anyone remembering to run them.
 9. Record the template commit SHA adopted from as a line in `docs/project-rules.md`; future template migrations diff against it (see the README's updating section).
 
 ## What Not to Copy Forward
@@ -29,9 +29,22 @@ Every task that changes the repository or triggers a skill appends one receipt l
 
 When `scripts/receipt.sh check` reports a retro due (default every 25 receipts or 30 days), run a harness retro:
 
-1. Read the receipts since the last retro.
+1. Read the receipts since the last retro, and cross-check them against git history: a `shipped` receipt followed by fix commits is rework the receipts hid, and it counts as rework.
 2. Look for patterns, never anecdotes: a skill that should have triggered but did not; verification repeatedly catching the same class of issue; corrections clustering around one convention; ceremony notes; rules and skills that never fired.
-3. Propose instruction changes through the change gate, each routed to its one owning document — and prune with the same energy as adding. A rule whose receipts never mention it is a removal candidate.
+3. Propose instruction changes through the change gate below, each routed to its one owning document — and prune with the same energy as adding. A rule whose receipts never mention it is a removal candidate. Flag lessons that look portable beyond this project as upstream proposals to the harness template.
 4. Present the proposals for human veto, then record the retro with `scripts/receipt.sh retro` and a summary of what changed.
 
 Do not add a new global rule after a single ambiguous miss; receipts exist precisely so rules rest on repeated evidence. In the first week, run the first retro after a handful of tasks instead of waiting for the cadence — early routing errors are the cheapest to fix.
+
+### The Change Gate
+
+Every instruction change — retro proposal, correction capture, or any other addition — answers these before it lands:
+
+- What observed failure does this prevent?
+- Is the model unable to infer it from the task, code, or tool feedback?
+- Does an existing owner already cover it?
+- Must it load always, or only for one task type or phase?
+- Can a schema, permission, test, linter, or script enforce it better?
+- What evidence will justify keeping it after models or products change?
+
+If the answers are weak, do not add the instruction.

@@ -6,11 +6,14 @@ cd "$root"
 
 scripts/audit-harness.sh .
 
-scripts/validate-skill.sh skills/take-a-step-back
-scripts/validate-skill.sh skills/verify
-scripts/validate-skill.sh skills/refactor
-scripts/validate-skill.sh skills/improve
-scripts/validate-skill.sh optional-skills/debug-java
+# Validate every skill present, including project-added and moved optional
+# skills, so this script holds in adopted repositories as well as the template.
+for dir in skills optional-skills; do
+  [[ -d "$dir" ]] || continue
+  while IFS= read -r skill_md; do
+    scripts/validate-skill.sh "$(dirname "$skill_md")"
+  done < <(find "$dir" -name SKILL.md | sort)
+done
 
 for link in \
   docs/project-rules.md \
@@ -35,7 +38,6 @@ for link in \
   scripts/refactor-baseline.sh \
   scripts/frontier.sh \
   scripts/receipt.sh \
-  optional-skills/debug-java/SKILL.md \
   docs/project-adaptation.md \
   docs/harness-reconciliation.md \
   docs/working-modes.md \
@@ -46,8 +48,16 @@ done
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-touch "$tmp/source" "$tmp/artifact"
-optional-skills/debug-java/scripts/preflight.sh --source "$tmp/source" --artifact "$tmp/artifact" >/dev/null
+
+# The debug-java preflight is optional: absent in adopted repositories that
+# excluded the skill, moved into skills/ in JVM repositories that enabled it.
+for preflight in optional-skills/debug-java/scripts/preflight.sh skills/debug-java/scripts/preflight.sh; do
+  if [[ -x "$preflight" ]]; then
+    touch "$tmp/source" "$tmp/artifact"
+    "$preflight" --source "$tmp/source" --artifact "$tmp/artifact" >/dev/null
+    break
+  fi
+done
 
 cat >"$tmp/good.md" <<'EOF'
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |

@@ -40,4 +40,4 @@ If the evaluation cannot be run on demand, the first deliverable is the evaluati
 
 ## Stop Conditions
 
-Stop and report when any applies: the target is reached; the budget is exhausted; three consecutive experiments fail to beat the frontier beyond the noise floor; or guard metrics keep regressing. Hand over the preserved frontier, the experiment ledger with classifications, the exhausted mechanisms, and the next higher-level decision. Whatever the outcome, the best-known state must be exactly recoverable at the end.
+Stop and report when any applies: the target is reached; the budget is exhausted; three consecutive experiments fail to beat the frontier beyond the noise floor; or guard metrics keep regressing. These conditions are additional to the take-a-step-back stop-loss — whichever stops earlier wins, and a `falsified-continue` classification does not extend the three-experiment limit. Hand over the preserved frontier, the experiment ledger with classifications, the exhausted mechanisms, and the next higher-level decision. Whatever the outcome, the best-known state must be exactly recoverable at the end.

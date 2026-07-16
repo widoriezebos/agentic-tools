@@ -37,6 +37,8 @@ One rule matters more than any other: **never mix refactor and improve in the sa
 
 **How to use it.** Asked to add rate limiting to an endpoint: read how the endpoint and its middleware work today; check `docs/project-rules.md` for commands and reserved decisions; make the change; run the focused tests; then actually hit the endpoint until it returns the limit response and paste that evidence into your report. Finish with the five-question completion check in `docs/design/design-obligation-gate.md` and a receipt.
 
+**Fixing a bug** adds one discipline: reproduce it before you fix it. Capture the reproduction as a failing test when practical, make the fix, and prove that same test now passes — then verify end-to-end as usual. A fix without a reproduction is a guess that happened to compile; the plausible cause and the demonstrated cause turn out to be different things surprisingly often.
+
 ## Design — decide before you build
 
 **Why it exists.** Consequential changes fail late and expensively when nobody decided who owns a behavior, what happens on failure, or how the change will be proven. Design mode forces those decisions while they are still cheap.

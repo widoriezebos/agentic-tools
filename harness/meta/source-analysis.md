@@ -44,6 +44,15 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | A new prose rule for every miss | Require evidence, canonical ownership, loading decision, and preferably executable enforcement. |
 | Model-specific prompt recipes | Keep outcomes and checks stable; tune adapters/skills only from repeated product-specific evidence. |
 
+## Deferred With Triggers (2026-07-16 self-review)
+
+| Item | Reopen trigger |
+| --- | --- |
+| Review-mode guidance (receipt type exists without a guidance owner) | Receipts show defective, padded, or unverified reviews |
+| Minimum-viable harness subset for small repositories | First adoption where the full harness is disproportionate |
+| Monorepo stance (per-directory project rules and ownership) | First monorepo adoption |
+| Codebase-learning recipe for unfamiliar repositories | Receipts show repeated exploration waste at session start |
+
 ## Ideal Harness Judgment
 
 The ideal harness is not the union of best rules. It is a routing and enforcement system: a thin stable contract, one canonical design standard, triggered high-risk workflows, task-local evidence, and deterministic locks. Rich context remains available, but arrives only when useful.

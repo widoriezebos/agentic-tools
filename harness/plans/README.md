@@ -2,6 +2,8 @@
 
 Task-local plans, obligation matrices, and investigation ledgers live here while work is in flight. They are evidence, not policy: promote a stable lesson into its canonical owner via `wow.md`, then delete or archive the plan. Generated run artifacts belong in a gitignored artifact directory, not here.
 
+Three files are standing ledgers, not task-local evidence, and are exempt from delete-when-shipped: `receipts.log` (task receipts feeding the retro), `refactor-baseline` (last gate-accepted state), and `frontier` (best-known improvement state). They stay committed and current for the life of the project.
+
 ## Handoff Notes
 
 Any stream of work expected to span more than one session keeps a note at `plans/handoff-<stream>.md`, updated before the session ends. Its job is to make the next session start warm instead of re-deriving context:

@@ -28,3 +28,7 @@ One rule, one home still applies: update the owner, do not scatter copies. A cor
 ## Escalation Shape
 
 When a reserved or ambiguous decision blocks progress, ask with a recommendation and the smallest set of real options, stating what each costs. Do not ask about decisions the code or conventions already answer, and do not proceed on a reserved decision because asking felt expensive.
+
+## Emergencies
+
+The human may explicitly suspend gates and checks for a declared emergency; suspension is always their explicit call, never inferred from urgency. Record what was skipped in the receipt or handoff note, and reconcile — run the skipped verification, backfill the ledgers — as the first task after the incident.

@@ -31,16 +31,7 @@ Every control has one canonical owner. Other files link to it and may state the 
 
 ## Change Gate
 
-Before adding harness content, answer:
-
-- What observed failure does this prevent?
-- Is the model unable to infer it from the task, code, or tool feedback?
-- Does an existing owner already cover it?
-- Must it load always, or only for one task type or phase?
-- Can a schema, permission, test, linter, or script enforce it better?
-- What evidence will justify keeping it after models or products change?
-
-If these answers are weak, do not add the instruction.
+The change gate questions are owned by `docs/project-adaptation.md` so they ship with every adopting project — the retro and correction-capture loops there are the gate's main consumers. Template changes answer the same gate; do not restate the questions here.
 
 ## Maintenance
 

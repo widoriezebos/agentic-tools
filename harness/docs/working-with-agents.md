@@ -74,3 +74,4 @@ Fresh repository: `docs/project-adaptation.md`. Repository with existing agent i
 | The harness installed here | "Reconcile this repo with the harness at SHA <sha>, per docs/harness-reconciliation.md." |
 | The system tuned | "Receipts say a retro is due — run it and bring me the proposals." |
 | A second opinion | "Have a subagent review this before you call it done." |
+| Emergency speed | "This is an emergency: suspend the gates, log what we skip, reconcile after." |

@@ -18,7 +18,7 @@ Replace this file when adopting the harness. Keep facts concrete and repository-
 - Build/package: `<command>`
 - Format/lint/typecheck: `<command>`
 - Local run: `<command>`
-- Refactor acceptance gate: `<command>` — the full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate; state its cadence backstop if it differs from the harness defaults (24 hours / 40 commits)
+- Refactor acceptance gate: `<command>` — the full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate; state its cadence backstop if it differs from the defaults owned by `scripts/refactor-baseline.sh`
 - Improvement evaluation: `<command>` — the on-demand evaluation for improvement goals; state the primary metric, guard metrics with floors, the noise floor (minimum meaningful delta), any cheaper canary/subset variant, and the holdout or case-rotation policy
 
 State realistic timeouts and prerequisites here. Do not repeat these commands in skills or root instructions.

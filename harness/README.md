@@ -16,7 +16,7 @@ Agents working on real projects fail in predictable ways, and most of those fail
 - **Unreviewable output.** The human — the actual bottleneck — gets omnibus diffs and buried risk.
 - **Prose mistaken for enforcement.** Hard requirements live as sentences the model may or may not weight, instead of scripts that fail.
 
-The harness exists to convert each of those failure classes into either a routed judgment standard, a triggered workflow, or a deterministic check — while keeping the always-loaded footprint small (audited, capped, currently well under half the budget).
+The harness exists to convert each of those failure classes into either a routed judgment standard, a triggered workflow, or a deterministic check — while keeping the always-loaded footprint small — audited and capped, so growth past the budget fails validation instead of accumulating silently.
 
 ## What It Does
 
@@ -110,7 +110,7 @@ Adopting in an **existing** repository — one that already has agent instructio
 
 **Pulling template updates into a project.** Diff against the recorded adoption SHA and apply the three-bucket rule — project-owned (never overwrite), template-owned (take upstream), merge deliberately (local deltas re-applied on top of new template text). The procedure is owned by [`docs/harness-reconciliation.md`](docs/harness-reconciliation.md); finish with `scripts/validate-harness.sh` and a retro entry recording the new template SHA.
 
-**Changing the template itself.** Applies to this repository only: every addition answers the change gate in [`meta/harness-architecture.md`](meta/harness-architecture.md) (template repo only), keep/remove decisions are recorded in `meta/source-analysis.md`, structural claims must pass `scripts/validate-harness.sh`, and external critiques get a written disposition — implemented, deferred with a named revisit trigger, or rejected — rather than wholesale adoption.
+**Changing the template itself.** Applies to this repository only: every addition answers the change gate (owned by [`docs/project-adaptation.md`](docs/project-adaptation.md), shipped with every project), keep/remove decisions are recorded in `meta/source-analysis.md`, structural claims must pass `scripts/validate-harness.sh`, and external critiques get a written disposition — implemented, deferred with a named revisit trigger, or rejected — rather than wholesale adoption.
 
 ## Status
 

@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE' >&2
 Usage:
-  scripts/receipt.sh add --type <implement|refactor|review|design|investigate|other> \
+  scripts/receipt.sh add --type <implement|refactor|improve|review|design|investigate|other> \
       --outcome <shipped|reworked|blocked|parked> [--skills a,b] \
       [--verify clean|caught|skipped] [--corrections N] [--stop-loss yes|no] \
       [--note "text"] [--file <path>]
@@ -59,7 +59,7 @@ now_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 case "$cmd" in
   add)
-    case "$type" in implement|refactor|review|design|investigate|other) ;; *) echo "invalid --type: $type" >&2; exit 2 ;; esac
+    case "$type" in implement|refactor|improve|review|design|investigate|other) ;; *) echo "invalid --type: $type" >&2; exit 2 ;; esac
     case "$outcome" in shipped|reworked|blocked|parked) ;; *) echo "invalid --outcome: $outcome" >&2; exit 2 ;; esac
     case "$verify" in clean|caught|skipped) ;; *) echo "invalid --verify: $verify" >&2; exit 2 ;; esac
     case "$stop_loss" in yes|no) ;; *) echo "invalid --stop-loss: $stop_loss" >&2; exit 2 ;; esac
