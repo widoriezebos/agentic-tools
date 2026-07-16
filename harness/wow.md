@@ -15,6 +15,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Behavior-preserving refactor | `skills/refactor/SKILL.md` | Restructuring, readability, or cleanup work whose contract is unchanged behavior |
 | Benchmark-driven improvement | `skills/improve/SKILL.md` | Chasing a measured improvement goal against a runnable evaluation |
 | Investigation stop-loss | `skills/take-a-step-back/SKILL.md` | Work is stuck, repetitive, expensive, or premise is uncertain |
+| Working modes, explained in plain English | `docs/working-modes.md` | Learning the system, or unsure which mode a task is in |
 | Worked examples | `docs/examples/` | A template above is unclear in practice |
 | Adoption and harness tuning | `docs/project-adaptation.md` | Starting a new repository, or `scripts/receipt.sh check` says a retro is due |
 | Reconciling an existing repository | `docs/harness-reconciliation.md` | Installing or upgrading the harness where instructions, skills, or prompts already exist |

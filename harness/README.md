@@ -39,7 +39,9 @@ The harness exists to convert each of those failure classes into either a routed
 
 ## How It Works
 
-Five design bets, each enforced rather than merely stated:
+The day-to-day system is a set of **working modes** — implement, design, refactor, improve, take-a-step-back, verify — each a different promise about what "done" means, each with its own failure modes and rules. The plain-English guide to all of them is [`docs/working-modes.md`](docs/working-modes.md); start there.
+
+Underneath the modes sit five design bets, each enforced rather than merely stated:
 
 1. **Progressive disclosure.** Only `AGENTS.md` + `wow.md` load on every task; everything else loads at the phase where it helps. `scripts/audit-harness.sh` fails the build if the always-loaded word count exceeds its cap.
 2. **One rule, one home, one owner.** Every control has exactly one canonical document; other files link to it and may state the trigger, but never paraphrase the rule. Routing lives only in `wow.md`.
@@ -57,6 +59,7 @@ CLAUDE.md            runtime compatibility pointer to AGENTS.md
 wow.md               the single routing index
 docs/
   project-rules.md   project facts — replaced on adoption
+  working-modes.md   plain-English guide to all working modes
   orchestration.md   delegation and peer-agent judgment
   collaboration.md   the human side: review, corrections, escalation
   project-adaptation.md  adoption steps + receipts-and-retro loop

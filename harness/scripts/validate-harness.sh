@@ -38,6 +38,7 @@ for link in \
   optional-skills/debug-java/SKILL.md \
   docs/project-adaptation.md \
   docs/harness-reconciliation.md \
+  docs/working-modes.md \
   plans/README.md; do
   [[ -e "$link" ]] || { echo "missing routed asset: $link" >&2; exit 1; }
 done
