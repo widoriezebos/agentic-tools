@@ -30,6 +30,7 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Exceptions remain diagnosable | Stack trace plus structured context matters operationally | Project rules/design standard |
 | Clean cutovers and deletion | Avoids dual primary behavior and permanent compatibility drag | Design principles |
 | Refactor mode: trusted baseline, tests-before-refactor, risk-sized replayable clusters, validation ladder, bounded fix attempts | Repeatedly prevented silent behavior drift and unbounded failed-refactor spirals in the source repository | Refactor skill + `scripts/refactor-baseline.sh` |
+| Responsibility-driven and domain-driven design, named and explained | The user looked for both and could not find them (2026-07-16). The RDD substance existed but was unnamed; DDD had been deferred from the Codex critique, and the deferral trigger fired | Design principles |
 
 ## Removed or Narrowed
 

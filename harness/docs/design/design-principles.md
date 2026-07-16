@@ -19,6 +19,25 @@ When principles conflict, prefer: correctness and invariant protection; clear ow
 - Optimize only against measured budgets and keep the optimization inside the owning component.
 - Make primary behavior changes as clean cutovers when feasible; remove superseded internal paths in the same change.
 
+## Responsibility-Driven Design
+
+The core standard above is responsibility-driven. The practical method:
+
+- Start from responsibilities: name the decisions and duties the change involves before naming classes or modules.
+- Assign each responsibility to one owner, and place behavior next to the state and invariants it guards. If a function needs another object's data to make a decision, the decision probably belongs to that object.
+- Express collaborators as roles with small contracts stating what they promise, and let callers depend on the role instead of the implementation.
+- When a class is hard to name, hard to test, or hard to document, treat that as an ownership problem. Split or move the responsibility before polishing the code.
+
+## Domain-Driven Design
+
+Apply this section in proportion to how much domain logic the system carries. A CRUD service or an infrastructure tool does not need aggregate ceremony; a system full of business rules does.
+
+- Use the domain's own language in code. Names for classes, methods, and events come from how the business talks, and one term means one thing within a context. When a domain expert would not recognize a name, the model has drifted.
+- Draw bounded contexts. A model is only valid inside its boundary, and the same word may mean different things in different contexts: an "order" in checkout differs from an "order" in shipping. Translate at the boundary instead of sharing models; a small translation layer is cheaper than a shared model that serves nobody well.
+- Cluster state that must change together into one aggregate, with one owner enforcing its invariants. A transaction changes one aggregate; effects on other aggregates travel as events.
+- Distinguish entities, where identity matters and attributes change, from value objects, where only the value matters and immutability is the default.
+- Keep domain rules in the domain objects. When every rule lives in service classes operating on data bags, ownership is lost and the responsibility rules above are being violated at scale.
+
 ## Documentation
 
 - Code is self-documenting first: if a comment would translate confusing code into English, improve the names, types, or shape instead.

@@ -25,7 +25,7 @@ For each of these failure classes the harness provides a guidance document, a tr
 | Always-on operating contract: inspect first, match the requested action, resolve ambiguity in a fixed order, escalate human-reserved decisions, capture corrections, completion duties | [`AGENTS.md`](AGENTS.md) |
 | Single routing index: what to load, when | [`wow.md`](wow.md) |
 | Project facts: commands, invariants, reserved decisions, external ownership | [`docs/project-rules.md`](docs/project-rules.md) (replaced per project) |
-| Design judgment and priority order for consequential change | [`docs/design/design-principles.md`](docs/design/design-principles.md) |
+| Design judgment for consequential change: priority order, responsibility-driven ownership, domain-driven design for domain-heavy systems | [`docs/design/design-principles.md`](docs/design/design-principles.md) |
 | Completion gate: a five-question default check on every change; a full obligation matrix only on explicit risk triggers | [`docs/design/design-obligation-gate.md`](docs/design/design-obligation-gate.md) |
 | End-to-end verification: observed behavior as the only proof a change works | [`skills/verify/`](skills/verify/SKILL.md) |
 | Behavior-preserving refactor mode: trusted baseline, tests before restructuring, risk-sized replayable batches, validation ladder, bounded failure handling | [`skills/refactor/`](skills/refactor/SKILL.md) |
