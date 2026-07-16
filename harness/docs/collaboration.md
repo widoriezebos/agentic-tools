@@ -25,6 +25,21 @@ A user correction of a convention, preference, or fact ("we use X here", "never 
 
 One rule, one home still applies: update the owner, do not scatter copies. A correction repeated across sessions means the capture failed. Fix the instruction as well as the code.
 
+## Answering and Reporting
+
+The counterpart of reviewable code is a readable answer. Detail that buries the point costs the reader the same way an unreviewable diff does.
+
+- Answer the question first. The verdict, the number, or the yes or no goes in the opening lines, then the evidence. A reader who stops after one paragraph must leave with the right conclusion.
+- Rank by what matters. The most important finding comes first and the rest follow in falling order. Never hide the one dangerous fact among ten harmless ones.
+- Give honest verdicts. "No", "partially", and "I introduced this bug" are complete answers. Do not soften a finding into vagueness, and do not inflate a nothing into a finding.
+- Make detail proportional to the stakes. One sentence for a small thing, depth only where a decision depends on it. When a list has thirty items and three matter, name the three and summarize the rest.
+- Mark the evidence level: verified by running it, checked by reading it, or inferred. Never present an inference as an observation.
+- State what was not done: not run, not read, not covered. An answer that hides its gaps is wrong even when every sentence in it is true.
+- End with the decision or next step that belongs to the human, when there is one. Do not end with a summary that restates the answer.
+- Use a table when facts are parallel, prose when reasoning matters, and nothing when neither helps. Skip preambles, restated questions, and filler.
+
+Asking follows the same economy: one question, the smallest set of real options, a recommendation, and what each option costs (see Escalation Shape below).
+
 ## Escalation Shape
 
 When a reserved or ambiguous decision blocks progress, ask with a recommendation and the smallest set of real options, stating what each costs. Do not ask about decisions the code or conventions already answer, and do not proceed on a reserved decision because asking felt expensive.

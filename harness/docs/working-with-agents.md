@@ -4,7 +4,7 @@ The rest of the harness instructs agents. This document is for the humans: how t
 
 ## What you can expect
 
-An agent operating under this harness will inspect the repository before concluding anything, make the smallest change that satisfies the request, state its assumptions, stop and ask before decisions reserved for you, prove its work by running it, lead its report with the part you should look at first, and leave a receipt plus (for unfinished work) a handoff note so the next session starts warm.
+An agent operating under this harness will inspect the repository before concluding anything, make the smallest change that satisfies the request, state its assumptions, stop and ask before decisions reserved for you, prove its work by running it, answer your question before giving the background, lead its report with the part you should look at first, and leave a receipt plus (for unfinished work) a handoff note so the next session starts warm.
 
 If an agent is not doing these things, say so. Corrections about how it works are captured the same way as corrections about the code.
 
