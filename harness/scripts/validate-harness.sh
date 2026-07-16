@@ -151,7 +151,7 @@ if scripts/assert-stop-loss.sh --file "$tmp/stuck.md" >/dev/null 2>&1; then
   echo "stop-loss check allowed a third cycle after two no-progress results" >&2
   exit 1
 fi
-printf '- Cycle budget: 2\n### Cycle C1\n- Classification: contract-improved\n### Cycle C2\n- Classification: falsified-continue\n' >"$tmp/spent.md"
+printf -- '- Cycle budget: 2\n### Cycle C1\n- Classification: contract-improved\n### Cycle C2\n- Classification: falsified-continue\n' >"$tmp/spent.md"
 if scripts/assert-stop-loss.sh --file "$tmp/spent.md" >/dev/null 2>&1; then
   echo "stop-loss check ignored an exhausted cycle budget" >&2
   exit 1
