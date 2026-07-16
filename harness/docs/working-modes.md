@@ -33,7 +33,7 @@ Never mix refactor and improve in the same change. Refactor promises the score s
 
 **What it is for.** Features, bug fixes, configuration, documentation. The everyday work.
 
-**How it works.** Look before you conclude: read the code, the tests, and the current state. Make the smallest change that satisfies the actual request. Resolve ambiguity in a fixed order: check the repository first; if the choice is reversible, make the smallest assumption and say so; if the choice affects contracts, scope, data, or what users see, ask first. Some decisions are never yours: anything on the project's reserved list (deploys, schema changes, new dependencies) goes to a human.
+**How it works.** Look before you conclude: read the code, the tests, and the current state. Make the smallest change that satisfies the actual request, and write it to the code standard in `docs/design/design-principles.md`: self-documenting first, comments only for what code cannot say. Resolve ambiguity in a fixed order: check the repository first; if the choice is reversible, make the smallest assumption and say so; if the choice affects contracts, scope, data, or what users see, ask first. Some decisions are never yours: anything on the project's reserved list (deploys, schema changes, new dependencies) goes to a human.
 
 **How to use it.** Say you are asked to add rate limiting to an endpoint. Read how the endpoint and its middleware work today. Check `docs/project-rules.md` for commands and reserved decisions. Make the change and run the focused tests. Then actually hit the endpoint until it returns the limit response, and paste that evidence into your report. Finish with the five-question completion check in `docs/design/design-obligation-gate.md` and a receipt.
 

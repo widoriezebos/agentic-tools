@@ -38,9 +38,19 @@ Apply this section in proportion to how much domain logic the system carries. A 
 - Distinguish entities, where identity matters and attributes change, from value objects, where only the value matters and immutability is the default.
 - Keep domain rules in the domain objects. When every rule lives in service classes operating on data bags, ownership is lost and the responsibility rules above are being violated at scale.
 
+## Self-Documenting Code
+
+Write code a maintainer can follow from names, types, method shape, and local control flow, without private context. This is a design requirement. Comments are the fallback for what code cannot say (next section).
+
+- Choose intention-revealing names. A name should state what the thing owns or decides. If the honest name would be vague ("helper", "util", "manager"), the responsibility is probably wrong.
+- Prefer rich domain types over primitive values, boolean flags, and generic maps. A named type carries meaning a string cannot.
+- Extract named predicates, policies, and transitions when a condition or rule represents a real concept. `isEligibleForRetry(order)` tells the reader what a three-clause boolean expression makes them work out.
+- Shape methods so the main path reads top to bottom at one level of abstraction. Extract a named step when the reader must hold two levels at once.
+- When a comment seems needed to explain what code does, fix the code first: rename, introduce a type, extract a named operation, split mixed responsibilities, or move the behavior to the owner of its state. Then reassess whether anything still needs a comment.
+
 ## Documentation
 
-- Code is self-documenting first: if a comment would translate confusing code into English, improve the names, types, or shape instead.
+- Documentation covers what self-documenting code cannot express (previous section). If a comment would translate confusing code into English, fix the code instead.
 - Document what code cannot express: why an owner exists, the boundary or lifecycle it protects, invariants, failure semantics, and deliberate non-responsibilities.
 - Durable comments never reference plans, tickets, phases, branches, dates, or other project state; translate history into the standing contract that remains true in the code.
 - Skip boilerplate: remove any comment that restates the name, lists methods, or could describe any similar class.
