@@ -8,6 +8,7 @@
 6. Add project-specific skills only for specialist workflows used repeatedly. Initialize and validate each skill; keep detailed references one hop from `SKILL.md`.
 7. Put task state in `plans/`, generated evidence in a gitignored artifact directory, and durable decisions in code/docs—not in root prompt history.
 8. Run `scripts/validate-harness.sh`, then a focused project build/test.
+9. Record the template commit SHA adopted from as a line in `docs/project-rules.md`; future template migrations diff against it (see the README's updating section).
 
 ## What Not to Copy Forward
 
