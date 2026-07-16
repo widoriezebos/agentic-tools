@@ -4,7 +4,7 @@ set -euo pipefail
 root=${1:-.}
 cd "$root"
 
-required=(AGENTS.md wow.md docs/project-rules.md docs/orchestration.md docs/design/design-principles.md docs/design/design-obligation-gate.md)
+required=(AGENTS.md wow.md docs/project-rules.md docs/orchestration.md docs/collaboration.md docs/design/design-principles.md docs/design/design-obligation-gate.md)
 for file in "${required[@]}"; do
   [[ -f "$file" ]] || { echo "missing required file: $file" >&2; exit 1; }
 done

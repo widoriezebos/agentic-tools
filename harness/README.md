@@ -6,7 +6,7 @@ The harness is deliberately layered:
 
 1. `AGENTS.md` is the small, always-loaded operating contract.
 2. `wow.md` is the single routing index to canonical guidance and triggered skills.
-3. `docs/` holds depth read only for the relevant phase, including delegation judgment (`docs/orchestration.md`) and worked examples (`docs/examples/`).
+3. `docs/` holds depth read only for the relevant phase, including delegation and peer-agent judgment (`docs/orchestration.md`), collaboration with the human team (`docs/collaboration.md`), and worked examples (`docs/examples/`).
 4. `skills/` holds core triggered workflows (`verify`, `take-a-step-back`), each with per-runtime subagent profile templates under `agents/`.
 5. `optional-skills/` holds specialists (e.g. `debug-java`) enabled per project during adaptation.
 6. `scripts/` turns binary requirements into checks.

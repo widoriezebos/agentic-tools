@@ -1,7 +1,7 @@
 # Project Adaptation
 
 1. Copy the harness contents into the new repository root, excluding `meta/` — it documents harness maintenance and must not ship with adopting projects.
-2. Replace `docs/project-rules.md` with verified project facts and commands, including any project-specific delegation facts (see `docs/orchestration.md`).
+2. Replace `docs/project-rules.md` with verified project facts and commands, including any project-specific delegation facts (see `docs/orchestration.md`) and the team's additions to the decisions reserved for humans.
 3. Enable optional skills only where they apply: move `optional-skills/debug-java` into `skills/` only for repositories with a JVM runtime, and configure its launcher path in the skill reference. Leave the rest of `optional-skills/` out.
 4. Register subagent profiles for the runtimes in use: copy each `skills/<name>/agents/claude.md` to `.claude/agents/<name>.md` and each `skills/<name>/agents/devin/AGENT.md` to `.devin/agents/<name>/AGENT.md`. Skip runtimes the team does not use.
 5. Keep only design principles relevant to the system's risk. Do not weaken ownership, invariant, failure, or proof rules without documenting why.

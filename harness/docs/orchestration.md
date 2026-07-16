@@ -18,6 +18,15 @@ This file owns delegation judgment. Each runtime's own manual owns tool mechanic
 
 Every delegation states: the goal, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), and a budget. Treat a subagent's report as unverified claims until checked against that contract; never merge unreviewed subagent edits into work you certify.
 
+## Peer Agents
+
+Top-level agents sharing one repository (e.g. Claude Code and Codex CLI, or two concurrent sessions) are peers, not subagents: nothing coordinates them unless the team does. Rules:
+
+- One branch or worktree per agent per stream. Never work directly on a branch another agent has in flight.
+- Claim a stream through its handoff note in `plans/` (shape in `plans/README.md`). Do not advance a stream whose note another agent owns; hand over by updating the note's owner.
+- Integrate through the normal review flow. Merge conflicts between peer agents are a human decision, not something either agent resolves by force.
+- A peer's output is unverified claims, exactly like a subagent's: verify against the contract before building on it or certifying it.
+
 ## Runtime Mechanics (pointers only)
 
 | Runtime | Spawn mechanism | Custom profile location |

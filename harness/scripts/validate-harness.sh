@@ -13,6 +13,7 @@ scripts/validate-skill.sh optional-skills/debug-java
 for link in \
   docs/project-rules.md \
   docs/orchestration.md \
+  docs/collaboration.md \
   docs/design/design-principles.md \
   docs/design/design-obligation-gate.md \
   docs/examples/design-obligation-matrix.md \
