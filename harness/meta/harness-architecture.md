@@ -37,4 +37,6 @@ The change gate questions are owned by `docs/project-adaptation.md` so they ship
 
 Write documentation in plain English, in the style of human-written open source projects. Do not use em dashes, "not X, but Y" constructions, rhetorical three-part lists, or metaphor jargon. This is a recorded user correction (2026-07-16).
 
+Internal project codenames never appear in the template. Refer to origins neutrally ("the source repository", "the source debugging toolkit"). One exception: the debug-java skill may name the Descartes debugger, because the skill exists to drive it. This is a recorded user correction (2026-07-16).
+
 Run `scripts/audit-harness.sh .` after meaningful harness changes. Review duplicated normative language, broken links, skill metadata size, placeholder leakage, and always-loaded word counts. Periodically retire controls whose original failure is obsolete or whose enforcement moved into code.

@@ -5,7 +5,7 @@
 - Repository instruction sets, portable working indexes, canonical design standards, obligation matrices, experiment ledgers, execution-log guidance, refactor/frontier controls, and recent engineering histories.
 - Stateful knowledge-system work covering minimum-complexity gates, semantic-quality journals, recovery ownership, and bounded experiments.
 - Model-backed document-processing work covering truth-vs-output separation, anti-overfitting, stop-loss ledgers, clean rollback, and exact-state validation.
-- Descartes repository instructions and Java debug skill covering debugger lifecycle, async breakpoint orchestration, source/artifact parity, causal proof, and cleanup.
+- The source debugging toolkit's repository instructions and Java debug skill covering debugger lifecycle, async breakpoint orchestration, source/artifact parity, causal proof, and cleanup.
 - Supplied transcript: harness mapping; blame the right layer; one rule/home/owner; phase-specific loading; hard checks for hard requirements; adapt to model and product; record receipts.
 
 The repositories were treated as evidence, not as modules to concatenate. Recent histories show repeated contract/plan checkpoints, rollback of falsified experiments, exact-frontier preservation, recovery ownership work, debugger lifecycle fixes, and removal of obsolete paths. Those patterns carry more weight than isolated prose additions.
@@ -21,7 +21,7 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Cycle contracts, classifications, stop-loss | Stops adjacent tweaks and repeated expensive failures | Step-back skill |
 | Current-consumer/necessity gate | Prevents zero-consumer architecture rabbit holes | Design + step-back skill |
 | Recoverable checkpoints and exact-state proof | Preserves learning and prevents stale artifact claims | Step-back skill; frontier ledger (`skills/improve`, `scripts/frontier.sh`) |
-| Improvement mode: improvement contract, frontier preservation, noise floor, single-mechanism experiments, anti-overfitting, diminishing-returns stop | Yoda/Morpheus benchmark-chasing practice; prevents noise-chasing, lost frontiers, and eval overfitting | Improve skill + `scripts/frontier.sh` |
+| Improvement mode: improvement contract, frontier preservation, noise floor, single-mechanism experiments, anti-overfitting, diminishing-returns stop | The source repositories' benchmark-chasing practice; prevents noise-chasing, lost frontiers, and eval overfitting | Improve skill + `scripts/frontier.sh` |
 | Documentation discipline: self-documenting first, no plan/ticket references in durable comments, no boilerplate, same-patch maintenance | Battle-tested source documentation guidelines; plan-reference and boilerplate comments are recurring agent failures | Design principles (Documentation section) |
 | Deterministic tests (fake clocks over sleeps, fixed seeds, isolated state) and diagnostic redaction | Source testing/observability guidance; sleep-based tests and secret-leaking logs are recurring agent failures | Design principles |
 | Source/artifact parity and causal-chain debugging | Prevents stale bytecode and correlation-as-root-cause errors | Debug skill |
@@ -32,7 +32,7 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Refactor mode: trusted baseline, tests-before-refactor, risk-sized replayable clusters, validation ladder, bounded fix attempts | Repeatedly prevented silent behavior drift and unbounded failed-refactor spirals in the source repository | Refactor skill + `scripts/refactor-baseline.sh` |
 | Responsibility-driven and domain-driven design, named and explained | The user looked for both and could not find them (2026-07-16). The RDD substance existed but was unnamed; DDD had been deferred from the Codex critique, and the deferral trigger fired | Design principles |
 | Self-documenting code as a design requirement, with the concrete techniques (intention-revealing names, domain types over primitives, named predicates, one level of abstraction per method) | The reconciliation harvest over-compressed this into half a comment-policy bullet; the user asked where the rule was (2026-07-16). Also fixed a routing gap: the code standard now loads for ordinary code changes, previously only for design and refactor work | Design principles (Self-Documenting Code section) |
-| Full parity pass against the source design principles (833 lines): composition over inheritance, encapsulation as invariant protection, thin entrypoints, failure taxonomy, explicit concurrency, pipeline stage contracts, deviations protocol, declarative semantics, external-reference reconciliation, design smells, outcome definition, size and file-hopping heuristics, the final rule | The user asked whether everything they feel strongly about was expressed (2026-07-16); a rule-by-rule comparison showed the original distillation had dropped these. Yoda repository rules (Workspace, builders, reflection ban) stay project policy | Design principles |
+| Full parity pass against the source design principles (833 lines): composition over inheritance, encapsulation as invariant protection, thin entrypoints, failure taxonomy, explicit concurrency, pipeline stage contracts, deviations protocol, declarative semantics, external-reference reconciliation, design smells, outcome definition, size and file-hopping heuristics, the final rule | The user asked whether everything they feel strongly about was expressed (2026-07-16); a rule-by-rule comparison showed the original distillation had dropped these. Source repository rules (workspace access, builder thresholds, reflection ban) stay project policy | Design principles |
 
 ## Removed or Narrowed
 
@@ -44,7 +44,7 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Document formats, fixture vocabulary, locale rules, expected-output schemas, and provider rules | Exclude domain terms. Retain the generic truth-vs-output and anti-overfit lessons. |
 | Repository-specific workspace APIs, build profiles, UI launchers, and retrieval-lane rules | Keep only in each project's rules, not the template. |
 | Domain-specific semantic scoring and learning-journal vocabulary | Retain experiment journaling and truth qualification as optional practices, not global rules. |
-| Descartes full tool catalog and exhaustive troubleshooting detail | Keep critical debugger orchestration in `SKILL.md`; load operational detail from one-hop references. |
+| The source debugger's full tool catalog and exhaustive troubleshooting detail | Keep critical debugger orchestration in `SKILL.md`; load operational detail from one-hop references. |
 | Universal builder thresholds, deprecation bans, framework styling | Do not universalize. These are language/project policy, not harness invariants. |
 | A new prose rule for every miss | Require evidence, canonical ownership, loading decision, and preferably executable enforcement. |
 | Model-specific prompt recipes | Keep outcomes and checks stable; tune adapters/skills only from repeated product-specific evidence. |
