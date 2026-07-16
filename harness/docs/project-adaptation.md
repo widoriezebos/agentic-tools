@@ -18,12 +18,17 @@
 - Long tool manuals in root instructions; runtime subagent mechanics belong to the runtime's own manual.
 - Rules already enforced by the compiler, tests, schemas, permissions, or CI unless the routing instruction is still necessary.
 
-## First-Week Receipt
+## Receipts and Retro
 
-Record the model/product, task types exercised, skills triggered, tools used, checks run, failures, fallbacks, and instruction changes. Add per-task outcome evidence:
+The harness is judged by shipped outcomes, not by whether its documents were followed. The evidence is collected continuously and consumed periodically:
 
-- Did the requested outcome ship without rework? If reworked, what did the harness fail to catch?
-- Did end-to-end verification (`skills/verify`) catch anything green checks missed?
-- Did stop-loss or delegation demonstrably save time or cost, or did it add ceremony?
+Every task that changes the repository or triggers a skill appends one receipt line at completion via `scripts/receipt.sh add` — task type, outcome, skills triggered, what verification showed, corrections received, stop-loss events, and a ceremony note when a rule cost more than it earned. Receipts are committed with the work. Purely conversational tasks get no receipt.
 
-Tune routing from that evidence; judge the harness by shipped outcomes, not by whether its documents were followed. Do not add a new global rule after a single ambiguous miss.
+When `scripts/receipt.sh check` reports a retro due (default every 25 receipts or 30 days), run a harness retro:
+
+1. Read the receipts since the last retro.
+2. Look for patterns, never anecdotes: a skill that should have triggered but did not; verification repeatedly catching the same class of issue; corrections clustering around one convention; ceremony notes; rules and skills that never fired.
+3. Propose instruction changes through the change gate, each routed to its one owning document — and prune with the same energy as adding. A rule whose receipts never mention it is a removal candidate.
+4. Present the proposals for human veto, then record the retro with `scripts/receipt.sh retro` and a summary of what changed.
+
+Do not add a new global rule after a single ambiguous miss; receipts exist precisely so rules rest on repeated evidence. In the first week, run the first retro after a handful of tasks instead of waiting for the cadence — early routing errors are the cheapest to fix.

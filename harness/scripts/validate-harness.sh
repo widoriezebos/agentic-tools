@@ -29,6 +29,7 @@ for link in \
   skills/refactor/agents/claude.md \
   skills/refactor/agents/devin/AGENT.md \
   scripts/refactor-baseline.sh \
+  scripts/receipt.sh \
   optional-skills/debug-java/SKILL.md \
   docs/project-adaptation.md \
   plans/README.md; do
@@ -74,6 +75,21 @@ fi
 rm "$repo/dirty.txt"
 if (cd "$repo" && "$root/scripts/refactor-baseline.sh" check --max-commits 0 >/dev/null 2>&1); then
   echo "refactor baseline check ignored the commit-count backstop" >&2
+  exit 1
+fi
+
+rfile="$tmp/receipts.log"
+scripts/receipt.sh add --type implement --outcome shipped --file "$rfile" >/dev/null
+scripts/receipt.sh check --file "$rfile" >/dev/null
+scripts/receipt.sh add --type review --outcome reworked --corrections 1 --file "$rfile" >/dev/null
+if scripts/receipt.sh check --max-receipts 1 --file "$rfile" >/dev/null 2>&1; then
+  echo "receipt check ignored the receipt-count backstop" >&2
+  exit 1
+fi
+scripts/receipt.sh retro "fixture retro" --file "$rfile" >/dev/null
+scripts/receipt.sh check --max-receipts 1 --file "$rfile" >/dev/null
+if scripts/receipt.sh add --type bogus --outcome shipped --file "$rfile" >/dev/null 2>&1; then
+  echo "receipt add accepted an invalid type" >&2
   exit 1
 fi
 
