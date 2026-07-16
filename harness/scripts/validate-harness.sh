@@ -8,6 +8,7 @@ scripts/audit-harness.sh .
 
 scripts/validate-skill.sh skills/take-a-step-back
 scripts/validate-skill.sh skills/verify
+scripts/validate-skill.sh skills/refactor
 scripts/validate-skill.sh optional-skills/debug-java
 
 for link in \
@@ -24,6 +25,10 @@ for link in \
   skills/verify/SKILL.md \
   skills/verify/agents/claude.md \
   skills/verify/agents/devin/AGENT.md \
+  skills/refactor/SKILL.md \
+  skills/refactor/agents/claude.md \
+  skills/refactor/agents/devin/AGENT.md \
+  scripts/refactor-baseline.sh \
   optional-skills/debug-java/SKILL.md \
   docs/project-adaptation.md \
   plans/README.md; do
@@ -53,5 +58,23 @@ scripts/assert-design-obligation-gate.sh --runtime-required --file docs/examples
   exit 1
 }
 scripts/assert-design-obligation-gate.sh --file docs/examples/design-obligation-matrix.md >/dev/null
+
+repo="$tmp/baseline-repo"
+git init -q "$repo"
+git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit --allow-empty -qm base
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" >/dev/null)
+git -C "$repo" add plans/refactor-baseline
+git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm baseline
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" check >/dev/null)
+echo dirty >"$repo/dirty.txt"
+if (cd "$repo" && "$root/scripts/refactor-baseline.sh" check >/dev/null 2>&1); then
+  echo "refactor baseline check accepted a dirty worktree" >&2
+  exit 1
+fi
+rm "$repo/dirty.txt"
+if (cd "$repo" && "$root/scripts/refactor-baseline.sh" check --max-commits 0 >/dev/null 2>&1); then
+  echo "refactor baseline check ignored the commit-count backstop" >&2
+  exit 1
+fi
 
 echo "harness validation passed"

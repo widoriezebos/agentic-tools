@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refactor"
+  short_description: "Behavior-preserving refactor with trusted-baseline discipline"
+  default_prompt: "Use $refactor to restructure this code without changing behavior, under baseline and validation-ladder rules."

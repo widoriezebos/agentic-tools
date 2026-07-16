@@ -26,6 +26,7 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Direct truth separated from software output | Generalizes to goldens, fixtures, expected outputs, and evaluations | Testing/evaluation guidance in design and plans |
 | Exceptions remain diagnosable | Stack trace plus structured context matters operationally | Project rules/design standard |
 | Clean cutovers and deletion | Avoids dual primary behavior and permanent compatibility drag | Design principles |
+| Refactor mode: trusted baseline, tests-before-refactor, risk-sized replayable clusters, validation ladder, bounded fix attempts | Repeatedly prevented silent behavior drift and unbounded failed-refactor spirals in the source repository | Refactor skill + `scripts/refactor-baseline.sh` |
 
 ## Removed or Narrowed
 
@@ -33,7 +34,7 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | --- | --- |
 | Large repository-specific AGENTS runbooks | Move commands and domain rules to `docs/project-rules.md`; move specialist methods to skills/references. |
 | Duplicate policies in root instructions, compatibility files, indexes, and skills | `AGENTS.md` owns the contract; `wow.md` routes; compatibility files link. |
-| Repository-specific benchmark scores, frontier scripts, and commit cadence | Exclude from portable core. Add only in projects that actually have stochastic frontier validation. |
+| Repository-specific benchmark scores, frontier scripts, and commit cadence | Partially reversed by user decision: the portable invariants (trusted baseline, cadence backstop, cheapest-rejection-first gating, bounded fix attempts) were promoted into the refactor skill and `scripts/refactor-baseline.sh`. The concrete gate — benchmark cases, canary floors, memory modes, tags — remains excluded and is declared per project in `docs/project-rules.md`. |
 | Document formats, fixture vocabulary, locale rules, expected-output schemas, and provider rules | Exclude domain terms. Retain the generic truth-vs-output and anti-overfit lessons. |
 | Repository-specific workspace APIs, build profiles, UI launchers, and retrieval-lane rules | Keep only in each project's rules, not the template. |
 | Domain-specific semantic scoring and learning-journal vocabulary | Retain experiment journaling and truth qualification as optional practices, not global rules. |

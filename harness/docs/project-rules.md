@@ -18,6 +18,7 @@ Replace this file when adopting the harness. Keep facts concrete and repository-
 - Build/package: `<command>`
 - Format/lint/typecheck: `<command>`
 - Local run: `<command>`
+- Refactor acceptance gate: `<command>` — the full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate; state its cadence backstop if it differs from the harness defaults (24 hours / 40 commits)
 
 State realistic timeouts and prerequisites here. Do not repeat these commands in skills or root instructions.
 
