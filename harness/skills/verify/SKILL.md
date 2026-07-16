@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Prove a code change works by driving the changed behavior end-to-end and observing the result, not inferring it from green checks. Use before calling any change with a runnable surface complete. Do not use for changes with no runtime surface (docs, comments, pure test edits) or as a substitute for focused unit tests.
+description: Prove a code change works by driving the changed behavior end-to-end and observing the result instead of inferring it from green checks. Use before calling any change with a runnable surface complete. Do not use for changes with no runtime surface (docs, comments, pure test edits) or as a substitute for focused unit tests.
 ---
 
 # Verify
@@ -21,7 +21,7 @@ If no such entrypoint exists, say so explicitly and report the change as unverif
 2. Capture the exact command and the observed output. The claim "it works" must be replaceable by that evidence.
 3. Confirm the observation distinguishes new behavior from old: reproduce the before state when cheap, or point to the artifact that only the new behavior can produce.
 4. If the observation contradicts expectation, stop and diagnose; switch to `skills/take-a-step-back/SKILL.md` if it stops converging.
-5. If making verification pass would require changing an existing test, golden, or expected output, stop and surface it as a contract change for the human — never silently weaken the assertion.
+5. If making verification pass would require changing an existing test, golden, or expected output, stop and surface it as a contract change for the human. Never silently weaken the assertion.
 
 ## Report
 

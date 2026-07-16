@@ -35,13 +35,13 @@ Illustration only, not policy. Context: an integration test fails roughly one ru
 ### Cycle C1
 - Contract: run `test_order_flow` in isolation 20×; novel fact: does order dependency exist? Budget: one CI batch. Checkpoint: no code changes needed.
 - Result: 0/20 failures in isolation; 4/20 in full suite.
-- Classification: `falsified-continue` — T2 ruled out as sole cause; suite-level resource state (T1) is now the leading owner.
+- Classification: `falsified-continue`. T2 ruled out as sole cause; suite-level resource state (T1) is now the leading owner.
 - Next action: instrument pool state.
 
 ### Cycle C2
 - Contract: log pool stats at test start in full suite; novel fact: pool occupancy at failure. Budget: one CI batch. Checkpoint: instrumentation on a branch, revertible.
 - Result: pool at 10/10 before the failing call; leak traced to `PaymentClient` skipping `close()` on the retry path.
-- Classification: `contract-improved` — owner and mechanism named with runtime evidence.
+- Classification: `contract-improved`. Owner and mechanism named with runtime evidence.
 - Next action: fix `PaymentClient` retry path; add invariant test that the pool is empty after each test.
 
 ## Local Learning Memo

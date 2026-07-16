@@ -4,7 +4,7 @@ Task-local plans, obligation matrices, and investigation ledgers live here while
 
 Four files are standing ledgers, not task-local evidence, and are exempt from delete-when-shipped: `receipts.log` (task receipts feeding the retro), `instruction-ledger.md` (instruction changes with expected effects and verdicts), `refactor-baseline` (last gate-accepted state), and `frontier` (best-known improvement state). They stay committed and current for the life of the project.
 
-With peer agents on parallel branches: `receipts.log` merges by union (the shipped `.gitattributes` rule), so concurrent appends do not conflict. Concurrent changes to `refactor-baseline` or `frontier` are real races — two competing claims about trusted state — and those merge conflicts go to the human by design.
+With peer agents on parallel branches: `receipts.log` merges by union (the shipped `.gitattributes` rule), so concurrent appends do not conflict. Concurrent changes to `refactor-baseline` or `frontier` are real races (two competing claims about trusted state), and those merge conflicts go to the human by design.
 
 ## Handoff Notes
 
@@ -24,6 +24,6 @@ Any stream of work expected to span more than one session keeps a note at `plans
 Rules:
 
 - Update the note before ending a session on unfinished work; a stale note is worse than none.
-- Notes are owned. Do not advance a stream whose note another agent owns — see the peer-agents section of `docs/orchestration.md`.
+- Notes are owned. Do not advance a stream whose note another agent owns; see the peer-agents section of `docs/orchestration.md`.
 - Record decisions and dead ends, not narration. The next session needs what was settled and what must not be retried, not a diary.
 - Delete the note when the stream ships; anything durable in it moves to code, docs, or its canonical owner first.

@@ -11,9 +11,9 @@ Illustration only, not policy. Context: a service delivers webhooks; the change 
 
 What the gates meant here:
 
-- Before implementation: every CRITICAL/HIGH row already named its owner, code target, and focused test — no row said "somewhere in the dispatcher".
+- Before implementation: every CRITICAL/HIGH row already named its owner, code target, and focused test. No row said "somewhere in the dispatcher".
 - Before the expensive staging run: rows were DONE or READY_FOR_RUNTIME, and the run had a question ("does the lease hold under duplicate triggers?"), an expected signal, and a stop condition.
 - OBL-RETRY-3 stays READY_FOR_RUNTIME until the load run's artifact is inspected; a green unit test alone must not flip it to DONE.
-- Completion report states OBL-RETRY-3 as the remaining risk; the change is not "done, pending load test" — it is not done.
+- Completion report states OBL-RETRY-3 as the remaining risk; there is no such state as "done, pending load test".
 
 Common faults this format exists to catch: an owner column naming a directory instead of a code unit; test proof that asserts a mock was called instead of the state transition; flipping READY_FOR_RUNTIME to DONE without naming the runtime artifact.

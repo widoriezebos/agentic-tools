@@ -31,7 +31,7 @@ Every control has one canonical owner. Other files link to it and may state the 
 
 ## Change Gate
 
-The change gate questions are owned by `docs/project-adaptation.md` so they ship with every adopting project — the retro and correction-capture loops there are the gate's main consumers. Template changes answer the same gate; do not restate the questions here.
+The change gate questions are owned by `docs/project-adaptation.md` so they ship with every adopting project; the retro and correction-capture loops there are the gate's main consumers. Template changes answer the same gate; do not restate the questions here.
 
 ## Maintenance
 

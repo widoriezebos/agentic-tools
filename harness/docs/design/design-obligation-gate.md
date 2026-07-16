@@ -14,7 +14,7 @@ If any answer is weak, fix or report it. Escalate to the full matrix only on the
 
 ## Full Matrix (risky changes only)
 
-Use a matrix when a change introduces or moves an owner, boundary, invariant, lifecycle, state transition, failure behavior, model/tool contract, or operational signal; or when expensive evidence will prove it. If no trigger applies, do not build a matrix — the default check above is the whole gate. A filled example: `docs/examples/design-obligation-matrix.md`.
+Use a matrix when a change introduces or moves an owner, boundary, invariant, lifecycle, state transition, failure behavior, model/tool contract, or operational signal; or when expensive evidence will prove it. If no trigger applies, do not build a matrix. The default check above is the whole gate. A filled example: `docs/examples/design-obligation-matrix.md`.
 
 ```markdown
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
