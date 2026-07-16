@@ -5,7 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/frontier.sh record --score N --eval "eval command that produced it" \
-      [--artifact <path>] [--force] [--file <path>]
+      [--artifact <path>] [--min-delta D] [--max-age-minutes M] [--force] [--file <path>]
   scripts/frontier.sh challenge --score N [--min-delta D] [--file <path>]
   scripts/frontier.sh status [--file <path>]
 
@@ -24,13 +24,19 @@ as the default for every later challenge and record, so forgetting the flag
 cannot silently drop the floor to zero. Resolution order: --min-delta flag,
 HARNESS_FRONTIER_MIN_DELTA, the stored value, then 0.
 
+Dynamic systems can declare a measurement window with --max-age-minutes
+(persisted the same way; env HARNESS_FRONTIER_MAX_AGE_MINUTES). When the
+recorded frontier is older than the window, comparisons are refused:
+the environment may have shifted, so re-baseline with record --force and
+record the reason in the owning plan. No window means scores never expire.
+
 Defaults: --file plans/frontier.
-Exit codes: 0 ok / beats frontier; 1 blocked / does not beat; 2 usage error.
+Exit codes: 0 ok / beats frontier; 1 blocked / does not beat / expired; 2 usage error.
 USAGE
 }
 
 file=plans/frontier
-min_delta_flag=
+min_delta_flag= max_age_flag=
 score= eval_cmd= artifact= force=0
 
 cmd=${1:-}
@@ -44,6 +50,7 @@ while (($#)); do
     --eval) eval_cmd=${2:-}; shift 2 ;;
     --artifact) artifact=${2:-}; shift 2 ;;
     --min-delta) min_delta_flag=${2:-}; shift 2 ;;
+    --max-age-minutes) max_age_flag=${2:-}; shift 2 ;;
     --force) force=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
@@ -64,6 +71,24 @@ resolve_min_delta() { # $1 = stored value, possibly empty
   printf '%s' "$d"
 }
 
+resolve_window() { # $1 = stored value, possibly empty; empty result means no window
+  local w
+  if [[ -n "$max_age_flag" ]]; then w=$max_age_flag
+  elif [[ -n "${HARNESS_FRONTIER_MAX_AGE_MINUTES:-}" ]]; then w=$HARNESS_FRONTIER_MAX_AGE_MINUTES
+  else w=$1; fi
+  [[ -z "$w" || "$w" =~ ^[0-9]+$ ]] || { echo "invalid measurement window: $w" >&2; exit 2; }
+  printf '%s' "$w"
+}
+
+frontier_expired() { # $1 = window (may be empty), uses recorded_epoch from the file
+  local epoch age
+  [[ -n "$1" ]] || return 1
+  epoch=$(read_field recorded_epoch)
+  [[ "$epoch" =~ ^[0-9]+$ ]] || { echo "frontier file is malformed: $file" >&2; exit 2; }
+  age=$(( ( $(date -u +%s) - epoch ) / 60 ))
+  (( age > $1 ))
+}
+
 beats() { # beats <candidate> <incumbent> <delta>
   awk -v n="$1" -v o="$2" -v d="$3" 'BEGIN { exit (n > o + d) ? 0 : 1 }'
 }
@@ -74,12 +99,18 @@ case "$cmd" in
     [[ -n "$eval_cmd" ]] || { echo "record requires --eval with the evaluation command that produced the score" >&2; exit 2; }
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not inside a git repository" >&2; exit 2; }
     [[ -z "$(git status --porcelain)" ]] || { echo "worktree is dirty; a frontier must be an exact committed state" >&2; exit 1; }
-    stored_delta=
+    stored_delta= stored_window=
     if [[ -f "$file" ]]; then
       stored_delta=$(read_field min_delta)
+      stored_window=$(read_field max_age_minutes)
     fi
     min_delta=$(resolve_min_delta "$stored_delta")
+    window=$(resolve_window "$stored_window")
     if [[ -f "$file" && $force -eq 0 ]]; then
+      if frontier_expired "$window"; then
+        echo "recorded frontier is older than its measurement window; the environment may have shifted. Re-baseline with --force and record the reason in the owning plan" >&2
+        exit 1
+      fi
       old=$(read_field score)
       [[ "$old" =~ $numeric ]] || { echo "frontier file is malformed: $file" >&2; exit 2; }
       beats "$score" "$old" "$min_delta" || {
@@ -93,6 +124,7 @@ case "$cmd" in
       echo "recorded_epoch=$(date -u +%s)"
       echo "score=$score"
       echo "min_delta=$min_delta"
+      echo "max_age_minutes=$window"
       echo "eval=$eval_cmd"
       echo "artifact=$artifact"
     } >"$file"
@@ -104,6 +136,11 @@ case "$cmd" in
     [[ -f "$file" ]] || { echo "no frontier recorded at $file; record the baseline first" >&2; exit 1; }
     old=$(read_field score)
     [[ "$old" =~ $numeric ]] || { echo "frontier file is malformed: $file" >&2; exit 2; }
+    window=$(resolve_window "$(read_field max_age_minutes)")
+    if frontier_expired "$window"; then
+      echo "frontier expired: recorded score $old is outside its measurement window; the environment may have shifted. Re-baseline with record --force before comparing candidates" >&2
+      exit 1
+    fi
     min_delta=$(resolve_min_delta "$(read_field min_delta)")
     if beats "$score" "$old" "$min_delta"; then
       echo "new frontier: $score beats $old by more than $min_delta; preserve this exact state before iterating"

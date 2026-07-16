@@ -136,6 +136,13 @@ if (cd "$repo" && "$root/scripts/frontier.sh" record --score 75 --eval "declared
   echo "frontier record accepted a regression without --force" >&2
   exit 1
 fi
+printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\nmax_age_minutes=60\neval=declared\nartifact=\n' >"$tmp/frontier-old"
+if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-old" >/dev/null 2>&1; then
+  echo "frontier challenge compared against an expired frontier" >&2
+  exit 1
+fi
+printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-nowindow"
+scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-nowindow" >/dev/null
 
 rfile="$tmp/receipts.log"
 scripts/receipt.sh add --type implement --outcome shipped --file "$rfile" >/dev/null

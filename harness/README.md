@@ -84,7 +84,7 @@ meta/                template maintenance and rationale, never copied to project
 | `scripts/validate-skill.sh` | Skill frontmatter and naming rules |
 | `scripts/assert-design-obligation-gate.sh` | Structure and declared state of an obligation matrix |
 | `scripts/refactor-baseline.sh` | Trusted-baseline record and check for refactor mode: clean worktree, ancestry, cadence backstop |
-| `scripts/frontier.sh` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions; `challenge` enforces the noise floor |
+| `scripts/frontier.sh` | Best-known-state ledger for improvement mode. `record` refuses frontier regressions, `challenge` enforces the noise floor, and both refuse comparisons against a frontier older than its declared measurement window |
 | `scripts/receipt.sh` | Task receipts, retro cadence check, comparable period stats, retro marker |
 | `scripts/enforcement/` | Shipped CI workflow and Claude Code hooks so the checks run without anyone remembering them |
 
