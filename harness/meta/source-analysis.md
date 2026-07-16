@@ -22,6 +22,8 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Current-consumer/necessity gate | Prevents zero-consumer architecture rabbit holes | Design + step-back skill |
 | Recoverable checkpoints and exact-state proof | Preserves learning and prevents stale artifact claims | Step-back skill; frontier ledger (`skills/improve`, `scripts/frontier.sh`) |
 | Improvement mode: improvement contract, frontier preservation, noise floor, single-mechanism experiments, anti-overfitting, diminishing-returns stop | Yoda/Morpheus benchmark-chasing practice; prevents noise-chasing, lost frontiers, and eval overfitting | Improve skill + `scripts/frontier.sh` |
+| Documentation discipline: self-documenting first, no plan/ticket references in durable comments, no boilerplate, same-patch maintenance | Battle-tested source documentation guidelines; plan-reference and boilerplate comments are recurring agent failures | Design principles (Documentation section) |
+| Deterministic tests (fake clocks over sleeps, fixed seeds, isolated state) and diagnostic redaction | Source testing/observability guidance; sleep-based tests and secret-leaking logs are recurring agent failures | Design principles |
 | Source/artifact parity and causal-chain debugging | Prevents stale bytecode and correlation-as-root-cause errors | Debug skill |
 | Cursor-based async debugger orchestration and cleanup | Prevents deadlocks, stale events, and shared-session damage | Debug skill |
 | Direct truth separated from software output | Generalizes to goldens, fixtures, expected outputs, and evaluations | Testing/evaluation guidance in design and plans |
@@ -43,6 +45,7 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Universal builder thresholds, deprecation bans, framework styling | Do not universalize. These are language/project policy, not harness invariants. |
 | A new prose rule for every miss | Require evidence, canonical ownership, loading decision, and preferably executable enforcement. |
 | Model-specific prompt recipes | Keep outcomes and checks stable; tune adapters/skills only from repeated product-specific evidence. |
+| Repo-root source files (`guidance/`, `skills/take-a-step-back/`) | Removed 2026-07-16 after a reconciliation pass (the manual's first run): duplicates were superseded by the distilled harness owners; the deltas worth keeping (documentation discipline, diagnostic redaction, test determinism) were harvested into design principles; Java/hexagonal specifics stay project policy. Originals remain in git history. |
 
 ## Deferred With Triggers (2026-07-16 self-review)
 

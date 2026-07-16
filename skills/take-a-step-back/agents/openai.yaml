@@ -1,4 +1,0 @@
-interface:
-  display_name: "Take A Step Back"
-  short_description: "Lowest-complexity evidence-first redesign"
-  default_prompt: "Use $take-a-step-back to challenge the premise, compare plausible fixes by total lifecycle complexity, choose the least complex robust solution, and stop when evidence does not justify further work."
