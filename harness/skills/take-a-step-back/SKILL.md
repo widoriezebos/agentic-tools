@@ -73,7 +73,7 @@ State `STOP-LOSS TRIGGERED`, preserve learning, remove or stash failed behavior,
 
 ## Preserve Progress
 
-Before expensive proof, make the exact state recoverable. After contract improvement, checkpoint before more edits. After falsification, preserve useful learning separately from behavior that should be reverted. A materially best-known frontier must be preserved exactly according to the project's push/tag policy before further change.
+Before expensive proof, make the exact state recoverable. After contract improvement, checkpoint before more edits. After falsification, preserve useful learning separately from behavior that should be reverted. A materially best-known frontier must be preserved exactly before further change; the frontier ledger and its rules are owned by `skills/improve/SKILL.md` and `scripts/frontier.sh`.
 
 ## Design and Proof
 

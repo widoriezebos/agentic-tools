@@ -3,7 +3,7 @@
 These steps assume a repository without existing agent instruction assets. If the repository already has agent contracts, skills, prompts, or rule files, follow `docs/harness-reconciliation.md`, which wraps these steps with inventory, classification, and cutover.
 
 1. Copy the harness contents into the new repository root, excluding `meta/` — it documents harness maintenance and must not ship with adopting projects.
-2. Replace `docs/project-rules.md` with verified project facts and commands, including any project-specific delegation facts (see `docs/orchestration.md`), the team's additions to the decisions reserved for humans, and the refactor acceptance gate with its cadence backstop.
+2. Replace `docs/project-rules.md` with verified project facts and commands, including any project-specific delegation facts (see `docs/orchestration.md`), the team's additions to the decisions reserved for humans, the refactor acceptance gate with its cadence backstop, and — where the project chases measured goals — the improvement evaluation with its metrics and noise floor.
 3. Enable optional skills only where they apply: move `optional-skills/debug-java` into `skills/` only for repositories with a JVM runtime, and configure its launcher path in the skill reference. Leave the rest of `optional-skills/` out.
 4. Register subagent profiles for the runtimes in use: copy each `skills/<name>/agents/claude.md` to `.claude/agents/<name>.md` and each `skills/<name>/agents/devin/AGENT.md` to `.devin/agents/<name>/AGENT.md`. Skip runtimes the team does not use.
 5. Keep only design principles relevant to the system's risk. Do not weaken ownership, invariant, failure, or proof rules without documenting why.

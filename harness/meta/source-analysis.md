@@ -20,7 +20,8 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Focused proof before expensive proof | Improves diagnosis and cost control | Root contract + step-back skill |
 | Cycle contracts, classifications, stop-loss | Stops adjacent tweaks and repeated expensive failures | Step-back skill |
 | Current-consumer/necessity gate | Prevents zero-consumer architecture rabbit holes | Design + step-back skill |
-| Recoverable checkpoints and exact-state proof | Preserves learning and prevents stale artifact claims | Step-back skill; project-specific frontier extensions |
+| Recoverable checkpoints and exact-state proof | Preserves learning and prevents stale artifact claims | Step-back skill; frontier ledger (`skills/improve`, `scripts/frontier.sh`) |
+| Improvement mode: improvement contract, frontier preservation, noise floor, single-mechanism experiments, anti-overfitting, diminishing-returns stop | Yoda/Morpheus benchmark-chasing practice; prevents noise-chasing, lost frontiers, and eval overfitting | Improve skill + `scripts/frontier.sh` |
 | Source/artifact parity and causal-chain debugging | Prevents stale bytecode and correlation-as-root-cause errors | Debug skill |
 | Cursor-based async debugger orchestration and cleanup | Prevents deadlocks, stale events, and shared-session damage | Debug skill |
 | Direct truth separated from software output | Generalizes to goldens, fixtures, expected outputs, and evaluations | Testing/evaluation guidance in design and plans |

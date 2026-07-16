@@ -1,0 +1,4 @@
+interface:
+  display_name: "Improve"
+  short_description: "Chase a measured improvement goal with frontier discipline"
+  default_prompt: "Use $improve to raise the target metric through falsifiable experiments under frontier-ledger and noise-floor rules."

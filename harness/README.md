@@ -29,6 +29,7 @@ The harness exists to convert each of those failure classes into either a routed
 | Completion gate: a 5-question default check on every change; a full obligation matrix only on explicit risk triggers | [`docs/design/design-obligation-gate.md`](docs/design/design-obligation-gate.md) |
 | End-to-end verification: observed behavior as the only proof a change works | [`skills/verify/`](skills/verify/SKILL.md) |
 | Behavior-preserving refactor mode: trusted baseline, tests-before-restructuring, risk-sized replayable batches, validation ladder, bounded failure handling | [`skills/refactor/`](skills/refactor/SKILL.md) |
+| Benchmark-driven improvement mode: improvement contract, frontier ledger with noise floor, falsifiable single-mechanism experiments, anti-overfitting, stop conditions | [`skills/improve/`](skills/improve/SKILL.md) |
 | Investigation stop-loss: evidence-first diagnosis, cycle contracts, classifications, hard stop conditions | [`skills/take-a-step-back/`](skills/take-a-step-back/SKILL.md) |
 | Delegation judgment: when to fan out to subagents, when not to, peer-agent coexistence | [`docs/orchestration.md`](docs/orchestration.md) |
 | Human collaboration: reviewable increments, review-guide-first reports, correction capture, escalation shape | [`docs/collaboration.md`](docs/collaboration.md) |
@@ -77,6 +78,7 @@ meta/                template maintenance + rationale — NOT copied to projects
 | `scripts/validate-skill.sh` | Skill frontmatter and naming rules |
 | `scripts/assert-design-obligation-gate.sh` | Structure and declared state of an obligation matrix |
 | `scripts/refactor-baseline.sh` | Trusted-baseline record/check for refactor mode (clean worktree, ancestry, cadence backstop) |
+| `scripts/frontier.sh` | Best-known-state ledger for improvement mode: record refuses frontier regressions; challenge enforces the noise floor |
 | `scripts/receipt.sh` | Task receipts, retro cadence check, retro marker |
 
 Scripts check structure and declared state; they cannot prove a named test or receipt is truthful. That honesty gap is closed by the retro's human veto and by git history as cross-check.

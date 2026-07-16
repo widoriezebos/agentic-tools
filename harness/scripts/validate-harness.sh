@@ -9,6 +9,7 @@ scripts/audit-harness.sh .
 scripts/validate-skill.sh skills/take-a-step-back
 scripts/validate-skill.sh skills/verify
 scripts/validate-skill.sh skills/refactor
+scripts/validate-skill.sh skills/improve
 scripts/validate-skill.sh optional-skills/debug-java
 
 for link in \
@@ -28,7 +29,11 @@ for link in \
   skills/refactor/SKILL.md \
   skills/refactor/agents/claude.md \
   skills/refactor/agents/devin/AGENT.md \
+  skills/improve/SKILL.md \
+  skills/improve/agents/claude.md \
+  skills/improve/agents/devin/AGENT.md \
   scripts/refactor-baseline.sh \
+  scripts/frontier.sh \
   scripts/receipt.sh \
   optional-skills/debug-java/SKILL.md \
   docs/project-adaptation.md \
@@ -76,6 +81,23 @@ fi
 rm "$repo/dirty.txt"
 if (cd "$repo" && "$root/scripts/refactor-baseline.sh" check --max-commits 0 >/dev/null 2>&1); then
   echo "refactor baseline check ignored the commit-count backstop" >&2
+  exit 1
+fi
+
+(cd "$repo" && "$root/scripts/frontier.sh" record --score 80 --eval "declared eval" >/dev/null)
+if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 79 >/dev/null 2>&1); then
+  echo "frontier challenge accepted a score below the frontier" >&2
+  exit 1
+fi
+if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 80.5 --min-delta 1 >/dev/null 2>&1); then
+  echo "frontier challenge ignored the noise floor" >&2
+  exit 1
+fi
+(cd "$repo" && "$root/scripts/frontier.sh" challenge --score 82 --min-delta 1 >/dev/null)
+git -C "$repo" add plans/frontier
+git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm frontier
+if (cd "$repo" && "$root/scripts/frontier.sh" record --score 75 --eval "declared eval" >/dev/null 2>&1); then
+  echo "frontier record accepted a regression without --force" >&2
   exit 1
 fi
 

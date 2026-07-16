@@ -13,6 +13,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Completion check and design proof | `docs/design/design-obligation-gate.md` | Finishing any change; full matrix only on its listed triggers |
 | End-to-end verification | `skills/verify/SKILL.md` | A change claims to work and has a runnable surface |
 | Behavior-preserving refactor | `skills/refactor/SKILL.md` | Restructuring, readability, or cleanup work whose contract is unchanged behavior |
+| Benchmark-driven improvement | `skills/improve/SKILL.md` | Chasing a measured improvement goal against a runnable evaluation |
 | Investigation stop-loss | `skills/take-a-step-back/SKILL.md` | Work is stuck, repetitive, expensive, or premise is uncertain |
 | Worked examples | `docs/examples/` | A template above is unclear in practice |
 | Adoption and harness tuning | `docs/project-adaptation.md` | Starting a new repository, or `scripts/receipt.sh check` says a retro is due |
