@@ -1,0 +1,4 @@
+interface:
+  display_name: "Debug Java"
+  short_description: "Prove Java runtime root causes with JDWP"
+  default_prompt: "Use $debug-java to diagnose this Java runtime problem and prove the causal chain."

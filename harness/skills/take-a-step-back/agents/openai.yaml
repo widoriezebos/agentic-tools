@@ -1,0 +1,4 @@
+interface:
+  display_name: "Take a Step Back"
+  short_description: "Stop drift and redesign from evidence"
+  default_prompt: "Use $take-a-step-back to diagnose this stuck or repeatedly failing work and enforce stop-loss."

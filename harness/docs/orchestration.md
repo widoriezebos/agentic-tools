@@ -1,0 +1,29 @@
+# Orchestration
+
+This file owns delegation judgment. Each runtime's own manual owns tool mechanics; do not copy runtime instructions here.
+
+## When to Delegate
+
+- Broad exploration across many files, directories, or naming conventions: use a read-only explorer subagent and keep only its conclusion in the main context.
+- Independent, separately verifiable subtasks: run them as parallel workers when neither needs the other's intermediate output.
+- Long or expensive runs whose output is only needed later: run in the background and continue decision work.
+
+## When Not to Delegate
+
+- A single lookup where the file, symbol, or command is already known.
+- Sequentially dependent edits, or work needing judgment that lives in the main conversation's context.
+- When coordination plus billing outweighs the saving: subagents run their own context windows and inference calls and bill independently on every current runtime.
+
+## Delegation Contract
+
+Every delegation states: the goal, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), and a budget. Treat a subagent's report as unverified claims until checked against that contract; never merge unreviewed subagent edits into work you certify.
+
+## Runtime Mechanics (pointers only)
+
+| Runtime | Spawn mechanism | Custom profile location |
+| --- | --- | --- |
+| Claude Code | `Task`/`Agent` tool; built-in read-only explorer | `.claude/agents/<name>.md` |
+| Devin CLI | `run_subagent`; built-in `subagent_explore` (read-only) and `subagent_general` | `.devin/agents/<name>/AGENT.md` |
+| Other | Consult the runtime manual | Adapt the templates below |
+
+Per-runtime profile templates for this harness's skills live in `skills/<name>/agents/` (`claude.md`, `devin/AGENT.md`); copy them into the runtime's profile location during adaptation. Project-specific delegation facts (a slow suite worth backgrounding, a directory worth pre-exploring) belong in `docs/project-rules.md`, not here.

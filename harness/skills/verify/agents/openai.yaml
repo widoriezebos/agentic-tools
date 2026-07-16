@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verify"
+  short_description: "Prove a change works by driving it end-to-end"
+  default_prompt: "Use $verify to drive this change through its real runtime surface and report observed evidence."
