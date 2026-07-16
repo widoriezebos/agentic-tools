@@ -1,5 +1,7 @@
 # Portable Agent Harness Design
 
+> Amendment (2026-07-16): this plan records the original build and is kept as a historical receipt. The July 2026 restructure changed facts it cites: `docs/source-analysis.md` and this file now live under `meta/`, the always-loaded footprint is tracked by `scripts/audit-harness.sh` (no longer 411 words), and the harness has since gained orchestration, collaboration, verify, and refactor layers with their own commits as receipts. The obligation rows below describe the original scope only; an external Codex review (`meta/codex-critique.md`) correctly flagged that these DONE statuses are structural, not semantic, proof.
+
 ## Contract
 
 - User outcome: a reusable, low-noise harness distilled from production engineering repositories, their work records, Descartes debugging practice, and the supplied harness-cleaning transcript.
