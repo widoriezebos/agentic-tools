@@ -56,7 +56,7 @@ The system stays honest through a few small human acts. Skipping them is how it 
 
 1. **Answer escalations promptly** — a reserved-decision question blocks that stream until you do.
 2. **Veto or accept dispositions** — reconciliation ledgers, correction captures, retro proposals. They are designed as accept/veto lists, not essays.
-3. **Run the retro when it is due** (`scripts/receipt.sh check` tells you, or the agent will). The agent proposes instruction changes from receipt patterns; you veto. This is the only mechanism by which the harness learns — twenty minutes a month is the entire cost.
+3. **Run the retro when it is due** (`scripts/receipt.sh check` tells you, or the agent will). The agent first reviews the previous retro's changes against evidence — keeping, amending, or reverting them — then proposes new ones from receipt patterns; you veto. This is the only mechanism by which the harness learns — twenty minutes a month is the entire cost.
 4. **Spot-check receipts against reality** occasionally: a `shipped` receipt followed by three fix commits is rework the next retro should hear about.
 
 ## Day One

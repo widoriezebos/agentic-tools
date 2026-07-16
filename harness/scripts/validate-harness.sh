@@ -35,6 +35,9 @@ for link in \
   skills/improve/SKILL.md \
   skills/improve/agents/claude.md \
   skills/improve/agents/devin/AGENT.md \
+  skills/retro/SKILL.md \
+  skills/retro/agents/claude.md \
+  skills/retro/agents/devin/AGENT.md \
   scripts/refactor-baseline.sh \
   scripts/frontier.sh \
   scripts/receipt.sh \
@@ -127,5 +130,9 @@ if scripts/receipt.sh add --type bogus --outcome shipped --file "$rfile" >/dev/n
   echo "receipt add accepted an invalid type" >&2
   exit 1
 fi
+scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "$rfile" >/dev/null
+scripts/receipt.sh stats --file "$rfile" | grep -q '^receipts=1$' || { echo "receipt stats miscounted the post-retro period" >&2; exit 1; }
+scripts/receipt.sh stats --file "$rfile" | grep -q '^type_improve=1$' || { echo "receipt stats missed the improve type" >&2; exit 1; }
+scripts/receipt.sh stats --all --file "$rfile" | grep -q '^receipts=3$' || { echo "receipt stats --all miscounted" >&2; exit 1; }
 
 echo "harness validation passed"

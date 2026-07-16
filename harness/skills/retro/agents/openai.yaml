@@ -1,0 +1,4 @@
+interface:
+  display_name: "Retro"
+  short_description: "Turn task receipts into gated, reviewable instruction changes"
+  default_prompt: "Use $retro to review prior instruction changes against evidence and propose new ones from receipt patterns."

@@ -104,3 +104,7 @@ One rule matters more than any other: **never mix refactor and improve in the sa
 - **Stuck mid-refactor or mid-improvement**: step back. The investigation follows step-back rules; the baseline and frontier rules of the paused mode still stand.
 - **Not sure whether design is needed**: answer the five-question default check; if any answer requires deciding ownership, failure behavior, or an invariant you cannot name — that is design work, do it first.
 - **Not sure at all**: `wow.md` is the routing table. When two modes seem to apply, the one with the stricter promise wins.
+
+## The Loop Above the Modes
+
+One workflow sits above all the modes: the **retro** (`skills/retro/SKILL.md`), which is how the harness improves itself. Every repo-changing task leaves a one-line receipt; when enough accumulate, a retro runs. It treats the harness's own rules the way improve mode treats code: every rule change was adopted with a written, falsifiable expectation ("correction X never repeats"), and the next retro checks whether that expectation came true — keeping, amending, or reverting the change. A rule that cannot show its value after two reviews is removed by default. Humans veto every change; nothing rewrites the rules automatically. This is why the harness you use a year from now should be smaller and sharper than today's, not larger and vaguer.

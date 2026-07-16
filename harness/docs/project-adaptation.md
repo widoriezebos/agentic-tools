@@ -27,12 +27,7 @@ The harness is judged by shipped outcomes, not by whether its documents were fol
 
 Every task that changes the repository or triggers a skill appends one receipt line at completion via `scripts/receipt.sh add` — task type, outcome, skills triggered, what verification showed, corrections received, stop-loss events, and a ceremony note when a rule cost more than it earned. Receipts are committed with the work. Purely conversational tasks get no receipt.
 
-When `scripts/receipt.sh check` reports a retro due (default every 25 receipts or 30 days), run a harness retro:
-
-1. Read the receipts since the last retro, and cross-check them against git history: a `shipped` receipt followed by fix commits is rework the receipts hid, and it counts as rework.
-2. Look for patterns, never anecdotes: a skill that should have triggered but did not; verification repeatedly catching the same class of issue; corrections clustering around one convention; ceremony notes; rules and skills that never fired.
-3. Propose instruction changes through the change gate below, each routed to its one owning document — and prune with the same energy as adding. A rule whose receipts never mention it is a removal candidate. Flag lessons that look portable beyond this project as upstream proposals to the harness template.
-4. Present the proposals for human veto, then record the retro with `scripts/receipt.sh retro` and a summary of what changed.
+When `scripts/receipt.sh check` reports a retro due (default every 25 receipts or 30 days), run the retro per `skills/retro/SKILL.md`: the previous retro's changes are reviewed against evidence first and kept, amended, or reverted; period numbers are recorded for comparability; and new proposals pass the change gate below before a human accepts or vetoes them. Every adopted change carries a falsifiable expected effect in `plans/instruction-ledger.md` so the next retro can judge it.
 
 Do not add a new global rule after a single ambiguous miss; receipts exist precisely so rules rest on repeated evidence. In the first week, run the first retro after a handful of tasks instead of waiting for the cadence — early routing errors are the cheapest to fix.
 

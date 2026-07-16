@@ -35,7 +35,7 @@ The harness exists to convert each of those failure classes into either a routed
 | Human collaboration: reviewable increments, review-guide-first reports, correction capture, escalation shape | [`docs/collaboration.md`](docs/collaboration.md) |
 | The human's guide: handing over work, reviewing, making corrections stick, running multiple agents, recurring duties | [`docs/working-with-agents.md`](docs/working-with-agents.md) |
 | Session continuity: owned handoff notes for multi-session streams | [`plans/README.md`](plans/README.md) |
-| Measurement and learning: per-task receipts, cadence-triggered retro, evidence-based tuning and pruning | [`docs/project-adaptation.md`](docs/project-adaptation.md) + `scripts/receipt.sh` |
+| Measurement and self-improvement: per-task receipts, cadence-triggered retro, instruction changes with falsifiable expected effects reviewed and reverted like experiments | [`skills/retro/`](skills/retro/SKILL.md) + `scripts/receipt.sh` |
 | Specialist opt-ins (e.g. live Java/JDWP debugging) | [`optional-skills/`](optional-skills/) |
 
 ## How It Works
@@ -48,7 +48,7 @@ Underneath the modes sit five design bets, each enforced rather than merely stat
 2. **One rule, one home, one owner.** Every control has exactly one canonical document; other files link to it and may state the trigger, but never paraphrase the rule. Routing lives only in `wow.md`.
 3. **Hard checks for hard requirements.** Binary properties are scripts, not prose. Prose that could be a script is a defect.
 4. **Evidence before prose.** New instructions must pass a change gate: name the observed failure, show the model cannot infer it, find the owner, prefer executable enforcement. Task-local plans, ledgers, and incident notes never become global policy without deliberate promotion.
-5. **The harness measures itself.** Every repo-changing task appends a receipt; a cadence check triggers a retro; retros change instructions through the change gate — with pruning weighted equal to adding.
+5. **The harness measures itself.** Every repo-changing task appends a receipt; a cadence check triggers a retro; retros change instructions through the change gate — with pruning weighted equal to adding. Each adopted change carries a falsifiable expected effect in an instruction ledger, and the next retro reviews it against evidence: kept, amended, or reverted. Rule changes are experiments, and unsupported ones die by default.
 
 Runtime portability is handled by splitting intent from mechanism: skills and docs are runtime-neutral; each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (`claude.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location.
 
@@ -67,7 +67,7 @@ docs/
   project-adaptation.md  adoption steps + receipts-and-retro loop
   design/            design principles + completion/obligation gate
   examples/          worked examples (filled matrix, filled ledger)
-skills/              triggered workflows: verify, refactor, take-a-step-back
+skills/              triggered workflows: verify, refactor, improve, retro, take-a-step-back
 optional-skills/     opt-in specialists (debug-java) — enabled per project
 scripts/             deterministic checks (see below)
 plans/               task-local state, handoff notes, receipts ledger
@@ -84,7 +84,7 @@ meta/                template maintenance + rationale — NOT copied to projects
 | `scripts/assert-design-obligation-gate.sh` | Structure and declared state of an obligation matrix |
 | `scripts/refactor-baseline.sh` | Trusted-baseline record/check for refactor mode (clean worktree, ancestry, cadence backstop) |
 | `scripts/frontier.sh` | Best-known-state ledger for improvement mode: record refuses frontier regressions; challenge enforces the noise floor |
-| `scripts/receipt.sh` | Task receipts, retro cadence check, retro marker |
+| `scripts/receipt.sh` | Task receipts, retro cadence check, comparable period stats, retro marker |
 
 Scripts check structure and declared state; they cannot prove a named test or receipt is truthful. That honesty gap is closed by the retro's human veto and by git history as cross-check.
 

@@ -9,12 +9,15 @@ Usage:
       [--verify clean|caught|skipped] [--corrections N] [--stop-loss yes|no] \
       [--note "text"] [--file <path>]
   scripts/receipt.sh check [--max-age-days N] [--max-receipts N] [--file <path>]
+  scripts/receipt.sh stats [--all] [--file <path>]
   scripts/receipt.sh retro "summary of instruction changes" [--file <path>]
 
 add: append one task receipt line at completion — the evidence base for
 tuning the harness from real use.
 check: exit 1 when a harness retro is due (receipts or age since the last
 retro exceed the backstop), 0 otherwise.
+stats: print the period numbers (since the last retro, or --all) as
+key=value lines — recorded per retro so periods stay comparable.
 retro: record that a retro ran and reset the cadence.
 
 Defaults: --file plans/receipts.log, --max-age-days 30 (override with
@@ -26,7 +29,7 @@ USAGE
 file=plans/receipts.log
 max_age_days=${HARNESS_RETRO_MAX_AGE_DAYS:-30}
 max_receipts=${HARNESS_RETRO_MAX_RECEIPTS:-25}
-type= outcome= skills=none verify=skipped corrections=0 stop_loss=no note= summary=
+type= outcome= skills=none verify=skipped corrections=0 stop_loss=no note= summary= all_flag=0
 
 cmd=${1:-}
 [[ -n "$cmd" ]] || { usage; exit 2; }
@@ -47,6 +50,7 @@ while (($#)); do
     --corrections) corrections=${2:-}; shift 2 ;;
     --stop-loss) stop_loss=${2:-}; shift 2 ;;
     --note) note=${2:-}; shift 2 ;;
+    --all) all_flag=1; shift ;;
     --max-age-days) max_age_days=${2:-}; shift 2 ;;
     --max-receipts) max_receipts=${2:-}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -74,6 +78,45 @@ case "$cmd" in
     mkdir -p "$(dirname "$file")"
     printf '%s|%s|RETRO|note=%s\n' "$now_epoch" "$now_utc" "${summary//|/;}" >>"$file"
     echo "retro recorded; cadence reset"
+    ;;
+  stats)
+    [[ -f "$file" ]] || { echo "receipts=0"; exit 0; }
+    if (( all_flag )); then
+      segment=$(cat "$file")
+    else
+      last_retro=$(grep -n '|RETRO|' "$file" | tail -1 | cut -d: -f1 || true)
+      if [[ -n "$last_retro" ]]; then
+        segment=$(tail -n +$((last_retro + 1)) "$file")
+      else
+        segment=$(cat "$file")
+      fi
+    fi
+    printf '%s\n' "$segment" | awk -F'|' '
+      $3 == "RECEIPT" {
+        n++
+        if (first == 0) first = $1
+        last = $1
+        for (i = 4; i <= NF; i++) {
+          eq = index($i, "=")
+          k = substr($i, 1, eq - 1); v = substr($i, eq + 1)
+          if (k == "outcome") out[v]++
+          else if (k == "type") typ[v]++
+          else if (k == "corrections") corr += v
+          else if (k == "verify" && v == "caught") caught++
+          else if (k == "stop_loss" && v == "yes") sl++
+        }
+      }
+      END {
+        printf "receipts=%d\n", n
+        no = split("shipped reworked blocked parked", oo, " ")
+        for (i = 1; i <= no; i++) if (oo[i] in out) printf "outcome_%s=%d\n", oo[i], out[oo[i]]
+        nt = split("implement refactor improve review design investigate other", tt, " ")
+        for (i = 1; i <= nt; i++) if (tt[i] in typ) printf "type_%s=%d\n", tt[i], typ[tt[i]]
+        printf "corrections=%d\n", corr
+        printf "caught_by_verify=%d\n", caught
+        printf "stop_loss_triggered=%d\n", sl
+        if (n > 0) printf "span_days=%.1f\n", (last - first) / 86400
+      }'
     ;;
   check)
     [[ -f "$file" ]] || { echo "no receipts recorded yet"; exit 0; }
