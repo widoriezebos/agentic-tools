@@ -108,15 +108,11 @@ Scripts check structure and declared state. They cannot prove that a named test 
 
 ## Using it in a fresh project
 
-The canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.md). The short version:
+The canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.md). The short version is three steps:
 
-1. Copy the harness contents into the repository root, excluding `meta/` and the template's own `plans/receipts.log`.
-2. Replace `docs/project-rules.md` with verified facts: commands, invariants, reserved decisions, the refactor acceptance gate, delegation facts.
-3. Enable optional skills only where they apply (move `optional-skills/debug-java` into `skills/` only for JVM repos).
-4. Register the skills with the runtimes (for example `skills/<name>/` to `.claude/skills/<name>/` so auto-triggering works), then the subagent profiles: `skills/<name>/agents/claude-profile.md` to `.claude/agents/<name>.md`, `skills/<name>/agents/devin/AGENT.md` to `.devin/agents/<name>/AGENT.md`.
-5. Run `scripts/validate-harness.sh`, then a focused project build and test. Wire the checks into CI using the shipped `scripts/enforcement/` files.
-6. Record the template commit SHA you adopted from (a line in `docs/project-rules.md`) so future migrations can diff against it.
-7. Work normally. Each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence. Early routing errors are the cheapest to fix.
+1. From the template checkout, run `scripts/adopt.sh <target> [--runtimes claude,devin,codex] [--enable debug-java]`. It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and Claude Code hook, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
+2. Fill `docs/project-rules.md` with verified facts: commands, invariants, reserved decisions, budgets, the refactor acceptance gate, delegation facts.
+3. Run `scripts/validate-harness.sh` in the target; it must pass with zero placeholders. Then work normally: each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence. Early routing errors are the cheapest to fix.
 
 For the engineers on the team, [`docs/working-with-agents.md`](docs/working-with-agents.md) is the manual: how to hand over work, what comes back to you, how to review, how to make corrections stick, and how to run several agents without collisions.
 

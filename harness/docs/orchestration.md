@@ -69,6 +69,7 @@ The specific shared paths, caches, and lock locations are project facts for `doc
 | --- | --- | --- |
 | Claude Code | `Task`/`Agent` tool; built-in read-only explorer | `.claude/agents/<name>.md` |
 | Devin CLI | `run_subagent`; built-in `subagent_explore` (read-only) and `subagent_general` | `.devin/agents/<name>/AGENT.md` |
+| OpenAI (Codex, ChatGPT) | Repository skills discovered under `.agents/skills` (symlinks supported) | `agents/openai.yaml` inside each skill, consumed in place |
 | Other | Consult the runtime manual | Adapt the templates below |
 
-Per-runtime profile templates for this harness's skills live in `skills/<name>/agents/`: `claude-profile.md`, `devin/AGENT.md`, and `openai.yaml` with invocation metadata for OpenAI-style skill launchers. Copy them into the runtime's profile location during adaptation. Project-specific delegation facts (a slow suite worth backgrounding, a directory worth pre-exploring) belong in `docs/project-rules.md` rather than here.
+Per-runtime profile templates for this harness's skills live in `skills/<name>/agents/`: `claude-profile.md`, `devin/AGENT.md`, and `openai.yaml`, invocation metadata OpenAI runtimes read in place once the skill directory is registered under `.agents/skills`. Copy or link them into the runtime's location during adaptation (`scripts/adopt.sh` does this). Project-specific delegation facts (a slow suite worth backgrounding, a directory worth pre-exploring) belong in `docs/project-rules.md` rather than here.
