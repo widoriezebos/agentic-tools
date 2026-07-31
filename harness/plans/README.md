@@ -19,6 +19,7 @@ Any stream of work expected to span more than one session keeps a note at `plans
 - Goal and current status:
 - In flight right now:
 - Decisions made (and who made them):
+- Waiting on the human (open escalations, reviews, reserved decisions):
 - Dead ends (do not retry without new evidence):
 - Next step:
 ```
@@ -28,4 +29,5 @@ Rules:
 - Update the note before ending a session on unfinished work; a stale note is worse than none.
 - Notes are owned. Do not advance a stream whose note another agent owns; see the peer-agents section of `docs/orchestration.md`.
 - Record decisions and dead ends, not narration. The next session needs what was settled and what must not be retried, not a diary.
+- Keep the waiting-on-the-human line current: every open escalation, review, and reserved decision stays listed until answered. An ask that lives only in a chat transcript is lost to the next session.
 - Delete the note when the stream ships; anything durable in it moves to code, docs, or its canonical owner first. Dead ends worth remembering beyond the stream move to `known-issues.md`.

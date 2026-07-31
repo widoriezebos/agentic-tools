@@ -56,7 +56,7 @@ Two agents, or two sessions, in one repository are peers. Nothing coordinates th
 
 The system stays honest through a few small human acts:
 
-1. **Answer escalations promptly.** A reserved-decision question blocks that stream until you do.
+1. **Answer escalations promptly.** A reserved-decision question blocks that stream until you do. The stream's handoff note keeps the standing list of everything waiting on you.
 2. **Accept or veto dispositions**: reconciliation ledgers, correction captures, retro proposals. They are designed as short lists you can approve item by item.
 3. **Run the retro when it is due** (`scripts/receipt.sh check` tells you, or the agent will). The agent first reviews the previous retro's changes against evidence, keeping, amending, or reverting them, then proposes new ones from receipt patterns. You veto. This is the only mechanism by which the harness learns, and it costs about twenty minutes a month.
 4. **Spot-check receipts against reality** now and then. A "shipped" receipt followed by three fix commits is rework the next retro should hear about.
