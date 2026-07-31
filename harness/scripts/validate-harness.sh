@@ -37,6 +37,7 @@ for link in \
   scripts/refactor-baseline.sh \
   scripts/frontier.sh \
   scripts/receipt.sh \
+  scripts/adopt.sh \
   scripts/enforcement/github-actions-harness.yml \
   scripts/enforcement/claude-code-hooks.json \
   scripts/assert-stop-loss.sh \
@@ -375,6 +376,95 @@ if (( template_mode )); then
     echo "adopted-mode validation accepted a present skill with broken frontmatter" >&2
     exit 1
   fi
+fi
+
+# adopt.sh self-test, template mode only. The source is a committed snapshot
+# of the current working tree: a git clone would exercise committed HEAD, not
+# the implementation under review.
+if (( template_mode )); then
+  srcrepo="$tmp/adopt-src"
+  mkdir -p "$srcrepo"
+  cp -R "$root/." "$srcrepo"
+  echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
+  echo junk >"$srcrepo/ignored-fixture.txt"
+  git init -q "$srcrepo"
+  git -C "$srcrepo" add -A
+  git -C "$srcrepo" -c user.name=harness -c user.email=harness@example.invalid commit -qm snapshot
+  adopt="$srcrepo/scripts/adopt.sh"
+  src_sha=$(git -C "$srcrepo" rev-parse HEAD)
+
+  tgt="$tmp/adopt-default"
+  bash "$adopt" "$tgt" >/dev/null
+  [[ -f "$tgt/.github/workflows/harness.yml" ]] || { echo "adopt: CI workflow not installed" >&2; exit 1; }
+  [[ -L "$tgt/.claude/skills/verify" ]] || { echo "adopt: claude skill symlink missing" >&2; exit 1; }
+  [[ -f "$tgt/.claude/agents/verify.md" ]] || { echo "adopt: claude agent profile missing" >&2; exit 1; }
+  grep -q systemMessage "$tgt/.claude/settings.json" || { echo "adopt: settings.json lacks the shipped hook" >&2; exit 1; }
+  [[ ! -e "$tgt/optional-skills" ]] || { echo "adopt: unselected optional skills were copied" >&2; exit 1; }
+  [[ ! -e "$tgt/README.md" ]] || { echo "adopt: template README copied into the target" >&2; exit 1; }
+  [[ ! -e "$tgt/ignored-fixture.txt" ]] || { echo "adopt: ignored source content entered the payload" >&2; exit 1; }
+  [[ "$(ls "$tgt/plans" | sort | tr '\n' ' ')" == "README.md instruction-ledger.md known-issues.md " ]] \
+    || { echo "adopt: plans/ payload carries more than the standing ledgers" >&2; exit 1; }
+  [[ -d "$tgt/artifacts" ]] || { echo "adopt: artifacts directory missing" >&2; exit 1; }
+  grep -qxF 'artifacts/' "$tgt/.gitignore" || { echo "adopt: artifacts/ not gitignored" >&2; exit 1; }
+  grep -q "$src_sha" "$tgt/docs/project-rules.md" || { echo "adopt: template SHA not recorded" >&2; exit 1; }
+  if grep -q '<template sha>' "$tgt/docs/project-rules.md"; then
+    echo "adopt: template SHA placeholder left unreplaced" >&2
+    exit 1
+  fi
+  snap="$tmp/adopt-snap"
+  mkdir -p "$snap"
+  cp -R "$tgt/." "$snap"
+  bash "$adopt" "$tgt" >/dev/null
+  diff -r "$snap" "$tgt" >/dev/null || { echo "adopt: second run changed an adopted target" >&2; exit 1; }
+  if bash "$tgt/scripts/validate-harness.sh" >/dev/null 2>&1; then
+    echo "adopt: target validated with unreplaced placeholders" >&2
+    exit 1
+  fi
+  sed 's/<[^>]*>/filled/g' "$tgt/docs/project-rules.md" >"$tgt/docs/project-rules.md.new"
+  mv "$tgt/docs/project-rules.md.new" "$tgt/docs/project-rules.md"
+  bash "$tgt/scripts/validate-harness.sh" >/dev/null 2>&1 || { echo "adopt: filled target failed validation" >&2; exit 1; }
+
+  bash "$adopt" "$tmp/adopt-devin" --runtimes devin >/dev/null
+  [[ -f "$tmp/adopt-devin/.devin/agents/verify/AGENT.md" ]] || { echo "adopt: devin profile missing" >&2; exit 1; }
+  [[ ! -e "$tmp/adopt-devin/.claude" ]] || { echo "adopt: devin-only target got .claude state" >&2; exit 1; }
+  bash "$adopt" "$tmp/adopt-codex" --runtimes codex >/dev/null
+  [[ -L "$tmp/adopt-codex/.agents/skills/verify" ]] || { echo "adopt: codex skill registration missing" >&2; exit 1; }
+  bash "$adopt" "$tmp/adopt-none" --runtimes none >/dev/null
+  [[ ! -e "$tmp/adopt-none/.claude" && ! -e "$tmp/adopt-none/.devin" && ! -e "$tmp/adopt-none/.agents" ]] \
+    || { echo "adopt: --runtimes none still registered a runtime" >&2; exit 1; }
+  [[ -f "$tmp/adopt-none/.github/workflows/harness.yml" ]] || { echo "adopt: CI workflow skipped for --runtimes none" >&2; exit 1; }
+  bash "$adopt" "$tmp/adopt-java" --enable debug-java >/dev/null
+  [[ -f "$tmp/adopt-java/skills/debug-java/SKILL.md" ]] || { echo "adopt: --enable did not move the optional skill" >&2; exit 1; }
+  bash "$adopt" "$tmp/adopt-copy" --copy-skills >/dev/null
+  [[ -d "$tmp/adopt-copy/.claude/skills/verify" && ! -L "$tmp/adopt-copy/.claude/skills/verify" ]] \
+    || { echo "adopt: --copy-skills did not copy" >&2; exit 1; }
+  sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/docs/project-rules.md" >"$tmp/adopt-copy/docs/project-rules.md.new"
+  mv "$tmp/adopt-copy/docs/project-rules.md.new" "$tmp/adopt-copy/docs/project-rules.md"
+  bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1 || { echo "adopt: copied-skills target failed validation" >&2; exit 1; }
+  echo drift >>"$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
+  if bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1; then
+    echo "adopt: validation missed a drifted skill copy" >&2
+    exit 1
+  fi
+
+  mkdir -p "$tmp/adopt-foreign"
+  touch "$tmp/adopt-foreign/.cursorrules"
+  if bash "$adopt" "$tmp/adopt-foreign" >/dev/null 2>&1; then
+    echo "adopt: accepted a target with a foreign instruction asset" >&2
+    exit 1
+  fi
+  mkdir -p "$tmp/adopt-collide/docs"
+  echo different >"$tmp/adopt-collide/docs/collaboration.md"
+  if bash "$adopt" "$tmp/adopt-collide" >/dev/null 2>&1; then
+    echo "adopt: overwrote or skipped a colliding payload path" >&2
+    exit 1
+  fi
+  echo dirty >>"$srcrepo/wow.md"
+  if bash "$adopt" "$tmp/adopt-dirty" >/dev/null 2>&1; then
+    echo "adopt: ran from a dirty template worktree" >&2
+    exit 1
+  fi
+  git -C "$srcrepo" checkout -q -- wow.md
 fi
 
 echo "harness validation passed"
