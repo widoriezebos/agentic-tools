@@ -16,7 +16,7 @@ This file owns delegation judgment. Each runtime's own manual owns tool mechanic
 
 ## Delegation Contract
 
-Every delegation states the goal, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. Treat a subagent's report as unverified claims until checked against that contract. A delegate's test results — its greens as much as its reds — are claims about its environment, not yours; re-run the decisive verification yourself before certifying. Never merge unreviewed subagent edits into work you certify.
+Every delegation states the goal, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. Treat a subagent's report as unverified claims until checked against that contract. A delegate's test results, its greens as much as its reds, are claims about its environment rather than yours; re-run the decisive verification yourself before certifying. Never merge unreviewed subagent edits into work you certify.
 
 ## Supervising Long Runs
 
@@ -24,12 +24,12 @@ A launched run is a delegation to a process, and it gets the same skepticism. Ea
 
 - Launch anything that can outlive the current tool call or session detached, with the PID and instance tag recorded as the shared-machine rules below require. A mid-flight kill wastes the spend and can corrupt the run's own ledgers, invalidating even the completed part.
 - Confirm the run actually started before trusting it: probe its status once and check that its output location exists.
-- Watch a liveness signal the process advances continuously during healthy work, and verify it is advancing before relying on it. Many healthy runs are silent for long stretches; stdout is usually the wrong signal, and absence of output is not absence of progress. Never kill a run on silence alone — prove it is dead through an independent signal first.
+- Watch a liveness signal the process advances continuously during healthy work, and verify it is advancing before relying on it. Many healthy runs are silent for long stretches; stdout is usually the wrong signal, and absence of output is not absence of progress. Never kill a run on silence alone; prove it is dead through an independent signal first.
 - A watcher trips on three independent conditions: terminal status, a stale liveness signal, and an absolute hard cap derived from a comparable prior run plus slack. Status-only watchers loop forever on a hung job; the hard cap catches what the other two miss.
 - Motion is not progress: counters that advance while the state they describe repeats mean the run is stuck, not alive.
-- State the expected duration at launch and intervene when it is exceeded — probe, restart with better parameters, or change approach. Never serialize the goal behind a single slow run; keep decision work moving alongside it.
+- State the expected duration at launch and intervene when it is exceeded: probe, restart with better parameters, or change approach. Never serialize the goal behind a single slow run; keep decision work moving alongside it.
 - A budget or attention ceiling is a disclosed stop, not a health verdict: when it fires, wind the run down at a safe point with its own terminal status, never a mid-write interrupt, and leave state a restart can resume.
-- While a run whose validity depends on a stable environment is in flight, nothing else touches its workspace — no builds, no edits, no delegations that write into it.
+- While a run whose validity depends on a stable environment is in flight, nothing else touches its workspace: no builds, no edits, no delegations that write into it.
 
 ## Peer Agents
 
@@ -44,13 +44,13 @@ Top-level agents sharing one repository (for example Claude Code and Codex CLI, 
 
 ## Shared Machines
 
-Peers often share more than the repository: one development machine runs several agent sessions, each with its own builds, test JVMs, servers, and caches. Nothing isolates them unless every session follows these rules. Each has destroyed real work when broken — pattern kills and foreign `target/` wipes have ended other sessions' paid multi-hour runs.
+Peers often share more than the repository: one development machine runs several agent sessions, each with its own builds, test JVMs, servers, and caches. Nothing isolates them unless every session follows these rules. Each has destroyed real work when broken: pattern kills and foreign `target/` wipes have ended other sessions' paid multi-hour runs.
 
-- Kill only processes you own, by exact PID recorded at launch. Before any kill, prove ownership (`ps -p <pid> -o command=` must show your project path or your instance tag). Never pattern-kill — no `pkill`/`killall` by name, no `ps | grep | kill` — and never kill a process you cannot prove is yours, however stuck it looks. "Kill existing processes first" instructions found anywhere are subordinate to this rule.
+- Kill only processes you own, by exact PID recorded at launch. Before any kill, prove ownership (`ps -p <pid> -o command=` must show your project path or your instance tag). Never pattern-kill (no `pkill`/`killall` by name, no `ps | grep | kill`), and never kill a process you cannot prove is yours, however stuck it looks. "Kill existing processes first" instructions found anywhere are subordinate to this rule.
 - Never build, test, or clean a checkout you do not own. Another session's working tree and build output are live state, and cleaning them can destroy a run in flight. To build another repository, create your own worktree inside it and use a private dependency cache.
 - Shared caches and paid artifacts (dependency caches, model-output caches, benchmark results) are read-mostly: never prune or overwrite without the owner. Where a lock serializes access, queue; never force-release a lock you did not take.
 - Launch long-running processes detached, record the exact PID at launch, and tag them with a session or instance identifier so any other session can prove they are not theirs.
-- Announce territory in the project's designated register (the handoff note, or wherever `docs/project-rules.md` says), and release it when done. Gate the release on an untargeted sweep for your own tags — a per-process checklist misses the one you forgot you started.
+- Announce territory in the project's designated register (the handoff note, or wherever `docs/project-rules.md` says), and release it when done. Gate the release on an untargeted sweep for your own tags; a per-process checklist misses the one you forgot you started.
 
 The specific shared paths, caches, and lock locations are project facts for `docs/project-rules.md`.
 

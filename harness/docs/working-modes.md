@@ -49,7 +49,7 @@ Never mix refactor and improve in the same change. Refactor promises the score s
 
 **How to use it.** Read the filled example in `docs/examples/design-obligation-matrix.md`. It shows a webhook retry queue, four obligations, and what the gate stopped from being called done too early.
 
-**Critiquing a design.** For consequential designs, have someone who did not write the design attack it before implementation — `skills/design-critique/SKILL.md` owns the loop. Its core is a stop rule: every finding is tested against "would an implementer build something different, or wrong, because of this?", and the loop ends the first round that produces no such finding. Critique that only polishes prose is over.
+**Critiquing a design.** For consequential designs, have someone who did not write the design attack it before implementation; `skills/design-critique/SKILL.md` owns the loop. Its core is a stop rule: every finding is tested against "would an implementer build something different, or wrong, because of this?", and the loop ends the first round that produces no such finding. Critique that only polishes prose is over.
 
 ## Refactor (change the structure, keep the behavior)
 
