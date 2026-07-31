@@ -13,9 +13,11 @@ done
 
 # Scope the outside-reference check to harness-owned files ONLY, by explicit
 # list rather than by directory: in adopted repositories docs/ and scripts/
-# also hold project-owned files that legitimately contain ../ (script root
-# resolution) or absolute paths (project registers, frozen histories).
-# docs/project-rules.md is project-owned and deliberately excluded.
+# also hold project-owned files that legitimately contain dot-dot path
+# segments (script root resolution) or absolute paths (project registers,
+# frozen histories). docs/project-rules.md is project-owned and deliberately
+# excluded, and so is this script itself: explicit file arguments bypass rg
+# glob filters, so it must not appear in the scan list at all.
 outside_pattern='/'"Users/"'|\.\.'"/"
 scan=()
 for p in AGENTS.md CLAUDE.md wow.md \
@@ -23,13 +25,13 @@ for p in AGENTS.md CLAUDE.md wow.md \
   docs/working-with-agents.md docs/project-adaptation.md docs/harness-reconciliation.md \
   docs/design/design-principles.md docs/design/design-obligation-gate.md docs/examples \
   skills optional-skills meta \
-  scripts/audit-harness.sh scripts/validate-harness.sh scripts/validate-skill.sh \
+  scripts/validate-harness.sh scripts/validate-skill.sh \
   scripts/assert-design-obligation-gate.sh scripts/refactor-baseline.sh scripts/frontier.sh \
   scripts/receipt.sh scripts/assert-stop-loss.sh scripts/enforcement \
   plans/README.md plans/instruction-ledger.md; do
   [[ -e "$p" ]] && scan+=("$p")
 done
-if rg -n "$outside_pattern" "${scan[@]}" --glob '!scripts/audit-harness.sh'; then
+if rg -n "$outside_pattern" "${scan[@]}"; then
   echo "references outside the harness are forbidden in harness-owned files" >&2
   exit 1
 fi
