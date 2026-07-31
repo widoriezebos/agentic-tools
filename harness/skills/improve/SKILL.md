@@ -18,6 +18,8 @@ Before the first run, write in the owning plan:
 
 Track actual spend against the budget as runs complete, from the project's authoritative usage source (`docs/project-rules.md`) rather than estimates, and count failed and invalid runs; a run in a failure mode typically costs several times a healthy one. When the budget runs out with the goal unmet, stop and ask: one batched request stating spend so far, what it bought, and the remaining options. Never run past the fence silently; overage is a reserved decision.
 
+Before the first paid call of a run, confirm the accounting will actually see that run's calls: when the paths about to spend do not report to the declared usage source, the run is inadmissible at any price, because a budget that cannot be measured cannot be enforced. Missing telemetry is never zero spend. Throttles inside the system under test (job caps, retry limits, rate windows) are not budgets; a bound counts only when it is enforced independently of the code being exercised.
+
 If the evaluation cannot be run on demand, the first deliverable is the evaluation itself. Renegotiate the goal with the human.
 
 ## Frontier Ledger
