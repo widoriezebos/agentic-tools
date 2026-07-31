@@ -168,6 +168,10 @@ repo="$tmp/baseline-repo"
 git init -q "$repo"
 git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit --allow-empty -qm base
 (cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" >/dev/null)
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" check >/dev/null) || {
+  echo "refactor baseline check blocked on the baseline file's own dirt right after record" >&2
+  exit 1
+}
 git -C "$repo" add plans/refactor-baseline
 git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm baseline
 (cd "$repo" && "$root/scripts/refactor-baseline.sh" check >/dev/null)
@@ -179,6 +183,26 @@ fi
 rm "$repo/dirty.txt"
 if (cd "$repo" && "$root/scripts/refactor-baseline.sh" check --max-commits 0 >/dev/null 2>&1); then
   echo "refactor baseline check ignored the commit-count backstop" >&2
+  exit 1
+fi
+# Custom and absolute --file paths normalize to the repository root; paths
+# outside the repository are rejected because git cannot see their dirt.
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file plans/custom-baseline >/dev/null)
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" check --file plans/custom-baseline >/dev/null) || {
+  echo "refactor baseline check blocked a custom relative --file right after record" >&2
+  exit 1
+}
+git -C "$repo" add plans/custom-baseline
+git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm custom-baseline
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "$repo/plans/abs-baseline" >/dev/null)
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" check --file "$repo/plans/abs-baseline" >/dev/null) || {
+  echo "refactor baseline check blocked an in-repository absolute --file right after record" >&2
+  exit 1
+}
+git -C "$repo" add plans/abs-baseline
+git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm abs-baseline
+if (cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "$tmp/outside-baseline" >/dev/null 2>&1); then
+  echo "refactor baseline accepted a --file outside the repository" >&2
   exit 1
 fi
 

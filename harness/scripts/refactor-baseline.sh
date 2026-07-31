@@ -14,7 +14,11 @@ baseline. Commit the baseline file with the next checkpoint.
 
 check: allow a new refactor edit batch only when the worktree is clean, the
 trusted baseline is an ancestor of HEAD, and the cadence backstop (age and
-commit count since the baseline) is not exceeded.
+commit count since the baseline) is not exceeded. Dirt consisting solely of
+the baseline file itself is tolerated, so running check right after record
+never blocks; commit the file with the next checkpoint. The --file path is
+normalized against the repository root and must live inside the repository,
+because git cannot see dirt outside it.
 
 Defaults: --file plans/refactor-baseline, --max-age-minutes 1440 (override
 with HARNESS_REFACTOR_MAX_AGE_MINUTES), --max-commits 40 (override with
@@ -46,7 +50,19 @@ done
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not inside a git repository" >&2; exit 2; }
 
+toplevel=$(git rev-parse --show-toplevel)
+file_dir=$(dirname "$file")
+mkdir -p "$file_dir"
+abs_file="$(cd "$file_dir" && pwd -P)/$(basename "$file")"
+[[ "$abs_file" == "$toplevel"/* ]] || { echo "baseline file must live inside the repository so git can see its dirt: $file" >&2; exit 2; }
+rel_file=${abs_file#"$toplevel"/}
+
 worktree_dirty() { [[ -n "$(git status --porcelain)" ]]; }
+
+worktree_dirty_beyond_baseline() {
+  git -C "$toplevel" status --porcelain --untracked-files=all \
+    | awk -v rel="$rel_file" 'substr($0, 4) != rel { found = 1 } END { exit found ? 0 : 1 }'
+}
 
 case "$cmd" in
   record)
@@ -57,14 +73,13 @@ case "$cmd" in
     fi
     sha=$(git rev-parse HEAD)
     now=$(date -u +%s)
-    mkdir -p "$(dirname "$file")"
     {
       echo "sha=$sha"
       echo "recorded_epoch=$now"
       echo "gate=$gate"
     } >"$file"
     echo "trusted baseline recorded: $sha"
-    echo "commit $file with the next checkpoint"
+    echo "commit $file now or with the next checkpoint; check ignores this file's own dirt"
     ;;
   check)
     [[ -f "$file" ]] || { echo "no trusted baseline at $file; run the acceptance gate, then record it" >&2; exit 1; }
@@ -72,8 +87,8 @@ case "$cmd" in
     recorded_epoch=$(sed -n 's/^recorded_epoch=//p' "$file" | head -1)
     [[ -n "$sha" && "$recorded_epoch" =~ ^[0-9]+$ ]] || { echo "baseline file is malformed: $file" >&2; exit 2; }
     git rev-parse --verify --quiet "${sha}^{commit}" >/dev/null || { echo "baseline commit $sha is unknown to this repository" >&2; exit 1; }
-    if worktree_dirty; then
-      echo "worktree is dirty; commit, stash, or revert before a new refactor batch" >&2
+    if worktree_dirty_beyond_baseline; then
+      echo "worktree is dirty beyond the baseline file; commit, stash, or revert before a new refactor batch" >&2
       exit 1
     fi
     git merge-base --is-ancestor "$sha" HEAD || { echo "baseline $sha is not an ancestor of HEAD; history diverged from the trusted baseline" >&2; exit 1; }
