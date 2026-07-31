@@ -118,6 +118,13 @@ if command -v python3 >/dev/null; then
   printf '%s|%s|RETRO|note=fixture\n' "$(date -u +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$hookrepo/plans/receipts.log"
   out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
   [[ -z "$out" ]] || { echo "stop hook emitted output when no retro is due" >&2; exit 1; }
+  printf 'garbage\n' >"$hookrepo/plans/receipts.log"
+  out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
+  grep -q "errored" <<<"$out" || { echo "stop hook hid a failing receipt check" >&2; exit 1; }
+  if grep -q "retro due" <<<"$out"; then
+    echo "stop hook misreported a check error as a due retro" >&2
+    exit 1
+  fi
 fi
 
 # The debug-java preflight is optional: absent in adopted repositories that
