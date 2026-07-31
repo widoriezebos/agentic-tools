@@ -80,9 +80,23 @@ done
 cat >"$tmp/good.md" <<'EOF'
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| OBL-1 | HIGH | Requirement | Behavior | Owner | Code | Test | Not applicable | DONE | None |
+| OBL-1 | HIGH | Requirement | Behavior | `owner.py` | `owner.py` | `test_owner.py` | Not applicable — pure derivation | DONE | None |
 EOF
 scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/good.md" >/dev/null
+
+# Proof cells on critical/high rows must be concrete: a DONE row whose proof
+# is vague prose must fail, or a declared status can outrun its evidence.
+sed 's/| `test_owner.py` |/| covered somewhere |/' "$tmp/good.md" >"$tmp/vague.md"
+if scripts/assert-design-obligation-gate.sh --file "$tmp/vague.md" >/dev/null 2>&1; then
+  echo "obligation gate accepted a DONE row with a vague proof cell" >&2
+  exit 1
+fi
+# Matrices shown inside fenced code blocks are documentation, not declarations.
+{ printf '```markdown\n'; cat "$tmp/good.md"; printf '```\n'; } >"$tmp/fenced.md"
+if scripts/assert-design-obligation-gate.sh --file "$tmp/fenced.md" >/dev/null 2>&1; then
+  echo "obligation gate read a matrix out of a fenced code block" >&2
+  exit 1
+fi
 
 sed 's/| DONE |/| MISSING |/' "$tmp/good.md" >"$tmp/bad.md"
 if scripts/assert-design-obligation-gate.sh --file "$tmp/bad.md" >/dev/null 2>&1; then
