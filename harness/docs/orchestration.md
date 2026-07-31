@@ -16,7 +16,16 @@ This file owns delegation judgment. Each runtime's own manual owns tool mechanic
 
 ## Delegation Contract
 
-Every delegation states the goal, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. Treat a subagent's report as unverified claims until checked against that contract. A delegate's test results, its greens as much as its reds, are claims about its environment rather than yours; re-run the decisive verification yourself before certifying. Never merge unreviewed subagent edits into work you certify.
+Every delegation states the goal, the workspace it runs in, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), the acceptance criteria, a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. Treat a subagent's report as unverified claims until checked against that contract. A delegate's test results, its greens as much as its reds, are claims about its environment rather than yours; re-run the decisive verification yourself before certifying. Never merge unreviewed subagent edits into work you certify.
+
+## Delegated Implementation
+
+When a delegate implements from a design you own, the contract above still applies and the division of labor sharpens. Each rule here comes from a recorded failure in a delegation campaign: the campaign's one bad contract was designed ahead of the facts, and the delegate's recurring defect was filling spec gaps silently.
+
+- Trace facts before designing. Where the current mechanism is uncertain, collect file-and-line evidence of how it works today before writing the design; the grounding standard is owned by `docs/design/design-principles.md`. The tracing itself is delegable, and its record is an input the contract names. The design decisions are not delegable.
+- The spec leaves the delegate no judgment calls. Reduce every residual open point to a mechanical rule the delegate can apply without deciding anything. The gap rule above is the safety net for what the spec missed; it does not license the spec to leave decisions open.
+- Critique a consequential design before dispatch (`skills/design-critique/SKILL.md`), and review returned work in two layers. Conformance first: the diff is exactly the accepted change, nothing unrelated rode along, and what you apply and certify is byte-identical to what you reviewed. Then an adversarial critique of the implementation itself: concurrency, edge cases, and failure paths the spec's tests cannot see.
+- Corrections return to the delegate that produced the work, in its existing context, as one focused correction per review round. A fresh delegate repays the whole briefing cost and lacks the history that explains the defect. New work gets a fresh context.
 
 ## Supervising Long Runs
 

@@ -46,7 +46,7 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | Behavior-preserving refactor mode: trusted baseline, tests before restructuring, risk-sized replayable batches, validation ladder, bounded failure handling | [`skills/refactor/`](skills/refactor/SKILL.md) |
 | Improvement mode: improvement contract, frontier ledger with noise floor, single-mechanism experiments, anti-overfitting, stop conditions | [`skills/improve/`](skills/improve/SKILL.md) |
 | Investigation stop-loss: evidence-first diagnosis, cycle contracts, classifications, hard stop conditions | [`skills/take-a-step-back/`](skills/take-a-step-back/SKILL.md) |
-| Delegation judgment: when to fan out to subagents, when to avoid it, how long runs are supervised, how peer agents coexist | [`docs/orchestration.md`](docs/orchestration.md) |
+| Delegation judgment: when to fan out to subagents, when to avoid it, how delegated implementation is specified and reviewed, how long runs are supervised, how peer agents coexist | [`docs/orchestration.md`](docs/orchestration.md) |
 | Human collaboration: reviewable increments, reports that lead with the review guide, correction capture, escalation shape | [`docs/collaboration.md`](docs/collaboration.md) |
 | The human's guide: handing over work, reviewing, making corrections stick, running multiple agents, recurring duties | [`docs/working-with-agents.md`](docs/working-with-agents.md) |
 | Session continuity: owned handoff notes for multi-session streams | [`plans/README.md`](plans/README.md) |
