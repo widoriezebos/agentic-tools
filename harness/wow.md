@@ -13,6 +13,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Code and design standards | `docs/design/design-principles.md` | Writing or changing code beyond trivial edits; any design, refactor, or consequential change |
 | Completion check and design proof | `docs/design/design-obligation-gate.md` | Finishing any change; full matrix only on its listed triggers |
 | End-to-end verification | `skills/verify/SKILL.md` | A change claims to work and has a runnable surface |
+| Adversarial design critique | `skills/design-critique/SKILL.md` | A design is ready to attack before implementation, or a critique loop needs a stop decision |
 | Behavior-preserving refactor | `skills/refactor/SKILL.md` | Restructuring, readability, or cleanup work whose contract is unchanged behavior |
 | Benchmark-driven improvement | `skills/improve/SKILL.md` | Chasing a measured improvement goal against a runnable evaluation |
 | Investigation stop-loss | `skills/take-a-step-back/SKILL.md` | Work is stuck, repetitive, expensive, or premise is uncertain |

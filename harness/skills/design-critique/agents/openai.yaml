@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Critique"
+  short_description: "Attack a design before it is built; report material findings only"
+  default_prompt: "Use $design-critique to adversarially critique this design document and report findings sorted by materiality."

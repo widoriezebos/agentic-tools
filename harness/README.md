@@ -38,6 +38,7 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | Code and design standards: priority order, responsibility-driven ownership, domain-driven design for domain-heavy systems, self-documenting code | [`docs/design/design-principles.md`](docs/design/design-principles.md) |
 | Completion gate: a five-question default check on every change; a full obligation matrix only on explicit risk triggers | [`docs/design/design-obligation-gate.md`](docs/design/design-obligation-gate.md) |
 | End-to-end verification: observed behavior as the only proof a change works | [`skills/verify/`](skills/verify/SKILL.md) |
+| Adversarial design critique: findings-only critique, a materiality criterion that binds the critic, adjudication of every finding, and a loop that stops when critique stops changing what would be built | [`skills/design-critique/`](skills/design-critique/SKILL.md) |
 | Behavior-preserving refactor mode: trusted baseline, tests before restructuring, risk-sized replayable batches, validation ladder, bounded failure handling | [`skills/refactor/`](skills/refactor/SKILL.md) |
 | Improvement mode: improvement contract, frontier ledger with noise floor, single-mechanism experiments, anti-overfitting, stop conditions | [`skills/improve/`](skills/improve/SKILL.md) |
 | Investigation stop-loss: evidence-first diagnosis, cycle contracts, classifications, hard stop conditions | [`skills/take-a-step-back/`](skills/take-a-step-back/SKILL.md) |
@@ -78,7 +79,7 @@ docs/
   harness-reconciliation.md  manual for repos with existing instructions
   design/            design principles plus the completion gate
   examples/          worked examples (filled matrix, filled ledger)
-skills/              triggered workflows: verify, refactor, improve, retro, take-a-step-back
+skills/              triggered workflows: verify, design-critique, refactor, improve, retro, take-a-step-back
 optional-skills/     opt-in specialists (debug-java), enabled per project
 scripts/             deterministic checks and shipped enforcement configs
 plans/               task-local state, handoff notes, standing ledgers

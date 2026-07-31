@@ -29,6 +29,10 @@ for link in \
   skills/take-a-step-back/agents/claude-profile.md \
   skills/take-a-step-back/agents/devin/AGENT.md \
   skills/take-a-step-back/agents/openai.yaml \
+  skills/design-critique/SKILL.md \
+  skills/design-critique/agents/claude-profile.md \
+  skills/design-critique/agents/devin/AGENT.md \
+  skills/design-critique/agents/openai.yaml \
   skills/verify/SKILL.md \
   skills/verify/agents/claude-profile.md \
   skills/verify/agents/devin/AGENT.md \
