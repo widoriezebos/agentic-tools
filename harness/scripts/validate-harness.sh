@@ -107,7 +107,7 @@ done
 cat >"$tmp/good.md" <<'EOF'
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| OBL-1 | HIGH | Requirement | Behavior | `owner.py` | `owner.py` | `test_owner.py` | Not applicable — pure derivation | DONE | None |
+| OBL-1 | HIGH | Requirement | Behavior | `owner.py` | `owner.py` | `test_owner.py` | Not applicable: pure derivation | DONE | None |
 EOF
 scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/good.md" >/dev/null
 
@@ -116,6 +116,27 @@ scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/good.md
 sed 's/| `test_owner.py` |/| covered somewhere |/' "$tmp/good.md" >"$tmp/vague.md"
 if scripts/assert-design-obligation-gate.sh --file "$tmp/vague.md" >/dev/null 2>&1; then
   echo "obligation gate accepted a DONE row with a vague proof cell" >&2
+  exit 1
+fi
+# Keyword-carrying prose is still prose: promises of future proof, and owners
+# without a code-shaped token, must fail.
+cat >"$tmp/keyword.md" <<'EOF'
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| OBL-1 | CRITICAL | Requirement | Behavior | someone will own this | we should test this later | needs testing | manual test pending | DONE | None |
+EOF
+if scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/keyword.md" >/dev/null 2>&1; then
+  echo "obligation gate accepted keyword prose as proof and a prose owner" >&2
+  exit 1
+fi
+sed 's/| Not applicable: pure derivation |/| Not applicable |/' "$tmp/good.md" >"$tmp/bare-na.md"
+if scripts/assert-design-obligation-gate.sh --file "$tmp/bare-na.md" >/dev/null 2>&1; then
+  echo "obligation gate accepted a bare Not applicable without a reason" >&2
+  exit 1
+fi
+sed 's/| Not applicable: pure derivation |/| Not applicable: |/' "$tmp/good.md" >"$tmp/empty-na.md"
+if scripts/assert-design-obligation-gate.sh --file "$tmp/empty-na.md" >/dev/null 2>&1; then
+  echo "obligation gate accepted an empty-delimiter Not applicable" >&2
   exit 1
 fi
 # Matrices shown inside fenced code blocks are documentation, not declarations.

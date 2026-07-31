@@ -17,10 +17,12 @@ Required table header:
 By default, CRITICAL/HIGH obligations must be DONE or READY_FOR_RUNTIME.
 With --runtime-required, CRITICAL/HIGH obligations must be DONE.
 
-Proof cells on CRITICAL/HIGH rows must be concrete: a backticked code or test
-reference, a file path, a named run/artifact, or an explicit "Not applicable"
-with a reason. Empty, "TBD", or vague prose cells fail the gate — a status is
-only as trustworthy as the proof behind it.
+Proof cells on CRITICAL/HIGH rows must be concrete: a backticked token, a
+path-shaped token (a slash or a known file extension), or "Not applicable"
+followed by a reason. Bare "Not applicable" fails, and so does keyword-only
+prose ("needs testing"): a status is only as trustworthy as the proof behind
+it. Owner cells on CRITICAL/HIGH rows need a backticked, dotted, slashed,
+double-colon, or CamelCase code token; plain prose fails.
 
 Matrix rows inside fenced code blocks are ignored, so documentation that shows
 the template does not satisfy the gate. Table cells must not contain literal
@@ -98,7 +100,10 @@ for file in "${FILES[@]}"; do
         return 0
       }
       if (normalized ~ /(not applicable|no runtime proof required|runtime proof not required)/) {
-        return 1
+        if (normalized ~ /(not applicable|no runtime proof required|runtime proof not required)[^a-z0-9]+[a-z0-9]/) {
+          return 1
+        }
+        return 0
       }
       if (original ~ /`[^`]+`/) {
         return 1
@@ -106,7 +111,29 @@ for file in "${FILES[@]}"; do
       if (original ~ /[[:alnum:]_\/.-]+\.(java|kt|scala|ts|tsx|js|jsx|py|go|rs|rb|cs|cpp|c|h|sql|md|json|xml|yml|yaml|sh|log)/) {
         return 1
       }
-      if (original ~ /(run id|Run id|artifact|Artifact|test|Test|execution-log|class |method |script|command)/) {
+      if (original ~ /[[:alnum:]_.-]+\/[[:alnum:]_\/.-]+/) {
+        return 1
+      }
+      return 0
+    }
+    function owner_ok(value) {
+      original = trim(value)
+      if (weak(original)) {
+        return 0
+      }
+      if (original ~ /`[^`]+`/) {
+        return 1
+      }
+      if (original ~ /[[:alnum:]_]+\.[[:alnum:]_]+/) {
+        return 1
+      }
+      if (original ~ /[[:alnum:]_.-]+\/[[:alnum:]_\/.-]+/) {
+        return 1
+      }
+      if (original ~ /::/) {
+        return 1
+      }
+      if (original ~ /[A-Z][a-z0-9]+[A-Z]/) {
         return 1
       }
       return 0
@@ -169,11 +196,11 @@ for file in "${FILES[@]}"; do
           if (runtime_required == 1) {
             add_failure(obligation_id " still needs runtime proof before this gate: " status)
           }
-          if (weak(owner) || !concrete(code_proof) || !concrete(test_proof)) {
+          if (!owner_ok(owner) || !concrete(code_proof) || !concrete(test_proof)) {
             add_failure(obligation_id " cannot be READY_FOR_RUNTIME without an owner, concrete code proof, and concrete test proof")
           }
         }
-        if (status == "DONE" && (weak(owner) || !concrete(code_proof) || !concrete(test_proof) || !concrete(runtime_proof))) {
+        if (status == "DONE" && (!owner_ok(owner) || !concrete(code_proof) || !concrete(test_proof) || !concrete(runtime_proof))) {
           add_failure(obligation_id " cannot be DONE without an owner and concrete code, test, and runtime proof")
         }
         if (status == "BLOCKED") {
