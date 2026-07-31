@@ -16,9 +16,13 @@ done
 # also hold project-owned files that legitimately contain dot-dot path
 # segments (script root resolution) or absolute paths (project registers,
 # frozen histories). docs/project-rules.md is project-owned and deliberately
-# excluded, and so is this script itself: explicit file arguments bypass rg
-# glob filters, so it must not appear in the scan list at all.
-outside_pattern='/'"Users/"'|\.\.'"/"
+# excluded, and so are this script and scripts/adopt.sh: explicit file
+# arguments bypass rg glob filters, and both legitimately contain dot-dot
+# segments (root resolution, relative symlink targets), so neither may
+# appear in the scan list at all.
+# The path pattern anchors on a non-word, non-slash character before the
+# leading slash so prose like "rule/home/owner" does not false-positive.
+outside_pattern='(^|[^[:alnum:]/])/(Users|home|root|tmp|var|opt|etc|private|workspace)/|\.\.'"/"
 scan=()
 for p in AGENTS.md CLAUDE.md wow.md \
   docs/orchestration.md docs/collaboration.md docs/working-modes.md \
@@ -28,7 +32,7 @@ for p in AGENTS.md CLAUDE.md wow.md \
   scripts/validate-harness.sh scripts/validate-skill.sh \
   scripts/assert-design-obligation-gate.sh scripts/refactor-baseline.sh scripts/frontier.sh \
   scripts/receipt.sh scripts/assert-stop-loss.sh scripts/enforcement \
-  plans/README.md plans/instruction-ledger.md; do
+  plans/README.md plans/instruction-ledger.md plans/known-issues.md; do
   [[ -e "$p" ]] && scan+=("$p")
 done
 if rg -n "$outside_pattern" "${scan[@]}"; then

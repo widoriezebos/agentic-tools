@@ -61,6 +61,13 @@ done
 now_epoch=$(date -u +%s)
 now_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# One sanitizer for every free-text field: the log is one line per record,
+# so newlines and carriage returns in any field corrupt it.
+sanitize() {
+  local v=${1//$'\r'/ }
+  printf '%s' "${v//$'\n'/ }"
+}
+
 case "$cmd" in
   add)
     case "$type" in implement|refactor|improve|review|design|investigate|other) ;; *) echo "invalid --type: $type" >&2; exit 2 ;; esac
@@ -69,6 +76,8 @@ case "$cmd" in
     case "$stop_loss" in yes|no) ;; *) echo "invalid --stop-loss: $stop_loss" >&2; exit 2 ;; esac
     [[ "$corrections" =~ ^[0-9]+$ ]] || { echo "invalid --corrections: $corrections" >&2; exit 2; }
     mkdir -p "$(dirname "$file")"
+    skills=$(sanitize "$skills")
+    note=$(sanitize "$note")
     printf '%s|%s|RECEIPT|type=%s|outcome=%s|skills=%s|verify=%s|corrections=%s|stop_loss=%s|note=%s\n' \
       "$now_epoch" "$now_utc" "$type" "$outcome" "${skills//|/;}" "$verify" "$corrections" "$stop_loss" "${note//|/;}" >>"$file"
     echo "receipt recorded in $file"
@@ -77,6 +86,7 @@ case "$cmd" in
   retro)
     [[ -n "$summary" ]] || { echo "retro requires a summary of the instruction changes made" >&2; exit 2; }
     mkdir -p "$(dirname "$file")"
+    summary=$(sanitize "$summary")
     printf '%s|%s|RETRO|note=%s\n' "$now_epoch" "$now_utc" "${summary//|/;}" >>"$file"
     echo "retro recorded; cadence reset"
     ;;

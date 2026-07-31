@@ -15,6 +15,15 @@ for dir in skills optional-skills; do
   done < <(find "$dir" -name SKILL.md | sort)
 done
 
+# Core assets are required everywhere. The full six-skill set with every
+# per-runtime profile is required only in the template repository (marked by
+# meta/harness-design.md): adopted repositories may prune unused skills, and
+# each skill present is still validated by the loop above. Profile files are
+# not demanded in adopted mode, because project-added skills never had them
+# and core skills may drop them after runtime registration.
+template_mode=0
+[[ -f meta/harness-design.md ]] && template_mode=1
+
 for link in \
   docs/project-rules.md \
   docs/orchestration.md \
@@ -25,30 +34,6 @@ for link in \
   docs/examples/step-back-ledger.md \
   .gitattributes \
   plans/instruction-ledger.md \
-  skills/take-a-step-back/SKILL.md \
-  skills/take-a-step-back/agents/claude-profile.md \
-  skills/take-a-step-back/agents/devin/AGENT.md \
-  skills/take-a-step-back/agents/openai.yaml \
-  skills/design-critique/SKILL.md \
-  skills/design-critique/agents/claude-profile.md \
-  skills/design-critique/agents/devin/AGENT.md \
-  skills/design-critique/agents/openai.yaml \
-  skills/verify/SKILL.md \
-  skills/verify/agents/claude-profile.md \
-  skills/verify/agents/devin/AGENT.md \
-  skills/verify/agents/openai.yaml \
-  skills/refactor/SKILL.md \
-  skills/refactor/agents/claude-profile.md \
-  skills/refactor/agents/devin/AGENT.md \
-  skills/refactor/agents/openai.yaml \
-  skills/improve/SKILL.md \
-  skills/improve/agents/claude-profile.md \
-  skills/improve/agents/devin/AGENT.md \
-  skills/improve/agents/openai.yaml \
-  skills/retro/SKILL.md \
-  skills/retro/agents/claude-profile.md \
-  skills/retro/agents/devin/AGENT.md \
-  skills/retro/agents/openai.yaml \
   scripts/refactor-baseline.sh \
   scripts/frontier.sh \
   scripts/receipt.sh \
@@ -62,6 +47,51 @@ for link in \
   plans/README.md; do
   [[ -e "$link" ]] || { echo "missing routed asset: $link" >&2; exit 1; }
 done
+
+if (( template_mode )); then
+  for link in \
+    skills/take-a-step-back/SKILL.md \
+    skills/take-a-step-back/agents/claude-profile.md \
+    skills/take-a-step-back/agents/devin/AGENT.md \
+    skills/take-a-step-back/agents/openai.yaml \
+    skills/design-critique/SKILL.md \
+    skills/design-critique/agents/claude-profile.md \
+    skills/design-critique/agents/devin/AGENT.md \
+    skills/design-critique/agents/openai.yaml \
+    skills/verify/SKILL.md \
+    skills/verify/agents/claude-profile.md \
+    skills/verify/agents/devin/AGENT.md \
+    skills/verify/agents/openai.yaml \
+    skills/refactor/SKILL.md \
+    skills/refactor/agents/claude-profile.md \
+    skills/refactor/agents/devin/AGENT.md \
+    skills/refactor/agents/openai.yaml \
+    skills/improve/SKILL.md \
+    skills/improve/agents/claude-profile.md \
+    skills/improve/agents/devin/AGENT.md \
+    skills/improve/agents/openai.yaml \
+    skills/retro/SKILL.md \
+    skills/retro/agents/claude-profile.md \
+    skills/retro/agents/devin/AGENT.md \
+    skills/retro/agents/openai.yaml; do
+    [[ -e "$link" ]] || { echo "missing template skill asset: $link" >&2; exit 1; }
+  done
+fi
+
+# Copied (non-symlink) Claude skill registrations must not drift from their
+# canonical source under skills/.
+if [[ -d .claude/skills ]]; then
+  for reg in .claude/skills/*/; do
+    [[ -e "$reg" ]] || continue
+    reg=${reg%/}
+    name=$(basename "$reg")
+    [[ -L "$reg" ]] && continue
+    if [[ -d "skills/$name" ]] && ! diff -rq "$reg" "skills/$name" >/dev/null 2>&1; then
+      echo "registered skill copy has drifted from its source: $reg vs skills/$name" >&2
+      exit 1
+    fi
+  done
+fi
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -313,5 +343,38 @@ scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "
 scripts/receipt.sh stats --file "$rfile" | grep -q '^receipts=1$' || { echo "receipt stats miscounted the post-retro period" >&2; exit 1; }
 scripts/receipt.sh stats --file "$rfile" | grep -q '^type_improve=1$' || { echo "receipt stats missed the improve type" >&2; exit 1; }
 scripts/receipt.sh stats --all --file "$rfile" | grep -q '^receipts=3$' || { echo "receipt stats --all miscounted" >&2; exit 1; }
+
+# Every free-text field is sanitized by one shared path: CRLF through the
+# note, the skills list, and the retro summary must each stay one log line.
+crlf_fixture=$(printf 'a\r\nb')
+rfile_crlf="$tmp/receipts-crlf.log"
+scripts/receipt.sh add --type implement --outcome shipped --note "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
+[[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 1 ]] || { echo "a CRLF note corrupted the receipt log" >&2; exit 1; }
+scripts/receipt.sh add --type implement --outcome shipped --skills "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
+[[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 2 ]] || { echo "a CRLF skills list corrupted the receipt log" >&2; exit 1; }
+scripts/receipt.sh retro "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
+[[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 3 ]] || { echo "a CRLF retro summary corrupted the receipt log" >&2; exit 1; }
+
+# Adopted-mode contract: a copy without the template marker validates with a
+# skill pruned, and a present-but-broken skill still fails. Template mode
+# only, so the nested run (which lacks meta/) cannot recurse.
+if (( template_mode )); then
+  adopted="$tmp/adopted"
+  mkdir -p "$adopted"
+  cp -R "$root/." "$adopted"
+  rm -rf "$adopted/meta" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
+  sed 's/<[^>]*>/filled/g' "$adopted/docs/project-rules.md" >"$adopted/docs/project-rules.md.new"
+  mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
+  bash "$adopted/scripts/validate-harness.sh" >/dev/null 2>&1 || {
+    echo "adopted-mode validation failed for a copy with one skill pruned" >&2
+    exit 1
+  }
+  grep -v '^name:' "$adopted/skills/verify/SKILL.md" >"$adopted/skills/verify/SKILL.md.new"
+  mv "$adopted/skills/verify/SKILL.md.new" "$adopted/skills/verify/SKILL.md"
+  if bash "$adopted/scripts/validate-harness.sh" >/dev/null 2>&1; then
+    echo "adopted-mode validation accepted a present skill with broken frontmatter" >&2
+    exit 1
+  fi
+fi
 
 echo "harness validation passed"
