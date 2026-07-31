@@ -8,6 +8,7 @@ Keep reviews small and cheap:
 
 - One reviewable intent per commit. Never mix mechanical change (rename, format, move, generated output) with behavior change. Land the mechanical part first so the semantic diff stays small.
 - Prefer several small commits over one big one. If a diff cannot be reviewed in one sitting, split it before asking for review.
+- Stage commits by explicit path. An add-everything commit sweeps up whatever else is in the tree, and with delegates or peer agents active that can include another stream's uncommitted work.
 - Commit messages state intent and observable effect. Follow the project's authorship convention for agent-written changes.
 - Credentials and secrets never enter commits, logs, plans, or handoff notes. If one leaks into history, escalate immediately. Removal is a human-reserved decision.
 
