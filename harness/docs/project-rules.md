@@ -9,6 +9,7 @@ Replace this file when adopting the harness. Keep facts concrete and repository-
 - Test roots: `<paths>`
 - Generated files: `<paths and ownership>`
 - Sensitive or protected areas: `<paths>`
+- Durable evidence root: `<path>`. Outside the repository and every build tree; holds the only-copy run evidence that must survive (rules in `plans/README.md`).
 
 ## Commands
 
@@ -24,6 +25,15 @@ Replace this file when adopting the harness. Keep facts concrete and repository-
 
 State realistic timeouts and prerequisites here. Do not repeat these commands in skills or root instructions.
 
+## Budgets
+
+Where agents can spend real money (model calls, paid APIs, cloud runs), state the facts that make the spend governable:
+
+- Spend fence, covering total spend across providers and agents rather than per run: `<amount and period>`
+- Proactive warning threshold below the fence: `<threshold>`
+- Who approves overage and resource-tier changes: `<owner>`
+- The authoritative usage source that spend is measured from (never estimates): `<usage source>`
+
 ## Local Invariants
 
 List only rules that cannot be inferred from code or tooling and apply broadly in this repository. Prefer an executable check whenever the rule is binary.
@@ -37,6 +47,7 @@ These require explicit in-task approval even when technically easy. Default set,
 - Adding or upgrading dependencies.
 - Deleting or disabling user-visible behavior or failing tests.
 - Publishing anything outside the repository.
+- Spending past a stated budget, and moving work to a more expensive resource tier (model class, hardware, paid service). "Use a stronger X" in an approved plan means the cheapest untested increment, never a silent jump to a higher price class.
 
 Project-specific additions: `<list them here>`
 

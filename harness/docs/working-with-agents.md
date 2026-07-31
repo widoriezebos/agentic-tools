@@ -18,10 +18,11 @@ If an agent is not doing these things, say so. Corrections about how it works ar
 
 ## Decisions that come back to you
 
-Some calls are yours by design, and the agent will stop for them: production deployments and data, API or schema contracts, new dependencies, deleting user-visible behavior, and anything on your project's reserved list in `docs/project-rules.md`. Two less obvious ones:
+Some calls are yours by design, and the agent will stop for them: production deployments and data, API or schema contracts, new dependencies, deleting user-visible behavior, spending past a stated budget or onto a costlier resource tier, and anything on your project's reserved list in `docs/project-rules.md`. A few less obvious ones:
 
 - A red test is a question for you. The agent will never weaken or delete a failing test to get to green; it will ask whether the contract changed.
 - Changing an evaluation re-baselines the improvement frontier, so the agent asks before doing both at once.
+- A budget running out arrives as one batched ask — spend so far, what it bought, the remaining options — never as silent overage and never as one question per run.
 - A fired stop-loss comes to you as evidence plus a decision, never as more attempts. The agent stops when an investigation records a dead end, two cycles without progress, or an exhausted budget. That is the mechanism working. The useful responses are a decision, a redesign, or a bigger budget; "just try once more" by reflex is the thing the stop-loss exists to prevent.
 
 When you answer, decide briefly and say why. The reason is what gets captured so the question is never asked twice.

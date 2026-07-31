@@ -12,7 +12,7 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 - State assumptions, blockers, verification performed, unverified areas, and remaining risk.
 - Answer the question first and rank by what matters: verdict up front, detail in proportion to the stakes, evidence level marked (ran it, read it, or inferred it). `docs/collaboration.md` owns the full reporting rules.
 - To resolve ambiguity: check the repository first. For reversible choices, make the smallest assumption and say so. For choices that affect contracts, scope, data, or user-visible behavior, ask first. State the chosen interpretation as something that can be checked.
-- Escalate before acting on human-reserved decisions: irreversible or outward-facing actions, API or schema contracts, new dependencies, and scope changes discovered mid-task. `docs/project-rules.md` lists the project's reserved set.
+- Escalate before acting on human-reserved decisions: irreversible or outward-facing actions, API or schema contracts, new dependencies, spending past a stated budget or onto a costlier resource tier, and scope changes discovered mid-task. `docs/project-rules.md` lists the project's reserved set.
 - Treat a user correction of a convention, preference, or fact as an instruction update: apply it now, and persist it to its owning document when the task authorizes edits. Otherwise propose the capture in your report (`docs/collaboration.md`).
 - Instructions change only through correction capture or a retro, and always through the change gate. Never add a rule mid-task because of a single incident.
 - Prefer the smallest robust solution that satisfies a current user or production contract.
