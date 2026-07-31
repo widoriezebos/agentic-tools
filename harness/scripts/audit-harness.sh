@@ -55,7 +55,11 @@ fi
 # carries meta/harness-design.md. Everywhere else, project-rules.md must be
 # filled in.
 if [[ ! -f meta/harness-design.md ]]; then
-  if rg -n '<[a-z][a-z -]*>' docs/project-rules.md; then
+  # Look for the template's own literal placeholders, exactly as the check on
+  # AGENTS.md and the skills does above. A generic any-angle-bracket pattern
+  # false-positives on legitimately parameterized commands in a filled file
+  # (<port>, <pid>, <prompt> and the like), which a real project-rules is full of.
+  if rg -n '<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>' docs/project-rules.md; then
     echo "adopted repository has unreplaced placeholders in docs/project-rules.md" >&2
     exit 1
   fi
