@@ -91,6 +91,7 @@ Write code a maintainer can follow from names, types, method shape, and local co
 - Durable comments never reference plans, tickets, phases, branches, dates, or other project state; translate history into the standing contract that remains true in the code.
 - Skip boilerplate: remove any comment that restates the name, lists methods, or could describe any similar class.
 - Update or delete documentation in the same change that moves the behavior it describes; stale purpose documentation is worse than none because it sends changes to the wrong owner.
+- Document and test only invariants the implementation actually provides. Verify a claim like "every X has exactly one Y" in the code before writing it down; when verification contradicts the claim, report the contradiction instead of recording the claim. Writing it down anyway turns a false statement into truth by repetition.
 
 ## Deviations
 
@@ -126,6 +127,8 @@ Before implementation, be able to state:
 6. Focused tests at each owning boundary.
 7. Migration/cutover and cleanup.
 8. Why direct change, deletion, reuse, or no change is insufficient.
+
+Ground the answers in traced evidence from the current system: file-and-line facts about how the mechanism works today, including the alternatives the design rejects. When the mechanism is uncertain, trace it before designing against it; a design written ahead of the facts encodes guesses as contracts.
 
 Use `design-obligation-gate.md` when the design will be implemented, expensively validated, reviewed for readiness, or called complete.
 
