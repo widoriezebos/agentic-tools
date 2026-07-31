@@ -66,6 +66,16 @@ done
 [[ -n "$target" ]] || { usage; exit 2; }
 [[ -n "$runtimes" ]] || { usage; exit 2; }
 
+# Validate runtime names before touching anything: a typo must not leave a
+# partially adopted target behind.
+IFS=, read -ra selected_runtimes <<<"$runtimes"
+for rt in "${selected_runtimes[@]}"; do
+  case "$rt" in
+    claude|devin|codex|none) ;;
+    *) die 2 "unknown runtime: $rt (claude, devin, codex, or none)" ;;
+  esac
+done
+
 mkdir -p "$target"
 target=$(cd "$target" && pwd -P)
 
@@ -87,6 +97,8 @@ rules="$target/docs/project-rules.md"
 if [[ -f "$target/wow.md" && -f "$rules" ]] && grep -q '^- Adopted from template SHA:' "$rules"; then
   recorded_line=$(grep '^- Adopted from template SHA:' "$rules" | head -1)
   if [[ "$recorded_line" == *"<template sha>"* || "$recorded_line" == *"$sha"* ]]; then
+    [[ -f "$target/.github/workflows/harness.yml" ]] \
+      || die 1 "target carries this template's marker but looks like an interrupted adoption (missing .github/workflows/harness.yml); finish it manually per docs/project-adaptation.md or start from a clean target"
     echo "target is already this template's installation; nothing to do"
     exit 0
   fi
@@ -176,8 +188,7 @@ for d in "$target"/skills/*/; do
   skill_names+=("$(basename "$d")")
 done
 
-IFS=, read -ra selected <<<"$runtimes"
-for rt in "${selected[@]}"; do
+for rt in "${selected_runtimes[@]}"; do
   case "$rt" in
     claude)
       mkdir -p "$target/.claude/skills" "$target/.claude/agents"
@@ -203,9 +214,6 @@ for rt in "${selected[@]}"; do
       done
       ;;
     none)
-      ;;
-    *)
-      die 2 "unknown runtime: $rt (claude, devin, codex, or none)"
       ;;
   esac
 done

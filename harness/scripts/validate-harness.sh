@@ -8,8 +8,14 @@ scripts/audit-harness.sh .
 
 # Validate every skill present, including project-added and moved optional
 # skills, so this script holds in adopted repositories as well as the template.
+# A skill directory without a SKILL.md is invisible to the find, so check for
+# hollow directories explicitly first.
 for dir in skills optional-skills; do
   [[ -d "$dir" ]] || continue
+  for d in "$dir"/*/; do
+    [[ -d "$d" ]] || continue
+    [[ -f "${d}SKILL.md" ]] || { echo "skill directory without SKILL.md: ${d%/}" >&2; exit 1; }
+  done
   while IFS= read -r skill_md; do
     scripts/validate-skill.sh "$(dirname "$skill_md")"
   done < <(find "$dir" -name SKILL.md | sort)
@@ -79,10 +85,11 @@ if (( template_mode )); then
   done
 fi
 
-# Copied (non-symlink) Claude skill registrations must not drift from their
-# canonical source under skills/.
-if [[ -d .claude/skills ]]; then
-  for reg in .claude/skills/*/; do
+# Copied (non-symlink) skill registrations must not drift from their
+# canonical source under skills/, for every runtime that takes copies.
+for regroot in .claude/skills .agents/skills; do
+  [[ -d "$regroot" ]] || continue
+  for reg in "$regroot"/*/; do
     [[ -e "$reg" ]] || continue
     reg=${reg%/}
     name=$(basename "$reg")
@@ -92,7 +99,7 @@ if [[ -d .claude/skills ]]; then
       exit 1
     fi
   done
-fi
+done
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -403,6 +410,12 @@ if (( template_mode )); then
     echo "adopted-mode validation failed for a copy with one skill pruned" >&2
     exit 1
   }
+  mkdir "$adopted/skills/hollow"
+  if bash "$adopted/scripts/validate-harness.sh" >/dev/null 2>&1; then
+    echo "adopted-mode validation accepted a skill directory without SKILL.md" >&2
+    exit 1
+  fi
+  rmdir "$adopted/skills/hollow"
   grep -v '^name:' "$adopted/skills/verify/SKILL.md" >"$adopted/skills/verify/SKILL.md.new"
   mv "$adopted/skills/verify/SKILL.md.new" "$adopted/skills/verify/SKILL.md"
   if bash "$adopted/scripts/validate-harness.sh" >/dev/null 2>&1; then
@@ -427,13 +440,15 @@ if (( template_mode )); then
   src_sha=$(git -C "$srcrepo" rev-parse HEAD)
 
   tgt="$tmp/adopt-default"
+  mkdir -p "$tgt"
+  printf 'project readme\n' >"$tgt/README.md"
   bash "$adopt" "$tgt" >/dev/null
   [[ -f "$tgt/.github/workflows/harness.yml" ]] || { echo "adopt: CI workflow not installed" >&2; exit 1; }
   [[ -L "$tgt/.claude/skills/verify" ]] || { echo "adopt: claude skill symlink missing" >&2; exit 1; }
   [[ -f "$tgt/.claude/agents/verify.md" ]] || { echo "adopt: claude agent profile missing" >&2; exit 1; }
   grep -q systemMessage "$tgt/.claude/settings.json" || { echo "adopt: settings.json lacks the shipped hook" >&2; exit 1; }
   [[ ! -e "$tgt/optional-skills" ]] || { echo "adopt: unselected optional skills were copied" >&2; exit 1; }
-  [[ ! -e "$tgt/README.md" ]] || { echo "adopt: template README copied into the target" >&2; exit 1; }
+  [[ "$(cat "$tgt/README.md")" == "project readme" ]] || { echo "adopt: the project's own README was touched" >&2; exit 1; }
   [[ ! -e "$tgt/ignored-fixture.txt" ]] || { echo "adopt: ignored source content entered the payload" >&2; exit 1; }
   [[ "$(ls "$tgt/plans" | sort | tr '\n' ' ')" == "README.md instruction-ledger.md known-issues.md " ]] \
     || { echo "adopt: plans/ payload carries more than the standing ledgers" >&2; exit 1; }
@@ -468,15 +483,23 @@ if (( template_mode )); then
   [[ -f "$tmp/adopt-none/.github/workflows/harness.yml" ]] || { echo "adopt: CI workflow skipped for --runtimes none" >&2; exit 1; }
   bash "$adopt" "$tmp/adopt-java" --enable debug-java >/dev/null
   [[ -f "$tmp/adopt-java/skills/debug-java/SKILL.md" ]] || { echo "adopt: --enable did not move the optional skill" >&2; exit 1; }
-  bash "$adopt" "$tmp/adopt-copy" --copy-skills >/dev/null
+  bash "$adopt" "$tmp/adopt-copy" --runtimes claude,codex --copy-skills >/dev/null
   [[ -d "$tmp/adopt-copy/.claude/skills/verify" && ! -L "$tmp/adopt-copy/.claude/skills/verify" ]] \
     || { echo "adopt: --copy-skills did not copy" >&2; exit 1; }
+  [[ -d "$tmp/adopt-copy/.agents/skills/verify" && ! -L "$tmp/adopt-copy/.agents/skills/verify" ]] \
+    || { echo "adopt: --copy-skills did not copy the codex registration" >&2; exit 1; }
   sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/docs/project-rules.md" >"$tmp/adopt-copy/docs/project-rules.md.new"
   mv "$tmp/adopt-copy/docs/project-rules.md.new" "$tmp/adopt-copy/docs/project-rules.md"
   bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1 || { echo "adopt: copied-skills target failed validation" >&2; exit 1; }
   echo drift >>"$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
   if bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1; then
-    echo "adopt: validation missed a drifted skill copy" >&2
+    echo "adopt: validation missed a drifted claude skill copy" >&2
+    exit 1
+  fi
+  cp "$tmp/adopt-copy/skills/verify/SKILL.md" "$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
+  echo drift >>"$tmp/adopt-copy/.agents/skills/verify/SKILL.md"
+  if bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1; then
+    echo "adopt: validation missed a drifted codex skill copy" >&2
     exit 1
   fi
 
@@ -488,8 +511,26 @@ if (( template_mode )); then
   fi
   mkdir -p "$tmp/adopt-collide/docs"
   echo different >"$tmp/adopt-collide/docs/collaboration.md"
-  if bash "$adopt" "$tmp/adopt-collide" >/dev/null 2>&1; then
+  if bash "$adopt" "$tmp/adopt-collide" >/dev/null 2>"$tmp/collide.err"; then
     echo "adopt: overwrote or skipped a colliding payload path" >&2
+    exit 1
+  fi
+  grep -q 'docs/collaboration.md' "$tmp/collide.err" || {
+    echo "adopt: collision refusal did not name the colliding path" >&2
+    exit 1
+  }
+  if bash "$adopt" "$tmp/adopt-bogus" --runtimes codez >/dev/null 2>&1; then
+    echo "adopt: accepted an unknown runtime name" >&2
+    exit 1
+  fi
+  [[ ! -e "$tmp/adopt-bogus/wow.md" ]] || {
+    echo "adopt: a rejected runtime name still mutated the target" >&2
+    exit 1
+  }
+  bash "$adopt" "$tmp/adopt-partial" >/dev/null
+  rm "$tmp/adopt-partial/.github/workflows/harness.yml"
+  if bash "$adopt" "$tmp/adopt-partial" >/dev/null 2>&1; then
+    echo "adopt: rerun over an incomplete installation reported success" >&2
     exit 1
   fi
   echo dirty >>"$srcrepo/wow.md"
