@@ -66,6 +66,29 @@ done
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+# The shipped Stop hook must stay rooted and surface via JSON output: hooks
+# run in the session's cwd, receipt.sh resolves its ledger from there, and a
+# non-blocking exit code shows only a first-line hook-error notice.
+hooks_json=scripts/enforcement/claude-code-hooks.json
+grep -Fq 'cd \"$CLAUDE_PROJECT_DIR\"' "$hooks_json" || { echo "stop hook is not rooted at CLAUDE_PROJECT_DIR" >&2; exit 1; }
+grep -Fq 'systemMessage' "$hooks_json" || { echo "stop hook does not surface a systemMessage when a retro is due" >&2; exit 1; }
+if grep -Fq '|| true' "$hooks_json"; then
+  echo "stop hook masks the retro-due exit code with || true" >&2
+  exit 1
+fi
+if command -v python3 >/dev/null; then
+  hook_cmd=$(python3 -c "import json; print(json.load(open('$hooks_json'))['hooks']['Stop'][0]['hooks'][0]['command'])")
+  hookrepo="$tmp/hookrepo"
+  mkdir -p "$hookrepo/scripts" "$hookrepo/plans"
+  cp scripts/receipt.sh "$hookrepo/scripts/"
+  printf '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n' >"$hookrepo/plans/receipts.log"
+  out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
+  grep -q systemMessage <<<"$out" || { echo "stop hook stayed silent on a due retro" >&2; exit 1; }
+  printf '%s|%s|RETRO|note=fixture\n' "$(date -u +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$hookrepo/plans/receipts.log"
+  out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
+  [[ -z "$out" ]] || { echo "stop hook emitted output when no retro is due" >&2; exit 1; }
+fi
+
 # The debug-java preflight is optional: absent in adopted repositories that
 # excluded the skill, moved into skills/ in JVM repositories that enabled it.
 for preflight in optional-skills/debug-java/scripts/preflight.sh skills/debug-java/scripts/preflight.sh; do

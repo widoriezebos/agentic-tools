@@ -1,12 +1,12 @@
 {
-  "_comment": "Shipped enforcement example: merge the hooks block into the project's .claude/settings.json during adaptation. The Stop hook surfaces retro-due state at the end of every Claude Code turn, so cadence detection does not depend on anyone running the check by hand.",
+  "_comment": "Shipped enforcement example: merge the hooks block into the project's .claude/settings.json during adaptation. When a retro is due, the Stop hook emits a systemMessage that Claude Code shows to the user at the end of the turn; when the cadence is not due it stays silent. The command roots itself at $CLAUDE_PROJECT_DIR because hooks run in the session's current working directory and receipt.sh resolves its ledger from there. Exit-code stderr is unreliable for surfacing text (a non-blocking error shows only a first-line hook-error notice), so the hook uses JSON output instead.",
   "hooks": {
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/receipt.sh check || true"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && bash scripts/receipt.sh check >/dev/null 2>&1 || echo '{\"systemMessage\":\"Harness retro due: run scripts/receipt.sh check for details, then skills/retro.\"}'"
           }
         ]
       }
