@@ -27,6 +27,8 @@ A change with no supporting evidence after two consecutive reviews is reverted b
 
 Record the period numbers from `stats` in the ledger so retros stay comparable over time. Then look for patterns, never single anecdotes: a skill that should have triggered but did not; verification repeatedly catching the same class of issue; corrections clustering around one convention; ceremony notes; skills and rules no receipt ever mentions.
 
+Also weigh process against product for the period. When plan and ledger edits outgrow shipped code, or bookkeeping commits accumulate while executed verification declines, the process has started substituting records for evidence, and that inversion is itself a retro finding.
+
 ## Step 3: Propose
 
 Each proposal passes the change gate in `docs/project-adaptation.md` and lands as a ledger row:
