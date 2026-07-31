@@ -78,4 +78,16 @@ max_words=${HARNESS_MAX_ALWAYS_LOADED_WORDS:-1400}
 words=$(cat AGENTS.md wow.md | wc -w | tr -d ' ')
 (( words <= max_words )) || { echo "always-loaded instructions exceed $max_words words" >&2; exit 1; }
 
+# Report only, uncapped: the effective per-task footprint. Project rules,
+# collaboration, and the completion gate load on nearly every repo-changing
+# task, and design principles on most; stating the real number keeps the
+# capped always-loaded metric honest.
+bundle=(AGENTS.md wow.md docs/project-rules.md docs/collaboration.md docs/design/design-obligation-gate.md docs/design/design-principles.md)
+present=()
+for f in "${bundle[@]}"; do
+  [[ -f "$f" ]] && present+=("$f")
+done
+bundle_words=$(cat "${present[@]}" | wc -w | tr -d ' ')
+echo "Effective common-path bundle: $bundle_words words (report only)"
+
 echo "harness audit passed"
