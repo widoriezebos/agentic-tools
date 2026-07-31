@@ -14,6 +14,8 @@ Agents working on real projects fail in predictable ways, and most of those fail
 - **False completion.** "Done" gets claimed because the code exists and tests pass, without anyone driving the change end to end.
 - **Forgotten lessons.** Corrections are applied once and then repeated forever. Session context dies and the next session starts from scratch.
 - **Unreviewable output.** The human reviewer gets one huge diff with the risky change buried in the middle.
+- **Unsupervised runs.** A long job hangs in its tenth minute but reports "running" all night to a status-only watcher, or a healthy quiet run gets killed for silence.
+- **Runaway spend.** Paid runs launch on estimates, failure-mode runs cost multiples of healthy ones, and the gap surfaces on the invoice.
 - **Prose mistaken for enforcement.** Hard requirements live as sentences the model may or may not follow, instead of scripts that fail.
 
 Each failure class has a named answer, and where the rule is binary, a script that enforces it:
@@ -26,6 +28,8 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | False completion | The verify skill (drive the change end to end and report the observed output) and the five-question completion check, with the obligation matrix for risky changes | `scripts/assert-design-obligation-gate.sh` refuses completion while critical obligations lack proof. A report that says "should work" is treated as a defect |
 | Forgotten lessons | Correction capture (a correction updates the instructions in their one owning document) and handoff notes that carry unfinished work across sessions | Receipts record every correction, the retro reviews the pattern, and the instruction ledger holds every rule change with a testable expected effect |
 | Unreviewable output | The collaboration rules: one intent per commit, mechanical churn separated from behavior change, and reports that start with the riskiest part | The human sends unreviewable diffs back; splitting them is the agent's job, and repeated offenses become retro findings |
+| Unsupervised runs | The supervision rules in `docs/orchestration.md`: detached launches, a verified liveness signal, watchers that trip on three independent conditions, budgets that wind down instead of interrupting | Watchers are project tooling; the harness sets their contract, and incidents land in receipts and `plans/known-issues.md` |
+| Runaway spend | Budgets as project facts, spend measured from the provider's own records, and overage or a costlier resource tier as human-reserved decisions | No script can read an external invoice: the fence lives in `docs/project-rules.md`, overage requires an explicit ask, and the retro compares spend against receipts |
 | Prose mistaken for enforcement | Binary rules become scripts, and the enforcement ships ready to wire in: a CI workflow and Claude Code hooks under `scripts/enforcement/` | `scripts/validate-harness.sh` runs positive and negative fixtures for the gate scripts, in the template and in adopted repositories |
 
 ## What it does
@@ -34,15 +38,15 @@ Each failure class has a named answer, and where the rule is binary, a script th
 | --- | --- |
 | Always-on operating contract: inspect first, match the requested action, resolve ambiguity in a fixed order, escalate human-reserved decisions, capture corrections, completion duties | [`AGENTS.md`](AGENTS.md) |
 | Single routing index: what to load, when | [`wow.md`](wow.md) |
-| Project facts: commands, invariants, reserved decisions, external ownership | [`docs/project-rules.md`](docs/project-rules.md) (replaced per project) |
+| Project facts: commands, invariants, reserved decisions, budgets, external ownership | [`docs/project-rules.md`](docs/project-rules.md) (replaced per project) |
 | Code and design standards: priority order, responsibility-driven ownership, domain-driven design for domain-heavy systems, self-documenting code | [`docs/design/design-principles.md`](docs/design/design-principles.md) |
-| Completion gate: a five-question default check on every change; a full obligation matrix only on explicit risk triggers | [`docs/design/design-obligation-gate.md`](docs/design/design-obligation-gate.md) |
+| Completion gate: a five-question default check on every change; one full-suite run at declared milestones; a full obligation matrix only on explicit risk triggers | [`docs/design/design-obligation-gate.md`](docs/design/design-obligation-gate.md) |
 | End-to-end verification: observed behavior as the only proof a change works | [`skills/verify/`](skills/verify/SKILL.md) |
 | Adversarial design critique: findings-only critique, a materiality criterion that binds the critic, adjudication of every finding, and a loop that stops when critique stops changing what would be built | [`skills/design-critique/`](skills/design-critique/SKILL.md) |
 | Behavior-preserving refactor mode: trusted baseline, tests before restructuring, risk-sized replayable batches, validation ladder, bounded failure handling | [`skills/refactor/`](skills/refactor/SKILL.md) |
 | Improvement mode: improvement contract, frontier ledger with noise floor, single-mechanism experiments, anti-overfitting, stop conditions | [`skills/improve/`](skills/improve/SKILL.md) |
 | Investigation stop-loss: evidence-first diagnosis, cycle contracts, classifications, hard stop conditions | [`skills/take-a-step-back/`](skills/take-a-step-back/SKILL.md) |
-| Delegation judgment: when to fan out to subagents, when to avoid it, how peer agents coexist | [`docs/orchestration.md`](docs/orchestration.md) |
+| Delegation judgment: when to fan out to subagents, when to avoid it, how long runs are supervised, how peer agents coexist | [`docs/orchestration.md`](docs/orchestration.md) |
 | Human collaboration: reviewable increments, reports that lead with the review guide, correction capture, escalation shape | [`docs/collaboration.md`](docs/collaboration.md) |
 | The human's guide: handing over work, reviewing, making corrections stick, running multiple agents, recurring duties | [`docs/working-with-agents.md`](docs/working-with-agents.md) |
 | Session continuity: owned handoff notes for multi-session streams | [`plans/README.md`](plans/README.md) |
