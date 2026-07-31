@@ -60,13 +60,14 @@ if [[ -n "$budget" ]] && (( total_cycles >= budget )); then
   exit 1
 fi
 if [[ -n "$no_gain_budget" ]]; then
-  classified=$(grep -c . <<<"$classifications" || true)
-  last_gain=$(grep -n '^contract-improved$' <<<"$classifications" | tail -1 | cut -d: -f1 || true)
-  if [[ -n "$last_gain" ]]; then
-    trailing=$((classified - last_gain))
-  else
-    trailing=$classified
-  fi
+  # Count trailing CYCLES, not classification lines: a cycle with a missing
+  # or unrecognized classification is certainly not a confirmed gain, so it
+  # counts toward the budget instead of vanishing from it.
+  trailing=$(awk '
+    /^### Cycle/ { c++ }
+    /^- Classification:/ && /contract-improved/ { g = c }
+    END { print c - g }
+  ' "$file")
   if (( trailing >= no_gain_budget )); then
     echo "stop-loss triggered: $trailing trailing cycles without a contract-improved against a no-gain budget of $no_gain_budget. Stop and hand over the frontier and what was learned" >&2
     exit 1

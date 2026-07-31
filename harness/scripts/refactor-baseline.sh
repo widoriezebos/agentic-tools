@@ -60,7 +60,9 @@ rel_file=${abs_file#"$toplevel"/}
 worktree_dirty() { [[ -n "$(git status --porcelain)" ]]; }
 
 worktree_dirty_beyond_baseline() {
-  git -C "$toplevel" status --porcelain --untracked-files=all \
+  # core.quotePath=false keeps non-ASCII paths literal so the comparison
+  # against rel_file holds for them too.
+  git -C "$toplevel" -c core.quotePath=false status --porcelain --untracked-files=all \
     | awk -v rel="$rel_file" 'substr($0, 4) != rel { found = 1 } END { exit found ? 0 : 1 }'
 }
 

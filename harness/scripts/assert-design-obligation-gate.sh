@@ -108,7 +108,7 @@ for file in "${FILES[@]}"; do
       if (original ~ /`[^`]+`/) {
         return 1
       }
-      if (original ~ /[[:alnum:]_\/.-]+\.(java|kt|scala|ts|tsx|js|jsx|py|go|rs|rb|cs|cpp|c|h|sql|md|json|xml|yml|yaml|sh|log)/) {
+      if (original ~ /[[:alnum:]_\/.-]+\.(java|kt|kts|scala|ts|tsx|js|jsx|py|go|rs|rb|cs|cpp|c|h|sql|md|json|xml|yml|yaml|sh|log|toml|txt|csv|gradle|properties|ini|cfg|conf|lock|env|proto|tf|ipynb|ps1|bat|html|css)/) {
         return 1
       }
       if (original ~ /[[:alnum:]_.-]+\/[[:alnum:]_\/.-]+/) {

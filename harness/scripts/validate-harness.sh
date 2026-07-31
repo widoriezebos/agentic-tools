@@ -177,6 +177,11 @@ if scripts/assert-design-obligation-gate.sh --file "$tmp/empty-na.md" >/dev/null
   echo "obligation gate accepted an empty-delimiter Not applicable" >&2
   exit 1
 fi
+sed 's/| `owner.py` | `owner.py` |/| `owner.py` | pyproject.toml |/' "$tmp/good.md" >"$tmp/toml.md"
+scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/toml.md" >/dev/null || {
+  echo "obligation gate rejected an unbackticked config-file proof path" >&2
+  exit 1
+}
 # Matrices shown inside fenced code blocks are documentation, not declarations.
 { printf '```markdown\n'; cat "$tmp/good.md"; printf '```\n'; } >"$tmp/fenced.md"
 if scripts/assert-design-obligation-gate.sh --file "$tmp/fenced.md" >/dev/null 2>&1; then
@@ -239,6 +244,13 @@ git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit
 }
 git -C "$repo" add plans/abs-baseline
 git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm abs-baseline
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "plans/bäseline" >/dev/null)
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" check --file "plans/bäseline" >/dev/null) || {
+  echo "refactor baseline check blocked a non-ASCII --file right after record (quotePath)" >&2
+  exit 1
+}
+git -C "$repo" add "plans/bäseline"
+git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm nonascii-baseline
 if (cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "$tmp/outside-baseline" >/dev/null 2>&1); then
   echo "refactor baseline accepted a --file outside the repository" >&2
   exit 1
@@ -268,6 +280,15 @@ if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-old" >/dev/nul
 fi
 printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-nowindow"
 scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-nowindow" >/dev/null
+scripts/frontier.sh status --file "$tmp/frontier-nowindow" | grep -qx 'direction=max' || {
+  echo "frontier status hid the effective direction of a legacy file" >&2
+  exit 1
+}
+printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\ndirection=sideways\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-malformed"
+if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-malformed" >/dev/null 2>&1; then
+  echo "frontier challenge accepted a malformed persisted direction" >&2
+  exit 1
+fi
 
 # Lower-is-better frontiers: persisted direction, force-gated changes, and a
 # challenge that only ever uses the stored direction.
@@ -327,6 +348,11 @@ scripts/assert-stop-loss.sh --file "$tmp/nogain-optout.md" >/dev/null || {
   echo "stop-loss check blocked unresolved cycles without a declared no-gain budget" >&2
   exit 1
 }
+printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n### Cycle E3\n- Classification: falsified-continue\n' >"$tmp/nogain-unclassified.md"
+if scripts/assert-stop-loss.sh --file "$tmp/nogain-unclassified.md" >/dev/null 2>&1; then
+  echo "stop-loss no-gain count let an unclassified cycle vanish from the tail" >&2
+  exit 1
+fi
 
 rfile="$tmp/receipts.log"
 scripts/receipt.sh add --type implement --outcome shipped --file "$rfile" >/dev/null
