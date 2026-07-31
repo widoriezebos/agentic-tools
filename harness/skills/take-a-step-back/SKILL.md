@@ -58,6 +58,8 @@ Immediately classify the result:
 
 Only `contract-improved` and `falsified-continue` authorize another cycle without user direction.
 
+One dead end deserves its own name: a capability ceiling, where the model, tool, or dependency cannot do what the mechanism requires. Prompt and parameter variations cannot cross it — stop iterating the moment evidence isolates one. Record it in `plans/known-issues.md` with the evidence, the realistic cost when it bites, and the named escalation lever (a stronger resource tier, an upstream fix, a design change); the lever is usually a reserved decision in `docs/project-rules.md`. Do not retry without new evidence. When the same issue bites again, append the occurrence to its entry and raise its priority instead of reopening the investigation.
+
 ## Stop-Loss
 
 Record every cycle and its classification in the ledger, and run `scripts/assert-stop-loss.sh --file <ledger>` before contracting a new cycle. It blocks on the machine-checkable triggers below (a dead end, two no-progress cycles, the declared cycle budget); the remaining triggers stay your judgment. Do not argue with the check.
