@@ -9,7 +9,7 @@ Replace this file when adopting the harness. Keep facts concrete and repository-
 - Test roots: `<paths>`
 - Generated files: `<paths and ownership>`
 - Sensitive or protected areas: `<paths>`
-- Durable evidence root: `<path>`. Outside the repository and every build tree; holds the only-copy run evidence that must survive (rules in `plans/README.md`).
+- Durable evidence root: `<path outside the repository>`. Outside the repository and every build tree; holds the only-copy run evidence that must survive (rules in `plans/README.md`).
 
 ## Commands
 
@@ -30,8 +30,8 @@ State realistic timeouts and prerequisites here. Do not repeat these commands in
 Where agents can spend real money (model calls, paid APIs, cloud runs), state the facts that make the spend governable:
 
 - Spend fence, covering total spend across providers and agents rather than per run: `<amount and period>`
-- Proactive warning threshold below the fence: `<threshold>`
-- Who approves overage and resource-tier changes: `<owner>`
+- Proactive warning threshold below the fence: `<warning threshold>`
+- Who approves overage and resource-tier changes: `<who approves>`
 - The authoritative usage source that spend is measured from (never estimates): `<usage source>`
 
 ## Local Invariants
