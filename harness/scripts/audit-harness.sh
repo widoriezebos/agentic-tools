@@ -63,7 +63,7 @@ if [[ ! -f meta/harness-design.md ]]; then
   # AGENTS.md and the skills does above. A generic any-angle-bracket pattern
   # false-positives on legitimately parameterized commands in a filled file
   # (<port>, <pid>, <prompt> and the like), which a real project-rules is full of.
-  if rg -n '<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>' docs/project-rules.md; then
+  if rg -n '<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>' docs/project-rules.md; then
     echo "adopted repository has unreplaced placeholders in docs/project-rules.md" >&2
     exit 1
   fi

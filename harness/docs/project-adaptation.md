@@ -10,7 +10,7 @@ These steps assume a repository without existing agent instruction assets. If th
 6. Add project-specific skills only for specialist workflows used repeatedly. Initialize and validate each skill; keep detailed references one hop from `SKILL.md`.
 7. Put task state in `plans/`, generated evidence in the gitignored `artifacts/` directory at the repository root (create it and add it to the project's `.gitignore`), and durable decisions in code and docs. Do not keep them in root prompt history.
 8. Run `scripts/validate-harness.sh`, then a focused project build and test. Wire the hard checks into machinery, starting from the shipped examples: copy `scripts/enforcement/github-actions-harness.yml` to `.github/workflows/harness.yml` (it installs ripgrep, which the audit requires) and merge `scripts/enforcement/claude-code-hooks.json` into `.claude/settings.json` so a due retro surfaces as a visible notice at the end of every Claude Code turn (the Stop hook emits a systemMessage; when the cadence is not due it stays silent). Hard checks must not depend on anyone remembering to run them.
-9. Record the template commit SHA adopted from as a line in `docs/project-rules.md`; future template migrations diff against it (see the README's updating section).
+9. Replace the `<template sha>` placeholder in `docs/project-rules.md` with the template commit SHA adopted from; future template migrations diff against it (see the README's updating section). `scripts/adopt.sh` fills it automatically.
 
 ## What Not to Copy Forward
 

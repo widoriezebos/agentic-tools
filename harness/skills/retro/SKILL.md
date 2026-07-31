@@ -17,11 +17,12 @@ The harness improves itself the same way improve mode improves code: changes car
 
 Before proposing anything new, give every ledger row adopted at an earlier retro a verdict against this period's evidence:
 
-- `KEPT`: the expected effect is visible, or the change is cheap and nothing contradicts it.
+- `KEPT`: the expected effect is visible in this period's evidence.
+- `KEPT-UNPROVEN`: the change is cheap and nothing contradicts it, but no supporting evidence appeared. This is a tracked state, not an acquittal.
 - `AMENDED`: directionally right but the wording or trigger needed adjustment. Record the amendment as a new row.
 - `REVERTED`: the expected effect did not appear, or ceremony notes name the change as a cost. Remove the instruction in this same retro.
 
-A change with no supporting evidence after two consecutive reviews is reverted by default. Keeping it requires an argument; reverting it does not.
+A row whose previous verdict was already `KEPT-UNPROVEN` and earns it again is reverted by default: two consecutive unsupported reviews end a rule. Keeping it requires an argument; reverting it does not.
 
 ## Step 2: Mine the Period
 

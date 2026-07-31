@@ -4,6 +4,7 @@ Replace this file when adopting the harness. Keep facts concrete and repository-
 
 ## Project Map
 
+- Adopted from template SHA: `<template sha>`. Filled by `scripts/adopt.sh`; future template migrations diff against it.
 - Purpose: `<one paragraph>`
 - Production entrypoints: `<paths>`
 - Test roots: `<paths>`
