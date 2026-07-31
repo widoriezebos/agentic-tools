@@ -46,6 +46,13 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Milestone-scope verification: one full-suite run in the certifier's own environment at declared milestones; a delegate's greens and reds are environment-bound claims to re-verify | One template variable broke four unrelated test classes while focused suites green-lit three consecutive milestone commits (2026-07-21); the delegate sandbox's measured limitations (no network sockets, no ref locks, no attach) made its results untrustworthy in both directions | Obligation gate (Milestone Check); orchestration (Delegation Contract) |
 | Deferred decommission tracking: a switch that outlives its rollback window is a decommission task including the switch itself; removal that cannot land in the same change is a named tracked work item | Owner directive 2026-07-23 ("code that gets switched off should also be removed... I don't want dangling code"); executed in the source repository as a 16.7k-line deletion covering the losing paths and the switch | Design principles (clean-cutover rule) |
 | Delegation gap rule: the contract states that unspecified gaps stop for review instead of being filled silently | The delegate's characteristic failure mode across the source campaign was silently filling unspecified gaps; mandatory stop-for-review checkpoints existed specifically to catch it | Orchestration (Delegation Contract) |
+| Delegated-implementation pipeline: facts traced before design, specs that leave the delegate no judgment calls, two-layer review of returned work (conformance, then adversarial implementation critique), corrections to the delegate's existing context, explicit workspace and acceptance criteria in the contract | Owner policy after a week-long delegation campaign (2026-07-20): the campaign's one bad contract was designed ahead of the traced facts, unreviewed returned diffs carried unrelated changes, and same-thread corrections with two-layer review were installed as the canonical workflow | Orchestration (Delegated Implementation) |
+| Explicit-path staging while delegated or peer work is in flight | The source dispatch protocol forbids add-all commits while tasks are live; the tree routinely held half-applied delegate output alongside the change being committed | Collaboration (Reviewable Increments) |
+| A standing waiting-on-the-human list in the stream's handoff note | The source status file's owner-owed list (policy 2026-07-20); its audit surfaced a composed cross-lane request that was lost unsent and rediscovered only by a later review | `plans/README.md` handoff shape |
+| Design grounding in traced facts: file-and-line evidence of the current mechanism, including rejected alternatives, before designing | Recorded owner lesson (2026-07-20): "the one bad contract came from designing ahead of the facts" | Design principles (Design Questions) |
+| Invariants verified before documented or tested | A session asked to document an invariant found the code contradicts it, recorded the contradiction, and refused to add the doc or test rather than turn a false claim into truth by repetition (source follow-up ledger) | Design principles (Documentation) |
+| Spend admissibility: accounting coverage proven before the first paid call, throttles in the system under test are never budgets, missing telemetry is never zero | A live paid run was aborted at zero spend (2026-07-19) when tracing showed provider-call owners bypass the usage accounting, making the budget unenforceable; adjudication ruled config throttles inadmissible as budgets after a lane sat inside its caps with a 4,800-request retry envelope | Improve skill (Improvement Contract) |
+| Process-inversion signal at retro: plan and ledger growth outpacing shipped code is evidence-substitution | An audited source week: 46 percent of commits moved no product code, twenty consecutive bookkeeping commits, plans up 89k lines against roughly 2.2k lines of authored code, HEAD uncompilable for 1.5 days | Retro skill (Mine the Period) |
 
 ## Removed or Narrowed
 
@@ -73,6 +80,13 @@ The repositories were treated as evidence, not as modules to concatenate. Recent
 | Codebase-learning recipe for unfamiliar repositories | Receipts show repeated exploration waste at session start |
 | PR/CI-shaped workflow guidance (post-push failures, review comments) | Receipts show failures in the PR loop |
 | Session-capacity guidance (context exhaustion and compaction mid-task) | Receipts or handoff notes show work lost to exhausted context |
+
+## Deferred With Triggers (2026-07-31 third harvest)
+
+| Item | Reopen trigger |
+| --- | --- |
+| Cross-repository coordination: readiness handshakes recording immutable SHAs, execution authority moved between repositories, approval decoupled from execution with grant-time re-baseline | First adoption spanning coordinated repositories or lanes |
+| Independent audit workflow: stable finding ids, independent re-verification before remediation, closure table with owner decisions and tripwires on kept behavior | Receipts show defects surviving normal review, or the human asks for a standing audit |
 
 ## Ideal Harness Judgment
 
