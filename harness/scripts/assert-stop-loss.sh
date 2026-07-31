@@ -65,7 +65,7 @@ if [[ -n "$no_gain_budget" ]]; then
   # counts toward the budget instead of vanishing from it.
   trailing=$(awk '
     /^### Cycle/ { c++ }
-    /^- Classification:/ && /contract-improved/ { g = c }
+    /^- Classification:[[:space:]]*`?contract-improved(`|[^a-zA-Z-]|$)/ { g = c }
     END { print c - g }
   ' "$file")
   if (( trailing >= no_gain_budget )); then

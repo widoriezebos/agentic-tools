@@ -85,16 +85,21 @@ if (( template_mode )); then
   done
 fi
 
-# Copied (non-symlink) skill registrations must not drift from their
-# canonical source under skills/, for every runtime that takes copies.
+# Registered skills must track their canonical source under skills/: copies
+# must not drift, orphaned copies of a pruned skill must not linger, and a
+# symlink to a pruned skill is dangling.
 for regroot in .claude/skills .agents/skills; do
   [[ -d "$regroot" ]] || continue
-  for reg in "$regroot"/*/; do
-    [[ -e "$reg" ]] || continue
-    reg=${reg%/}
+  for reg in "$regroot"/*; do
+    [[ -e "$reg" || -L "$reg" ]] || continue
     name=$(basename "$reg")
-    [[ -L "$reg" ]] && continue
-    if [[ -d "skills/$name" ]] && ! diff -rq "$reg" "skills/$name" >/dev/null 2>&1; then
+    if [[ -L "$reg" ]]; then
+      [[ -e "$reg" ]] || { echo "registered skill link is dangling: $reg" >&2; exit 1; }
+      continue
+    fi
+    [[ -d "$reg" ]] || continue
+    [[ -d "skills/$name" ]] || { echo "orphaned registered skill copy: $reg has no skills/$name source" >&2; exit 1; }
+    if ! diff -rq "$reg" "skills/$name" >/dev/null 2>&1; then
       echo "registered skill copy has drifted from its source: $reg vs skills/$name" >&2
       exit 1
     fi
@@ -132,6 +137,8 @@ if command -v python3 >/dev/null; then
     echo "stop hook misreported a check error as a due retro" >&2
     exit 1
   fi
+  out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$tmp/definitely-missing" bash -c "$hook_cmd")
+  grep -q "project directory" <<<"$out" || { echo "stop hook stayed silent on an unresolvable project directory" >&2; exit 1; }
 fi
 
 # The debug-java preflight is optional: absent in adopted repositories that
@@ -189,6 +196,16 @@ scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/toml.md
   echo "obligation gate rejected an unbackticked config-file proof path" >&2
   exit 1
 }
+sed 's/| `owner.py` | `owner.py` |/| `owner.py` | module.mjs |/' "$tmp/good.md" >"$tmp/mjs.md"
+scripts/assert-design-obligation-gate.sh --runtime-required --file "$tmp/mjs.md" >/dev/null || {
+  echo "obligation gate rejected an unbackticked filename outside the old whitelist" >&2
+  exit 1
+}
+sed 's/| `owner.py` | `owner.py` |/| `owner.py` | compare e.g. the results |/' "$tmp/good.md" >"$tmp/eg.md"
+if scripts/assert-design-obligation-gate.sh --file "$tmp/eg.md" >/dev/null 2>&1; then
+  echo "obligation gate mistook abbreviation prose for a filename" >&2
+  exit 1
+fi
 # Matrices shown inside fenced code blocks are documentation, not declarations.
 { printf '```markdown\n'; cat "$tmp/good.md"; printf '```\n'; } >"$tmp/fenced.md"
 if scripts/assert-design-obligation-gate.sh --file "$tmp/fenced.md" >/dev/null 2>&1; then
@@ -258,6 +275,13 @@ git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit
 }
 git -C "$repo" add "plans/bäseline"
 git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm nonascii-baseline
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "plans/my baseline" >/dev/null)
+(cd "$repo" && "$root/scripts/refactor-baseline.sh" check --file "plans/my baseline" >/dev/null) || {
+  echo "refactor baseline check blocked a space-containing --file right after record (C-quoting)" >&2
+  exit 1
+}
+git -C "$repo" add "plans/my baseline"
+git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm space-baseline
 if (cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" --file "$tmp/outside-baseline" >/dev/null 2>&1); then
   echo "refactor baseline accepted a --file outside the repository" >&2
   exit 1
@@ -294,6 +318,11 @@ scripts/frontier.sh status --file "$tmp/frontier-nowindow" | grep -qx 'direction
 printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\ndirection=sideways\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-malformed"
 if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-malformed" >/dev/null 2>&1; then
   echo "frontier challenge accepted a malformed persisted direction" >&2
+  exit 1
+fi
+printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\ndirection=\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-emptydir"
+if scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-emptydir" >/dev/null 2>&1; then
+  echo "frontier challenge accepted an empty persisted direction" >&2
   exit 1
 fi
 
@@ -358,6 +387,11 @@ scripts/assert-stop-loss.sh --file "$tmp/nogain-optout.md" >/dev/null || {
 printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n### Cycle E3\n- Classification: falsified-continue\n' >"$tmp/nogain-unclassified.md"
 if scripts/assert-stop-loss.sh --file "$tmp/nogain-unclassified.md" >/dev/null 2>&1; then
   echo "stop-loss no-gain count let an unclassified cycle vanish from the tail" >&2
+  exit 1
+fi
+printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n- Classification: not-contract-improved\n### Cycle E3\n- Classification: falsified-continue\n' >"$tmp/nogain-fakegain.md"
+if scripts/assert-stop-loss.sh --file "$tmp/nogain-fakegain.md" >/dev/null 2>&1; then
+  echo "stop-loss no-gain count reset on a classification merely containing contract-improved" >&2
   exit 1
 fi
 
@@ -502,6 +536,16 @@ if (( template_mode )); then
     echo "adopt: validation missed a drifted codex skill copy" >&2
     exit 1
   fi
+  cp "$tmp/adopt-copy/skills/verify/SKILL.md" "$tmp/adopt-copy/.agents/skills/verify/SKILL.md"
+  rm -rf "$tmp/adopt-copy/skills/verify"
+  if bash "$tmp/adopt-copy/scripts/validate-harness.sh" >"$tmp/orphan.out" 2>&1; then
+    echo "adopt: validation missed an orphaned copy of a pruned skill" >&2
+    exit 1
+  fi
+  grep -q "orphaned" "$tmp/orphan.out" || {
+    echo "adopt: pruned-skill failure did not name the orphaned copy" >&2
+    exit 1
+  }
 
   mkdir -p "$tmp/adopt-foreign"
   touch "$tmp/adopt-foreign/.cursorrules"
@@ -527,10 +571,24 @@ if (( template_mode )); then
     echo "adopt: a rejected runtime name still mutated the target" >&2
     exit 1
   }
+  if bash "$adopt" "$tmp/adopt-nonemix" --runtimes none,claude >/dev/null 2>&1; then
+    echo "adopt: accepted the contradictory none-plus-runtime form" >&2
+    exit 1
+  fi
+  [[ ! -e "$tmp/adopt-nonemix/wow.md" ]] || {
+    echo "adopt: a rejected runtime combination still mutated the target" >&2
+    exit 1
+  }
   bash "$adopt" "$tmp/adopt-partial" >/dev/null
   rm "$tmp/adopt-partial/.github/workflows/harness.yml"
   if bash "$adopt" "$tmp/adopt-partial" >/dev/null 2>&1; then
     echo "adopt: rerun over an incomplete installation reported success" >&2
+    exit 1
+  fi
+  bash "$adopt" "$tmp/adopt-partial2" >/dev/null
+  rm "$tmp/adopt-partial2/AGENTS.md"
+  if bash "$adopt" "$tmp/adopt-partial2" >/dev/null 2>&1; then
+    echo "adopt: rerun over a structurally broken installation reported success" >&2
     exit 1
   fi
   echo dirty >>"$srcrepo/wow.md"
@@ -539,6 +597,15 @@ if (( template_mode )); then
     exit 1
   fi
   git -C "$srcrepo" checkout -q -- wow.md
+  rm -rf "$tgt/skills/take-a-step-back"
+  if bash "$tgt/scripts/validate-harness.sh" >"$tmp/dangling.out" 2>&1; then
+    echo "adopt: validation missed a dangling registered skill link" >&2
+    exit 1
+  fi
+  grep -q "dangling" "$tmp/dangling.out" || {
+    echo "adopt: pruned-skill failure did not name the dangling link" >&2
+    exit 1
+  }
 fi
 
 echo "harness validation passed"

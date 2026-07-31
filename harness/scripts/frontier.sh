@@ -175,10 +175,13 @@ case "$cmd" in
       exit 1
     fi
     min_delta=$(resolve_min_delta "$(read_field min_delta)")
-    direction=$(read_field direction)
-    [[ -z "$direction" || "$direction" == max || "$direction" == min ]] \
-      || { echo "frontier file has a malformed direction: $direction" >&2; exit 2; }
-    direction=${direction:-max}
+    if grep -q '^direction=' "$file"; then
+      direction=$(read_field direction)
+      [[ "$direction" == max || "$direction" == min ]] \
+        || { echo "frontier file has a malformed direction: '$direction'" >&2; exit 2; }
+    else
+      direction=max
+    fi
     if beats "$score" "$old" "$min_delta" "$direction"; then
       echo "new frontier: $score beats $old by more than $min_delta (direction $direction); preserve this exact state before iterating"
       exit 0
@@ -193,7 +196,7 @@ case "$cmd" in
   status)
     [[ -f "$file" ]] || { echo "no frontier recorded at $file"; exit 0; }
     cat "$file"
-    grep -q '^direction=' "$file" || echo "direction=max"
+    grep -q '^direction=.' "$file" || echo "direction=max"
     ;;
   *)
     usage

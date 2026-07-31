@@ -60,9 +60,11 @@ rel_file=${abs_file#"$toplevel"/}
 worktree_dirty() { [[ -n "$(git status --porcelain)" ]]; }
 
 worktree_dirty_beyond_baseline() {
-  # core.quotePath=false keeps non-ASCII paths literal so the comparison
-  # against rel_file holds for them too.
-  git -C "$toplevel" -c core.quotePath=false status --porcelain --untracked-files=all \
+  # -z porcelain is NUL-delimited and never C-quoted, so paths with spaces
+  # or non-ASCII bytes compare literally. A rename's second record carries no
+  # status prefix and therefore reads as foreign dirt, which is the safe
+  # direction: it blocks.
+  git -C "$toplevel" status --porcelain --untracked-files=all -z | tr '\0' '\n' \
     | awk -v rel="$rel_file" 'substr($0, 4) != rel { found = 1 } END { exit found ? 0 : 1 }'
 }
 

@@ -18,7 +18,8 @@ By default, CRITICAL/HIGH obligations must be DONE or READY_FOR_RUNTIME.
 With --runtime-required, CRITICAL/HIGH obligations must be DONE.
 
 Proof cells on CRITICAL/HIGH rows must be concrete: a backticked token, a
-path-shaped token (a slash or a known file extension), or "Not applicable"
+path-shaped token (a slash, or a filename with a letter-bearing stem and an
+extension of two or more characters, plus .c/.h/.m/.r), or "Not applicable"
 followed by a reason. Bare "Not applicable" fails, and so does keyword-only
 prose ("needs testing"): a status is only as trustworthy as the proof behind
 it. Owner cells on CRITICAL/HIGH rows need a backticked, dotted, slashed,
@@ -108,7 +109,10 @@ for file in "${FILES[@]}"; do
       if (original ~ /`[^`]+`/) {
         return 1
       }
-      if (original ~ /[[:alnum:]_\/.-]+\.(java|kt|kts|scala|ts|tsx|js|jsx|py|go|rs|rb|cs|cpp|c|h|sql|md|json|xml|yml|yaml|sh|log|toml|txt|csv|gradle|properties|ini|cfg|conf|lock|env|proto|tf|ipynb|ps1|bat|html|css)/) {
+      if (original ~ /[[:alpha:]][[:alnum:]_.-]*\.[[:alnum:]][[:alnum:]]+/) {
+        return 1
+      }
+      if (original ~ /[[:alnum:]_\/.-]+\.(c|h|m|r|R)([^[:alnum:]]|$)/) {
         return 1
       }
       if (original ~ /[[:alnum:]_.-]+\/[[:alnum:]_\/.-]+/) {

@@ -75,6 +75,9 @@ for rt in "${selected_runtimes[@]}"; do
     *) die 2 "unknown runtime: $rt (claude, devin, codex, or none)" ;;
   esac
 done
+if [[ "$runtimes" == *none* && "$runtimes" != none ]]; then
+  die 2 "--runtimes none cannot be combined with other runtimes"
+fi
 
 mkdir -p "$target"
 target=$(cd "$target" && pwd -P)
@@ -97,10 +100,12 @@ rules="$target/docs/project-rules.md"
 if [[ -f "$target/wow.md" && -f "$rules" ]] && grep -q '^- Adopted from template SHA:' "$rules"; then
   recorded_line=$(grep '^- Adopted from template SHA:' "$rules" | head -1)
   if [[ "$recorded_line" == *"<template sha>"* || "$recorded_line" == *"$sha"* ]]; then
-    [[ -f "$target/.github/workflows/harness.yml" ]] \
-      || die 1 "target carries this template's marker but looks like an interrupted adoption (missing .github/workflows/harness.yml); finish it manually per docs/project-adaptation.md or start from a clean target"
-    echo "target is already this template's installation; nothing to do"
-    exit 0
+    if [[ -f "$target/.github/workflows/harness.yml" ]] \
+      && (cd "$target" && HARNESS_AUDIT_ALLOW_PLACEHOLDERS=1 bash scripts/audit-harness.sh . >/dev/null 2>&1); then
+      echo "target is already this template's installation; nothing to do"
+      exit 0
+    fi
+    die 1 "target carries this template's marker but is not a complete healthy installation (missing workflow or failing structural audit); finish it manually per docs/project-adaptation.md or start from a clean target"
   fi
   die 1 "target carries an installation at another SHA; follow the upgrade path in docs/harness-reconciliation.md"
 fi
