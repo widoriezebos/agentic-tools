@@ -1,0 +1,19 @@
+# Template repository CI: runs the harness's own hard checks on every push
+# and pull request, so validation does not depend on anyone remembering it.
+# The shipped adoption copy of this workflow lives at
+# harness/scripts/enforcement/github-actions-harness.yml; this file is the
+# template repository's own instance, pointed at the harness/ subdirectory.
+name: harness
+on: [push, pull_request]
+jobs:
+  harness-validation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: harness
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Harness validation
+        run: bash scripts/validate-harness.sh
