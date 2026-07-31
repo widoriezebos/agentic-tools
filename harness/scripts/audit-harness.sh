@@ -11,11 +11,22 @@ for file in "${required[@]}"; do
   [[ -f "$file" ]] || { echo "missing required file: $file" >&2; exit 1; }
 done
 
-# Scope the outside-reference check to harness-owned files only: adopted
-# repositories legitimately contain ../ in their own source and docs.
+# Scope the outside-reference check to harness-owned files ONLY, by explicit
+# list rather than by directory: in adopted repositories docs/ and scripts/
+# also hold project-owned files that legitimately contain ../ (script root
+# resolution) or absolute paths (project registers, frozen histories).
+# docs/project-rules.md is project-owned and deliberately excluded.
 outside_pattern='/'"Users/"'|\.\.'"/"
 scan=()
-for p in AGENTS.md CLAUDE.md wow.md docs skills optional-skills meta scripts plans/README.md plans/instruction-ledger.md; do
+for p in AGENTS.md CLAUDE.md wow.md \
+  docs/orchestration.md docs/collaboration.md docs/working-modes.md \
+  docs/working-with-agents.md docs/project-adaptation.md docs/harness-reconciliation.md \
+  docs/design/design-principles.md docs/design/design-obligation-gate.md docs/examples \
+  skills optional-skills meta \
+  scripts/audit-harness.sh scripts/validate-harness.sh scripts/validate-skill.sh \
+  scripts/assert-design-obligation-gate.sh scripts/refactor-baseline.sh scripts/frontier.sh \
+  scripts/receipt.sh scripts/assert-stop-loss.sh scripts/enforcement \
+  plans/README.md plans/instruction-ledger.md; do
   [[ -e "$p" ]] && scan+=("$p")
 done
 if rg -n "$outside_pattern" "${scan[@]}" --glob '!scripts/audit-harness.sh'; then
