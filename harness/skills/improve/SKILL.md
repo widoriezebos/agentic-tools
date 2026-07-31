@@ -16,6 +16,8 @@ Before the first run, write in the owning plan:
 - Guard metrics that must not regress, with their floors.
 - The budget (runs, cost, wall-clock) and the non-goals.
 
+Track actual spend against the budget as runs complete, from the project's authoritative usage source (`docs/project-rules.md`) rather than estimates, and count failed and invalid runs — a run in a failure mode typically costs several times a healthy one. When the budget runs out with the goal unmet, stop and ask: one batched request stating spend so far, what it bought, and the remaining options. Never run past the fence silently; overage is a reserved decision.
+
 If the evaluation cannot be run on demand, the first deliverable is the evaluation itself. Renegotiate the goal with the human.
 
 ## Frontier Ledger
@@ -29,7 +31,7 @@ If the evaluation cannot be run on demand, the first deliverable is the evaluati
 
 - One mechanism per experiment. Pre-register the hypothesis, the expected signal size relative to the noise floor, and the cheapest signal able to reject it. Use the cycle contract and result classifications from `skills/take-a-step-back/SKILL.md` verbatim.
 - Cheapest rejection first: run the canary or subset evaluation before the full suite whenever the project's evaluation supports it.
-- A delta within the noise floor is noise. Do not count it as progress; repeat the run or increase the effect before believing it. A guard-metric regression is never averaged away by a primary-metric gain.
+- A delta within the noise floor is noise, in both directions. Do not count it as progress; repeat the run or increase the effect before believing it. Equally, a within-noise result refutes nothing — classify it unresolved, never falsified. A guard-metric regression is never averaged away by a primary-metric gain.
 - After a falsified experiment, revert the behavior and keep the learning in the plan. Never stack experiments on unreverted falsified changes.
 - Record each experiment as a ledger cycle with its classification line, and run `scripts/assert-stop-loss.sh --file <plan>` before contracting the next one. It blocks on a dead end, repeated no-progress, or an exhausted cycle budget.
 
@@ -45,6 +47,7 @@ The loop in this skill is the same for every optimization problem. What changes 
 ## Anti-Overfitting
 
 - The evaluation is a proxy; the contract is the user or production outcome. A gain needs a mechanism you can explain. An unexplainable gain is treated as noise or overfitting until independently reproduced.
+- A gain proven on one case set is not accepted as the production default until it replicates on an independent set — a second corpus, a holdout, the next rotation — per the project's evaluation policy. Single-set parity is what overfitting looks like from the inside; small curated case sets are exactly what a candidate can memorize.
 - Do not tune against the same fixed evaluation cases indefinitely; rotate, extend, or hold out cases per the project's evaluation policy in `docs/project-rules.md`.
 - Never modify the evaluation and the system under test in one change. An evaluation change re-baselines the frontier (`scripts/frontier.sh record --force`, with the reason recorded in the owning plan).
 
