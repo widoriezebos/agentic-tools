@@ -202,6 +202,21 @@ if scripts/assert-stop-loss.sh --file "$tmp/deadend.md" >/dev/null 2>&1; then
   echo "stop-loss check allowed cycles after a dead end" >&2
   exit 1
 fi
+printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n- Classification: falsified-continue\n### Cycle E3\n- Classification: unresolved\n' >"$tmp/nogain.md"
+if scripts/assert-stop-loss.sh --file "$tmp/nogain.md" >/dev/null 2>&1; then
+  echo "stop-loss check ignored an exhausted no-gain budget over a mixed trailing sequence" >&2
+  exit 1
+fi
+printf -- '- No-gain budget: 3\n### Cycle E1\n- Classification: unresolved\n### Cycle E2\n- Classification: contract-improved\n### Cycle E3\n- Classification: unresolved\n### Cycle E4\n- Classification: falsified-continue\n' >"$tmp/nogain-reset.md"
+scripts/assert-stop-loss.sh --file "$tmp/nogain-reset.md" >/dev/null || {
+  echo "stop-loss check failed to reset the no-gain count on a contract-improved cycle" >&2
+  exit 1
+}
+printf '### Cycle E1\n- Classification: unresolved\n### Cycle E2\n- Classification: unresolved\n### Cycle E3\n- Classification: unresolved\n' >"$tmp/nogain-optout.md"
+scripts/assert-stop-loss.sh --file "$tmp/nogain-optout.md" >/dev/null || {
+  echo "stop-loss check blocked unresolved cycles without a declared no-gain budget" >&2
+  exit 1
+}
 
 rfile="$tmp/receipts.log"
 scripts/receipt.sh add --type implement --outcome shipped --file "$rfile" >/dev/null

@@ -54,9 +54,10 @@ Immediately classify the result:
 - `falsified-continue`: a leading theory is ruled out and a new viable owner/mechanism is identified.
 - `falsified-dead-end`: the mechanism is exhausted or no owner has the required facts; stop.
 - `no-progress`: neither contract nor theory set improved. One such result blocks another attempt in the same mechanism; a second no-progress cycle anywhere triggers stop-loss.
+- `unresolved`: a valid measured result whose delta lies inside a declared noise floor; the run executed and produced an interpretable measurement that neither confirms nor refutes. Illegitimate without a declared noise floor; a run with no interpretable measurement is `no-progress`. Never counts toward the no-progress trigger.
 - `invalid-run`: parity/environment/timeout prevents interpretation; repair validity, not behavior.
 
-Only `contract-improved` and `falsified-continue` authorize another cycle without user direction.
+Only `contract-improved` and `falsified-continue` authorize another cycle without user direction. An `unresolved` result authorizes one only while a declared `- No-gain budget: N` ledger line is unexhausted: `scripts/assert-stop-loss.sh` blocks once N trailing cycles pass without a `contract-improved`.
 
 One dead end deserves its own name: a capability ceiling, where the model, tool, or dependency cannot do what the mechanism requires. Prompt and parameter variations cannot cross it; stop iterating the moment evidence isolates one. Record it in `plans/known-issues.md` with the evidence, the realistic cost when it bites, and the named escalation lever (a stronger resource tier, an upstream fix, a design change); the lever is usually a reserved decision in `docs/project-rules.md`. Do not retry without new evidence. When the same issue bites again, append the occurrence to its entry and raise its priority instead of reopening the investigation.
 
