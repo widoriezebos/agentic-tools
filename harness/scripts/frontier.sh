@@ -5,7 +5,8 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/frontier.sh record --score N --eval "eval command that produced it" \
-      [--artifact <path>] [--min-delta D] [--max-age-minutes M] [--force] [--file <path>]
+      [--direction max|min] [--artifact <path>] [--min-delta D] \
+      [--max-age-minutes M] [--force] [--file <path>]
   scripts/frontier.sh challenge --score N [--min-delta D] [--file <path>]
   scripts/frontier.sh status [--file <path>]
 
@@ -24,6 +25,14 @@ as the default for every later challenge and record, so forgetting the flag
 cannot silently drop the floor to zero. Resolution order: --min-delta flag,
 HARNESS_FRONTIER_MIN_DELTA, the stored value, then 0.
 
+The direction is persisted the same way: max (higher is better, the
+default) or min (lower is better, for latency and cost goals). record
+resolves --direction, HARNESS_FRONTIER_DIRECTION, then the stored value;
+changing a stored direction requires --force, because it re-baselines what
+the frontier means. challenge accepts no direction input and uses only the
+persisted value, so a flag or environment variable cannot reinterpret a
+recorded frontier at comparison time.
+
 Dynamic systems can declare a measurement window with --max-age-minutes
 (persisted the same way; env HARNESS_FRONTIER_MAX_AGE_MINUTES). When the
 recorded frontier is older than the window, comparisons are refused:
@@ -36,7 +45,7 @@ USAGE
 }
 
 file=plans/frontier
-min_delta_flag= max_age_flag=
+min_delta_flag= max_age_flag= direction_flag=
 score= eval_cmd= artifact= force=0
 
 cmd=${1:-}
@@ -51,6 +60,7 @@ while (($#)); do
     --artifact) artifact=${2:-}; shift 2 ;;
     --min-delta) min_delta_flag=${2:-}; shift 2 ;;
     --max-age-minutes) max_age_flag=${2:-}; shift 2 ;;
+    --direction) direction_flag=${2:-}; shift 2 ;;
     --force) force=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
@@ -89,8 +99,22 @@ frontier_expired() { # $1 = window (may be empty), uses recorded_epoch from the 
   (( age > $1 ))
 }
 
-beats() { # beats <candidate> <incumbent> <delta>
-  awk -v n="$1" -v o="$2" -v d="$3" 'BEGIN { exit (n > o + d) ? 0 : 1 }'
+resolve_direction() { # $1 = stored value, possibly empty; record-time resolution
+  local d
+  if [[ -n "$direction_flag" ]]; then d=$direction_flag
+  elif [[ -n "${HARNESS_FRONTIER_DIRECTION:-}" ]]; then d=$HARNESS_FRONTIER_DIRECTION
+  elif [[ -n "$1" ]]; then d=$1
+  else d=max; fi
+  [[ "$d" == max || "$d" == min ]] || { echo "invalid direction: $d (max or min)" >&2; exit 2; }
+  printf '%s' "$d"
+}
+
+beats() { # beats <candidate> <incumbent> <delta> <direction>
+  if [[ "$4" == min ]]; then
+    awk -v n="$1" -v o="$2" -v d="$3" 'BEGIN { exit (n < o - d) ? 0 : 1 }'
+  else
+    awk -v n="$1" -v o="$2" -v d="$3" 'BEGIN { exit (n > o + d) ? 0 : 1 }'
+  fi
 }
 
 case "$cmd" in
@@ -99,22 +123,29 @@ case "$cmd" in
     [[ -n "$eval_cmd" ]] || { echo "record requires --eval with the evaluation command that produced the score" >&2; exit 2; }
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not inside a git repository" >&2; exit 2; }
     [[ -z "$(git status --porcelain)" ]] || { echo "worktree is dirty; a frontier must be an exact committed state" >&2; exit 1; }
-    stored_delta= stored_window=
+    stored_delta= stored_window= stored_direction=
     if [[ -f "$file" ]]; then
       stored_delta=$(read_field min_delta)
       stored_window=$(read_field max_age_minutes)
+      stored_direction=$(read_field direction)
     fi
     min_delta=$(resolve_min_delta "$stored_delta")
     window=$(resolve_window "$stored_window")
+    direction=$(resolve_direction "$stored_direction")
     if [[ -f "$file" && $force -eq 0 ]]; then
+      effective_stored=${stored_direction:-max}
+      if [[ "$direction" != "$effective_stored" ]]; then
+        echo "direction $direction differs from the recorded frontier's $effective_stored; a direction change re-baselines the frontier, so use --force and record the reason in the owning plan" >&2
+        exit 1
+      fi
       if frontier_expired "$window"; then
         echo "recorded frontier is older than its measurement window; the environment may have shifted. Re-baseline with --force and record the reason in the owning plan" >&2
         exit 1
       fi
       old=$(read_field score)
       [[ "$old" =~ $numeric ]] || { echo "frontier file is malformed: $file" >&2; exit 2; }
-      beats "$score" "$old" "$min_delta" || {
-        echo "score $score does not beat the recorded frontier $old by more than $min_delta; use challenge first, or --force only to re-baseline after an evaluation change" >&2
+      beats "$score" "$old" "$min_delta" "$direction" || {
+        echo "score $score does not beat the recorded frontier $old by more than $min_delta (direction $direction); use challenge first, or --force only to re-baseline after an evaluation change" >&2
         exit 1
       }
     fi
@@ -124,6 +155,7 @@ case "$cmd" in
       echo "recorded_epoch=$(date -u +%s)"
       echo "score=$score"
       echo "min_delta=$min_delta"
+      echo "direction=$direction"
       echo "max_age_minutes=$window"
       echo "eval=$eval_cmd"
       echo "artifact=$artifact"
@@ -133,6 +165,7 @@ case "$cmd" in
     ;;
   challenge)
     [[ "$score" =~ $numeric ]] || { echo "challenge requires a numeric --score" >&2; exit 2; }
+    [[ -z "$direction_flag" ]] || { echo "challenge uses only the persisted direction; change it with record --force, never at comparison time" >&2; exit 2; }
     [[ -f "$file" ]] || { echo "no frontier recorded at $file; record the baseline first" >&2; exit 1; }
     old=$(read_field score)
     [[ "$old" =~ $numeric ]] || { echo "frontier file is malformed: $file" >&2; exit 2; }
@@ -142,14 +175,16 @@ case "$cmd" in
       exit 1
     fi
     min_delta=$(resolve_min_delta "$(read_field min_delta)")
-    if beats "$score" "$old" "$min_delta"; then
-      echo "new frontier: $score beats $old by more than $min_delta; preserve this exact state before iterating"
+    direction=$(read_field direction)
+    direction=${direction:-max}
+    if beats "$score" "$old" "$min_delta" "$direction"; then
+      echo "new frontier: $score beats $old by more than $min_delta (direction $direction); preserve this exact state before iterating"
       exit 0
     fi
-    if beats "$score" "$old" 0; then
-      echo "within noise floor: $score is above $old but not by more than $min_delta; treat as noise" >&2
+    if beats "$score" "$old" 0 "$direction"; then
+      echo "within noise floor: $score improves on $old but not by more than $min_delta; treat as noise" >&2
     else
-      echo "below frontier: $score does not beat $old" >&2
+      echo "does not beat frontier: $score against $old (direction $direction)" >&2
     fi
     exit 1
     ;;

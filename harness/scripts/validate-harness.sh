@@ -186,6 +186,33 @@ fi
 printf 'sha=x\nrecorded_epoch=1\nscore=80\nmin_delta=1\nmax_age_minutes=\neval=declared\nartifact=\n' >"$tmp/frontier-nowindow"
 scripts/frontier.sh challenge --score 99 --file "$tmp/frontier-nowindow" >/dev/null
 
+# Lower-is-better frontiers: persisted direction, force-gated changes, and a
+# challenge that only ever uses the stored direction.
+(cd "$repo" && "$root/scripts/frontier.sh" record --score 80 --min-delta 1 --direction min --eval "declared eval" --file plans/frontier-min >/dev/null)
+git -C "$repo" add plans/frontier-min
+git -C "$repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm frontier-min
+if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 79.5 --file plans/frontier-min >/dev/null 2>&1); then
+  echo "min-direction challenge accepted a within-noise improvement" >&2
+  exit 1
+fi
+(cd "$repo" && "$root/scripts/frontier.sh" challenge --score 78 --file plans/frontier-min >/dev/null)
+(cd "$repo" && HARNESS_FRONTIER_DIRECTION=max "$root/scripts/frontier.sh" challenge --score 78 --file plans/frontier-min >/dev/null) || {
+  echo "challenge honored an environment direction instead of the persisted one" >&2
+  exit 1
+}
+if (cd "$repo" && "$root/scripts/frontier.sh" record --score 85 --eval "declared eval" --file plans/frontier-min >/dev/null 2>&1); then
+  echo "min-direction record accepted a regression without --force" >&2
+  exit 1
+fi
+if (cd "$repo" && "$root/scripts/frontier.sh" record --score 99 --direction max --eval "declared eval" --file plans/frontier-min >/dev/null 2>&1); then
+  echo "frontier record accepted a direction change without --force" >&2
+  exit 1
+fi
+if (cd "$repo" && "$root/scripts/frontier.sh" challenge --score 1 --direction min --file plans/frontier-min >/dev/null 2>&1); then
+  echo "frontier challenge accepted a direction flag" >&2
+  exit 1
+fi
+
 scripts/assert-stop-loss.sh --file docs/examples/step-back-ledger.md >/dev/null
 printf '### Cycle C1\n- Classification: no-progress\n### Cycle C2\n- Classification: no-progress\n' >"$tmp/stuck.md"
 if scripts/assert-stop-loss.sh --file "$tmp/stuck.md" >/dev/null 2>&1; then

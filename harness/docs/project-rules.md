@@ -20,7 +20,7 @@ Replace this file when adopting the harness. Keep facts concrete and repository-
 - Format/lint/typecheck: `<command>`
 - Local run: `<command>`
 - Refactor acceptance gate: `<command>`. The full behavior-preservation proof (full suite, benchmark, or golden run) that accepts a refactor candidate. State its cadence backstop if it differs from the defaults owned by `scripts/refactor-baseline.sh`.
-- Improvement evaluation: `<command>`. The on-demand evaluation for improvement goals. State the evaluation type (deterministic, stochastic, hidden-information, or dynamic; see the improve skill), the primary metric, guard metrics with floors, the noise floor (minimum meaningful delta), any cheaper canary or subset variant, and the holdout or case-rotation policy.
+- Improvement evaluation: `<command>`. The on-demand evaluation for improvement goals. State the evaluation type (deterministic, stochastic, hidden-information, or dynamic; see the improve skill), the primary metric and its direction (max or min), guard metrics with floors, the noise floor (minimum meaningful delta), any cheaper canary or subset variant, and the holdout or case-rotation policy.
 - Frontier preservation policy: `<policy>`. How a new best-known state is preserved: tag pattern, push target, and who may move it.
 
 State realistic timeouts and prerequisites here. Do not repeat these commands in skills or root instructions.
