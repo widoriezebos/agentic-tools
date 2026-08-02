@@ -29,6 +29,12 @@ Require the critic's verdict line to count only material findings.
 3. **Read the findings body, never just the verdict line.** A summary that says "no blocking findings" above a body that lists one is itself a finding; the body governs.
 4. Stop the loop the first round that produces no material finding. Do not run another round for prose consistency.
 
+## Close a Round by Join, Not by Count
+
+A round is closed only when every material finding carries a disposition — and that is a claim to be checked, not asserted. Parse the critique into a structured worklist (stable identifier, severity, proposal) and join it against the dispositions; the round closes when the two sets are equal. Working from prose invites the failure this prevents: "N corrections applied" reads like closure while unaddressed findings sit in the body, and the next round spends itself rediscovering them instead of finding anything new. If the critique carries no stable identifier per finding, ask for one — an unjoinable critique can be estimated, not closed.
+
+Refutations carry the same burden of proof as the findings they answer. Record the evidence literally: the exact string searched and what it returned, not a summary of the conclusion. Both directions fail in practice — a finding can be wrong on the facts, and a refutation can be wrong because it checked the wrong string.
+
 ## Fix the Generating Cause Once
 
 When the same class of finding recurs across rounds ("section X contradicts row Y", again and again), stop patching instances. Rewrite the accreted artifact in a single pass and let the next round attack the rewrite. A long design patched in place accumulates contradictions faster than a loop can remove them, and the loop degenerates into finding the previous round's patch seams.
