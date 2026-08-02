@@ -608,4 +608,38 @@ if (( template_mode )); then
   }
 fi
 
+# watch-background-jobs: all four reportable states plus baseline suppression
+wbj="$tmp/wbj"; mkdir -p "$wbj/jobs"
+printf '{"status":"completed"}' >"$wbj/jobs/done.json"
+printf '{"status":"running"}'   >"$wbj/jobs/live.json"
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o1" 2>&1
+grep -q "^DONE done status=completed" "$wbj/o1" || {
+  echo "watch-background-jobs: terminal job not reported" >&2; exit 1; }
+grep -q "live" "$wbj/o1" && {
+  echo "watch-background-jobs: running job reported as terminal" >&2; exit 1; }
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o2" 2>&1
+[ -s "$wbj/o2" ] && {
+  echo "watch-background-jobs: re-reported an already-reported job" >&2; exit 1; }
+# age the record by a controlled 10 minutes so stale and cap are separable
+python3 - "$wbj/jobs/live.json" <<'AGE'
+import os, sys, time
+t = time.time() - 600
+os.utime(sys.argv[1], (t, t))
+AGE
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s2" --stale-min 5 --cap-min 600 --once >"$wbj/o3" 2>&1
+grep -q "^STALE live" "$wbj/o3" || {
+  echo "watch-background-jobs: stale job not reported" >&2; exit 1; }
+grep -q "^CAPPED live" "$wbj/o3" && {
+  echo "watch-background-jobs: hard cap fired inside its own window" >&2; exit 1; }
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min 5 --once >"$wbj/o4" 2>&1
+grep -q "^CAPPED live" "$wbj/o4" || {
+  echo "watch-background-jobs: hard cap not reported" >&2; exit 1; }
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s4" --baseline >/dev/null 2>&1
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s4" --once >"$wbj/o5" 2>&1
+grep -q "^DONE done" "$wbj/o5" && {
+  echo "watch-background-jobs: baseline did not suppress pre-existing jobs" >&2; exit 1; }
+if scripts/watch-background-jobs.sh --state "$wbj/s5" --once >/dev/null 2>&1; then
+  echo "watch-background-jobs: accepted a call with no --dir" >&2; exit 1
+fi
+
 echo "harness validation passed"
