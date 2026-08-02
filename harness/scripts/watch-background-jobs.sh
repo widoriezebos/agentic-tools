@@ -211,7 +211,18 @@ scan_once() {
       in_scope "$path" || continue
 
       status=$(job_status "$path")
+      # Liveness is the NEWEST mtime across every file the runner keeps for this
+      # job, not the record alone. Runners commonly write the status record once
+      # at dispatch and then stream progress to a sibling log, so a record-only
+      # check reports STALE for a job that is demonstrably working — observed on
+      # a healthy 25-minute build whose .log was updating continuously.
+      # Scope and status still come from the primary record; only age widens.
       mtime=$(file_mtime "$path")
+      for sib in "$(dirname "$path")/$id".*; do
+        [ -f "$sib" ] || continue
+        sib_mtime=$(file_mtime "$sib")
+        if [ "${sib_mtime:-0}" -gt "${mtime:-0}" ] 2>/dev/null; then mtime=$sib_mtime; fi
+      done
       age_min=$(( (now - mtime) / 60 ))
 
       if [ -n "$status" ] && is_terminal "$status"; then

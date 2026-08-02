@@ -634,6 +634,29 @@ grep -q "^CAPPED live" "$wbj/o3" && {
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min 5 --once >"$wbj/o4" 2>&1
 grep -q "^CAPPED live" "$wbj/o4" || {
   echo "watch-background-jobs: hard cap not reported" >&2; exit 1; }
+# A job whose RECORD is old but whose sibling log is fresh is WORKING, not stale.
+# Runners write the record once at dispatch and stream progress to the log, so a
+# record-only liveness check cries wolf on every long phase.
+mkdir -p "$wbj/live-log/jobs"
+printf '{"status":"running"}' >"$wbj/live-log/jobs/busy.json"
+printf 'building\n' >"$wbj/live-log/jobs/busy.log"
+python3 - "$wbj/live-log/jobs/busy.json" <<'AGE'
+import os, sys, time
+t = time.time() - 3600
+os.utime(sys.argv[1], (t, t))
+AGE
+scripts/watch-background-jobs.sh --dir "$wbj/live-log/jobs" --state "$wbj/s3b" --stale-min 5 --once >"$wbj/o4b" 2>&1
+grep -q "^STALE busy" "$wbj/o4b" && {
+  echo "watch-background-jobs: reported STALE for a job whose log is advancing" >&2; exit 1; }
+# ...but when BOTH files go quiet it is genuinely stale and must still report.
+python3 - "$wbj/live-log/jobs/busy.log" <<'AGE'
+import os, sys, time
+t = time.time() - 3600
+os.utime(sys.argv[1], (t, t))
+AGE
+scripts/watch-background-jobs.sh --dir "$wbj/live-log/jobs" --state "$wbj/s3c" --stale-min 5 --once >"$wbj/o4c" 2>&1
+grep -q "^STALE busy" "$wbj/o4c" || {
+  echo "watch-background-jobs: missed a genuinely stale job (all files quiet)" >&2; exit 1; }
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s4" --baseline >/dev/null 2>&1
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s4" --once >"$wbj/o5" 2>&1
 grep -q "^DONE done" "$wbj/o5" && {
