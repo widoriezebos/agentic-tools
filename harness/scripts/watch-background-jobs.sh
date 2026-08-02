@@ -182,7 +182,7 @@ report() { # state id status age record
 
 scan_once() {
   local now; now=$(now_epoch)
-  local pattern path id status mtime age_min
+  local pattern path id status mtime age_min primary sib
 
   for pattern in "${dirs[@]}"; do
     # word-splitting is intended: patterns may be globs
@@ -190,6 +190,16 @@ scan_once() {
       [ -f "$path" ] || continue
       id=$(basename "$path"); id="${id%.*}"
       seen "$id" && continue
+      # Prefer the record that actually carries fields; skip sidecars of an id
+      # whose primary record exists, so one job reports once and scope holds.
+      primary="$path"
+      for sib in "$(dirname "$path")/$id".*; do
+        [ -f "$sib" ] || continue
+        if [ -n "$(job_status "$sib")" ] || [ -n "$(job_field "$sib" "$scope_field")" ]; then
+          primary="$sib"; break
+        fi
+      done
+      [ "$primary" = "$path" ] || continue
       in_scope "$path" || continue
 
       status=$(job_status "$path")

@@ -641,6 +641,17 @@ grep -q "^DONE done" "$wbj/o5" && {
 if scripts/watch-background-jobs.sh --state "$wbj/s5" --once >/dev/null 2>&1; then
   echo "watch-background-jobs: accepted a call with no --dir" >&2; exit 1
 fi
+# sidecar records must not double-report or bypass scope
+printf '{"status":"completed","workspaceRoot":"/r/other"}' >"$wbj/jobs/side.json"
+printf 'log text, not json\n'                             >"$wbj/jobs/side.log"
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s7" --once >"$wbj/o7" 2>&1
+grep -q "side" "$wbj/o7" && {
+  echo "watch-background-jobs: sidecar record bypassed the scope filter" >&2; exit 1; }
+printf '{"status":"completed","workspaceRoot":"/r/mine"}' >"$wbj/jobs/dual.json"
+printf 'log text, not json\n'                            >"$wbj/jobs/dual.log"
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8" --once >"$wbj/o8" 2>&1
+[ "$(grep -c '^DONE dual' "$wbj/o8")" -eq 1 ] || {
+  echo "watch-background-jobs: job with a sidecar did not report exactly once" >&2; exit 1; }
 # scope: own repo and its worktrees in, peer repo and prefix-collision out
 printf '{"status":"completed","workspaceRoot":"/r/mine"}'                >"$wbj/jobs/sc-mine.json"
 printf '{"status":"completed","workspaceRoot":"/r/mine/.worktrees/w"}'   >"$wbj/jobs/sc-wt.json"
