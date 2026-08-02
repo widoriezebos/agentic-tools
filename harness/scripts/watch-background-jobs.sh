@@ -103,8 +103,16 @@ touch "$state_file"
 now_epoch() { date +%s; }
 
 file_mtime() {
-  # portable: BSD stat then GNU stat
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0
+  # A failed GNU `stat -f` still prints filesystem details for valid operands,
+  # so a plain command chain leaks that output into the fallback result.
+  local mtime
+  if mtime=$(stat -c %Y "$1" 2>/dev/null); then
+    printf '%s\n' "$mtime"
+  elif mtime=$(stat -f %m "$1" 2>/dev/null); then
+    printf '%s\n' "$mtime"
+  else
+    echo 0
+  fi
 }
 
 job_field() { # record field -> value ("" when absent/unparseable)
@@ -159,7 +167,7 @@ declare -a running_ids=()
 declare -a running_paths=()
 running_index() {
   local i=0
-  while [ $i -lt ${#running_ids[@]:-0} ]; do
+  while [ $i -lt ${#running_ids[@]} ]; do
     [ "${running_ids[$i]}" = "$1" ] && { printf '%s' "$i"; return 0; }
     i=$((i + 1))
   done
@@ -223,7 +231,7 @@ scan_once() {
 
   # Records that were running and are now gone: the runner lost the job.
   local i=0
-  while [ $i -lt ${#running_ids[@]:-0} ]; do
+  while [ $i -lt ${#running_ids[@]} ]; do
     if [ ! -f "${running_paths[$i]}" ]; then
       [ "$baseline" -eq 1 ] || { report VANISHED "${running_ids[$i]}" running 0 "${running_paths[$i]}"; mark "${running_ids[$i]}"; }
       unset 'running_ids[i]' 'running_paths[i]'
