@@ -641,5 +641,24 @@ grep -q "^DONE done" "$wbj/o5" && {
 if scripts/watch-background-jobs.sh --state "$wbj/s5" --once >/dev/null 2>&1; then
   echo "watch-background-jobs: accepted a call with no --dir" >&2; exit 1
 fi
+# scope: own repo and its worktrees in, peer repo and prefix-collision out
+printf '{"status":"completed","workspaceRoot":"/r/mine"}'                >"$wbj/jobs/sc-mine.json"
+printf '{"status":"completed","workspaceRoot":"/r/mine/.worktrees/w"}'   >"$wbj/jobs/sc-wt.json"
+printf '{"status":"completed","workspaceRoot":"/r/other"}'               >"$wbj/jobs/sc-peer.json"
+printf '{"status":"completed","workspaceRoot":"/r/mine-other"}'          >"$wbj/jobs/sc-prefix.json"
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s6" --once >"$wbj/o6" 2>&1
+grep -q "^DONE sc-mine" "$wbj/o6" || {
+  echo "watch-background-jobs: in-scope job not reported" >&2; exit 1; }
+grep -q "^DONE sc-wt" "$wbj/o6" || {
+  echo "watch-background-jobs: worktree job dropped by scope filter" >&2; exit 1; }
+grep -q "sc-peer" "$wbj/o6" && {
+  echo "watch-background-jobs: peer repository job reported" >&2; exit 1; }
+grep -q "sc-prefix" "$wbj/o6" && {
+  echo "watch-background-jobs: scope matched on a path prefix" >&2; exit 1; }
+# distinct scopes must not share default state
+a=$(scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --once 2>/dev/null | wc -l)
+b=$(scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | wc -l)
+[ "$a" -gt 0 ] && [ "$b" -gt 0 ] || {
+  echo "watch-background-jobs: distinct scopes shared a default state file" >&2; exit 1; }
 
 echo "harness validation passed"

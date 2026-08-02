@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/watch-background-jobs.sh --dir <job-state-dir> [--dir <more>]...
+                                   [--scope <path>] [--scope-field <name>]
                                    [--state <file>] [--stale-min <n>]
                                    [--cap-min <n>] [--interval <sec>]
                                    [--baseline] [--once]
@@ -28,8 +29,24 @@ the file's mtime alone drives STALE/CAPPED and terminal status is unknown.
 Directories may be given as globs so a whole tool's per-project layout is
 covered by one argument, and they need not exist yet when the watcher starts.
 
+SCOPE. A shared runner records every project's jobs side by side, so watch only
+the jobs belonging to THIS repository: reporting a peer session's job is noise
+at best and a false claim of ownership at worst. Pass --scope with the
+repository root; records whose workspace field falls outside it are ignored.
+Scope by recorded workspace, not by directory name — worktrees of one
+repository get their own job directories, and a name filter misses them.
+
+STATE ISOLATION. The state file records which jobs were reported. Two projects
+sharing one state file suppress each other's reports, which is the exact silent
+miss this watcher exists to prevent. The default path is derived from the
+--dir/--scope arguments so distinct scopes get distinct state automatically;
+only override --state with a path unique to the scope.
+
 Options:
   --dir DIR        directory (or glob) holding job records; repeatable, required
+  --scope PATH     only report jobs whose workspace field is PATH or below
+                   (default: no filter)
+  --scope-field F  JSON field holding the workspace (default workspaceRoot)
   --state FILE     where already-reported jobs are remembered
                    (default: ${TMPDIR:-/tmp}/watch-background-jobs.<hash>.state)
   --stale-min N    minutes without a state change before STALE (default 20)
@@ -48,6 +65,8 @@ USAGE
 }
 
 dirs=()
+scope=""
+scope_field="workspaceRoot"
 state_file=""
 stale_min=20
 cap_min=180
@@ -58,6 +77,8 @@ once=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir) [ $# -ge 2 ] || { usage; exit 2; }; dirs+=("$2"); shift 2 ;;
+    --scope) [ $# -ge 2 ] || { usage; exit 2; }; scope="${2%/}"; shift 2 ;;
+    --scope-field) [ $# -ge 2 ] || { usage; exit 2; }; scope_field="$2"; shift 2 ;;
     --state) [ $# -ge 2 ] || { usage; exit 2; }; state_file="$2"; shift 2 ;;
     --stale-min) [ $# -ge 2 ] || { usage; exit 2; }; stale_min="$2"; shift 2 ;;
     --cap-min) [ $# -ge 2 ] || { usage; exit 2; }; cap_min="$2"; shift 2 ;;
@@ -73,7 +94,7 @@ done
 case "$stale_min$cap_min$interval" in *[!0-9]*) usage; exit 2 ;; esac
 
 if [ -z "$state_file" ]; then
-  key=$(printf '%s\n' "${dirs[@]}" | cksum | tr -d ' \t')
+  key=$(printf '%s\n' "${dirs[@]}" "scope=$scope" | cksum | tr -d ' \t')
   state_file="${TMPDIR:-/tmp}/watch-background-jobs.${key}.state"
 fi
 mkdir -p "$(dirname "$state_file")"
@@ -84,6 +105,28 @@ now_epoch() { date +%s; }
 file_mtime() {
   # portable: BSD stat then GNU stat
   stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0
+}
+
+job_field() { # record field -> value ("" when absent/unparseable)
+  python3 - "$1" "$2" 2>/dev/null <<'JSONQ' || true
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        d = json.load(fh)
+    v = d.get(sys.argv[2]) if isinstance(d, dict) else None
+    if isinstance(v, str):
+        print(v)
+except Exception:
+    pass
+JSONQ
+}
+
+in_scope() { # record -> 0 when the job belongs to this scope
+  [ -z "$scope" ] && return 0
+  local ws; ws=$(job_field "$1" "$scope_field")
+  # No workspace field: report it. Unknown ownership beats an unobserved job.
+  [ -z "$ws" ] && return 0
+  case "${ws%/}/" in "$scope"/*) return 0 ;; *) return 1 ;; esac
 }
 
 job_status() {
@@ -147,6 +190,7 @@ scan_once() {
       [ -f "$path" ] || continue
       id=$(basename "$path"); id="${id%.*}"
       seen "$id" && continue
+      in_scope "$path" || continue
 
       status=$(job_status "$path")
       mtime=$(file_mtime "$path")
