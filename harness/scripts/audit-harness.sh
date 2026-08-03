@@ -6,7 +6,7 @@ cd "$root"
 
 command -v rg >/dev/null || { echo "ripgrep (rg) is required; without it the reference and placeholder checks cannot run" >&2; exit 2; }
 
-required=(AGENTS.md wow.md docs/project-rules.md docs/orchestration.md docs/collaboration.md docs/design/design-principles.md docs/design/design-obligation-gate.md)
+required=(AGENTS.md wow.md harness.conf docs/project-rules.md docs/orchestration.md docs/collaboration.md docs/design/design-principles.md docs/design/design-obligation-gate.md)
 for file in "${required[@]}"; do
   [[ -f "$file" ]] || { echo "missing required file: $file" >&2; exit 1; }
 done
@@ -67,8 +67,9 @@ if [[ ! -f meta/harness-design.md ]]; then
   # scripts/adopt.sh runs right after copying, before the facts are filled in;
   # the closing validate-harness run enforces them again.
   if [[ -z "${HARNESS_AUDIT_ALLOW_PLACEHOLDERS:-}" ]]; then
-    if rg -n '<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>' docs/project-rules.md; then
-      echo "adopted repository has unreplaced placeholders in docs/project-rules.md" >&2
+    if rg -n '<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>' docs/project-rules.md \
+      || rg -n '<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>' harness.conf; then
+      echo "adopted repository has unreplaced placeholders in docs/project-rules.md or harness.conf" >&2
       exit 1
     fi
   fi

@@ -63,6 +63,11 @@ for link in \
   scripts/agents/templates/follow-up.md \
   scripts/agents/permissions/none.json \
   scripts/agents/permissions/workspace.json \
+  harness.conf \
+  scripts/harness-config.sh \
+  scripts/agents/dispatch.sh \
+  scripts/agents/adapters/fake.sh \
+  scripts/agents/assert-conformance.sh \
   scripts/assert-return-complete.sh \
   scripts/agents/check-preamble-quotes.sh; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
@@ -192,8 +197,15 @@ for name, expected in permission_expected.items():
 for role in role_fields:
     path = root / "scripts" / "agents" / "roles" / f"{role}.requirements.json"
     requirement = json.loads(path.read_text())
-    if set(requirement) != {"required", "optional"}:
+    if not {"required", "optional"}.issubset(requirement) or not set(requirement).issubset({"required", "optional", "waivers"}):
         raise SystemExit(f"{role} capability declaration has unknown top-level fields")
+    waivers = requirement.get("waivers", {})
+    if not isinstance(waivers, dict) or any(
+        not isinstance(field, str) or not isinstance(runtimes, list)
+        or not all(isinstance(runtime, str) for runtime in runtimes)
+        for field, runtimes in waivers.items()
+    ):
+        raise SystemExit(f"{role} capability waivers have an invalid shape")
     if requirement["required"] != []:
         raise SystemExit(f"{role} incorrectly repeats adapter-guaranteed baseline capabilities")
     if role == "implementer":
@@ -415,6 +427,589 @@ for field in jobId round runtime sessionId; do
   grep -Fq "$.${field} identity mismatch" "$tmp/identity-$field.out" \
     || { echo "job-aware return checker did not name the $field mismatch" >&2; exit 1; }
 done
+
+# Dispatcher and fake-adapter fixtures run in a minimal adopted-mode Git
+# repository. Keeping their artifacts outside this checkout proves that the
+# scripts derive every path from the repository they ship into. Nested
+# adoption validations inherit the skip after this block, avoiding duplicate
+# process-lifecycle runs while a direct adopted-repository validation still
+# exercises the full contract.
+if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
+  agent_fixture="$tmp/agent-fixture"
+  agent_repo="$agent_fixture/repo"
+  agent_evidence="$agent_fixture/evidence"
+  mkdir -p "$agent_repo/scripts"
+  agent_repo=$(cd "$agent_repo" && pwd -P)
+  cp -R scripts/agents "$agent_repo/scripts/"
+  cp scripts/harness-config.sh scripts/assert-return-complete.sh "$agent_repo/scripts/"
+  cp harness.conf "$agent_repo/"
+  perl -0pi -e 's/^harness\.runtimes=.*$/harness.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^model\.tier\.1=.*$/model.tier.1=fake:fake-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/harness.conf"
+  git -C "$agent_repo" init -q
+  git -C "$agent_repo" add .
+  git -C "$agent_repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm base
+  agent_dispatch="$agent_repo/scripts/agents/dispatch.sh"
+  fake_adapter="$agent_repo/scripts/agents/adapters/fake.sh"
+  agent_config="$agent_repo/scripts/harness-config.sh"
+  good_agent_conf="$agent_fixture/good-harness.conf"
+  cp "$agent_repo/harness.conf" "$good_agent_conf"
+
+  agent_fails() { # output name, expected text, command...
+    local name=$1 expected=$2 result
+    shift 2
+    set +e
+    "$@" >"$agent_fixture/$name.out" 2>&1
+    result=$?
+    set -e
+    if [[ $result -eq 0 ]]; then
+      echo "agent fixture unexpectedly passed: $name" >&2
+      exit 1
+    fi
+    [[ -z "$expected" ]] || grep -Fq "$expected" "$agent_fixture/$name.out" || {
+      echo "agent fixture $name did not report: $expected" >&2
+      cat "$agent_fixture/$name.out" >&2
+      exit 1
+    }
+  }
+
+  make_agent_brief() { # output, mode, optional marker/value lines...
+    local output=$1 mode=$2
+    shift 2
+    sed "s/^Working Mode:.*/Working Mode: $mode/" "$agent_repo/scripts/agents/templates/brief.md" >"$output"
+    for line in "$@"; do printf '\n%s\n' "$line" >>"$output"; done
+  }
+
+  wait_for_agent_status() { # job, expected
+    local job=$1 expected=$2 observed= i
+    for ((i=0; i<100; i++)); do
+      observed=$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job "$job" 2>/dev/null || true)
+      [[ "$observed" == "$expected" ]] && return 0
+      sleep 0.05
+    done
+    echo "agent fixture $job did not reach $expected (last status: ${observed:-missing})" >&2
+    return 1
+  }
+
+  # Configuration resolution is flag, environment, mode, plain, default.
+  config_order="$agent_fixture/config-order"
+  mkdir -p "$config_order/scripts"
+  cp scripts/harness-config.sh "$config_order/scripts/"
+  cat >"$config_order/harness.conf" <<EOF
+role.implementer.runtime=plain
+mode.refactor.role.implementer.runtime=mode
+plain.knob=plain-value
+EOF
+  [[ "$("$config_order/scripts/harness-config.sh" get --key role.implementer.runtime --mode refactor --flag flag)" == flag ]] \
+    || { echo "harness config did not prefer the flag" >&2; exit 1; }
+  [[ "$(HARNESS_ROLE_IMPLEMENTER_RUNTIME=environment "$config_order/scripts/harness-config.sh" get --key role.implementer.runtime --mode refactor)" == environment ]] \
+    || { echo "harness config did not prefer the environment" >&2; exit 1; }
+  [[ "$(env -u HARNESS_ROLE_IMPLEMENTER_RUNTIME "$config_order/scripts/harness-config.sh" get --key role.implementer.runtime --mode refactor)" == mode ]] \
+    || { echo "harness config did not resolve the mode scope" >&2; exit 1; }
+  [[ "$("$config_order/scripts/harness-config.sh" get --key plain.knob --mode refactor)" == plain-value ]] \
+    || { echo "harness config did not resolve the plain key" >&2; exit 1; }
+  [[ "$("$config_order/scripts/harness-config.sh" get --key absent.knob --default built-in)" == built-in ]] \
+    || { echo "harness config did not resolve the built-in default" >&2; exit 1; }
+
+  "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  perl -0pi -e 's/^role\.design-critic\.runtime=.*$/role.design-critic.runtime=ghost/m' "$agent_repo/harness.conf"
+  agent_fails invalid-role-runtime 'outside harness.runtimes' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  perl -0pi -e 's/^mode\.refactor\.role\.implementer\.runtime=.*$/mode.refactor.role.implementer.runtime=ghost/m' "$agent_repo/harness.conf"
+  agent_fails invalid-mode-runtime 'outside harness.runtimes' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.1=/m' "$agent_repo/harness.conf"
+  agent_fails unmapped-model 'appears in 0 model tiers' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  perl -0pi -e 's/^model\.tier\.2=.*$/model.tier.2=fake:fake-model/m' "$agent_repo/harness.conf"
+  agent_fails duplicate-model-tier 'appears in 2 model tiers' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  perl -0pi -e 's/^role\.design-critic\.model\.fake=.*\n//m; s/^role\.default\.model\.fake=.*\n//m' "$agent_repo/harness.conf"
+  agent_fails missing-runtime-model 'has no model.fake value' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$agent_repo"'/evidence|m' "$agent_repo/harness.conf"
+  agent_fails inside-evidence-root 'outside the repository' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+
+  first_snapshot=$($fake_adapter probe)
+  second_snapshot=$($fake_adapter probe)
+  [[ "$first_snapshot" == *-001.json && "$second_snapshot" == *-002.json && "$first_snapshot" != "$second_snapshot" ]] \
+    || { echo "fake probe did not create immutable sequence-suffixed snapshots" >&2; exit 1; }
+
+  happy_brief="$agent_fixture/happy.md"
+  make_agent_brief "$happy_brief" design
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id happy --wait)
+  [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job happy)" == completed ]] \
+    || { echo "valid fake dispatch did not complete" >&2; exit 1; }
+  python3 - "$agent_repo" <<'PY'
+import json, re, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+record = json.loads((root / "artifacts/agents/jobs/happy.json").read_text())
+required = {
+    "jobId", "role", "mission", "runtime", "round", "parentJob", "status", "phase", "error",
+    "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "pid", "pgid", "instanceTag",
+    "sessionId", "turnId", "requestedModel", "effectiveModel", "overridden", "capabilitySnapshot",
+    "input", "startedAt", "endedAt", "usage", "mirror",
+}
+assert required.issubset(record) and record["status"] == "completed"
+assert record["capabilitySnapshot"].endswith("-002.json")
+assert record["permissions"]["requested"]["preset"] == "none"
+assert record["input"]["delivery"] == "stdin" and record["input"]["bytes"] > 0
+prompt = (root / "artifacts/agents/happy/rounds/1/prompt.md").read_text()
+assert prompt.startswith("Job-Id: happy\nRole: design-critic\nRuntime: fake\nModel: fake-model\nRound: 1\n")
+preamble = (root / "scripts/agents/roles/design-critic.md").read_text().rstrip("\n")
+brief = (root / "artifacts/agents/happy/brief.md").read_text().rstrip("\n")
+assert prompt.index(preamble) < prompt.index(brief)
+PY
+  mkdir -p "$agent_repo/artifacts/agents/locks/stale-lock.d"
+  printf '{"pid":999999,"instanceTag":"dead-owner","acquiredAt":"2000-01-01T00:00:00Z"}\n' >"$agent_repo/artifacts/agents/locks/stale-lock.d/owner.json"
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id stale-lock --wait)
+
+  generated=$(cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief")
+  [[ "$generated" =~ ^design-critic-[0-9]{8}t[0-9]{6}z-[a-f0-9]{4}$ ]] \
+    || { echo "generated job id does not match the lowercase grammar: $generated" >&2; exit 1; }
+  agent_fails collision 'job id collision' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id happy
+  agent_fails malformed-job-id 'invalid job id' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id 'Bad_Id'
+  agent_fails contradictory-mode "contradicts the brief's Working Mode" "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --mode verify
+  agent_fails unregistered-override 'outside harness.runtimes' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --runtime ghost
+  agent_fails main-override 'assigned to main' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --runtime main
+  agent_fails costlier-unmapped 'requires human approval' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model absent-from-tier
+
+  # The recorded default is a real fallback, while its absence refuses.
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  perl -0pi -e 's/^role\.verifier\.runtime=.*\n//m' "$agent_repo/harness.conf"
+  verifier_brief="$agent_fixture/verifier.md"
+  make_agent_brief "$verifier_brief" verify
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role verifier --brief "$verifier_brief" --permissions none --job-id default-role --wait)
+  cp "$agent_repo/harness.conf" "$agent_fixture/no-role.conf"
+  perl -0pi -e 's/^role\.default\.runtime=.*\n//m' "$agent_repo/harness.conf"
+  agent_fails no-role-default 'neither a runtime entry nor role.default.runtime' "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  code_brief="$agent_fixture/code.md"
+  make_agent_brief "$code_brief" implement
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role code-critic --brief "$code_brief" --runtime fake --permissions none --job-id flag-runtime --wait)
+  python3 - "$agent_repo/artifacts/agents/jobs/flag-runtime.json" <<'PY'
+import json, sys
+record = json.load(open(sys.argv[1])); assert record["runtime"] == "fake" and record["overridden"] is True
+PY
+  investigator_brief="$agent_fixture/investigator.md"
+  make_agent_brief "$investigator_brief" take-a-step-back
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role investigator --brief "$investigator_brief" --runtime fake --permissions none --job-id investigator-role --wait)
+
+  no_signal="$agent_fixture/no-signal.md"
+  make_agent_brief "$no_signal" design 'FAKE:no-session-signal'
+  agent_fails no-session-signal '' "$agent_dispatch" dispatch --role design-critic --brief "$no_signal" --job-id no-signal --wait
+  [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$agent_repo/artifacts/agents/jobs/no-signal.json")" == failed ]] \
+    || { echo "non-signal handshake did not end failed" >&2; exit 1; }
+  grep -Fq 'handshake_timeout' "$agent_repo/artifacts/agents/jobs/no-signal.json" \
+    || { echo "non-signal handshake did not retain its error" >&2; exit 1; }
+  handshake_failure="$agent_fixture/handshake-failure.md"
+  make_agent_brief "$handshake_failure" design 'FAKE:handshake-failure'
+  agent_fails handshake-failure '' "$agent_dispatch" dispatch --role design-critic --brief "$handshake_failure" --job-id handshake-failure --wait
+  grep -Fq 'authentication_failed' "$agent_repo/artifacts/agents/jobs/handshake-failure.json" \
+    || { echo "fake handshake failure lost its named error" >&2; exit 1; }
+  missing_session="$agent_fixture/missing-session.md"
+  make_agent_brief "$missing_session" design 'FAKE:missing-session-id'
+  agent_fails missing-session '' "$agent_dispatch" dispatch --role design-critic --brief "$missing_session" --job-id missing-session --wait
+  grep -Fq 'handshake_missing_session_id' "$agent_repo/artifacts/agents/jobs/missing-session.json" \
+    || { echo "missing session id did not fail the strong handshake" >&2; exit 1; }
+
+  pending_brief="$agent_fixture/pending.md"
+  make_agent_brief "$pending_brief" design 'FAKE:no-session-signal'
+  (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_brief" --job-id pending-chain >/dev/null 2>&1) & pending_driver=$!
+  wait_for_agent_status pending-chain pending
+  pending_message="$agent_fixture/pending-follow.md"
+  cp "$agent_repo/scripts/agents/templates/follow-up.md" "$pending_message"
+  agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job pending-chain --message "$pending_message"
+  wait "$pending_driver" || true
+
+  pending_loss_brief="$agent_fixture/pending-loss.md"
+  make_agent_brief "$pending_loss_brief" design 'FAKE:pending-process-loss'
+  (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_loss_brief" --job-id pending-loss >/dev/null 2>&1) & pending_loss_driver=$!
+  wait_for_agent_status pending-loss pending
+  (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job pending-loss)
+  wait "$pending_loss_driver" || true
+  grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/pending-loss.json" \
+    || { echo "dead pending supervisor did not transition through reap" >&2; exit 1; }
+
+  malformed_brief="$agent_fixture/malformed-return.md"
+  make_agent_brief "$malformed_brief" design 'FAKE:malformed-return'
+  set +e
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$malformed_brief" --job-id malformed-return --wait)
+  malformed_status=$?
+  set -e
+  [[ $malformed_status -eq 3 ]] || { echo "malformed return mapped to $malformed_status instead of 3" >&2; exit 1; }
+  grep -Fq 'protocol_error' "$agent_repo/artifacts/agents/jobs/malformed-return.json" \
+    || { echo "malformed return did not record protocol_error" >&2; exit 1; }
+
+  interrupted="$agent_fixture/interrupted.md"
+  make_agent_brief "$interrupted" design 'FAKE:interrupted-atomic-write'
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$interrupted" --job-id interrupted --wait)
+  [[ -f "$agent_repo/artifacts/agents/record-locks/interrupted.interrupted" ]] \
+    || { echo "interrupted atomic-write fixture did not leave its staged partial" >&2; exit 1; }
+  python3 -m json.tool "$agent_repo/artifacts/agents/jobs/interrupted.json" >/dev/null
+  terminal_patch="$agent_fixture/terminal-race.json"
+  printf '{"error":"loser"}\n' >"$terminal_patch"
+  set +e
+  "$agent_dispatch" __record-cas --job interrupted --expect running --status failed --patch "$terminal_patch" >/dev/null 2>&1
+  terminal_race_status=$?
+  set -e
+  [[ $terminal_race_status -eq 3 && "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job interrupted)" == completed ]] \
+    || { echo "terminal compare-and-set did not preserve the first writer" >&2; exit 1; }
+  agent_fails illegal-terminal-transition 'illegal job transition' "$agent_dispatch" __record-cas --job interrupted --expect completed --status failed --patch "$terminal_patch"
+
+  effective_wider="$agent_fixture/effective-wider.md"
+  make_agent_brief "$effective_wider" design 'FAKE:effective-wider'
+  agent_fails effective-wider '' "$agent_dispatch" dispatch --role design-critic --brief "$effective_wider" --job-id effective-wider --wait
+  grep -Fq 'permissions_mismatch:network' "$agent_repo/artifacts/agents/jobs/effective-wider.json" \
+    || { echo "wider effective envelope did not record the mismatch" >&2; exit 1; }
+  permissive_permissions="$agent_fixture/permissive-permissions.json"
+  printf '{"readRoots":["."],"writeRoots":[],"network":"allow","approvals":"deny","tools":"read-only"}\n' >"$permissive_permissions"
+  effective_narrower="$agent_fixture/effective-narrower.md"
+  make_agent_brief "$effective_narrower" design 'FAKE:effective-narrower'
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$effective_narrower" --permissions "$permissive_permissions" --job-id effective-narrower --wait)
+
+  agent_fails writable-without-worktree 'writable permissions require --worktree' \
+    "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id no-worktree
+  custom_permissions="$agent_fixture/custom-permissions.json"
+  cat >"$custom_permissions" <<EOF
+{"readRoots":["."],"writeRoots":["$agent_fixture/outside"],"network":"deny","approvals":"deny","tools":"runtime-default"}
+EOF
+  agent_fails escaping-write-root 'escapes the job worktree' "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id escaping-root --worktree --permissions "$custom_permissions"
+
+  oversized="$agent_fixture/oversized.md"
+  make_agent_brief "$oversized" design 'FAKE:oversized-input'
+  head -c 70000 /dev/zero | tr '\0' x >>"$oversized"
+  agent_fails oversized-input 'pass a file reference' "$agent_dispatch" dispatch --role design-critic --brief "$oversized" --job-id oversized
+
+  # Reap owns process loss, absolute caps, group death, and terminal mirroring.
+  process_loss="$agent_fixture/process-loss.md"
+  make_agent_brief "$process_loss" design 'FAKE:process-loss'
+  set +e
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$process_loss" --job-id process-loss --wait)
+  process_loss_status=$?
+  set -e
+  [[ $process_loss_status -eq 3 ]] || { echo "process loss mapped to $process_loss_status instead of 3" >&2; exit 1; }
+  grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/process-loss.json" \
+    || { echo "reap did not name process-lost" >&2; exit 1; }
+  [[ -f "$agent_repo/artifacts/agents/process-loss/rounds/1/child.stopped" ]] \
+    || { echo "reap did not TERM the orphaned process-loss child" >&2; exit 1; }
+  grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/process-loss.json" \
+    || { echo "process-loss terminal record lacks group-death proof" >&2; exit 1; }
+
+  timeout_brief="$agent_fixture/timeout.md"
+  make_agent_brief "$timeout_brief" design 'FAKE:timeout'
+  timeout_result="$agent_fixture/timeout.status"
+  (
+    set +e
+    cd "$agent_repo"
+    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id timed --cap-min 1 --wait
+    printf '%s\n' "$?" >"$timeout_result"
+  ) &
+  timeout_driver=$!
+  wait_for_agent_status timed running
+  python3 - "$agent_repo/artifacts/agents/jobs/timed.json" <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["startedAt"] = "2000-01-01T00:00:00Z"; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+PY
+  (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job timed)
+  wait "$timeout_driver"
+  [[ "$(cat "$timeout_result")" == 4 ]] || { echo "timeout did not map to wait exit 4 (got $(cat "$timeout_result"))" >&2; exit 1; }
+  grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/timed.json" \
+    || { echo "absolute cap did not record budget-cap" >&2; exit 1; }
+  [[ -f "$agent_repo/artifacts/agents/timed/rounds/1/child.stopped" ]] \
+    || { echo "timeout did not TERM the whole owned group" >&2; exit 1; }
+  grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/timed.json" \
+    || { echo "timeout terminal record lacks group-death proof" >&2; exit 1; }
+
+  cancel_result="$agent_fixture/cancel.status"
+  (
+    set +e
+    cd "$agent_repo"
+    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id cancelled --wait
+    printf '%s\n' "$?" >"$cancel_result"
+  ) &
+  cancel_driver=$!
+  wait_for_agent_status cancelled running
+  (cd "$agent_repo" && scripts/agents/dispatch.sh cancel --job cancelled)
+  wait "$cancel_driver"
+  [[ "$(cat "$cancel_result")" == 8 ]] || { echo "cancelled did not map to wait exit 8" >&2; exit 1; }
+  [[ -f "$agent_repo/artifacts/agents/cancelled/rounds/1/child.stopped" ]] \
+    || { echo "cancel did not TERM the whole owned group" >&2; exit 1; }
+  grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/cancelled.json" \
+    || { echo "cancelled terminal record lacks group-death proof" >&2; exit 1; }
+
+  vanished_result="$agent_fixture/vanished.status"
+  (
+    set +e
+    cd "$agent_repo"
+    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id vanished --wait
+    printf '%s\n' "$?" >"$vanished_result"
+  ) &
+  vanished_driver=$!
+  for ((i=0; i<100; i++)); do
+    [[ -f "$agent_repo/artifacts/agents/hb/vanished.waiting" ]] && break
+    sleep 0.05
+  done
+  [[ -f "$agent_repo/artifacts/agents/hb/vanished.waiting" ]] \
+    || { echo "vanished wait fixture never entered the wait loop" >&2; exit 1; }
+  mv "$agent_repo/artifacts/agents/jobs/vanished.json" "$agent_fixture/vanished.json"
+  wait "$vanished_driver"
+  mv "$agent_fixture/vanished.json" "$agent_repo/artifacts/agents/jobs/vanished.json"
+  [[ "$(cat "$vanished_result")" == 5 ]] || { echo "vanished record did not map to wait exit 5 (got $(cat "$vanished_result"))" >&2; exit 1; }
+  (cd "$agent_repo" && scripts/agents/dispatch.sh cancel --job vanished)
+
+  cancel_race="$agent_fixture/cancel-race.md"
+  make_agent_brief "$cancel_race" design 'FAKE:cancel-race'
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$cancel_race" --job-id cancel-race >/dev/null)
+  (cd "$agent_repo" && scripts/agents/dispatch.sh cancel --job cancel-race)
+  [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job cancel-race)" == completed ]] \
+    || { echo "completion did not win the scripted cancellation race" >&2; exit 1; }
+
+  mirror_failure="$agent_fixture/mirror-failure.md"
+  make_agent_brief "$mirror_failure" design 'FAKE:mirror-failure'
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$mirror_failure" --job-id mirror-retry --wait)
+  [[ -f "$agent_repo/artifacts/agents/mirror-retry/.mirror-failed" ]] \
+    || { echo "scripted first mirror failure did not occur" >&2; exit 1; }
+  if [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")" == None ]]; then
+    (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job mirror-retry)
+  fi
+  mirror_hash_before=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"]["manifest"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")
+  (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job mirror-retry)
+  mirror_hash_after=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"]["manifest"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")
+  [[ "$mirror_hash_before" == "$mirror_hash_after" && "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job mirror-retry)" == completed ]] \
+    || { echo "idempotent mirror retry changed terminal state or durable content" >&2; exit 1; }
+  python3 - "$agent_repo/artifacts/agents/jobs/mirror-retry.json" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+record = json.load(open(sys.argv[1])); mirror = record["mirror"]; assert mirror
+manifest_path = Path(mirror["path"]) / "manifest.json"
+assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == mirror["manifest"]
+manifest = json.loads(manifest_path.read_text())
+for relative, item in manifest["files"].items():
+    assert hashlib.sha256((Path(mirror["path"]) / relative).read_bytes()).hexdigest() == item["sha256"]
+PY
+
+  # Follow-ups are child records under one serialized, explicitly closed chain.
+  follow_message="$agent_fixture/follow.md"
+  cp "$agent_repo/scripts/agents/templates/follow-up.md" "$follow_message"
+  (cd "$agent_repo" && scripts/agents/dispatch.sh follow-up --job happy --message "$follow_message" --wait)
+  [[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \
+    || { echo "follow-up did not preserve round 1 and create round 2" >&2; exit 1; }
+  python3 - "$agent_repo" <<'PY'
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1]); parent = json.loads((root / "artifacts/agents/jobs/happy.json").read_text()); child = json.loads((root / "artifacts/agents/jobs/happy-r2.json").read_text())
+assert child["parentJob"] == "happy" and child["round"] == 2 and child["sessionId"] == parent["sessionId"]
+assert child["startedAt"] >= parent["startedAt"] and child["capMin"] == parent["capMin"]
+assert parent["chainUsage"]["providerUnits"]["fake"]["fake-unit"] == 2
+assert parent["mirror"]["manifest"] == child["mirror"]["manifest"]
+PY
+  (cd "$agent_repo" && scripts/agents/dispatch.sh follow-up --job malformed-return --message "$follow_message" --wait)
+  [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
+    || { echo "protocol-error retry did not create a completed child" >&2; exit 1; }
+  agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job cancelled --message "$follow_message"
+  agent_fails timeout-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job timed --message "$follow_message"
+  agent_fails process-loss-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job process-loss --message "$follow_message"
+
+  python3 - "$agent_repo/artifacts/agents/jobs/default-role.json" <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["sessionId"] = None; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+PY
+  agent_fails null-session-follow-up 'fresh-context embed fallback' "$agent_dispatch" follow-up --job default-role --message "$follow_message"
+
+  resume_root="$agent_fixture/resume-root.md"
+  make_agent_brief "$resume_root" design
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$resume_root" --job-id resume-root --wait)
+  resume_collision="$agent_fixture/resume-collision.md"
+  cp "$follow_message" "$resume_collision"
+  printf '\nFAKE:resume-collision\n' >>"$resume_collision"
+  set +e
+  (cd "$agent_repo" && scripts/agents/dispatch.sh follow-up --job resume-root --message "$resume_collision" --wait)
+  resume_status=$?
+  set -e
+  [[ $resume_status -eq 3 ]] || { echo "resume collision did not map to failed" >&2; exit 1; }
+  grep -Fq 'resume_collision' "$agent_repo/artifacts/agents/jobs/resume-root-r2.json" \
+    || { echo "resume collision did not retain its named error" >&2; exit 1; }
+
+  active_brief="$agent_fixture/active.md"
+  make_agent_brief "$active_brief" design 'FAKE:concurrent-turn'
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$active_brief" --job-id active-turn >/dev/null)
+  agent_fails active-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job active-turn --message "$follow_message"
+  (cd "$agent_repo" && scripts/agents/dispatch.sh cancel --job active-turn)
+
+  (cd "$agent_repo" && scripts/agents/dispatch.sh close --job happy)
+  agent_fails closed-follow-up 'job chain is closed' "$agent_dispatch" follow-up --job happy --message "$follow_message"
+
+  # A close racing a follow-up cannot land between its open check and child creation.
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id close-race --wait)
+  close_rc="$agent_fixture/close-race.close"; follow_rc="$agent_fixture/close-race.follow"
+  (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh close --job close-race >/dev/null 2>&1; printf '%s\n' "$?" >"$close_rc") & close_pid=$!
+  (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh follow-up --job close-race --message "$follow_message" >/dev/null 2>&1; printf '%s\n' "$?" >"$follow_rc") & follow_pid=$!
+  wait "$close_pid"; wait "$follow_pid"
+  close_won=$(cat "$close_rc"); follow_won=$(cat "$follow_rc")
+  [[ ( "$close_won" == 0 && "$follow_won" != 0 ) || ( "$close_won" != 0 && "$follow_won" == 0 ) ]] \
+    || { echo "close/follow-up race did not serialize to one winner" >&2; exit 1; }
+
+  # Conformance uses the actual intent-to-add working-tree diff and protects
+  # both plans/ and the ignored agent control plane.
+  implement_brief="$agent_fixture/implement.md"
+  make_agent_brief "$implement_brief" implement
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role implementer --brief "$implement_brief" --job-id conformance --worktree --wait)
+  agent_fails close-before-diff 'diff.patch is not mirrored' "$agent_dispatch" close --job conformance
+  (cd "$agent_repo" && scripts/agents/assert-conformance.sh --job conformance)
+  [[ -f "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" ]] \
+    || { echo "conformance did not persist diff.patch" >&2; exit 1; }
+  (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job conformance)
+  (cd "$agent_repo" && scripts/agents/dispatch.sh close --job conformance)
+  conformance_workspace=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workspaceRoot"])' "$agent_repo/artifacts/agents/jobs/conformance.json")
+  case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
+  printf 'untracked change\n' >"$conformance_workspace/source.txt"
+  agent_fails diff-boundary-mismatch 'Diff-boundary claim does not match computed diff' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+PY
+  (cd "$agent_repo" && scripts/agents/assert-conformance.sh --job conformance)
+  mkdir -p "$conformance_workspace/plans"
+  printf 'delegate plan\n' >"$conformance_workspace/plans/delegate.md"
+  python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt plans/delegate.md <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+PY
+  agent_fails untracked-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  git -C "$conformance_workspace" add source.txt plans/delegate.md
+  git -C "$conformance_workspace" -c user.name=harness -c user.email=harness@example.invalid commit -qm delegate-checkpoint
+  agent_fails committed-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  printf 'uncommitted change\n' >>"$conformance_workspace/plans/delegate.md"
+  agent_fails uncommitted-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  mkdir -p "$conformance_workspace/artifacts/agents"
+  printf 'tamper\n' >"$conformance_workspace/artifacts/agents/tamper"
+  agent_fails control-plane-change 'agent control plane contains delegate-created files' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+
+  # Snapshot refusal, fallbacks, permission waivers, and raw/event degradations.
+  snapshot_dir="$agent_repo/artifacts/agents/capabilities"
+  snapshot_save="$agent_fixture/snapshots"
+  mkdir -p "$snapshot_save"
+  mv "$snapshot_dir"/*.json "$snapshot_save/"
+  agent_fails no-snapshot 'no capability snapshot matches' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id no-snapshot
+  "$fake_adapter" probe --age-days 31 >/dev/null
+  agent_fails stale-snapshot 'capability snapshot is stale' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-snapshot
+  mv "$snapshot_dir"/*.json "$agent_fixture/"
+  mv "$snapshot_save"/*.json "$snapshot_dir/"
+
+  old_save="$agent_fixture/current-snapshots"
+  mkdir -p "$old_save"
+  mv "$snapshot_dir"/*.json "$old_save/"
+  "$fake_adapter" probe --profile old >/dev/null
+  old_brief="$agent_fixture/old-capabilities.md"
+  make_agent_brief "$old_brief" implement 'FAKE:old-capability-set' 'FAKE:no-event-stream' 'FAKE:hook-unavailable'
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role implementer --brief "$old_brief" --job-id old-capabilities --worktree --wait)
+  python3 - "$agent_repo/artifacts/agents/jobs/old-capabilities.json" <<'PY'
+import json, sys
+record = json.load(open(sys.argv[1])); assert record["sessionEstablishedSignal"] is False
+assert any(item["capability"] == "resume" for item in record["capabilityFallbacks"])
+PY
+  [[ ! -e "$agent_repo/artifacts/agents/old-capabilities/rounds/1/events.jsonl" ]] \
+    || { echo "no-event-stream fallback emitted a native event file" >&2; exit 1; }
+  grep -Fq 'polling fallback used' "$agent_repo/artifacts/agents/jobs/old-capabilities.log" \
+    || { echo "hook-unavailable fallback was not observable" >&2; exit 1; }
+  (cd "$agent_repo" && scripts/agents/dispatch.sh follow-up --job old-capabilities --message "$follow_message" --wait)
+  python3 - "$agent_repo" <<'PY'
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1]); parent = json.loads((root / "artifacts/agents/jobs/old-capabilities.json").read_text()); child = json.loads((root / "artifacts/agents/jobs/old-capabilities-r2.json").read_text())
+assert child["resumeMode"] == "fresh-context" and child["sessionId"] != parent["sessionId"]
+prompt = (root / "artifacts/agents/old-capabilities/rounds/2/prompt.md").read_text()
+assert "# Prior brief" in prompt and "# Prior return" in prompt and "# Correction" in prompt
+PY
+  mv "$snapshot_dir"/*.json "$agent_fixture/"
+  mv "$old_save"/*.json "$snapshot_dir/"
+
+  requirements="$agent_repo/scripts/agents/roles/design-critic.requirements.json"
+  saved_requirements="$agent_fixture/design-critic.requirements.json"
+  cp "$requirements" "$saved_requirements"
+  "$fake_adapter" probe --profile unverified-network >/dev/null
+  agent_fails unverified-deny 'cannot verify restrictive permission field network' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id unverified-deny
+  perl -0pi -e 's/"optional": \{\}/"optional": {},\n  "waivers": {"network": ["fake"]}/' "$requirements"
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id waived-deny --wait)
+  cp "$saved_requirements" "$requirements"
+  "$fake_adapter" probe >/dev/null
+
+  nested_brief="$agent_fixture/nested.md"
+  make_agent_brief "$nested_brief" design 'FAKE:nested-agent-events'
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$nested_brief" --job-id nested-events --wait)
+  grep -Fq '"topLevel":false' "$agent_repo/artifacts/agents/nested-events/rounds/1/events.jsonl" \
+    || { echo "nested-agent event was not captured" >&2; exit 1; }
+  [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job nested-events)" == completed ]] \
+    || { echo "nested completion event ended the wrong lifecycle" >&2; exit 1; }
+  malicious_brief="$agent_fixture/malicious.md"
+  make_agent_brief "$malicious_brief" design 'Fake-Argument: $(touch should-not-exist)'
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$malicious_brief" --job-id malicious-argument --wait)
+  [[ ! -e "$agent_repo/should-not-exist" ]] || { echo "malicious provider argument was evaluated" >&2; exit 1; }
+  grep -Fq '$(touch should-not-exist)' "$agent_repo/artifacts/agents/malicious-argument/rounds/1/raw.out" \
+    || { echo "malicious provider argument was not transported verbatim as a value" >&2; exit 1; }
+
+  # Dispatch only reads mission leases. The future mission runner owns their
+  # acquisition and renewal; this fixture fabricates the frozen shape around
+  # a process whose command line carries the instance tag.
+  mkdir -p "$agent_repo/plans" "$agent_repo/artifacts/agents/missions/mission-alpha"
+  printf '```text\nfence.job-cap-min=120\n```\n' >"$agent_repo/plans/mission-mission-alpha.contract.md"
+  python3 -c 'import time; time.sleep(30)' mission-lease-tag & mission_pid=$!
+  mission_pgid=$(python3 -c 'import os,sys; print(os.getpgid(int(sys.argv[1])))' "$mission_pid")
+  mission_identity="$agent_fixture/mission-process-identity.json"
+  python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" "$mission_identity" "$mission_pid" "$mission_pgid" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+pid, pgid = int(sys.argv[3]), int(sys.argv[4])
+Path(sys.argv[1]).write_text(json.dumps({"missionId":"mission-alpha","pid":pid,"pgid":pgid,"instanceTag":"mission-lease-tag","startedAt":now,"renewedAt":now}) + "\n")
+Path(sys.argv[2]).write_text(json.dumps({str(pid): {"pgid": pgid, "command": "python3 fixture mission-lease-tag"}}) + "\n")
+PY
+  export HARNESS_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
+  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --wait)
+  HARNESS_MISSION_ID=mission-alpha HARNESS_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
+    "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --wait
+  agent_fails mission-cap 'exceeds the mission' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min 121
+  agent_fails missing-mission-lease 'does not have a live' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id missing-mission --mission missing
+  agent_fails ambiguous-mission 'ambiguous mission context' env HARNESS_MISSION_ID=mission-alpha HARNESS_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
+    "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-ambiguous --mission another
+  [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mission"])' "$agent_repo/artifacts/agents/jobs/happy.json")" == None ]] \
+    || { echo "unstamped interactive dispatch gained mission authority" >&2; exit 1; }
+  kill "$mission_pid" 2>/dev/null || true
+  wait "$mission_pid" 2>/dev/null || true
+  unset HARNESS_FAKE_PROCESS_IDENTITY_FILE
+
+  agent_fails unknown-status-job '' "$agent_dispatch" status --job absent
+  set +e
+  "$agent_dispatch" status --job absent >/dev/null 2>&1
+  unknown_status=$?
+  set -e
+  [[ $unknown_status -eq 6 ]] || { echo "unknown status job mapped to $unknown_status instead of 6" >&2; exit 1; }
+  printf '{malformed\n' >"$agent_repo/artifacts/agents/jobs/malformed-status.json"
+  set +e
+  "$agent_dispatch" status --job malformed-status >/dev/null 2>&1
+  malformed_record_status=$?
+  set -e
+  [[ $malformed_record_status -eq 7 ]] || { echo "malformed status record mapped to $malformed_record_status instead of 7" >&2; exit 1; }
+  "$fake_adapter" selftest >"$agent_fixture/fake-selftest.out"
+  grep -Fq 'full protocol sequence' "$agent_fixture/fake-selftest.out" \
+    || { echo "fake adapter selftest did not run its full protocol sequence" >&2; exit 1; }
+  python3 - "$agent_repo/artifacts/agents/selftests" <<'PY'
+import json, sys
+from pathlib import Path
+paths = list(Path(sys.argv[1]).glob("fake-selftest-*.json")); assert paths
+value = json.loads(max(paths, key=lambda path: path.stat().st_mtime).read_text())
+assert "resume-identity" in value["provenBehaviorally"] and "network" in value["constructedOnly"]
+PY
+
+  export HARNESS_SKIP_AGENT_FIXTURES=1
+fi
 
 # The shipped Stop hook must stay rooted and surface via JSON output: hooks
 # run in the session's cwd, receipt.sh resolves its ledger from there, and a
@@ -747,6 +1342,8 @@ if (( template_mode )); then
   rm -rf "$adopted/meta" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
   sed 's/<[^>]*>/filled/g' "$adopted/docs/project-rules.md" >"$adopted/docs/project-rules.md.new"
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
+  sed 's/<[^>]*>/filled/g' "$adopted/harness.conf" >"$adopted/harness.conf.new"
+  mv "$adopted/harness.conf.new" "$adopted/harness.conf"
   bash "$adopted/scripts/validate-harness.sh" >/dev/null 2>&1 || {
     echo "adopted-mode validation failed for a copy with one skill pruned" >&2
     exit 1
@@ -811,6 +1408,8 @@ if (( template_mode )); then
   fi
   sed 's/<[^>]*>/filled/g' "$tgt/docs/project-rules.md" >"$tgt/docs/project-rules.md.new"
   mv "$tgt/docs/project-rules.md.new" "$tgt/docs/project-rules.md"
+  sed 's/<[^>]*>/filled/g' "$tgt/harness.conf" >"$tgt/harness.conf.new"
+  mv "$tgt/harness.conf.new" "$tgt/harness.conf"
   bash "$tgt/scripts/validate-harness.sh" >/dev/null 2>&1 || { echo "adopt: filled target failed validation" >&2; exit 1; }
 
   bash "$adopt" "$tmp/adopt-devin" --runtimes devin >/dev/null
@@ -831,6 +1430,8 @@ if (( template_mode )); then
     || { echo "adopt: --copy-skills did not copy the codex registration" >&2; exit 1; }
   sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/docs/project-rules.md" >"$tmp/adopt-copy/docs/project-rules.md.new"
   mv "$tmp/adopt-copy/docs/project-rules.md.new" "$tmp/adopt-copy/docs/project-rules.md"
+  sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/harness.conf" >"$tmp/adopt-copy/harness.conf.new"
+  mv "$tmp/adopt-copy/harness.conf.new" "$tmp/adopt-copy/harness.conf"
   bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1 || { echo "adopt: copied-skills target failed validation" >&2; exit 1; }
   echo drift >>"$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
   if bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1; then
@@ -985,6 +1586,11 @@ printf 'log text, not json\n'                            >"$wbj/jobs/dual.log"
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8" --once >"$wbj/o8" 2>&1
 [ "$(grep -c '^DONE dual' "$wbj/o8")" -eq 1 ] || {
   echo "watch-background-jobs: job with a sidecar did not report exactly once" >&2; exit 1; }
+printf '{"jobId":"chain-r2","parentJob":"chain","round":2,"status":"completed","workspaceRoot":"/r/mine"}' >"$wbj/jobs/chain-r2.json"
+touch "$wbj/s8b"
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --state "$wbj/s8b" --once >"$wbj/o8b" 2>&1
+grep -q '^DONE chain-r2 status=completed' "$wbj/o8b" || {
+  echo "watch-background-jobs: follow-up child was not tracked under its own id" >&2; exit 1; }
 # scope: own repo and its worktrees in, peer repo and prefix-collision out
 printf '{"status":"completed","workspaceRoot":"/r/mine"}'                >"$wbj/jobs/sc-mine.json"
 printf '{"status":"completed","workspaceRoot":"/r/mine/.worktrees/w"}'   >"$wbj/jobs/sc-wt.json"
