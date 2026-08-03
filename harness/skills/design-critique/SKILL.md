@@ -33,6 +33,8 @@ Require the critic's verdict line to count only material findings.
 
 A round is closed only when every material finding carries a disposition — and that is a claim to be checked, not asserted. Parse the critique into a structured worklist (stable identifier, severity, proposal) and join it against the dispositions; the round closes when the two sets are equal. Working from prose invites the failure this prevents: "N corrections applied" reads like closure while unaddressed findings sit in the body, and the next round spends itself rediscovering them instead of finding anything new. If the critique carries no stable identifier per finding, ask for one — an unjoinable critique can be estimated, not closed.
 
+The mechanical form uses the canonical `findings` array in the critic's `return.json` and a Markdown dispositions table headed `| Finding id | Disposition | Reasoning and evidence | Amendment |`; run `scripts/assert-critique-closed.sh --findings <return.json> --dispositions <file>` to perform the join.
+
 Refutations carry the same burden of proof as the findings they answer. Record the evidence literally: the exact string searched and what it returned, not a summary of the conclusion. Both directions fail in practice — a finding can be wrong on the facts, and a refutation can be wrong because it checked the wrong string.
 
 ## Fix the Generating Cause Once

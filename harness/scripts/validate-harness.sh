@@ -68,6 +68,7 @@ for link in \
   scripts/agents/dispatch.sh \
   scripts/agents/adapters/fake.sh \
   scripts/agents/assert-conformance.sh \
+  scripts/assert-critique-closed.sh \
   scripts/assert-return-complete.sh \
   scripts/agents/check-preamble-quotes.sh; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
@@ -347,6 +348,158 @@ return_usage_status=$?
 set -e
 [[ $return_usage_status -eq 2 ]] \
   || { echo "return checker used $return_usage_status instead of exit 2 for usage" >&2; exit 1; }
+
+# Critique closure joins the canonical return JSON against the one Markdown
+# dispositions table. Reuse the item-2 return fixture shape and vary only the
+# findings and table rows needed to exercise each join invariant.
+critique_fixtures="$tmp/critiques"
+mkdir -p "$critique_fixtures"
+python3 - "$return_fixtures/design-critic-positive.json" "$critique_fixtures" <<'PY'
+import copy
+import json
+import sys
+from pathlib import Path
+
+source = json.loads(Path(sys.argv[1]).read_text())
+out = Path(sys.argv[2])
+material = {
+    "id": "F-1", "severity": "high", "material": True,
+    "claim": "contract gap", "evidence": "read design",
+}
+nonmaterial = {
+    "id": "F-2", "severity": "low", "material": False,
+    "claim": "wording issue", "evidence": "read design",
+}
+second_material = {
+    "id": "F-3", "severity": "medium", "material": True,
+    "claim": "incorrect premise", "evidence": "checked implementation",
+}
+
+
+def write_return(name, findings):
+    value = copy.deepcopy(source)
+    value["findings"] = findings
+    value["verdictMaterialCount"] = sum(1 for finding in findings if finding["material"])
+    (out / f"{name}.json").write_text(json.dumps(value, indent=2) + "\n")
+
+
+def write_table(name, rows, separator="| --- | --- | --- | --- |"):
+    lines = [
+        "| Finding id | Disposition | Reasoning and evidence | Amendment |",
+        separator,
+        *[f"| {finding_id} | {disposition} | {reasoning} | {amendment} |"
+          for finding_id, disposition, reasoning, amendment in rows],
+    ]
+    (out / f"{name}.md").write_text("\n".join(lines) + "\n")
+
+
+write_return("joinable", [material, nonmaterial, second_material])
+write_table("all-disposed", [
+    ("F-1", "accepted", "design amended", "section 3"),
+    ("F-2", "noted", "does not change implementation", "none"),
+    ("F-3", "refuted", "implementation disproves the claim", "none"),
+])
+write_table("open-material", [
+    ("F-2", "noted", "does not change implementation", "none"),
+    ("F-3", "refuted", "implementation disproves the claim", "none"),
+])
+write_table("noted-on-material", [
+    ("F-1", "noted", "incorrect disposition", "none"),
+    ("F-2", "noted", "does not change implementation", "none"),
+    ("F-3", "refuted", "implementation disproves the claim", "none"),
+])
+write_table("missing-nonmaterial-disposition", [
+    ("F-1", "accepted", "design amended", "section 3"),
+    ("F-3", "refuted", "implementation disproves the claim", "none"),
+])
+write_table("unknown-disposition", [
+    ("F-1", "dismissed", "not a protocol value", "none"),
+    ("F-2", "noted", "does not change implementation", "none"),
+    ("F-3", "refuted", "implementation disproves the claim", "none"),
+])
+write_table("unknown-finding-id", [
+    ("F-1", "accepted", "design amended", "section 3"),
+    ("F-2", "noted", "does not change implementation", "none"),
+    ("F-3", "refuted", "implementation disproves the claim", "none"),
+    ("F-404", "refuted", "no matching finding", "none"),
+])
+
+write_return("duplicate-id", [material, material, nonmaterial, second_material])
+write_table("duplicate-id", [
+    ("F-1", "accepted", "first row", "section 3"),
+    ("F-1", "refuted", "second row", "none"),
+    ("F-2", "noted", "does not change implementation", "none"),
+    ("F-3", "refuted", "implementation disproves the claim", "none"),
+])
+
+missing_findings = copy.deepcopy(source)
+missing_findings.pop("findings")
+(out / "unjoinable-missing-findings.json").write_text(
+    json.dumps(missing_findings, indent=2) + "\n"
+)
+write_table("unjoinable-malformed-table", [], separator="| --- | --- | --- |")
+PY
+
+scripts/assert-critique-closed.sh \
+  --findings "$critique_fixtures/joinable.json" \
+  --dispositions "$critique_fixtures/all-disposed.md"
+
+check_open_critique() { # fixture name, findings file, dispositions file, diagnostics...
+  local name=$1 findings_file=$2 dispositions_file=$3 output status expected
+  shift 3
+  output="$tmp/critique-$name.out"
+  set +e
+  scripts/assert-critique-closed.sh \
+    --findings "$findings_file" \
+    --dispositions "$dispositions_file" >"$output" 2>&1
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
+    echo "critique checker accepted the negative $name fixture" >&2
+    exit 1
+  fi
+  [[ $status -eq 1 ]] \
+    || { echo "critique checker used $status instead of exit 1 for $name" >&2; exit 1; }
+  for expected in "$@"; do
+    grep -Fq "$expected" "$output" || {
+      echo "critique checker did not name the $name violation: $expected" >&2
+      cat "$output" >&2
+      exit 1
+    }
+  done
+}
+
+check_open_critique open-material \
+  "$critique_fixtures/joinable.json" "$critique_fixtures/open-material.md" \
+  "finding id 'F-1' has no disposition row"
+check_open_critique noted-on-material \
+  "$critique_fixtures/joinable.json" "$critique_fixtures/noted-on-material.md" \
+  "material finding id 'F-1' cannot use disposition 'noted'"
+check_open_critique missing-nonmaterial-disposition \
+  "$critique_fixtures/joinable.json" "$critique_fixtures/missing-nonmaterial-disposition.md" \
+  "finding id 'F-2' has no disposition row"
+check_open_critique duplicate-id \
+  "$critique_fixtures/duplicate-id.json" "$critique_fixtures/duplicate-id.md" \
+  "duplicate finding id: 'F-1'" "duplicate disposition id: 'F-1'"
+check_open_critique unknown-disposition \
+  "$critique_fixtures/joinable.json" "$critique_fixtures/unknown-disposition.md" \
+  "disposition for finding id 'F-1' has unknown value 'dismissed'"
+check_open_critique unknown-finding-id \
+  "$critique_fixtures/joinable.json" "$critique_fixtures/unknown-finding-id.md" \
+  "disposition names unknown finding id: 'F-404'"
+check_open_critique unjoinable-format-missing-findings \
+  "$critique_fixtures/unjoinable-missing-findings.json" "$critique_fixtures/all-disposed.md" \
+  '$.findings array is missing'
+check_open_critique unjoinable-format-malformed-table \
+  "$critique_fixtures/joinable.json" "$critique_fixtures/unjoinable-malformed-table.md" \
+  "malformed dispositions table: invalid separator row"
+
+set +e
+scripts/assert-critique-closed.sh >"$tmp/critique-usage.out" 2>&1
+critique_usage_status=$?
+set -e
+[[ $critique_usage_status -eq 2 ]] \
+  || { echo "critique checker used $critique_usage_status instead of exit 2 for usage" >&2; exit 1; }
 
 # Job mode derives the schema and return path from the record and then checks
 # all four identity fields, one at a time, against a schema-valid return.
