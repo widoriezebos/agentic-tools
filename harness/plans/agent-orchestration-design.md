@@ -324,6 +324,8 @@ Owned by `docs/orchestration.md`, filled during implementation, one row per capa
 | `harness.conf` | New root file: every durable machine-read knob, the roster included; shipped by `adopt.sh` with placeholders and the selected runtimes recorded |
 | `scripts/harness-config.sh` | New shared reader implementing the resolution order; `receipt.sh`, `refactor-baseline.sh`, and `watch-background-jobs.sh` read their knobs through it between flag and built-in default |
 | `plans/README.md` | Job directories named as evidence under `artifacts/`; the standing-ledger list is unchanged, since configuration lives in `harness.conf` rather than a ledger |
+| `docs/getting-started.md` | New in-payload teaching document: the from-scratch setup, configuration, and usage walkthrough (Part 7) |
+| `docs/project-adaptation.md` | Gains the `harness.conf` filling step and the dispatch-mechanism registration facts; stays the canonical adoption owner |
 | `skills/code-critique/` | New skill: conformance layer, adversarial layer, its own materiality criterion, round budget with escalation (closes L8), findings format shared with design-critique |
 | `skills/design-critique/SKILL.md` | Names the findings format and the join checker as the mechanical form of its close-by-join rule |
 | `scripts/receipt.sh` | `--delegate runtime:model:job-id`, repeatable; sanitized like the other fields |
@@ -433,6 +435,24 @@ Before the first unsupervised cycle, a preflight must pass: `assert-mission.sh` 
 
 The five behaviors in Part 5 are binding rules of mission mode, restated here as the one-line law: the human's absence narrows what the loop may do, never widens it. Reserved decisions outside an envelope park; red tests park; instruction files, the conf, and the roster are frozen for the mission's duration (a needed change is itself a batched ask); retro proposals queue; and no envelope can authorize what `docs/project-rules.md` reserves unconditionally, such as production data.
 
+## Part 7: Adoption and Usage Documentation
+
+Requirement stated by the user 2026-08-03: an agent adopting the harness for a repository from scratch must know exactly how to set up, configure, and use it, from the shipped documentation alone.
+
+What exists today and where it falls short of that:
+
+- `docs/project-adaptation.md` owns the adoption steps and stays authoritative, but it predates this plan's mechanism (no `harness.conf`, no roster, no dispatcher, no missions), and it is a specification more than a walkthrough.
+- The README is the only overview and is deliberately excluded from the adoption payload, so an adopted repository ships with no overview document at all.
+- `docs/working-modes.md` teaches the modes, and nothing teaches setup, configuration, or the orchestration mechanism.
+- Every agent-facing document assumes the harness is already installed and configured; `docs/working-with-agents.md` addresses the human. No document addresses the adopting agent as its reader.
+
+Design:
+
+- A new `docs/getting-started.md` ships in the payload as the second in-payload teaching document, under the same declared-exception rule as `docs/working-modes.md`: it restates for teaching, sets no rules of its own, and loses on any conflict with a rule's owner, and its header says so. Its reader is whoever stands in a freshly adopted repository, agent or human. Contents in execution order: what the harness is, in a few lines; the `adopt.sh` invocation and what it just did; filling `docs/project-rules.md`, with what each fact is for and what "verified" means; filling `harness.conf`, every key with its effect and its owning document linked; runtime registration per selected runtime and how to check it worked; the closing validation and what zero placeholders means; the first task walked through the completion gate; the first dispatch (roster, brief, watcher, review of the return); the first mission (contract, preflight, the four end states); and the map of where every rule lives when depth is needed.
+- `docs/project-adaptation.md` gains the `harness.conf` filling step and the dispatch-mechanism registration facts, staying the canonical owner of adoption. The guide links it instead of replacing it.
+- The proof rule: the Phase 5 rehearsal (item 18) is driven from the shipped documentation alone. The operator may consult only the adopted payload, and every point where outside knowledge turns out to be needed is a documentation defect, logged and fixed before the rehearsal counts. That is the only honest test of "knows exactly how".
+- Validation: the guide joins the required-asset list in both validator modes, and the audit's placeholder scan covers it.
+
 ## Decisions, All Answered
 
 All seven were answered by the user on 2026-08-03. Kept in full as the record of what was decided and why.
@@ -483,7 +503,8 @@ One commit per item; each script lands with its fixtures in the same commit.
 15. The token proxy: the `mission` field in job records and briefs, cost summation in `dispatch.sh`, warn and fence behavior with wind-down statuses and the batched ask, fixtured through the fake adapter.
 16. The mission ledger under `assert-stop-loss.sh`: the mission-shaped ledger fixture, park semantics for `parked-reserved` and `parked-stop-loss` streams, and the mid-mission reserved-decision fixture (one stream parks, another continues).
 17. Acceptance-criteria and Evidence sections in the brief and return templates take the input-expected-verification shape (source-repository pattern 3), so conformance review replays the delegate's verification verbatim.
-18. The unsupervised rehearsal: one recorded mission on a scratch repository with the human absent for the run, small enough to finish (make a failing suite pass), proving the preflight, the ledger, a deliberately injected reserved decision that parks one stream, and a gate-driven stop. This is Phase 5's runtime proof, run after Phase 4's end-to-end proof.
+18. The unsupervised rehearsal: one recorded mission on a scratch repository with the human absent for the run, small enough to finish (make a failing suite pass), proving the preflight, the ledger, a deliberately injected reserved decision that parks one stream, and a gate-driven stop. The rehearsal is driven from the shipped documentation alone per Part 7's proof rule: any point needing outside knowledge is a documentation defect fixed before the rehearsal counts. This is Phase 5's runtime proof, run after Phase 4's end-to-end proof and after item 19.
+19. `docs/getting-started.md` per Part 7, with its declared-exception header; the `harness.conf` step and registration facts added to `docs/project-adaptation.md`; the guide registered in the validator's required-asset lists and the audit's placeholder scan. Lands before item 18, which proves it.
 
 ## Obligation Matrix
 
@@ -508,6 +529,7 @@ Run `scripts/assert-design-obligation-gate.sh --file plans/agent-orchestration-d
 | ORCH-15 | HIGH | U3 | Dispatch warns past the mission's token threshold, refuses past the fence, and winds down to terminal statuses with the batched ask written | `scripts/agents/dispatch.sh` | mission cost summation in `dispatch.sh` | warn, fence, and wind-down fixtures through the fake adapter | Not applicable: fixture-covered script logic | PARTIAL | Item 15 |
 | ORCH-16 | HIGH | U4 | The mission keeps a ledger with a declared cycle budget under the existing stop-loss enforcement, and a fired trigger parks the mission instead of authorizing another cycle | `scripts/assert-stop-loss.sh` | the mission ledger shape in `docs/orchestration.md` | the mission-shaped ledger fixture | The rehearsal's injected no-progress park (item 18) | PARTIAL | Item 16 |
 | ORCH-17 | HIGH | Part 5 | The five human-dependency behaviors bind mission mode: reserved decisions outside an envelope park their stream while others continue, and instructions, conf, and roster stay frozen for the mission's duration | `docs/orchestration.md` | the mission-mode rules section | the mid-mission reserved-decision fixture (item 16) | The rehearsal's injected reserved decision (item 18) | PARTIAL | Items 16 and 18 |
+| ORCH-18 | HIGH | Part 7 | An agent in a freshly adopted repository can set up, configure, and use the harness, dispatches and missions included, from the shipped documentation alone | `docs/getting-started.md` | the guide plus the updated `docs/project-adaptation.md` | required-asset and placeholder checks in `scripts/validate-harness.sh` and `scripts/audit-harness.sh` | The rehearsal driven from shipped documentation only, doc defects logged and fixed (items 18 and 19) | PARTIAL | Item 19, then item 18 |
 
 ## Critique Ledger
 
