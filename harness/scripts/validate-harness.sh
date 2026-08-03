@@ -915,17 +915,20 @@ if (( template_mode )); then
   }
 fi
 
-# watch-background-jobs: all four reportable states plus baseline suppression
+# watch-background-jobs: all four reportable states plus baseline suppression.
+# The state file is pre-created because a MISSING state file auto-baselines on
+# first run (the 2026-08-03 hardening); an existing empty state means armed.
 wbj="$tmp/wbj"; mkdir -p "$wbj/jobs"
 printf '{"status":"completed"}' >"$wbj/jobs/done.json"
 printf '{"status":"running"}'   >"$wbj/jobs/live.json"
+touch "$wbj/s1" "$wbj/s2" "$wbj/s3" "$wbj/s3b" "$wbj/s3c" "$wbj/s6" "$wbj/s7" "$wbj/s8"
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o1" 2>&1
 grep -q "^DONE done status=completed" "$wbj/o1" || {
   echo "watch-background-jobs: terminal job not reported" >&2; exit 1; }
 grep -q "live" "$wbj/o1" && {
   echo "watch-background-jobs: running job reported as terminal" >&2; exit 1; }
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$wbj/o2" 2>&1
-[ -s "$wbj/o2" ] && {
+grep -v "^ARMED " "$wbj/o2" | grep -q . && {
   echo "watch-background-jobs: re-reported an already-reported job" >&2; exit 1; }
 # age the record by a controlled 10 minutes so stale and cap are separable
 python3 - "$wbj/jobs/live.json" <<'AGE'
@@ -996,10 +999,16 @@ grep -q "sc-peer" "$wbj/o6" && {
   echo "watch-background-jobs: peer repository job reported" >&2; exit 1; }
 grep -q "sc-prefix" "$wbj/o6" && {
   echo "watch-background-jobs: scope matched on a path prefix" >&2; exit 1; }
-# distinct scopes must not share default state
-a=$(scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine --once 2>/dev/null | wc -l)
-b=$(scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | wc -l)
-[ "$a" -gt 0 ] && [ "$b" -gt 0 ] || {
+# distinct scopes must not share default state. Auto-baseline swallows the
+# first pass per fresh default state, so warm each scope, then prove each
+# reports a job that arrives after its own arming.
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once >/dev/null 2>&1
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once >/dev/null 2>&1
+printf '{"status":"completed","workspaceRoot":"/r/mine"}'  >"$wbj/jobs/nu-mine.json"
+printf '{"status":"completed","workspaceRoot":"/r/other"}' >"$wbj/jobs/nu-other.json"
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once 2>/dev/null | grep -q "^DONE nu-mine" || {
+  echo "watch-background-jobs: post-arming job not reported under its scope's default state" >&2; exit 1; }
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
   echo "watch-background-jobs: distinct scopes shared a default state file" >&2; exit 1; }
 
 echo "harness validation passed"
