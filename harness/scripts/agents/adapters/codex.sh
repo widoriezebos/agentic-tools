@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/adapters/codex.sh identity
+  scripts/agents/adapters/codex.sh signature
   scripts/agents/adapters/codex.sh probe
   scripts/agents/adapters/codex.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -187,6 +188,7 @@ supervise() { # dispatch|follow-up and supervisor args
 
   "${command[@]}" <"$prompt" >"$events" 2>>"$log" &
   cli_pid=$!
+  register_cli_custody "$cli_pid" || { terminate_cli_child "$cli_pid"; fail_pending custody_registration handshake; return 1; }
   while kill -0 "$cli_pid" 2>/dev/null; do
     event_session=$(codex_event_field "$events" session 2>/dev/null || true)
     if [[ -n "$event_session" ]]; then
@@ -217,6 +219,13 @@ command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
 case "$command_name" in
+  signature)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' \
+      'match (^|[[:space:]])([^[:space:]]*/)?codex([[:space:]]|$)' \
+      'exclude supervision-hook\.sh' \
+      'exclude scripts/agents/adapters/codex\.sh'
+    ;;
   identity)
     (($# == 0)) || { usage; exit 2; }
     codex_identity

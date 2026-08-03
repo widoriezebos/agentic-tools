@@ -21,6 +21,8 @@ die() { echo "$2" >&2; exit "$1"; }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 config="$root/harness.conf"
+repo_scope=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || true)
+[[ -n "$repo_scope" ]] && repo_scope=$(cd "$repo_scope" && pwd -P)
 
 conf_value() { # key
   python3 - "$config" "$1" <<'PY'
@@ -100,7 +102,7 @@ get_value() {
 }
 
 validate_config() {
-  python3 - "$config" "$root" <<'PY'
+  python3 - "$config" "${repo_scope:-$root}" <<'PY'
 import os
 import re
 import sys

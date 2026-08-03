@@ -4,7 +4,17 @@ set -euo pipefail
 root=${1:-.}
 cd "$root"
 
-command -v rg >/dev/null || { echo "ripgrep (rg) is required; without it the reference and placeholder checks cannot run" >&2; exit 2; }
+search_lines() { # POSIX ERE followed by files/directories
+  local pattern=$1
+  shift
+  if command -v rg >/dev/null 2>&1; then
+    rg -n "$pattern" "$@"
+  else
+    # grep -R is the portable IL-3 path. The scan roots are already explicit,
+    # so excluding .git preserves the same harness-owned boundary as rg.
+    grep -EnR --exclude-dir=.git -- "$pattern" "$@" 2>/dev/null
+  fi
+}
 
 required=(AGENTS.md wow.md harness.conf docs/project-rules.md docs/orchestration.md docs/collaboration.md docs/design/design-principles.md docs/design/design-obligation-gate.md)
 for file in "${required[@]}"; do
@@ -35,7 +45,7 @@ for p in AGENTS.md CLAUDE.md wow.md \
   plans/README.md plans/instruction-ledger.md plans/known-issues.md; do
   [[ -e "$p" ]] && scan+=("$p")
 done
-if rg -n "$outside_pattern" "${scan[@]}"; then
+if search_lines "$outside_pattern" "${scan[@]}"; then
   echo "references outside the harness are forbidden in harness-owned files" >&2
   exit 1
 fi
@@ -49,7 +59,7 @@ find "${skill_dirs[@]}" -name SKILL.md -print | sort
 echo "Instruction inventory"
 find . -type f \( -name 'AGENTS.md' -o -name 'CLAUDE.md' -o -name 'wow.md' -o -name 'SKILL.md' -o -name 'AGENT.md' \) -print | sort
 
-if rg -n 'TODO|TBD|<one paragraph>|<command>|<paths' AGENTS.md wow.md "${skill_dirs[@]}"; then
+if search_lines 'TODO|TBD|<one paragraph>|<command>|<paths' AGENTS.md wow.md "${skill_dirs[@]}"; then
   echo "unresolved placeholders in active instructions" >&2
   exit 1
 fi
@@ -68,7 +78,7 @@ if [[ ! -f meta/harness-design.md ]]; then
   # the closing validate-harness run enforces them again.
   if [[ -z "${HARNESS_AUDIT_ALLOW_PLACEHOLDERS:-}" ]]; then
     placeholder_pattern='<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>'
-    if rg -n "$placeholder_pattern" docs/project-rules.md harness.conf; then
+    if search_lines "$placeholder_pattern" docs/project-rules.md harness.conf; then
       echo "adopted repository has unreplaced placeholders in docs/project-rules.md or harness.conf" >&2
       exit 1
     fi

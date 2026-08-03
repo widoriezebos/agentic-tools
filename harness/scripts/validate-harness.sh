@@ -49,6 +49,8 @@ for link in \
   scripts/adopt.sh \
   scripts/enforcement/github-actions-harness.yml \
   scripts/enforcement/claude-code-hooks.json \
+  scripts/enforcement/codex-hooks.json \
+  scripts/enforcement/devin-hooks.json \
   scripts/assert-stop-loss.sh \
   docs/project-adaptation.md \
   docs/harness-reconciliation.md \
@@ -69,6 +71,10 @@ for link in \
   harness.conf \
   scripts/harness-config.sh \
   scripts/agents/dispatch.sh \
+  scripts/agents/arm-supervision.sh \
+  scripts/agents/process-census.py \
+  scripts/agents/supervision-hook.sh \
+  scripts/agents/supervision-fixtures.sh \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
   scripts/agents/adapters/claude-session-signal.py \
@@ -79,13 +85,35 @@ for link in \
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
 
+# Section 3.11 and retained watch-list round S4 have one bounded fixture suite.
+# It names S4-1 through S4-10 at their owning checks and contains no uncapped
+# process wait (IL-1).
+if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
+  scripts/agents/supervision-fixtures.sh
+fi
+
 # Real runtime selftests spend model calls and remain manual acceptance steps.
 # Validation covers only their static adapter contract.
+bash -n scripts/agents/arm-supervision.sh
+bash -n scripts/agents/supervision-hook.sh
+bash -n scripts/agents/supervision-fixtures.sh
+bash -n scripts/watch-background-jobs.sh
+bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
-python3 - scripts/agents/adapters/claude-session-signal.py <<'PY'
+python3 - scripts/agents/adapters/claude-session-signal.py scripts/agents/process-census.py <<'PY'
 import ast, sys
 from pathlib import Path
-ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])
+for source in sys.argv[1:]:
+    ast.parse(Path(source).read_text(encoding="utf-8"), filename=source)
+PY
+python3 - scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json scripts/enforcement/devin-hooks.json <<'PY'
+import json, sys
+for source in sys.argv[1:]:
+    value=json.load(open(source))
+    hooks=value["hooks"]
+    assert set(hooks) >= {"SessionStart", "Stop", "SessionEnd"}
+    flattened=json.dumps(hooks)
+    assert "supervision-hook.sh" in flattened
 PY
 for runtime in claude codex devin; do
   adapter="scripts/agents/adapters/$runtime.sh"
@@ -93,7 +121,7 @@ for runtime in claude codex devin; do
   [[ -x "$adapter" ]] || { echo "$runtime runtime adapter is not executable: $adapter" >&2; exit 1; }
   bash -n "$adapter"
   adapter_usage=$($adapter --help 2>&1)
-  for verb in identity probe dispatch follow-up cancel selftest; do
+  for verb in identity signature probe dispatch follow-up cancel selftest; do
     grep -Fq "adapters/$runtime.sh $verb" <<<"$adapter_usage" \
       || { echo "$runtime adapter usage does not advertise $verb" >&2; exit 1; }
   done
@@ -206,7 +234,23 @@ if (( ! template_mode )); then
 fi
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+agent_supervision_repo=
+validation_cleanup() {
+  if [[ -n "${agent_supervision_repo:-}" && -x "$agent_supervision_repo/scripts/agents/arm-supervision.sh" ]]; then
+    "$agent_supervision_repo/scripts/agents/arm-supervision.sh" --repo "$agent_supervision_repo" --shutdown >/dev/null 2>&1 || true
+  fi
+  rm -rf "$tmp"
+}
+trap validation_cleanup EXIT
+
+# IL-3: prove the audit's fallback with a PATH that contains its ordinary POSIX
+# tools but deliberately contains no rg binary.
+no_rg_bin="$tmp/no-rg-bin"
+mkdir -p "$no_rg_bin"
+for command_name in cat find grep sort tr wc; do
+  ln -s "$(command -v "$command_name")" "$no_rg_bin/$command_name"
+done
+env PATH="$no_rg_bin" /bin/bash scripts/audit-harness.sh . >"$tmp/audit-no-rg.out"
 
 fill_harness_conf() { # config path, absolute evidence root
   python3 - "$1" "$2" <<'PY'
@@ -713,9 +757,12 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   mkdir -p "$agent_repo/scripts"
   agent_repo=$(cd "$agent_repo" && pwd -P)
   cp -R scripts/agents "$agent_repo/scripts/"
-  cp scripts/harness-config.sh scripts/assert-return-complete.sh "$agent_repo/scripts/"
+  cp scripts/harness-config.sh scripts/assert-return-complete.sh \
+    scripts/watch-background-jobs.sh "$agent_repo/scripts/"
   cp harness.conf "$agent_repo/"
-  perl -0pi -e 's/^harness\.runtimes=.*$/harness.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^model\.tier\.1=.*$/model.tier.1=fake:fake-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/harness.conf"
+  perl -0pi -e 's/^harness\.runtimes=.*$/harness.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=5/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=4096/m; s/^model\.tier\.1=.*$/model.tier.1=fake:fake-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/harness.conf"
+  grep -q '^watch\.interval-sec=' "$agent_repo/harness.conf" || printf 'watch.interval-sec=5\n' >>"$agent_repo/harness.conf"
+  grep -q '^census\.log-max-bytes=' "$agent_repo/harness.conf" || printf 'census.log-max-bytes=4096\n' >>"$agent_repo/harness.conf"
   git -C "$agent_repo" init -q
   git -C "$agent_repo" add .
   git -C "$agent_repo" -c user.name=harness -c user.email=harness@example.invalid commit -qm base
@@ -728,6 +775,29 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   agent_fixture_timeout_sec=${HARNESS_AGENT_FIXTURE_TIMEOUT_SEC:-20}
   [[ "$agent_fixture_timeout_sec" =~ ^[1-9][0-9]*$ && "$agent_fixture_timeout_sec" -le 120 ]] \
     || { echo "HARNESS_AGENT_FIXTURE_TIMEOUT_SEC must be an integer from 1 through 120" >&2; exit 1; }
+
+  wait_for_agent_census_fresh() { # fixture name
+    local name=$1 deadline=$((SECONDS + agent_fixture_timeout_sec)) expected
+    [[ -n "${agent_supervision_repo:-}" ]] || return 0
+    echo "agent fixture census wait: $name (cap: ${agent_fixture_timeout_sec}s)" >&2
+    while (( SECONDS < deadline )); do
+      expected=$("$agent_supervision_repo/scripts/agents/arm-supervision.sh" \
+        fingerprint --repo "$agent_supervision_repo" 2>/dev/null || true)
+      if [[ -n "$expected" ]] && python3 - \
+          "$agent_supervision_repo/artifacts/agents/supervision/last-census.json" \
+          "$expected" <<'PY'
+import json,sys,time
+try: value=json.load(open(sys.argv[1]))
+except (OSError,ValueError): raise SystemExit(1)
+age=int(time.time())-int(value.get("completedAtEpoch",0)); interval=int(value.get("intervalSec",0) or 0)
+raise SystemExit(0 if value.get("verdict")=="SUCCESS" and value.get("fingerprint")==sys.argv[2] and 0 <= age <= max(1,interval//2) else 1)
+PY
+      then return 0; fi
+      sleep 0.05
+    done
+    echo "agent fixture timed out waiting for a fresh census: $name" >&2
+    return 1
+  }
 
   agent_fixture_job_from_args() {
     local previous= argument
@@ -805,6 +875,7 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   run_agent_fixture() { # fixture name, job id or -, command...
     local name=$1 job=$2 child_pid
     shift 2
+    case ${2:-} in dispatch|follow-up) wait_for_agent_census_fresh "$name" ;; esac
     "$@" &
     child_pid=$!
     wait_for_agent_fixture_process "$name" "$job" "$child_pid"
@@ -813,6 +884,7 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   run_agent_fixture_captured() { # fixture name, job id or -, output file, command...
     local name=$1 job=$2 output=$3 child_pid
     shift 3
+    case ${2:-} in dispatch|follow-up) wait_for_agent_census_fresh "$name" ;; esac
     "$@" >"$output" 2>&1 &
     child_pid=$!
     wait_for_agent_fixture_process "$name" "$job" "$child_pid"
@@ -903,6 +975,22 @@ EOF
   agent_fails inside-evidence-root 'outside the repository' "$agent_config" validate
   cp "$good_agent_conf" "$agent_repo/harness.conf"
 
+  # All remaining dispatch fixtures run behind a real armed fake-runtime set.
+  # The explicit synthetic process table is fixture-only and keeps this test
+  # deterministic in restricted environments where ps enumeration is denied.
+  agent_process_fixture="$agent_fixture/processes.json"
+  agent_identity_fixture="$agent_fixture/process-identities.json"
+  printf '[]\n' >"$agent_process_fixture"
+  printf '{}\n' >"$agent_identity_fixture"
+  export HARNESS_CENSUS_PROCESS_FILE="$agent_process_fixture"
+  export HARNESS_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
+  agent_supervision_repo=$agent_repo
+  agent_main_start=$("$agent_repo/scripts/agents/process-census.py" started-at --pid "$$")
+  HARNESS_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
+    --repo "$agent_repo" --session validator --pid "$$" \
+    --start-time "$agent_main_start" --tag harness-main-fake-validator \
+    >"$agent_fixture/arming.out"
+
   first_snapshot=$($fake_adapter probe)
   second_snapshot=$($fake_adapter probe)
   [[ "$first_snapshot" == *-001.json && "$second_snapshot" == *-002.json && "$first_snapshot" != "$second_snapshot" ]] \
@@ -920,7 +1008,7 @@ root = Path(sys.argv[1])
 record = json.loads((root / "artifacts/agents/jobs/happy.json").read_text())
 required = {
     "jobId", "role", "mission", "runtime", "round", "parentJob", "status", "phase", "error",
-    "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "pid", "pgid", "instanceTag",
+    "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "pid", "pidStartedAt", "pgid", "instanceTag", "custodyProcesses",
     "sessionId", "turnId", "requestedModel", "effectiveModel", "overridden", "capabilitySnapshot",
     "input", "startedAt", "endedAt", "usage", "mirror",
 }
@@ -1358,7 +1446,7 @@ PY
     || { echo "unstamped interactive dispatch gained mission authority" >&2; exit 1; }
   kill "$mission_pid" 2>/dev/null || true
   wait_for_agent_fixture_process mission-lease-holder - "$mission_pid" 2>/dev/null || true
-  unset HARNESS_FAKE_PROCESS_IDENTITY_FILE
+  export HARNESS_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
 
   agent_fails unknown-status-job '' "$agent_dispatch" status --job absent
   set +e
@@ -1383,6 +1471,9 @@ value = json.loads(max(paths, key=lambda path: path.stat().st_mtime).read_text()
 assert "resume-identity" in value["provenBehaviorally"] and "network" in value["constructedOnly"]
 PY
 
+  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
+  agent_supervision_repo=
+  unset HARNESS_CENSUS_PROCESS_FILE HARNESS_FAKE_PROCESS_IDENTITY_FILE
   export HARNESS_SKIP_AGENT_FIXTURES=1
 fi
 
@@ -1822,6 +1913,9 @@ if (( template_mode )); then
     exit 1
   fi
   grep -q systemMessage "$tgt/.claude/settings.json" || { echo "adopt: settings.json lacks the shipped hook" >&2; exit 1; }
+  grep -q 'SessionStart' "$tgt/.claude/settings.json" \
+    && grep -q 'supervision-hook.sh.*claude start' "$tgt/.claude/settings.json" \
+    || { echo "adopt: Claude session-start supervision hook missing" >&2; exit 1; }
   [[ ! -e "$tgt/optional-skills" ]] || { echo "adopt: unselected optional skills were copied" >&2; exit 1; }
   [[ "$(cat "$tgt/README.md")" == "project readme" ]] || { echo "adopt: the project's own README was touched" >&2; exit 1; }
   [[ ! -e "$tgt/ignored-fixture.txt" ]] || { echo "adopt: ignored source content entered the payload" >&2; exit 1; }
@@ -1882,6 +1976,9 @@ if (( template_mode )); then
     || { echo "adopt: devin selection was not recorded" >&2; exit 1; }
   grep -qxF 'role.default.runtime=devin' "$tmp/adopt-devin/harness.conf" \
     || { echo "adopt: devin was not selected as the roster default" >&2; exit 1; }
+  [[ -f "$tmp/adopt-devin/.devin/config.json" ]] \
+    && grep -q 'supervision-hook.sh.*devin start' "$tmp/adopt-devin/.devin/config.json" \
+    || { echo "adopt: Devin-compatible session-start supervision hook missing" >&2; exit 1; }
   [[ ! -e "$tmp/adopt-devin/.claude" ]] || { echo "adopt: devin-only target got .claude state" >&2; exit 1; }
   bash "$adopt" "$tmp/adopt-codex" --runtimes codex >/dev/null
   [[ -L "$tmp/adopt-codex/.agents/skills/verify" ]] || { echo "adopt: codex skill registration missing" >&2; exit 1; }
@@ -1890,6 +1987,9 @@ if (( template_mode )); then
     || { echo "adopt: codex selection was not recorded" >&2; exit 1; }
   grep -qxF 'role.default.runtime=codex' "$tmp/adopt-codex/harness.conf" \
     || { echo "adopt: codex was not selected as the roster default" >&2; exit 1; }
+  [[ -f "$tmp/adopt-codex/.codex/hooks.json" ]] \
+    && grep -q 'supervision-hook.sh.*codex start' "$tmp/adopt-codex/.codex/hooks.json" \
+    || { echo "adopt: Codex session-start supervision hook missing" >&2; exit 1; }
   bash "$adopt" "$tmp/adopt-none" --runtimes none >/dev/null
   [[ ! -e "$tmp/adopt-none/.claude" && ! -e "$tmp/adopt-none/.devin" && ! -e "$tmp/adopt-none/.agents" ]] \
     || { echo "adopt: --runtimes none still registered a runtime" >&2; exit 1; }

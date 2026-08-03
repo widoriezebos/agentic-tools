@@ -19,9 +19,9 @@ placeholders.
 
 --runtimes defaults to claude. claude registers skills under .claude/skills
 (symlinks unless --copy-skills), profiles under .claude/agents, and writes
-.claude/settings.json with the shipped Stop hook. devin registers skills under
+.claude/settings.json with the shipped lifecycle hooks. devin registers skills under
 both .agents/skills and .devin/skills and copies AGENT.md profiles under
-.devin/agents. codex symlinks skills under .agents/skills,
+.devin/agents, then installs its Claude-compatible hook config. codex symlinks skills under .agents/skills and installs .codex/hooks.json,
 where OpenAI runtimes read each skill's agents/openai.yaml in place. none
 skips every runtime registration. The CI workflow installs regardless; it is
 runtime-neutral.
@@ -313,12 +313,14 @@ for rt in "${selected_runtimes[@]}"; do
           cp "$target/skills/$n/agents/devin/AGENT.md" "$target/.devin/agents/$n/AGENT.md"
         fi
       done
+      cp "$target/scripts/enforcement/devin-hooks.json" "$target/.devin/config.json"
       ;;
     codex)
-      mkdir -p "$target/.agents/skills"
+      mkdir -p "$target/.agents/skills" "$target/.codex"
       for n in ${skill_names[@]+"${skill_names[@]}"}; do
         [[ -e "$target/.agents/skills/$n" ]] || register_skill_dir "$target/.agents/skills" "$n"
       done
+      cp "$target/scripts/enforcement/codex-hooks.json" "$target/.codex/hooks.json"
       ;;
     none)
       ;;

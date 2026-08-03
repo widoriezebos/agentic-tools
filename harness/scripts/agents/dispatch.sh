@@ -25,6 +25,9 @@ USAGE
 die() { echo "$2" >&2; exit "$1"; }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+repo_scope=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) \
+  || die 1 "harness installation is not inside a git repository: $root"
+repo_scope=$(cd "$repo_scope" && pwd -P)
 config="$root/scripts/harness-config.sh"
 agents="$root/artifacts/agents"
 jobs="$agents/jobs"
@@ -34,10 +37,40 @@ record_locks="$agents/record-locks"
 capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
+process_census="$root/scripts/agents/process-census.py"
+arm_supervision="$root/scripts/agents/arm-supervision.sh"
 
 valid_id() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 sha256_file() { shasum -a 256 "$1" | awk '{print $1}'; }
+
+require_fresh_census() {
+  local verdict="$agents/supervision/last-census.json" expected
+  [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
+  python3 - "$verdict" <<'PY' || exit $?
+import json, sys, time
+from pathlib import Path
+try: value=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError,ValueError) as error: raise SystemExit(f"dispatch refused: census verdict is unreadable: {error}")
+required={"schemaVersion","writer","verdict","completedAtEpoch","intervalSec","fingerprint","counts","inventory","diagnostics","errors"}
+if not required.issubset(value) or value.get("schemaVersion") != 1 or value.get("writer") != "watch-background-jobs.sh":
+    raise SystemExit("dispatch refused: census verdict schema or writer is invalid")
+if value.get("verdict") == "CENSUS-FAILED":
+    raise SystemExit("dispatch refused: last census verdict is CENSUS-FAILED")
+if value.get("verdict") != "SUCCESS":
+    raise SystemExit("dispatch refused: census verdict is not successful")
+completed, interval = value.get("completedAtEpoch"), value.get("intervalSec")
+if not isinstance(completed,int) or not isinstance(interval,int) or interval < 1:
+    raise SystemExit("dispatch refused: census freshness fields are invalid")
+age=int(time.time())-completed
+if age < -5 or age > interval:
+    raise SystemExit(f"dispatch refused: census verdict is stale (age={age}s interval={interval}s)")
+PY
+  expected=$("$arm_supervision" fingerprint --repo "$repo_scope" 2>&1) \
+    || die 1 "dispatch refused: census fingerprint cannot be computed: $expected"
+  [[ "$(json_field "$verdict" fingerprint 2>/dev/null || true)" == "$expected" ]] \
+    || die 1 "dispatch refused: census fingerprint does not match the armed code, signatures, configuration, and supervisor instances"
+}
 
 json_field() { # file, dotted field
   python3 - "$1" "$2" <<'PY'
@@ -492,7 +525,7 @@ expand_permissions() { # requested value, workspace root, worktree flag, output
   local requested=$1 workspace=$2 is_worktree=$3 output=$4 source preset
   if [[ -f "$requested" ]]; then source=$requested; preset=custom; else source="$root/scripts/agents/permissions/$requested.json"; preset=$requested; fi
   [[ -f "$source" ]] || die 1 "unknown permissions preset or envelope file: $requested"
-  python3 - "$source" "$root" "$workspace" "$is_worktree" "$preset" "$output" <<'PY'
+  python3 - "$source" "$repo_scope" "$workspace" "$is_worktree" "$preset" "$output" <<'PY'
 import json, os, sys
 from pathlib import Path
 source, repo, workspace, is_worktree, preset, output = sys.argv[1:]
@@ -662,7 +695,7 @@ write_prompt() { # path job role runtime model round content
 }
 
 launch_adapter() { # runtime verb job tag
-  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid patch
+  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch deadline
   mkdir -p "$heartbeats"
   python3 - "$root" "$adapter" "$verb" "$job" "$gate" "$tag" >/dev/null 2>&1 <<'PY' &
 import os, sys
@@ -672,15 +705,21 @@ os.setsid()
 os.execv(adapter, [adapter, verb, "--job", job, "--start-gate", gate, "--instance-tag", tag])
 PY
   pid=$!
+  deadline=$((SECONDS + 5))
+  until pid_started=$("$process_census" started-at --pid "$pid" 2>/dev/null); do
+    (( SECONDS < deadline )) || { echo "adapter start identity ceiling reached for $job" >&2; return 1; }
+    sleep 0.02
+  done
   patch=$(mktemp "$record_locks/launch.XXXXXX")
-  python3 - "$patch" "$pid" "$tag" <<'PY'
+  python3 - "$patch" "$pid" "$pid_started" "$tag" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
 pid = int(sys.argv[2])
+pid_started = int(sys.argv[3])
 Path(sys.argv[1]).write_text(json.dumps({
-  "pid": pid, "pgid": pid,
-  "ownershipProof": {"pid": pid, "pgid": pid, "instanceTag": sys.argv[3], "provenAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "source": "trusted-launcher"},
+  "pid": pid, "pidStartedAt": pid_started, "pgid": pid,
+  "ownershipProof": {"pid": pid, "pidStartedAt": pid_started, "pgid": pid, "instanceTag": sys.argv[4], "provenAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "source": "trusted-launcher"},
 }) + "\n")
 PY
   record_cas "$job" pending pending "$patch" || return 1
@@ -790,7 +829,7 @@ from pathlib import Path
 print(Path(sys.argv[1]).resolve(strict=False))
 PY
   )
-  case "${evidence%/}/" in "${root%/}/"*) echo "cannot mirror $job: evidence.root is inside the repository" >&2; return 1 ;; esac
+  case "${evidence%/}/" in "${repo_scope%/}/"*) echo "cannot mirror $job: evidence.root is inside the repository" >&2; return 1 ;; esac
   root_id=$(root_job_id "$job") || return 1
   result=$(mktemp "$record_locks/mirror-result.XXXXXX")
   if ! python3 - "$root" "$evidence" "$root_id" "$job" "$result" <<'PY'
@@ -985,6 +1024,7 @@ dispatch_job() {
   [[ ! ( $use_worktree -eq 1 && -n "$workspace" ) ]] || die 2 "--workspace and --worktree are mutually exclusive"
   mode=$(brief_mode "$brief") || die 1 "brief must contain exactly one filled Working Mode header"
   [[ -z "$mode_override" || "$mode_override" == "$mode" ]] || die 1 "--mode contradicts the brief's Working Mode header"
+  require_fresh_census
 
   configured_runtime=$(config_get --key "role.$role.runtime" --mode "$mode" --default __missing__)
   [[ "$configured_runtime" != __missing__ ]] || configured_runtime=$(config_get --key role.default.runtime --mode "$mode" --default __missing__)
@@ -1030,9 +1070,9 @@ PY
   if (( use_worktree )); then
     workspace="$worktrees/$job"
     [[ ! -e "$workspace" ]] || die 1 "job worktree already exists: $workspace"
-    git -C "$root" worktree add -q -b "agent/$job" "$workspace" HEAD || die 1 "could not create job worktree"
+    git -C "$repo_scope" worktree add -q -b "agent/$job" "$workspace" HEAD || die 1 "could not create job worktree"
   else
-    workspace=${workspace:-$root}
+    workspace=${workspace:-$repo_scope}
     workspace=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"
   fi
   permission_name=${permissions_override:-$(config_get --key "dispatch.permissions.$role" --default none)}
@@ -1068,7 +1108,8 @@ record = {
   "round": 1, "parentJob": None, "status": "pending", "phase": "handshake", "error": None,
   "workspaceRoot": str(Path(workspace).resolve()), "baseSha": base, "branch": branch,
   "permissions": {"requested": json.loads(Path(permissions).read_text()), "effective": None},
-  "capMin": int(cap), "pid": None, "pgid": None, "instanceTag": f"harness-job-{job}",
+  "capMin": int(cap), "pid": None, "pidStartedAt": None, "pgid": None, "instanceTag": f"harness-job-{job}",
+  "custodyProcesses": [],
   "sessionId": None, "turnId": None, "requestedModel": model, "effectiveModel": None,
   "overridden": overridden == "true", "capabilitySnapshot": snapshot,
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
@@ -1099,6 +1140,7 @@ follow_up() {
     esac
   done
   valid_id "$job" && [[ -f "$message" && -f "$jobs/$job.json" ]] || { usage; exit 2; }
+  require_fresh_census
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
   acquire_chain_lock "$root_id"; trap 'release_chain_lock "$root_id"' EXIT
   [[ "$(json_field "$jobs/$root_id.json" chainClosed 2>/dev/null || true)" != true ]] || die 1 "job chain is closed"
@@ -1147,7 +1189,8 @@ job, round_number, parent_job, snapshot, fallbacks, signal, resume_mode, size, d
 record = {key: parent[key] for key in ("role", "mission", "runtime", "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "requestedModel")}
 record.update({
   "jobId": job, "round": int(round_number), "parentJob": parent_job, "status": "pending", "phase": "handshake", "error": None,
-  "permissions": {"requested": parent["permissions"]["requested"], "effective": None}, "pid": None, "pgid": None,
+  "permissions": {"requested": parent["permissions"]["requested"], "effective": None}, "pid": None, "pidStartedAt": None, "pgid": None,
+  "custodyProcesses": [],
   "instanceTag": f"harness-job-{job}", "sessionId": parent["sessionId"] if resume_mode == "resumed" else None, "turnId": None,
   "effectiveModel": None, "overridden": False, "capabilitySnapshot": snapshot,
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
@@ -1173,7 +1216,22 @@ status_job() {
   valid_id "$job" || { usage; exit 2; }
   [[ -e "$jobs/$job.json" ]] || return 6
   status=$(json_field "$jobs/$job.json" status 2>/dev/null || true)
-  case "$status" in pending|running|completed|failed|timeout|cancelled) printf '%s\n' "$status" ;; *) return 7 ;; esac
+  case "$status" in
+    pending|running|completed|failed|timeout|cancelled)
+      printf '%s\n' "$status"
+      surface_census_verdict >&2
+      ;;
+    *) return 7 ;;
+  esac
+}
+
+surface_census_verdict() {
+  local verdict="$agents/supervision/last-census.json" value completed age
+  if [[ ! -f "$verdict" ]]; then echo "CENSUS verdict=ABSENT"; return; fi
+  value=$(json_field "$verdict" verdict 2>/dev/null || echo UNREADABLE)
+  completed=$(json_field "$verdict" completedAtEpoch 2>/dev/null || echo 0)
+  age=$(( $(date +%s) - completed ))
+  printf 'CENSUS verdict=%s age=%ss fingerprint=%s\n' "$value" "$age" "$(json_field "$verdict" fingerprint 2>/dev/null || echo unavailable)"
 }
 
 cancel_job() {
@@ -1233,24 +1291,60 @@ PY
 }
 
 reap_jobs() {
-  local job= interval=
+  local job= interval= supervision_heartbeat= supervision_tag=
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
       --interval) [[ $# -ge 2 ]] || { usage; exit 2; }; interval=$2; shift 2 ;;
+      --heartbeat) [[ $# -ge 2 ]] || { usage; exit 2; }; supervision_heartbeat=$2; shift 2 ;;
+      --instance-tag) [[ $# -ge 2 ]] || { usage; exit 2; }; supervision_tag=$2; shift 2 ;;
       *) usage; exit 2 ;;
     esac
   done
   [[ -z "$job" ]] || valid_id "$job" || { usage; exit 2; }
   [[ -z "$interval" || "$interval" =~ ^[1-9][0-9]*$ ]] || { usage; exit 2; }
+  [[ -z "$supervision_heartbeat" || ( -n "$interval" && -n "$supervision_tag" ) ]] || { usage; exit 2; }
   while true; do
     if [[ -n "$job" ]]; then reap_one "$job"; else
       mkdir -p "$jobs"
       for record in "$jobs"/*.json; do [[ -f "$record" ]] && reap_one "$(basename "${record%.json}")"; done
     fi
+    if [[ -n "$supervision_heartbeat" ]]; then
+      python3 - "$supervision_heartbeat" "$$" "$supervision_tag" "$process_census" <<'PY'
+import json,os,subprocess,sys,tempfile,time
+from pathlib import Path
+p=Path(sys.argv[1]); pid=int(sys.argv[2]); tag=sys.argv[3]; helper=sys.argv[4]
+started=int(subprocess.check_output([helper,"started-at","--pid",str(pid)],text=True).strip())
+v={"function":"reaper","pid":pid,"pidStartedAt":started,"instanceTag":tag,"observedAtEpoch":int(time.time())}
+p.parent.mkdir(parents=True,exist_ok=True); fd,t=tempfile.mkstemp(prefix=p.name+".",suffix=".tmp",dir=p.parent)
+with os.fdopen(fd,"w") as h: json.dump(v,h,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
+os.replace(t,p)
+PY
+    fi
     [[ -n "$interval" ]] || break
     sleep "$interval"
   done
+}
+
+internal_register_custody() {
+  local job= pid= record status tag started patch
+  while (($#)); do
+    case "$1" in --job) job=$2; shift 2 ;; --pid) pid=$2; shift 2 ;; *) exit 2 ;; esac
+  done
+  valid_id "$job" && [[ "$pid" =~ ^[1-9][0-9]*$ && -f "$jobs/$job.json" ]] || exit 2
+  record="$jobs/$job.json"; status=$(json_field "$record" status); tag=$(json_field "$record" instanceTag)
+  case "$status" in pending|running) ;; *) exit 1 ;; esac
+  started=$("$process_census" started-at --pid "$pid") || exit 1
+  patch=$(mktemp "$record_locks/custody.XXXXXX")
+  python3 - "$record" "$patch" "$pid" "$started" "$tag" <<'PY'
+import json,sys
+from pathlib import Path
+record=json.loads(Path(sys.argv[1]).read_text()); output=Path(sys.argv[2]); pid,start,tag=int(sys.argv[3]),int(sys.argv[4]),sys.argv[5]
+items=[item for item in record.get("custodyProcesses",[]) if item.get("pid") != pid or item.get("pidStartedAt") != start]
+items.append({"pid":pid,"pidStartedAt":start,"instanceTag":tag})
+output.write_text(json.dumps({"custodyProcesses":items})+"\n")
+PY
+  record_cas "$job" "$status" "$status" "$patch"
 }
 
 internal_handshake() {
@@ -1348,6 +1442,7 @@ case "$command" in
   __record-cas) atomic_record_python cas "$@" ;;
   __handshake) internal_handshake "$@" ;;
   __cancel-owned) [[ ${1:-} == --job && $# -eq 2 ]] || exit 2; internal_cancel "$2" ;;
+  __register-custody) internal_register_custody "$@" ;;
   -h|--help) usage ;;
   *) usage; exit 2 ;;
 esac

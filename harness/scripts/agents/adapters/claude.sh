@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/adapters/claude.sh identity
+  scripts/agents/adapters/claude.sh signature
   scripts/agents/adapters/claude.sh probe
   scripts/agents/adapters/claude.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -224,11 +225,12 @@ PY
 
   (
     cd "$workspace"
-    HARNESS_CLAUDE_SESSION_SIGNAL="$signal_file" \
-      HARNESS_CLAUDE_EVENTS="$events" \
-      "${command[@]}" <"$prompt" >"$result_file" 2>>"$log"
+    export HARNESS_CLAUDE_SESSION_SIGNAL="$signal_file"
+    export HARNESS_CLAUDE_EVENTS="$events"
+    exec "${command[@]}" <"$prompt" >"$result_file" 2>>"$log"
   ) &
   cli_pid=$!
+  register_cli_custody "$cli_pid" || { terminate_cli_child "$cli_pid"; fail_pending custody_registration handshake; return 1; }
 
   while kill -0 "$cli_pid" 2>/dev/null; do
     if [[ -s "$signal_file" ]]; then
@@ -274,6 +276,14 @@ command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
 case "$command_name" in
+  signature)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' \
+      'match (^|[[:space:]])([^[:space:]]*/)?claude([[:space:]]|$)' \
+      'exclude claude-session-signal\.py' \
+      'exclude supervision-hook\.sh' \
+      'exclude scripts/agents/adapters/claude\.sh'
+    ;;
   identity)
     (($# == 0)) || { usage; exit 2; }
     claude_identity

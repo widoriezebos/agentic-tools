@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/adapters/devin.sh identity
+  scripts/agents/adapters/devin.sh signature
   scripts/agents/adapters/devin.sh probe
   scripts/agents/adapters/devin.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -226,10 +227,11 @@ supervise() { # dispatch|follow-up and supervisor args
     # Existing Devin hooks can backfill this file from their stable session_id
     # payload. The baseline remains `devin list --format json`, because the
     # adapter cannot install repository hooks into a delegate worktree.
-    HARNESS_DEVIN_SESSION_SIGNAL="$signal_file" \
-      "${command[@]}" >"$raw" 2>>"$log"
+    export HARNESS_DEVIN_SESSION_SIGNAL="$signal_file"
+    exec "${command[@]}" >"$raw" 2>>"$log"
   ) &
   cli_pid=$!
+  register_cli_custody "$cli_pid" || { terminate_cli_child "$cli_pid"; fail_pending custody_registration handshake; return 1; }
 
   while kill -0 "$cli_pid" 2>/dev/null; do
     [[ -s "$raw" ]] && output_seen=1
@@ -269,6 +271,13 @@ command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
 case "$command_name" in
+  signature)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' \
+      'match (^|[[:space:]])([^[:space:]]*/)?devin([[:space:]]|$)' \
+      'exclude supervision-hook\.sh' \
+      'exclude scripts/agents/adapters/devin\.sh'
+    ;;
   identity)
     (($# == 0)) || { usage; exit 2; }
     devin_identity

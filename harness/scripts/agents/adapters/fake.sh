@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/adapters/fake.sh identity
+  scripts/agents/adapters/fake.sh signature
   scripts/agents/adapters/fake.sh probe [--profile current|old|unverified-network]
       [--age-days N]
   scripts/agents/adapters/fake.sh dispatch --job <job-id> --start-gate <file>
@@ -299,6 +300,13 @@ command=${1:-}
 [[ -n "$command" ]] || { usage; exit 2; }
 shift
 case "$command" in
+  signature)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' \
+      'match (^|[[:space:]/-])(fake|harness-fake-agent)([[:space:]]|$)' \
+      'exclude supervision-hook\.sh' \
+      'exclude scripts/agents/adapters/fake\.sh'
+    ;;
   identity)
     (($# == 0)) || { usage; exit 2; }
     # The fake has no runtime configuration inputs. Its deterministic identity

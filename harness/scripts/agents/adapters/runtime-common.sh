@@ -96,6 +96,20 @@ Path(sys.argv[2]).write_text(
 PY
 }
 
+register_cli_custody() { # child pid
+  local child_pid=$1 deadline=$((SECONDS + 5))
+  while kill -0 "$child_pid" 2>/dev/null; do
+    if "$dispatch" __register-custody --job "$job" --pid "$child_pid"; then return 0; fi
+    (( SECONDS < deadline )) || {
+      echo "$runtime child custody registration ceiling reached for pid $child_pid" >&2
+      return 1
+    }
+    sleep 0.02
+  done
+  echo "$runtime child exited before custody identity was recorded" >&2
+  return 1
+}
+
 record_actual_workspace_write_scope() {
   python3 - "$effective" "$workspace" <<'PY'
 import json, sys
