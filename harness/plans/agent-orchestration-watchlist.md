@@ -111,3 +111,17 @@ VERDICT: 33 material findings
 SELF-SUSTAINMENT: 28/33 material findings (85%) are seams of Round 10’s own edits, decisively above the roughly-half stop line.
 
 STOP RECOMMENDED — carry candidate and frozen-instrument isolation, host/runner lifecycle and result protocols, state and human-approval anchoring, stop-loss classification, and rehearsal/evidence completeness into implementation as failing-test watch-list items.
+
+## Round S4: supervision arming (section 3.11), retained 2026-08-03
+
+Pass on section 3.11 stopped at round S4 under the diminishing-returns rule: 10 of 10 material findings were seams of the S3 dispositions (100 percent), and the critic ruled STOP RECOMMENDED. Rounds S, S2, and S3 were adjudicated in full (22, 10, 15 findings) and killed the legitimacy premise outright; these ten are the residue and become failing tests during item 23 under ORCH-21's discipline, not more prose.
+
+Watch-list areas named by the critic: process-group custody, canonical `pidStartedAt` schemas, census verdict/failure/fingerprint semantics, mutual-supervisor recovery, arming identity defaults, argv-scope parsing, signature failure handling, cross-component ownership.
+
+S4-10 — high — material: yes — S3-15 remains undisposed in the matrix because ORCH-22 still names only `arm-supervision.sh` as owner despite requiring changes to dispatch, watcher, reaper, job schemas, mission host turns, adapters, hooks, preflight, and status. Evidence: the cross-component behavior occupies [agent-orchestration-design.md:460](/Users/wido/LocalStorage/GitHub/agentic-tools/harness/plans/agent-orchestration-design.md:460) through [agent-orchestration-design.md:466](/Users/wido/LocalStorage/GitHub/agentic-tools/harness/plans/agent-orchestration-design.md:466), but ORCH-22 retains the single owner at [agent-orchestration-design.md:696](/Users/wido/LocalStorage/GitHub/agentic-tools/harness/plans/agent-orchestration-design.md:696).
+
+VERDICT: 10 material findings
+
+SELF-SUSTAINMENT: 10/10 material findings (100%) are seams of the S3 dispositions, decisively beyond the skill’s roughly-half threshold.
+
+STOP RECOMMENDED — Carry process-group custody, canonical `pidStartedAt` schemas, census verdict/failure/fingerprint semantics, mutual-supervisor recovery, arming identity defaults, argv-scope parsing, signature failures, and cross-component ownership into item 23 as failing-test watch-list areas; further prose critique is now self-sustaining.
