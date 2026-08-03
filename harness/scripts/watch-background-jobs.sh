@@ -55,10 +55,19 @@ Options:
   --baseline       record every currently-terminal job as already reported and
                    exit; use once when adopting the watcher on a repository
                    with history, so the first arming does not flood
+                   (a MISSING state file now auto-baselines on first run, so
+                   this flag is only needed to re-baseline an existing file)
+  --start-verify-min N  minutes a job may sit queued/pending before
+                   NEVER-STARTED fires (default 5; 0 disables)
   --once           make a single pass and exit (for tests and cron)
 
 Reported lines are stable and greppable:
   <STATE> <job-id> status=<status> age=<minutes>m record=<path>
+plus NEVER-STARTED for a dispatch that stays queued/pending past
+--start-verify-min, and one ARMED banner on startup carrying the effective
+config and the script's own fingerprint — so a transcript always shows WHICH
+code and config a long-lived watcher is actually running (armed watchers keep
+executing the code they started with; re-arm after editing this script).
 
 Exit codes: 0 normal exit (--once/--baseline); 2 usage error.
 USAGE
@@ -73,6 +82,7 @@ cap_min=180
 interval=60
 baseline=0
 once=0
+start_verify_min=5
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -84,6 +94,7 @@ while [ $# -gt 0 ]; do
     --cap-min) [ $# -ge 2 ] || { usage; exit 2; }; cap_min="$2"; shift 2 ;;
     --interval) [ $# -ge 2 ] || { usage; exit 2; }; interval="$2"; shift 2 ;;
     --baseline) baseline=1; shift ;;
+    --start-verify-min) [ $# -ge 2 ] || { usage; exit 2; }; start_verify_min="$2"; shift 2 ;;
     --once) once=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
@@ -91,14 +102,20 @@ while [ $# -gt 0 ]; do
 done
 
 [ ${#dirs[@]} -gt 0 ] || { usage; exit 2; }
-case "$stale_min$cap_min$interval" in *[!0-9]*) usage; exit 2 ;; esac
+case "$stale_min$cap_min$interval$start_verify_min" in *[!0-9]*) usage; exit 2 ;; esac
 
 if [ -z "$state_file" ]; then
   key=$(printf '%s\n' "${dirs[@]}" "scope=$scope" | cksum | tr -d ' \t')
   state_file="${TMPDIR:-/tmp}/watch-background-jobs.${key}.state"
 fi
 mkdir -p "$(dirname "$state_file")"
+auto_baseline=0
+[ -f "$state_file" ] || auto_baseline=1
 touch "$state_file"
+
+script_fp=$(cksum "$0" 2>/dev/null | tr -d ' \t' | cut -c1-12)
+printf 'ARMED watcher fp=%s dirs=%s scope=%s state=%s stale=%sm cap=%sm start-verify=%sm auto-baseline=%s\n' \
+  "$script_fp" "${dirs[*]}" "${scope:-none}" "$state_file" "$stale_min" "$cap_min" "$start_verify_min" "$auto_baseline"
 
 now_epoch() { date +%s; }
 
@@ -231,6 +248,13 @@ scan_once() {
       elif [ "$age_min" -ge "$cap_min" ]; then
         [ "$baseline" -eq 1 ] && { mark "$id"; continue; }
         report CAPPED "$id" "${status:-running}" "$age_min" "$path"; mark "$id"; forget_running "$id"
+      elif [ "$start_verify_min" -gt 0 ] && [ "$age_min" -ge "$start_verify_min" ] && \
+           { [ -z "$status" ] || case "$status" in queued|pending|starting|created) true ;; *) false ;; esac; }; then
+        # A dispatch that never left the queue is a silent failure long before
+        # STALE would fire — observed 2026-08-03: a resume queued, died, and
+        # cost 2.3 idle hours. Report it early and by its real name.
+        [ "$baseline" -eq 1 ] && { mark "$id"; continue; }
+        report NEVER-STARTED "$id" "${status:-absent}" "$age_min" "$path"; mark "$id"; forget_running "$id"
       elif [ "$age_min" -ge "$stale_min" ]; then
         [ "$baseline" -eq 1 ] && continue
         report STALE "$id" "${status:-running}" "$age_min" "$path"; mark "$id"; forget_running "$id"
@@ -258,6 +282,16 @@ if [ "$baseline" -eq 1 ]; then
   scan_once
   echo "baseline recorded in $state_file" >&2
   exit 0
+fi
+
+if [ "$auto_baseline" -eq 1 ]; then
+  # First run against a fresh state file: adopt history instead of flooding.
+  # The arm-once contract arms BEFORE the first dispatch, so nothing current
+  # is suppressed; anything already terminal predates this session's work.
+  baseline=1
+  scan_once
+  baseline=0
+  echo "auto-baselined historical jobs into $state_file" >&2
 fi
 
 if [ "$once" -eq 1 ]; then
