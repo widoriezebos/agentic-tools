@@ -347,6 +347,17 @@ os.replace(temp, path)
 PY
 }
 
+acquire_lifecycle_lock_until() { # job id, maximum wait seconds
+  local job=$1 maximum=$2 deadline=$(( SECONDS + $2 ))
+  while ! acquire_lifecycle_lock "$job"; do
+    if (( SECONDS >= deadline )); then
+      echo "timed out acquiring lifecycle lock for $job after ${maximum}s" >&2
+      return 1
+    fi
+    sleep 0.05
+  done
+}
+
 release_lifecycle_lock() { # job id
   local dir="$record_locks/$1.lifecycle.d" owner="$record_locks/$1.lifecycle.d/owner.json"
   [[ -f "$owner" ]] || return 0
@@ -561,6 +572,13 @@ try:
 except (OSError, ValueError) as error:
     raise SystemExit(f"cannot evaluate capabilities: {error}")
 caps = snapshot.get("capabilities", {})
+handshake_timeout = caps.get("sessionEstablishedTimeoutSec", 2)
+if (
+    isinstance(handshake_timeout, bool)
+    or not isinstance(handshake_timeout, int)
+    or not 1 <= handshake_timeout <= 60
+):
+    raise SystemExit("capability snapshot has an invalid session-established timeout")
 missing = [name for name in requirements.get("required", []) if caps.get(name) is not True]
 if missing:
     raise SystemExit("required runtime capabilities are absent: " + ", ".join(sorted(missing)))
@@ -576,6 +594,7 @@ for field in unverified:
 result = {
     "path": str(path.relative_to(root)), "fallbacks": fallbacks,
     "sessionEstablishedSignal": caps.get("sessionEstablishedSignal") is True,
+    "sessionEstablishedTimeoutSec": handshake_timeout,
     "resume": caps.get("resume") is True,
 }
 Path(output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -668,8 +687,10 @@ PY
   touch "$gate"
 }
 
-await_handshake() { # job
-  local job=$1 record="$jobs/$1.json" deadline=$(( $(date +%s) + 2 )) status session patch
+await_handshake() { # job, maximum session-established seconds
+  local job=$1 timeout=$2 record="$jobs/$1.json" deadline status session patch
+  [[ "$timeout" =~ ^[1-9][0-9]*$ && "$timeout" -le 60 ]] || return 1
+  deadline=$(( $(date +%s) + timeout ))
   while (( $(date +%s) <= deadline )); do
     if [[ -f "$record" ]]; then
       status=$(json_field "$record" status 2>/dev/null || true)
@@ -1061,7 +1082,7 @@ PY
   release_chain_lock "$job"; trap - EXIT
   launch_adapter "$runtime" dispatch "$job" "harness-job-$job" || {
     patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"; record_cas "$job" pending failed "$patch" || true; return 3; }
-  await_handshake "$job" || return 3
+  await_handshake "$job" "$(json_field "$snapshot_json" sessionEstablishedTimeoutSec)" || return 3
   if (( wait )); then wait_for_job "$job"; return $?; fi
   printf '%s\n' "$job"
 }
@@ -1141,7 +1162,7 @@ PY
   release_chain_lock "$root_id"; trap - EXIT
   launch_adapter "$runtime" "$adapter_verb" "$child" "harness-job-$child" || {
     patch=$(mktemp "$record_locks/follow-launch.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"; record_cas "$child" pending failed "$patch" || true; return 3; }
-  await_handshake "$child" || return 3
+  await_handshake "$child" "$(json_field "$snapshot_json" sessionEstablishedTimeoutSec)" || return 3
   if (( wait )); then wait_for_job "$child"; return $?; fi
   printf '%s\n' "$child"
 }
@@ -1290,7 +1311,7 @@ internal_cancel() {
   local job=$1 record="$jobs/$1.json" status patch
   [[ -f "$record" ]] || exit 1
   process_instance_tag=${process_instance_tag:-$job}
-  acquire_lifecycle_lock "$job" || exit 0
+  acquire_lifecycle_lock_until "$job" 5 || exit 1
   status=$(json_field "$record" status)
   case "$status" in pending|running) ;; *) release_lifecycle_lock "$job"; exit 0 ;; esac
   wind_down_group "$record" || { release_lifecycle_lock "$job"; exit 1; }

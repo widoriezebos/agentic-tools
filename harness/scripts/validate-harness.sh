@@ -635,11 +635,105 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   good_agent_conf="$agent_fixture/good-harness.conf"
   cp "$agent_repo/harness.conf" "$good_agent_conf"
 
-  agent_fails() { # output name, expected text, command...
-    local name=$1 expected=$2 result
+  agent_fixture_timeout_sec=${HARNESS_AGENT_FIXTURE_TIMEOUT_SEC:-20}
+  [[ "$agent_fixture_timeout_sec" =~ ^[1-9][0-9]*$ && "$agent_fixture_timeout_sec" -le 120 ]] \
+    || { echo "HARNESS_AGENT_FIXTURE_TIMEOUT_SEC must be an integer from 1 through 120" >&2; exit 1; }
+
+  agent_fixture_job_from_args() {
+    local previous= argument
+    for argument in "$@"; do
+      if [[ "$previous" == --job || "$previous" == --job-id ]]; then
+        printf '%s\n' "$argument"
+        return
+      fi
+      previous=$argument
+    done
+    printf '%s\n' -
+  }
+
+  agent_fixture_diagnostics() { # fixture name, job id or -
+    local name=$1 job=$2 path
+    echo "agent fixture timed out after ${agent_fixture_timeout_sec}s: $name (job: $job)" >&2
+    [[ "$job" != - ]] || return
+    for path in \
+      "$agent_repo/artifacts/agents/jobs/$job.json" \
+      "$agent_repo/artifacts/agents/jobs/$job.log" \
+      "$agent_repo/artifacts/agents/hb/$job.start" \
+      "$agent_repo/artifacts/agents/hb/$job" \
+      "$agent_repo/artifacts/agents/hb/$job.waiting"; do
+      if [[ -e "$path" ]]; then
+        echo "--- $path" >&2
+        sed -n '1,240p' "$path" >&2
+      else
+        echo "--- missing: $path" >&2
+      fi
+    done
+  }
+
+  stop_timed_out_agent_fixture() { # fixture name, job id or -, driver pid
+    local name=$1 job=$2 driver_pid=$3 cleanup_pid cleanup_deadline driver_deadline status=
+    agent_fixture_diagnostics "$name" "$job"
+    if [[ "$job" != - && -f "$agent_repo/artifacts/agents/jobs/$job.json" ]]; then
+      status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", "malformed"))' \
+        "$agent_repo/artifacts/agents/jobs/$job.json" 2>/dev/null || true)
+      if [[ "$status" == pending || "$status" == running ]]; then
+        "$agent_dispatch" cancel --job "$job" >"$agent_fixture/$name-timeout-cancel.out" 2>&1 &
+        cleanup_pid=$!
+        cleanup_deadline=$(( SECONDS + 7 ))
+        while kill -0 "$cleanup_pid" 2>/dev/null && (( SECONDS < cleanup_deadline )); do sleep 0.05; done
+        if kill -0 "$cleanup_pid" 2>/dev/null; then
+          echo "agent fixture cleanup timed out: $name cancel pid $cleanup_pid" >&2
+          kill -TERM "$cleanup_pid" 2>/dev/null || true
+          sleep 0.1
+          kill -KILL "$cleanup_pid" 2>/dev/null || true
+        fi
+      fi
+    fi
+    if kill -0 "$driver_pid" 2>/dev/null; then
+      kill -TERM "$driver_pid" 2>/dev/null || true
+      driver_deadline=$(( SECONDS + 2 ))
+      while kill -0 "$driver_pid" 2>/dev/null && (( SECONDS < driver_deadline )); do sleep 0.05; done
+      if kill -0 "$driver_pid" 2>/dev/null; then
+        echo "agent fixture driver survived TERM: $name pid $driver_pid; sending KILL" >&2
+        kill -KILL "$driver_pid" 2>/dev/null || true
+      fi
+    fi
+    exit 1
+  }
+
+  wait_for_agent_fixture_process() { # fixture name, job id or -, exact child pid
+    local name=$1 job=$2 child_pid=$3 deadline=$(( SECONDS + agent_fixture_timeout_sec )) result
+    echo "agent fixture wait: $name (job: $job; cap: ${agent_fixture_timeout_sec}s)" >&2
+    while kill -0 "$child_pid" 2>/dev/null; do
+      (( SECONDS < deadline )) || stop_timed_out_agent_fixture "$name" "$job" "$child_pid"
+      sleep 0.05
+    done
+    if wait "$child_pid"; then result=0; else result=$?; fi
+    return "$result"
+  }
+
+  run_agent_fixture() { # fixture name, job id or -, command...
+    local name=$1 job=$2 child_pid
     shift 2
+    "$@" &
+    child_pid=$!
+    wait_for_agent_fixture_process "$name" "$job" "$child_pid"
+  }
+
+  run_agent_fixture_captured() { # fixture name, job id or -, output file, command...
+    local name=$1 job=$2 output=$3 child_pid
+    shift 3
+    "$@" >"$output" 2>&1 &
+    child_pid=$!
+    wait_for_agent_fixture_process "$name" "$job" "$child_pid"
+  }
+
+  agent_fails() { # output name, expected text, command...
+    local name=$1 expected=$2 result job
+    shift 2
+    job=$(agent_fixture_job_from_args "$@")
     set +e
-    "$@" >"$agent_fixture/$name.out" 2>&1
+    run_agent_fixture_captured "$name" "$job" "$agent_fixture/$name.out" "$@"
     result=$?
     set -e
     if [[ $result -eq 0 ]]; then
@@ -662,6 +756,7 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
 
   wait_for_agent_status() { # job, expected
     local job=$1 expected=$2 observed= i
+    echo "agent fixture status wait: $job -> $expected (cap: 5s)" >&2
     for ((i=0; i<100; i++)); do
       observed=$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job "$job" 2>/dev/null || true)
       [[ "$observed" == "$expected" ]] && return 0
@@ -719,7 +814,7 @@ EOF
 
   happy_brief="$agent_fixture/happy.md"
   make_agent_brief "$happy_brief" design
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id happy --wait)
+  run_agent_fixture happy happy "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id happy --wait
   [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job happy)" == completed ]] \
     || { echo "valid fake dispatch did not complete" >&2; exit 1; }
   python3 - "$agent_repo" <<'PY'
@@ -745,9 +840,9 @@ assert prompt.index(preamble) < prompt.index(brief)
 PY
   mkdir -p "$agent_repo/artifacts/agents/locks/stale-lock.d"
   printf '{"pid":999999,"instanceTag":"dead-owner","acquiredAt":"2000-01-01T00:00:00Z"}\n' >"$agent_repo/artifacts/agents/locks/stale-lock.d/owner.json"
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id stale-lock --wait)
+  run_agent_fixture stale-lock stale-lock "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-lock --wait
 
-  generated=$(cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief")
+  generated=$(run_agent_fixture generated-dispatch - "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief")
   [[ "$generated" =~ ^design-critic-[0-9]{8}t[0-9]{6}z-[a-f0-9]{4}$ ]] \
     || { echo "generated job id does not match the lowercase grammar: $generated" >&2; exit 1; }
   agent_fails collision 'job id collision' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id happy
@@ -762,21 +857,21 @@ PY
   perl -0pi -e 's/^role\.verifier\.runtime=.*\n//m' "$agent_repo/harness.conf"
   verifier_brief="$agent_fixture/verifier.md"
   make_agent_brief "$verifier_brief" verify
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role verifier --brief "$verifier_brief" --permissions none --job-id default-role --wait)
+  run_agent_fixture default-role default-role "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none --job-id default-role --wait
   cp "$agent_repo/harness.conf" "$agent_fixture/no-role.conf"
   perl -0pi -e 's/^role\.default\.runtime=.*\n//m' "$agent_repo/harness.conf"
   agent_fails no-role-default 'neither a runtime entry nor role.default.runtime' "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none
   cp "$good_agent_conf" "$agent_repo/harness.conf"
   code_brief="$agent_fixture/code.md"
   make_agent_brief "$code_brief" implement
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role code-critic --brief "$code_brief" --runtime fake --permissions none --job-id flag-runtime --wait)
+  run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --runtime fake --permissions none --job-id flag-runtime --wait
   python3 - "$agent_repo/artifacts/agents/jobs/flag-runtime.json" <<'PY'
 import json, sys
 record = json.load(open(sys.argv[1])); assert record["runtime"] == "fake" and record["overridden"] is True
 PY
   investigator_brief="$agent_fixture/investigator.md"
   make_agent_brief "$investigator_brief" take-a-step-back
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role investigator --brief "$investigator_brief" --runtime fake --permissions none --job-id investigator-role --wait)
+  run_agent_fixture investigator-role investigator-role "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --permissions none --job-id investigator-role --wait
 
   no_signal="$agent_fixture/no-signal.md"
   make_agent_brief "$no_signal" design 'FAKE:no-session-signal'
@@ -803,21 +898,21 @@ PY
   pending_message="$agent_fixture/pending-follow.md"
   cp "$agent_repo/scripts/agents/templates/follow-up.md" "$pending_message"
   agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job pending-chain --message "$pending_message"
-  wait "$pending_driver" || true
+  wait_for_agent_fixture_process pending-chain-driver pending-chain "$pending_driver" || true
 
   pending_loss_brief="$agent_fixture/pending-loss.md"
   make_agent_brief "$pending_loss_brief" design 'FAKE:pending-process-loss'
   (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_loss_brief" --job-id pending-loss >/dev/null 2>&1) & pending_loss_driver=$!
   wait_for_agent_status pending-loss pending
-  (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job pending-loss)
-  wait "$pending_loss_driver" || true
+  run_agent_fixture pending-loss-reap pending-loss "$agent_dispatch" reap --job pending-loss
+  wait_for_agent_fixture_process pending-loss-driver pending-loss "$pending_loss_driver" || true
   grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/pending-loss.json" \
     || { echo "dead pending supervisor did not transition through reap" >&2; exit 1; }
 
   malformed_brief="$agent_fixture/malformed-return.md"
   make_agent_brief "$malformed_brief" design 'FAKE:malformed-return'
   set +e
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$malformed_brief" --job-id malformed-return --wait)
+  run_agent_fixture malformed-return malformed-return "$agent_dispatch" dispatch --role design-critic --brief "$malformed_brief" --job-id malformed-return --wait
   malformed_status=$?
   set -e
   [[ $malformed_status -eq 3 ]] || { echo "malformed return mapped to $malformed_status instead of 3" >&2; exit 1; }
@@ -826,14 +921,14 @@ PY
 
   interrupted="$agent_fixture/interrupted.md"
   make_agent_brief "$interrupted" design 'FAKE:interrupted-atomic-write'
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$interrupted" --job-id interrupted --wait)
+  run_agent_fixture interrupted interrupted "$agent_dispatch" dispatch --role design-critic --brief "$interrupted" --job-id interrupted --wait
   [[ -f "$agent_repo/artifacts/agents/record-locks/interrupted.interrupted" ]] \
     || { echo "interrupted atomic-write fixture did not leave its staged partial" >&2; exit 1; }
   python3 -m json.tool "$agent_repo/artifacts/agents/jobs/interrupted.json" >/dev/null
   terminal_patch="$agent_fixture/terminal-race.json"
   printf '{"error":"loser"}\n' >"$terminal_patch"
   set +e
-  "$agent_dispatch" __record-cas --job interrupted --expect running --status failed --patch "$terminal_patch" >/dev/null 2>&1
+  run_agent_fixture_captured terminal-race interrupted /dev/null "$agent_dispatch" __record-cas --job interrupted --expect running --status failed --patch "$terminal_patch"
   terminal_race_status=$?
   set -e
   [[ $terminal_race_status -eq 3 && "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job interrupted)" == completed ]] \
@@ -849,7 +944,7 @@ PY
   printf '{"readRoots":["."],"writeRoots":[],"network":"allow","approvals":"deny","tools":"read-only"}\n' >"$permissive_permissions"
   effective_narrower="$agent_fixture/effective-narrower.md"
   make_agent_brief "$effective_narrower" design 'FAKE:effective-narrower'
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$effective_narrower" --permissions "$permissive_permissions" --job-id effective-narrower --wait)
+  run_agent_fixture effective-narrower effective-narrower "$agent_dispatch" dispatch --role design-critic --brief "$effective_narrower" --permissions "$permissive_permissions" --job-id effective-narrower --wait
 
   agent_fails writable-without-worktree 'writable permissions require --worktree' \
     "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id no-worktree
@@ -868,7 +963,7 @@ EOF
   process_loss="$agent_fixture/process-loss.md"
   make_agent_brief "$process_loss" design 'FAKE:process-loss'
   set +e
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$process_loss" --job-id process-loss --wait)
+  run_agent_fixture process-loss process-loss "$agent_dispatch" dispatch --role design-critic --brief "$process_loss" --job-id process-loss --wait
   process_loss_status=$?
   set -e
   [[ $process_loss_status -eq 3 ]] || { echo "process loss mapped to $process_loss_status instead of 3" >&2; exit 1; }
@@ -895,8 +990,8 @@ import json, sys
 from pathlib import Path
 path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["startedAt"] = "2000-01-01T00:00:00Z"; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 PY
-  (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job timed)
-  wait "$timeout_driver"
+  run_agent_fixture timed-reap timed "$agent_dispatch" reap --job timed
+  wait_for_agent_fixture_process timed-driver timed "$timeout_driver"
   [[ "$(cat "$timeout_result")" == 4 ]] || { echo "timeout did not map to wait exit 4 (got $(cat "$timeout_result"))" >&2; exit 1; }
   grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/timed.json" \
     || { echo "absolute cap did not record budget-cap" >&2; exit 1; }
@@ -914,8 +1009,8 @@ PY
   ) &
   cancel_driver=$!
   wait_for_agent_status cancelled running
-  (cd "$agent_repo" && scripts/agents/dispatch.sh cancel --job cancelled)
-  wait "$cancel_driver"
+  run_agent_fixture cancelled-cancel cancelled "$agent_dispatch" cancel --job cancelled
+  wait_for_agent_fixture_process cancelled-driver cancelled "$cancel_driver"
   [[ "$(cat "$cancel_result")" == 8 ]] || { echo "cancelled did not map to wait exit 8" >&2; exit 1; }
   [[ -f "$agent_repo/artifacts/agents/cancelled/rounds/1/child.stopped" ]] \
     || { echo "cancel did not TERM the whole owned group" >&2; exit 1; }
@@ -930,6 +1025,7 @@ PY
     printf '%s\n' "$?" >"$vanished_result"
   ) &
   vanished_driver=$!
+  echo "agent fixture file wait: vanished.waiting (job: vanished; cap: 5s)" >&2
   for ((i=0; i<100; i++)); do
     [[ -f "$agent_repo/artifacts/agents/hb/vanished.waiting" ]] && break
     sleep 0.05
@@ -937,28 +1033,28 @@ PY
   [[ -f "$agent_repo/artifacts/agents/hb/vanished.waiting" ]] \
     || { echo "vanished wait fixture never entered the wait loop" >&2; exit 1; }
   mv "$agent_repo/artifacts/agents/jobs/vanished.json" "$agent_fixture/vanished.json"
-  wait "$vanished_driver"
+  wait_for_agent_fixture_process vanished-driver vanished "$vanished_driver"
   mv "$agent_fixture/vanished.json" "$agent_repo/artifacts/agents/jobs/vanished.json"
   [[ "$(cat "$vanished_result")" == 5 ]] || { echo "vanished record did not map to wait exit 5 (got $(cat "$vanished_result"))" >&2; exit 1; }
-  (cd "$agent_repo" && scripts/agents/dispatch.sh cancel --job vanished)
+  run_agent_fixture vanished-cancel vanished "$agent_dispatch" cancel --job vanished
 
   cancel_race="$agent_fixture/cancel-race.md"
   make_agent_brief "$cancel_race" design 'FAKE:cancel-race'
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$cancel_race" --job-id cancel-race >/dev/null)
-  (cd "$agent_repo" && scripts/agents/dispatch.sh cancel --job cancel-race)
+  run_agent_fixture_captured cancel-race-dispatch cancel-race /dev/null "$agent_dispatch" dispatch --role design-critic --brief "$cancel_race" --job-id cancel-race
+  run_agent_fixture cancel-race-cancel cancel-race "$agent_dispatch" cancel --job cancel-race
   [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job cancel-race)" == completed ]] \
     || { echo "completion did not win the scripted cancellation race" >&2; exit 1; }
 
   mirror_failure="$agent_fixture/mirror-failure.md"
   make_agent_brief "$mirror_failure" design 'FAKE:mirror-failure'
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$mirror_failure" --job-id mirror-retry --wait)
+  run_agent_fixture mirror-retry mirror-retry "$agent_dispatch" dispatch --role design-critic --brief "$mirror_failure" --job-id mirror-retry --wait
   [[ -f "$agent_repo/artifacts/agents/mirror-retry/.mirror-failed" ]] \
     || { echo "scripted first mirror failure did not occur" >&2; exit 1; }
   if [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")" == None ]]; then
-    (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job mirror-retry)
+    run_agent_fixture mirror-retry-first-reap mirror-retry "$agent_dispatch" reap --job mirror-retry
   fi
   mirror_hash_before=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"]["manifest"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")
-  (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job mirror-retry)
+  run_agent_fixture mirror-retry-second-reap mirror-retry "$agent_dispatch" reap --job mirror-retry
   mirror_hash_after=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"]["manifest"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")
   [[ "$mirror_hash_before" == "$mirror_hash_after" && "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job mirror-retry)" == completed ]] \
     || { echo "idempotent mirror retry changed terminal state or durable content" >&2; exit 1; }
@@ -976,7 +1072,7 @@ PY
   # Follow-ups are child records under one serialized, explicitly closed chain.
   follow_message="$agent_fixture/follow.md"
   cp "$agent_repo/scripts/agents/templates/follow-up.md" "$follow_message"
-  (cd "$agent_repo" && scripts/agents/dispatch.sh follow-up --job happy --message "$follow_message" --wait)
+  run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
   [[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \
     || { echo "follow-up did not preserve round 1 and create round 2" >&2; exit 1; }
   python3 - "$agent_repo" <<'PY'
@@ -988,7 +1084,7 @@ assert child["startedAt"] >= parent["startedAt"] and child["capMin"] == parent["
 assert parent["chainUsage"]["providerUnits"]["fake"]["fake-unit"] == 2
 assert parent["mirror"]["manifest"] == child["mirror"]["manifest"]
 PY
-  (cd "$agent_repo" && scripts/agents/dispatch.sh follow-up --job malformed-return --message "$follow_message" --wait)
+  run_agent_fixture malformed-return-follow-up malformed-return-r2 "$agent_dispatch" follow-up --job malformed-return --message "$follow_message" --wait
   [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
     || { echo "protocol-error retry did not create a completed child" >&2; exit 1; }
   agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job cancelled --message "$follow_message"
@@ -1004,12 +1100,12 @@ PY
 
   resume_root="$agent_fixture/resume-root.md"
   make_agent_brief "$resume_root" design
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$resume_root" --job-id resume-root --wait)
+  run_agent_fixture resume-root resume-root "$agent_dispatch" dispatch --role design-critic --brief "$resume_root" --job-id resume-root --wait
   resume_collision="$agent_fixture/resume-collision.md"
   cp "$follow_message" "$resume_collision"
   printf '\nFAKE:resume-collision\n' >>"$resume_collision"
   set +e
-  (cd "$agent_repo" && scripts/agents/dispatch.sh follow-up --job resume-root --message "$resume_collision" --wait)
+  run_agent_fixture resume-collision resume-root-r2 "$agent_dispatch" follow-up --job resume-root --message "$resume_collision" --wait
   resume_status=$?
   set -e
   [[ $resume_status -eq 3 ]] || { echo "resume collision did not map to failed" >&2; exit 1; }
@@ -1018,19 +1114,20 @@ PY
 
   active_brief="$agent_fixture/active.md"
   make_agent_brief "$active_brief" design 'FAKE:concurrent-turn'
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$active_brief" --job-id active-turn >/dev/null)
+  run_agent_fixture_captured active-turn-dispatch active-turn /dev/null "$agent_dispatch" dispatch --role design-critic --brief "$active_brief" --job-id active-turn
   agent_fails active-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job active-turn --message "$follow_message"
-  (cd "$agent_repo" && scripts/agents/dispatch.sh cancel --job active-turn)
+  run_agent_fixture active-turn-cancel active-turn "$agent_dispatch" cancel --job active-turn
 
-  (cd "$agent_repo" && scripts/agents/dispatch.sh close --job happy)
+  run_agent_fixture happy-close happy "$agent_dispatch" close --job happy
   agent_fails closed-follow-up 'job chain is closed' "$agent_dispatch" follow-up --job happy --message "$follow_message"
 
   # A close racing a follow-up cannot land between its open check and child creation.
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id close-race --wait)
+  run_agent_fixture close-race close-race "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id close-race --wait
   close_rc="$agent_fixture/close-race.close"; follow_rc="$agent_fixture/close-race.follow"
   (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh close --job close-race >/dev/null 2>&1; printf '%s\n' "$?" >"$close_rc") & close_pid=$!
   (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh follow-up --job close-race --message "$follow_message" >/dev/null 2>&1; printf '%s\n' "$?" >"$follow_rc") & follow_pid=$!
-  wait "$close_pid"; wait "$follow_pid"
+  wait_for_agent_fixture_process close-race-close close-race "$close_pid"
+  wait_for_agent_fixture_process close-race-follow close-race-r2 "$follow_pid"
   close_won=$(cat "$close_rc"); follow_won=$(cat "$follow_rc")
   [[ ( "$close_won" == 0 && "$follow_won" != 0 ) || ( "$close_won" != 0 && "$follow_won" == 0 ) ]] \
     || { echo "close/follow-up race did not serialize to one winner" >&2; exit 1; }
@@ -1039,13 +1136,13 @@ PY
   # both plans/ and the ignored agent control plane.
   implement_brief="$agent_fixture/implement.md"
   make_agent_brief "$implement_brief" implement
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role implementer --brief "$implement_brief" --job-id conformance --worktree --wait)
+  run_agent_fixture conformance conformance "$agent_dispatch" dispatch --role implementer --brief "$implement_brief" --job-id conformance --worktree --wait
   agent_fails close-before-diff 'diff.patch is not mirrored' "$agent_dispatch" close --job conformance
   (cd "$agent_repo" && scripts/agents/assert-conformance.sh --job conformance)
   [[ -f "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" ]] \
     || { echo "conformance did not persist diff.patch" >&2; exit 1; }
-  (cd "$agent_repo" && scripts/agents/dispatch.sh reap --job conformance)
-  (cd "$agent_repo" && scripts/agents/dispatch.sh close --job conformance)
+  run_agent_fixture conformance-reap conformance "$agent_dispatch" reap --job conformance
+  run_agent_fixture conformance-close conformance "$agent_dispatch" close --job conformance
   conformance_workspace=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workspaceRoot"])' "$agent_repo/artifacts/agents/jobs/conformance.json")
   case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
   printf 'untracked change\n' >"$conformance_workspace/source.txt"
@@ -1090,7 +1187,7 @@ PY
   "$fake_adapter" probe --profile old >/dev/null
   old_brief="$agent_fixture/old-capabilities.md"
   make_agent_brief "$old_brief" implement 'FAKE:old-capability-set' 'FAKE:no-event-stream' 'FAKE:hook-unavailable'
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role implementer --brief "$old_brief" --job-id old-capabilities --worktree --wait)
+  run_agent_fixture old-capabilities old-capabilities "$agent_dispatch" dispatch --role implementer --brief "$old_brief" --job-id old-capabilities --worktree --wait
   python3 - "$agent_repo/artifacts/agents/jobs/old-capabilities.json" <<'PY'
 import json, sys
 record = json.load(open(sys.argv[1])); assert record["sessionEstablishedSignal"] is False
@@ -1100,7 +1197,7 @@ PY
     || { echo "no-event-stream fallback emitted a native event file" >&2; exit 1; }
   grep -Fq 'polling fallback used' "$agent_repo/artifacts/agents/jobs/old-capabilities.log" \
     || { echo "hook-unavailable fallback was not observable" >&2; exit 1; }
-  (cd "$agent_repo" && scripts/agents/dispatch.sh follow-up --job old-capabilities --message "$follow_message" --wait)
+  run_agent_fixture old-capabilities-follow-up old-capabilities-r2 "$agent_dispatch" follow-up --job old-capabilities --message "$follow_message" --wait
   python3 - "$agent_repo" <<'PY'
 import json, sys
 from pathlib import Path
@@ -1118,20 +1215,20 @@ PY
   "$fake_adapter" probe --profile unverified-network >/dev/null
   agent_fails unverified-deny 'cannot verify restrictive permission field network' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id unverified-deny
   perl -0pi -e 's/"optional": \{\}/"optional": {},\n  "waivers": {"network": ["fake"]}/' "$requirements"
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id waived-deny --wait)
+  run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id waived-deny --wait
   cp "$saved_requirements" "$requirements"
   "$fake_adapter" probe >/dev/null
 
   nested_brief="$agent_fixture/nested.md"
   make_agent_brief "$nested_brief" design 'FAKE:nested-agent-events'
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$nested_brief" --job-id nested-events --wait)
+  run_agent_fixture nested-events nested-events "$agent_dispatch" dispatch --role design-critic --brief "$nested_brief" --job-id nested-events --wait
   grep -Fq '"topLevel":false' "$agent_repo/artifacts/agents/nested-events/rounds/1/events.jsonl" \
     || { echo "nested-agent event was not captured" >&2; exit 1; }
   [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job nested-events)" == completed ]] \
     || { echo "nested completion event ended the wrong lifecycle" >&2; exit 1; }
   malicious_brief="$agent_fixture/malicious.md"
   make_agent_brief "$malicious_brief" design 'Fake-Argument: $(touch should-not-exist)'
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$malicious_brief" --job-id malicious-argument --wait)
+  run_agent_fixture malicious-argument malicious-argument "$agent_dispatch" dispatch --role design-critic --brief "$malicious_brief" --job-id malicious-argument --wait
   [[ ! -e "$agent_repo/should-not-exist" ]] || { echo "malicious provider argument was evaluated" >&2; exit 1; }
   grep -Fq '$(touch should-not-exist)' "$agent_repo/artifacts/agents/malicious-argument/rounds/1/raw.out" \
     || { echo "malicious provider argument was not transported verbatim as a value" >&2; exit 1; }
@@ -1154,9 +1251,9 @@ Path(sys.argv[1]).write_text(json.dumps({"missionId":"mission-alpha","pid":pid,"
 Path(sys.argv[2]).write_text(json.dumps({str(pid): {"pgid": pgid, "command": "python3 fixture mission-lease-tag"}}) + "\n")
 PY
   export HARNESS_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
-  (cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --wait)
+  run_agent_fixture mission-explicit mission-explicit "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --wait
   HARNESS_MISSION_ID=mission-alpha HARNESS_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
-    "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --wait
+    run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --wait
   agent_fails mission-cap 'exceeds the mission' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min 121
   agent_fails missing-mission-lease 'does not have a live' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id missing-mission --mission missing
   agent_fails ambiguous-mission 'ambiguous mission context' env HARNESS_MISSION_ID=mission-alpha HARNESS_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
@@ -1164,7 +1261,7 @@ PY
   [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mission"])' "$agent_repo/artifacts/agents/jobs/happy.json")" == None ]] \
     || { echo "unstamped interactive dispatch gained mission authority" >&2; exit 1; }
   kill "$mission_pid" 2>/dev/null || true
-  wait "$mission_pid" 2>/dev/null || true
+  wait_for_agent_fixture_process mission-lease-holder - "$mission_pid" 2>/dev/null || true
   unset HARNESS_FAKE_PROCESS_IDENTITY_FILE
 
   agent_fails unknown-status-job '' "$agent_dispatch" status --job absent
@@ -1179,7 +1276,7 @@ PY
   malformed_record_status=$?
   set -e
   [[ $malformed_record_status -eq 7 ]] || { echo "malformed status record mapped to $malformed_record_status instead of 7" >&2; exit 1; }
-  "$fake_adapter" selftest >"$agent_fixture/fake-selftest.out"
+  run_agent_fixture_captured fake-selftest - "$agent_fixture/fake-selftest.out" "$fake_adapter" selftest
   grep -Fq 'full protocol sequence' "$agent_fixture/fake-selftest.out" \
     || { echo "fake adapter selftest did not run its full protocol sequence" >&2; exit 1; }
   python3 - "$agent_repo/artifacts/agents/selftests" <<'PY'

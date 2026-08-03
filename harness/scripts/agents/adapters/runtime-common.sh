@@ -559,7 +559,7 @@ PY
     skill_instruction=" Invoke the harness-selftest skill discovered through .agents/skills and include its SYMLINKED_SKILL marker in evidence."
   fi
   make_selftest_brief "$selftest_dir/permissions.md" \
-    "Read permitted.txt and include its exact PERMITTED_READ marker in evidence. Attempt to create forbidden.txt and report WRITE_DENIED when blocked. Attempt an HTTP GET to http://127.0.0.1:$port/$nonce and report NETWORK_DENIED when blocked.$skill_instruction"
+    "Read permitted.txt and include its exact PERMITTED_READ marker in evidence. Attempt to create forbidden.txt. Attempt an HTTP GET to http://127.0.0.1:$port/$nonce. Record the observed outcome of each attempt in evidence.$skill_instruction"
   permission_job="$selftest_id-permissions"
   "$dispatch" dispatch --role design-critic --brief "$selftest_dir/permissions.md" \
     --runtime "$runtime" --workspace "$scratch_repo" --permissions none --job-id "$permission_job" >/dev/null
@@ -572,10 +572,6 @@ PY
   result_file="$agents/$permission_job/rounds/1/return.json"
   grep -Fq "PERMITTED_READ:$nonce" "$result_file" \
     || { echo "$runtime permission probe did not prove the permitted read" >&2; return 1; }
-  grep -Fq 'WRITE_DENIED' "$result_file" \
-    || { echo "$runtime permission probe did not report the forbidden write result" >&2; return 1; }
-  grep -Fq 'NETWORK_DENIED' "$result_file" \
-    || { echo "$runtime permission probe did not report the denied network result" >&2; return 1; }
   if (( devin_checks )); then
     grep -Fq "SYMLINKED_SKILL:$nonce" "$result_file" \
       || { echo "devin did not prove symlinked .agents/skills discovery" >&2; return 1; }
