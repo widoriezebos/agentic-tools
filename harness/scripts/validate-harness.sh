@@ -67,12 +67,41 @@ for link in \
   scripts/harness-config.sh \
   scripts/agents/dispatch.sh \
   scripts/agents/adapters/fake.sh \
+  scripts/agents/adapters/runtime-common.sh \
+  scripts/agents/adapters/claude-session-signal.py \
   scripts/agents/assert-conformance.sh \
   scripts/assert-critique-closed.sh \
   scripts/assert-return-complete.sh \
   scripts/agents/check-preamble-quotes.sh; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
+
+# Real runtime selftests spend model calls and remain manual acceptance steps.
+# Validation covers only their static adapter contract.
+bash -n scripts/agents/adapters/runtime-common.sh
+python3 - scripts/agents/adapters/claude-session-signal.py <<'PY'
+import ast, sys
+from pathlib import Path
+ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])
+PY
+for runtime in claude codex devin; do
+  adapter="scripts/agents/adapters/$runtime.sh"
+  [[ -f "$adapter" ]] || { echo "missing $runtime runtime adapter: $adapter" >&2; exit 1; }
+  [[ -x "$adapter" ]] || { echo "$runtime runtime adapter is not executable: $adapter" >&2; exit 1; }
+  bash -n "$adapter"
+  adapter_usage=$($adapter --help 2>&1)
+  for verb in identity probe dispatch follow-up cancel selftest; do
+    grep -Fq "adapters/$runtime.sh $verb" <<<"$adapter_usage" \
+      || { echo "$runtime adapter usage does not advertise $verb" >&2; exit 1; }
+  done
+  grep -Fq "adapter_common_init $runtime" "$adapter" \
+    || { echo "$runtime adapter does not bind its snapshot runtime identity" >&2; exit 1; }
+  grep -Fq "write_capability_snapshot $runtime \"\$version\" \"\$hash\"" "$adapter" \
+    || { echo "$runtime adapter does not write its named capability snapshot" >&2; exit 1; }
+done
+grep -Fq 'path = directory / f"{runtime}-{version}-{config_hash}-{date}-{sequence:03d}.json"' \
+  scripts/agents/adapters/runtime-common.sh \
+  || { echo "real adapter capability snapshot naming contract drifted" >&2; exit 1; }
 for role in design-critic implementer code-critic verifier investigator; do
   for suffix in md requirements.json; do
     [[ -f "scripts/agents/roles/$role.$suffix" ]] \
