@@ -55,6 +55,27 @@ for link in \
   [[ -e "$link" ]] || { echo "missing routed asset: $link" >&2; exit 1; }
 done
 
+# The agent protocol is runtime-neutral and ships in template and adopted
+# repositories. Keep the five dispatchable roles in lockstep across their
+# preamble, return schema, and capability declaration.
+for link in \
+  scripts/agents/templates/brief.md \
+  scripts/agents/templates/follow-up.md \
+  scripts/agents/permissions/none.json \
+  scripts/agents/permissions/workspace.json \
+  scripts/assert-return-complete.sh \
+  scripts/agents/check-preamble-quotes.sh; do
+  [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
+done
+for role in design-critic implementer code-critic verifier investigator; do
+  for suffix in md requirements.json; do
+    [[ -f "scripts/agents/roles/$role.$suffix" ]] \
+      || { echo "missing $role role asset: scripts/agents/roles/$role.$suffix" >&2; exit 1; }
+  done
+  [[ -f "scripts/agents/schemas/$role.schema.json" ]] \
+    || { echo "missing $role return schema" >&2; exit 1; }
+done
+
 if (( template_mode )); then
   for link in \
     skills/take-a-step-back/SKILL.md \
@@ -108,6 +129,292 @@ done
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+
+# The brief contains only orchestrator-authored header fields. Dispatch owns
+# job identity, role, runtime, model, and round, so none may appear as a brief
+# header before those values exist.
+brief=scripts/agents/templates/brief.md
+for header in 'Working Mode:' 'Mission Stream:' 'Orchestrator Identity:' 'Date:'; do
+  grep -q "^$header" "$brief" || { echo "brief template is missing authored header: $header" >&2; exit 1; }
+done
+if grep -Eq '^(Job-Id|Role|Runtime|Model|Round):' "$brief"; then
+  echo "brief template contains a dispatch-assigned header" >&2
+  exit 1
+fi
+grep -q '^Finding Id:' scripts/agents/templates/follow-up.md \
+  || { echo "follow-up template does not restate one finding" >&2; exit 1; }
+grep -q '^Disposition:' scripts/agents/templates/follow-up.md \
+  || { echo "follow-up template does not restate the disposition" >&2; exit 1; }
+grep -q '^# Unchanged Return Contract$' scripts/agents/templates/follow-up.md \
+  || { echo "follow-up template can lose the original return contract" >&2; exit 1; }
+
+# Assert the machine-readable shapes item 2 owns. Later dispatcher fixtures
+# exercise expansion and capability gating; here the shipped declarations
+# must remain minimal and must not grow baseline guarantees into snapshots.
+python3 - "$root" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+common = {"jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode"}
+role_fields = {
+    "design-critic": {"findings", "verdictMaterialCount"},
+    "implementer": {"riskiestPart", "diffBoundary", "whatWasDone"},
+    "code-critic": {"findings", "verdictMaterialCount"},
+    "verifier": {"riskiestPart", "whatWasDone"},
+    "investigator": {"frozenFrame", "theories", "classifications", "stopLoss"},
+}
+for role, owned in role_fields.items():
+    path = root / "scripts" / "agents" / "schemas" / f"{role}.schema.json"
+    schema = json.loads(path.read_text())
+    expected = common | owned
+    actual = set(schema.get("properties", {}))
+    required = set(schema.get("required", []))
+    if actual != expected or required != expected or schema.get("additionalProperties") is not False:
+        raise SystemExit(f"{role} schema property set drifted from the protocol")
+
+permission_expected = {
+    "none": {
+        "readRoots": ["."], "writeRoots": [], "network": "deny",
+        "approvals": "deny", "tools": "read-only",
+    },
+    "workspace": {
+        "readRoots": ["."], "writeRoots": ["<worktree>"], "network": "deny",
+        "approvals": "deny", "tools": "runtime-default",
+    },
+}
+for name, expected in permission_expected.items():
+    path = root / "scripts" / "agents" / "permissions" / f"{name}.json"
+    if json.loads(path.read_text()) != expected:
+        raise SystemExit(f"{name} permission preset drifted from its envelope")
+
+for role in role_fields:
+    path = root / "scripts" / "agents" / "roles" / f"{role}.requirements.json"
+    requirement = json.loads(path.read_text())
+    if set(requirement) != {"required", "optional"}:
+        raise SystemExit(f"{role} capability declaration has unknown top-level fields")
+    if requirement["required"] != []:
+        raise SystemExit(f"{role} incorrectly repeats adapter-guaranteed baseline capabilities")
+    if role == "implementer":
+        resume = requirement["optional"].get("resume")
+        if set(requirement["optional"]) != {"resume"} or not isinstance(resume, dict) or not resume.get("fallback"):
+            raise SystemExit("implementer resume capability lacks its embed fallback")
+    elif requirement["optional"] != {}:
+        raise SystemExit(f"{role} declares a variable capability it does not need")
+PY
+
+# Quote markers name their canonical source. The checker compares the content
+# bytes rather than trusting a second prose copy of the binding criterion.
+scripts/agents/check-preamble-quotes.sh
+cp -R scripts/agents/roles "$tmp/drifted-roles"
+sed 's/build something DIFFERENT/build the same thing/' \
+  "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
+mv "$tmp/drifted-roles/design-critic.md.new" "$tmp/drifted-roles/design-critic.md"
+set +e
+scripts/agents/check-preamble-quotes.sh --roles-dir "$tmp/drifted-roles" >"$tmp/quote-drift.out" 2>&1
+quote_status=$?
+set -e
+if [[ $quote_status -eq 0 ]]; then
+  echo "preamble quote checker accepted a drifted binding criterion" >&2
+  exit 1
+fi
+[[ $quote_status -eq 1 ]] \
+  || { echo "preamble quote checker used $quote_status instead of exit 1 for drift" >&2; exit 1; }
+grep -q 'quote drifted from skills/design-critique/SKILL.md' "$tmp/quote-drift.out" \
+  || { echo "preamble quote checker did not name the drifted source" >&2; exit 1; }
+
+# Build canonical positive returns and one role-specific negative per role.
+# JSON remains canonical; these fixtures never rely on the Markdown view.
+return_fixtures="$tmp/returns"
+mkdir -p "$return_fixtures"
+python3 - "$return_fixtures" <<'PY'
+import copy
+import json
+import sys
+from pathlib import Path
+
+out = Path(sys.argv[1])
+common = {
+    "jobId": "fixture-job",
+    "round": 1,
+    "runtime": "fake",
+    "sessionId": "session-1",
+    "model": {"requested": "fake-model", "effective": "fake-model"},
+    "evidence": [{"command": "scripts/validate-harness.sh", "observed": "fixture output", "level": "ran"}],
+    "gaps": [],
+    "mode": "implement",
+}
+positive = {
+    "design-critic": {
+        **common,
+        "mode": "design",
+        "findings": [{"id": "F-1", "severity": "high", "material": True, "claim": "contract gap", "evidence": "read design"}],
+        "verdictMaterialCount": 1,
+    },
+    "code-critic": {
+        **common,
+        "findings": [],
+        "verdictMaterialCount": 0,
+    },
+    "implementer": {
+        **common,
+        "riskiestPart": "schema boundary",
+        "diffBoundary": ["scripts/example.sh"],
+        "whatWasDone": "implemented the brief",
+    },
+    "verifier": {
+        **common,
+        "mode": "verify",
+        "riskiestPart": "failure path",
+        "whatWasDone": "drove the runnable surface",
+    },
+    "investigator": {
+        **common,
+        "mode": "take-a-step-back",
+        "frozenFrame": "symptom and boundary frozen",
+        "theories": [{"statement": "owner lost state", "evidenceFor": "trace", "evidenceAgainst": "focused check"}],
+        "classifications": ["falsified-continue"],
+        "stopLoss": {"triggered": False, "trigger": None},
+    },
+}
+for role, value in positive.items():
+    (out / f"{role}-positive.json").write_text(json.dumps(value, indent=2) + "\n")
+
+negative = copy.deepcopy(positive)
+negative["design-critic"].pop("findings")
+negative["design-critic"].pop("verdictMaterialCount")
+negative["code-critic"]["whatWasDone"] = "critics do not own this section"
+negative["implementer"].pop("diffBoundary")
+negative["verifier"]["diffBoundary"] = ["not verifier-owned"]
+negative["investigator"].pop("frozenFrame")
+negative["investigator"].pop("theories")
+for role, value in negative.items():
+    (out / f"{role}-negative.json").write_text(json.dumps(value, indent=2) + "\n")
+
+miscount = copy.deepcopy(positive["design-critic"])
+miscount["verdictMaterialCount"] = 0
+(out / "critic-miscount.json").write_text(json.dumps(miscount, indent=2) + "\n")
+missing_verdict = copy.deepcopy(positive["design-critic"])
+missing_verdict.pop("verdictMaterialCount")
+(out / "critic-missing-verdict.json").write_text(json.dumps(missing_verdict, indent=2) + "\n")
+PY
+
+for role in design-critic implementer code-critic verifier investigator; do
+  scripts/assert-return-complete.sh --role "$role" --file "$return_fixtures/$role-positive.json"
+done
+
+check_bad_return() { # role, file, required diagnostic text
+  local role=$1 file=$2 expected=$3 output status
+  output="$tmp/${role}-negative.out"
+  set +e
+  scripts/assert-return-complete.sh --role "$role" --file "$file" >"$output" 2>&1
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
+    echo "return checker accepted the negative $role fixture" >&2
+    exit 1
+  fi
+  [[ $status -eq 1 ]] \
+    || { echo "return checker used $status instead of exit 1 for $role validation" >&2; exit 1; }
+  grep -Fq "$expected" "$output" \
+    || { echo "return checker did not name the $role violation: $expected" >&2; exit 1; }
+}
+
+check_bad_return design-critic "$return_fixtures/design-critic-negative.json" '$.findings is required'
+check_bad_return code-critic "$return_fixtures/code-critic-negative.json" '$.whatWasDone is not allowed'
+check_bad_return implementer "$return_fixtures/implementer-negative.json" '$.diffBoundary is required'
+check_bad_return verifier "$return_fixtures/verifier-negative.json" '$.diffBoundary is not allowed'
+check_bad_return investigator "$return_fixtures/investigator-negative.json" '$.frozenFrame is required'
+check_bad_return design-critic "$return_fixtures/critic-missing-verdict.json" '$.verdictMaterialCount is required'
+check_bad_return design-critic "$return_fixtures/critic-miscount.json" '$.verdictMaterialCount must equal the count of findings with material=true'
+
+set +e
+scripts/assert-return-complete.sh >"$tmp/return-usage.out" 2>&1
+return_usage_status=$?
+set -e
+[[ $return_usage_status -eq 2 ]] \
+  || { echo "return checker used $return_usage_status instead of exit 2 for usage" >&2; exit 1; }
+
+# Job mode derives the schema and return path from the record and then checks
+# all four identity fields, one at a time, against a schema-valid return.
+job_fixture="$tmp/job-harness"
+mkdir -p "$job_fixture/scripts/agents" \
+  "$job_fixture/artifacts/agents/jobs" \
+  "$job_fixture/artifacts/agents/fixture-job/rounds/1"
+cp scripts/assert-return-complete.sh "$job_fixture/scripts/"
+cp -R scripts/agents/schemas "$job_fixture/scripts/agents/"
+cat >"$job_fixture/artifacts/agents/jobs/fixture-job.json" <<'EOF'
+{
+  "jobId": "fixture-job",
+  "role": "implementer",
+  "round": 1,
+  "parentJob": null,
+  "runtime": "fake",
+  "sessionId": "session-1"
+}
+EOF
+cp "$return_fixtures/implementer-positive.json" \
+  "$job_fixture/artifacts/agents/fixture-job/rounds/1/return.json"
+(cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job)
+
+mkdir -p "$job_fixture/artifacts/agents/fixture-job/rounds/2"
+cat >"$job_fixture/artifacts/agents/jobs/fixture-job-r2.json" <<'EOF'
+{
+  "jobId": "fixture-job-r2",
+  "role": "implementer",
+  "round": 2,
+  "parentJob": "fixture-job",
+  "runtime": "fake",
+  "sessionId": "session-2"
+}
+EOF
+python3 - "$return_fixtures/implementer-positive.json" \
+  "$job_fixture/artifacts/agents/fixture-job/rounds/2/return.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+value = json.loads(Path(sys.argv[1]).read_text())
+value.update({"jobId": "fixture-job-r2", "round": 2, "sessionId": "session-2"})
+Path(sys.argv[2]).write_text(json.dumps(value, indent=2) + "\n")
+PY
+(cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job-r2)
+
+python3 - "$return_fixtures/implementer-positive.json" "$return_fixtures" <<'PY'
+import copy
+import json
+import sys
+from pathlib import Path
+
+source = json.loads(Path(sys.argv[1]).read_text())
+out = Path(sys.argv[2])
+for field, value in {
+    "jobId": "other-job",
+    "round": 2,
+    "runtime": "other-runtime",
+    "sessionId": "other-session",
+}.items():
+    changed = copy.deepcopy(source)
+    changed[field] = value
+    (out / f"identity-{field}.json").write_text(json.dumps(changed, indent=2) + "\n")
+PY
+for field in jobId round runtime sessionId; do
+  cp "$return_fixtures/identity-$field.json" \
+    "$job_fixture/artifacts/agents/fixture-job/rounds/1/return.json"
+  set +e
+  (cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job) >"$tmp/identity-$field.out" 2>&1
+  identity_status=$?
+  set -e
+  if [[ $identity_status -eq 0 ]]; then
+    echo "job-aware return checker accepted a mismatched $field" >&2
+    exit 1
+  fi
+  [[ $identity_status -eq 1 ]] \
+    || { echo "job-aware return checker used $identity_status instead of exit 1 for $field" >&2; exit 1; }
+  grep -Fq "$.${field} identity mismatch" "$tmp/identity-$field.out" \
+    || { echo "job-aware return checker did not name the $field mismatch" >&2; exit 1; }
+done
 
 # The shipped Stop hook must stay rooted and surface via JSON output: hooks
 # run in the session's cwd, receipt.sh resolves its ledger from there, and a

@@ -1,0 +1,7 @@
+{
+  "readRoots": ["."],
+  "writeRoots": ["<worktree>"],
+  "network": "deny",
+  "approvals": "deny",
+  "tools": "runtime-default"
+}

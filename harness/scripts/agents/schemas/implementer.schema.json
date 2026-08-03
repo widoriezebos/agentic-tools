@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "harness.version=1",
+  "title": "Implementer return",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "riskiestPart", "diffBoundary", "whatWasDone"],
+  "properties": {
+    "jobId": {"type": "string"},
+    "round": {"type": "integer"},
+    "runtime": {"type": "string"},
+    "sessionId": {"type": ["string", "null"]},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "effective"],
+      "properties": {
+        "requested": {"type": "string"},
+        "effective": {"type": ["string", "null"]}
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "observed", "level"],
+        "properties": {
+          "command": {"type": "string"},
+          "observed": {"type": "string"},
+          "level": {"enum": ["ran", "read", "inferred"]}
+        }
+      }
+    },
+    "gaps": {"type": "array", "items": {"type": "string"}},
+    "mode": {"type": "string"},
+    "riskiestPart": {"type": "string"},
+    "diffBoundary": {"type": "array", "items": {"type": "string"}},
+    "whatWasDone": {"type": "string"}
+  }
+}
