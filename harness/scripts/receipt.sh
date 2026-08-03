@@ -7,7 +7,7 @@ Usage:
   scripts/receipt.sh add --type <implement|refactor|improve|review|design|investigate|other> \
       --outcome <shipped|reworked|blocked|parked> [--skills a,b] \
       [--verify clean|caught|skipped] [--corrections N] [--stop-loss yes|no] \
-      [--note "text"] [--file <path>]
+      [--delegate runtime:model:job-id]... [--note "text"] [--file <path>]
   scripts/receipt.sh check [--max-age-days N] [--max-receipts N] [--file <path>]
   scripts/receipt.sh stats [--all] [--file <path>]
   scripts/receipt.sh retro "summary of instruction changes" [--file <path>]
@@ -20,16 +20,20 @@ stats: print the period numbers (since the last retro, or --all) as
 key=value lines — recorded per retro so periods stay comparable.
 retro: record that a retro ran and reset the cadence.
 
-Defaults: --file plans/receipts.log, --max-age-days 30 (override with
-HARNESS_RETRO_MAX_AGE_DAYS), --max-receipts 25 (HARNESS_RETRO_MAX_RECEIPTS).
+Defaults: --file plans/receipts.log. Retro cadence resolves from flags, then
+environment, then harness.conf, then built-ins: --max-age-days 30 and
+--max-receipts 25.
 Exit codes: 0 ok; 1 retro due; 2 usage error.
 USAGE
 }
 
 file=plans/receipts.log
-max_age_days=${HARNESS_RETRO_MAX_AGE_DAYS:-30}
-max_receipts=${HARNESS_RETRO_MAX_RECEIPTS:-25}
+max_age_days=
+max_receipts=
+max_age_days_set=0
+max_receipts_set=0
 type= outcome= skills=none verify=skipped corrections=0 stop_loss=no note= summary= all_flag=0
+delegates=()
 
 cmd=${1:-}
 [[ -n "$cmd" ]] || { usage; exit 2; }
@@ -49,14 +53,23 @@ while (($#)); do
     --verify) verify=${2:-}; shift 2 ;;
     --corrections) corrections=${2:-}; shift 2 ;;
     --stop-loss) stop_loss=${2:-}; shift 2 ;;
+    --delegate) delegates+=("${2:-}"); shift 2 ;;
     --note) note=${2:-}; shift 2 ;;
     --all) all_flag=1; shift ;;
-    --max-age-days) max_age_days=${2:-}; shift 2 ;;
-    --max-receipts) max_receipts=${2:-}; shift 2 ;;
+    --max-age-days) max_age_days=${2:-}; max_age_days_set=1; shift 2 ;;
+    --max-receipts) max_receipts=${2:-}; max_receipts_set=1; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
 done
+
+config=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/harness-config.sh
+age_args=(get --key retro.max-age-days --default 30)
+receipt_args=(get --key retro.max-receipts --default 25)
+(( max_age_days_set )) && age_args+=(--flag "$max_age_days")
+(( max_receipts_set )) && receipt_args+=(--flag "$max_receipts")
+max_age_days=$("$config" "${age_args[@]}")
+max_receipts=$("$config" "${receipt_args[@]}")
 
 now_epoch=$(date -u +%s)
 now_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -78,8 +91,18 @@ case "$cmd" in
     mkdir -p "$(dirname "$file")"
     skills=$(sanitize "$skills")
     note=$(sanitize "$note")
-    printf '%s|%s|RECEIPT|type=%s|outcome=%s|skills=%s|verify=%s|corrections=%s|stop_loss=%s|note=%s\n' \
-      "$now_epoch" "$now_utc" "$type" "$outcome" "${skills//|/;}" "$verify" "$corrections" "$stop_loss" "${note//|/;}" >>"$file"
+    delegate=none
+    if ((${#delegates[@]})); then
+      delegate=
+      for value in "${delegates[@]}"; do
+        value=$(sanitize "$value")
+        value=${value//|/;}
+        [[ -z "$delegate" ]] || delegate+=,
+        delegate+=$value
+      done
+    fi
+    printf '%s|%s|RECEIPT|type=%s|outcome=%s|skills=%s|verify=%s|corrections=%s|stop_loss=%s|delegate=%s|note=%s\n' \
+      "$now_epoch" "$now_utc" "$type" "$outcome" "${skills//|/;}" "$verify" "$corrections" "$stop_loss" "$delegate" "${note//|/;}" >>"$file"
     echo "receipt recorded in $file"
     "$0" check --file "$file" >/dev/null 2>&1 || echo "note: a harness retro is due — run skills/retro (scripts/receipt.sh check for details)" >&2
     ;;

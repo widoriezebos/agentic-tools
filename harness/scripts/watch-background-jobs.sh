@@ -20,7 +20,7 @@ watcher loops forever on a job that hangs or whose record disappears:
 
   DONE      terminal status recorded by the runner
   STALE     no state change for --stale-min minutes while still running
-  CAPPED    running longer than --cap-min minutes (absolute ceiling)
+  CAPPED    no record or sidecar change for --cap-min minutes (inactivity ceiling)
   VANISHED  a job seen running whose record disappeared (runner lost it)
 
 Job records are files under the given directories. A record's status is read
@@ -50,7 +50,7 @@ Options:
   --state FILE     where already-reported jobs are remembered
                    (default: ${TMPDIR:-/tmp}/watch-background-jobs.<hash>.state)
   --stale-min N    minutes without a state change before STALE (default 20)
-  --cap-min N      minutes of total runtime before CAPPED (default 180)
+  --cap-min N      minutes without a state change before CAPPED (default 180)
   --interval SEC   poll interval (default 60)
   --baseline       record every currently-terminal job as already reported and
                    exit; use once when adopting the watcher on a repository
@@ -77,8 +77,10 @@ dirs=()
 scope=""
 scope_field="workspaceRoot"
 state_file=""
-stale_min=20
-cap_min=180
+stale_min=
+cap_min=
+stale_min_set=0
+cap_min_set=0
 interval=60
 baseline=0
 once=0
@@ -90,8 +92,8 @@ while [ $# -gt 0 ]; do
     --scope) [ $# -ge 2 ] || { usage; exit 2; }; scope="${2%/}"; shift 2 ;;
     --scope-field) [ $# -ge 2 ] || { usage; exit 2; }; scope_field="$2"; shift 2 ;;
     --state) [ $# -ge 2 ] || { usage; exit 2; }; state_file="$2"; shift 2 ;;
-    --stale-min) [ $# -ge 2 ] || { usage; exit 2; }; stale_min="$2"; shift 2 ;;
-    --cap-min) [ $# -ge 2 ] || { usage; exit 2; }; cap_min="$2"; shift 2 ;;
+    --stale-min) [ $# -ge 2 ] || { usage; exit 2; }; stale_min="$2"; stale_min_set=1; shift 2 ;;
+    --cap-min) [ $# -ge 2 ] || { usage; exit 2; }; cap_min="$2"; cap_min_set=1; shift 2 ;;
     --interval) [ $# -ge 2 ] || { usage; exit 2; }; interval="$2"; shift 2 ;;
     --baseline) baseline=1; shift ;;
     --start-verify-min) [ $# -ge 2 ] || { usage; exit 2; }; start_verify_min="$2"; shift 2 ;;
@@ -100,6 +102,14 @@ while [ $# -gt 0 ]; do
     *) usage; exit 2 ;;
   esac
 done
+
+config=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/harness-config.sh
+stale_args=(get --key watch.stale-min --default 20)
+cap_args=(get --key watch.cap-min --default 180)
+(( stale_min_set )) && stale_args+=(--flag "$stale_min")
+(( cap_min_set )) && cap_args+=(--flag "$cap_min")
+stale_min=$("$config" "${stale_args[@]}")
+cap_min=$("$config" "${cap_args[@]}")
 
 [ ${#dirs[@]} -gt 0 ] || { usage; exit 2; }
 case "$stale_min$cap_min$interval$start_verify_min" in *[!0-9]*) usage; exit 2 ;; esac

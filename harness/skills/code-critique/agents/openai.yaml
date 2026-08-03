@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Critique"
+  short_description: "Review implementations for defects and brief violations"
+  default_prompt: "Use $code-critique to review this implementation for conformance and adversarial defects."

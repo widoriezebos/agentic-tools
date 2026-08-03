@@ -21,14 +21,17 @@ for dir in skills optional-skills; do
   done < <(find "$dir" -name SKILL.md | sort)
 done
 
-# Core assets are required everywhere. The full six-skill set with every
+# Core assets are required everywhere. The full seven-skill set with every
 # per-runtime profile is required only in the template repository (marked by
 # meta/harness-design.md): adopted repositories may prune unused skills, and
-# each skill present is still validated by the loop above. Profile files are
-# not demanded in adopted mode, because project-added skills never had them
-# and core skills may drop them after runtime registration.
+# each skill present is still validated by the loop above. In adopted mode,
+# any profile a remaining skill does provide must be registered without drift;
+# project-added skills are not required to invent profiles they never shipped.
 template_mode=0
 [[ -f meta/harness-design.md ]] && template_mode=1
+if (( ! template_mode )); then
+  scripts/harness-config.sh validate
+fi
 
 for link in \
   docs/project-rules.md \
@@ -121,6 +124,10 @@ if (( template_mode )); then
     skills/design-critique/agents/claude-profile.md \
     skills/design-critique/agents/devin/AGENT.md \
     skills/design-critique/agents/openai.yaml \
+    skills/code-critique/SKILL.md \
+    skills/code-critique/agents/claude-profile.md \
+    skills/code-critique/agents/devin/AGENT.md \
+    skills/code-critique/agents/openai.yaml \
     skills/verify/SKILL.md \
     skills/verify/agents/claude-profile.md \
     skills/verify/agents/devin/AGENT.md \
@@ -144,7 +151,7 @@ fi
 # Registered skills must track their canonical source under skills/: copies
 # must not drift, orphaned copies of a pruned skill must not linger, and a
 # symlink to a pruned skill is dangling.
-for regroot in .claude/skills .agents/skills; do
+for regroot in .claude/skills .agents/skills .devin/skills; do
   [[ -d "$regroot" ]] || continue
   for reg in "$regroot"/*; do
     [[ -e "$reg" || -L "$reg" ]] || continue
@@ -162,8 +169,79 @@ for regroot in .claude/skills .agents/skills; do
   done
 done
 
+# In adopted mode harness.runtimes is live truth for registrations. Every
+# remaining skill must be discoverable by each selected runtime, and copied
+# launcher profiles must remain byte-identical to their canonical source.
+if (( ! template_mode )); then
+  configured_runtimes=$(sed -n 's/^harness\.runtimes=//p' harness.conf)
+  runtime_selected() { [[ ",$configured_runtimes," == *",$1,"* ]]; }
+  for skill_dir in skills/*/; do
+    [[ -d "$skill_dir" ]] || continue
+    name=$(basename "$skill_dir")
+    if runtime_selected claude; then
+      [[ -e ".claude/skills/$name" ]] \
+        || { echo "claude registration missing for skill: $name" >&2; exit 1; }
+      if [[ -f "$skill_dir/agents/claude-profile.md" ]]; then
+        profile=".claude/agents/$name.md"
+        [[ -f "$profile" ]] || { echo "claude profile registration missing: $profile" >&2; exit 1; }
+        cmp -s "$skill_dir/agents/claude-profile.md" "$profile" \
+          || { echo "claude profile drifted from $skill_dir/agents/claude-profile.md: $profile" >&2; exit 1; }
+      fi
+    fi
+    if runtime_selected codex || runtime_selected devin; then
+      [[ -e ".agents/skills/$name" ]] \
+        || { echo "shared .agents skill registration missing: $name" >&2; exit 1; }
+    fi
+    if runtime_selected devin; then
+      [[ -e ".devin/skills/$name" ]] \
+        || { echo "devin skill registration missing: $name" >&2; exit 1; }
+      if [[ -f "$skill_dir/agents/devin/AGENT.md" ]]; then
+        profile=".devin/agents/$name/AGENT.md"
+        [[ -f "$profile" ]] || { echo "devin profile registration missing: $profile" >&2; exit 1; }
+        cmp -s "$skill_dir/agents/devin/AGENT.md" "$profile" \
+          || { echo "devin profile drifted from $skill_dir/agents/devin/AGENT.md: $profile" >&2; exit 1; }
+      fi
+    fi
+  done
+fi
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+
+fill_harness_conf() { # config path, absolute evidence root
+  python3 - "$1" "$2" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+evidence = sys.argv[2]
+model_key = re.compile(
+    r"^(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$"
+)
+lines = []
+models = set()
+for raw in path.read_text(encoding="utf-8").splitlines():
+    if "=" not in raw:
+        lines.append(raw)
+        continue
+    key, value = raw.split("=", 1)
+    match = model_key.fullmatch(key)
+    if key == "evidence.root":
+        value = evidence
+    elif match:
+        runtime = match.group(1)
+        value = f"fixture-{runtime}-model"
+        models.add(f"{runtime}:{value}")
+    elif key == "model.tier.1":
+        value = "__MODELS__"
+    elif key.startswith("model.tier."):
+        value = ""
+    lines.append(f"{key}={value}")
+joined = "\n".join(lines).replace("model.tier.1=__MODELS__", f"model.tier.1={','.join(sorted(models))}")
+path.write_text(joined + "\n", encoding="utf-8")
+PY
+}
 
 # The brief contains only orchestrator-authored header fields. Dispatch owns
 # job identity, role, runtime, model, and round, so none may appear as a brief
@@ -265,6 +343,18 @@ fi
   || { echo "preamble quote checker used $quote_status instead of exit 1 for drift" >&2; exit 1; }
 grep -q 'quote drifted from skills/design-critique/SKILL.md' "$tmp/quote-drift.out" \
   || { echo "preamble quote checker did not name the drifted source" >&2; exit 1; }
+cp -R scripts/agents/roles "$tmp/drifted-code-roles"
+sed 's/ship a defect/ship no defect/' \
+  "$tmp/drifted-code-roles/code-critic.md" >"$tmp/drifted-code-roles/code-critic.md.new"
+mv "$tmp/drifted-code-roles/code-critic.md.new" "$tmp/drifted-code-roles/code-critic.md"
+set +e
+scripts/agents/check-preamble-quotes.sh --roles-dir "$tmp/drifted-code-roles" >"$tmp/code-quote-drift.out" 2>&1
+code_quote_status=$?
+set -e
+[[ $code_quote_status -eq 1 ]] \
+  || { echo "preamble quote checker accepted a drifted code-critique criterion" >&2; exit 1; }
+grep -q 'quote drifted from skills/code-critique/SKILL.md' "$tmp/code-quote-drift.out" \
+  || { echo "preamble quote checker did not name the code-critique source" >&2; exit 1; }
 
 # Build canonical positive returns and one role-specific negative per role.
 # JSON remains canonical; these fixtures never rely on the Markdown view.
@@ -794,6 +884,12 @@ EOF
   perl -0pi -e 's/^mode\.refactor\.role\.implementer\.runtime=.*$/mode.refactor.role.implementer.runtime=ghost/m' "$agent_repo/harness.conf"
   agent_fails invalid-mode-runtime 'outside harness.runtimes' "$agent_config" validate
   cp "$good_agent_conf" "$agent_repo/harness.conf"
+  printf 'role.default.model.ghost=ghost-model\n' >>"$agent_repo/harness.conf"
+  agent_fails invalid-model-runtime 'outside harness.runtimes' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
+  perl -0pi -e 's/^harness\.runtimes=.*$/harness.runtimes=ghost/m' "$agent_repo/harness.conf"
+  agent_fails unsupported-runtime 'unsupported runtime' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/harness.conf"
   perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.1=/m' "$agent_repo/harness.conf"
   agent_fails unmapped-model 'appears in 0 model tiers' "$agent_config" validate
   cp "$good_agent_conf" "$agent_repo/harness.conf"
@@ -1304,7 +1400,8 @@ if command -v python3 >/dev/null; then
   hook_cmd=$(python3 -c "import json; print(json.load(open('$hooks_json'))['hooks']['Stop'][0]['hooks'][0]['command'])")
   hookrepo="$tmp/hookrepo"
   mkdir -p "$hookrepo/scripts" "$hookrepo/plans"
-  cp scripts/receipt.sh "$hookrepo/scripts/"
+  cp scripts/receipt.sh scripts/harness-config.sh "$hookrepo/scripts/"
+  cp harness.conf "$hookrepo/"
   printf '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n' >"$hookrepo/plans/receipts.log"
   out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
   grep -q systemMessage <<<"$out" || { echo "stop hook stayed silent on a due retro" >&2; exit 1; }
@@ -1576,8 +1673,51 @@ if scripts/assert-stop-loss.sh --file "$tmp/nogain-fakegain.md" >/dev/null 2>&1;
   exit 1
 fi
 
+knob_fixture="$tmp/conf-consuming-scripts"
+mkdir -p "$knob_fixture/receipt/scripts" "$knob_fixture/watch/scripts" "$knob_fixture/watch/jobs"
+cp scripts/receipt.sh scripts/harness-config.sh "$knob_fixture/receipt/scripts/"
+printf 'retro.max-receipts=0\nretro.max-age-days=30\n' >"$knob_fixture/receipt/harness.conf"
+"$knob_fixture/receipt/scripts/receipt.sh" add --type implement --outcome shipped --file "$knob_fixture/receipt/receipts.log" >/dev/null
+if "$knob_fixture/receipt/scripts/receipt.sh" check --file "$knob_fixture/receipt/receipts.log" >/dev/null 2>&1; then
+  echo "receipt ignored the harness.conf receipt limit" >&2
+  exit 1
+fi
+HARNESS_RETRO_MAX_RECEIPTS=2 "$knob_fixture/receipt/scripts/receipt.sh" check --file "$knob_fixture/receipt/receipts.log" >/dev/null \
+  || { echo "receipt did not prefer the environment over harness.conf" >&2; exit 1; }
+HARNESS_RETRO_MAX_RECEIPTS=0 "$knob_fixture/receipt/scripts/receipt.sh" check --max-receipts 2 --file "$knob_fixture/receipt/receipts.log" >/dev/null \
+  || { echo "receipt did not prefer the flag over the environment" >&2; exit 1; }
+
+cp scripts/watch-background-jobs.sh scripts/harness-config.sh "$knob_fixture/watch/scripts/"
+printf 'watch.stale-min=7\nwatch.cap-min=9\n' >"$knob_fixture/watch/harness.conf"
+touch "$knob_fixture/watch/state"
+"$knob_fixture/watch/scripts/watch-background-jobs.sh" --dir "$knob_fixture/watch/jobs" --state "$knob_fixture/watch/state" --once >"$knob_fixture/watch.out"
+grep -q 'stale=7m cap=9m' "$knob_fixture/watch.out" \
+  || { echo "watcher ignored harness.conf ceilings" >&2; exit 1; }
+
+refactor_knob="$knob_fixture/refactor"
+mkdir -p "$refactor_knob/scripts"
+cp scripts/refactor-baseline.sh scripts/harness-config.sh "$refactor_knob/scripts/"
+printf 'refactor.max-age-minutes=1440\nrefactor.max-commits=0\n' >"$refactor_knob/harness.conf"
+git init -q "$refactor_knob"
+printf 'fixture\n' >"$refactor_knob/source.txt"
+git -C "$refactor_knob" add source.txt harness.conf scripts
+git -C "$refactor_knob" -c user.name=harness -c user.email=harness@example.invalid commit -qm initial
+(cd "$refactor_knob" && scripts/refactor-baseline.sh record --gate fixture >/dev/null)
+git -C "$refactor_knob" add plans/refactor-baseline
+git -C "$refactor_knob" -c user.name=harness -c user.email=harness@example.invalid commit -qm baseline
+if (cd "$refactor_knob" && scripts/refactor-baseline.sh check >/dev/null 2>&1); then
+  echo "refactor baseline ignored harness.conf commit cadence" >&2
+  exit 1
+fi
+(cd "$refactor_knob" && scripts/refactor-baseline.sh check --max-commits 2 >/dev/null) \
+  || { echo "refactor baseline did not prefer the cadence flag" >&2; exit 1; }
+
 rfile="$tmp/receipts.log"
-scripts/receipt.sh add --type implement --outcome shipped --file "$rfile" >/dev/null
+scripts/receipt.sh add --type implement --outcome shipped \
+  --delegate codex:fixture-code:implementer-job \
+  --delegate claude:fixture-review:code-critic-job --file "$rfile" >/dev/null
+grep -q '|delegate=codex:fixture-code:implementer-job,claude:fixture-review:code-critic-job|' "$rfile" \
+  || { echo "receipt did not join repeated delegate triples" >&2; exit 1; }
 scripts/receipt.sh check --file "$rfile" >/dev/null
 scripts/receipt.sh add --type review --outcome reworked --corrections 1 --file "$rfile" >/dev/null
 if scripts/receipt.sh check --max-receipts 1 --file "$rfile" >/dev/null 2>&1; then
@@ -1601,15 +1741,21 @@ scripts/receipt.sh stats --file "$rfile" | grep -q '^type_improve=1$' || { echo 
 scripts/receipt.sh stats --all --file "$rfile" | grep -q '^receipts=3$' || { echo "receipt stats --all miscounted" >&2; exit 1; }
 
 # Every free-text field is sanitized by one shared path: CRLF through the
-# note, the skills list, and the retro summary must each stay one log line.
+# note, the skills list, delegates, and the retro summary must each stay one log line.
 crlf_fixture=$(printf 'a\r\nb')
 rfile_crlf="$tmp/receipts-crlf.log"
 scripts/receipt.sh add --type implement --outcome shipped --note "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
 [[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 1 ]] || { echo "a CRLF note corrupted the receipt log" >&2; exit 1; }
 scripts/receipt.sh add --type implement --outcome shipped --skills "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
 [[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 2 ]] || { echo "a CRLF skills list corrupted the receipt log" >&2; exit 1; }
+scripts/receipt.sh add --type implement --outcome shipped --delegate "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
+[[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 3 ]] || { echo "a CRLF delegate corrupted the receipt log" >&2; exit 1; }
 scripts/receipt.sh retro "$crlf_fixture" --file "$rfile_crlf" >/dev/null 2>&1
-[[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 3 ]] || { echo "a CRLF retro summary corrupted the receipt log" >&2; exit 1; }
+[[ $(wc -l <"$rfile_crlf" | tr -d ' ') == 4 ]] || { echo "a CRLF retro summary corrupted the receipt log" >&2; exit 1; }
+if LC_ALL=C grep -q $'\r' "$rfile_crlf"; then
+  echo "receipt sanitizer left a carriage return in the log" >&2
+  exit 1
+fi
 
 # Adopted-mode contract: a copy without the template marker validates with a
 # skill pruned, and a present-but-broken skill still fails. Template mode
@@ -1621,8 +1767,8 @@ if (( template_mode )); then
   rm -rf "$adopted/meta" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
   sed 's/<[^>]*>/filled/g' "$adopted/docs/project-rules.md" >"$adopted/docs/project-rules.md.new"
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
-  sed 's/<[^>]*>/filled/g' "$adopted/harness.conf" >"$adopted/harness.conf.new"
-  mv "$adopted/harness.conf.new" "$adopted/harness.conf"
+  perl -0pi -e 's/^harness\.runtimes=.*$/harness.runtimes=/m; s/^role\..*\n//mg; s/^mode\..*\.role\..*\n//mg' "$adopted/harness.conf"
+  fill_harness_conf "$adopted/harness.conf" "$tmp/adopted-evidence"
   bash "$adopted/scripts/validate-harness.sh" >/dev/null 2>&1 || {
     echo "adopted-mode validation failed for a copy with one skill pruned" >&2
     exit 1
@@ -1663,6 +1809,18 @@ if (( template_mode )); then
   [[ -f "$tgt/.github/workflows/harness.yml" ]] || { echo "adopt: CI workflow not installed" >&2; exit 1; }
   [[ -L "$tgt/.claude/skills/verify" ]] || { echo "adopt: claude skill symlink missing" >&2; exit 1; }
   [[ -f "$tgt/.claude/agents/verify.md" ]] || { echo "adopt: claude agent profile missing" >&2; exit 1; }
+  [[ -L "$tgt/.claude/skills/code-critique" && -f "$tgt/.claude/agents/code-critique.md" ]] \
+    || { echo "adopt: code-critique was not registered for claude" >&2; exit 1; }
+  [[ -f "$tgt/scripts/agents/dispatch.sh" && -f "$tgt/harness.conf" ]] \
+    || { echo "adopt: orchestration payload missing" >&2; exit 1; }
+  grep -qxF 'harness.runtimes=claude' "$tgt/harness.conf" \
+    || { echo "adopt: default runtime selection was not recorded" >&2; exit 1; }
+  grep -qxF 'role.default.runtime=claude' "$tgt/harness.conf" \
+    || { echo "adopt: selected claude was not made the roster default" >&2; exit 1; }
+  if grep -Eq '(^|\.)model\.(codex|devin)=|\.runtime=(codex|devin)$' "$tgt/harness.conf"; then
+    echo "adopt: unselected runtime-valued keys survived the default selection" >&2
+    exit 1
+  fi
   grep -q systemMessage "$tgt/.claude/settings.json" || { echo "adopt: settings.json lacks the shipped hook" >&2; exit 1; }
   [[ ! -e "$tgt/optional-skills" ]] || { echo "adopt: unselected optional skills were copied" >&2; exit 1; }
   [[ "$(cat "$tgt/README.md")" == "project readme" ]] || { echo "adopt: the project's own README was touched" >&2; exit 1; }
@@ -1687,19 +1845,74 @@ if (( template_mode )); then
   fi
   sed 's/<[^>]*>/filled/g' "$tgt/docs/project-rules.md" >"$tgt/docs/project-rules.md.new"
   mv "$tgt/docs/project-rules.md.new" "$tgt/docs/project-rules.md"
-  sed 's/<[^>]*>/filled/g' "$tgt/harness.conf" >"$tgt/harness.conf.new"
-  mv "$tgt/harness.conf.new" "$tgt/harness.conf"
+  if bash "$tgt/scripts/validate-harness.sh" >"$tmp/conf-placeholder.out" 2>&1; then
+    echo "adopt: target validated while harness.conf placeholders remained" >&2
+    exit 1
+  fi
+  grep -q 'harness.conf' "$tmp/conf-placeholder.out" \
+    || { echo "adopt: placeholder failure did not name harness.conf" >&2; exit 1; }
+  fill_harness_conf "$tgt/harness.conf" "$tmp/adopt-default-evidence"
   bash "$tgt/scripts/validate-harness.sh" >/dev/null 2>&1 || { echo "adopt: filled target failed validation" >&2; exit 1; }
+
+  echo drift >>"$tgt/.claude/agents/verify.md"
+  if bash "$tgt/scripts/validate-harness.sh" >"$tmp/profile-drift.out" 2>&1; then
+    echo "adopt: validation missed a drifted claude profile" >&2
+    exit 1
+  fi
+  grep -q 'profile drifted' "$tmp/profile-drift.out" \
+    || { echo "adopt: profile-drift failure did not name the profile" >&2; exit 1; }
+  cp "$tgt/skills/verify/agents/claude-profile.md" "$tgt/.claude/agents/verify.md"
+
+  mv "$tgt/.claude/skills" "$tgt/.claude/skills.missing"
+  if "$tgt/scripts/harness-config.sh" validate >"$tmp/missing-registration.out" 2>&1; then
+    echo "adopt: configuration validation missed a selected runtime registration" >&2
+    exit 1
+  fi
+  grep -q 'registration directory .claude/skills is missing' "$tmp/missing-registration.out" \
+    || { echo "adopt: missing-registration failure did not name the directory" >&2; exit 1; }
+  mv "$tgt/.claude/skills.missing" "$tgt/.claude/skills"
 
   bash "$adopt" "$tmp/adopt-devin" --runtimes devin >/dev/null
   [[ -f "$tmp/adopt-devin/.devin/agents/verify/AGENT.md" ]] || { echo "adopt: devin profile missing" >&2; exit 1; }
+  [[ -L "$tmp/adopt-devin/.agents/skills/verify" && -L "$tmp/adopt-devin/.devin/skills/verify" ]] \
+    || { echo "adopt: devin skill registrations missing" >&2; exit 1; }
+  [[ -L "$tmp/adopt-devin/.devin/skills/code-critique" && -f "$tmp/adopt-devin/.devin/agents/code-critique/AGENT.md" ]] \
+    || { echo "adopt: code-critique was not registered for devin" >&2; exit 1; }
+  grep -qxF 'harness.runtimes=devin' "$tmp/adopt-devin/harness.conf" \
+    || { echo "adopt: devin selection was not recorded" >&2; exit 1; }
+  grep -qxF 'role.default.runtime=devin' "$tmp/adopt-devin/harness.conf" \
+    || { echo "adopt: devin was not selected as the roster default" >&2; exit 1; }
   [[ ! -e "$tmp/adopt-devin/.claude" ]] || { echo "adopt: devin-only target got .claude state" >&2; exit 1; }
   bash "$adopt" "$tmp/adopt-codex" --runtimes codex >/dev/null
   [[ -L "$tmp/adopt-codex/.agents/skills/verify" ]] || { echo "adopt: codex skill registration missing" >&2; exit 1; }
+  [[ -L "$tmp/adopt-codex/.agents/skills/code-critique" ]] || { echo "adopt: code-critique was not registered for codex" >&2; exit 1; }
+  grep -qxF 'harness.runtimes=codex' "$tmp/adopt-codex/harness.conf" \
+    || { echo "adopt: codex selection was not recorded" >&2; exit 1; }
+  grep -qxF 'role.default.runtime=codex' "$tmp/adopt-codex/harness.conf" \
+    || { echo "adopt: codex was not selected as the roster default" >&2; exit 1; }
   bash "$adopt" "$tmp/adopt-none" --runtimes none >/dev/null
   [[ ! -e "$tmp/adopt-none/.claude" && ! -e "$tmp/adopt-none/.devin" && ! -e "$tmp/adopt-none/.agents" ]] \
     || { echo "adopt: --runtimes none still registered a runtime" >&2; exit 1; }
   [[ -f "$tmp/adopt-none/.github/workflows/harness.yml" ]] || { echo "adopt: CI workflow skipped for --runtimes none" >&2; exit 1; }
+  grep -qxF 'harness.runtimes=' "$tmp/adopt-none/harness.conf" \
+    || { echo "adopt: --runtimes none did not record an empty runtime selection" >&2; exit 1; }
+  if grep -Eq '^(role\.|mode\..*\.role\.)' "$tmp/adopt-none/harness.conf"; then
+    echo "adopt: --runtimes none retained roster lines" >&2
+    exit 1
+  fi
+
+  tier_src="$tmp/adopt-tier-src"
+  cp -R "$srcrepo/." "$tier_src"
+  perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.1=claude:claude-model,codex:codex-model,devin:devin-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^(.*\.model\.claude)=.*$/$1=claude-model/mg; s/^(.*\.model\.codex)=.*$/$1=codex-model/mg; s/^(.*\.model\.devin)=.*$/$1=devin-model/mg' "$tier_src/harness.conf"
+  git -C "$tier_src" add harness.conf
+  git -C "$tier_src" -c user.name=harness -c user.email=harness@example.invalid commit -qm tier-fixture
+  bash "$tier_src/scripts/adopt.sh" "$tmp/adopt-tier-claude" --runtimes claude >/dev/null
+  grep -qxF 'model.tier.1=claude:claude-model' "$tmp/adopt-tier-claude/harness.conf" \
+    || { echo "adopt: model tier retained an unselected runtime" >&2; exit 1; }
+  if grep -Eq '(^|\.)model\.(codex|devin)=|\.runtime=(codex|devin)$' "$tmp/adopt-tier-claude/harness.conf"; then
+    echo "adopt: concrete unselected model or runtime keys survived pruning" >&2
+    exit 1
+  fi
   bash "$adopt" "$tmp/adopt-java" --enable debug-java >/dev/null
   [[ -f "$tmp/adopt-java/skills/debug-java/SKILL.md" ]] || { echo "adopt: --enable did not move the optional skill" >&2; exit 1; }
   bash "$adopt" "$tmp/adopt-copy" --runtimes claude,codex --copy-skills >/dev/null
@@ -1707,10 +1920,13 @@ if (( template_mode )); then
     || { echo "adopt: --copy-skills did not copy" >&2; exit 1; }
   [[ -d "$tmp/adopt-copy/.agents/skills/verify" && ! -L "$tmp/adopt-copy/.agents/skills/verify" ]] \
     || { echo "adopt: --copy-skills did not copy the codex registration" >&2; exit 1; }
+  grep -qxF 'harness.runtimes=claude,codex' "$tmp/adopt-copy/harness.conf" \
+    || { echo "adopt: multi-runtime selection was not recorded" >&2; exit 1; }
+  grep -qxF 'role.default.runtime=codex' "$tmp/adopt-copy/harness.conf" \
+    || { echo "adopt: runtime default did not follow codex, devin, claude precedence" >&2; exit 1; }
   sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/docs/project-rules.md" >"$tmp/adopt-copy/docs/project-rules.md.new"
   mv "$tmp/adopt-copy/docs/project-rules.md.new" "$tmp/adopt-copy/docs/project-rules.md"
-  sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/harness.conf" >"$tmp/adopt-copy/harness.conf.new"
-  mv "$tmp/adopt-copy/harness.conf.new" "$tmp/adopt-copy/harness.conf"
+  fill_harness_conf "$tmp/adopt-copy/harness.conf" "$tmp/adopt-copy-evidence"
   bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1 || { echo "adopt: copied-skills target failed validation" >&2; exit 1; }
   echo drift >>"$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
   if bash "$tmp/adopt-copy/scripts/validate-harness.sh" >/dev/null 2>&1; then
@@ -1764,6 +1980,14 @@ if (( template_mode )); then
   fi
   [[ ! -e "$tmp/adopt-nonemix/wow.md" ]] || {
     echo "adopt: a rejected runtime combination still mutated the target" >&2
+    exit 1
+  }
+  if bash "$adopt" "$tmp/adopt-duplicate" --runtimes codex,codex >/dev/null 2>&1; then
+    echo "adopt: accepted a duplicate runtime selection" >&2
+    exit 1
+  fi
+  [[ ! -e "$tmp/adopt-duplicate/wow.md" ]] || {
+    echo "adopt: a rejected duplicate runtime still mutated the target" >&2
     exit 1
   }
   bash "$adopt" "$tmp/adopt-partial" >/dev/null

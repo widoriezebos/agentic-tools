@@ -6,7 +6,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | --- | --- | --- |
 | Always-on behavior | `AGENTS.md` | Every task |
 | Project commands and constraints | `docs/project-rules.md` | Before editing or validation |
-| Delegation, parallel work, peer agents | `docs/orchestration.md` | Work splits into independent parts, needs broad exploration, runs long, or shares the repo with another agent |
+| Dispatching, supervising, or coordinating agents | `docs/orchestration.md` | Work splits into independent parts, a rostered role is dispatched, a run needs supervision, or peers share the repo |
 | Working with the human team | `docs/collaboration.md` | Answering a question, reporting, committing, preparing changes for review, or receiving a correction |
 | The human teammate's manual | `docs/working-with-agents.md` | The user asks how to work with agents under this harness |
 | Session handoff and task-local state | `plans/README.md` | Starting or ending a session on a multi-session stream |
@@ -14,6 +14,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Completion check and design proof | `docs/design/design-obligation-gate.md` | Finishing any change; full matrix only on its listed triggers |
 | End-to-end verification | `skills/verify/SKILL.md` | A change claims to work and has a runnable surface |
 | Adversarial design critique | `skills/design-critique/SKILL.md` | A design is ready to attack before implementation, or a critique loop needs a stop decision |
+| Two-layer implementation critique | `skills/code-critique/SKILL.md` | Implemented work needs conformance review against its brief and computed diff, then adversarial defect review |
 | Behavior-preserving refactor | `skills/refactor/SKILL.md` | Restructuring, readability, or cleanup work whose contract is unchanged behavior |
 | Benchmark-driven improvement | `skills/improve/SKILL.md` | Chasing a measured improvement goal against a runnable evaluation |
 | Investigation stop-loss | `skills/take-a-step-back/SKILL.md` | Work is stuck, repetitive, expensive, or premise is uncertain |

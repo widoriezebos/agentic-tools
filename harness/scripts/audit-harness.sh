@@ -67,8 +67,8 @@ if [[ ! -f meta/harness-design.md ]]; then
   # scripts/adopt.sh runs right after copying, before the facts are filled in;
   # the closing validate-harness run enforces them again.
   if [[ -z "${HARNESS_AUDIT_ALLOW_PLACEHOLDERS:-}" ]]; then
-    if rg -n '<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>' docs/project-rules.md \
-      || rg -n '<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>' harness.conf; then
+    placeholder_pattern='<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>'
+    if rg -n "$placeholder_pattern" docs/project-rules.md harness.conf; then
       echo "adopted repository has unreplaced placeholders in docs/project-rules.md or harness.conf" >&2
       exit 1
     fi

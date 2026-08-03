@@ -9,17 +9,19 @@ Usage:
 
 First installation of the harness into a fresh repository. Performs the
 mechanical adaptation steps: exports the payload from the template's tracked
-HEAD, registers skills and profiles for the selected runtimes, installs the
-shipped enforcement, creates the gitignored artifacts/ directory, and records
-the template SHA in docs/project-rules.md. What remains manual afterwards:
-fill docs/project-rules.md with verified project facts, then run
+HEAD, writes harness.conf for the selected runtimes, registers skills and
+profiles, installs the shipped enforcement, creates the gitignored artifacts/
+directory, and records the template SHA in docs/project-rules.md. What remains
+manual afterwards: fill docs/project-rules.md and harness.conf with verified
+project facts, then run
 scripts/validate-harness.sh in the target; it must pass with zero
 placeholders.
 
 --runtimes defaults to claude. claude registers skills under .claude/skills
 (symlinks unless --copy-skills), profiles under .claude/agents, and writes
-.claude/settings.json with the shipped Stop hook. devin copies AGENT.md
-profiles under .devin/agents. codex symlinks skills under .agents/skills,
+.claude/settings.json with the shipped Stop hook. devin registers skills under
+both .agents/skills and .devin/skills and copies AGENT.md profiles under
+.devin/agents. codex symlinks skills under .agents/skills,
 where OpenAI runtimes read each skill's agents/openai.yaml in place. none
 skips every runtime registration. The CI workflow installs regardless; it is
 runtime-neutral.
@@ -77,6 +79,11 @@ for rt in "${selected_runtimes[@]}"; do
 done
 if [[ "$runtimes" == *none* && "$runtimes" != none ]]; then
   die 2 "--runtimes none cannot be combined with other runtimes"
+fi
+if [[ "$runtimes" != none ]]; then
+  unique_runtimes=$(printf '%s\n' "${selected_runtimes[@]}" | sort -u | wc -l | tr -d ' ')
+  [[ "$unique_runtimes" -eq "${#selected_runtimes[@]}" ]] \
+    || die 2 "--runtimes contains a duplicate runtime"
 fi
 
 mkdir -p "$target"
@@ -141,6 +148,95 @@ for s in ${enable_skills[@]+"${enable_skills[@]}"}; do
 done
 rm -rf "$stage/optional-skills"
 
+# Tailor the committed configuration template before collision checks and
+# copying. The selected-runtime list is durable state, and no unselected
+# runtime's model placeholder or mode override may leak into the adopted
+# repository.
+conf="$stage/harness.conf"
+[[ -f "$conf" ]] || die 1 "payload is missing harness.conf"
+python3 - "$conf" "${selected_runtimes[@]}" <<'PY'
+import os
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+requested = sys.argv[2:]
+selected = [] if requested == ["none"] else requested
+selected_set = set(selected)
+default = next((runtime for runtime in ("codex", "devin", "claude") if runtime in selected_set), None)
+
+role_runtime = re.compile(r"^role\.[a-z0-9-]+\.runtime$")
+mode_runtime = re.compile(r"^mode\.[a-z0-9-]+\.role\.[a-z0-9-]+\.runtime$")
+model_key = re.compile(
+    r"^(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$"
+)
+tier_key = re.compile(r"^model\.tier\.[1-9][0-9]*$")
+known_runtimes = {"claude", "codex", "devin", "fake"}
+
+out = []
+saw_runtimes = False
+saw_default = False
+for raw in path.read_text(encoding="utf-8").splitlines():
+    stripped = raw.strip()
+    if not stripped or stripped.startswith("#") or "=" not in raw:
+        out.append(raw)
+        continue
+    key, value = (part.strip() for part in raw.split("=", 1))
+
+    if key == "harness.runtimes":
+        out.append(f"harness.runtimes={','.join(selected)}")
+        saw_runtimes = True
+        continue
+
+    if not selected:
+        if key.startswith("role.") or (key.startswith("mode.") and ".role." in key):
+            continue
+        if tier_key.fullmatch(key):
+            out.append(f"{key}=")
+            continue
+        out.append(raw)
+        continue
+
+    if key == "role.default.runtime":
+        out.append(f"{key}={default}")
+        saw_default = True
+        continue
+    if role_runtime.fullmatch(key):
+        out.append(f"{key}={value if value == 'main' or value in selected_set else default}")
+        continue
+    if mode_runtime.fullmatch(key):
+        if value == "main" or value in selected_set:
+            out.append(raw)
+        continue
+
+    match = model_key.fullmatch(key)
+    if match and match.group(1) not in selected_set:
+        continue
+
+    if tier_key.fullmatch(key) and not (value.startswith("<") and value.endswith(">")):
+        kept = []
+        for member in (item.strip() for item in value.split(",")):
+            if not member:
+                continue
+            runtime = member.split(":", 1)[0] if ":" in member else None
+            if runtime not in known_runtimes or runtime in selected_set:
+                kept.append(member)
+        out.append(f"{key}={','.join(kept)}")
+        continue
+
+    out.append(raw)
+
+if not saw_runtimes:
+    out.insert(0, f"harness.runtimes={','.join(selected)}")
+if selected and not saw_default:
+    out.append(f"role.default.runtime={default}")
+
+temporary = path.with_name(path.name + ".new")
+temporary.write_text("\n".join(out) + "\n", encoding="utf-8")
+os.replace(temporary, path)
+PY
+
 # Collision policy: .gitattributes and .gitignore merge by line-append; every
 # other payload path that exists in the target with different content refuses,
 # never overwriting and never skipping silently.
@@ -171,6 +267,9 @@ for mf in .gitattributes .gitignore; do
     grep -qxF "$line" "$target/$mf" || echo "$line" >>"$target/$mf"
   done <"$stage/$mf"
 done
+
+[[ -f "$target/harness.conf" && -f "$target/scripts/agents/dispatch.sh" ]] \
+  || die 1 "adopted payload is missing harness.conf or scripts/agents/"
 
 mkdir -p "$target/artifacts"
 touch "$target/.gitignore"
@@ -205,7 +304,10 @@ for rt in "${selected_runtimes[@]}"; do
       sed '/"_comment"/d' "$target/scripts/enforcement/claude-code-hooks.json" >"$target/.claude/settings.json"
       ;;
     devin)
+      mkdir -p "$target/.agents/skills" "$target/.devin/skills"
       for n in ${skill_names[@]+"${skill_names[@]}"}; do
+        [[ -e "$target/.agents/skills/$n" ]] || register_skill_dir "$target/.agents/skills" "$n"
+        [[ -e "$target/.devin/skills/$n" ]] || register_skill_dir "$target/.devin/skills" "$n"
         if [[ -f "$target/skills/$n/agents/devin/AGENT.md" ]]; then
           mkdir -p "$target/.devin/agents/$n"
           cp "$target/skills/$n/agents/devin/AGENT.md" "$target/.devin/agents/$n/AGENT.md"
@@ -234,4 +336,5 @@ cp "$target/scripts/enforcement/github-actions-harness.yml" "$target/.github/wor
 echo "adopted at template SHA $sha"
 echo "finish the adoption:"
 echo "  1. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions)."
-echo "  2. Run scripts/validate-harness.sh in the target; it must pass with zero placeholders."
+echo "  2. Fill harness.conf with verified models, tiers, and the durable evidence root."
+echo "  3. Run scripts/validate-harness.sh in the target; it must pass with zero placeholders."

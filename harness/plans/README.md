@@ -1,6 +1,6 @@
 # Plans
 
-Task-local plans, obligation matrices, and investigation ledgers live here while work is in flight. They are evidence, not policy: promote a stable lesson into its canonical owner via `wow.md`, then delete or archive the plan. Generated run artifacts belong in the gitignored `artifacts/` directory at the repository root, never here.
+Task-local plans, obligation matrices, and investigation ledgers live here while work is in flight. They are evidence, not policy: promote a stable lesson into its canonical owner via `wow.md`, then delete or archive the plan. Generated run artifacts belong in the gitignored `artifacts/` directory at the repository root, never here. Agent-job evidence uses `artifacts/agents/jobs/<job-id>.json` and its transcript sidecar, with the chain's brief and immutable round directories under `artifacts/agents/<root-id>/`; disposable job worktrees live under `artifacts/agents/worktrees/<job-id>/`.
 
 Evidence that must survive (paid-run raws, acceptance proof) is mirrored to the project's durable evidence root (declared in `docs/project-rules.md`, outside the repository and every build tree), with content hashes verified on the copy, before the originals count as disposable. A directory whose lifecycle contract is "safe to wipe" (build output, caches, anything `git clean` reaches) never holds the only copy of anything: a rule telling actors not to wipe it treats the symptom, while moving the asset treats the hazard.
 

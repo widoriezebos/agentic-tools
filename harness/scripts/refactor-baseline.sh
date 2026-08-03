@@ -20,17 +20,19 @@ never blocks; commit the file with the next checkpoint. The --file path is
 normalized against the repository root and must live inside the repository,
 because git cannot see dirt outside it.
 
-Defaults: --file plans/refactor-baseline, --max-age-minutes 1440 (override
-with HARNESS_REFACTOR_MAX_AGE_MINUTES), --max-commits 40 (override with
-HARNESS_REFACTOR_MAX_COMMITS).
+Defaults: --file plans/refactor-baseline. Cadence resolves from flags, then
+environment, then harness.conf, then built-ins: --max-age-minutes 1440 and
+--max-commits 40.
 
 Exit codes: 0 safe; 1 blocked; 2 usage or environment error.
 USAGE
 }
 
 file=plans/refactor-baseline
-max_age_minutes=${HARNESS_REFACTOR_MAX_AGE_MINUTES:-1440}
-max_commits=${HARNESS_REFACTOR_MAX_COMMITS:-40}
+max_age_minutes=
+max_commits=
+max_age_minutes_set=0
+max_commits_set=0
 gate=
 
 cmd=${1:-}
@@ -41,12 +43,20 @@ while (($#)); do
   case "$1" in
     --file) file=${2:-}; shift 2 ;;
     --gate) gate=${2:-}; shift 2 ;;
-    --max-age-minutes) max_age_minutes=${2:-}; shift 2 ;;
-    --max-commits) max_commits=${2:-}; shift 2 ;;
+    --max-age-minutes) max_age_minutes=${2:-}; max_age_minutes_set=1; shift 2 ;;
+    --max-commits) max_commits=${2:-}; max_commits_set=1; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
 done
+
+config=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/harness-config.sh
+age_args=(get --key refactor.max-age-minutes --default 1440)
+commit_args=(get --key refactor.max-commits --default 40)
+(( max_age_minutes_set )) && age_args+=(--flag "$max_age_minutes")
+(( max_commits_set )) && commit_args+=(--flag "$max_commits")
+max_age_minutes=$("$config" "${age_args[@]}")
+max_commits=$("$config" "${commit_args[@]}")
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not inside a git repository" >&2; exit 2; }
 

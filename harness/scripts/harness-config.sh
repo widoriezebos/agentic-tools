@@ -139,10 +139,15 @@ for key in values:
     ):
         errors.append(f"{key} is not a supported mode-scoped key")
 
+if "harness.runtimes" not in values:
+    errors.append("harness.runtimes is required")
 runtimes = [item.strip() for item in values.get("harness.runtimes", "").split(",") if item.strip()]
 if len(runtimes) != len(set(runtimes)):
     errors.append("harness.runtimes contains a duplicate runtime")
 runtime_set = set(runtimes)
+supported_runtimes = {"claude", "codex", "devin", "fake"}
+for runtime in sorted(runtime_set - supported_runtimes):
+    errors.append(f"harness.runtimes names unsupported runtime {runtime!r}")
 
 runtime_key = re.compile(r"(?:^|\.)role\.[a-z0-9-]+\.runtime$")
 for key, value in values.items():
@@ -175,6 +180,8 @@ for key, value in values.items():
     match = plain_model.fullmatch(key) or mode_model.fullmatch(key)
     if match:
         runtime = match.groups()[-1]
+        if runtime not in runtime_set:
+            errors.append(f"{key} names runtime {runtime!r} outside harness.runtimes")
         configured_models.append((key, f"{runtime}:{value}"))
 for key, qualified in configured_models:
     count = tier_counts.get(qualified, 0)
@@ -227,6 +234,21 @@ else:
         pass
     else:
         errors.append("evidence.root must be outside the repository")
+
+# Registration is adopted-repository state, not a template invariant. The fake
+# runtime is a fixture adapter and deliberately has no external registration.
+if not (repo / "meta" / "harness-design.md").is_file():
+    registration_roots = {
+        "claude": [".claude/skills", ".claude/agents"],
+        "codex": [".agents/skills"],
+        "devin": [".agents/skills", ".devin/skills", ".devin/agents"],
+    }
+    for runtime in sorted(runtime_set):
+        for relative in registration_roots.get(runtime, []):
+            if not (repo / relative).is_dir():
+                errors.append(
+                    f"harness.runtimes enables {runtime!r} but registration directory {relative} is missing"
+                )
 
 for error in errors:
     print(f"invalid harness configuration: {error}", file=sys.stderr)

@@ -18,7 +18,7 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 - Prefer the smallest robust solution that satisfies a current user or production contract.
 - Give each important behavior one owner. Keep boundaries honest. Make state, failure, and observability explicit.
 - Use focused tests first. Use expensive, model-backed, debugger, or full-suite validation only when it answers a named question.
-- When the runtime provides subagents, delegate independent exploration and verifiable subtasks. Keep the main context for decisions (`docs/orchestration.md`).
+- When the runtime provides subagents, delegate independent exploration and verifiable subtasks. Keep the main context for decisions. Dispatch rostered roles through `scripts/agents/dispatch.sh`; if exact-session resume is unavailable, use the documented fresh-dispatch embed fallback (`docs/orchestration.md`).
 - Keep machine-verifiable requirements in schemas, tests, linters, permissions, or scripts, never in repeated prose.
 - Keep project-specific commands and policies in `docs/project-rules.md`.
 
