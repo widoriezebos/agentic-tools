@@ -4,3 +4,7 @@ Standing ledger of instruction changes adopted by retros (`skills/retro/SKILL.md
 
 | Id | Retro | Change | Owner doc | Evidence pattern | Expected effect | Review by | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| IL-1 | retro-2026-08-03 | Fixture waits carry named ceilings like every run | `docs/orchestration.md` | no hang-class receipt recurs | validation never exceeds its ceiling silently | next retro | ADOPTED |
+| IL-2 | retro-2026-08-03 | Verify asserts world-state facts over agent narration | `skills/verify/SKILL.md` | no narration-marker defect recurs | selftest-class probes stay mechanical | next retro | ADOPTED |
+| IL-3 | retro-2026-08-03 | Audit falls back to grep when rg is absent (implementation queued to Codex) | `scripts/audit-harness.sh` | audit runs on machines without ripgrep | the rg shim workaround disappears from receipts | next retro | ADOPTED |
+

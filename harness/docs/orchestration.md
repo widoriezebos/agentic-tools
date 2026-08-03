@@ -40,6 +40,7 @@ A launched run is a delegation to a process, and it gets the same skepticism. Ea
 - Reporting a run as "still running" is a claim about observed state, so read the state before making it: the job record, the output file's mtime, the process. A dispatch acknowledgement is not evidence of progress, and a missing job record is not evidence of running — some runners lose records. An unverified status report is worse than silence, because it stops anyone from looking.
 - Motion is not progress: counters that advance while the state they describe repeats mean the run is stuck, not alive.
 - State the expected duration at launch and intervene when it is exceeded: probe, restart with better parameters, or change approach. Never serialize the goal behind a single slow run; keep decision work moving alongside it.
+- Test suites and fixtures are runs too: a fixture wait without a named ceiling is the same defect as an uncapped job, and it fails loudly naming itself instead of hanging. Recorded from the 2026-08-03 validation hang (112 minutes, zero progress) that only surfaced in a second environment.
 - A budget or attention ceiling is a disclosed stop, not a health verdict: when it fires, wind the run down at a safe point with its own terminal status, never a mid-write interrupt, and leave state a restart can resume.
 - While a run whose validity depends on a stable environment is in flight, nothing else touches its workspace: no builds, no edits, no delegations that write into it.
 
