@@ -39,7 +39,7 @@ else
 fi
 
 case "$role" in
-  ""|design-critic|implementer|code-critic|verifier|investigator) ;;
+  ""|orchestrator|design-critic|implementer|code-critic|verifier|investigator) ;;
   *) echo "violation: unknown role: $role" >&2; exit 1 ;;
 esac
 
@@ -210,7 +210,7 @@ else:
     role = requested_role
     return_path = Path(requested_file)
 
-allowed_roles = {"design-critic", "implementer", "code-critic", "verifier", "investigator"}
+allowed_roles = {"orchestrator", "design-critic", "implementer", "code-critic", "verifier", "investigator"}
 if role not in allowed_roles:
     violation(f"job record role is not dispatchable: {role!r}" if mode == "job" else f"unknown role: {role!r}")
 

@@ -71,6 +71,9 @@ done
 for link in \
   scripts/agents/templates/brief.md \
   scripts/agents/templates/follow-up.md \
+  scripts/agents/templates/host-turn-instruction.md \
+  scripts/agents/roles/orchestrator.md \
+  scripts/agents/schemas/orchestrator.schema.json \
   scripts/agents/permissions/none.json \
   scripts/agents/permissions/workspace.json \
   harness.conf \
@@ -93,6 +96,7 @@ for link in \
   scripts/agents/assert-conformance.sh \
   scripts/assert-critique-closed.sh \
   scripts/assert-return-complete.sh \
+  scripts/assert-turn-prompt.sh \
   scripts/agents/check-preamble-quotes.sh; do
   [[ -e "$link" ]] || { echo "missing agent protocol asset: $link" >&2; exit 1; }
 done
@@ -115,6 +119,8 @@ bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/assert-mission.sh
+bash -n scripts/assert-return-complete.sh
+bash -n scripts/assert-turn-prompt.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
@@ -324,6 +330,18 @@ grep -q '^Disposition:' scripts/agents/templates/follow-up.md \
   || { echo "follow-up template does not restate the disposition" >&2; exit 1; }
 grep -q '^# Unchanged Return Contract$' scripts/agents/templates/follow-up.md \
   || { echo "follow-up template can lose the original return contract" >&2; exit 1; }
+python3 - scripts/agents/templates/host-turn-instruction.md <<'PY'
+import re
+import sys
+from pathlib import Path
+
+body = Path(sys.argv[1]).read_text(encoding="utf-8")
+parameters = re.findall(r"<([^<>]+)>", body)
+if parameters != ["cycle-number", "fence-headroom", "yes | no"]:
+    raise SystemExit("host-turn instruction parameters drifted from cycle, fence headroom, reconciliation")
+if "Runtime:" in body:
+    raise SystemExit("host-turn instruction is parameterized by runtime")
+PY
 
 # Assert the machine-readable shapes item 2 owns. Later dispatcher fixtures
 # exercise expansion and capability gating; here the shipped declarations
@@ -350,6 +368,33 @@ for role, owned in role_fields.items():
     required = set(schema.get("required", []))
     if actual != expected or required != expected or schema.get("additionalProperties") is not False:
         raise SystemExit(f"{role} schema property set drifted from the protocol")
+
+orchestrator_path = root / "scripts" / "agents" / "schemas" / "orchestrator.schema.json"
+orchestrator = json.loads(orchestrator_path.read_text())
+orchestrator_fields = {
+    "turnId", "missionId", "cycle", "dispatched", "certified",
+    "streamUpdatesRequested", "askCandidates", "factsForLedger", "gaps", "identity",
+}
+if (
+    set(orchestrator.get("properties", {})) != orchestrator_fields
+    or set(orchestrator.get("required", [])) != orchestrator_fields
+    or orchestrator.get("additionalProperties") is not False
+):
+    raise SystemExit("orchestrator schema property set drifted from the host-turn protocol")
+
+
+def assert_closed_schema(node, path):
+    if node.get("type") == "object":
+        properties = node.get("properties", {})
+        if node.get("additionalProperties") is not False or set(node.get("required", [])) != set(properties):
+            raise SystemExit(f"orchestrator schema object is not fully enumerated: {path}")
+        for name, child in properties.items():
+            assert_closed_schema(child, f"{path}.{name}")
+    if node.get("type") == "array":
+        assert_closed_schema(node.get("items", {}), f"{path}[]")
+
+
+assert_closed_schema(orchestrator, "$")
 
 permission_expected = {
     "none": {
@@ -391,6 +436,53 @@ PY
 # Quote markers name their canonical source. The checker compares the content
 # bytes rather than trusting a second prose copy of the binding criterion.
 scripts/agents/check-preamble-quotes.sh
+python3 - scripts/agents/roles/orchestrator.md <<'PY'
+import re
+import sys
+from pathlib import Path
+
+body = Path(sys.argv[1]).read_bytes()
+pattern = re.compile(
+    br'^<!-- quote source="([^"\r\n]+)" -->\n(.*?)^<!-- /quote -->$',
+    re.MULTILINE | re.DOTALL,
+)
+required = [
+    (b"AGENTS.md", b"## Completion\n"),
+    (b"docs/orchestration.md", b"## Delegation Contract\n"),
+    (b"docs/orchestration.md", b"### Working without the human\n"),
+    (b"docs/collaboration.md", b"## Review Guide in Reports\n"),
+    (b"docs/collaboration.md", b"## Escalation Shape\n"),
+    (b"docs/project-rules.md", b"These require explicit in-task approval"),
+]
+
+
+def matches(value):
+    return list(pattern.finditer(value))
+
+
+def missing(value):
+    blocks = matches(value)
+    return [
+        (source, marker)
+        for source, marker in required
+        if not any(match.group(1) == source and marker in match.group(2) for match in blocks)
+    ]
+
+
+absent = missing(body)
+if absent:
+    raise SystemExit(f"orchestrator preamble lacks mandated quote blocks: {absent!r}")
+for source, marker in required:
+    match = next(
+        item for item in matches(body)
+        if item.group(1) == source and marker in item.group(2)
+    )
+    deleted = body[:match.start()] + body[match.end():]
+    if (source, marker) not in missing(deleted):
+        raise SystemExit(
+            f"orchestrator required-block fixture did not detect deletion: {source!r} {marker!r}"
+        )
+PY
 cp -R scripts/agents/roles "$tmp/drifted-roles"
 sed 's/build something DIFFERENT/build the same thing/' \
   "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
@@ -419,6 +511,20 @@ set -e
   || { echo "preamble quote checker accepted a drifted code-critique criterion" >&2; exit 1; }
 grep -q 'quote drifted from skills/code-critique/SKILL.md' "$tmp/code-quote-drift.out" \
   || { echo "preamble quote checker did not name the code-critique source" >&2; exit 1; }
+cp -R scripts/agents/roles "$tmp/drifted-orchestrator-roles"
+sed "s/The human's absence narrows/The human's presence narrows/" \
+  "$tmp/drifted-orchestrator-roles/orchestrator.md" >"$tmp/drifted-orchestrator-roles/orchestrator.md.new"
+mv "$tmp/drifted-orchestrator-roles/orchestrator.md.new" \
+  "$tmp/drifted-orchestrator-roles/orchestrator.md"
+set +e
+scripts/agents/check-preamble-quotes.sh \
+  --roles-dir "$tmp/drifted-orchestrator-roles" >"$tmp/orchestrator-quote-drift.out" 2>&1
+orchestrator_quote_status=$?
+set -e
+[[ $orchestrator_quote_status -eq 1 ]] \
+  || { echo "preamble quote checker accepted a drifted orchestrator quote" >&2; exit 1; }
+grep -q 'quote drifted from docs/orchestration.md' "$tmp/orchestrator-quote-drift.out" \
+  || { echo "preamble quote checker did not name the drifted orchestrator source" >&2; exit 1; }
 
 # Build canonical positive returns and one role-specific negative per role.
 # JSON remains canonical; these fixtures never rely on the Markdown view.
@@ -442,6 +548,18 @@ common = {
     "mode": "implement",
 }
 positive = {
+    "orchestrator": {
+        "turnId": "turn-3",
+        "missionId": "fixture-mission",
+        "cycle": 3,
+        "dispatched": [{"jobId": "fixture-job", "role": "implementer", "stream": "stream-a"}],
+        "certified": [{"jobId": "prior-job", "verdict": "accepted", "evidence": "focused checks passed"}],
+        "streamUpdatesRequested": [{"streamId": "stream-a", "requestedState": "active", "reason": "work remains"}],
+        "askCandidates": [{"streamId": "stream-b", "reasonClass": "reserved-decision", "question": "Approve the contract change?"}],
+        "factsForLedger": ["focused check exposed one new fact"],
+        "gaps": [],
+        "identity": {"runtime": "fake", "model": "fake-model", "sessionId": None},
+    },
     "design-critic": {
         **common,
         "mode": "design",
@@ -478,6 +596,7 @@ for role, value in positive.items():
     (out / f"{role}-positive.json").write_text(json.dumps(value, indent=2) + "\n")
 
 negative = copy.deepcopy(positive)
+negative["orchestrator"].pop("factsForLedger")
 negative["design-critic"].pop("findings")
 negative["design-critic"].pop("verdictMaterialCount")
 negative["code-critic"]["whatWasDone"] = "critics do not own this section"
@@ -496,7 +615,7 @@ missing_verdict.pop("verdictMaterialCount")
 (out / "critic-missing-verdict.json").write_text(json.dumps(missing_verdict, indent=2) + "\n")
 PY
 
-for role in design-critic implementer code-critic verifier investigator; do
+for role in orchestrator design-critic implementer code-critic verifier investigator; do
   scripts/assert-return-complete.sh --role "$role" --file "$return_fixtures/$role-positive.json"
 done
 
@@ -517,6 +636,7 @@ check_bad_return() { # role, file, required diagnostic text
     || { echo "return checker did not name the $role violation: $expected" >&2; exit 1; }
 }
 
+check_bad_return orchestrator "$return_fixtures/orchestrator-negative.json" '$.factsForLedger is required'
 check_bad_return design-critic "$return_fixtures/design-critic-negative.json" '$.findings is required'
 check_bad_return code-critic "$return_fixtures/code-critic-negative.json" '$.whatWasDone is not allowed'
 check_bad_return implementer "$return_fixtures/implementer-negative.json" '$.diffBoundary is required'
@@ -531,6 +651,144 @@ return_usage_status=$?
 set -e
 [[ $return_usage_status -eq 2 ]] \
   || { echo "return checker used $return_usage_status instead of exit 2 for usage" >&2; exit 1; }
+
+# Host-turn prompts are checked against the canonical turn record and shipped
+# preamble before a host process may start. The positive prompt is deliberately
+# hand-authored so this fixture does not share assembly logic with the checker.
+turn_fixture="$tmp/turn-prompt"
+turn_dir="$turn_fixture/turn-3"
+mkdir -p "$turn_dir"
+cat >"$turn_dir/turn.json" <<'EOF'
+{
+  "missionId": "fixture-mission",
+  "turnId": "turn-3",
+  "cycle": 3,
+  "runtime": "fake",
+  "model": "fake-model",
+  "hostSession": null,
+  "reconciliation": false,
+  "startedAt": "2026-08-04T12:00:00Z",
+  "pid": 1234,
+  "outcome": null
+}
+EOF
+good_turn_prompt="$turn_fixture/good.md"
+{
+  printf '%s\n' \
+    'Mission-Id: fixture-mission' \
+    'Turn-Id: turn-3' \
+    'Cycle: 3' \
+    'Host-Session: none' \
+    'Runtime: fake' \
+    'Model: fake-model' \
+    'Reconciliation: no'
+  printf '\n'
+  cat scripts/agents/roles/orchestrator.md
+  printf '\n'
+  cat <<'EOF'
+## Mission Contract
+Signed fixture mission contract.
+
+## Ledger Tail
+<<<DATA>>>
+1	contract-improved	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	metric=1
+2	unresolved	bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb	metric=1
+<<<END>>>
+
+## Open Asks
+<<<DATA>>>
+ask-1	stream-a	reserved-decision	Approve the named API contract?
+<<<END>>>
+
+## Streams
+<<<DATA>>>
+stream-a	active	Make the fixture gate pass	none
+stream-b	parked-reserved	Publish the fixture	Awaiting approval
+<<<END>>>
+
+## Reconciliation
+<<<DATA>>>
+(none)
+<<<END>>>
+
+## This Turn
+Cycle: 3
+Fence headroom: cycles=2,jobs=3
+Reconciliation: no
+
+Advance active streams by designing, dispatching, reviewing, and certifying. When Reconciliation is `yes`, reconcile the prior turn before starting new work. End this turn when work is dispatched and reviewed; never wait inside the turn.
+EOF
+} >"$good_turn_prompt"
+
+scripts/assert-turn-prompt.sh --file "$good_turn_prompt" --turn "$turn_dir"
+
+python3 - "$good_turn_prompt" "$turn_fixture" <<'PY'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+out = Path(sys.argv[2])
+mutations = {
+    "missing-header": source.replace("Model: fake-model\n", "", 1),
+    "turn-mismatch": source.replace("Turn-Id: turn-3\n", "Turn-Id: turn-other\n", 1),
+    "mission-mismatch": source.replace("Mission-Id: fixture-mission\n", "Mission-Id: other-mission\n", 1),
+    "altered-preamble": source.replace(
+        "You are the orchestrator for an unattended mission.",
+        "You are an orchestrator for an unattended mission.",
+        1,
+    ),
+    "headings-out-of-order": source.replace("## Open Asks", "## TEMP", 1)
+        .replace("## Streams", "## Open Asks", 1)
+        .replace("## TEMP", "## Streams", 1),
+    "unfenced-data": source.replace(
+        "## Open Asks\n<<<DATA>>>\nask-1\tstream-a\treserved-decision\tApprove the named API contract?\n<<<END>>>",
+        "## Open Asks\nask-1\tstream-a\treserved-decision\tApprove the named API contract?",
+        1,
+    ),
+    "malformed-record": source.replace(
+        "ask-1\tstream-a\treserved-decision\tApprove the named API contract?",
+        "ask-1\tstream-a\treserved-decision",
+        1,
+    ),
+}
+for name, value in mutations.items():
+    if value == source:
+        raise SystemExit(f"turn-prompt mutation did not change fixture: {name}")
+    (out / f"{name}.md").write_text(value, encoding="utf-8")
+PY
+
+check_bad_turn_prompt() { # fixture name, failing check
+  local name=$1 expected=$2 output status
+  output="$turn_fixture/$name.out"
+  set +e
+  scripts/assert-turn-prompt.sh \
+    --file "$turn_fixture/$name.md" --turn "$turn_dir" >"$output" 2>&1
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
+    echo "turn prompt checker accepted the negative $name fixture" >&2
+    exit 1
+  fi
+  [[ $status -eq 1 ]] \
+    || { echo "turn prompt checker used $status instead of exit 1 for $name" >&2; exit 1; }
+  grep -Fq "[$expected]" "$output" \
+    || { echo "turn prompt checker did not name the $expected check for $name" >&2; exit 1; }
+}
+
+check_bad_turn_prompt missing-header headers
+check_bad_turn_prompt turn-mismatch identity
+check_bad_turn_prompt mission-mismatch identity
+check_bad_turn_prompt altered-preamble preamble
+check_bad_turn_prompt headings-out-of-order headings
+check_bad_turn_prompt unfenced-data fencing
+check_bad_turn_prompt malformed-record records
+
+set +e
+scripts/assert-turn-prompt.sh >"$turn_fixture/usage.out" 2>&1
+turn_prompt_usage_status=$?
+set -e
+[[ $turn_prompt_usage_status -eq 2 ]] \
+  || { echo "turn prompt checker used $turn_prompt_usage_status instead of exit 2 for usage" >&2; exit 1; }
 
 # Critique closure joins the canonical return JSON against the one Markdown
 # dispositions table. Reuse the item-2 return fixture shape and vary only the
