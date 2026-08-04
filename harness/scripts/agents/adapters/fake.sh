@@ -262,11 +262,19 @@ probe() {
   case "$profile" in current|old|unverified-network) ;; *) usage; exit 2 ;; esac
   [[ "$age_days" =~ ^[0-9]+$ ]] || { usage; exit 2; }
   mkdir -p "$agents/capabilities"
-  python3 - "$agents/capabilities" "$profile" "$age_days" <<'PY'
+  # The simulator's handshake window scales with measured load like every other
+  # fixture ceiling; a fixed two-second default is a red gate on a busy machine.
+  local handshake
+  # shellcheck source=../fixture-budget.sh
+  . "$root/scripts/agents/fixture-budget.sh"
+  [[ -n "${HARNESS_FIXTURE_CAP_SCALE_MILLI:-}" ]] || harness_fixture_budget_init "$root" || return 1
+  handshake=$(harness_fixture_scaled_cap 2) || return 1
+  (( handshake <= 60 )) || handshake=60
+  python3 - "$agents/capabilities" "$profile" "$age_days" "$handshake" <<'PY'
 import json, re, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-directory, profile, age_days = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+directory, profile, age_days, handshake = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 captured = datetime.now(timezone.utc) - timedelta(days=age_days)
 date = captured.strftime("%Y%m%d")
 prefix = f"fake-fake-1-fake-config-v1-{date}-"
@@ -282,6 +290,7 @@ capabilities = {
   "nativeStructuredOutput": enabled, "nativeEvents": enabled,
   "nativeUsage": enabled, "gracefulCancel": enabled, "hooks": enabled,
   "protocolServer": enabled, "nativeBudget": enabled,
+  "sessionEstablishedTimeoutSec": handshake,
 }
 permissions = {"unverified": ["network"] if profile == "unverified-network" else []}
 value = {
