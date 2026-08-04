@@ -4,7 +4,7 @@
 - Goal and current status: act on the review's findings: the gate was flaky, design outran proof, commits went red in CI, retained findings piled up untriaged, and no mission has ever run. Status: CC-1 done; CC-2 done; CC-5 resolved by the human; CC-3 and CC-4 not started
 - In flight right now: nothing
 - Decisions made (and who made them): the review's findings accepted by the user 2026-08-04; the proportionality ruling and the container ruling both made by the user the same day, which resolved CC-5 without further design
-- Waiting on the human: D-CC1 below; the Devin self-test is unchanged from the master plan
+- Waiting on the human: nothing blocking (D-CC1 through D-CC4 answered 2026-08-04); the Devin self-test is unchanged from the master plan
 - Dead ends: two hardened-mode designs (trust roots, then verifier domains) were built and cut when the user ruled that isolation comes from a container or VM. Do not rebuild local enforcement against a same-user agent; it is impossible and the rounds proving it are recorded in the ledger
 - Next step: CC-4's triage, then CC-3's Mission Zero
 
@@ -26,8 +26,8 @@ From the self-review of the first 24 hours, all five accepted by the user:
 | --- | --- | --- |
 | CC-1 | Fix the flake as a class, not per fixture: scaled budgets, isolated contenders, diagnostics naming elapsed and cap, IL-1 preserved | DONE (`fddf870`), proven by three consecutive green runs, a forced-failure run, and the orchestrator's own green run |
 | CC-2 | Stop treating local green as sufficient: verify against the pushed state, and keep CI green as the gate of record | DONE in practice: HEAD is green and pushed; the standing rule is that a red CI run blocks the next dispatch |
-| CC-3 | Prove-first: build the minimal runner and run Mission Zero, the smallest real unattended mission (make one failing test pass on a scratch repository), before any further mission-mode design | NOT STARTED, next after CC-4 |
-| CC-4 | Triage every retained watch-list finding into "decide now" (a designer decision, blocks the build) and "test later" (a failing-test obligation under ORCH-21). The third gap-stop proved the pile mixes both and stalls implementation | NOT STARTED |
+| CC-3 | Prove-first: build the minimal runner and run Mission Zero, the smallest real unattended mission (make one failing test pass on a scratch repository), before any further mission-mode design | NOT STARTED, after CC-4. Scope per D-CC1: lease, one host turn from the shipped prompt artifacts (6.2a), runner-side measurement, one ledger entry in the stop-loss grammar, four end states. Fences per D-CC3: cycles 5, jobs 5, concurrency 1, job cap 10 minutes, wall clock 1 hour, cheap delegate models |
+| CC-4 | Triage every retained watch-list finding into "decide now" (a designer decision, blocks the build) and "test later" (a failing-test obligation under ORCH-21). The third gap-stop proved the pile mixes both and stalls implementation | NOT STARTED, next action, dispatch to Codex reading `plans/agent-orchestration-watchlist.md` (65 findings: 33 pass-2, 10 S4, 22 P3) and returning each id tagged decide-now or test-later with a one-line reason |
 | CC-5 | Answer proportionality with evidence rather than argument | RESOLVED by the user's rulings: the cooperative-agent baseline stands, isolation is the operator's container, and Part 9 shrank to documentation. Mission Zero remains the evidence for the rest |
 
 ## Decisions, answered by the human 2026-08-04
