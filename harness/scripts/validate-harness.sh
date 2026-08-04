@@ -1244,6 +1244,18 @@ EOF
     || { echo "harness config did not resolve the plain key" >&2; exit 1; }
   [[ "$("$config_order/scripts/harness-config.sh" get --key absent.knob --default built-in)" == built-in ]] \
     || { echo "harness config did not resolve the built-in default" >&2; exit 1; }
+  # An uncommitted local file carries values that must not ship to adopting
+  # projects. It outranks the committed conf and yields to the environment.
+  cat >"$config_order/harness.conf.local" <<'EOF'
+plain.knob=local-value
+EOF
+  [[ "$(env -u HARNESS_PLAIN_KNOB "$config_order/scripts/harness-config.sh" get --key plain.knob)" == local-value ]] \
+    || { echo "harness config did not prefer the local override" >&2; exit 1; }
+  [[ "$(HARNESS_PLAIN_KNOB=environment "$config_order/scripts/harness-config.sh" get --key plain.knob)" == environment ]] \
+    || { echo "local override outranked the environment" >&2; exit 1; }
+  [[ "$(env -u HARNESS_ROLE_IMPLEMENTER_RUNTIME "$config_order/scripts/harness-config.sh" get --key role.implementer.runtime --mode refactor)" == mode ]] \
+    || { echo "local override disturbed a key it does not carry" >&2; exit 1; }
+  rm -f "$config_order/harness.conf.local"
 
   "$agent_config" validate
   cp "$good_agent_conf" "$agent_repo/harness.conf"

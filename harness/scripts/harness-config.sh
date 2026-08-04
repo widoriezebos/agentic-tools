@@ -80,6 +80,19 @@ get_value() {
     printf '%s\n' "${!env_name}"
     return
   fi
+  # An uncommitted local file holds values that must not ship: a developer's own
+  # evidence root, or the template repository's own settings, which cannot go in
+  # harness.conf because every adopting project would inherit them. It is a
+  # recorded override, not a hidden one: the file is documented in harness.conf,
+  # and every job record captures the value that actually resolved.
+  if [[ -f "$config.local" ]]; then
+    set +e
+    value=$(config="$config.local" conf_value "$key")
+    status=$?
+    set -e
+    if [[ $status -eq 0 ]]; then printf '%s\n' "$value"; return; fi
+    [[ $status -eq 3 ]] || exit "$status"
+  fi
   if [[ -n "$mode" && ( "$key" =~ ^role\.[a-z0-9-]+\.runtime$ || "$key" =~ ^role\.[a-z0-9-]+\.model\.[a-z0-9-]+$ ) ]]; then
     set +e
     value=$(conf_value "mode.$mode.$key")
