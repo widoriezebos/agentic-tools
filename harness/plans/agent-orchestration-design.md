@@ -575,6 +575,8 @@ Delegate prompts are shipped artifacts; host turns meet the same bar or the unsu
 
 **Bounds and honesty (P2-1, P2-16, P-14).** `mission.ledger-tail-cycles` (default 5, bounds 1 to 50) and `mission.max-prompt-kb` (default 256) join `harness.conf`; an assembled prompt over the cap refuses the launch with the oversized block named, and the ledger tail carries only fields the ledger grammar actually holds, namely the cycle heading and its classification line, with the measured delta included only because the runner writes it into that classification line as part of 6.2's measurement step. The assembled prompt is complete evidence of what the harness instructed, and is not a full replay of a resumed turn, whose provider-side history the harness cannot hold.
 
+Critique closed at round P3 under the diminishing-returns rule (22 of 22 findings were seams of the previous round's edits); the retained round is in `plans/agent-orchestration-watchlist.md` and its findings are ORCH-21 obligations for item 20.
+
 **Fixtures**: every quote block byte-matches and a drifted or missing mandated block fails; assembly emits header, preamble, and six headings with `(none)` placeholders; a counterfeit heading inside an ask is neutralized by fencing; a data block containing the fence marker is rejected; oversized prompts refuse; identity mismatch between prompt and turn record refuses; two consecutive turns differ only in data blocks; reconciliation appears for every non-zero prior outcome and never for zero; an orchestrator return with a stale turnId is rejected before application; each acceptance predicate accepts and rejects with the rejection surfaced; ledger-tail bounds enforced at both ends.
 
 ### 6.3 Enforcement, fences, and evidence
