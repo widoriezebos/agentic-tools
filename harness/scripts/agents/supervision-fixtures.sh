@@ -699,6 +699,38 @@ wait_until "UNTRACKED end-turn source" inventory_has "$last" UNTRACKED "$raw_pid
 printf '{"session_id":"surface","cwd":"%s","hook_event_name":"Stop"}\n' "$repo" \
   | "$repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/surface.out"
 grep -q 'UNTRACKED' "$tmp/surface.out" || { echo "end-of-turn hook hid UNTRACKED" >&2; exit 1; }
+
+# S4-12: a turn that ends while a plan still names an unblocked next step and
+# nothing is in flight must say so. Continuation is the one part of the loop no
+# prompt can guarantee, so it is checked rather than requested in prose.
+open_work_root=$tmp/open-work
+mkdir -p "$open_work_root/plans" "$open_work_root/artifacts/agents/jobs"
+cat >"$open_work_root/plans/stream.md" <<'EOF'
+- Waiting on the human: nothing blocking
+- Next step: dispatch the runner
+EOF
+[[ "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" == "OPEN-WORK plans/stream.md: dispatch the runner" ]] \
+  || { echo "open work with nothing in flight was not reported" >&2; exit 1; }
+printf '{"status":"running"}\n' >"$open_work_root/artifacts/agents/jobs/live.json"
+[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
+  || { echo "open work was reported while a job was in flight" >&2; exit 1; }
+rm -f "$open_work_root/artifacts/agents/jobs/live.json"
+cat >"$open_work_root/plans/stream.md" <<'EOF'
+- Waiting on the human: D-9, which model tier to use
+- Next step: dispatch the runner
+EOF
+[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
+  || { echo "a stream waiting on the human was reported as open work" >&2; exit 1; }
+cat >"$open_work_root/plans/stream.md" <<'EOF'
+- Waiting on the human: nothing blocking
+- Next step: none
+EOF
+[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
+  || { echo "a settled next step was reported as open work" >&2; exit 1; }
+cp "$source_root/plans/README.md" "$open_work_root/plans/README.md"
+rm -f "$open_work_root/plans/stream.md"
+[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
+  || { echo "the plans README was mistaken for a stream" >&2; exit 1; }
 wait_until "census log rotation" test -f "$repo/artifacts/agents/supervision/census.log.1"
 
 # The arming event log proves write-announcement precedes the first census and
@@ -752,4 +784,4 @@ kill -0 "$foreign_sleep_pid" 2>/dev/null \
   || { echo "shutdown stopped a process another checkout owned" >&2; exit 1; }
 stop_owned_pid "foreign owner" "$foreign_sleep_pid" "$foreign_start" >/dev/null 2>&1 || true
 
-echo "supervision fixtures passed (S4-1 through S4-11)"
+echo "supervision fixtures passed (S4-1 through S4-12)"

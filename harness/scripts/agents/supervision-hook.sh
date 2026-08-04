@@ -81,6 +81,11 @@ for name,item in identities.items():
 print("\n".join(lines[:20]))
 PY
   )
+  # Continuation is the one part of the loop no prompt can guarantee, so it is
+  # checked here rather than asked for in prose: a turn ending while a plan
+  # still names an unblocked next step and nothing is in flight says so.
+  open_work=$(python3 "$script_dir/open-work.py" --repo "$harness_root" 2>/dev/null || true)
+  [[ -z "$open_work" ]] || message=$(printf '%s%s%s' "$message" "${message:+$'\n'}" "$open_work")
   [[ -z "$message" ]] || surface_json "$message"
   exit 0
 fi
