@@ -645,6 +645,63 @@ The report's what-not-to-copy list is confirmed in full and already matched the 
 
 Two answered decisions were amended by the report and the amendments are recorded in their entries: D5's fence mechanism (typed telemetry and lifecycle fences replace the single token sum) and D6's shape (envelope replaces the binary flag, defaults unchanged).
 
+## Part 9: Hardened Mode (added 2026-08-04; the baseline in Parts 3 and 6 is unchanged)
+
+Part 6's proportionality ruling sets the default: cooperative, fallible agents. This part adds the other tier for repositories that need it, without altering a line of the default. `security.mode=cooperative|hardened` in `harness.conf` selects it, `cooperative` shipped as the default, and every mechanism below is inert unless the mode is `hardened`. A project can also enable individual controls without the whole tier (`security.<control>=on`), because most of them are useful singly.
+
+### 9.1 The threat model hardened mode actually addresses
+
+Three attackers, in descending order of likelihood, because designing against the wrong one wastes the budget:
+
+1. **The steered delegate.** An agent reads untrusted content (a fetched page, an issue body, a dependency's README, a file under review) that contains instructions, and follows them. No malice by the operator, no compromised binary; this is the realistic attack and it needs no attacker at all, only a careless input path. Prompt-injection defense is therefore the first-class concern, not the last.
+2. **The tampered artifact.** Something rewrites what the harness trusts: a mission contract mid-flight, a gate's implementation, reference truth, the roster, a job record, the ledger. Cause may be a steered agent, a bad merge, or a human in a hurry. The harness cannot prevent writes it does not mediate; it can make every such write detectable and attributable.
+3. **The compromised runtime or supply chain.** A malicious or backdoored CLI, adapter, MCP server, or model endpoint. Mostly outside the harness's reach, and stated as such, with the few honest mitigations named.
+
+Out of scope permanently, and worth saying plainly so nobody builds against it: an attacker with root on the machine, with the human's git signing key, or with the provider account. Against those the harness offers evidence for the post-mortem, nothing more.
+
+### 9.2 Integrity: making tampering detectable and attributable
+
+- **State hash chain.** `state.json` carries `prevHash` and every write is chained; the runner verifies continuity before each turn, and a fork parks the mission `state-integrity`. Restores what the baseline dropped, and adds the reason the baseline was right to drop it by default: it costs a hash per write and buys nothing against honest crashes, which ledger-as-truth recovery already handles.
+- **Anchoring.** Each cycle the runner commits the ledger entry and the state head hash. In hardened mode that commit is signed (`commit.gpgsign` or SSH signing) and pushed to the shared branch on a declared cadence, so rewriting history means rewriting published signed history, which the reserved list marks never-authorizable and the remote makes evident to peers.
+- **Contract sealing with real signatures.** `assert-mission.sh --seal` unchanged; the approval line is replaced by a signed commit whose author is on `security.approvers` (an allowlist of key fingerprints in `harness.conf`), and `--preflight` verifies the signature and the fingerprint rather than a name typed by whoever ran the command. Same for every human answer: `mission-runner.sh answer` requires a verified signed commit before unparking.
+- **The frozen-set sweep becomes a verified manifest.** The gate implementation, reference truth, conf, roster, and instruction files carry a signed manifest recorded at preflight; the per-turn check verifies signatures, not just hashes, so an attacker who can write files cannot also mint a matching manifest without a key.
+- **Job records and returns.** In hardened mode the dispatcher records a hash of the assembled prompt and of the raw return alongside each job, so a later edit of either is detectable; the mirror manifest already covers the durable copies.
+
+### 9.3 Prompt-injection defense, the control that earns its keep first
+
+- **Nonce fencing returns.** Data blocks in host and delegate prompts use per-turn nonces derived from the turn id, and the assembler refuses content bearing the nonce, so quoted untrusted text cannot close its own fence and issue instructions. This is the one baseline cut that a project should consider restoring even in cooperative mode, because a steered delegate needs no adversary.
+- **Provenance labels inside prompts.** Every data block is prefixed with its origin (`delegate-return job-x`, `fetched-content url`, `repository-file path`) so the model has the information the trust rule asks it to act on, rather than a wall of undifferentiated text.
+- **Return scanning.** Before a return reaches the orchestrator, `assert-return-complete.sh` in hardened mode flags imperative patterns aimed at the reader (instructions to ignore prior rules, to run commands, to change gates, to alter `plans/`), marking the return `suspect` rather than rejecting it: the orchestrator still reviews it as data, but the flag raises the review's attention and lands in the audit log. False positives are cheap; a missed injection is not.
+- **Egress default.** Hardened envelopes set `network: deny` for every role including implementers, with allowlisted hosts as the only opening, because the exfiltration path and the injection path are the same path.
+- **Secret hygiene.** The dispatcher scrubs environment variables matching the project's secret patterns before spawning any adapter, and hardened mode fails the dispatch rather than the scrub when a secret would otherwise be inherited.
+
+### 9.4 Containment: least privilege as the mechanism, not the aspiration
+
+- **Envelope minimums.** Hardened mode refuses a dispatch whose envelope grants more than the role's declared need: implementers get the job worktree and nothing else, critics get read-only with no network, and `approvals: deny` is mandatory rather than default.
+- **Worktree isolation is required, not implied**, for every writable role, and the merge into the integration branch is a human-reviewed step with the computed diff attached, never an agent's own merge.
+- **Runtime sandboxing where the platform offers it.** Each adapter declares in its capability snapshot whether its runtime can enforce filesystem and network confinement, and hardened mode refuses runtimes that cannot, rather than trusting prompt-level compliance. This is where the census's `signature` verb pays a second dividend: it already tells the harness what each runtime is.
+- **Blast radius by construction.** No role's envelope may include `plans/`, the control plane, `harness.conf`, or the roster; a diff touching them fails conformance in every mode, and in hardened mode also parks the mission.
+
+### 9.5 Detection and response
+
+- **The census is the detection surface** the baseline already ships, and hardened mode adds attribution: an UNTRACKED process is not merely reported but recorded with its full argv, start time, and parentage into the audit log, and the mission parks rather than continuing beside an agent nobody can account for.
+- **Append-only audit log.** `artifacts/agents/audit.log`, one line per security-relevant event (integrity failure, suspect return, envelope refusal, unaccounted process, signature failure), mirrored to the durable evidence root on the normal cadence, and never rewritten in place.
+- **A defined response, because detection without response is theater.** On any integrity failure the runner: stops dispatching, cancels running delegates through the normal cancel path so their work is preserved rather than torn, parks the mission with the specific reason, writes the audit entry, and surfaces it through the end-of-turn hook. It never attempts remediation, because an automated response to a suspected compromise is itself an attack surface.
+- **Evidence preservation.** Job payloads, transcripts, prompts, and returns for the affected window are mirrored immediately rather than on cadence, so a post-mortem has the artifacts even if the working tree is later cleaned.
+
+### 9.6 What hardened mode still does not give you
+
+Stated so the mode is not oversold the way the baseline once oversold `mains.expected`:
+
+- An agent operating inside its envelope can still do harmful work that looks like ordinary work; only review catches that, which is why two-layer review is doctrine in every mode.
+- Signatures prove a key was used, never that a human used it.
+- Detection is bounded by cadence: sub-interval activity is visible only in artifacts, not in the census.
+- A compromised model endpoint or CLI defeats everything downstream of it; the mitigations are pinned versions, recorded capability snapshots, and the audit trail for the post-mortem.
+
+### 9.7 Enabling it
+
+`adopt.sh --security hardened` writes the mode, the approver allowlist placeholder, and the egress allowlist placeholder into `harness.conf`, and `validate-harness.sh` fails a hardened repository whose prerequisites are unmet: no approvers configured, signing unavailable, a runtime in the roster whose snapshot reports no sandbox capability, or an envelope exceeding its role minimum. Hardened mode that cannot enforce its own preconditions refuses to run rather than pretending, which is the same fail-closed rule the census already follows.
+
 ## Decisions, All Answered
 
 All seven were answered by the user on 2026-08-03. Kept in full as the record of what was decided and why.
