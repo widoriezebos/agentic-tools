@@ -52,6 +52,8 @@ for link in \
   scripts/enforcement/codex-hooks.json \
   scripts/enforcement/devin-hooks.json \
   scripts/assert-stop-loss.sh \
+  scripts/assert-mission.sh \
+  docs/examples/mission-contract.md \
   docs/project-adaptation.md \
   docs/harness-reconciliation.md \
   docs/working-modes.md \
@@ -75,6 +77,12 @@ for link in \
   scripts/agents/process-census.py \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-fixtures.sh \
+  scripts/agents/mission-fixtures.sh \
+  scripts/agents/mission-contract.py \
+  scripts/agents/mission-fence.py \
+  scripts/agents/mission-ledger.py \
+  scripts/agents/mission-state.py \
+  scripts/agents/schemas/mission-state.schema.json \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
   scripts/agents/adapters/claude-session-signal.py \
@@ -90,6 +98,7 @@ done
 # process wait (IL-1).
 if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   scripts/agents/supervision-fixtures.sh
+  scripts/agents/mission-fixtures.sh
 fi
 
 # Real runtime selftests spend model calls and remain manual acceptance steps.
@@ -97,10 +106,14 @@ fi
 bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
+bash -n scripts/agents/mission-fixtures.sh
+bash -n scripts/assert-mission.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
-python3 - scripts/agents/adapters/claude-session-signal.py scripts/agents/process-census.py <<'PY'
+python3 - scripts/agents/adapters/claude-session-signal.py scripts/agents/process-census.py \
+  scripts/agents/mission-contract.py scripts/agents/mission-fence.py \
+  scripts/agents/mission-ledger.py scripts/agents/mission-state.py <<'PY'
 import ast, sys
 from pathlib import Path
 for source in sys.argv[1:]:
@@ -1421,7 +1434,15 @@ PY
   # acquisition and renewal; this fixture fabricates the frozen shape around
   # a process whose command line carries the instance tag.
   mkdir -p "$agent_repo/plans" "$agent_repo/artifacts/agents/missions/mission-alpha"
-  printf '```text\nfence.job-cap-min=120\n```\n' >"$agent_repo/plans/mission-mission-alpha.contract.md"
+  cat >"$agent_repo/plans/mission-mission-alpha.contract.md" <<'EOF'
+```mission
+fence.wall-clock-hours=2
+fence.cycles=10
+fence.jobs=20
+fence.concurrency=2
+fence.job-cap-min=120
+```
+EOF
   python3 -c 'import time; time.sleep(30)' mission-lease-tag & mission_pid=$!
   mission_pgid=$(python3 -c 'import os,sys; print(os.getpgid(int(sys.argv[1])))' "$mission_pid")
   mission_identity="$agent_fixture/mission-process-identity.json"
@@ -1438,7 +1459,106 @@ PY
   run_agent_fixture mission-explicit mission-explicit "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --wait
   HARNESS_MISSION_ID=mission-alpha HARNESS_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
     run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --wait
-  agent_fails mission-cap 'exceeds the mission' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min 121
+  agent_fails mission-cap 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min 121
+  [[ -f "$agent_repo/artifacts/agents/missions/mission-alpha/asks/fence-bound.json" ]] \
+    || { echo "job-cap refusal did not write the batched mission ask" >&2; exit 1; }
+  python3 - "$agent_repo" <<'PY'
+import json, sys
+from pathlib import Path
+root=Path(sys.argv[1]); usage=json.loads((root/"artifacts/agents/missions/mission-alpha/usage.json").read_text())
+units={(item["provider"],item["unit"]):item["value"] for item in usage["units"]}
+assert units[("fake","provider.fake-unit")] == 2
+for job in ("mission-explicit","mission-inherited"):
+    prompt=(root/f"artifacts/agents/{job}/rounds/1/prompt.md").read_text()
+    assert "\nMission: mission-alpha\n" in prompt
+PY
+
+  make_fence_mission() { # mission id, cycles, jobs, concurrency, wall hours
+    local mission=$1 cycles=$2 jobs_limit=$3 concurrency=$4 wall=$5 mission_dir="$agent_repo/artifacts/agents/missions/$1"
+    mkdir -p "$mission_dir" "$agent_repo/plans"
+    cat >"$agent_repo/plans/mission-$mission.contract.md" <<EOF
+\`\`\`mission
+fence.wall-clock-hours=$wall
+fence.cycles=$cycles
+fence.jobs=$jobs_limit
+fence.concurrency=$concurrency
+fence.job-cap-min=120
+\`\`\`
+EOF
+    python3 - "$mission_dir/lease.json" "$mission" "$mission_pid" "$mission_pgid" <<'PY'
+import json,sys
+from datetime import datetime,timezone
+from pathlib import Path
+now=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+Path(sys.argv[1]).write_text(json.dumps({"missionId":sys.argv[2],"pid":int(sys.argv[3]),"pgid":int(sys.argv[4]),"instanceTag":"mission-lease-tag","startedAt":now,"renewedAt":now})+"\n")
+PY
+  }
+
+  assert_fence_ask() { # mission, expected reason
+    local mission=$1 reason=$2 ask="$agent_repo/artifacts/agents/missions/$1/asks/fence-bound.json"
+    [[ -f "$ask" ]] || { echo "mission fence $reason refusal wrote no batched ask" >&2; exit 1; }
+    grep -Fq "\`$reason\`" "$ask" || { echo "mission fence ask omitted $reason" >&2; exit 1; }
+  }
+
+  make_fence_mission mission-wall 10 10 2 1
+  printf '{"schemaVersion":1,"missionId":"mission-wall","startedAt":"2000-01-01T00:00:00Z","cycles":0,"reservations":{}}\n' \
+    >"$agent_repo/artifacts/agents/missions/mission-wall/fences.json"
+  agent_fails fence-wall 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-wall --mission mission-wall --wait
+  assert_fence_ask mission-wall wall-clock-hours
+
+  make_fence_mission mission-cycles 1 10 2 2
+  printf '{"schemaVersion":1,"missionId":"mission-cycles","startedAt":"%s","cycles":1,"reservations":{}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >"$agent_repo/artifacts/agents/missions/mission-cycles/fences.json"
+  agent_fails fence-cycles 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-cycles --mission mission-cycles --wait
+  assert_fence_ask mission-cycles cycles
+
+  make_fence_mission mission-jobs 10 1 2 2
+  printf '{"schemaVersion":1,"missionId":"mission-jobs","startedAt":"%s","cycles":0,"reservations":{"prior":{"reservedAt":"2000-01-01T00:00:00Z","capMin":1}}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >"$agent_repo/artifacts/agents/missions/mission-jobs/fences.json"
+  agent_fails fence-jobs 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --wait
+  assert_fence_ask mission-jobs jobs
+
+  make_fence_mission mission-concurrency 10 10 1 2
+  printf '{"schemaVersion":1,"missionId":"mission-concurrency","startedAt":"%s","cycles":0,"reservations":{"active":{"reservedAt":"2000-01-01T00:00:00Z","capMin":1}}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >"$agent_repo/artifacts/agents/missions/mission-concurrency/fences.json"
+  agent_fails fence-concurrency 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --wait
+  assert_fence_ask mission-concurrency concurrency
+
+  make_fence_mission mission-timeout 10 10 2 2
+  mission_timeout_result="$agent_fixture/mission-timeout.status"
+  (
+    set +e
+    cd "$agent_repo"
+    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --cap-min 1 --wait
+    printf '%s\n' "$?" >"$mission_timeout_result"
+  ) &
+  mission_timeout_driver=$!
+  wait_for_agent_status mission-timeout-job running
+  python3 - "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" <<'PY'
+import json,sys
+from pathlib import Path
+path=Path(sys.argv[1]); value=json.loads(path.read_text()); value["startedAt"]="2000-01-01T00:00:00Z"; path.write_text(json.dumps(value)+"\n")
+PY
+  run_agent_fixture mission-timeout-reap mission-timeout-job "$agent_dispatch" reap --job mission-timeout-job
+  wait_for_agent_fixture_process mission-timeout-driver mission-timeout-job "$mission_timeout_driver"
+  [[ "$(cat "$mission_timeout_result")" == 4 ]] || { echo "mission job timeout did not map to exit 4" >&2; exit 1; }
+  assert_fence_ask mission-timeout job-cap-min
+
+  # A provider-native unit with the same spelling from another provider stays
+  # a separate typed tuple; no heterogeneous mission total exists.
+  python3 - "$agent_repo/artifacts/agents/jobs/other-provider.json" <<'PY'
+import json,sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({"jobId":"other-provider","mission":"mission-alpha","runtime":"other","status":"completed","usage":{"availability":"native","inputTokens":3,"cachedInputTokens":None,"outputTokens":None,"reasoningTokens":None,"cost":None,"providerUnits":{"name":"fake-unit","value":5}}})+"\n")
+PY
+  "$agent_repo/scripts/agents/mission-fence.py" aggregate-usage --repo "$agent_repo" --mission mission-alpha
+  python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/usage.json" <<'PY'
+import json,sys
+value=json.load(open(sys.argv[1])); units={(item["provider"],item["unit"]):item["value"] for item in value["units"]}
+assert units[("fake","provider.fake-unit")] == 2
+assert units[("other","provider.fake-unit")] == 5
+assert not any(item["unit"] == "provider.total" for item in value["units"])
+PY
   agent_fails missing-mission-lease 'does not have a live' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id missing-mission --mission missing
   agent_fails ambiguous-mission 'ambiguous mission context' env HARNESS_MISSION_ID=mission-alpha HARNESS_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
     "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-ambiguous --mission another

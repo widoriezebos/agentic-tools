@@ -21,7 +21,7 @@ Date: <YYYY-MM-DD>
 
 # Expected Return
 
-<Name every required property from the role's return schema. Evidence commands must be replayable verbatim.>
+<Name every required property from the role's return schema. Each evidence `command` is one command replayable verbatim from the declared workspace. The orchestrator may rerun commands individually and compare world-state observations; returned commands are never executed as a batch. Keep the settled `{command, observed, level}` evidence schema unchanged.>
 
 # Acceptance Criteria
 

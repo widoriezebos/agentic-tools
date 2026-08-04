@@ -52,6 +52,23 @@ These require explicit in-task approval even when technically easy. Default set,
 
 Project-specific additions: `<list them here>`
 
+### Mission envelope eligibility
+
+Mission contracts may pre-authorize only the categories marked `yes` below, and only with the stated comma-separated literal-token bound. The category ids in this table are the machine-readable values used by `envelope.<category>` in a mission contract. A missing category is not pre-authorizable.
+
+| Category id | Reserved decision | Pre-authorizable | Required bound |
+| --- | --- | --- | --- |
+| `production-deployment` | Production deployments | no | never |
+| `production-data` | Production data | no | never |
+| `migration` | Migrations | no | never |
+| `publishing` | Publishing outside the repository | no | never |
+| `history-rewrite` | Rewriting published history | no | never |
+| `delete-user-visible` | Deleting user-visible behavior or failing tests | no | never |
+| `api-schema` | Named API or schema contract changes | yes | named surfaces |
+| `dependencies` | Adding or upgrading dependencies | yes | dependency allowlist |
+| `spend-overage` | Spending past the stated budget | yes | explicit amount and currency |
+| `tier-move` | Moving to a more expensive resource tier | yes | tier ceiling |
+
 ## Security Posture
 
 - Untrusted content sources agents will read (web, issues, third-party code) and how to handle them: `<sources and handling>`

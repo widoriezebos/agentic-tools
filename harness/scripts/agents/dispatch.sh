@@ -39,6 +39,7 @@ worktrees="$agents/worktrees"
 process_instance_tag=
 process_census="$root/scripts/agents/process-census.py"
 arm_supervision="$root/scripts/agents/arm-supervision.sh"
+mission_fence="$root/scripts/agents/mission-fence.py"
 
 valid_id() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -506,21 +507,6 @@ resolve_mission() { # explicit id; prints mission|lease or |
   printf '%s|%s\n' "$mission" "$lease"
 }
 
-mission_cap() { # mission
-  python3 - "$root/plans/mission-$1.contract.md" <<'PY'
-import re, sys
-from pathlib import Path
-try:
-    lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
-except OSError:
-    raise SystemExit(1)
-values = [line.split("=", 1)[1].strip() for line in lines if line.strip().startswith("fence.job-cap-min=")]
-if len(values) != 1 or not re.fullmatch(r"[1-9][0-9]*", values[0]):
-    raise SystemExit(1)
-print(values[0])
-PY
-}
-
 expand_permissions() { # requested value, workspace root, worktree flag, output
   local requested=$1 workspace=$2 is_worktree=$3 output=$4 source preset
   if [[ -f "$requested" ]]; then source=$requested; preset=custom; else source="$root/scripts/agents/permissions/$requested.json"; preset=$requested; fi
@@ -684,10 +670,10 @@ print(max(records, key=lambda item: item[0])[1])
 PY
 }
 
-write_prompt() { # path job role runtime model round content
-  local path=$1 job=$2 role=$3 runtime=$4 model=$5 round=$6 content=$7
+write_prompt() { # path job role runtime model round mission content
+  local path=$1 job=$2 role=$3 runtime=$4 model=$5 round=$6 mission=${7:-none} content=$8
   {
-    printf 'Job-Id: %s\nRole: %s\nRuntime: %s\nModel: %s\nRound: %s\n\n' "$job" "$role" "$runtime" "$model" "$round"
+    printf 'Job-Id: %s\nRole: %s\nRuntime: %s\nModel: %s\nRound: %s\nMission: %s\n\n' "$job" "$role" "$runtime" "$model" "$round" "${mission:-none}"
     cat "$root/scripts/agents/roles/$role.md"
     printf '\n\n'
     cat "$content"
@@ -814,6 +800,13 @@ for record in records:
 output.write_text(json.dumps({"chainUsage": {"tokens": tokens, "cost": costs, "providerUnits": units}}, sort_keys=True) + "\n")
 PY
   record_cas "$chain" "$status" "$status" "$patch" || true
+}
+
+aggregate_mission_usage() { # job record
+  local record=$1 mission
+  mission=$(json_field "$record" mission 2>/dev/null || true)
+  [[ -n "$mission" && "$mission" != null ]] || return 0
+  "$mission_fence" aggregate-usage --repo "$root" --mission "$mission"
 }
 
 mirror_record() { # job
@@ -945,13 +938,14 @@ PY
 }
 
 reap_one_locked() { # job
-  local job=$1 record="$jobs/$1.json" status pid tag started cap elapsed patch root_id
+  local job=$1 record="$jobs/$1.json" status pid tag started cap elapsed patch root_id mission
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
     completed|failed|timeout|cancelled)
       root_id=$(root_job_id "$job" 2>/dev/null || true)
       [[ -n "$root_id" ]] && aggregate_chain_usage "$root_id"
+      aggregate_mission_usage "$record" || true
       mirror_record "$job" || true
       return
       ;;
@@ -983,6 +977,11 @@ PY
     patch=$(mktemp "$record_locks/timeout.XXXXXX")
     printf '{"error":"budget-cap","phase":"supervision","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
     record_cas "$job" "$status" timeout "$patch" || true
+    mission=$(json_field "$record" mission 2>/dev/null || true)
+    if [[ -n "$mission" && "$mission" != null ]]; then
+      "$mission_fence" refuse --repo "$root" --mission "$mission" --reason job-cap-min >/dev/null || true
+      aggregate_mission_usage "$record" || true
+    fi
     mirror_record "$job" || true
   fi
 }
@@ -1061,8 +1060,8 @@ PY
   cap=$(config_get --key dispatch.cap-min ${cap_override:+--flag "$cap_override"} --default 120)
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
   if [[ -n "$mission" ]]; then
-    mission_limit=$(mission_cap "$mission") || die 1 "mission contract lacks one valid fence.job-cap-min"
-    (( cap <= mission_limit )) || die 1 "dispatch cap exceeds the mission's fence.job-cap-min"
+    "$mission_fence" check-job --repo "$root" --mission "$mission" --job "$job" --cap-min "$cap" \
+      || die 1 "mission dispatch refused by a lifecycle fence"
   fi
   watch_cap=$(config_get --key watch.cap-min --default 180)
   [[ "$watch_cap" =~ ^[1-9][0-9]*$ && $cap -lt $watch_cap ]] || die 1 "dispatch cap must stay below watch.cap-min"
@@ -1092,7 +1091,7 @@ PY
   payload="$agents/$job"; round_dir="$payload/rounds/1"
   mkdir -p "$round_dir"
   cp "$brief" "$payload/brief.md"
-  write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "$brief"
+  write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
   python3 - "$record_json" "$job" "$role" "$mission" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" <<'PY'
@@ -1119,6 +1118,10 @@ record = {
 }
 Path(out).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 PY
+  if [[ -n "$mission" ]]; then
+    "$mission_fence" reserve-job --repo "$root" --mission "$mission" --job "$job" --cap-min "$cap" \
+      || die 1 "mission dispatch refused by a lifecycle fence"
+  fi
   record_create "$job" "$record_json"
   release_chain_lock "$job"; trap - EXIT
   launch_adapter "$runtime" dispatch "$job" "harness-job-$job" || {
@@ -1178,7 +1181,7 @@ follow_up() {
   max_kb=$(config_get --key dispatch.max-inline-input-kb --default 64); input_bytes=$(wc -c <"$delivery_content" | tr -d ' ')
   (( input_bytes <= max_kb * 1024 )) || die 1 "inline input exceeds dispatch.max-inline-input-kb; pass a file reference in the message"
   input_hash=$(sha256_file "$delivery_content")
-  write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "$delivery_content"
+  write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
   python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$resume_mode" "$input_bytes" "$input_hash" <<'PY'
 import json, sys
@@ -1201,6 +1204,12 @@ record.update({
 })
 out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 PY
+  if [[ -n "$mission" ]]; then
+    "$mission_fence" check-job --repo "$root" --mission "$mission" --job "$child" --cap-min "$cap" \
+      || die 1 "mission follow-up refused by a lifecycle fence"
+    "$mission_fence" reserve-job --repo "$root" --mission "$mission" --job "$child" --cap-min "$cap" \
+      || die 1 "mission follow-up refused by a lifecycle fence"
+  fi
   record_create "$child" "$record_json"
   release_chain_lock "$root_id"; trap - EXIT
   launch_adapter "$runtime" "$adapter_verb" "$child" "harness-job-$child" || {
