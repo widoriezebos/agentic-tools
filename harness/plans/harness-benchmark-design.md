@@ -1,12 +1,12 @@
 # Plan: The Harness Benchmark
 
 - Owner: unclaimed (design written 2026-08-04, single session, nothing built)
-- Goal and current status: a benchmark where a coordinator and sub-agents build software to a fixed spec, producing two things we grade: the software itself and the logged behavior of the agents that built it. The scorecard from both becomes the harness's own fitness function, so agents can later evolve the harness inside constraints expressed in software. Status: under critique; rounds 1 and 2 (14 material each), 3 (15 material, diminishing-returns stop invoked), and 4 (verification, 2 material seams) adjudicated and folded in
-- In flight right now: round 5, confirming the two BM-4 fixes to close the loop by join
+- Goal and current status: a benchmark where a coordinator and sub-agents build software to a fixed spec, producing two things we grade: the software itself and the logged behavior of the agents that built it. The scorecard from both becomes the harness's own fitness function, so agents can later evolve the harness inside constraints expressed in software. Status: critique CLOSED by join at round 5 (2026-08-04): 45 material findings adjudicated across rounds 1-4, round 5 returned zero material findings with the critic's recorded agreement that the design is ready for implementation under the B-0 condition
+- In flight right now: nothing
 - Decisions made (and who made them): the requirement and its intent stated by the user 2026-08-04, who also directed this design and its critique to run now, ahead of Mission Zero; design decisions D-B1 through D-B6 taken here with recorded defaults, overridable by the human
 - Waiting on the human: nothing blocking; D-B1 through D-B6 stand unless overridden
 - Dead ends: none yet
-- Next step: critique loop to agreement; then the design waits for Mission Zero and its reconciliation pass (B-0) before anything is built
+- Next step: wait for Mission Zero (CC-3), then run B-0's reconciliation; nothing is built before both
 
 This plan layers on `plans/agent-orchestration-design.md`. It amends the settled design in exactly one named place: the standing benchmark authorization (D-B5), an extension to mission approval that goes through the change gate when B-4 builds it. Everything else reuses mission mode (Part 6 there) as the chassis: a benchmark run is a mission, and the contract grammar, runner-side measurement, fences, ledger, and evidence trail are reused rather than reinvented. The user directed the design and critique to run now; implementation stays blocked behind Mission Zero (CC-3 in `plans/prove-first-course-correction.md`), and B-0 below makes the design answer to Mission Zero's evidence before any item builds on it (BM-1-11).
 
@@ -159,10 +159,56 @@ Process per the standing regime: this design goes to Codex critique in the loop 
 
 ## Critique Ledger
 
-- **Round 1** (job `design-critic-20260804t102631z-67c9`, codex/gpt-5.6-sol, 2026-08-04): 14 findings, all material, all accepted except BM-1-11's timing claim (user directed the timing; its amendment, B-0, accepted). Dispositions recorded in the round 1 entry of this ledger as committed at 14a4618; the fixes are integrated throughout.
-- **Round 2** (same chain, round 2, 2026-08-04): 14 findings, all material, all accepted. BM-2-1 trust model stated, instrument-path tripwire and verdict grades added; BM-2-2 candidate sha removed from the comparability tuple; BM-2-3 absolute floors joined to the verdict arithmetic; BM-2-4 standing authorization (D-B5); BM-2-5 delegated-share floor from git history; BM-2-6 candidate-sourced targets allowed under human-ratified verdicts; BM-2-7 kit-bump baseline re-run and explicit compatibility rule; BM-2-8 cohort ids and repetition indexes, compare consumes named cohorts; BM-2-9 machine fingerprint moved into the comparability tuple; BM-2-10 roster-resolution equality as validity, B-8 demoted to descriptive report; BM-2-11 gap-probe authority chain via the contract envelope, implementer path unchanged, consistency-checkable gaps required; BM-2-12 CI attestation interface; BM-2-13 differential seed-versus-final test check; BM-2-14 judge as stock role dispatched measuring-side (D-B6).
-- **Round 3** (same chain, round 3, 2026-08-04): 16 findings, 15 material, all 15 accepted as designer decisions rather than test-later residue (the CC-4 lesson applied). BM-3-1 deterministic newest-complete cohort selection with committed supersession and abandonment records; BM-3-2 pre-registration as a committed proposal artifact with ancestry-and-timing verification; BM-3-3 the verdict as an artifact speaking the gate grammar, ratification completing `verdict=1` on re-run; BM-3-4 the gap decision granted by the spec's own clause, removing the envelope and the second amendment; BM-3-5 absolute bounds bind per repetition; BM-3-6 cost reclassified candidate-sourced, removed from auto-accept targets; BM-3-7 measuring-harness sha named in the tuple's equality list; BM-3-8 noise floors move only by kit commit, never from the judged cohort; BM-3-9 attestation path under results (identity-neutral) naming the kit-recorded workflow, run id, and attempt; BM-3-10 delegated share defined (blame-based last-writer over product paths, candidate-sourced) with B-0's exit question deciding constraint-versus-judged standing; BM-3-11 a test satisfies the differential condition for at most one requirement; BM-3-12 target improvement scoped to proposal-named specs, no-regression elsewhere; BM-3-13 measuring-stick rule activates at the first baseline, D-B5 lands as its own commit; BM-3-14 authorization use ledger under the fence-reservation lock discipline; BM-3-15 spec-reference hits force human-ratified. BM-3-16 (minor) invoked the diminishing-returns stop: the majority of round 3 attacked round-2 amendments, so after these dispositions the loop closes with a verification round, not another hunt.
-- **Round 4** (same chain, round 4, 2026-08-04, verification of the round 3 dispositions): 13 of 15 dispositions verified landed; 2 material seams, both accepted. BM-4-1: the proposal is bound at cohort start — the runner records the proposal id in the cohort record and compare uses exactly that one, so multiple eligible proposals buy nothing. BM-4-2: proposals moved under the identity-neutral results tree and the spec-reference tripwire restricted to paths outside `benchmark/`, so the mandatory proposal cannot force ratification of an otherwise auto-eligible verdict. The critic's readiness statement: ready for implementation once these two land, conditional on B-0's Mission Zero reconciliation — which is this design's own completion condition.
+One chain, job `design-critic-20260804t102631z-67c9`, codex/gpt-5.6-sol, all rounds 2026-08-04. Round 1: 14 material. Round 2: 14 material, attacking the round 1 fixes. Round 3: 15 material plus BM-3-16 invoking the diminishing-returns stop (majority of findings were seams of round 2's edits). Round 4, verification of dispositions: 13 of 15 confirmed landed, 2 material seams. Round 5, confirmation: zero material findings and the critic's recorded agreement that the design is ready for implementation under the B-0 condition. Closed by join.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| BM-1-1 | accepted | candidate owns the behavior-measurement plane; superseded in part by BM-2-1 | source-ownership rule; kit-pinned schemas; floors-not-credit (The run evidence set) |
+| BM-1-2 | accepted | validation suite was not joined to the evolution gate | gate of record as step 0 (Evolution loop) |
+| BM-1-3 | accepted | nothing forced delegation | delegation floor plus judged dimension (What a benchmark run is) |
+| BM-1-4 | accepted | single visible spec invites overfitting | scoped verdicts, every-live-spec runs, spec-reference tripwire (Evolution loop) |
+| BM-1-5 | accepted | compare had no executable contract | verdict arithmetic fixed (Evolution loop step 4) |
+| BM-1-6 | accepted | comparability permitted confounds | tuple widened; roster made actual (Identity and comparability) |
+| BM-1-7 | accepted | target eligibility and direction undefined | target-eligibility rule (Evolution loop step 1) |
+| BM-1-8 | accepted | judged layer could drive verdicts | judged scores never gate, never target (Behavior: judged) |
+| BM-1-9 | accepted | committed results self-invalidated the sha | results-only commits identity-neutral (What a benchmark run is) |
+| BM-1-10 | accepted | gap probe semantics contradictory | recorded-decision-plus-consistency semantics (Product: gap handling) |
+| BM-1-11 | accepted | premature closure claim; timing itself governed by the user's direction | B-0 reconciliation blocks all items; completion requires it (Items) |
+| BM-1-12 | accepted | same-obligation metric rested on prose similarity | metric cut to judged layer (Behavior: mechanical) |
+| BM-1-13 | accepted | Mission Zero corpus cannot validate the extractor | fixture corpus for B-2; Mission Zero demoted to smoke (Items B-2) |
+| BM-1-14 | accepted | product-test mapping unmeasurable as specified | builder-shipped mapping manifest (Product: own tests) |
+| BM-2-1 | accepted | schema pinning is shape, not completeness | trust model stated; instrument-path tripwire; verdict grades (The run evidence set) |
+| BM-2-2 | accepted | sha equality in the tuple made comparison impossible | candidate sha removed from the tuple (Identity and comparability) |
+| BM-2-3 | accepted | absolute floors missing from arithmetic | absolute bounds joined to the verdict (Evolution loop step 4) |
+| BM-2-4 | accepted | per-run human signing breaks unattended cohorts | standing authorization, D-B5 (Evolution loop) |
+| BM-2-5 | accepted | one trivial job satisfied the floor | delegated share from git history (What a benchmark run is) |
+| BM-2-6 | accepted | behavior improvements had no legal target | candidate-sourced targets under human-ratified verdicts (Evolution loop step 1) |
+| BM-2-7 | accepted | schema evolution had no migration path | kit-bump baseline re-run; explicit compatibility (Evolution loop step 2) |
+| BM-2-8 | accepted | cohorts unidentifiable, poisoned by strays | cohort ids and repetition indexes (Identity; Evolution loop step 3) |
+| BM-2-9 | accepted | wall-clock target unattributable across machines | machine fingerprint into the tuple (Identity and comparability) |
+| BM-2-10 | accepted | roster over- and under-constrained | roster-resolution equality as validity; B-8 descriptive (Identity and comparability) |
+| BM-2-11 | accepted | gap probe contradicted ask-first rules | authority chain made explicit; superseded in part by BM-3-4 (Product: gap handling) |
+| BM-2-12 | accepted | CI check had no interface | attestation file contract (Evolution loop step 0) |
+| BM-2-13 | accepted | mapping check was vacuous | differential seed-versus-final condition (Product: own tests) |
+| BM-2-14 | accepted | judge execution boundary undecided | stock role, kit rubrics in brief, measuring-side dispatch, D-B6 (Behavior: judged) |
+| BM-3-1 | accepted | cohort selection permitted cherry-picking | deterministic newest-complete selection; supersession and abandonment records (Evolution loop step 3) |
+| BM-3-2 | accepted | pre-registration unbound; completed by BM-4-1 | committed proposal artifact with ancestry and timing checks (Evolution loop step 1) |
+| BM-3-3 | accepted | human-ratified grade had no executable shape | verdict artifact in the gate grammar; ratification completes verdict=1 (Evolution loop step 6) |
+| BM-3-4 | accepted | envelope category was not legal grammar | spec-granted decision clause; second amendment removed (Product: gap handling) |
+| BM-3-5 | accepted | medians averaged away absolute breaches | absolute bounds bind per repetition (Evolution loop step 4) |
+| BM-3-6 | accepted | cost ownership contradictory | cost candidate-sourced; removed from auto-accept targets (Evolution loop step 1) |
+| BM-3-7 | accepted | measuring-harness sha in and out of the tuple | named in the tuple's equality list (Identity and comparability) |
+| BM-3-8 | accepted | noise widening had no admissibility rule | floors move only by kit commit (Variance paragraph) |
+| BM-3-9 | accepted | attestation identity paradox and workflow ambiguity | results-tree path; kit-named workflow, run id, attempt (Evolution loop step 0) |
+| BM-3-10 | accepted | delegated share was not a defined scalar | blame-based last-writer definition; B-0 exit question decides standing (What a benchmark run is) |
+| BM-3-11 | accepted | one smoke test could cover the manifest | differential condition capped at one requirement per test (Product: own tests) |
+| BM-3-12 | accepted | multi-spec conjunction rejected scoped improvements | improvement on proposal-named specs, no-regression elsewhere (Evolution loop step 4) |
+| BM-3-13 | accepted | measuring-stick rule unsatisfiable during build | rule activates at first baseline; D-B5 its own commit (Measuring-stick rule) |
+| BM-3-14 | accepted | authorization consumption had no owner | append-only use ledger under the reservation lock (Evolution loop, D-B5 paragraph) |
+| BM-3-15 | accepted | spec-tripwire had no verdict mapping | hits force human-ratified (Evolution loop step 5) |
+| BM-3-16 | accepted | diminishing-returns stop correctly invoked | loop closed with verification rounds 4 and 5, not another hunt (this ledger) |
+| BM-4-1 | accepted | proposal choosable at compare time | proposal bound at cohort start; compare takes no proposal argument (Evolution loop step 1) |
+| BM-4-2 | accepted | mandatory proposal tripped the spec tripwire | proposals under the results tree; tripwire scoped outside `benchmark/` (Evolution loop step 1; Measuring-stick rule) |
 
 ## Completion
 
