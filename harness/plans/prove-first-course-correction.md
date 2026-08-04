@@ -30,9 +30,12 @@ From the self-review of the first 24 hours, all five accepted by the user:
 | CC-4 | Triage every retained watch-list finding into "decide now" (a designer decision, blocks the build) and "test later" (a failing-test obligation under ORCH-21). The third gap-stop proved the pile mixes both and stalls implementation | NOT STARTED |
 | CC-5 | Answer proportionality with evidence rather than argument | RESOLVED by the user's rulings: the cooperative-agent baseline stands, isolation is the operator's container, and Part 9 shrank to documentation. Mission Zero remains the evidence for the rest |
 
-## Decision reserved for the human
+## Decisions, answered by the human 2026-08-04
 
-**D-CC1: how minimal is Mission Zero's runner?** Recommended: the smallest runner that can complete one cycle honestly, which is the lease, one host turn through a shipped prompt, the runner-side measurement, one ledger entry, and the four end states, deferring hooks, guard cadence, reconciliation turns, and the proof bundle to whatever Mission Zero shows is needed. Alternative: build item 20 in full first, which is more complete on paper and delays the first real evidence by another long implementation round.
+- **D-CC1, runner scope: minimal, then Mission Zero.** Build only what completes one honest cycle: the lease, one host turn assembled from the shipped prompt artifacts, the runner-side measurement, one ledger entry, and the four end states. Hooks, guard cadence, reconciliation turns, and the proof bundle wait until Mission Zero shows they are needed. Item 20's remaining scope is decided by that evidence, not in advance.
+- **D-CC2, target: a scratch repository with one deliberately failing test**, the mission's goal being to make it pass. The gate is unambiguous, nothing real is at risk, and no peer session can collide with it.
+- **D-CC3, spend: tight lifecycle fences**, sized small (a handful of cycles, a few jobs, short per-job timeouts, concurrency one) with cheap models for delegates. A mission that cannot finish inside that envelope is itself the finding, and the fences are the enforcement since no invoice-level control exists.
+- **D-CC4, continuity: this session continues.** The handoff discipline stays untested for now; the plans and ledgers remain the record either way.
 
 ## Completion
 
