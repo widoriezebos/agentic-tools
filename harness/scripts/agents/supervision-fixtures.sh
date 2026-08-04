@@ -160,7 +160,16 @@ PY
 operator_scope=$tmp/operator-repo
 operator_harness=$operator_scope/harness
 mkdir -p "$operator_scope"
-cp -R "$source_root" "$operator_harness"
+# Copy the shipped tree only. artifacts/ holds this session's live runtime
+# state, including the supervision lock naming the operator's own owner pid;
+# carrying it into the sandbox makes the fixture's shutdown stop a supervisor
+# it does not own, which silently disarms the machine running the suite.
+mkdir -p "$operator_harness"
+(cd "$source_root" && for entry in * .[!.]*; do
+  [[ -e "$entry" ]] || continue
+  [[ "$entry" == artifacts ]] && continue
+  cp -R "$entry" "$operator_harness/"
+done)
 operator_scope=$(cd "$operator_scope" && pwd -P)
 operator_harness=$(cd "$operator_harness" && pwd -P)
 git -C "$operator_scope" init -q
@@ -702,4 +711,45 @@ census=min(i for i,x in enumerate(lines) if "first-census-complete" in x)
 assert announce < census
 PY
 
-echo "supervision fixtures passed (S4-1 through S4-10)"
+# S4-11: a sandbox must never stop a supervisor another checkout armed. The
+# operator sandbox above is built without artifacts/ for exactly this reason;
+# both halves are asserted, because either one alone leaves the suite able to
+# disarm the machine it runs on.
+[[ ! -e "$operator_harness/artifacts/agents/supervision/lock.d/owner.json" ]] \
+  || { echo "operator sandbox carries the operator's supervision lock" >&2; exit 1; }
+
+foreign=$tmp/foreign-owner
+mkdir -p "$foreign/repo"
+(cd "$foreign/repo" && git init -q .)
+mkdir -p "$foreign/repo/harness/scripts/agents" "$foreign/repo/harness/artifacts/agents/supervision/lock.d"
+cp "$source_root/scripts/agents/arm-supervision.sh" "$foreign/repo/harness/scripts/agents/"
+cp "$source_root/scripts/agents/process-census.py" "$foreign/repo/harness/scripts/agents/"
+foreign_sleep_pid=$(
+  bash -c 'exec -a harness-foreign-owner sleep 120 >/dev/null 2>&1 & echo $!'
+)
+foreign_start=$(process_started_at "$foreign_sleep_pid")
+owned_pids+=("$foreign_sleep_pid:$foreign_start")
+python3 - "$foreign/repo/harness/artifacts/agents/supervision/lock.d/owner.json" \
+  "$foreign_sleep_pid" "$foreign_start" <<'PY'
+import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+  "pid": int(sys.argv[2]), "pidStartedAt": int(sys.argv[3]),
+  "instanceTag": "harness-supervision-owner-some-other-checkout-1-2",
+  "acquiredAt": "1970-01-01T00:00:00Z",
+}) + "\n")
+PY
+set +e
+"$foreign/repo/harness/scripts/agents/arm-supervision.sh" --repo "$foreign/repo" --shutdown \
+  >"$tmp/foreign-shutdown.out" 2>&1
+foreign_status=$?
+set -e
+(( foreign_status != 0 )) \
+  || { echo "shutdown accepted a lock armed for another repository" >&2; exit 1; }
+grep -Fq 'another repository' "$tmp/foreign-shutdown.out" \
+  || { echo "foreign-owner refusal did not name the cause" >&2; cat "$tmp/foreign-shutdown.out" >&2; exit 1; }
+kill -0 "$foreign_sleep_pid" 2>/dev/null \
+  || { echo "shutdown stopped a process another checkout owned" >&2; exit 1; }
+stop_owned_pid "foreign owner" "$foreign_sleep_pid" "$foreign_start" >/dev/null 2>&1 || true
+
+echo "supervision fixtures passed (S4-1 through S4-11)"

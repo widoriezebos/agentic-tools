@@ -327,7 +327,7 @@ verify_armed() { # repo, owner pid/start/tag
 
 arm_repository() {
   local repo= session= pid= start= tag= runtime=${HARNESS_AGENT_RUNTIME:-} retire=0 shutdown=0 ancestor safe announcement
-  local owner_cap owner_started owner_deadline elapsed
+  local owner_cap owner_started owner_deadline elapsed expected_owner_prefix
   while (($#)); do
     case "$1" in
       --repo) [[ $# -ge 2 ]] || { usage; exit 2; }; repo=$2; shift 2 ;;
@@ -346,6 +346,12 @@ arm_repository() {
     lock=$agents/supervision/lock.d/owner.json
     [[ -f "$lock" ]] || exit 0
     owner_pid=$(json_field "$lock" pid); owner_start=$(json_field "$lock" pidStartedAt); owner_tag=$(json_field "$lock" instanceTag)
+    # The tag carries the repository the owner was armed for. A record copied
+    # from another checkout names a live process this repository does not own,
+    # so shutting it down would kill a stranger's supervisor: refuse instead.
+    expected_owner_prefix="harness-supervision-owner-$(sanitize "$(git -C "$harness_root" rev-parse --show-toplevel 2>/dev/null || true)")-"
+    [[ "$owner_tag" == "$expected_owner_prefix"* ]] \
+      || die 1 "supervision lock names an owner armed for another repository ($owner_tag); refusing to stop a process this repository does not own"
     stop_identity owner "$owner_pid" "$owner_start" "$owner_tag"
     exit 0
   fi
