@@ -57,6 +57,7 @@ for link in \
   scripts/assert-stop-loss.sh \
   scripts/assert-mission.sh \
   docs/examples/mission-contract.md \
+  docs/examples/mission-cron.example \
   docs/project-adaptation.md \
   docs/harness-reconciliation.md \
   docs/working-modes.md \
@@ -89,6 +90,10 @@ for link in \
   scripts/agents/mission-fence.py \
   scripts/agents/mission-ledger.py \
   scripts/agents/mission-state.py \
+  scripts/agents/mission-prompt.py \
+  scripts/agents/mission-runner.sh \
+  scripts/agents/hosts/claude.sh \
+  scripts/agents/hosts/fake.sh \
   scripts/agents/schemas/mission-state.schema.json \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
@@ -118,6 +123,9 @@ bash -n scripts/agents/fixture-budget.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
+bash -n scripts/agents/mission-runner.sh
+bash -n scripts/agents/hosts/claude.sh
+bash -n scripts/agents/hosts/fake.sh
 bash -n scripts/assert-mission.sh
 bash -n scripts/assert-return-complete.sh
 bash -n scripts/assert-turn-prompt.sh
@@ -126,7 +134,8 @@ bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
 python3 - scripts/agents/adapters/claude-session-signal.py scripts/agents/process-census.py \
   scripts/agents/mission-contract.py scripts/agents/mission-fence.py \
-  scripts/agents/mission-ledger.py scripts/agents/mission-state.py <<'PY'
+  scripts/agents/mission-ledger.py scripts/agents/mission-state.py \
+  scripts/agents/mission-prompt.py <<'PY'
 import ast, sys
 from pathlib import Path
 for source in sys.argv[1:]:
@@ -155,6 +164,12 @@ for runtime in claude codex devin; do
     || { echo "$runtime adapter does not bind its snapshot runtime identity" >&2; exit 1; }
   grep -Fq "write_capability_snapshot $runtime \"\$version\" \"\$hash\"" "$adapter" \
     || { echo "$runtime adapter does not write its named capability snapshot" >&2; exit 1; }
+done
+for runtime in claude fake; do
+  host="scripts/agents/hosts/$runtime.sh"
+  [[ -x "$host" ]] || { echo "$runtime host adapter is missing or not executable: $host" >&2; exit 1; }
+  grep -Fq 'start-turn' <<<"$($host --help 2>&1)" \
+    || { echo "$runtime host adapter does not advertise start-turn" >&2; exit 1; }
 done
 grep -Fq 'path = directory / f"{runtime}-{version}-{config_hash}-{date}-{sequence:03d}.json"' \
   scripts/agents/adapters/runtime-common.sh \
@@ -1032,11 +1047,13 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   agent_fixture="$tmp/agent-fixture"
   agent_repo="$agent_fixture/repo"
   agent_evidence="$agent_fixture/evidence"
-  mkdir -p "$agent_repo/scripts"
+  mkdir -p "$agent_repo/scripts" "$agent_repo/docs"
   agent_repo=$(cd "$agent_repo" && pwd -P)
   cp -R scripts/agents "$agent_repo/scripts/"
-  cp scripts/harness-config.sh scripts/assert-return-complete.sh \
+  cp scripts/harness-config.sh scripts/assert-mission.sh scripts/assert-stop-loss.sh \
+    scripts/assert-return-complete.sh scripts/assert-turn-prompt.sh \
     scripts/watch-background-jobs.sh "$agent_repo/scripts/"
+  cp docs/project-rules.md "$agent_repo/docs/"
   cp harness.conf "$agent_repo/"
   perl -0pi -e 's/^harness\.runtimes=.*$/harness.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=5/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=4096/m; s/^model\.tier\.1=.*$/model.tier.1=fake:fake-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/harness.conf"
   grep -q '^watch\.interval-sec=' "$agent_repo/harness.conf" || printf 'watch.interval-sec=5\n' >>"$agent_repo/harness.conf"
@@ -1772,6 +1789,7 @@ PY
   export HARNESS_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
   run_agent_fixture mission-explicit mission-explicit "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --wait
   HARNESS_MISSION_ID=mission-alpha HARNESS_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
+    HARNESS_MISSION_TURN=mission-alpha-t1-fixture \
     run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --wait
   agent_fails mission-cap 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min 121
   [[ -f "$agent_repo/artifacts/agents/missions/mission-alpha/asks/fence-bound.json" ]] \
@@ -1785,6 +1803,8 @@ assert units[("fake","provider.fake-unit")] == 2
 for job in ("mission-explicit","mission-inherited"):
     prompt=(root/f"artifacts/agents/{job}/rounds/1/prompt.md").read_text()
     assert "\nMission: mission-alpha\n" in prompt
+inherited=json.loads((root/"artifacts/agents/jobs/mission-inherited.json").read_text())
+assert inherited["turnId"] == "mission-alpha-t1-fixture"
 PY
 
   make_fence_mission() { # mission id, cycles, jobs, concurrency, wall hours
@@ -1896,6 +1916,273 @@ PY
   set -e
   [[ $malformed_record_status -eq 7 ]] || { echo "malformed status record mapped to $malformed_record_status instead of 7" >&2; exit 1; }
 
+  # The minimal mission runner is exercised only through its fake host. The
+  # repository, origin, supervision set, signed contracts, frozen gate, turn
+  # records, state, and ledger are all real; only the model call is simulated.
+  runner="$agent_repo/scripts/agents/mission-runner.sh"
+  runner_origin="$agent_fixture/runner-origin.git"
+  runner_mission_identity_fixture="$agent_fixture/runner-mission-process-identities.json"
+  mv "$agent_repo/scripts/agents/arm-supervision.sh" \
+    "$agent_repo/scripts/agents/arm-supervision-real.sh"
+  cat >"$agent_repo/scripts/agents/arm-supervision.sh" <<'ARM'
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+fixture_root=$(git -C "$script_dir" rev-parse --show-toplevel)
+called_at=$(date +%s)
+"$script_dir/arm-supervision-real.sh" "$@"
+[[ ${1:-} == fingerprint ]] && exit 0
+for argument in "$@"; do [[ "$argument" == --shutdown ]] && exit 0; done
+deadline=$((called_at + 30))
+while (( $(date +%s) <= deadline )); do
+  completed=$(python3 - "$fixture_root/artifacts/agents/supervision/last-census.json" <<'PY' 2>/dev/null || true
+import json,sys
+try: print(json.load(open(sys.argv[1]))["completedAtEpoch"])
+except (OSError,ValueError,KeyError,TypeError): pass
+PY
+  )
+  [[ ${completed:-0} -ge $called_at ]] && break
+  sleep 0.05
+done
+if [[ -n "${HARNESS_MISSION_PROCESS_IDENTITY_FILE:-}" \
+  && -f "$fixture_root/artifacts/agents/supervision/state.json" ]]; then
+  python3 - "$fixture_root/artifacts/agents/supervision/state.json" \
+    "$HARNESS_MISSION_PROCESS_IDENTITY_FILE" <<'PY'
+import json,sys
+from pathlib import Path
+state=json.loads(Path(sys.argv[1]).read_text()); identities={}
+for name in ("watcher","reaper"):
+    value=state["components"][name]
+    identities[str(value["pid"])]= {
+        "pidStartedAt":value["pidStartedAt"],
+        "command":f"fixture {value['instanceTag']}",
+    }
+Path(sys.argv[2]).write_text(json.dumps(identities)+"\n")
+PY
+fi
+ARM
+  chmod +x "$agent_repo/scripts/agents/arm-supervision.sh"
+  mkdir -p "$agent_repo/scripts" "$agent_repo/truth"
+  cat >"$agent_repo/scripts/gate.sh" <<'GATE'
+#!/usr/bin/env bash
+set -euo pipefail
+score=$(cat candidate-score.txt)
+printf 'metric=score=%s\n' "$score"
+GATE
+  chmod +x "$agent_repo/scripts/gate.sh"
+  printf '0\n' >"$agent_repo/candidate-score.txt"
+  printf 'runner truth\n' >"$agent_repo/truth/reference.txt"
+  git -C "$agent_repo" config user.name harness
+  git -C "$agent_repo" config user.email harness@example.invalid
+  git -C "$agent_repo" add scripts/gate.sh candidate-score.txt truth/reference.txt
+  git -C "$agent_repo" commit -qm 'add mission runner instruments'
+  git -C "$agent_repo" tag runner-instruments
+  git init -q --bare "$runner_origin"
+  runner_branch=$(git -C "$agent_repo" branch --show-current)
+  git -C "$agent_repo" remote add origin "$runner_origin"
+  git -C "$agent_repo" push -qu -u origin "$runner_branch"
+  git -C "$runner_origin" symbolic-ref HEAD "refs/heads/$runner_branch"
+  git -C "$agent_repo" remote set-head origin -a >/dev/null
+
+  make_runner_contract() { # mission, fake behavior, cycle fence, optional prompt-breaking heading
+    local mission=$1 behavior=$2 cycles=$3 bad_heading=${4:-} contract="$agent_repo/plans/mission-$1.contract.md" contract_sha
+    mkdir -p "$agent_repo/plans"
+    cat >"$contract" <<EOF
+# Intent
+
+Advance the candidate through one unattended fake-host turn.
+$bad_heading
+
+# Non-goals
+
+Do not publish or deploy.
+
+# Initial streams
+
+Keep the primary stream active until the frozen gate passes.
+
+\`\`\`mission
+gate.command=scripts/gate.sh
+gate.ref=runner-instruments
+gate.paths=scripts/gate.sh
+truth.paths=truth/reference.txt
+truth.certification=certified
+gate.direction=max
+gate.threshold.score=>=1
+gate.noise-floor.score=0
+guard.score.command=scripts/gate.sh
+guard.score.floor=1
+guard.score.noise=0
+guard.cadence=1
+ledger.cycle-budget=5
+ledger.no-gain-budget=3
+fence.wall-clock-hours=2
+fence.cycles=$cycles
+fence.jobs=4
+fence.concurrency=1
+fence.job-cap-min=5
+host.runtime=fake
+host.model=fake-model
+host.turn-cap-min=1
+stream.primary=FAKEHOST:$behavior advance the candidate.
+envelope.dependencies=jq
+exposure=EUR:1
+\`\`\`
+EOF
+    contract_sha=$("$agent_repo/scripts/assert-mission.sh" --seal --file "$contract")
+    printf '\nApproval: name=Fixture-Human; date=2026-08-04; contract-sha256=%s\n' "$contract_sha" >>"$contract"
+    git -C "$agent_repo" add "plans/mission-$mission.contract.md"
+    git -C "$agent_repo" commit -qm "sign mission $mission"
+    git -C "$agent_repo" push -qu origin "$runner_branch"
+  }
+
+  run_runner_expect() { # name, expected exit, command...
+    local name=$1 expected=$2 result
+    shift 2
+    set +e
+    run_agent_fixture_captured "$name" - "$agent_fixture/$name.out" "$@"
+    result=$?
+    set -e
+    if [[ $result -ne $expected ]]; then
+      echo "mission runner fixture $name exited $result instead of $expected" >&2
+      cat "$agent_fixture/$name.out" >&2
+      exit 1
+    fi
+  }
+
+  wait_runner_status() { # mission, expected exit
+    local mission=$1 expected=$2 result=7 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec ))
+    while (( SECONDS < deadline )); do
+      set +e
+      "$runner" status --mission "$mission" >"$agent_fixture/status-$mission.out" 2>&1
+      result=$?
+      set -e
+      [[ $result -eq $expected ]] && return 0
+      sleep 0.05
+    done
+    echo "mission runner status timed out: $mission -> $expected (last exit: $result)" >&2
+    cat "$agent_fixture/status-$mission.out" >&2
+    return 1
+  }
+
+  printf '{}\n' >"$runner_mission_identity_fixture"
+  export HARNESS_MISSION_PROCESS_IDENTITY_FILE="$runner_mission_identity_fixture"
+
+  make_runner_contract runner-cycle return-ok 5
+  printf '1\n' >"$agent_repo/candidate-score.txt"
+  git -C "$agent_repo" add candidate-score.txt
+  git -C "$agent_repo" commit -qm 'improve mission runner candidate'
+  git -C "$agent_repo" push -qu origin "$runner_branch"
+  run_runner_expect runner-cycle-start 0 env HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-cycle
+  wait_runner_status runner-cycle 10
+  cycle_turn=$(find "$agent_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
+  "$agent_repo/scripts/assert-turn-prompt.sh" --file "$cycle_turn/prompt.md" --turn "$cycle_turn"
+  python3 - "$agent_repo" "$cycle_turn/prompt.md" <<'PY'
+import sys
+from pathlib import Path
+root,prompt_path=Path(sys.argv[1]),Path(sys.argv[2])
+prompt=prompt_path.read_bytes(); header_end=prompt.index(b"\n\n")
+header=prompt[:header_end].decode().splitlines()
+assert [line.split(": ",1)[0] for line in header] == [
+    "Mission-Id","Turn-Id","Cycle","Host-Session","Runtime","Model","Reconciliation"
+]
+preamble=(root/"scripts/agents/roles/orchestrator.md").read_bytes()
+assert prompt[header_end+2:header_end+2+len(preamble)] == preamble
+text=prompt.decode(); headings=[
+    "## Mission Contract","## Ledger Tail","## Open Asks",
+    "## Streams","## Reconciliation","## This Turn",
+]
+positions=[text.index(heading) for heading in headings]
+assert positions == sorted(positions)
+PY
+  grep -Fq -- '- Classification: contract-improved;' \
+    "$agent_repo/artifacts/agents/missions/runner-cycle/ledger.md" \
+    || { echo "full mission cycle did not record runner-measured contract improvement" >&2; exit 1; }
+  run_runner_expect prompt-missing-turn 1 "$agent_repo/scripts/agents/mission-prompt.py" \
+    --mission runner-cycle --turn runner-cycle-t99-missing --output "$agent_fixture/missing-prompt.md"
+  grep -Fq 'missing turn record' "$agent_fixture/prompt-missing-turn.out" \
+    || { echo "prompt assembler did not name its missing turn record refusal" >&2; exit 1; }
+  run_runner_expect prompt-oversized 1 env HARNESS_MISSION_MAX_PROMPT_KB=1 \
+    "$agent_repo/scripts/agents/mission-prompt.py" --mission runner-cycle \
+    --turn "$(basename "$cycle_turn")" --output "$agent_fixture/oversized-prompt.md"
+  grep -Fq 'oversized block' "$agent_fixture/prompt-oversized.out" \
+    || { echo "prompt assembler did not name the oversized block" >&2; exit 1; }
+
+  make_runner_contract runner-bad-prompt return-ok 5 '## Streams'
+  run_runner_expect runner-bad-prompt-start 3 env HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-bad-prompt
+  wait_runner_status runner-bad-prompt 11
+  bad_turn=$(find "$agent_repo/artifacts/agents/missions/runner-bad-prompt/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
+  [[ ! -e "$bad_turn/raw.out" ]] || { echo "prompt-checker refusal launched the fake host" >&2; exit 1; }
+  grep -Fq 'prompt-refused' "$bad_turn/turn.json" \
+    || { echo "prompt-checker refusal was not recorded on the turn" >&2; exit 1; }
+
+  make_runner_contract runner-ghost dispatch-ghost 5
+  run_runner_expect runner-ghost-start 0 env HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-ghost
+  wait_runner_status runner-ghost 10
+  python3 - "$agent_repo/artifacts/agents/missions/runner-ghost" <<'PY'
+import json,sys
+from pathlib import Path
+mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
+rejected=state["turnLog"][-1]["rejected"]
+assert len(rejected)==1 and rejected[0]["kind"]=="dispatched"
+assert "does not exist" in rejected[0]["reason"]
+ask=json.loads((mission/"asks"/f"{rejected[0]['askId']}.json").read_text())
+assert ask["reasonClass"]=="host-failure" and ask["answeredAt"] is None
+PY
+
+  make_runner_contract runner-fence return-ok 1
+  mkdir -p "$agent_repo/artifacts/agents/missions/runner-fence"
+  printf '{"schemaVersion":1,"missionId":"runner-fence","startedAt":"%s","cycles":1,"reservations":{}}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >"$agent_repo/artifacts/agents/missions/runner-fence/fences.json"
+  run_runner_expect runner-fence-start 3 env HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-fence
+  wait_runner_status runner-fence 11
+  python3 - "$agent_repo/artifacts/agents/missions/runner-fence" <<'PY'
+import json,sys
+from pathlib import Path
+mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
+assert state["status"]=="parked" and state["parkReason"]=="fence"
+asks=[json.loads(path.read_text()) for path in (mission/"asks").glob("*.json")]
+assert any(ask["reasonClass"]=="fence" and ask["answeredAt"] is None for ask in asks)
+PY
+
+  make_runner_contract runner-unverified return-ok 5
+  run_runner_expect runner-unverified-start 3 env HARNESS_AGENT_RUNTIME=fake \
+    HARNESS_FAKE_HOST_START_UNVERIFIED=1 "$runner" start --mission runner-unverified
+  wait_runner_status runner-unverified 11
+  unverified_ask=$(python3 - "$agent_repo/artifacts/agents/missions/runner-unverified" <<'PY'
+import json,sys
+from pathlib import Path
+mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
+assert state["parkReason"]=="host-failure"
+turns=list((mission/"turns").glob("*/turn.json")); assert len(turns)==1
+turn=json.loads(turns[0].read_text()); assert turn["error"]=="start-unverified"
+asks=[json.loads(path.read_text()) for path in (mission/"asks").glob("*.json")]
+ask=next(value for value in asks if value["reasonClass"]=="host-failure" and value["answeredAt"] is None)
+print(ask["askId"])
+PY
+  )
+  run_runner_expect runner-unverified-answer 0 "$runner" answer --mission runner-unverified \
+    --ask "$unverified_ask" --answer acknowledged
+  wait_runner_status runner-unverified 0
+
+  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
+  agent_supervision_repo=
+  [[ ! -e "$agent_repo/artifacts/agents/missions/runner-unverified/lease.d" ]] \
+    || { echo "parked mission retained its runner lease" >&2; exit 1; }
+  agent_supervision_repo=$agent_repo
+  run_runner_expect runner-unverified-resume 0 env HARNESS_AGENT_RUNTIME=fake "$runner" resume --mission runner-unverified
+  wait_runner_status runner-unverified 10
+  [[ -f "$agent_repo/artifacts/agents/supervision/state.json" ]] \
+    || { echo "resume did not re-arm supervision" >&2; exit 1; }
+  [[ ! -e "$agent_repo/artifacts/agents/missions/runner-unverified/lease.d" ]] \
+    || { echo "completed resumed mission retained its runner lease" >&2; exit 1; }
+  resumed_prompt=$(find "$agent_repo/artifacts/agents/missions/runner-unverified/turns" -name prompt.md | sort | tail -1)
+  grep -Fq 'Reconciliation: yes' "$resumed_prompt" \
+    || { echo "resumed turn did not carry reconciliation" >&2; exit 1; }
+  grep -Fq $'\tfailed\tstart-unverified' "$resumed_prompt" \
+    || { echo "resumed turn omitted the failed prior turn from reconciliation" >&2; exit 1; }
+
   "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
   agent_supervision_repo=
   agent_selftest_process_fixture="$agent_fixture/selftest-processes.json"
@@ -1909,7 +2196,8 @@ PY
   HARNESS_AGENT_RUNTIME=fake "$agent_selftest_repo/scripts/agents/arm-supervision.sh" \
     --repo "$agent_selftest_repo" --session selftest-validator --pid "$$" \
     --start-time "$agent_selftest_main_start" --tag harness-main-fake-selftest-validator \
-    >"$agent_fixture/selftest-arming.out"
+    >"$agent_fixture/selftest-arming.out" \
+    || { echo "adapter selftest fixture could not arm supervision" >&2; exit 1; }
   fake_selftest_adapter="$agent_selftest_repo/scripts/agents/adapters/fake.sh"
   run_agent_fixture_captured fake-selftest - "$agent_fixture/fake-selftest.out" "$fake_selftest_adapter" selftest
   grep -Fq 'full protocol sequence' "$agent_fixture/fake-selftest.out" \
@@ -1924,7 +2212,8 @@ PY
 
   "$agent_selftest_repo/scripts/agents/arm-supervision.sh" --repo "$agent_selftest_repo" --shutdown >/dev/null 2>&1
   agent_supervision_repo=
-  unset HARNESS_CENSUS_PROCESS_FILE HARNESS_FAKE_PROCESS_IDENTITY_FILE
+  unset HARNESS_CENSUS_PROCESS_FILE HARNESS_FAKE_PROCESS_IDENTITY_FILE \
+    HARNESS_MISSION_PROCESS_IDENTITY_FILE
   export HARNESS_SKIP_AGENT_FIXTURES=1
 fi
 
