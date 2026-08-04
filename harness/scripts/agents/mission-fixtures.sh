@@ -2,6 +2,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$root/scripts/agents/fixture-budget.sh"
+harness_fixture_budget_init "$root"
 fixture_root=$(mktemp -d)
 repo=$fixture_root/repo
 remote=$fixture_root/origin.git
@@ -9,11 +11,14 @@ watcher_pid=
 reaper_pid=
 
 wait_for_fixture_pid() { # name, pid, named ceiling seconds
-  local name=$1 pid=$2 maximum=$3 deadline=$((SECONDS + $3))
-  echo "mission fixture wait: $name (cap: ${maximum}s)" >&2
+  local name=$1 pid=$2 maximum started deadline elapsed
+  maximum=$(harness_fixture_scaled_cap "$3")
+  started=$SECONDS
+  deadline=$((SECONDS + maximum))
   while kill -0 "$pid" 2>/dev/null; do
     if (( SECONDS >= deadline )); then
-      echo "mission fixture wait ceiling reached: $name pid=$pid" >&2
+      elapsed=$((SECONDS - started))
+      echo "mission fixture wait ceiling reached: $name pid=$pid (elapsed: ${elapsed}s; scaled cap: ${maximum}s)" >&2
       kill -KILL "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
       return 1

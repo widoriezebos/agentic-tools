@@ -5,9 +5,12 @@ set -euo pipefail
 # named ceiling so a broken supervisor fails loudly instead of hanging (IL-1).
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-fixture_ceiling_sec=${HARNESS_SUPERVISION_FIXTURE_TIMEOUT_SEC:-12}
-[[ "$fixture_ceiling_sec" =~ ^[1-9][0-9]*$ && "$fixture_ceiling_sec" -le 60 ]] \
+source "$source_root/scripts/agents/fixture-budget.sh"
+harness_fixture_budget_init "$source_root"
+fixture_base_cap_sec=${HARNESS_SUPERVISION_FIXTURE_TIMEOUT_SEC:-12}
+[[ "$fixture_base_cap_sec" =~ ^[1-9][0-9]*$ && "$fixture_base_cap_sec" -le 60 ]] \
   || { echo "HARNESS_SUPERVISION_FIXTURE_TIMEOUT_SEC must be 1..60" >&2; exit 1; }
+fixture_ceiling_sec=$(harness_fixture_scaled_cap "$fixture_base_cap_sec")
 
 tmp=$(mktemp -d)
 owned_pids=()
@@ -22,24 +25,28 @@ process_identity_alive() { # pid, start
 }
 
 wait_until() { # name, shell predicate...
-  local name=$1 deadline=$((SECONDS + fixture_ceiling_sec))
+  local name=$1 started=$SECONDS deadline=$((SECONDS + fixture_ceiling_sec)) elapsed
   shift
-  echo "supervision fixture wait: $name (cap: ${fixture_ceiling_sec}s)" >&2
   until "$@"; do
-    (( SECONDS < deadline )) || { echo "supervision fixture timed out: $name" >&2; return 1; }
+    if (( SECONDS >= deadline )); then
+      elapsed=$((SECONDS - started))
+      echo "supervision fixture timed out: $name (elapsed: ${elapsed}s; scaled cap: ${fixture_ceiling_sec}s)" >&2
+      return 1
+    fi
     sleep 0.05
   done
 }
 
 stop_owned_pid() { # name, pid, start
-  local name=$1 pid=$2 start=$3 deadline
+  local name=$1 pid=$2 start=$3 started deadline elapsed
   process_identity_alive "$pid" "$start" || return 0
   kill -TERM "$pid" 2>/dev/null || true
+  started=$SECONDS
   deadline=$((SECONDS + fixture_ceiling_sec))
-  echo "supervision fixture wait: stop $name (cap: ${fixture_ceiling_sec}s)" >&2
   while process_identity_alive "$pid" "$start"; do
     if (( SECONDS >= deadline )); then
-      echo "supervision fixture stop timed out: $name pid=$pid" >&2
+      elapsed=$((SECONDS - started))
+      echo "supervision fixture stop timed out: $name pid=$pid (elapsed: ${elapsed}s; scaled cap: ${fixture_ceiling_sec}s)" >&2
       kill -KILL "$pid" 2>/dev/null || true
       return 1
     fi
@@ -50,7 +57,10 @@ stop_owned_pid() { # name, pid, start
 
 wait_for_child_exit() { # name, child pid
   local name=$1 pid=$2 result
-  wait_until "$name" bash -c '! kill -0 "$1" 2>/dev/null' _ "$pid"
+  if ! wait_until "$name" bash -c '! kill -0 "$1" 2>/dev/null' _ "$pid"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    return 124
+  fi
   # The child is already observed dead under the named ceiling above; this
   # wait only reaps its immediately available status.
   if wait "$pid"; then result=0; else result=$?; fi
@@ -335,15 +345,18 @@ done
 cat >"$repo/harness-fake-agent" <<'SH'
 #!/usr/bin/env bash
 HARNESS_FAKE_AGENT_ANCESTOR_PID=$$ "$1" --repo "$2"
+while [[ ! -e "$3" ]]; do sleep 0.05; done
 SH
 chmod +x "$repo/harness-fake-agent"
+infer_release=$tmp/inferred-agent.release
 HARNESS_SESSION_ID=inferred-session HARNESS_AGENT_RUNTIME=fake \
-  "$repo/harness-fake-agent" "$arm" "$repo" >"$tmp/inferred-arm.out" 2>&1 &
+  "$repo/harness-fake-agent" "$arm" "$repo" "$infer_release" >"$tmp/inferred-arm.out" 2>&1 &
 infer_driver=$!
 infer_driver_start=$(process_started_at "$infer_driver")
 owned_pids+=("$infer_driver:$infer_driver_start")
-wait_for_child_exit "S4-8 inferred arming" "$infer_driver"
 wait_until "S4-8 inferred announcement" bash -c 'compgen -G "$1/artifacts/agents/mains/inferred-session-*.json" >/dev/null' _ "$repo"
+touch "$infer_release"
+wait_for_child_exit "S4-8 inferred arming" "$infer_driver"
 grep -Eq '(^|[[:space:]])ARMED repo=' "$tmp/inferred-arm.out" \
   || { cat "$tmp/inferred-arm.out" >&2; exit 1; }
 

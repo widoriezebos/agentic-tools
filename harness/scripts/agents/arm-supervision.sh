@@ -33,6 +33,13 @@ agents=$harness_root/artifacts/agents
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+supervision_wait_cap() { # base seconds; fixture validation may export a scale
+  local base=$1 scale_milli=${HARNESS_FIXTURE_CAP_SCALE_MILLI:-1000}
+  [[ "$base" =~ ^[1-9][0-9]*$ && "$scale_milli" =~ ^[1-9][0-9]*$ ]] \
+    || die 2 "supervision wait cap inputs must be positive integers"
+  printf '%s\n' "$(( (base * scale_milli + 999) / 1000 ))"
+}
+
 resolve_repo() {
   local supplied=$1 top
   top=$(git -C "$supplied" rev-parse --show-toplevel 2>/dev/null) \
@@ -123,13 +130,16 @@ PY
 }
 
 stop_identity() { # name, pid, start, tag
-  local name=$1 pid=$2 start=$3 tag=$4 deadline
+  local name=$1 pid=$2 start=$3 tag=$4 cap started deadline elapsed
   identity_alive "$pid" "$start" "$tag" || return 0
   kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-  deadline=$((SECONDS + 5))
+  cap=$(supervision_wait_cap 5)
+  started=$SECONDS
+  deadline=$((SECONDS + cap))
   while identity_alive "$pid" "$start" "$tag"; do
     if (( SECONDS >= deadline )); then
-      echo "supervision stop ceiling reached: $name pid=$pid; sending KILL" >&2
+      elapsed=$((SECONDS - started))
+      echo "supervision stop ceiling reached: $name pid=$pid (elapsed: ${elapsed}s; scaled cap: ${cap}s); sending KILL" >&2
       kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
       return 1
     fi
@@ -153,12 +163,16 @@ PY
 }
 
 wait_for_start_identity() { # name, pid
-  local name=$1 pid=$2 deadline=$((SECONDS + 5)) value
+  local name=$1 pid=$2 cap started deadline elapsed value
+  cap=$(supervision_wait_cap 5)
+  started=$SECONDS
+  deadline=$((SECONDS + cap))
   while (( SECONDS < deadline )); do
     if value=$("$helper" started-at --pid "$pid" 2>/dev/null); then printf '%s\n' "$value"; return 0; fi
     sleep 0.02
   done
-  echo "supervision start identity ceiling reached: $name pid=$pid" >&2
+  elapsed=$((SECONDS - started))
+  echo "supervision start identity ceiling reached: $name pid=$pid (elapsed: ${elapsed}s; scaled cap: ${cap}s)" >&2
   return 1
 }
 
@@ -181,7 +195,7 @@ stop_recorded_components() {
 
 run_owner() {
   local repo= gate= owner_tag= interval supervision state lock owner watcher_pid watcher_start reaper_pid reaper_start
-  local watcher_tag reaper_tag generation=0 fingerprint component pid start tag stale
+  local watcher_tag reaper_tag generation=0 fingerprint component pid start tag stale gate_cap gate_started elapsed
   while (($#)); do
     case "$1" in
       --repo) repo=$2; shift 2 ;; --gate) gate=$2; shift 2 ;; --tag) owner_tag=$2; shift 2 ;;
@@ -195,9 +209,15 @@ run_owner() {
   owner=$lock/owner.json
   interval=$("$config" get --key watch.interval-sec --default 60)
   [[ "$interval" =~ ^[1-9][0-9]*$ ]] || exit 1
-  deadline=$((SECONDS + 10))
+  gate_cap=$(supervision_wait_cap 10)
+  gate_started=$SECONDS
+  deadline=$((SECONDS + gate_cap))
   while [[ ! -e "$gate" ]]; do
-    (( SECONDS < deadline )) || { echo "supervision owner start-gate ceiling reached" >&2; exit 1; }
+    if (( SECONDS >= deadline )); then
+      elapsed=$((SECONDS - gate_started))
+      echo "supervision owner start-gate ceiling reached (elapsed: ${elapsed}s; scaled cap: ${gate_cap}s)" >&2
+      exit 1
+    fi
     sleep 0.02
   done
   rm -f "$gate"
@@ -272,11 +292,12 @@ PY
 }
 
 verify_armed() { # repo, owner pid/start/tag
-  local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 supervision state last interval deadline component pid start tag heartbeat observed expected actual verdict completed
+  local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 supervision state last interval cap started deadline elapsed component pid start tag heartbeat observed expected actual verdict completed
   supervision=$agents/supervision; state=$supervision/state.json; last=$supervision/last-census.json
   interval=$("$config" get --key watch.interval-sec --default 60)
-  deadline=$((SECONDS + interval + 10))
-  echo "supervision arming wait: first complete census (cap: $((interval + 10))s)" >&2
+  cap=$(supervision_wait_cap "$((interval + 10))")
+  started=$SECONDS
+  deadline=$((SECONDS + cap))
   while (( SECONDS < deadline )); do
     if identity_alive "$owner_pid" "$owner_start" "$owner_tag" && [[ -f "$state" && -f "$last" ]]; then
       functions_live=1
@@ -299,12 +320,14 @@ verify_armed() { # repo, owner pid/start/tag
     fi
     sleep 0.05
   done
-  echo "arming did not verify watcher, reaper, and a fresh successful census" >&2
+  elapsed=$((SECONDS - started))
+  echo "supervision arming timed out: first complete census (elapsed: ${elapsed}s; scaled cap: ${cap}s): watcher, reaper, and a fresh successful census did not verify" >&2
   return 1
 }
 
 arm_repository() {
   local repo= session= pid= start= tag= runtime=${HARNESS_AGENT_RUNTIME:-} retire=0 shutdown=0 ancestor safe announcement
+  local owner_cap owner_started owner_deadline elapsed
   while (($#)); do
     case "$1" in
       --repo) [[ $# -ge 2 ]] || { usage; exit 2; }; repo=$2; shift 2 ;;
@@ -368,10 +391,14 @@ arm_repository() {
     # mkdir and owner.json cannot be one filesystem operation. Give the lock
     # winner a bounded publication window; an ownerless lock still refuses
     # because no process identity exists to prove dead.
-    owner_deadline=$((SECONDS + 5))
-    echo "supervision lock join wait: owner identity (cap: 5s)" >&2
+    owner_cap=$(supervision_wait_cap 5)
+    owner_started=$SECONDS
+    owner_deadline=$((SECONDS + owner_cap))
     while [[ ! -f "$owner_file" && $SECONDS -lt $owner_deadline ]]; do sleep 0.02; done
-    [[ -f "$owner_file" ]] || die 1 "supervision lock has no owner identity; refusing unproven takeover"
+    if [[ ! -f "$owner_file" ]]; then
+      elapsed=$((SECONDS - owner_started))
+      die 1 "supervision lock join timed out: owner identity (elapsed: ${elapsed}s; scaled cap: ${owner_cap}s); refusing unproven takeover"
+    fi
     owner_pid=$(json_field "$owner_file" pid) || die 1 "supervision lock owner is malformed"
     owner_start=$(json_field "$owner_file" pidStartedAt) || die 1 "supervision lock owner is malformed"
     existing_tag=$(json_field "$owner_file" instanceTag) || die 1 "supervision lock owner is malformed"

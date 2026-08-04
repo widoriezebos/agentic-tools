@@ -4,6 +4,9 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 
+source scripts/agents/fixture-budget.sh
+harness_fixture_budget_init "$root"
+
 scripts/audit-harness.sh .
 
 # Validate every skill present, including project-added and moved optional
@@ -75,6 +78,7 @@ for link in \
   scripts/agents/dispatch.sh \
   scripts/agents/arm-supervision.sh \
   scripts/agents/process-census.py \
+  scripts/agents/fixture-budget.sh \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-fixtures.sh \
   scripts/agents/mission-fixtures.sh \
@@ -94,7 +98,9 @@ for link in \
 done
 
 # Section 3.11 and retained watch-list round S4 have one bounded fixture suite.
-# It names S4-1 through S4-10 at their owning checks and contains no uncapped
+# Process-owning groups run serially and use separate temporary repositories,
+# so their supervisors and dispatch jobs cannot share lifecycle state. They
+# name S4-1 through S4-10 at their owning checks and contain no uncapped
 # process wait (IL-1).
 if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   scripts/agents/supervision-fixtures.sh
@@ -104,6 +110,7 @@ fi
 # Real runtime selftests spend model calls and remain manual acceptance steps.
 # Validation covers only their static adapter contract.
 bash -n scripts/agents/arm-supervision.sh
+bash -n scripts/agents/fixture-budget.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
@@ -785,14 +792,28 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   good_agent_conf="$agent_fixture/good-harness.conf"
   cp "$agent_repo/harness.conf" "$good_agent_conf"
 
-  agent_fixture_timeout_sec=${HARNESS_AGENT_FIXTURE_TIMEOUT_SEC:-20}
-  [[ "$agent_fixture_timeout_sec" =~ ^[1-9][0-9]*$ && "$agent_fixture_timeout_sec" -le 120 ]] \
+  # The compound adapter selftest gets a pristine repository and supervisor.
+  # It runs only after the main dispatch fixture set has shut down, so its
+  # dispatch/follow-up/cancel sequence cannot queue behind earlier fixture
+  # state or a concurrently active fixture supervisor.
+  agent_selftest_repo="$agent_fixture/selftest-repo"
+  agent_selftest_evidence="$agent_fixture/selftest-evidence"
+  cp -R "$agent_repo" "$agent_selftest_repo"
+  agent_selftest_repo=$(cd "$agent_selftest_repo" && pwd -P)
+  perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$agent_selftest_evidence"'|m' \
+    "$agent_selftest_repo/harness.conf"
+
+  agent_fixture_base_cap_sec=${HARNESS_AGENT_FIXTURE_TIMEOUT_SEC:-20}
+  [[ "$agent_fixture_base_cap_sec" =~ ^[1-9][0-9]*$ && "$agent_fixture_base_cap_sec" -le 120 ]] \
     || { echo "HARNESS_AGENT_FIXTURE_TIMEOUT_SEC must be an integer from 1 through 120" >&2; exit 1; }
+  agent_fixture_cap_sec=$(harness_fixture_scaled_cap "$agent_fixture_base_cap_sec")
+  agent_status_cap_sec=$(harness_fixture_scaled_cap 5)
+  agent_cleanup_cap_sec=$(harness_fixture_scaled_cap 7)
+  agent_driver_stop_cap_sec=$(harness_fixture_scaled_cap 2)
 
   wait_for_agent_census_fresh() { # fixture name
-    local name=$1 deadline=$((SECONDS + agent_fixture_timeout_sec)) expected
+    local name=$1 started=$SECONDS deadline=$((SECONDS + agent_fixture_cap_sec)) expected elapsed
     [[ -n "${agent_supervision_repo:-}" ]] || return 0
-    echo "agent fixture census wait: $name (cap: ${agent_fixture_timeout_sec}s)" >&2
     while (( SECONDS < deadline )); do
       expected=$("$agent_supervision_repo/scripts/agents/arm-supervision.sh" \
         fingerprint --repo "$agent_supervision_repo" 2>/dev/null || true)
@@ -808,7 +829,8 @@ PY
       then return 0; fi
       sleep 0.05
     done
-    echo "agent fixture timed out waiting for a fresh census: $name" >&2
+    elapsed=$((SECONDS - started))
+    echo "agent fixture timed out waiting for a fresh census: $name (elapsed: ${elapsed}s; scaled cap: ${agent_fixture_cap_sec}s)" >&2
     return 1
   }
 
@@ -824,9 +846,9 @@ PY
     printf '%s\n' -
   }
 
-  agent_fixture_diagnostics() { # fixture name, job id or -
-    local name=$1 job=$2 path
-    echo "agent fixture timed out after ${agent_fixture_timeout_sec}s: $name (job: $job)" >&2
+  agent_fixture_diagnostics() { # fixture name, job id or -, elapsed seconds
+    local name=$1 job=$2 elapsed=$3 path
+    echo "agent fixture timed out: $name (job: $job; elapsed: ${elapsed}s; scaled cap: ${agent_fixture_cap_sec}s)" >&2
     [[ "$job" != - ]] || return
     for path in \
       "$agent_repo/artifacts/agents/jobs/$job.json" \
@@ -843,19 +865,22 @@ PY
     done
   }
 
-  stop_timed_out_agent_fixture() { # fixture name, job id or -, driver pid
-    local name=$1 job=$2 driver_pid=$3 cleanup_pid cleanup_deadline driver_deadline status=
-    agent_fixture_diagnostics "$name" "$job"
+  stop_timed_out_agent_fixture() { # fixture name, job id or -, driver pid, wait start
+    local name=$1 job=$2 driver_pid=$3 wait_started=$4 cleanup_pid cleanup_started cleanup_deadline driver_started driver_deadline elapsed status=
+    elapsed=$((SECONDS - wait_started))
+    agent_fixture_diagnostics "$name" "$job" "$elapsed"
     if [[ "$job" != - && -f "$agent_repo/artifacts/agents/jobs/$job.json" ]]; then
       status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", "malformed"))' \
         "$agent_repo/artifacts/agents/jobs/$job.json" 2>/dev/null || true)
       if [[ "$status" == pending || "$status" == running ]]; then
         "$agent_dispatch" cancel --job "$job" >"$agent_fixture/$name-timeout-cancel.out" 2>&1 &
         cleanup_pid=$!
-        cleanup_deadline=$(( SECONDS + 7 ))
+        cleanup_started=$SECONDS
+        cleanup_deadline=$(( SECONDS + agent_cleanup_cap_sec ))
         while kill -0 "$cleanup_pid" 2>/dev/null && (( SECONDS < cleanup_deadline )); do sleep 0.05; done
         if kill -0 "$cleanup_pid" 2>/dev/null; then
-          echo "agent fixture cleanup timed out: $name cancel pid $cleanup_pid" >&2
+          elapsed=$((SECONDS - cleanup_started))
+          echo "agent fixture cleanup timed out: $name cancel pid $cleanup_pid (elapsed: ${elapsed}s; scaled cap: ${agent_cleanup_cap_sec}s)" >&2
           kill -TERM "$cleanup_pid" 2>/dev/null || true
           sleep 0.1
           kill -KILL "$cleanup_pid" 2>/dev/null || true
@@ -864,10 +889,12 @@ PY
     fi
     if kill -0 "$driver_pid" 2>/dev/null; then
       kill -TERM "$driver_pid" 2>/dev/null || true
-      driver_deadline=$(( SECONDS + 2 ))
+      driver_started=$SECONDS
+      driver_deadline=$(( SECONDS + agent_driver_stop_cap_sec ))
       while kill -0 "$driver_pid" 2>/dev/null && (( SECONDS < driver_deadline )); do sleep 0.05; done
       if kill -0 "$driver_pid" 2>/dev/null; then
-        echo "agent fixture driver survived TERM: $name pid $driver_pid; sending KILL" >&2
+        elapsed=$((SECONDS - driver_started))
+        echo "agent fixture driver stop timed out: $name pid $driver_pid (elapsed: ${elapsed}s; scaled cap: ${agent_driver_stop_cap_sec}s); sending KILL" >&2
         kill -KILL "$driver_pid" 2>/dev/null || true
       fi
     fi
@@ -875,10 +902,9 @@ PY
   }
 
   wait_for_agent_fixture_process() { # fixture name, job id or -, exact child pid
-    local name=$1 job=$2 child_pid=$3 deadline=$(( SECONDS + agent_fixture_timeout_sec )) result
-    echo "agent fixture wait: $name (job: $job; cap: ${agent_fixture_timeout_sec}s)" >&2
+    local name=$1 job=$2 child_pid=$3 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec )) result
     while kill -0 "$child_pid" 2>/dev/null; do
-      (( SECONDS < deadline )) || stop_timed_out_agent_fixture "$name" "$job" "$child_pid"
+      (( SECONDS < deadline )) || stop_timed_out_agent_fixture "$name" "$job" "$child_pid" "$started"
       sleep 0.05
     done
     if wait "$child_pid"; then result=0; else result=$?; fi
@@ -930,14 +956,14 @@ PY
   }
 
   wait_for_agent_status() { # job, expected
-    local job=$1 expected=$2 observed= i
-    echo "agent fixture status wait: $job -> $expected (cap: 5s)" >&2
-    for ((i=0; i<100; i++)); do
+    local job=$1 expected=$2 observed= started=$SECONDS deadline=$((SECONDS + agent_status_cap_sec)) elapsed
+    while (( SECONDS < deadline )); do
       observed=$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job "$job" 2>/dev/null || true)
       [[ "$observed" == "$expected" ]] && return 0
       sleep 0.05
     done
-    echo "agent fixture $job did not reach $expected (last status: ${observed:-missing})" >&2
+    elapsed=$((SECONDS - started))
+    echo "agent fixture status timed out: $job -> $expected (last status: ${observed:-missing}; elapsed: ${elapsed}s; scaled cap: ${agent_status_cap_sec}s)" >&2
     return 1
   }
 
@@ -1090,6 +1116,7 @@ PY
 
   pending_brief="$agent_fixture/pending.md"
   make_agent_brief "$pending_brief" design 'FAKE:no-session-signal'
+  wait_for_agent_census_fresh pending-chain
   (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_brief" --job-id pending-chain >/dev/null 2>&1) & pending_driver=$!
   wait_for_agent_status pending-chain pending
   pending_message="$agent_fixture/pending-follow.md"
@@ -1099,6 +1126,7 @@ PY
 
   pending_loss_brief="$agent_fixture/pending-loss.md"
   make_agent_brief "$pending_loss_brief" design 'FAKE:pending-process-loss'
+  wait_for_agent_census_fresh pending-loss
   (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_loss_brief" --job-id pending-loss >/dev/null 2>&1) & pending_loss_driver=$!
   wait_for_agent_status pending-loss pending
   run_agent_fixture pending-loss-reap pending-loss "$agent_dispatch" reap --job pending-loss
@@ -1174,6 +1202,7 @@ EOF
   timeout_brief="$agent_fixture/timeout.md"
   make_agent_brief "$timeout_brief" design 'FAKE:timeout'
   timeout_result="$agent_fixture/timeout.status"
+  wait_for_agent_census_fresh timed
   (
     set +e
     cd "$agent_repo"
@@ -1198,6 +1227,7 @@ PY
     || { echo "timeout terminal record lacks group-death proof" >&2; exit 1; }
 
   cancel_result="$agent_fixture/cancel.status"
+  wait_for_agent_census_fresh cancelled
   (
     set +e
     cd "$agent_repo"
@@ -1215,6 +1245,7 @@ PY
     || { echo "cancelled terminal record lacks group-death proof" >&2; exit 1; }
 
   vanished_result="$agent_fixture/vanished.status"
+  wait_for_agent_census_fresh vanished
   (
     set +e
     cd "$agent_repo"
@@ -1222,13 +1253,14 @@ PY
     printf '%s\n' "$?" >"$vanished_result"
   ) &
   vanished_driver=$!
-  echo "agent fixture file wait: vanished.waiting (job: vanished; cap: 5s)" >&2
-  for ((i=0; i<100; i++)); do
+  vanished_wait_started=$SECONDS
+  vanished_wait_deadline=$((SECONDS + agent_status_cap_sec))
+  while (( SECONDS < vanished_wait_deadline )); do
     [[ -f "$agent_repo/artifacts/agents/hb/vanished.waiting" ]] && break
     sleep 0.05
   done
   [[ -f "$agent_repo/artifacts/agents/hb/vanished.waiting" ]] \
-    || { echo "vanished wait fixture never entered the wait loop" >&2; exit 1; }
+    || { vanished_wait_elapsed=$((SECONDS - vanished_wait_started)); echo "agent fixture file wait timed out: vanished.waiting (job: vanished; elapsed: ${vanished_wait_elapsed}s; scaled cap: ${agent_status_cap_sec}s)" >&2; exit 1; }
   mv "$agent_repo/artifacts/agents/jobs/vanished.json" "$agent_fixture/vanished.json"
   wait_for_agent_fixture_process vanished-driver vanished "$vanished_driver"
   mv "$agent_fixture/vanished.json" "$agent_repo/artifacts/agents/jobs/vanished.json"
@@ -1321,6 +1353,7 @@ PY
   # A close racing a follow-up cannot land between its open check and child creation.
   run_agent_fixture close-race close-race "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id close-race --wait
   close_rc="$agent_fixture/close-race.close"; follow_rc="$agent_fixture/close-race.follow"
+  wait_for_agent_census_fresh close-race-follow
   (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh close --job close-race >/dev/null 2>&1; printf '%s\n' "$?" >"$close_rc") & close_pid=$!
   (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh follow-up --job close-race --message "$follow_message" >/dev/null 2>&1; printf '%s\n' "$?" >"$follow_rc") & follow_pid=$!
   wait_for_agent_fixture_process close-race-close close-race "$close_pid"
@@ -1526,6 +1559,7 @@ PY
 
   make_fence_mission mission-timeout 10 10 2 2
   mission_timeout_result="$agent_fixture/mission-timeout.status"
+  wait_for_agent_census_fresh mission-timeout-job
   (
     set +e
     cd "$agent_repo"
@@ -1580,10 +1614,26 @@ PY
   malformed_record_status=$?
   set -e
   [[ $malformed_record_status -eq 7 ]] || { echo "malformed status record mapped to $malformed_record_status instead of 7" >&2; exit 1; }
-  run_agent_fixture_captured fake-selftest - "$agent_fixture/fake-selftest.out" "$fake_adapter" selftest
+
+  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
+  agent_supervision_repo=
+  agent_selftest_process_fixture="$agent_fixture/selftest-processes.json"
+  agent_selftest_identity_fixture="$agent_fixture/selftest-process-identities.json"
+  printf '[]\n' >"$agent_selftest_process_fixture"
+  printf '{}\n' >"$agent_selftest_identity_fixture"
+  export HARNESS_CENSUS_PROCESS_FILE="$agent_selftest_process_fixture"
+  export HARNESS_FAKE_PROCESS_IDENTITY_FILE="$agent_selftest_identity_fixture"
+  agent_supervision_repo=$agent_selftest_repo
+  agent_selftest_main_start=$("$agent_selftest_repo/scripts/agents/process-census.py" started-at --pid "$$")
+  HARNESS_AGENT_RUNTIME=fake "$agent_selftest_repo/scripts/agents/arm-supervision.sh" \
+    --repo "$agent_selftest_repo" --session selftest-validator --pid "$$" \
+    --start-time "$agent_selftest_main_start" --tag harness-main-fake-selftest-validator \
+    >"$agent_fixture/selftest-arming.out"
+  fake_selftest_adapter="$agent_selftest_repo/scripts/agents/adapters/fake.sh"
+  run_agent_fixture_captured fake-selftest - "$agent_fixture/fake-selftest.out" "$fake_selftest_adapter" selftest
   grep -Fq 'full protocol sequence' "$agent_fixture/fake-selftest.out" \
     || { echo "fake adapter selftest did not run its full protocol sequence" >&2; exit 1; }
-  python3 - "$agent_repo/artifacts/agents/selftests" <<'PY'
+  python3 - "$agent_selftest_repo/artifacts/agents/selftests" <<'PY'
 import json, sys
 from pathlib import Path
 paths = list(Path(sys.argv[1]).glob("fake-selftest-*.json")); assert paths
@@ -1591,7 +1641,7 @@ value = json.loads(max(paths, key=lambda path: path.stat().st_mtime).read_text()
 assert "resume-identity" in value["provenBehaviorally"] and "network" in value["constructedOnly"]
 PY
 
-  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
+  "$agent_selftest_repo/scripts/agents/arm-supervision.sh" --repo "$agent_selftest_repo" --shutdown >/dev/null 2>&1
   agent_supervision_repo=
   unset HARNESS_CENSUS_PROCESS_FILE HARNESS_FAKE_PROCESS_IDENTITY_FILE
   export HARNESS_SKIP_AGENT_FIXTURES=1

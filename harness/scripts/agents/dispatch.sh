@@ -45,6 +45,13 @@ valid_id() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 sha256_file() { shasum -a 256 "$1" | awk '{print $1}'; }
 
+dispatch_fixture_wait_cap() { # base seconds; normal dispatch remains 1x
+  local base=$1 scale_milli=${HARNESS_FIXTURE_CAP_SCALE_MILLI:-1000}
+  [[ "$base" =~ ^[1-9][0-9]*$ && "$scale_milli" =~ ^[1-9][0-9]*$ ]] \
+    || die 2 "dispatch wait cap inputs must be positive integers"
+  printf '%s\n' "$(( (base * scale_milli + 999) / 1000 ))"
+}
+
 require_fresh_census() {
   local verdict="$agents/supervision/last-census.json" expected
   [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
@@ -382,10 +389,14 @@ PY
 }
 
 acquire_lifecycle_lock_until() { # job id, maximum wait seconds
-  local job=$1 maximum=$2 deadline=$(( SECONDS + $2 ))
+  local job=$1 base=$2 maximum started deadline elapsed
+  maximum=$(dispatch_fixture_wait_cap "$base")
+  started=$SECONDS
+  deadline=$(( SECONDS + maximum ))
   while ! acquire_lifecycle_lock "$job"; do
     if (( SECONDS >= deadline )); then
-      echo "timed out acquiring lifecycle lock for $job after ${maximum}s" >&2
+      elapsed=$((SECONDS - started))
+      echo "timed out acquiring lifecycle lock for $job (elapsed: ${elapsed}s; scaled cap: ${maximum}s)" >&2
       return 1
     fi
     sleep 0.05
@@ -681,7 +692,7 @@ write_prompt() { # path job role runtime model round mission content
 }
 
 launch_adapter() { # runtime verb job tag
-  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch deadline
+  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed
   mkdir -p "$heartbeats"
   python3 - "$root" "$adapter" "$verb" "$job" "$gate" "$tag" >/dev/null 2>&1 <<'PY' &
 import os, sys
@@ -691,9 +702,15 @@ os.setsid()
 os.execv(adapter, [adapter, verb, "--job", job, "--start-gate", gate, "--instance-tag", tag])
 PY
   pid=$!
-  deadline=$((SECONDS + 5))
+  cap=$(dispatch_fixture_wait_cap 5)
+  started=$SECONDS
+  deadline=$((SECONDS + cap))
   until pid_started=$("$process_census" started-at --pid "$pid" 2>/dev/null); do
-    (( SECONDS < deadline )) || { echo "adapter start identity ceiling reached for $job" >&2; return 1; }
+    if (( SECONDS >= deadline )); then
+      elapsed=$((SECONDS - started))
+      echo "adapter start identity ceiling reached for $job (elapsed: ${elapsed}s; scaled cap: ${cap}s)" >&2
+      return 1
+    fi
     sleep 0.02
   done
   patch=$(mktemp "$record_locks/launch.XXXXXX")
