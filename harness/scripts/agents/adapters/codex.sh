@@ -186,7 +186,13 @@ supervise() { # dispatch|follow-up and supervisor args
     )
   fi
 
-  "${command[@]}" <"$prompt" >"$events" 2>>"$log" &
+  # The write boundary is the CLI's cwd. `codex exec` takes -C, but
+  # `codex exec resume` has no such flag, so a resumed turn would otherwise
+  # inherit the adapter's cwd (the harness root) and be free to write the whole
+  # repository while the record still claimed the job worktree. Entering the
+  # workspace makes the recorded boundary true on both paths. `exec` keeps the
+  # pid, which custody registration depends on.
+  ( cd "$workspace" && exec "${command[@]}" ) <"$prompt" >"$events" 2>>"$log" &
   cli_pid=$!
   register_cli_custody "$cli_pid" || { terminate_cli_child "$cli_pid"; fail_pending custody_registration handshake; return 1; }
   while kill -0 "$cli_pid" 2>/dev/null; do
