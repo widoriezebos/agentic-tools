@@ -645,71 +645,61 @@ The report's what-not-to-copy list is confirmed in full and already matched the 
 
 Two answered decisions were amended by the report and the amendments are recorded in their entries: D5's fence mechanism (typed telemetry and lifecycle fences replace the single token sum) and D6's shape (envelope replaces the binary flag, defaults unchanged).
 
-## Part 9: Hardened Mode (added 2026-08-04; rewritten after critique round H; the baseline in Parts 3 and 6 is unchanged)
+## Part 9: Hardened Mode (third form, after critique rounds H and H2, 2026-08-04; the baseline in Parts 3 and 6 is unchanged)
 
-Round H's blocker exposed the design's central error: it bootstrapped trust from inside the repository an attacker is assumed to control, and it modelled the steered delegate while leaving the higher-privilege orchestrator and the extension paths that execute before any harness code outside the boundary. The rewrite starts from a root of trust the repository cannot rewrite, and treats every in-repository artifact as untrusted input to verification rather than as evidence.
+Two rounds killed two versions of the same mistake. Round H: trust bootstrapped from inside the repository the attacker controls. Round H2: the *activation* and the *pointer to the trust root* were themselves attacker-controlled, so the attacker simply declines to be checked. The correction is architectural rather than another layer of files.
+
+**A same-user local agent cannot be locally contained.** An agent that runs as the operator's user, with a shell, can read and write anything that user can, including any configuration selecting whether it is checked, any environment variable naming a trust root, and any binary that would do the checking. No arrangement of files inside that privilege domain fixes this; every previous draft was an elaborate way of not saying it. Hardened mode therefore rests on one structural claim, and everything else in this part serves it:
+
+> **Enforcement lives in a privilege domain the agents do not occupy. Inside the agent's domain, hardened mode buys tamper-evidence and containment of mistakes, never tamper-prevention.**
 
 ### 9.1 Threat model, in privilege order
 
-1. **The steered orchestrator.** The highest-privilege agent: it certifies, merges, writes repository state, and dispatches. Steering it by poisoned content is the worst realistic case and outranks the delegate case (H-1). It is contained by the same means as a delegate plus one more: certification and merge become reviewable artifacts (below), not trusted acts.
-2. **The steered delegate.** Reads untrusted content and follows it. Contained by envelope, isolation, and prompt hygiene.
-3. **The tampered artifact.** Contract, gate, truth, roster, records, ledger, snapshots, or the harness's own executables. Contained by verification against the external root, never by comparing repository files to other repository files.
-4. **The extension execution path.** MCP servers, session hooks, git hooks, and adapter binaries execute before or around harness logic and are therefore prior to it in the trust order (H-4, H-5, H-6).
-5. **The compromised runtime or supply chain.** Mitigated only by pinning and evidence; stated as largely out of reach.
+1. **The steered orchestrator**, highest authority: certifies, merges, dispatches, writes repository state.
+2. **The steered delegate**, contained by envelope and worktree.
+3. **The tampered artifact**, including the harness's own executables and any file that selects whether checking happens.
+4. **The extension execution path**: MCP servers, session and git hooks, adapter binaries, all executing before or around harness logic.
+5. **The compromised runtime or supply chain**, out of local reach.
 
-Out of scope permanently: root on the machine, possession of the human's signing key, or control of the provider account.
+Out of scope permanently: root, the human's signing key, the provider account, and, newly explicit, **any expectation that a same-user agent can be prevented rather than detected** (H2-1, H2-2, H2-3).
 
-### 9.2 The root of trust lives outside the repository (H-8, H-9, H-11, H-18)
+### 9.2 The two enforcement domains
 
-Nothing in the working tree may authorize itself. Hardened mode reads its trust anchors from `HARNESS_TRUST_ROOT`, a directory outside the repository and outside every build tree, provided by the operator and never written by the harness:
+- **The verifier domain**, where enforcement is real. Three deployments, in ascending order of assurance, and a project picks one: (a) **CI**, the default recommendation, where a workflow the agents cannot modify re-verifies every push against the trust root; (b) **a separate OS user or container** running the verifier and holding the trust root, with the agent user granted read-only access to what it must read and no access to the trust root; (c) **a remote attestation service**. In every deployment the mode itself is declared in the verifier domain, never in `harness.conf` (H2-1), and the trust root is located by the verifier's own configuration, never by an environment variable the agent can set (H2-2). The agent-side `security.mode` key is removed from the design; a repository does not get to say whether it is checked.
+- **The agent domain**, where the harness runs. Here hardened mode does what it honestly can: constructs least-privilege envelopes, keeps evidence, refuses when its own preconditions are visibly unmet, and reports. A local check that an attacker could disable is retained only where it catches mistakes, and is never counted as a control against the steered-agent threat (H2-14, H2-28: local hook emptying and local binary verification are mistake-catchers, subject to check/use races, and labelled as such).
 
-- `approvers.pub`: the allowlist of signing key fingerprints. The repository cannot declare who may approve it (H-9).
-- `expected-head`: the last verified state head hash and mission id, updated by the runner only after a successful verification, so a whole-chain rewrite is detected because the prior head is remembered outside the chain (H-8).
-- `manifest.sig`: the signed manifest covering the harness's own enforcing executables (dispatcher, runner, census, checkers, adapters, permission presets) as well as the gate implementation, reference truth, conf, and roster (H-11). Verification runs from the trust root's copy of the verifier, not the repository's.
-- `pins`: adapter CLI versions with their executable hashes, checked before any dispatch (H-28).
-- Capability snapshots are re-derived at preflight rather than read from `artifacts/`, because a snapshot on the writable surface is an attacker's input, not evidence (H-18).
+### 9.3 What the verifier domain verifies
 
-Hardened mode without a readable, well-formed trust root refuses to start. This is the honest form of fail-closed: the mode's own preconditions cannot be satisfied by the thing it is protecting against.
+Per push, and per turn where the deployment supports it, from the trust root it alone can read:
 
-### 9.3 Extension paths are inventoried and gated (H-4, H-5, H-6)
+- Signed head continuity per mission, keyed by mission id, so concurrent missions each carry their own expected head and a whole-chain rewrite is caught against a head the agent domain never held (H2-4, H2-5, H2-6: the head advances only after the verifier accepts the cycle, and a crash between ledger write and acceptance is resolved by ledger-as-truth replay).
+- A signed manifest covering everything policy-bearing: the harness's enforcing executables, prompts, role preambles, templates, schemas, permission presets and minimums, requirement files, hook configurations, and the gate and truth paths (H2-7, H2-27).
+- Approver fingerprints, pins with executable hashes, and the MCP allowlist, all provisioned and rotated through a documented protocol signed by an existing approver, with a first-provisioning ceremony the human performs out of band (H2-8, H2-29, H2-15).
+- Capability and inventory facts re-derived by the verifier rather than read from agent-writable artifacts, with each verification recorded durably so job records can reference a verification id rather than carrying re-probed claims (H2-20, H2-21, H2-32, H2-16).
+- The journal, appended through the verifier domain's own writer service so an agent-domain process cannot rewrite history it has already emitted (H2-17, H2-18).
 
-- **MCP**: `security.mcp.allow` in the trust root lists permitted servers by name and executable hash; preflight inventories configured servers and refuses on any unlisted or hash-mismatched entry. Delegates run with MCP disabled unless their role's requirements name a listed server.
-- **Session and harness hooks**: hook configuration files and hook scripts join the signed manifest; preflight verifies them before arming, since a modified hook executes before any dispatch control.
-- **Git hooks**: hardened operations run with `core.hooksPath` pointed at an empty directory inside the trust root, so repository-local hooks cannot execute during signing, committing, or verification.
+### 9.4 What the agent domain still does
 
-### 9.4 Containment and the enforcement points that survive tampering
+- **Envelopes with deny subpaths**, minimums in `permissions/minimums.json` with a defined ordering relation, and the honest note that an adapter which cannot express a deny subpath must refuse the dispatch rather than approximate it (H2-31).
+- **Network as a policy object** with canonical matching semantics defined for scheme, host, port, subdomain, and IP literal, and a stated inability to control post-resolution behavior (H2-30).
+- **Allowlist-constructed child environments**, with argv redaction limited to what a token-based rule can safely rewrite and the residual disclosure risk stated rather than assumed away (H2-19).
+- **The orchestrator gets an envelope too** (H2-11): its repository write authority excludes the control plane, `plans/`, conf, roster, and the gate and truth paths, enforced by the same conformance check delegates face, so its greater authority is bounded by something other than instructions.
+- **Certification and merge become artifacts** (H2-12): a certification record naming the exact diff hash it certifies, and a merge request the human approves by signing that hash, so approval binds to bytes rather than to a claim.
+- **`suspect` is a harness-set flag, never an agent-set field** (H2-22): the scanner runs in the harness, writes the flag on the job record, and the orchestrator's certification must state how it was handled.
+- **`awaiting-merge-review`** joins the stream state enum with its unpark transition on a signed approval (H2-24).
+- **Cooperative mode is separate by construction** (H2-23): hardened envelopes, minimums, and role requirements are distinct files selected by the verifier-declared mode, so no cooperative default is altered by their existence.
 
-- **Envelopes gain deny subpaths** (H-20): a write root may carry an exclusion list, and hardened role minimums exclude `plans/`, `harness.conf`, the roster, and the control plane by construction. The envelope schema, its role minimums, and their ordering relation ship as `scripts/agents/permissions/minimums.json` so "exceeds the minimum" is computable (H-19).
-- **Network is a policy object, not a scalar** (H-15): `{mode: deny|allowlist|full, hosts: [...]}`, with each adapter declaring in its contract how it maps the object and refusing the dispatch when it cannot express the policy. Adapter signature strings identify a runtime; they never imply sandbox capability, and the capability that matters is proven by the adapter's self-test, not asserted (H-17).
-- **Secrets**: patterns come from the trust root, the dispatcher constructs the child environment as an allowlist rather than scrubbing an inherited one, and a required variable matching a secret pattern fails the dispatch (H-16).
-- **Payload integrity** (H-12): prompt and return hashes are written to the trust root's append-only journal at the moment of use, not beside the payload, so altering both is not a local operation.
+### 9.5 What hardened mode does not give you
 
-### 9.5 Prompt hygiene, honestly bounded (H-13)
-
-Nonce fencing, provenance labels, and imperative scanning of returns reduce the chance that quoted text is read as instruction; they do not constrain what a delegate reads or executes, and the design says so. The controls that actually contain a steered agent are the envelope, the worktree, egress policy, and review. Scanning marks a return `suspect`: a boolean field in the return schema, a `suspect` note on the job record, checker exit code 8, an audit event, and an orchestrator obligation to review it as data with the flag stated in its certification (H-14). Provenance labels are a defined prefix line inside each fenced block, part of the shipped template rather than prose.
-
-### 9.6 Detection, response, and evidence (H-23, H-24, H-25, H-26)
-
-- **The journal is external and append-only**: one writer, the trust root's journal file opened in append mode with an advisory lock, each line carrying a hash of the previous line. Repository-side `audit.log` remains a convenience copy with no authority.
-- **Argv is redacted before it is durable** (H-24): the census records process identity and a redacted argv, applying the secret patterns, because durable evidence must not become the leak.
-- **The latch is global and persists** (H-25): an integrity failure writes a latch file in the trust root; `dispatch.sh` refuses while it exists, whether or not a mission or runner is alive, and only a human clears it after review.
-- **Preservation works for any artifact** (H-26): a preserve operation copies an arbitrary path set to the durable evidence root with hashes, independent of job terminality, and runs before the latch is announced.
-- **Verification is continuous, not adoption-time** (H-27): every dispatch and every turn re-verifies the manifest, the pins, the trust-root readability, and the envelope minimums. Adoption-time checking was the false-confidence failure the baseline already suffered once.
-
-### 9.7 Cooperative mode is untouched (H-21, H-22)
-
-Every rule in this part is conditional on `security.mode=hardened`; no conformance guard, no schema field, and no refusal introduced here applies in cooperative mode, and the shipped default remains cooperative. Where hardened mode adds a human step, it declares its own unsupervised behavior: mandatory pre-merge review means a hardened mission parks the stream with `awaiting-merge-review` rather than blocking the loop (H-22), and the human's answer resumes it.
-
-### 9.8 What hardened mode still does not give you
-
-- An agent acting inside its envelope can still produce harmful work that looks ordinary; only review catches that.
+- Nothing prevents a same-user agent from acting inside its OS privileges; the guarantee is that acting outside its declared envelope becomes visible in a domain it cannot edit.
 - Signatures prove a key was used, never who used it.
-- Detection is bounded by cadence and by what the census can enumerate.
-- A compromised model endpoint defeats everything downstream; pins and the journal serve the post-mortem, not prevention.
+- Detection is bounded by verification cadence; between verifications the agent domain is on its own evidence.
+- Check/use races are real: verifying a binary and then executing it is not atomic locally, and only the verifier domain's independent re-verification closes the loop after the fact.
+- A compromised model endpoint or CLI defeats everything downstream of it.
 
-### 9.9 Delivery (H-2, H-3)
+### 9.6 Delivery
 
-Part 9 is work item 24, sequenced after the mission layer proves itself (item 18's rehearsal), because hardening an unproven loop is premature. Its obligation is ORCH-23: hardened mode verifies every trust decision against the external root, refuses when its preconditions are unmet at any dispatch rather than only at adoption, and leaves cooperative mode byte-identical in behavior. Activation is all-or-nothing (H-3): `security.mode` selects the tier; individual controls are not separately switchable, since the tier's guarantees depend on their combination. The two controls worth having without the tier, nonce fencing and provenance labels, are instead proposed as baseline improvements through the normal change gate rather than as hardened-mode fragments.
+Item 24, after item 18's rehearsal, under ORCH-23 restated: **hardened mode places mode selection, trust-root location, and verification in a domain the agents do not occupy; the agent domain contributes containment and evidence only; and cooperative mode is untouched.** Acceptance requires the CI deployment working end to end against a repository whose agent domain has been deliberately tampered with, plus the cooperative no-op proof. Sections 9.1 and 9.5 are non-deferrable prose and must be correct before implementation; the remaining specification detail may become failing tests.
 
 ## Decisions, All Answered
 
@@ -798,7 +788,7 @@ Run `scripts/assert-design-obligation-gate.sh --file plans/agent-orchestration-d
 | ORCH-19 | CRITICAL | Report R1 | Mission progress never depends on a host session waking up: the deterministic mission runner owns waiting, timeouts, state transitions, and starting each next orchestrator turn through a host adapter, with hooks as acceleration and polling as correctness | `scripts/agents/mission-runner.sh` | the runner and the per-runtime host adapters | runner fixtures through the fake adapter, including a hook-unavailable run | The three host-cycle smoke tests (item 22) and the rehearsal (item 18) | PARTIAL | Items 20 and 22 |
 | ORCH-20 | HIGH | Report R6 | Capabilities are probed into persisted machine-readable snapshots; roles declare required and optional capabilities; missing required fails closed, missing optional takes its declared fallback | `scripts/agents/adapters/` | `probe` snapshot writing and the role capability declarations | snapshot fixtures, a fail-closed fixture, and one fallback fixture per optional capability | Real snapshots recorded by each adapter self-test | PARTIAL | Items 3, 5, 6 |
 | ORCH-21 | HIGH | Critique round 11 | Every watch-list finding in `plans/agent-orchestration-watchlist.md` is converted into a failing test before the feature it touches is called done, and a watch-list area that implementation proves under-designed reopens the critique loop from the retained round | `plans/agent-orchestration-watchlist.md` | the retained round and the fixtures it seeds | one fixture per watch-list finding, tracked against the retained ids | The rehearsal (item 18) runs with every watch-list fixture green | PARTIAL | Phase 5, alongside each touched item |
-| ORCH-23 | HIGH | Part 9 | Hardened mode verifies every trust decision against an external root the repository cannot rewrite, re-verifies at every dispatch and turn rather than at adoption, gates the extension execution paths, and leaves cooperative mode behaviorally identical | `HARNESS_TRUST_ROOT` contract in Part 9 | trust-root verification in `dispatch.sh` and `mission-runner.sh` | fixtures per 9.2 to 9.7 including a tampered manifest, a rewritten chain caught by the external head, an unlisted MCP server, and a cooperative-mode no-op proof | The rehearsal repeated in hardened mode after item 18 | PARTIAL | Item 24 |
+| ORCH-23 | HIGH | Part 9 | Mode selection, trust-root location, and verification live in a privilege domain the agents do not occupy; the agent domain contributes containment and evidence only; cooperative mode is untouched | the verifier deployment contract in Part 9 | the CI verifier workflow plus agent-domain envelope and evidence code | verifier fixtures over a deliberately tampered agent domain, plus the cooperative no-op proof | The CI deployment verifying a tampered repository end to end, after item 18 | PARTIAL | Item 24 |
 | ORCH-22 | CRITICAL | IL-4, IL-4b, section 3.11 | Every agent-shaped process in repository scope appears in every census within one interval, classified CUSTODY, ANNOUNCED, or UNTRACKED; custody joins on pid, process start time, and tag; dispatch refuses without a fresh successful census verdict; legitimacy adjudication is explicitly not claimed | `scripts/agents/arm-supervision.sh` | the arming script, the census in the watcher, the announcement registry, the per-runtime hook configurations | the 3.11 fixture set including both incident replays, stale-custody rejection, scope inclusion and exclusion, and the three dispatch refusals | Both incident replays on each runtime the machine can host | PARTIAL | Item 23, after the S round that closes |
 
 ## Critique Ledger
