@@ -1129,10 +1129,21 @@ PY
   wait_for_agent_census_fresh pending-loss
   (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh dispatch --role design-critic --brief "$pending_loss_brief" --job-id pending-loss >/dev/null 2>&1) & pending_loss_driver=$!
   wait_for_agent_status pending-loss pending
-  run_agent_fixture pending-loss-reap pending-loss "$agent_dispatch" reap --job pending-loss
+  # The supervisor is dying while this runs, so a single sweep can legitimately
+  # land before the kill and observe a live match. The standing reaper sweeps on
+  # an interval, so sweeping until the transition or a scaled ceiling is the
+  # faithful check; the assertion itself is unchanged.
+  pending_loss_started=$SECONDS
+  pending_loss_deadline=$((SECONDS + agent_status_cap_sec))
+  until grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/pending-loss.json"; do
+    if (( SECONDS >= pending_loss_deadline )); then
+      echo "dead pending supervisor did not transition through reap (elapsed: $((SECONDS - pending_loss_started))s; scaled cap: ${agent_status_cap_sec}s)" >&2
+      exit 1
+    fi
+    run_agent_fixture pending-loss-reap pending-loss "$agent_dispatch" reap --job pending-loss
+    sleep 0.1
+  done
   wait_for_agent_fixture_process pending-loss-driver pending-loss "$pending_loss_driver" || true
-  grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/pending-loss.json" \
-    || { echo "dead pending supervisor did not transition through reap" >&2; exit 1; }
 
   malformed_brief="$agent_fixture/malformed-return.md"
   make_agent_brief "$malformed_brief" design 'FAKE:malformed-return'
