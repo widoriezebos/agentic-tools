@@ -2305,7 +2305,21 @@ fi
 if (( template_mode )); then
   adopted="$tmp/adopted"
   mkdir -p "$adopted"
-  cp -R "$root/." "$adopted"
+copy_tree_without_artifacts() { # source root, destination
+  # Only for copies whose source is the live harness root: artifacts/ is
+  # runtime state, not shipped content, and copying it races
+  # with any job writing lock directories, and an adoption fixture has no use
+  # for it. Excluding it makes the suite safe to run while work is in flight.
+  local from=$1 to=$2 entry
+  mkdir -p "$to"
+  (cd "$from" && for entry in * .[!.]*; do
+    [[ -e "$entry" ]] || continue
+    [[ "$entry" == artifacts ]] && continue
+    cp -R "$entry" "$to/"
+  done)
+}
+
+  copy_tree_without_artifacts "$root" "$adopted"
   rm -rf "$adopted/meta" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
   sed 's/<[^>]*>/filled/g' "$adopted/docs/project-rules.md" >"$adopted/docs/project-rules.md.new"
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
@@ -2335,7 +2349,7 @@ fi
 if (( template_mode )); then
   srcrepo="$tmp/adopt-src"
   mkdir -p "$srcrepo"
-  cp -R "$root/." "$srcrepo"
+  copy_tree_without_artifacts "$root" "$srcrepo"
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
   echo junk >"$srcrepo/ignored-fixture.txt"
   git init -q "$srcrepo"
