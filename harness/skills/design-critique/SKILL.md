@@ -35,6 +35,8 @@ A round is closed only when every material finding carries a disposition — and
 
 The mechanical form uses the canonical `findings` array in the critic's `return.json` and a Markdown dispositions table headed `| Finding id | Disposition | Reasoning and evidence | Amendment |`; run `scripts/assert-critique-closed.sh --findings <return.json> --dispositions <file>` to perform the join.
 
+When a round's findings are retained or carried elsewhere (a watch-list, a later round's brief), count the retained findings against the round's own verdict number before calling the round closed. A retention that silently drops findings reads exactly like a complete one, which is the same failure the join above prevents; it has happened twice in this repository's own loops.
+
 Refutations carry the same burden of proof as the findings they answer. Record the evidence literally: the exact string searched and what it returned, not a summary of the conclusion. Both directions fail in practice — a finding can be wrong on the facts, and a refutation can be wrong because it checked the wrong string.
 
 ## Fix the Generating Cause Once
