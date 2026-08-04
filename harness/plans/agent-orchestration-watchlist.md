@@ -213,3 +213,85 @@ Evidence: The proposed manifest is `{id, source, section}` and requires exact na
 
 P3-22 — high — material: yes — The ledger serialization is internally inconsistent because collections are one record per line while each ledger cycle is defined as its heading plus a separate classification line, and the delta’s encoding in that line is unspecified.  
 Evidence: The one-line-record rule applies to ledger cycles ([agent-orchestration-design.md:566](/Users/wido/LocalStorage/GitHub/agentic-tools/harness/plans/agent-orchestration-design.md:566)), but the bounds paragraph requires two source lines per cycle and an added measured delta ([agent-orchestration-design.md:576](/Users/wido/LocalStorage/GitHub/agentic-tools/harness/plans/agent-orchestration-design.md:576)); the enforcement script recognizes only the classification prefix and vocabulary ([assert-stop-loss.sh:41](/Users/wido/LocalStorage/GitHub/agentic-tools/harness/scripts/assert-stop-loss.sh:41)).
+
+## Triage (CC-4, 2026-08-04)
+
+Every retained finding classified by a Codex investigator (`investigator-20260804t123608z-ac09`, gpt-5.6-sol) and adjudicated by the orchestrator. This is also the overdue pass section 6.2b promised, where entries answered by later design work are finally marked.
+
+Verdicts: `decide-now` 31 (a designer decision an implementer cannot derive; blocks its item), `test-later` 6 (the design determines the answer, the proof is missing; an ORCH-21 failing-test obligation), `already-resolved` 28 (later design or shipped code answered it; no longer tracked).
+
+Adjudication, three points where the orchestrator's reading matters more than the count:
+
+1. **The pile was 43 percent stale.** Twenty-eight findings had already been answered by 6.2b, the proportionality ruling, the container ruling, or shipped scripts. Retaining them undifferentiated is what made the pile unusable, and the count is the evidence for IL-5's discipline rather than an argument against retention.
+2. **All ten supervision findings closed as fixtures.** S4-1 through S4-10 are already fixture names in `scripts/agents/supervision-fixtures.sh`, so item 23 converted them exactly as ORCH-21 requires. Verified by spot-check on S4-2 (`custodyProcesses` in `dispatch.sh`).
+3. **Item 20 carries 38 of the 65 and most of the decisions.** That is not a blocker for Mission Zero: D-CC1 deliberately scopes the minimal runner to one honest cycle and leaves item 20's remaining scope to be decided by Mission Zero's evidence. Many of these decisions are expected to collapse once a mission has actually run, so they are answered after that evidence exists, not before. Only decisions the minimal runner itself needs are answered up front.
+
+Spot-checks performed against the tree rather than accepting the return: C11-14 and C11-16 (`mission-ledger.py` accepts all six classifications), C11-33 (`docs/project-rules.md:57` ships the category table, enforced at `mission-contract.py:164`), S4-2.
+
+| Id | Verdict | Item | Reason |
+| --- | --- | --- | --- |
+| C11-1 | decide-now | 20 | Sections 3.4 and 6.2 still conflict on whether the runner heartbeat is visible to the watcher, so item 20 lacks a canonical placement. |
+| C11-2 | test-later | 20 | Section 3.3 already requires owned process-group death before a terminal write; item 20 needs the equivalent capped-host fixture. |
+| C11-3 | decide-now | 20 | No authority defines a pre-spawn durable turn intent or a child-release handshake, so orphan-safe launch ordering is a protocol decision. |
+| C11-4 | already-resolved | 20 | Section 6.2a replaces the four-field channel with returnPath and an enumerated orchestrator return carrying dispatch, certification, stream, ask, ledger, gap, and identity data. |
+| C11-5 | decide-now | 20 | Verified host start still lacks its signal, grace window, and refusal transition; those lifecycle semantics cannot be inferred from delegate startup. |
+| C11-6 | decide-now | 20 | turnId generation, lock scope, and collision refusal remain unspecified for the item-20 evidence namespace. |
+| C11-7 | already-resolved | 20 | Section 6.2 specifies lease.json, atomic lease.d acquisition, process-liveness ownership, and proven-dead takeover. |
+| C11-8 | decide-now | 20 | Resume preflight and re-arming plus ownership of the promised restart asset remain absent, so item 20 has no restart protocol. |
+| C11-9 | decide-now | 15 | The shipped hard fences do not define a warning-threshold source or safe-point transition during a host turn, leaving item 15 a policy choice. |
+| C11-10 | already-resolved | 13 | Section 6.2b pins candidate.branch, and scripts/agents/mission-contract.py seals the branch and resolved SHA. |
+| C11-11 | decide-now | 20 | The runner still has no review-and-integration step between terminal delegate jobs and candidate measurement. |
+| C11-12 | decide-now | 20 | The design does not choose whether candidate edits to gate.paths or truth.paths are forbidden, parked, or allowed but ignored. |
+| C11-13 | already-resolved | 13 | Section 6.2b defines the conservative failure-count fallback, implemented by scripts/agents/mission-contract.py. |
+| C11-14 | already-resolved | 13 | Section 6.2b defines metric=<name>=<value>, implemented by scripts/agents/mission-contract.py. |
+| C11-15 | decide-now | 20 | Delta reference, mixed-metric aggregation, and direction across a threshold vector remain undefined for runner classification. |
+| C11-16 | already-resolved | 16 | scripts/agents/mission-ledger.py accepts all six take-a-step-back classifications, including invalid-run and falsified-dead-end. |
+| C11-17 | test-later | 20 | The named take-a-step-back contract already requires both a ruled-out theory and a viable new owner or mechanism; item 20 lacks the acceptance test. |
+| C11-18 | already-resolved | 16 | Section 6.2b makes stop-loss mission-wide, and scripts/agents/mission-state.py reserves stream parked-stop-loss for a human answer. |
+| C11-19 | decide-now | 20 | No component or machine predicate owns active-to-done, so item 20 cannot safely apply that transition. |
+| C11-20 | already-resolved | 20 | The proportionality ruling and section 6.2b replace pushed-history integrity with local bookkeeping and ledger-as-truth recovery; scripts/agents/mission-state.py implements the owner. |
+| C11-21 | already-resolved | 20 | Section 6.2b defines ledger-first recovery and state-integrity parking, implemented by scripts/agents/mission-state.py reconciliation and anchor checks. |
+| C11-22 | already-resolved | 13 | Section 6.2b defines approval canonicalization and seal-after-pricing, implemented by scripts/agents/mission-contract.py. |
+| C11-23 | already-resolved | 14 | The Part 6 proportionality ruling explicitly drops origin identity verification; docs/orchestration.md limits approval to byte attestation. |
+| C11-24 | test-later | 20 | The proportionality ruling retains accidental drift detection and Part 6.4 requires instructions, conf, roster, and contract drift parking; item 20 needs the per-turn proof. |
+| C11-25 | already-resolved | 14 | Part 9 assigns filesystem, network, environment, credential, and resource isolation to the operator container or VM; gate.paths remains the repository instrument manifest. |
+| C11-26 | decide-now | 18 | The exact durable mission proof bundle and its retention cadence are still not enumerated, so item 18 cannot decide what must survive. |
+| C11-27 | already-resolved | 18 | ORCH-18 and Work Item 18 state the two-stage rule: adopt from the template checkout, then operate from the adopted payload alone. |
+| C11-28 | test-later | 18 | ORCH-16 already requires an injected no-progress park; item 18 is missing that rehearsal proof. |
+| C11-29 | decide-now | 20 | Detection owners and stream association for red tests, merge conflicts, and retro proposals remain undefined in the item-20 state protocol. |
+| C11-30 | already-resolved | 17 | Section 6.2b and docs/orchestration.md permit only orchestrator-run single-command replay and forbid batch execution or trust in delegate output. |
+| C11-31 | decide-now | 21 | The hook event schema still lacks mission and turn routing plus an atomic claim rule for concurrent runners. |
+| C11-32 | decide-now | 20 | The public answer command, its input schema, and its atomic join with runner-owned state remain unspecified. |
+| C11-33 | already-resolved | 13 | docs/project-rules.md now ships the pre-authorizable category table, enforced by scripts/agents/mission-contract.py. |
+| S4-1 | already-resolved | none | scripts/agents/dispatch.sh records pidStartedAt, docs/orchestration.md requires the host-turn field, and scripts/agents/supervision-fixtures.sh carries S4-1. |
+| S4-2 | already-resolved | none | Runtime adapters register custodyProcesses for actual CLI children and scripts/agents/process-census.py joins them exactly; supervision-fixtures.sh proves the child case. |
+| S4-3 | already-resolved | none | scripts/agents/arm-supervision.sh computes the composite fingerprint over code, signatures, configuration, scope, and supervisor instances, with S4-3 fixtures. |
+| S4-4 | already-resolved | none | scripts/agents/arm-supervision.sh continuously checks watcher and reaper identities and heartbeats and replaces a stale set; supervision-fixtures.sh kills each component. |
+| S4-5 | already-resolved | none | scripts/agents/process-census.py atomically owns last-census.json and scripts/agents/dispatch.sh validates its exact authoritative fields. |
+| S4-6 | already-resolved | none | scripts/agents/process-census.py defines CENSUS-FAILED for enumeration, unresolved-scope, argv, and start-time failures, all covered by supervision-fixtures.sh. |
+| S4-7 | already-resolved | none | The runtime adapters implement line-oriented match and exclude signatures with exclusion precedence, and supervision-fixtures.sh covers malformed and lookalike cases. |
+| S4-8 | already-resolved | none | scripts/agents/arm-supervision.sh infers only a proven immediate agent-signature ancestor and otherwise refuses with required identity flags; S4-8 is fixtured. |
+| S4-9 | already-resolved | none | scripts/agents/process-census.py owns argv path extraction, canonical scope evaluation, and unresolved-scope failure handling, with scope fixtures. |
+| S4-10 | already-resolved | none | The shipped item-23 owners span arm-supervision.sh, process-census.py, dispatch.sh, adapters, watcher, hooks, adoption, and status; supervision-fixtures.sh checks the cross-component assets. |
+| P3-1 | test-later | 20 | Section 6.2a already determines the expanded host interface; item 20 needs a joined adapter fixture that prevents the legacy four-field shape. |
+| P3-2 | decide-now | 20 | Open asks currently mix non-authoritative request data with authoritative human answers, so prompt projection still lacks one authority semantic. |
+| P3-3 | decide-now | 20 | The This Turn contract asks one host turn to both dispatch and review without waiting; the lifecycle end condition needs a designer choice. |
+| P3-4 | test-later | 20 | Section 3.8 requires JSON-only fallback plus local validation and section 6.2a defines the schema; item 20 needs the prompt-instruction fixture. |
+| P3-5 | decide-now | 20 | Required sets, nullability, model shape, and certification evidence types remain undefined for orchestrator.schema.json. |
+| P3-6 | decide-now | 20 | Cross-check ownership for cycle, runtime, model, and session identity remains unspecified, including first-turn and resumed-session semantics. |
+| P3-7 | decide-now | 20 | returnPath still lacks a canonical location, containment rule, and symlink policy, which are protocol-shape choices. |
+| P3-8 | decide-now | 20 | Certification linkage to an existing same-mission job and evidence artifact has no acceptance predicate while runner re-judgment is forbidden. |
+| P3-9 | decide-now | 20 | factsForLedger has no structured artifact identity or join predicate capable of carrying the falsified-continue contract. |
+| P3-10 | decide-now | 20 | Rejected return entries still lack a canonical state schema, stable identity, and lifecycle. |
+| P3-11 | decide-now | 20 | The created-during-this-turn predicate requires a mission-turn identity in delegate records, but its field and propagation contract are undecided. |
+| P3-12 | decide-now | 20 | Stream validation requires delegate job stream identity, but the job-record field and ownership contract are undecided. |
+| P3-13 | already-resolved | 16 | scripts/agents/mission-state.py rejects parked-stop-loss unless a human budget answer authorizes it, preserving runner-owned stop-loss. |
+| P3-14 | decide-now | 20 | Field orders for asks, streams, reconciliation, and ledger projections remain unstated, so serialization is not mechanical. |
+| P3-15 | decide-now | 20 | Lossy tab and newline replacement remains the specified behavior without an encoding contract, so item 20 cannot preserve payload meaning mechanically. |
+| P3-16 | already-resolved | 20 | The Part 6 proportionality ruling removes per-turn nonces and fixes the data markers; section 6.2a requires fenced blocks and an in-block none placeholder. |
+| P3-17 | decide-now | 20 | Fence-collision and prompt-size refusal still have no mission transition or retry-prevention owner. |
+| P3-18 | decide-now | 20 | The turn record still has no typed schema or canonical artifact from which all seven prompt headers can be cross-checked. |
+| P3-19 | decide-now | 20 | docs/project-rules.md still does not own the human-absence parking rule that orchestrator.md is required to quote. |
+| P3-20 | decide-now | 20 | No regeneration or adoption synchronization contract keeps a static orchestrator.md quote aligned with later project-specific reserved decisions. |
+| P3-21 | decide-now | 20 | The existing quote marker identifies only a source path, while the proposed manifest needs id and section join semantics that are not defined. |
+| P3-22 | already-resolved | 16 | scripts/agents/mission-ledger.py defines each cycle as a heading plus one classification line with candidate-sha and observed fields and validates that grammar. |
