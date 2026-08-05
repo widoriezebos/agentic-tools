@@ -132,7 +132,7 @@ Held out by construction; `grader/` is never copied into the repository the agen
 | `format_agreement` | Text and JSON report identical order, counts, and per-task states, each invoked from an identical cold cache state so the two runs are comparable at all |
 | `build_clean` | The produced repository runs from a fresh clone with no manual steps |
 | `own_tests_pass` | The builder's own suite passes under its stated command |
-| `mutation_catch` | Share of requirements whose mapped tests detect a targeted mutation of the careful reference implementation that breaks exactly that requirement |
+| `mutation_catch` | Share of pinned requirements whose mapped tests detect one of the mutants targeting that requirement. Mutants declare a target rather than isolating one, and requirement 10 is excluded, so the denominator is the pinned requirements only |
 | `plan_seconds` | Requirement 20, measured on a generated 1000-task configuration |
 | `dependency_count` | Non-standard-library imports in the shipped code |
 | `gap_handled` | A decision record names requirement 10 and repeated runs agree |
@@ -169,7 +169,7 @@ Noise floors cannot be invented either: agent runs vary, and how much is unknown
 
 ## S-5: the reference implementations, and why they come first
 
-Before any agent sees this, we build solutions by hand. Not two endpoints, which would only prove the grader can tell perfect from broken, but a small set spanning what real runs plausibly produce: one careful; one with a cache key that ignores the command; one whose order is nondeterministic by construction, shuffling the ready set with an unseeded random source on every run. A `set` of names would have been the obvious choice and is wrong for the same reason the dictionary was: hash randomisation makes it *probably* vary, so calibration would intermittently see a deterministic run and accept the defect. A seeded flaw must fail its metric every time or it cannot calibrate anything; one that runs dependents after a failure; one correct but with tests that assert almost nothing; and one that is simply incomplete, because an unattended run stopped at its fences is the most likely outcome of all.
+Before any agent sees this, we build solutions by hand. Not two endpoints, which would only prove the grader can tell perfect from broken, but a small set spanning what real runs plausibly produce: one careful; one with a cache key that ignores the command; one whose order differs on every invocation with certainty, not probability: it keeps a counter beside its cache and reverses the reported order on alternate runs, so any configuration with two or more independent tasks orders differently each time. Two obvious choices are both wrong here and for the same reason. Iterating a `set` only *probably* varies, since hash randomisation might not change the order. An unseeded shuffle only probably varies too: a shuffle of three tasks repeats its order roughly one run in six. Either would let calibration see a deterministic run, accept the seeded defect, and report that a broken metric works. A flaw planted to test a metric must fail that metric on every repetition or it calibrates nothing; one that runs dependents after a failure; one correct but with tests that assert almost nothing; and one that is simply incomplete, because an unattended run stopped at its fences is the most likely outcome of all.
 
 The grader must separate those in the ways this design predicts, and the spread between them is the first evidence that the spec discriminates at all. If the careful and the sloppy versions score within a hair of each other, the spec has failed at its only job and must change before anything is spent on running it.
 
@@ -178,7 +178,7 @@ Calibration also bounds the work, but it cannot size the run, and the earlier cl
 So the budget is set generously and treated as an experiment rather than a constraint we believe in, with a stated promotion rule so the transition is not left to be invented (SP-4-4):
 
 - Trial runs happen under spec version `0.x`. Their scorecards are recorded and readable, and are **never** comparison-eligible: `benchmark-compare` refuses a cohort whose spec version is below 1.0.
-- After the trials, each fence is set to the observed maximum across them plus one half, rounded up, so a normal run has room and a runaway still stops.
+- After the trials, each fence is `ceil(observed_max * 1.5)` where `observed_max` is the largest value that fence reached across all trial runs, in that fence's own unit: cycles, jobs, concurrent jobs, minutes, hours. Trials that parked at a fence are excluded from its own maximum, since a run stopped at eight cycles tells us it wanted at least eight, not that eight was enough; if every trial parked at a fence, that fence has no evidence yet and more trials are needed rather than a guessed number.
 - Those values are written into the manifest, the spec is published as version `1.0`, and from that point it is immutable: changing a fence later means version `1.1` and a fresh baseline, exactly like any other kit change.
 
 A trial run that stops at its fences is a measurement, not a failure. This is the same prove-first discipline the rest of the harness now follows, and the alternative is a number invented today that quietly decides every future verdict.
