@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mission-state.schema.json",
+  "title": "Runner-owned mission state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "missionId",
+    "branch",
+    "status",
+    "parkReason",
+    "gatePassed",
+    "streams",
+    "fences",
+    "turnLog",
+    "waitingList",
+    "runnerLease",
+    "ledger",
+    "integrity"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "missionId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "branch": {"type": "string", "minLength": 1},
+    "status": {"enum": ["running", "completed", "parked"]},
+    "parkReason": {
+      "type": ["string", "null"],
+      "enum": [
+        null,
+        "all-streams-parked",
+        "stop-loss",
+        "fence",
+        "gate-integrity",
+        "state-integrity",
+        "contract-changed",
+        "host-failure"
+      ]
+    },
+    "gatePassed": {"type": "boolean"},
+    "streams": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["goal", "state", "reason", "answeredAsk"],
+        "properties": {
+          "goal": {"type": "string", "minLength": 1},
+          "state": {"enum": ["active", "parked-reserved", "parked-stop-loss", "done"]},
+          "reason": {"type": ["string", "null"]},
+          "answeredAsk": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "fences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startedAt", "cycles", "jobs", "activeJobs", "usage"],
+      "properties": {
+        "startedAt": {"type": "string", "format": "date-time"},
+        "cycles": {"type": "integer", "minimum": 0},
+        "jobs": {"type": "integer", "minimum": 0},
+        "activeJobs": {"type": "integer", "minimum": 0},
+        "usage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provider", "unit", "value"],
+            "properties": {
+              "provider": {"type": "string", "minLength": 1},
+              "unit": {"type": "string", "minLength": 1},
+              "value": {"type": "number", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "turnLog": {"type": "array", "items": {"type": "object"}},
+    "waitingList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+    },
+    "runnerLease": {"type": ["string", "null"]},
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "cycles"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "cycles": {"type": "integer", "minimum": 0}
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "previousHash", "hash", "history", "recoveryOf"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 0},
+        "previousHash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "recoveryOf": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sequence", "previousHash", "hash"],
+            "properties": {
+              "sequence": {"type": "integer", "minimum": 0},
+              "previousHash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+              "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            }
+          }
+        }
+      }
+    }
+  }
+}
