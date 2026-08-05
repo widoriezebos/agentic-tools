@@ -503,23 +503,19 @@ if tag not in command or actual_pgid != pgid:
 PY
 }
 
-resolve_mission() { # explicit id; prints mission|lease|turn or ||
-  local explicit=$1 env_id=${HARNESS_MISSION_ID:-} env_lease=${HARNESS_MISSION_LEASE:-}
-  local env_turn=${HARNESS_MISSION_TURN:-} mission lease
+resolve_mission() { # explicit id; prints mission|lease or |
+  local explicit=$1 env_id=${HARNESS_MISSION_ID:-} env_lease=${HARNESS_MISSION_LEASE:-} mission lease
   if [[ -n "$env_id" || -n "$env_lease" ]]; then
     [[ -n "$env_id" && -n "$env_lease" ]] || die 1 "ambiguous inherited mission context: both HARNESS_MISSION_ID and HARNESS_MISSION_LEASE are required"
   fi
-  [[ -z "$env_turn" || -n "$env_id" ]] \
-    || die 1 "ambiguous inherited mission context: HARNESS_MISSION_TURN requires HARNESS_MISSION_ID and HARNESS_MISSION_LEASE"
-  [[ -z "$env_turn" ]] || valid_id "$env_turn" || die 1 "invalid inherited mission turn id"
   if [[ -n "$explicit" && -n "$env_id" && "$explicit" != "$env_id" ]]; then
     die 1 "ambiguous mission context: --mission and HARNESS_MISSION_ID disagree"
   fi
   mission=${explicit:-$env_id}
-  if [[ -z "$mission" ]]; then printf '||\n'; return; fi
+  if [[ -z "$mission" ]]; then printf '|\n'; return; fi
   lease=${env_lease:-$agents/missions/$mission/lease.json}
   validate_mission "$mission" "$lease" || die 1 "mission $mission does not have a live, matching lease"
-  printf '%s|%s|%s\n' "$mission" "$lease" "$env_turn"
+  printf '%s|%s\n' "$mission" "$lease"
 }
 
 expand_permissions() { # requested value, workspace root, worktree flag, output
@@ -1020,7 +1016,7 @@ reap_one() { # job
 
 dispatch_job() {
   local role= brief= mode_override= runtime_override= model_override= job= workspace= permissions_override= mission_override= cap_override=
-  local use_worktree=0 wait=0 mode runtime model default_model configured_runtime overridden=false mission_data mission lease mission_turn cap watch_cap
+  local use_worktree=0 wait=0 mode runtime model default_model configured_runtime overridden=false mission_data mission lease cap watch_cap
   local permission_name permission_json snapshot_json snapshot_path fallbacks signal input_bytes input_hash max_kb payload round_dir record_json
   while (($#)); do
     case "$1" in
@@ -1077,7 +1073,7 @@ PY
   [[ ! -e "$jobs/$job.json" && ! -e "$agents/$job" ]] || die 1 "job id collision: $job"
 
   mission_data=$(resolve_mission "$mission_override")
-  IFS='|' read -r mission lease mission_turn <<<"$mission_data"
+  mission=${mission_data%%|*}; lease=${mission_data#*|}
   cap=$(config_get --key dispatch.cap-min ${cap_override:+--flag "$cap_override"} --default 120)
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
   if [[ -n "$mission" ]]; then
@@ -1115,11 +1111,11 @@ PY
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
-  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" <<'PY'
+  python3 - "$record_json" "$job" "$role" "$mission" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" <<'PY'
 import json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
-out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal = sys.argv[1:]
+out, job, role, mission, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal = sys.argv[1:]
 try: base = subprocess.check_output(["git", "-C", workspace, "rev-parse", "HEAD"], text=True).strip()
 except subprocess.SubprocessError: raise SystemExit("workspace is not a git worktree")
 branch = subprocess.check_output(["git", "-C", workspace, "branch", "--show-current"], text=True).strip()
@@ -1130,7 +1126,7 @@ record = {
   "permissions": {"requested": json.loads(Path(permissions).read_text()), "effective": None},
   "capMin": int(cap), "pid": None, "pidStartedAt": None, "pgid": None, "instanceTag": f"harness-job-{job}",
   "custodyProcesses": [],
-  "sessionId": None, "turnId": mission_turn or None, "requestedModel": model, "effectiveModel": None,
+  "sessionId": None, "turnId": None, "requestedModel": model, "effectiveModel": None,
   "overridden": overridden == "true", "capabilitySnapshot": snapshot,
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
   "input": {"bytes": int(size), "hash": digest, "delivery": "stdin"},
@@ -1153,7 +1149,7 @@ PY
 }
 
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model round child payload round_dir cap permission_json snapshot_json snapshot_path fallbacks signal resume_cap record_json mission mission_data lease mission_turn
+  local job= message= wait=0 root_id latest status error session role runtime model round child payload round_dir cap permission_json snapshot_json snapshot_path fallbacks signal resume_cap record_json mission
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round
   while (($#)); do
     case "$1" in
@@ -1179,11 +1175,7 @@ follow_up() {
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
   [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
   mission=$(json_field "$latest" mission 2>/dev/null || true); [[ "$mission" == null ]] && mission=
-  mission_turn=
-  if [[ -n "$mission" ]]; then
-    mission_data=$(resolve_mission "$mission")
-    IFS='|' read -r mission lease mission_turn <<<"$mission_data"
-  fi
+  if [[ -n "$mission" ]]; then resolve_mission "$mission" >/dev/null; fi
   cap=$(json_field "$latest" capMin)
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
@@ -1208,19 +1200,18 @@ follow_up() {
   input_hash=$(sha256_file "$delivery_content")
   write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
-  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$resume_mode" "$input_bytes" "$input_hash" "$mission_turn" <<'PY'
+  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$resume_mode" "$input_bytes" "$input_hash" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
 parent = json.loads(Path(sys.argv[1]).read_text()); out = Path(sys.argv[2])
-job, round_number, parent_job, snapshot, fallbacks, signal, resume_mode, size, digest, mission_turn = sys.argv[3:]
+job, round_number, parent_job, snapshot, fallbacks, signal, resume_mode, size, digest = sys.argv[3:]
 record = {key: parent[key] for key in ("role", "mission", "runtime", "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "requestedModel")}
 record.update({
   "jobId": job, "round": int(round_number), "parentJob": parent_job, "status": "pending", "phase": "handshake", "error": None,
   "permissions": {"requested": parent["permissions"]["requested"], "effective": None}, "pid": None, "pidStartedAt": None, "pgid": None,
   "custodyProcesses": [],
-  "instanceTag": f"harness-job-{job}", "sessionId": parent["sessionId"] if resume_mode == "resumed" else None,
-  "turnId": mission_turn or None,
+  "instanceTag": f"harness-job-{job}", "sessionId": parent["sessionId"] if resume_mode == "resumed" else None, "turnId": None,
   "effectiveModel": None, "overridden": False, "capabilitySnapshot": snapshot,
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
   "resumeMode": resume_mode,
@@ -1417,11 +1408,7 @@ for field, order in orders.items():
 for field in ("readRoots", "writeRoots"):
     if field in effective and not set(effective[field]).issubset(set(requested[field])): errors.append(field)
 if signal == "true" and not session: errors.append("sessionId")
-patch = {
-    "permissions": {"requested": requested, "effective": effective},
-    "effectiveModel": model,
-    "turnId": record.get("turnId") or turn or None,
-}
+patch = {"permissions": {"requested": requested, "effective": effective}, "effectiveModel": model, "turnId": turn or None}
 if session: patch["sessionId"] = session
 if errors:
     patch.update({"error": "permissions_mismatch:" + ",".join(errors) if errors != ["sessionId"] else "handshake_missing_session_id", "phase": "handshake"})
