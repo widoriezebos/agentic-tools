@@ -1,12 +1,27 @@
 # taskrun: a dependency-aware task runner
 
-Build a command-line task runner in Python. Given a file describing tasks, each
+Build a command-line task runner in Java. Given a file describing tasks, each
 with a command, declared inputs and outputs, and dependencies on other tasks, it
 works out the order, runs them, skips work whose inputs have not changed, and
 reports failures without running anything that depended on the failure.
 
-Everything below is graded from outside the program, by running it. Nothing is
-graded by reading your source.
+Everything below is graded from outside the program, by building it and running
+it. Nothing is graded by reading your source.
+
+## Project shape
+
+- Java 21, built with Maven. The repository ships the Maven wrapper
+  (`mvnw`, `mvnw.cmd`, `.mvn/`), and every build command below uses it.
+- `./mvnw -o -q package` produces `target/taskrun.jar`, runnable as
+  `java -jar target/taskrun.jar`. Set `finalName` so the jar has exactly that
+  name, and make it executable as a single jar with no classpath arguments.
+- **Builds run offline.** The environment has no network. A populated Maven
+  repository is already present, holding the JDK-era plugins Maven needs plus
+  JUnit 5. Every build and test command uses `-o`, and adding a dependency that
+  is not already in that repository will simply fail to resolve.
+- Main code uses the Java standard library only: no compile-scope or
+  runtime-scope dependencies in `pom.xml`. Test scope may use JUnit 5, which is
+  already available.
 
 ## Configuration
 
@@ -16,13 +31,13 @@ Tasks are described in `tasks.json`:
 {
   "tasks": {
     "codegen": {
-      "command": "python3 gen.py",
+      "command": "sh -c 'echo generated > gen.out'",
       "inputs": ["schema.txt"],
-      "outputs": ["gen.py.out"]
+      "outputs": ["gen.out"]
     },
     "build": {
-      "command": "cat gen.py.out > app",
-      "inputs": ["gen.py.out"],
+      "command": "sh -c 'cat gen.out > app'",
+      "inputs": ["gen.out"],
       "outputs": ["app"],
       "deps": ["codegen"]
     }
@@ -32,8 +47,8 @@ Tasks are described in `tasks.json`:
 
 - The top-level object has exactly one key, `tasks`, whose value is an object
   keyed by task name.
-- A task name matches `[A-Za-z0-9][A-Za-z0-9_.-]*`. Names containing anything
-  else are a configuration error.
+- A task name matches `[A-Za-z0-9][A-Za-z0-9_.-]*`. Anything else is a
+  configuration error.
 - `command` is required and is a string run through the system shell.
 - `inputs`, `outputs` and `deps` are optional arrays of strings, defaulting to
   empty.
@@ -44,17 +59,19 @@ Tasks are described in `tasks.json`:
   missing `command`, a non-array `deps`, malformed JSON — is a configuration
   error.
 
+Parsing JSON with the standard library alone is part of the work.
+
 ## Requirements
 
 ### Command line
 
-1. `python3 taskrun.py run [task...]` runs the named tasks and everything they
-   depend on, directly or indirectly. With no task named, every task in the
-   configuration runs. A named task absent from the configuration is a usage
-   error.
+1. `java -jar target/taskrun.jar run [task...]` runs the named tasks and
+   everything they depend on, directly or indirectly. With no task named, every
+   task in the configuration runs. A named task absent from the configuration is
+   a usage error.
 2. `--file <path>` selects the configuration, defaulting to `tasks.json` in the
    current directory.
-3. `--dry-run` prints the plan and runs nothing. See requirement 18 for its
+3. `--dry-run` prints the plan and runs nothing. See requirement 20 for its
    exact output.
 4. `--force` runs every selected task regardless of cache state. No task is
    reported `cached` under `--force`.
@@ -63,11 +80,10 @@ Tasks are described in `tasks.json`:
    - `1` when any selected task ended `failed`, whatever else happened.
    - `2` for any usage or configuration error: unknown flag, missing flag value,
      unreadable or missing configuration file, malformed configuration, an
-     invalid task name, a named task absent from the configuration, or a
-     `--top`-style value that is not a positive integer where one is required.
+     invalid task name, or a named task absent from the configuration.
 
-   A configuration error is detected before any task runs, so a run either
-   exits 2 having run nothing, or exits 0 or 1 having produced a full report.
+   A configuration error is detected before any task runs, so a run either exits
+   2 having run nothing, or exits 0 or 1 having produced a full report.
 
 ### Configuration errors
 
@@ -78,7 +94,7 @@ Tasks are described in `tasks.json`:
 8. Two tasks declaring the same output path is a configuration error. The
    message names both tasks and the path.
 
-Configuration error messages go to standard error and are otherwise free-form:
+Configuration error messages go to standard error and are otherwise free-form,
 graded only for naming what each requirement above says they must name.
 
 ### Execution
@@ -122,9 +138,9 @@ graded only for naming what each requirement above says they must name.
 20. On a run with `--dry-run`, standard output carries one line per selected
     task, in reported order, of exactly `plan <task-name>`, then a final line of
     exactly `summary planned=<n>`. No other requirement's output applies.
-21. Everything else your program prints — progress, task command output,
-    diagnostics — goes to standard error, so standard output is always a
-    parseable record.
+21. Everything else your program prints — progress, the output of task commands,
+    diagnostics, anything the JVM emits — goes to standard error, so standard
+    output is always a parseable record.
 22. `--format json` replaces the standard output described in 19 and 20 with a
     single JSON object and nothing else. For a run, exactly the keys `order`
     (array of task names in reported order), `tasks` (object mapping each
@@ -137,18 +153,21 @@ graded only for naming what each requirement above says they must name.
 
 ### Non-functional
 
-23. Python 3.11 or later, running as `python3 taskrun.py` from a fresh clone
-    with no installation step. Every module you import is either your own file
-    in the repository or a Python standard library module.
+23. `./mvnw -o -q package` succeeds from a fresh clone with no manual steps and
+    no network, and `pom.xml` declares no compile-scope or runtime-scope
+    dependency.
 24. A configuration of 1000 tasks in a single dependency chain, whose work is
-    entirely cached, completes within 5 seconds of wall-clock time on an
-    ordinary developer machine, measured from process start to exit.
+    entirely cached, completes within 20 seconds of wall-clock time, measured
+    from process start to exit on an ordinary developer machine. The budget is
+    generous because it includes JVM startup; it exists to rule out work that
+    grows faster than the number of tasks, not to reward micro-optimisation.
 25. Ship your own tests and a `requirements-map.json`: an object whose keys are
     the strings `"1"` through `"25"`, one for every requirement above, and whose
-    values are arrays of test identifiers. A test identifier is a string your
-    stated test command accepts in order to run that test alone, in the form
-    `<path>::<test-name>`. Every requirement must have at least one. State the
-    test command in `README.md` on a line of exactly `Test command: <command>`.
+    values are arrays of test identifiers in JUnit form,
+    `<fully.qualified.ClassName>#<methodName>`, each runnable alone via
+    `./mvnw -o test -Dtest='<identifier>'`. Every requirement must have at least
+    one. State the test command in `README.md` on a line of exactly
+    `Test command: ./mvnw -o test`.
 
 ## Where this specification is silent
 
@@ -176,6 +195,7 @@ correct, and all three are equally acceptable. Choosing silently is not.
 
 ## What to deliver
 
-A repository that runs from a fresh clone with no manual steps, containing at
-least `taskrun.py`, `README.md` with the `Test command:` line, and
-`requirements-map.json`, `DECISIONS.md`, and your tests.
+A repository that builds and runs from a fresh clone with no manual steps and no
+network, containing at least `pom.xml`, the Maven wrapper, your Java sources,
+`README.md` with the `Test command:` line, `requirements-map.json`,
+`DECISIONS.md`, and your tests.

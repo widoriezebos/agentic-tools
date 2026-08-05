@@ -1,16 +1,16 @@
 {
   "id": "bm-1",
   "version": "0.1",
-  "title": "taskrun: a dependency-aware task runner",
+  "title": "taskrun: a dependency-aware task runner (Java, Maven, command line)",
   "comparisonEligible": false,
   "comparisonEligibleNote": "Version 0.x is a trial spec. benchmark-compare refuses any cohort below 1.0. Promotion to 1.0 happens once trial runs have set the fences from observed use, per the promotion rule in plans/benchmark-spec-bm1-design.md section S-6.",
   "product": {
     "sourcePaths": [
-      "taskrun.py",
-      "*.py",
-      "tests/**"
+      "src/main/**",
+      "src/test/**",
+      "pom.xml"
     ],
-    "entryPoint": "python3 taskrun.py",
+    "entryPoint": "java -jar target/taskrun.jar",
     "requirementCount": 25
   },
   "seededGap": {
@@ -112,7 +112,8 @@
         null
       ],
       "direction": "min",
-      "bound": 5
+      "bound": 20,
+      "note": "Includes JVM startup. Generous on purpose: it rules out work growing faster than the task count, it does not reward micro-optimisation."
     },
     "dependency_count": {
       "domain": [
@@ -120,7 +121,8 @@
         null
       ],
       "direction": "min",
-      "bound": 0
+      "bound": 0,
+      "note": "Compile-scope and runtime-scope dependencies in pom.xml. Test-scope JUnit 5 is expected and not counted."
     },
     "gap_handled": {
       "domain": [
@@ -163,5 +165,19 @@
       "probes": "small purpose-built programs, one per metric, each exhibiting exactly the flaw that metric must catch",
       "note": "Calibration proves each check fires. A full correct implementation is a wildly expensive way to test a checker and is not built."
     }
+  },
+  "language": {
+    "runtime": "Java 21",
+    "buildTool": "Maven, via the wrapper shipped in the repository",
+    "entryPoint": "java -jar target/taskrun.jar",
+    "buildCommand": "./mvnw -o -q package",
+    "testCommand": "./mvnw -o test",
+    "testIdentifierForm": "<fully.qualified.ClassName>#<methodName>",
+    "note": "Spring Boot was considered and dropped: the deliverable is a command-line tool and a web framework would have added ceremony without adding anything the benchmark measures."
+  },
+  "environment": {
+    "network": "none",
+    "mavenRepository": "pre-populated in the target image before the run starts",
+    "note": "Maven resolves dependencies over the network by default, and delegates run with network denied. Without a warmed local repository the very first build would fail for reasons having nothing to do with the agents. Provisioning warms it and every build command uses -o."
   }
 }
