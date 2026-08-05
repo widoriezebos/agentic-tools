@@ -1,14 +1,14 @@
 # Plan: BM-1, the First Benchmark Spec
 
 - Owner: unclaimed (written 2026-08-05, single session, nothing built)
-- Goal and current status: design the first benchmark spec, a task runner the harness builds from scratch unattended, substantial enough that building it successfully means something, and shaped so the result becomes the fixture for the two benchmarks after it. Status: designed, not critiqued, nothing built
+- Goal and current status: design the first benchmark spec, a task runner the harness builds from scratch unattended, substantial enough that building it successfully means something, and shaped so the result becomes the fixture for the two benchmarks after it. Status: critique round 1 adjudicated (11 material findings, all accepted), round 2 pending, nothing built
 - In flight right now: nothing
 - Decisions made (and who made them): the user chose the three-benchmark structure and the task-runner subject on 2026-08-05; design decisions S-1 through S-7 taken here with recorded defaults
 - Waiting on the human: the fence sizing in S-6, which is larger than Mission Zero's and costs real money
 - Dead ends: a log summariser was drafted first and discarded: the subject was picked without asking, and it was too shallow to discriminate. A diff and patch toolkit was rejected because the core algorithm is a well-known exercise, so it would partly measure recall. An append-only store with compaction was rejected because its most interesting property, crash safety, cannot be graded in minutes
-- Next step: Codex critique against the stated purpose, then build it as item B-1
+- Next step: critique round 2 on the amended design, then build it as item B-1
 
-This plan fills in item B-1 of `plans/harness-benchmark-design.md`, which fixed the shape of a spec but wrote neither requirements nor grader. It changes nothing in that design.
+This plan fills in item B-1 of `plans/harness-benchmark-design.md`, which fixed the shape of a spec but wrote neither requirements nor grader. It **does** amend that design in one place: the human replaced the log-summariser note with the task runner and the three-case structure on 2026-08-05, and the parent's BM-1 paragraph now points here as the authority. The earlier claim that this changed nothing was wrong, and two documents describing different first specs would have left an implementer with no way to know which governs.
 
 ## What this spec is for
 
