@@ -276,17 +276,33 @@ fi
 
 tmp=$(mktemp -d)
 agent_supervision_repo=
+# Every fixture repository this suite arms, so cleanup can stop all of them.
+# A single variable was tracked before, reassigned as the suite moved between
+# repositories and emptied at the end, so the trap shut down nothing and each
+# armed repository leaked its supervision owner. Two such owners were found
+# alive after 25 hours, each scanning every process on the machine every five
+# seconds. Killing components does not help: the owner restarts them by design,
+# so only a shutdown of the owner ends it.
+armed_supervision_repos=()
+track_armed_supervision() { # repository
+  local repo=$1 known
+  [[ -n "$repo" ]] || return 0
+  for known in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
+    [[ "$known" == "$repo" ]] && return 0
+  done
+  armed_supervision_repos+=("$repo")
+}
 validation_cleanup() {
-  if [[ -n "${agent_supervision_repo:-}" && -x "$agent_supervision_repo/scripts/agents/arm-supervision.sh" ]]; then
-    if [[ "$agent_supervision_repo" == "${runner_repo:-}" ]] \
-        && declare -p runner_process_env >/dev/null 2>&1; then
-      "${runner_process_env[@]}" "$agent_supervision_repo/scripts/agents/arm-supervision.sh" \
-        --repo "$agent_supervision_repo" --shutdown >/dev/null 2>&1 || true
+  local repo
+  for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
+    [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
+    if [[ "$repo" == "${runner_repo:-}" ]] && declare -p runner_process_env >/dev/null 2>&1; then
+      "${runner_process_env[@]}" "$repo/scripts/agents/arm-supervision.sh" \
+        --repo "$repo" --shutdown >/dev/null 2>&1 || true
     else
-      "$agent_supervision_repo/scripts/agents/arm-supervision.sh" \
-        --repo "$agent_supervision_repo" --shutdown >/dev/null 2>&1 || true
+      "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >/dev/null 2>&1 || true
     fi
-  fi
+  done
   rm -rf "$tmp"
 }
 trap validation_cleanup EXIT
@@ -1375,6 +1391,7 @@ EOF
   export HARNESS_CENSUS_PROCESS_FILE="$agent_process_fixture"
   export HARNESS_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
   agent_supervision_repo=$agent_repo
+  track_armed_supervision "$agent_repo"
   agent_main_start=$("$agent_repo/scripts/agents/process-census.py" started-at --pid "$$")
   HARNESS_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
     --repo "$agent_repo" --session validator --pid "$$" \
@@ -2068,6 +2085,7 @@ ARM
   runner_main_start=$("${runner_process_env[@]}" \
     "$runner_repo/scripts/agents/process-census.py" started-at --pid "$$")
   agent_supervision_repo=$runner_repo
+  track_armed_supervision "$runner_repo"
   "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake \
     "$runner_repo/scripts/agents/arm-supervision.sh" \
     --repo "$runner_repo" --session runner-validator --pid "$$" \
@@ -2296,6 +2314,7 @@ PY
   [[ ! -e "$runner_repo/artifacts/agents/missions/runner-unverified/lease.d" ]] \
     || { echo "parked mission retained its runner lease" >&2; exit 1; }
   agent_supervision_repo=$runner_repo
+  track_armed_supervision "$runner_repo"
   run_runner_expect runner-unverified-resume 0 "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake "$runner" resume --mission runner-unverified
   wait_runner_status runner-unverified 10
   [[ -f "$runner_repo/artifacts/agents/supervision/state.json" ]] \
@@ -2317,6 +2336,7 @@ PY
   export HARNESS_CENSUS_PROCESS_FILE="$agent_selftest_process_fixture"
   export HARNESS_FAKE_PROCESS_IDENTITY_FILE="$agent_selftest_identity_fixture"
   agent_supervision_repo=$agent_selftest_repo
+  track_armed_supervision "$agent_selftest_repo"
   agent_selftest_main_start=$("$agent_selftest_repo/scripts/agents/process-census.py" started-at --pid "$$")
   HARNESS_AGENT_RUNTIME=fake "$agent_selftest_repo/scripts/agents/arm-supervision.sh" \
     --repo "$agent_selftest_repo" --session selftest-validator --pid "$$" \
