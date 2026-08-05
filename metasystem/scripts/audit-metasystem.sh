@@ -57,7 +57,9 @@ skill_dirs=(skills)
 [[ -d optional-skills ]] && skill_dirs+=(optional-skills)
 find "${skill_dirs[@]}" -name SKILL.md -print | sort
 echo "Instruction inventory"
-find . -type f \( -name 'AGENTS.md' -o -name 'CLAUDE.md' -o -name 'wow.md' -o -name 'SKILL.md' -o -name 'AGENT.md' \) -print | sort
+# artifacts/ is runtime state: no instruction asset lives there, and a live
+# job's lock directories vanish mid-traversal, which kills a bare find.
+find . -path ./artifacts -prune -o -type f \( -name 'AGENTS.md' -o -name 'CLAUDE.md' -o -name 'wow.md' -o -name 'SKILL.md' -o -name 'AGENT.md' \) -print | sort
 
 if search_lines 'TODO|TBD|<one paragraph>|<command>|<paths' AGENTS.md wow.md "${skill_dirs[@]}"; then
   echo "unresolved placeholders in active instructions" >&2
