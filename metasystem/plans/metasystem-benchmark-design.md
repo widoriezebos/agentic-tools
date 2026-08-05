@@ -4,7 +4,7 @@
 - Goal and current status: a benchmark where a coordinator and sub-agents build software to a fixed spec, producing two things we grade: the software itself and the logged behavior of the agents that built it. The scorecard from both becomes the metasystem's own fitness function, so agents can later evolve the metasystem inside constraints expressed in software. Status: critique CLOSED by join at round 5 (2026-08-04): 45 material findings adjudicated across rounds 1-4, round 5 returned zero material findings with the critic's recorded agreement that the design is ready for implementation under the B-0 condition
 - In flight right now: nothing
 - Decisions made (and who made them): the requirement and its intent stated by the user 2026-08-04, who also directed this design and its critique to run now, ahead of Mission Zero; design decisions D-B1 through D-B6 taken here with recorded defaults, overridable by the human
-- Waiting on the human: nothing blocking; D-B1 through D-B6 stand unless overridden
+- Waiting on the human: nothing blocking; D-B1 through D-B6 stand unless overridden Mission Zero itself now waits on the human's signature of its sealed contract (see plans/prove-first-course-correction.md).
 - Dead ends: none yet
 - Next step: wait for Mission Zero (CC-3), then run B-0's reconciliation; nothing is built before both
 
