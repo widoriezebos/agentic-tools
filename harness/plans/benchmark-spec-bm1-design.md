@@ -124,7 +124,7 @@ Held out by construction; `grader/` is never copied into the repository the agen
 | Metric | What it measures |
 | --- | --- |
 | `acceptance` | Share of held-out tests passing across all twenty-one requirements |
-| `requirement_coverage` | Share of requirements whose held-out tests all pass |
+| `requirement_coverage` | Share of requirements whose held-out tests all pass, derived from a per-requirement line the grader also emits, `metric=requirement_<n>=1` or `0`. The per-requirement lines exist because the fixture filter below asks whether any requirement scored zero, and a filter cannot rest on a number nothing publishes |
 | `cache_correctness` | A battery: unchanged inputs skip, changed command reruns, changed input reruns, `--force` reruns everything, deleted cache directory returns to cold |
 | `failure_propagation` | Dependents of a failure are `blocked`, unrelated branches still run, exit code is 1 |
 | `determinism` | Identical configuration and identical starting cache state produce identical order and identical per-task states. Each repetition begins from a deleted cache directory, because a correct cache legitimately reports `ran` the first time and `cached` the next, and comparing those two would fail every correct implementation |
@@ -169,19 +169,25 @@ Noise floors cannot be invented either: agent runs vary, and how much is unknown
 
 ## S-5: the reference implementations, and why they come first
 
-Before any agent sees this, we build solutions by hand. Not two endpoints, which would only prove the grader can tell perfect from broken, but a small set spanning what real runs plausibly produce: one careful; one with a cache key that ignores the command; one whose order is genuinely nondeterministic — iterating a `set` of task names, whose order varies between processes under string hash randomisation, rather than a dictionary, whose insertion order is guaranteed on the mandated runtime and is simply `config-order`, one of the three valid rules; one that runs dependents after a failure; one correct but with tests that assert almost nothing; and one that is simply incomplete, because an unattended run stopped at its fences is the most likely outcome of all.
+Before any agent sees this, we build solutions by hand. Not two endpoints, which would only prove the grader can tell perfect from broken, but a small set spanning what real runs plausibly produce: one careful; one with a cache key that ignores the command; one whose order is nondeterministic by construction, shuffling the ready set with an unseeded random source on every run. A `set` of names would have been the obvious choice and is wrong for the same reason the dictionary was: hash randomisation makes it *probably* vary, so calibration would intermittently see a deterministic run and accept the defect. A seeded flaw must fail its metric every time or it cannot calibrate anything; one that runs dependents after a failure; one correct but with tests that assert almost nothing; and one that is simply incomplete, because an unattended run stopped at its fences is the most likely outcome of all.
 
 The grader must separate those in the ways this design predicts, and the spread between them is the first evidence that the spec discriminates at all. If the careful and the sloppy versions score within a hair of each other, the spec has failed at its only job and must change before anything is spent on running it.
 
 Calibration also bounds the work, but it cannot size the run, and the earlier claim that it could was wrong (SP-3-9). A timed hand-build measures how long the task takes a person who already knows the answer; an unattended run spends its time on delegation, review, correction and rework, which is most of the cost and none of the hand-build. There is no way to derive the second from the first.
 
-So the budget is set generously and treated as an experiment rather than a constraint we believe in: the first BM-1 runs record what they actually consumed, and the fences are re-set from that evidence before any run is used for comparison. A first run that stops at its fences is a measurement, not a failure. This is the same prove-first discipline the rest of the harness now follows, and the alternative is a number invented today that quietly decides every future verdict.
+So the budget is set generously and treated as an experiment rather than a constraint we believe in, with a stated promotion rule so the transition is not left to be invented (SP-4-4):
+
+- Trial runs happen under spec version `0.x`. Their scorecards are recorded and readable, and are **never** comparison-eligible: `benchmark-compare` refuses a cohort whose spec version is below 1.0.
+- After the trials, each fence is set to the observed maximum across them plus one half, rounded up, so a normal run has room and a runaway still stops.
+- Those values are written into the manifest, the spec is published as version `1.0`, and from that point it is immutable: changing a fence later means version `1.1` and a fresh baseline, exactly like any other kit change.
+
+A trial run that stops at its fences is a measurement, not a failure. This is the same prove-first discipline the rest of the harness now follows, and the alternative is a number invented today that quietly decides every future verdict.
 
 **What calibration must show before anything is spent (SP-2-7).** Three conditions, each checkable:
 
-1. **Every seeded flaw is caught by the metric designed to catch it.** The command-blind cache key drops `cache_correctness`; the dictionary-order scheduler drops `determinism`; the run-dependents-anyway variant drops `failure_propagation`; the assert-nothing variant drops `mutation_catch` while keeping `own_tests_pass`. A flaw that only shows up in the aggregate is a metric that failed.
-2. **The careful reference scores strictly above every flawed variant on the metric that variant targets.** If it does not, that metric is not measuring what it claims.
-3. **The incomplete variant scores between them rather than at the floor**, since a run stopped at its fences is the likeliest real outcome and a spec that cannot tell partial work from broken work will read every unfinished run as a failure.
+1. **Every seeded flaw is caught by the metric designed to catch it, on every repetition.** The command-blind cache key drops `cache_correctness`; the shuffling scheduler drops `determinism`; the run-dependents-anyway variant drops `failure_propagation`; the assert-nothing variant drops `mutation_catch` while keeping `own_tests_pass`. Each is checked over the same repetition count a real cohort uses, and a flaw caught on some repetitions and not others has not been caught: the metric is measuring luck.
+2. **The careful reference scores strictly above every flawed variant on the metric that variant targets.** If it does not, that metric is not measuring what it claims. This is per metric; there is deliberately no aggregate score, because a single number would let a strong metric mask a broken one, which is the failure mode this whole section exists to prevent.
+3. **The incomplete variant scores strictly between the careful reference and the worst flawed variant on `acceptance` and `requirement_coverage`**, since a run stopped at its fences is the likeliest real outcome and a spec that cannot tell partial work from broken work will read every unfinished run as a failure.
 
 Absolute bounds come out of this exercise by a stated rule rather than by judgement: for each metric, the bound is set midway between the careful reference's score and the best score any flawed variant achieved on it. That places the bar above every variant the design considers unacceptable and below the reference, and it is reproducible from the calibration record, so a second person recomputing it gets the same numbers.
 
