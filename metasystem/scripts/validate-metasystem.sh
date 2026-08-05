@@ -184,6 +184,8 @@ for role in design-critic implementer code-critic verifier investigator behavior
 done
 
 if (( template_mode )); then
+  [[ -x benchmark/provision.sh ]] || { echo "benchmark provisioner is missing or not executable" >&2; exit 1; }
+  bash -n benchmark/provision.sh
   for link in \
     skills/take-a-step-back/SKILL.md \
     skills/take-a-step-back/agents/claude-profile.md \
@@ -2920,6 +2922,194 @@ PYEOF
   git -C "$srcrepo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm snapshot
   adopt="$srcrepo/scripts/adopt.sh"
   src_sha=$(git -C "$srcrepo" rev-parse HEAD)
+
+  # Benchmark provisioning owns the complete bridge from a held-out spec kit
+  # to the human seal/sign boundary. Exercise the real BM-1 manifest through a
+  # clean source snapshot because adopt.sh correctly refuses a dirty source.
+  provision_target="$tmp/provision-bm-1"
+  provision_contract="$provision_target/plans/mission-bm-1.contract.md"
+  provision_output="$tmp/provision-bm-1.out"
+  provision_identity=(
+    env
+    GIT_AUTHOR_NAME=metasystem-fixture
+    GIT_AUTHOR_EMAIL=metasystem-fixture@example.invalid
+    GIT_COMMITTER_NAME=metasystem-fixture
+    GIT_COMMITTER_EMAIL=metasystem-fixture@example.invalid
+  )
+
+  # Defence in depth must fail before target creation if any declared copy
+  # source crosses the held-out grader boundary.
+  grader_spec="$tmp/provision-grader-spec"
+  cp -R "$srcrepo/benchmark/specs/bm-1" "$grader_spec"
+  python3 - "$grader_spec/manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+value = json.loads(path.read_text(encoding="utf-8"))
+value["seed"]["path"] = value["grader"]["path"]
+path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+PY
+  if "${provision_identity[@]}" "$srcrepo/benchmark/provision.sh" \
+      --spec "$grader_spec" --target "$tmp/provision-must-refuse" \
+      >"$tmp/provision-grader.out" 2>"$tmp/provision-grader.err"; then
+    echo "benchmark provision: accepted a grader path as a copy source" >&2
+    exit 1
+  fi
+  grep -q 'held-out grader path would be copied' "$tmp/provision-grader.err" \
+    || { echo "benchmark provision: grader refusal was not loud and specific" >&2; exit 1; }
+  [[ ! -e "$tmp/provision-must-refuse" ]] \
+    || { echo "benchmark provision: grader refusal created the target" >&2; exit 1; }
+
+  if ! "${provision_identity[@]}" "$srcrepo/benchmark/provision.sh" \
+      --spec "$srcrepo/benchmark/specs/bm-1" --target "$provision_target" \
+      >"$provision_output" 2>"$tmp/provision-bm-1.err"; then
+    echo "benchmark provision: BM-1 provisioning failed" >&2
+    cat "$tmp/provision-bm-1.err" >&2
+    exit 1
+  fi
+  track_armed_supervision "$provision_target"
+
+  [[ $(wc -l <"$provision_output" | tr -d ' ') == 3 ]] \
+    || { echo "benchmark provision: output was not exactly three human steps" >&2; exit 1; }
+  sed -n '1p' "$provision_output" | grep -q '^Review ' \
+    || { echo "benchmark provision: first human step is not contract review" >&2; exit 1; }
+  sed -n '2p' "$provision_output" | grep -q '^Seal it: ' \
+    || { echo "benchmark provision: second human step is not sealing" >&2; exit 1; }
+  sed -n '3p' "$provision_output" | grep -q '^Sign it: ' \
+    || { echo "benchmark provision: third human step is not signing" >&2; exit 1; }
+
+  [[ -f "$provision_contract" ]] \
+    || { echo "benchmark provision: mission contract is missing" >&2; exit 1; }
+  if grep -qE '^```mission-seal|^Approval:' "$provision_contract"; then
+    echo "benchmark provision: provisioner crossed the human seal/sign boundary" >&2
+    exit 1
+  fi
+  "$provision_target/scripts/assert-mission.sh" --file "$provision_contract" >/dev/null \
+    || { echo "benchmark provision: unsigned contract is structurally invalid" >&2; exit 1; }
+
+  # The grader must be absent by world state, not merely by provisioner claim.
+  [[ ! -e "$provision_target/benchmark" && ! -e "$provision_target/grader" ]] \
+    || { echo "benchmark provision: held-out grader or benchmark kit reached the target" >&2; exit 1; }
+  [[ -z "$(find "$provision_target" -path "$provision_target/artifacts" -prune \
+      -o -path "$provision_target/.git" -prune -o -type d -name grader -print -quit)" ]] \
+    || { echo "benchmark provision: a held-out grader directory exists in the target" >&2; exit 1; }
+  [[ ! -e "$provision_target/calibrate.py" && ! -e "$provision_target/grade.sh" ]] \
+    || { echo "benchmark provision: held-out grader files reached the target" >&2; exit 1; }
+
+  # Configuration is manifest-derived: compare the live target to the manifest
+  # instead of restating either model identifier in the fixture.
+  python3 - "$srcrepo/benchmark/specs/bm-1/manifest.json" \
+    "$provision_target/metasystem.conf" "$provision_contract" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+config = {}
+for raw in Path(sys.argv[2]).read_text(encoding="utf-8").splitlines():
+    if raw and not raw.startswith("#") and "=" in raw:
+        key, value = raw.split("=", 1)
+        config[key] = value
+contract = {}
+inside = False
+for raw in Path(sys.argv[3]).read_text(encoding="utf-8").splitlines():
+    if raw == "```mission":
+        inside = True
+    elif raw == "```" and inside:
+        inside = False
+    elif inside and "=" in raw:
+        key, value = raw.split("=", 1)
+        contract[key] = value
+
+host = manifest["roster"]["host"]
+delegates = manifest["roster"]["delegates"]
+models = {host["runtime"]: host["model"], **delegates}
+if config.get("metasystem.runtimes", "").split(",") != list(models):
+    raise SystemExit("benchmark provision: configured runtimes differ from manifest roster")
+for runtime, model in models.items():
+    configured = [
+        value for key, value in config.items()
+        if re.fullmatch(rf"(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.{re.escape(runtime)}", key)
+    ]
+    if not configured or set(configured) != {model}:
+        raise SystemExit(f"benchmark provision: configured {runtime} models differ from manifest")
+if contract.get("host.runtime") != host["runtime"] or contract.get("host.model") != host["model"]:
+    raise SystemExit("benchmark provision: contract host differs from manifest roster")
+fences = manifest["fences"]
+expected = {
+    "ledger.cycle-budget": fences["ledgerCycleBudget"],
+    "ledger.no-gain-budget": fences["ledgerNoGainBudget"],
+    "fence.wall-clock-hours": fences["wallClockHours"],
+    "fence.cycles": fences["cycles"],
+    "fence.jobs": fences["jobs"],
+    "fence.concurrency": fences["concurrency"],
+    "fence.job-cap-min": fences["jobCapMin"],
+    "host.turn-cap-min": fences["hostTurnCapMin"],
+}
+for key, value in expected.items():
+    if contract.get(key) != str(value):
+        raise SystemExit(f"benchmark provision: contract {key} differs from manifest")
+for stream, goal in manifest["missionContract"]["streams"].items():
+    if contract.get(f"stream.{stream}") != goal:
+        raise SystemExit(f"benchmark provision: stream {stream} differs from manifest")
+PY
+  "$provision_target/scripts/metasystem-config.sh" validate \
+    || { echo "benchmark provision: filled metasystem.conf is invalid" >&2; exit 1; }
+
+  provision_ref=$(sed -n 's/^gate\.ref=//p' "$provision_contract")
+  [[ -n "$provision_ref" ]] \
+    || { echo "benchmark provision: contract has no gate.ref" >&2; exit 1; }
+  git -C "$provision_target" rev-parse --verify -q "refs/tags/$provision_ref^{commit}" >/dev/null \
+    || { echo "benchmark provision: gate.ref is not a tag" >&2; exit 1; }
+  if git -C "$provision_target" show-ref --verify -q "refs/heads/$provision_ref"; then
+    echo "benchmark provision: gate.ref also names a branch" >&2
+    exit 1
+  fi
+  cmp "$srcrepo/benchmark/specs/bm-1/gate.sh" "$provision_target/gate.sh" >/dev/null \
+    && cmp "$srcrepo/benchmark/specs/bm-1/guard-deps.sh" "$provision_target/guard-deps.sh" >/dev/null \
+    || { echo "benchmark provision: copied instruments differ from the spec" >&2; exit 1; }
+  git -C "$provision_target" cat-file -e "$provision_ref:gate.sh" \
+    && git -C "$provision_target" cat-file -e "$provision_ref:guard-deps.sh" \
+    || { echo "benchmark provision: instrument tag does not contain both instruments" >&2; exit 1; }
+
+  provision_origin=$(git -C "$provision_target" remote get-url origin)
+  [[ "$provision_origin" == "$provision_target.origin.git" ]] \
+    || { echo "benchmark provision: origin is not the sibling bare repository" >&2; exit 1; }
+  [[ "$(git -C "$provision_origin" rev-parse --is-bare-repository)" == true ]] \
+    || { echo "benchmark provision: local origin is not bare" >&2; exit 1; }
+  [[ "$(git -C "$provision_target" symbolic-ref refs/remotes/origin/HEAD)" == refs/remotes/origin/main ]] \
+    || { echo "benchmark provision: origin default branch is not declared" >&2; exit 1; }
+
+  before_rerun=$(git -C "$provision_target" status --porcelain=v1)
+  if "${provision_identity[@]}" "$srcrepo/benchmark/provision.sh" \
+      --spec "$srcrepo/benchmark/specs/bm-1" --target "$provision_target" \
+      >"$tmp/provision-rerun.out" 2>"$tmp/provision-rerun.err"; then
+    echo "benchmark provision: rerun accepted an existing target" >&2
+    exit 1
+  fi
+  grep -q 'target already exists' "$tmp/provision-rerun.err" \
+    || { echo "benchmark provision: rerun refusal did not name the existing target" >&2; exit 1; }
+  [[ "$(git -C "$provision_target" status --porcelain=v1)" == "$before_rerun" ]] \
+    || { echo "benchmark provision: refused rerun changed the target" >&2; exit 1; }
+
+  # Fixture-only human actions: seal, add the byte-attesting approval, commit,
+  # and push it so origin provenance can pass. Provisioning itself did none.
+  seal_hash=$("${provision_identity[@]}" "$provision_target/scripts/assert-mission.sh" \
+    --seal --file "$provision_contract")
+  [[ "$seal_hash" =~ ^[0-9a-f]{64}$ ]] \
+    || { echo "benchmark provision: fixture seal did not return a contract hash" >&2; exit 1; }
+  printf '\nApproval: name=Metasystem Fixture; date=2026-08-05; contract-sha256=%s\n' \
+    "$seal_hash" >>"$provision_contract"
+  git -C "$provision_target" add plans/mission-bm-1.contract.md
+  "${provision_identity[@]}" git -C "$provision_target" commit -qm "Seal and sign fixture mission"
+  git -C "$provision_target" push -q origin main
+  preflight_output=$("$provision_target/scripts/assert-mission.sh" --preflight --file "$provision_contract") \
+    || { echo "benchmark provision: provisioned BM-1 failed preflight" >&2; exit 1; }
+  [[ "$preflight_output" == "mission preflight passed: bm-1" ]] \
+    || { echo "benchmark provision: preflight did not report BM-1 success" >&2; exit 1; }
 
   tgt="$tmp/adopt-default"
   mkdir -p "$tgt"
