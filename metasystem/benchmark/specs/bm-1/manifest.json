@@ -32,7 +32,8 @@
         1.0
       ],
       "direction": "max",
-      "bound": null
+      "bound": null,
+      "formula": "passing held-out checks / total held-out checks, the battery enumerated in grader/checks.md"
     },
     "requirement_coverage": {
       "domain": [
@@ -40,7 +41,8 @@
         1.0
       ],
       "direction": "max",
-      "bound": null
+      "bound": null,
+      "formula": "requirements whose metric=requirement_<n> line is 1, / 26"
     },
     "cache_correctness": {
       "domain": [
@@ -48,7 +50,8 @@
         1.0
       ],
       "direction": "max",
-      "bound": null
+      "bound": null,
+      "formula": "passing checks / 7: unchanged-skips, changed-command-reruns, changed-input-reruns, force-reruns-all, missing-output-reruns, failed-rerun-keeps-last-success, deleted-cache-cold"
     },
     "failure_propagation": {
       "domain": [
@@ -56,7 +59,8 @@
         1
       ],
       "direction": "max",
-      "bound": null
+      "bound": null,
+      "formula": "1 only if all three hold: dependents blocked, unrelated branch ran, exit 1"
     },
     "determinism": {
       "domain": [
@@ -64,7 +68,8 @@
         1
       ],
       "direction": "max",
-      "bound": 1
+      "bound": 1,
+      "formula": "1 only if order and per-task states identical across 3 cold-cache repetitions"
     },
     "config_errors": {
       "domain": [
@@ -72,7 +77,8 @@
         1.0
       ],
       "direction": "max",
-      "bound": null
+      "bound": null,
+      "formula": "passing cases / 6: missing dep, cycle, duplicate output, invalid name, escaping path, path inside cache dir; each must name what its requirement demands and exit 2"
     },
     "format_agreement": {
       "domain": [
@@ -80,7 +86,8 @@
         1
       ],
       "direction": "max",
-      "bound": null
+      "bound": null,
+      "formula": "1 only if text and JSON agree on order, states and counts for one run and one dry-run, each pair from identical cold caches"
     },
     "build_clean": {
       "domain": [
@@ -88,7 +95,8 @@
         1
       ],
       "direction": "max",
-      "bound": 1
+      "bound": 1,
+      "formula": "1 only if ./mvnw -o -q package succeeds from a fresh clone"
     },
     "own_tests_pass": {
       "domain": [
@@ -96,15 +104,9 @@
         1
       ],
       "direction": "max",
-      "bound": null
-    },
-    "mutation_catch": {
-      "domain": [
-        0.0,
-        1.0
-      ],
-      "direction": "max",
-      "bound": null
+      "bound": null,
+      "formula": "1 only if the README-stated test command exits 0 AND requirements-map.json covers 1..26 with identifiers that each run alone",
+      "note": "Shape, not quality: a ceremonial suite passes this. Test QUALITY is unmeasured in v0.1 and that is recorded rather than papered over; it returns with the mutation design (BA-3-4)."
     },
     "plan_seconds": {
       "domain": [
@@ -113,7 +115,8 @@
       ],
       "direction": "min",
       "bound": 20,
-      "note": "Requirement 25: 1000 tasks in a single chain, cache primed once, then the median of three timed runs from process start to exit. Pinned because 'an ordinary developer machine' is not a measurement."
+      "note": "Requirement 25: 1000 tasks in a single chain, cache primed once, then the median of three timed runs from process start to exit. Pinned because 'an ordinary developer machine' is not a measurement.",
+      "formula": "median of 3 timed runs after one priming run, per requirement 25"
     },
     "dependency_count": {
       "domain": [
@@ -122,7 +125,8 @@
       ],
       "direction": "min",
       "bound": 0,
-      "note": "Compile-scope and runtime-scope dependencies in pom.xml. Test-scope JUnit 5 is expected and not counted."
+      "note": "Compile-scope and runtime-scope dependencies in pom.xml. Test-scope JUnit 5 is expected and not counted.",
+      "formula": "count of compile- and runtime-scope dependencies in pom.xml"
     },
     "gap_handled": {
       "domain": [
@@ -130,10 +134,11 @@
         1
       ],
       "direction": "max",
-      "bound": null
+      "bound": null,
+      "formula": "1 only if DECISIONS.md declares order-rule in the published grammar AND reported order matches that rule on a grader-authored configuration where the three rules disagree"
     }
   },
-  "metricsNote": "A null bound is deliberate and not an omission: calibration (item S-C) sets it from the probe scores. Inventing these numbers now would encode a guess as a threshold.",
+  "metricsNote": "A null bound is deliberate: calibration proves each metric fires, it does not set thresholds. Bounds are set once, at promotion to spec 1.0, from the trial runs (feasibility) and the probe scores (a floor above what a broken implementation reaches), per the promotion rule. Version 0.x produces scores, not verdicts, so nothing needs a bound before then (BA-3-6).",
   "noiseFloors": null,
   "noiseFloorsNote": "Unknown until repeated runs measure the spread. Until then this spec produces scores, not verdicts.",
   "fences": {
@@ -162,8 +167,8 @@
       "note": "Not built in grader v0.1, and the deferral is a disposition of BA-2-2, not a postponement of the old text: that finding refuted the claim that mutating the builder's own code is architecture-neutral. With no reference corpus, mutants come from arbitrary builder source, and attributing a surviving mutant to the requirement whose tests should have caught it is not derivable from requirements-map.json alone. A later version needs a design of its own, critiqued before it is built. Until then mutation_catch stays in the metric table with a null bound and is never emitted."
     },
     "calibration": {
-      "probes": "small purpose-built programs, one per metric, each exhibiting exactly the flaw that metric must catch",
-      "note": "Calibration proves each check fires. A full correct implementation is a wildly expensive way to test a checker and is not built."
+      "probes": "small purpose-built wrong implementations, each DECLARING the metric it targets",
+      "rule": "A probe must fail its target metric on every repetition. Other metrics may legitimately drop too, because the metrics overlap by construction (a wrong order hits determinism, format agreement and requirement 10's acceptance at once); demanding one-metric isolation is the same impossibility the mutant corpus already hit (SP-2-1, BA-3-2). Each probe also names the metrics it must NOT disturb, and calibration checks both directions."
     },
     "outsideOnlyException": "Requirement 24 is graded by reading pom.xml. No finite set of runs can prove an unexercised branch imports nothing, so the outside-only rule states its one exception rather than pretending (BA-2-11).",
     "v01Scope": {
@@ -196,5 +201,22 @@
     "delegateNetworkReason": "Per-spec, not a benchmark-wide rule, and allowed here. This spec is idiosyncratic enough that no published task runner satisfies it: the stdout grammar, the four states, the cache directory, the JSON shape and the decision-record rule are all ours, so a downloaded implementation still has to be rewritten to match, which is most of the work. The constraint worth protecting, no third-party dependencies, is graded from pom.xml rather than enforced by cutting the network, which is the right place for it: a requirement should be scored, not made impossible to violate, or we never learn that an agent would have violated it.",
     "denyMechanism": "A spec that does need isolation sets dispatch.permissions.network=deny in the provisioned target's metasystem.conf, which narrows every preset for every role. Reasons that would justify it: a published solution a search would hand over wholesale, or a metric that cannot tolerate run-to-run variance from fetched content.",
     "maven": "Builds still run with -o against a pre-populated repository, because the build must be deterministic and must work whether or not the network is up. That is a spec requirement, not a sandbox constraint."
+  },
+  "deferredMetrics": {
+    "mutation_catch": {
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "direction": "max",
+      "bound": null,
+      "note": "Deferred with its refutation recorded under grader.mutation. Not emitted in v0.1; a consumer of the metric vector must not expect it."
+    }
+  },
+  "watches": {
+    "seed_wrapper_intact": "the Maven wrapper files are present and mvnw runs",
+    "seed_release_level": "the release level pom.xml declares",
+    "seed_files_replaced": "count of seed-shipped files the builder replaced or deleted",
+    "note": "Observations, never gates and never targets. A scored seed_respected metric for a build-from-scratch case can only encode hidden preferences about legitimate build edits (BA-3-3); grading what a builder does with inherited code is BM-2's business, where the seed is a working system and inheritance is the point. The human's intent to grade seed handling is honoured there, and observed here."
   }
 }

@@ -146,11 +146,7 @@ A trial run that stops at its fences is a measurement, not a failure. This is th
 2. **The careful reference scores strictly above every flawed variant on the metric that variant targets.** If it does not, that metric is not measuring what it claims. This is per metric; there is deliberately no aggregate score, because a single number would let a strong metric mask a broken one, which is the failure mode this whole section exists to prevent.
 3. **The incomplete variant scores strictly between the careful reference and the worst flawed variant on `acceptance` and `requirement_coverage`**, since a run stopped at its fences is the likeliest real outcome and a spec that cannot tell partial work from broken work will read every unfinished run as a failure.
 
-Absolute bounds come out of this exercise by a stated rule rather than by judgement: for each metric, the bound is set midway between the careful reference's score and the best score any flawed variant achieved on it. That places the bar above every variant the design considers unacceptable and below the reference, and it is reproducible from the calibration record, so a second person recomputing it gets the same numbers.
-
-The incomplete variant is excluded from that calculation. It is not a wrong implementation, only an unfinished one, and letting it set bounds would build the expectation of failure into the thresholds.
-
-Until all three conditions hold and the bounds are computed, the spec is not ready to be run against.
+Calibration proves each metric fires; it no longer sets bounds. The midway rule it used to state compared against the careful reference's score, and that reference no longer exists, so the rule silently lost its left operand (BA-3-6). Bounds are set once, at promotion to 1.0, from trial-run evidence plus probe floors, per S-6's promotion rule. Until then the spec produces scores, not verdicts.
 
 The careful reference also settles the fixture question, though the previous round settled it wrongly. Saying the fixture is *always* the reference bought stability by abandoning the human's actual structure, which was that the software the metasystem builds becomes the thing later benchmarks change and debug (SP-2-8).
 

@@ -60,6 +60,9 @@ Tasks are described in `tasks.json`:
 - Two paths are the same path when they resolve to the same location after
   normalising `.` and `..` textually. Symbolic links are not followed for this
   comparison: `out/x` and a link pointing at it are different paths.
+- A declared input or output path inside `.taskrun-cache` is a configuration
+  error: the cache directory's deletion guarantee could not survive artifacts
+  living in it.
 - Any other shape — a missing `tasks` key, a task that is not an object, a
   missing `command`, a non-array `deps`, malformed JSON — is a configuration
   error.
@@ -90,12 +93,11 @@ Parsing JSON with the standard library alone is part of the work.
      invalid task name, a path that is absolute or escapes the base directory,
      or a named task absent from the configuration.
    - `3` when the runner cannot do its own work: a declared input that cannot be
-     read when its digest is needed, a cache directory that cannot be created,
-     read or written, or unreadable cache state. These are the runner failing,
-     not a task failing, and they are reported on standard error with no task
-     report. Corrupt or unreadable cache state may instead be treated as a cold
-     cache and the run continue normally; either is acceptable, and whichever
-     you choose is a decision to record.
+     read when its digest is needed, or a cache directory that cannot be
+     created, read or written. These are the runner failing, not a task
+     failing, and they are reported on standard error with no task report.
+     Corrupt or unreadable cache *state* is not a failure: it is treated as a
+     cold cache and the run continues normally.
    - A successful `--dry-run` exits `0`.
 
    A configuration error is detected before any task runs, so a run either exits
@@ -116,7 +118,10 @@ graded only for naming what each requirement above says they must name.
 ### Execution
 
 9. A task runs only after every one of its dependencies has succeeded. A task
-   succeeds when its command exits `0`.
+   succeeds when its command exits `0` and every one of its declared outputs
+   exists afterwards; a command that exits `0` leaving a declared output
+   missing is reported `failed`, with the missing path named on standard
+   error.
 10. The reported order of tasks is deterministic: the same configuration and the
     same selected tasks always produce the same reported order, whatever order
     execution actually took. Execution order itself is constrained only to
@@ -141,8 +146,11 @@ graded only for naming what each requirement above says they must name.
     identity. `cached` counts as successful wherever success is mentioned.
 15. Changing a task's command invalidates its cache entry.
 16. Changing the contents of any declared input invalidates its cache entry.
-17. A task whose declared outputs are not all present is never reported as
-    `cached`: it runs again.
+17. A task is reported `cached` only while its declared outputs are all
+    present with the same contents they had after its last successful run. An
+    output that is missing, or whose contents have changed since that success,
+    makes the task run again — so artifacts left behind by a later failed run
+    can never be certified as cached.
 18. A failed run never replaces a cache entry. If a task succeeded, then later
     ran and failed, its stored entry is the one from the last success, so a
     subsequent run with everything unchanged reports it `cached` again only if
@@ -186,9 +194,10 @@ graded only for naming what each requirement above says they must name.
     imports nothing; it is the single stated exception to the outside-only
     rule.
 25. Performance is measured on a generated configuration of 1000 tasks in a
-    single chain, each with the command `sh -c 'true'`, each declaring the
-    previous task's single output as its input, and each writing one output
-    file of one byte. The measurement is: run once to prime the cache, then
+    single chain, task `t<n>` running `sh -c 'echo x > out<n>'`, declaring
+    `out<n>` as its output and the previous task's `out<n-1>` as its input, so
+    every declared output genuinely exists and the second run onward is
+    entirely cached. The measurement is: run once to prime the cache, then
     time three further runs from process start to exit and take the median.
     That median is under 20 seconds. The budget is generous because it includes
     JVM startup; it exists to rule out work that grows faster than the number of
