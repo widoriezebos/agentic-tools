@@ -3083,7 +3083,12 @@ PY
     || { echo "benchmark provision: instrument tag does not contain both instruments" >&2; exit 1; }
 
   provision_origin=$(git -C "$provision_target" remote get-url origin)
-  [[ "$provision_origin" == "$provision_target.origin.git" ]] \
+  # Compare resolved to resolved: provision canonicalises its target, and on
+  # macOS mktemp hands out the /var symlink spelling of /private/var, so a
+  # textual comparison fails on any normal Mac while passing in a sandbox
+  # whose TMPDIR is already canonical.
+  [[ "$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$provision_origin")" \
+      == "$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$provision_target.origin.git")" ]] \
     || { echo "benchmark provision: origin is not the sibling bare repository" >&2; exit 1; }
   [[ "$(git -C "$provision_origin" rev-parse --is-bare-repository)" == true ]] \
     || { echo "benchmark provision: local origin is not bare" >&2; exit 1; }
