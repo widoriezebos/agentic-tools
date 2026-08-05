@@ -914,6 +914,24 @@ scripts/assert-critique-closed.sh \
 # Plan consistency: a rule stated in several places must not disagree with
 # itself. Eight of nine rounds of one design critique found nothing else, and a
 # paid round is the wrong instrument for drift a script finds instantly.
+# This repository builds the harness and must run under it. Its own hooks were
+# never installed: adopt.sh writes .claude/settings.json into adopted targets,
+# and the template never adopts itself, so for the whole of development the
+# session-start arming, the untracked-process report, the stale-supervisor
+# warning and the open-work check were inert here. Everything was fixtured and
+# nothing was live. This check is why that cannot recur silently.
+# Template repository only. An adopted copy gets its hooks from adopt.sh at its
+# own root, with a different layout; this is about the repository that builds the
+# harness running under it.
+if [[ -f meta/harness-design.md ]]; then
+  harness_own_settings=$(cd "$root/.." && pwd -P)/.claude/settings.json
+  [[ -f "$harness_own_settings" ]] \
+    || { echo "this repository has no .claude/settings.json: the harness is not running under itself" >&2; exit 1; }
+  python3 "$root/scripts/agents/check-own-hooks.py" "$harness_own_settings" \
+    "$root/scripts/enforcement/claude-code-hooks.json"
+  echo "harness runs under its own hooks"
+fi
+
 scripts/assert-plan-consistency.sh >"$tmp/plan-consistency.out"
 grep -q 'retired term' "$tmp/plan-consistency.out" \
   || { echo "plan consistency check did not report its retired terms" >&2; exit 1; }
