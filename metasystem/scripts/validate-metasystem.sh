@@ -2784,6 +2784,26 @@ if (( template_mode )); then
   srcrepo="$tmp/adopt-src"
   mkdir -p "$srcrepo"
   copy_tree_without_artifacts "$root" "$srcrepo"
+
+  # The same adoption must work when the template is vendored one level below
+  # the git toplevel, which is the real repository's own layout. A tree path
+  # after the colon in git archive resolves relative to the cwd, so archiving
+  # HEAD:<prefix> from inside the prefix yields an empty archive with exit 0;
+  # every fixture stages at a root, which is why the first real adoption from
+  # the vendored layout found it and no fixture did.
+  nested_src="$tmp/adopt-nested"
+  mkdir -p "$nested_src/vendored"
+  copy_tree_without_artifacts "$root" "$nested_src/vendored"
+  git -C "$nested_src" init -q
+  git -C "$nested_src" add .
+  git -C "$nested_src" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm nested
+  nested_tgt="$tmp/adopt-nested-target"
+  mkdir -p "$nested_tgt"
+  git -C "$nested_tgt" init -q
+  "$nested_src/vendored/scripts/adopt.sh" "$nested_tgt" --runtimes claude >"$tmp/adopt-nested.out" 2>&1 \
+    || { echo "nested-prefix adoption failed" >&2; cat "$tmp/adopt-nested.out" >&2; exit 1; }
+  [[ -f "$nested_tgt/metasystem.conf" && -d "$nested_tgt/scripts/agents" ]] \
+    || { echo "nested-prefix adoption staged an empty payload" >&2; exit 1; }
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
   echo junk >"$srcrepo/ignored-fixture.txt"
   git init -q "$srcrepo"

@@ -129,8 +129,18 @@ echo "note: only file-shaped instruction assets are detectable. Confirm by hand 
 # Stage the payload from the tracked HEAD.
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
-if [[ -n "$prefix" ]]; then treeish="HEAD:${prefix%/}"; else treeish=HEAD; fi
-git -C "$root" archive "$treeish" >"$stage/payload.tar"
+# A tree path after the colon resolves relative to the current directory, so
+# archiving HEAD:<prefix> from inside the prefix silently yields an empty
+# archive with exit 0. Every fixture stages the template at a repository root
+# (empty prefix), which is why this survived until the first real adoption from
+# the vendored layout. Archive from the toplevel, where the prefix means what
+# it says.
+toplevel=$(git -C "$root" rev-parse --show-toplevel)
+if [[ -n "$prefix" ]]; then
+  git -C "$toplevel" archive "HEAD:${prefix%/}" >"$stage/payload.tar"
+else
+  git -C "$root" archive HEAD >"$stage/payload.tar"
+fi
 tar -xf "$stage/payload.tar" -C "$stage"
 rm -f "$stage/payload.tar"
 rm -rf "$stage/development" "$stage/README.md" "$stage/LICENSE"
