@@ -8,9 +8,19 @@ the mechanism: the end-of-turn hook runs it, so stopping with open work becomes
 a visible fact rather than something only a reader would notice.
 
 Its inputs are the structured fields `plans/README.md` already mandates for
-every stream, not free prose: the `- Next step:` line and the
-`- Waiting on the human:` line. A plan is open work when it names a next step,
-is not waiting on the human, and no agent job is in flight.
+every stream, not free prose: the `- Next step:` line, the
+`- Waiting on the human:` line, and the `- In flight right now:` line. A plan is
+open work when it names a next step, is not waiting on the human, and no agent
+job is in flight.
+
+It also reports a plan whose own account of itself contradicts the job records,
+because a check that reads a stale plan reports the wrong work as confidently as
+the right work, which is worse than staying quiet.
+
+Nothing here is specific to a runtime. It reads files written by the dispatcher
+and by humans, so it produces the same answer under Claude, Codex, Devin, or no
+agent at all. How the answer reaches an agent differs by runtime; what the
+answer is does not.
 """
 
 from __future__ import annotations
@@ -50,6 +60,54 @@ def jobs_in_flight(harness_root: Path) -> int:
     return count
 
 
+def stale_plans(harness_root: Path) -> list[str]:
+    """Report plans whose own state contradicts the job records.
+
+    A plan that misdescribes reality makes every check reading it worse than
+    useless: it reports the wrong work with the same confidence as the right
+    work. This session lost a turn to exactly that, so the accuracy of the
+    signal is checked alongside the signal.
+    """
+    live = set()
+    for path in (harness_root / "artifacts" / "agents" / "jobs").glob("*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if record.get("status") in IN_FLIGHT:
+            live.add(record.get("jobId", ""))
+
+    lines = []
+    for plan in sorted((harness_root / "plans").glob("*.md")):
+        if plan.name == "README.md":
+            continue
+        try:
+            text = plan.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        claim = field(text, "In flight right now")
+        if claim is None or not claim or UNBLOCKED.match(claim):
+            # A stream saying it has nothing running is not contradicted by some
+            # other stream's job. Only a claim of its own in-flight work can be
+            # wrong, and flagging every idle plan whenever anything runs would
+            # make this noise rather than signal.
+            continue
+        name = plan.relative_to(harness_root)
+        if not live:
+            lines.append(
+                f"STALE-PLAN {name}: claims work in flight while no job is running"
+            )
+            continue
+        # A chain's rounds are <root>-r<n>; a plan naming the root is current.
+        roots = {re.sub(r"-r[0-9]+$", "", job) for job in live} | live
+        if not any(job and job in claim for job in roots):
+            lines.append(
+                f"STALE-PLAN {name}: names in-flight work that is not among the "
+                f"running jobs"
+            )
+    return lines
+
+
 def open_work(harness_root: Path) -> list[str]:
     if jobs_in_flight(harness_root):
         # Work is in flight; the turn is not idle and nothing is being dropped.
@@ -82,6 +140,8 @@ def main() -> int:
     root = Path(args.repo).resolve()
     if not (root / "plans").is_dir():
         return 0
+    for line in stale_plans(root):
+        print(line)
     for line in open_work(root):
         print(line)
     return 0

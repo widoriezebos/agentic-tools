@@ -727,6 +727,30 @@ cat >"$open_work_root/plans/stream.md" <<'EOF'
 EOF
 [[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
   || { echo "a settled next step was reported as open work" >&2; exit 1; }
+
+# S4-13: a plan whose own account of itself contradicts the job records. A check
+# that reads a stale plan reports the wrong work as confidently as the right
+# work, which is how this session lost a turn.
+cat >"$open_work_root/plans/stream.md" <<'EOF'
+- In flight right now: job design-critic-20260101t000000z-aaaa
+- Waiting on the human: nothing blocking
+- Next step: none
+EOF
+python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root" \
+  | grep -q 'STALE-PLAN plans/stream.md: claims work in flight while no job is running' \
+  || { echo "a plan claiming absent work was not reported stale" >&2; exit 1; }
+printf '{"jobId":"design-critic-20260101t000000z-aaaa-r3","status":"running"}\n' \
+  >"$open_work_root/artifacts/agents/jobs/live.json"
+[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root" | grep STALE-PLAN)" ]] \
+  || { echo "a plan naming the chain root of a live round was called stale" >&2; exit 1; }
+cat >"$open_work_root/plans/other.md" <<'EOF'
+- In flight right now: nothing
+- Waiting on the human: nothing blocking
+- Next step: none
+EOF
+[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root" | grep 'STALE-PLAN plans/other.md')" ]] \
+  || { echo "an idle stream was called stale because another stream had a job" >&2; exit 1; }
+rm -f "$open_work_root/plans/other.md" "$open_work_root/artifacts/agents/jobs/live.json"
 cp "$source_root/plans/README.md" "$open_work_root/plans/README.md"
 rm -f "$open_work_root/plans/stream.md"
 [[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
@@ -784,4 +808,4 @@ kill -0 "$foreign_sleep_pid" 2>/dev/null \
   || { echo "shutdown stopped a process another checkout owned" >&2; exit 1; }
 stop_owned_pid "foreign owner" "$foreign_sleep_pid" "$foreign_start" >/dev/null 2>&1 || true
 
-echo "supervision fixtures passed (S4-1 through S4-12)"
+echo "supervision fixtures passed (S4-1 through S4-13)"

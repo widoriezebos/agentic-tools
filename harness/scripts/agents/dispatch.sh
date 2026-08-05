@@ -52,6 +52,19 @@ dispatch_fixture_wait_cap() { # base seconds; normal dispatch remains 1x
   printf '%s\n' "$(( (base * scale_milli + 999) / 1000 ))"
 }
 
+report_plan_drift() {
+  # Surfaced here as well as at end of turn, because the end-of-turn hook needs
+  # a runtime that fires hooks and only one of the three has ever been observed
+  # doing so. Every agent that delegates passes through this function whatever
+  # runtime it is, so a plan contradicting the job records cannot stay invisible
+  # on Codex or Devin merely because their hooks are unproven. Reporting only:
+  # a stale plan is never a reason to refuse work.
+  local reporter="$root/scripts/agents/open-work.py" output
+  [[ -f "$reporter" ]] || return 0
+  output=$(python3 "$reporter" --repo "$root" 2>/dev/null | grep '^STALE-PLAN' || true)
+  [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+}
+
 require_fresh_census() {
   local verdict="$agents/supervision/last-census.json" expected
   [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
@@ -1045,6 +1058,7 @@ dispatch_job() {
   mode=$(brief_mode "$brief") || die 1 "brief must contain exactly one filled Working Mode header"
   [[ -z "$mode_override" || "$mode_override" == "$mode" ]] || die 1 "--mode contradicts the brief's Working Mode header"
   require_fresh_census
+  report_plan_drift
 
   configured_runtime=$(config_get --key "role.$role.runtime" --mode "$mode" --default __missing__)
   [[ "$configured_runtime" != __missing__ ]] || configured_runtime=$(config_get --key role.default.runtime --mode "$mode" --default __missing__)
@@ -1165,6 +1179,7 @@ follow_up() {
   done
   valid_id "$job" && [[ -f "$message" && -f "$jobs/$job.json" ]] || { usage; exit 2; }
   require_fresh_census
+  report_plan_drift
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
   acquire_chain_lock "$root_id"; trap 'release_chain_lock "$root_id"' EXIT
   [[ "$(json_field "$jobs/$root_id.json" chainClosed 2>/dev/null || true)" != true ]] || die 1 "job chain is closed"
