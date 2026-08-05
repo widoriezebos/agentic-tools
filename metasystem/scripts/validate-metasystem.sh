@@ -93,6 +93,7 @@ for link in \
   scripts/agents/mission-prompt.py \
   scripts/agents/mission-runner.sh \
   scripts/agents/hosts/claude.sh \
+  scripts/agents/hosts/codex.sh \
   scripts/agents/hosts/fake.sh \
   scripts/agents/schemas/mission-state.schema.json \
   scripts/agents/adapters/fake.sh \
@@ -125,6 +126,7 @@ bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/mission-runner.sh
 bash -n scripts/agents/hosts/claude.sh
+bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/fake.sh
 bash -n scripts/assert-mission.sh
 bash -n scripts/assert-return-complete.sh
@@ -165,7 +167,7 @@ for runtime in claude codex devin; do
   grep -Fq "write_capability_snapshot $runtime \"\$version\" \"\$hash\"" "$adapter" \
     || { echo "$runtime adapter does not write its named capability snapshot" >&2; exit 1; }
 done
-for runtime in claude fake; do
+for runtime in claude codex fake; do
   host="scripts/agents/hosts/$runtime.sh"
   [[ -x "$host" ]] || { echo "$runtime host adapter is missing or not executable: $host" >&2; exit 1; }
   grep -Fq 'start-turn' <<<"$($host --help 2>&1)" \
@@ -2167,8 +2169,9 @@ GATE
   git -C "$runner_origin" symbolic-ref HEAD "refs/heads/$runner_branch"
   git -C "$runner_repo" remote set-head origin -a >/dev/null
 
-  make_runner_contract() { # mission, fake behavior, cycle fence, optional prompt-breaking heading
-    local mission=$1 behavior=$2 cycles=$3 bad_heading=${4:-} contract="$runner_repo/plans/mission-$1.contract.md" contract_sha
+  make_runner_contract() { # mission, behavior, cycle fence, optional heading, runtime, model
+    local mission=$1 behavior=$2 cycles=$3 bad_heading=${4:-} runtime=${5:-fake} model=${6:-fake-model}
+    local contract="$runner_repo/plans/mission-$1.contract.md" contract_sha
     mkdir -p "$runner_repo/plans"
     cat >"$contract" <<EOF
 # Intent
@@ -2204,8 +2207,8 @@ fence.cycles=$cycles
 fence.jobs=4
 fence.concurrency=1
 fence.job-cap-min=5
-host.runtime=fake
-host.model=fake-model
+host.runtime=$runtime
+host.model=$model
 host.turn-cap-min=1
 stream.primary=FAKEHOST:$behavior advance the candidate.
 envelope.dependencies=jq
@@ -2260,6 +2263,38 @@ EOF
     return 1
   }
 
+  wait_runner_file() { # path, description
+    local path=$1 description=$2 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec ))
+    while (( SECONDS < deadline )); do
+      [[ -e "$path" ]] && return 0
+      sleep 0.02
+    done
+    echo "mission runner file wait timed out: $description (elapsed: $((SECONDS - started))s; scaled cap: ${agent_fixture_cap_sec}s)" >&2
+    return 1
+  }
+
+  start_atomic_result_watcher() { # result path, fixture name
+    local result_path=$1 name=$2
+    python3 - "$result_path" "$agent_fixture_cap_sec" >"$agent_fixture/$name.out" 2>&1 <<'PY' &
+import json, sys, time
+from pathlib import Path
+path, cap = Path(sys.argv[1]), int(sys.argv[2])
+deadline = time.monotonic() + cap
+while time.monotonic() < deadline:
+    if path.exists():
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise SystemExit(f"host result was observable in a partial state: {error}")
+        assert set(value) == {"sessionId", "outcome", "usage", "rawPath", "returnPath"}, value
+        assert value["outcome"] == "completed" and value["sessionId"] == "codex-fixture-session", value
+        raise SystemExit(0)
+    time.sleep(0.001)
+raise SystemExit(f"host result did not appear within {cap}s: {path}")
+PY
+    atomic_result_watcher_pid=$!
+  }
+
   printf '{}\n' >"$runner_mission_identity_fixture"
   export METASYSTEM_MISSION_PROCESS_IDENTITY_FILE="$runner_mission_identity_fixture"
 
@@ -2293,6 +2328,181 @@ PY
   grep -Fq -- '- Classification: contract-improved;' \
     "$runner_repo/artifacts/agents/missions/runner-cycle/ledger.md" \
     || { echo "full mission cycle did not record runner-measured contract improvement" >&2; exit 1; }
+
+  # Exercise the real mission runner through the Codex host with only the paid
+  # model call replaced. Two turns prove first-turn and resumed identity,
+  # workspace entry for `codex exec resume`, typed usage, atomic host results,
+  # and the live instance tag that releases the runner's start gate.
+  codex_host_fixture="$agent_fixture/codex-host"
+  codex_host_bin="$codex_host_fixture/bin"
+  mkdir -p "$codex_host_bin"
+  cat >"$codex_host_bin/codex" <<'CODEX'
+#!/usr/bin/env bash
+set -euo pipefail
+fixture=${METASYSTEM_CODEX_FIXTURE_DIR:?}
+cap=${METASYSTEM_CODEX_FIXTURE_TIMEOUT_SEC:?}
+mkdir -p "$fixture"
+if [[ ! -e "$fixture/request-1.args" ]]; then
+  sequence=1
+elif [[ ! -e "$fixture/request-2.args" ]]; then
+  sequence=2
+else
+  echo "codex host fixture received an unexpected third turn" >&2
+  exit 9
+fi
+printf '%s\0' "$@" >"$fixture/request-$sequence.args"
+printf '%s\n' "$PWD" >"$fixture/request-$sequence.cwd"
+prompt="$fixture/request-$sequence.prompt"
+cat >"$prompt"
+printf 'ready\n' >"$fixture/ready-$sequence"
+deadline=$((SECONDS + cap))
+while [[ ! -e "$fixture/release-$sequence" ]]; do
+  (( SECONDS < deadline )) || { echo "codex host fixture release $sequence timed out" >&2; exit 9; }
+  sleep 0.02
+done
+output=
+arguments=("$@")
+for ((index=0; index<${#arguments[@]}; index++)); do
+  if [[ ${arguments[$index]} == -o && $((index + 1)) -lt ${#arguments[@]} ]]; then
+    output=${arguments[$((index + 1))]}
+  fi
+done
+[[ -n "$output" ]] || { echo "codex host fixture received no -o path" >&2; exit 9; }
+if [[ $sequence -eq 2 ]]; then
+  printf '1\n' >"$PWD/candidate-score.txt"
+  git add candidate-score.txt
+  git commit -qm 'improve candidate from codex host fixture'
+fi
+python3 - "$prompt" "$output" "$sequence" <<'PY'
+import json, sys
+from pathlib import Path
+prompt, output, sequence = Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3])
+headers = dict(
+    line.split(": ", 1)
+    for line in prompt.read_text(encoding="utf-8").split("\n\n", 1)[0].splitlines()
+)
+declared = None if headers["Host-Session"] == "none" else headers["Host-Session"]
+if sequence == 1:
+    assert declared is None
+else:
+    assert declared == "codex-fixture-session"
+value = {
+    "turnId": headers["Turn-Id"],
+    "missionId": headers["Mission-Id"],
+    "cycle": int(headers["Cycle"]),
+    "dispatched": [],
+    "certified": [],
+    "streamUpdatesRequested": [],
+    "askCandidates": [],
+    "factsForLedger": [],
+    "gaps": [],
+    "identity": {
+        "runtime": headers["Runtime"],
+        "model": headers["Model"],
+        "sessionId": declared,
+    },
+}
+output.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+printf '%s\n' \
+  '{"type":"thread.started","thread_id":"codex-fixture-session"}' \
+  "{\"type\":\"turn.started\",\"turn_id\":\"codex-fixture-turn-$sequence\"}" \
+  '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":4,"reasoning_output_tokens":1}}'
+CODEX
+  chmod +x "$codex_host_bin/codex"
+
+  printf '0\n' >"$runner_repo/candidate-score.txt"
+  git -C "$runner_repo" add candidate-score.txt
+  git -C "$runner_repo" commit -qm 'reset candidate for codex host mission'
+  git -C "$runner_repo" push -qu origin "$runner_branch"
+  make_runner_contract runner-codex return-ok 5 '' codex gpt-5-fixture
+  run_runner_expect runner-codex-start 0 "${runner_process_env[@]}" \
+    PATH="$codex_host_bin:$PATH" METASYSTEM_AGENT_RUNTIME=fake \
+    METASYSTEM_CODEX_FIXTURE_DIR="$codex_host_fixture" \
+    METASYSTEM_CODEX_FIXTURE_TIMEOUT_SEC="$agent_fixture_cap_sec" \
+    "$runner" start --mission runner-codex
+  wait_runner_file "$codex_host_fixture/ready-1" "codex host first turn"
+  codex_turn_one=$(find "$runner_repo/artifacts/agents/missions/runner-codex/turns" \
+    -mindepth 1 -maxdepth 1 -type d | head -1)
+  read -r codex_host_pid codex_host_tag < <(python3 - "$codex_turn_one/turn.json" <<'PY'
+import json,sys
+value=json.load(open(sys.argv[1])); assert value["status"]=="running"
+assert value["pid"]==value["pgid"] and value["instanceTag"].startswith("metasystem-host-")
+print(value["pid"], value["instanceTag"])
+PY
+  )
+  codex_host_command=$(ps -ww -p "$codex_host_pid" -o command=)
+  [[ "$codex_host_command" == *"$codex_host_tag"* ]] \
+    || { echo "codex host process did not carry its recorded instance tag" >&2; exit 1; }
+  start_atomic_result_watcher "$codex_turn_one/result.json" codex-result-one
+  codex_result_one_watcher=$atomic_result_watcher_pid
+  touch "$codex_host_fixture/release-1"
+  wait_for_agent_fixture_process codex-result-one - "$codex_result_one_watcher" \
+    || { cat "$agent_fixture/codex-result-one.out" >&2; exit 1; }
+  wait_runner_file "$codex_host_fixture/ready-2" "codex host resumed turn"
+  codex_turn_two=$(python3 - "$runner_repo/artifacts/agents/missions/runner-codex/turns" <<'PY'
+import json,sys
+from pathlib import Path
+for path in Path(sys.argv[1]).glob("*/turn.json"):
+    if json.loads(path.read_text())["cycle"] == 2:
+        print(path.parent)
+        raise SystemExit(0)
+raise SystemExit("second codex host turn was not created")
+PY
+  )
+  start_atomic_result_watcher "$codex_turn_two/result.json" codex-result-two
+  codex_result_two_watcher=$atomic_result_watcher_pid
+  touch "$codex_host_fixture/release-2"
+  wait_for_agent_fixture_process codex-result-two - "$codex_result_two_watcher" \
+    || { cat "$agent_fixture/codex-result-two.out" >&2; exit 1; }
+  wait_runner_status runner-codex 10
+  wait_lease_released runner-codex "completed codex-host mission"
+  python3 - "$runner_repo" "$codex_host_fixture" "$codex_turn_one" "$codex_turn_two" <<'PY'
+import json, sys
+from pathlib import Path
+root, fixture, first, second = map(Path, sys.argv[1:])
+
+def arguments(sequence):
+    return [part.decode() for part in (fixture / f"request-{sequence}.args").read_bytes().split(b"\0") if part]
+
+first_args, second_args = arguments(1), arguments(2)
+assert first_args[:2] == ["exec", "--json"]
+assert first_args[first_args.index("-m") + 1] == "gpt-5-fixture"
+assert first_args[first_args.index("--sandbox") + 1] == "workspace-write"
+assert first_args[first_args.index("-C") + 1] == str(root)
+assert 'approval_policy="never"' in first_args
+assert "sandbox_workspace_write.network_access=true" in first_args
+assert second_args[:3] == ["exec", "resume", "--json"]
+assert "-C" not in second_args
+assert 'model="gpt-5-fixture"' in second_args
+assert 'sandbox_mode="workspace-write"' in second_args
+assert 'approval_policy="never"' in second_args
+assert "sandbox_workspace_write.network_access=true" in second_args
+assert "codex-fixture-session" in second_args
+assert (fixture / "request-1.cwd").read_text().strip() == str(root)
+assert (fixture / "request-2.cwd").read_text().strip() == str(root)
+
+expected_result_fields = {"sessionId", "outcome", "usage", "rawPath", "returnPath"}
+expected_usage = {
+    "availability": "native", "inputTokens": 10, "cachedInputTokens": 2,
+    "outputTokens": 4, "reasoningTokens": 1, "cost": None, "providerUnits": None,
+}
+for turn in (first, second):
+    result = json.loads((turn / "result.json").read_text())
+    assert set(result) == expected_result_fields and result["outcome"] == "completed"
+    assert result["sessionId"] == "codex-fixture-session" and result["usage"] == expected_usage
+    assert Path(result["rawPath"]).resolve() == (turn / "raw.out").resolve()
+    assert Path(result["returnPath"]).resolve() == (turn / "return.json").resolve()
+    assert not list(turn.glob("result.json.*.tmp"))
+first_return = json.loads((first / "return.json").read_text())
+second_return = json.loads((second / "return.json").read_text())
+second_turn = json.loads((second / "turn.json").read_text())
+assert first_return["identity"]["sessionId"] is None
+assert second_turn["hostSession"] == "codex-fixture-session"
+assert second_return["identity"]["sessionId"] == second_turn["hostSession"]
+PY
+  git -C "$runner_repo" push -qu origin "$runner_branch"
+
   run_runner_expect prompt-missing-turn 1 "$runner_repo/scripts/agents/mission-prompt.py" \
     --mission runner-cycle --turn runner-cycle-t99-missing --output "$agent_fixture/missing-prompt.md"
   grep -Fq 'missing turn record' "$agent_fixture/prompt-missing-turn.out" \
