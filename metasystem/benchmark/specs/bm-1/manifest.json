@@ -273,5 +273,44 @@
     "decision": "self-assessment, decided 2026-08-05 under the human's blanket approval",
     "command": "the builder's stated test command passes AND requirements-map.json covers 1..26 AND ./mvnw -o -q package succeeds from a clean state",
     "rationale": "The grader is held out, so the mission cannot iterate against it; the run stops when the builders believe they are done, and the held-out grading afterwards measures how right that belief was, which is among the most interesting numbers the benchmark produces."
+  },
+  "missionContract": {
+    "note": "Everything provisioning needs to write a preflightable contract. Decided 2026-08-05 under the human's blanket approval; these are benchmark policy, not something a provisioning script may invent.",
+    "instruments": [
+      "gate.sh",
+      "guard-deps.sh"
+    ],
+    "instrumentsNote": "Copied to the target root from the spec directory and tagged; the builder must never edit them, which gate.paths enforces.",
+    "gate": {
+      "command": "bash gate.sh",
+      "metric": "self-assessment",
+      "direction": "max",
+      "threshold": ">=1",
+      "noiseFloor": 0,
+      "paths": "gate.sh,guard-deps.sh",
+      "refKind": "tag",
+      "refKindNote": "A tag, never a branch: sealing against a branch cannot survive its own signing commit, which the first real preflight found."
+    },
+    "guard": {
+      "name": "deps",
+      "command": "bash guard-deps.sh",
+      "metric": "no-runtime-deps",
+      "floor": 1,
+      "noise": 0,
+      "cadence": 1,
+      "rationale": "Requirement 24's floor, checked every cycle and deliberately orthogonal to the completion gate: a build can stay green and the tests can stay passing while a dependency quietly does the work. A guard stops the run; a metric would only score it afterwards."
+    },
+    "truth": {
+      "paths": "gate.sh,guard-deps.sh",
+      "certification": "certified"
+    },
+    "streams": {
+      "build": "Build the task runner described in spec.md so that gate.sh reports self-assessment=1."
+    },
+    "envelope": {
+      "dependencies": "jdk21,maven"
+    },
+    "exposure": "EUR:75",
+    "exposureNote": "An estimate, not a measurement: no BM-1 run has happened, so nobody knows what eight cycles and twelve jobs on this roster actually cost. The first trial's recorded usage replaces this number, and the fences stop the run long before the exposure does."
   }
 }
