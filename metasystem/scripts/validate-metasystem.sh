@@ -2812,6 +2812,56 @@ if (( template_mode )); then
     || { echo "adoption leaked the benchmark kit into the target" >&2; exit 1; }
   [[ ! -e "$nested_tgt/development" ]] \
     || { echo "adoption leaked development/ into the target" >&2; exit 1; }
+
+  # IL-14: a brand-new plan file in the staged set needs explicit
+  # acknowledgment; modifying a tracked plan stays free. The prose form of this
+  # rule was violated by its own author, so it is a mechanism now.
+  guard_repo="$tmp/guard-repo"
+  mkdir -p "$guard_repo/plans"
+  git -C "$guard_repo" init -q
+  echo old >"$guard_repo/plans/existing.md"
+  git -C "$guard_repo" add plans/existing.md
+  git -C "$guard_repo" -c user.name=m -c user.email=m@example.invalid commit -qm seed
+  echo new >"$guard_repo/plans/surprise.md"
+  git -C "$guard_repo" add plans/surprise.md
+  if (cd "$guard_repo" && "$source_root/scripts/agents/pre-commit-guard.sh" >/dev/null 2>&1); then
+    echo "guard allowed a new plan file without acknowledgment" >&2; exit 1
+  fi
+  (cd "$guard_repo" && METASYSTEM_ALLOW_NEW_PLAN=1 "$source_root/scripts/agents/pre-commit-guard.sh") \
+    || { echo "guard refused an acknowledged new plan" >&2; exit 1; }
+  git -C "$guard_repo" reset -q
+  echo changed >"$guard_repo/plans/existing.md"
+  git -C "$guard_repo" add plans/existing.md
+  (cd "$guard_repo" && "$source_root/scripts/agents/pre-commit-guard.sh") \
+    || { echo "guard refused a modification to a tracked plan" >&2; exit 1; }
+  [[ -x "$nested_tgt/.git/hooks/pre-commit" ]] \
+    || { echo "adoption did not install the pre-commit guard hook" >&2; exit 1; }
+
+  # IL-16: an open chain counts as current for a plan's in-flight claim, within
+  # a bounded window; a closed or aged chain does not. jobs_in_flight stays
+  # strict on purpose, so the stop hook still refuses abandoning an open chain.
+  chain_root="$tmp/chain-repo"
+  mkdir -p "$chain_root/plans" "$chain_root/artifacts/agents/jobs"
+  cat >"$chain_root/plans/stream.md" <<'PLAN'
+- In flight right now: chain implementer-20260101t000000z-cccc (round 2 adjudicating)
+- Waiting on the human: nothing blocking
+- Next step: none
+PLAN
+  printf '{"jobId":"implementer-20260101t000000z-cccc","status":"completed"}\n' \
+    >"$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json"
+  [[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+    || { echo "a plan naming an open chain between rounds was called stale" >&2; exit 1; }
+  [[ -n "$(METASYSTEM_CHAIN_GRACE_SECONDS=0 python3 "$source_root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+    || { echo "an aged-out chain still suppressed the stale report" >&2; exit 1; }
+  python3 - "$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+record = json.load(open(path))
+record["chainClosed"] = True
+json.dump(record, open(path, "w"))
+PYEOF
+  [[ -n "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+    || { echo "a closed chain still suppressed the stale report" >&2; exit 1; }
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
   echo junk >"$srcrepo/ignored-fixture.txt"
   git init -q "$srcrepo"

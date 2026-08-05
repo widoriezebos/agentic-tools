@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 import re
 from pathlib import Path
 
@@ -69,13 +71,46 @@ def stale_plans(harness_root: Path) -> list[str]:
     signal is checked alongside the signal.
     """
     live = set()
+    chains: dict[str, dict] = {}
+    now = time.time()
+    grace = float(os.environ.get("METASYSTEM_CHAIN_GRACE_SECONDS", "5400"))
     for path in (harness_root / "artifacts" / "agents" / "jobs").glob("*.json"):
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        job_id = record.get("jobId", "") or path.stem
         if record.get("status") in IN_FLIGHT:
-            live.add(record.get("jobId", ""))
+            live.add(job_id)
+        root = re.sub(r"-r[0-9]+$", "", job_id)
+        entry = chains.setdefault(root, {"ids": set(), "closed": False, "newest": None})
+        entry["ids"].add(job_id)
+        if job_id == root and record.get("chainClosed") is True:
+            entry["closed"] = True
+        match = re.search(r"-r([0-9]+)$", job_id)
+        rank = int(match.group(1)) if match else 1
+        newest = entry["newest"]
+        if newest is None or rank > newest[0]:
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            entry["newest"] = (rank, record.get("status"), mtime)
+
+    # IL-16: an open chain is work in flight for a PLAN's purposes even while no
+    # round is running. Between rounds the orchestrator is adjudicating, and the
+    # false stale-plan reports that gap produced taught the operator to ignore a
+    # true one. The window is bounded so an abandoned chain still goes stale,
+    # and jobs_in_flight() deliberately keeps the strict view: the stop hook
+    # must still refuse a turn that walks away from an open chain.
+    current = set(live) | {re.sub(r"-r[0-9]+$", "", job) for job in live}
+    for root, entry in chains.items():
+        if entry["closed"] or entry["newest"] is None:
+            continue
+        rank, status, mtime = entry["newest"]
+        if status == "completed" and now - mtime <= grace:
+            current.add(root)
+            current |= entry["ids"]
 
     lines = []
     for plan in sorted((harness_root / "plans").glob("*.md")):
@@ -93,17 +128,15 @@ def stale_plans(harness_root: Path) -> list[str]:
             # make this noise rather than signal.
             continue
         name = plan.relative_to(harness_root)
-        if not live:
+        if not current:
             lines.append(
                 f"STALE-PLAN {name}: claims work in flight while no job is running"
             )
             continue
-        # A chain's rounds are <root>-r<n>; a plan naming the root is current.
-        roots = {re.sub(r"-r[0-9]+$", "", job) for job in live} | live
-        if not any(job and job in claim for job in roots):
+        if not any(job and job in claim for job in current):
             lines.append(
                 f"STALE-PLAN {name}: names in-flight work that is not among the "
-                f"running jobs"
+                f"running jobs or open chains"
             )
     return lines
 

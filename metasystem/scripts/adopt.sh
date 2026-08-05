@@ -353,4 +353,12 @@ echo "adopted at template SHA $sha"
 echo "finish the adoption:"
 echo "  1. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions)."
 echo "  2. Fill metasystem.conf with verified models, tiers, and the durable evidence root."
+hook_dir=$(git -C "$target" rev-parse --git-common-dir)/hooks
+if [[ ! -e "$hook_dir/pre-commit" ]]; then
+  mkdir -p "$hook_dir"
+  printf '#!/usr/bin/env bash\nguard="$(git rev-parse --show-toplevel)/scripts/agents/pre-commit-guard.sh"\n[[ -x "$guard" ]] && exec "$guard"\nexit 0\n' >"$hook_dir/pre-commit"
+  chmod +x "$hook_dir/pre-commit"
+else
+  echo "pre-commit hook already present in the target; the new-plan guard was NOT installed over it" >&2
+fi
 echo "  3. Run scripts/validate-metasystem.sh in the target; it must pass with zero placeholders."
