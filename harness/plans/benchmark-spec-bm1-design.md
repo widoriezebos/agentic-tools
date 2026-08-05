@@ -87,7 +87,7 @@ As they will appear in `spec.md`. Configuration is `tasks.json`:
 **Reporting**
 
 18. A run ends with a summary counting tasks in each of the four states. Its final line is exactly `summary ran=<n> cached=<n> failed=<n> blocked=<n>`; everything else printed is free.
-19. `--format json` writes a result matching the schema fixed in the spec (an object with `tasks`, an object keyed by task name whose values are one of the four state strings, and `summary`, an object with the four integer counts). Text is the default. For the same run, both report identical counts and identical per-task states. Deriving one format from the other, or both from one result object, is a legitimate implementation and is not penalised.
+19. `--format json` writes a result matching the schema fixed in the spec: `order`, an array of task names in reported order; `tasks`, an object keyed by task name whose values are one of the four state strings; and `summary`, an object with the four integer counts. The `order` array is what makes requirement 10 observable at all, since a JSON object has no order. Text is the default. For the same run, both report identical counts and identical per-task states. Deriving one format from the other, or both from one result object, is a legitimate implementation and is not penalised.
 
 **Non-functional**
 
@@ -97,6 +97,8 @@ As they will appear in `spec.md`. Configuration is `tasks.json`:
 
 Where the spec is silent, the builder records the decision in `DECISIONS.md`, naming the requirement and the chosen behaviour.
 
+**What the grader may test (SP-2-6).** Only behaviour these requirements pin, plus the one deliberate gap in requirement 10. Anything else a builder must decide — how errors are worded, whether the cache directory is hidden, how `--dry-run` formats its plan beyond being one task per line in order — is out of scope for scoring entirely, and the grader holding a preferred answer to any of it is a defect in the grader. S-B's job is to walk the requirements once more and pin every choice point that ought to be pinned; whatever survives that pass is genuinely free, and free means unscored.
+
 ## S-3: the seeded ambiguity
 
 Requirement 10 demands a deterministic order among independent tasks and deliberately never says which order. Alphabetical, configuration order, and dependency depth are all defensible.
@@ -105,7 +107,13 @@ This is the right gap. A careless reader sees "deterministic" and assumes whatev
 
 Correct handling is a `DECISIONS.md` entry naming requirement 10 and the chosen rule, with an implementation that matches it. Shipping whatever ordering the language happens to produce fails even when the output looks right, because it is not a decision.
 
-So that the check measures noticing rather than boilerplate, the decision must be declared in a closed vocabulary the grader can act on: the `DECISIONS.md` entry for requirement 10 carries a line `order-rule: alphabetical | config-order | dependency-depth | other`. The grader then builds a configuration on which those rules disagree and checks the implementation actually follows the rule it declared. `other` is accepted and its consistency is checked the only way it can be, by repeated runs agreeing; it scores the same, because the point is that a decision was taken and honoured, not which one.
+So that the check measures noticing rather than boilerplate, the decision must be declared in a closed vocabulary the grader can act on: the `DECISIONS.md` entry for requirement 10 carries a line `order-rule:` with exactly one of three values, each of which is a total order on its own:
+
+- `alphabetical` — by task name.
+- `config-order` — the order the tasks appear in the configuration file.
+- `dependency-depth` — by longest path from a task with no dependencies, ties broken alphabetically.
+
+The grader builds a configuration on which the three disagree and checks the implementation follows the rule it declared. There is deliberately no `other`: an open-ended value would reopen the boilerplate loophole this vocabulary exists to close, since any behaviour could then be declared after the fact and nothing could be checked against it. Three genuinely defensible options are enough to prove a decision was taken and honoured.
 
 Whether the rule is a good choice stays with the judged layer. A checker that parsed free prose would be a hidden right answer in disguise.
 
@@ -131,7 +139,9 @@ Held out by construction; `grader/` is never copied into the repository the agen
 
 `cache_correctness` and `format_agreement` are reported separately rather than folded into `acceptance`, because they are the two most likely to separate a coordinated run from an uncoordinated one, and burying them in a pass rate would hide the signal the spec exists to produce.
 
-**`mutation_catch` replaces a check that did not work.** The first draft asked whether the builder's mapped tests failed on the seed and passed on the final tree. That proves nothing: the seed contains no `taskrun.py`, so every test fails there merely because the file is missing, and one always-green test per requirement would have scored full marks. Mutation catching asks the question that was actually meant. The kit ships one mutant of the careful reference per requirement, each breaking exactly that requirement, and a builder's test earns the point only by failing against the mutant it claims to cover. Building those mutants is real work and belongs to S-C, and it is the only version of this metric that cannot be satisfied by writing `assert True`.
+**How the builder's tests reach the mutants (SP-2-3).** A builder's tests are written against its own code, so they can only run against a mutant of the reference through an interface both share: the command line fixed in requirements 1 to 5 and the output contracts in 18 and 19. `mutation_catch` therefore counts only tests that drive `python3 taskrun.py`; tests that import internal modules cannot transfer and score nothing on this metric, though they still count for `own_tests_pass`. This deliberately favours black-box tests, and says so rather than hiding it: they are the tests that survive refactoring, which is the property worth rewarding. A mutant is caught only when the mapped test fails against it and passes against the unmutated reference, so an irrelevant failure earns nothing.
+
+**`mutation_catch` replaces a check that did not work.** The first draft asked whether the builder's mapped tests failed on the seed and passed on the final tree. That proves nothing: the seed contains no `taskrun.py`, so every test fails there merely because the file is missing, and one always-green test per requirement would have scored full marks. Mutation catching asks the question that was actually meant. The kit ships mutants of the careful reference, each declaring the requirement it targets. It does not pretend a mutant breaks exactly one requirement: the requirements overlap by design (a broken cache key offends 13, 14, 15 and 16 at once), so demanding isolation would make the corpus impossible to build and S-C would fail for reasons having nothing to do with the harness. What is required is that every requirement has at least one mutant targeting it, and the metric asks whether the tests mapped to that requirement catch one of its targeted mutants. Building those mutants is real work and belongs to S-C, and it is the only version of this metric that cannot be satisfied by writing `assert True`.
 
 ## S-4a: the scoring contract
 
@@ -163,13 +173,27 @@ The grader must separate those in the ways this design predicts, and the spread 
 
 Calibration also has to test the budget, not just the scoring. At least one timed hand-build tells us whether twenty-two requirements plausibly fit three hours, which is currently an estimate with nothing behind it.
 
-The careful reference also settles the fixture question, and it is settled rather than left open: **the frozen artifact for BM-2 and BM-3 is always the careful reference implementation.** An agent-built result never becomes the fixture, however good it looks. Swapping it would silently change what two other benchmarks measure, and scores taken before and after would be quietly incomparable. BM-1's output is scored and then archived as evidence, not promoted.
+**What calibration must show before anything is spent (SP-2-7).** Three conditions, each checkable:
+
+1. **Every seeded flaw is caught by the metric designed to catch it.** The command-blind cache key drops `cache_correctness`; the dictionary-order scheduler drops `determinism`; the run-dependents-anyway variant drops `failure_propagation`; the assert-nothing variant drops `mutation_catch` while keeping `own_tests_pass`. A flaw that only shows up in the aggregate is a metric that failed.
+2. **The careful reference scores strictly above every flawed variant on the metric that variant targets.** If it does not, that metric is not measuring what it claims.
+3. **The incomplete variant scores between them rather than at the floor**, since a run stopped at its fences is the likeliest real outcome and a spec that cannot tell partial work from broken work will read every unfinished run as a failure.
+
+Absolute bounds for the remaining metrics come out of this exercise, from the observed scores of the flawed variants, rather than being invented. Until all three conditions hold, the spec is not ready to be run against.
+
+The careful reference also settles the fixture question, though the previous round settled it wrongly. Saying the fixture is *always* the reference bought stability by abandoning the human's actual structure, which was that the software the harness builds becomes the thing later benchmarks change and debug (SP-2-8).
+
+The real requirement is not that the fixture be hand-built; it is that it never changes once anything has been scored against it. So: **the fixture is chosen once and frozen forever.** After BM-1's first runs, we take either the best agent-built artifact or the careful reference, whichever is sound enough to build on, freeze it as `taskrunner-v1`, and never swap it. A later, better artifact becomes `taskrunner-v2` alongside a new spec version, never a quiet replacement of v1. The human's intent is preserved, and comparability is preserved, because the thing that breaks comparability is swapping after scoring, not choosing an agent-built artifact in the first place.
+
+The bar for choosing the agent-built one is stated rather than felt: it must pass the full held-out grader, contain no requirement scored zero, and be readable enough that the BM-2 change is a fair ask. If nothing meets that, the reference is the fixture and we say so.
 
 ## S-6: fences, and why they exceed Mission Zero's
 
 Mission Zero's fences (5 cycles, 5 jobs, one hour) were sized for a one-line fix to prove the loop turns over. Twenty-one requirements with a caching layer will not fit, and shrinking the spec to fit would destroy the substance the user asked for.
 
-Proposed, as a complete vector, because a partial one cannot be sealed: `fence.cycles=8`, `fence.jobs=12`, `fence.concurrency=2`, `fence.job-cap-min=15`, `fence.wall-clock-hours=3`.
+Proposed, as a complete vector, because a partial one cannot be sealed: `fence.cycles=8`, `fence.jobs=12`, `fence.concurrency=2`, `fence.job-cap-min=15`, `fence.wall-clock-hours=3`, `host.turn-cap-min=20`, `ledger.cycle-budget=8`, `ledger.no-gain-budget=3`.
+
+The last three matter as much as the first five and were missing: without a host turn cap a single stuck orchestrator turn consumes the wall clock, and without the ledger budgets the mission has no stop-loss, so a run that ships receipts while the gate never moves would burn the whole envelope before anything noticed.
 
 The roster must be pinned by exact model identifier, not by the phrase "cheap models", because the comparability tuple in the parent design requires that two cohorts share an identical roster and a job's requested model must equal what it actually ran. A word like "cheap" is not a roster identity and two runs a month apart would silently differ. The exact identifiers are filled in when the manifest is written, from whatever the project's tier 1 declares at that moment, and recorded in the scorecard.
 
@@ -196,7 +220,9 @@ Frozen as `benchmark/fixtures/taskrunner-v1/` inside the kit. The kit must be se
 | --- | --- | --- |
 | S-A | Critique this design with Codex against the stated purpose | NOT STARTED, next |
 | S-B | Write `spec.md`, `manifest.json`, and `seed/` | NOT STARTED |
-| S-C | Build the two reference implementations and prove the grader separates them | NOT STARTED, before any agent run |
+| S-C | Build the reference and its flawed variants, the mutant corpus, and prove calibration's three conditions hold | NOT STARTED, before any agent run |
+
+All three remain blocked behind the canonical gates and this plan does not reorder them (SP-2-10): S-A is design work and runs now, but S-B and S-C are item B-1 of the parent design, which B-0 blocks, which in turn waits on Mission Zero. Designing the spec early is deliberate; building it before the runner has been watched running is the mistake this whole sequence exists to avoid.
 
 ## Completion
 
