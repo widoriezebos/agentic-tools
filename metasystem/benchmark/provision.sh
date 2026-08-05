@@ -414,7 +414,9 @@ PY
 
 "$target/scripts/assert-mission.sh" --file "$contract" >/dev/null
 git -C "$target" add "$contract_rel"
-git -C "$target" commit -qm "Add unsigned $mission_id mission contract"
+# The contract is a deliberately added plan file; say so through the guard's
+# front door instead of weakening the guard.
+METASYSTEM_ALLOW_NEW_PLAN=1 git -C "$target" commit -qm "Add unsigned $mission_id mission contract"
 git -C "$target" push -q -u origin main
 git -C "$target" push -q origin "refs/tags/$instrument_tag"
 git -C "$target" remote set-head origin main
