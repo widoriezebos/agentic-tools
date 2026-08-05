@@ -16,6 +16,11 @@ set -euo pipefail
 
 [[ "${METASYSTEM_ALLOW_NEW_PLAN:-}" == "1" ]] && exit 0
 
+# An unborn branch has no peer work to capture: the initial commit stages the
+# entire payload by design (adoption and provisioning both do), and refusing
+# it broke provisioning the first time the two mechanisms met.
+git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
+
 added=$(git diff --cached --name-status --diff-filter=A | cut -f2- \
   | grep -E '(^|/)plans/[^/]+\.md$' || true)
 [[ -z "$added" ]] && exit 0

@@ -2882,6 +2882,13 @@ if (( template_mode )); then
   fi
   (cd "$guard_repo" && METASYSTEM_ALLOW_NEW_PLAN=1 "$root/scripts/agents/pre-commit-guard.sh") \
     || { echo "guard refused an acknowledged new plan" >&2; exit 1; }
+  unborn_repo="$tmp/guard-unborn"
+  mkdir -p "$unborn_repo/plans"
+  git -C "$unborn_repo" init -q
+  echo first >"$unborn_repo/plans/new.md"
+  git -C "$unborn_repo" add plans/new.md
+  (cd "$unborn_repo" && "$root/scripts/agents/pre-commit-guard.sh") \
+    || { echo "guard refused the initial commit of an unborn branch" >&2; exit 1; }
   git -C "$guard_repo" reset -q
   echo changed >"$guard_repo/plans/existing.md"
   git -C "$guard_repo" add plans/existing.md
