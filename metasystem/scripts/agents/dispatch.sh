@@ -724,6 +724,8 @@ import os, sys
 root, adapter, verb, job, gate, tag = sys.argv[1:]
 os.chdir(root)
 os.setsid()
+os.environ["GIT_AUTHOR_NAME"] = job
+os.environ["GIT_AUTHOR_EMAIL"] = f"{job}@metasystem.invalid"
 os.execv(adapter, [adapter, verb, "--job", job, "--start-gate", gate, "--instance-tag", tag])
 PY
   pid=$!
