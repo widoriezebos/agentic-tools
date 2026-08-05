@@ -39,6 +39,9 @@ Where agents can spend real money (model calls, paid APIs, cloud runs), state th
 
 List only rules that cannot be inferred from code or tooling and apply broadly in this repository. Prefer an executable check whenever the rule is binary.
 
+- A commit is gated on the suite run that produced its verdict, in one shell chain: `scripts/validate-metasystem.sh && ... && git commit && git push`. Never read a verdict from a log tail, a previous shell, or a check whose failure does not stop the chain. Two pushes on a red suite happened in one day, both that way (IL-17).
+- A receipt is appended in the same commit as the work it describes. Bookkeeping-only commits hide the ratio of records to evidence, which is the retro's own inversion test (IL-19).
+
 ## Decisions Reserved for Humans
 
 These require explicit in-task approval even when technically easy. Default set, which adaptation may extend but should not silently shrink:
