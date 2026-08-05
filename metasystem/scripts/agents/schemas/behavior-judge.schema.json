@@ -1,0 +1,136 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "metasystem.version=1",
+  "title": "Behavior judge return",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "dimensions", "reliabilityWatch"],
+  "properties": {
+    "jobId": {"type": "string"},
+    "round": {"type": "integer"},
+    "runtime": {"type": "string"},
+    "sessionId": {"type": ["string", "null"]},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "effective"],
+      "properties": {
+        "requested": {"type": "string"},
+        "effective": {"type": ["string", "null"]}
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "observed", "level"],
+        "properties": {
+          "command": {"type": "string"},
+          "observed": {"type": "string"},
+          "level": {"enum": ["ran", "read", "inferred"]}
+        }
+      }
+    },
+    "gaps": {"type": "array", "items": {"type": "string"}},
+    "mode": {"type": "string"},
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "score", "rationale", "anchors", "findings"],
+        "properties": {
+          "id": {
+            "enum": [
+              "brief-quality",
+              "adjudication-quality",
+              "delegation-discipline",
+              "gap-handling",
+              "spec-fidelity",
+              "repeated-work",
+              "proportionality",
+              "evidence-honesty"
+            ]
+          },
+          "score": {"enum": [1, 2, 3, 4, 5]},
+          "rationale": {"type": "string"},
+          "anchors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["file", "line"],
+              "properties": {
+                "file": {"type": "string"},
+                "line": {"type": "integer"}
+              }
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "claim", "evidence", "anchors"],
+              "properties": {
+                "id": {"type": "string"},
+                "claim": {"type": "string"},
+                "evidence": {"type": "string"},
+                "anchors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["file", "line"],
+                    "properties": {
+                      "file": {"type": "string"},
+                      "line": {"type": "integer"}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "reliabilityWatch": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dimension", "mechanicalMetric", "agreement", "explanation", "anchors"],
+        "properties": {
+          "dimension": {
+            "enum": [
+              "brief-quality",
+              "adjudication-quality",
+              "delegation-discipline",
+              "gap-handling",
+              "spec-fidelity",
+              "repeated-work",
+              "proportionality",
+              "evidence-honesty"
+            ]
+          },
+          "mechanicalMetric": {"type": "string"},
+          "agreement": {"enum": ["agrees", "disagrees", "mixed"]},
+          "explanation": {"type": "string"},
+          "anchors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["file", "line"],
+              "properties": {
+                "file": {"type": "string"},
+                "line": {"type": "integer"}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
