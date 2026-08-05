@@ -149,10 +149,20 @@
     "wallClockHours": 3,
     "hostTurnCapMin": 20,
     "ledgerCycleBudget": 8,
-    "ledgerNoGainBudget": 3
+    "ledgerNoGainBudget": 3,
+    "approved": "2026-08-05, under the human's blanket approval; still an experiment per the promotion rule"
   },
   "fencesNote": "Provisional and unapproved. These are an experiment, not a belief: trial runs record what they consume and each fence becomes ceil(observed_max * 1.5), excluding trials that parked at that fence. A human must approve them before any run spends money.",
-  "roster": null,
+  "roster": {
+    "host": {
+      "runtime": "claude",
+      "model": "claude-opus-5"
+    },
+    "delegates": {
+      "codex": "gpt-5.6-sol"
+    },
+    "ruling": "Benchmark missions run their host on Opus, never Fable, by the human's direction 2026-08-05: Fable tokens are not spent on benchmarking."
+  },
   "rosterNote": "Pinned by exact model identifier when a run is prepared, never by a phrase like 'cheap models', because comparability requires two cohorts to share an identical roster.",
   "seed": {
     "path": "seed/",
@@ -258,5 +268,10 @@
     "seed_files_replaced": "count of seed-shipped files the builder replaced or deleted",
     "note": "Observations, never gates and never targets. A scored seed_respected metric for a build-from-scratch case can only encode hidden preferences about legitimate build edits (BA-3-3); grading what a builder does with inherited code is BM-2's business, where the seed is a working system and inheritance is the point. The human's intent to grade seed handling is honoured there, and observed here.",
     "grammar": "watch=<name>=<value> lines on standard output beside the metric lines: seed_wrapper_intact 0 or 1, seed_release_level the integer pom.xml declares, seed_files_replaced a count"
+  },
+  "completionGate": {
+    "decision": "self-assessment, decided 2026-08-05 under the human's blanket approval",
+    "command": "the builder's stated test command passes AND requirements-map.json covers 1..26 AND ./mvnw -o -q package succeeds from a clean state",
+    "rationale": "The grader is held out, so the mission cannot iterate against it; the run stops when the builders believe they are done, and the held-out grading afterwards measures how right that belief was, which is among the most interesting numbers the benchmark produces."
   }
 }
