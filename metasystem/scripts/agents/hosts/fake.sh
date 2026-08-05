@@ -120,7 +120,10 @@ value={
   "turnId":turn["turnId"],"missionId":turn["missionId"],"cycle":turn["cycle"],
   "dispatched":[],"certified":[],"streamUpdatesRequested":[],"askCandidates":[],
   "factsForLedger":[],"gaps":[],
-  "identity":{"runtime":"fake","model":turn["model"],"sessionId":session},
+  # The return attests what the prompt declared (Host-Session header, null on a
+  # first or unresumable turn), never the session the adapter minted: that is
+  # 6.2c's contract, and the live first turn of Mission Zero proved it.
+  "identity":{"runtime":"fake","model":turn["model"],"sessionId":turn.get("hostSession")},
 }
 if behavior=="dispatch-ghost":
     value["dispatched"]=[{"jobId":f"ghost-{turn['cycle']}","role":"implementer","stream":active}]

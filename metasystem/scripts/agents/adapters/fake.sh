@@ -312,7 +312,7 @@ case "$command" in
   signature)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' \
-      'match (^|[[:space:]/-])(fake|metasystem-fake-agent)([[:space:]]|$)' \
+      'match (^|[[:space:]/-])metasystem-fake-agent([[:space:]]|$)' \
       'exclude supervision-hook\.sh' \
       'exclude scripts/agents/adapters/fake\.sh'
     ;;

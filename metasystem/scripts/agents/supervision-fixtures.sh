@@ -330,7 +330,13 @@ for runtime in claude codex devin fake; do
     printf '' | grep -Eq -- "${line#* }" || [[ $? -eq 1 ]] \
       || { echo "S4-7: invalid POSIX ERE from $runtime" >&2; exit 1; }
   done <<<"$signature"
-  "$census" signature-check --adapter "$adapter" --positive "$runtime" \
+  positive=$runtime
+  # The real CLIs are invoked by their bare command word, so that word is the
+  # honest positive for claude, codex and devin. The fake runtime has no CLI:
+  # its processes carry the fixture name, and a bare-word positive was exactly
+  # the looseness that let commit-message prose in a tool shell match (KI-14).
+  [[ "$runtime" == fake ]] && positive=metasystem-fake-agent
+  "$census" signature-check --adapter "$adapter" --positive "$positive" \
     --lookalike "metasystem-${runtime}-lookalike" >/dev/null
 done
 for failure in malformed invalid-ere adapter-failed exclude-tie; do
