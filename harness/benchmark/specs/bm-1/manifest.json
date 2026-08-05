@@ -11,7 +11,7 @@
       "pom.xml"
     ],
     "entryPoint": "java -jar target/taskrun.jar",
-    "requirementCount": 25
+    "requirementCount": 26
   },
   "seededGap": {
     "requirement": 10,
@@ -23,7 +23,7 @@
       "config-order",
       "dependency-depth"
     ],
-    "note": "All three of these are published in spec.md, including the entry grammar. A builder cannot satisfy a machine-checked declaration whose format is withheld; that was BA-1-1."
+    "note": "Published in spec.md in full: the entry grammar, the key, and the three permitted values with their exact semantics. A builder cannot satisfy a machine-checked declaration whose format is withheld (BA-1-1), and a rule without executable semantics leaves the grader holding a hidden right answer (BA-2-1)."
   },
   "metrics": {
     "acceptance": {
@@ -113,7 +113,7 @@
       ],
       "direction": "min",
       "bound": 20,
-      "note": "Includes JVM startup. Generous on purpose: it rules out work growing faster than the task count, it does not reward micro-optimisation."
+      "note": "Requirement 25: 1000 tasks in a single chain, cache primed once, then the median of three timed runs from process start to exit. Pinned because 'an ordinary developer machine' is not a measurement."
     },
     "dependency_count": {
       "domain": [
@@ -164,7 +164,8 @@
     "calibration": {
       "probes": "small purpose-built programs, one per metric, each exhibiting exactly the flaw that metric must catch",
       "note": "Calibration proves each check fires. A full correct implementation is a wildly expensive way to test a checker and is not built."
-    }
+    },
+    "outsideOnlyException": "Requirement 24 is graded by reading pom.xml. No finite set of runs can prove an unexercised branch imports nothing, so the outside-only rule states its one exception rather than pretending (BA-2-11)."
   },
   "language": {
     "runtime": "Java 21",

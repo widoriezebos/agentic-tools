@@ -6,7 +6,8 @@ works out the order, runs them, skips work whose inputs have not changed, and
 reports failures without running anything that depended on the failure.
 
 Everything below is graded from outside the program, by building it and running
-it. Nothing is graded by reading your source.
+it. The single exception is requirement 24, which is graded by reading
+`pom.xml`. Nothing else is graded by reading your source.
 
 ## Project shape
 
@@ -52,9 +53,13 @@ Tasks are described in `tasks.json`:
 - `command` is required and is a string run through the system shell.
 - `inputs`, `outputs` and `deps` are optional arrays of strings, defaulting to
   empty.
-- `inputs` and `outputs` are file paths relative to the directory containing the
-  configuration file. Commands run with that directory as their working
-  directory.
+- `inputs` and `outputs` are relative file paths, resolved against the directory
+  containing the configuration file, which is also the working directory
+  commands run in. An absolute path, or one that escapes that directory after
+  resolving `.` and `..`, is a configuration error.
+- Two paths are the same path when they resolve to the same location after
+  normalising `.` and `..` textually. Symbolic links are not followed for this
+  comparison: `out/x` and a link pointing at it are different paths.
 - Any other shape — a missing `tasks` key, a task that is not an object, a
   missing `command`, a non-array `deps`, malformed JSON — is a configuration
   error.
@@ -65,13 +70,15 @@ Parsing JSON with the standard library alone is part of the work.
 
 ### Command line
 
-1. `java -jar target/taskrun.jar run [task...]` runs the named tasks and
+1. `java -jar target/taskrun.jar run [options] [task...]`: the subcommand `run`
+   first, then any options, then task names. Options never appear before `run`
+   and never appear after the first task name. Runs the named tasks and
    everything they depend on, directly or indirectly. With no task named, every
    task in the configuration runs. A named task absent from the configuration is
    a usage error.
 2. `--file <path>` selects the configuration, defaulting to `tasks.json` in the
    current directory.
-3. `--dry-run` prints the plan and runs nothing. See requirement 20 for its
+3. `--dry-run` prints the plan and runs nothing. See requirement 21 for its
    exact output.
 4. `--force` runs every selected task regardless of cache state. No task is
    reported `cached` under `--force`.
@@ -80,7 +87,16 @@ Parsing JSON with the standard library alone is part of the work.
    - `1` when any selected task ended `failed`, whatever else happened.
    - `2` for any usage or configuration error: unknown flag, missing flag value,
      unreadable or missing configuration file, malformed configuration, an
-     invalid task name, or a named task absent from the configuration.
+     invalid task name, a path that is absolute or escapes the base directory,
+     or a named task absent from the configuration.
+   - `3` when the runner cannot do its own work: a declared input that cannot be
+     read when its digest is needed, a cache directory that cannot be created,
+     read or written, or unreadable cache state. These are the runner failing,
+     not a task failing, and they are reported on standard error with no task
+     report. Corrupt or unreadable cache state may instead be treated as a cold
+     cache and the run continue normally; either is acceptable, and whichever
+     you choose is a decision to record.
+   - A successful `--dry-run` exits `0`.
 
    A configuration error is detected before any task runs, so a run either exits
    2 having run nothing, or exits 0 or 1 having produced a full report.
@@ -118,51 +134,67 @@ graded only for naming what each requirement above says they must name.
 14. A task is skipped as `cached` when all of the following are unchanged since
     its last successful run: its command string, the contents of its declared
     inputs, and the cache identity of every task in `deps`. A task's cache
-    identity is the value the cache stores for it after a successful run; how
-    you compute it is yours to decide, provided a dependency that re-runs and
-    produces different outputs causes its dependents to re-run.
+    identity is derived from the contents of its declared outputs after a
+    successful run, so a dependency that re-runs and produces byte-identical
+    outputs leaves its dependents `cached`, and one that produces different
+    outputs makes them re-run. A task with no declared outputs has a constant
+    identity. `cached` counts as successful wherever success is mentioned.
 15. Changing a task's command invalidates its cache entry.
 16. Changing the contents of any declared input invalidates its cache entry.
 17. A task whose declared outputs are not all present is never reported as
     `cached`: it runs again.
-18. Cache state lives in a directory named `.taskrun-cache`, beside the
+18. A failed run never replaces a cache entry. If a task succeeded, then later
+    ran and failed, its stored entry is the one from the last success, so a
+    subsequent run with everything unchanged reports it `cached` again only if
+    requirement 17 is also satisfied.
+19. Cache state lives in a directory named `.taskrun-cache`, beside the
     configuration file. Deleting that directory returns the runner to a cold
     state and has no other effect. Nothing outside it persists between runs.
 
 ### Reporting
 
-19. On a run without `--dry-run`, standard output carries one line per selected
+20. On a run without `--dry-run`, standard output carries one line per selected
     task, in reported order, of exactly `<state> <task-name>`, where state is one
     of `ran`, `cached`, `failed`, `blocked`; then a final line of exactly
     `summary ran=<n> cached=<n> failed=<n> blocked=<n>`.
-20. On a run with `--dry-run`, standard output carries one line per selected
+21. On a run with `--dry-run`, standard output carries one line per selected
     task, in reported order, of exactly `plan <task-name>`, then a final line of
-    exactly `summary planned=<n>`. No other requirement's output applies.
-21. Everything else your program prints — progress, the output of task commands,
+    exactly `summary planned=<n>`. No other requirement's output applies. A
+    dry run neither runs commands nor writes cache state: `.taskrun-cache` is
+    byte-identical before and after, and is not created if it was absent.
+22. Everything else your program prints — progress, the output of task commands,
     diagnostics, anything the JVM emits — goes to standard error, so standard
     output is always a parseable record.
-22. `--format json` replaces the standard output described in 19 and 20 with a
-    single JSON object and nothing else. For a run, exactly the keys `order`
-    (array of task names in reported order), `tasks` (object mapping each
-    selected task name to its state string), and `summary` (object with integer
-    keys `ran`, `cached`, `failed`, `blocked`). For `--dry-run`, exactly the keys
-    `order` and `summary`, the latter with the single integer key `planned`.
+23. `--format json` replaces the standard output described in requirements 20
+    and 21 with a single JSON object and nothing else. For a run: exactly the
+    keys `order` (an array of task names in reported order), `tasks` (an object
+    mapping each selected task name to its state string), and `summary` (an
+    object whose keys are `ran`, `cached`, `failed` and `blocked`, and whose
+    values are JSON numbers with no fractional part). For `--dry-run`: exactly
+    the keys `order` and `summary`, the latter holding the single key `planned`
+    whose value is a JSON number with no fractional part.
     `--format text` is the default. For the same invocation, both formats report
     the same order, the same per-task states, and the same counts. Deriving one
     from the other is fine.
 
 ### Non-functional
 
-23. `./mvnw -o -q package` succeeds from a fresh clone with no manual steps and
+24. `./mvnw -o -q package` succeeds from a fresh clone with no manual steps and
     no network, and `pom.xml` declares no compile-scope or runtime-scope
-    dependency.
-24. A configuration of 1000 tasks in a single dependency chain, whose work is
-    entirely cached, completes within 20 seconds of wall-clock time, measured
-    from process start to exit on an ordinary developer machine. The budget is
-    generous because it includes JVM startup; it exists to rule out work that
-    grows faster than the number of tasks, not to reward micro-optimisation.
-25. Ship your own tests and a `requirements-map.json`: an object whose keys are
-    the strings `"1"` through `"25"`, one for every requirement above, and whose
+    dependency. This one is graded by reading `pom.xml` rather than by running
+    the program, because no finite set of runs can prove an unexercised branch
+    imports nothing; it is the single stated exception to the outside-only
+    rule.
+25. Performance is measured on a generated configuration of 1000 tasks in a
+    single chain, each with the command `sh -c 'true'`, each declaring the
+    previous task's single output as its input, and each writing one output
+    file of one byte. The measurement is: run once to prime the cache, then
+    time three further runs from process start to exit and take the median.
+    That median is under 20 seconds. The budget is generous because it includes
+    JVM startup; it exists to rule out work that grows faster than the number of
+    tasks, not to reward micro-optimisation.
+26. Ship your own tests and a `requirements-map.json`: an object whose keys are
+    the strings `"1"` through `"26"`, one for every requirement above, and whose
     values are arrays of test identifiers in JUnit form,
     `<fully.qualified.ClassName>#<methodName>`, each runnable alone via
     `./mvnw -o test -Dtest='<identifier>'`. Every requirement must have at least
@@ -185,10 +217,16 @@ followed by any prose you like on the following lines. For the open question,
 the key is `order-rule` and the value is one of `alphabetical`, `config-order`,
 or `dependency-depth`, each meaning:
 
-- `alphabetical` — by task name.
-- `config-order` — the order tasks appear in the configuration file.
-- `dependency-depth` — by longest path from a task with no dependencies, ties
-  broken alphabetically.
+- `alphabetical` — the selected tasks sorted by name, comparing Unicode code
+  points, ascending.
+- `config-order` — the selected tasks in the order their keys appear in the
+  configuration file, tasks not selected simply omitted.
+- `dependency-depth` — ascending by depth, where a task with no dependencies
+  has depth 0 and any other task has depth one greater than its deepest
+  dependency; ties within a depth broken alphabetically as above.
+
+Each rule is a total order over the selected tasks alone, independent of
+which tasks were named on the command line and independent of execution.
 
 Implement the rule you declare. A recorded decision honoured in the code is
 correct, and all three are equally acceptable. Choosing silently is not.
