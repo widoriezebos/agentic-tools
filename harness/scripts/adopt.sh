@@ -133,7 +133,7 @@ if [[ -n "$prefix" ]]; then treeish="HEAD:${prefix%/}"; else treeish=HEAD; fi
 git -C "$root" archive "$treeish" >"$stage/payload.tar"
 tar -xf "$stage/payload.tar" -C "$stage"
 rm -f "$stage/payload.tar"
-rm -rf "$stage/meta" "$stage/README.md" "$stage/LICENSE"
+rm -rf "$stage/development" "$stage/README.md" "$stage/LICENSE"
 # plans/ ships only its standing ledgers: task-local plans and handoff notes
 # are template-repository state, and receipts.log is its receipts history.
 for p in "$stage"/plans/*; do

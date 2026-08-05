@@ -73,8 +73,8 @@ Should this harness gain an LLM-oriented wiki/knowledge mechanism? A positive de
 | Karpathy's primary `llm-wiki.md` gist, created 2026-04-04 | Checked by reading | The pattern is an intentionally abstract research knowledge-base workflow, not a specific agent-memory implementation. |
 | WiCER, arXiv:2605.07068 | Checked by reading; preprint | Blind LLM compilation can discard decisive facts. Evaluation-driven refinement recovered much of the loss in its benchmark, so source retention and diagnostic probes are design requirements rather than optional polish. |
 | Vector RAG vs LLM-Compiled Wiki, arXiv:2605.18490 | Checked by reading; small preregistered preprint | On 24 papers and 13 questions, the wiki improved cross-paper connection and claim-level citation support, but used more query tokens. Decomposition-based RAG recovered most synthesis benefit at lower LLM-token cost. There is no universal cost or quality win. |
-| Repository word counts on 2026-08-04 | Observed by running `wc` | `plans/` and its ledgers contain about 51,000 words, while `meta/source-analysis.md` contains 2,758. Automatically compiling all plans would amplify the harness's recorded evidence-substitution risk. |
-| Git history since 2026-07 | Observed by running `git log --numstat` | This repository repeatedly performs source harvest and critique work, and its durable outcome is manually reconciled into `meta/source-analysis.md`. History does not establish a repeated query workflow or a provenance-caused defect, so demand for a reusable wiki remains unproven. |
+| Repository word counts on 2026-08-04 | Observed by running `wc` | `plans/` and its ledgers contain about 51,000 words, while `development/source-analysis.md` contains 2,758. Automatically compiling all plans would amplify the harness's recorded evidence-substitution risk. |
+| Git history since 2026-07 | Observed by running `git log --numstat` | This repository repeatedly performs source harvest and critique work, and its durable outcome is manually reconciled into `development/source-analysis.md`. History does not establish a repeated query workflow or a provenance-caused defect, so demand for a reusable wiki remains unproven. |
 
 ## Primary Research
 
@@ -116,15 +116,15 @@ These sources are recent preprints and project reports, not settled evidence. Th
 | Durable instruction learning | `docs/project-adaptation.md:26-47`; `skills/retro/SKILL.md:10-52`; `plans/instruction-ledger.md` | Already solved. Receipts and retros measure repeated failures and human-gate instruction changes. A wiki must not bypass the change gate. |
 | Durable dead ends | `plans/known-issues.md` | Already solved. A wiki can link to a known issue but cannot become a competing issue register. |
 | Generated runtime evidence | `plans/README.md:3-9`; `artifacts/` and the durable evidence root | Already solved. Runtime artifacts remain evidence in their existing lifecycle. They are not bulk-ingested by default. |
-| Template-maintenance research synthesis | Maintenance sessions that update `meta/source-analysis.md:1-95`, especially its evidence list and keep/remove/defer decisions | Candidate consumer only. The output lacks claim-level provenance, but no receipt or observed failure shows that maintainers repeatedly query a stable corpus or that this gap caused rework. The artifact itself is not a consumer. |
+| Template-maintenance research synthesis | Maintenance sessions that update `development/source-analysis.md:1-95`, especially its evidence list and keep/remove/defer decisions | Candidate consumer only. The output lacks claim-level provenance, but no receipt or observed failure shows that maintainers repeatedly query a stable corpus or that this gap caused rework. The artifact itself is not a consumer. |
 
-The architecture already warns that plans become permanent prompt baggage when misused (`meta/harness-architecture.md:19`) and requires a current consumer before adding support layers (`docs/design/design-principles.md:35-37`). The retro treats plan and ledger growth beyond shipped work as evidence substitution (`skills/retro/SKILL.md:27-31`). Those facts rule out an automatic repository-wide memory layer.
+The architecture already warns that plans become permanent prompt baggage when misused (`development/harness-architecture.md:19`) and requires a current consumer before adding support layers (`docs/design/design-principles.md:35-37`). The retro treats plan and ledger growth beyond shipped work as evidence substitution (`skills/retro/SKILL.md:27-31`). Those facts rule out an automatic repository-wide memory layer.
 
 ## Step-Back Analysis
 
 ### Frozen frame
 
-- Symptom: cross-source template conclusions currently collapse into a single manually maintained `meta/source-analysis.md`, with limited primary-source traceability and no deterministic health check. Repeated query demand and provenance-caused rework have not been observed.
+- Symptom: cross-source template conclusions currently collapse into a single manually maintained `development/source-analysis.md`, with limited primary-source traceability and no deterministic health check. Repeated query demand and provenance-caused rework have not been observed.
 - Impact: later template-maintenance sessions may have to re-establish which exact source supports a claim, whether the source changed, or whether a new source contradicts an older synthesis. The actual frequency and cost are unknown.
 - Exact state at the final verification checkpoint: repository `0b9ca1b` with only this plan and its task receipt modified. Earlier checkpoints contained concurrent validation and orchestrator changes that landed independently during the research.
 - Success: a bounded research corpus supports source-grounded ingest, navigation, query, and lint without becoming policy, project memory, or common-path prompt context.
@@ -138,7 +138,7 @@ The architecture already warns that plans become permanent prompt baggage when m
 | --- | --- | --- | --- | --- |
 | T1 | The harness needs a general persistent memory layer. | Session context dies; the README names forgotten lessons. | Handoffs, canonical docs, receipts, retros, the instruction ledger, and known issues already own each durable-memory class. A general layer would duplicate truth and load stale context. | Falsified dead end. Do not implement. |
 | T2 | The pattern has no value because existing owners are complete. | Most proposed wiki jobs map directly to an existing owner. | Template-maintenance research has a real synthesis artifact but lacks claim-level source identity and deterministic integrity checks. | Falsified continue. Narrow the consumer. |
-| T3 | An opt-in, source-grounded research workspace could add value after demand appears. | Candidate `meta/source-analysis.md` maintenance workflow; empirical cross-document synthesis benefit; Git/Markdown fit; no retrieval dependency needed. | No repeated query baseline or provenance-caused defect; compilation loss, query-token cost, maintenance growth, and hallucination propagation. | Plausible but unproven. Park until the activation trigger fires. |
+| T3 | An opt-in, source-grounded research workspace could add value after demand appears. | Candidate `development/source-analysis.md` maintenance workflow; empirical cross-document synthesis benefit; Git/Markdown fit; no retrieval dependency needed. | No repeated query baseline or provenance-caused defect; compilation loss, query-token cost, maintenance growth, and hallucination propagation. | Plausible but unproven. Park until the activation trigger fires. |
 | T4 | The harness should ship vector RAG or a hosted knowledge service. | Could scale retrieval beyond a Markdown index. | No current scale problem, new dependencies and operations, weaker inspectability, and the small comparison found decomposition can close much of the synthesis gap. | Rejected until measured retrieval misses cross a declared threshold. |
 
 ### Alternatives
@@ -146,7 +146,7 @@ The architecture already warns that plans become permanent prompt baggage when m
 | Alternative | Decision | Reason |
 | --- | --- | --- |
 | No executable change now | Selected | A reusable mechanism would otherwise create its own pilot as its first consumer. Keep the reviewed design ready, then wait for observed demand or an explicit implementation request. |
-| Add direct citations to `meta/source-analysis.md` | Preferred immediate mitigation when the next source decision changes | The file remains the canonical template decision summary. Direct citations address provenance cheaply without adding state, scripts, or workflow. Repeated re-reading after that mitigation is evidence for reopening this design. |
+| Add direct citations to `development/source-analysis.md` | Preferred immediate mitigation when the next source decision changes | The file remains the canonical template decision summary. Direct citations address provenance cheaply without adding state, scripts, or workflow. Repeated re-reading after that mitigation is evidence for reopening this design. |
 | Use plans and handoffs as memory | Rejected | They are task-local by contract and should be deleted or archived after promotion. |
 | Auto-compile all repository files and Git history | Rejected | It creates stale duplication, expands process records, and has no bounded source-selection contract. |
 | Always load a wiki index | Rejected | Every task would pay context cost for a specialist concern. |
@@ -161,11 +161,11 @@ The pattern has plausible value for repeated cross-source research, but the curr
 1. Two completed research tasks against the same corpus record repeated source re-reading or a provenance-caused correction in receipts or handoff evidence.
 2. A human explicitly requests implementation for a named corpus and accepts the pilot's evaluation and spend contract.
 
-When reopened, the mechanism belongs under `optional-skills/`. Its first pilot candidate is template-maintenance research feeding `meta/source-analysis.md`. It is not project memory, an instruction layer, or a RAG replacement.
+When reopened, the mechanism belongs under `optional-skills/`. Its first pilot candidate is template-maintenance research feeding `development/source-analysis.md`. It is not project memory, an instruction layer, or a RAG replacement.
 
 ### Parked-plan lifecycle
 
-This file remains task-local evidence, not a standing design owner. It is waiting on one human decision: accept the parked verdict, request implementation for a named corpus under the evaluation contract, or reject the mechanism. If implementation is not activated by 2026-09-03 or the next harness retro, whichever comes first, the retro owner records a compact `defer` decision with the activation triggers and primary research links in `meta/source-analysis.md`, then deletes this plan. A later trigger starts a fresh task from that durable decision and revalidates the design against the current harness. If implementation is activated sooner, this plan becomes the active implementation plan and is deleted after the accepted contract moves into the optional skill and canonical project guidance. An explicit rejection immediately records `reject` and the human's rationale in `meta/source-analysis.md`, then deletes this plan; only an explicit human reversal or materially new evidence may reopen it.
+This file remains task-local evidence, not a standing design owner. It is waiting on one human decision: accept the parked verdict, request implementation for a named corpus under the evaluation contract, or reject the mechanism. If implementation is not activated by 2026-09-03 or the next harness retro, whichever comes first, the retro owner records a compact `defer` decision with the activation triggers and primary research links in `development/source-analysis.md`, then deletes this plan. A later trigger starts a fresh task from that durable decision and revalidates the design against the current harness. If implementation is activated sooner, this plan becomes the active implementation plan and is deleted after the accepted contract moves into the optional skill and canonical project guidance. An explicit rejection immediately records `reject` and the human's rationale in `development/source-analysis.md`, then deletes this plan; only an explicit human reversal or materially new evidence may reopen it.
 
 The design intentionally adopts Karpathy's immutable-source, compiled-wiki, ingest/query/lint shape while rejecting three parts that conflict with this harness:
 
@@ -377,9 +377,9 @@ The first pilot candidate is this template repository's external-reference resea
 6. Compile pages for the core pattern, evidence, failure modes, and harness-fit decision, then generate the index and run deterministic `check`.
 7. Content-hash each development candidate version before running its exact preregistered repetition set, no fewer than three. Each repetition initializes an empty corpus, independently compiles it from the same raw sources in a fresh session with that frozen version, and answers the fixed questions in fresh sessions. A code, prompt, schema, selector, model, or procedure change creates the next candidate cycle and requires a complete new repetition set. After a valid development gain, freeze the accepted version for holdout.
 8. The custodian releases only the holdout raw sources to fresh builders using the frozen candidate. They independently build the exact preregistered number of holdout wikis, no fewer than three. Holdout questions, expected answers, and baseline artifacts remain inaccessible until every repeated wiki is sealed. Separate answering sessions then receive randomized question packets and the blinded rater scores anonymized answers.
-9. Only after an independently replicated holdout win, exercise fresh adoption and use the corpus to update the keep/remove/defer decision in `meta/source-analysis.md`.
+9. Only after an independently replicated holdout win, exercise fresh adoption and use the corpus to update the keep/remove/defer decision in `development/source-analysis.md`.
 
-The slice replaces no canonical owner. It replaces the ad hoc source-tracing work used to maintain `meta/source-analysis.md`. If the pilot does not reduce repeated source reading or improve claim support, remove the corpus and keep only the source-analysis decision.
+The slice replaces no canonical owner. It replaces the ad hoc source-tracing work used to maintain `development/source-analysis.md`. If the pilot does not reduce repeated source reading or improve claim support, remove the corpus and keep only the source-analysis decision.
 
 ## Focused Proof
 
@@ -455,7 +455,7 @@ The human-run response bundle records raw answers, selected source ids, cited an
 | 7 | Content-hash and freeze the complete candidate, then independently build every declared holdout repetition from custodian-released raw sources without revealing questions | Candidate freeze manifest; exact declared count of fresh holdout compilations; holdout-access audit |
 | 8 | Replicate with fresh holdout answering sessions and blinded scoring | Holdout candidate mean meets its independently calculated target and every guard passes |
 | 9 | Exercise the existing generic `--enable research-wiki` fresh-adoption path and add project guidance | Paired fresh-adoption fixtures with and without the option |
-| 10 | Record the keep/narrow/reject decision in `meta/source-analysis.md` and the next retro | Link/audit check plus receipt evidence; remove the candidate on failure |
+| 10 | Record the keep/narrow/reject decision in `development/source-analysis.md` and the next retro | Link/audit check plus receipt evidence; remove the candidate on failure |
 
 No implementation step edits a concurrently modified path without first re-reading and reconciling its diff. Test additions should prefer a focused fixture script so the large validation owner only needs a small integration call.
 
@@ -465,7 +465,7 @@ Round 1 used an independent fresh-context critic under `skills/design-critique/S
 
 | Finding id | Disposition | Reasoning and evidence | Amendment |
 | --- | --- | --- | --- |
-| LLMW-001 | ACCEPT | `meta/source-analysis.md` is an output, not a caller. Repository history shows source harvests but no repeated query baseline, provenance-caused defect, or avoided re-reading measurement. | Changed the verdict from implementable value to design-and-park; added two activation triggers and selected direct citations as the immediate mitigation. |
+| LLMW-001 | ACCEPT | `development/source-analysis.md` is an output, not a caller. Repository history shows source harvests but no repeated query baseline, provenance-caused defect, or avoided re-reading measurement. | Changed the verdict from implementable value to design-and-park; added two activation triggers and selected direct citations as the immediate mitigation. |
 | LLMW-002 | ACCEPT | `adopt.sh:10,102-149,280-323` is a fresh-install path and cannot enable a feature in the template checkout or an existing adoption. Skill registration does not create a read-only dispatch role. | The template pilot invokes the optional skill in place; fresh adopters use generic `--enable`; existing adopters reconcile/upgrade. Removed the claimed mechanical permission boundary and new role. |
 | LLMW-003 | ACCEPT | The earlier contract required a payload while also permitting reference-only records and left identical bytes from different origins ambiguous. | Version 1 now permits payload-bearing UTF-8 sources only and defines the exact source schema, content identity, origin merge, and line-anchor rules. |
 | LLMW-004 | ACCEPT | Natural-language factuality cannot be decided by a deterministic Markdown linter, and tables/lists/mixed paragraphs had no acceptance rule. | Version 1 now uses explicit `Fact:`, `Synthesis:`, and `Uncertainty:` claim paragraphs; unsupported Markdown constructs fail; metadata source duplication was removed. |
@@ -491,7 +491,7 @@ Round 3 reported five material findings. All five are accepted and adjudicated h
 
 | Finding id | Disposition | Reasoning and evidence | Amendment |
 | --- | --- | --- | --- |
-| LLMW3-001 | ACCEPT | Parking a complete design indefinitely in `plans/` would violate the task-local lifecycle and create the baggage the verdict warns about. | Added a human-review decision, a 2026-09-03 or next-retro deadline, `meta/source-analysis.md` as the compact durable decision owner, and deletion rules for both defer and activation outcomes. |
+| LLMW3-001 | ACCEPT | Parking a complete design indefinitely in `plans/` would violate the task-local lifecycle and create the baggage the verdict warns about. | Added a human-review decision, a 2026-09-03 or next-retro deadline, `development/source-analysis.md` as the compact durable decision owner, and deletion rules for both defer and activation outcomes. |
 | LLMW3-002 | ACCEPT | Callers and proofs named `check`, while the operation heading called the same deterministic validation `lint` and also described optional model review. | Renamed the deterministic operation `check` throughout and separated model-backed `semantic-lint` as a skill workflow with no script command or mutation authority. |
 | LLMW3-003 | ACCEPT | The prior metric mixed per-answer and aggregate guards and compared percentages with score-unit standard deviations without one verdict equation. | Defined exact per-answer predicates, aggregate and run guards, repetition accounting, sample deviation units, `noise_delta`, and the development/holdout candidate threshold equation. |
 | LLMW3-004 | ACCEPT | Preparing both corpora in builder-visible storage made the claimed untouched holdout vulnerable to question-shaped compilation. | Added a separate custodian, external sealed holdout materials and baselines, a content-hashed candidate freeze, staged raw-source release, fresh builder and answer sessions, blinded scoring, and `invalid-run` on custody failure. |

@@ -26,12 +26,12 @@ done
 
 # Core assets are required everywhere. The full seven-skill set with every
 # per-runtime profile is required only in the template repository (marked by
-# meta/harness-design.md): adopted repositories may prune unused skills, and
+# development/metasystem-design.md): adopted repositories may prune unused skills, and
 # each skill present is still validated by the loop above. In adopted mode,
 # any profile a remaining skill does provide must be registered without drift;
 # project-added skills are not required to invent profiles they never shipped.
 template_mode=0
-[[ -f meta/harness-design.md ]] && template_mode=1
+[[ -f development/metasystem-design.md ]] && template_mode=1
 if (( ! template_mode )); then
   scripts/harness-config.sh validate
 fi
@@ -939,7 +939,7 @@ scripts/assert-critique-closed.sh \
 # Template repository only. An adopted copy gets its hooks from adopt.sh at its
 # own root, with a different layout; this is about the repository that builds the
 # harness running under it.
-if [[ -f meta/harness-design.md ]]; then
+if [[ -f development/metasystem-design.md ]]; then
   harness_own_settings=$(cd "$root/.." && pwd -P)/.claude/settings.json
   [[ -f "$harness_own_settings" ]] \
     || { echo "this repository has no .claude/settings.json: the harness is not running under itself" >&2; exit 1; }
@@ -2735,7 +2735,7 @@ fi
 
 # Adopted-mode contract: a copy without the template marker validates with a
 # skill pruned, and a present-but-broken skill still fails. Template mode
-# only, so the nested run (which lacks meta/) cannot recurse.
+# only, so the nested run (which lacks development/) cannot recurse.
 if (( template_mode )); then
   adopted="$tmp/adopted"
   mkdir -p "$adopted"
@@ -2754,7 +2754,7 @@ copy_tree_without_artifacts() { # source root, destination
 }
 
   copy_tree_without_artifacts "$root" "$adopted"
-  rm -rf "$adopted/meta" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
+  rm -rf "$adopted/development" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
   sed 's/<[^>]*>/filled/g' "$adopted/docs/project-rules.md" >"$adopted/docs/project-rules.md.new"
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
   perl -0pi -e 's/^harness\.runtimes=.*$/harness.runtimes=/m; s/^role\..*\n//mg; s/^mode\..*\.role\..*\n//mg' "$adopted/harness.conf"

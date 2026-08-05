@@ -87,7 +87,7 @@ skills/              triggered workflows: verify, design-critique, refactor, imp
 optional-skills/     opt-in specialists (debug-java), enabled per project
 scripts/             deterministic checks and shipped enforcement configs
 plans/               task-local state, handoff notes, standing ledgers
-meta/                template maintenance and rationale, never copied to projects
+development/                template maintenance and rationale, never copied to projects
 ```
 
 ### Scripts
@@ -124,8 +124,8 @@ Adopting in an **existing** repository, one that already has agent instructions,
 
 **Pulling template updates into a project.** Diff against the recorded adoption SHA and apply the three-bucket rule: project-owned files are never overwritten, template-owned files are taken from upstream, and shared files are merged deliberately with local changes re-applied on top. The procedure is owned by [`docs/harness-reconciliation.md`](docs/harness-reconciliation.md). Finish with `scripts/validate-harness.sh` and a retro entry recording the new template SHA.
 
-**Changing the template itself.** Applies to this repository only: every addition answers the change gate (owned by [`docs/project-adaptation.md`](docs/project-adaptation.md), shipped with every project), keep-or-remove decisions are recorded in `meta/source-analysis.md`, structural claims must pass `scripts/validate-harness.sh`, and external critiques get a written disposition: implemented, deferred with a named revisit trigger, or rejected with a reason.
+**Changing the template itself.** Applies to this repository only: every addition answers the change gate (owned by [`docs/project-adaptation.md`](docs/project-adaptation.md), shipped with every project), keep-or-remove decisions are recorded in `development/source-analysis.md`, structural claims must pass `scripts/validate-harness.sh`, and external critiques get a written disposition: implemented, deferred with a named revisit trigger, or rejected with a reason.
 
 ## Status
 
-The structure is validated end to end. Real-world behavior is unproven until a project adopts it; the receipts loop is how each rule earns its keep or gets removed. The harness was distilled from production engineering repositories, agent-evaluation work, and runtime-debugging practice, and it has been reviewed against three independent external critiques. Sources and decisions are traceable in `meta/source-analysis.md` (template repository only).
+The structure is validated end to end. Real-world behavior is unproven until a project adopts it; the receipts loop is how each rule earns its keep or gets removed. The harness was distilled from production engineering repositories, agent-evaluation work, and runtime-debugging practice, and it has been reviewed against three independent external critiques. Sources and decisions are traceable in `development/source-analysis.md` (template repository only).

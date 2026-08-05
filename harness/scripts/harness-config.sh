@@ -252,7 +252,7 @@ else:
 
 # Registration is adopted-repository state, not a template invariant. The fake
 # runtime is a fixture adapter and deliberately has no external registration.
-if not (repo / "meta" / "harness-design.md").is_file():
+if not (repo / "development" / "metasystem-design.md").is_file():
     registration_roots = {
         "claude": [".claude/skills", ".claude/agents"],
         "codex": [".agents/skills"],

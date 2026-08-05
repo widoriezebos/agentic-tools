@@ -64,11 +64,11 @@ if search_lines 'TODO|TBD|<one paragraph>|<command>|<paths' AGENTS.md wow.md "${
   exit 1
 fi
 
-# Template detection uses a positive marker, not the mere absence of a meta/
+# Template detection uses a positive marker, not the mere absence of a deta/
 # directory (any project may have one of those): only the template repository
-# carries meta/harness-design.md. Everywhere else, project-rules.md must be
+# carries development/metasystem-design.md. Everywhere else, project-rules.md must be
 # filled in.
-if [[ ! -f meta/harness-design.md ]]; then
+if [[ ! -f development/metasystem-design.md ]]; then
   # Look for the template's own literal placeholders, exactly as the check on
   # AGENTS.md and the skills does above. A generic any-angle-bracket pattern
   # false-positives on legitimately parameterized commands in a filled file
