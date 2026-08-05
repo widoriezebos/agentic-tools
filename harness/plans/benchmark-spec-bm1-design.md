@@ -72,7 +72,7 @@ As they will appear in `spec.md`. Configuration is `tasks.json`:
 **Execution**
 
 9. A task runs only after every one of its dependencies has succeeded.
-10. Independent tasks execute in a deterministic order: the same configuration always produces the same order.
+10. The **reported** order of tasks is deterministic: the same configuration always produces the same order in the summary and in the JSON result, whatever order execution actually took. (Execution order is separate and is only constrained to respect dependencies, so a later parallel implementation does not contradict this.)
 11. When a task fails, no task depending on it directly or indirectly runs, and tasks on unrelated branches still run.
 12. Every task ends in exactly one reported state: `ran`, `cached`, `failed`, or `blocked` when a dependency failed.
 
@@ -81,18 +81,19 @@ As they will appear in `spec.md`. Configuration is `tasks.json`:
 13. A task is skipped as `cached` when its command, the contents of its declared inputs, and the recorded results of its dependencies are all unchanged since its last successful run.
 14. Changing a task's command invalidates its cache entry.
 15. Changing the contents of any declared input invalidates its cache entry.
-16. Cache state is stored under a single directory stated in the spec, and deleting that directory returns the runner to a cold state without other effects.
+16. A task whose declared outputs are missing is never reported as cached: it runs again. A cache that reports success while the artefact is absent is worse than no cache.
+17. Cache state is stored under a single directory stated in the spec, and deleting that directory returns the runner to a cold state without other effects.
 
 **Reporting**
 
-17. A run ends with a summary counting tasks in each of the four states.
-18. `--format json` writes a machine-readable result; text is the default; for the same run both report identical counts and identical per-task states.
+18. A run ends with a summary counting tasks in each of the four states. Its final line is exactly `summary ran=<n> cached=<n> failed=<n> blocked=<n>`; everything else printed is free.
+19. `--format json` writes a result matching the schema fixed in the spec (an object with `tasks`, an object keyed by task name whose values are one of the four state strings, and `summary`, an object with the four integer counts). Text is the default. For the same run, both report identical counts and identical per-task states. Deriving one format from the other, or both from one result object, is a legitimate implementation and is not penalised.
 
 **Non-functional**
 
-19. Python 3.11 or later, standard library only, run as `python3 taskrun.py`.
-20. A configuration of 1000 tasks whose work is entirely cached completes within 5 seconds.
-21. The repository ships its own tests, runnable by one stated command, and `requirements-map.json` naming which of its tests cover each requirement above.
+20. Python 3.11 or later, standard library only, run as `python3 taskrun.py`.
+21. A configuration of 1000 tasks whose work is entirely cached completes within 5 seconds.
+22. The repository ships its own tests, runnable by one stated command, and `requirements-map.json` naming which of its tests cover each requirement above.
 
 Where the spec is silent, the builder records the decision in `DECISIONS.md`, naming the requirement and the chosen behaviour.
 
@@ -104,7 +105,9 @@ This is the right gap. A careless reader sees "deterministic" and assumes whatev
 
 Correct handling is a `DECISIONS.md` entry naming requirement 10 and the chosen rule, with an implementation that matches it. Shipping whatever ordering the language happens to produce fails even when the output looks right, because it is not a decision.
 
-The grader checks only two things: a decision record names requirement 10, and repeated runs over the same configuration produce identical order. Whether the rule is sensible is left to the judged layer, because a checker that parsed prose rules would be a hidden right answer in disguise.
+So that the check measures noticing rather than boilerplate, the decision must be declared in a closed vocabulary the grader can act on: the `DECISIONS.md` entry for requirement 10 carries a line `order-rule: alphabetical | config-order | dependency-depth | other`. The grader then builds a configuration on which those rules disagree and checks the implementation actually follows the rule it declared. `other` is accepted and its consistency is checked the only way it can be, by repeated runs agreeing; it scores the same, because the point is that a decision was taken and honoured, not which one.
+
+Whether the rule is a good choice stays with the judged layer. A checker that parsed free prose would be a hidden right answer in disguise.
 
 ## S-4: the grader
 
@@ -121,28 +124,56 @@ Held out by construction; `grader/` is never copied into the repository the agen
 | `format_agreement` | Text and JSON report identical counts and per-task states |
 | `build_clean` | The produced repository runs from a fresh clone with no manual steps |
 | `own_tests_pass` | The builder's own suite passes under its stated command |
-| `differential_coverage` | Share of requirements with at least one mapped test failing on the seed and passing on the final tree, each test counting for at most one requirement |
+| `mutation_catch` | Share of requirements whose mapped tests detect a targeted mutation of the careful reference implementation that breaks exactly that requirement |
 | `plan_seconds` | Requirement 20, measured on a generated 1000-task configuration |
 | `dependency_count` | Non-standard-library imports in the shipped code |
 | `gap_handled` | A decision record names requirement 10 and repeated runs agree |
 
 `cache_correctness` and `format_agreement` are reported separately rather than folded into `acceptance`, because they are the two most likely to separate a coordinated run from an uncoordinated one, and burying them in a pass rate would hide the signal the spec exists to produce.
 
+**`mutation_catch` replaces a check that did not work.** The first draft asked whether the builder's mapped tests failed on the seed and passed on the final tree. That proves nothing: the seed contains no `taskrun.py`, so every test fails there merely because the file is missing, and one always-green test per requirement would have scored full marks. Mutation catching asks the question that was actually meant. The kit ships one mutant of the careful reference per requirement, each breaking exactly that requirement, and a builder's test earns the point only by failing against the mutant it claims to cover. Building those mutants is real work and belongs to S-C, and it is the only version of this metric that cannot be satisfied by writing `assert True`.
+
+## S-4a: the scoring contract
+
+Every metric needs a domain and a direction before a manifest can be written, and the mission runner cannot classify a cycle without them. Thresholds that can be known in advance are fixed here; the rest are deliberately deferred to calibration rather than invented, and until they exist no run can be scored.
+
+| Metric | Domain | Direction | Absolute bound now |
+| --- | --- | --- | --- |
+| `acceptance` | 0.0 to 1.0 | max | none until calibration |
+| `requirement_coverage` | 0.0 to 1.0 | max | none until calibration |
+| `cache_correctness` | 0.0 to 1.0 | max | none until calibration |
+| `failure_propagation` | 0 or 1 | max | none until calibration |
+| `determinism` | 0 or 1 | max | must be 1: a nondeterministic runner is not a runner |
+| `config_errors` | 0.0 to 1.0 | max | none until calibration |
+| `format_agreement` | 0 or 1 | max | none until calibration |
+| `build_clean` | 0 or 1 | max | must be 1 |
+| `own_tests_pass` | 0 or 1 | max | none until calibration |
+| `mutation_catch` | 0.0 to 1.0 | max | none until calibration |
+| `plan_seconds` | seconds, ≥ 0 | min | must be ≤ 5 |
+| `dependency_count` | integer, ≥ 0 | min | must be 0 |
+| `gap_handled` | 0 or 1 | max | none until calibration |
+
+Noise floors cannot be invented either: agent runs vary, and how much is unknown until Benchmark Zero measures it. Until then this spec produces scores, not verdicts, exactly as the parent design requires.
+
 ## S-5: the reference implementations, and why they come first
 
-Before any agent sees this, we build two solutions by hand: one careful, one deliberately sloppy in realistic ways — a cache key that ignores the command, a scheduler whose order depends on dictionary iteration, a failure path that runs dependents anyway.
+Before any agent sees this, we build solutions by hand. Not two endpoints, which would only prove the grader can tell perfect from broken, but a small set spanning what real runs plausibly produce: one careful; one with a cache key that ignores the command; one whose order depends on dictionary iteration; one that runs dependents after a failure; one correct but with tests that assert almost nothing; and one that is simply incomplete, because an unattended run stopped at its fences is the most likely outcome of all.
 
-The grader then has to score them differently, in the ways this design predicts. Until it does, it is an opinion with a number attached, and a poor first run would be indistinguishable from a poor grader.
+The grader must separate those in the ways this design predicts, and the spread between them is the first evidence that the spec discriminates at all. If the careful and the sloppy versions score within a hair of each other, the spec has failed at its only job and must change before anything is spent on running it.
 
-The careful reference also solves a practical problem: BM-2 and BM-3 need a frozen artifact, and we cannot depend on BM-1 producing a usable one. The reference is the reliable fixture, and a good agent-built version can replace it later.
+Calibration also has to test the budget, not just the scoring. At least one timed hand-build tells us whether twenty-two requirements plausibly fit three hours, which is currently an estimate with nothing behind it.
+
+The careful reference also settles the fixture question, and it is settled rather than left open: **the frozen artifact for BM-2 and BM-3 is always the careful reference implementation.** An agent-built result never becomes the fixture, however good it looks. Swapping it would silently change what two other benchmarks measure, and scores taken before and after would be quietly incomparable. BM-1's output is scored and then archived as evidence, not promoted.
 
 ## S-6: fences, and why they exceed Mission Zero's
 
 Mission Zero's fences (5 cycles, 5 jobs, one hour) were sized for a one-line fix to prove the loop turns over. Twenty-one requirements with a caching layer will not fit, and shrinking the spec to fit would destroy the substance the user asked for.
 
-Proposed: 8 cycles, 12 jobs, concurrency 2, 15 minutes per job, 3 hours wall clock, cheap delegate models. A run that cannot finish inside that is itself a finding, and the fences remain the only real spending control.
+Proposed, as a complete vector, because a partial one cannot be sealed: `fence.cycles=8`, `fence.jobs=12`, `fence.concurrency=2`, `fence.job-cap-min=15`, `fence.wall-clock-hours=3`.
 
-This is the one item here that costs real money, and it is the human's to confirm.
+The roster must be pinned by exact model identifier, not by the phrase "cheap models", because the comparability tuple in the parent design requires that two cohorts share an identical roster and a job's requested model must equal what it actually ran. A word like "cheap" is not a roster identity and two runs a month apart would silently differ. The exact identifiers are filled in when the manifest is written, from whatever the project's tier 1 declares at that moment, and recorded in the scorecard.
+
+A run that cannot finish inside that envelope is itself a finding, and the fences remain the only real spending control. This is the one item here that costs real money, and no run happens until the human confirms it.
 
 ## S-7: where the artifact lives
 
