@@ -1,0 +1,26 @@
+# Template repository CI: runs the metasystem's own hard checks on every push
+# and pull request, so validation does not depend on anyone remembering it.
+# The shipped adoption copy of this workflow lives at
+# metasystem/scripts/enforcement/github-actions-metasystem.yml; this file is the
+# template repository's own instance, pointed at the metasystem/ subdirectory.
+name: metasystem
+on: [push, pull_request]
+jobs:
+  metasystem-validation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: metasystem
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Harness validation
+        # The process-owning fixtures run watcher, reaper, and census loops for
+        # more than one repository at once, which a free shared runner does not
+        # have the capacity for. That is a decision about what we pay for, not a
+        # defect. The local suite is the gate of record and runs everything; this
+        # job keeps the cheap checks useful instead of failing forever.
+        env:
+          HARNESS_SKIP_AGENT_FIXTURES: "1"
+        run: bash scripts/validate-metasystem.sh

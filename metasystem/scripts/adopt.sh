@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE' >&2
+Usage:
+  scripts/adopt.sh <target-dir> [--runtimes claude,devin,codex|none] \
+      [--enable <optional-skill>] [--copy-skills]
+
+First installation of the metasystem into a fresh repository. Performs the
+mechanical adaptation steps: exports the payload from the template's tracked
+HEAD, writes metasystem.conf for the selected runtimes, registers skills and
+profiles, installs the shipped enforcement, creates the gitignored artifacts/
+directory, and records the template SHA in docs/project-rules.md. What remains
+manual afterwards: fill docs/project-rules.md and metasystem.conf with verified
+project facts, then run
+scripts/validate-metasystem.sh in the target; it must pass with zero
+placeholders.
+
+--runtimes defaults to claude. claude registers skills under .claude/skills
+(symlinks unless --copy-skills), profiles under .claude/agents, and writes
+.claude/settings.json with the shipped lifecycle hooks. devin registers skills under
+both .agents/skills and .devin/skills and copies AGENT.md profiles under
+.devin/agents, then installs its Claude-compatible hook config. codex symlinks skills under .agents/skills and installs .codex/hooks.json,
+where OpenAI runtimes read each skill's agents/openai.yaml in place. none
+skips every runtime registration. The CI workflow installs regardless; it is
+runtime-neutral.
+
+--enable moves the named optional skill (for example debug-java) into
+skills/; unselected optional skills are not copied at all.
+
+Refusals: a dirty template worktree (the recorded SHA must identify the
+payload exactly); a target carrying any detectable foreign instruction asset
+(follow docs/metasystem-reconciliation.md instead); a target with an older
+installation of this metasystem (follow the upgrade path there); and payload
+paths that already exist in the target with different content. A target that
+is already this template's own installation at the same SHA is a no-op.
+
+A script can detect only file-shaped instruction assets. Agent-directed
+prose in READMEs, prompt directories under other names, and hooks or CI
+encoding agent rules must be checked by a human before calling a repository
+fresh.
+
+Exit codes: 0 adopted or already adopted; 1 refused; 2 usage or environment error.
+USAGE
+}
+
+die() { echo "$2" >&2; exit "$1"; }
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+target=
+runtimes=claude
+copy_skills=0
+enable_skills=()
+
+while (($#)); do
+  case "$1" in
+    --runtimes) runtimes=${2:-}; shift 2 ;;
+    --enable) enable_skills+=("${2:-}"); shift 2 ;;
+    --copy-skills) copy_skills=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) usage; exit 2 ;;
+    *)
+      [[ -z "$target" ]] || { usage; exit 2; }
+      target=$1; shift ;;
+  esac
+done
+[[ -n "$target" ]] || { usage; exit 2; }
+[[ -n "$runtimes" ]] || { usage; exit 2; }
+
+# Validate runtime names before touching anything: a typo must not leave a
+# partially adopted target behind.
+IFS=, read -ra selected_runtimes <<<"$runtimes"
+for rt in "${selected_runtimes[@]}"; do
+  case "$rt" in
+    claude|devin|codex|none) ;;
+    *) die 2 "unknown runtime: $rt (claude, devin, codex, or none)" ;;
+  esac
+done
+if [[ "$runtimes" == *none* && "$runtimes" != none ]]; then
+  die 2 "--runtimes none cannot be combined with other runtimes"
+fi
+if [[ "$runtimes" != none ]]; then
+  unique_runtimes=$(printf '%s\n' "${selected_runtimes[@]}" | sort -u | wc -l | tr -d ' ')
+  [[ "$unique_runtimes" -eq "${#selected_runtimes[@]}" ]] \
+    || die 2 "--runtimes contains a duplicate runtime"
+fi
+
+mkdir -p "$target"
+target=$(cd "$target" && pwd -P)
+
+# Source provenance: the payload is exported from the tracked HEAD, never the
+# filesystem, so ignored or untracked content cannot ride along; a dirty
+# worktree is refused so the recorded SHA identifies the payload exactly.
+git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+  || die 2 "template source is not a git checkout: $root"
+[[ -z "$(git -C "$root" status --porcelain -- .)" ]] \
+  || die 1 "template worktree is dirty; commit first so the recorded SHA identifies the copied payload"
+sha=$(git -C "$root" rev-parse HEAD)
+prefix=$(git -C "$root" rev-parse --show-prefix)
+
+# Target recognition: our own installation is a no-op at the same SHA (or the
+# unreplaced placeholder right after a first run); an older installation goes
+# to the upgrade path; any other detectable instruction asset goes to
+# reconciliation.
+rules="$target/docs/project-rules.md"
+if [[ -f "$target/wow.md" && -f "$rules" ]] && grep -q '^- Adopted from template SHA:' "$rules"; then
+  recorded_line=$(grep '^- Adopted from template SHA:' "$rules" | head -1)
+  if [[ "$recorded_line" == *"<template sha>"* || "$recorded_line" == *"$sha"* ]]; then
+    if [[ -f "$target/.github/workflows/metasystem.yml" ]] \
+      && (cd "$target" && METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS=1 bash scripts/audit-metasystem.sh . >/dev/null 2>&1); then
+      echo "target is already this template's installation; nothing to do"
+      exit 0
+    fi
+    die 1 "target carries this template's marker but is not a complete healthy installation (missing workflow or failing structural audit); finish it manually per docs/project-adaptation.md or start from a clean target"
+  fi
+  die 1 "target carries an installation at another SHA; follow the upgrade path in docs/metasystem-reconciliation.md"
+fi
+for asset in AGENTS.md CLAUDE.md GEMINI.md wow.md .cursorrules .cursor/rules \
+  .github/copilot-instructions.md .windsurfrules .claude .devin .agents skills; do
+  [[ -e "$target/$asset" ]] \
+    && die 1 "target contains an existing instruction asset ($asset); follow docs/metasystem-reconciliation.md instead"
+done
+[[ -e "$target/.github/workflows/metasystem.yml" ]] \
+  && die 1 "target already has .github/workflows/metasystem.yml; follow docs/metasystem-reconciliation.md instead"
+
+echo "note: only file-shaped instruction assets are detectable. Confirm by hand that no agent-directed prose, prompt directories, or agent-encoding hooks/CI exist before treating this repository as fresh."
+
+# Stage the payload from the tracked HEAD.
+stage=$(mktemp -d)
+trap 'rm -rf "$stage"' EXIT
+if [[ -n "$prefix" ]]; then treeish="HEAD:${prefix%/}"; else treeish=HEAD; fi
+git -C "$root" archive "$treeish" >"$stage/payload.tar"
+tar -xf "$stage/payload.tar" -C "$stage"
+rm -f "$stage/payload.tar"
+rm -rf "$stage/development" "$stage/README.md" "$stage/LICENSE"
+# plans/ ships only its standing ledgers: task-local plans and handoff notes
+# are template-repository state, and receipts.log is its receipts history.
+for p in "$stage"/plans/*; do
+  case "$(basename "$p")" in
+    README.md|instruction-ledger.md|known-issues.md) ;;
+    *) rm -rf "$p" ;;
+  esac
+done
+for s in ${enable_skills[@]+"${enable_skills[@]}"}; do
+  [[ -d "$stage/optional-skills/$s" ]] || die 2 "unknown optional skill: $s"
+  mv "$stage/optional-skills/$s" "$stage/skills/$s"
+done
+rm -rf "$stage/optional-skills"
+
+# Tailor the committed configuration template before collision checks and
+# copying. The selected-runtime list is durable state, and no unselected
+# runtime's model placeholder or mode override may leak into the adopted
+# repository.
+conf="$stage/metasystem.conf"
+[[ -f "$conf" ]] || die 1 "payload is missing metasystem.conf"
+python3 - "$conf" "${selected_runtimes[@]}" <<'PY'
+import os
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+requested = sys.argv[2:]
+selected = [] if requested == ["none"] else requested
+selected_set = set(selected)
+default = next((runtime for runtime in ("codex", "devin", "claude") if runtime in selected_set), None)
+
+role_runtime = re.compile(r"^role\.[a-z0-9-]+\.runtime$")
+mode_runtime = re.compile(r"^mode\.[a-z0-9-]+\.role\.[a-z0-9-]+\.runtime$")
+model_key = re.compile(
+    r"^(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$"
+)
+tier_key = re.compile(r"^model\.tier\.[1-9][0-9]*$")
+known_runtimes = {"claude", "codex", "devin", "fake"}
+
+out = []
+saw_runtimes = False
+saw_default = False
+for raw in path.read_text(encoding="utf-8").splitlines():
+    stripped = raw.strip()
+    if not stripped or stripped.startswith("#") or "=" not in raw:
+        out.append(raw)
+        continue
+    key, value = (part.strip() for part in raw.split("=", 1))
+
+    if key == "metasystem.runtimes":
+        out.append(f"metasystem.runtimes={','.join(selected)}")
+        saw_runtimes = True
+        continue
+
+    if not selected:
+        if key.startswith("role.") or (key.startswith("mode.") and ".role." in key):
+            continue
+        if tier_key.fullmatch(key):
+            out.append(f"{key}=")
+            continue
+        out.append(raw)
+        continue
+
+    if key == "role.default.runtime":
+        out.append(f"{key}={default}")
+        saw_default = True
+        continue
+    if role_runtime.fullmatch(key):
+        out.append(f"{key}={value if value == 'main' or value in selected_set else default}")
+        continue
+    if mode_runtime.fullmatch(key):
+        if value == "main" or value in selected_set:
+            out.append(raw)
+        continue
+
+    match = model_key.fullmatch(key)
+    if match and match.group(1) not in selected_set:
+        continue
+
+    if tier_key.fullmatch(key) and not (value.startswith("<") and value.endswith(">")):
+        kept = []
+        for member in (item.strip() for item in value.split(",")):
+            if not member:
+                continue
+            runtime = member.split(":", 1)[0] if ":" in member else None
+            if runtime not in known_runtimes or runtime in selected_set:
+                kept.append(member)
+        out.append(f"{key}={','.join(kept)}")
+        continue
+
+    out.append(raw)
+
+if not saw_runtimes:
+    out.insert(0, f"metasystem.runtimes={','.join(selected)}")
+if selected and not saw_default:
+    out.append(f"role.default.runtime={default}")
+
+temporary = path.with_name(path.name + ".new")
+temporary.write_text("\n".join(out) + "\n", encoding="utf-8")
+os.replace(temporary, path)
+PY
+
+# Collision policy: .gitattributes and .gitignore merge by line-append; every
+# other payload path that exists in the target with different content refuses,
+# never overwriting and never skipping silently.
+collisions=0
+while IFS= read -r p; do
+  rel=${p#"$stage"/}
+  case "$rel" in .gitattributes|.gitignore) continue ;; esac
+  if [[ -e "$target/$rel" ]] && ! cmp -s "$p" "$target/$rel"; then
+    echo "collision: $rel" >&2
+    collisions=$((collisions + 1))
+  fi
+done < <(find "$stage" -type f)
+(( collisions == 0 )) \
+  || die 1 "target already contains $collisions differing payload path(s); resolve them or follow docs/metasystem-reconciliation.md"
+
+# Copy the payload, then merge the line-append files.
+(cd "$stage" && find . -type f ! -name .gitattributes ! -name .gitignore -print0) \
+  | while IFS= read -r -d '' p; do
+      rel=${p#./}
+      mkdir -p "$target/$(dirname "$rel")"
+      cp "$stage/$rel" "$target/$rel"
+    done
+for mf in .gitattributes .gitignore; do
+  [[ -f "$stage/$mf" ]] || continue
+  touch "$target/$mf"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    grep -qxF "$line" "$target/$mf" || echo "$line" >>"$target/$mf"
+  done <"$stage/$mf"
+done
+
+[[ -f "$target/metasystem.conf" && -f "$target/scripts/agents/dispatch.sh" ]] \
+  || die 1 "adopted payload is missing metasystem.conf or scripts/agents/"
+
+mkdir -p "$target/artifacts"
+touch "$target/.gitignore"
+grep -qxF 'artifacts/' "$target/.gitignore" || echo 'artifacts/' >>"$target/.gitignore"
+
+sed "s|<template sha>|$sha|" "$rules" >"$rules.new" && mv "$rules.new" "$rules"
+
+# Runtime registrations.
+register_skill_dir() { # $1 = runtime dir for skill links, $2 = skill name
+  if (( copy_skills )); then
+    cp -R "$target/skills/$2" "$1/$2"
+  else
+    ln -s "../../skills/$2" "$1/$2"
+  fi
+}
+
+skill_names=()
+for d in "$target"/skills/*/; do
+  [[ -d "$d" ]] || continue
+  skill_names+=("$(basename "$d")")
+done
+
+for rt in "${selected_runtimes[@]}"; do
+  case "$rt" in
+    claude)
+      mkdir -p "$target/.claude/skills" "$target/.claude/agents"
+      for n in ${skill_names[@]+"${skill_names[@]}"}; do
+        [[ -e "$target/.claude/skills/$n" ]] || register_skill_dir "$target/.claude/skills" "$n"
+        [[ -f "$target/skills/$n/agents/claude-profile.md" ]] \
+          && cp "$target/skills/$n/agents/claude-profile.md" "$target/.claude/agents/$n.md"
+      done
+      sed '/"_comment"/d' "$target/scripts/enforcement/claude-code-hooks.json" >"$target/.claude/settings.json"
+      ;;
+    devin)
+      mkdir -p "$target/.agents/skills" "$target/.devin/skills"
+      for n in ${skill_names[@]+"${skill_names[@]}"}; do
+        [[ -e "$target/.agents/skills/$n" ]] || register_skill_dir "$target/.agents/skills" "$n"
+        [[ -e "$target/.devin/skills/$n" ]] || register_skill_dir "$target/.devin/skills" "$n"
+        if [[ -f "$target/skills/$n/agents/devin/AGENT.md" ]]; then
+          mkdir -p "$target/.devin/agents/$n"
+          cp "$target/skills/$n/agents/devin/AGENT.md" "$target/.devin/agents/$n/AGENT.md"
+        fi
+      done
+      cp "$target/scripts/enforcement/devin-hooks.json" "$target/.devin/config.json"
+      ;;
+    codex)
+      mkdir -p "$target/.agents/skills" "$target/.codex"
+      for n in ${skill_names[@]+"${skill_names[@]}"}; do
+        [[ -e "$target/.agents/skills/$n" ]] || register_skill_dir "$target/.agents/skills" "$n"
+      done
+      cp "$target/scripts/enforcement/codex-hooks.json" "$target/.codex/hooks.json"
+      ;;
+    none)
+      ;;
+  esac
+done
+
+# Runtime-neutral enforcement.
+mkdir -p "$target/.github/workflows"
+cp "$target/scripts/enforcement/github-actions-metasystem.yml" "$target/.github/workflows/metasystem.yml"
+
+# Structural check now; the placeholder check waits for the facts.
+(cd "$target" && METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS=1 bash scripts/audit-metasystem.sh . >/dev/null) \
+  || die 1 "structural audit failed in the adopted target"
+
+echo "adopted at template SHA $sha"
+echo "finish the adoption:"
+echo "  1. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions)."
+echo "  2. Fill metasystem.conf with verified models, tiers, and the durable evidence root."
+echo "  3. Run scripts/validate-metasystem.sh in the target; it must pass with zero placeholders."
