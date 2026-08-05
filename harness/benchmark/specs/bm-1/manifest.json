@@ -176,8 +176,9 @@
     "note": "Spring Boot was considered and dropped: the deliverable is a command-line tool and a web framework would have added ceremony without adding anything the benchmark measures."
   },
   "environment": {
-    "network": "none",
-    "mavenRepository": "pre-populated in the target image before the run starts",
-    "note": "Maven resolves dependencies over the network by default, and delegates run with network denied. Without a warmed local repository the very first build would fail for reasons having nothing to do with the agents. Provisioning warms it and every build command uses -o."
+    "delegateNetwork": "allowed",
+    "delegateNetworkReason": "Per-spec, not a benchmark-wide rule, and allowed here. This spec is idiosyncratic enough that no published task runner satisfies it: the stdout grammar, the four states, the cache directory, the JSON shape and the decision-record rule are all ours, so a downloaded implementation still has to be rewritten to match, which is most of the work. The constraint worth protecting, no third-party dependencies, is graded from pom.xml rather than enforced by cutting the network, which is the right place for it: a requirement should be scored, not made impossible to violate, or we never learn that an agent would have violated it.",
+    "denyMechanism": "A spec that does need isolation sets dispatch.permissions.network=deny in the provisioned target's harness.conf, which narrows every preset for every role. Reasons that would justify it: a published solution a search would hand over wholesale, or a metric that cannot tolerate run-to-run variance from fetched content.",
+    "maven": "Builds still run with -o against a pre-populated repository, because the build must be deterministic and must work whether or not the network is up. That is a spec requirement, not a sandbox constraint."
   }
 }

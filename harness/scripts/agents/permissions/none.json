@@ -1,7 +1,9 @@
 {
-  "readRoots": ["."],
+  "readRoots": [
+    "."
+  ],
   "writeRoots": [],
-  "network": "deny",
+  "network": "allow",
   "approvals": "deny",
   "tools": "read-only"
 }

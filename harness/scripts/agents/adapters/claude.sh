@@ -81,8 +81,13 @@ record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 output, hook_helper = Path(sys.argv[2]), str(Path(sys.argv[3]).resolve())
 requested = record["permissions"]["requested"]
 write_roots = requested["writeRoots"]
+network = requested.get("network", "deny")
 allow = ["Read", "Glob", "Grep"]
-deny = ["WebFetch", "WebSearch"]
+deny = []
+if network == "allow":
+    allow.extend(["WebFetch", "WebSearch"])
+else:
+    deny.extend(["WebFetch", "WebSearch"])
 if write_roots:
     allow.extend(["Bash", "Edit", "Write", "NotebookEdit"])
 else:
@@ -95,9 +100,11 @@ settings = {
         "autoAllowBashIfSandboxed": True,
         "allowUnsandboxedCommands": False,
         "filesystem": {"allowWrite": write_roots},
-        # A non-resolving allowlist sentinel makes every usable destination
-        # unavailable, while WebFetch/WebSearch are denied at the tool layer.
-        "network": {"allowedDomains": ["harness.invalid"], "deniedDomains": []},
+        # An empty allowlist with an empty denylist permits ordinary egress;
+        # the non-resolving sentinel makes every usable destination unavailable.
+        # The tool layer above agrees with whichever is chosen.
+        "network": ({"allowedDomains": [], "deniedDomains": []} if network == "allow"
+                    else {"allowedDomains": ["harness.invalid"], "deniedDomains": []}),
     },
     "hooks": {
         "SessionStart": [{

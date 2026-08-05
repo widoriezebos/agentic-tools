@@ -536,13 +536,19 @@ resolve_mission() { # explicit id; prints mission|lease|turn or ||
 }
 
 expand_permissions() { # requested value, workspace root, worktree flag, output
-  local requested=$1 workspace=$2 is_worktree=$3 output=$4 source preset
+  local requested=$1 workspace=$2 is_worktree=$3 output=$4 source preset network_floor
   if [[ -f "$requested" ]]; then source=$requested; preset=custom; else source="$root/scripts/agents/permissions/$requested.json"; preset=$requested; fi
   [[ -f "$source" ]] || die 1 "unknown permissions preset or envelope file: $requested"
-  python3 - "$source" "$repo_scope" "$workspace" "$is_worktree" "$preset" "$output" <<'PY'
+  # A repository may deny network to every delegate regardless of preset. A
+  # benchmark target sets this, because an agent that can reach the internet can
+  # download a solution and the measurement stops meaning anything. It only ever
+  # narrows: a repository cannot grant access a preset withholds.
+  network_floor=$(config_get --key dispatch.permissions.network --default '')
+  case "$network_floor" in ''|deny|allow) ;; *) die 1 "dispatch.permissions.network must be deny or allow" ;; esac
+  python3 - "$source" "$repo_scope" "$workspace" "$is_worktree" "$preset" "$output" "$network_floor" <<'PY'
 import json, os, sys
 from pathlib import Path
-source, repo, workspace, is_worktree, preset, output = sys.argv[1:]
+source, repo, workspace, is_worktree, preset, output, network_floor = sys.argv[1:]
 repo = Path(repo).resolve()
 workspace = Path(workspace).resolve()
 try:
@@ -570,6 +576,8 @@ for item in envelope["writeRoots"]:
         Path(item).resolve().relative_to(workspace)
     except ValueError:
         raise SystemExit(f"permission write root escapes the job worktree: {item}")
+if network_floor == "deny":
+    envelope["network"] = "deny"
 envelope = {"preset": preset, **envelope}
 Path(output).write_text(json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY

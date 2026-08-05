@@ -419,12 +419,16 @@ def assert_closed_schema(node, path):
 assert_closed_schema(orchestrator, "$")
 
 permission_expected = {
+    # Network is granted by default: the container or VM is the isolation
+    # boundary, and a delegate that cannot resolve a dependency or read
+    # documentation cannot do real work. A repository narrows it for every role
+    # with dispatch.permissions.network=deny.
     "none": {
-        "readRoots": ["."], "writeRoots": [], "network": "deny",
+        "readRoots": ["."], "writeRoots": [], "network": "allow",
         "approvals": "deny", "tools": "read-only",
     },
     "workspace": {
-        "readRoots": ["."], "writeRoots": ["<worktree>"], "network": "deny",
+        "readRoots": ["."], "writeRoots": ["<worktree>"], "network": "allow",
         "approvals": "deny", "tools": "runtime-default",
     },
 }
@@ -1500,9 +1504,14 @@ PY
     || { echo "terminal compare-and-set did not preserve the first writer" >&2; exit 1; }
   agent_fails illegal-terminal-transition 'illegal job transition' "$agent_dispatch" __record-cas --job interrupted --expect completed --status failed --patch "$terminal_patch"
 
+  # The fake reports network access it was not granted. Now that the presets
+  # grant it by default, the request has to withhold it explicitly for the
+  # report to be wider than the request at all.
+  restrictive_permissions="$agent_fixture/restrictive-permissions.json"
+  printf '{"readRoots":["."],"writeRoots":[],"network":"deny","approvals":"deny","tools":"read-only"}\n' >"$restrictive_permissions"
   effective_wider="$agent_fixture/effective-wider.md"
   make_agent_brief "$effective_wider" design 'FAKE:effective-wider'
-  agent_fails effective-wider '' "$agent_dispatch" dispatch --role design-critic --brief "$effective_wider" --job-id effective-wider --wait
+  agent_fails effective-wider '' "$agent_dispatch" dispatch --role design-critic --brief "$effective_wider" --permissions "$restrictive_permissions" --job-id effective-wider --wait
   grep -Fq 'permissions_mismatch:network' "$agent_repo/artifacts/agents/jobs/effective-wider.json" \
     || { echo "wider effective envelope did not record the mismatch" >&2; exit 1; }
   permissive_permissions="$agent_fixture/permissive-permissions.json"
@@ -1510,6 +1519,29 @@ PY
   effective_narrower="$agent_fixture/effective-narrower.md"
   make_agent_brief "$effective_narrower" design 'FAKE:effective-narrower'
   run_agent_fixture effective-narrower effective-narrower "$agent_dispatch" dispatch --role design-critic --brief "$effective_narrower" --permissions "$permissive_permissions" --job-id effective-narrower --wait
+
+  # The shipped presets grant network, and a repository may narrow it for every
+  # role at once. Until 2026-08-05 the adapters hard-coded network off and never
+  # read the field, so a job could be recorded as networked and still be cut off
+  # (KI-12); these fixtures exist so that cannot recur silently.
+  [[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["network"])' scripts/agents/permissions/workspace.json)" == allow ]] \
+    || { echo "the workspace preset no longer grants network" >&2; exit 1; }
+  [[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["network"])' scripts/agents/permissions/none.json)" == allow ]] \
+    || { echo "the none preset no longer grants network" >&2; exit 1; }
+  net_default="$agent_fixture/net-default.md"
+  make_agent_brief "$net_default" design
+  run_agent_fixture net-default net-default "$agent_dispatch" dispatch --role design-critic --brief "$net_default" --job-id net-default --wait
+  [[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["permissions"]["requested"]["network"])' "$agent_repo/artifacts/agents/jobs/net-default.json")" == allow ]] \
+    || { echo "a delegate did not receive network by default" >&2; exit 1; }
+  printf 'dispatch.permissions.network=deny\n' >>"$agent_repo/harness.conf"
+  net_floor="$agent_fixture/net-floor.md"
+  make_agent_brief "$net_floor" design
+  run_agent_fixture net-floor net-floor "$agent_dispatch" dispatch --role design-critic --brief "$net_floor" --job-id net-floor --wait
+  [[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["permissions"]["requested"]["network"])' "$agent_repo/artifacts/agents/jobs/net-floor.json")" == deny ]] \
+    || { echo "the repository network floor did not narrow the preset" >&2; exit 1; }
+  perl -0pi -e 's/^dispatch\.permissions\.network=deny\n//m' "$agent_repo/harness.conf"
+  agent_fails invalid-network-floor 'must be deny or allow' \
+    env HARNESS_DISPATCH_PERMISSIONS_NETWORK=sometimes "$agent_dispatch" dispatch --role design-critic --brief "$net_default" --job-id bad-floor
 
   agent_fails writable-without-worktree 'writable permissions require --worktree' \
     "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id no-worktree
@@ -1783,9 +1815,12 @@ PY
   saved_requirements="$agent_fixture/design-critic.requirements.json"
   cp "$requirements" "$saved_requirements"
   "$fake_adapter" probe --profile unverified-network >/dev/null
-  agent_fails unverified-deny 'cannot verify restrictive permission field network' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id unverified-deny
+  # This refusal is about a runtime that cannot verify a field the envelope
+  # restricts, so the envelope has to restrict it. Since the presets now grant
+  # network, the request is made restrictive explicitly rather than by default.
+  agent_fails unverified-deny 'cannot verify restrictive permission field network' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id unverified-deny
   perl -0pi -e 's/"optional": \{\}/"optional": {},\n  "waivers": {"network": ["fake"]}/' "$requirements"
-  run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id waived-deny --wait
+  run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id waived-deny --wait
   cp "$saved_requirements" "$requirements"
   "$fake_adapter" probe >/dev/null
 

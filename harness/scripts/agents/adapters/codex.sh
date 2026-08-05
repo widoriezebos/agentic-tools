@@ -144,7 +144,7 @@ supervise() { # dispatch|follow-up and supervisor args
   shift
   prepare_supervision "$verb" "$@" || { usage; return 2; }
   local usage_file="$round_dir/usage.json"
-  local sandbox_mode cli_pid event_session event_turn model_toml
+  local sandbox_mode network_access cli_pid event_session event_turn model_toml
   local -a command
 
   record_actual_workspace_write_scope
@@ -156,6 +156,14 @@ supervise() { # dispatch|follow-up and supervisor args
   else
     sandbox_mode=workspace-write
   fi
+  # The envelope decides network access. It used to be hard-coded off, which
+  # made the recorded field decorative: a job could be recorded as networked and
+  # still be cut off (KI-12).
+  if [[ $(field "$record" permissions.requested.network) == allow ]]; then
+    network_access=true
+  else
+    network_access=false
+  fi
 
   if [[ "$verb" == dispatch ]]; then
     command=(
@@ -164,7 +172,7 @@ supervise() { # dispatch|follow-up and supervisor args
       --sandbox "$sandbox_mode"
       -C "$workspace"
       -c 'approval_policy="never"'
-      -c 'sandbox_workspace_write.network_access=false'
+      -c "sandbox_workspace_write.network_access=$network_access"
       --output-schema "$schema"
       -o "$raw"
       -
@@ -178,7 +186,7 @@ supervise() { # dispatch|follow-up and supervisor args
       -c "model=$model_toml"
       -c "sandbox_mode=\"$sandbox_mode\""
       -c 'approval_policy="never"'
-      -c 'sandbox_workspace_write.network_access=false'
+      -c "sandbox_workspace_write.network_access=$network_access"
       --output-schema "$schema"
       -o "$raw"
       "$requested_session"
