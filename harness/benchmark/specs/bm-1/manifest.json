@@ -4,39 +4,136 @@
   "title": "taskrun: a dependency-aware task runner",
   "comparisonEligible": false,
   "comparisonEligibleNote": "Version 0.x is a trial spec. benchmark-compare refuses any cohort below 1.0. Promotion to 1.0 happens once trial runs have set the fences from observed use, per the promotion rule in plans/benchmark-spec-bm1-design.md section S-6.",
-
   "product": {
-    "sourcePaths": ["taskrun.py", "*.py", "tests/**"],
-    "entryPoint": "python3 taskrun.py"
+    "sourcePaths": [
+      "taskrun.py",
+      "*.py",
+      "tests/**"
+    ],
+    "entryPoint": "python3 taskrun.py",
+    "requirementCount": 25
   },
-
   "seededGap": {
     "requirement": 10,
     "decisionFile": "DECISIONS.md",
+    "entryGrammar": "requirement <n>: <key>: <value>",
     "declaredRuleKey": "order-rule",
-    "allowedValues": ["alphabetical", "config-order", "dependency-depth"]
+    "allowedValues": [
+      "alphabetical",
+      "config-order",
+      "dependency-depth"
+    ],
+    "note": "All three of these are published in spec.md, including the entry grammar. A builder cannot satisfy a machine-checked declaration whose format is withheld; that was BA-1-1."
   },
-
   "metrics": {
-    "acceptance": { "domain": [0.0, 1.0], "direction": "max", "bound": null },
-    "requirement_coverage": { "domain": [0.0, 1.0], "direction": "max", "bound": null },
-    "cache_correctness": { "domain": [0.0, 1.0], "direction": "max", "bound": null },
-    "failure_propagation": { "domain": [0, 1], "direction": "max", "bound": null },
-    "determinism": { "domain": [0, 1], "direction": "max", "bound": 1 },
-    "config_errors": { "domain": [0.0, 1.0], "direction": "max", "bound": null },
-    "format_agreement": { "domain": [0, 1], "direction": "max", "bound": null },
-    "build_clean": { "domain": [0, 1], "direction": "max", "bound": 1 },
-    "own_tests_pass": { "domain": [0, 1], "direction": "max", "bound": null },
-    "mutation_catch": { "domain": [0.0, 1.0], "direction": "max", "bound": null },
-    "plan_seconds": { "domain": [0, null], "direction": "min", "bound": 5 },
-    "dependency_count": { "domain": [0, null], "direction": "min", "bound": 0 },
-    "gap_handled": { "domain": [0, 1], "direction": "max", "bound": null }
+    "acceptance": {
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "direction": "max",
+      "bound": null
+    },
+    "requirement_coverage": {
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "direction": "max",
+      "bound": null
+    },
+    "cache_correctness": {
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "direction": "max",
+      "bound": null
+    },
+    "failure_propagation": {
+      "domain": [
+        0,
+        1
+      ],
+      "direction": "max",
+      "bound": null
+    },
+    "determinism": {
+      "domain": [
+        0,
+        1
+      ],
+      "direction": "max",
+      "bound": 1
+    },
+    "config_errors": {
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "direction": "max",
+      "bound": null
+    },
+    "format_agreement": {
+      "domain": [
+        0,
+        1
+      ],
+      "direction": "max",
+      "bound": null
+    },
+    "build_clean": {
+      "domain": [
+        0,
+        1
+      ],
+      "direction": "max",
+      "bound": 1
+    },
+    "own_tests_pass": {
+      "domain": [
+        0,
+        1
+      ],
+      "direction": "max",
+      "bound": null
+    },
+    "mutation_catch": {
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "direction": "max",
+      "bound": null
+    },
+    "plan_seconds": {
+      "domain": [
+        0,
+        null
+      ],
+      "direction": "min",
+      "bound": 5
+    },
+    "dependency_count": {
+      "domain": [
+        0,
+        null
+      ],
+      "direction": "min",
+      "bound": 0
+    },
+    "gap_handled": {
+      "domain": [
+        0,
+        1
+      ],
+      "direction": "max",
+      "bound": null
+    }
   },
-  "metricsNote": "A null bound is deliberate and not an omission: it is set by calibration (item S-C), midway between the careful reference's score and the best score any flawed variant reached on that metric. Inventing these numbers now would encode a guess as a threshold.",
-
+  "metricsNote": "A null bound is deliberate and not an omission: calibration (item S-C) sets it from the probe scores. Inventing these numbers now would encode a guess as a threshold.",
   "noiseFloors": null,
   "noiseFloorsNote": "Unknown until repeated runs measure the spread. Until then this spec produces scores, not verdicts.",
-
   "fences": {
     "cycles": 8,
     "jobs": 12,
@@ -48,18 +145,23 @@
     "ledgerNoGainBudget": 3
   },
   "fencesNote": "Provisional and unapproved. These are an experiment, not a belief: trial runs record what they consume and each fence becomes ceil(observed_max * 1.5), excluding trials that parked at that fence. A human must approve them before any run spends money.",
-
   "roster": null,
   "rosterNote": "Pinned by exact model identifier when a run is prepared, never by a phrase like 'cheap models', because comparability requires two cohorts to share an identical roster.",
-
   "seed": {
     "path": "seed/",
     "description": "A git repository containing README.md, spec.md, and an empty tests/ directory. Empty because BM-1 builds from scratch."
   },
-
   "grader": {
     "path": "grader/",
     "heldOut": true,
-    "heldOutNote": "Never copied into the repository the agents work in. Provisioning copies spec.md and seed/ only."
+    "heldOutNote": "Never copied into the repository the agents work in. Provisioning copies spec.md and seed/ only.",
+    "mutation": {
+      "target": "the builder's own code",
+      "note": "Mutation testing operates on what the builder produced, not on a reference implementation. Their tests run against their code, so no transfer problem exists and no test architecture is favoured. There is no reference implementation in this benchmark."
+    },
+    "calibration": {
+      "probes": "small purpose-built programs, one per metric, each exhibiting exactly the flaw that metric must catch",
+      "note": "Calibration proves each check fires. A full correct implementation is a wildly expensive way to test a checker and is not built."
+    }
   }
 }
