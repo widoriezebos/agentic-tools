@@ -139,60 +139,79 @@ print(json.dumps(sys.argv[1]))
 PY
 }
 
+codex_permission_settings() { # permissions JSON, optional dotted prefix
+  local permissions=$1 prefix=${2:-} write_roots network
+  [[ -z "$prefix" ]] || prefix="$prefix."
+  write_roots=$(field "$permissions" "${prefix}writeRoots")
+  network=$(field "$permissions" "${prefix}network")
+  if [[ "$write_roots" == '[]' ]]; then
+    codex_sandbox_mode=read-only
+  else
+    codex_sandbox_mode=workspace-write
+  fi
+  if [[ "$network" == allow ]]; then
+    codex_network_access=true
+  else
+    codex_network_access=false
+  fi
+}
+
+build_codex_command() { # dispatch|follow-up, model, workspace, schema, output, sandbox, network, session
+  local verb=$1 command_model=$2 command_workspace=$3 command_schema=$4 command_output=$5
+  local command_sandbox=$6 command_network=$7 command_session=${8:-} model_toml
+  if [[ "$verb" == dispatch ]]; then
+    codex_cli_command=(
+      codex exec --json
+      -m "$command_model"
+      --sandbox "$command_sandbox"
+      -C "$command_workspace"
+      -c 'approval_policy="never"'
+      -c "sandbox_workspace_write.network_access=$command_network"
+      --output-schema "$command_schema"
+      -o "$command_output"
+      -
+    )
+  elif [[ "$verb" == follow-up && -n "$command_session" ]]; then
+    # `codex exec resume` has no --sandbox or -C flags. The thread inherits its
+    # cwd/config; supported per-turn overrides travel only through -c.
+    model_toml=$(toml_string "$command_model")
+    codex_cli_command=(
+      codex exec resume --json
+      -c "model=$model_toml"
+      -c "sandbox_mode=\"$command_sandbox\""
+      -c 'approval_policy="never"'
+      -c "sandbox_workspace_write.network_access=$command_network"
+      --output-schema "$command_schema"
+      -o "$command_output"
+      "$command_session"
+      -
+    )
+  else
+    return 2
+  fi
+}
+
 supervise() { # dispatch|follow-up and supervisor args
   local verb=$1
   shift
   prepare_supervision "$verb" "$@" || { usage; return 2; }
   local usage_file="$round_dir/usage.json"
-  local sandbox_mode network_access cli_pid event_session event_turn model_toml
+  local sandbox_mode network_access cli_pid event_session event_turn
   local -a command
 
   record_actual_workspace_write_scope
   fail_if_effective_wider_before_launch || return 1
   : >"$events"
   : >"$raw"
-  if [[ $(field "$record" permissions.requested.writeRoots) == '[]' ]]; then
-    sandbox_mode=read-only
-  else
-    sandbox_mode=workspace-write
-  fi
+  codex_permission_settings "$record" permissions.requested
+  sandbox_mode=$codex_sandbox_mode
+  network_access=$codex_network_access
   # The envelope decides network access. It used to be hard-coded off, which
   # made the recorded field decorative: a job could be recorded as networked and
   # still be cut off (KI-12).
-  if [[ $(field "$record" permissions.requested.network) == allow ]]; then
-    network_access=true
-  else
-    network_access=false
-  fi
-
-  if [[ "$verb" == dispatch ]]; then
-    command=(
-      codex exec --json
-      -m "$requested_model"
-      --sandbox "$sandbox_mode"
-      -C "$workspace"
-      -c 'approval_policy="never"'
-      -c "sandbox_workspace_write.network_access=$network_access"
-      --output-schema "$schema"
-      -o "$raw"
-      -
-    )
-  else
-    # `codex exec resume` has no --sandbox or -C flags. The thread inherits its
-    # cwd/config; supported per-turn overrides travel only through -c.
-    model_toml=$(toml_string "$requested_model")
-    command=(
-      codex exec resume --json
-      -c "model=$model_toml"
-      -c "sandbox_mode=\"$sandbox_mode\""
-      -c 'approval_policy="never"'
-      -c "sandbox_workspace_write.network_access=$network_access"
-      --output-schema "$schema"
-      -o "$raw"
-      "$requested_session"
-      -
-    )
-  fi
+  build_codex_command "$verb" "$requested_model" "$workspace" "$schema" "$raw" \
+    "$sandbox_mode" "$network_access" "$requested_session"
+  command=("${codex_cli_command[@]}")
 
   # The write boundary is the CLI's cwd. `codex exec` takes -C, but
   # `codex exec resume` has no such flag, so a resumed turn would otherwise
@@ -228,6 +247,10 @@ supervise() { # dispatch|follow-up and supervisor args
   fi
   complete_from_cli "$cli_status" "$usage_file" "$raw"
 }
+
+if [[ ${BASH_SOURCE[0]} != "$0" ]]; then
+  return 0
+fi
 
 command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
