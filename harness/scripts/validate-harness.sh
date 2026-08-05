@@ -278,7 +278,14 @@ tmp=$(mktemp -d)
 agent_supervision_repo=
 validation_cleanup() {
   if [[ -n "${agent_supervision_repo:-}" && -x "$agent_supervision_repo/scripts/agents/arm-supervision.sh" ]]; then
-    "$agent_supervision_repo/scripts/agents/arm-supervision.sh" --repo "$agent_supervision_repo" --shutdown >/dev/null 2>&1 || true
+    if [[ "$agent_supervision_repo" == "${runner_repo:-}" ]] \
+        && declare -p runner_process_env >/dev/null 2>&1; then
+      "${runner_process_env[@]}" "$agent_supervision_repo/scripts/agents/arm-supervision.sh" \
+        --repo "$agent_supervision_repo" --shutdown >/dev/null 2>&1 || true
+    else
+      "$agent_supervision_repo/scripts/agents/arm-supervision.sh" \
+        --repo "$agent_supervision_repo" --shutdown >/dev/null 2>&1 || true
+    fi
   fi
   rm -rf "$tmp"
 }
@@ -1067,10 +1074,16 @@ if [[ -z "${HARNESS_SKIP_AGENT_FIXTURES:-}" ]]; then
   good_agent_conf="$agent_fixture/good-harness.conf"
   cp "$agent_repo/harness.conf" "$good_agent_conf"
 
-  # The compound adapter selftest gets a pristine repository and supervisor.
-  # It runs only after the main dispatch fixture set has shut down, so its
-  # dispatch/follow-up/cancel sequence cannot queue behind earlier fixture
-  # state or a concurrently active fixture supervisor.
+  # The mission runner and compound adapter selftest each get a pristine
+  # repository and supervisor. They run only after the main dispatch fixture
+  # set has shut down, so neither can queue behind its fixture state or reuse
+  # its synthetic-process supervision set.
+  runner_repo="$agent_fixture/runner-repo"
+  runner_evidence="$agent_fixture/runner-evidence"
+  cp -R "$agent_repo" "$runner_repo"
+  runner_repo=$(cd "$runner_repo" && pwd -P)
+  perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$runner_evidence"'|m' \
+    "$runner_repo/harness.conf"
   agent_selftest_repo="$agent_fixture/selftest-repo"
   agent_selftest_evidence="$agent_fixture/selftest-evidence"
   cp -R "$agent_repo" "$agent_selftest_repo"
@@ -1916,15 +1929,23 @@ PY
   set -e
   [[ $malformed_record_status -eq 7 ]] || { echo "malformed status record mapped to $malformed_record_status instead of 7" >&2; exit 1; }
 
+  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
+  agent_supervision_repo=
+
   # The minimal mission runner is exercised only through its fake host. The
   # repository, origin, supervision set, signed contracts, frozen gate, turn
   # records, state, and ledger are all real; only the model call is simulated.
-  runner="$agent_repo/scripts/agents/mission-runner.sh"
+  # Unlike the dispatch fixtures above, it owns an isolated repository armed
+  # against real process sources so the census can observe each freshly
+  # launched runner. This is scoped like the nested ordinary-operator fixture
+  # in supervision-fixtures.sh.
+  runner_process_env=(env -u HARNESS_CENSUS_PROCESS_FILE -u HARNESS_FAKE_PROCESS_IDENTITY_FILE)
+  runner="$runner_repo/scripts/agents/mission-runner.sh"
   runner_origin="$agent_fixture/runner-origin.git"
   runner_mission_identity_fixture="$agent_fixture/runner-mission-process-identities.json"
-  mv "$agent_repo/scripts/agents/arm-supervision.sh" \
-    "$agent_repo/scripts/agents/arm-supervision-real.sh"
-  cat >"$agent_repo/scripts/agents/arm-supervision.sh" <<'ARM'
+  mv "$runner_repo/scripts/agents/arm-supervision.sh" \
+    "$runner_repo/scripts/agents/arm-supervision-real.sh"
+  cat >"$runner_repo/scripts/agents/arm-supervision.sh" <<'ARM'
 #!/usr/bin/env bash
 set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -1961,32 +1982,41 @@ Path(sys.argv[2]).write_text(json.dumps(identities)+"\n")
 PY
 fi
 ARM
-  chmod +x "$agent_repo/scripts/agents/arm-supervision.sh"
-  mkdir -p "$agent_repo/scripts" "$agent_repo/truth"
-  cat >"$agent_repo/scripts/gate.sh" <<'GATE'
+  chmod +x "$runner_repo/scripts/agents/arm-supervision.sh"
+  runner_main_start=$("${runner_process_env[@]}" \
+    "$runner_repo/scripts/agents/process-census.py" started-at --pid "$$")
+  agent_supervision_repo=$runner_repo
+  "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake \
+    "$runner_repo/scripts/agents/arm-supervision.sh" \
+    --repo "$runner_repo" --session runner-validator --pid "$$" \
+    --start-time "$runner_main_start" --tag harness-main-fake-runner-validator \
+    >"$agent_fixture/runner-arming.out" \
+    || { echo "mission runner fixture could not arm real-source supervision" >&2; cat "$agent_fixture/runner-arming.out" >&2; exit 1; }
+  mkdir -p "$runner_repo/scripts" "$runner_repo/truth"
+  cat >"$runner_repo/scripts/gate.sh" <<'GATE'
 #!/usr/bin/env bash
 set -euo pipefail
 score=$(cat candidate-score.txt)
 printf 'metric=score=%s\n' "$score"
 GATE
-  chmod +x "$agent_repo/scripts/gate.sh"
-  printf '0\n' >"$agent_repo/candidate-score.txt"
-  printf 'runner truth\n' >"$agent_repo/truth/reference.txt"
-  git -C "$agent_repo" config user.name harness
-  git -C "$agent_repo" config user.email harness@example.invalid
-  git -C "$agent_repo" add scripts/gate.sh candidate-score.txt truth/reference.txt
-  git -C "$agent_repo" commit -qm 'add mission runner instruments'
-  git -C "$agent_repo" tag runner-instruments
+  chmod +x "$runner_repo/scripts/gate.sh"
+  printf '0\n' >"$runner_repo/candidate-score.txt"
+  printf 'runner truth\n' >"$runner_repo/truth/reference.txt"
+  git -C "$runner_repo" config user.name harness
+  git -C "$runner_repo" config user.email harness@example.invalid
+  git -C "$runner_repo" add scripts/gate.sh candidate-score.txt truth/reference.txt
+  git -C "$runner_repo" commit -qm 'add mission runner instruments'
+  git -C "$runner_repo" tag runner-instruments
   git init -q --bare "$runner_origin"
-  runner_branch=$(git -C "$agent_repo" branch --show-current)
-  git -C "$agent_repo" remote add origin "$runner_origin"
-  git -C "$agent_repo" push -qu -u origin "$runner_branch"
+  runner_branch=$(git -C "$runner_repo" branch --show-current)
+  git -C "$runner_repo" remote add origin "$runner_origin"
+  git -C "$runner_repo" push -qu -u origin "$runner_branch"
   git -C "$runner_origin" symbolic-ref HEAD "refs/heads/$runner_branch"
-  git -C "$agent_repo" remote set-head origin -a >/dev/null
+  git -C "$runner_repo" remote set-head origin -a >/dev/null
 
   make_runner_contract() { # mission, fake behavior, cycle fence, optional prompt-breaking heading
-    local mission=$1 behavior=$2 cycles=$3 bad_heading=${4:-} contract="$agent_repo/plans/mission-$1.contract.md" contract_sha
-    mkdir -p "$agent_repo/plans"
+    local mission=$1 behavior=$2 cycles=$3 bad_heading=${4:-} contract="$runner_repo/plans/mission-$1.contract.md" contract_sha
+    mkdir -p "$runner_repo/plans"
     cat >"$contract" <<EOF
 # Intent
 
@@ -2029,11 +2059,23 @@ envelope.dependencies=jq
 exposure=EUR:1
 \`\`\`
 EOF
-    contract_sha=$("$agent_repo/scripts/assert-mission.sh" --seal --file "$contract")
+    contract_sha=$("$runner_repo/scripts/assert-mission.sh" --seal --file "$contract")
     printf '\nApproval: name=Fixture-Human; date=2026-08-04; contract-sha256=%s\n' "$contract_sha" >>"$contract"
-    git -C "$agent_repo" add "plans/mission-$mission.contract.md"
-    git -C "$agent_repo" commit -qm "sign mission $mission"
-    git -C "$agent_repo" push -qu origin "$runner_branch"
+    git -C "$runner_repo" add "plans/mission-$mission.contract.md"
+    git -C "$runner_repo" commit -qm "sign mission $mission"
+    git -C "$runner_repo" push -qu origin "$runner_branch"
+  }
+
+  wait_lease_released() { # mission, description
+    local mission=$1 what=$2 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec ))
+    # The runner writes the terminal mission status inside its cycle and
+    # releases the lease as it exits, so release trails the status by design.
+    while (( SECONDS < deadline )); do
+      [[ -e "$runner_repo/artifacts/agents/missions/$mission/lease.d" ]] || return 0
+      sleep 0.05
+    done
+    echo "$what retained its runner lease (elapsed: $((SECONDS - started))s; scaled cap: ${agent_fixture_cap_sec}s)" >&2
+    exit 1
   }
 
   run_runner_expect() { # name, expected exit, command...
@@ -2069,15 +2111,15 @@ EOF
   export HARNESS_MISSION_PROCESS_IDENTITY_FILE="$runner_mission_identity_fixture"
 
   make_runner_contract runner-cycle return-ok 5
-  printf '1\n' >"$agent_repo/candidate-score.txt"
-  git -C "$agent_repo" add candidate-score.txt
-  git -C "$agent_repo" commit -qm 'improve mission runner candidate'
-  git -C "$agent_repo" push -qu origin "$runner_branch"
-  run_runner_expect runner-cycle-start 0 env HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-cycle
+  printf '1\n' >"$runner_repo/candidate-score.txt"
+  git -C "$runner_repo" add candidate-score.txt
+  git -C "$runner_repo" commit -qm 'improve mission runner candidate'
+  git -C "$runner_repo" push -qu origin "$runner_branch"
+  run_runner_expect runner-cycle-start 0 "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-cycle
   wait_runner_status runner-cycle 10
-  cycle_turn=$(find "$agent_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
-  "$agent_repo/scripts/assert-turn-prompt.sh" --file "$cycle_turn/prompt.md" --turn "$cycle_turn"
-  python3 - "$agent_repo" "$cycle_turn/prompt.md" <<'PY'
+  cycle_turn=$(find "$runner_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
+  "$runner_repo/scripts/assert-turn-prompt.sh" --file "$cycle_turn/prompt.md" --turn "$cycle_turn"
+  python3 - "$runner_repo" "$cycle_turn/prompt.md" <<'PY'
 import sys
 from pathlib import Path
 root,prompt_path=Path(sys.argv[1]),Path(sys.argv[2])
@@ -2096,30 +2138,30 @@ positions=[text.index(heading) for heading in headings]
 assert positions == sorted(positions)
 PY
   grep -Fq -- '- Classification: contract-improved;' \
-    "$agent_repo/artifacts/agents/missions/runner-cycle/ledger.md" \
+    "$runner_repo/artifacts/agents/missions/runner-cycle/ledger.md" \
     || { echo "full mission cycle did not record runner-measured contract improvement" >&2; exit 1; }
-  run_runner_expect prompt-missing-turn 1 "$agent_repo/scripts/agents/mission-prompt.py" \
+  run_runner_expect prompt-missing-turn 1 "$runner_repo/scripts/agents/mission-prompt.py" \
     --mission runner-cycle --turn runner-cycle-t99-missing --output "$agent_fixture/missing-prompt.md"
   grep -Fq 'missing turn record' "$agent_fixture/prompt-missing-turn.out" \
     || { echo "prompt assembler did not name its missing turn record refusal" >&2; exit 1; }
   run_runner_expect prompt-oversized 1 env HARNESS_MISSION_MAX_PROMPT_KB=1 \
-    "$agent_repo/scripts/agents/mission-prompt.py" --mission runner-cycle \
+    "$runner_repo/scripts/agents/mission-prompt.py" --mission runner-cycle \
     --turn "$(basename "$cycle_turn")" --output "$agent_fixture/oversized-prompt.md"
   grep -Fq 'oversized block' "$agent_fixture/prompt-oversized.out" \
     || { echo "prompt assembler did not name the oversized block" >&2; exit 1; }
 
   make_runner_contract runner-bad-prompt return-ok 5 '## Streams'
-  run_runner_expect runner-bad-prompt-start 3 env HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-bad-prompt
+  run_runner_expect runner-bad-prompt-start 3 "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-bad-prompt
   wait_runner_status runner-bad-prompt 11
-  bad_turn=$(find "$agent_repo/artifacts/agents/missions/runner-bad-prompt/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
+  bad_turn=$(find "$runner_repo/artifacts/agents/missions/runner-bad-prompt/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
   [[ ! -e "$bad_turn/raw.out" ]] || { echo "prompt-checker refusal launched the fake host" >&2; exit 1; }
   grep -Fq 'prompt-refused' "$bad_turn/turn.json" \
     || { echo "prompt-checker refusal was not recorded on the turn" >&2; exit 1; }
 
   make_runner_contract runner-ghost dispatch-ghost 5
-  run_runner_expect runner-ghost-start 0 env HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-ghost
+  run_runner_expect runner-ghost-start 0 "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-ghost
   wait_runner_status runner-ghost 10
-  python3 - "$agent_repo/artifacts/agents/missions/runner-ghost" <<'PY'
+  python3 - "$runner_repo/artifacts/agents/missions/runner-ghost" <<'PY'
 import json,sys
 from pathlib import Path
 mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
@@ -2131,13 +2173,13 @@ assert ask["reasonClass"]=="host-failure" and ask["answeredAt"] is None
 PY
 
   make_runner_contract runner-fence return-ok 1
-  mkdir -p "$agent_repo/artifacts/agents/missions/runner-fence"
+  mkdir -p "$runner_repo/artifacts/agents/missions/runner-fence"
   printf '{"schemaVersion":1,"missionId":"runner-fence","startedAt":"%s","cycles":1,"reservations":{}}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    >"$agent_repo/artifacts/agents/missions/runner-fence/fences.json"
-  run_runner_expect runner-fence-start 3 env HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-fence
+    >"$runner_repo/artifacts/agents/missions/runner-fence/fences.json"
+  run_runner_expect runner-fence-start 3 "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake "$runner" start --mission runner-fence
   wait_runner_status runner-fence 11
-  python3 - "$agent_repo/artifacts/agents/missions/runner-fence" <<'PY'
+  python3 - "$runner_repo/artifacts/agents/missions/runner-fence" <<'PY'
 import json,sys
 from pathlib import Path
 mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
@@ -2147,10 +2189,10 @@ assert any(ask["reasonClass"]=="fence" and ask["answeredAt"] is None for ask in 
 PY
 
   make_runner_contract runner-unverified return-ok 5
-  run_runner_expect runner-unverified-start 3 env HARNESS_AGENT_RUNTIME=fake \
+  run_runner_expect runner-unverified-start 3 "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake \
     HARNESS_FAKE_HOST_START_UNVERIFIED=1 "$runner" start --mission runner-unverified
   wait_runner_status runner-unverified 11
-  unverified_ask=$(python3 - "$agent_repo/artifacts/agents/missions/runner-unverified" <<'PY'
+  unverified_ask=$(python3 - "$runner_repo/artifacts/agents/missions/runner-unverified" <<'PY'
 import json,sys
 from pathlib import Path
 mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
@@ -2166,24 +2208,25 @@ PY
     --ask "$unverified_ask" --answer acknowledged
   wait_runner_status runner-unverified 0
 
-  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
+  "${runner_process_env[@]}" "$runner_repo/scripts/agents/arm-supervision.sh" \
+    --repo "$runner_repo" --shutdown >/dev/null 2>&1
   agent_supervision_repo=
-  [[ ! -e "$agent_repo/artifacts/agents/missions/runner-unverified/lease.d" ]] \
+  [[ ! -e "$runner_repo/artifacts/agents/missions/runner-unverified/lease.d" ]] \
     || { echo "parked mission retained its runner lease" >&2; exit 1; }
-  agent_supervision_repo=$agent_repo
-  run_runner_expect runner-unverified-resume 0 env HARNESS_AGENT_RUNTIME=fake "$runner" resume --mission runner-unverified
+  agent_supervision_repo=$runner_repo
+  run_runner_expect runner-unverified-resume 0 "${runner_process_env[@]}" HARNESS_AGENT_RUNTIME=fake "$runner" resume --mission runner-unverified
   wait_runner_status runner-unverified 10
-  [[ -f "$agent_repo/artifacts/agents/supervision/state.json" ]] \
+  [[ -f "$runner_repo/artifacts/agents/supervision/state.json" ]] \
     || { echo "resume did not re-arm supervision" >&2; exit 1; }
-  [[ ! -e "$agent_repo/artifacts/agents/missions/runner-unverified/lease.d" ]] \
-    || { echo "completed resumed mission retained its runner lease" >&2; exit 1; }
-  resumed_prompt=$(find "$agent_repo/artifacts/agents/missions/runner-unverified/turns" -name prompt.md | sort | tail -1)
+  wait_lease_released runner-unverified "completed resumed mission"
+  resumed_prompt=$(find "$runner_repo/artifacts/agents/missions/runner-unverified/turns" -name prompt.md | sort | tail -1)
   grep -Fq 'Reconciliation: yes' "$resumed_prompt" \
     || { echo "resumed turn did not carry reconciliation" >&2; exit 1; }
   grep -Fq $'\tfailed\tstart-unverified' "$resumed_prompt" \
     || { echo "resumed turn omitted the failed prior turn from reconciliation" >&2; exit 1; }
 
-  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
+  "${runner_process_env[@]}" "$runner_repo/scripts/agents/arm-supervision.sh" \
+    --repo "$runner_repo" --shutdown >/dev/null 2>&1
   agent_supervision_repo=
   agent_selftest_process_fixture="$agent_fixture/selftest-processes.json"
   agent_selftest_identity_fixture="$agent_fixture/selftest-process-identities.json"

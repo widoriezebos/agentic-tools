@@ -1360,16 +1360,25 @@ def internal_run(mission: str, mode: str, tag: str, start_signal: Path) -> int:
             state = one_cycle(mission, state_path, ledger, state, lease, start_signal, notified)
         if not notified[0]:
             write_start_signal(start_signal, False, None, f"mission parked before a host turn started: {state.get('parkReason')}")
+        if lease is not None:
+            release_lease(mission)
+            lease = None
         finish_runner(mission, "completed", None)
         return 0
     except RunnerError as error:
         if not notified[0]:
             write_start_signal(start_signal, False, None, str(error))
+        if lease is not None:
+            release_lease(mission)
+            lease = None
         finish_runner(mission, "failed", str(error))
         return error.code
     except Exception as error:
         if not notified[0]:
             write_start_signal(start_signal, False, None, str(error))
+        if lease is not None:
+            release_lease(mission)
+            lease = None
         finish_runner(mission, "failed", str(error))
         return 3
     finally:
