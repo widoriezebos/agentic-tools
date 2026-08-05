@@ -4,9 +4,9 @@
 - Goal and current status: act on the review's findings: the gate was flaky, design outran proof, commits went red in CI, retained findings piled up untriaged, and no mission has ever run. Status: CC-1, CC-2, CC-4 done; CC-5 resolved by the human; CC-3 is the only item left and nothing blocks it
 - In flight right now: nothing
 - Decisions made (and who made them): the review's findings accepted by the user 2026-08-04; the proportionality ruling and the container ruling both made by the user the same day, which resolved CC-5 without further design
-- Waiting on the human: nothing blocking (D-CC1 through D-CC4 answered 2026-08-04); the Devin self-test is unchanged from the master plan
+- Waiting on the human: Mission Zero's signature. The contract at ~/LocalStorage/GitHub/mission-zero/plans/mission-zero.contract.md is sealed (sha 7c9051ed...); the human confirms the EUR:5 exposure and adds the approval line, then preflight and the first run start. The Devin self-test is unchanged
 - Dead ends: two hardened-mode designs (trust roots, then verifier domains) were built and cut when the user ruled that isolation comes from a container or VM. Do not rebuild local enforcement against a same-user agent; it is impossible and the rounds proving it are recorded in the ledger
-- Next step: Mission Zero. The runner is merged and green locally (`agent/implementer-20260805t063758z-3648`, merged). Build the scratch repository with one deliberately failing test, write and sign its contract, and run the first unattended mission under the D-CC3 fences: 5 cycles, 5 jobs, concurrency 1, 10-minute job cap, 1-hour wall clock, cheap delegate models
+- Next step: the human signs the sealed Mission Zero contract; then arm the target, preflight, and start the runner. Everything to run is staged
 
 This plan amends the SEQUENCING of `plans/agent-orchestration-design.md`; it does not amend that plan's design content, which stays canonical. When these items close, this file is deleted and anything durable moves to its owner per `plans/README.md`.
 
