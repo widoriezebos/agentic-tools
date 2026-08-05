@@ -401,7 +401,18 @@ def write_state(path: Path, proposed: dict[str, Any]) -> dict[str, Any]:
     return read_json(path, "mission state", 7)
 
 
-def anchor_state(state_path: Path, ledger: Path) -> None:
+def git_author_environment(identity: str) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GIT_AUTHOR_NAME": identity,
+            "GIT_AUTHOR_EMAIL": f"{identity}@metasystem.invalid",
+        }
+    )
+    return environment
+
+
+def anchor_state(state_path: Path, ledger: Path, identity: str) -> None:
     result = run_command(
         [
             str(ROOT / "scripts" / "agents" / "mission-state.py"),
@@ -412,7 +423,8 @@ def anchor_state(state_path: Path, ledger: Path) -> None:
             str(ROOT),
             "--ledger",
             str(ledger),
-        ]
+        ],
+        env=git_author_environment(identity),
     )
     if result.returncode != 0:
         raise RunnerError(f"mission anchor refused: {(result.stderr or result.stdout).strip()}")
@@ -500,7 +512,7 @@ def initialize_state(mission: str, lease: Path) -> tuple[Path, Path, dict[str, A
         ],
         "mission state initialization refused",
     )
-    anchor_state(state_path, ledger)
+    anchor_state(state_path, ledger, mission)
     return state_path, ledger, verify_state(state_path, anchor=True)
 
 
@@ -654,7 +666,7 @@ def launch_host(
     ]
     if turn["hostSession"] is not None:
         command += ["--resume-session", turn["hostSession"]]
-    environment = os.environ.copy()
+    environment = git_author_environment(turn_id)
     environment.update(
         {
             "METASYSTEM_MISSION_ID": mission,
@@ -1078,7 +1090,14 @@ def append_ledger(ledger: Path, cycle: int, classification: str, candidate_sha: 
         raise RunnerError(f"mission ledger append refused: {(result.stderr or result.stdout).strip()}")
 
 
-def park_state(state_path: Path, ledger: Path, state: dict[str, Any], reason: str, mission: str) -> dict[str, Any]:
+def park_state(
+    state_path: Path,
+    ledger: Path,
+    state: dict[str, Any],
+    reason: str,
+    mission: str,
+    identity: str,
+) -> dict[str, Any]:
     proposed = copy.deepcopy(state)
     asks_dir = mission_dir(mission) / "asks"
     if reason in {"host-failure", "stop-loss"}:
@@ -1110,7 +1129,7 @@ def park_state(state_path: Path, ledger: Path, state: dict[str, Any], reason: st
     proposed["waitingList"] = open_ask_ids(mission_dir(mission) / "asks")
     project_fences(mission, proposed)
     updated = write_state(state_path, proposed)
-    anchor_state(state_path, ledger)
+    anchor_state(state_path, ledger, identity)
     return updated
 
 
@@ -1142,13 +1161,13 @@ def record_failed_turn(
     if consecutive_failures >= 2:
         proposed.update({"status": "parked", "parkReason": "host-failure", "gatePassed": False})
     updated = write_state(state_path, proposed)
-    anchor_state(state_path, ledger)
+    anchor_state(state_path, ledger, turn["turnId"])
     if updated["status"] == "parked" and updated.get("parkReason") == "host-failure":
-        return park_state(state_path, ledger, updated, "host-failure", mission)
+        return park_state(state_path, ledger, updated, "host-failure", mission, turn["turnId"])
     if updated["status"] == "running":
         stop = run_command([str(ROOT / "scripts" / "assert-stop-loss.sh"), "--file", str(ledger)])
         if stop.returncode == 1:
-            updated = park_state(state_path, ledger, updated, "stop-loss", mission)
+            updated = park_state(state_path, ledger, updated, "stop-loss", mission, turn["turnId"])
     return updated
 
 
@@ -1165,7 +1184,7 @@ def one_cycle(
         [str(ROOT / "scripts" / "agents" / "mission-fence.py"), "reserve-cycle", "--repo", str(ROOT), "--mission", mission]
     )
     if reserve.returncode != 0:
-        return park_state(state_path, ledger, state, "fence", mission)
+        return park_state(state_path, ledger, state, "fence", mission, mission)
     fences = read_json(mission_dir(mission) / "fences.json", "mission fence counters")
     cycle = fences.get("cycles")
     if not isinstance(cycle, int) or isinstance(cycle, bool) or cycle < 1:
@@ -1298,11 +1317,11 @@ def one_cycle(
         rawPath=str(raw_path),
         returnPath=str(return_path),
     )
-    anchor_state(state_path, ledger)
+    anchor_state(state_path, ledger, turn_id)
     if updated["status"] == "running":
         stop = run_command([str(ROOT / "scripts" / "assert-stop-loss.sh"), "--file", str(ledger)])
         if stop.returncode == 1:
-            updated = park_state(state_path, ledger, updated, "stop-loss", mission)
+            updated = park_state(state_path, ledger, updated, "stop-loss", mission, turn_id)
     return updated
 
 
@@ -1593,7 +1612,7 @@ def answer_command(arguments: list[str]) -> int:
     atomic_json(ask_path, ask)
     try:
         updated = write_state(state_path, proposed)
-        anchor_state(state_path, mission_dir(mission) / "ledger.md")
+        anchor_state(state_path, mission_dir(mission) / "ledger.md", mission)
     except RunnerError as error:
         atomic_json(ask_path, original_ask)
         print(f"answer refused: {error}", file=sys.stderr)
