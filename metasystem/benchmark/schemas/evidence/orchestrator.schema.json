@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "metasystem.version=1",
+  "title": "Orchestrator return",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["turnId", "missionId", "cycle", "dispatched", "certified", "streamUpdatesRequested", "askCandidates", "factsForLedger", "gaps", "identity"],
+  "properties": {
+    "turnId": {"type": "string"},
+    "missionId": {"type": "string"},
+    "cycle": {"type": "integer"},
+    "dispatched": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["jobId", "role", "stream"],
+        "properties": {
+          "jobId": {"type": "string"},
+          "role": {"type": "string"},
+          "stream": {"type": "string"}
+        }
+      }
+    },
+    "certified": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["jobId", "verdict", "evidence"],
+        "properties": {
+          "jobId": {"type": "string"},
+          "verdict": {"enum": ["accepted", "rejected"]},
+          "evidence": {"type": "string"}
+        }
+      }
+    },
+    "streamUpdatesRequested": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["streamId", "requestedState", "reason"],
+        "properties": {
+          "streamId": {"type": "string"},
+          "requestedState": {"enum": ["active", "parked-reserved", "parked-stop-loss", "done"]},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "askCandidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["streamId", "reasonClass", "question"],
+        "properties": {
+          "streamId": {"type": "string"},
+          "reasonClass": {"enum": ["reserved-decision", "red-test", "merge-conflict", "host-failure"]},
+          "question": {"type": "string"}
+        }
+      }
+    },
+    "factsForLedger": {"type": "array", "items": {"type": "string"}},
+    "gaps": {"type": "array", "items": {"type": "string"}},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "model", "sessionId"],
+      "properties": {
+        "runtime": {"type": "string"},
+        "model": {"type": "string"},
+        "sessionId": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
