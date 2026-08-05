@@ -189,7 +189,7 @@ One chain, job `design-critic-20260804t102631z-67c9`, codex/gpt-5.6-sol, all rou
 | BM-2-10 | accepted | roster over- and under-constrained | roster-resolution equality as validity; B-8 descriptive (Identity and comparability) |
 | BM-2-11 | accepted | gap probe contradicted ask-first rules | authority chain made explicit; superseded in part by BM-3-4 (Product: gap handling) |
 | BM-2-12 | accepted | CI check had no interface | attestation file contract (Evolution loop step 0) |
-| BM-2-13 | accepted | mapping check was vacuous | differential seed-versus-final condition (Product: own tests) |
+| BM-2-13 | accepted | mapping check was vacuous | differential seed-versus-final condition (Product: own tests). SUPERSEDED 2026-08-05 by SP-1-3: the differential condition was itself vacuous where the seed holds no implementation, and `mutation_catch` replaces it |
 | BM-2-14 | accepted | judge execution boundary undecided | stock role, kit rubrics in brief, measuring-side dispatch, D-B6 (Behavior: judged) |
 | BM-3-1 | accepted | cohort selection permitted cherry-picking | deterministic newest-complete selection; supersession and abandonment records (Evolution loop step 3) |
 | BM-3-2 | accepted | pre-registration unbound; completed by BM-4-1 | committed proposal artifact with ancestry and timing checks (Evolution loop step 1) |
@@ -201,7 +201,7 @@ One chain, job `design-critic-20260804t102631z-67c9`, codex/gpt-5.6-sol, all rou
 | BM-3-8 | accepted | noise widening had no admissibility rule | floors move only by kit commit (Variance paragraph) |
 | BM-3-9 | accepted | attestation identity paradox and workflow ambiguity | results-tree path; kit-named workflow, run id, attempt (Evolution loop step 0) |
 | BM-3-10 | accepted | delegated share was not a defined scalar | blame-based last-writer definition; B-0 exit question decides standing (What a benchmark run is) |
-| BM-3-11 | accepted | one smoke test could cover the manifest | differential condition capped at one requirement per test (Product: own tests) |
+| BM-3-11 | accepted | one smoke test could cover the manifest | differential condition capped at one requirement per test (Product: own tests). SUPERSEDED 2026-08-05 by SP-1-3 and SP-2-1: mutants declare a target rather than isolating one, and the cap no longer applies |
 | BM-3-12 | accepted | multi-spec conjunction rejected scoped improvements | improvement on proposal-named specs, no-regression elsewhere (Evolution loop step 4) |
 | BM-3-13 | accepted | measuring-stick rule unsatisfiable during build | rule activates at first baseline; D-B5 its own commit (Measuring-stick rule) |
 | BM-3-14 | accepted | authorization consumption had no owner | append-only use ledger under the reservation lock (Evolution loop, D-B5 paragraph) |
