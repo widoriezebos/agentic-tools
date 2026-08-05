@@ -236,7 +236,7 @@ case "$command_name" in
   signature)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' \
-      'match (^|[[:space:]])([^[:space:]]*/)?codex([[:space:]]|$)' \
+      'match ^([^[:space:]]*/)?codex([[:space:]]|$)' \
       'exclude supervision-hook\.sh' \
       'exclude scripts/agents/adapters/codex\.sh'
     ;;

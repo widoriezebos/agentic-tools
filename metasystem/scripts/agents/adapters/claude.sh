@@ -286,7 +286,7 @@ case "$command_name" in
   signature)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' \
-      'match (^|[[:space:]])([^[:space:]]*/)?claude([[:space:]]|$)' \
+      'match ^([^[:space:]]*/)?claude([[:space:]]|$)' \
       'exclude claude-session-signal\.py' \
       'exclude supervision-hook\.sh' \
       'exclude scripts/agents/adapters/claude\.sh'

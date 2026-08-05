@@ -100,7 +100,9 @@ PY
   # was ignored. An unbounded block is the loop the design forbids, so the same
   # open work never blocks twice: the second attempt passes and the human
   # decides.
-  blocked_state="$supervision_dir/stop-block.state"
+  # Keyed by session: with a shared file, a peer session's refusal consumed
+  # this session's one block, and the same open work then sailed through.
+  blocked_state="$supervision_dir/stop-block-$session.state"
   open_only=$(printf '%s' "$message" | grep '^OPEN-WORK' || true)
   if [[ -n "$open_only" ]]; then
     signature=$(printf '%s' "$open_only" | shasum | cut -d' ' -f1)

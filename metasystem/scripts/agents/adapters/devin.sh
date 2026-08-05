@@ -274,7 +274,7 @@ case "$command_name" in
   signature)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' \
-      'match (^|[[:space:]])([^[:space:]]*/)?devin([[:space:]]|$)' \
+      'match ^([^[:space:]]*/)?devin([[:space:]]|$)' \
       'exclude supervision-hook\.sh' \
       'exclude scripts/agents/adapters/devin\.sh'
     ;;

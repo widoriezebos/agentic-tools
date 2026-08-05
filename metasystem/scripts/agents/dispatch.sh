@@ -853,20 +853,26 @@ aggregate_mission_usage() { # job record
   "$mission_fence" aggregate-usage --repo "$root" --mission "$mission"
 }
 
+mirror_fail() { # job, reason — durable trace beside the jobs it failed for
+  printf '%s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" \
+    >>"${jobs%/jobs}/mirror-failures.log" 2>/dev/null || true
+  echo "cannot mirror $1: $2" >&2
+}
+
 mirror_record() { # job
   local job=$1 record="$jobs/$1.json" status evidence result patch root_id
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in completed|failed|timeout|cancelled) ;; *) return 0 ;; esac
   evidence=$(config_get --key evidence.root --default '')
-  [[ "$evidence" == /* ]] || { echo "cannot mirror $job: evidence.root must be absolute" >&2; return 1; }
+  [[ "$evidence" == /* ]] || { mirror_fail "$job" "evidence.root must be absolute"; return 1; }
   evidence=$(python3 - "$evidence" <<'PY'
 import sys
 from pathlib import Path
 print(Path(sys.argv[1]).resolve(strict=False))
 PY
   )
-  case "${evidence%/}/" in "${repo_scope%/}/"*) echo "cannot mirror $job: evidence.root is inside the repository" >&2; return 1 ;; esac
+  case "${evidence%/}/" in "${repo_scope%/}/"*) mirror_fail "$job" "evidence.root is inside the repository"; return 1 ;; esac
   root_id=$(root_job_id "$job") || return 1
   result=$(mktemp "$record_locks/mirror-result.XXXXXX")
   if ! python3 - "$root" "$evidence" "$root_id" "$job" "$result" <<'PY'
@@ -952,6 +958,7 @@ else:
 Path(result).write_text(json.dumps({"path": str(destination), "manifest": manifest_hash, "mirroredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}) + "\n")
 PY
   then
+    mirror_fail "$job" "copy or verification failed (see stderr above)"
     return 1
   fi
   patch=$(mktemp "$record_locks/mirror-patch.XXXXXX")
