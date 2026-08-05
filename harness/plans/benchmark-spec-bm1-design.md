@@ -185,7 +185,7 @@ A trial run that stops at its fences is a measurement, not a failure. This is th
 
 **What calibration must show before anything is spent (SP-2-7).** Three conditions, each checkable:
 
-1. **Every seeded flaw is caught by the metric designed to catch it, on every repetition.** The command-blind cache key drops `cache_correctness`; the shuffling scheduler drops `determinism`; the run-dependents-anyway variant drops `failure_propagation`; the assert-nothing variant drops `mutation_catch` while keeping `own_tests_pass`. Each is checked over the same repetition count a real cohort uses, and a flaw caught on some repetitions and not others has not been caught: the metric is measuring luck.
+1. **Every seeded flaw is caught by the metric designed to catch it, on every repetition.** The command-blind cache key drops `cache_correctness`; the alternating-order scheduler drops `determinism`; the run-dependents-anyway variant drops `failure_propagation`; the assert-nothing variant drops `mutation_catch` while keeping `own_tests_pass`. Each is checked over the same repetition count a real cohort uses, and a flaw caught on some repetitions and not others has not been caught: the metric is measuring luck.
 2. **The careful reference scores strictly above every flawed variant on the metric that variant targets.** If it does not, that metric is not measuring what it claims. This is per metric; there is deliberately no aggregate score, because a single number would let a strong metric mask a broken one, which is the failure mode this whole section exists to prevent.
 3. **The incomplete variant scores strictly between the careful reference and the worst flawed variant on `acceptance` and `requirement_coverage`**, since a run stopped at its fences is the likeliest real outcome and a spec that cannot tell partial work from broken work will read every unfinished run as a failure.
 
@@ -217,7 +217,7 @@ A run that cannot finish inside that envelope is itself a finding, and the fence
 
 Frozen as `benchmark/fixtures/taskrunner-v1/` inside the kit. The kit must be self-contained with no network fetches, and a spec cited by any scorecard is immutable, so a separate repository would break both. BM-2 and BM-3 each take their own copy into their `seed/` when those specs are written, so nothing shifts underneath a benchmark that has already been scored.
 
-`seed/` for BM-1 itself is a git repository containing only `README.md`, `spec.md`, and an empty `tests/`. No `taskrun.py` exists, so any test mapped to a requirement necessarily fails on the seed, which is what makes the differential check meaningful.
+`seed/` for BM-1 itself is a git repository containing only `README.md`, `spec.md`, and an empty `tests/`. It is empty because BM-1 builds from scratch, and for no other reason: the earlier justification, that a mapped test necessarily fails on an empty seed, was the reasoning behind the differential check that round 1 removed as vacuous. Test quality is measured against the mutant corpus, which does not involve the seed at all.
 
 ## Open questions for the critique
 
