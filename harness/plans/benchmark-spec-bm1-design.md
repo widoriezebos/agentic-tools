@@ -86,14 +86,14 @@ As they will appear in `spec.md`. Configuration is `tasks.json`:
 
 **Reporting**
 
-18. A run ends with a summary counting tasks in each of the four states. Its final line is exactly `summary ran=<n> cached=<n> failed=<n> blocked=<n>`; everything else printed is free.
+18. A run prints one line per task, in reported order, of exactly `<state> <task-name>` where state is one of `ran`, `cached`, `failed`, `blocked`. Its final line is exactly `summary ran=<n> cached=<n> failed=<n> blocked=<n>`. Any other output must go to standard error, so standard output is a parseable record. Without this, the text format carries no task sequence and no per-task state, and comparing it with the JSON result would need a grammar the grader invented privately.
 19. `--format json` writes a result matching the schema fixed in the spec: `order`, an array of task names in reported order; `tasks`, an object keyed by task name whose values are one of the four state strings; and `summary`, an object with the four integer counts. The `order` array is what makes requirement 10 observable at all, since a JSON object has no order. Text is the default. For the same run, both report identical counts and identical per-task states. Deriving one format from the other, or both from one result object, is a legitimate implementation and is not penalised.
 
 **Non-functional**
 
 20. Python 3.11 or later, standard library only, run as `python3 taskrun.py`.
 21. A configuration of 1000 tasks whose work is entirely cached completes within 5 seconds.
-22. The repository ships its own tests, runnable by one stated command, and `requirements-map.json` naming which of its tests cover each requirement above.
+22. The repository ships its own tests and `requirements-map.json`, an object keyed by requirement number whose values are arrays of test identifiers. A test identifier is a string the repository's stated test command accepts to run that test alone, in the form `<path>::<test-name>`, and `README.md` states the command whose argument it is. Without a way to run one named test, the grader cannot ask whether *that* test catches a mutant, and mutation catching is unimplementable.
 
 Where the spec is silent, the builder records the decision in `DECISIONS.md`, naming the requirement and the chosen behaviour.
 
@@ -127,9 +127,9 @@ Held out by construction; `grader/` is never copied into the repository the agen
 | `requirement_coverage` | Share of requirements whose held-out tests all pass |
 | `cache_correctness` | A battery: unchanged inputs skip, changed command reruns, changed input reruns, `--force` reruns everything, deleted cache directory returns to cold |
 | `failure_propagation` | Dependents of a failure are `blocked`, unrelated branches still run, exit code is 1 |
-| `determinism` | Identical configuration produces identical order and identical per-task states across repeated runs |
+| `determinism` | Identical configuration and identical starting cache state produce identical order and identical per-task states. Each repetition begins from a deleted cache directory, because a correct cache legitimately reports `ran` the first time and `cached` the next, and comparing those two would fail every correct implementation |
 | `config_errors` | Missing dependency, cycle, and duplicate output are each detected with the required detail and exit 2 |
-| `format_agreement` | Text and JSON report identical counts and per-task states |
+| `format_agreement` | Text and JSON report identical order, counts, and per-task states, each invoked from an identical cold cache state so the two runs are comparable at all |
 | `build_clean` | The produced repository runs from a fresh clone with no manual steps |
 | `own_tests_pass` | The builder's own suite passes under its stated command |
 | `mutation_catch` | Share of requirements whose mapped tests detect a targeted mutation of the careful reference implementation that breaks exactly that requirement |
@@ -141,7 +141,9 @@ Held out by construction; `grader/` is never copied into the repository the agen
 
 **How the builder's tests reach the mutants (SP-2-3).** A builder's tests are written against its own code, so they can only run against a mutant of the reference through an interface both share: the command line fixed in requirements 1 to 5 and the output contracts in 18 and 19. `mutation_catch` therefore counts only tests that drive `python3 taskrun.py`; tests that import internal modules cannot transfer and score nothing on this metric, though they still count for `own_tests_pass`. This deliberately favours black-box tests, and says so rather than hiding it: they are the tests that survive refactoring, which is the property worth rewarding. A mutant is caught only when the mapped test fails against it and passes against the unmutated reference, so an irrelevant failure earns nothing.
 
-**`mutation_catch` replaces a check that did not work.** The first draft asked whether the builder's mapped tests failed on the seed and passed on the final tree. That proves nothing: the seed contains no `taskrun.py`, so every test fails there merely because the file is missing, and one always-green test per requirement would have scored full marks. Mutation catching asks the question that was actually meant. The kit ships mutants of the careful reference, each declaring the requirement it targets. It does not pretend a mutant breaks exactly one requirement: the requirements overlap by design (a broken cache key offends 13, 14, 15 and 16 at once), so demanding isolation would make the corpus impossible to build and S-C would fail for reasons having nothing to do with the harness. What is required is that every requirement has at least one mutant targeting it, and the metric asks whether the tests mapped to that requirement catch one of its targeted mutants. Building those mutants is real work and belongs to S-C, and it is the only version of this metric that cannot be satisfied by writing `assert True`.
+**`mutation_catch` replaces a check that did not work.** The first draft asked whether the builder's mapped tests failed on the seed and passed on the final tree. That proves nothing: the seed contains no `taskrun.py`, so every test fails there merely because the file is missing, and one always-green test per requirement would have scored full marks. Mutation catching asks the question that was actually meant. The kit ships mutants of the careful reference, each declaring the requirement it targets. It does not pretend a mutant breaks exactly one requirement: the requirements overlap by design (a broken cache key offends 13, 14, 15 and 16 at once), so demanding isolation would make the corpus impossible to build and S-C would fail for reasons having nothing to do with the harness. What is required is that every requirement has at least one mutant targeting it, and the metric asks whether the tests mapped to that requirement catch one of its targeted mutants.
+
+Requirement 10 is deliberately excluded from the corpus. Mutating the reference's ordering would create exactly the hidden right answer this design keeps refusing: a builder that chose `config-order` writes a correct test asserting `config-order`, which fails against a reference that chose `alphabetical`, and would be scored for disagreeing rather than for being wrong. The ordering gap is measured by `gap_handled` alone, which compares each builder against its own declared rule. Building those mutants is real work and belongs to S-C, and it is the only version of this metric that cannot be satisfied by writing `assert True`.
 
 ## S-4a: the scoring contract
 
@@ -167,11 +169,13 @@ Noise floors cannot be invented either: agent runs vary, and how much is unknown
 
 ## S-5: the reference implementations, and why they come first
 
-Before any agent sees this, we build solutions by hand. Not two endpoints, which would only prove the grader can tell perfect from broken, but a small set spanning what real runs plausibly produce: one careful; one with a cache key that ignores the command; one whose order depends on dictionary iteration; one that runs dependents after a failure; one correct but with tests that assert almost nothing; and one that is simply incomplete, because an unattended run stopped at its fences is the most likely outcome of all.
+Before any agent sees this, we build solutions by hand. Not two endpoints, which would only prove the grader can tell perfect from broken, but a small set spanning what real runs plausibly produce: one careful; one with a cache key that ignores the command; one whose order is genuinely nondeterministic — iterating a `set` of task names, whose order varies between processes under string hash randomisation, rather than a dictionary, whose insertion order is guaranteed on the mandated runtime and is simply `config-order`, one of the three valid rules; one that runs dependents after a failure; one correct but with tests that assert almost nothing; and one that is simply incomplete, because an unattended run stopped at its fences is the most likely outcome of all.
 
 The grader must separate those in the ways this design predicts, and the spread between them is the first evidence that the spec discriminates at all. If the careful and the sloppy versions score within a hair of each other, the spec has failed at its only job and must change before anything is spent on running it.
 
-Calibration also has to test the budget, not just the scoring. At least one timed hand-build tells us whether twenty-two requirements plausibly fit three hours, which is currently an estimate with nothing behind it.
+Calibration also bounds the work, but it cannot size the run, and the earlier claim that it could was wrong (SP-3-9). A timed hand-build measures how long the task takes a person who already knows the answer; an unattended run spends its time on delegation, review, correction and rework, which is most of the cost and none of the hand-build. There is no way to derive the second from the first.
+
+So the budget is set generously and treated as an experiment rather than a constraint we believe in: the first BM-1 runs record what they actually consumed, and the fences are re-set from that evidence before any run is used for comparison. A first run that stops at its fences is a measurement, not a failure. This is the same prove-first discipline the rest of the harness now follows, and the alternative is a number invented today that quietly decides every future verdict.
 
 **What calibration must show before anything is spent (SP-2-7).** Three conditions, each checkable:
 
@@ -179,13 +183,17 @@ Calibration also has to test the budget, not just the scoring. At least one time
 2. **The careful reference scores strictly above every flawed variant on the metric that variant targets.** If it does not, that metric is not measuring what it claims.
 3. **The incomplete variant scores between them rather than at the floor**, since a run stopped at its fences is the likeliest real outcome and a spec that cannot tell partial work from broken work will read every unfinished run as a failure.
 
-Absolute bounds for the remaining metrics come out of this exercise, from the observed scores of the flawed variants, rather than being invented. Until all three conditions hold, the spec is not ready to be run against.
+Absolute bounds come out of this exercise by a stated rule rather than by judgement: for each metric, the bound is set midway between the careful reference's score and the best score any flawed variant achieved on it. That places the bar above every variant the design considers unacceptable and below the reference, and it is reproducible from the calibration record, so a second person recomputing it gets the same numbers.
+
+The incomplete variant is excluded from that calculation. It is not a wrong implementation, only an unfinished one, and letting it set bounds would build the expectation of failure into the thresholds.
+
+Until all three conditions hold and the bounds are computed, the spec is not ready to be run against.
 
 The careful reference also settles the fixture question, though the previous round settled it wrongly. Saying the fixture is *always* the reference bought stability by abandoning the human's actual structure, which was that the software the harness builds becomes the thing later benchmarks change and debug (SP-2-8).
 
 The real requirement is not that the fixture be hand-built; it is that it never changes once anything has been scored against it. So: **the fixture is chosen once and frozen forever.** After BM-1's first runs, we take either the best agent-built artifact or the careful reference, whichever is sound enough to build on, freeze it as `taskrunner-v1`, and never swap it. A later, better artifact becomes `taskrunner-v2` alongside a new spec version, never a quiet replacement of v1. The human's intent is preserved, and comparability is preserved, because the thing that breaks comparability is swapping after scoring, not choosing an agent-built artifact in the first place.
 
-The bar for choosing the agent-built one is stated rather than felt: it must pass the full held-out grader, contain no requirement scored zero, and be readable enough that the BM-2 change is a fair ask. If nothing meets that, the reference is the fixture and we say so.
+Choosing between candidates is the human's decision, taken once and recorded, not an agent's judgement (SP-3-8). Two of the criteria are mechanical and act as a filter: the candidate passes the full held-out grader, and no requirement scores zero. The third, whether the code is a fair basis for the BM-2 change, is a judgement no metric captures, and pretending otherwise would let different operators freeze materially different codebases and quietly change how hard the next two benchmarks are. The kit records which candidate was frozen, its scores, and who chose it. If no candidate passes the filter, the reference is the fixture and the record says so.
 
 ## S-6: fences, and why they exceed Mission Zero's
 
