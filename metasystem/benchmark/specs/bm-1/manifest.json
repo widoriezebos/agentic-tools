@@ -33,7 +33,7 @@
       ],
       "direction": "max",
       "bound": null,
-      "formula": "passing held-out checks / total held-out checks, the battery enumerated in grader/checks.md"
+      "formula": "passed checks / total checks across the battery the grader authors in grader/checks.md: at least one check per requirement, each a separately counted case, clauses decomposed where they naturally separate; the battery freezes with the kit at 1.0"
     },
     "requirement_coverage": {
       "domain": [
@@ -138,7 +138,7 @@
       "formula": "1 only if DECISIONS.md declares order-rule in the published grammar AND reported order matches that rule on a grader-authored configuration where the three rules disagree"
     }
   },
-  "metricsNote": "A null bound is deliberate: calibration proves each metric fires, it does not set thresholds. Bounds are set once, at promotion to spec 1.0, from the trial runs (feasibility) and the probe scores (a floor above what a broken implementation reaches), per the promotion rule. Version 0.x produces scores, not verdicts, so nothing needs a bound before then (BA-3-6).",
+  "metricsNote": "A null bound is deliberate: calibration proves each metric fires, it does not set thresholds. Bounds are set once, at promotion to spec 1.0, from the trial runs (feasibility) and the probe scores (a floor above what a broken implementation reaches), per the promotion rule. Version 0.x produces scores, not verdicts, so nothing needs a bound before then (BA-3-6). A metric whose procedure cannot run on the target is omitted from the output, never invented: omission means unmeasurable, and the compare layer already treats a missing metric as no-verdict.",
   "noiseFloors": null,
   "noiseFloorsNote": "Unknown until repeated runs measure the spread. Until then this spec produces scores, not verdicts.",
   "fences": {
