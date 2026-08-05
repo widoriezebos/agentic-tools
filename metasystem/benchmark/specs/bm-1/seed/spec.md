@@ -100,8 +100,9 @@ Parsing JSON with the standard library alone is part of the work.
      cold cache and the run continues normally.
    - A successful `--dry-run` exits `0`.
 
-   A configuration error is detected before any task runs, so a run either exits
-   2 having run nothing, or exits 0 or 1 having produced a full report.
+   A configuration error is detected before any task runs. A run therefore ends
+   one of three ways: exit 2 or 3 having run nothing and produced no task
+   report, or exit 0 or 1 having produced a full report.
 
 ### Configuration errors
 

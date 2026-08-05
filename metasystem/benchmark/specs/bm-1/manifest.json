@@ -177,8 +177,8 @@
         "the held-out acceptance suite, one or more checks per requirement, driving the built jar from outside; per-requirement lines metric=requirement_<n>=1|0",
         "behavioural batteries: cache_correctness, failure_propagation, determinism (each repetition from a deleted cache), config_errors, format_agreement (cold cache both sides)",
         "build_clean, own_tests_pass, plan_seconds per requirement 25, dependency_count from pom.xml (the stated outside-only exception), gap_handled (declared rule checked against behaviour on a disagreeing configuration)",
-        "seed_respected: wrapper intact and functional, release level unchanged, no compile-scope dependency added, inherited build still working, computed as a diff against seed/",
-        "calibration probes, one per metric, each failing exactly its metric on every repetition, scores recorded in grader/calibration.md"
+        "seed watches, emitted as unscored observation lines (wrapper intact, release level, files replaced), never as a metric: a scored version for a from-scratch case encodes hidden preferences (BA-3-3)",
+        "calibration probes, each declaring its target metric and the metrics it must not disturb; the target fails on every repetition, overlap elsewhere is expected (BA-3-2); scores recorded in grader/calibration.md"
       ],
       "doesNotBuild": [
         "mutation_catch",
