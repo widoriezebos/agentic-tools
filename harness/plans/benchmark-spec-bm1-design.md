@@ -177,7 +177,7 @@ Calibration also bounds the work, but it cannot size the run, and the earlier cl
 
 So the budget is set generously and treated as an experiment rather than a constraint we believe in, with a stated promotion rule so the transition is not left to be invented (SP-4-4):
 
-- Trial runs happen under spec version `0.x`. Their scorecards are recorded and readable, and are **never** comparison-eligible: `benchmark-compare` refuses a cohort whose spec version is below 1.0.
+- Trial runs happen under spec version `0.x`, this spec's own version rather than the shared measuring-kit version. Their scorecards are recorded and readable, and are **never** comparison-eligible: `benchmark-compare` refuses a cohort whose spec version is below 1.0.
 - After the trials, each fence is `ceil(observed_max * 1.5)` where `observed_max` is the largest value that fence reached across all trial runs, in that fence's own unit: cycles, jobs, concurrent jobs, minutes, hours. Trials that parked at a fence are excluded from its own maximum, since a run stopped at eight cycles tells us it wanted at least eight, not that eight was enough; if every trial parked at a fence, that fence has no evidence yet and more trials are needed rather than a guessed number.
 - Those values are written into the manifest, the spec is published as version `1.0`, and from that point it is immutable: changing a fence later means version `1.1` and a fresh baseline, exactly like any other kit change.
 
@@ -214,6 +214,10 @@ The roster must be pinned by exact model identifier, not by the phrase "cheap mo
 A run that cannot finish inside that envelope is itself a finding, and the fences remain the only real spending control. This is the one item here that costs real money, and no run happens until the human confirms it.
 
 ## S-7: where the artifact lives
+
+**The case itself lives at `benchmark/specs/bm-1/`**, once S-B writes it: `spec.md` carrying the requirements of S-2, `manifest.json` carrying the thresholds, fences and roster, `seed/`, and the held-out `grader/` with its mutant corpus. This plan is the design *for* that directory and is scaffolding: when S-B and S-C ship, the durable content lives in the spec directory and this file is deleted, per `plans/README.md`. Nothing in `plans/` is ever the artifact.
+
+Sibling cases sit beside it as `benchmark/specs/bm-2/` and `bm-3/`, each a self-contained directory with its own version. Adding one bumps no shared version and invalidates no existing baseline, which is what makes accumulating cases possible; that property was missing until 2026-08-05 and is now stated in the parent design.
 
 Frozen as `benchmark/fixtures/taskrunner-v1/` inside the kit. The kit must be self-contained with no network fetches, and a spec cited by any scorecard is immutable, so a separate repository would break both. BM-2 and BM-3 each take their own copy into their `seed/` when those specs are written, so nothing shifts underneath a benchmark that has already been scored.
 
