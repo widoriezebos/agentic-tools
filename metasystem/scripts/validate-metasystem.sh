@@ -3083,8 +3083,8 @@ PY
     || { echo "benchmark provision: instrument tag does not contain both instruments" >&2; exit 1; }
 
   provision_origin=$(git -C "$provision_target" remote get-url origin)
-  # Compare resolved to resolved: provision canonicalises its target, and on
-  # macOS mktemp hands out the /var symlink spelling of /private/var, so a
+  # Compare resolved to resolved: provision canonicalises its target, and
+  # macOS mktemp hands out the symlinked spelling of the temp directory, so a
   # textual comparison fails on any normal Mac while passing in a sandbox
   # whose TMPDIR is already canonical.
   [[ "$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$provision_origin")" \
