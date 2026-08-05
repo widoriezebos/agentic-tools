@@ -353,7 +353,10 @@ echo "adopted at template SHA $sha"
 echo "finish the adoption:"
 echo "  1. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions)."
 echo "  2. Fill metasystem.conf with verified models, tiers, and the durable evidence root."
-hook_dir=$(git -C "$target" rev-parse --git-common-dir)/hooks
+# --git-common-dir answers relative to the target, so resolve it there or the
+# hook lands wherever this script happens to be standing (it once created a
+# stray .git inside the template itself).
+hook_dir=$(cd "$target" && git rev-parse --path-format=absolute --git-common-dir)/hooks
 if [[ ! -e "$hook_dir/pre-commit" ]]; then
   mkdir -p "$hook_dir"
   printf '#!/usr/bin/env bash\nguard="$(git rev-parse --show-toplevel)/scripts/agents/pre-commit-guard.sh"\n[[ -x "$guard" ]] && exec "$guard"\nexit 0\n' >"$hook_dir/pre-commit"
