@@ -356,12 +356,19 @@ echo "  2. Fill metasystem.conf with verified models, tiers, and the durable evi
 # --git-common-dir answers relative to the target, so resolve it there or the
 # hook lands wherever this script happens to be standing (it once created a
 # stray .git inside the template itself).
-hook_dir=$(cd "$target" && git rev-parse --path-format=absolute --git-common-dir)/hooks
-if [[ ! -e "$hook_dir/pre-commit" ]]; then
-  mkdir -p "$hook_dir"
-  printf '#!/usr/bin/env bash\nguard="$(git rev-parse --show-toplevel)/scripts/agents/pre-commit-guard.sh"\n[[ -x "$guard" ]] && exec "$guard"\nexit 0\n' >"$hook_dir/pre-commit"
-  chmod +x "$hook_dir/pre-commit"
+# A target need not be a git repository yet; the guard only makes sense once
+# it is, so a non-repository target skips the install with a note instead of
+# killing the adoption.
+if hook_common=$(cd "$target" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  hook_dir="$hook_common/hooks"
+  if [[ ! -e "$hook_dir/pre-commit" ]]; then
+    mkdir -p "$hook_dir"
+    printf '#!/usr/bin/env bash\nguard="$(git rev-parse --show-toplevel)/scripts/agents/pre-commit-guard.sh"\n[[ -x "$guard" ]] && exec "$guard"\nexit 0\n' >"$hook_dir/pre-commit"
+    chmod +x "$hook_dir/pre-commit"
+  else
+    echo "pre-commit hook already present in the target; the new-plan guard was NOT installed over it" >&2
+  fi
 else
-  echo "pre-commit hook already present in the target; the new-plan guard was NOT installed over it" >&2
+  echo "target is not a git repository; the new-plan guard hook was not installed (install it when git init happens)" >&2
 fi
 echo "  3. Run scripts/validate-metasystem.sh in the target; it must pass with zero placeholders."
