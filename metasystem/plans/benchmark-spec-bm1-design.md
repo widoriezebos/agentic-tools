@@ -1,12 +1,12 @@
 # Plan: BM-1, the First Benchmark Spec
 
 - Owner: unclaimed (written 2026-08-05, single session, nothing built)
-- Goal and current status: design the first benchmark spec, a task runner the metasystem builds from scratch unattended, substantial enough that building it successfully means something, and shaped so the result becomes the fixture for the two benchmarks after it. Status: design critique CLOSED by join at round 9; **S-B done** — the case exists at `benchmark/specs/bm-1/` and is under its own artifact critique, at the human's direction and ahead of the B-0 gate (43 material findings across eight rounds, all accepted; round 9 returned zero), nothing built
-- In flight right now: nothing
+- Goal and current status: design the first benchmark spec, a task runner the metasystem builds from scratch unattended, substantial enough that building it successfully means something, and shaped so the result becomes the fixture for the two benchmarks after it. Status: design critique CLOSED (round 9); artifact critique CLOSED by join at round 5 (2026-08-05): 41 material findings across rounds BA-1 to BA-4, zero in round 5, all five rounds joined mechanically
+- In flight right now: the grader build (Codex implementer)
 - Decisions made (and who made them): the user chose the three-benchmark structure and the task-runner subject on 2026-08-05; design decisions S-1 through S-7 taken here with recorded defaults
 - Waiting on the human: the fence sizing in S-6, which is larger than Mission Zero's and costs real money
 - Dead ends: a log summariser was drafted first and discarded: the subject was picked without asking, and it was too shallow to discriminate. A diff and patch toolkit was rejected because the core algorithm is a well-known exercise, so it would partly measure recall. An append-only store with compaction was rejected because its most interesting property, crash safety, cannot be graded in minutes
-- Next step: fold the twelve round-2 artifact findings into `benchmark/specs/bm-1/spec.md`, then build the grading baseline (item S-C). The fences in S-6 still need human approval before any run spends money
+- Next step: the grader build is dispatched to Codex (item S-C, v0.1 scope per the manifest); Mission Zero's contract awaits the human's signature; fences for BM-1 still need human approval before any BM-1 run
 
 This plan fills in item B-1 of `plans/metasystem-benchmark-design.md`, which fixed the shape of a spec but wrote neither requirements nor grader. It **does** amend that design in one place: the human replaced the log-summariser note with the task runner and the three-case structure on 2026-08-05, and the parent's BM-1 paragraph now points here as the authority. The earlier claim that this changed nothing was wrong, and two documents describing different first specs would have left an implementer with no way to know which governs.
 
@@ -143,8 +143,8 @@ A trial run that stops at its fences is a measurement, not a failure. This is th
 **What calibration must show before anything is spent (SP-2-7).** Three conditions, each checkable:
 
 1. **Every seeded flaw is caught by the metric designed to catch it, on every repetition.** The command-blind cache key drops `cache_correctness`; the alternating-order scheduler drops `determinism`; the run-dependents-anyway variant drops `failure_propagation`; the assert-nothing variant drops `mutation_catch` while keeping `own_tests_pass`. Each is checked over the same repetition count a real cohort uses, and a flaw caught on some repetitions and not others has not been caught: the metric is measuring luck.
-2. **The careful reference scores strictly above every flawed variant on the metric that variant targets.** If it does not, that metric is not measuring what it claims. This is per metric; there is deliberately no aggregate score, because a single number would let a strong metric mask a broken one, which is the failure mode this whole section exists to prevent.
-3. **The incomplete variant scores strictly between the careful reference and the worst flawed variant on `acceptance` and `requirement_coverage`**, since a run stopped at its fences is the likeliest real outcome and a spec that cannot tell partial work from broken work will read every unfinished run as a failure.
+2. **Each probe's must-not-disturb metrics stay undisturbed.** The manifest's calibration rule is the authority: a probe declares its target and the metrics it must not touch, and calibration checks both directions. There is deliberately no aggregate score, because a single number would let a strong metric mask a broken one.
+3. **The incomplete probe's `acceptance` sits strictly between zero and one**, visibly partial rather than at the floor, since a run stopped at its fences is the likeliest real outcome and a spec that cannot tell partial work from broken work will read every unfinished run as a failure.
 
 Calibration proves each metric fires; it no longer sets bounds. The midway rule it used to state compared against the careful reference's score, and that reference no longer exists, so the rule silently lost its left operand (BA-3-6). Bounds are set once, at promotion to 1.0, from trial-run evidence plus probe floors, per S-6's promotion rule. Until then the spec produces scores, not verdicts.
 
