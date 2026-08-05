@@ -158,14 +158,29 @@
     "heldOut": true,
     "heldOutNote": "Never copied into the repository the agents work in. Provisioning copies spec.md and seed/ only.",
     "mutation": {
-      "target": "the builder's own code",
-      "note": "Mutation testing operates on what the builder produced, not on a reference implementation. Their tests run against their code, so no transfer problem exists and no test architecture is favoured. There is no reference implementation in this benchmark."
+      "status": "deferred, not designed",
+      "note": "Not built in grader v0.1, and the deferral is a disposition of BA-2-2, not a postponement of the old text: that finding refuted the claim that mutating the builder's own code is architecture-neutral. With no reference corpus, mutants come from arbitrary builder source, and attributing a surviving mutant to the requirement whose tests should have caught it is not derivable from requirements-map.json alone. A later version needs a design of its own, critiqued before it is built. Until then mutation_catch stays in the metric table with a null bound and is never emitted."
     },
     "calibration": {
       "probes": "small purpose-built programs, one per metric, each exhibiting exactly the flaw that metric must catch",
       "note": "Calibration proves each check fires. A full correct implementation is a wildly expensive way to test a checker and is not built."
     },
-    "outsideOnlyException": "Requirement 24 is graded by reading pom.xml. No finite set of runs can prove an unexercised branch imports nothing, so the outside-only rule states its one exception rather than pretending (BA-2-11)."
+    "outsideOnlyException": "Requirement 24 is graded by reading pom.xml. No finite set of runs can prove an unexercised branch imports nothing, so the outside-only rule states its one exception rather than pretending (BA-2-11).",
+    "v01Scope": {
+      "builds": [
+        "grade.sh emitting metric=<name>=<value> lines in the mission gate grammar, exit 0 when measurement ran",
+        "the held-out acceptance suite, one or more checks per requirement, driving the built jar from outside; per-requirement lines metric=requirement_<n>=1|0",
+        "behavioural batteries: cache_correctness, failure_propagation, determinism (each repetition from a deleted cache), config_errors, format_agreement (cold cache both sides)",
+        "build_clean, own_tests_pass, plan_seconds per requirement 25, dependency_count from pom.xml (the stated outside-only exception), gap_handled (declared rule checked against behaviour on a disagreeing configuration)",
+        "seed_respected: wrapper intact and functional, release level unchanged, no compile-scope dependency added, inherited build still working, computed as a diff against seed/",
+        "calibration probes, one per metric, each failing exactly its metric on every repetition, scores recorded in grader/calibration.md"
+      ],
+      "doesNotBuild": [
+        "mutation_catch",
+        "any reference implementation",
+        "noise floors, which come from repeated runs"
+      ]
+    }
   },
   "language": {
     "runtime": "Java 21",
