@@ -6,7 +6,7 @@
 - Decisions made (and who made them): the user answered four of the prior plan's six reserved decisions on 2026-08-03 (recorded in Part 1), and all seven of this plan's decisions the same day (recorded in the Decisions section); D2 with the user's own direction (Devin fully implemented, live-tested by the user); Devin capabilities resolved from the online documentation at the user's direction
 - Waiting on the human: nothing blocking; the Devin self-test and host-cycle smoke wait for a machine with Devin, after Phase 2 builds the adapter
 - Dead ends: none recorded
-- Next step: item 20b, the minimal mission runner, then Mission Zero; sequencing is owned by `plans/prove-first-course-correction.md` until that plan closes. Phases 0 through 4 and items 13 to 17, 23, and 20a are shipped; the obligation matrix below still describes the pre-implementation repository and needs a pass
+- Next step: Mission Zero, the first unattended run; sequencing is owned by `plans/prove-first-course-correction.md` until that plan closes. Phases 0 through 4, items 13 to 17, 23, and 20a and 20b are shipped, so the mission runner exists and is green locally. The obligation matrix below still describes the pre-implementation repository and needs a pass
 
 Scope is the template repository. Evidence level: the whole harness was read; no runtime was driven; every claim about CLI behavior is marked as an open verification item where it is not certain. The proven prior art is the Codex plugin pattern used in this project today: a Claude session launching `codex exec` through the shell and resuming one Codex thread across rounds, which carried the seven-round critique loop recorded in `plans/harness-review-remediation.md`.
 
