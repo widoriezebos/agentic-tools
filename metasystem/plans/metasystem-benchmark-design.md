@@ -4,11 +4,20 @@
 - Goal and current status: a benchmark where a coordinator and sub-agents build software to a fixed spec, producing two things we grade: the software itself and the logged behavior of the agents that built it. The scorecard from both becomes the metasystem's own fitness function, so agents can later evolve the metasystem inside constraints expressed in software. Status: critique CLOSED by join at round 5 (2026-08-04): 45 material findings adjudicated across rounds 1-4, round 5 returned zero material findings with the critic's recorded agreement that the design is ready for implementation under the B-0 condition
 - In flight right now: nothing
 - Decisions made (and who made them): the requirement and its intent stated by the user 2026-08-04, who also directed this design and its critique to run now, ahead of Mission Zero; design decisions D-B1 through D-B6 taken here with recorded defaults, overridable by the human
-- Waiting on the human: nothing blocking; D-B1 through D-B6 stand unless overridden Mission Zero itself now waits on the human's signature of its sealed contract (see plans/prove-first-course-correction.md).
+- Waiting on the human: the BM-1 completion gate decision and the fence vector approval; nothing else
 - Dead ends: none yet
-- Next step: wait for Mission Zero (CC-3), then run B-0's reconciliation; nothing is built before both
+- Next step: the grader build returns (chain implementer-20260805t194101z-a102), the orchestrator critiques it; then the human's BM-1 completion-gate and fence decisions; then the first 0.x trial
 
 This plan layers on `plans/agent-orchestration-design.md`. It amends the settled design in exactly one named place: the standing benchmark authorization (D-B5), an extension to mission approval that goes through the change gate when B-4 builds it. Everything else reuses mission mode (Part 6 there) as the chassis: a benchmark run is a mission, and the contract grammar, runner-side measurement, fences, ledger, and evidence trail are reused rather than reinvented. The user directed the design and critique to run now; implementation stays blocked behind Mission Zero (CC-3 in `plans/prove-first-course-correction.md`), and B-0 below makes the design answer to Mission Zero's evidence before any item builds on it (BM-1-11).
+
+## B-0: reconciliation against Mission Zero (done 2026-08-05)
+
+Mission Zero ran end to end the same day: two cycles, completed by its own gate. What its evidence says about this design's assumptions:
+
+- **The evidence set has the shape the extractor expects.** Turn directories carry `turn.json`, the assembled prompt, the adapter result, and the schema-valid return; the ledger keeps the stop-loss grammar with runner-written classifications; anchor commits are real. One semantics bug surfaced and is fixed: the runner compared the return's attested session against the adapter-discovered id rather than against what the prompt declared, failing every honest first turn.
+- **The delegated-share join was not exercised, and its precondition does not exist.** The host dispatched no delegate and fixed the test itself, which is inside its authority and exactly why BM-1's delegation floor is run-validity. Worse for the join: the fix commit is authored with the machine's global git identity, the human's name, so blame currently attributes AI work to the operator. Per this design's own exit rule, **delegated share starts as a judged dimension and the job-count floor stands alone** until dispatch stamps per-job git identity (delegate commits authored as their job id), which is a small dispatcher change queued as ordinary backlog, not a blocker.
+- **Contract instantiation has three provisioning duties B-4 must own**, all found by the first real preflight: `gate.ref` must be a non-moving ref, because sealing against a branch cannot survive its own signing commit (the shipped worked example carried this flaw; fixed there too); the target needs an origin remote, a local bare one sufficing; and supervision must be armed in the target before preflight passes.
+
 
 ## Intent
 
@@ -145,7 +154,7 @@ Sequenced strictly after CC-3 (Mission Zero). B-0 is the hinge: nothing else sta
 
 | Id | Item | Status |
 | --- | --- | --- |
-| B-0 | Reconcile this design against Mission Zero's actual runner and evidence contract: a dated pass over every claim this design makes about mission machinery — commit provenance through the merge flow (the delegated-share join), the evidence set's real shape, the contract-instantiation seam — amendments recorded here, re-critiqued if material (BM-1-11) | NOT STARTED, blocks all below |
+| B-0 | Reconcile this design against Mission Zero's actual runner and evidence contract | DONE 2026-08-05, recorded in the B-0 section above: evidence shape confirmed, one runner bug fixed, delegated share falls back to judged with the job-count floor standing until per-job git identity ships, three provisioning duties named for B-4 |
 | B-1 | Spec format, BM-1 spec, seed, decision-record and test-mapping shapes, and held-out grader emitting the gate grammar, including the mutation-catch corpus. Designed in full in `plans/benchmark-spec-bm1-design.md` | NOT STARTED |
 | B-2 | Scorecard schema (cohort id, repetition index, sourceOwner, measuring-metasystem sha included) and the extractor, with kit-pinned evidence schema copies; validated against a fixture corpus (fake-adapter runs plus hand-authored evidence sets covering each metric's positive and failure case, BM-1-13); Mission Zero's evidence is the first real smoke, not the validation | NOT STARTED |
 | B-3 | The `behavior-judge` stock role (preamble with byte-checked quote blocks, requirements, return schema) plus the kit rubrics that travel in its brief | NOT STARTED |

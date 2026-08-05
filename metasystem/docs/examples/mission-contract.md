@@ -17,7 +17,7 @@ Do not publish, deploy, rewrite history, or change external API contracts.
 
 ```mission
 gate.command=bash -c 'scripts/validate-metasystem.sh; status=$?; printf "metric=validation=%s\n" "$status"; exit 0'
-gate.ref=main
+gate.ref=instruments-v1   # a tag or other non-moving ref: sealing against a branch cannot survive its own signing commit
 gate.paths=scripts/validate-metasystem.sh
 truth.paths=docs/**/*.md
 truth.certification=certified

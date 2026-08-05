@@ -808,7 +808,12 @@ def validate_return(turn: dict[str, Any], result: dict[str, Any], turn_dir: Path
         raise RunnerError("orchestrator return identity is missing")
     if identity.get("runtime") != turn["runtime"] or identity.get("model") != turn["model"]:
         raise RunnerError("orchestrator return runtime/model identity mismatch")
-    if identity.get("sessionId") != result.get("sessionId"):
+    # The orchestrator attests what the prompt told it (Host-Session header,
+    # null on a first or unresumable turn), not the session id the adapter
+    # discovered at launch, which the model cannot know. Mission Zero's first
+    # cycle failed on exactly this: a correct null against a discovered id
+    # (6.2c states the null explicitly).
+    if identity.get("sessionId") != turn.get("hostSession"):
         raise RunnerError("orchestrator return session identity mismatch")
     return returned, raw_path, return_path
 
