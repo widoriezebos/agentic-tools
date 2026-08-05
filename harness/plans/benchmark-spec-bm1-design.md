@@ -1,12 +1,12 @@
 # Plan: BM-1, the First Benchmark Spec
 
 - Owner: unclaimed (written 2026-08-05, single session, nothing built)
-- Goal and current status: design the first benchmark spec, a task runner the harness builds from scratch unattended, substantial enough that building it successfully means something, and shaped so the result becomes the fixture for the two benchmarks after it. Status: critique round 1 adjudicated (11 material findings, all accepted), round 2 pending, nothing built
+- Goal and current status: design the first benchmark spec, a task runner the harness builds from scratch unattended, substantial enough that building it successfully means something, and shaped so the result becomes the fixture for the two benchmarks after it. Status: critique CLOSED by join at round 9 (43 material findings across eight rounds, all accepted; round 9 returned zero), nothing built
 - In flight right now: nothing
 - Decisions made (and who made them): the user chose the three-benchmark structure and the task-runner subject on 2026-08-05; design decisions S-1 through S-7 taken here with recorded defaults
 - Waiting on the human: the fence sizing in S-6, which is larger than Mission Zero's and costs real money
 - Dead ends: a log summariser was drafted first and discarded: the subject was picked without asking, and it was too shallow to discriminate. A diff and patch toolkit was rejected because the core algorithm is a well-known exercise, so it would partly measure recall. An append-only store with compaction was rejected because its most interesting property, crash safety, cannot be graded in minutes
-- Next step: critique round 2 on the amended design, then build it as item B-1
+- Next step: S-B and S-C remain blocked behind B-0 and Mission Zero; the fences in S-6 need human approval before any run
 
 This plan fills in item B-1 of `plans/harness-benchmark-design.md`, which fixed the shape of a spec but wrote neither requirements nor grader. It **does** amend that design in one place: the human replaced the log-summariser note with the task runner and the three-case structure on 2026-08-05, and the parent's BM-1 paragraph now points here as the authority. The earlier claim that this changed nothing was wrong, and two documents describing different first specs would have left an implementer with no way to know which governs.
 
@@ -237,6 +237,62 @@ Frozen as `benchmark/fixtures/taskrunner-v1/` inside the kit. The kit must be se
 | S-C | Build the reference and its flawed variants, the mutant corpus, and prove calibration's three conditions hold | NOT STARTED, before any agent run |
 
 All three remain blocked behind the canonical gates and this plan does not reorder them (SP-2-10): S-A is design work and runs now, but S-B and S-C are item B-1 of the parent design, which B-0 blocks, which in turn waits on Mission Zero. Designing the spec early is deliberate; building it before the runner has been watched running is the mistake this whole sequence exists to avoid.
+
+RETIRED: differential seed-versus-final check -- mutation_catch against the reference mutant corpus
+
+RETIRED: order-rule other -- the closed vocabulary alphabetical, config-order, dependency-depth
+
+## Critique Ledger
+
+One chain, job `design-critic-20260805t093318z-b195`, codex/gpt-5.6-sol, all rounds 2026-08-05. Material findings by round — round 1: 11, round 2: 10, round 3: 9, round 4: 5, round 5: 3, round 6: 2, round 7: 1, round 8: 1, round 9: 0 — 43 in total, every one accepted. Closed by join at round 9 with zero material findings.
+
+The shape of the loop is worth recording. Rounds 1 to 4 attacked the design and changed it substantially: the vacuous test-quality check, the unobservable ordering decision, the impossible mutant corpus, the fixture rule that abandoned the human's three-case structure, and the determinism check that would have failed every correct implementation. Rounds 5 to 9 found only one species of defect, a rule correctly changed in one place and left stale in another statement of the same rule, eight times. That is drift between statements, not a defect in the design, and the remedy is a mechanical consistency check rather than further rounds; it is being built rather than recommended.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| SP-1-1 | accepted | The design does not define an executable scoring contract: every grader metric lacks its numeric domain, direction, absolute floor or ceiling, noise f… | folded into the design at the section it names |
+| SP-1-2 | accepted | Requirements 17-18 provide no public text grammar or JSON schema, making the held-out `format_agreement` grader impossible to implement without a secr… | folded into the design at the section it names |
+| SP-1-3 | accepted | The proposed differential-coverage check is vacuous: because mapped tests are absent from the seed, their failure there proves only that the test arti… | folded into the design at the section it names |
+| SP-1-4 | accepted | Requirement 10 is not the sole seeded under-determination; the specification contains multiple accidental choice points, and the blanket `DECISIONS.md… | folded into the design at the section it names |
+| SP-1-5 | accepted | A fully conforming implementation can report a task as cached after its declared output has been deleted or corrupted, so the specified artifact is no… | folded into the design at the section it names |
+| SP-1-6 | accepted | The seeded-gap grader does not check the recorded decision against the implementation, so it measures the presence of boilerplate rather than whether … | folded into the design at the section it names |
+| SP-1-7 | accepted | The plan leaves two binding benchmark authorities in direct conflict while claiming to change nothing, so an implementer cannot know which BM-1 size, … | folded into the design at the section it names |
+| SP-1-8 | accepted | The proposed run cannot be sealed or cost-bounded from this design because its fence vector is both unapproved and incomplete, and “cheap delegate mod… | folded into the design at the section it names |
+| SP-1-9 | accepted | The design does not ensure that BM-1’s produced artifact serves BM-2 and BM-3; it substitutes a hand-built reference by default and leaves an undefine… | folded into the design at the section it names |
+| SP-1-10 | accepted | The proposed BM-2 change conflicts with BM-1’s deterministic-order contract because the design never distinguishes deterministic launch order, complet… | folded into the design at the section it names |
+| SP-1-11 | accepted | S-5’s calibration obligation is too weak to establish discrimination or budget fit: two hand-authored endpoints merely scoring differently does not sh… | folded into the design at the section it names |
+| SP-1-12 | accepted | Generating the text report from the JSON report, or both from one result object, is not itself a defect and should not be penalized.… | folded into the design at the section it names |
+| SP-2-1 | accepted | The mutation corpus has an impossible construction requirement: several numbered requirements overlap logically, so a mutant cannot break exactly one … | folded into the design at the section it names |
+| SP-2-2 | accepted | The seeded ordering decision and determinism metric are not representable in the pinned output contracts, so the grader has no specification-defined t… | folded into the design at the section it names |
+| SP-2-3 | accepted | `mutation_catch` has no executable test-transfer protocol and can reward irrelevant failures, secretly favoring one test architecture over another.… | folded into the design at the section it names |
+| SP-2-4 | accepted | The `other` ordering value reopens the exact boilerplate loophole the closed vocabulary was meant to close, and `dependency-depth` does not itself def… | folded into the design at the section it names |
+| SP-2-5 | accepted | The amended child and canonical parent still prescribe mutually exclusive own-test graders, leaving an implementer to build the removed differential c… | folded into the design at the section it names |
+| SP-2-6 | accepted | The accepted finding that requirement 10 was not the only ambiguity has not landed: the design still sends several public behaviors to `DECISIONS.md` … | folded into the design at the section it names |
+| SP-2-7 | accepted | Calibration still has no acceptance contract, so the manifest writer must invent both the score separation that proves discrimination and most absolut… | folded into the design at the section it names |
+| SP-2-8 | accepted | The fixed-reference amendment resolves fixture stability by abandoning the stated three-benchmark purpose: BM-1's produced software never becomes the … | folded into the design at the section it names |
+| SP-2-9 | accepted | S-6 still does not define the complete sealable execution envelope it claims to define, leaving host time and mission stop-loss behavior unconstrained… | folded into the design at the section it names |
+| SP-2-10 | accepted | The target's implementation sequence bypasses the canonical B-0 gate, so following this plan would start B-1 before its settled prerequisite has passe… | folded into the design at the section it names |
+| SP-3-1 | accepted | Calibration is guaranteed to reject the proposed dictionary-order variant for the wrong reason: on the mandated Python runtime, dictionary/configurati… | folded into the design at the section it names |
+| SP-3-2 | accepted | Adding `order` to JSON fixed only half of the reporting contract: the text result still has no required task sequence or per-task states, so requireme… | folded into the design at the section it names |
+| SP-3-3 | accepted | The determinism and format-agreement procedures can fail every correct cache implementation because repeated CLI invocations do not begin from identic… | folded into the design at the section it names |
+| SP-3-4 | accepted | Mutation catching introduces a hidden right answer for the deliberate ordering gap: a valid builder test that asserts its chosen rule can receive no c… | folded into the design at the section it names |
+| SP-3-5 | accepted | The mutant transfer protocol still lacks the mapping and individual-test execution interface needed to implement it.… | folded into the design at the section it names |
+| SP-3-6 | accepted | The round-2 corrections were not joined across the binding documents, leaving contradictory grader and fixture contracts at HEAD.… | folded into the design at the section it names |
+| SP-3-7 | accepted | The new calibration conditions are not checkable as written and still do not determine the deferred thresholds.… | folded into the design at the section it names |
+| SP-3-8 | accepted | Fixture selection is still an unowned multi-objective judgment, so different operators can freeze different codebases and materially change BM-2 and B… | folded into the design at the section it names |
+| SP-3-9 | accepted | A timed hand-build does not validate the proposed unattended mission budget, so the design still has no evidence that three hours separates harness qu… | folded into the design at the section it names |
+| SP-4-1 | accepted | The replacement nondeterminism variant and its grader are probabilistic, so calibration can intermittently accept the seeded defect or treat it as ful… | folded into the design at the section it names |
+| SP-4-2 | accepted | The mandatory calibration conditions still describe the removed dictionary variant and an undefined aggregate score, so S-C has no coherent completion… | folded into the design at the section it names |
+| SP-4-3 | accepted | The mutation contract is still unjoined across its authoritative surfaces, changing both the corpus denominator and whether the grader implements muta… | folded into the design at the section it names |
+| SP-4-4 | accepted | The new experimental-fence policy has no promotion rule from trial evidence to the immutable comparison spec, so an implementer must invent both the f… | folded into the design at the section it names |
+| SP-4-5 | accepted | The fixture's mechanical filter references a per-requirement score that the grader does not define or emit, so fixture eligibility remains implementat… | folded into the design at the section it names |
+| SP-5-1 | accepted | SP-4-1 did not land: replacing set iteration with an unseeded shuffle leaves the seeded determinism flaw probabilistic, despite requiring it to fail o… | folded into the design at the section it names |
+| SP-5-2 | accepted | SP-4-3 only landed in the parent; the BM-1 design still gives mutually exclusive mutation-corpus contracts.… | folded into the design at the section it names |
+| SP-5-3 | accepted | SP-4-4 leaves the fence-promotion formula ambiguous, so it does not yet determine the immutable 1.0 fence vector.… | folded into the design at the section it names |
+| SP-6-1 | accepted | SP-5-1 did not fully land: the operative calibration condition still directs S-C to build or assess the rejected probabilistic shuffling variant inste… | folded into the design at the section it names |
+| SP-6-2 | accepted | SP-5-2 did not fully land: only the metric row was corrected, while the same section and seed contract still retain the mutually exclusive all-require… | folded into the design at the section it names |
+| SP-7-1 | accepted | SP-6-2 still did not land document-wide: the corrected metric and seed paragraph coexist with remaining instructions to use the empty seed and cover e… | folded into the design at the section it names |
+| SP-8-1 | accepted | SP-7-1 remains only partially answered: the parent-ledger bookkeeping is now correctly annotated, but two current BM-1 design statements still prescri… | folded into the design at the section it names |
 
 ## Completion
 

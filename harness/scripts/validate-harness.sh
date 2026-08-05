@@ -907,6 +907,35 @@ scripts/assert-critique-closed.sh \
   --findings "$critique_fixtures/joinable.json" \
   --dispositions "$critique_fixtures/all-disposed.md"
 
+# Plan consistency: a rule stated in several places must not disagree with
+# itself. Eight of nine rounds of one design critique found nothing else, and a
+# paid round is the wrong instrument for drift a script finds instantly.
+scripts/assert-plan-consistency.sh >"$tmp/plan-consistency.out"
+grep -q 'retired term' "$tmp/plan-consistency.out" \
+  || { echo "plan consistency check did not report its retired terms" >&2; exit 1; }
+
+plan_fixture=$tmp/plan-consistency
+mkdir -p "$plan_fixture"
+cat >"$plan_fixture/owner.md" <<'FIXTURE'
+RETIRED: widget check -- the gadget check
+FIXTURE
+cat >"$plan_fixture/clean.md" <<'FIXTURE'
+The widget check was replaced by the gadget check.
+FIXTURE
+scripts/assert-plan-consistency.sh --plans-dir "$plan_fixture" >/dev/null \
+  || { echo "plan consistency rejected a line that explains the change" >&2; exit 1; }
+cat >"$plan_fixture/stale.md" <<'FIXTURE'
+Test quality is measured by the widget check.
+FIXTURE
+set +e
+scripts/assert-plan-consistency.sh --plans-dir "$plan_fixture" >"$tmp/plan-stale.out" 2>&1
+plan_status=$?
+set -e
+(( plan_status == 1 )) \
+  || { echo "plan consistency did not fail on a prescribed retired term" >&2; exit 1; }
+grep -q "stale.md:1: prescribes 'widget check'" "$tmp/plan-stale.out" \
+  || { echo "plan consistency did not name the file, line, and term" >&2; cat "$tmp/plan-stale.out" >&2; exit 1; }
+
 check_open_critique() { # fixture name, findings file, dispositions file, diagnostics...
   local name=$1 findings_file=$2 dispositions_file=$3 output status expected
   shift 3
