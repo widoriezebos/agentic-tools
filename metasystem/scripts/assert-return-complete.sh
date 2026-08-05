@@ -39,7 +39,7 @@ else
 fi
 
 case "$role" in
-  ""|orchestrator|design-critic|implementer|code-critic|verifier|investigator) ;;
+  ""|orchestrator|design-critic|implementer|code-critic|verifier|investigator|behavior-judge) ;;
   *) echo "violation: unknown role: $role" >&2; exit 1 ;;
 esac
 
@@ -210,7 +210,10 @@ else:
     role = requested_role
     return_path = Path(requested_file)
 
-allowed_roles = {"orchestrator", "design-critic", "implementer", "code-critic", "verifier", "investigator"}
+allowed_roles = {
+    "orchestrator", "design-critic", "implementer", "code-critic",
+    "verifier", "investigator", "behavior-judge",
+}
 if role not in allowed_roles:
     violation(f"job record role is not dispatchable: {role!r}" if mode == "job" else f"unknown role: {role!r}")
 
@@ -236,6 +239,50 @@ if result is not None and schema is not None:
                     "$.verdictMaterialCount must equal the count of findings with material=true "
                     f"(expected {material_count}, got {verdict})"
                 )
+
+    if role == "behavior-judge" and isinstance(result, dict):
+        def require_anchors(anchors, path):
+            if not isinstance(anchors, list) or not anchors:
+                violation(f"{path} must contain at least one file-and-line anchor")
+                return
+            for index, anchor in enumerate(anchors):
+                if not isinstance(anchor, dict):
+                    continue
+                file_name = anchor.get("file")
+                line = anchor.get("line")
+                if not isinstance(file_name, str) or not file_name:
+                    violation(f"{path}[{index}].file must be a non-empty string")
+                if isinstance(line, bool) or not isinstance(line, int) or line < 1:
+                    violation(f"{path}[{index}].line must be a positive one-based line number")
+
+        dimensions = result.get("dimensions")
+        if isinstance(dimensions, list):
+            dimension_ids = [
+                dimension.get("id")
+                for dimension in dimensions
+                if isinstance(dimension, dict)
+            ]
+            if not dimension_ids or len(dimension_ids) != len(set(dimension_ids)):
+                violation("$.dimensions must contain at least one requested judged dimension with no duplicate ids")
+
+            for dimension_index, dimension in enumerate(dimensions):
+                if not isinstance(dimension, dict):
+                    continue
+                require_anchors(dimension.get("anchors"), f"$.dimensions[{dimension_index}].anchors")
+                findings = dimension.get("findings")
+                if isinstance(findings, list):
+                    for finding_index, finding in enumerate(findings):
+                        if isinstance(finding, dict):
+                            require_anchors(
+                                finding.get("anchors"),
+                                f"$.dimensions[{dimension_index}].findings[{finding_index}].anchors",
+                            )
+
+        reliability_watch = result.get("reliabilityWatch")
+        if isinstance(reliability_watch, list):
+            for watch_index, watch in enumerate(reliability_watch):
+                if isinstance(watch, dict):
+                    require_anchors(watch.get("anchors"), f"$.reliabilityWatch[{watch_index}].anchors")
 
     if mode == "job" and isinstance(result, dict) and isinstance(record, dict):
         for name in ("jobId", "round", "runtime", "sessionId"):

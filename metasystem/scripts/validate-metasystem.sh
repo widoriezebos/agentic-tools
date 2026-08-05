@@ -67,7 +67,7 @@ for link in \
 done
 
 # The agent protocol is runtime-neutral and ships in template and adopted
-# repositories. Keep the five dispatchable roles in lockstep across their
+# repositories. Keep the six dispatchable roles in lockstep across their
 # preamble, return schema, and capability declaration.
 for link in \
   scripts/agents/templates/brief.md \
@@ -174,7 +174,7 @@ done
 grep -Fq 'path = directory / f"{runtime}-{version}-{config_hash}-{date}-{sequence:03d}.json"' \
   scripts/agents/adapters/runtime-common.sh \
   || { echo "real adapter capability snapshot naming contract drifted" >&2; exit 1; }
-for role in design-critic implementer code-critic verifier investigator; do
+for role in design-critic implementer code-critic verifier investigator behavior-judge; do
   for suffix in md requirements.json; do
     [[ -f "scripts/agents/roles/$role.$suffix" ]] \
       || { echo "missing $role role asset: scripts/agents/roles/$role.$suffix" >&2; exit 1; }
@@ -397,6 +397,7 @@ role_fields = {
     "code-critic": {"findings", "verdictMaterialCount"},
     "verifier": {"riskiestPart", "whatWasDone"},
     "investigator": {"frozenFrame", "theories", "classifications", "stopLoss"},
+    "behavior-judge": {"dimensions", "reliabilityWatch"},
 }
 for role, owned in role_fields.items():
     path = root / "scripts" / "agents" / "schemas" / f"{role}.schema.json"
@@ -589,6 +590,32 @@ common = {
     "gaps": [],
     "mode": "implement",
 }
+behavior_dimension_ids = [
+    "brief-quality",
+    "adjudication-quality",
+    "delegation-discipline",
+    "gap-handling",
+    "spec-fidelity",
+    "repeated-work",
+    "proportionality",
+    "evidence-honesty",
+]
+behavior_dimensions = [
+    {
+        "id": dimension_id,
+        "score": 4,
+        "rationale": "fixture judgment",
+        "anchors": [{"file": "artifacts/agents/missions/fixture/ledger.md", "line": 1}],
+        "findings": [],
+    }
+    for dimension_id in behavior_dimension_ids
+]
+behavior_dimensions[0]["findings"] = [{
+    "id": "BQ-1",
+    "claim": "fixture finding",
+    "evidence": "fixture evidence",
+    "anchors": [{"file": "artifacts/agents/fixture/rounds/1/prompt.md", "line": 10}],
+}]
 positive = {
     "orchestrator": {
         "turnId": "turn-3",
@@ -633,6 +660,18 @@ positive = {
         "classifications": ["falsified-continue"],
         "stopLoss": {"triggered": False, "trigger": None},
     },
+    "behavior-judge": {
+        **common,
+        "mode": "verify",
+        "dimensions": behavior_dimensions,
+        "reliabilityWatch": [{
+            "dimension": "proportionality",
+            "mechanicalMetric": "fence-economy",
+            "agreement": "agrees",
+            "explanation": "fixture agreement",
+            "anchors": [{"file": "artifacts/agents/missions/fixture/state.json", "line": 5}],
+        }],
+    },
 }
 for role, value in positive.items():
     (out / f"{role}-positive.json").write_text(json.dumps(value, indent=2) + "\n")
@@ -646,8 +685,17 @@ negative["implementer"].pop("diffBoundary")
 negative["verifier"]["diffBoundary"] = ["not verifier-owned"]
 negative["investigator"].pop("frozenFrame")
 negative["investigator"].pop("theories")
+negative["behavior-judge"]["dimensions"][0]["findings"][0]["anchors"] = []
 for role, value in negative.items():
     (out / f"{role}-negative.json").write_text(json.dumps(value, indent=2) + "\n")
+
+empty_dimensions = copy.deepcopy(positive["behavior-judge"])
+empty_dimensions["dimensions"] = []
+(out / "behavior-judge-empty-dimensions.json").write_text(json.dumps(empty_dimensions, indent=2) + "\n")
+
+invalid_anchor = copy.deepcopy(positive["behavior-judge"])
+invalid_anchor["dimensions"][0]["anchors"][0]["line"] = 0
+(out / "behavior-judge-invalid-anchor.json").write_text(json.dumps(invalid_anchor, indent=2) + "\n")
 
 miscount = copy.deepcopy(positive["design-critic"])
 miscount["verdictMaterialCount"] = 0
@@ -657,7 +705,7 @@ missing_verdict.pop("verdictMaterialCount")
 (out / "critic-missing-verdict.json").write_text(json.dumps(missing_verdict, indent=2) + "\n")
 PY
 
-for role in orchestrator design-critic implementer code-critic verifier investigator; do
+for role in orchestrator design-critic implementer code-critic verifier investigator behavior-judge; do
   scripts/assert-return-complete.sh --role "$role" --file "$return_fixtures/$role-positive.json"
 done
 
@@ -684,6 +732,9 @@ check_bad_return code-critic "$return_fixtures/code-critic-negative.json" '$.wha
 check_bad_return implementer "$return_fixtures/implementer-negative.json" '$.diffBoundary is required'
 check_bad_return verifier "$return_fixtures/verifier-negative.json" '$.diffBoundary is not allowed'
 check_bad_return investigator "$return_fixtures/investigator-negative.json" '$.frozenFrame is required'
+check_bad_return behavior-judge "$return_fixtures/behavior-judge-negative.json" '$.dimensions[0].findings[0].anchors must contain at least one file-and-line anchor'
+check_bad_return behavior-judge "$return_fixtures/behavior-judge-empty-dimensions.json" '$.dimensions must contain at least one requested judged dimension with no duplicate ids'
+check_bad_return behavior-judge "$return_fixtures/behavior-judge-invalid-anchor.json" '$.dimensions[0].anchors[0].line must be a positive one-based line number'
 check_bad_return design-critic "$return_fixtures/critic-missing-verdict.json" '$.verdictMaterialCount is required'
 check_bad_return design-critic "$return_fixtures/critic-miscount.json" '$.verdictMaterialCount must equal the count of findings with material=true'
 
@@ -2824,15 +2875,15 @@ if (( template_mode )); then
   git -C "$guard_repo" -c user.name=m -c user.email=m@example.invalid commit -qm seed
   echo new >"$guard_repo/plans/surprise.md"
   git -C "$guard_repo" add plans/surprise.md
-  if (cd "$guard_repo" && "$source_root/scripts/agents/pre-commit-guard.sh" >/dev/null 2>&1); then
+  if (cd "$guard_repo" && "$root/scripts/agents/pre-commit-guard.sh" >/dev/null 2>&1); then
     echo "guard allowed a new plan file without acknowledgment" >&2; exit 1
   fi
-  (cd "$guard_repo" && METASYSTEM_ALLOW_NEW_PLAN=1 "$source_root/scripts/agents/pre-commit-guard.sh") \
+  (cd "$guard_repo" && METASYSTEM_ALLOW_NEW_PLAN=1 "$root/scripts/agents/pre-commit-guard.sh") \
     || { echo "guard refused an acknowledged new plan" >&2; exit 1; }
   git -C "$guard_repo" reset -q
   echo changed >"$guard_repo/plans/existing.md"
   git -C "$guard_repo" add plans/existing.md
-  (cd "$guard_repo" && "$source_root/scripts/agents/pre-commit-guard.sh") \
+  (cd "$guard_repo" && "$root/scripts/agents/pre-commit-guard.sh") \
     || { echo "guard refused a modification to a tracked plan" >&2; exit 1; }
   [[ -x "$nested_tgt/.git/hooks/pre-commit" ]] \
     || { echo "adoption did not install the pre-commit guard hook" >&2; exit 1; }
@@ -2849,9 +2900,9 @@ if (( template_mode )); then
 PLAN
   printf '{"jobId":"implementer-20260101t000000z-cccc","status":"completed"}\n' \
     >"$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json"
-  [[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+  [[ -z "$(python3 "$root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "a plan naming an open chain between rounds was called stale" >&2; exit 1; }
-  [[ -n "$(METASYSTEM_CHAIN_GRACE_SECONDS=0 python3 "$source_root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+  [[ -n "$(METASYSTEM_CHAIN_GRACE_SECONDS=0 python3 "$root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "an aged-out chain still suppressed the stale report" >&2; exit 1; }
   python3 - "$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json" <<'PYEOF'
 import json, sys
@@ -2860,7 +2911,7 @@ record = json.load(open(path))
 record["chainClosed"] = True
 json.dump(record, open(path, "w"))
 PYEOF
-  [[ -n "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+  [[ -n "$(python3 "$root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "a closed chain still suppressed the stale report" >&2; exit 1; }
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
   echo junk >"$srcrepo/ignored-fixture.txt"
