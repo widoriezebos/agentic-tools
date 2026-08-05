@@ -292,13 +292,14 @@
       "refKindNote": "A tag, never a branch: sealing against a branch cannot survive its own signing commit, which the first real preflight found."
     },
     "guard": {
-      "name": "deps",
+      "name": "no-runtime-deps",
       "command": "bash guard-deps.sh",
       "metric": "no-runtime-deps",
       "floor": 1,
       "noise": 0,
       "cadence": 1,
-      "rationale": "Requirement 24's floor, checked every cycle and deliberately orthogonal to the completion gate: a build can stay green and the tests can stay passing while a dependency quietly does the work. A guard stops the run; a metric would only score it afterwards."
+      "rationale": "Requirement 24's floor, checked every cycle and deliberately orthogonal to the completion gate: a build can stay green and the tests can stay passing while a dependency quietly does the work. A guard stops the run; a metric would only score it afterwards.",
+      "note": "Guard name and metric are deliberately identical: the mission contract grammar has no separate guard-to-metric mapping, so a guard named X must emit metric=X. The first draft named the guard `deps` while its script emitted `no-runtime-deps`, which the runner would have refused."
     },
     "truth": {
       "paths": "gate.sh,guard-deps.sh",

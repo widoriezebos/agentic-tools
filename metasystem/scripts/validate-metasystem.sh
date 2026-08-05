@@ -2804,6 +2804,14 @@ if (( template_mode )); then
     || { echo "nested-prefix adoption failed" >&2; cat "$tmp/adopt-nested.out" >&2; exit 1; }
   [[ -f "$nested_tgt/metasystem.conf" && -d "$nested_tgt/scripts/agents" ]] \
     || { echo "nested-prefix adoption staged an empty payload" >&2; exit 1; }
+
+  # The measuring kit must never reach an adopted repository: it carries every
+  # spec's held-out grader, so a benchmark target receiving it would ship the
+  # builders their own answer key. Assert on the payload, not on the source.
+  [[ ! -e "$nested_tgt/benchmark" ]] \
+    || { echo "adoption leaked the benchmark kit into the target" >&2; exit 1; }
+  [[ ! -e "$nested_tgt/development" ]] \
+    || { echo "adoption leaked development/ into the target" >&2; exit 1; }
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
   echo junk >"$srcrepo/ignored-fixture.txt"
   git init -q "$srcrepo"
