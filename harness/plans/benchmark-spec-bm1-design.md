@@ -38,66 +38,23 @@ Why this subject discriminates:
 | Structural decisions are made before building | Caching cannot be bolted on afterwards: what a cache key covers is decided when the executor is written, and retrofitting it means rewriting both |
 | Delegates stop and report gaps rather than guessing | One requirement is deliberately under-determined, and correct handling is a recorded decision, not a silent choice |
 | Claims are verified by running | Cache invalidation, cycle detection and failure propagation all look right on a reading and fail on a second run |
-| Tests are not weakened to pass | The builder ships a map of which of its tests covers which requirement, and those tests are checked by whether they catch deliberate breakages of a reference implementation |
+| Tests are not weakened to pass | The builder ships a map of which of its tests covers which requirement, and those tests are checked by whether they catch deliberate faults introduced into the builder's own code |
 
-It is also deterministic, needs no network, and has no memorised reference implementation the way a diff algorithm does.
+It is also deterministic, needs no network, and is not a memorised exercise the way a diff algorithm is, so it measures engineering rather than recall.
 
 ## S-2: the requirements
 
-As they will appear in `spec.md`. Configuration is `tasks.json`:
+**The requirements live in `benchmark/specs/bm-1/spec.md` and only there.** This section used to carry a copy of them, and that copy was the single largest source of drift in this plan's history: eight critique rounds found nothing but statements of one rule disagreeing across places. A plan that restates its artifact will always eventually contradict it.
 
-```json
-{
-  "tasks": {
-    "codegen": { "command": "python3 gen.py", "inputs": ["schema.txt"], "outputs": ["gen.py.out"] },
-    "build":   { "command": "cat gen.py.out > app", "inputs": ["gen.py.out"], "outputs": ["app"], "deps": ["codegen"] }
-  }
-}
-```
+What the requirements are, in outline, so this plan reads on its own: a command-line task runner in Java 21 built with Maven, taking a `tasks.json` of commands with declared inputs, outputs and dependencies; twenty-five numbered requirements spanning the command line, configuration errors, execution and failure propagation, caching and invalidation, two output formats that must agree, and the non-functional budget. The artifact is authority for every detail.
 
-**Command line**
+## S-0: language and build (the human, 2026-08-05)
 
-1. `python3 taskrun.py run [task...]` runs the named tasks and everything they depend on. With no task named, every task runs.
-2. `--file <path>` selects the configuration, defaulting to `tasks.json`.
-3. `--dry-run` prints the execution plan in the order tasks would run, and runs nothing.
-4. `--force` runs every selected task regardless of cache state.
-5. Exit codes are exactly: 0 when every selected task succeeded, 1 when any task failed, 2 for a usage or configuration error.
+Java 21, Maven through the wrapper, command line. Spring Boot was asked for and withdrawn once it was clear the deliverable is a command-line tool: a web framework would have added ceremony without adding anything the benchmark measures.
 
-**Configuration errors**
+One consequence needed handling before it could bite. Maven resolves dependencies over the network, and delegates run with network denied by the permissions envelope, so the first build of an unattended run would have failed for a reason having nothing to do with the agents. Provisioning warms a Maven repository in the target image and every build command uses `-o`. The no-third-party-dependency rule survives the move: main scope declares none, and test scope may use the JUnit already present.
 
-6. A dependency naming a task that does not exist is a configuration error that names both the depending task and the missing name.
-7. A dependency cycle is a configuration error that lists the task names forming the cycle.
-8. Two tasks declaring the same output path is a configuration error naming both tasks and the path.
-
-**Execution**
-
-9. A task runs only after every one of its dependencies has succeeded.
-10. The **reported** order of tasks is deterministic: the same configuration always produces the same order in the summary and in the JSON result, whatever order execution actually took. (Execution order is separate and is only constrained to respect dependencies, so a later parallel implementation does not contradict this.)
-11. When a task fails, no task depending on it directly or indirectly runs, and tasks on unrelated branches still run.
-12. Every task ends in exactly one reported state: `ran`, `cached`, `failed`, or `blocked` when a dependency failed.
-
-**Caching**
-
-13. A task is skipped as `cached` when its command, the contents of its declared inputs, and the recorded results of its dependencies are all unchanged since its last successful run.
-14. Changing a task's command invalidates its cache entry.
-15. Changing the contents of any declared input invalidates its cache entry.
-16. A task whose declared outputs are missing is never reported as cached: it runs again. A cache that reports success while the artefact is absent is worse than no cache.
-17. Cache state is stored under a single directory stated in the spec, and deleting that directory returns the runner to a cold state without other effects.
-
-**Reporting**
-
-18. A run prints one line per task, in reported order, of exactly `<state> <task-name>` where state is one of `ran`, `cached`, `failed`, `blocked`. Its final line is exactly `summary ran=<n> cached=<n> failed=<n> blocked=<n>`. Any other output must go to standard error, so standard output is a parseable record. Without this, the text format carries no task sequence and no per-task state, and comparing it with the JSON result would need a grammar the grader invented privately.
-19. `--format json` writes a result matching the schema fixed in the spec: `order`, an array of task names in reported order; `tasks`, an object keyed by task name whose values are one of the four state strings; and `summary`, an object with the four integer counts. The `order` array is what makes requirement 10 observable at all, since a JSON object has no order. Text is the default. For the same run, both report identical counts and identical per-task states. Deriving one format from the other, or both from one result object, is a legitimate implementation and is not penalised.
-
-**Non-functional**
-
-20. Python 3.11 or later, standard library only, run as `python3 taskrun.py`.
-21. A configuration of 1000 tasks whose work is entirely cached completes within 5 seconds.
-22. The repository ships its own tests and `requirements-map.json`, an object keyed by requirement number whose values are arrays of test identifiers. A test identifier is a string the repository's stated test command accepts to run that test alone, in the form `<path>::<test-name>`, and `README.md` states the command whose argument it is. Without a way to run one named test, the grader cannot ask whether *that* test catches a mutant, and mutation catching is unimplementable.
-
-Where the spec is silent, the builder records the decision in `DECISIONS.md`, naming the requirement and the chosen behaviour.
-
-**What the grader may test (SP-2-6).** Only behaviour these requirements pin, plus the one deliberate gap in requirement 10. Anything else a builder must decide — how errors are worded, whether the cache directory is hidden, how `--dry-run` formats its plan beyond being one task per line in order — is out of scope for scoring entirely, and the grader holding a preferred answer to any of it is a defect in the grader. S-B's job is to walk the requirements once more and pin every choice point that ought to be pinned; whatever survives that pass is genuinely free, and free means unscored.
+The move strengthens the case rather than translating it. Parsing JSON with the standard library alone is real work in Java, the performance budget tests algorithmic growth rather than JVM startup, and a Maven project gives independently built parts more structural surface to disagree across.
 
 ## S-3: the seeded ambiguity
 
@@ -139,7 +96,7 @@ Held out by construction; `grader/` is never copied into the repository the agen
 
 `cache_correctness` and `format_agreement` are reported separately rather than folded into `acceptance`, because they are the two most likely to separate a coordinated run from an uncoordinated one, and burying them in a pass rate would hide the signal the spec exists to produce.
 
-**How the builder's tests reach the mutants (SP-2-3).** A builder's tests are written against its own code, so they can only run against a mutant of the reference through an interface both share: the command line fixed in requirements 1 to 5 and the output contracts in 18 and 19. `mutation_catch` therefore counts only tests that drive `python3 taskrun.py`; tests that import internal modules cannot transfer and score nothing on this metric, though they still count for `own_tests_pass`. This deliberately favours black-box tests, and says so rather than hiding it: they are the tests that survive refactoring, which is the property worth rewarding. A mutant is caught only when the mapped test fails against it and passes against the unmutated reference, so an irrelevant failure earns nothing.
+**How mutation testing works here (SP-2-3, superseded 2026-08-05).** The transfer problem this paragraph used to solve no longer exists. Mutation testing operates on the builder's own code: their tests run against their own implementation with a fault introduced, so nothing has to cross an interface and no test architecture is favoured. A mutant counts as caught when the tests mapped to its target requirement fail against the mutant and pass against the unmutated code.
 
 **`mutation_catch` replaces a check that did not work, and the replacement does not use the seed at all.** The first draft asked whether the builder's mapped tests failed on the seed and passed on the final tree. That proves nothing: the seed contains no `taskrun.py`, so every test fails there merely because the file is missing, and one always-green test per requirement would have scored full marks. Mutation catching asks the question that was actually meant. The kit ships mutants of the careful reference, each declaring the requirement it targets. It does not pretend a mutant breaks exactly one requirement: the requirements overlap by design (a broken cache key offends 13, 14, 15 and 16 at once), so demanding isolation would make the corpus impossible to build and S-C would fail for reasons having nothing to do with the harness. What is required is that every pinned requirement has at least one mutant targeting it — every requirement except 10, whose exclusion is explained below — and the metric asks whether the tests mapped to that requirement catch one of its targeted mutants.
 
@@ -167,7 +124,7 @@ Every metric needs a domain and a direction before a manifest can be written, an
 
 Noise floors cannot be invented either: agent runs vary, and how much is unknown until Benchmark Zero measures it. Until then this spec produces scores, not verdicts, exactly as the parent design requires.
 
-## S-5: the reference implementations, and why they come first
+## S-5: calibration, and why it comes first
 
 Before any agent sees this, we build solutions by hand. Not two endpoints, which would only prove the grader can tell perfect from broken, but a small set spanning what real runs plausibly produce: one careful; one with a cache key that ignores the command; one whose order differs on every invocation with certainty, not probability: it keeps a counter beside its cache and reverses the reported order on alternate runs, so any configuration with two or more independent tasks orders differently each time. Two obvious choices are both wrong here and for the same reason. Iterating a `set` only *probably* varies, since hash randomisation might not change the order. An unseeded shuffle only probably varies too: a shuffle of three tasks repeats its order roughly one run in six. Either would let calibration see a deterministic run, accept the seeded defect, and report that a broken metric works. A flaw planted to test a metric must fail that metric on every repetition or it calibrates nothing; one that runs dependents after a failure; one correct but with tests that assert almost nothing; and one that is simply incomplete, because an unattended run stopped at its fences is the most likely outcome of all.
 
@@ -238,13 +195,17 @@ Frozen as `benchmark/fixtures/taskrunner-v1/` inside the kit. The kit must be se
 | --- | --- | --- |
 | S-A | Critique this design with Codex against the stated purpose | NOT STARTED, next |
 | S-B | Write `spec.md`, `manifest.json`, and `seed/` | NOT STARTED |
-| S-C | Build the grading baseline: the acceptance suite from the spec, a mutation harness that operates on the builder's own code, small per-metric calibration probes, the check scripts emitting the gate grammar, and the calibration proving each metric fires | NOT STARTED, before any agent run. No reference implementation: the human refused that premise on 2026-08-05 and was right, since mutating what the builder wrote asks the question directly and a correct implementation is an expensive way to test a checker |
+| S-C | Build the grading baseline: the acceptance suite from the spec, a mutation harness that operates on the builder's own code, small per-metric calibration probes, the check scripts emitting the gate grammar, and the calibration proving each metric fires | NOT STARTED, before any agent run. Nothing correct is hand-built here: the human refused that premise on 2026-08-05 and was right, since mutating what the builder wrote asks the question directly, and writing a working solution is an expensive way to test a checker |
 
 All three remain blocked behind the canonical gates and this plan does not reorder them (SP-2-10): S-A is design work and runs now, but S-B and S-C are item B-1 of the parent design, which B-0 blocks, which in turn waits on Mission Zero. Designing the spec early is deliberate; building it before the runner has been watched running is the mistake this whole sequence exists to avoid.
 
 RETIRED: differential seed-versus-final check -- mutation_catch against the reference mutant corpus
 
 RETIRED: order-rule other -- the closed vocabulary alphabetical, config-order, dependency-depth
+
+RETIRED: reference implementation -- mutation testing on the builder's own code, and per-metric calibration probes
+
+RETIRED: logsum -- the taskrun case in benchmark/specs/bm-1/
 
 ## Critique Ledger
 
