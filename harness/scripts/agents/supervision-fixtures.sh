@@ -808,4 +808,36 @@ kill -0 "$foreign_sleep_pid" 2>/dev/null \
   || { echo "shutdown stopped a process another checkout owned" >&2; exit 1; }
 stop_owned_pid "foreign owner" "$foreign_sleep_pid" "$foreign_start" >/dev/null 2>&1 || true
 
-echo "supervision fixtures passed (S4-1 through S4-13)"
+# S4-14: the stop hook refuses a turn that ends with open work, once, and leaves
+# evidence that it ran. A report was ignorable and was ignored four times in one
+# session; an unbounded refusal is the loop the design forbids.
+stop_root=$tmp/stop-hook
+mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
+cp "$source_root/scripts/agents/open-work.py" "$source_root/scripts/agents/stop-block.py" \
+   "$source_root/scripts/agents/supervision-hook.sh" "$source_root/scripts/agents/process-census.py" \
+   "$source_root/scripts/agents/arm-supervision.sh" "$stop_root/scripts/agents/"
+cat >"$stop_root/plans/stream.md" <<'FIXTURE'
+- In flight right now: nothing
+- Waiting on the human: nothing blocking
+- Next step: dispatch the runner
+FIXTURE
+git -C "$stop_root" init -q
+stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
+first=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$first" | grep -q '"decision":"block"' \
+  || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
+second=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$second" | grep -q '"decision":"block"' \
+  && { echo "the stop hook refused the same open work twice, which is the loop the design forbids" >&2; exit 1; }
+[[ -s "$stop_root/artifacts/agents/supervision/hooks.log" ]] \
+  || { echo "the stop hook left no evidence that it ran" >&2; exit 1; }
+cat >"$stop_root/plans/stream.md" <<'FIXTURE'
+- In flight right now: nothing
+- Waiting on the human: nothing blocking
+- Next step: none
+FIXTURE
+settled=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$settled" | grep -q '"decision":"block"' \
+  && { echo "the stop hook refused a turn with no open work" >&2; exit 1; }
+
+echo "supervision fixtures passed (S4-1 through S4-14)"

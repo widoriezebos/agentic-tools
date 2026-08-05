@@ -86,6 +86,33 @@ PY
   # still names an unblocked next step and nothing is in flight says so.
   open_work=$(python3 "$script_dir/open-work.py" --repo "$harness_root" 2>/dev/null || true)
   [[ -z "$open_work" ]] || message=$(printf '%s%s%s' "$message" "${message:+$'\n'}" "$open_work")
+
+  # Leave evidence that this ran. Without it there is no telling a hook that
+  # fired and found nothing from one that never fired, which is the confusion
+  # that let this repository run for days with its hooks uninstalled.
+  supervision_dir="$harness_root/artifacts/agents/supervision"
+  mkdir -p "$supervision_dir"
+  printf '%s stop open=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$(printf '%s' "$message" | grep -c '^OPEN-WORK' || true)" \
+    >>"$supervision_dir/hooks.log" 2>/dev/null || true
+
+  # Refuse to end the turn while work is open, once. A report is ignorable and
+  # was ignored. An unbounded block is the loop the design forbids, so the same
+  # open work never blocks twice: the second attempt passes and the human
+  # decides.
+  blocked_state="$supervision_dir/stop-block.state"
+  open_only=$(printf '%s' "$message" | grep '^OPEN-WORK' || true)
+  if [[ -n "$open_only" ]]; then
+    signature=$(printf '%s' "$open_only" | shasum | cut -d' ' -f1)
+    if [[ "$(cat "$blocked_state" 2>/dev/null || true)" != "$signature" ]]; then
+      printf '%s' "$signature" >"$blocked_state" 2>/dev/null || true
+      python3 "$script_dir/stop-block.py" "$message"
+      exit 0
+    fi
+  else
+    rm -f "$blocked_state" 2>/dev/null || true
+  fi
+
   [[ -z "$message" ]] || surface_json "$message"
   exit 0
 fi
