@@ -1,8 +1,62 @@
-# Ideal Agent Metasystem
+# Metasystem: the system to build a system
 
-A portable set of working rules for repositories where agents (Claude Code, Devin CLI, Codex and similar) and humans build software together. It consists of a small always-loaded contract, guidance that loads only when needed, skills for high-risk workflows, scripts that enforce the binary rules, and a receipts loop that tunes everything from real use.
+Every software system is really two systems. There is the system you ship —
+the code, the tests, the running thing. And there is the system that builds
+and evolves it: who may change what, what "done" means, which checks gate a
+merge, when a human must decide, how lessons from one incident reach the next
+task. In most repositories that second system is implicit — tribal knowledge,
+review habits, prompt files, hope. The metasystem is that second system made
+explicit, executable, and improvable: a small always-loaded contract,
+guidance that loads only when needed, skills for high-risk workflows, scripts
+that enforce every binary rule, supervision for anything that runs
+unattended, and a receipts-and-retro loop that tunes all of it from real use.
 
-The metasystem is judged by shipped results rather than by whether its documents were followed.
+The metasystem is judged by shipped results rather than by whether its
+documents were followed.
+
+## One builder per system: there is nothing generic here
+
+A common misreading is that this is a general agent framework that "builds
+software". It is not, and cannot be: **a metasystem instance is always the
+builder of one specific system, and the pair is the unit that works.** What
+this repository ships is the machinery every such pair shares — dispatch,
+supervision, missions, gates, the retro loop — with deliberate empty sockets.
+Adoption fills the sockets with the target system's own facts: its verified
+commands and invariants in `docs/project-rules.md`, its reserved human
+decisions, its budgets, its acceptance gates, its evidence root. The instance
+that builds a task runner and the instance that builds a trading system share
+machinery the way two factories share conveyor design; neither can do the
+other's job, because the job is defined by the sockets, not the conveyor.
+
+Both halves of the pair evolve, each with its own loop:
+
+- **The product evolves** through gated work: tasks and unattended missions
+  under signed contracts, fences, and completion gates that measure rather
+  than trust.
+- **The builder evolves** through evidence about itself. Day to day, that is
+  the receipts-and-retro loop: every rule carries a testable expected effect
+  and is kept, amended, or reverted against what the receipts show. And where
+  it matters enough to measure whole, the builder is benchmarked: a fixed
+  spec goes in, agents build it unattended, and a held-out grader scores the
+  software while an extractor scores the builders' behaviour. Those graders
+  and specs are themselves specific — a benchmark is built per kind of
+  system, and its answer key is held outside the builder's reach — which is
+  why the measuring kit lives beside a metasystem's source, never inside the
+  payload.
+
+The aim, in one sentence: **make building software governed by evidence, and
+make improvements to the builder measurable instead of argued.** The end
+state that matters is unattended competence with honest limits — an agent
+crew that can carry real work through signed contracts and hard fences,
+knows what it may never decide alone, reports what it measured rather than
+what it believes, and leaves behind evidence a human or a grader can check.
+The most useful single number such a pair produces is the distance between
+the builders' own "done" and the held-out measurement of it.
+
+This template's own source is developed by an instance of itself — the same
+hooks, gates, supervision, and receipts that ship to every project run here
+first. That is the first pair, and it is why the rules in this repository
+tend to be scar tissue with a receipt attached rather than theory.
 
 ## Why it exists
 
