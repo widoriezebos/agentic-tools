@@ -1791,6 +1791,19 @@ PY
   # Follow-ups are child records under one serialized, explicitly closed chain.
   follow_message="$agent_fixture/follow.md"
   cp "$agent_repo/scripts/agents/templates/follow-up.md" "$follow_message"
+  # A follow-up on a worktree chain whose trunk moved warns loudly: the
+  # stale-worktree lesson was violated three times as prose before this line.
+  stale_brief="$agent_fixture/stale-wt.md"
+  make_agent_brief "$stale_brief" implement
+  run_agent_fixture stale-wt stale-wt "$agent_dispatch" dispatch --role implementer --brief "$stale_brief" --job-id stale-wt --worktree --wait
+  printf 'advance\n' >>"$agent_repo/trunk-advance.txt"
+  git -C "$agent_repo" add trunk-advance.txt
+  git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm trunk-advance
+  "$agent_dispatch" follow-up --job stale-wt --message "$follow_message" --wait >"$tmp/stale-wt.out" 2>"$tmp/stale-wt.err" \
+    || { echo "stale-worktree follow-up itself failed" >&2; cat "$tmp/stale-wt.err" >&2; exit 1; }
+  grep -q 'WORKTREE-BEHIND' "$tmp/stale-wt.err" \
+    || { echo "follow-up did not warn about a worktree behind its trunk" >&2; exit 1; }
+
   run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
   [[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \
     || { echo "follow-up did not preserve round 1 and create round 2" >&2; exit 1; }

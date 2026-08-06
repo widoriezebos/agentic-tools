@@ -1235,6 +1235,19 @@ follow_up() {
   report_plan_drift
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
   acquire_chain_lock "$root_id"; trap 'release_chain_lock "$root_id"' EXIT
+  # A worktree chain reads its own branch, not main: a follow-up citing files
+  # amended on main after the branch point describes files the delegate does
+  # not have. This lesson (KI-9's complement) was violated three times as
+  # prose before becoming this check.
+  if worktree_path=$(json_field "$jobs/$root_id.json" worktree 2>/dev/null) \
+      && [[ -n "$worktree_path" && "$worktree_path" != null && -d "$worktree_path" ]]; then
+    trunk=$(git -C "$root" branch --show-current 2>/dev/null || true)
+    behind=0
+    [[ -n "$trunk" ]] && behind=$(git -C "$worktree_path" rev-list --count "HEAD..$trunk" 2>/dev/null || echo 0)
+    if (( behind > 0 )); then
+      echo "WORKTREE-BEHIND: the chain worktree is $behind commit(s) behind main; if this follow-up cites amended files, merge main into $worktree_path first" >&2
+    fi
+  fi
   [[ "$(json_field "$jobs/$root_id.json" chainClosed 2>/dev/null || true)" != true ]] || die 1 "job chain is closed"
   latest=$(latest_chain_record "$root_id") || die 1 "cannot find the newest chain record"
   status=$(json_field "$latest" status); error=$(json_field "$latest" error 2>/dev/null || true)
