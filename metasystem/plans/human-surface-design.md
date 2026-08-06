@@ -128,19 +128,20 @@ resolution, the requested model, and the cost direction, then requires typed
 confirmation, recording name, timestamp, and the displayed facts in the job
 record. The ONE non-interactive path that remains is the one that already
 carries a signature (HS-6-5), and it is enforceable with or without tiers
-(HS-7-3): the envelope names the exact models it permits
-(`envelope.model-allow=<comma-separated model ids>`), and the guard enforces
-set membership, never tier arithmetic — a signed allowlist means the same
-thing whether or not a tier table exists. This key JOINS the authoritative
-contract grammar where envelopes live (HS-8-2): the orchestration contract's
-envelope section and the shipped project-rules envelope table both gain
-`model-allow` with its bound, and both RETIRE the `tier-move` category in the
-same change — an unenforceable-without-tiers authorization must not remain
-grantable. The same guard covers runtime overrides (HS-8-3): `--runtime`
-differing from the roster's resolution is the same reserved spending boundary
-as `--model`, refused under identical rules (envelope `runtime-allow`, or
-interactive confirmation), because switching provider crosses cost lines
-tier arithmetic never sees. Interactive-only governs everything OUTSIDE a
+(HS-7-3): the envelope names the exact
+runtime-and-model PAIRS it permits — one key, `envelope.dispatch-allow=
+<runtime>:<model>[,<runtime>:<model>…]` — and the guard checks the RESOLVED
+pair for membership, never tier arithmetic. One exact key replaces the two
+imprecise ones an earlier fold proposed (HS-9-2: authorizing a runtime
+without binding the model that runtime's roster then selects is not a
+spending bound). The key JOINS the authoritative contract grammar where
+envelopes live (HS-8-2): the orchestration contract's envelope section and
+the shipped project-rules envelope table both gain `dispatch-allow` with its
+bound, and both RETIRE the `tier-move` category in the same change — an
+unenforceable-without-tiers authorization must not remain grantable. Both
+override flags (`--model`, `--runtime`) are guarded by the same membership
+check on the resolved pair (HS-8-3), because switching provider crosses cost
+lines tier arithmetic never sees. Interactive-only governs everything OUTSIDE a
 signed envelope. Without tiers, any differing
 `--model` override refuses, naming the remedies (configure tiers, sign an
 envelope that authorizes it, or re-run interactively).
@@ -152,12 +153,11 @@ validate accepts absence and still refuses malformed present keys; the guard
 ranks when tiers are configured; an override without tiers refuses; the
 interactive path has fixtures for non-TTY refusal, declined confirmation,
 and a completed confirmation whose job record carries the recorded display
-facts; an envelope-allowlisted model proceeds unattended while the same model
-without the envelope refuses — both fixtures running WITHOUT a tier table,
-since that is the case HS-7-3 named; the identical pair for a runtime
-override (HS-8-3); and the grammar fixtures proving `tier-move` is no longer
-accepted as an envelope category while `model-allow` and `runtime-allow`
-are.
+facts; an envelope-allowlisted resolved pair proceeds unattended while the
+same request outside the allowlist refuses — covering a model override, a
+runtime override, and a runtime override whose implied model is not listed
+(the HS-9-2 case), all WITHOUT a tier table; and the grammar fixtures
+proving `tier-move` refuses while `dispatch-allow` parses.
 
 **F-5: Refusals that do not hand the human the fix.**
 Evidence: a contract metric named with an underscore cost an hour; the
