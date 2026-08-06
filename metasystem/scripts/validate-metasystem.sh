@@ -2168,7 +2168,7 @@ PY
   conformance_workspace=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workspaceRoot"])' "$agent_repo/artifacts/agents/jobs/conformance.json")
   case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
   printf 'untracked change\n' >"$conformance_workspace/source.txt"
-  agent_fails diff-boundary-mismatch 'Diff-boundary claim does not match computed diff' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
+  agent_fails diff-boundary-mismatch 'changed paths fall outside the cumulative implementation boundary' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
   python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt <<'PY'
 import json, sys
 from pathlib import Path
