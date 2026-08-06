@@ -2136,7 +2136,10 @@ PY
   git -C "$agent_repo" push -qu origin main
   git -C "$dispatch_origin" symbolic-ref HEAD refs/heads/main
   git -C "$agent_repo" remote set-head origin -a >/dev/null
-  python3 -c 'import time; time.sleep(30)' mission-lease-tag & mission_pid=$!
+  # The lease holder outlives every fixture that leans on it and is killed
+  # explicitly below; a 30-second budget here was an IL-1b time bomb that
+  # detonated when F-4 made each dispatch marginally slower.
+  python3 -c 'import time; time.sleep(600)' mission-lease-tag & mission_pid=$!
   mission_pgid=$(python3 -c 'import os,sys; print(os.getpgid(int(sys.argv[1])))' "$mission_pid")
   mission_identity="$agent_fixture/mission-process-identity.json"
   python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" "$mission_identity" "$mission_pid" "$mission_pgid" <<'PY'
