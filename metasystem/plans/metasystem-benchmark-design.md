@@ -10,6 +10,14 @@
 
 This plan layers on `plans/agent-orchestration-design.md`. It amends the settled design in exactly one named place: the standing benchmark authorization (D-B5), an extension to mission approval that goes through the change gate when B-4 builds it. Everything else reuses mission mode (Part 6 there) as the chassis: a benchmark run is a mission, and the contract grammar, runner-side measurement, fences, ledger, and evidence trail are reused rather than reinvented. The user directed the design and critique to run now; implementation stays blocked behind Mission Zero (CC-3 in `plans/prove-first-course-correction.md`), and B-0 below makes the design answer to Mission Zero's evidence before any item builds on it (BM-1-11).
 
+## Compare reconciliation (2026-08-06): the evolution-loop design against the real scorecard
+
+The extractor exists now and its identity block carries every comparability-tuple key the design names, so the core assumption held. Three deltas, recorded before `benchmark-compare` is built:
+
+1. **Attestation follows the gate of record, which is local by standing ruling.** The design's attestation queried CI via `gh`; the human ruled the local suite is the gate of record before that section closed. Amended: the attestation records a local gate run — command, candidate sha, conclusion, timestamp, machine fingerprint — written by a kit script the moment the suite passes; a CI-run attestation is an accepted alternative form when a project has CI, and compare verifies either without network. "No attestation, no verdict" stands.
+2. **The cohort driver is the missing writer.** Nothing today creates cohort records or stamps cohort id, repetition index and count, proposal id, spec version, and measuring-kit version into a run's evidence — which is exactly why the trial's scorecard gapped those fields. `benchmark/run-cohort.sh` owns them: it provisions fresh per repetition, stamps identity before the mission starts, runs, grades into the evidence, extracts, and files the scorecard under `benchmark/results/`. The kit gains its `kit-version` file, the shared half of the two-version rule.
+3. **Per-repetition signatures are a human decision, flagged not decided.** A cohort of N repetitions means N sealed contracts. Whether the human signs each, or grants a recorded in-session authorization covering a named cohort, is a human-dependency rule and stays theirs; the driver must support both and refuse a repetition whose contract lacks its approval line either way.
+
 ## Trial 001 (2026-08-05/06): the first run, scored
 
 Roster Opus host + gpt-5.6-luna delegates; fences 8 cycles / 12 jobs / 3h. Ran two cycles in 36 minutes, ~USD 5.43 of Claude plus small luna usage, against an exposure estimate of EUR:40.
