@@ -3378,7 +3378,9 @@ PYEOF
     || { echo "adopt: default runtime selection was not recorded" >&2; exit 1; }
   grep -qxF 'role.default.runtime=claude' "$tgt/metasystem.conf" \
     || { echo "adopt: selected claude was not made the roster default" >&2; exit 1; }
-  if grep -Eq '(^|\.)model\.(codex|devin)=|\.runtime=(codex|devin)$' "$tgt/metasystem.conf"; then
+  # Active keys only: F-4 demoted optional families to commented examples,
+  # and a comment is documentation, not a roster entry.
+  if grep -Ev '^[[:space:]]*#' "$tgt/metasystem.conf" | grep -Eq '(^|\.)model\.(codex|devin)=|\.runtime=(codex|devin)$'; then
     echo "adopt: unselected runtime-valued keys survived the default selection" >&2
     exit 1
   fi
