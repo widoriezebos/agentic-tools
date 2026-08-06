@@ -11,6 +11,57 @@ top=$(cd "$kit/.." && pwd -P)
 
 tmp=$(mktemp -d)
 
+# The kit gate is required to run in delegate sandboxes where process-table
+# visibility is denied. Provisioning still exercises the real supervision
+# bridge; only its OS process source is replaced, and only when even the
+# current shell cannot be inspected. An empty enumeration is sufficient here:
+# this fixture proves arming/preflight integration, while the metasystem suite
+# owns process-census behavior itself.
+if ! ps -p "$$" -o lstart= >/dev/null 2>&1 \
+    || ! ps -axo pid=,ppid=,pgid=,lstart=,command= >/dev/null 2>&1; then
+  restricted_bin=$tmp/restricted-bin
+  mkdir -p "$restricted_bin"
+  python3 - "$restricted_bin/ps" <<'PY'
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    "#!/usr/bin/env python3\n"
+    "import json, os, sys\n"
+    "from pathlib import Path\n"
+    "args = sys.argv[1:]\n"
+    "if 'lstart=' in args:\n"
+    "    print('Wed Aug  6 12:00:00 2026')\n"
+    "elif 'command=' in args:\n"
+    "    pid = int(args[args.index('-p') + 1])\n"
+    "    root = Path(os.environ['METASYSTEM_RESTRICTED_PS_ROOT'])\n"
+    "    def tagged(value):\n"
+    "        if isinstance(value, dict):\n"
+    "            if value.get('pid') == pid and isinstance(value.get('instanceTag'), str):\n"
+    "                return value['instanceTag']\n"
+    "            for child in value.values():\n"
+    "                found = tagged(child)\n"
+    "                if found: return found\n"
+    "        elif isinstance(value, list):\n"
+    "            for child in value:\n"
+    "                found = tagged(child)\n"
+    "                if found: return found\n"
+    "        return None\n"
+    "    for path in root.rglob('*.json'):\n"
+    "        try: found = tagged(json.loads(path.read_text()))\n"
+    "        except (OSError, ValueError): continue\n"
+    "        if found:\n"
+    "            print(found)\n"
+    "            break\n",
+    encoding="utf-8",
+)
+PY
+  chmod +x "$restricted_bin/ps"
+  PATH=$restricted_bin:$PATH
+  METASYSTEM_RESTRICTED_PS_ROOT=$tmp
+  export PATH METASYSTEM_RESTRICTED_PS_ROOT
+fi
+
 # KI-13's lesson, inherited with the provisioning block: every repository this
 # gate arms gets shut down again, because killing components is futile while
 # the owner self-heals, and a leaked owner outlives the run by days.
@@ -36,6 +87,11 @@ trap kit_cleanup EXIT
 # 1. The extractor's own fixtures.
 "$kit/extractor-fixtures.sh" >/dev/null
 echo "kit: extractor fixtures passed"
+
+# The evolution-loop tools use only synthetic scorecards and a local fake gate:
+# no mission is launched and no network or paid runtime is touched.
+"$kit/evolution-fixtures.sh" >/dev/null
+echo "kit: evolution fixtures passed"
 
 # 2. Cross-artifact seam checks: manifest against spec against instruments.
 cd "$kit/.."
@@ -317,6 +373,57 @@ PY
     || { echo "benchmark provision: rerun refusal did not name the existing target" >&2; exit 1; }
   [[ "$(git -C "$provision_target" status --porcelain=v1)" == "$before_rerun" ]] \
     || { echo "benchmark provision: refused rerun changed the target" >&2; exit 1; }
+
+  # The cohort driver owns the next layer: one persistent cohort record, a
+  # fresh target, the extractor-visible identity stamp, and a hard pause at
+  # the unsigned human boundary. Do not resume past that boundary here.
+  cohort_output=$tmp/cohort.out
+  if ! "${provision_identity[@]}" "$srcrepo/benchmark/run-cohort.sh" \
+      --spec bm-1 --repetitions 2 >"$cohort_output" 2>"$tmp/cohort.err"; then
+    echo "benchmark cohort: initial staging failed" >&2
+    cat "$tmp/cohort.err" >&2
+    exit 1
+  fi
+  [[ $(wc -l <"$cohort_output" | tr -d ' ') == 4 ]] \
+    || { echo "benchmark cohort: human boundary was not exactly four steps" >&2; exit 1; }
+  sed -n '1p' "$cohort_output" | grep -q '^Review ' \
+    && sed -n '2p' "$cohort_output" | grep -q '^Seal it: ' \
+    && sed -n '3p' "$cohort_output" | grep -q '^Sign it: ' \
+    && sed -n '4p' "$cohort_output" | grep -q '^Resume it: ' \
+    || { echo "benchmark cohort: printed human boundary is incomplete" >&2; exit 1; }
+  cohort_record=$(find "$srcrepo/benchmark/results/cohorts" -maxdepth 1 -type f -name '*.json' -print -quit)
+  [[ -n "$cohort_record" ]] \
+    || { echo "benchmark cohort: cohort record is missing" >&2; exit 1; }
+  cohort_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["cohortId"])' "$cohort_record")
+  cohort_target=$srcrepo/benchmark/.runs/$cohort_id/targets/1
+  track_armed_supervision "$cohort_target"
+  python3 - "$cohort_record" "$cohort_target/artifacts/agents/benchmark-identity.json" \
+    "$srcrepo/benchmark/kit-version" <<'PY'
+import json
+import sys
+record = json.load(open(sys.argv[1], encoding="utf-8"))
+identity = json.load(open(sys.argv[2], encoding="utf-8"))
+kit_version = open(sys.argv[3], encoding="utf-8").read().strip()
+assert record["benchmarkSpecId"] == "bm-1"
+assert record["benchmarkSpecVersion"] == "0.1"
+assert record["measuringKitVersion"] == kit_version == "0.1.0"
+assert record["proposalId"] is None and record["repetitionCount"] == 2
+assert set(record["machineFingerprint"]) == {"os", "cpuModel", "coreCount"}
+assert isinstance(record["roster"], dict) and record["roster"]
+assert identity["cohortId"] == record["cohortId"]
+assert identity["candidateSha"] == record["candidateSha"]
+assert identity["repetitionIndex"] == 1 and identity["repetitionCount"] == 2
+assert identity["measuringKitVersion"] == kit_version
+PY
+  if "${provision_identity[@]}" "$srcrepo/benchmark/run-cohort.sh" --resume "$cohort_id" \
+      >"$tmp/cohort-resume.out" 2>"$tmp/cohort-resume.err"; then
+    echo "benchmark cohort: unsigned repetition resumed" >&2
+    exit 1
+  fi
+  grep -q 'contract has no Approval line' "$tmp/cohort-resume.err" \
+    || { echo "benchmark cohort: unsigned refusal was not specific" >&2; exit 1; }
+  [[ ! -e "$cohort_target/artifacts/agents/missions/bm-1/state.json" ]] \
+    || { echo "benchmark cohort: unsigned refusal started the mission" >&2; exit 1; }
 
   # Fixture-only human actions: seal, add the byte-attesting approval, commit,
   # and push it so origin provenance can pass. Provisioning itself did none.

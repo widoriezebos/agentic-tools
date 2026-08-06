@@ -272,6 +272,7 @@ class Extractor:
         self.turns: list[dict[str, Any]] = []
         self.jobs: list[dict[str, Any]] = []
         self.job_returns: dict[str, dict[str, Any]] = {}
+        self.benchmark_identity: dict[str, Any] | None = None
         self.git_root: Path | None = None
 
     def gap(self, name: str, reason: str) -> None:
@@ -329,6 +330,17 @@ class Extractor:
             elif self.manifest is not None and not isinstance(self.manifest.get("version"), str):
                 self.evidence_error("benchmarkSpec", "manifest version is missing")
                 self.manifest = None
+
+        identity_path = self.agents_root / "benchmark-identity.json"
+        self.benchmark_identity = self.load_json(identity_path, "benchmarkIdentity")
+        if self.benchmark_identity is not None:
+            violations = schema_violations(
+                self.benchmark_identity,
+                read_schema("benchmark-identity.schema.json"),
+            )
+            if violations:
+                self.evidence_error("benchmarkIdentity", "; ".join(violations[:8]))
+                self.benchmark_identity = None
 
         turns_dir = self.mission_root / "turns"
         if not turns_dir.is_dir():
@@ -441,23 +453,41 @@ class Extractor:
 
     def identity(self) -> tuple[dict[str, Any], dict[str, Any] | None]:
         mission_id = self.state.get("missionId") if self.state else self.mission_root.name
-        candidate_sha = None
-        if self.git_root is not None:
-            try:
-                candidate_sha = run_git(
-                    self.git_root,
-                    "log",
-                    "-1",
-                    "--format=%H",
-                    "HEAD",
-                    "--",
-                    ".",
-                    ":(exclude)benchmark/results/**",
-                ) or None
-            except ExtractionError as error:
-                self.gap("identity.candidateSha", str(error))
-        if candidate_sha is None:
-            self.gap("identity.candidateSha", "target Git history does not provide a candidate commit")
+        stamped = self.benchmark_identity or {}
+
+        kit_version = None
+        kit_version_path = BENCHMARK_DIR / "kit-version"
+        try:
+            raw_kit_version = kit_version_path.read_text(encoding="utf-8").strip()
+            if not raw_kit_version or "\n" in raw_kit_version or "\r" in raw_kit_version:
+                raise ValueError("must contain exactly one non-empty line")
+            kit_version = raw_kit_version
+        except (OSError, ValueError) as error:
+            self.evidence_error("measuringKitVersion", f"kit-version is unreadable: {error}")
+
+        if stamped:
+            expected = {
+                "benchmarkSpecId": self.manifest.get("id") if self.manifest else None,
+                "benchmarkSpecVersion": self.manifest.get("version") if self.manifest else None,
+                "measuringKitVersion": kit_version,
+            }
+            for name, value in expected.items():
+                if stamped.get(name) != value:
+                    self.evidence_error(
+                        "benchmarkIdentity",
+                        f"stamped {name} does not match the measuring kit",
+                    )
+            repetition_index = stamped.get("repetitionIndex")
+            repetition_count = stamped.get("repetitionCount")
+            if (
+                isinstance(repetition_index, int)
+                and isinstance(repetition_count, int)
+                and repetition_index > repetition_count
+            ):
+                self.evidence_error(
+                    "benchmarkIdentity",
+                    "repetitionIndex exceeds repetitionCount",
+                )
 
         config_path = self.target_root / "metasystem.conf"
         roster = {"host": {"runtime": self.contract.get("host.runtime"), "model": self.contract.get("host.model")}, "delegates": []}
@@ -491,25 +521,31 @@ class Extractor:
             "missionId": mission_id,
             "benchmarkSpecId": self.manifest.get("id") if self.manifest else None,
             "benchmarkSpecVersion": self.manifest.get("version") if self.manifest else None,
-            "measuringKitVersion": None,
-            "candidateSha": candidate_sha,
-            "cohortId": None,
-            "repetitionIndex": None,
-            "repetitionCount": None,
+            "measuringKitVersion": stamped.get("measuringKitVersion"),
+            "candidateSha": stamped.get("candidateSha"),
+            "cohortId": stamped.get("cohortId"),
+            "repetitionIndex": stamped.get("repetitionIndex"),
+            "repetitionCount": stamped.get("repetitionCount"),
             "roster": roster,
             "fences": fences,
-            "measuringMetasystemSha": None,
+            "measuringMetasystemSha": stamped.get("measuringMetasystemSha"),
         }
-        self.gap("identity.measuringKitVersion", "the evidence set has no measuring-kit version record")
-        self.gap("identity.cohortId", "the evidence set has no cohort record")
-        self.gap("identity.repetitionIndex", "the evidence set has no repetition index")
-        self.gap("identity.repetitionCount", "the evidence set has no repetition count")
-        self.gap("identity.measuringMetasystemSha", "the evidence set has no measuring-metasystem commit record")
+        for name in (
+            "measuringKitVersion",
+            "candidateSha",
+            "cohortId",
+            "repetitionIndex",
+            "repetitionCount",
+            "measuringMetasystemSha",
+        ):
+            if identity[name] is None:
+                self.gap(f"identity.{name}", "the benchmark identity evidence does not record this fact")
         if self.manifest is None:
             self.gap("identity.benchmarkSpec", "benchmark spec id and version are unavailable")
 
-        machine = None
-        self.gap("machineFingerprint", "OS, CPU model, and core count were not logged with the run")
+        machine = stamped.get("machineFingerprint")
+        if machine is None:
+            self.gap("machineFingerprint", "OS, CPU model, and core count were not logged with the run")
         return identity, machine
 
     def job_chains(self) -> dict[str, list[dict[str, Any]]]:
@@ -994,13 +1030,19 @@ class Extractor:
             "maximumMilliseconds": max(values) if values else None,
         }
 
-    def commit_watch(self, candidate_sha: str | None) -> dict[str, Any]:
+    def commit_watch(self) -> dict[str, Any]:
         sizes: list[int] = []
         commits: list[str] = []
         base = self.sealed.get("sealed.baseline.candidate-sha")
-        if self.git_root is not None and candidate_sha and base:
+        target_head = None
+        if self.git_root is not None:
             try:
-                commits = run_git(self.git_root, "log", "--format=%H", "--reverse", f"{base}..{candidate_sha}").splitlines()
+                target_head = run_git(self.git_root, "rev-parse", "HEAD") or None
+            except ExtractionError as error:
+                self.gap("watches.commitShape", str(error))
+        if self.git_root is not None and target_head and base:
+            try:
+                commits = run_git(self.git_root, "log", "--format=%H", "--reverse", f"{base}..{target_head}").splitlines()
                 for commit in commits:
                     raw = run_git(self.git_root, "show", "--numstat", "--format=", commit)
                     changed = 0
@@ -1017,12 +1059,12 @@ class Extractor:
             "name": "commitShape",
             "measurementClass": "watch",
             "sourceOwner": "kit",
-            "commitCount": len(commits) if commits or (base and candidate_sha) else None,
+            "commitCount": len(commits) if commits or (base and target_head) else None,
             "changedLinesPerCommit": sizes,
             "minimumChangedLines": min(sizes) if sizes else None,
             "medianChangedLines": median_number(sizes),
             "maximumChangedLines": max(sizes) if sizes else None,
-            "totalChangedLines": sum(sizes) if sizes else (0 if commits == [] and base and candidate_sha else None),
+            "totalChangedLines": sum(sizes) if sizes else (0 if commits == [] and base and target_head else None),
         }
 
     def build(self) -> dict[str, Any]:
@@ -1039,7 +1081,7 @@ class Extractor:
         watches = grader_watches + [
             self.prompt_watch(),
             self.census_watch(),
-            self.commit_watch(identity["candidateSha"]),
+            self.commit_watch(),
             {"name": "validationSuiteWallClockSeconds", "measurementClass": "watch", "sourceOwner": "kit", "wallClockSeconds": None},
             {"name": "metasystemLineCount", "measurementClass": "watch", "sourceOwner": "kit", "lineCount": None},
         ]
