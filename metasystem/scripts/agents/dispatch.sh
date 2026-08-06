@@ -820,7 +820,8 @@ aggregate_chain_usage() { # root id
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in completed|failed|timeout|cancelled) ;; *) return 0 ;; esac
   patch=$(mktemp "$record_locks/usage.XXXXXX")
-  python3 - "$jobs" "$chain" "$patch" <<'PY'
+  local aggregate_rc=0
+  python3 - "$jobs" "$chain" "$patch" <<'PY' || aggregate_rc=$?
 import json, sys
 from pathlib import Path
 jobs, root, output = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
@@ -851,8 +852,19 @@ for record in records:
     unit = usage.get("providerUnits")
     if isinstance(unit, dict) and isinstance(unit.get("name"), str) and isinstance(unit.get("value"), (int, float)):
         units.setdefault(runtime, {})[unit["name"]] = units.setdefault(runtime, {}).get(unit["name"], 0) + unit["value"]
-output.write_text(json.dumps({"chainUsage": {"tokens": tokens, "cost": costs, "providerUnits": units}}, sort_keys=True) + "\n")
+value = {"chainUsage": {"tokens": tokens, "cost": costs, "providerUnits": units}}
+try:
+    current = json.loads((jobs / f"{root}.json").read_text()).get("chainUsage")
+except (OSError, ValueError):
+    current = None
+if current == value["chainUsage"]:
+    raise SystemExit(7)
+output.write_text(json.dumps(value, sort_keys=True) + "\n")
 PY
+  if (( aggregate_rc == 7 )); then
+    rm -f -- "$patch" 2>/dev/null || true
+    return 0
+  fi
   record_cas "$chain" "$status" "$status" "$patch" || true
 }
 
@@ -965,11 +977,20 @@ else:
         json.dump(manifest, handle, indent=2, sort_keys=True); handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
     os.replace(temp_name, manifest_path)
     manifest_hash = digest(manifest_path)
-Path(result).write_text(json.dumps({"path": str(destination), "manifest": manifest_hash, "mirroredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}) + "\n")
+Path(result).write_text(json.dumps({"path": str(destination), "manifest": manifest_hash, "unchanged": bool(unchanged and manifest_path.exists()), "mirroredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}) + "\n")
 PY
   then
     mirror_fail "$job" "copy or verification failed (see stderr above)"
     return 1
+  fi
+  if [[ "$(python3 -c '
+import json, sys
+result = json.load(open(sys.argv[1]))
+record = json.load(open(sys.argv[2]))
+mirror = record.get("mirror") or {}
+print(int(bool(result.get("unchanged")) and mirror.get("manifest") == result.get("manifest")))' "$result" "$record")" == 1 ]]; then
+    rm -f -- "$result" 2>/dev/null || true
+    return 0
   fi
   patch=$(mktemp "$record_locks/mirror-patch.XXXXXX")
   python3 - "$result" "$patch" <<'PY'
@@ -1009,15 +1030,6 @@ reap_one_locked() { # job
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
     completed|failed|timeout|cancelled)
-      settled_mirror=$(json_field "$record" mirror 2>/dev/null || true)
-      if [[ -n "$settled_mirror" && "$settled_mirror" != None && "$settled_mirror" != null ]]; then
-        # Settled once: mirrored terminal records are done. Re-walking them
-        # every sweep rewrote every record every interval, all day. A null
-        # mirror is a FAILED mirror and must keep retrying: the first guard
-        # treated the string None as settled and the mirror-retry fixture
-        # caught it within one gate run.
-        return
-      fi
       root_id=$(root_job_id "$job" 2>/dev/null || true)
       [[ -n "$root_id" ]] && aggregate_chain_usage "$root_id"
       aggregate_mission_usage "$record" || true
