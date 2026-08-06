@@ -2399,7 +2399,10 @@ done
 if [[ $sequence -eq 2 ]]; then
   printf '1\n' >"$PWD/candidate-score.txt"
   git add candidate-score.txt
-  git commit -qm 'improve candidate from codex host fixture'
+  # What the classification needs is the candidate SHA advancing with score 1,
+  # not a content change: whether 1 is already committed here depends on how
+  # the earlier missions interleaved, and requiring a diff made this a flake.
+  git commit --allow-empty -qm 'improve candidate from codex host fixture'
 fi
 python3 - "$prompt" "$output" "$sequence" <<'PY'
 import json, sys
