@@ -1509,6 +1509,13 @@ PY
         captured_result=$?
       fi
       grep -Fq 'censusGeneration=' "$output" 2>/dev/null || return "$captured_result"
+      # Retry is only safe while the refusal preceded job creation. Once a
+      # record exists the dispatch got past the census check, the failure is
+      # the real answer, and a re-dispatch would overwrite the record it is
+      # asserting about (one-shot fake markers made that visible).
+      if [[ "$job" != - && -e "$agent_repo/artifacts/agents/jobs/$job.json" ]]; then
+        return "$captured_result"
+      fi
       sleep 1
     done
     return "$captured_result"
