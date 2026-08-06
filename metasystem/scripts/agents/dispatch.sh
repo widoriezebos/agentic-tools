@@ -994,9 +994,13 @@ for path in jobs.glob("*.json"):
     if current.get("jobId") == root and value.get("status") in {"completed", "failed", "timeout", "cancelled"}:
         print(f"{value['jobId']}|{value['status']}")
 PY
-    record_cas "$chain_job" "$chain_status" "$chain_status" "$patch" || return 1
+    # record_cas consumes its patch (one-shot); this loop applies the same
+    # content to every job in the chain, so each call gets its own copy.
+    patch_copy=$(mktemp "$record_locks/mirror-patch.XXXXXX")
+    cp "$patch" "$patch_copy"
+    record_cas "$chain_job" "$chain_status" "$chain_status" "$patch_copy" || return 1
   done
-  rm -f -- "$result" 2>/dev/null || true
+  rm -f -- "$result" "$patch" 2>/dev/null || true
 }
 
 reap_one_locked() { # job
