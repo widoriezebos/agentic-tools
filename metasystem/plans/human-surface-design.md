@@ -82,15 +82,22 @@ and any agent-invokable attestation is self-attested. That is this design's
 own fence: the finding grew complexity, so the finding was wrong.
 Change, minimal and inheriting the existing trust model wholesale: F-1's
 command accepts multiple files — `--sign "<name>" --file a.md --file b.md …`.
-It verifies the contracts are identical under the one permitted difference
-(the mission id), displays ONE combined summary (count, the shared English
-sections and bounds, per-repetition and TOTAL exposure), takes ONE typed
-confirmation, and appends each contract's ORDINARY approval line with that
-contract's own hash. No new grammar, no records, no ledgers, no expiry, no
-replay surface: every repetition carries individually signed bytes that the
-existing preflight already verifies, and the driver simply refuses a
-repetition without its approval line. Non-identical contracts in one batch
-refuse with the differing key named.
+Equality is defined on the regions the human is authorizing (HS-6-2): the
+English sections and the ```mission block must be byte-identical across the
+batch; seal blocks may differ, since sealing stamps per-repetition values
+(sealed.at, baselines); identity lives in the filename, and duplicate paths
+refuse (HS-6-4). The combined display lists every contract's path and
+resolved mission id, then the shared English sections and bounds, then
+per-repetition and TOTAL exposure (HS-6-4). One typed confirmation appends
+each contract's ORDINARY approval line with that contract's own hash. The
+git transaction is per contract repository (HS-6-3): each contract commits
+and pushes in ITS OWN repo under F-1's single-contract rules — the batch is
+one consent, N ordinary transactions, and a failure in repo K stops there
+and names the signed-but-unpushed remainder precisely. No new grammar, no
+records, no ledgers: every repetition carries individually signed bytes the
+existing preflight already verifies, and the driver refuses a repetition
+without its approval line. Non-identical contracts refuse with the first
+differing line named.
 Proof: kit-gate fixtures for the batch happy path through preflight on every
 repetition; refusal when batched contracts differ beyond the mission id;
 refusal of an unsigned repetition by the driver; the combined display
@@ -115,17 +122,23 @@ bare flag is self-attested, since the agent is dispatch's normal caller):
 `--approve-escalation` is interactive-only — it displays the roster
 resolution, the requested model, and the cost direction, then requires typed
 confirmation, recording name, timestamp, and the displayed facts in the job
-record; there is no non-interactive form, so unattended flows simply cannot
-escalate, which is the correct failure. Without tiers, any differing
-`--model` override refuses, naming both remedies (configure tiers, or re-run
-interactively with the confirmation).
+record. The ONE non-interactive path that remains is the one that already
+carries a signature (HS-6-5): a mission whose signed contract's envelope
+explicitly pre-authorizes the tier move proceeds inside that bound, exactly
+as project rules and the orchestration contract state today; interactive-only
+governs everything OUTSIDE a signed envelope. Without tiers, any differing
+`--model` override refuses, naming the remedies (configure tiers, sign an
+envelope that authorizes it, or re-run interactively).
 The guard never silently accepts what it cannot rank. Validate says in one
 informational line that tiers are absent and overrides therefore always
 escalate.
-Proof: the suite passes with the demoted template; fixtures prove validate
-accepts absence, still refuses malformed present keys, the escalation guard
-still ranks when tiers are configured, and — decisive for HS-3-6 — an
-override without tiers is refused pending approval rather than accepted.
+Proof (HS-6-6, enumerated): the suite passes with the demoted template;
+validate accepts absence and still refuses malformed present keys; the guard
+ranks when tiers are configured; an override without tiers refuses; the
+interactive path has fixtures for non-TTY refusal, declined confirmation,
+and a completed confirmation whose job record carries the recorded display
+facts; and an envelope-pre-authorized move proceeds unattended while the
+same move without the envelope refuses.
 
 **F-5: Refusals that do not hand the human the fix.**
 Evidence: a contract metric named with an underscore cost an hour; the
