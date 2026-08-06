@@ -77,10 +77,10 @@ report_plan_drift() {
 }
 
 require_fresh_census() {
-  local verdict="$agents/supervision/last-census.json" expected
+  local verdict="$agents/supervision/last-census.json" state="$agents/supervision/state.json" expected
   [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
-  python3 - "$verdict" <<'PY' || exit $?
-import json, sys, time
+  python3 - "$verdict" "$state" "$arm_supervision" "$repo_scope" <<'PY' || exit $?
+import json, re, sys, time
 from pathlib import Path
 try: value=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 except (OSError,ValueError) as error: raise SystemExit(f"dispatch refused: census verdict is unreadable: {error}")
@@ -92,16 +92,30 @@ if value.get("verdict") == "CENSUS-FAILED":
 if value.get("verdict") != "SUCCESS":
     raise SystemExit("dispatch refused: census verdict is not successful")
 completed, interval = value.get("completedAtEpoch"), value.get("intervalSec")
-if not isinstance(completed,int) or not isinstance(interval,int) or interval < 1:
+if type(completed) is not int or type(interval) is not int or interval < 1:
     raise SystemExit("dispatch refused: census freshness fields are invalid")
 age=int(time.time())-completed
+census_generation, state_digest = value.get("generation"), value.get("stateDigest")
+if type(census_generation) is not int or census_generation < 1 or not isinstance(state_digest,str) or not re.fullmatch(r"[0-9a-f]{64}",state_digest):
+    raise SystemExit("dispatch refused: census generation fields are invalid")
+try: armed=json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+except (OSError,ValueError) as error: raise SystemExit(f"dispatch refused: arming record is unreadable: {error}")
+armed_generation=armed.get("generation") if isinstance(armed,dict) else None
+if type(armed_generation) is not int or armed_generation < 1:
+    raise SystemExit("dispatch refused: arming record generation is invalid")
+if census_generation != armed_generation:
+    raise SystemExit(
+        f"dispatch refused: census verdict is stale (age={age}s "
+        f"censusGeneration={census_generation} armedGeneration={armed_generation}); "
+        f"retry in a moment; re-arm with {sys.argv[3]} --repo {sys.argv[4]} if supervision is dead"
+    )
 if age < -5 or age > interval:
     raise SystemExit(f"dispatch refused: census verdict is stale (age={age}s interval={interval}s)")
 PY
   expected=$("$arm_supervision" fingerprint --repo "$repo_scope" 2>&1) \
     || die 1 "dispatch refused: census fingerprint cannot be computed: $expected"
   [[ "$(json_field "$verdict" fingerprint 2>/dev/null || true)" == "$expected" ]] \
-    || die 1 "dispatch refused: census fingerprint does not match the armed code, signatures, configuration, and supervisor instances"
+    || die 1 "dispatch refused: census fingerprint does not match the armed code, signatures, and configuration"
 }
 
 json_field() { # file, dotted field

@@ -97,6 +97,7 @@ for link in \
   scripts/agents/arm-supervision.sh \
   scripts/agents/process-census.py \
   scripts/agents/fixture-budget.sh \
+  scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-fixtures.sh \
   scripts/agents/mission-fixtures.sh \
@@ -128,6 +129,7 @@ done
 # process wait (IL-1).
 if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
   scripts/agents/supervision-fixtures.sh
+  scripts/agents/fingerprint-harness.sh --iterations 2
   scripts/agents/mission-fixtures.sh
 fi
 
@@ -135,6 +137,7 @@ fi
 # Validation covers only their static adapter contract.
 bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/fixture-budget.sh
+bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
@@ -1274,12 +1277,15 @@ LOCK
         fingerprint --repo "$agent_supervision_repo" 2>/dev/null || true)
       if [[ -n "$expected" ]] && python3 - \
           "$agent_supervision_repo/artifacts/agents/supervision/last-census.json" \
+          "$agent_supervision_repo/artifacts/agents/supervision/state.json" \
           "$expected" <<'PY'
 import json,sys,time
-try: value=json.load(open(sys.argv[1]))
+try: value=json.load(open(sys.argv[1])); state=json.load(open(sys.argv[2]))
 except (OSError,ValueError): raise SystemExit(1)
 age=int(time.time())-int(value.get("completedAtEpoch",0)); interval=int(value.get("intervalSec",0) or 0)
-raise SystemExit(0 if value.get("verdict")=="SUCCESS" and value.get("fingerprint")==sys.argv[2] and 0 <= age <= max(1,interval//2) else 1)
+raise SystemExit(0 if value.get("verdict")=="SUCCESS" and value.get("fingerprint")==sys.argv[3]
+                 and value.get("generation")==state.get("generation")
+                 and 0 <= age <= max(1,interval//2) else 1)
 PY
       then return 0; fi
       sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"

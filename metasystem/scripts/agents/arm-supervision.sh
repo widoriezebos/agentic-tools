@@ -241,6 +241,13 @@ run_owner() {
   trap cleanup_owner EXIT
   trap 'exit 0' TERM INT
 
+  if [[ -f "$state" ]]; then
+    generation=$(json_field "$state" generation 2>/dev/null) \
+      || { echo "supervision state has no readable generation" >&2; exit 1; }
+    [[ "$generation" =~ ^[0-9]+$ ]] \
+      || { echo "supervision state generation is not a non-negative integer" >&2; exit 1; }
+  fi
+
   launch_set() {
     local suffix watcher_heartbeat=$supervision/watcher.heartbeat.json reaper_heartbeat=$supervision/reaper.heartbeat.json
     stop_recorded_components "$harness_root"
@@ -256,29 +263,21 @@ run_owner() {
     launch_detached reaper_pid "$supervision/reaper.log" "$dispatch" reap --interval "$interval" \
       --heartbeat "$reaper_heartbeat" --instance-tag "$reaper_tag"
     reaper_start=$(wait_for_start_identity reaper "$reaper_pid") || exit 1
+    fingerprint=$("$helper" fingerprint --repo "$repo") || exit 1
     python3 - "$state" "$$" "$("$helper" started-at --pid "$$")" "$owner_tag" \
       "$watcher_pid" "$watcher_start" "$watcher_tag" "$watcher_heartbeat" \
-      "$reaper_pid" "$reaper_start" "$reaper_tag" "$reaper_heartbeat" "$interval" "$generation" <<'PY'
+      "$reaper_pid" "$reaper_start" "$reaper_tag" "$reaper_heartbeat" "$interval" "$generation" "$fingerprint" <<'PY'
 import json, os, sys, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 args=sys.argv[1:]; output=Path(args[0]); owner_pid,owner_start,owner_tag=int(args[1]),int(args[2]),args[3]
 w_pid,w_start,w_tag,w_hb=int(args[4]),int(args[5]),args[6],args[7]
 r_pid,r_start,r_tag,r_hb=int(args[8]),int(args[9]),args[10],args[11]
-interval,generation=int(args[12]),int(args[13])
-value={"schemaVersion":1,"owner":{"pid":owner_pid,"pidStartedAt":owner_start,"instanceTag":owner_tag},"components":{"watcher":{"pid":w_pid,"pidStartedAt":w_start,"instanceTag":w_tag,"heartbeat":w_hb},"reaper":{"pid":r_pid,"pidStartedAt":r_start,"instanceTag":r_tag,"heartbeat":r_hb}},"intervalSec":interval,"generation":generation,"fingerprint":None,"startedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+interval,generation,fingerprint=int(args[12]),int(args[13]),args[14]
+value={"schemaVersion":1,"owner":{"pid":owner_pid,"pidStartedAt":owner_start,"instanceTag":owner_tag},"components":{"watcher":{"pid":w_pid,"pidStartedAt":w_start,"instanceTag":w_tag,"heartbeat":w_hb},"reaper":{"pid":r_pid,"pidStartedAt":r_start,"instanceTag":r_tag,"heartbeat":r_hb}},"intervalSec":interval,"generation":generation,"fingerprint":fingerprint,"startedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 output.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix=output.name+".",suffix=".tmp",dir=output.parent)
 with os.fdopen(fd,"w") as h: json.dump(value,h,indent=2,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
 os.replace(tmp,output)
-PY
-    fingerprint=$("$helper" fingerprint --repo "$repo") || exit 1
-    python3 - "$state" "$fingerprint" <<'PY'
-import json,os,sys,tempfile
-from pathlib import Path
-p=Path(sys.argv[1]); v=json.loads(p.read_text()); v["fingerprint"]=sys.argv[2]
-fd,t=tempfile.mkstemp(prefix=p.name+".",suffix=".tmp",dir=p.parent)
-with os.fdopen(fd,"w") as h: json.dump(v,h,indent=2,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
-os.replace(t,p)
 PY
   }
 
@@ -302,7 +301,7 @@ PY
 }
 
 verify_armed() { # repo, owner pid/start/tag
-  local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 supervision state last interval cap started deadline elapsed component pid start tag heartbeat observed expected actual verdict completed
+  local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 supervision state last interval cap started deadline elapsed component pid start tag heartbeat observed expected actual verdict completed expected_generation actual_generation
   supervision=$agents/supervision; state=$supervision/state.json; last=$supervision/last-census.json
   interval=$("$config" get --key watch.interval-sec --default 60)
   cap=$(supervision_wait_cap "$((interval + 10))")
@@ -323,7 +322,11 @@ verify_armed() { # repo, owner pid/start/tag
         completed=$(json_field "$last" completedAtEpoch 2>/dev/null || echo 0)
         actual=$(json_field "$last" fingerprint 2>/dev/null || true)
         expected=$(json_field "$state" fingerprint 2>/dev/null || true)
-        if [[ "$verdict" == SUCCESS && -n "$expected" && "$actual" == "$expected" ]] && (( $(date +%s) - completed <= interval )); then
+        actual_generation=$(json_field "$last" generation 2>/dev/null || true)
+        expected_generation=$(json_field "$state" generation 2>/dev/null || true)
+        if [[ "$verdict" == SUCCESS && -n "$expected" && "$actual" == "$expected" \
+          && -n "$expected_generation" && "$actual_generation" == "$expected_generation" ]] \
+          && (( $(date +%s) - completed <= interval )); then
           return 0
         fi
       fi

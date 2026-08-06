@@ -175,6 +175,51 @@ def process_command(pid: int) -> str:
     return result.stdout.strip()
 
 
+def read_supervision_snapshot() -> tuple[dict[str, dict[str, Any]], int, str]:
+    state_path = METASYSTEM_ROOT / "artifacts" / "agents" / "supervision" / "state.json"
+    try:
+        state_bytes = state_path.read_bytes()
+        state = json.loads(state_bytes)
+    except (OSError, ValueError) as error:
+        raise CensusError(f"supervision state is unavailable: {error}") from error
+    if not isinstance(state, dict):
+        raise CensusError("supervision state is not an object")
+    generation = state.get("generation")
+    if type(generation) is not int or generation < 1:
+        raise CensusError("supervision state has an invalid generation")
+    components = state.get("components")
+    owner = state.get("owner")
+    if not isinstance(components, dict) or set(components) != {"watcher", "reaper"} or not isinstance(owner, dict):
+        raise CensusError("supervision state has no complete instance set")
+    identities: dict[str, dict[str, Any]] = {}
+    for name, value in {"owner": owner, **components}.items():
+        if not isinstance(value, dict):
+            raise CensusError(f"supervision state has invalid {name} identity")
+        pid, started, tag = value.get("pid"), value.get("pidStartedAt"), value.get("instanceTag")
+        if type(pid) is not int or pid < 1 or type(started) is not int or started < 1 or not isinstance(tag, str) or not tag:
+            raise CensusError(f"supervision state has invalid {name} identity")
+        identities[name] = {"pid": pid, "pidStartedAt": started, "instanceTag": tag}
+    return identities, generation, sha256(state_bytes).hexdigest()
+
+
+def verify_supervision_snapshot(identities: dict[str, dict[str, Any]], errors: list[str]) -> None:
+    for name in ("owner", "watcher", "reaper"):
+        identity = identities[name]
+        pid, started, tag = identity["pid"], identity["pidStartedAt"], identity["instanceTag"]
+        if not identity_alive(pid, started):
+            errors.append(f"supervision-not-live:{name}:pid={pid}")
+            continue
+        try:
+            command = process_command(pid)
+        except (OSError, ProcessLookupError):
+            errors.append(f"supervision-command-unavailable:{name}:pid={pid}")
+            continue
+        if tag not in command:
+            errors.append(f"supervision-tag-mismatch:{name}:pid={pid}")
+        elif not identity_alive(pid, started):
+            errors.append(f"supervision-not-live:{name}:pid={pid}")
+
+
 def resolve_cwd(pid: int) -> tuple[str | None, bool]:
     proc_cwd = Path(f"/proc/{pid}/cwd")
     if proc_cwd.exists() or sys.platform.startswith("linux"):
@@ -553,6 +598,13 @@ def run_census(repo: Path, fingerprint: str, interval: int, output: Path) -> int
     diagnostics: list[str] = []
     errors: list[str] = []
     counts = {"CUSTODY": 0, "ANNOUNCED": 0, "UNTRACKED": 0}
+    generation: int | None = None
+    state_digest: str | None = None
+    try:
+        supervisor_identities, generation, state_digest = read_supervision_snapshot()
+        verify_supervision_snapshot(supervisor_identities, errors)
+    except CensusError as error:
+        errors.append(f"supervision-state:{error}")
     try:
         declarations = configured_signatures()
         processes = enumerate_processes(repo)
@@ -627,6 +679,8 @@ def run_census(repo: Path, fingerprint: str, interval: int, output: Path) -> int
         "durationMs": duration_ms,
         "intervalSec": interval,
         "fingerprint": fingerprint,
+        "generation": generation,
+        "stateDigest": state_digest,
         "counts": counts,
         "inventory": sorted(inventory, key=lambda item: item["pid"]),
         "diagnostics": diagnostics,
@@ -644,11 +698,6 @@ def run_census(repo: Path, fingerprint: str, interval: int, output: Path) -> int
 
 def fingerprint(repo: Path) -> str:
     repo = Path(os.path.realpath(repo))
-    state_path = METASYSTEM_ROOT / "artifacts" / "agents" / "supervision" / "state.json"
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise CensusError(f"supervision state is unavailable: {error}") from error
     declarations = configured_signatures()
     files = [
         METASYSTEM_ROOT / "scripts" / "agents" / "arm-supervision.sh",
@@ -665,20 +714,6 @@ def fingerprint(repo: Path) -> str:
             file_hashes[str(path.relative_to(METASYSTEM_ROOT))] = sha256(path.read_bytes()).hexdigest()
         except OSError as error:
             raise CensusError(f"fingerprint input is unavailable: {path}: {error}") from error
-    components = state.get("components")
-    owner = state.get("owner")
-    if not isinstance(components, dict) or set(components) != {"watcher", "reaper"} or not isinstance(owner, dict):
-        raise CensusError("supervision state has no complete instance set")
-    instance_fields = {}
-    for name, value in {"owner": owner, **components}.items():
-        try:
-            instance_fields[name] = {
-                "pid": int(value["pid"]),
-                "pidStartedAt": int(value["pidStartedAt"]),
-                "instanceTag": str(value["instanceTag"]),
-            }
-        except (KeyError, TypeError, ValueError) as error:
-            raise CensusError(f"supervision state has invalid {name} identity") from error
     relevant_config = {
         key: config_value(METASYSTEM_ROOT, key, default)
         for key, default in {
@@ -695,7 +730,6 @@ def fingerprint(repo: Path) -> str:
         "files": file_hashes,
         "signatures": {runtime: value[2] for runtime, value in declarations.items()},
         "config": relevant_config,
-        "instances": instance_fields,
     }
     return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
