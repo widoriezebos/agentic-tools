@@ -710,6 +710,32 @@ printf '{"session_id":"surface","cwd":"%s","hook_event_name":"Stop"}\n' "$repo" 
   | "$repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/surface.out"
 grep -q 'UNTRACKED' "$tmp/surface.out" || { echo "end-of-turn hook hid UNTRACKED" >&2; exit 1; }
 
+# S4-15: a stop event inside a repository is NEVER silent. Silence reads
+# identically to "still running", to "finished", and to "the hook never
+# fired", which is the ambiguity this check exists to remove. Whatever the
+# state — untracked agents, stale supervision, running jobs, or nothing at
+# all — the hook must say something, and when nothing is left it must say so
+# in plain words.
+idle_repo=$tmp/idle-hook
+mkdir -p "$idle_repo/artifacts/agents/jobs" "$idle_repo/artifacts/agents/supervision" "$idle_repo/plans" "$idle_repo/scripts"
+cp -R "$source_root/scripts/agents" "$idle_repo/scripts/"
+cp "$source_root/metasystem.conf" "$idle_repo/"
+# The hook refuses outside a git repository, correctly: it reports on a
+# repository's work. The sandbox must be one.
+git -C "$idle_repo" init -q
+printf '{"session_id":"idle","cwd":"%s","hook_event_name":"Stop"}\n' "$idle_repo" \
+  | "$idle_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/idle.out" 2>/dev/null || true
+[[ -s "$tmp/idle.out" ]] \
+  || { echo "turn-end hook was silent inside a repository" >&2; exit 1; }
+grep -q 'systemMessage' "$tmp/idle.out" \
+  || { echo "turn-end hook emitted no surfaced message" >&2; cat "$tmp/idle.out" >&2; exit 1; }
+
+# And the idle wording itself, exercised directly on the branch that produces
+# it, so the sentence a human reads cannot silently change.
+grep -Fq 'NOTHING LEFT TO WORK ON' "$idle_repo/scripts/agents/supervision-hook.sh" \
+  && grep -Fq 'STILL WORKING' "$idle_repo/scripts/agents/supervision-hook.sh" \
+  || { echo "turn-end hook lost one of its two plain-words states" >&2; exit 1; }
+
 # S4-12: a turn that ends while a plan still names an unblocked next step and
 # nothing is in flight must say so. Continuation is the one part of the loop no
 # prompt can guarantee, so it is checked rather than requested in prose.

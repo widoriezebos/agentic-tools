@@ -121,7 +121,29 @@ PY
     rm -f "$blocked_state" 2>/dev/null || true
   fi
 
-  [[ -z "$message" ]] || surface_json "$message"
+  if [[ -n "$message" ]]; then
+    surface_json "$message"
+  else
+    # Say so when there is nothing to say. Silence is ambiguous to a human:
+    # it reads the same whether work is finished, still running, or the hook
+    # never fired at all. An explicit idle line distinguishes all three, and
+    # it costs one sentence at the end of a turn.
+    # No pipelines here: under pipefail a grep that matches nothing fails the
+    # whole assignment, and set -e then kills the hook before it can report —
+    # the silent-exit failure this very check exists to make visible.
+    running=0
+    for record in "$harness_root/artifacts/agents/jobs"/*.json; do
+      [[ -e "$record" ]] || break
+      if grep -q '"status": *"\(pending\|running\)"' "$record" 2>/dev/null; then
+        running=$((running + 1))
+      fi
+    done
+    if [[ "${running:-0}" != 0 ]]; then
+      surface_json "STILL WORKING: $running delegate job(s) are still running. Nothing else is open."
+    else
+      surface_json "NOTHING LEFT TO WORK ON: no jobs running, nothing open in any plan, no stale claims, no untracked agents."
+    fi
+  fi
   exit 0
 fi
 

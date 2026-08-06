@@ -2,7 +2,7 @@
 
 - Owner: unclaimed (design written 2026-08-04, single session, nothing built)
 - Goal and current status: a benchmark where a coordinator and sub-agents build software to a fixed spec, producing two things we grade: the software itself and the logged behavior of the agents that built it. The scorecard from both becomes the metasystem's own fitness function, so agents can later evolve the metasystem inside constraints expressed in software. Status: critique CLOSED by join at round 5 (2026-08-04): 45 material findings adjudicated across rounds 1-4, round 5 returned zero material findings with the critic's recorded agreement that the design is ready for implementation under the B-0 condition
-- In flight right now: the scorecard extractor and benchmark/provision.sh, both on gpt-5.6-luna. A codex host adapter (`scripts/agents/hosts/codex.sh`) was started and cancelled: only claude and fake can coordinate a mission today, which is a real gap, but the human postponed Devin and GPT-5 coordination to 2026-08-06 and Opus hosts the first BM-1 trial, so it left the critical path. Backlog, not blocker.
+- In flight right now: nothing
 - Decisions made (and who made them): the requirement and its intent stated by the user 2026-08-04, who also directed this design and its critique to run now, ahead of Mission Zero; design decisions D-B1 through D-B6 taken here with recorded defaults, overridable by the human
 - Waiting on the human: the BM-1 completion gate decision and the fence vector approval; nothing else
 - Dead ends: none yet
