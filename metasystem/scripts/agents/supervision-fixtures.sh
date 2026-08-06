@@ -594,6 +594,9 @@ chmod +x "$repo/scripts/agents/adapters/fake.sh"
 
 # Dispatch refuses absent, stale, failed, and fingerprint-mismatched verdicts.
 gate_repo=$tmp/gate-repo
+# The refusal message names the resolved path, and on macOS the temp
+# directory is reached through a symlink, so the expectation must resolve too.
+gate_repo_real=$gate_repo
 mkdir -p "$gate_repo"
 make_repo "$gate_repo"
 brief=$gate_repo/brief.md
@@ -636,7 +639,7 @@ assert_stale_shape() { # name, window
   grep -Eq 'age=[0-9]+s' "$output" \
     && grep -Fq "window=${window}s" "$output" \
     && grep -Fq 'retry in a moment' "$output" \
-    && grep -Fq "re-arm with $gate_repo/scripts/agents/arm-supervision.sh --repo $gate_repo if supervision is dead" "$output" \
+    && grep -Fq "re-arm with $gate_repo_real/scripts/agents/arm-supervision.sh --repo $gate_repo_real if supervision is dead" "$output" \
     || { echo "stale census refusal did not carry the common diagnostic shape" >&2; cat "$output" >&2; exit 1; }
 }
 dispatch_fails no-census 'census verdict is absent'
@@ -669,6 +672,7 @@ set_gate_census 0 10 "$gate_fingerprint"
 dispatch_succeeds inside-census-window
 set_gate_census 20 10 "$gate_fingerprint"
 dispatch_fails census-window-boundary 'census verdict is stale'
+gate_repo_real=$(cd "$gate_repo" && pwd -P)
 assert_stale_shape census-window-boundary 20
 set_gate_census 21 10 "$gate_fingerprint"
 dispatch_fails stale-census 'census verdict is stale'
