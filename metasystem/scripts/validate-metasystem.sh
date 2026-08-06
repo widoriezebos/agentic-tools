@@ -2261,7 +2261,8 @@ PY
   python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/usage.json" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1])); units={(item["provider"],item["unit"]):item["value"] for item in value["units"]}
-assert units[("fake","provider.fake-unit")] == 2
+# 4 = explicit + inherited + the two envelope-allowlisted jobs F-4 added.
+assert units[("fake","provider.fake-unit")] == 4
 assert units[("other","provider.fake-unit")] == 5
 assert not any(item["unit"] == "provider.total" for item in value["units"])
 PY
