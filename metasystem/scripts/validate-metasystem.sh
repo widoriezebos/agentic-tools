@@ -2453,8 +2453,17 @@ PY
   (
     set +e
     cd "$agent_repo"
-    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --cap-min "$fixture_minimum_cap_min" --wait
-    printf '%s\n' "$?" >"$mission_timeout_result"
+    # Same self-heal transient the shared runner retries; this dispatch runs
+    # detached from that runner, so it carries the same bounded retry itself.
+    for _ in 1 2 3; do
+      output=$(scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --cap-min "$fixture_minimum_cap_min" --wait 2>&1)
+      driver_status=$?
+      printf '%s\n' "$output"
+      [[ $driver_status -eq 0 ]] && break
+      printf '%s' "$output" | grep -Fq 'censusGeneration=' || break
+      sleep 1
+    done
+    printf '%s\n' "$driver_status" >"$mission_timeout_result"
   ) &
   mission_timeout_driver=$!
   wait_for_agent_status mission-timeout-job running
