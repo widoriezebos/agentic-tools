@@ -1209,6 +1209,29 @@ if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
   runner_evidence="$agent_fixture/runner-evidence"
   cp -R "$agent_repo" "$runner_repo"
   runner_repo=$(cd "$runner_repo" && pwd -P)
+  # Fixture git writes race the previous mission's trailing anchor: runners
+  # are detached, so "the mission returned" does not mean "its last git op
+  # finished". Wait for a live lock, remove a dead one's leavings (a killed
+  # runner leaves index.lock forever), then run the git op.
+  runner_git() {
+    local tries=0
+    while [[ -e "$runner_repo/.git/index.lock" ]] && (( tries < 16 )); do
+      sleep 0.5; tries=$((tries + 1))
+      if (( tries == 16 )); then
+        python3 - "$runner_repo/.git/index.lock" <<'LOCK'
+import os, sys, time
+lock = sys.argv[1]
+try:
+    if time.time() - os.stat(lock).st_mtime >= 4:
+        os.unlink(lock)
+except OSError:
+    pass
+LOCK
+      fi
+    done
+    git -C "$runner_repo" "$@"
+  }
+
   perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$runner_evidence"'|m' \
     "$runner_repo/metasystem.conf"
   agent_selftest_repo="$agent_fixture/selftest-repo"
@@ -2162,17 +2185,17 @@ GATE
   chmod +x "$runner_repo/scripts/gate.sh"
   printf '0\n' >"$runner_repo/candidate-score.txt"
   printf 'runner truth\n' >"$runner_repo/truth/reference.txt"
-  git -C "$runner_repo" config user.name metasystem
-  git -C "$runner_repo" config user.email metasystem@example.invalid
-  git -C "$runner_repo" add scripts/gate.sh candidate-score.txt truth/reference.txt
-  git -C "$runner_repo" commit -qm 'add mission runner instruments'
-  git -C "$runner_repo" tag runner-instruments
+  runner_git config user.name metasystem
+  runner_git config user.email metasystem@example.invalid
+  runner_git add scripts/gate.sh candidate-score.txt truth/reference.txt
+  runner_git commit -qm 'add mission runner instruments'
+  runner_git tag runner-instruments
   git init -q --bare "$runner_origin"
-  runner_branch=$(git -C "$runner_repo" branch --show-current)
-  git -C "$runner_repo" remote add origin "$runner_origin"
-  git -C "$runner_repo" push -qu -u origin "$runner_branch"
+  runner_branch=$(runner_git branch --show-current)
+  runner_git remote add origin "$runner_origin"
+  runner_git push -qu -u origin "$runner_branch"
   git -C "$runner_origin" symbolic-ref HEAD "refs/heads/$runner_branch"
-  git -C "$runner_repo" remote set-head origin -a >/dev/null
+  runner_git remote set-head origin -a >/dev/null
 
   make_runner_contract() { # mission, behavior, cycle fence, optional heading, runtime, model
     local mission=$1 behavior=$2 cycles=$3 bad_heading=${4:-} runtime=${5:-fake} model=${6:-fake-model}
@@ -2222,9 +2245,9 @@ exposure=EUR:1
 EOF
     contract_sha=$("$runner_repo/scripts/assert-mission.sh" --seal --file "$contract")
     printf '\nApproval: name=Fixture-Human; date=2026-08-04; contract-sha256=%s\n' "$contract_sha" >>"$contract"
-    git -C "$runner_repo" add "plans/mission-$mission.contract.md"
-    git -C "$runner_repo" commit -qm "sign mission $mission"
-    git -C "$runner_repo" push -qu origin "$runner_branch"
+    runner_git add "plans/mission-$mission.contract.md"
+    runner_git commit -qm "sign mission $mission"
+    runner_git push -qu origin "$runner_branch"
   }
 
   wait_lease_released() { # mission, description
@@ -2305,9 +2328,9 @@ PY
 
   make_runner_contract runner-cycle return-ok 5
   printf '1\n' >"$runner_repo/candidate-score.txt"
-  git -C "$runner_repo" add candidate-score.txt
-  git -C "$runner_repo" commit -qm 'improve mission runner candidate'
-  git -C "$runner_repo" push -qu origin "$runner_branch"
+  runner_git add candidate-score.txt
+  runner_git commit -qm 'improve mission runner candidate'
+  runner_git push -qu origin "$runner_branch"
   run_runner_expect runner-cycle-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-cycle
   wait_runner_status runner-cycle 10
   cycle_turn=$(find "$runner_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
@@ -2417,9 +2440,9 @@ CODEX
   chmod +x "$codex_host_bin/codex"
 
   printf '0\n' >"$runner_repo/candidate-score.txt"
-  git -C "$runner_repo" add candidate-score.txt
-  git -C "$runner_repo" commit -qm 'reset candidate for codex host mission'
-  git -C "$runner_repo" push -qu origin "$runner_branch"
+  runner_git add candidate-score.txt
+  runner_git commit -qm 'reset candidate for codex host mission'
+  runner_git push -qu origin "$runner_branch"
   make_runner_contract runner-codex return-ok 5 '' codex gpt-5-fixture
   run_runner_expect runner-codex-start 0 "${runner_process_env[@]}" \
     PATH="$codex_host_bin:$PATH" METASYSTEM_AGENT_RUNTIME=fake \
@@ -2506,7 +2529,7 @@ assert first_return["identity"]["sessionId"] is None
 assert second_turn["hostSession"] == "codex-fixture-session"
 assert second_return["identity"]["sessionId"] == second_turn["hostSession"]
 PY
-  git -C "$runner_repo" push -qu origin "$runner_branch"
+  runner_git push -qu origin "$runner_branch"
 
   run_runner_expect prompt-missing-turn 1 "$runner_repo/scripts/agents/mission-prompt.py" \
     --mission runner-cycle --turn runner-cycle-t99-missing --output "$agent_fixture/missing-prompt.md"
