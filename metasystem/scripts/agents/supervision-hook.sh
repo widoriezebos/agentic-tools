@@ -92,6 +92,12 @@ PY
   # that let this repository run for days with its hooks uninstalled.
   supervision_dir="$harness_root/artifacts/agents/supervision"
   mkdir -p "$supervision_dir"
+  # Hygiene runs itself: every turn end collects what the mirror already
+  # holds, so residue never waits for a human to wander in with a flashlight.
+  # Best-effort by design; a repo without an evidence root is politely refused
+  # by the collector and that is fine.
+  "$script_dir/evidence-gc.sh" >>"$supervision_dir/hooks.log" 2>&1 || true
+
   printf '%s stop open=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "$(printf '%s' "$message" | grep -c '^OPEN-WORK' || true)" \
     >>"$supervision_dir/hooks.log" 2>/dev/null || true
