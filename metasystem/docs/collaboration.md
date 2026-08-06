@@ -2,6 +2,26 @@
 
 This file owns the human side of the work: reviewable output, learned corrections, and predictable behavior in a shared repository. The always-on rules it expands live in `AGENTS.md`. Project-specific reserved decisions live in `docs/project-rules.md`.
 
+## Write to a human
+
+Every report a human reads — a turn summary, a delegate return, a refusal
+message, a commit message — is written for the person, not for the machine
+that produced it. Concretely:
+
+- Spell out an identifier the first time it appears in a report: "KI-4, the
+  slow process scan", not "KI-4". Ids are bookmarks, never explanations.
+- Say what a number means, not only its value: "442ms per scan, which is
+  longer than the 250ms gap between scans, so it can never catch up".
+- Never let a status line be made of ids, paths and jargon alone.
+- Prefer the sentence a colleague would understand without the repository
+  open. If it would not survive being read aloud to them, rewrite it.
+- Plain does not mean vague: keep the verdict, the evidence level, and the
+  uncertainty. Say the hard thing clearly rather than hiding it in shorthand.
+
+This is a standing rule in `AGENTS.md`, restated here because this document
+owns reporting; the role preambles carry it for delegates, so it holds for
+every runtime.
+
 ## Reviewable Increments
 
 Keep reviews small and cheap:
