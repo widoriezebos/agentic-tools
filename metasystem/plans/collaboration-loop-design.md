@@ -1,8 +1,8 @@
 # The Collaboration Loop: how orchestrator and delegate actually work together
 
-- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: CLOSED 2026-08-06 — round 3 returned zero material findings after 17 were folded across rounds 1-2. Chain design-critic-20260806t202601z-4f2f.
+- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: REOPENED 2026-08-06 by an implementer gap-stop (per this design's own C-1b), four gap amendments G-1..G-4 below; awaiting critique round 4.
 - Next step: implement, through the loop this design itself prescribes: delegate implements, a code-critic on a different model reviews to a zero-material round over the merged tree.
-- In flight right now: both gates running over the closed design (quiet machine); implementation brief written at the scratchpad, dispatches the moment the gates return — sequenced behind them because a sol delegate at xhigh and the full suite on one laptop is the exact load contention that flaked arming twice today
+- In flight right now: critique round 4 over the gap amendments
 - Waiting on the human: nothing — implementation authorized under the standing instruction to fix all findings
 
 ## Why this exists
@@ -183,6 +183,41 @@ gains the five-step loop as its own section; the orchestrator role and the
 host-turn instruction point at it rather than restating it, so there is one
 canonical statement and no drift between copies.
 
+## Gap amendments (from the implementer's gap-stop, per C-1b)
+
+The first implementation attempt changed zero files and reported four gaps.
+Each is a design decision, decided here:
+
+**G-1: one command, two stages.** `assert-conformance.sh` gains `--stage`
+with two values. `--stage review` produces and validates the diff artifact
+the critic will review and requires no chain — it is how the review object
+comes to exist. `--stage merge` is the full gate of C-1 and refuses without
+a closed chain. The chicken-and-egg dies there: review-stage invocations are
+never refused for lacking the chain they exist to enable.
+
+**G-2: the fixture-expectation-only waiver class is DELETED — it contradicted
+this design's own instruction-bearing rule.** Fixture expectations live under
+`scripts/`, which C-2a makes permanently unwaivable; a class that can never
+legally apply is a trap. One waiver class remains: `prose-under-30`, defined
+mechanically — every changed file ends in `.md`, none is on the
+instruction-bearing list, and changed lines (additions plus deletions, per
+`git diff --numstat`) total at most 30. Fixture-expectation changes go
+through critique like any code; tonight's fixture-wording fixes would have
+cost one cheap critic round, which is the correct price.
+
+**G-3: exhaustion has a record shape.** The chain root record gains a
+`critiqueExhaustions` array; each entry holds the round number, the open
+finding ids, and the successor job id. Conformance validates the successor
+by reading its archived brief and requiring every open finding id to appear
+in it. A chain whose array already holds one entry cannot receive a second:
+conformance refuses outright with "waiting on the human", and only a human
+note in the stream's plan unblocks the work.
+
+**G-4: the relation is a dispatch flag.** A code-critic dispatch carries
+`--reviews <implementer-job-id>`; dispatch refuses the flag for any other
+role and writes it as `reviews` in the job record. Merge conformance and
+receipt validation both read that one field — the same fact, one owner.
+
 ## What is deliberately not changed
 
 The design half. It works, it is enforced, and two long chains this session
@@ -203,9 +238,11 @@ was decided and why.
   though every finding has a disposition (the letter-vs-purpose case, CL-1-2).
 - A chain that exhausted its round budget: refused, `critiqueExhausted`
   recorded, and the open findings named (CL-1-3).
-- A waiver claiming documentation-only over a diff that touches a script:
-  refused; the same waiver over a genuinely doc-only diff: allowed and
-  counted (CL-1-5).
+- A waiver claiming prose-under-30 over a diff that touches a script:
+  refused; the same claim over a 10-line docs-only diff: allowed and counted;
+  a 40-line docs-only diff: refused for the threshold (CL-1-5, G-2).
+- `--stage review` with no chain: succeeds and emits the diff artifact;
+  `--stage merge` with no chain: refused (G-1).
 - Critic and implementer jobs identical in both runtime and model, without a
   declared `independence=session-only`: refused (CL-1-6).
 - `receipt.sh add` with `skills=code-critique` and no chain id: refused at
