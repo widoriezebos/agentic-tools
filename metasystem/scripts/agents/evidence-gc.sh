@@ -48,6 +48,13 @@ for chain_dir in sorted(p for p in agents.iterdir() if p.is_dir() and p.name not
         kept.append((chain, "no job records; not this tool's to judge")); continue
     if any(r.get("status") not in TERMINAL for r in records):
         kept.append((chain, "a round is still live")); continue
+    # An OPEN chain is working state even when every round is terminal: the
+    # orchestrator is adjudicating between rounds, and the collector once ate
+    # an active critique chain mid-conversation because this check was
+    # missing. Only an explicitly closed chain is history.
+    root = next((r for r in records if r.get("jobId") == chain), None)
+    if root is None or root.get("chainClosed") is not True:
+        kept.append((chain, "chain not closed; working state")); continue
     manifest_path = evidence / "agents" / chain / "manifest.json"
     if not manifest_path.exists():
         kept.append((chain, "no mirror manifest")); continue
