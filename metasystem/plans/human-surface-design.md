@@ -72,43 +72,29 @@ answer flow (HS-4-5).
 Proof: the audit's checks pass AND a fixture asserts the mission section
 names both the prose-first flow and the answer command verbatim.
 
-**F-3: Cohorts must not multiply signatures.**
-Evidence: a cohort of N repetitions currently implies N seal-and-sign
-ceremonies; the human has already rejected artifact multiplication in
-principle.
-Change: cohort-level authorization as the default, made representable and
-bounded rather than asserted. The contract grammar gains one optional line
-(HS-1-3): `Cohort-Authorization: cohort-id=<id>; record-sha256=<hash>`, which
-seal covers and preflight accepts as the approval when — and only when — the
-named cohort record is itself signed and its hash matches. The cohort
-record's signed bytes bind everything one signature spends (HS-1-4): the
-contract template hash, spec id and version, measuring-kit version, fence
-vector, roster, repetition count, per-repetition exposure, and the total
-exposure ceiling. The hash protocol is normative and complete (HS-3-4,
-HS-4-1): the template hash is sha256 over the contract file's bytes from its
-first byte through the closing fence of the ```mission block ONLY — the seal
-block, approval lines, and Cohort-Authorization line all sit outside the
-hashed region by construction, which also excludes every seal-time variable
-(timestamp, gate-ref sha) — with exactly one substitution: the `mission.id`
-value replaced by the literal token `@COHORT-MISSION-ID@`. Preflight
-recomputes exactly this; a deviating repetition fails on the hash. Replay
-bounds have grammar, owner, and atomicity (HS-3-5, HS-4-2): the record
-carries `expiresAt` (ISO-8601 UTC; preflight refuses at or after expiry);
-each repetition's mission id is `<spec-id>-<cohort-id>-r<index>` with index
-in [1, count]; the consumed-index ledger is the driver-owned directory
-`benchmark/results/cohorts/<cohort-id>.consumed/`, one file per index created
-with O_EXCL BEFORE provisioning — creation is the atomic reservation,
-reservations are never released, and a failed repetition consumes its index:
-rerunning it is a new cohort decision, never a silent retry. The cohort
-record signs without sealing (HS-4-3): records run no gate, so F-1's command
-gains a `--record <path>` mode whose display shows the bound facts (spec id
-and version, template hash, repetition count, per-repetition and total
-exposure, expiry) and whose approval line hashes the record's canonical
-bytes; no seal step exists for records. Per-repetition signing remains
-available; the driver accepts either and refuses a repetition with neither.
-Proof: kit-gate fixtures for both paths, the refusal with neither, a
-tampered-template repetition refused, a total-exposure ceiling exceeded
-refused, a reused repetition index refused, and an expired record refused.
+**F-3: Cohorts must not multiply ceremonies — SIMPLIFIED at round 5, by the
+scope fence.** Rounds 2 through 5 grew a cohort-authorization protocol
+(signed records, normative template hashes, consumed-index ledgers, expiry
+clocks) that the critique correctly kept finding holes in — HS-5-2 through
+HS-5-5 showed the surface cannot bottom out, because a driver-owned mutable
+record and a human-signed immutable authorization are different artifacts,
+and any agent-invokable attestation is self-attested. That is this design's
+own fence: the finding grew complexity, so the finding was wrong.
+Change, minimal and inheriting the existing trust model wholesale: F-1's
+command accepts multiple files — `--sign "<name>" --file a.md --file b.md …`.
+It verifies the contracts are identical under the one permitted difference
+(the mission id), displays ONE combined summary (count, the shared English
+sections and bounds, per-repetition and TOTAL exposure), takes ONE typed
+confirmation, and appends each contract's ORDINARY approval line with that
+contract's own hash. No new grammar, no records, no ledgers, no expiry, no
+replay surface: every repetition carries individually signed bytes that the
+existing preflight already verifies, and the driver simply refuses a
+repetition without its approval line. Non-identical contracts in one batch
+refuse with the differing key named.
+Proof: kit-gate fixtures for the batch happy path through preflight on every
+repetition; refusal when batched contracts differ beyond the mission id;
+refusal of an unsigned repetition by the driver; the combined display
+asserting the TOTAL exposure line.
 
 **F-4: Configuration generality billed to every human up front.** (Amended
 per HS-1-5: the original deletion claim was WRONG — both key families have
@@ -123,11 +109,16 @@ demotes both families to commented-out examples with one line each saying
 what configuring them buys; `metasystem-config.sh validate` accepts their
 absence (verify it already does; fix if not). The cost-escalation guard
 fails CLOSED without tiers (HS-3-6), and the approval path is CREATED, not
-cited — none exists today (HS-4-4): the dispatcher gains
-`--approve-escalation "<name>"`, which records name and timestamp in the job
-record as the escalation's approval evidence; without tiers, any `--model`
-override differing from the roster's resolution refuses with a message
-naming both remedies (configure tiers, or re-run with the approval flag).
+cited — none exists today (HS-4-4): the dispatcher gains an
+escalation confirmation with the same trust anchor as signing (HS-5-5: a
+bare flag is self-attested, since the agent is dispatch's normal caller):
+`--approve-escalation` is interactive-only — it displays the roster
+resolution, the requested model, and the cost direction, then requires typed
+confirmation, recording name, timestamp, and the displayed facts in the job
+record; there is no non-interactive form, so unattended flows simply cannot
+escalate, which is the correct failure. Without tiers, any differing
+`--model` override refuses, naming both remedies (configure tiers, or re-run
+interactively with the confirmation).
 The guard never silently accepts what it cannot rank. Validate says in one
 informational line that tiers are absent and overrides therefore always
 escalate.
