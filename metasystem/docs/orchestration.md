@@ -18,6 +18,35 @@ This file owns delegation judgment and the runtime-neutral orchestration mechani
 
 Every delegation states the goal, the workspace it runs in, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), the acceptance criteria, a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. The trust and certification rule below binds every return.
 
+## The Collaboration Loop
+
+For each substantial piece of work, use this five-step loop:
+
+1. **Design.** The orchestrator writes the design. A small, obvious change may
+   skip to implementation only when the orchestrator records why it is too
+   small to delegate.
+2. **Design critique.** A delegate critiques the design, the orchestrator
+   dispositions every finding, and rounds continue until a mechanically joined
+   round has zero material findings. Exhausting the round budget is not
+   agreement.
+3. **Implementation.** A delegate implements the closed design. The
+   orchestrator does not write the product itself.
+4. **Implementation critique.** A delegate in the code-critic role, in a fresh
+   session and on a different effective model unless configuration declares
+   `independence=session-only`, reviews the exact implementation tree. The
+   orchestrator dispositions every finding, and rounds continue until the
+   final round over that tree has zero material findings.
+5. **Gate and merge.** The orchestrator runs the gate of record and merges. The
+   gate is a floor beneath the two parties' agreement, not a substitute for it.
+
+The loop also has reverse edges. An implementer gap-stop reopens design with
+the gap as input. A critic finding that indicts the design rather than the code
+reopens design critique. A failed merge gate returns the work to
+implementation, after which the critic reviews the new tree. Design and code
+critique use their bounded skill budgets: an exhausted chain remains open, its
+successor brief enumerates every open finding identifier, and a second
+exhaustion stops with the work waiting on the human.
+
 ## Rostered Dispatch
 
 `metasystem.conf` owns the runtime and model roster. Dispatch a rostered role through `scripts/agents/dispatch.sh --role <role> --brief <file>` even when the selected runtime matches the main agent; `scripts/agents/dispatch.sh --help` owns the full command and lifecycle interface. `runtime=main` means the current session performs that role and is not dispatchable. Native subagents remain available for cheap, read-only exploration outside the roster.
@@ -43,7 +72,7 @@ Everything exchanged between orchestrator and delegate is a file; the launch tra
 | `artifacts/agents/worktrees/<job-id>/` | Disposable delegate worktree created by `--worktree`; writable roles never edit the shared checkout |
 | `artifacts/agents/capabilities/` | Immutable probe snapshots that gate dispatch |
 
-For implementation, `scripts/agents/assert-conformance.sh --job <job-id>` computes and persists the actual base-to-working-tree `diff.patch`; the delegate's reported file boundary is only a claim. `scripts/assert-critique-closed.sh` owns the mechanical findings-to-dispositions join. `plans/README.md` owns evidence retention and the durable-mirror boundary.
+For implementation, `scripts/agents/assert-conformance.sh --stage review --job <job-id>` computes and persists the actual base-to-working-tree `diff.patch` and its exact `reviewedTree`; the delegate's reported file boundary is only a claim. After critique, `--stage merge` binds the closed code-critic chain to the final committed tree. `scripts/assert-critique-closed.sh` owns the mechanical findings-to-dispositions join. `plans/README.md` owns evidence retention and the durable-mirror boundary.
 
 ## Mission Contracts
 

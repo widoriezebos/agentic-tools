@@ -160,7 +160,7 @@ cp "$source_root/scripts/metasystem-config.sh" \
   "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
 cp "$source_root/docs/project-rules.md" "$repo/docs/"
 cp "$source_root/metasystem.conf" "$repo/"
-perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$tmp/evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=1/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/^role\.(code-critic|investigator)\.runtime=main$/role.$1.runtime=fake/mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$repo/metasystem.conf"
+perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$tmp/evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=1/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/^role\.code-critic\.runtime=.*$/role.code-critic.runtime=fake/m; s/^role\.code-critic\.model\.<runtime>=.*$/role.code-critic.model.fake=fake-model/m; s/^role\.investigator\.runtime=main$/role.investigator.runtime=fake/m; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$repo/metasystem.conf"
 printf '\nmodel.tier.1=fake:fake-model\n' >>"$repo/metasystem.conf"
 git -C "$repo" init -q
 git -C "$repo" add .

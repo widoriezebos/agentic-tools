@@ -148,6 +148,7 @@ for link in \
   scripts/agents/adapters/runtime-common.sh \
   scripts/agents/adapters/claude-session-signal.py \
   scripts/agents/assert-conformance.sh \
+  scripts/agents/conformance-fixtures.sh \
   scripts/assert-critique-closed.sh \
   scripts/assert-return-complete.sh \
   scripts/assert-turn-prompt.sh \
@@ -179,6 +180,7 @@ bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/mission-runner.sh
+bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/fake.sh
@@ -188,6 +190,7 @@ bash -n scripts/assert-turn-prompt.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
+bash scripts/agents/conformance-fixtures.sh
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
@@ -501,9 +504,9 @@ from pathlib import Path
 root = Path(sys.argv[1])
 common = {"jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode"}
 role_fields = {
-    "design-critic": {"findings", "verdictMaterialCount"},
+    "design-critic": {"reviewedCommit", "findings", "verdictMaterialCount"},
     "implementer": {"riskiestPart", "diffBoundary", "whatWasDone"},
-    "code-critic": {"findings", "verdictMaterialCount"},
+    "code-critic": {"reviewedTree", "findings", "verdictMaterialCount"},
     "verifier": {"riskiestPart", "whatWasDone"},
     "investigator": {"frozenFrame", "theories", "classifications", "stopLoss"},
     "behavior-judge": {"dimensions", "reliabilityWatch"},
@@ -741,11 +744,13 @@ positive = {
     "design-critic": {
         **common,
         "mode": "design",
+        "reviewedCommit": "0" * 40,
         "findings": [{"id": "F-1", "severity": "high", "material": True, "claim": "contract gap", "evidence": "read design"}],
         "verdictMaterialCount": 1,
     },
     "code-critic": {
         **common,
+        "reviewedTree": "0" * 40,
         "findings": [],
         "verdictMaterialCount": 0,
     },
@@ -846,6 +851,25 @@ check_bad_return behavior-judge "$return_fixtures/behavior-judge-empty-dimension
 check_bad_return behavior-judge "$return_fixtures/behavior-judge-invalid-anchor.json" '$.dimensions[0].anchors[0].line must be a positive one-based line number'
 check_bad_return design-critic "$return_fixtures/critic-missing-verdict.json" '$.verdictMaterialCount is required'
 check_bad_return design-critic "$return_fixtures/critic-miscount.json" '$.verdictMaterialCount must equal the count of findings with material=true'
+
+if (( template_mode )); then
+  set +e
+  scripts/agents/dispatch.sh dispatch --role code-critic --brief scripts/agents/templates/brief.md \
+    >"$tmp/code-critic-missing-reviews.out" 2>&1
+  missing_reviews_status=$?
+  scripts/agents/dispatch.sh dispatch --role implementer --brief scripts/agents/templates/brief.md --reviews fixture-job \
+    >"$tmp/non-critic-reviews.out" 2>&1
+  non_critic_reviews_status=$?
+  set -e
+  [[ $missing_reviews_status -eq 2 ]] \
+    || { echo "code-critic dispatch without --reviews did not use exit 2" >&2; exit 1; }
+  grep -Fq 'code-critic dispatch requires --reviews <implementer-job-id>' "$tmp/code-critic-missing-reviews.out" \
+    || { echo "code-critic dispatch did not require its review relation" >&2; exit 1; }
+  [[ $non_critic_reviews_status -eq 2 ]] \
+    || { echo "non-critic --reviews dispatch did not use exit 2" >&2; exit 1; }
+  grep -Fq -- '--reviews is only valid for the code-critic role' "$tmp/non-critic-reviews.out" \
+    || { echo "dispatcher accepted --reviews for a non-critic role" >&2; exit 1; }
+fi
 
 set +e
 scripts/assert-return-complete.sh >"$tmp/return-usage.out" 2>&1
@@ -1290,7 +1314,7 @@ if delegate_process_section "dispatcher, adapter selftest, and mission-runner pr
     scripts/watch-background-jobs.sh "$agent_repo/scripts/"
   cp docs/project-rules.md "$agent_repo/docs/"
   cp metasystem.conf "$agent_repo/"
-  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=5/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=4096/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/^role\.(code-critic|investigator)\.runtime=main$/role.$1.runtime=fake/mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/metasystem.conf"
+  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=5/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=4096/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/^role\.code-critic\.runtime=.*$/role.code-critic.runtime=fake/m; s/^role\.code-critic\.model\.<runtime>=.*$/role.code-critic.model.fake=fake-model/m; s/^role\.investigator\.runtime=main$/role.investigator.runtime=fake/m; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/metasystem.conf"
   printf '\nmodel.tier.1=fake:fake-model\nmodel.tier.2=fake:fake-premium\n' >>"$agent_repo/metasystem.conf"
   grep -q '^watch\.interval-sec=' "$agent_repo/metasystem.conf" || printf 'watch.interval-sec=5\n' >>"$agent_repo/metasystem.conf"
   grep -q '^census\.log-max-bytes=' "$agent_repo/metasystem.conf" || printf 'census.log-max-bytes=4096\n' >>"$agent_repo/metasystem.conf"
@@ -1754,10 +1778,14 @@ PY
   cp "$good_agent_conf" "$agent_repo/metasystem.conf"
   code_brief="$agent_fixture/code.md"
   make_agent_brief "$code_brief" implement
-  run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --runtime fake --permissions none --job-id flag-runtime --wait
+  review_target_brief="$agent_fixture/review-target.md"
+  make_agent_brief "$review_target_brief" implement
+  run_agent_fixture review-target review-target "$agent_dispatch" dispatch --role implementer --brief "$review_target_brief" --job-id review-target --worktree --wait
+  run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --permissions none --job-id flag-runtime --wait
   python3 - "$agent_repo/artifacts/agents/jobs/flag-runtime.json" <<'PY'
 import json, sys
 record = json.load(open(sys.argv[1])); assert record["runtime"] == "fake" and record["overridden"] is True
+assert record["reviews"] == "review-target"
 PY
   investigator_brief="$agent_fixture/investigator.md"
   make_agent_brief "$investigator_brief" take-a-step-back
@@ -2131,7 +2159,7 @@ PY
   make_agent_brief "$implement_brief" implement
   run_agent_fixture conformance conformance "$agent_dispatch" dispatch --role implementer --brief "$implement_brief" --job-id conformance --worktree --wait
   agent_fails close-before-diff 'diff.patch is not mirrored' "$agent_dispatch" close --job conformance
-  (cd "$agent_repo" && scripts/agents/assert-conformance.sh --job conformance)
+  (cd "$agent_repo" && scripts/agents/assert-conformance.sh --stage review --job conformance)
   [[ -f "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" ]] \
     || { echo "conformance did not persist diff.patch" >&2; exit 1; }
   run_agent_fixture conformance-reap conformance "$agent_dispatch" reap --job conformance
@@ -2139,13 +2167,13 @@ PY
   conformance_workspace=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workspaceRoot"])' "$agent_repo/artifacts/agents/jobs/conformance.json")
   case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
   printf 'untracked change\n' >"$conformance_workspace/source.txt"
-  agent_fails diff-boundary-mismatch 'Diff-boundary claim does not match computed diff' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  agent_fails diff-boundary-mismatch 'Diff-boundary claim does not match computed diff' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
   python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt <<'PY'
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 PY
-  (cd "$agent_repo" && scripts/agents/assert-conformance.sh --job conformance)
+  (cd "$agent_repo" && scripts/agents/assert-conformance.sh --stage review --job conformance)
   mkdir -p "$conformance_workspace/plans"
   printf 'delegate plan\n' >"$conformance_workspace/plans/delegate.md"
   python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt plans/delegate.md <<'PY'
@@ -2153,15 +2181,15 @@ import json, sys
 from pathlib import Path
 path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 PY
-  agent_fails untracked-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  agent_fails untracked-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
   git -C "$conformance_workspace" add source.txt plans/delegate.md
   git -C "$conformance_workspace" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm delegate-checkpoint
-  agent_fails committed-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  agent_fails committed-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
   printf 'uncommitted change\n' >>"$conformance_workspace/plans/delegate.md"
-  agent_fails uncommitted-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  agent_fails uncommitted-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
   mkdir -p "$conformance_workspace/artifacts/agents"
   printf 'tamper\n' >"$conformance_workspace/artifacts/agents/tamper"
-  agent_fails control-plane-change 'agent control plane contains delegate-created files' "$agent_repo/scripts/agents/assert-conformance.sh" --job conformance
+  agent_fails control-plane-change 'agent control plane contains delegate-created files' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
 
   # Snapshot refusal, fallbacks, permission waivers, and raw/event degradations.
   snapshot_dir="$agent_repo/artifacts/agents/capabilities"
@@ -2333,7 +2361,7 @@ PY
   run_agent_fixture envelope-model-override envelope-model-override "$agent_dispatch" dispatch \
     --role design-critic --brief "$happy_brief" --model fake-escalated --job-id envelope-model-override --mission mission-alpha --wait
   run_agent_fixture envelope-runtime-override envelope-runtime-override "$agent_dispatch" dispatch \
-    --role code-critic --brief "$code_brief" --runtime fake --job-id envelope-runtime-override --mission mission-alpha --wait
+    --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --job-id envelope-runtime-override --mission mission-alpha --wait
   agent_fails envelope-runtime-implied-model 'add fake:fake-implied-model to a signed envelope.dispatch-allow' \
     "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --job-id envelope-runtime-implied --mission mission-alpha
   run_agent_fixture mission-explicit mission-explicit "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --wait
@@ -3380,6 +3408,79 @@ scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "
 scripts/receipt.sh stats --file "$rfile" | grep -q '^receipts=1$' || { echo "receipt stats miscounted the post-retro period" >&2; exit 1; }
 scripts/receipt.sh stats --file "$rfile" | grep -q '^type_improve=1$' || { echo "receipt stats missed the improve type" >&2; exit 1; }
 scripts/receipt.sh stats --all --file "$rfile" | grep -q '^receipts=3$' || { echo "receipt stats --all miscounted" >&2; exit 1; }
+
+receipt_relation="$tmp/receipt-relation"
+mkdir -p "$receipt_relation/scripts" "$receipt_relation/artifacts/agents/jobs"
+cp scripts/receipt.sh scripts/metasystem-config.sh "$receipt_relation/scripts/"
+printf 'retro.max-receipts=25\nretro.max-age-days=30\n' >"$receipt_relation/metasystem.conf"
+python3 - "$receipt_relation/artifacts/agents/jobs" <<'PY'
+import json, sys
+from pathlib import Path
+
+jobs = Path(sys.argv[1])
+values = {
+    "fixture-implementer": {
+        "jobId": "fixture-implementer", "role": "implementer", "parentJob": None,
+    },
+    "fixture-critic": {
+        "jobId": "fixture-critic", "role": "code-critic", "parentJob": None,
+        "reviews": "fixture-implementer",
+    },
+    "unrelated-critic": {
+        "jobId": "unrelated-critic", "role": "code-critic", "parentJob": None,
+        "reviews": "another-implementer",
+    },
+    "waived-implementer": {
+        "jobId": "waived-implementer", "role": "implementer", "parentJob": None,
+        "critiqueWaived": {"class": "prose-under-30"},
+    },
+}
+for name, value in values.items():
+    (jobs / f"{name}.json").write_text(json.dumps(value) + "\n")
+PY
+relation_log="$receipt_relation/receipts.log"
+if "$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
+    --skills code-critique --delegate fake:model:fixture-implementer \
+    --file "$relation_log" >"$receipt_relation/missing-chain.out" 2>&1; then
+  echo "receipt accepted code-critique without a related critic chain" >&2
+  exit 1
+fi
+grep -Fq 'code-critic chain id and the implementer job id' "$receipt_relation/missing-chain.out" \
+  || { echo "receipt refusal did not name the missing relation" >&2; exit 1; }
+if "$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
+    --skills code-critique --delegate fake:model:fixture-implementer \
+    --delegate fake:model:unrelated-critic --file "$relation_log" >/dev/null 2>&1; then
+  echo "receipt accepted an unrelated critic chain" >&2
+  exit 1
+fi
+"$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
+  --skills code-critique --delegate fake:model:fixture-implementer \
+  --delegate fake:model:fixture-critic --file "$relation_log" >/dev/null
+mkdir -p "$receipt_relation/artifacts/agents/waived-implementer"
+printf 'Working Mode: implement\nMission Stream: waiver-stream\n' \
+  >"$receipt_relation/artifacts/agents/waived-implementer/brief.md"
+"$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
+  --delegate fake:model:waived-implementer --file "$relation_log" >/dev/null
+grep -Fq '|critique_waived=prose-under-30|waiver_stream=waiver-stream|' "$relation_log" \
+  || { echo "receipt did not surface the accepted waiver and its stream" >&2; exit 1; }
+"$receipt_relation/scripts/receipt.sh" stats --file "$relation_log" | grep -q '^critique_waivers=1$' \
+  || { echo "receipt stats did not count the stream waiver for retro" >&2; exit 1; }
+
+correction_log="$tmp/receipt-correction.log"
+scripts/receipt.sh add --type implement --outcome shipped --skills none \
+  --file "$correction_log" >/dev/null
+original_line=$(sed -n '1p' "$correction_log")
+original_epoch=${original_line%%|*}
+original_sha1=$(printf '%s' "$original_line" | shasum -a 1 | awk '{print $1}')
+scripts/receipt.sh correct --ref-epoch "$original_epoch" --ref-sha1 "$original_sha1" \
+  --field skills --was none --now review --reason 'fixture correction' \
+  --file "$correction_log" >/dev/null
+[[ "$(sed -n '1p' "$correction_log")" == "$original_line" ]] \
+  || { echo "receipt correction edited the original line" >&2; exit 1; }
+[[ $(wc -l <"$correction_log" | tr -d ' ') == 2 ]] \
+  || { echo "receipt correction did not append exactly one line" >&2; exit 1; }
+grep -Fq "|CORRECTION|ref_epoch=$original_epoch|ref_sha1=$original_sha1|field=skills|was=none|now=review|reason=fixture correction" "$correction_log" \
+  || { echo "receipt correction line lost its unique reference or change fields" >&2; exit 1; }
 
 # Every free-text field is sanitized by one shared path: CRLF through the
 # note, the skills list, delegates, and the retro summary must each stay one log line.

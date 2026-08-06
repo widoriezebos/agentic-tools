@@ -4,7 +4,7 @@
   "title": "Code critic return",
   "type": "object",
   "additionalProperties": false,
-  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "findings", "verdictMaterialCount"],
+  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "reviewedTree", "findings", "verdictMaterialCount"],
   "properties": {
     "jobId": {"type": "string"},
     "round": {"type": "integer"},
@@ -34,6 +34,7 @@
     },
     "gaps": {"type": "array", "items": {"type": "string"}},
     "mode": {"type": "string"},
+    "reviewedTree": {"type": "string"},
     "findings": {
       "type": "array",
       "items": {

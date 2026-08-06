@@ -249,6 +249,10 @@ for raw in path.read_text(encoding="utf-8").splitlines():
             out.append(raw)
         continue
 
+    if key == "role.code-critic.model.<runtime>":
+        out.append(f"role.code-critic.model.{default}={value}")
+        continue
+
     match = model_key.fullmatch(key)
     if match and match.group(1) not in selected_set:
         continue
