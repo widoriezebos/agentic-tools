@@ -1,7 +1,7 @@
 # Human Surface Design: recovering from over-engineering
 
-- Goal and current status: every human touchpoint of the metasystem reduced to English prose or a single command, with complexity permitted only on the agent side; over-engineered pieces named by evidence and removed. Status: DRAFT, awaiting critique.
-- Next step: design critique by Codex until closed by join; then implement per the order below.
+- Goal and current status: every human touchpoint of the metasystem reduced to English prose or a single command, with complexity permitted only on the agent side; over-engineered pieces named by evidence and removed. Status: CLOSED by join at round 12 (2026-08-06), 48 findings adjudicated; ready for implementation in the stated order.
+- Next step: implement per the order below, one brief per finding or adjacent pair, each citing this design.
 - In flight right now: nothing
 - Waiting on the human: ratification comes through accepting this design after critique
 
