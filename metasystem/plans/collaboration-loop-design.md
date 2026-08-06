@@ -1,8 +1,8 @@
 # The Collaboration Loop: how orchestrator and delegate actually work together
 
-- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: REOPENED 2026-08-06 by an implementer gap-stop (per this design's own C-1b), four gap amendments G-1..G-4 below; awaiting critique round 4.
+- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: CLOSED 2026-08-06 (second closure) — round 4 returned zero material findings over the gap amendments. 17 findings + 4 gap amendments across the chain's life.
 - Next step: implement, through the loop this design itself prescribes: delegate implements, a code-critic on a different model reviews to a zero-material round over the merged tree.
-- In flight right now: critique round 4 over the gap amendments
+- In flight right now: implementation, second dispatch, against the amended design
 - Waiting on the human: nothing — implementation authorized under the standing instruction to fix all findings
 
 ## Why this exists
