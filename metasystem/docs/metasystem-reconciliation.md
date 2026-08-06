@@ -47,7 +47,7 @@ Decide the fate of every rule with the table below. A file is not the unit of de
 
 Default when torn between keep-as-delta and drop: drop, and record it in the ledger. The receipts-and-retro loop will re-add a rule that reality asks for, and restoring from the ledger is cheaper than carrying an unused rule in every context window.
 
-Known template-level gaps and their reopen triggers live in the template repository's `development/source-analysis.md`. Consult it before concluding that a missing capability is yours to invent.
+Known template-level gaps and their reopen triggers live beside the template checkout, in its development docs (`development/source-analysis.md`, a sibling of the metasystem folder there). Consult them before concluding that a missing capability is yours to invent.
 
 ## Phase 2: install or upgrade
 
@@ -67,7 +67,7 @@ Clean cutover, per the design principles: the same change that installs a metasy
 
 ## Phase 4: prove and hand over
 
-1. `scripts/validate-metasystem.sh` passes in the repository. Outside the template repository (detected by the absence of the template marker `development/metasystem-design.md`) the audit also fails on unreplaced `docs/project-rules.md` placeholders, along with the always-loaded cap.
+1. `scripts/validate-metasystem.sh` passes in the repository. Outside the template checkout (which the audit detects by its folder name plus the development docs beside it) the audit also fails on unreplaced `docs/project-rules.md` placeholders, along with the always-loaded cap.
 2. The commands recorded in `docs/project-rules.md` each actually ran, at minimum the focused test and the build.
 3. A final sweep finds no orphaned instruction files and no dangling references to deleted ones.
 4. Report with the ledger first: dispositions by bucket, deletions with reasons, conflicts escalated, deltas kept, and upstream proposals for the template. Append a receipt (`scripts/receipt.sh add`) and recommend the first retro after a handful of tasks rather than at the default cadence.

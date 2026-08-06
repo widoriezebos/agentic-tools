@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,25 @@ LEGAL_STREAM_TRANSITIONS = {
 class StateError(RuntimeError):
     pass
 
+
+
+def clear_index_lock(repo: Path) -> None:
+    """Wait briefly for a live lock holder; remove a dead one's leavings."""
+    lock = repo / ".git" / "index.lock"
+    for _ in range(8):
+        if not lock.exists():
+            return
+        time.sleep(0.5)
+    try:
+        age = time.time() - lock.stat().st_mtime
+    except OSError:
+        return
+    if age >= 4:
+        print(f"removing stale index.lock (age {age:.0f}s, holder presumed dead)", file=sys.stderr)
+        try:
+            lock.unlink()
+        except OSError:
+            pass
 
 def canonical(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
@@ -426,6 +446,13 @@ def command_anchor(args: argparse.Namespace) -> None:
         ledger_relative = args.ledger.resolve().relative_to(args.repo.resolve()).as_posix()
     except ValueError as error:
         raise StateError("anchor refused: mission ledger is outside the repository") from error
+    # Two distinct lock conditions meet here. A LIVE holder (the host's final
+    # commit racing the anchor: turn end is the result file landing, which
+    # serialises nothing) deserves a short wait. A DEAD holder (a process
+    # group killed mid-commit leaves .git/index.lock forever) deserves
+    # removal, which is git's own printed advice; waiting on a corpse's lock
+    # is how the suite hung twice tonight.
+    clear_index_lock(args.repo)
     git(args.repo, "add", "-f", "--", ledger_relative)
     subject = f"mission({state['missionId']}): anchor cycle {cycles}"
     body = (
@@ -435,7 +462,13 @@ def command_anchor(args: argparse.Namespace) -> None:
         f"Mission-Ledger-Path: {ledger_relative}\n"
         f"Mission-Cycle: {cycles}"
     )
-    git(args.repo, "commit", "--allow-empty", "-m", subject, "-m", body)
+    for attempt in range(6):
+        result = git(args.repo, "commit", "--allow-empty", "-m", subject, "-m", body, check=False)
+        if result.returncode == 0:
+            break
+        if "index.lock" not in (result.stderr or "") or attempt == 5:
+            raise StateError(f"anchor commit failed: {(result.stderr or result.stdout).strip()}")
+        clear_index_lock(args.repo)
     print(git(args.repo, "rev-parse", "HEAD").stdout.strip())
 
 

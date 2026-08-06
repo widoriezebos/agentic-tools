@@ -145,17 +145,42 @@ tar -xf "$stage/payload.tar" -C "$stage"
 rm -f "$stage/payload.tar"
 # benchmark/ is the measuring kit: it measures the metasystem rather than
 # serving adopted projects, and it carries every spec's HELD-OUT grader. A
-# benchmark target that received it would ship the builders their own answer
-# key, so this exclusion is load-bearing, not tidiness.
-rm -rf "$stage/development" "$stage/benchmark" "$stage/README.md" "$stage/LICENSE"
-# plans/ ships only its standing ledgers: task-local plans and handoff notes
-# are template-repository state, and receipts.log is its receipts history.
-for p in "$stage"/plans/*; do
-  case "$(basename "$p")" in
-    README.md|instruction-ledger.md|known-issues.md) ;;
-    *) rm -rf "$p" ;;
-  esac
+# The payload is an allowlist: what is not named here does not ship. Three
+# leaks in one day came from ship-by-default — the held-out grader, the
+# development ledgers, and the roster — and an allowlist inverts the failure
+# mode: a forgotten new file stays home instead of going out.
+payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md docs metasystem.conf optional-skills plans scripts skills wow.md"
+for entry in "$stage"/* "$stage"/.[!.]*; do
+  [[ -e "$entry" || -L "$entry" ]] || continue
+  keep=0
+  for allowed in $payload_allow; do
+    [[ "$(basename "$entry")" == "$allowed" ]] && { keep=1; break; }
+  done
+  (( keep )) || rm -rf "$entry"
 done
+# plans/ ships its README and FRESH ledgers, never this repository's. Shipping
+# the real instruction ledger and known-issues register was an early deliberate
+# choice ("standing ledgers") and it was wrong: an adopted project starts with
+# its own history, and a benchmark run must not read its builders our lessons.
+for p in "$stage"/plans/*; do
+  case "$(basename "$p")" in README.md) ;; *) rm -rf "$p" ;; esac
+done
+cat >"$stage/plans/instruction-ledger.md" <<'SKELETON'
+# Instruction Ledger
+
+Standing ledger of instruction changes adopted by retros (`skills/retro/SKILL.md`). Rows enter as `ADOPTED` with `Review by` naming the next retro; that retro replaces the status with a verdict: `KEPT`, `KEPT-UNPROVEN`, `AMENDED`, or `REVERTED`. Two consecutive `KEPT-UNPROVEN` verdicts revert by default.
+
+| Id | Retro | Change | Owner doc | Evidence pattern | Expected effect | Review by | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+SKELETON
+cat >"$stage/plans/known-issues.md" <<'SKELETON'
+# Known Issues
+
+Accepted defects and risks, each with its consequence and the condition that reopens it. A row here is a decision, not a backlog item: it says this project knows and accepts the issue until the stated condition changes.
+
+| Id | Date | Issue | Consequence | Reopen when | Status |
+| --- | --- | --- | --- | --- | --- |
+SKELETON
 for s in ${enable_skills[@]+"${enable_skills[@]}"}; do
   [[ -d "$stage/optional-skills/$s" ]] || die 2 "unknown optional skill: $s"
   mv "$stage/optional-skills/$s" "$stage/skills/$s"

@@ -15,7 +15,10 @@ USAGE
 
 die() { echo "$2" >&2; exit "$1"; }
 
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+# The kit lives beside the metasystem, never inside it: dependencies point
+# one way, kit into equipment. root is the metasystem checkout.
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../metasystem" && pwd -P)
+kit=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 spec_arg=
 target_arg=
 

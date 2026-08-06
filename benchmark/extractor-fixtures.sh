@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-fixture=$(mktemp -d "$root/scripts/.benchmark-extractor-fixture.XXXXXX")
+kit=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+fixture=$(mktemp -d "$kit/.extractor-fixture.XXXXXX")
 
 cleanup() {
   case "$fixture" in
-    "$root"/scripts/.benchmark-extractor-fixture.*) rm -rf -- "$fixture" ;;
+    "$kit"/.extractor-fixture.*) rm -rf -- "$fixture" ;;
     *) echo "refusing to remove unexpected fixture path: $fixture" >&2; return 1 ;;
   esac
 }
 trap cleanup EXIT
 
-python3 - "$fixture" "$root" <<'PY'
+python3 - "$fixture" "$kit" <<'PY'
 import copy
 import json
 import shutil
@@ -260,7 +260,7 @@ PY
 for name in valid everyJobTerminal everyChainClosed zeroUntracked fencesEnforced delegationFloorMet rosterPinned evidenceSetComplete; do
   mission="$fixture/$name/artifacts/agents/missions/fixture"
   out="$fixture/$name-scorecard.json"
-  "$root/benchmark/extract.sh" "$mission" --spec "$fixture/spec" --out "$out" >/dev/null
+  "$kit/extract.sh" "$mission" --spec "$fixture/spec" --out "$out" >/dev/null
   python3 - "$out" "$name" <<'PY'
 import json
 import sys

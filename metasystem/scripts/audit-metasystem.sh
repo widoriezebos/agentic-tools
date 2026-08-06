@@ -3,6 +3,9 @@ set -euo pipefail
 
 root=${1:-.}
 cd "$root"
+# Captured AFTER the cd: the sentinel describes the audited root, never the
+# caller's working directory.
+metasystem_here=$(pwd -P)
 
 search_lines() { # POSIX ERE followed by files/directories
   local pattern=$1
@@ -66,11 +69,12 @@ if search_lines 'TODO|TBD|<one paragraph>|<command>|<paths' AGENTS.md wow.md "${
   exit 1
 fi
 
-# Template detection uses a positive marker, not the mere absence of a deta/
-# directory (any project may have one of those): only the template repository
-# carries development/metasystem-design.md. Everywhere else, project-rules.md must be
-# filled in.
-if [[ ! -f development/metasystem-design.md ]]; then
+# Template detection uses a positive marker, not the mere absence of a
+# directory: only the template checkout is a folder literally named metasystem
+# with the development docs beside it, and the name test short-circuits so an
+# adopted repository never touches a parent path. Everywhere else,
+# project-rules.md must be filled in.
+if ! [[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]]; then
   # Look for the template's own literal placeholders, exactly as the check on
   # AGENTS.md and the skills does above. A generic any-angle-bracket pattern
   # false-positives on legitimately parameterized commands in a filled file
