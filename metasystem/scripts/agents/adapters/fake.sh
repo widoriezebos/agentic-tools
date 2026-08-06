@@ -58,6 +58,67 @@ parse_supervisor_args() {
 
 behavior_present() { grep -Fqi "FAKE:$1" "$prompt"; }
 
+fake_guarded_write() { # permissions JSON, target path
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+from pathlib import Path
+
+permissions = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+target = Path(sys.argv[2]).resolve()
+for raw_root in permissions.get("writeRoots", []):
+    root = Path(raw_root).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        continue
+    target.write_text("fake envelope write probe\n", encoding="utf-8")
+    raise SystemExit(0)
+raise SystemExit(77)
+PY
+}
+
+fake_guarded_network_call() { # permissions JSON, host, port
+  [[ $(field "$1" network) == allow ]] || return 77
+  python3 - "$2" "$3" <<'PY'
+import socket, sys
+
+with socket.create_connection((sys.argv[1], int(sys.argv[2])), timeout=1) as connection:
+    connection.sendall(b"GET /fake-envelope-probe HTTP/1.0\r\n\r\n")
+PY
+}
+
+probe_fake_envelope_mechanism() {
+  local probe_dir permissions target result write_status network_status
+  probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fake-envelope-probe.XXXXXX")
+  permissions="$probe_dir/permissions.json"
+  target="$probe_dir/denied-write.txt"
+  result=${METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT:-}
+  printf '{"readRoots":[],"writeRoots":[],"network":"deny"}\n' >"$permissions"
+  set +e
+  fake_guarded_write "$permissions" "$target"
+  write_status=$?
+  fake_guarded_network_call "$permissions" 127.0.0.1 9
+  network_status=$?
+  set -e
+  if [[ $write_status -ne 77 || $network_status -ne 77 || -e "$target" ]]; then
+    echo "fake envelope mechanism did not refuse a denied write and network call" >&2
+    rm -rf "$probe_dir"
+    return 1
+  fi
+  if [[ -n "$result" ]]; then
+    python3 - "$result" "$write_status" "$network_status" <<'PY'
+import json, sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps({
+    "writeRoots": {"observed": "denied", "exitStatus": int(sys.argv[2])},
+    "network": {"observed": "denied", "exitStatus": int(sys.argv[3])},
+}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+  fi
+  rm -rf "$probe_dir"
+}
+
 fixture_milliseconds_to_sleep() { # positive integer milliseconds
   local milliseconds=$1
   [[ "$milliseconds" =~ ^[1-9][0-9]*$ ]] \
@@ -270,6 +331,7 @@ probe() {
   done
   case "$profile" in current|old|unverified-network) ;; *) usage; exit 2 ;; esac
   [[ "$age_days" =~ ^[0-9]+$ ]] || { usage; exit 2; }
+  probe_fake_envelope_mechanism
   mkdir -p "$agents/capabilities"
   # The simulator's handshake window scales with measured load like every other
   # fixture ceiling; a fixed two-second default is a red gate on a busy machine.
@@ -302,11 +364,16 @@ capabilities = {
   "sessionEstablishedTimeoutSec": handshake,
 }
 permissions = {"unverified": ["network"] if profile == "unverified-network" else []}
+envelope_enforcement = {
+  "writeRoots": "mapped",
+  "readRoots": "notEnforced",
+  "network": "notEnforced" if profile == "unverified-network" else "mapped",
+}
 value = {
   "runtime": "fake", "cliVersion": "fake-1", "configHash": "fake-config-v1",
   "capturedAt": captured.strftime("%Y-%m-%dT%H:%M:%SZ"), "sequence": sequence,
   "transports": ["stdin", "file"], "capabilities": capabilities, "permissions": permissions,
-  "profile": profile,
+  "envelopeEnforcement": envelope_enforcement, "profile": profile,
 }
 with path.open("x", encoding="utf-8") as handle:
     json.dump(value, handle, indent=2, sort_keys=True); handle.write("\n")
@@ -358,11 +425,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 Path(sys.argv[1]).write_text(json.dumps({
   "runtime": "fake", "job": sys.argv[2], "passedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-  "provenBehaviorally": ["dispatch", "return-validation", "resume-identity", "cancel", "usage-extraction"],
-  "constructedOnly": ["readRoots", "writeRoots", "network", "approvals", "tools"],
+  "provenBehaviorally": [
+    "dispatch", "return-validation", "resume-identity", "cancel", "usage-extraction",
+    "denied-write", "denied-network",
+  ],
+  "constructedOnly": ["readRoots", "approvals", "tools"],
 }, indent=2, sort_keys=True) + "\n")
 PY
-    echo "fake adapter selftest passed: full protocol sequence; permission fields recorded as constructed-only"
+    echo "fake adapter selftest passed: full protocol sequence and denied-envelope mechanism probes"
     ;;
   -h|--help) usage ;;
   *) usage; exit 2 ;;

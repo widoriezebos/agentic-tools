@@ -372,18 +372,26 @@ print(digest.hexdigest()[:24])
 PY
 }
 
-write_capability_snapshot() { # runtime version hash transports caps permissions
+write_capability_snapshot() { # runtime version hash transports caps permissions envelope-enforcement
   local snapshot_runtime=$1 version=$2 config_hash=$3 transports=$4 caps=$5 permissions=$6
+  local envelope_enforcement=$7
   mkdir -p "$agents/capabilities"
   python3 - "$agents/capabilities" "$snapshot_runtime" "$version" "$config_hash" \
-    "$transports" "$caps" "$permissions" <<'PY'
+    "$transports" "$caps" "$permissions" "$envelope_enforcement" <<'PY'
 import json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 directory = Path(sys.argv[1])
 runtime, version, config_hash = sys.argv[2:5]
-transports, capabilities, permissions = map(json.loads, sys.argv[5:8])
+transports, capabilities, permissions, envelope_enforcement = map(json.loads, sys.argv[5:9])
+expected_enforcement_fields = {"writeRoots", "readRoots", "network"}
+if (
+    not isinstance(envelope_enforcement, dict)
+    or set(envelope_enforcement) != expected_enforcement_fields
+    or any(value not in {"mapped", "notEnforced"} for value in envelope_enforcement.values())
+):
+    raise SystemExit("envelope enforcement declaration must map writeRoots, readRoots, and network to mapped or notEnforced")
 captured = datetime.now(timezone.utc)
 date = captured.strftime("%Y%m%d")
 prefix = f"{runtime}-{version}-{config_hash}-{date}-"
@@ -403,6 +411,7 @@ value = {
     "transports": transports,
     "capabilities": capabilities,
     "permissions": permissions,
+    "envelopeEnforcement": envelope_enforcement,
 }
 with path.open("x", encoding="utf-8") as handle:
     json.dump(value, handle, indent=2, sort_keys=True)
