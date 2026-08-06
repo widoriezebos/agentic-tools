@@ -69,6 +69,21 @@ count_running_work() { # sets: running, elsewhere
       done | sort -u)
 }
 
+work_sentence() {
+  count_running_work
+  local missions=""
+  [[ -n "$elsewhere" ]] && missions=$(printf '%s' "$elsewhere" | sed 's/^ //; s/ /, /g')
+  if (( running )) && [[ -n "$missions" ]]; then
+    printf 'STILL WORKING: %s helper agent(s) running here, and a mission I started still going in %s.' "$running" "$missions"
+  elif (( running )); then
+    printf 'STILL WORKING: %s helper agent(s) running here. No missions running.' "$running"
+  elif [[ -n "$missions" ]]; then
+    printf 'NO HELPER AGENTS RUNNING — but a mission I started is still going in %s, so work is not finished.' "$missions"
+  else
+    printf 'NOTHING LEFT TO WORK ON: no helper agents, no missions running anywhere, nothing open in any plan.'
+  fi
+}
+
 if [[ "$event" == stop ]]; then
   last="$harness_root/artifacts/agents/supervision/last-census.json"
   state="$harness_root/artifacts/agents/supervision/state.json"
@@ -153,16 +168,11 @@ PY
   if [[ -n "$message" ]]; then
     count_running_work
     if (( running )); then
-      surface_json "STILL WORKING: $running job(s) here${elsewhere:+, and a mission running in$elsewhere}.
+      surface_json "$(work_sentence)
 $message"
     else
-      if [[ -n "$elsewhere" ]]; then
-      surface_json "STILL WORKING: a mission is running in$elsewhere. Nothing open here.
+      surface_json "$(work_sentence)
 $message"
-    else
-      surface_json "NOTHING LEFT TO WORK ON: no jobs running, nothing open in any plan.
-$message"
-    fi
     fi
   else
     # Say so when there is nothing to say. Silence is ambiguous to a human:
@@ -174,13 +184,9 @@ $message"
     # the silent-exit failure this very check exists to make visible.
     count_running_work
     if [[ "${running:-0}" != 0 ]]; then
-      surface_json "STILL WORKING: $running job(s) here${elsewhere:+, and a mission running in$elsewhere}. Nothing else is open."
+      surface_json "$(work_sentence)"
     else
-      if [[ -n "$elsewhere" ]]; then
-      surface_json "STILL WORKING: a mission is running in$elsewhere. Nothing else is open."
-    else
-      surface_json "NOTHING LEFT TO WORK ON: no jobs running anywhere, nothing open in any plan, no stale claims, no untracked agents."
-    fi
+      surface_json "$(work_sentence)"
     fi
   fi
   exit 0
