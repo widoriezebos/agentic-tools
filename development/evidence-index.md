@@ -24,3 +24,15 @@ is the tracked memory of what exists. Maintained when evidence-gc collects.
 - `design-critic-20260805t093318z-b195` — Adversarial design critique of `plans/benchmark-spec-bm1-design.md`, the first benchmark spec for this harness: a task runner the harness builds from 
 - `design-critic-20260805t092455z-404b` — Adversarial design critique of `plans/benchmark-spec-bm1-design.md`, the first benchmark spec for this harness. Findings only.
 - `design-critic-20260804t102631z-67c9` — Adversarial design critique of `plans/harness-benchmark-design.md`, the harness benchmark design: a coordinator and sub-agents build software to a fix
+
+## Missions and trials (archived whole, working copies scrapped)
+
+- `missions/mission-zero-final.tar.gz` — the first unattended mission ever run (2026-08-05): two cycles, recovered from a failed first turn, completed by its own gate. Full repo with git history and turn evidence.
+- `missions/bm1-trial-001-final.tar.gz` — the first benchmark run (2026-08-06): Opus host, luna delegates, self-assessment 1 vs held-out 0.981, the r14 cache miss, KI-16/KI-17 found. Full repo including the built task runner.
+- `missions/bm1-trial-001-evidence-root.tar.gz` — the trial's delegate-job mirror sidecar.
+- `missions/bm1-scorecard.{json,md}`, `missions/bm1-grade.txt` — the trial's scorecard and held-out grade.
+- Mission Zero's job mirrors remain unpacked at `mission-zero/` in this store.
+
+Mission targets are single-use by design (each run provisions fresh, and
+comparability demands it), so the working repositories were scrapped once
+archived — upgrade-in-place is for long-lived project repos, not these.
