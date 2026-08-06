@@ -98,10 +98,14 @@ records, no ledgers: every repetition carries individually signed bytes the
 existing preflight already verifies, and the driver refuses a repetition
 without its approval line. Non-identical contracts refuse with the first
 differing line named.
-Proof: kit-gate fixtures for the batch happy path through preflight on every
-repetition; refusal when batched contracts differ beyond the mission id;
-refusal of an unsigned repetition by the driver; the combined display
-asserting the TOTAL exposure line.
+Proof, matched one-to-one to the semantics (HS-7-2): the batch happy path
+through preflight on every repetition; contracts differing by one byte
+INSIDE the mission block refused naming the first differing line; contracts
+differing only in seal blocks accepted; a duplicate --file path refused; the
+combined display asserting every path, every mission id, and the TOTAL
+exposure line; an induced push failure in repository K stopping there and
+naming the signed-but-unpushed remainder; and the driver refusing an
+unsigned repetition.
 
 **F-4: Configuration generality billed to every human up front.** (Amended
 per HS-1-5: the original deletion claim was WRONG — both key families have
@@ -123,10 +127,12 @@ bare flag is self-attested, since the agent is dispatch's normal caller):
 resolution, the requested model, and the cost direction, then requires typed
 confirmation, recording name, timestamp, and the displayed facts in the job
 record. The ONE non-interactive path that remains is the one that already
-carries a signature (HS-6-5): a mission whose signed contract's envelope
-explicitly pre-authorizes the tier move proceeds inside that bound, exactly
-as project rules and the orchestration contract state today; interactive-only
-governs everything OUTSIDE a signed envelope. Without tiers, any differing
+carries a signature (HS-6-5), and it is enforceable with or without tiers
+(HS-7-3): the envelope names the exact models it permits
+(`envelope.model-allow=<comma-separated model ids>`), and the guard enforces
+set membership, never tier arithmetic — a signed allowlist means the same
+thing whether or not a tier table exists. Interactive-only governs
+everything OUTSIDE a signed envelope. Without tiers, any differing
 `--model` override refuses, naming the remedies (configure tiers, sign an
 envelope that authorizes it, or re-run interactively).
 The guard never silently accepts what it cannot rank. Validate says in one
@@ -137,8 +143,9 @@ validate accepts absence and still refuses malformed present keys; the guard
 ranks when tiers are configured; an override without tiers refuses; the
 interactive path has fixtures for non-TTY refusal, declined confirmation,
 and a completed confirmation whose job record carries the recorded display
-facts; and an envelope-pre-authorized move proceeds unattended while the
-same move without the envelope refuses.
+facts; and an envelope-allowlisted model proceeds unattended while the same
+model without the envelope refuses — both fixtures running WITHOUT a tier
+table, since that is the case HS-7-3 named.
 
 **F-5: Refusals that do not hand the human the fix.**
 Evidence: a contract metric named with an underscore cost an hour; the
