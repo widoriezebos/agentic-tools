@@ -2264,8 +2264,10 @@ PY
   "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null
   cp "$no_tier_conf" "$agent_repo/metasystem.conf"
   perl -0pi -e 's/^role\.(code-critic|investigator)\.runtime=fake$/role.$1.runtime=main/mg' "$agent_repo/metasystem.conf"
+  # The template now ships code-critic entries (C-2), so the conf snapshot
+  # already carries role.code-critic.model.fake from the roster rewrite;
+  # appending it again was a duplicate-key failure.
   cat >>"$agent_repo/metasystem.conf" <<'EOF'
-role.code-critic.model.fake=fake-model
 role.investigator.model.fake=fake-implied-model
 EOF
   METASYSTEM_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
