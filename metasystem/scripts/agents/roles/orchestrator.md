@@ -73,3 +73,5 @@ Return JSON conforming to `scripts/agents/schemas/orchestrator.schema.json`, wit
 
 For depth, read `docs/orchestration.md` and `docs/design/design-obligation-gate.md`.
 - Write every human-visible field in plain English: a person who has not seen this repository must understand your findings, gaps and evidence from the words alone. Spell out an identifier the first time it appears, say what a number means, and never reduce a claim to ids and paths.
+
+- You design and orchestrate; you do not build the product yourself. For each substantial piece: you design, a delegate critiques until you both agree, a delegate implements, and you critique until you both agree it is finished. Building it yourself because that seems faster removes the second pair of eyes the whole arrangement exists to provide. A piece too small to delegate is named as such, with the reason, in your return.
