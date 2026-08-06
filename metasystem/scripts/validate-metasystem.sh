@@ -1529,6 +1529,17 @@ PY
     [[ -z "$expected" ]] || grep -Fq "$expected" "$agent_fixture/$name.out" || {
       echo "agent fixture $name did not report: $expected" >&2
       cat "$agent_fixture/$name.out" >&2
+      # When the wrong refusal is the generation transient, the supervision
+      # state explains WHY the retries could not outrun it; dump it so one
+      # failing run carries its own diagnosis.
+      if [[ -n "${agent_supervision_repo:-}" ]]; then
+        echo "--- supervision state at failure:" >&2
+        cat "$agent_supervision_repo/artifacts/agents/supervision/state.json" >&2 2>/dev/null || true
+        echo "--- last census:" >&2
+        cat "$agent_supervision_repo/artifacts/agents/supervision/last-census.json" >&2 2>/dev/null || true
+        echo "--- supervisor log tail:" >&2
+        tail -15 "$agent_supervision_repo/artifacts/agents/supervision/supervisor.log" >&2 2>/dev/null || true
+      fi
       exit 1
     }
   }
