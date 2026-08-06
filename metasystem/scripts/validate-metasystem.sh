@@ -1500,11 +1500,14 @@ PY
       case ${2:-} in dispatch|follow-up) wait_for_agent_census_fresh "$name" ;; esac
       "$@" >"$output" 2>&1 &
       child_pid=$!
-      set +e
-      wait_for_agent_fixture_process "$name" "$job" "$child_pid"
-      captured_result=$?
-      set -e
-      [[ $captured_result -eq 0 ]] && return 0
+      # No errexit toggling here: set -e is global, not function-scoped, and
+      # re-enabling it before returning nonzero detonates in a caller that
+      # disabled it around this very call. The if-form never trips errexit.
+      if wait_for_agent_fixture_process "$name" "$job" "$child_pid"; then
+        return 0
+      else
+        captured_result=$?
+      fi
       grep -Fq 'censusGeneration=' "$output" 2>/dev/null || return "$captured_result"
       sleep 1
     done
