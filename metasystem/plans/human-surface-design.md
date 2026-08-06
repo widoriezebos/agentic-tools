@@ -38,20 +38,25 @@ Evidence: every mission signed so far took four to five steps (seal, copy a
 64-character hash, paste an approval line, commit, push); the protection —
 review and explicit consent — lives in none of them.
 Change: `scripts/assert-mission.sh --sign "<name>"` is display-then-confirm
-in one command: it validates, seals if needed, SHOWS the contract's English
-sections plus the decisive numbers (exposure, fences, gate threshold), and
-only then asks for typed confirmation before appending the approval line with
-the computed hash; consent is the confirmation after the display, never the
+in one command, and it REQUIRES an already-sealed contract: sealing runs the
+gate to record the baseline, which is code execution, so sealing stays an
+agent-side step and --sign refuses an unsealed contract by naming the seal
+command (HS-3-1). The mandatory display shows the contract's English
+sections plus every enforceable bound: exposure, fences, gate threshold, and
+the permission envelopes, since envelopes are reserved-decision boundaries
+the signer is granting (HS-3-2). Only then does it ask for typed
+confirmation; consent is the confirmation after the display, never the
 invocation (HS-1-1). Non-interactive use requires an explicit
 `--confirmed-after-review` flag carrying the same meaning. The git
-transaction is defined, not implied (HS-1-2): the command refuses unless on
-the origin-tracked default branch preflight will fetch, commits exactly the
-contract file, pushes to origin's default branch, and on any git failure
-states precisely what remains for the human. It executes nothing else — no
-gates, no hooks beyond git's own.
+transaction is defined AND proven (HS-1-2, HS-3-3): refuse unless on the
+origin-tracked default branch preflight will fetch; refuse when anything
+besides the contract is staged; commit exactly the contract file; push to
+origin's default branch; on any git failure state precisely what remains.
 Proof: fixtures for the confirmed happy path through preflight; refusal
-without confirmation; refusal off the default branch; refusal on an
-unsealable contract — each asserting the message names the fix.
+without confirmation; refusal off the default branch; refusal on an unsealed
+contract; refusal with unrelated staged changes; induced commit failure and
+induced push failure, each asserting the exact residual state named in the
+message.
 
 **F-2: Prose-to-mission is the real flow but is documented nowhere.**
 Evidence: both real missions started as human prose; the orchestrator drafted
@@ -80,8 +85,8 @@ from the bound template fails preflight because the template hash no longer
 matches. Per-repetition signing remains available; the driver accepts either
 and refuses a repetition with neither.
 Proof: kit-gate fixtures for both paths, the refusal with neither, a
-tampered-template repetition refused, and a total-exposure ceiling exceeded
-refused.
+tampered-template repetition refused, a total-exposure ceiling exceeded
+refused, a reused repetition index refused, and an expired record refused.
 
 **F-4: Configuration generality billed to every human up front.** (Amended
 per HS-1-5: the original deletion claim was WRONG — both key families have
@@ -94,12 +99,17 @@ on 2026-08-05.
 Change: the readers and their guards stay untouched. The shipped template
 demotes both families to commented-out examples with one line each saying
 what configuring them buys; `metasystem-config.sh validate` accepts their
-absence (verify it already does; fix if not). An adopter who never uncomments
-them loses only the cost-escalation guard's tier comparison, and validate
-says so in one informational line rather than demanding tiers.
+absence (verify it already does; fix if not). The cost-escalation guard
+fails CLOSED without tiers (HS-3-6): when no tier table is configured, any
+`--model` override differing from the roster's resolution is treated as an
+escalation requiring the existing human-approval path — the guard never
+silently accepts what it can no longer rank. Validate says in one
+informational line that tiers are absent and overrides therefore always
+escalate.
 Proof: the suite passes with the demoted template; fixtures prove validate
-accepts absence, still refuses malformed present keys, and the dispatcher's
-escalation guard still works when tiers are configured.
+accepts absence, still refuses malformed present keys, the escalation guard
+still ranks when tiers are configured, and — decisive for HS-3-6 — an
+override without tiers is refused pending approval rather than accepted.
 
 **F-5: Refusals that do not hand the human the fix.**
 Evidence: a contract metric named with an underscore cost an hour; the
@@ -125,15 +135,13 @@ message points at it. No new tooling: the agent is the interviewer.
 Proof: doc change only; adopt fixture asserts the closing message names the
 flow.
 
-**F-7: Answering a parked mission's ask is a raw-file ceremony (HS-1-7).**
-Evidence: a mission that parks on a human question expects the answer as a
-committed file in the exact shape the runner reads; nothing offers the human
-a prose path.
-Change: `scripts/assert-mission.sh --answer <ask-id> "<prose>"` writes the
-answer artifact in the runner's shape, commits, and pushes, one command; the
-runner's resume flow is unchanged.
-Proof: fixture answering a parked fixture mission by the command and
-resuming; refusal for an unknown ask id names the open asks.
+**F-7: WITHDRAWN (HS-3-7) — the one-command prose answer already exists.**
+The critic showed `mission-runner.sh` already accepts a prose answer in one
+command with reason-specific validation, atomic recording, and anchoring; the
+finding was built on a false premise and would have created a second,
+incomplete owner for answers. What remains of it folds into F-2 (document
+the existing command as THE flow) and F-5 (its refusals join the sweep).
+The withdrawal stays in this design as evidence that the scope fence works.
 
 ## What is deliberately NOT simplified
 
@@ -144,10 +152,10 @@ design draws is not "less rigor"; it is "rigor never billed to the human."
 
 ## Implementation order
 
-F-4 (template demotion, smallest risk), F-1, F-3 (builds on F-1's flow), F-7,
-F-5, then F-2 and F-6 (docs last, describing what then exists). One implement
-brief per finding or adjacent pair; each cites this design; the usual loop
-applies.
+F-4 (template demotion, fail-closed guard), F-1, F-3 (builds on F-1's flow),
+F-5, then F-2 and F-6 (docs last, describing what then exists; F-2 absorbs
+withdrawn F-7's documentation duty). One implement brief per finding or
+adjacent pair; each cites this design; the usual loop applies.
 
 ## Completion
 
