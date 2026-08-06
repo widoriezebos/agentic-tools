@@ -1,6 +1,6 @@
 # The Collaboration Loop: how orchestrator and delegate actually work together
 
-- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: CLOSED 2026-08-07 (third closure) — round 5 clean over G-5. Across its life: 17 design findings, 5 gap amendments, and one finding each from the code-critic, the implementer, and the design-critic in a single escalation chain.
+- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: REOPENED 2026-08-07 by a third implementer gap-stop: multi-round boundary semantics were undecided. G-6 below; awaiting critique round 6.
 - Next step: implement, through the loop this design itself prescribes: delegate implements, a code-critic on a different model reviews to a zero-material round over the merged tree.
 - In flight right now: the first code-critic chain (claude-opus-5) reviewing implementer-20260806t212109z-ceb3 (gpt-5.6-sol), reviewedTree a378c157; bootstrap note: this first chain's review object was computed by hand because the --stage machinery under review cannot serve its own first case; the mechanical --reviews linkage binds from the next change onward
 - Waiting on the human: nothing — implementation authorized under the standing instruction to fix all findings
@@ -229,6 +229,17 @@ becomes canonical, the list becomes checkable: it lives in one file owned
 by conformance, and a fixture asserts that every document AGENTS.md, a role
 preamble, or the host-turn instruction names as owning rules appears on it.
 The next canonical document cannot silently stay waivable.
+
+**G-6: the declared boundary is cumulative and base-anchored.** A chain's
+declared boundary is the union of the per-round `diffBoundary` lists across
+its immutable round returns — nothing is re-declared, nothing re-opened. The
+review stage compares the branch's changed paths, computed from merge-base
+to final tree, against that union. The base is the merge-base with the
+target at review time: a rebase folds target movement behind the base, so
+commits merged from an advancing target can never appear in the comparison
+— this is the same rebase-and-re-review rule CL-2-1 already imposes, doing
+double duty. A changed path outside the union is a refusal that names the
+path and states that some round should have declared it.
 
 ## What is deliberately not changed
 
