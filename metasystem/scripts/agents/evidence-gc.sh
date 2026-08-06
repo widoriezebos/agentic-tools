@@ -154,12 +154,15 @@ if caps.is_dir():
     def capture_key(snap):
         parts = snap.stem.rsplit("-", 2)
         return (parts[-2], parts[-1]) if len(parts) == 3 else ("", "")
+    # Group by runtime+version+CONFIG HASH, which is what dispatch matches on.
+    # Grouping by runtime+version alone treats snapshots for different configs
+    # as superseding each other, so a config change silently deleted the very
+    # snapshot the next dispatch needed and every dispatch then refused.
     newest = {}
     for snap in caps.glob("*.json"):
-        stem = snap.name.rsplit("-", 2)[0]  # runtime-version-confighash
-        runtime_version = "-".join(stem.split("-")[:2])
-        newest.setdefault(runtime_version, []).append(snap)
-    for runtime_version, snaps in newest.items():
+        identity = snap.name.rsplit("-", 2)[0]  # runtime-version-confighash
+        newest.setdefault(identity, []).append(snap)
+    for identity, snaps in newest.items():
         for snap in sorted(snaps, key=capture_key)[:-1]:
             snap.unlink(); residue += 1
 
