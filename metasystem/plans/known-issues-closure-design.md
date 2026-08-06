@@ -215,7 +215,15 @@ past its window is reaped with the existing classification.
   an explicit walk — `find` both trees, compare the sorted path sets, `cmp`
   regular files pairwise, and compare symlink TARGETS with `readlink`,
   never traversing them. Deterministic on every platform the suite runs on.
-- **KI-4** (census cost proportional to machine processes): ACCEPT with the
+- **KI-4** (census cost proportional to machine processes): REOPENED
+  2026-08-06 by its own trigger, and now BLOCKING: at fixture-fast intervals
+  the scan exceeds its interval on an ordinary laptop, so arming's
+  first-complete-census wait cannot converge and the KI-18 harness cannot
+  finish twenty iterations. It is therefore promoted to the front of the
+  implementation order, ahead of everything else, with its own brief:
+  filter candidates by the runtime signature tables before per-process work.
+  The original acceptance is superseded and preserved here for the record:
+  ACCEPT with the
   existing watch and a reopen trigger (census duration exceeding its own
   interval); measuring on other machines belongs to real adoption.
 - **KI-5** (one S4-8 timeout under load): RETIRE — subsumed by the
