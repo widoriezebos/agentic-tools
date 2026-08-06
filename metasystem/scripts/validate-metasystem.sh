@@ -1490,31 +1490,35 @@ PY
   }
 
   run_agent_fixture_captured() { # fixture name, job id or -, output file, command...
-    local name=$1 job=$2 output=$3 child_pid
+    local name=$1 job=$2 output=$3 child_pid captured_result captured_attempt
     shift 3
-    case ${2:-} in dispatch|follow-up) wait_for_agent_census_fresh "$name" ;; esac
-    "$@" >"$output" 2>&1 &
-    child_pid=$!
-    wait_for_agent_fixture_process "$name" "$job" "$child_pid"
+    # The supervisor heals itself asynchronously; a dispatch landing between
+    # an arming publication and its confirming census is refused with a
+    # transient "retry in a moment". Every driver shares this runner, so the
+    # retry lives here once — pass, fail, and TTY paths behave identically.
+    for captured_attempt in 1 2 3; do
+      case ${2:-} in dispatch|follow-up) wait_for_agent_census_fresh "$name" ;; esac
+      "$@" >"$output" 2>&1 &
+      child_pid=$!
+      set +e
+      wait_for_agent_fixture_process "$name" "$job" "$child_pid"
+      captured_result=$?
+      set -e
+      [[ $captured_result -eq 0 ]] && return 0
+      grep -Fq 'censusGeneration=' "$output" 2>/dev/null || return "$captured_result"
+      sleep 1
+    done
+    return "$captured_result"
   }
 
   agent_fails() { # output name, expected text, command...
     local name=$1 expected=$2 result job
     shift 2
     job=$(agent_fixture_job_from_args "$@")
-    local attempt
-    for attempt in 1 2 3; do
-      set +e
-      run_agent_fixture_captured "$name" "$job" "$agent_fixture/$name.out" "$@"
-      result=$?
-      set -e
-      # A supervision self-heal makes the status check one generation old for
-      # a moment, and dispatch rightly refuses until the next check lands.
-      # That refusal is transient and is not the one under test, so wait for
-      # the next check and ask again rather than reading it as the answer.
-      grep -Fq 'censusGeneration=' "$agent_fixture/$name.out" 2>/dev/null || break
-      sleep 1
-    done
+    set +e
+    run_agent_fixture_captured "$name" "$job" "$agent_fixture/$name.out" "$@"
+    result=$?
+    set -e
     if [[ $result -eq 0 ]]; then
       echo "agent fixture unexpectedly passed: $name" >&2
       exit 1
