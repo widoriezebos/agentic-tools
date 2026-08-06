@@ -608,6 +608,37 @@ dispatch_fails() { # name, expected
   [[ $rc -ne 0 ]] || { echo "dispatch accepted $name census" >&2; exit 1; }
   grep -Fq "$expected" "$tmp/$name.out" || { cat "$tmp/$name.out" >&2; exit 1; }
 }
+dispatch_succeeds() { # name
+  local name=$1
+  "$gate_repo/scripts/agents/dispatch.sh" dispatch --role design-critic --brief "$brief" --job-id "$name" \
+    >"$tmp/$name.out" 2>&1 \
+    || { echo "dispatch refused $name census" >&2; cat "$tmp/$name.out" >&2; exit 1; }
+}
+set_gate_census() { # age, interval, fingerprint
+  python3 - "$gate_repo/artifacts/agents/supervision/last-census.json" \
+    "$gate_repo/artifacts/agents/supervision/state.json" "$1" "$2" "$3" <<'PY'
+import json, sys, time
+from pathlib import Path
+census_path, state_path = Path(sys.argv[1]), Path(sys.argv[2])
+value = json.loads(census_path.read_text()); state = json.loads(state_path.read_text())
+value.update({
+    "completedAtEpoch": int(time.time()) - int(sys.argv[3]),
+    "intervalSec": int(sys.argv[4]),
+    "verdict": "SUCCESS",
+    "fingerprint": sys.argv[5],
+    "generation": state["generation"],
+})
+census_path.write_text(json.dumps(value) + "\n")
+PY
+}
+assert_stale_shape() { # name, window
+  local name=$1 window=$2 output="$tmp/$1.out"
+  grep -Eq 'age=[0-9]+s' "$output" \
+    && grep -Fq "window=${window}s" "$output" \
+    && grep -Fq 'retry in a moment' "$output" \
+    && grep -Fq "re-arm with $gate_repo/scripts/agents/arm-supervision.sh --repo $gate_repo if supervision is dead" "$output" \
+    || { echo "stale census refusal did not carry the common diagnostic shape" >&2; cat "$output" >&2; exit 1; }
+}
 dispatch_fails no-census 'census verdict is absent'
 mkdir -p "$gate_repo/artifacts/agents/supervision"
 cp "$state" "$gate_repo/artifacts/agents/supervision/state.json"
@@ -630,11 +661,41 @@ printf '\n# watcher fingerprint fixture\n' >>"$gate_repo/scripts/watch-backgroun
   || { echo "S4-3: watcher code did not alter the fingerprint" >&2; exit 1; }
 git -C "$gate_repo" show HEAD:scripts/watch-background-jobs.sh >"$gate_repo/scripts/watch-background-jobs.sh"
 chmod +x "$gate_repo/scripts/watch-background-jobs.sh"
-python3 - "$gate_repo/artifacts/agents/supervision/last-census.json" <<'PY'
-import json, sys, time
-p=sys.argv[1]; v=json.load(open(p)); v["completedAtEpoch"]=int(time.time())-100; json.dump(v,open(p,"w"))
-PY
+
+# Freshness is one capped window. Inside proceeds; the exact boundary and one
+# second past refuse with age, window, and both remedies. A configured interval
+# above the cap still refuses at 180 seconds.
+set_gate_census 0 10 "$gate_fingerprint"
+dispatch_succeeds inside-census-window
+set_gate_census 20 10 "$gate_fingerprint"
+dispatch_fails census-window-boundary 'census verdict is stale'
+assert_stale_shape census-window-boundary 20
+set_gate_census 21 10 "$gate_fingerprint"
 dispatch_fails stale-census 'census verdict is stale'
+assert_stale_shape stale-census 20
+perl -0pi -e 's/^watch\.interval-sec=.*$/watch.interval-sec=200/m' "$gate_repo/metasystem.conf"
+capped_fingerprint=$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")
+set_gate_census 180 200 "$capped_fingerprint"
+dispatch_fails capped-census-window 'census verdict is stale'
+assert_stale_shape capped-census-window 180
+git -C "$gate_repo" show HEAD:metasystem.conf >"$gate_repo/metasystem.conf"
+
+# A census from the prior arming generation uses that same refusal shape and
+# additionally names both generations.
+set_gate_census 0 10 "$gate_fingerprint"
+python3 - "$gate_repo/artifacts/agents/supervision/state.json" <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["generation"] += 1
+path.write_text(json.dumps(value) + "\n")
+PY
+dispatch_fails stale-census-generation 'census verdict is stale'
+assert_stale_shape stale-census-generation 20
+grep -Fq 'censusGeneration=' "$tmp/stale-census-generation.out" \
+  && grep -Fq 'armedGeneration=' "$tmp/stale-census-generation.out" \
+  || { echo "generation-stale refusal did not name both generations" >&2; cat "$tmp/stale-census-generation.out" >&2; exit 1; }
+cp "$tmp/gate-state.json" "$gate_repo/artifacts/agents/supervision/state.json"
+set_gate_census 0 10 "$gate_fingerprint"
 python3 - "$gate_repo/artifacts/agents/supervision/last-census.json" <<'PY'
 import json, sys, time
 p=sys.argv[1]; v=json.load(open(p)); v.update({"completedAtEpoch":int(time.time()),"verdict":"CENSUS-FAILED"}); json.dump(v,open(p,"w"))

@@ -95,6 +95,7 @@ completed, interval = value.get("completedAtEpoch"), value.get("intervalSec")
 if type(completed) is not int or type(interval) is not int or interval < 1:
     raise SystemExit("dispatch refused: census freshness fields are invalid")
 age=int(time.time())-completed
+window=min(2 * interval, 180)
 census_generation, state_digest = value.get("generation"), value.get("stateDigest")
 if type(census_generation) is not int or census_generation < 1 or not isinstance(state_digest,str) or not re.fullmatch(r"[0-9a-f]{64}",state_digest):
     raise SystemExit("dispatch refused: census generation fields are invalid")
@@ -105,12 +106,15 @@ if type(armed_generation) is not int or armed_generation < 1:
     raise SystemExit("dispatch refused: arming record generation is invalid")
 if census_generation != armed_generation:
     raise SystemExit(
-        f"dispatch refused: census verdict is stale (age={age}s "
+        f"dispatch refused: census verdict is stale (age={age}s window={window}s "
         f"censusGeneration={census_generation} armedGeneration={armed_generation}); "
         f"retry in a moment; re-arm with {sys.argv[3]} --repo {sys.argv[4]} if supervision is dead"
     )
-if age < -5 or age > interval:
-    raise SystemExit(f"dispatch refused: census verdict is stale (age={age}s interval={interval}s)")
+if age >= window:
+    raise SystemExit(
+        f"dispatch refused: census verdict is stale (age={age}s window={window}s); "
+        f"retry in a moment; re-arm with {sys.argv[3]} --repo {sys.argv[4]} if supervision is dead"
+    )
 PY
   expected=$("$arm_supervision" fingerprint --repo "$repo_scope" 2>&1) \
     || die 1 "dispatch refused: census fingerprint cannot be computed: $expected"
@@ -1111,7 +1115,7 @@ PY
 }
 
 reap_one_locked() { # job
-  local job=$1 record="$jobs/$1.json" status pid tag started cap elapsed patch root_id mission
+  local job=$1 record="$jobs/$1.json" status pid tag started cap handshake_budget pending_age elapsed patch root_id mission
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
@@ -1129,6 +1133,20 @@ reap_one_locked() { # job
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
   started=$(json_field "$record" startedAt 2>/dev/null || true)
   cap=$(json_field "$record" capMin 2>/dev/null || true)
+  handshake_budget=$(json_field "$record" sessionEstablishedTimeoutSec 2>/dev/null || true)
+  if [[ "$status" == pending && "$handshake_budget" =~ ^[1-9][0-9]*$ ]]; then
+    pending_age=$(python3 - "$started" <<'PY'
+from datetime import datetime, timezone
+import sys
+try: started = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+except ValueError: raise SystemExit(1)
+print(int((datetime.now(timezone.utc) - started).total_seconds()))
+PY
+    ) || true
+    if [[ "$pending_age" =~ ^-?[0-9]+$ ]] && (( pending_age < handshake_budget )); then
+      return
+    fi
+  fi
   if ! job_supervisor_matches "$record"; then
     wind_down_group "$record" || return 1
     patch=$(mktemp "$record_locks/lost.XXXXXX")
@@ -1175,7 +1193,7 @@ dispatch_job() {
   local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn cap watch_cap tiers_present=false roster_tier requested_tier escalation_required=0
   local cost_direction= approval_name= approved_at=
-  local permission_name permission_json snapshot_json snapshot_path fallbacks signal input_bytes input_hash max_kb payload round_dir record_json
+  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget input_bytes input_hash max_kb payload round_dir record_json
   while (($#)); do
     case "$1" in
       --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
@@ -1300,6 +1318,7 @@ PY
   snapshot_path=$(json_field "$snapshot_json" path)
   fallbacks=$(json_field "$snapshot_json" fallbacks)
   signal=$(json_field "$snapshot_json" sessionEstablishedSignal)
+  handshake_budget=$(json_field "$snapshot_json" sessionEstablishedTimeoutSec)
 
   input_bytes=$(wc -c <"$brief" | tr -d ' ')
   max_kb=$(config_get --key dispatch.max-inline-input-kb --default 64)
@@ -1312,11 +1331,11 @@ PY
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
-  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" <<'PY'
+  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" <<'PY'
 import json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
-out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, approval_name, approved_at, roster_pair, requested_pair, cost_direction = sys.argv[1:]
+out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, handshake_budget, approval_name, approved_at, roster_pair, requested_pair, cost_direction = sys.argv[1:]
 try: base = subprocess.check_output(["git", "-C", workspace, "rev-parse", "HEAD"], text=True).strip()
 except subprocess.SubprocessError: raise SystemExit("workspace is not a git worktree")
 branch = subprocess.check_output(["git", "-C", workspace, "branch", "--show-current"], text=True).strip()
@@ -1340,6 +1359,7 @@ record = {
   "overridden": overridden == "true", "capabilitySnapshot": snapshot,
   "escalationApproval": escalation_approval,
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
+  "sessionEstablishedTimeoutSec": int(handshake_budget),
   "input": {"bytes": int(size), "hash": digest, "delivery": "stdin"},
   "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "endedAt": None,
   "usage": None, "mirror": None, "chainClosed": False, "runnerClosed": False,
@@ -1354,13 +1374,13 @@ PY
   release_chain_lock "$job"; trap - EXIT
   launch_adapter "$runtime" dispatch "$job" "metasystem-job-$job" || {
     patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"; record_cas "$job" pending failed "$patch" || true; return 3; }
-  await_handshake "$job" "$(json_field "$snapshot_json" sessionEstablishedTimeoutSec)" || return 3
+  await_handshake "$job" "$handshake_budget" || return 3
   if (( wait )); then wait_for_job "$job"; return $?; fi
   printf '%s\n' "$job"
 }
 
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model round child payload round_dir cap permission_json snapshot_json snapshot_path fallbacks signal resume_cap record_json mission mission_data lease mission_turn
+  local job= message= wait=0 root_id latest status error session role runtime model round child payload round_dir cap permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round
   while (($#)); do
     case "$1" in
@@ -1410,7 +1430,7 @@ follow_up() {
   json_field "$latest" permissions.requested >"$permission_json"
   snapshot_json=$(mktemp "$record_locks/follow-snapshot.XXXXXX")
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
-  snapshot_path=$(json_field "$snapshot_json" path); fallbacks=$(json_field "$snapshot_json" fallbacks); signal=$(json_field "$snapshot_json" sessionEstablishedSignal); resume_cap=$(json_field "$snapshot_json" resume)
+  snapshot_path=$(json_field "$snapshot_json" path); fallbacks=$(json_field "$snapshot_json" fallbacks); signal=$(json_field "$snapshot_json" sessionEstablishedSignal); handshake_budget=$(json_field "$snapshot_json" sessionEstablishedTimeoutSec); resume_cap=$(json_field "$snapshot_json" resume)
   payload="$agents/$root_id"; round_dir="$payload/rounds/$round"; mkdir -p "$round_dir"
   delivery_content=$message
   if [[ "$resume_cap" != true ]]; then
@@ -1429,12 +1449,12 @@ follow_up() {
   input_hash=$(sha256_file "$delivery_content")
   write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
-  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$resume_mode" "$input_bytes" "$input_hash" "$mission_turn" <<'PY'
+  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$handshake_budget" "$resume_mode" "$input_bytes" "$input_hash" "$mission_turn" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
 parent = json.loads(Path(sys.argv[1]).read_text()); out = Path(sys.argv[2])
-job, round_number, parent_job, snapshot, fallbacks, signal, resume_mode, size, digest, mission_turn = sys.argv[3:]
+job, round_number, parent_job, snapshot, fallbacks, signal, handshake_budget, resume_mode, size, digest, mission_turn = sys.argv[3:]
 record = {key: parent[key] for key in ("role", "mission", "runtime", "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "requestedModel")}
 record.update({
   "jobId": job, "round": int(round_number), "parentJob": parent_job, "status": "pending", "phase": "handshake", "error": None,
@@ -1444,6 +1464,7 @@ record.update({
   "turnId": mission_turn or None,
   "effectiveModel": None, "overridden": False, "capabilitySnapshot": snapshot,
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
+  "sessionEstablishedTimeoutSec": int(handshake_budget),
   "resumeMode": resume_mode,
   "input": {"bytes": int(size), "hash": digest, "delivery": "stdin"},
   "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "endedAt": None,
@@ -1461,7 +1482,7 @@ PY
   release_chain_lock "$root_id"; trap - EXIT
   launch_adapter "$runtime" "$adapter_verb" "$child" "metasystem-job-$child" || {
     patch=$(mktemp "$record_locks/follow-launch.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"; record_cas "$child" pending failed "$patch" || true; return 3; }
-  await_handshake "$child" "$(json_field "$snapshot_json" sessionEstablishedTimeoutSec)" || return 3
+  await_handshake "$child" "$handshake_budget" || return 3
   if (( wait )); then wait_for_job "$child"; return $?; fi
   printf '%s\n' "$child"
 }
