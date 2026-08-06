@@ -245,8 +245,12 @@ PY
   fi
   track_armed_supervision "$provision_target"
 
-  [[ $(wc -l <"$provision_output" | tr -d ' ') == 3 ]] \
-    || { echo "benchmark provision: output was not exactly three human steps" >&2; exit 1; }
+  # Count STEPS, not lines: informational notices (F-4's tier note, for one)
+  # legitimately share the stream, and a human step is what the human must do.
+  grep -v '^INFO: ' "$provision_output" >"$provision_output.steps"
+  [[ $(wc -l <"$provision_output.steps" | tr -d ' ') == 3 ]] \
+    || { echo "benchmark provision: output was not exactly three human steps" >&2; cat "$provision_output" >&2; exit 1; }
+  provision_output=$provision_output.steps
   sed -n '1p' "$provision_output" | grep -q '^Review ' \
     || { echo "benchmark provision: first human step is not contract review" >&2; exit 1; }
   sed -n '2p' "$provision_output" | grep -q '^Seal it: ' \
