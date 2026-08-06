@@ -32,6 +32,19 @@ dispatch. The alternative — atomically re-recording the armed fingerprint on
 every heal — was rejected: it makes the arming record mutable by an
 unattended process, which is the pattern this repository keeps burying.
 
+The generation identifier is a monotonic counter the ARMING side owns
+(KC-2-1: startedAt plus owner identity is not unique across heals — whole
+seconds, constant owner): `state.json` carries `generation`, incremented by
+every arming and every self-heal that replaces a component, and the census
+echoes the value it observed. Liveness gets a real owner rather than an
+assumed one (KC-2-2): the census verdict is SUCCESS only when it has
+positively confirmed owner, watcher and reaper alive with matching tags in
+that same pass, which becomes an explicit assertion in `run_census()` rather
+than an inherited assumption. And the heal window is defined (KC-2-3): a
+fresh census carrying an older generation means dispatch WAITS for the next
+census within the same KI-11 deadline, then refuses — heals are brief by
+construction, so the wait absorbs them without reintroducing the failure.
+
 The critic proved the replacement duty I cited does not exist (KC-1-1):
 nothing at dispatch time ties a SUCCESS census to the CURRENT armed
 generation. So the decision gains its missing half: `fingerprint()` drops
@@ -52,41 +65,38 @@ class — and twenty on the new code with zero refusals; then three
 consecutive full-suite greens plus one under artificial CPU load. The
 harness stays as a suite fixture at reduced iteration count.
 
-## KI-9 — delegates cannot commit in their worktrees (decision REVERSED at round 1)
+## KI-9 — delegates cannot commit in their worktrees (ACCEPTED; the round-1 invention DELETED at round 2)
 
-The draft granted three writeRoots; the critic showed `.git/objects` is an
-isolation hole (deletion and overwrite of every loose object, alternates,
-packs — KC-1-2), the set was incomplete anyway (reflogs — KC-1-3), and the
-ref-glob is inexpressible in the shipped adapters. All true. No sandbox
-widening.
+Round 1 reversed a sandbox widening into an orchestrator-side `checkpoint`
+verb. Round 2 killed that too, and correctly: KC-2-4 showed it is a direct
+escape — committing in a delegate-controlled worktree fires the shared
+pre-commit hook, which executes a guard script the delegate can rewrite,
+outside any sandbox. KC-2-5 and KC-2-6 then showed the verb needed a whole
+transaction and schema contract to be safe.
 
-DECISION: KI-9 stays ACCEPTED — delegates never run git writes — and the
-checkpoint need is met on the orchestrator's side of the boundary, where
-git already lives: a new `dispatch.sh checkpoint --job <id>` verb commits
-the job's current worktree state on its own agent branch with per-job
-authorship (shipped) and a checkpoint trailer. Delegates REQUEST a
-checkpoint through their return (files as the only interface, as
-everywhere); the orchestrator or the runner grants it with one command.
-The escape surface stays exactly zero.
+DECISION: build nothing. KI-9 is ACCEPTED as the boundary it always was —
+delegates never run git writes; they report a file boundary and the
+orchestrator integrates. That flow ran roughly fifteen times this session
+without a single case where a checkpoint would have helped, so the need was
+invented rather than observed. The register row states the boundary, its
+mitigation (orchestrator integration, per-job authorship on the resulting
+commits, the WORKTREE-BEHIND warning for staleness), and its reopen trigger:
+a delegate task that demonstrably cannot proceed without intermediate
+commits.
 
-Change: the `checkpoint` verb; the implementer return schema gains an
-optional `checkpointRequested` boolean; the register row stays ACCEPTED
-with the verb named as its mitigation.
-
-Proof: fixtures — the verb commits a dirty worktree on the right branch
-with job authorship and touches no other ref; a second invocation with a
-clean tree is a recorded no-op; the schema round-trips.
+Proof: none needed; nothing is built. The register row's wording is the
+deliverable, and the design's scope fence is upheld twice over.
 
 ## KI-11 — dispatch refuses a census one second past its interval
 
 Root cause: freshness is a point predicate against a live, ticking process.
 
-DECISION (single rule, KC-1-5): dispatch computes one hard deadline —
-census age must be under 2x the interval, additionally capped at 180
-seconds absolute so an absurd configured interval cannot stall dispatch
-indefinitely. If the current age is below the deadline, dispatch waits for
-the next census only up to that same deadline; at or past it, refuse. One
-number, both branches.
+DECISION (three-way mapping over one deadline, KC-1-5 + KC-2-9):
+`deadline = min(2 x interval, 180s)`. Age below ONE interval: proceed
+immediately, no wait — the ordinary healthy case. Age between one interval
+and the deadline: wait for the next census until the deadline, then proceed
+or refuse on what arrives. Age at or past the deadline: refuse. Healthy
+dispatches never wait.
 
 Change: `require_fresh_census` waits bounded; refusal message states the age,
 the bound, and the arming remedy (F-5's message rule).
@@ -112,9 +122,20 @@ the preset they requested. Per-dispatch behavioural probing was rejected as
 pure overhead: the sandbox implementation does not vary between dispatches
 of the same runtime version and preset.
 
+The measurement key is the EFFECTIVE envelope, not the preset name
+(KC-2-7): preset plus the resolved network value after the repository floor,
+plus the worktree flag — the tuple that actually determines the sandbox.
+And the circularity is broken by a stated bootstrap (KC-2-8): `probe` and
+`selftest` are the PRODUCERS of snapshots and therefore never require a
+matching one; only role dispatches do. A dispatch whose effective envelope
+has no measurement records `measured: false` and proceeds — measurement is
+evidence, never a gate, or the first dispatch after any config change would
+deadlock.
+
 Change: `runtime-common.sh` probe helpers; fake adapter implements them
 honestly (its sandbox is the suite's); real adapters implement in their
-selftest paths; snapshot schema gains the field.
+selftest paths; snapshot schema gains the field keyed by effective
+envelope.
 
 Proof: suite fixture over the fake adapter's measured envelope (deny paths
 observed as denied); codex selftest run once for real by the orchestrator;
@@ -160,9 +181,13 @@ past its window is reaped with the existing classification.
   reference to match the artifact; one line, fixture greps both.
 - **KI-2** (suite wall time growth): ACCEPT with a measured trigger
   (KC-1-7: retirement was unearned — nothing showed the growth ceased). The
-  closure implementation RECORDS the post-rework baseline from three timed
-  runs in the register row, and the reopen trigger is mechanical: a green
-  suite exceeding 1.5x that baseline.
+  closure implementation records, in the register row, the MEDIAN of three
+  timed green runs together with the machine fingerprint and load average
+  they were taken under (KC-2-10). The trigger is mechanical because the
+  suite itself checks it: a green run whose wall time exceeds 1.5x the
+  recorded median prints a WALL-TIME-REGRESSION notice naming both numbers.
+  A notice, not a failure — timing must never turn the gate nondeterministic
+  again.
 - **KI-3** (BSD diff symlink diagnostics): FIX now, without the unsafe
   choices the draft allowed (KC-1-9: BSD diff lacks --no-dereference, and
   filtering diagnostics can hide skipped content): the fixture compares by
