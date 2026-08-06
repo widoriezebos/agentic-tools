@@ -1005,9 +1005,13 @@ reap_one_locked() { # job
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
     completed|failed|timeout|cancelled)
-      if [[ -n "$(json_field "$record" mirror 2>/dev/null || true)" ]]; then
+      settled_mirror=$(json_field "$record" mirror 2>/dev/null || true)
+      if [[ -n "$settled_mirror" && "$settled_mirror" != None && "$settled_mirror" != null ]]; then
         # Settled once: mirrored terminal records are done. Re-walking them
-        # every sweep rewrote every record every interval, all day.
+        # every sweep rewrote every record every interval, all day. A null
+        # mirror is a FAILED mirror and must keep retrying: the first guard
+        # treated the string None as settled and the mirror-retry fixture
+        # caught it within one gate run.
         return
       fi
       root_id=$(root_job_id "$job" 2>/dev/null || true)
