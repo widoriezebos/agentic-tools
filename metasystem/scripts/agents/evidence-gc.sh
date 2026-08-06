@@ -140,13 +140,20 @@ if locks_dir.is_dir():
             pass
 caps = agents / "capabilities"
 if caps.is_dir():
+    # Newest means BY CAPTURE, not by filename: the config hash precedes the
+    # date in the name, so a lexicographic sort once deleted the current
+    # snapshot and kept a stale one, and the next dispatch refused. Sort by
+    # the date and sequence components the writer stamps.
+    def capture_key(snap):
+        parts = snap.stem.rsplit("-", 2)
+        return (parts[-2], parts[-1]) if len(parts) == 3 else ("", "")
     newest = {}
-    for snap in sorted(caps.glob("*.json")):
+    for snap in caps.glob("*.json"):
         stem = snap.name.rsplit("-", 2)[0]  # runtime-version-confighash
         runtime_version = "-".join(stem.split("-")[:2])
         newest.setdefault(runtime_version, []).append(snap)
     for runtime_version, snaps in newest.items():
-        for snap in snaps[:-1]:
+        for snap in sorted(snaps, key=capture_key)[:-1]:
             snap.unlink(); residue += 1
 
 # Empty directories are confusion, not placeholders: every writer here
