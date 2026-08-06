@@ -232,7 +232,7 @@ One chain, job `design-critic-20260804t102631z-67c9`, codex/gpt-5.6-sol, all rou
 | BM-3-10 | accepted | delegated share was not a defined scalar | blame-based last-writer definition; B-0 exit question decides standing (What a benchmark run is) |
 | BM-3-11 | accepted | one smoke test could cover the manifest | differential condition capped at one requirement per test (Product: own tests). SUPERSEDED 2026-08-05 by SP-1-3 and SP-2-1: mutants declare a target rather than isolating one, and the cap no longer applies |
 | BM-3-12 | accepted | multi-spec conjunction rejected scoped improvements | improvement on proposal-named specs, no-regression elsewhere (Evolution loop step 4) |
-| BM-3-13 | accepted | measuring-stick rule unsatisfiable during build | rule activates at first baseline; D-B5 its own commit (Measuring-stick rule) |
+| BM-3-13 | accepted | measuring-stick rule unsatisfiable during build | rule activates at first baseline; the once-planned separate D-B5 commit is moot, that amendment RETIRED at human-surface round 5 (Measuring-stick rule) |
 | BM-3-14 | accepted, then SUPERSEDED at human-surface round 5 | authorization consumption had no owner | moot: per-repetition batch signing gives every repetition its own signed approval line, so there is no shared authorization whose consumption needs an owner |
 | BM-3-15 | accepted | spec-tripwire had no verdict mapping | hits force human-ratified (Evolution loop step 5) |
 | BM-3-16 | accepted | diminishing-returns stop correctly invoked | loop closed with verification rounds 4 and 5, not another hunt (this ledger) |

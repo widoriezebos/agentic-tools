@@ -217,6 +217,10 @@ side. Then this file is closed into `development/` as a finished report.
 
 RETIRED: standing authorization -- per-repetition batch signing (F-3): one confirmation, N ordinary approval lines
 
+RETIRED: standing benchmark authorization -- the same retirement, under its long name, because the checker matches exact terms
+
+RETIRED: D-B5 -- nothing: the amendment is gone, not renamed; batch signing is a signing-tool feature outside mission machinery
+
 RETIRED: cohort-authorization line -- ordinary per-contract approval lines written by batch signing
 
 RETIRED: consumed-index ledger -- individually signed repetitions; no shared authorization exists to consume
