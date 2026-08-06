@@ -99,7 +99,8 @@ if last is None:
     lines.append("WATCHDOG: it has not reported at all yet. Re-arm it with " + arm_cmd + " if this persists.")
 else:
     age=int(time.time())-int(last.get("completedAtEpoch",0)); interval=int(last.get("intervalSec",0) or 0)
-    if last.get("verdict") != "SUCCESS" or interval < 1 or age > interval:
+    window=min(2*interval,180) if interval>=1 else 0
+    if last.get("verdict") != "SUCCESS" or interval < 1 or age >= window:
         lines.append(f"WATCHDOG: its last report is {age}s old or unsuccessful, so it may not be watching. Re-arm it with {arm_cmd}.")
     for item in last.get("inventory",[]):
         if item.get("class")=="UNTRACKED": lines.append(f"UNTRACKED pid={item.get('pid')} runtime={item.get('runtime')} argv={item.get('argv')}")
@@ -166,14 +167,8 @@ PY
   # working?" got a sentence about watchdog internals instead. Warnings are
   # added to the answer now, never substituted for it.
   if [[ -n "$message" ]]; then
-    count_running_work
-    if (( running )); then
-      surface_json "$(work_sentence)
+    surface_json "$(work_sentence)
 $message"
-    else
-      surface_json "$(work_sentence)
-$message"
-    fi
   else
     # Say so when there is nothing to say. Silence is ambiguous to a human:
     # it reads the same whether work is finished, still running, or the hook
@@ -182,12 +177,7 @@ $message"
     # No pipelines here: under pipefail a grep that matches nothing fails the
     # whole assignment, and set -e then kills the hook before it can report —
     # the silent-exit failure this very check exists to make visible.
-    count_running_work
-    if [[ "${running:-0}" != 0 ]]; then
-      surface_json "$(work_sentence)"
-    else
-      surface_json "$(work_sentence)"
-    fi
+    surface_json "$(work_sentence)"
   fi
   exit 0
 fi
