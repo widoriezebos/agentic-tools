@@ -45,6 +45,30 @@ print(json.dumps({"systemMessage":sys.argv[1]},separators=(",",":")))
 PY
 }
 
+count_running_work() { # sets: running, elsewhere
+  running=0
+  elsewhere=""
+  for record in "$harness_root/artifacts/agents/jobs"/*.json; do
+    [[ -e "$record" ]] || break
+    if grep -q '"status": *"\(pending\|running\)"' "$record" 2>/dev/null; then
+      running=$((running + 1))
+    fi
+  done
+  # A mission started from this repository usually runs in ANOTHER repository
+  # (a benchmark target, a scratch repo). Reporting only this directory's
+  # jobs told the human "nothing is running" while their benchmark was in
+  # full flight, which is worse than saying nothing at all.
+  local other
+  while IFS= read -r other; do
+    [[ -n "$other" ]] || continue
+    elsewhere="$elsewhere $other"
+  done < <(pgrep -f 'mission-runner.sh __run' 2>/dev/null \
+    | while read -r pid; do
+        ps -p "$pid" -o command= 2>/dev/null \
+          | sed -n 's|.*/\([^/ ]*\)/scripts/agents/mission-runner.sh.*|\1|p'
+      done | sort -u)
+}
+
 if [[ "$event" == stop ]]; then
   last="$harness_root/artifacts/agents/supervision/last-census.json"
   state="$harness_root/artifacts/agents/supervision/state.json"
@@ -127,19 +151,18 @@ PY
   # working?" got a sentence about watchdog internals instead. Warnings are
   # added to the answer now, never substituted for it.
   if [[ -n "$message" ]]; then
-    running=0
-    for record in "$harness_root/artifacts/agents/jobs"/*.json; do
-      [[ -e "$record" ]] || break
-      if grep -q '"status": *"\(pending\|running\)"' "$record" 2>/dev/null; then
-        running=$((running + 1))
-      fi
-    done
+    count_running_work
     if (( running )); then
-      surface_json "STILL WORKING: $running job(s) running.
+      surface_json "STILL WORKING: $running job(s) here${elsewhere:+, and a mission running in$elsewhere}.
+$message"
+    else
+      if [[ -n "$elsewhere" ]]; then
+      surface_json "STILL WORKING: a mission is running in$elsewhere. Nothing open here.
 $message"
     else
       surface_json "NOTHING LEFT TO WORK ON: no jobs running, nothing open in any plan.
 $message"
+    fi
     fi
   else
     # Say so when there is nothing to say. Silence is ambiguous to a human:
@@ -149,17 +172,15 @@ $message"
     # No pipelines here: under pipefail a grep that matches nothing fails the
     # whole assignment, and set -e then kills the hook before it can report —
     # the silent-exit failure this very check exists to make visible.
-    running=0
-    for record in "$harness_root/artifacts/agents/jobs"/*.json; do
-      [[ -e "$record" ]] || break
-      if grep -q '"status": *"\(pending\|running\)"' "$record" 2>/dev/null; then
-        running=$((running + 1))
-      fi
-    done
+    count_running_work
     if [[ "${running:-0}" != 0 ]]; then
-      surface_json "STILL WORKING: $running delegate job(s) are still running. Nothing else is open."
+      surface_json "STILL WORKING: $running job(s) here${elsewhere:+, and a mission running in$elsewhere}. Nothing else is open."
     else
-      surface_json "NOTHING LEFT TO WORK ON: no jobs running, nothing open in any plan, no stale claims, no untracked agents."
+      if [[ -n "$elsewhere" ]]; then
+      surface_json "STILL WORKING: a mission is running in$elsewhere. Nothing else is open."
+    else
+      surface_json "NOTHING LEFT TO WORK ON: no jobs running anywhere, nothing open in any plan, no stale claims, no untracked agents."
+    fi
     fi
   fi
   exit 0
