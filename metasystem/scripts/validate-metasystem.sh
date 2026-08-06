@@ -2329,9 +2329,14 @@ PY
   export METASYSTEM_MISSION_PROCESS_IDENTITY_FILE="$runner_mission_identity_fixture"
 
   make_runner_contract runner-cycle return-ok 5
+  # Both candidate-score commits are state-dependent without --allow-empty:
+  # whether the byte they write already sits at HEAD depends on how earlier
+  # missions' anchors interleaved, and each variant of this flake has now
+  # red-gated an unrelated change. The classification needs the sha to
+  # advance; the gate reads the file contents either way.
   printf '1\n' >"$runner_repo/candidate-score.txt"
   runner_git add candidate-score.txt
-  runner_git commit -qm 'improve mission runner candidate'
+  runner_git commit --allow-empty -qm 'improve mission runner candidate'
   runner_git push -qu origin "$runner_branch"
   run_runner_expect runner-cycle-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-cycle
   wait_runner_status runner-cycle 10
@@ -2446,7 +2451,7 @@ CODEX
 
   printf '0\n' >"$runner_repo/candidate-score.txt"
   runner_git add candidate-score.txt
-  runner_git commit -qm 'reset candidate for codex host mission'
+  runner_git commit --allow-empty -qm 'reset candidate for codex host mission'
   runner_git push -qu origin "$runner_branch"
   make_runner_contract runner-codex return-ok 5 '' codex gpt-5-fixture
   run_runner_expect runner-codex-start 0 "${runner_process_env[@]}" \
