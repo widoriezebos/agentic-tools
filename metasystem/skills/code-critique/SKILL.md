@@ -26,7 +26,7 @@ Severity and materiality are separate. Require the verdict count to include only
 
 Review the accepted brief and the computed base-to-working-tree diff before reasoning about code quality.
 
-For a dispatched implementation, run `scripts/agents/assert-conformance.sh --stage review --job <job-id>`. It computes the diff from the recorded `baseSha`, includes committed, uncommitted, and previously untracked unignored work, persists `diff.patch` and `review.json`, rejects delegate changes under `plans/` or the agent control plane, and cross-checks the return's `diffBoundary`. Carry the emitted `reviewedTree` into every code-critic return. Read that computed diff; never substitute the delegate's file list or summary.
+For a dispatched implementation, run `scripts/agents/assert-conformance.sh --stage review --job <job-id>`. It computes the diff from the implementer branch's merge-base with the invoking target checkout, includes committed, uncommitted, and previously untracked unignored work, persists `diff.patch` and `review.json`, rejects delegate changes under `plans/` or the agent control plane, and checks only that every changed path appears in the union of every round's immutable `diffBoundary` declarations: a declared-but-unchanged path passes, while a changed-but-undeclared path refuses. Carry the emitted `reviewedTree` into every code-critic return. Read that computed diff; never substitute the delegate's file list or summary.
 
 Check that the diff implements every acceptance criterion, stays within the declared workspace and non-goals, preserves tests and certification assets unless the brief explicitly changes them, and contains no unrelated work. Treat every mismatch as a conformance finding before proceeding.
 

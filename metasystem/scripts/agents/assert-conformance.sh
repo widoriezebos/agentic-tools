@@ -80,6 +80,7 @@ review_file="$round_dir/review.json"
   || { echo "conformance failure: implementer round return is missing" >&2; exit 1; }
 git -C "$workspace" cat-file -e "$base_sha^{commit}" 2>/dev/null \
   || { echo "conformance failure: baseSha is not a commit in the implementer workspace" >&2; exit 1; }
+[[ "$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" != "$(git -C "$workspace" rev-parse --show-toplevel 2>/dev/null)" ]] || { echo "conformance failure: invoke this command from the merge-target checkout, not the implementer workspace" >&2; exit 1; }
 target_sha=$(git -C "$root" rev-parse 'HEAD^{commit}' 2>/dev/null) \
   || { echo "conformance failure: current merge target is not a commit" >&2; exit 1; }
 boundary_base=$(git -C "$workspace" merge-base "$target_sha" HEAD 2>/dev/null) \
