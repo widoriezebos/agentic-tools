@@ -52,24 +52,25 @@ if [[ "$event" == stop ]]; then
 import json,subprocess,sys,time
 from pathlib import Path
 last_path,state_path,helper=Path(sys.argv[1]),Path(sys.argv[2]),sys.argv[3]
+arm_cmd="scripts/agents/arm-supervision.sh --repo ."
 lines=[]
 try: last=json.loads(last_path.read_text())
 except (OSError,ValueError): last=None
 if last is None:
-    lines.append("STALE-SUPERVISOR census verdict is absent")
+    lines.append("WATCHDOG: it has not reported at all yet. Re-arm it with " + arm_cmd + " if this persists.")
 else:
     age=int(time.time())-int(last.get("completedAtEpoch",0)); interval=int(last.get("intervalSec",0) or 0)
     if last.get("verdict") != "SUCCESS" or interval < 1 or age > interval:
-        lines.append(f"STALE-SUPERVISOR census={last.get('verdict','UNREADABLE')} age={age}s")
+        lines.append(f"WATCHDOG: its last report is {age}s old or unsuccessful, so it may not be watching. Re-arm it with {arm_cmd}.")
     for item in last.get("inventory",[]):
         if item.get("class")=="UNTRACKED": lines.append(f"UNTRACKED pid={item.get('pid')} runtime={item.get('runtime')} argv={item.get('argv')}")
 try: state=json.loads(state_path.read_text())
 except (OSError,ValueError): state=None
 if not isinstance(state,dict) or not isinstance(state.get("owner"),dict) or not isinstance(state.get("components"),dict):
-    lines.append("STALE-SUPERVISOR state is absent or unreadable")
+    lines.append("WATCHDOG: its record of what it is watching is missing or unreadable. Re-arm it with " + arm_cmd + ".")
     state={}
 elif last is not None and state.get("fingerprint") != last.get("fingerprint"):
-    lines.append("STALE-SUPERVISOR census fingerprint does not match the active supervisor set")
+    lines.append("WATCHDOG: it was started against an older version of this code and is now watching something that has changed. Re-arm it with " + arm_cmd + ".")
 identities={}
 if isinstance(state.get("owner"),dict): identities["owner"]=state["owner"]
 identities.update(state.get("components",{}))
@@ -77,7 +78,7 @@ for name,item in identities.items():
     try:
         ok=subprocess.run([helper,"alive","--pid",str(item["pid"]),"--start-time",str(item["pidStartedAt"])],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
     except (KeyError,TypeError,OSError): ok=False
-    if not ok: lines.append(f"STALE-SUPERVISOR component={name}")
+    if not ok: lines.append(f"WATCHDOG: its {name} part is not running. Re-arm it with {arm_cmd}.")
 print("\n".join(lines[:20]))
 PY
   )
@@ -121,8 +122,25 @@ PY
     rm -f "$blocked_state" 2>/dev/null || true
   fi
 
+  # Busy-or-not is answered on every single turn end, warnings or not. A
+  # warning used to REPLACE the answer, so a human asking "is it still
+  # working?" got a sentence about watchdog internals instead. Warnings are
+  # added to the answer now, never substituted for it.
   if [[ -n "$message" ]]; then
-    surface_json "$message"
+    running=0
+    for record in "$harness_root/artifacts/agents/jobs"/*.json; do
+      [[ -e "$record" ]] || break
+      if grep -q '"status": *"\(pending\|running\)"' "$record" 2>/dev/null; then
+        running=$((running + 1))
+      fi
+    done
+    if (( running )); then
+      surface_json "STILL WORKING: $running job(s) running.
+$message"
+    else
+      surface_json "NOTHING LEFT TO WORK ON: no jobs running, nothing open in any plan.
+$message"
+    fi
   else
     # Say so when there is nothing to say. Silence is ambiguous to a human:
     # it reads the same whether work is finished, still running, or the hook
