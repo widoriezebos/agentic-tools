@@ -29,6 +29,16 @@ Require the critic's verdict line to count only material findings.
 3. **Read the findings body, never just the verdict line.** A summary that says "no blocking findings" above a body that lists one is itself a finding; the body governs.
 4. Stop the loop the first round that produces no material finding. Do not run another round for prose consistency.
 
+## Round Budget and Exhaustion
+
+The shipped round budget is three focused rounds; record it in the brief. If
+material findings remain after round three, the next focused follow-up must
+enumerate every open finding identifier; dispatch records that successor in
+the chain's `critiqueExhaustions` array and opens one fresh three-round budget
+on the same critic chain. If material findings exhaust that second budget,
+stop outright with the design waiting on the human. A human decision recorded
+in the stream plan is the only remedy.
+
 ## Close a Round by Join, Not by Count
 
 A round is closed only when every material finding carries a disposition — and that is a claim to be checked, not asserted. Parse the critique into a structured worklist (stable identifier, severity, proposal) and join it against the dispositions; the round closes when the two sets are equal. Working from prose invites the failure this prevents: "N corrections applied" reads like closure while unaddressed findings sit in the body, and the next round spends itself rediscovering them instead of finding anything new. If the critique carries no stable identifier per finding, ask for one — an unjoinable critique can be estimated, not closed.

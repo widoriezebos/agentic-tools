@@ -149,7 +149,7 @@ PY
 write_valid_return() {
   local return_file="$round_dir/return.json"
   python3 - "$record" "$prompt" "$return_file" <<'PY'
-import json, sys
+import json, subprocess, sys
 from pathlib import Path
 record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 mode = "implement"
@@ -167,6 +167,12 @@ common = {
 role = record["role"]
 if role in {"design-critic", "code-critic"}:
     common.update({"findings": [], "verdictMaterialCount": 0})
+    if role == "design-critic":
+        common["reviewedCommit"] = subprocess.check_output(
+            ["git", "-C", record["workspaceRoot"], "rev-parse", "HEAD"], text=True
+        ).strip()
+    else:
+        common["reviewedTree"] = "0" * 40
 elif role == "implementer":
     common.update({"riskiestPart": "fake boundary", "diffBoundary": [], "whatWasDone": "simulated implementation"})
 elif role == "verifier":

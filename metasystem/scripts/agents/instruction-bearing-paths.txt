@@ -1,0 +1,13 @@
+# Installation-relative paths that can steer agent behavior and are never
+# eligible for a critique waiver. A trailing slash covers the whole subtree.
+AGENTS.md
+wow.md
+CLAUDE.md
+docs/project-rules.md
+docs/orchestration.md
+docs/collaboration.md
+skills/
+scripts/
+schemas/
+templates/
+roles/

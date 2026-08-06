@@ -6,7 +6,7 @@ usage() {
 Usage:
   scripts/agents/dispatch.sh dispatch --role <role> --brief <file>
       [--mode <working-mode>] [--runtime claude|codex|devin|fake]
-      [--model <model>] [--job-id <id>]
+      [--model <model>] [--job-id <id>] [--reviews <implementer-job-id>]
       [--workspace <dir> | --worktree]
       [--permissions <preset|envelope-file>] [--mission <id>]
       [--approve-escalation] [--wait] [--cap-min N]
@@ -224,13 +224,13 @@ with (lock_dir / f"{job}.lock").open("a+") as lock:
         if not isinstance(patch, dict) or "status" in patch:
             print("record patch must be an object and cannot contain status", file=sys.stderr)
             raise SystemExit(1)
-        immutable = {"jobId", "role", "runtime", "round", "parentJob", "workspaceRoot", "baseSha", "branch", "startedAt"}
+        immutable = {"jobId", "role", "runtime", "round", "parentJob", "reviews", "workspaceRoot", "baseSha", "branch", "startedAt"}
         if immutable.intersection(patch):
             print("record patch attempts to change immutable identity", file=sys.stderr)
             raise SystemExit(1)
         terminal = {"completed", "failed", "cancelled", "timeout"}
-        if current in terminal and metadata_update and not set(patch).issubset({"mirror", "chainClosed", "chainUsage", "runnerClosed"}):
-            print("terminal record metadata is final except mirror, closure, and aggregate usage", file=sys.stderr)
+        if current in terminal and metadata_update and not set(patch).issubset({"mirror", "chainClosed", "chainUsage", "runnerClosed", "critiqueExhaustions"}):
+            print("terminal record metadata is final except mirror, closure, aggregate usage, and critique exhaustion", file=sys.stderr)
             raise SystemExit(1)
         record.update(patch)
         record["status"] = target
@@ -1196,7 +1196,7 @@ reap_one() { # job
 }
 
 dispatch_job() {
-  local role= brief= mode_override= runtime_override= model_override= job= workspace= permissions_override= mission_override= cap_override=
+  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override=
   local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn cap watch_cap tiers_present=false roster_tier requested_tier escalation_required=0
   local cost_direction= approval_name= approved_at=
@@ -1209,6 +1209,7 @@ dispatch_job() {
       --runtime) [[ $# -ge 2 ]] || { usage; exit 2; }; runtime_override=$2; shift 2 ;;
       --model) [[ $# -ge 2 ]] || { usage; exit 2; }; model_override=$2; shift 2 ;;
       --job-id) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
+      --reviews) [[ $# -ge 2 ]] || { usage; exit 2; }; reviews=$2; shift 2 ;;
       --workspace) [[ $# -ge 2 ]] || { usage; exit 2; }; workspace=$2; shift 2 ;;
       --worktree) use_worktree=1; shift ;;
       --permissions) [[ $# -ge 2 ]] || { usage; exit 2; }; permissions_override=$2; shift 2 ;;
@@ -1221,6 +1222,15 @@ dispatch_job() {
   done
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
+  if [[ "$role" == code-critic ]]; then
+    [[ -n "$reviews" ]] || die 2 "code-critic dispatch requires --reviews <implementer-job-id>"
+    valid_id "$reviews" || die 2 "invalid implementer job id for --reviews: $reviews"
+    [[ -f "$jobs/$reviews.json" ]] || die 1 "code-critic dispatch cannot review unknown implementer job: $reviews"
+    [[ "$(json_field "$jobs/$reviews.json" role 2>/dev/null || true)" == implementer ]] \
+      || die 1 "code-critic dispatch --reviews must name an implementer job: $reviews"
+  elif [[ -n "$reviews" ]]; then
+    die 2 "--reviews is only valid for the code-critic role"
+  fi
   [[ ! ( $use_worktree -eq 1 && -n "$workspace" ) ]] || die 2 "--workspace and --worktree are mutually exclusive"
   if (( approve_escalation )) && { [[ ! -t 0 ]] || [[ ! -t 2 ]]; }; then
     die 1 "--approve-escalation requires an interactive TTY; remove the flag or re-run the same dispatch from a TTY"
@@ -1338,11 +1348,11 @@ PY
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
-  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" <<'PY'
+  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" "$reviews" <<'PY'
 import json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
-out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, handshake_budget, approval_name, approved_at, roster_pair, requested_pair, cost_direction = sys.argv[1:]
+out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, handshake_budget, approval_name, approved_at, roster_pair, requested_pair, cost_direction, reviews = sys.argv[1:]
 try: base = subprocess.check_output(["git", "-C", workspace, "rev-parse", "HEAD"], text=True).strip()
 except subprocess.SubprocessError: raise SystemExit("workspace is not a git worktree")
 branch = subprocess.check_output(["git", "-C", workspace, "branch", "--show-current"], text=True).strip()
@@ -1357,7 +1367,8 @@ if approval_name:
     }
 record = {
   "jobId": job, "role": role, "mission": mission or None, "runtime": runtime,
-  "round": 1, "parentJob": None, "status": "pending", "phase": "handshake", "error": None,
+  "round": 1, "parentJob": None, "reviews": reviews or None,
+  "status": "pending", "phase": "handshake", "error": None,
   "workspaceRoot": str(Path(workspace).resolve()), "baseSha": base, "branch": branch,
   "permissions": {
     "requested": json.loads(Path(permissions).read_text()),
@@ -1374,6 +1385,7 @@ record = {
   "input": {"bytes": int(size), "hash": digest, "delivery": "stdin"},
   "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "endedAt": None,
   "usage": None, "mirror": None, "chainClosed": False, "runnerClosed": False,
+  "critiqueExhaustions": [],
 }
 Path(out).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 PY
@@ -1390,8 +1402,244 @@ PY
   printf '%s\n' "$job"
 }
 
+critique_exhaustion_action() { # root job, role, latest record, message, successor id, output manifest
+  python3 - "$root" "$1" "$2" "$3" "$4" "$5" "$6" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+repository, root_job, role, latest_path, message_path, successor, output_path = sys.argv[1:]
+repository, latest_path, message_path, output_path = map(
+    Path, (repository, latest_path, message_path, output_path)
+)
+jobs = repository / "artifacts" / "agents" / "jobs"
+agents = repository / "artifacts" / "agents"
+
+
+def fail(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def load(path, description):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        fail(f"{description} is unreadable: {error}")
+    if not isinstance(value, dict):
+        fail(f"{description} is not a JSON object")
+    return value
+
+
+records = {}
+for path in jobs.glob("*.json"):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        continue
+    if isinstance(value, dict) and value.get("jobId") == path.stem:
+        records[path.stem] = value
+
+
+def chain_root(job_id):
+    current = job_id
+    seen = set()
+    while current in records and current not in seen:
+        seen.add(current)
+        parent = records[current].get("parentJob")
+        if parent is None:
+            return current
+        if not isinstance(parent, str):
+            return None
+        current = parent
+    return None
+
+
+def chain_members(chain_id):
+    return [
+        value for job_id, value in records.items() if chain_root(job_id) == chain_id
+    ]
+
+
+def latest_member(chain_id):
+    members = [
+        value
+        for value in chain_members(chain_id)
+        if isinstance(value.get("round"), int)
+        and not isinstance(value.get("round"), bool)
+    ]
+    return max(members, key=lambda value: value["round"]) if members else None
+
+
+def open_material_ids(record, chain_id):
+    # The job record owns round identity. A delegate-returned round is data and
+    # cannot decide whether a three-round budget has elapsed.
+    round_number = record.get("round")
+    if not isinstance(round_number, int) or isinstance(round_number, bool) or round_number < 1:
+        fail(f"job record {record.get('jobId')!r} has an invalid round number")
+    if record.get("status") == "failed" and record.get("error") == "protocol_error":
+        return None
+    if record.get("status") != "completed":
+        return None
+    return_path = agents / chain_id / "rounds" / str(round_number) / "return.json"
+    result = load(return_path, f"critique return for job {record.get('jobId')!r}")
+    findings = result.get("findings")
+    if not isinstance(findings, list):
+        fail(f"critique return for job {record.get('jobId')!r} has no findings array")
+    found = []
+    for item in findings:
+        if not isinstance(item, dict) or item.get("material") is not True:
+            continue
+        finding_id = item.get("id")
+        if isinstance(finding_id, str) and finding_id and finding_id not in found:
+            found.append(finding_id)
+    return found
+
+
+def exhaustions(record):
+    value = record.get("critiqueExhaustions", [])
+    if not isinstance(value, list):
+        fail("critiqueExhaustions is malformed; waiting on the human is the only remedy")
+    if len(value) > 1:
+        fail("a second critique exhaustion is refused outright; waiting on the human is the only remedy")
+    return value
+
+
+try:
+    message = message_path.read_text(encoding="utf-8")
+except OSError as error:
+    fail(f"critique exhaustion successor message is unreadable: {error}")
+
+
+def require_enumeration(open_ids):
+    missing = [
+        finding_id
+        for finding_id in open_ids
+        if re.search(
+            rf"(?<![A-Za-z0-9_-]){re.escape(finding_id)}(?![A-Za-z0-9_-])",
+            message,
+        )
+        is None
+    ]
+    if missing:
+        fail(
+            "critique budget exhausted; the implementer or design successor follow-up "
+            "must enumerate every open finding identifier: " + ", ".join(missing)
+        )
+
+
+def entry(round_number, open_ids):
+    return {
+        "round": round_number,
+        "openFindingIds": open_ids,
+        "successorJobId": successor,
+    }
+
+
+latest = load(latest_path, "latest follow-up job record")
+if latest.get("status") == "failed" and latest.get("error") == "protocol_error":
+    # Protocol recovery deliberately does not read the missing or malformed
+    # return that caused the protocol error.
+    print("none")
+    raise SystemExit(0)
+
+actions = []
+if role == "design-critic":
+    round_number = latest.get("round")
+    open_ids = open_material_ids(latest, root_job)
+    if not open_ids or round_number % 3:
+        print("none")
+        raise SystemExit(0)
+    current = records.get(root_job) or load(jobs / f"{root_job}.json", "critique root record")
+    previous = exhaustions(current)
+    if previous:
+        if previous[0].get("round") == round_number and previous[0].get("successorJobId") == successor:
+            print("none")
+            raise SystemExit(0)
+        fail("a second critique exhaustion is refused outright; waiting on the human is the only remedy")
+    require_enumeration(open_ids)
+    actions.append({"jobId": root_job, "critiqueExhaustions": [entry(round_number, open_ids)]})
+
+elif role == "code-critic":
+    round_number = latest.get("round")
+    open_ids = open_material_ids(latest, root_job)
+    if not open_ids or round_number % 3:
+        print("none")
+        raise SystemExit(0)
+    current = records.get(root_job) or load(jobs / f"{root_job}.json", "critique root record")
+    previous = exhaustions(current)
+    if not previous:
+        fail(
+            "code critique budget exhausted; dispatch an implementer follow-up that enumerates "
+            "every open finding identifier before continuing the code-critic chain: "
+            + ", ".join(open_ids)
+        )
+    if previous[0].get("round") != round_number:
+        fail("a second critique exhaustion is refused outright; waiting on the human is the only remedy")
+
+elif role == "implementer":
+    implementation_ids = {
+        job_id for job_id in records if chain_root(job_id) == root_job
+    }
+    critic_roots = [
+        value
+        for value in records.values()
+        if value.get("role") == "code-critic"
+        and value.get("parentJob") is None
+        and value.get("reviews") in implementation_ids
+    ]
+    for critic_root in critic_roots:
+        critic_id = critic_root["jobId"]
+        critic_latest = latest_member(critic_id)
+        if critic_latest is None:
+            continue
+        round_number = critic_latest["round"]
+        open_ids = open_material_ids(critic_latest, critic_id)
+        if not open_ids or round_number % 3:
+            continue
+        previous = exhaustions(critic_root)
+        if previous:
+            if previous[0].get("round") == round_number:
+                continue
+            fail("a second critique exhaustion is refused outright; waiting on the human is the only remedy")
+        require_enumeration(open_ids)
+        actions.append({"jobId": critic_id, "critiqueExhaustions": [entry(round_number, open_ids)]})
+
+if not actions:
+    print("none")
+    raise SystemExit(0)
+output_path.write_text(json.dumps({"records": actions}, sort_keys=True) + "\n", encoding="utf-8")
+print("record")
+PY
+}
+
+record_critique_exhaustions() { # manifest
+  local manifest=$1 index target patch target_status
+  while IFS=$'\t' read -r index target; do
+    patch=$(mktemp "$record_locks/exhaustion-record.XXXXXX")
+    python3 - "$manifest" "$index" "$patch" <<'PY'
+import json, sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+item = manifest["records"][int(sys.argv[2])]
+Path(sys.argv[3]).write_text(json.dumps({"critiqueExhaustions": item["critiqueExhaustions"]}) + "\n")
+PY
+    target_status=$(json_field "$jobs/$target.json" status)
+    record_cas "$target" "$target_status" "$target_status" "$patch" \
+      || die 1 "could not record the critique exhaustion successor on code-critic chain $target"
+  done < <(python3 - "$manifest" <<'PY'
+import json, sys
+from pathlib import Path
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for index, item in enumerate(value["records"]):
+    print(f"{index}\t{item['jobId']}")
+PY
+)
+}
+
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model round child payload round_dir cap permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
+  local job= message= wait=0 root_id latest status error session role runtime model workspace reviewed_commit round child payload round_dir cap permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round
   while (($#)); do
     case "$1" in
@@ -1428,8 +1676,29 @@ follow_up() {
   session=$(json_field "$latest" sessionId 2>/dev/null || true)
   [[ -n "$session" && "$session" != null ]] || die 1 "follow-up has no resumable session id; use the fresh-context embed fallback"
   role=$(json_field "$latest" role); runtime=$(json_field "$latest" runtime); model=$(json_field "$latest" requestedModel)
+  workspace=$(json_field "$latest" workspaceRoot)
+  if [[ "$role" == design-critic ]]; then
+    reviewed_commit=$(git -C "$repo_scope" rev-parse HEAD) \
+      || die 1 "design-critic follow-up cannot resolve the current commit"
+    if [[ "$(cd "$workspace" && pwd -P)" != "$repo_scope" ]]; then
+      [[ -z "$(git -C "$workspace" status --porcelain)" ]] \
+        || die 1 "design-critic follow-up cannot synchronize a dirty critic worktree"
+      git -C "$workspace" merge --ff-only -q "$reviewed_commit" \
+        || die 1 "design-critic follow-up cannot fast-forward its worktree to current commit $reviewed_commit"
+    fi
+  fi
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
   [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
+  if [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic ]]; then
+    exhaustion_patch=$(mktemp "$record_locks/exhaustion.XXXXXX")
+    if ! exhaustion_action=$(critique_exhaustion_action \
+      "$root_id" "$role" "$latest" "$message" "$child" "$exhaustion_patch" 2>&1); then
+      die 1 "$exhaustion_action"
+    fi
+    if [[ "$exhaustion_action" == record ]]; then
+      record_critique_exhaustions "$exhaustion_patch"
+    fi
+  fi
   mission=$(json_field "$latest" mission 2>/dev/null || true); [[ "$mission" == null ]] && mission=
   mission_turn=
   if [[ -n "$mission" ]]; then
@@ -1466,7 +1735,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 parent = json.loads(Path(sys.argv[1]).read_text()); out = Path(sys.argv[2])
 job, round_number, parent_job, snapshot, fallbacks, signal, handshake_budget, resume_mode, size, digest, mission_turn = sys.argv[3:]
-record = {key: parent[key] for key in ("role", "mission", "runtime", "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "requestedModel")}
+record = {key: parent[key] for key in ("role", "mission", "runtime", "reviews", "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "requestedModel")}
 record.update({
   "jobId": job, "round": int(round_number), "parentJob": parent_job, "status": "pending", "phase": "handshake", "error": None,
   "permissions": {
@@ -1729,6 +1998,25 @@ internal_cancel() {
   release_lifecycle_lock "$job"
 }
 
+internal_critique_exhaustion() {
+  local root_job= role= latest= message= successor= output=
+  while (($#)); do
+    case "$1" in
+      --root-job) root_job=$2; shift 2 ;;
+      --role) role=$2; shift 2 ;;
+      --latest) latest=$2; shift 2 ;;
+      --message) message=$2; shift 2 ;;
+      --successor) successor=$2; shift 2 ;;
+      --output) output=$2; shift 2 ;;
+      *) exit 2 ;;
+    esac
+  done
+  valid_id "$root_job" && valid_id "$successor" \
+    && [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic ]] \
+    && [[ -f "$latest" && -f "$message" && -n "$output" ]] || exit 2
+  critique_exhaustion_action "$root_job" "$role" "$latest" "$message" "$successor" "$output"
+}
+
 # Lock-owning public commands re-exec once so their lease tag is part of the
 # process command line and a contender can distinguish this process from PID
 # reuse. Internal adapter callbacks never acquire a chain lock.
@@ -1757,6 +2045,7 @@ case "$command" in
   __handshake) internal_handshake "$@" ;;
   __cancel-owned) [[ ${1:-} == --job && $# -eq 2 ]] || exit 2; internal_cancel "$2" ;;
   __register-custody) internal_register_custody "$@" ;;
+  __critique-exhaustion) internal_critique_exhaustion "$@" ;;
   -h|--help) usage ;;
   *) usage; exit 2 ;;
 esac

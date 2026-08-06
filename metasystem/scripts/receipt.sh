@@ -8,6 +8,8 @@ Usage:
       --outcome <shipped|reworked|blocked|parked> [--skills a,b] \
       [--verify clean|caught|skipped] [--corrections N] [--stop-loss yes|no] \
       [--delegate runtime:model:job-id]... [--note "text"] [--file <path>]
+  scripts/receipt.sh correct --ref-epoch <epoch> --ref-sha1 <sha1> \
+      --field <field> --was <value> --now <value> --reason <text> [--file <path>]
   scripts/receipt.sh check [--max-age-days N] [--max-receipts N] [--file <path>]
   scripts/receipt.sh stats [--all] [--file <path>]
   scripts/receipt.sh retro "summary of instruction changes" [--file <path>]
@@ -18,6 +20,8 @@ check: exit 1 when a metasystem retro is due (receipts or age since the last
 retro exceed the backstop), 0 otherwise.
 stats: print the period numbers (since the last retro, or --all) as
 key=value lines — recorded per retro so periods stay comparable.
+correct: append a correction that uniquely references an existing line; the
+original receipt is never edited.
 retro: record that a retro ran and reset the cadence.
 
 Defaults: --file plans/receipts.log. Retro cadence resolves from flags, then
@@ -27,12 +31,14 @@ Exit codes: 0 ok; 1 retro due; 2 usage error.
 USAGE
 }
 
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 file=plans/receipts.log
 max_age_days=
 max_receipts=
 max_age_days_set=0
 max_receipts_set=0
 type= outcome= skills=none verify=skipped corrections=0 stop_loss=no note= summary= all_flag=0
+ref_epoch= ref_sha1= correction_field= correction_was= correction_now= correction_reason=
 delegates=()
 
 cmd=${1:-}
@@ -55,6 +61,12 @@ while (($#)); do
     --stop-loss) stop_loss=${2:-}; shift 2 ;;
     --delegate) delegates+=("${2:-}"); shift 2 ;;
     --note) note=${2:-}; shift 2 ;;
+    --ref-epoch) ref_epoch=${2:-}; shift 2 ;;
+    --ref-sha1) ref_sha1=${2:-}; shift 2 ;;
+    --field) correction_field=${2:-}; shift 2 ;;
+    --was) correction_was=${2:-}; shift 2 ;;
+    --now) correction_now=${2:-}; shift 2 ;;
+    --reason) correction_reason=${2:-}; shift 2 ;;
     --all) all_flag=1; shift ;;
     --max-age-days) max_age_days=${2:-}; max_age_days_set=1; shift 2 ;;
     --max-receipts) max_receipts=${2:-}; max_receipts_set=1; shift 2 ;;
@@ -81,6 +93,97 @@ sanitize() {
   printf '%s' "${v//$'\n'/ }"
 }
 
+validate_code_critique_claim() {
+  python3 - "$root" ${delegates[@]+"${delegates[@]}"} <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+jobs = root / "artifacts" / "agents" / "jobs"
+records = []
+for triple in sys.argv[2:]:
+    job_id = triple.rsplit(":", 1)[-1]
+    path = jobs / f"{job_id}.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        continue
+    if isinstance(value, dict) and value.get("jobId") == job_id:
+        records.append(value)
+
+implementers = {
+    value["jobId"]: value
+    for value in records
+    if value.get("role") == "implementer"
+}
+critics = [
+    value
+    for value in records
+    if value.get("role") == "code-critic" and value.get("parentJob") is None
+]
+for critic in critics:
+    reviewed = critic.get("reviews")
+    if reviewed in implementers:
+        raise SystemExit(0)
+print(
+    "receipt refused: skills=code-critique requires delegate entries naming a "
+    "code-critic chain id and the implementer job id in that chain's reviews field",
+    file=sys.stderr,
+)
+raise SystemExit(1)
+PY
+}
+
+waiver_receipt_facts() {
+  python3 - "$root" ${delegates[@]+"${delegates[@]}"} <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+jobs = root / "artifacts" / "agents" / "jobs"
+for triple in sys.argv[2:]:
+    job_id = triple.rsplit(":", 1)[-1]
+    path = jobs / f"{job_id}.json"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        continue
+    if not isinstance(record, dict) or record.get("jobId") != job_id or record.get("role") != "implementer":
+        continue
+    claim = record.get("critiqueWaived")
+    if not isinstance(claim, dict) or not isinstance(claim.get("class"), str):
+        continue
+    current = record
+    seen = set()
+    while current.get("parentJob") is not None:
+        parent = current.get("parentJob")
+        if not isinstance(parent, str) or parent in seen:
+            break
+        seen.add(parent)
+        try:
+            current = json.loads((jobs / f"{parent}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            break
+    root_job = current.get("jobId", job_id)
+    stream = "standalone"
+    brief = root / "artifacts" / "agents" / root_job / "brief.md"
+    try:
+        for line in brief.read_text(encoding="utf-8").splitlines():
+            if line.startswith("Mission Stream:"):
+                stream = line.split(":", 1)[1].strip() or "standalone"
+                break
+    except OSError:
+        pass
+    print(claim["class"])
+    print(stream)
+    raise SystemExit(0)
+print("none")
+print("none")
+PY
+}
+
 case "$cmd" in
   add)
     case "$type" in implement|refactor|improve|review|design|investigate|other) ;; *) echo "invalid --type: $type" >&2; exit 2 ;; esac
@@ -101,10 +204,49 @@ case "$cmd" in
         delegate+=$value
       done
     fi
-    printf '%s|%s|RECEIPT|type=%s|outcome=%s|skills=%s|verify=%s|corrections=%s|stop_loss=%s|delegate=%s|note=%s\n' \
-      "$now_epoch" "$now_utc" "$type" "$outcome" "${skills//|/;}" "$verify" "$corrections" "$stop_loss" "$delegate" "${note//|/;}" >>"$file"
+    if [[ ",$skills," == *,code-critique,* ]]; then
+      validate_code_critique_claim || exit 2
+    fi
+    waiver_facts=$(waiver_receipt_facts)
+    critique_waived=$(printf '%s\n' "$waiver_facts" | sed -n '1p'); critique_waived=$(sanitize "$critique_waived")
+    waiver_stream=$(printf '%s\n' "$waiver_facts" | sed -n '2p'); waiver_stream=$(sanitize "$waiver_stream")
+    printf '%s|%s|RECEIPT|type=%s|outcome=%s|skills=%s|verify=%s|corrections=%s|stop_loss=%s|delegate=%s|critique_waived=%s|waiver_stream=%s|note=%s\n' \
+      "$now_epoch" "$now_utc" "$type" "$outcome" "${skills//|/;}" "$verify" "$corrections" "$stop_loss" "$delegate" \
+      "${critique_waived//|/;}" "${waiver_stream//|/;}" "${note//|/;}" >>"$file"
     echo "receipt recorded in $file"
     "$0" check --file "$file" >/dev/null 2>&1 || echo "note: a metasystem retro is due — run skills/retro (scripts/receipt.sh check for details)" >&2
+    ;;
+  correct)
+    [[ "$ref_epoch" =~ ^[0-9]+$ ]] || { echo "correct requires a numeric --ref-epoch" >&2; exit 2; }
+    [[ "$ref_sha1" =~ ^[0-9a-f]{40}$ ]] || { echo "correct requires a lowercase 40-character --ref-sha1" >&2; exit 2; }
+    [[ "$correction_field" =~ ^[a-z][a-z0-9_-]*$ ]] || { echo "correct requires a valid --field" >&2; exit 2; }
+    [[ -n "$correction_reason" ]] || { echo "correct requires a nonempty --reason" >&2; exit 2; }
+    [[ -f "$file" ]] || { echo "correction reference file does not exist: $file" >&2; exit 2; }
+    correction_was=$(sanitize "$correction_was"); correction_was=${correction_was//|/;}
+    correction_now=$(sanitize "$correction_now"); correction_now=${correction_now//|/;}
+    correction_reason=$(sanitize "$correction_reason"); correction_reason=${correction_reason//|/;}
+    original=
+    matches=0
+    while IFS= read -r candidate || [[ -n "$candidate" ]]; do
+      [[ "${candidate%%|*}" == "$ref_epoch" ]] || continue
+      candidate_sha1=$(printf '%s' "$candidate" | shasum -a 1 | awk '{print $1}')
+      [[ "$candidate_sha1" == "$ref_sha1" ]] || continue
+      [[ "$candidate" == *'|RECEIPT|'* ]] || {
+        echo "correction reference must identify an original RECEIPT line" >&2
+        exit 2
+      }
+      original=$candidate
+      matches=$((matches + 1))
+    done <"$file"
+    (( matches == 1 )) || { echo "correction reference must identify exactly one original line; matched $matches" >&2; exit 2; }
+    case "|$original|" in
+      *"|$correction_field=$correction_was|"*) ;;
+      *) echo "correction --was value does not match field $correction_field on the original line" >&2; exit 2 ;;
+    esac
+    printf '%s|%s|CORRECTION|ref_epoch=%s|ref_sha1=%s|field=%s|was=%s|now=%s|reason=%s\n' \
+      "$now_epoch" "$now_utc" "$ref_epoch" "$ref_sha1" "$correction_field" \
+      "$correction_was" "$correction_now" "$correction_reason" >>"$file"
+    echo "correction recorded in $file; original line unchanged"
     ;;
   retro)
     [[ -n "$summary" ]] || { echo "retro requires a summary of the instruction changes made" >&2; exit 2; }
@@ -138,6 +280,7 @@ case "$cmd" in
           else if (k == "corrections") corr += v
           else if (k == "verify" && v == "caught") caught++
           else if (k == "stop_loss" && v == "yes") sl++
+          else if (k == "critique_waived" && v != "none") waivers++
         }
       }
       END {
@@ -149,6 +292,7 @@ case "$cmd" in
         printf "corrections=%d\n", corr
         printf "caught_by_verify=%d\n", caught
         printf "stop_loss_triggered=%d\n", sl
+        printf "critique_waivers=%d\n", waivers
         if (n > 0) printf "span_days=%.1f\n", (last - first) / 86400
       }'
     ;;

@@ -26,7 +26,7 @@ Severity and materiality are separate. Require the verdict count to include only
 
 Review the accepted brief and the computed base-to-working-tree diff before reasoning about code quality.
 
-For a dispatched implementation, run `scripts/agents/assert-conformance.sh --job <job-id>`. It computes the diff from the recorded `baseSha`, includes committed, uncommitted, and previously untracked work, persists `diff.patch`, rejects delegate changes under `plans/` or the agent control plane, and cross-checks the return's `diffBoundary`. Read that computed diff; never substitute the delegate's file list or summary.
+For a dispatched implementation, run `scripts/agents/assert-conformance.sh --stage review --job <job-id>`. It computes the diff from the implementer branch's merge-base with the invoking target checkout, includes committed, uncommitted, and previously untracked unignored work, persists `diff.patch` and `review.json`, rejects delegate changes under `plans/` or the agent control plane, and checks only that every changed path appears in the union of every round's immutable `diffBoundary` declarations: a declared-but-unchanged path passes, while a changed-but-undeclared path refuses. Carry the emitted `reviewedTree` into every code-critic return. Read that computed diff; never substitute the delegate's file list or summary.
 
 Check that the diff implements every acceptance criterion, stays within the declared workspace and non-goals, preserves tests and certification assets unless the brief explicitly changes them, and contains no unrelated work. Treat every mismatch as a conformance finding before proceeding.
 
@@ -59,7 +59,7 @@ Use `accepted` or `refuted` for material findings. Use `noted` only for non-mate
 
 ## Round Budget and Exit
 
-Commit the round budget in the brief before review. Default to three focused rounds:
+The shipped round budget is three focused rounds; record it in the brief before review:
 
 1. Run both layers over the full implementation and adjudicate every finding.
 2. If corrections were required, send one focused follow-up to the same implementer, then recompute the whole diff and run both layers again.
@@ -67,4 +67,4 @@ Commit the round budget in the brief before review. Default to three focused rou
 
 Stop at the first round with zero material findings.
 
-If material findings remain after round three, do not silently spend a fourth round and do not certify the change. Escalate to the human with the unresolved findings, their dispositions and evidence, the rounds already spent, and a recommendation to revise the brief, replace the implementation approach, accept a named risk, or authorize another bounded round.
+If material findings remain after round three, do not silently spend a fourth round and do not certify the change. The next focused follow-up must enumerate every open finding identifier; dispatch records that successor in the chain's `critiqueExhaustions` array and opens one fresh three-round budget on the same critic chain. If material findings exhaust that second budget, stop outright with the work waiting on the human. A human decision recorded in the stream plan is the only remedy.
