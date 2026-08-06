@@ -17,10 +17,12 @@ Made mechanical as one rule, to be added to the shipped
 `docs/project-rules.md` template (anonymous form) through this design's
 change-gate passage:
 
-> Every artifact names whose hands touch it. Anything a human must touch is
-> English prose or a single command; complexity may only live on the agent
-> side of that line. A refusal a human can hit must state, in its message,
-> exactly what to change.
+> Every artifact names whose hands touch it. Anything a human must PRODUCE
+> for the machine to consume is English prose or a single command; complexity
+> may only live on the agent side of that line. Review duties — reading
+> contracts, diffs, evidence, retro proposals — are unchanged and are not
+> "touch": the rule governs inputs, never oversight (HS-1-6). A refusal a
+> human can hit must state, in its message, exactly what to change.
 
 ## Scope fence, against over-engineering the fix
 
@@ -35,15 +37,21 @@ finding is wrong and comes back here.
 Evidence: every mission signed so far took four to five steps (seal, copy a
 64-character hash, paste an approval line, commit, push); the protection —
 review and explicit consent — lives in none of them.
-Change: `scripts/assert-mission.sh --sign "<name>"` shows the contract's
-English sections plus the decisive numbers (exposure, fences, gate threshold),
-seals if not yet sealed, appends the approval line with the computed hash
-itself, commits, and pushes where an origin exists. Consent is the act of
-running the command with your name after the display; the display is
-mandatory, not skippable.
-Proof: a suite fixture signs a fixture contract with `--sign` and preflight
-passes; a second fixture proves `--sign` on an unreviewable contract (invalid,
-unsealed-and-unsealable) refuses with the reason.
+Change: `scripts/assert-mission.sh --sign "<name>"` is display-then-confirm
+in one command: it validates, seals if needed, SHOWS the contract's English
+sections plus the decisive numbers (exposure, fences, gate threshold), and
+only then asks for typed confirmation before appending the approval line with
+the computed hash; consent is the confirmation after the display, never the
+invocation (HS-1-1). Non-interactive use requires an explicit
+`--confirmed-after-review` flag carrying the same meaning. The git
+transaction is defined, not implied (HS-1-2): the command refuses unless on
+the origin-tracked default branch preflight will fetch, commits exactly the
+contract file, pushes to origin's default branch, and on any git failure
+states precisely what remains for the human. It executes nothing else — no
+gates, no hooks beyond git's own.
+Proof: fixtures for the confirmed happy path through preflight; refusal
+without confirmation; refusal off the default branch; refusal on an
+unsealable contract — each asserting the message names the fix.
 
 **F-2: Prose-to-mission is the real flow but is documented nowhere.**
 Evidence: both real missions started as human prose; the orchestrator drafted
@@ -59,36 +67,53 @@ Proof: doc change only; the audit's placeholder and reference checks pass.
 Evidence: a cohort of N repetitions currently implies N seal-and-sign
 ceremonies; the human has already rejected artifact multiplication in
 principle.
-Change: cohort-level authorization as the default. The human signs the cohort
-record once (name plus the cohort record's hash, same one-command flow as
-F-1); the driver then stamps each repetition's contract approval mechanically,
-citing the cohort authorization. Per-repetition signing remains available;
-the driver accepts either and refuses a repetition with neither.
-Proof: kit-gate fixtures for both paths and for the refusal.
+Change: cohort-level authorization as the default, made representable and
+bounded rather than asserted. The contract grammar gains one optional line
+(HS-1-3): `Cohort-Authorization: cohort-id=<id>; record-sha256=<hash>`, which
+seal covers and preflight accepts as the approval when — and only when — the
+named cohort record is itself signed (F-1 flow) and its hash matches. The
+cohort record's signed bytes must bind everything one signature spends
+(HS-1-4): the contract template hash, spec id and version, measuring-kit
+version, fence vector, roster, repetition count, per-repetition exposure, and
+the total exposure ceiling; a repetition whose generated contract deviates
+from the bound template fails preflight because the template hash no longer
+matches. Per-repetition signing remains available; the driver accepts either
+and refuses a repetition with neither.
+Proof: kit-gate fixtures for both paths, the refusal with neither, a
+tampered-template repetition refused, and a total-exposure ceiling exceeded
+refused.
 
-**F-4: Dead configuration generality that has already caused harm.**
-Evidence: `model.tier.1..3` and `mode.<mode>.role.*` keys are read by no
-shipped code path (verify by search before removal; abort this finding for
-any key that is read), have never been exercised by real use, and the tier
+**F-4: Configuration generality billed to every human up front.** (Amended
+per HS-1-5: the original deletion claim was WRONG — both key families have
+shipped readers, and `model.tier.*` powers the dispatcher's cost-escalation
+guard. The critic checking rather than trusting saved a protection.)
+Evidence: the tier table and mode-scoped keys confront every adopter as
+placeholders to fill although most projects never need them, and the tier
 table contributed to the roster confusion that cancelled three healthy jobs
 on 2026-08-05.
-Change: remove the keys from the shipped `metasystem.conf` template and from
-`metasystem-config.sh validate`'s required set; delete dead resolution code
-for them. Projects that need per-mode rosters can add keys when a real need
-arrives, through the change gate, with a reader.
-Proof: the suite passes with the pruned template; a fixture proves validate
-accepts a conf without tiers and still refuses genuinely malformed rosters.
+Change: the readers and their guards stay untouched. The shipped template
+demotes both families to commented-out examples with one line each saying
+what configuring them buys; `metasystem-config.sh validate` accepts their
+absence (verify it already does; fix if not). An adopter who never uncomments
+them loses only the cost-escalation guard's tier comparison, and validate
+says so in one informational line rather than demanding tiers.
+Proof: the suite passes with the demoted template; fixtures prove validate
+accepts absence, still refuses malformed present keys, and the dispatcher's
+escalation guard still works when tiers are configured.
 
 **F-5: Refusals that do not hand the human the fix.**
 Evidence: a contract metric named with an underscore cost an hour; the
 refusal named the key as unknown instead of stating the allowed charset and
 the fixed spelling.
 Change: sweep the refusal messages a HUMAN can plausibly hit — contract
-validation, seal, preflight, adopt, provision — and make each one state what
-to change, in the message itself. Agent-only assertion messages are out of
-scope.
-Proof: fixtures asserting the improved messages for the known-bad cases
-(underscore metric name, missing approval, dirty template, existing target).
+validation, seal, sign, preflight, adopt, provision, and the mission
+ask-and-answer path (HS-1-7) — and make each one state what to change, in the
+message itself. Agent-only assertion messages are out of scope.
+Proof: the implementation enumerates every refusal on those surfaces into a
+checklist in its return (HS-1-8: the sweep is auditable, not sampled), and
+fixtures assert the message for at least: underscore metric name, missing
+approval, dirty template, existing target, unanswered-ask park, and answer
+to an unknown ask.
 
 **F-6: Adoption asks the human to fill files a conversation should fill.**
 Evidence: after `adopt.sh`, the human faces two files of placeholders;
@@ -100,6 +125,16 @@ message points at it. No new tooling: the agent is the interviewer.
 Proof: doc change only; adopt fixture asserts the closing message names the
 flow.
 
+**F-7: Answering a parked mission's ask is a raw-file ceremony (HS-1-7).**
+Evidence: a mission that parks on a human question expects the answer as a
+committed file in the exact shape the runner reads; nothing offers the human
+a prose path.
+Change: `scripts/assert-mission.sh --answer <ask-id> "<prose>"` writes the
+answer artifact in the runner's shape, commits, and pushes, one command; the
+runner's resume flow is unchanged.
+Proof: fixture answering a parked fixture mission by the command and
+resuming; refusal for an unknown ask id names the open asks.
+
 ## What is deliberately NOT simplified
 
 The agent-side machinery — close-by-join, conformance, schemas, gates,
@@ -109,9 +144,10 @@ design draws is not "less rigor"; it is "rigor never billed to the human."
 
 ## Implementation order
 
-F-4 (deletion first, smallest risk), F-1, F-3 (builds on F-1's flow), F-5,
-F-2 and F-6 (docs last, describing what then exists). One implement brief per
-finding or adjacent pair; each cites this design; the usual loop applies.
+F-4 (template demotion, smallest risk), F-1, F-3 (builds on F-1's flow), F-7,
+F-5, then F-2 and F-6 (docs last, describing what then exists). One implement
+brief per finding or adjacent pair; each cites this design; the usual loop
+applies.
 
 ## Completion
 
