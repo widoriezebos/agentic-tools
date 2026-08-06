@@ -1,8 +1,8 @@
 # Human Surface Design: recovering from over-engineering
 
 - Goal and current status: every human touchpoint of the metasystem reduced to English prose or a single command, with complexity permitted only on the agent side; over-engineered pieces named by evidence and removed. Status: CLOSED by join at round 12 (2026-08-06), 48 findings adjudicated; ready for implementation in the stated order.
-- Next step: implement per the order below, one brief per finding or adjacent pair, each citing this design.
-- In flight right now: nothing
+- Next step: resolve KI-18, push the F-4 + load-immunity batch, then F-1 per the order below.
+- In flight right now: nothing running; the F-4 implementation is MERGED LOCALLY with the load-immunity rework and both are blocked from pushing by KI-18 (fingerprint instability under fixture-fast intervals), which is the next session's first item. F-1 dispatches after that batch lands
 - Waiting on the human: ratification comes through accepting this design after critique
 
 ## The standard (the human's words, made binding)
