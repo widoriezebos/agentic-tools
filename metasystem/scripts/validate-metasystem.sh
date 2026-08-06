@@ -1467,10 +1467,19 @@ PY
     local name=$1 expected=$2 result job
     shift 2
     job=$(agent_fixture_job_from_args "$@")
-    set +e
-    run_agent_fixture_captured "$name" "$job" "$agent_fixture/$name.out" "$@"
-    result=$?
-    set -e
+    local attempt
+    for attempt in 1 2 3; do
+      set +e
+      run_agent_fixture_captured "$name" "$job" "$agent_fixture/$name.out" "$@"
+      result=$?
+      set -e
+      # A supervision self-heal makes the status check one generation old for
+      # a moment, and dispatch rightly refuses until the next check lands.
+      # That refusal is transient and is not the one under test, so wait for
+      # the next check and ask again rather than reading it as the answer.
+      grep -Fq 'censusGeneration=' "$agent_fixture/$name.out" 2>/dev/null || break
+      sleep 1
+    done
     if [[ $result -eq 0 ]]; then
       echo "agent fixture unexpectedly passed: $name" >&2
       exit 1
