@@ -119,7 +119,13 @@ PY
 }
 
 record_cas() { # job, expected status, target status, patch file
-  "$0" __record-cas --job "$1" --expect "$2" --status "$3" --patch "$4"
+  local cas_rc=0
+  "$0" __record-cas --job "$1" --expect "$2" --status "$3" --patch "$4" || cas_rc=$?
+  # One-shot by contract: twenty call sites mktemp a patch and none cleaned it,
+  # which is how record-locks reached 142k files. The wrapper is the one point
+  # that always runs.
+  rm -f -- "$4" 2>/dev/null || true
+  return "$cas_rc"
 }
 
 record_create() { # job, source json
@@ -990,6 +996,7 @@ for path in jobs.glob("*.json"):
 PY
     record_cas "$chain_job" "$chain_status" "$chain_status" "$patch" || return 1
   done
+  rm -f -- "$result" 2>/dev/null || true
 }
 
 reap_one_locked() { # job
@@ -998,6 +1005,11 @@ reap_one_locked() { # job
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
     completed|failed|timeout|cancelled)
+      if [[ -n "$(json_field "$record" mirror 2>/dev/null || true)" ]]; then
+        # Settled once: mirrored terminal records are done. Re-walking them
+        # every sweep rewrote every record every interval, all day.
+        return
+      fi
       root_id=$(root_job_id "$job" 2>/dev/null || true)
       [[ -n "$root_id" ]] && aggregate_chain_usage "$root_id"
       aggregate_mission_usage "$record" || true

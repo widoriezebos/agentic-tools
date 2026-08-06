@@ -68,6 +68,42 @@ for chain_dir in sorted(p for p in agents.iterdir() if p.is_dir() and p.name not
             log.unlink()
     collected.append(chain)
 
+# Job records are the registry while work is recent: the staleness check reads
+# them for its chain window and the census joins custody through them. Past
+# that window, a terminal chain's records serve only history, and history is
+# the mirror, which already holds every record file. Locally: live-only.
+import os, time
+grace = float(os.environ.get("METASYSTEM_CHAIN_GRACE_SECONDS", "5400"))
+for record_path in sorted(jobs.glob("*.json")):
+    try:
+        record = json.loads(record_path.read_text())
+    except (OSError, ValueError):
+        continue
+    if record.get("status") not in TERMINAL:
+        continue
+    root_chain = re.sub(r"-r[0-9]+$", "", record_path.stem)
+    if (agents / root_chain).exists():
+        continue  # chain payload not collected yet; records stay with it
+    manifest_path = evidence / "agents" / root_chain / "manifest.json"
+    if not manifest_path.exists():
+        continue
+    manifest_files = json.loads(manifest_path.read_text())["files"]
+    entry = manifest_files.get(f"jobs/{record_path.name}")
+    if entry is None:
+        continue
+    mirrored_at = json.loads(manifest_path.read_text()).get("updatedAt", "")
+    try:
+        from datetime import datetime, timezone
+        age = time.time() - datetime.strptime(mirrored_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        continue
+    if age <= grace:
+        continue
+    try:
+        record_path.unlink()
+    except FileNotFoundError:
+        pass
+
 # Beyond chain payloads, three residue classes accumulate per terminal job and
 # nobody else cleans them: heartbeats, lock files and lifecycle dirs, and the
 # mktemp leftovers of interrupted operations. And capability snapshots
@@ -117,8 +153,12 @@ if caps.is_dir():
 # mkdir-ps before writing, so a directory with nothing in it carries no
 # information and comes back the moment it is needed. Bottom-up, so nested
 # empties collapse in one pass; the supervision dir is skipped while armed.
+# The spine stays even when empty: the census and watcher read these every
+# interval, and pruning an empty jobs/ silenced the census entirely (no
+# directory, no verdict, no arming). Only per-job ephemera collapse.
+SPINE = {"jobs", "capabilities", "mains", "record-locks", "supervision"}
 for directory in sorted((p for p in agents.rglob("*") if p.is_dir()), reverse=True):
-    if directory.name == "supervision" or "supervision" in directory.parts:
+    if directory.name in SPINE or "supervision" in directory.parts:
         continue
     try:
         directory.rmdir()  # only succeeds when empty
