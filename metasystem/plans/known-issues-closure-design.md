@@ -32,48 +32,61 @@ dispatch. The alternative — atomically re-recording the armed fingerprint on
 every heal — was rejected: it makes the arming record mutable by an
 unattended process, which is the pattern this repository keeps burying.
 
-Change: remove instance-derived inputs from `fingerprint()` in
-`process-census.py`; arming records and dispatch comparisons use the
-identity-only fingerprint; the census verdict retains its component-health
-duties unchanged.
+The critic proved the replacement duty I cited does not exist (KC-1-1):
+nothing at dispatch time ties a SUCCESS census to the CURRENT armed
+generation. So the decision gains its missing half: `fingerprint()` drops
+instance-derived inputs, AND the census output gains the armed generation it
+served (the arming record's `startedAt` + owner identity, echoed verbatim
+from `state.json` into `last-census.json`); dispatch compares that
+generation against the arming record explicitly. Identity by fingerprint,
+generation by declaration, liveness by verdict — three separable checks
+instead of one hash conflating them.
 
-Proof: a reproduction harness OUTSIDE the full suite (arm a sandbox repo with
-fixture-fast intervals, kill a component, wait for self-heal, dispatch) that
-fails on the old code and passes on the new, kept as a suite fixture; then
-three consecutive full-suite greens plus one under artificial CPU load — the
-final proof that also releases the parked batch.
+Change: `fingerprint()` inputs; census emit; dispatch's freshness check
+gains the generation comparison with its own message.
 
-## KI-9 — delegates cannot commit in their worktrees
+Proof, two-sided per KC-1-8: the reproduction harness (fixture-fast sandbox,
+kill a component, self-heal, dispatch) runs TWENTY iterations on the old
+code and must refuse in at least five — establishing it reproduces the
+class — and twenty on the new code with zero refusals; then three
+consecutive full-suite greens plus one under artificial CPU load. The
+harness stays as a suite fixture at reduced iteration count.
 
-Root cause: a worktree commit writes outside the sandbox's writeRoots — the
-shared object store, the worktree's metadata directory, and its own branch
-ref all live under the template's `.git`.
+## KI-9 — delegates cannot commit in their worktrees (decision REVERSED at round 1)
 
-DECISION: grant the minimum that makes a delegate's OWN commits possible and
-nothing else: `--worktree` dispatches add three precise writeRoots —
-`.git/objects/` (content-addressed, append-only in practice),
-`.git/worktrees/<name>/` (the worktree's own metadata), and
-`.git/refs/heads/agent/<job-id>*` (its own branch and nothing beside it).
-Orchestrator-owned merges and the conformance diff stay exactly as they are;
-the settled workspace contract already anticipated delegate checkpoint
-commits, and per-job authorship (shipped) stamps them honestly.
+The draft granted three writeRoots; the critic showed `.git/objects` is an
+isolation hole (deletion and overwrite of every loose object, alternates,
+packs — KC-1-2), the set was incomplete anyway (reflogs — KC-1-3), and the
+ref-glob is inexpressible in the shipped adapters. All true. No sandbox
+widening.
 
-Change: `dispatch.sh` permission expansion for worktree jobs; the KI-9
-register row closes; the WORKTREE-BEHIND warning stays (syncing remains the
-orchestrator's job).
+DECISION: KI-9 stays ACCEPTED — delegates never run git writes — and the
+checkpoint need is met on the orchestrator's side of the boundary, where
+git already lives: a new `dispatch.sh checkpoint --job <id>` verb commits
+the job's current worktree state on its own agent branch with per-job
+authorship (shipped) and a checkpoint trailer. Delegates REQUEST a
+checkpoint through their return (files as the only interface, as
+everywhere); the orchestrator or the runner grants it with one command.
+The escape surface stays exactly zero.
 
-Proof: fixtures — a fake worktree job runs `git commit` successfully on its
-own branch; an attempted write to another ref path is refused by the
-sandbox; conformance still computes the identical boundary.
+Change: the `checkpoint` verb; the implementer return schema gains an
+optional `checkpointRequested` boolean; the register row stays ACCEPTED
+with the verb named as its mitigation.
+
+Proof: fixtures — the verb commits a dirty worktree on the right branch
+with job authorship and touches no other ref; a second invocation with a
+clean tree is a recorded no-op; the schema round-trips.
 
 ## KI-11 — dispatch refuses a census one second past its interval
 
 Root cause: freshness is a point predicate against a live, ticking process.
 
-DECISION: staleness within one interval of grace means WAIT, not refuse:
-dispatch blocks up to one full interval for the next census; it refuses only
-past 2x the interval, which genuinely indicates dead supervision. No
-configuration knob — the interval itself is the unit.
+DECISION (single rule, KC-1-5): dispatch computes one hard deadline —
+census age must be under 2x the interval, additionally capped at 180
+seconds absolute so an absurd configured interval cannot stall dispatch
+indefinitely. If the current age is below the deadline, dispatch waits for
+the next census only up to that same deadline; at or past it, refuse. One
+number, both branches.
 
 Change: `require_fresh_census` waits bounded; refusal message states the age,
 the bound, and the arming remedy (F-5's message rule).
@@ -87,8 +100,11 @@ Root cause: the recorded envelope is what dispatch REQUESTED; nothing ever
 observes what the sandbox actually enforced.
 
 DECISION: measure at the cadence where it is cheap and meaningful — the
-adapter self-test, once per runtime version+config fingerprint, not per
-dispatch. Each real adapter's `selftest` gains behavioural probes: attempt an
+adapter self-test, once per runtime version+config fingerprint AND PER
+SHIPPED PRESET (KC-1-4: `none` and `workspace` produce materially different
+sandboxes, so each is probed; a custom envelope file is recorded as
+`measured: false` in the job record, honestly unmeasured rather than
+falsely covered). Each real adapter's `selftest` gains behavioural probes: attempt an
 out-of-root write, attempt network under deny, attempt a read outside
 readRoots; record observed outcomes in the capability snapshot as
 `measuredEnvelope`. Dispatch records then cite the snapshot that measured
@@ -118,9 +134,11 @@ sections the orchestrator still owes. Briefs cite the flag; the KI row moves
 to ACCEPTED with the flag as its mitigation and "sandboxes gain process
 visibility" as the reopen trigger.
 
-Proof: the flag exists, is green in a normal environment with ps removed
-from PATH (simulating the sandbox), and the suite asserts the section list
-it prints matches the sections actually skipped.
+Proof: the flag exists and is green under an honest simulation (KC-1-6): a
+PATH-shimmed `ps` that EXISTS and fails with `Operation not permitted` on
+stderr and a nonzero exit, mimicking the observed seatbelt behaviour rather
+than command absence; the suite asserts the printed section list matches
+the sections actually skipped.
 
 ## KI-7 — the launch window race
 
@@ -140,12 +158,17 @@ past its window is reaped with the existing classification.
 
 - **KI-1** (durationMs vs durationSeconds naming): FIX now — rename the doc
   reference to match the artifact; one line, fixture greps both.
-- **KI-2** (suite wall time growth): RETIRE as superseded — the load-immunity
-  rework re-baselined the suite; the register keeps the new baseline number
-  and the watch lives in the benchmark watches, where it now belongs.
-- **KI-3** (BSD diff symlink diagnostics): FIX now — the adoption fixture
-  compares with `diff -r --no-dereference` equivalents or filters the known
-  benign lines EXPLICITLY BY PATTERN; exit codes already correct.
+- **KI-2** (suite wall time growth): ACCEPT with a measured trigger
+  (KC-1-7: retirement was unearned — nothing showed the growth ceased). The
+  closure implementation RECORDS the post-rework baseline from three timed
+  runs in the register row, and the reopen trigger is mechanical: a green
+  suite exceeding 1.5x that baseline.
+- **KI-3** (BSD diff symlink diagnostics): FIX now, without the unsafe
+  choices the draft allowed (KC-1-9: BSD diff lacks --no-dereference, and
+  filtering diagnostics can hide skipped content): the fixture compares by
+  an explicit walk — `find` both trees, compare the sorted path sets, `cmp`
+  regular files pairwise, and compare symlink TARGETS with `readlink`,
+  never traversing them. Deterministic on every platform the suite runs on.
 - **KI-4** (census cost proportional to machine processes): ACCEPT with the
   existing watch and a reopen trigger (census duration exceeding its own
   interval); measuring on other machines belongs to real adoption.
