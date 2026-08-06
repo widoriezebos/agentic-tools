@@ -1,7 +1,7 @@
 # Known-Issues Closure Design: an empty register before the next run
 
-- Goal and current status: every OPEN row in `plans/known-issues.md` gets a decision and a fix with proof, every ACCEPTED row gets re-judged, and the register reads empty-of-OPEN before any benchmark runs, at the human's direction. Status: DRAFT, awaiting critique.
-- Next step: design critique by Codex until closed by join; then implement in the stated order.
+- Goal and current status: every OPEN row in `plans/known-issues.md` gets a decision and a fix with proof, every ACCEPTED row gets re-judged, and the register reads empty-of-OPEN before any benchmark runs, at the human's direction. Status: CLOSED by join at round 8 (2026-08-06), 42 findings adjudicated; ready for implementation in the stated order.
+- Next step: KI-18 implements first and alone (harness before fix); then the grouped briefs; the final proof releases the parked batch.
 - In flight right now: nothing
 - Waiting on the human: ratification through accepting this design after critique
 
