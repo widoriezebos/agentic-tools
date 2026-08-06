@@ -58,6 +58,13 @@ parse_supervisor_args() {
 
 behavior_present() { grep -Fqi "FAKE:$1" "$prompt"; }
 
+fixture_milliseconds_to_sleep() { # positive integer milliseconds
+  local milliseconds=$1
+  [[ "$milliseconds" =~ ^[1-9][0-9]*$ ]] \
+    || { echo "fake adapter interval must be a positive integer in milliseconds" >&2; return 2; }
+  printf '%d.%03d\n' "$((milliseconds / 1000))" "$((milliseconds % 1000))"
+}
+
 cas_terminal() { # target, error, phase
   local target=$1 error=$2 phase=$3 patch
   patch="$round_dir/terminal-patch.json"
@@ -126,10 +133,12 @@ complete_valid() {
 }
 
 supervise() { # verb and remaining args
-  local verb=$1; shift
+  local verb=$1 gate_poll heartbeat_sleep; shift
   parse_supervisor_args "$@"
   record="$jobs/$job.json"
-  while [[ ! -e "$gate" ]]; do sleep 0.01; done
+  gate_poll=$(fixture_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}")
+  heartbeat_sleep=$(fixture_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-200}")
+  while [[ ! -e "$gate" ]]; do sleep "$gate_poll"; done
   round=$(field "$record" round)
   root_job=$(python3 - "$jobs" "$job" <<'PY'
 import json, sys
@@ -159,7 +168,7 @@ PY
 
   if behavior_present no-session-signal; then
     printf 'ordinary output without a session-established event\n' >>"$log"
-    python3 -c 'import time; time.sleep(30)' "$instance_tag" &
+    python3 -c 'import signal; signal.pause()' "$instance_tag" &
     wait
   fi
   if behavior_present handshake-failure; then
@@ -208,21 +217,21 @@ PY
   fi
   if behavior_present resume-collision; then cas_terminal failed resume_collision resume; exit 1; fi
   if behavior_present process-loss; then
-    python3 -c 'import signal,sys,time; from pathlib import Path; signal.signal(signal.SIGTERM, lambda *_: (Path(sys.argv[1]).write_text("stopped\n"), sys.exit(0))); time.sleep(30)' "$round_dir/child.stopped" "$instance_tag" &
+    python3 -c 'import signal,sys; from pathlib import Path; signal.signal(signal.SIGTERM, lambda *_: (Path(sys.argv[1]).write_text("stopped\n"), sys.exit(0))); signal.pause()' "$round_dir/child.stopped" "$instance_tag" &
     printf '%s\n' "$!" >"$round_dir/child.pid"
     printf '{"lost":true}\n' >"$heartbeat"
     kill -KILL "$$"
   fi
   if behavior_present timeout || behavior_present concurrent-turn; then
-    python3 -c 'import signal,sys,time; from pathlib import Path; signal.signal(signal.SIGTERM, lambda *_: (Path(sys.argv[1]).write_text("stopped\n"), sys.exit(0))); time.sleep(30)' "$round_dir/child.stopped" "$instance_tag" &
+    python3 -c 'import signal,sys; from pathlib import Path; signal.signal(signal.SIGTERM, lambda *_: (Path(sys.argv[1]).write_text("stopped\n"), sys.exit(0))); signal.pause()' "$round_dir/child.stopped" "$instance_tag" &
     printf '%s\n' "$!" >"$round_dir/child.pid"
-    while true; do touch "$heartbeat"; sleep 0.2; done
+    while true; do touch "$heartbeat"; sleep "$heartbeat_sleep"; done
   fi
   if behavior_present cancel-race; then
     trap 'complete_valid; exit 0' TERM
-    python3 -c 'import signal,sys,time; from pathlib import Path; signal.signal(signal.SIGTERM, lambda *_: (Path(sys.argv[1]).write_text("stopped\n"), sys.exit(0))); time.sleep(30)' "$round_dir/child.stopped" "$instance_tag" &
+    python3 -c 'import signal,sys; from pathlib import Path; signal.signal(signal.SIGTERM, lambda *_: (Path(sys.argv[1]).write_text("stopped\n"), sys.exit(0))); signal.pause()' "$round_dir/child.stopped" "$instance_tag" &
     printf '%s\n' "$!" >"$round_dir/child.pid"
-    while true; do touch "$heartbeat"; sleep 0.2; done
+    while true; do touch "$heartbeat"; sleep "$heartbeat_sleep"; done
   fi
   if behavior_present malformed-return; then
     printf '{malformed\n' >"$round_dir/return.json"
@@ -267,8 +276,8 @@ probe() {
   local handshake
   # shellcheck source=../fixture-budget.sh
   . "$root/scripts/agents/fixture-budget.sh"
-  [[ -n "${METASYSTEM_FIXTURE_CAP_SCALE_MILLI:-}" ]] || harness_fixture_budget_init "$root" || return 1
-  handshake=$(harness_fixture_scaled_cap 2) || return 1
+  harness_fixture_budget_init "$root" || return 1
+  handshake=$(harness_fixture_cap adapter-handshake) || return 1
   (( handshake <= 60 )) || handshake=60
   python3 - "$agents/capabilities" "$profile" "$age_days" "$handshake" <<'PY'
 import json, re, sys

@@ -56,6 +56,13 @@ dispatch_fixture_wait_cap() { # base seconds; normal dispatch remains 1x
   printf '%s\n' "$(( (base * scale_milli + 999) / 1000 ))"
 }
 
+milliseconds_to_sleep() { # positive integer milliseconds
+  local milliseconds=$1
+  [[ "$milliseconds" =~ ^[1-9][0-9]*$ ]] \
+    || die 2 "poll interval must be a positive integer in milliseconds"
+  printf '%d.%03d\n' "$((milliseconds / 1000))" "$((milliseconds % 1000))"
+}
+
 report_plan_drift() {
   # Surfaced here as well as at end of turn, because the end-of-turn hook needs
   # a runtime that fires hooks and only one of the three has ever been observed
@@ -790,7 +797,8 @@ write_prompt() { # path job role runtime model round mission content
 }
 
 launch_adapter() { # runtime verb job tag
-  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed
+  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed poll_sleep
+  poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}")
   mkdir -p "$heartbeats"
   python3 - "$root" "$adapter" "$verb" "$job" "$gate" "$tag" >/dev/null 2>&1 <<'PY' &
 import os, sys
@@ -811,7 +819,7 @@ PY
       echo "adapter start identity ceiling reached for $job (elapsed: ${elapsed}s; scaled cap: ${cap}s)" >&2
       return 1
     fi
-    sleep 0.02
+    sleep "$poll_sleep"
   done
   patch=$(mktemp "$record_locks/launch.XXXXXX")
   python3 - "$patch" "$pid" "$pid_started" "$tag" <<'PY'
@@ -830,8 +838,9 @@ PY
 }
 
 await_handshake() { # job, maximum session-established seconds
-  local job=$1 timeout=$2 record="$jobs/$1.json" deadline status session patch
+  local job=$1 timeout=$2 record="$jobs/$1.json" deadline status session patch poll_sleep
   [[ "$timeout" =~ ^[1-9][0-9]*$ && "$timeout" -le 60 ]] || return 1
+  poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-50}")
   deadline=$(( $(date +%s) + timeout ))
   while (( $(date +%s) <= deadline )); do
     if [[ -f "$record" ]]; then
@@ -844,7 +853,7 @@ await_handshake() { # job, maximum session-established seconds
         failed|cancelled|timeout) return 1 ;;
       esac
     fi
-    sleep 0.05
+    sleep "$poll_sleep"
   done
   wind_down_group "$record" || return 1
   patch=$(mktemp "$record_locks/handshake.XXXXXX")
@@ -1534,7 +1543,7 @@ PY
 }
 
 reap_jobs() {
-  local job= interval= supervision_heartbeat= supervision_tag=
+  local job= interval= supervision_heartbeat= supervision_tag= interval_ms interval_sleep
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
@@ -1547,6 +1556,10 @@ reap_jobs() {
   [[ -z "$job" ]] || valid_id "$job" || { usage; exit 2; }
   [[ -z "$interval" || "$interval" =~ ^[1-9][0-9]*$ ]] || { usage; exit 2; }
   [[ -z "$supervision_heartbeat" || ( -n "$interval" && -n "$supervision_tag" ) ]] || { usage; exit 2; }
+  if [[ -n "$interval" ]]; then
+    interval_ms=${METASYSTEM_CENSUS_INTERVAL_MS:-$((interval * 1000))}
+    interval_sleep=$(milliseconds_to_sleep "$interval_ms")
+  fi
   while true; do
     if [[ -n "$job" ]]; then reap_one "$job"; else
       mkdir -p "$jobs"
@@ -1565,7 +1578,7 @@ os.replace(t,p)
 PY
     fi
     [[ -n "$interval" ]] || break
-    sleep "$interval"
+    sleep "$interval_sleep"
   done
 }
 

@@ -286,6 +286,17 @@ def scaled_seconds(base: int) -> int:
     return max(1, math.ceil(base * scale / 1000))
 
 
+def interval_seconds(name: str, default_ms: int) -> float:
+    raw = os.environ.get(name, str(default_ms))
+    try:
+        milliseconds = int(raw)
+    except ValueError as error:
+        raise RunnerError(f"{name} must be a positive integer in milliseconds") from error
+    if milliseconds < 1:
+        raise RunnerError(f"{name} must be a positive integer in milliseconds")
+    return milliseconds / 1000
+
+
 def terminate_group(pgid: int, tag: str, *, allow_fake: bool = False) -> None:
     if not group_alive(pgid):
         return
@@ -293,8 +304,9 @@ def terminate_group(pgid: int, tag: str, *, allow_fake: bool = False) -> None:
         raise RunnerError(f"refusing to signal unowned host process group {pgid}")
     os.killpg(pgid, signal.SIGTERM)
     deadline = time.monotonic() + scaled_seconds(5)
+    poll_interval = interval_seconds("METASYSTEM_HEARTBEAT_INTERVAL_MS", 50)
     while group_alive(pgid) and time.monotonic() < deadline:
-        time.sleep(0.05)
+        time.sleep(poll_interval)
     if group_alive(pgid):
         if not group_owned(pgid, tag, allow_fake=allow_fake):
             raise RunnerError(f"lost ownership proof for host process group {pgid}")
@@ -688,6 +700,7 @@ def launch_host(
     )
     grace = scaled_seconds(5)
     deadline = time.monotonic() + grace
+    handshake_poll_interval = interval_seconds("METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS", 20)
     started = None
     verified = False
     fake_runtime = turn["runtime"] == "fake"
@@ -710,7 +723,7 @@ def launch_host(
         if verified:
             break
         heartbeat(mission, turn_id)
-        time.sleep(0.02)
+        time.sleep(handshake_poll_interval)
     turn_path = turn_dir / "turn.json"
     if not verified or started is None:
         if process.poll() is None:
@@ -741,13 +754,14 @@ def launch_host(
     cap_seconds = int(turn["turnCapMin"]) * 60
     capped = False
     deadline = time.monotonic() + cap_seconds
+    heartbeat_interval = interval_seconds("METASYSTEM_HEARTBEAT_INTERVAL_MS", 100)
     while process.poll() is None:
         heartbeat(mission, turn_id)
         if time.monotonic() >= deadline:
             terminate_group(process.pid, tag, allow_fake=fake_runtime)
             capped = True
             break
-        time.sleep(0.1)
+        time.sleep(heartbeat_interval)
     try:
         exit_code = process.wait(timeout=scaled_seconds(5))
     except subprocess.TimeoutExpired:
@@ -949,6 +963,7 @@ def mission_jobs(mission: str) -> list[tuple[Path, dict[str, Any]]]:
 
 
 def drain_jobs(mission: str) -> None:
+    poll_interval = interval_seconds("METASYSTEM_HEARTBEAT_INTERVAL_MS", 100)
     while True:
         records = mission_jobs(mission)
         active = [(path, value) for path, value in records if value.get("status") not in TERMINAL_JOBS]
@@ -958,7 +973,7 @@ def drain_jobs(mission: str) -> None:
             run_command(
                 [str(ROOT / "scripts" / "agents" / "dispatch.sh"), "reap", "--job", value.get("jobId", path.stem)]
             )
-        time.sleep(0.1)
+        time.sleep(poll_interval)
 
 
 def close_terminal_chains(mission: str) -> None:
@@ -1504,6 +1519,7 @@ def launch_runner(command: str, mission: str, foreground: bool) -> int:
         text=True,
     )
     deadline = time.monotonic() + scaled_seconds(15)
+    handshake_poll_interval = interval_seconds("METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS", 50)
     while time.monotonic() <= deadline:
         if signal_path.exists():
             signal_value = read_json(signal_path, "runner start signal")
@@ -1527,7 +1543,7 @@ def launch_runner(command: str, mission: str, foreground: bool) -> int:
                 except RunnerError:
                     pass
             raise RunnerError(error)
-        time.sleep(0.05)
+        time.sleep(handshake_poll_interval)
     if process.poll() is None:
         command_line = process_command(process.pid)
         if tag in command_line:

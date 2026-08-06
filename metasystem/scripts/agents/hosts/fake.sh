@@ -36,14 +36,17 @@ PY
 
 wait_for_start_gate() {
   local gate=${METASYSTEM_HOST_START_GATE:-} cap=${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} started=$SECONDS
+  local poll_ms=${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20} poll_sleep
   [[ -z "$gate" ]] && return 0
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || { echo "fake host start-gate timeout is invalid" >&2; return 3; }
+  [[ "$poll_ms" =~ ^[1-9][0-9]*$ ]] || { echo "fake host handshake poll interval is invalid" >&2; return 3; }
+  printf -v poll_sleep '%d.%03d' "$((poll_ms / 1000))" "$((poll_ms % 1000))"
   while [[ ! -e "$gate" ]]; do
     if (( SECONDS - started >= cap )); then
       echo "fake host start gate was not released within ${cap}s" >&2
       return 3
     fi
-    sleep 0.02
+    sleep "$poll_sleep"
   done
 }
 

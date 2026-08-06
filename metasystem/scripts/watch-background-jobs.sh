@@ -96,6 +96,8 @@ watcher_heartbeat=
 instance_tag=
 census_writer_owned=0
 census_budget_percent=
+supervision_interval_ms=
+supervision_interval_sleep=
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -134,6 +136,11 @@ census_budget_percent=$("$config" get --key census.max-interval-share-percent --
 
 [ ${#dirs[@]} -gt 0 ] || { usage; exit 2; }
 case "$stale_min$cap_min$interval$start_verify_min" in *[!0-9]*) usage; exit 2 ;; esac
+supervision_interval_ms=${METASYSTEM_CENSUS_INTERVAL_MS:-$((interval * 1000))}
+[[ "$supervision_interval_ms" =~ ^[1-9][0-9]*$ ]] \
+  || { echo "METASYSTEM_CENSUS_INTERVAL_MS must be a positive integer" >&2; exit 2; }
+printf -v supervision_interval_sleep '%d.%03d' \
+  "$((supervision_interval_ms / 1000))" "$((supervision_interval_ms % 1000))"
 [[ "$census_budget_percent" =~ ^[1-9][0-9]*$ ]] \
   && (( census_budget_percent <= 100 )) \
   || { echo "census.max-interval-share-percent must be 1..100" >&2; exit 2; }
@@ -225,7 +232,7 @@ append_census_log() { # captured scan output
 
 monitor_census_duration() { # start-ns, share-marker, interval-marker
   local started_ns=$1 share_marker=$2 interval_marker=$3 period=5 elapsed_ms sleeper=
-  local interval_ms=$((interval * 1000)) budget_ms=$((interval * 1000 * census_budget_percent / 100))
+  local interval_ms=$supervision_interval_ms budget_ms=$((supervision_interval_ms * census_budget_percent / 100))
   (( interval < period )) && period=$interval
   trap 'kill "${sleeper:-}" 2>/dev/null || true; exit 0' TERM INT
   while true; do
@@ -286,11 +293,11 @@ PY
     printf 'CENSUS-FAILED fingerprint=%s\n' "$(tr '\n' ' ' <"$captured.error")" >"$captured"
   fi
   append_census_log "$captured"
-  python3 - "$last" "$interval" "$census_budget_percent" "$share_marker" "$interval_marker" <<'PY'
+  python3 - "$last" "$supervision_interval_ms" "$census_budget_percent" "$share_marker" "$interval_marker" <<'PY'
 import json, sys
 from pathlib import Path
 
-last, interval_ms, budget_percent = Path(sys.argv[1]), int(sys.argv[2]) * 1000, int(sys.argv[3])
+last, interval_ms, budget_percent = Path(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 share_warned, interval_warned = Path(sys.argv[4]).exists(), Path(sys.argv[5]).exists()
 try:
     duration_ms = int(json.loads(last.read_text(encoding="utf-8"))["durationMs"])
@@ -507,5 +514,5 @@ fi
 
 while true; do
   scan_once
-  sleep "$interval"
+  sleep "$supervision_interval_sleep"
 done

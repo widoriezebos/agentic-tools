@@ -61,12 +61,21 @@ while True:
 PY
 }
 
+adapter_milliseconds_to_sleep() { # positive integer milliseconds
+  local milliseconds=$1
+  [[ "$milliseconds" =~ ^[1-9][0-9]*$ ]] \
+    || { echo "$runtime adapter interval must be a positive integer in milliseconds" >&2; return 2; }
+  printf '%d.%03d\n' "$((milliseconds / 1000))" "$((milliseconds % 1000))"
+}
+
 prepare_supervision() { # dispatch|follow-up and supervisor args
+  local gate_poll
   adapter_verb=$1
   shift
   parse_supervisor_args "$@" || return 2
   record="$jobs/$job.json"
-  while [[ ! -e "$gate" ]]; do sleep 0.01; done
+  gate_poll=$(adapter_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}") || return 2
+  while [[ ! -e "$gate" ]]; do sleep "$gate_poll"; done
   round=$(field "$record" round)
   root_job=$(root_job_id "$job")
   round_dir="$agents/$root_job/rounds/$round"
@@ -97,14 +106,15 @@ PY
 }
 
 register_cli_custody() { # child pid
-  local child_pid=$1 deadline=$((SECONDS + 5))
+  local child_pid=$1 deadline=$((SECONDS + 5)) poll_sleep
+  poll_sleep=$(adapter_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}") || return 2
   while kill -0 "$child_pid" 2>/dev/null; do
     if "$dispatch" __register-custody --job "$job" --pid "$child_pid"; then return 0; fi
     (( SECONDS < deadline )) || {
       echo "$runtime child custody registration ceiling reached for pid $child_pid" >&2
       return 1
     }
-    sleep 0.02
+    sleep "$poll_sleep"
   done
   echo "$runtime child exited before custody identity was recorded" >&2
   return 1
@@ -208,12 +218,13 @@ finish_running() { # completed|failed, error|null, phase, usage file
 }
 
 wait_for_cli() { # child pid; sets cli_status and keeps liveness sidecars fresh
-  local child=$1 tick=0
+  local child=$1 tick=0 heartbeat_sleep
+  heartbeat_sleep=$(adapter_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-100}") || return 2
   while kill -0 "$child" 2>/dev/null; do
     touch "$heartbeat"
     tick=$((tick + 1))
     (( tick % 10 != 0 )) || touch "$log"
-    sleep 0.1
+    sleep "$heartbeat_sleep"
   done
   set +e
   wait "$child"
