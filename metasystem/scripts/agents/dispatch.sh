@@ -34,6 +34,10 @@ jobs="$agents/jobs"
 heartbeats="$agents/hb"
 locks="$agents/locks"
 record_locks="$agents/record-locks"
+# Self-cleaning: every operation mktemps here and not every path removes its
+# file; the comb found 142k orphans holding 557MB. Age-based, so nothing live
+# is ever touched.
+find "$record_locks" -maxdepth 1 -type f -mmin +60 -delete 2>/dev/null || true
 capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
