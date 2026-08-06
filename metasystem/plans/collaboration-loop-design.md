@@ -1,6 +1,6 @@
 # The Collaboration Loop: how orchestrator and delegate actually work together
 
-- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: REOPENED 2026-08-07 by a third implementer gap-stop: multi-round boundary semantics were undecided. G-6 below; awaiting critique round 6.
+- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: CLOSED 2026-08-07 (fourth closure) — round 6 clean over G-6.
 - Next step: implement, through the loop this design itself prescribes: delegate implements, a code-critic on a different model reviews to a zero-material round over the merged tree.
 - In flight right now: the first code-critic chain (claude-opus-5) reviewing implementer-20260806t212109z-ceb3 (gpt-5.6-sol), reviewedTree a378c157; bootstrap note: this first chain's review object was computed by hand because the --stage machinery under review cannot serve its own first case; the mechanical --reviews linkage binds from the next change onward
 - Waiting on the human: nothing — implementation authorized under the standing instruction to fix all findings
