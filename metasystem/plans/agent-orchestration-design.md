@@ -750,6 +750,27 @@ One commit per item; each script lands with its fixtures in the same commit.
 23c. The metasystem benchmark stream, designed and critique-closed in `plans/metasystem-benchmark-design.md` (five rounds, 45 findings adjudicated, closed by join 2026-08-04): a coordinator and sub-agents build to a fixed spec, the product is graded by a held-out grader, agent behavior is measured mechanically and judged against kit rubrics, and one scorecard per run drives `benchmark-compare` as the metasystem's evolution gate. Its items B-0 through B-8 sequence strictly after Mission Zero (CC-3), with B-0's reconciliation against the real runner blocking every other item. Carries one named amendment to this plan, the standing benchmark authorization (D-B5 there), which lands through the change gate as its own commit during B-4.
 23. Supervision arming per 3.11 (critiqued across four rounds S to S4; S4 stopped under the diminishing-returns rule with its ten findings retained in `development/agent-orchestration-watchlist.md (moved beside the metasystem 2026-08-06)` as ORCH-21 failing-test obligations): `arm-supervision.sh`, the mains registry, adapter-declared process signatures, the UNTRACKED detector in the watcher's cadence, per-runtime session-start hook configurations in `scripts/enforcement/` wired by `adopt.sh`, the IL-3 grep fallback for the audit, and the full 3.11 fixture set.
 
+## D-M1: mission end-state decisions (2026-08-06, from trial 001)
+
+Two defects the first benchmark run exposed, decided here so the fix
+implements a decision rather than improvising one:
+
+**KI-16 — completion is measured before parking is concluded.** The runner's
+end-of-cycle order becomes: measure the gate; if the threshold is met, the
+mission is `completed`, regardless of stream bookkeeping in the same turn. A
+host that tidily closes its streams while succeeding must never demote a
+success to `parked`. The fixture is the trial's exact shape: gate met and all
+streams closed in one turn.
+
+**KI-17 — the runner closes terminal delegate chains at mission end, and
+records that it did.** The alternative (a prompt duty on the host) was
+rejected on the design's own principle: mission progress and mission hygiene
+must never depend on the host doing something — that is why the runner
+exists. Hosts remain free to close chains mid-mission; the runner guarantees
+the invariant at the boundary, stamping runner-closed chains so the scorecard
+can tell a host that practiced discipline from a runner that mopped up. The
+`everyChainClosed` validity gate stays exactly as strict.
+
 ## Obligation Matrix
 
 Run `scripts/assert-design-obligation-gate.sh --file plans/agent-orchestration-design.md`. Refreshed 2026-08-06 against the shipped and executed state: 20 of 23 VERIFIED with the proof that did it named, 3 PARTIAL and all three waiting on the same fact, that the devin runtime has never executed a verb on a real machine. A VERIFIED row here means code, fixtures, and at least one real execution all exist; it does not mean bug-free.
