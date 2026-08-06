@@ -74,8 +74,8 @@ names both the prose-first flow and the answer command verbatim.
 
 **F-3: Cohorts must not multiply ceremonies — SIMPLIFIED at round 5, by the
 scope fence.** Rounds 2 through 5 grew a cohort-authorization protocol
-(signed records, normative template hashes, consumed-index ledgers, expiry
-clocks) that the critique correctly kept finding holes in — HS-5-2 through
+(signed records, template hashes, consumed-index ledgers — since removed —
+and expiry clocks) that the critique correctly kept finding holes in — HS-5-2 through
 HS-5-5 showed the surface cannot bottom out, because a driver-owned mutable
 record and a human-signed immutable authorization are different artifacts,
 and any agent-invokable attestation is self-attested. That is this design's
@@ -212,3 +212,13 @@ rule from the standard is in the shipped template, and a walkthrough of every
 human touchpoint (adopt, daily prose, mission consent, cohort authorization,
 upgrade checklist) shows nothing but prose and single commands on the human
 side. Then this file is closed into `development/` as a finished report.
+
+## Retired terms
+
+RETIRED: standing authorization -- per-repetition batch signing (F-3): one confirmation, N ordinary approval lines
+
+RETIRED: cohort-authorization line -- ordinary per-contract approval lines written by batch signing
+
+RETIRED: consumed-index ledger -- individually signed repetitions; no shared authorization exists to consume
+
+RETIRED: tier-move envelope -- envelope.dispatch-allow with exact runtime:model pairs
