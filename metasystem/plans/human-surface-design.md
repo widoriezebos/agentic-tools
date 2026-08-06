@@ -37,7 +37,7 @@ finding is wrong and comes back here.
 Evidence: every mission signed so far took four to five steps (seal, copy a
 64-character hash, paste an approval line, commit, push); the protection —
 review and explicit consent — lives in none of them.
-Change: `scripts/assert-mission.sh --sign "<name>"` is display-then-confirm
+Change: `scripts/assert-mission.sh --sign "<name>" --file <contract>` is display-then-confirm (the file is explicit: with several contracts present, guessing is worse than typing a path — HS-4-6)
 in one command, and it REQUIRES an already-sealed contract: sealing runs the
 gate to record the baseline, which is code execution, so sealing stays an
 agent-side step and --sign refuses an unsealed contract by naming the seal
@@ -65,8 +65,12 @@ grammar first, as if a human writes key=value blocks.
 Change: `docs/orchestration.md` mission section opens with the flow: the
 human states intent, limits, and budget in prose; the orchestrating agent
 drafts the contract; the human reads the English sections and signs (F-1's
-one command). The grammar remains, labeled as the agent-side format.
-Proof: doc change only; the audit's placeholder and reference checks pass.
+one command). The grammar remains, labeled as the agent-side format. The
+same section documents the EXISTING one-command prose answer for parked
+missions (`mission-runner.sh answer`, absorbed from withdrawn F-7) as THE
+answer flow (HS-4-5).
+Proof: the audit's checks pass AND a fixture asserts the mission section
+names both the prose-first flow and the answer command verbatim.
 
 **F-3: Cohorts must not multiply signatures.**
 Evidence: a cohort of N repetitions currently implies N seal-and-sign
@@ -100,10 +104,13 @@ Change: the readers and their guards stay untouched. The shipped template
 demotes both families to commented-out examples with one line each saying
 what configuring them buys; `metasystem-config.sh validate` accepts their
 absence (verify it already does; fix if not). The cost-escalation guard
-fails CLOSED without tiers (HS-3-6): when no tier table is configured, any
-`--model` override differing from the roster's resolution is treated as an
-escalation requiring the existing human-approval path — the guard never
-silently accepts what it can no longer rank. Validate says in one
+fails CLOSED without tiers (HS-3-6), and the approval path is CREATED, not
+cited — none exists today (HS-4-4): the dispatcher gains
+`--approve-escalation "<name>"`, which records name and timestamp in the job
+record as the escalation's approval evidence; without tiers, any `--model`
+override differing from the roster's resolution refuses with a message
+naming both remedies (configure tiers, or re-run with the approval flag).
+The guard never silently accepts what it cannot rank. Validate says in one
 informational line that tiers are absent and overrides therefore always
 escalate.
 Proof: the suite passes with the demoted template; fixtures prove validate
