@@ -53,11 +53,39 @@ Known template-level gaps and their reopen triggers live beside the template che
 
 **First installation:** copy the metasystem payload excluding `meta/`, then follow `docs/project-adaptation.md` steps 2 through 9, filling `docs/project-rules.md` from the Phase 1 harvest.
 
-**Upgrade** (metasystem already present at an older recorded SHA): diff the project against the template at that SHA and apply the three-bucket rule:
+**Upgrade** (metasystem already present at an older recorded SHA) — the full
+checklist; no step is optional and none may be reordered:
 
-- Project-owned, never overwrite: `docs/project-rules.md`, `plans/` (handoff notes, receipts), registered runtime profiles, and any file local retros changed.
-- Template-owned, take upstream: `scripts/`, `docs/examples/`, and skills without local modifications.
-- Merge deliberately: `AGENTS.md`, `wow.md`, and retro-modified docs. Re-apply the local changes on top of the new template text, never the reverse.
+1. Read the recorded adoption SHA from the target's `docs/project-rules.md`
+   ("Adopted from template SHA"). If it is missing or still a placeholder,
+   stop: this is not a recorded installation, and guessing the base makes
+   every diff a lie. Escalate to the human.
+2. On a dedicated branch in the target, compute the change set:
+   `git -C <template> diff <recorded-sha>..HEAD -- <allowlisted payload paths>`.
+   The template's `scripts/adopt.sh` source is the authority for what the
+   payload contains at each version.
+3. Apply the three-bucket rule, file by file, recording every decision in the
+   reconciliation ledger:
+   - **Project-owned, never overwrite:** `docs/project-rules.md`, everything
+     under `plans/`, registered runtime profiles, and any file a local retro
+     changed (the instruction ledger names them).
+   - **Template-owned, take upstream verbatim:** `scripts/`,
+     `docs/examples/`, and skills without local modifications.
+   - **Merge deliberately:** `AGENTS.md`, `wow.md`, and retro-modified docs.
+     Re-apply the local changes on top of the new template text, never the
+     reverse; a conflict between a local rule and a new template rule is
+     escalated, not silently resolved.
+4. Run `scripts/validate-metasystem.sh` in the target: it must pass with zero
+   placeholders. A red suite means the upgrade is not done; do not commit
+   around it.
+5. Update the recorded SHA in `docs/project-rules.md` to the new template
+   commit, and record the upgrade in a retro entry (what moved, what merged,
+   what was escalated).
+6. Hand the ledger to the human for review before merging the branch.
+
+This procedure is currently manual by an agent following it verbatim; a
+mechanical `upgrade.sh` for buckets one and two is planned, and until it
+exists this checklist is the only authority.
 
 Record the new template SHA in `docs/project-rules.md` when done.
 

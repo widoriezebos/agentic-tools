@@ -126,6 +126,16 @@ Adopting in an **existing** repository, one that already has agent instructions,
 
 **Changing the template itself.** Applies to this repository only: every addition answers the change gate (owned by [`docs/project-adaptation.md`](docs/project-adaptation.md), shipped with every project), keep-or-remove decisions are recorded in `development/source-analysis.md`, structural claims must pass `scripts/validate-metasystem.sh`, and external critiques get a written disposition: implemented, deferred with a named revisit trigger, or rejected with a reason.
 
+## This template repository itself
+
+This checkout is simply an adopted repository whose product is the template's
+own source: its `plans/` are this project's plans, its gitignored `artifacts/`
+is this project's live runtime state, and the same hooks and gates that ship
+to every project run here first. What builds and measures the template lives
+BESIDE it, never inside: the toplevel README explains the layout, and
+`development/metasystem-inventory.md` classifies every path here as SHIPS,
+PROJECT-STATE, or RUNTIME with the deciding rule for each.
+
 ## Status
 
-The structure is validated end to end. Real-world behavior is unproven until a project adopts it; the receipts loop is how each rule earns its keep or gets removed. The metasystem was distilled from production engineering repositories, agent-evaluation work, and runtime-debugging practice, and it has been reviewed against three independent external critiques. Sources and decisions are traceable in `development/source-analysis.md` (template repository only).
+The structure is validated end to end, and the loop has now run for real: the template repository develops itself under its own rules (its hooks, supervision, and receipts are live, not aspirational), a deterministic mission runner has completed unattended missions, and the measuring kit beside this template has graded an unattended build against a held-out battery. The receipts loop remains how each rule earns its keep or gets removed. The metasystem was distilled from production engineering repositories, agent-evaluation work, and runtime-debugging practice, and it has been reviewed against three independent external critiques. Sources and decisions are traceable in `development/source-analysis.md` (template repository only).
