@@ -44,10 +44,12 @@ assumed one (KC-2-2), and coherence is structural rather than hoped for
 watcher and reaper aliveness with matching tags against THAT snapshot,
 echoing that same snapshot's generation. A concurrent rewrite therefore
 yields a consistent older pair, never a mixed one, and the next census
-carries the new generation. And the heal window is defined (KC-2-3): a
-fresh census carrying an older generation means dispatch WAITS for the next
-census within the same KI-11 deadline, then refuses — heals are brief by
-construction, so the wait absorbs them without reintroducing the failure.
+carries the new generation. And the heal window follows KI-11's
+simplification rather than the deleted wait (KC-6-1): a census carrying an
+older generation is treated exactly like a stale census — refuse, naming the
+age, the generations, and the same two remedies. Heals are brief by
+construction, so the caller's next attempt succeeds; both the orchestrator
+and the runner already retry.
 
 The critic proved the replacement duty I cited does not exist (KC-1-1):
 nothing at dispatch time ties a SUCCESS census to the CURRENT armed
@@ -71,7 +73,10 @@ point — KC-4-6) it additionally ASSERTS, per iteration: generation strictly in
 every heal; generation never repeats after an owner restart; the census's
 echoed generation always equals the state snapshot it verified aliveness
 against; and dispatch's comparison refuses when handed a deliberately
-back-dated generation. Then three consecutive full-suite greens plus one
+back-dated generation. The echo's provenance is observable (KC-5-6, KC-6-2):
+the census emits `stateDigest` beside `generation` in `last-census.json` —
+the sha256 of the exact state bytes it read — and the harness compares that
+digest against the file it wrote. Then three consecutive full-suite greens plus one
 under artificial CPU load. The harness stays as a suite fixture at reduced
 iteration count with every assertion intact.
 
@@ -135,11 +140,15 @@ and no new machinery:
   runtime whose sandbox the suite fully controls — proving the MECHANISM
   (that a denied write is refused and a denied network call fails) exactly
   where it can be proven without inventing a subsystem.
-- **Real adapters declare rather than claim**: each adapter's existing
-  capability snapshot records which envelope dimensions it maps and which it
-  does not (codex already records readRoots as a constraint); the job record
-  cites the adapter's declaration alongside the requested envelope, so
-  "requested" is never mistaken for "enforced" by a reader.
+- **Real adapters declare rather than claim**, with the interface named
+  (KC-6-3): the capability snapshot gains one field, `envelopeEnforcement`,
+  an object mapping each of `writeRoots`, `readRoots` and `network` to
+  `mapped` or `notEnforced`, populated by each adapter's existing `probe`
+  from what that adapter actually maps (codex already records readRoots as a
+  constraint); the job record's `permissions` block gains
+  `enforcementSnapshot`, the id of the snapshot that declaration came from.
+  Two fields, both in artifacts that already exist, so "requested" can never
+  be read as "enforced".
 - The register row states the residual honestly: enforcement is trusted
   runtime behaviour, verified by mechanism on the fake adapter and declared
   per-adapter elsewhere. Reopen trigger: any observed case of a delegate
