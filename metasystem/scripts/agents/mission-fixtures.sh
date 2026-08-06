@@ -400,4 +400,140 @@ race_ask=$repo/artifacts/agents/missions/race/asks/fence-bound.json
 [[ -f "$race_ask" ]] && grep -Fq '`concurrency`' "$race_ask" \
   || { echo "concurrent mission refusal did not write its batched ask" >&2; exit 1; }
 
-echo "mission contract and state fixtures passed"
+# The end-state fixtures run the real runner with the fake host and synthetic
+# process identities. They stay independent of the process-owning validator
+# fixtures so restricted worktrees can exercise these two terminal outcomes.
+cp -R "$root/scripts/agents/." "$repo/scripts/agents/"
+cp "$root/scripts/metasystem-config.sh" "$root/scripts/assert-mission.sh" \
+  "$root/scripts/assert-return-complete.sh" "$root/scripts/assert-stop-loss.sh" \
+  "$root/scripts/assert-turn-prompt.sh" "$repo/scripts/"
+cp "$root/metasystem.conf" "$repo/metasystem.conf"
+perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$fixture_root/runner-evidence"'|m; s/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m' \
+  "$repo/metasystem.conf"
+cat >"$repo/scripts/agents/arm-supervision.sh" <<'ARM'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == fingerprint && ${2:-} == --repo && $# -eq 3 ]]; then
+  printf 'fixture-fingerprint\n'
+else
+  printf 'ARMED fixture-supervision\n'
+fi
+ARM
+chmod +x "$repo/scripts/agents/arm-supervision.sh"
+git -C "$repo" rm -q candidate-bad
+git -C "$repo" add scripts metasystem.conf
+git -C "$repo" commit -qm 'install mission runner fixtures'
+git -C "$repo" push -qu origin main
+
+export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
+python3 - "$supervision" <<'PY'
+import json,sys,time
+from pathlib import Path
+directory=Path(sys.argv[1]); now=int(time.time())
+for name in ("watcher.heartbeat.json","reaper.heartbeat.json"):
+    path=directory/name; value=json.loads(path.read_text()); value["observedAtEpoch"]=now; path.write_text(json.dumps(value)+"\n")
+path=directory/"last-census.json"; value=json.loads(path.read_text()); value["completedAtEpoch"]=now; path.write_text(json.dumps(value)+"\n")
+PY
+
+make_end_state_contract() { # mission, fake-host behavior
+  local mission=$1 behavior=$2 path="$repo/plans/mission-$1.contract.md" contract_sha
+  cat >"$path" <<EOF
+# Intent
+
+Reach the gate in one fake-host turn.
+
+# Non-goals
+
+Do not publish or deploy.
+
+# Initial streams
+
+Close the primary stream when the work succeeds.
+
+\`\`\`mission
+gate.command=scripts/gate.sh
+gate.ref=instruments
+gate.paths=scripts/gate.sh
+truth.paths=truth/reference.txt
+truth.certification=certified
+gate.direction=max
+gate.threshold.score=>=1
+gate.noise-floor.score=0
+guard.score.command=scripts/gate.sh
+guard.score.floor=1
+guard.score.noise=0
+guard.cadence=1
+ledger.cycle-budget=3
+ledger.no-gain-budget=2
+fence.wall-clock-hours=2
+fence.cycles=3
+fence.jobs=4
+fence.concurrency=1
+fence.job-cap-min=5
+host.runtime=fake
+host.model=fake-model
+host.turn-cap-min=1
+stream.primary=FAKEHOST:$behavior complete the primary stream.
+envelope.dependencies=jq
+exposure=EUR:1
+\`\`\`
+EOF
+  contract_sha=$("$repo/scripts/assert-mission.sh" --seal --file "$path")
+  printf '\nApproval: name=Fixture-Human; date=2026-08-06; contract-sha256=%s\n' "$contract_sha" >>"$path"
+  git -C "$repo" add "plans/mission-$mission.contract.md"
+  git -C "$repo" commit -qm "sign mission $mission"
+  git -C "$repo" push -qu origin main
+}
+
+wait_end_state() { # mission, expected status exit
+  local mission=$1 expected=$2 result=7 maximum deadline
+  maximum=$(harness_fixture_scaled_cap 10)
+  deadline=$((SECONDS + maximum))
+  while (( SECONDS < deadline )); do
+    set +e
+    "$repo/scripts/agents/mission-runner.sh" status --mission "$mission" >/dev/null 2>&1
+    result=$?
+    set -e
+    [[ $result -eq $expected ]] && return 0
+    if [[ -f "$repo/artifacts/agents/missions/runners/$mission.json" ]] \
+      && grep -Fq '"status": "failed"' "$repo/artifacts/agents/missions/runners/$mission.json"; then
+      echo "mission end-state fixture runner failed: $mission" >&2
+      sed -n '1,240p' "$repo/artifacts/agents/missions/runners/$mission.json" >&2
+      return 1
+    fi
+    sleep 0.05
+  done
+  echo "mission end-state fixture timed out: $mission -> $expected (last exit: $result; scaled cap: ${maximum}s)" >&2
+  sed -n '1,240p' "$repo/artifacts/agents/missions/runners/$mission.json" >&2 2>/dev/null || true
+  sed -n '1,240p' "$repo/artifacts/agents/missions/$mission/state.json" >&2 2>/dev/null || true
+  return 1
+}
+
+make_end_state_contract gate-and-close close-stream
+METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
+  --mission gate-and-close --foreground >/dev/null
+wait_end_state gate-and-close 10
+python3 - "$repo/artifacts/agents/missions/gate-and-close/state.json" <<'PY'
+import json,sys
+state=json.load(open(sys.argv[1]))
+assert state["status"]=="completed" and state["parkReason"] is None and state["gatePassed"] is True, state
+assert state["streams"]["primary"]["state"]=="done", state["streams"]
+PY
+
+make_end_state_contract runner-closes-chain dispatch-terminal
+METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
+  --mission runner-closes-chain --foreground >/dev/null
+wait_end_state runner-closes-chain 10
+python3 - "$repo" <<'PY'
+import json,sys
+from pathlib import Path
+root=Path(sys.argv[1]); mission=root/"artifacts/agents/missions/runner-closes-chain"
+state=json.loads((mission/"state.json").read_text())
+record=json.loads((root/"artifacts/agents/jobs/verifier-runner-closes-chain.json").read_text())
+assert state["status"]=="completed", state
+assert record["chainClosed"] is True and record["runnerClosed"] is True, record
+assert record["mirror"] and (Path(record["mirror"]["path"])/"manifest.json").is_file(), record
+assert any(item["kind"]=="dispatched" and item["value"]["jobId"]==record["jobId"] for item in state["turnLog"][-1]["accepted"]), state["turnLog"][-1]
+PY
+
+echo "mission contract, state, and runner end-state fixtures passed"

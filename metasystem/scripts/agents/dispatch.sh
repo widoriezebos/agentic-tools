@@ -14,7 +14,7 @@ Usage:
   scripts/agents/dispatch.sh follow-up --job <job-id> --message <file> [--wait]
   scripts/agents/dispatch.sh status --job <job-id>
   scripts/agents/dispatch.sh cancel --job <job-id>
-  scripts/agents/dispatch.sh close --job <root-id>
+  scripts/agents/dispatch.sh close --job <root-id> [--runner-closed]
   scripts/agents/dispatch.sh reap [--job <job-id>] [--interval <sec>]
 
 Exit codes: 0 success/completed; 2 usage; 3 failed; 4 timeout;
@@ -204,7 +204,7 @@ with (lock_dir / f"{job}.lock").open("a+") as lock:
             print("record patch attempts to change immutable identity", file=sys.stderr)
             raise SystemExit(1)
         terminal = {"completed", "failed", "cancelled", "timeout"}
-        if current in terminal and metadata_update and not set(patch).issubset({"mirror", "chainClosed", "chainUsage"}):
+        if current in terminal and metadata_update and not set(patch).issubset({"mirror", "chainClosed", "chainUsage", "runnerClosed"}):
             print("terminal record metadata is final except mirror, closure, and aggregate usage", file=sys.stderr)
             raise SystemExit(1)
         record.update(patch)
@@ -1202,7 +1202,7 @@ record = {
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
   "input": {"bytes": int(size), "hash": digest, "delivery": "stdin"},
   "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "endedAt": None,
-  "usage": None, "mirror": None, "chainClosed": False,
+  "usage": None, "mirror": None, "chainClosed": False, "runnerClosed": False,
 }
 Path(out).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 PY
@@ -1345,8 +1345,13 @@ cancel_job() {
 }
 
 close_chain() {
-  local job= root_id root_record status patch
-  [[ ${1:-} == --job && $# -eq 2 ]] || { usage; exit 2; }; job=$2
+  local job= root_id root_record status patch runner_closed=false
+  [[ ${1:-} == --job && $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2
+  if [[ ${1:-} == --runner-closed && $# -eq 1 ]]; then
+    runner_closed=true
+    shift
+  fi
+  (($# == 0)) || { usage; exit 2; }
   valid_id "$job" && [[ -f "$jobs/$job.json" ]] || die 1 "unknown job: $job"
   root_id=$(root_job_id "$job") || die 1 "cannot resolve job chain"
   [[ "$root_id" == "$job" ]] || die 1 "close requires the root job id: $root_id"
@@ -1388,7 +1393,12 @@ for value in records:
         if files[relative].get("sha256") != digest: raise SystemExit(f"manifest has a stale implementer diff.patch for {job}")
 PY
   status=$(json_field "$root_record" status)
-  patch=$(mktemp "$record_locks/close.XXXXXX"); printf '{"chainClosed":true}\n' >"$patch"
+  patch=$(mktemp "$record_locks/close.XXXXXX")
+  if [[ "$runner_closed" == true ]]; then
+    printf '{"chainClosed":true,"runnerClosed":true}\n' >"$patch"
+  else
+    printf '{"chainClosed":true}\n' >"$patch"
+  fi
   record_cas "$root_id" "$status" "$status" "$patch"
   release_chain_lock "$root_id"; trap - EXIT
 }

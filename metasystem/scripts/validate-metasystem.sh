@@ -1838,6 +1838,8 @@ PY
   run_agent_fixture active-turn-cancel active-turn "$agent_dispatch" cancel --job active-turn
 
   run_agent_fixture happy-close happy "$agent_dispatch" close --job happy
+  [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["runnerClosed"])' "$agent_repo/artifacts/agents/jobs/happy.json")" == False ]] \
+    || { echo "host-closed chain was stamped as runner-closed" >&2; exit 1; }
   agent_fails closed-follow-up 'job chain is closed' "$agent_dispatch" follow-up --job happy --message "$follow_message"
 
   # A close racing a follow-up cannot land between its open check and child creation.

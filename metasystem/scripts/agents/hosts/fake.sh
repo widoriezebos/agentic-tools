@@ -8,8 +8,8 @@ Usage:
       --prompt <file> --result <file> [--resume-session <sid>]
 
 Reads FAKEHOST:<behavior> markers from the assembled prompt. Behaviors:
-return-ok (default), return-malformed, dispatch-ghost, park-request,
-exit-nonzero, and no-return.
+return-ok (default), return-malformed, dispatch-ghost, dispatch-terminal,
+close-stream, park-request, exit-nonzero, and no-return.
 USAGE
 }
 
@@ -83,7 +83,7 @@ if (( behavior_count > 1 )); then
 fi
 behavior=${behaviors:-return-ok}
 case "$behavior" in
-  return-ok|return-malformed|dispatch-ghost|park-request|exit-nonzero|no-return) ;;
+  return-ok|return-malformed|dispatch-ghost|dispatch-terminal|close-stream|park-request|exit-nonzero|no-return) ;;
   *) echo "unknown fake host behavior: $behavior" >&2; exit 3 ;;
 esac
 
@@ -110,11 +110,11 @@ if [[ "$behavior" == return-malformed ]]; then
   printf '{malformed\n' >"$return_path"
 elif [[ "$behavior" != no-return ]]; then
   python3 - "$turn_record" "$root/artifacts/agents/missions/$mission/state.json" "$return_path" \
-    "$behavior" "$session" <<'PY'
+    "$behavior" "$session" "$root" <<'PY'
 import json,sys
 from pathlib import Path
 turn=json.loads(Path(sys.argv[1]).read_text()); state=json.loads(Path(sys.argv[2]).read_text())
-out,behavior,session=Path(sys.argv[3]),sys.argv[4],sys.argv[5]
+out,behavior,session,root=Path(sys.argv[3]),sys.argv[4],sys.argv[5],Path(sys.argv[6])
 active=next((name for name,value in sorted(state["streams"].items()) if value["state"]=="active"),next(iter(sorted(state["streams"]))))
 value={
   "turnId":turn["turnId"],"missionId":turn["missionId"],"cycle":turn["cycle"],
@@ -127,6 +127,19 @@ value={
 }
 if behavior=="dispatch-ghost":
     value["dispatched"]=[{"jobId":f"ghost-{turn['cycle']}","role":"implementer","stream":active}]
+elif behavior=="dispatch-terminal":
+    job_id=f"verifier-{turn['missionId']}"
+    jobs=root/"artifacts"/"agents"/"jobs"; jobs.mkdir(parents=True,exist_ok=True)
+    record={
+      "jobId":job_id,"role":"verifier","mission":turn["missionId"],"turnId":turn["turnId"],
+      "runtime":"fake","round":1,"parentJob":None,"status":"completed","endedAt":turn["startedAt"],
+      "capabilitySnapshot":"artifacts/agents/capabilities/fake.json","usage":None,"mirror":None,
+      "chainClosed":False,"runnerClosed":False,
+    }
+    (jobs/f"{job_id}.json").write_text(json.dumps(record,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+    value["dispatched"]=[{"jobId":job_id,"role":"verifier","stream":active}]
+elif behavior=="close-stream":
+    value["streamUpdatesRequested"]=[{"streamId":active,"requestedState":"done","reason":"done"}]
 elif behavior=="park-request":
     value["streamUpdatesRequested"]=[{"streamId":active,"requestedState":"parked-reserved","reason":"fake-host-request"}]
 out.write_text(json.dumps(value,indent=2,sort_keys=True)+"\n",encoding="utf-8")

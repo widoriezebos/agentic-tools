@@ -948,18 +948,59 @@ def mission_jobs(mission: str) -> list[tuple[Path, dict[str, Any]]]:
     return records
 
 
-def drain_jobs(mission: str) -> tuple[bool, bool]:
+def drain_jobs(mission: str) -> None:
     while True:
         records = mission_jobs(mission)
         active = [(path, value) for path, value in records if value.get("status") not in TERMINAL_JOBS]
         if not active:
-            chains_closed = all(value.get("chainClosed") is True for _, value in records)
-            return True, chains_closed
+            return
         for path, value in active:
             run_command(
                 [str(ROOT / "scripts" / "agents" / "dispatch.sh"), "reap", "--job", value.get("jobId", path.stem)]
             )
         time.sleep(0.1)
+
+
+def close_terminal_chains(mission: str) -> None:
+    records = mission_jobs(mission)
+    by_id = {
+        value["jobId"]: value
+        for _, value in records
+        if isinstance(value.get("jobId"), str)
+    }
+    chains: dict[str, list[dict[str, Any]]] = {}
+    for value in by_id.values():
+        current = value
+        seen: set[str] = set()
+        while current.get("parentJob") is not None:
+            parent = current.get("parentJob")
+            if not isinstance(parent, str) or parent in seen or parent not in by_id:
+                current = {}
+                break
+            seen.add(parent)
+            current = by_id[parent]
+        root_id = current.get("jobId")
+        if isinstance(root_id, str):
+            chains.setdefault(root_id, []).append(value)
+    for root_id, chain in sorted(chains.items()):
+        if any(value.get("status") not in TERMINAL_JOBS for value in chain):
+            continue
+        root_record = by_id[root_id]
+        if root_record.get("chainClosed") is True:
+            continue
+        run_command([str(ROOT / "scripts" / "agents" / "dispatch.sh"), "reap", "--job", root_id])
+        closed = run_command(
+            [
+                str(ROOT / "scripts" / "agents" / "dispatch.sh"),
+                "close",
+                "--job",
+                root_id,
+                "--runner-closed",
+            ]
+        )
+        if closed.returncode != 0:
+            detail = (closed.stderr or closed.stdout).strip()
+            raise RunnerError(f"runner could not close terminal job chain {root_id}: {detail}")
 
 
 def load_contract_module():
@@ -1260,14 +1301,9 @@ def one_cycle(
 
     proposed = copy.deepcopy(state)
     accepted, rejected = apply_orchestrator_return(mission, turn, proposed, returned)
-    drained, chains_closed = drain_jobs(mission)
+    drain_jobs(mission)
     try:
-        classification, observed, measurement, gate_passed = measure(mission, state) if drained else (
-            "no-progress",
-            "unmeasurable:mission jobs did not drain",
-            None,
-            False,
-        )
+        classification, observed, measurement, gate_passed = measure(mission, state)
     except Exception as error:
         classification, observed, measurement, gate_passed = (
             "no-progress",
@@ -1299,7 +1335,7 @@ def one_cycle(
     proposed["ledger"]["cycles"] = cycle
     proposed["waitingList"] = open_ask_ids(mission_dir(mission) / "asks")
     project_fences(mission, proposed)
-    if gate_passed and chains_closed:
+    if gate_passed:
         proposed.update({"status": "completed", "parkReason": None, "gatePassed": True})
     elif not any(value["state"] == "active" for value in proposed["streams"].values()):
         proposed.update({"status": "parked", "parkReason": "all-streams-parked", "gatePassed": False})
@@ -1382,6 +1418,7 @@ def internal_run(mission: str, mode: str, tag: str, start_signal: Path) -> int:
         while state["status"] == "running":
             heartbeat(mission)
             state = one_cycle(mission, state_path, ledger, state, lease, start_signal, notified)
+        close_terminal_chains(mission)
         if not notified[0]:
             write_start_signal(start_signal, False, None, f"mission parked before a host turn started: {state.get('parkReason')}")
         if lease is not None:
