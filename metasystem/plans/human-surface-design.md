@@ -80,14 +80,32 @@ Change: cohort-level authorization as the default, made representable and
 bounded rather than asserted. The contract grammar gains one optional line
 (HS-1-3): `Cohort-Authorization: cohort-id=<id>; record-sha256=<hash>`, which
 seal covers and preflight accepts as the approval when — and only when — the
-named cohort record is itself signed (F-1 flow) and its hash matches. The
-cohort record's signed bytes must bind everything one signature spends
-(HS-1-4): the contract template hash, spec id and version, measuring-kit
-version, fence vector, roster, repetition count, per-repetition exposure, and
-the total exposure ceiling; a repetition whose generated contract deviates
-from the bound template fails preflight because the template hash no longer
-matches. Per-repetition signing remains available; the driver accepts either
-and refuses a repetition with neither.
+named cohort record is itself signed and its hash matches. The cohort
+record's signed bytes bind everything one signature spends (HS-1-4): the
+contract template hash, spec id and version, measuring-kit version, fence
+vector, roster, repetition count, per-repetition exposure, and the total
+exposure ceiling. The hash protocol is normative and complete (HS-3-4,
+HS-4-1): the template hash is sha256 over the contract file's bytes from its
+first byte through the closing fence of the ```mission block ONLY — the seal
+block, approval lines, and Cohort-Authorization line all sit outside the
+hashed region by construction, which also excludes every seal-time variable
+(timestamp, gate-ref sha) — with exactly one substitution: the `mission.id`
+value replaced by the literal token `@COHORT-MISSION-ID@`. Preflight
+recomputes exactly this; a deviating repetition fails on the hash. Replay
+bounds have grammar, owner, and atomicity (HS-3-5, HS-4-2): the record
+carries `expiresAt` (ISO-8601 UTC; preflight refuses at or after expiry);
+each repetition's mission id is `<spec-id>-<cohort-id>-r<index>` with index
+in [1, count]; the consumed-index ledger is the driver-owned directory
+`benchmark/results/cohorts/<cohort-id>.consumed/`, one file per index created
+with O_EXCL BEFORE provisioning — creation is the atomic reservation,
+reservations are never released, and a failed repetition consumes its index:
+rerunning it is a new cohort decision, never a silent retry. The cohort
+record signs without sealing (HS-4-3): records run no gate, so F-1's command
+gains a `--record <path>` mode whose display shows the bound facts (spec id
+and version, template hash, repetition count, per-repetition and total
+exposure, expiry) and whose approval line hashes the record's canonical
+bytes; no seal step exists for records. Per-repetition signing remains
+available; the driver accepts either and refuses a repetition with neither.
 Proof: kit-gate fixtures for both paths, the refusal with neither, a
 tampered-template repetition refused, a total-exposure ceiling exceeded
 refused, a reused repetition index refused, and an expired record refused.
