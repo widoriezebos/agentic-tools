@@ -4,15 +4,18 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$root/scripts/agents/fixture-budget.sh"
 harness_fixture_budget_init "$root"
+mission_job_cap_min=$(harness_fixture_semantic_cap mission-job-minutes)
+mission_turn_cap_min=$(harness_fixture_semantic_cap mission-turn-minutes)
+minimum_cap_min=$(harness_fixture_semantic_cap minimum-minutes)
 fixture_root=$(mktemp -d)
 repo=$fixture_root/repo
 remote=$fixture_root/origin.git
 watcher_pid=
 reaper_pid=
 
-wait_for_fixture_pid() { # name, pid, named ceiling seconds
+wait_for_fixture_pid() { # name, pid, named cap
   local name=$1 pid=$2 maximum started deadline elapsed
-  maximum=$(harness_fixture_scaled_cap "$3")
+  maximum=$(harness_fixture_cap "$3")
   started=$SECONDS
   deadline=$((SECONDS + maximum))
   while kill -0 "$pid" 2>/dev/null; do
@@ -23,7 +26,7 @@ wait_for_fixture_pid() { # name, pid, named ceiling seconds
       wait "$pid" 2>/dev/null || true
       return 1
     fi
-    sleep 0.05
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
   wait "$pid" 2>/dev/null || true
 }
@@ -33,7 +36,7 @@ cleanup() {
   for pid in "$watcher_pid" "$reaper_pid"; do
     [[ -n "$pid" ]] || continue
     kill -TERM "$pid" 2>/dev/null || true
-    wait_for_fixture_pid supervisor-cleanup "$pid" 5 || true
+    wait_for_fixture_pid supervisor-cleanup "$pid" mission-process-wait || true
   done
   rm -rf "$fixture_root"
 }
@@ -122,15 +125,16 @@ fence.wall-clock-hours=2
 fence.cycles=3
 fence.jobs=4
 fence.concurrency=2
-fence.job-cap-min=5
+fence.job-cap-min=FIXTURE_JOB_CAP_MIN
 host.runtime=fake
 host.model=fake-model
-host.turn-cap-min=5
+host.turn-cap-min=FIXTURE_TURN_CAP_MIN
 stream.primary=Reach the acceptance score.
 envelope.dependencies=jq
 exposure=EUR:10
 ```
 CONTRACT
+perl -0pi -e 's/FIXTURE_JOB_CAP_MIN/'"$mission_job_cap_min"'/g; s/FIXTURE_TURN_CAP_MIN/'"$mission_turn_cap_min"'/g' "$base"
 
 "$root/scripts/assert-mission.sh" --file "$base" >/dev/null
 
@@ -261,8 +265,8 @@ git -C "$repo" push -qu origin main
 # Fabricate only the supervisor facts preflight reads. Each process is a real
 # live process whose argv carries the recorded tag; cleanup waits are named
 # and ceiling-bounded above.
-python3 -c 'import time; time.sleep(60)' mission-watcher-tag & watcher_pid=$!
-python3 -c 'import time; time.sleep(60)' mission-reaper-tag & reaper_pid=$!
+python3 -c 'import signal; signal.pause()' mission-watcher-tag & watcher_pid=$!
+python3 -c 'import signal; signal.pause()' mission-reaper-tag & reaper_pid=$!
 identity_file=$fixture_root/mission-process-identities.json
 printf '{"%s":{"pidStartedAt":%s,"command":"fixture mission-watcher-tag"},"%s":{"pidStartedAt":%s,"command":"fixture mission-reaper-tag"}}\n' \
   "$watcher_pid" "$watcher_pid" "$reaper_pid" "$reaper_pid" >"$identity_file"
@@ -409,18 +413,18 @@ race_contract=$repo/plans/mission-race.contract.md
 sed 's/fence.concurrency=2/fence.concurrency=1/' "$base" >"$race_contract"
 (
   set +e
-  "$root/scripts/agents/mission-fence.py" reserve-job --repo "$repo" --mission race --job race-a --cap-min 1 >"$fixture_root/race-a.out" 2>&1
+  "$root/scripts/agents/mission-fence.py" reserve-job --repo "$repo" --mission race --job race-a --cap-min "$minimum_cap_min" >"$fixture_root/race-a.out" 2>&1
   printf '%s\n' "$?" >"$fixture_root/race-a.status"
 ) &
 race_a_pid=$!
 (
   set +e
-  "$root/scripts/agents/mission-fence.py" reserve-job --repo "$repo" --mission race --job race-b --cap-min 1 >"$fixture_root/race-b.out" 2>&1
+  "$root/scripts/agents/mission-fence.py" reserve-job --repo "$repo" --mission race --job race-b --cap-min "$minimum_cap_min" >"$fixture_root/race-b.out" 2>&1
   printf '%s\n' "$?" >"$fixture_root/race-b.status"
 ) &
 race_b_pid=$!
-wait_for_fixture_pid concurrency-reservation-a "$race_a_pid" 5
-wait_for_fixture_pid concurrency-reservation-b "$race_b_pid" 5
+wait_for_fixture_pid concurrency-reservation-a "$race_a_pid" mission-process-wait
+wait_for_fixture_pid concurrency-reservation-b "$race_b_pid" mission-process-wait
 race_total=$(( $(cat "$fixture_root/race-a.status") + $(cat "$fixture_root/race-b.status") ))
 [[ $race_total -eq 1 ]] || { echo "mission concurrency lock admitted zero or two reservations" >&2; exit 1; }
 race_ask=$repo/artifacts/agents/missions/race/asks/fence-bound.json
@@ -496,10 +500,10 @@ fence.wall-clock-hours=2
 fence.cycles=3
 fence.jobs=4
 fence.concurrency=1
-fence.job-cap-min=5
+fence.job-cap-min=$mission_job_cap_min
 host.runtime=fake
 host.model=fake-model
-host.turn-cap-min=1
+host.turn-cap-min=$minimum_cap_min
 stream.primary=FAKEHOST:$behavior complete the primary stream.
 envelope.dependencies=jq
 exposure=EUR:1
@@ -514,7 +518,7 @@ EOF
 
 wait_end_state() { # mission, expected status exit
   local mission=$1 expected=$2 result=7 maximum deadline
-  maximum=$(harness_fixture_scaled_cap 10)
+  maximum=$(harness_fixture_cap mission-end-state)
   deadline=$((SECONDS + maximum))
   while (( SECONDS < deadline )); do
     set +e
@@ -528,7 +532,7 @@ wait_end_state() { # mission, expected status exit
       sed -n '1,240p' "$repo/artifacts/agents/missions/runners/$mission.json" >&2
       return 1
     fi
-    sleep 0.05
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
   echo "mission end-state fixture timed out: $mission -> $expected (last exit: $result; scaled cap: ${maximum}s)" >&2
   sed -n '1,240p' "$repo/artifacts/agents/missions/runners/$mission.json" >&2 2>/dev/null || true

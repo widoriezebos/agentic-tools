@@ -7,10 +7,7 @@ set -euo pipefail
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$source_root/scripts/agents/fixture-budget.sh"
 harness_fixture_budget_init "$source_root"
-fixture_base_cap_sec=${METASYSTEM_SUPERVISION_FIXTURE_TIMEOUT_SEC:-12}
-[[ "$fixture_base_cap_sec" =~ ^[1-9][0-9]*$ && "$fixture_base_cap_sec" -le 60 ]] \
-  || { echo "METASYSTEM_SUPERVISION_FIXTURE_TIMEOUT_SEC must be 1..60" >&2; exit 1; }
-fixture_ceiling_sec=$(harness_fixture_scaled_cap "$fixture_base_cap_sec")
+fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 
 tmp=$(mktemp -d)
 owned_pids=()
@@ -33,7 +30,7 @@ wait_until() { # name, shell predicate...
       echo "supervision fixture timed out: $name (elapsed: ${elapsed}s; scaled cap: ${fixture_ceiling_sec}s)" >&2
       return 1
     fi
-    sleep 0.05
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
 }
 
@@ -50,7 +47,7 @@ stop_owned_pid() { # name, pid, start
       kill -KILL "$pid" 2>/dev/null || true
       return 1
     fi
-    sleep 0.05
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
   wait "$pid" 2>/dev/null || true
 }
@@ -360,7 +357,7 @@ done
 cat >"$repo/metasystem-fake-agent" <<'SH'
 #!/usr/bin/env bash
 METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ "$1" --repo "$2"
-while [[ ! -e "$3" ]]; do sleep 0.05; done
+while [[ ! -e "$3" ]]; do sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:?}"; done
 SH
 chmod +x "$repo/metasystem-fake-agent"
 infer_release=$tmp/inferred-agent.release
@@ -498,12 +495,14 @@ PY
 supervisor_start=$(process_started_at "$$")
 supervisor_pgid=$(python3 -c 'import os; print(os.getpgid(int(__import__("sys").argv[1])))' "$$")
 mkdir -p "$repo/artifacts/agents/hb"
-python3 - "$repo/artifacts/agents/jobs/owned.json" "$repo/artifacts/agents/hb/owned" "$repo" "$custody_pid" "$custody_start" "$$" "$supervisor_start" "$supervisor_pgid" <<'PY'
+python3 - "$repo/artifacts/agents/jobs/owned.json" "$repo/artifacts/agents/hb/owned" "$repo" \
+  "$custody_pid" "$custody_start" "$$" "$supervisor_start" "$supervisor_pgid" \
+  "$(harness_fixture_semantic_cap dormant-job-minutes)" <<'PY'
 import json, sys
-record,heartbeat,repo,child,child_start,supervisor,supervisor_start,supervisor_pgid=sys.argv[1:]
+record,heartbeat,repo,child,child_start,supervisor,supervisor_start,supervisor_pgid,cap_min=sys.argv[1:]
 supervisor,supervisor_start,supervisor_pgid=int(supervisor),int(supervisor_start),int(supervisor_pgid)
 tag="metasystem-job-owned"
-json.dump({"jobId":"owned","status":"running","runtime":"fake","workspaceRoot":repo,"pid":supervisor,"pidStartedAt":supervisor_start,"pgid":supervisor_pgid,"instanceTag":tag,"ownershipProof":{"pid":supervisor,"pidStartedAt":supervisor_start,"pgid":supervisor_pgid,"instanceTag":tag},"startedAt":"2099-01-01T00:00:00Z","capMin":999999,"custodyProcesses":[{"pid":int(child),"pidStartedAt":int(child_start)-1,"instanceTag":tag}]}, open(record, "w"))
+json.dump({"jobId":"owned","status":"running","runtime":"fake","workspaceRoot":repo,"pid":supervisor,"pidStartedAt":supervisor_start,"pgid":supervisor_pgid,"instanceTag":tag,"ownershipProof":{"pid":supervisor,"pidStartedAt":supervisor_start,"pgid":supervisor_pgid,"instanceTag":tag},"startedAt":"2099-01-01T00:00:00Z","capMin":int(cap_min),"custodyProcesses":[{"pid":int(child),"pidStartedAt":int(child_start)-1,"instanceTag":tag}]}, open(record, "w"))
 json.dump({"pid":supervisor,"instanceTag":tag},open(heartbeat,"w"))
 PY
 wait_until "three-class census" inventory_has "$last" ANNOUNCED "$announced_pid"
@@ -687,7 +686,7 @@ new_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pi
 dead_pid=$(python3 - <<'PY'
 import subprocess,sys
 p=subprocess.Popen(
-    [sys.executable,"-c","import time; time.sleep(30)"],
+    [sys.executable,"-c","import signal; signal.pause()"],
     stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
     start_new_session=True,
 )
@@ -787,7 +786,7 @@ mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/art
 cp "$source_root/scripts/agents/arm-supervision.sh" "$foreign/repo/metasystem/scripts/agents/"
 cp "$source_root/scripts/agents/process-census.py" "$foreign/repo/metasystem/scripts/agents/"
 foreign_sleep_pid=$(
-  bash -c 'exec -a metasystem-foreign-owner sleep 120 >/dev/null 2>&1 & echo $!'
+  bash -c 'python3 -c "import signal; signal.pause()" metasystem-foreign-owner >/dev/null 2>&1 & echo $!'
 )
 foreign_start=$(process_started_at "$foreign_sleep_pid")
 owned_pids+=("$foreign_sleep_pid:$foreign_start")

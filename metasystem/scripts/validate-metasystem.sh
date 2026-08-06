@@ -10,6 +10,13 @@ metasystem_here=$(pwd -P)
 
 source scripts/agents/fixture-budget.sh
 harness_fixture_budget_init "$root"
+fixture_minimum_cap_min=$(harness_fixture_semantic_cap minimum-minutes)
+fixture_mission_job_cap_min=$(harness_fixture_semantic_cap mission-job-minutes)
+fixture_dispatch_envelope_cap_min=$(harness_fixture_semantic_cap dispatch-envelope-minutes)
+fixture_dispatch_over_envelope_cap_min=$(harness_fixture_semantic_cap dispatch-over-envelope-minutes)
+fixture_watcher_config_cap_min=$(harness_fixture_semantic_cap watcher-config-minutes)
+fixture_watcher_nonfiring_cap_min=$(harness_fixture_semantic_cap watcher-nonfiring-minutes)
+fixture_watcher_firing_cap_min=$(harness_fixture_semantic_cap watcher-firing-minutes)
 
 scripts/audit-metasystem.sh .
 
@@ -1222,22 +1229,24 @@ if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
   # are detached, so "the mission returned" does not mean "its last git op
   # finished". Wait for a live lock, remove a dead one's leavings (a killed
   # runner leaves index.lock forever), then run the git op.
+  runner_git_cap_sec=$(harness_fixture_cap runner-git-lock)
+  runner_git_stale_sec=$(( $(harness_fixture_base_cap runner-git-lock) / 2 ))
   runner_git() {
-    local tries=0
-    while [[ -e "$runner_repo/.git/index.lock" ]] && (( tries < 16 )); do
-      sleep 0.5; tries=$((tries + 1))
-      if (( tries == 16 )); then
-        python3 - "$runner_repo/.git/index.lock" <<'LOCK'
+    local deadline=$((SECONDS + runner_git_cap_sec))
+    while [[ -e "$runner_repo/.git/index.lock" ]] && (( SECONDS < deadline )); do
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+    done
+    if [[ -e "$runner_repo/.git/index.lock" ]]; then
+      python3 - "$runner_repo/.git/index.lock" "$runner_git_stale_sec" <<'LOCK'
 import os, sys, time
 lock = sys.argv[1]
 try:
-    if time.time() - os.stat(lock).st_mtime >= 4:
+    if time.time() - os.stat(lock).st_mtime >= int(sys.argv[2]):
         os.unlink(lock)
 except OSError:
     pass
 LOCK
-      fi
-    done
+    fi
     git -C "$runner_repo" "$@"
   }
 
@@ -1250,13 +1259,12 @@ LOCK
   perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$agent_selftest_evidence"'|m' \
     "$agent_selftest_repo/metasystem.conf"
 
-  agent_fixture_base_cap_sec=${METASYSTEM_AGENT_FIXTURE_TIMEOUT_SEC:-20}
-  [[ "$agent_fixture_base_cap_sec" =~ ^[1-9][0-9]*$ && "$agent_fixture_base_cap_sec" -le 120 ]] \
-    || { echo "METASYSTEM_AGENT_FIXTURE_TIMEOUT_SEC must be an integer from 1 through 120" >&2; exit 1; }
-  agent_fixture_cap_sec=$(harness_fixture_scaled_cap "$agent_fixture_base_cap_sec")
-  agent_status_cap_sec=$(harness_fixture_scaled_cap 5)
-  agent_cleanup_cap_sec=$(harness_fixture_scaled_cap 7)
-  agent_driver_stop_cap_sec=$(harness_fixture_scaled_cap 2)
+  agent_fixture_cap_sec=$(harness_fixture_cap agent-command)
+  agent_status_cap_sec=$(harness_fixture_cap agent-status)
+  agent_cleanup_cap_sec=$(harness_fixture_cap agent-cleanup)
+  agent_driver_stop_cap_sec=$(harness_fixture_cap agent-driver-stop)
+  METASYSTEM_FIXTURE_AGENT_STATUS_CAP_SEC=$agent_status_cap_sec
+  export METASYSTEM_FIXTURE_AGENT_STATUS_CAP_SEC
 
   wait_for_agent_census_fresh() { # fixture name
     local name=$1 started=$SECONDS deadline=$((SECONDS + agent_fixture_cap_sec)) expected elapsed
@@ -1274,7 +1282,7 @@ age=int(time.time())-int(value.get("completedAtEpoch",0)); interval=int(value.ge
 raise SystemExit(0 if value.get("verdict")=="SUCCESS" and value.get("fingerprint")==sys.argv[2] and 0 <= age <= max(1,interval//2) else 1)
 PY
       then return 0; fi
-      sleep 0.05
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
     done
     elapsed=$((SECONDS - started))
     echo "agent fixture timed out waiting for a fresh census: $name (elapsed: ${elapsed}s; scaled cap: ${agent_fixture_cap_sec}s)" >&2
@@ -1324,12 +1332,12 @@ PY
         cleanup_pid=$!
         cleanup_started=$SECONDS
         cleanup_deadline=$(( SECONDS + agent_cleanup_cap_sec ))
-        while kill -0 "$cleanup_pid" 2>/dev/null && (( SECONDS < cleanup_deadline )); do sleep 0.05; done
+        while kill -0 "$cleanup_pid" 2>/dev/null && (( SECONDS < cleanup_deadline )); do sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"; done
         if kill -0 "$cleanup_pid" 2>/dev/null; then
           elapsed=$((SECONDS - cleanup_started))
           echo "agent fixture cleanup timed out: $name cancel pid $cleanup_pid (elapsed: ${elapsed}s; scaled cap: ${agent_cleanup_cap_sec}s)" >&2
           kill -TERM "$cleanup_pid" 2>/dev/null || true
-          sleep 0.1
+          sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
           kill -KILL "$cleanup_pid" 2>/dev/null || true
         fi
       fi
@@ -1338,7 +1346,7 @@ PY
       kill -TERM "$driver_pid" 2>/dev/null || true
       driver_started=$SECONDS
       driver_deadline=$(( SECONDS + agent_driver_stop_cap_sec ))
-      while kill -0 "$driver_pid" 2>/dev/null && (( SECONDS < driver_deadline )); do sleep 0.05; done
+      while kill -0 "$driver_pid" 2>/dev/null && (( SECONDS < driver_deadline )); do sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"; done
       if kill -0 "$driver_pid" 2>/dev/null; then
         elapsed=$((SECONDS - driver_started))
         echo "agent fixture driver stop timed out: $name pid $driver_pid (elapsed: ${elapsed}s; scaled cap: ${agent_driver_stop_cap_sec}s); sending KILL" >&2
@@ -1352,7 +1360,7 @@ PY
     local name=$1 job=$2 child_pid=$3 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec )) result
     while kill -0 "$child_pid" 2>/dev/null; do
       (( SECONDS < deadline )) || stop_timed_out_agent_fixture "$name" "$job" "$child_pid" "$started"
-      sleep 0.05
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
     done
     if wait "$child_pid"; then result=0; else result=$?; fi
     return "$result"
@@ -1399,7 +1407,8 @@ PY
     local name=$1 typed=$2 expected_exit=$3
     shift 3
     wait_for_agent_census_fresh "$name"
-    python3 - "$agent_fixture/$name.out" "$typed" "$expected_exit" "$agent_fixture_cap_sec" "$@" <<'PY'
+    python3 - "$agent_fixture/$name.out" "$typed" "$expected_exit" "$agent_fixture_cap_sec" \
+      "$agent_driver_stop_cap_sec" "$@" <<'PY'
 import errno
 import os
 import pty
@@ -1409,7 +1418,7 @@ import sys
 import time
 from pathlib import Path
 
-output, typed, expected_exit, cap, *command = sys.argv[1:]
+output, typed, expected_exit, cap, stop_cap, *command = sys.argv[1:]
 master, slave = pty.openpty()
 process = subprocess.Popen(command, stdin=slave, stdout=slave, stderr=slave, close_fds=True)
 os.close(slave)
@@ -1420,7 +1429,7 @@ while process.poll() is None:
     if time.monotonic() >= deadline:
         process.terminate()
         try:
-            process.wait(timeout=2)
+            process.wait(timeout=int(stop_cap))
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
@@ -1461,7 +1470,7 @@ PY
     while (( SECONDS < deadline )); do
       observed=$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job "$job" 2>/dev/null || true)
       [[ "$observed" == "$expected" ]] && return 0
-      sleep 0.05
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
     done
     elapsed=$((SECONDS - started))
     echo "agent fixture status timed out: $job -> $expected (last status: ${observed:-missing}; elapsed: ${elapsed}s; scaled cap: ${agent_status_cap_sec}s)" >&2
@@ -1673,7 +1682,7 @@ PY
       exit 1
     fi
     run_agent_fixture pending-loss-reap pending-loss "$agent_dispatch" reap --job pending-loss
-    sleep 0.1
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
   wait_for_agent_fixture_process pending-loss-driver pending-loss "$pending_loss_driver" || true
 
@@ -1777,7 +1786,7 @@ EOF
   (
     set +e
     cd "$agent_repo"
-    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id timed --cap-min 1 --wait
+    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id timed --cap-min "$fixture_minimum_cap_min" --wait
     printf '%s\n' "$?" >"$timeout_result"
   ) &
   timeout_driver=$!
@@ -1828,7 +1837,7 @@ PY
   vanished_wait_deadline=$((SECONDS + agent_status_cap_sec))
   while (( SECONDS < vanished_wait_deadline )); do
     [[ -f "$agent_repo/artifacts/agents/hb/vanished.waiting" ]] && break
-    sleep 0.05
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
   [[ -f "$agent_repo/artifacts/agents/hb/vanished.waiting" ]] \
     || { vanished_wait_elapsed=$((SECONDS - vanished_wait_started)); echo "agent fixture file wait timed out: vanished.waiting (job: vanished; elapsed: ${vanished_wait_elapsed}s; scaled cap: ${agent_status_cap_sec}s)" >&2; exit 1; }
@@ -2106,7 +2115,7 @@ fence.wall-clock-hours=2
 fence.cycles=10
 fence.jobs=20
 fence.concurrency=2
-fence.job-cap-min=120
+fence.job-cap-min=FIXTURE_DISPATCH_CAP_MIN
 envelope.dispatch-allow=fake:fake-escalated,fake:fake-model
 ```
 
@@ -2114,6 +2123,8 @@ envelope.dispatch-allow=fake:fake-escalated,fake:fake-model
 sealed.version=1
 ```
 EOF
+  perl -0pi -e 's/FIXTURE_DISPATCH_CAP_MIN/'"$fixture_dispatch_envelope_cap_min"'/g' \
+    "$agent_repo/plans/mission-mission-alpha.contract.md"
   python3 - "$agent_repo/scripts/agents/mission-contract.py" "$agent_repo/plans/mission-mission-alpha.contract.md" <<'PY'
 import importlib.util
 import sys
@@ -2136,10 +2147,9 @@ PY
   git -C "$agent_repo" push -qu origin main
   git -C "$dispatch_origin" symbolic-ref HEAD refs/heads/main
   git -C "$agent_repo" remote set-head origin -a >/dev/null
-  # The lease holder outlives every fixture that leans on it and is killed
-  # explicitly below; a 30-second budget here was an IL-1b time bomb that
-  # detonated when F-4 made each dispatch marginally slower.
-  python3 -c 'import time; time.sleep(600)' mission-lease-tag & mission_pid=$!
+  # The lease holder has no private lifetime: its bounded teardown below is the
+  # only event that ends it, so section growth cannot turn its lifetime into a cap.
+  python3 -c 'import signal; signal.pause()' mission-lease-tag & mission_pid=$!
   mission_pgid=$(python3 -c 'import os,sys; print(os.getpgid(int(sys.argv[1])))' "$mission_pid")
   mission_identity="$agent_fixture/mission-process-identity.json"
   python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" "$mission_identity" "$mission_pid" "$mission_pgid" <<'PY'
@@ -2162,7 +2172,7 @@ PY
   METASYSTEM_MISSION_ID=mission-alpha METASYSTEM_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
     METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture \
     run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --wait
-  agent_fails mission-cap 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min 121
+  agent_fails mission-cap 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min "$fixture_dispatch_over_envelope_cap_min"
   [[ -f "$agent_repo/artifacts/agents/missions/mission-alpha/asks/fence-bound.json" ]] \
     || { echo "job-cap refusal did not write the batched mission ask" >&2; exit 1; }
   python3 - "$agent_repo" <<'PY'
@@ -2187,7 +2197,7 @@ fence.wall-clock-hours=$wall
 fence.cycles=$cycles
 fence.jobs=$jobs_limit
 fence.concurrency=$concurrency
-fence.job-cap-min=120
+fence.job-cap-min=$fixture_dispatch_envelope_cap_min
 \`\`\`
 EOF
     python3 - "$mission_dir/lease.json" "$mission" "$mission_pid" "$mission_pgid" <<'PY'
@@ -2218,13 +2228,15 @@ PY
   assert_fence_ask mission-cycles cycles
 
   make_fence_mission mission-jobs 10 1 2 2
-  printf '{"schemaVersion":1,"missionId":"mission-jobs","startedAt":"%s","cycles":0,"reservations":{"prior":{"reservedAt":"2000-01-01T00:00:00Z","capMin":1}}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  printf '{"schemaVersion":1,"missionId":"mission-jobs","startedAt":"%s","cycles":0,"reservations":{"prior":{"reservedAt":"2000-01-01T00:00:00Z","capMin":%s}}}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
     >"$agent_repo/artifacts/agents/missions/mission-jobs/fences.json"
   agent_fails fence-jobs 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --wait
   assert_fence_ask mission-jobs jobs
 
   make_fence_mission mission-concurrency 10 10 1 2
-  printf '{"schemaVersion":1,"missionId":"mission-concurrency","startedAt":"%s","cycles":0,"reservations":{"active":{"reservedAt":"2000-01-01T00:00:00Z","capMin":1}}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  printf '{"schemaVersion":1,"missionId":"mission-concurrency","startedAt":"%s","cycles":0,"reservations":{"active":{"reservedAt":"2000-01-01T00:00:00Z","capMin":%s}}}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
     >"$agent_repo/artifacts/agents/missions/mission-concurrency/fences.json"
   agent_fails fence-concurrency 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --wait
   assert_fence_ask mission-concurrency concurrency
@@ -2235,7 +2247,7 @@ PY
   (
     set +e
     cd "$agent_repo"
-    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --cap-min 1 --wait
+    scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --cap-min "$fixture_minimum_cap_min" --wait
     printf '%s\n' "$?" >"$mission_timeout_result"
   ) &
   mission_timeout_driver=$!
@@ -2313,7 +2325,7 @@ called_at=$(date +%s)
 "$script_dir/arm-supervision-real.sh" "$@"
 [[ ${1:-} == fingerprint ]] && exit 0
 for argument in "$@"; do [[ "$argument" == --shutdown ]] && exit 0; done
-deadline=$((called_at + 30))
+deadline=$((called_at + ${METASYSTEM_FIXTURE_AGENT_STATUS_CAP_SEC:?}))
 while (( $(date +%s) <= deadline )); do
   completed=$(python3 - "$fixture_root/artifacts/agents/supervision/last-census.json" <<'PY' 2>/dev/null || true
 import json,sys
@@ -2322,7 +2334,7 @@ except (OSError,ValueError,KeyError,TypeError): pass
 PY
   )
   [[ ${completed:-0} -ge $called_at ]] && break
-  sleep 0.05
+  sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:?}"
 done
 if [[ -n "${METASYSTEM_MISSION_PROCESS_IDENTITY_FILE:-}" \
   && -f "$fixture_root/artifacts/agents/supervision/state.json" ]]; then
@@ -2411,10 +2423,10 @@ fence.wall-clock-hours=2
 fence.cycles=$cycles
 fence.jobs=4
 fence.concurrency=1
-fence.job-cap-min=5
+fence.job-cap-min=$fixture_mission_job_cap_min
 host.runtime=$runtime
 host.model=$model
-host.turn-cap-min=1
+host.turn-cap-min=$fixture_minimum_cap_min
 stream.primary=FAKEHOST:$behavior advance the candidate.
 envelope.dependencies=jq
 exposure=EUR:1
@@ -2433,7 +2445,7 @@ EOF
     # releases the lease as it exits, so release trails the status by design.
     while (( SECONDS < deadline )); do
       [[ -e "$runner_repo/artifacts/agents/missions/$mission/lease.d" ]] || return 0
-      sleep 0.05
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
     done
     echo "$what retained its runner lease (elapsed: $((SECONDS - started))s; scaled cap: ${agent_fixture_cap_sec}s)" >&2
     exit 1
@@ -2461,7 +2473,7 @@ EOF
       result=$?
       set -e
       [[ $result -eq $expected ]] && return 0
-      sleep 0.05
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
     done
     echo "mission runner status timed out: $mission -> $expected (last exit: $result)" >&2
     cat "$agent_fixture/status-$mission.out" >&2
@@ -2472,7 +2484,7 @@ EOF
     local path=$1 description=$2 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec ))
     while (( SECONDS < deadline )); do
       [[ -e "$path" ]] && return 0
-      sleep 0.02
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
     done
     echo "mission runner file wait timed out: $description (elapsed: $((SECONDS - started))s; scaled cap: ${agent_fixture_cap_sec}s)" >&2
     return 1
@@ -2480,10 +2492,11 @@ EOF
 
   start_atomic_result_watcher() { # result path, fixture name
     local result_path=$1 name=$2
-    python3 - "$result_path" "$agent_fixture_cap_sec" >"$agent_fixture/$name.out" 2>&1 <<'PY' &
+    python3 - "$result_path" "$agent_fixture_cap_sec" "$METASYSTEM_FIXTURE_POLL_INTERVAL_MS" \
+      >"$agent_fixture/$name.out" 2>&1 <<'PY' &
 import json, sys, time
 from pathlib import Path
-path, cap = Path(sys.argv[1]), int(sys.argv[2])
+path, cap, poll_ms = Path(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 deadline = time.monotonic() + cap
 while time.monotonic() < deadline:
     if path.exists():
@@ -2494,7 +2507,7 @@ while time.monotonic() < deadline:
         assert set(value) == {"sessionId", "outcome", "usage", "rawPath", "returnPath"}, value
         assert value["outcome"] == "completed" and value["sessionId"] == "codex-fixture-session", value
         raise SystemExit(0)
-    time.sleep(0.001)
+    time.sleep(poll_ms / 1000)
 raise SystemExit(f"host result did not appear within {cap}s: {path}")
 PY
     atomic_result_watcher_pid=$!
@@ -2568,7 +2581,7 @@ printf 'ready\n' >"$fixture/ready-$sequence"
 deadline=$((SECONDS + cap))
 while [[ ! -e "$fixture/release-$sequence" ]]; do
   (( SECONDS < deadline )) || { echo "codex host fixture release $sequence timed out" >&2; exit 9; }
-  sleep 0.02
+  sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:?}"
 done
 output=
 arguments=("$@")
@@ -3140,10 +3153,10 @@ METASYSTEM_RETRO_MAX_RECEIPTS=0 "$knob_fixture/receipt/scripts/receipt.sh" check
   || { echo "receipt did not prefer the flag over the environment" >&2; exit 1; }
 
 cp scripts/watch-background-jobs.sh scripts/metasystem-config.sh "$knob_fixture/watch/scripts/"
-printf 'watch.stale-min=7\nwatch.cap-min=9\n' >"$knob_fixture/watch/metasystem.conf"
+printf 'watch.stale-min=7\nwatch.cap-min=%s\n' "$fixture_watcher_config_cap_min" >"$knob_fixture/watch/metasystem.conf"
 touch "$knob_fixture/watch/state"
 "$knob_fixture/watch/scripts/watch-background-jobs.sh" --dir "$knob_fixture/watch/jobs" --state "$knob_fixture/watch/state" --once >"$knob_fixture/watch.out"
-grep -q 'stale=7m cap=9m' "$knob_fixture/watch.out" \
+grep -q "stale=7m cap=${fixture_watcher_config_cap_min}m" "$knob_fixture/watch.out" \
   || { echo "watcher ignored metasystem.conf ceilings" >&2; exit 1; }
 
 refactor_knob="$knob_fixture/refactor"
@@ -3611,12 +3624,12 @@ import os, sys, time
 t = time.time() - 600
 os.utime(sys.argv[1], (t, t))
 AGE
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s2" --stale-min 5 --cap-min 600 --once >"$wbj/o3" 2>&1
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s2" --stale-min 5 --cap-min "$fixture_watcher_nonfiring_cap_min" --once >"$wbj/o3" 2>&1
 grep -q "^STALE live" "$wbj/o3" || {
   echo "watch-background-jobs: stale job not reported" >&2; exit 1; }
 grep -q "^CAPPED live" "$wbj/o3" && {
   echo "watch-background-jobs: hard cap fired inside its own window" >&2; exit 1; }
-scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min 5 --once >"$wbj/o4" 2>&1
+scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min "$fixture_watcher_firing_cap_min" --once >"$wbj/o4" 2>&1
 grep -q "^CAPPED live" "$wbj/o4" || {
   echo "watch-background-jobs: hard cap not reported" >&2; exit 1; }
 # A job whose RECORD is old but whose sibling log is fresh is WORKING, not stale.

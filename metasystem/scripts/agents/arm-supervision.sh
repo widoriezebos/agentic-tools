@@ -40,6 +40,13 @@ supervision_wait_cap() { # base seconds; fixture validation may export a scale
   printf '%s\n' "$(( (base * scale_milli + 999) / 1000 ))"
 }
 
+milliseconds_to_sleep() { # positive integer milliseconds
+  local milliseconds=$1
+  [[ "$milliseconds" =~ ^[1-9][0-9]*$ ]] \
+    || die 2 "supervision interval must be a positive integer in milliseconds"
+  printf '%d.%03d\n' "$((milliseconds / 1000))" "$((milliseconds % 1000))"
+}
+
 resolve_repo() {
   local supplied=$1 top
   top=$(git -C "$supplied" rev-parse --show-toplevel 2>/dev/null) \
@@ -194,7 +201,7 @@ stop_recorded_components() {
 }
 
 run_owner() {
-  local repo= gate= owner_tag= interval supervision state lock owner watcher_pid watcher_start reaper_pid reaper_start
+  local repo= gate= owner_tag= interval interval_ms interval_sleep supervision state lock owner watcher_pid watcher_start reaper_pid reaper_start
   local watcher_tag reaper_tag generation=0 fingerprint component pid start tag stale gate_cap gate_started elapsed
   while (($#)); do
     case "$1" in
@@ -209,6 +216,8 @@ run_owner() {
   owner=$lock/owner.json
   interval=$("$config" get --key watch.interval-sec --default 60)
   [[ "$interval" =~ ^[1-9][0-9]*$ ]] || exit 1
+  interval_ms=${METASYSTEM_WATCH_POLL_INTERVAL_MS:-$((interval * 1000))}
+  interval_sleep=$(milliseconds_to_sleep "$interval_ms")
   gate_cap=$(supervision_wait_cap 10)
   gate_started=$SECONDS
   deadline=$((SECONDS + gate_cap))
@@ -274,6 +283,7 @@ PY
   }
 
   launch_set
+  [[ -z "${METASYSTEM_WATCH_POLL_INTERVAL_MS:-}" ]] || sleep "$interval_sleep"
   while true; do
     stale=
     for component in watcher reaper; do
@@ -287,7 +297,7 @@ PY
       printf '%s STALE-SUPERVISOR component=%s generation=%s\n' "$(now_iso)" "$stale" "$generation" >>"$supervision/supervisor.log"
       launch_set
     fi
-    sleep "$interval"
+    sleep "$interval_sleep"
   done
 }
 
