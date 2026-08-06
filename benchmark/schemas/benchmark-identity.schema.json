@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Benchmark run identity facts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "benchmarkSpecId",
+    "benchmarkSpecVersion",
+    "measuringKitVersion",
+    "candidateSha",
+    "cohortId",
+    "repetitionIndex",
+    "repetitionCount",
+    "machineFingerprint",
+    "measuringMetasystemSha",
+    "proposalId",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "benchmarkSpecId": {"type": "string", "minLength": 1},
+    "benchmarkSpecVersion": {"type": "string", "minLength": 1},
+    "measuringKitVersion": {"type": "string", "minLength": 1},
+    "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "cohortId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "repetitionIndex": {"type": "integer", "minimum": 1},
+    "repetitionCount": {"type": "integer", "minimum": 1},
+    "machineFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "cpuModel", "coreCount"],
+      "properties": {
+        "os": {"type": "string", "minLength": 1},
+        "cpuModel": {"type": "string", "minLength": 1},
+        "coreCount": {"type": "integer", "minimum": 1}
+      }
+    },
+    "measuringMetasystemSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "proposalId": {"type": ["string", "null"]},
+    "createdAt": {"type": "string", "format": "date-time"}
+  }
+}

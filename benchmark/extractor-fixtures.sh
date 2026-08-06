@@ -40,6 +40,8 @@ write_json(spec / "manifest.json", {
     "noiseFloors": {"acceptance": 0},
 })
 
+kit_version = (root / "kit-version").read_text(encoding="utf-8").strip()
+
 base = fixture / "base"
 mission = base / "artifacts" / "agents" / "missions" / "fixture"
 agents = base / "artifacts" / "agents"
@@ -104,6 +106,24 @@ write_json(mission / "state.json", state)
 )
 write_json(mission / "fences.json", {"schemaVersion": 1, "missionId": "fixture", "cycles": 1, "startedAt": "2026-08-05T00:00:00Z", "reservations": {}})
 (mission / "grader.out").write_text("metric=acceptance=1\n", encoding="utf-8")
+write_json(agents / "benchmark-identity.json", {
+    "schemaVersion": 1,
+    "benchmarkSpecId": "extractor-fixture",
+    "benchmarkSpecVersion": "1.0",
+    "measuringKitVersion": kit_version,
+    "candidateSha": head,
+    "cohortId": "extractor-fixture-cohort",
+    "repetitionIndex": 1,
+    "repetitionCount": 1,
+    "machineFingerprint": {
+        "os": "fixture-os",
+        "cpuModel": "fixture-cpu",
+        "coreCount": 1,
+    },
+    "measuringMetasystemSha": head,
+    "proposalId": None,
+    "createdAt": "2026-08-05T00:00:00Z",
+})
 
 turn_dir = mission / "turns" / "fixture-t1"
 write_json(turn_dir / "turn.json", {
@@ -272,6 +292,10 @@ gates = {gate["name"]: gate["passed"] for gate in scorecard["runValidity"]["gate
 if variant == "valid":
     assert scorecard["runValidity"]["valid"] is True, scorecard["runValidity"]
     assert all(value is True for value in gates.values()), gates
+    assert scorecard["identity"]["measuringKitVersion"] == "0.1.0"
+    assert scorecard["identity"]["cohortId"] == "extractor-fixture-cohort"
+    assert scorecard["identity"]["candidateSha"] is not None
+    assert scorecard["machineFingerprint"]["cpuModel"] == "fixture-cpu"
 else:
     assert scorecard["runValidity"]["valid"] is False, scorecard["runValidity"]
     assert gates[variant] is False, gates
