@@ -1502,9 +1502,28 @@ PY
   }
 
   run_tty_agent_fixture() { # fixture name, typed line, expected exit, command...
+    local name=$1 typed=$2 expected_exit=$3 attempt tty_result
+    shift 3
+    # The supervisor heals itself asynchronously, so a dispatch can land in
+    # the moment between an arming publication and the census that confirms
+    # it; that refusal is transient and says "retry in a moment", which is
+    # what agent_fails already does and this driver must do too.
+    for attempt in 1 2 3; do
+      wait_for_agent_census_fresh "$name"
+      set +e
+      run_tty_agent_fixture_once "$name" "$typed" "$expected_exit" "$@"
+      tty_result=$?
+      set -e
+      [[ $tty_result -eq 0 ]] && return 0
+      grep -Fq 'censusGeneration=' "$agent_fixture/$name.out" 2>/dev/null || break
+      sleep 1
+    done
+    return "$tty_result"
+  }
+
+  run_tty_agent_fixture_once() { # fixture name, typed line, expected exit, command...
     local name=$1 typed=$2 expected_exit=$3
     shift 3
-    wait_for_agent_census_fresh "$name"
     python3 - "$agent_fixture/$name.out" "$typed" "$expected_exit" "$agent_fixture_cap_sec" \
       "$agent_driver_stop_cap_sec" "$@" <<'PY'
 import errno
@@ -1552,6 +1571,8 @@ while True:
 os.close(master)
 Path(output).write_bytes(b"".join(chunks))
 if process.returncode != int(expected_exit):
+    # A failure that hides its transcript cannot be diagnosed after teardown.
+    sys.stderr.write(b"".join(chunks).decode(errors="replace")[-2000:] + "\n")
     raise SystemExit(f"TTY fixture exit {process.returncode}, expected {expected_exit}")
 PY
   }
