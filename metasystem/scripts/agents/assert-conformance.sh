@@ -8,7 +8,9 @@ Usage: scripts/agents/assert-conformance.sh --stage review|merge --job <job-id>
 The review stage computes the implementer worktree's exact review object. A
 temporary index contains every tracked file plus every untracked, unignored
 file; ignored files are excluded. It writes diff.patch and review.json without
-changing the worktree's real index. The merge stage leaves those review
+changing the worktree's real index. Changed paths are measured from the
+branch's merge-base with the current target and checked against the cumulative
+union of immutable per-round declarations. The merge stage leaves review
 artifacts untouched and requires either a mechanically valid waiver or a
 closed, independent code-critic chain over the branch's final committed tree.
 
@@ -78,6 +80,10 @@ review_file="$round_dir/review.json"
   || { echo "conformance failure: implementer round return is missing" >&2; exit 1; }
 git -C "$workspace" cat-file -e "$base_sha^{commit}" 2>/dev/null \
   || { echo "conformance failure: baseSha is not a commit in the implementer workspace" >&2; exit 1; }
+target_sha=$(git -C "$root" rev-parse 'HEAD^{commit}' 2>/dev/null) \
+  || { echo "conformance failure: current merge target is not a commit" >&2; exit 1; }
+boundary_base=$(git -C "$workspace" merge-base "$target_sha" HEAD 2>/dev/null) \
+  || { echo "conformance failure: implementer branch has no merge-base with the current target" >&2; exit 1; }
 
 install_prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null || true)
 install_prefix=${install_prefix%/}
@@ -95,15 +101,17 @@ if [[ "$stage" == review ]]; then
   GIT_INDEX_FILE="$index" git -C "$workspace" read-tree HEAD
   GIT_INDEX_FILE="$index" git -C "$workspace" add -A -- .
   reviewed_tree=$(GIT_INDEX_FILE="$index" git -C "$workspace" write-tree)
-  GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --binary --no-renames "$base_sha" -- >"$diff_file"
-  GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --name-only -z --no-renames "$base_sha" -- >"$paths_file"
+  GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --binary --no-renames "$boundary_base" -- >"$diff_file"
+  GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --name-only -z --no-renames "$boundary_base" -- >"$paths_file"
 
-  python3 - "$workspace" "$return_file" "$paths_file" "$install_prefix" <<'PY'
+  python3 - "$workspace" "$root" "$root_job" "$round" "$paths_file" "$install_prefix" <<'PY'
 import json, os, sys
 from pathlib import Path
 
-workspace, return_file, paths_file = map(Path, sys.argv[1:4])
-install_prefix = sys.argv[4].replace("\\", "/").strip("/")
+workspace, root = map(Path, sys.argv[1:3])
+root_job, round_text = sys.argv[3:5]
+paths_file = Path(sys.argv[5])
+install_prefix = sys.argv[6].replace("\\", "/").strip("/")
 paths = [os.fsdecode(item) for item in paths_file.read_bytes().split(b"\0") if item]
 violations = []
 
@@ -129,17 +137,34 @@ if control.exists() and any(path.is_file() for path in control.rglob("*")):
     violations.append("agent control plane contains delegate-created files")
 
 try:
-    result = json.loads(return_file.read_text(encoding="utf-8"))
-except (OSError, ValueError) as error:
-    violations.append(f"return.json is unreadable: {error}")
-    result = {}
-claim = result.get("diffBoundary")
-if not isinstance(claim, list) or not all(isinstance(item, str) for item in claim):
-    violations.append("return diffBoundary is not an array of paths")
-elif sorted(set(claim)) != sorted(set(paths)):
+    current_round = int(round_text)
+except ValueError:
+    violations.append(f"implementer round is not an integer: {round_text!r}")
+    current_round = 0
+declared = set()
+rounds_root = root / "artifacts" / "agents" / root_job / "rounds"
+for candidate in sorted(rounds_root.glob("*/return.json")):
+    try:
+        candidate_round = int(candidate.parent.name)
+    except ValueError:
+        continue
+    if candidate_round > current_round:
+        continue
+    try:
+        result = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        violations.append(f"round {candidate_round} return.json is unreadable: {error}")
+        continue
+    claim = result.get("diffBoundary") if isinstance(result, dict) else None
+    if not isinstance(claim, list) or not all(isinstance(item, str) for item in claim):
+        violations.append(f"round {candidate_round} return diffBoundary is not an array of paths")
+        continue
+    declared.update(claim)
+outside = sorted(set(paths) - declared)
+if outside:
     violations.append(
-        "Diff-boundary claim does not match computed diff: "
-        f"claimed={sorted(set(claim))!r} computed={sorted(set(paths))!r}"
+        "changed paths fall outside the cumulative implementation boundary: "
+        f"{outside!r}; some implementation round must declare every changed path"
     )
 for violation in violations:
     print(f"conformance failure: {violation}", file=sys.stderr)
@@ -187,13 +212,13 @@ print("yes" if value.get("critiqueWaived") is not None else "no")
 PY
 ) || { echo "conformance failure: implementer job record is unreadable" >&2; exit 1; }
 if [[ "$has_waiver" == yes ]]; then
-  git -C "$workspace" diff --name-only -z --no-renames "$base_sha" HEAD -- >"$paths_file"
-  git -C "$workspace" diff --numstat --no-renames "$base_sha" HEAD -- >"$numstat_file"
+  git -C "$workspace" diff --name-only -z --no-renames "$boundary_base" HEAD -- >"$paths_file"
+  git -C "$workspace" diff --numstat --no-renames "$boundary_base" HEAD -- >"$numstat_file"
 fi
 
 python3 - "$root" "$record" "$paths_file" "$numstat_file" "$install_prefix" \
   "$final_tree" "$code_critic_runtime" "$independence" "$root_job" \
-  "$instruction_paths_file" <<'PY'
+  "$instruction_paths_file" "$workspace" <<'PY'
 import json
 import os
 import re
@@ -213,6 +238,7 @@ from pathlib import Path
     independence,
     implementer_root,
     instruction_paths_path,
+    workspace_path,
 ) = sys.argv[5:]
 jobs_dir = root / "artifacts" / "agents" / "jobs"
 job_id_pattern = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -278,6 +304,17 @@ paths = [os.fsdecode(item) for item in paths_path.read_bytes().split(b"\0") if i
 waiver = implementer.get("critiqueWaived")
 if waiver is not None:
     violations = []
+    protected_paths = []
+    for path in paths:
+        normalized = installation_path(path)
+        if normalized == "plans" or normalized.startswith("plans/"):
+            protected_paths.append(f"trusted plans/ state changed: {path}")
+        if normalized == "artifacts/agents" or normalized.startswith("artifacts/agents/"):
+            protected_paths.append(f"agent control plane changed: {path}")
+    control = Path(workspace_path) / install_prefix / "artifacts" / "agents"
+    if control.exists() and any(path.is_file() for path in control.rglob("*")):
+        protected_paths.append("agent control plane contains delegate-created files")
+    violations.extend(protected_paths)
     if not isinstance(waiver, dict) or set(waiver) != {"class"}:
         violations.append("critiqueWaived must be an object containing exactly the claimed class")
         waiver_class = None
@@ -518,7 +555,7 @@ for critic_root in critic_roots:
         missing = [finding_id for finding_id in open_ids if not enumerates(text, finding_id)]
         if missing:
             failures.append(
-                f"successor job {successor!r} brief does not enumerate open findings: {', '.join(missing)}"
+                f"successor job {successor!r} prompt does not enumerate open findings: {', '.join(missing)}"
             )
         if not isinstance(final_round, int) or final_round <= exhausted_round or material_ids or verdict != 0:
             failures.append(

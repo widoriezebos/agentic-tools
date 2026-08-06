@@ -99,6 +99,34 @@ child.update({"jobId": "impl-r2", "round": 2, "parentJob": "impl"})
 PY
 }
 
+write_followup_return() { # round, diff paths...
+  local fixture_round=$1
+  shift
+  python3 - "$controller" "$fixture_round" "$@" <<'PY'
+import json, sys
+from pathlib import Path
+
+root, round_text, *paths = sys.argv[1:]
+root, round_number = Path(root), int(round_text)
+result = {
+    "jobId": f"impl-r{round_number}",
+    "round": round_number,
+    "runtime": "fake",
+    "sessionId": "implementer-session",
+    "model": {"requested": "shared-model", "effective": "shared-model"},
+    "evidence": [],
+    "gaps": [],
+    "mode": "implement",
+    "riskiestPart": "fixture follow-up boundary",
+    "diffBoundary": paths,
+    "whatWasDone": "fixture follow-up implementation",
+}
+round_dir = root / "artifacts/agents/impl/rounds" / str(round_number)
+round_dir.mkdir(parents=True, exist_ok=True)
+(round_dir / "return.json").write_text(json.dumps(result, indent=2) + "\n")
+PY
+}
+
 write_critic() { # reviewed tree, material id or empty, exhaustion mode, effective model
   local tree=$1 material_id=$2 exhaustion=$3 model=$4
   mkdir -p "$controller/artifacts/agents/critic/rounds/1"
@@ -266,7 +294,7 @@ write_critic "$reviewed_tree" F-9 one critic-model
 expect_failure exhausted-open 'open material findings: F-9' \
   "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
 write_critic "$reviewed_tree" F-10 missing-successor-finding critic-model
-expect_failure exhausted-successor 'brief does not enumerate open findings: F-10' \
+expect_failure exhausted-successor 'prompt does not enumerate open findings: F-10' \
   "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
 write_critic "$reviewed_tree" F-9 critic-successor critic-model
 expect_failure exhausted-wrong-party 'is not an implementer follow-up in the reviewed implementation chain' \
@@ -304,6 +332,23 @@ grep -Fq 'local.conf' "$controller/artifacts/agents/impl/rounds/1/diff.patch" &&
   exit 1
 }
 
+# G-6, the cumulative implementation boundary: each round declares only its
+# own files, while review compares the merge-base-to-tree path set with the
+# union of all declarations through that round.
+new_case multi-round
+printf 'round one\n' >>"$worktree/source.txt"
+write_implementer '' source.txt
+"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
+commit_worktree
+printf 'round two\n' >>"$worktree/docs/note.md"
+write_followup_return 2 docs/note.md
+"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl-r2 >/dev/null
+printf 'undeclared\n' >"$worktree/extra.txt"
+expect_failure cumulative-boundary-outside 'some implementation round must declare every changed path' \
+  "$controller/scripts/agents/assert-conformance.sh" --stage review --job impl-r2
+grep -Fq 'extra.txt' "$fixture_root/cumulative-boundary-outside.out" \
+  || { echo "cumulative boundary refusal did not name the undeclared path" >&2; exit 1; }
+
 # CC-1-2 and CC-1-3: advancing the merge target does not make an immutable
 # review-stage boundary fail, and merge never overwrites the critic's artifact,
 # whether the first merge attempt passes or refuses a stale review.
@@ -313,14 +358,15 @@ write_implementer '' source.txt
 "$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
 first_tree=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reviewedTree"])' \
   "$controller/artifacts/agents/impl/rounds/1/review.json")
-artifact_sha=$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')
 commit_worktree
 printf 'advanced target\n' >"$controller/upstream.txt"
 git -C "$controller" add upstream.txt
 git -C "$controller" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm upstream
 controller_branch=$(git -C "$controller" branch --show-current)
-git -C "$worktree" -c user.name=metasystem -c user.email=metasystem@example.invalid merge -q "$controller_branch"
+git -C "$worktree" rebase -q "$controller_branch"
+"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
 final_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}')
+artifact_sha=$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')
 configure_critic
 write_critic "$first_tree" '' none critic-model
 expect_failure recovery-stale 'is stale' \
@@ -356,6 +402,25 @@ for number in $(seq 1 40); do printf 'line %s\n' "$number" >>"$worktree/docs/not
 write_implementer prose-under-30 docs/note.md
 commit_worktree
 expect_failure waiver-large 'the maximum is 30 additions plus deletions' \
+  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+
+# CC-2-2: waivers never bypass trusted plans/ or the normally ignored agent
+# control plane, even when every committed path otherwise qualifies as prose.
+new_case waiver-plan
+mkdir -p "$worktree/plans"
+printf 'delegate plan\n' >"$worktree/plans/note.md"
+write_implementer prose-under-30 plans/note.md
+commit_worktree
+expect_failure waiver-plan 'trusted plans/ state changed: plans/note.md' \
+  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+
+new_case waiver-control-plane
+printf 'small prose change\n' >>"$worktree/docs/note.md"
+mkdir -p "$worktree/artifacts/agents"
+printf 'tamper\n' >"$worktree/artifacts/agents/tamper"
+write_implementer prose-under-30 docs/note.md
+commit_worktree
+expect_failure waiver-control-plane 'agent control plane contains delegate-created files' \
   "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
 
 # CC-1-5, CC-1-7, and CC-1-10 exercise the dispatcher's deterministic
