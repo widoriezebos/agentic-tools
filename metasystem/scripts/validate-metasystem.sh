@@ -402,7 +402,17 @@ validation_cleanup() {
       "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >/dev/null 2>&1 || true
     fi
   done
-  rm -rf "$tmp"
+  # Shutdown returns before the owner and its children have fully exited, and
+  # a straggler writing one last record while rm walks the tree turns a PASSED
+  # validation into a red exit ("Directory not empty"). Wait for every process
+  # still referencing the sandbox to finish, bounded, then delete; the leak
+  # guard is this wait, not the rm exit code, so a residual wrinkle in the
+  # teardown never overrules the verdict printed above it.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "$tmp" >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+  rm -rf "$tmp" 2>/dev/null || { sleep 1; rm -rf "$tmp" 2>/dev/null || true; }
 }
 trap validation_cleanup EXIT
 

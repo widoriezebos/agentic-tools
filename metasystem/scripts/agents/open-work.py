@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import os
 import time
 import re
@@ -59,7 +60,23 @@ def jobs_in_flight(harness_root: Path) -> int:
             continue
         if record.get("status") in IN_FLIGHT:
             count += 1
+    if count == 0 and gates_running():
+        count += 1
     return count
+
+
+def gates_running() -> bool:
+    """The orchestrator's own gate runs are work in flight that no job record
+    describes: they run as background commands of the host session. A plan
+    that says "waiting for the gates" while the gates are visibly running is
+    accurate, and calling it stale teaches people to stop writing the truth
+    into plans."""
+    probe = subprocess.run(
+        ["pgrep", "-f", r"validate-metasystem\.sh|validate-kit\.sh"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return probe.returncode == 0
 
 
 def stale_plans(harness_root: Path) -> list[str]:
@@ -128,6 +145,9 @@ def stale_plans(harness_root: Path) -> list[str]:
             # make this noise rather than signal.
             continue
         name = plan.relative_to(harness_root)
+        if "gate" in claim.lower() and gates_running():
+            # The claim names the gates and the gates are running: accurate.
+            continue
         if not current:
             lines.append(
                 f"STALE-PLAN {name}: claims work in flight while no job is running"

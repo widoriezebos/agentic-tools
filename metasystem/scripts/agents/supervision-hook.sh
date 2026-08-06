@@ -71,16 +71,22 @@ count_running_work() { # sets: running, elsewhere
 
 work_sentence() {
   count_running_work
-  local missions=""
+  local missions="" active=""
   [[ -n "$elsewhere" ]] && missions=$(printf '%s' "$elsewhere" | sed 's/^ //; s/ /, /g')
-  if (( running )) && [[ -n "$missions" ]]; then
-    printf 'STILL WORKING: %s helper agent(s) running here, and a mission I started still going in %s.' "$running" "$missions"
-  elif (( running )); then
-    printf 'STILL WORKING: %s helper agent(s) running here. No missions running.' "$running"
-  elif [[ -n "$missions" ]]; then
-    printf 'NO HELPER AGENTS RUNNING — but a mission I started is still going in %s, so work is not finished.' "$missions"
+  (( running )) && active="$running helper agent(s)"
+  [[ -n "$missions" ]] && active="${active:+$active, and }a mission still going in $missions"
+  # The orchestrator's own gate runs are neither delegate jobs nor missions,
+  # and they are exactly what a human sees mid-flight and asks about.
+  if pgrep -f 'validate-metasystem\.sh|validate-kit\.sh' >/dev/null 2>&1; then
+    active="${active:+$active, and }the test gates"
+  fi
+  if [[ -n "$active" ]]; then
+    printf 'STILL WORKING: %s.' "$active"
+  elif [[ -n "${open_work:-}" ]]; then
+    # Never assert an idle the open-work checker just contradicted.
+    printf 'NO AGENTS RUNNING — but a plan still names open work, listed below.'
   else
-    printf 'NOTHING LEFT TO WORK ON: no helper agents, no missions running anywhere, nothing open in any plan.'
+    printf 'NOTHING LEFT TO WORK ON: no helper agents, no missions, no gate runs, and no plan names open work.'
   fi
 }
 
