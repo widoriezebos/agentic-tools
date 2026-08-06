@@ -97,86 +97,61 @@ commits.
 Proof: none needed; nothing is built. The register row's wording is the
 deliverable, and the design's scope fence is upheld twice over.
 
-## KI-11 — dispatch refuses a census one second past its interval
+## KI-11 — dispatch refuses a census one second past its interval (SIMPLIFIED at round 5)
 
-Root cause: freshness is a point predicate against a live, ticking process.
+Three rounds of critique have now found contradictions in a wait-then-decide
+formula (KC-1-5, KC-2-9, KC-3-6, KC-4-4, KC-5-1). The fence applies: the
+waiting is what generates the contradictions, and it buys almost nothing.
 
-DECISION (three-way mapping over one deadline, KC-1-5 + KC-2-9):
-`deadline = min(2 x interval, 180s)` for the REFUSAL threshold, and the
-maximum time dispatch may ever spend waiting is 180 seconds regardless of
-interval (KC-4-4: an hour-long interval must not authorize an hour-long
-wait). Where a configured interval exceeds the cap, dispatch proceeds on any
-census younger than one interval and otherwise waits at most the cap before
-deciding on what it has — the cap is an absolute bound on waiting, never a
-floor raised by configuration (KC-3-6 is satisfied by the proceed rule
-below, not by inflating the deadline). Age below ONE interval: proceed
-immediately, no wait — the ordinary healthy case. Age between one interval
-and the deadline: wait for the next census until the deadline, then proceed
-or refuse on what arrives. Age at or past the deadline: refuse. Healthy
-dispatches never wait.
+DECISION: no waiting. The freshness window widens to `2 x interval` with an
+absolute ceiling of 180 seconds — one predicate, no branches: fresher than
+the window proceeds, at or past it refuses. The refusal message states the
+age, the window, and the two remedies (retry in a moment; re-arm if
+supervision is dead). A caller who hits a genuinely-stale census retries one
+command later, which is what the orchestrator has done all along and what
+the runner already does on its own cadence.
 
-Change: `require_fresh_census` waits bounded; refusal message states the age,
-the bound, and the arming remedy (F-5's message rule).
+Change: `require_fresh_census` computes the widened window; the message
+follows F-5's rule.
 
-Proof: fixtures — stale-but-live census: dispatch waits and proceeds;
-stale-and-dead: refuses with the stated message.
+Proof: fixtures — a census inside the window proceeds; one past it refuses
+with the stated message and both remedies; the boundary case at exactly the
+window refuses.
 
-## KI-8 — permission envelopes are asserted, not measured
+## KI-8 — permission envelopes are asserted, not measured (ACCEPTED at round 5, subsystem DELETED)
 
-Root cause: the recorded envelope is what dispatch REQUESTED; nothing ever
-observes what the sandbox actually enforced.
+Rounds 1 through 5 grew a measurement subsystem: per-effective-envelope
+keys, snapshot selection semantics, sticky failures, bootstrap exemptions,
+recovery transactions, and a runtime-registration change — each fold
+answering a real finding (KC-1-4, KC-2-7, KC-2-8, KC-3-3, KC-3-5, KC-4-1,
+KC-4-2, KC-5-2, KC-5-3, KC-5-4, KC-5-5) and each introducing the next. Set
+against that: KI-8 has caused zero observed harm in the entire life of this
+repository. It is a rigor gap, not a defect. The fence is unambiguous here.
 
-DECISION: measure at the cadence where it is cheap and meaningful — the
-adapter self-test, once per runtime version+config fingerprint AND PER
-SHIPPED PRESET (KC-1-4: `none` and `workspace` produce materially different
-sandboxes, so each is probed; a custom envelope file is recorded as
-`measured: false` in the job record, honestly unmeasured rather than
-falsely covered). Each real adapter's `selftest` probes only what that adapter actually MAPS
-(KC-4-1: codex maps writeRoots and network; readRoots completeness is
-already recorded as a constraint, not an enforcement): an out-of-root write
-attempt and, where the envelope denies it, a network attempt. Anything the
-adapter does not map is recorded `notEnforced` with the adapter's existing
-constraint note, never probed and never claimed. Outcomes land in the
-capability snapshot as `measuredEnvelope`. Dispatch records then cite the snapshot that measured
-the preset they requested. Per-dispatch behavioural probing was rejected as
-pure overhead: the sandbox implementation does not vary between dispatches
-of the same runtime version and preset.
+DECISION: ACCEPT, with the cheapest mitigation that carries real evidence
+and no new machinery:
 
-The measurement key is the EFFECTIVE envelope, not the preset name
-(KC-2-7): preset, the resolved network value after the repository floor, the
-worktree flag, the LAUNCH MODE (initial versus resume — the exact variation
-that produced KI-8, since resume carries no sandbox flags of its own,
-KC-3-3), and the workspace topology (repository root versus an explicit
-`--workspace` root, KC-3-4). A probe positively observing that a requested
-denial did NOT hold is not a note but a refusal (KC-3-5): the snapshot
-records the failure, and every dispatch requesting that effective envelope
-refuses. Recovery is a defined transaction, not newest-wins drift (KC-4-2):
-selection for an effective envelope takes the newest snapshot that CARRIES a
-measurement for it, so a fresh probe snapshot cannot silently mask a
-recorded failure; clearing a failure requires a selftest producing a passing
-measurement for that same envelope, which is then the newest carrier. Absent
-measurement proceeds; FAILED measurement never does.
-And the circularity is broken by a stated bootstrap (KC-2-8): `probe` and
-`selftest` are the PRODUCERS of snapshots and therefore never require a
-matching one; only role dispatches do. A dispatch whose effective envelope
-has no measurement records `measured: false` and proceeds — measurement is
-evidence, never a gate, or the first dispatch after any config change would
-deadlock.
+- The **fake adapter** gains behavioural probes in the suite — it is the one
+  runtime whose sandbox the suite fully controls — proving the MECHANISM
+  (that a denied write is refused and a denied network call fails) exactly
+  where it can be proven without inventing a subsystem.
+- **Real adapters declare rather than claim**: each adapter's existing
+  capability snapshot records which envelope dimensions it maps and which it
+  does not (codex already records readRoots as a constraint); the job record
+  cites the adapter's declaration alongside the requested envelope, so
+  "requested" is never mistaken for "enforced" by a reader.
+- The register row states the residual honestly: enforcement is trusted
+  runtime behaviour, verified by mechanism on the fake adapter and declared
+  per-adapter elsewhere. Reopen trigger: any observed case of a delegate
+  exceeding its envelope, which would make measurement worth its cost.
 
-Change: `runtime-common.sh` probe helpers; fake adapter implements them
-honestly (its sandbox is the suite's); real adapters implement in their
-selftest paths; snapshot schema gains the field keyed by effective
-envelope.
+Devin's registration is unaffected (the round-4 change is withdrawn with the
+subsystem it served), and no bootstrap, selection, or deadlock question
+survives, because nothing gates on a measurement.
 
-Proof (KC-3-7 — every registered runtime, or the row does not close): the
-suite fixture over the fake adapter's measured envelope (deny paths observed
-as denied) for the whole key matrix; a real `selftest` measurement recorded
-for BOTH claude and codex by the orchestrator; and devin — determinate, not deferred (KC-4-3): devin is REMOVED from
-`metasystem.runtimes` in the shipped template's default selection until its
-selftest runs on the human's other machine, so "every registered runtime is
-measured" holds literally with no exception clause. Re-registering it is
-part of that selftest's completion, and `development/devin-selftest.md`
-carries the step.
+Proof: the fake-adapter mechanism fixtures; a fixture asserting the job
+record carries the adapter declaration beside the requested envelope; the
+register row's wording.
 
 ## KI-15 — delegates cannot run the gate of record
 
