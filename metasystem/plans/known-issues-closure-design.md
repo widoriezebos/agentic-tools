@@ -37,10 +37,12 @@ The generation identifier is a monotonic counter the ARMING side owns
 seconds, constant owner): `state.json` carries `generation`, incremented by
 every arming and every self-heal that replaces a component, and the census
 echoes the value it observed. Liveness gets a real owner rather than an
-assumed one (KC-2-2): the census verdict is SUCCESS only when it has
-positively confirmed owner, watcher and reaper alive with matching tags in
-that same pass, which becomes an explicit assertion in `run_census()` rather
-than an inherited assumption. And the heal window is defined (KC-2-3): a
+assumed one (KC-2-2), and coherence is structural rather than hoped for
+(KC-3-2): the census reads `state.json` ONCE into memory, and verifies owner,
+watcher and reaper aliveness with matching tags against THAT snapshot,
+echoing that same snapshot's generation. A concurrent rewrite therefore
+yields a consistent older pair, never a mixed one, and the next census
+carries the new generation. And the heal window is defined (KC-2-3): a
 fresh census carrying an older generation means dispatch WAITS for the next
 census within the same KI-11 deadline, then refuses — heals are brief by
 construction, so the wait absorbs them without reintroducing the failure.
@@ -49,21 +51,26 @@ The critic proved the replacement duty I cited does not exist (KC-1-1):
 nothing at dispatch time ties a SUCCESS census to the CURRENT armed
 generation. So the decision gains its missing half: `fingerprint()` drops
 instance-derived inputs, AND the census output gains the armed generation it
-served (the arming record's `startedAt` + owner identity, echoed verbatim
-from `state.json` into `last-census.json`); dispatch compares that
-generation against the arming record explicitly. Identity by fingerprint,
+served — the `generation` counter defined above, echoed verbatim from
+`state.json` into `last-census.json`; dispatch compares that generation
+against the arming record explicitly. `arm-supervision.sh` is its sole
+writer, on arming and on every component-replacing heal. Identity by fingerprint,
 generation by declaration, liveness by verdict — three separable checks
 instead of one hash conflating them.
 
 Change: `fingerprint()` inputs; census emit; dispatch's freshness check
 gains the generation comparison with its own message.
 
-Proof, two-sided per KC-1-8: the reproduction harness (fixture-fast sandbox,
-kill a component, self-heal, dispatch) runs TWENTY iterations on the old
-code and must refuse in at least five — establishing it reproduces the
-class — and twenty on the new code with zero refusals; then three
-consecutive full-suite greens plus one under artificial CPU load. The
-harness stays as a suite fixture at reduced iteration count.
+Proof, two-sided AND state-machine-explicit (KC-1-8, KC-3-8): the harness
+runs twenty iterations on the old code refusing at least five times, and
+twenty on the new code refusing zero — but sampling alone cannot pass, so it
+additionally ASSERTS, per iteration: generation strictly increases across
+every heal; generation never repeats after an owner restart; the census's
+echoed generation always equals the state snapshot it verified aliveness
+against; and dispatch's comparison refuses when handed a deliberately
+back-dated generation. Then three consecutive full-suite greens plus one
+under artificial CPU load. The harness stays as a suite fixture at reduced
+iteration count with every assertion intact.
 
 ## KI-9 — delegates cannot commit in their worktrees (ACCEPTED; the round-1 invention DELETED at round 2)
 
@@ -92,7 +99,8 @@ deliverable, and the design's scope fence is upheld twice over.
 Root cause: freshness is a point predicate against a live, ticking process.
 
 DECISION (three-way mapping over one deadline, KC-1-5 + KC-2-9):
-`deadline = min(2 x interval, 180s)`. Age below ONE interval: proceed
+`deadline = max(interval, min(2 x interval, 180s))` — the absolute cap can
+never pull the deadline below one interval (KC-3-6). Age below ONE interval: proceed
 immediately, no wait — the ordinary healthy case. Age between one interval
 and the deadline: wait for the next census until the deadline, then proceed
 or refuse on what arrives. Age at or past the deadline: refuse. Healthy
@@ -123,8 +131,15 @@ pure overhead: the sandbox implementation does not vary between dispatches
 of the same runtime version and preset.
 
 The measurement key is the EFFECTIVE envelope, not the preset name
-(KC-2-7): preset plus the resolved network value after the repository floor,
-plus the worktree flag — the tuple that actually determines the sandbox.
+(KC-2-7): preset, the resolved network value after the repository floor, the
+worktree flag, the LAUNCH MODE (initial versus resume — the exact variation
+that produced KI-8, since resume carries no sandbox flags of its own,
+KC-3-3), and the workspace topology (repository root versus an explicit
+`--workspace` root, KC-3-4). A probe positively observing that a requested
+denial did NOT hold is not a note but a refusal (KC-3-5): the snapshot
+records the failure, and every dispatch requesting that effective envelope
+refuses until the snapshot is replaced by a passing measurement. Absent
+measurement proceeds; FAILED measurement never does.
 And the circularity is broken by a stated bootstrap (KC-2-8): `probe` and
 `selftest` are the PRODUCERS of snapshots and therefore never require a
 matching one; only role dispatches do. A dispatch whose effective envelope
@@ -137,9 +152,13 @@ honestly (its sandbox is the suite's); real adapters implement in their
 selftest paths; snapshot schema gains the field keyed by effective
 envelope.
 
-Proof: suite fixture over the fake adapter's measured envelope (deny paths
-observed as denied); codex selftest run once for real by the orchestrator;
-devin deferred to its first selftest (already on the board).
+Proof (KC-3-7 — every registered runtime, or the row does not close): the
+suite fixture over the fake adapter's measured envelope (deny paths observed
+as denied) for the whole key matrix; a real `selftest` measurement recorded
+for BOTH claude and codex by the orchestrator; and devin recorded as
+`unmeasured` in the register with its selftest as the named closing
+condition, since its runbook already waits on the human's other machine —
+an honestly-scoped exception rather than silence.
 
 ## KI-15 — delegates cannot run the gate of record
 
