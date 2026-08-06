@@ -1,7 +1,7 @@
 # The Collaboration Loop: how orchestrator and delegate actually work together
 
-- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: DRAFT, awaiting critique.
-- Next step: design critique by whichever agent the roster assigns the design-critic role, until closed by join; then implement.
+- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: IN CRITIQUE, round 1 folded (9 material findings, CL-1-1..9).
+- Next step: follow-up critique round 2 on the folded design; close by join at zero material findings; then implement.
 - In flight right now: nothing
 - Waiting on the human: ratification by accepting this design after critique
 
@@ -58,11 +58,16 @@ below therefore say "a delegate in the design-critic role", never a product
 name, and any rule that would only make sense for one vendor belongs in that
 vendor's adapter, not here.
 
-The single constraint the loop does impose is independence, stated as a
-property rather than a roster: **the agent that critiques an implementation
-must not be the agent that produced it.** How a project satisfies that —
-different model, different runtime, or merely a different session with no
-shared context — is the project's decision, recorded in its configuration.
+The single constraint the loop does impose is independence — and it is
+stated as what the evidence can actually verify, because an unenforceable
+must-not is worse than an honest boundary (CL-1-6). The checkable rule: the
+code-critic job and the implementer job it reviews must differ in at least
+one of runtime or model, verified from the two job records at merge time.
+Every delegate dispatch is already a fresh session with no shared context;
+what the rule adds is that the same model does not grade its own blind spots.
+A project that cannot satisfy it declares `independence=session-only` in its
+configuration, the gate accepts that declaration, and the declaration —
+not a pretense of independence — is what shows in evidence.
 
 ## The loop, stated once as canon
 
@@ -88,24 +93,63 @@ close the same way.
 
 ## Changes
 
-**C-1: implementation critique becomes a required step with a real gate.**
-After a delegate's implementation returns and before the orchestrator merges,
-a `code-critic` delegate reviews the diff against the brief and the design.
-Its findings are dispositioned and joined by `assert-critique-closed.sh`,
-exactly as the design half. The merge is refused until the join passes.
+**C-1: implementation critique becomes a required step with a real gate,
+bound to the bytes it reviewed.** After a delegate's implementation returns
+and before the orchestrator merges, a `code-critic` delegate reviews the diff
+against the brief and the design. The review object is exact: the critic's
+return records the implementer job id and the tree hash of the worktree state
+it reviewed (`reviewedTree`). The merge gate verifies three things
+mechanically: the chain names the implementer job being merged; the
+`reviewedTree` of the chain's final round equals the tree being merged; and
+that final round reports zero material findings. A join that balances
+findings against dispositions is bookkeeping; the zero-material final round
+over the exact merged bytes is the agreement (CL-1-1, CL-1-2).
+
+**C-1a: the loop is bounded and its exhaustion is a recorded outcome, not a
+loophole.** Rounds follow the shipped critique budget. If the budget runs out
+with material findings still open, the merge stays refused and the chain
+records `critiqueExhausted`; the work goes back to implementation with the
+open findings as its brief, or to the human. Nothing merges on an exhausted
+chain (CL-1-3).
+
+**C-1b: the loop has reverse edges, stated.** An implementer gap-stop reopens
+the design (step 1) with the gap as input. A critic finding that indicts the
+design rather than the code reopens design critique (step 2). A failed gate
+at step 5 returns to implementation (step 3) and the next critique round
+reviews the new tree. The five steps are the spine, not the only legal moves
+(CL-1-4).
+
+**C-1c: the handoff mechanics are part of the contract.** The critic reviews
+the implementer's worktree diff against its recorded base — passed as the
+diff artifact plus the tree hash, never as prose. Fixes fold in the same
+implementer chain's worktree via follow-up rounds; each critic follow-up
+names the new tree hash it reviewed. Critic follow-ups go to the same critic
+chain so the round history stays in one place (CL-1-8).
 
 **C-2: mechanical enforcement where it is honest.** `assert-conformance.sh`
-already runs before merge; it gains a check that a closed code-critique chain
-exists for the job being merged, naming the chain. When a change is small
-enough to skip critique, the orchestrator records that decision explicitly in
-the job record (`critiqueWaived` with a reason), which the same check
-accepts and which shows up in evidence rather than hiding.
+already runs before merge; it gains the three-part check from C-1. The
+`code-critic` role also becomes real configuration: the shipped template
+gains the role with a placeholder, this repository's local configuration pins
+it, and the conformance error when the role is unconfigured says exactly
+which key to set — without this, the gate would deadlock every merge in any
+repository that adopted the rule before the roster (CL-1-7).
 
-**C-3: receipts stop overstating.** `skills=code-critique` may only be
-recorded when a code-critic chain ran. Orchestrator review is `skills=none`
-with the review named in the note. The eight historical receipts are
-corrected in place with a one-line note rather than rewritten, since the
-record of a mistake is worth more than a clean history.
+**C-2a: the waiver is narrow, checkable, and audited.** `critiqueWaived` is
+valid only for classes the gate can verify against the actual diff:
+documentation-only, fixture-expectation-only, or a diff under a named line
+threshold. The waiver states its claimed class; conformance checks the claim
+against the diff and refuses a waiver whose class does not match. Waivers are
+counted per stream and surface in the retro, so a swallowing pattern becomes
+visible instead of silent (CL-1-5).
+
+**C-3: receipts stop overstating, mechanically.** `receipt.sh add` refuses
+`skills=code-critique` unless the line also names a code-critic chain id that
+exists on disk — the check runs at write time, where it can actually prevent
+the overstatement rather than lament it. History is corrected append-only:
+`receipt.sh` gains a `correct` verb that writes a CORRECTION line referencing
+the original entry's epoch, stating field, old value, new value, and reason.
+The eight overstating lines each receive one; none are edited, because the
+record of the mistake is the valuable part (CL-1-9).
 
 **C-4: the loop is written where every party reads it.** `docs/orchestration.md`
 gains the five-step loop as its own section; the orchestrator role and the
@@ -124,15 +168,24 @@ was decided and why.
 
 ## Proof
 
-- A fixture where a merge is attempted with no code-critique chain and no
-  waiver: refused, naming what is missing.
-- A fixture where the chain exists but has unjoined findings: refused.
-- A fixture where `critiqueWaived` carries a reason: allowed, and the reason
-  appears in the job record.
-- A fixture asserting a receipt with `skills=code-critique` and no
-  corresponding chain is rejected by `receipt.sh`.
-- The five-step loop appears once in `docs/orchestration.md`, and the role
-  and instruction reference it rather than duplicating it.
+- Merge with no code-critique chain and no waiver: refused, naming what is
+  missing and, if the role is unconfigured, the exact key to set.
+- A chain whose final round reviewed a different tree than the one being
+  merged: refused (the stale-review case, CL-1-1).
+- A chain whose final round still carries a material finding: refused, even
+  though every finding has a disposition (the letter-vs-purpose case, CL-1-2).
+- A chain that exhausted its round budget: refused, `critiqueExhausted`
+  recorded, and the open findings named (CL-1-3).
+- A waiver claiming documentation-only over a diff that touches a script:
+  refused; the same waiver over a genuinely doc-only diff: allowed and
+  counted (CL-1-5).
+- Critic and implementer jobs identical in both runtime and model, without a
+  declared `independence=session-only`: refused (CL-1-6).
+- `receipt.sh add` with `skills=code-critique` and no chain id: refused at
+  write time; `receipt.sh correct` writes an append-only CORRECTION line
+  (CL-1-9).
+- The five-step loop appears once in `docs/orchestration.md`; the role and
+  instruction reference it rather than duplicating it.
 
 ## Completion
 
