@@ -75,11 +75,12 @@ host.runtime=<runtime id>
 host.model=<model id>
 host.turn-cap-min=<positive integer>
 stream.<id>=<observable goal>
+envelope.dispatch-allow=<runtime>:<model>[,<runtime>:<model>...]
 envelope.<category>=<comma-separated literal tokens>
 exposure=<human-priced amount and currency>
 ```
 
-Every threshold operator is one of `>=`, `<=`, `>`, or `<`, and every threshold has a matching noise floor. Every guard has all three fields. Gate and guard commands emit `metric=<name>=<decimal>` lines and exit zero when measurement ran, regardless of whether a threshold passed; a non-zero exit is measurement failure. The last line for a repeated metric wins. Envelope categories come only from the table marked pre-authorizable in `docs/project-rules.md`, and prose bounds are rejected because an unattended loop cannot enforce them.
+Every threshold operator is one of `>=`, `<=`, `>`, or `<`, and every threshold has a matching noise floor. Every guard has all three fields. Gate and guard commands emit `metric=<name>=<decimal>` lines and exit zero when measurement ran, regardless of whether a threshold passed; a non-zero exit is measurement failure. The last line for a repeated metric wins. Envelope categories come only from the table marked pre-authorizable in `docs/project-rules.md`, and prose bounds are rejected because an unattended loop cannot enforce them. `envelope.dispatch-allow` authorizes only its exact resolved runtime:model pairs; the former `tier-move` envelope is retired because a tier ceiling is not enforceable when no tier table is configured.
 
 Sealing runs the gate once against the candidate branch with `gate.paths` and `truth.paths` restored from `gate.ref`. It records the candidate branch and resolved SHA, the per-metric baseline, a conservative failing-metric count when the gate has no machine-defined failing-identifier channel, integrity hashes, and an exact echo of every fence input used by the signed exposure. The approval line format is `Approval: name=<name>; date=<YYYY-MM-DD>; contract-sha256=<sha256>`; its hash covers the whole file without that line after trailing whitespace is stripped. This is byte attestation. Identity assurance comes from the repository's protected shared-default-branch controls, if any.
 

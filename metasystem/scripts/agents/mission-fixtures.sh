@@ -192,6 +192,33 @@ expect_failure unbounded-literal-envelope "unbounded or non-literal" "$root/scri
 forbidden=$cases/forbidden.md
 sed 's/envelope.dependencies=jq/envelope.production-data=fixture/' "$base" >"$forbidden"
 expect_failure forbidden-envelope "not marked pre-authorizable" "$root/scripts/assert-mission.sh" --file "$forbidden"
+tier_move=$cases/tier-move.md
+sed 's/envelope.dependencies=jq/envelope.tier-move=3/' "$base" >"$tier_move"
+expect_failure tier-move-retired "use envelope.dispatch-allow" "$root/scripts/assert-mission.sh" --file "$tier_move"
+malformed_dispatch_allow=$cases/malformed-dispatch-allow.md
+sed 's/envelope.dependencies=jq/envelope.dispatch-allow=fake-model/' "$base" >"$malformed_dispatch_allow"
+expect_failure malformed-dispatch-allow "exact runtime:model pairs" "$root/scripts/assert-mission.sh" --file "$malformed_dispatch_allow"
+
+dispatch_allow=$repo/plans/mission-dispatch-allow.contract.md
+sed 's/envelope.dependencies=jq/envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol/' "$base" >"$dispatch_allow"
+"$root/scripts/assert-mission.sh" --seal --file "$dispatch_allow" >/dev/null
+python3 - "$root/scripts/agents/mission-contract.py" "$dispatch_allow" "$repo" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+module_path, contract_path, project_root = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+specification = importlib.util.spec_from_file_location("fixture_mission_contract", module_path)
+module = importlib.util.module_from_spec(specification)
+sys.modules[specification.name] = module
+assert specification.loader is not None
+specification.loader.exec_module(module)
+contract = module.read_contract(contract_path)
+module.validate_contract(contract, project_root)
+expected = "fake:fake-model,codex:gpt-5.6-sol"
+assert contract.values["envelope.dispatch-allow"] == expected
+assert module.validate_dispatch_allow(contract.values["envelope.dispatch-allow"]) == expected.split(",")
+assert "envelope.dispatch-allow=" + expected in contract.text
+PY
 
 unsealed=$repo/plans/mission-unsealed.contract.md
 cp "$base" "$unsealed"

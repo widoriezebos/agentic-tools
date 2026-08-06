@@ -191,6 +191,21 @@ def validate_literal_tokens(value: str, key: str) -> list[str]:
     return tokens
 
 
+def validate_dispatch_allow(value: str) -> list[str]:
+    pairs = validate_literal_tokens(value, "envelope.dispatch-allow")
+    for pair in pairs:
+        runtime, separator, model = pair.partition(":")
+        if (
+            separator != ":"
+            or not re.fullmatch(ID, runtime)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", model)
+        ):
+            fail(
+                "envelope.dispatch-allow must be a comma-separated list of exact runtime:model pairs"
+            )
+    return pairs
+
+
 def validate_contract(contract: Contract, project_root: Path) -> None:
     for heading in ("Intent", "Non-goals", "Initial streams"):
         section_body(contract.text, heading)
@@ -263,11 +278,18 @@ def validate_contract(contract: Contract, project_root: Path) -> None:
         fail("mission contract must declare at least one non-empty stream.<id>")
     if not envelopes:
         fail("mission contract must declare at least one bounded envelope.<category>")
+    if "tier-move" in envelopes:
+        fail(
+            "envelope.tier-move is retired; use envelope.dispatch-allow with exact runtime:model pairs"
+        )
     permitted = preauthorizable_categories(project_root)
     for category, bound in envelopes.items():
         if category not in permitted:
             fail(f"envelope category is not marked pre-authorizable: {category}")
-        validate_literal_tokens(bound, f"envelope.{category}")
+        if category == "dispatch-allow":
+            validate_dispatch_allow(bound)
+        else:
+            validate_literal_tokens(bound, f"envelope.{category}")
 
     if values["truth.certification"] not in {"candidate", "certified"}:
         fail("truth.certification must be candidate or certified")

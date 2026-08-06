@@ -141,6 +141,14 @@ bash -n scripts/assert-turn-prompt.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
+[[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
+  || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
+[[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
+  || { echo "template demotion fixture: mode role overrides are not three commented examples" >&2; exit 1; }
+if grep -Eq '^(model\.tier\.[1-9][0-9]*|mode\.[a-z0-9-]+\.role\.)' metasystem.conf; then
+  echo "template demotion fixture: an optional tier or mode role key is still active" >&2
+  exit 1
+fi
 python3 - scripts/agents/adapters/claude-session-signal.py scripts/agents/process-census.py \
   scripts/agents/mission-contract.py scripts/agents/mission-fence.py \
   scripts/agents/mission-ledger.py scripts/agents/mission-state.py \
@@ -1189,7 +1197,8 @@ if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
     scripts/watch-background-jobs.sh "$agent_repo/scripts/"
   cp docs/project-rules.md "$agent_repo/docs/"
   cp metasystem.conf "$agent_repo/"
-  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=5/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=4096/m; s/^model\.tier\.1=.*$/model.tier.1=fake:fake-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/metasystem.conf"
+  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=5/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=4096/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/^role\.(code-critic|investigator)\.runtime=main$/role.$1.runtime=fake/mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/metasystem.conf"
+  printf '\nmodel.tier.1=fake:fake-model\nmodel.tier.2=fake:fake-premium\n' >>"$agent_repo/metasystem.conf"
   grep -q '^watch\.interval-sec=' "$agent_repo/metasystem.conf" || printf 'watch.interval-sec=5\n' >>"$agent_repo/metasystem.conf"
   grep -q '^census\.log-max-bytes=' "$agent_repo/metasystem.conf" || printf 'census.log-max-bytes=4096\n' >>"$agent_repo/metasystem.conf"
   git -C "$agent_repo" init -q
@@ -1386,6 +1395,60 @@ PY
     }
   }
 
+  run_tty_agent_fixture() { # fixture name, typed line, expected exit, command...
+    local name=$1 typed=$2 expected_exit=$3
+    shift 3
+    wait_for_agent_census_fresh "$name"
+    python3 - "$agent_fixture/$name.out" "$typed" "$expected_exit" "$agent_fixture_cap_sec" "$@" <<'PY'
+import errno
+import os
+import pty
+import select
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+output, typed, expected_exit, cap, *command = sys.argv[1:]
+master, slave = pty.openpty()
+process = subprocess.Popen(command, stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+os.close(slave)
+os.write(master, (typed + "\n").encode())
+chunks = []
+deadline = time.monotonic() + int(cap)
+while process.poll() is None:
+    if time.monotonic() >= deadline:
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        raise SystemExit(f"TTY fixture timed out: {' '.join(command)}")
+    ready, _, _ = select.select([master], [], [], 0.05)
+    if ready:
+        try:
+            chunks.append(os.read(master, 65536))
+        except OSError as error:
+            if error.errno != errno.EIO:
+                raise
+while True:
+    try:
+        chunk = os.read(master, 65536)
+    except OSError as error:
+        if error.errno == errno.EIO:
+            break
+        raise
+    if not chunk:
+        break
+    chunks.append(chunk)
+os.close(master)
+Path(output).write_bytes(b"".join(chunks))
+if process.returncode != int(expected_exit):
+    raise SystemExit(f"TTY fixture exit {process.returncode}, expected {expected_exit}")
+PY
+  }
+
   make_agent_brief() { # output, mode, optional marker/value lines...
     local output=$1 mode=$2
     shift 2
@@ -1438,11 +1501,28 @@ EOF
   rm -f "$config_order/metasystem.conf.local"
 
   "$agent_config" validate
+  no_tier_conf="$agent_fixture/no-tier-metasystem.conf"
+  python3 - "$good_agent_conf" "$no_tier_conf" <<'PY'
+import sys
+from pathlib import Path
+source, output = map(Path, sys.argv[1:])
+output.write_text("\n".join(line for line in source.read_text().splitlines() if not line.startswith("model.tier.")) + "\n")
+PY
+  cp "$no_tier_conf" "$agent_repo/metasystem.conf"
+  "$agent_config" validate >"$agent_fixture/no-tier-validate.out"
+  [[ $(grep -Fc 'INFO: model tiers are absent; dispatch overrides therefore always escalate' "$agent_fixture/no-tier-validate.out") -eq 1 ]] \
+    || { echo "tier-absence validation fixture did not emit its one informational line" >&2; exit 1; }
+  cp "$good_agent_conf" "$agent_repo/metasystem.conf"
+  perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.one=fake:fake-model/m' "$agent_repo/metasystem.conf"
+  agent_fails malformed-tier-key 'not a supported model tier key' "$agent_config" validate
+  cp "$good_agent_conf" "$agent_repo/metasystem.conf"
+  perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.1=fake-model/m' "$agent_repo/metasystem.conf"
+  agent_fails malformed-tier-member 'not runtime-qualified' "$agent_config" validate
   cp "$good_agent_conf" "$agent_repo/metasystem.conf"
   perl -0pi -e 's/^role\.design-critic\.runtime=.*$/role.design-critic.runtime=ghost/m' "$agent_repo/metasystem.conf"
   agent_fails invalid-role-runtime 'outside metasystem.runtimes' "$agent_config" validate
   cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-  perl -0pi -e 's/^mode\.refactor\.role\.implementer\.runtime=.*$/mode.refactor.role.implementer.runtime=ghost/m' "$agent_repo/metasystem.conf"
+  printf 'mode.refactor.role.implementer.runtime=ghost\n' >>"$agent_repo/metasystem.conf"
   agent_fails invalid-mode-runtime 'outside metasystem.runtimes' "$agent_config" validate
   cp "$good_agent_conf" "$agent_repo/metasystem.conf"
   printf 'role.default.model.ghost=ghost-model\n' >>"$agent_repo/metasystem.conf"
@@ -1524,7 +1604,8 @@ PY
   agent_fails contradictory-mode "contradicts the brief's Working Mode" "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --mode verify
   agent_fails unregistered-override 'outside metasystem.runtimes' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --runtime ghost
   agent_fails main-override 'assigned to main' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --runtime main
-  agent_fails costlier-unmapped 'requires human approval' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model absent-from-tier
+  agent_fails costlier-unmapped 'cost direction is unranked' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model absent-from-tier
+  agent_fails ranked-costlier 'higher (tier 1 -> tier 2)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-premium
 
   # The recorded default is a real fallback, while its absence refuses.
   cp "$good_agent_conf" "$agent_repo/metasystem.conf"
@@ -1971,6 +2052,50 @@ PY
   grep -Fq '$(touch should-not-exist)' "$agent_repo/artifacts/agents/malicious-argument/rounds/1/raw.out" \
     || { echo "malicious provider argument was not transported verbatim as a value" >&2; exit 1; }
 
+  # The no-tier guard fixtures use a fresh supervisor fingerprint after
+  # changing the roster. The runtime-override roles return to their shipped
+  # main assignment; fake remains the only registered fixture adapter.
+  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null
+  cp "$no_tier_conf" "$agent_repo/metasystem.conf"
+  perl -0pi -e 's/^role\.(code-critic|investigator)\.runtime=fake$/role.$1.runtime=main/mg' "$agent_repo/metasystem.conf"
+  cat >>"$agent_repo/metasystem.conf" <<'EOF'
+role.code-critic.model.fake=fake-model
+role.investigator.model.fake=fake-implied-model
+EOF
+  METASYSTEM_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
+    --repo "$agent_repo" --session validator-no-tiers --pid "$$" \
+    --start-time "$agent_main_start" --tag metasystem-main-fake-validator \
+    >"$agent_fixture/no-tier-arming.out"
+
+  agent_fails no-tier-model-override 'Configure model.tier.* to rank both pairs' \
+    "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --job-id no-tier-model
+  agent_fails escalation-non-tty 'requires an interactive TTY' \
+    "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-non-tty
+  run_tty_agent_fixture escalation-declined NO 1 \
+    "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-declined
+  grep -Fq 'escalation approval declined' "$agent_fixture/escalation-declined.out" \
+    || { echo "declined escalation fixture did not name the corrective action" >&2; exit 1; }
+  [[ ! -e "$agent_repo/artifacts/agents/jobs/escalation-declined.json" ]] \
+    || { echo "declined escalation fixture created a job" >&2; exit 1; }
+  run_tty_agent_fixture escalation-approved 'APPROVE Fixture Human' 0 \
+    "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-approved --wait
+  python3 - "$agent_repo/artifacts/agents/jobs/escalation-approved.json" "$agent_fixture/escalation-approved.out" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+record = json.loads(Path(sys.argv[1]).read_text())
+display = Path(sys.argv[2]).read_text()
+approval = record["escalationApproval"]
+assert approval["name"] == "Fixture Human"
+assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", approval["approvedAt"])
+assert approval["rosterResolution"] == "fake:fake-model"
+assert approval["requestedPair"] == "fake:fake-escalated"
+assert approval["costDirection"] == "unranked (model tiers absent; overrides always escalate)"
+for label, key in (("Roster resolution", "rosterResolution"), ("Requested pair", "requestedPair"), ("Cost direction", "costDirection")):
+    assert f"{label}: {approval[key]}" in display
+PY
+
   # Dispatch only reads mission leases. The future mission runner owns their
   # acquisition and renewal; this fixture fabricates the frozen shape around
   # a process whose command line carries the instance tag.
@@ -1982,8 +2107,35 @@ fence.cycles=10
 fence.jobs=20
 fence.concurrency=2
 fence.job-cap-min=120
+envelope.dispatch-allow=fake:fake-escalated,fake:fake-model
+```
+
+```mission-seal
+sealed.version=1
 ```
 EOF
+  python3 - "$agent_repo/scripts/agents/mission-contract.py" "$agent_repo/plans/mission-mission-alpha.contract.md" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+module_path, contract_path = map(Path, sys.argv[1:])
+specification = importlib.util.spec_from_file_location("dispatch_fixture_contract", module_path)
+module = importlib.util.module_from_spec(specification)
+sys.modules[specification.name] = module
+assert specification.loader is not None
+specification.loader.exec_module(module)
+path = contract_path
+text = path.read_text()
+path.write_text(text + f"\nApproval: name=Fixture-Human; date=2026-08-06; contract-sha256={module.contract_hash(text)}\n")
+PY
+  dispatch_origin="$agent_fixture/dispatch-origin.git"
+  git init -q --bare "$dispatch_origin"
+  git -C "$agent_repo" remote add origin "$dispatch_origin"
+  git -C "$agent_repo" add metasystem.conf plans/mission-mission-alpha.contract.md
+  git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'sign dispatch envelope fixture'
+  git -C "$agent_repo" push -qu origin main
+  git -C "$dispatch_origin" symbolic-ref HEAD refs/heads/main
+  git -C "$agent_repo" remote set-head origin -a >/dev/null
   python3 -c 'import time; time.sleep(30)' mission-lease-tag & mission_pid=$!
   mission_pgid=$(python3 -c 'import os,sys; print(os.getpgid(int(sys.argv[1])))' "$mission_pid")
   mission_identity="$agent_fixture/mission-process-identity.json"
@@ -1997,6 +2149,12 @@ Path(sys.argv[1]).write_text(json.dumps({"missionId":"mission-alpha","pid":pid,"
 Path(sys.argv[2]).write_text(json.dumps({str(pid): {"pgid": pgid, "command": "python3 fixture mission-lease-tag"}}) + "\n")
 PY
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
+  run_agent_fixture envelope-model-override envelope-model-override "$agent_dispatch" dispatch \
+    --role design-critic --brief "$happy_brief" --model fake-escalated --job-id envelope-model-override --mission mission-alpha --wait
+  run_agent_fixture envelope-runtime-override envelope-runtime-override "$agent_dispatch" dispatch \
+    --role code-critic --brief "$code_brief" --runtime fake --job-id envelope-runtime-override --mission mission-alpha --wait
+  agent_fails envelope-runtime-implied-model 'add fake:fake-implied-model to a signed envelope.dispatch-allow' \
+    "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --job-id envelope-runtime-implied --mission mission-alpha
   run_agent_fixture mission-explicit mission-explicit "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --wait
   METASYSTEM_MISSION_ID=mission-alpha METASYSTEM_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
     METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture \
@@ -2009,7 +2167,7 @@ import json, sys
 from pathlib import Path
 root=Path(sys.argv[1]); usage=json.loads((root/"artifacts/agents/missions/mission-alpha/usage.json").read_text())
 units={(item["provider"],item["unit"]):item["value"] for item in usage["units"]}
-assert units[("fake","provider.fake-unit")] == 2
+assert units[("fake","provider.fake-unit")] == 4
 for job in ("mission-explicit","mission-inherited"):
     prompt=(root/f"artifacts/agents/{job}/rounds/1/prompt.md").read_text()
     assert "\nMission: mission-alpha\n" in prompt
@@ -3311,13 +3469,14 @@ PYEOF
 
   tier_src="$tmp/adopt-tier-src"
   cp -R "$srcrepo/." "$tier_src"
-  perl -0pi -e 's/^model\.tier\.1=.*$/model.tier.1=claude:claude-model,codex:codex-model,devin:devin-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^(.*\.model\.claude)=.*$/$1=claude-model/mg; s/^(.*\.model\.codex)=.*$/$1=codex-model/mg; s/^(.*\.model\.devin)=.*$/$1=devin-model/mg' "$tier_src/metasystem.conf"
+  perl -0pi -e 's/^(.*\.model\.claude)=.*$/$1=claude-model/mg; s/^(.*\.model\.codex)=.*$/$1=codex-model/mg; s/^(.*\.model\.devin)=.*$/$1=devin-model/mg' "$tier_src/metasystem.conf"
+  printf '\nmodel.tier.1=claude:claude-model,codex:codex-model,devin:devin-model\n' >>"$tier_src/metasystem.conf"
   git -C "$tier_src" add metasystem.conf
   git -C "$tier_src" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm tier-fixture
   bash "$tier_src/scripts/adopt.sh" "$tmp/adopt-tier-claude" --runtimes claude >/dev/null
   grep -qxF 'model.tier.1=claude:claude-model' "$tmp/adopt-tier-claude/metasystem.conf" \
     || { echo "adopt: model tier retained an unselected runtime" >&2; exit 1; }
-  if grep -Eq '(^|\.)model\.(codex|devin)=|\.runtime=(codex|devin)$' "$tmp/adopt-tier-claude/metasystem.conf"; then
+  if grep -Eq '^(role\.|mode\..*\.role\.).*(\.model\.(codex|devin)=|\.runtime=(codex|devin)$)' "$tmp/adopt-tier-claude/metasystem.conf"; then
     echo "adopt: concrete unselected model or runtime keys survived pruning" >&2
     exit 1
   fi

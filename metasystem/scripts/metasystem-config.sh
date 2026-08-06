@@ -170,9 +170,15 @@ for key, value in values.items():
         errors.append(f"{key} names runtime {value!r} outside metasystem.runtimes")
 
 tier_members = []
+tier_key = re.compile(r"model\.tier\.([1-9][0-9]*)")
+tier_keys = []
 for key, value in values.items():
-    if not re.fullmatch(r"model\.tier\.[1-9][0-9]*", key):
+    if not key.startswith("model.tier."):
         continue
+    if not tier_key.fullmatch(key):
+        errors.append(f"{key} is not a supported model tier key")
+        continue
+    tier_keys.append(key)
     for member in (item.strip() for item in value.split(",")):
         if not member:
             continue
@@ -199,6 +205,8 @@ for key, value in values.items():
             errors.append(f"{key} names runtime {runtime!r} outside metasystem.runtimes")
         configured_models.append((key, f"{runtime}:{value}"))
 for key, qualified in configured_models:
+    if not tier_keys:
+        continue
     count = tier_counts.get(qualified, 0)
     if count != 1:
         errors.append(f"{key} model {qualified!r} appears in {count} model tiers; expected exactly one")
@@ -267,6 +275,8 @@ if not (repo / "development" / "metasystem-design.md").is_file():
 
 for error in errors:
     print(f"invalid metasystem configuration: {error}", file=sys.stderr)
+if not tier_keys:
+    print("INFO: model tiers are absent; dispatch overrides therefore always escalate")
 raise SystemExit(1 if errors else 0)
 PY
 }

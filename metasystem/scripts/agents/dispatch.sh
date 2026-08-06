@@ -9,7 +9,7 @@ Usage:
       [--model <model>] [--job-id <id>]
       [--workspace <dir> | --worktree]
       [--permissions <preset|envelope-file>] [--mission <id>]
-      [--wait] [--cap-min N]
+      [--approve-escalation] [--wait] [--cap-min N]
   scripts/agents/dispatch.sh --role <role> --brief <file> [dispatch options]
   scripts/agents/dispatch.sh follow-up --job <job-id> --message <file> [--wait]
   scripts/agents/dispatch.sh status --job <job-id>
@@ -474,6 +474,69 @@ for raw in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
         tiers.append(int(match.group(1)))
 print(tiers[0] if len(tiers) == 1 else 999999)
 PY
+}
+
+model_tiers_configured() {
+  python3 - "$root/metasystem.conf" <<'PY'
+import re, sys
+from pathlib import Path
+for raw in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    line = raw.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key = line.split("=", 1)[0].strip()
+    if re.fullmatch(r"model\.tier\.[1-9][0-9]*", key):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+signed_dispatch_envelope_allows() { # mission id, exact runtime:model pair
+  python3 - "$root" "$1" "$2" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+
+root, mission, requested = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+module_path = root / "scripts" / "agents" / "mission-contract.py"
+specification = importlib.util.spec_from_file_location("dispatch_mission_contract", module_path)
+if specification is None or specification.loader is None:
+    raise SystemExit(1)
+module = importlib.util.module_from_spec(specification)
+sys.modules[specification.name] = module
+specification.loader.exec_module(module)
+try:
+    contract = module.read_contract(root / "plans" / f"mission-{mission}.contract.md")
+    if not contract.sealed:
+        module.fail("dispatch-allow envelope is not sealed")
+    module.verify_approval(contract)
+    module.verify_origin(contract, module.repository_for(contract.path))
+    value = contract.values.get("envelope.dispatch-allow")
+    allowed = module.validate_dispatch_allow(value) if value is not None else []
+except module.ContractError as error:
+    print(f"signed dispatch envelope unavailable: {error}", file=sys.stderr)
+    raise SystemExit(1)
+raise SystemExit(0 if requested in allowed else 1)
+PY
+}
+
+confirm_escalation() { # roster pair, requested pair, displayed cost direction
+  local roster_pair=$1 requested_pair=$2 cost_direction=$3 confirmation name
+  printf 'Roster resolution: %s\n' "$roster_pair" >&2
+  printf 'Requested pair: %s\n' "$requested_pair" >&2
+  printf 'Cost direction: %s\n' "$cost_direction" >&2
+  printf 'Type APPROVE <name> to confirm: ' >&2
+  IFS= read -r confirmation || confirmation=
+  if [[ "$confirmation" != "APPROVE "* ]]; then
+    die 1 "escalation approval declined; re-run without the override, or repeat from an interactive TTY with --approve-escalation and type APPROVE <name>"
+  fi
+  name=${confirmation#APPROVE }
+  python3 - "$name" <<'PY' || die 1 "escalation approval declined; type APPROVE followed by a non-empty name without leading, trailing, or control characters"
+import sys
+name = sys.argv[1]
+raise SystemExit(0 if name and name == name.strip() and not any(ord(char) < 32 for char in name) else 1)
+PY
+  printf '%s\n' "$name"
 }
 
 validate_mission() { # mission id, lease path
@@ -1086,7 +1149,9 @@ reap_one() { # job
 
 dispatch_job() {
   local role= brief= mode_override= runtime_override= model_override= job= workspace= permissions_override= mission_override= cap_override=
-  local use_worktree=0 wait=0 mode runtime model default_model configured_runtime overridden=false mission_data mission lease mission_turn cap watch_cap
+  local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
+  local overridden=false mission_data mission lease mission_turn cap watch_cap tiers_present=false roster_tier requested_tier escalation_required=0
+  local cost_direction= approval_name= approved_at=
   local permission_name permission_json snapshot_json snapshot_path fallbacks signal input_bytes input_hash max_kb payload round_dir record_json
   while (($#)); do
     case "$1" in
@@ -1101,6 +1166,7 @@ dispatch_job() {
       --permissions) [[ $# -ge 2 ]] || { usage; exit 2; }; permissions_override=$2; shift 2 ;;
       --mission) [[ $# -ge 2 ]] || { usage; exit 2; }; mission_override=$2; shift 2 ;;
       --cap-min) [[ $# -ge 2 ]] || { usage; exit 2; }; cap_override=$2; shift 2 ;;
+      --approve-escalation) approve_escalation=1; shift ;;
       --wait) wait=1; shift ;;
       *) usage; exit 2 ;;
     esac
@@ -1108,25 +1174,68 @@ dispatch_job() {
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
   [[ ! ( $use_worktree -eq 1 && -n "$workspace" ) ]] || die 2 "--workspace and --worktree are mutually exclusive"
+  if (( approve_escalation )) && { [[ ! -t 0 ]] || [[ ! -t 2 ]]; }; then
+    die 1 "--approve-escalation requires an interactive TTY; remove the flag or re-run the same dispatch from a TTY"
+  fi
   mode=$(brief_mode "$brief") || die 1 "brief must contain exactly one filled Working Mode header"
   [[ -z "$mode_override" || "$mode_override" == "$mode" ]] || die 1 "--mode contradicts the brief's Working Mode header"
   require_fresh_census
   report_plan_drift
 
-  configured_runtime=$(config_get --key "role.$role.runtime" --mode "$mode" --default __missing__)
-  [[ "$configured_runtime" != __missing__ ]] || configured_runtime=$(config_get --key role.default.runtime --mode "$mode" --default __missing__)
-  runtime=${runtime_override:-$configured_runtime}
+  roster_runtime=$(config_get --key "role.$role.runtime" --mode "$mode" --default __missing__)
+  [[ "$roster_runtime" != __missing__ ]] || roster_runtime=$(config_get --key role.default.runtime --mode "$mode" --default __missing__)
+  runtime=${runtime_override:-$roster_runtime}
   [[ "$runtime" != __missing__ && -n "$runtime" ]] || die 1 "role $role has neither a runtime entry nor role.default.runtime"
   [[ "$runtime" != main ]] || die 1 "role $role is assigned to main and cannot be dispatched"
   registered_runtime "$runtime" || die 1 "runtime $runtime is outside metasystem.runtimes"
-  default_model=$(config_get --key "role.$role.model.$runtime" --mode "$mode" --default __missing__)
-  [[ "$default_model" != __missing__ ]] || default_model=$(config_get --key "role.default.model.$runtime" --mode "$mode" --default __missing__)
-  [[ "$default_model" != __missing__ ]] || die 1 "role $role resolves to $runtime but has no model.$runtime value"
-  model=${model_override:-$default_model}
-  if [[ -n "$model_override" && $(model_tier "$runtime" "$model") -gt $(model_tier "$runtime" "$default_model") ]]; then
-    die 1 "model override is costlier than the recorded default and requires human approval"
+  if [[ "$roster_runtime" == main ]]; then
+    roster_model='<current-session>'
+  else
+    roster_model=$(config_get --key "role.$role.model.$roster_runtime" --mode "$mode" --default __missing__)
+    [[ "$roster_model" != __missing__ ]] || roster_model=$(config_get --key "role.default.model.$roster_runtime" --mode "$mode" --default __missing__)
+    [[ "$roster_model" != __missing__ ]] || die 1 "role $role resolves to $roster_runtime but has no model.$roster_runtime value"
   fi
+  roster_pair="$roster_runtime:$roster_model"
+  requested_model=$(config_get --key "role.$role.model.$runtime" --mode "$mode" --default __missing__)
+  [[ "$requested_model" != __missing__ ]] || requested_model=$(config_get --key "role.default.model.$runtime" --mode "$mode" --default __missing__)
+  [[ "$requested_model" != __missing__ ]] || die 1 "role $role resolves to $runtime but has no model.$runtime value"
+  model=${model_override:-$requested_model}
+  requested_pair="$runtime:$model"
   [[ -z "$runtime_override" && -z "$model_override" ]] || overridden=true
+
+  mission_data=$(resolve_mission "$mission_override")
+  IFS='|' read -r mission lease mission_turn <<<"$mission_data"
+  if [[ "$overridden" == true && "$requested_pair" != "$roster_pair" ]]; then
+    if model_tiers_configured; then
+      tiers_present=true
+      roster_tier=$(model_tier "$roster_runtime" "$roster_model")
+      requested_tier=$(model_tier "$runtime" "$model")
+      if [[ "$roster_tier" == 999999 || "$requested_tier" == 999999 ]]; then
+        escalation_required=1
+        cost_direction='unranked (one or both resolved pairs are absent from model.tier.*)'
+      elif (( requested_tier > roster_tier )); then
+        escalation_required=1
+        cost_direction="higher (tier $roster_tier -> tier $requested_tier)"
+      fi
+    else
+      escalation_required=1
+      cost_direction='unranked (model tiers absent; overrides always escalate)'
+    fi
+  fi
+  if (( escalation_required )); then
+    if (( approve_escalation )); then
+      approval_name=$(confirm_escalation "$roster_pair" "$requested_pair" "$cost_direction")
+      approved_at=$(now_iso)
+    elif [[ -n "$mission" ]] && signed_dispatch_envelope_allows "$mission" "$requested_pair"; then
+      :
+    elif [[ "$tiers_present" == false ]]; then
+      die 1 "dispatch escalation refused: roster resolves to $roster_pair, requested pair is $requested_pair, and model tiers are absent. Configure model.tier.* to rank both pairs, add $requested_pair to a signed envelope.dispatch-allow mission contract, or re-run from a TTY with --approve-escalation."
+    else
+      die 1 "dispatch escalation refused: roster resolves to $roster_pair, requested pair is $requested_pair, cost direction is $cost_direction. Remove the override to use $roster_pair, add $requested_pair to a signed envelope.dispatch-allow mission contract, or re-run from a TTY with --approve-escalation."
+    fi
+  elif (( approve_escalation )); then
+    die 1 "--approve-escalation is unnecessary because the requested pair does not require escalation approval; remove the flag"
+  fi
 
   if [[ -z "$job" ]]; then
     job=$(python3 - "$role" <<'PY'
@@ -1143,8 +1252,6 @@ PY
   trap 'release_chain_lock "$job"' EXIT
   [[ ! -e "$jobs/$job.json" && ! -e "$agents/$job" ]] || die 1 "job id collision: $job"
 
-  mission_data=$(resolve_mission "$mission_override")
-  IFS='|' read -r mission lease mission_turn <<<"$mission_data"
   cap=$(config_get --key dispatch.cap-min ${cap_override:+--flag "$cap_override"} --default 120)
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
   if [[ -n "$mission" ]]; then
@@ -1182,14 +1289,23 @@ PY
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
-  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" <<'PY'
+  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" <<'PY'
 import json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
-out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal = sys.argv[1:]
+out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, approval_name, approved_at, roster_pair, requested_pair, cost_direction = sys.argv[1:]
 try: base = subprocess.check_output(["git", "-C", workspace, "rev-parse", "HEAD"], text=True).strip()
 except subprocess.SubprocessError: raise SystemExit("workspace is not a git worktree")
 branch = subprocess.check_output(["git", "-C", workspace, "branch", "--show-current"], text=True).strip()
+escalation_approval = None
+if approval_name:
+    escalation_approval = {
+        "name": approval_name,
+        "approvedAt": approved_at,
+        "rosterResolution": roster_pair,
+        "requestedPair": requested_pair,
+        "costDirection": cost_direction,
+    }
 record = {
   "jobId": job, "role": role, "mission": mission or None, "runtime": runtime,
   "round": 1, "parentJob": None, "status": "pending", "phase": "handshake", "error": None,
@@ -1199,6 +1315,7 @@ record = {
   "custodyProcesses": [],
   "sessionId": None, "turnId": mission_turn or None, "requestedModel": model, "effectiveModel": None,
   "overridden": overridden == "true", "capabilitySnapshot": snapshot,
+  "escalationApproval": escalation_approval,
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
   "input": {"bytes": int(size), "hash": digest, "delivery": "stdin"},
   "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "endedAt": None,

@@ -71,7 +71,7 @@ Mission contracts may pre-authorize only the categories marked `yes` below, and 
 | `api-schema` | Named API or schema contract changes | yes | named surfaces |
 | `dependencies` | Adding or upgrading dependencies | yes | dependency allowlist |
 | `spend-overage` | Spending past the stated budget | yes | explicit amount and currency |
-| `tier-move` | Moving to a more expensive resource tier | yes | tier ceiling |
+| `dispatch-allow` | Dispatching away from the roster resolution | yes | exact runtime:model pair allowlist |
 
 ## Security Posture
 
