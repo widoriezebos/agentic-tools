@@ -380,13 +380,18 @@ wait_until "first complete census" test -s "$last"
 # S4-5 and S4-10: the authoritative verdict is single-writer, schema-versioned,
 # identifies its owner and instances, and the cross-component fields exist.
 python3 - "$last" "$state" <<'PY'
-import json, sys
-last, state = (json.load(open(path)) for path in sys.argv[1:])
+import hashlib, json, sys
+from pathlib import Path
+last = json.loads(Path(sys.argv[1]).read_text())
+state_bytes = Path(sys.argv[2]).read_bytes()
+state = json.loads(state_bytes)
 assert last["schemaVersion"] == 1 and last["writer"] == "watch-background-jobs.sh"
 assert last["verdict"] in {"SUCCESS", "CENSUS-FAILED"}
 assert isinstance(last["completedAtEpoch"], int) and isinstance(last["intervalSec"], int)
 assert isinstance(last["durationMs"], int) and last["durationMs"] >= 0
 assert isinstance(last["fingerprint"], str) and last["fingerprint"]
+assert last["generation"] == state["generation"]
+assert last["stateDigest"] == hashlib.sha256(state_bytes).hexdigest()
 assert set(last["counts"]) == {"CUSTODY", "ANNOUNCED", "UNTRACKED"}
 assert set(state["components"]) == {"watcher", "reaper"}
 for component in state["components"].values():
@@ -576,8 +581,8 @@ PY' _ "$last"
 printf '[]\n' >"$process_fixture"
 wait_until "S4-6 partial-failure recovery" bash -c '[[ $(python3 -c '\''import json,sys; print(json.load(open(sys.argv[1]))["verdict"])'\'' "$1") == SUCCESS ]]' _ "$last"
 
-# Fingerprint includes scripts, signatures, relevant config, and the live set
-# identities. Mutating a signature owner invalidates the old verdict (S4-3).
+# Fingerprint includes scripts, signatures, and relevant config. Mutating a
+# static identity owner invalidates the old verdict (S4-3).
 fingerprint_before=$(json_field "$last" fingerprint)
 printf '\n# signature fingerprint fixture\n' >>"$repo/scripts/agents/adapters/fake.sh"
 fingerprint_after=$($arm fingerprint --repo "$repo")
@@ -617,8 +622,8 @@ python3 - "$gate_repo/artifacts/agents/supervision/state.json" <<'PY'
 import json,sys
 p=sys.argv[1]; v=json.load(open(p)); v["owner"]["instanceTag"] += "-changed"; json.dump(v,open(p,"w"))
 PY
-[[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
-  || { echo "S4-3: supervisor instance identity did not alter the fingerprint" >&2; exit 1; }
+[[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" == "$gate_fingerprint" ]] \
+  || { echo "S4-3: supervisor instance identity altered the static fingerprint" >&2; exit 1; }
 cp "$tmp/gate-state.json" "$gate_repo/artifacts/agents/supervision/state.json"
 printf '\n# watcher fingerprint fixture\n' >>"$gate_repo/scripts/watch-background-jobs.sh"
 [[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
