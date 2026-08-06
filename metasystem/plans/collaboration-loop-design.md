@@ -1,9 +1,9 @@
 # The Collaboration Loop: how orchestrator and delegate actually work together
 
-- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: IN CRITIQUE, rounds 1-2 folded (9 + 8 material findings).
-- Next step: follow-up critique round 3; close at a zero-material round; then implement.
+- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: CLOSED 2026-08-06 — round 3 returned zero material findings after 17 were folded across rounds 1-2. Chain design-critic-20260806t202601z-4f2f.
+- Next step: implement, through the loop this design itself prescribes: delegate implements, a code-critic on a different model reviews to a zero-material round over the merged tree.
 - In flight right now: nothing
-- Waiting on the human: ratification by accepting this design after critique
+- Waiting on the human: nothing — implementation authorized under the standing instruction to fix all findings
 
 ## Why this exists
 
