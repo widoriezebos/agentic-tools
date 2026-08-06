@@ -1239,7 +1239,7 @@ follow_up() {
   # amended on main after the branch point describes files the delegate does
   # not have. This lesson (KI-9's complement) was violated three times as
   # prose before becoming this check.
-  if worktree_path=$(json_field "$jobs/$root_id.json" worktree 2>/dev/null) \
+  if worktree_path=$(json_field "$jobs/$root_id.json" workspaceRoot 2>/dev/null) \
       && [[ -n "$worktree_path" && "$worktree_path" != null && -d "$worktree_path" ]]; then
     trunk=$(git -C "$root" branch --show-current 2>/dev/null || true)
     behind=0
