@@ -68,7 +68,8 @@ probe() {
       "protocolServer": true,
       "nativeBudget": true
     }' \
-    '{"unverified": []}'
+    '{"unverified": []}' \
+    '{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}'
 }
 
 build_claude_settings() { # output settings, hook helper

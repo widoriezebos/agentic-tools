@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+  echo "Usage: scripts/validate-metasystem.sh [--delegate-scope]" >&2
+}
+
+delegate_scope=0
+case ${1:-} in
+  '') ;;
+  --delegate-scope) [[ $# -eq 1 ]] || { usage; exit 2; }; delegate_scope=1 ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage; exit 2 ;;
+esac
+
+delegate_owed_sections=(
+  "supervision and census fixtures"
+  "supervisor fingerprint heal harness"
+  "dispatcher, adapter selftest, and mission-runner process fixtures"
+)
+delegate_skipped_sections=()
+delegate_process_section() { # human-readable section name
+  if (( delegate_scope )); then
+    delegate_skipped_sections+=("$1")
+    return 1
+  fi
+  return 0
+}
+
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 # Captured AFTER the cd above: the sentinel must describe the suite's own
@@ -9,6 +35,13 @@ cd "$root"
 metasystem_here=$(pwd -P)
 
 source scripts/agents/fixture-budget.sh
+if (( delegate_scope )); then
+  # Load calibration is itself a real census. Delegate validation uses the
+  # policy's minimum scale so no process enumeration occurs before the
+  # process-sensitive sections are skipped.
+  : "${METASYSTEM_FIXTURE_CAP_SCALE:=3}"
+  export METASYSTEM_FIXTURE_CAP_SCALE
+fi
 harness_fixture_budget_init "$root"
 fixture_minimum_cap_min=$(harness_fixture_semantic_cap minimum-minutes)
 fixture_mission_job_cap_min=$(harness_fixture_semantic_cap mission-job-minutes)
@@ -127,9 +160,13 @@ done
 # so their supervisors and dispatch jobs cannot share lifecycle state. They
 # name S4-1 through S4-10 at their owning checks and contain no uncapped
 # process wait (IL-1).
-if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
-  scripts/agents/supervision-fixtures.sh
-  scripts/agents/fingerprint-harness.sh --iterations 2
+if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" || $delegate_scope -eq 1 ]]; then
+  if delegate_process_section "supervision and census fixtures"; then
+    scripts/agents/supervision-fixtures.sh
+  fi
+  if delegate_process_section "supervisor fingerprint heal harness"; then
+    scripts/agents/fingerprint-harness.sh --iterations 2
+  fi
   scripts/agents/mission-fixtures.sh
 fi
 
@@ -192,6 +229,15 @@ for runtime in claude codex devin; do
   grep -Fq "write_capability_snapshot $runtime \"\$version\" \"\$hash\"" "$adapter" \
     || { echo "$runtime adapter does not write its named capability snapshot" >&2; exit 1; }
 done
+grep -Fq '{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}' \
+  scripts/agents/adapters/codex.sh \
+  || { echo "codex adapter envelope enforcement declaration drifted" >&2; exit 1; }
+grep -Fq '{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}' \
+  scripts/agents/adapters/claude.sh \
+  || { echo "claude adapter envelope enforcement declaration drifted" >&2; exit 1; }
+grep -Fq '{"writeRoots":"mapped","readRoots":"mapped","network":"notEnforced"}' \
+  scripts/agents/adapters/devin.sh \
+  || { echo "devin adapter envelope enforcement declaration drifted" >&2; exit 1; }
 for runtime in claude codex fake; do
   host="scripts/agents/hosts/$runtime.sh"
   [[ -x "$host" ]] || { echo "$runtime host adapter is missing or not executable: $host" >&2; exit 1; }
@@ -303,6 +349,32 @@ fi
 
 tmp=$(mktemp -d)
 agent_supervision_repo=
+
+# The fake runtime is the only sandbox this suite owns. Its probe drives the
+# denied write and network-call paths and reports the observed nonzero status;
+# real adapters are inspected only for their declarations above.
+fake_probe_root="$tmp/fake-envelope-probe"
+mkdir -p "$fake_probe_root/scripts/agents/adapters"
+cp scripts/agents/adapters/fake.sh "$fake_probe_root/scripts/agents/adapters/"
+cp scripts/agents/fixture-budget.sh "$fake_probe_root/scripts/agents/"
+fake_probe_result="$tmp/fake-envelope-probe-result.json"
+fake_snapshot=$(METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="$fake_probe_result" \
+  "$fake_probe_root/scripts/agents/adapters/fake.sh" probe)
+python3 - "$fake_snapshot" "$fake_probe_result" <<'PY'
+import json, sys
+from pathlib import Path
+
+snapshot = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+result = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+assert snapshot["envelopeEnforcement"] == {
+    "writeRoots": "mapped", "readRoots": "notEnforced", "network": "mapped",
+}
+assert result == {
+    "writeRoots": {"observed": "denied", "exitStatus": 77},
+    "network": {"observed": "denied", "exitStatus": 77},
+}
+PY
+
 # Every fixture repository this suite arms, so cleanup can stop all of them.
 # A single variable was tracked before, reassigned as the suite moved between
 # repositories and emptied at the end, so the trap shut down nothing and each
@@ -1195,7 +1267,8 @@ done
 # adoption validations inherit the skip after this block, avoiding duplicate
 # process-lifecycle runs while a direct adopted-repository validation still
 # exercises the full contract.
-if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
+if delegate_process_section "dispatcher, adapter selftest, and mission-runner process fixtures" \
+  && [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
   agent_fixture="$tmp/agent-fixture"
   agent_repo="$agent_fixture/repo"
   agent_evidence="$agent_fixture/evidence"
@@ -1600,6 +1673,11 @@ required = {
 assert required.issubset(record) and record["status"] == "completed"
 assert record["capabilitySnapshot"].endswith("-002.json")
 assert record["permissions"]["requested"]["preset"] == "none"
+assert record["permissions"]["enforcementSnapshot"] == record["capabilitySnapshot"]
+snapshot = json.loads((root / record["permissions"]["enforcementSnapshot"]).read_text())
+assert snapshot["envelopeEnforcement"] == {
+    "writeRoots": "mapped", "readRoots": "notEnforced", "network": "mapped",
+}
 assert record["input"]["delivery"] == "stdin" and record["input"]["bytes"] > 0
 prompt = (root / "artifacts/agents/happy/rounds/1/prompt.md").read_text()
 assert prompt.startswith("Job-Id: happy\nRole: design-critic\nRuntime: fake\nModel: fake-model\nRound: 1\n")
@@ -2847,13 +2925,21 @@ import json, sys
 from pathlib import Path
 paths = list(Path(sys.argv[1]).glob("fake-selftest-*.json")); assert paths
 value = json.loads(max(paths, key=lambda path: path.stat().st_mtime).read_text())
-assert "resume-identity" in value["provenBehaviorally"] and "network" in value["constructedOnly"]
+assert "resume-identity" in value["provenBehaviorally"]
+assert {"denied-write", "denied-network"}.issubset(value["provenBehaviorally"])
+assert "network" not in value["constructedOnly"]
 PY
 
   "$agent_selftest_repo/scripts/agents/arm-supervision.sh" --repo "$agent_selftest_repo" --shutdown >/dev/null 2>&1
   agent_supervision_repo=
   unset METASYSTEM_CENSUS_PROCESS_FILE METASYSTEM_FAKE_PROCESS_IDENTITY_FILE \
     METASYSTEM_MISSION_PROCESS_IDENTITY_FILE
+  export METASYSTEM_SKIP_AGENT_FIXTURES=1
+fi
+if (( delegate_scope )); then
+  # Nested adopted-copy validations exercise the same static and grammar
+  # checks, but must not re-enter process-owning fixtures after this outer run
+  # has deliberately left them to the orchestrator.
   export METASYSTEM_SKIP_AGENT_FIXTURES=1
 fi
 
@@ -3712,4 +3798,16 @@ scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once 2>/de
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
   echo "watch-background-jobs: distinct scopes shared a default state file" >&2; exit 1; }
 
-echo "metasystem validation passed"
+if (( delegate_scope )); then
+  [[ ${#delegate_skipped_sections[@]} -eq ${#delegate_owed_sections[@]} ]] \
+    || { echo "delegate-scope skipped-section accounting drifted" >&2; exit 1; }
+  for index in "${!delegate_owed_sections[@]}"; do
+    [[ "${delegate_skipped_sections[$index]}" == "${delegate_owed_sections[$index]}" ]] \
+      || { echo "delegate-scope skipped-section accounting drifted" >&2; exit 1; }
+  done
+  echo "delegate-scope validation passed"
+  echo "orchestrator still owes these process-visibility sections:"
+  printf -- '- %s\n' "${delegate_skipped_sections[@]}"
+else
+  echo "metasystem validation passed"
+fi

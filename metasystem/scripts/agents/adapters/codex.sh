@@ -67,7 +67,8 @@ probe() {
       "protocolServer": true,
       "nativeBudget": false
     }' \
-    '{"unverified": []}'
+    '{"unverified": []}' \
+    '{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}'
 }
 
 codex_event_field() { # events JSONL, session|turn

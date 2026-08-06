@@ -66,7 +66,8 @@ probe() {
       "protocolServer": true,
       "nativeBudget": false
     }' \
-    '{"unverified": []}'
+    '{"unverified": []}' \
+    '{"writeRoots":"mapped","readRoots":"mapped","network":"notEnforced"}'
 }
 
 build_devin_config() { # output

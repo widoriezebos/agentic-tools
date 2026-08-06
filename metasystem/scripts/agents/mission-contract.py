@@ -610,6 +610,16 @@ def process_has_tag(project_root: Path, pid: int, started: int, tag: str) -> boo
         )
         if identity.returncode != 0:
             return False
+    def fixture_identity_matches() -> bool:
+        fixture = os.environ.get("METASYSTEM_MISSION_PROCESS_IDENTITY_FILE")
+        if not fixture:
+            return False
+        try:
+            identities = json.loads(Path(fixture).read_text(encoding="utf-8"))
+            return identities[str(pid)]["pidStartedAt"] == started and tag in identities[str(pid)]["command"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "command="],
@@ -619,14 +629,9 @@ def process_has_tag(project_root: Path, pid: int, started: int, tag: str) -> boo
             text=True,
         )
     except OSError:
-        fixture = os.environ.get("METASYSTEM_MISSION_PROCESS_IDENTITY_FILE")
-        if not fixture:
-            return False
-        try:
-            identities = json.loads(Path(fixture).read_text(encoding="utf-8"))
-            return identities[str(pid)]["pidStartedAt"] == started and tag in identities[str(pid)]["command"]
-        except (OSError, ValueError, KeyError, TypeError):
-            return False
+        return fixture_identity_matches()
+    if result.returncode != 0:
+        return fixture_identity_matches()
     return result.returncode == 0 and tag in result.stdout
 
 

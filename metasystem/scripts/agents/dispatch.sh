@@ -721,6 +721,13 @@ try:
 except (OSError, ValueError) as error:
     raise SystemExit(f"cannot evaluate capabilities: {error}")
 caps = snapshot.get("capabilities", {})
+envelope_enforcement = snapshot.get("envelopeEnforcement")
+if (
+    not isinstance(envelope_enforcement, dict)
+    or set(envelope_enforcement) != {"writeRoots", "readRoots", "network"}
+    or any(value not in {"mapped", "notEnforced"} for value in envelope_enforcement.values())
+):
+    raise SystemExit("capability snapshot has no valid envelope enforcement declaration; re-run adapter probe")
 handshake_timeout = caps.get("sessionEstablishedTimeoutSec", 2)
 if (
     isinstance(handshake_timeout, bool)
@@ -1333,7 +1340,11 @@ record = {
   "jobId": job, "role": role, "mission": mission or None, "runtime": runtime,
   "round": 1, "parentJob": None, "status": "pending", "phase": "handshake", "error": None,
   "workspaceRoot": str(Path(workspace).resolve()), "baseSha": base, "branch": branch,
-  "permissions": {"requested": json.loads(Path(permissions).read_text()), "effective": None},
+  "permissions": {
+    "requested": json.loads(Path(permissions).read_text()),
+    "effective": None,
+    "enforcementSnapshot": snapshot,
+  },
   "capMin": int(cap), "pid": None, "pidStartedAt": None, "pgid": None, "instanceTag": f"metasystem-job-{job}",
   "custodyProcesses": [],
   "sessionId": None, "turnId": mission_turn or None, "requestedModel": model, "effectiveModel": None,
@@ -1438,7 +1449,11 @@ job, round_number, parent_job, snapshot, fallbacks, signal, resume_mode, size, d
 record = {key: parent[key] for key in ("role", "mission", "runtime", "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "requestedModel")}
 record.update({
   "jobId": job, "round": int(round_number), "parentJob": parent_job, "status": "pending", "phase": "handshake", "error": None,
-  "permissions": {"requested": parent["permissions"]["requested"], "effective": None}, "pid": None, "pidStartedAt": None, "pgid": None,
+  "permissions": {
+    "requested": parent["permissions"]["requested"],
+    "effective": None,
+    "enforcementSnapshot": snapshot,
+  }, "pid": None, "pidStartedAt": None, "pgid": None,
   "custodyProcesses": [],
   "instanceTag": f"metasystem-job-{job}", "sessionId": parent["sessionId"] if resume_mode == "resumed" else None,
   "turnId": mission_turn or None,
@@ -1653,7 +1668,11 @@ for field in ("readRoots", "writeRoots"):
     if field in effective and not set(effective[field]).issubset(set(requested[field])): errors.append(field)
 if signal == "true" and not session: errors.append("sessionId")
 patch = {
-    "permissions": {"requested": requested, "effective": effective},
+    "permissions": {
+        "requested": requested,
+        "effective": effective,
+        "enforcementSnapshot": record["permissions"]["enforcementSnapshot"],
+    },
     "effectiveModel": model,
     "turnId": record.get("turnId") or turn or None,
 }
