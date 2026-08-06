@@ -1,6 +1,6 @@
 # The Collaboration Loop: how orchestrator and delegate actually work together
 
-- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: CLOSED 2026-08-06 (second closure) — round 4 returned zero material findings over the gap amendments. 17 findings + 4 gap amendments across the chain's life.
+- Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: REOPENED 2026-08-07 by the code-critic's CC-1-6 via an implementer gap-stop: the unwaivable list omitted the loop's own canonical document. G-5 below; awaiting critique round 5.
 - Next step: implement, through the loop this design itself prescribes: delegate implements, a code-critic on a different model reviews to a zero-material round over the merged tree.
 - In flight right now: the first code-critic chain (claude-opus-5) reviewing implementer-20260806t212109z-ceb3 (gpt-5.6-sol), reviewedTree a378c157; bootstrap note: this first chain's review object was computed by hand because the --stage machinery under review cannot serve its own first case; the mechanical --reviews linkage binds from the next change onward
 - Waiting on the human: nothing — implementation authorized under the standing instruction to fix all findings
@@ -217,6 +217,18 @@ note in the stream's plan unblocks the work.
 `--reviews <implementer-job-id>`; dispatch refuses the flag for any other
 role and writes it as `reviews` in the job record. Merge conformance and
 receipt validation both read that one field — the same fact, one owner.
+
+**G-5: the unwaivable list contains the loop's own canon, and the list is
+checkable.** CC-1-6, found by the first code-critic chain: C-4 made
+`docs/orchestration.md` the canonical statement of the loop while the
+instruction-bearing list left it waivable as prose — a thirty-line edit
+could have rewritten the loop without critique. The list gains
+`docs/orchestration.md` and `docs/collaboration.md` (which owns the
+reporting rules). And because this failure recurs every time a document
+becomes canonical, the list becomes checkable: it lives in one file owned
+by conformance, and a fixture asserts that every document AGENTS.md, a role
+preamble, or the host-turn instruction names as owning rules appears on it.
+The next canonical document cannot silently stay waivable.
 
 ## What is deliberately not changed
 
