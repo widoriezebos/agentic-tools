@@ -34,8 +34,10 @@ unattended process, which is the pattern this repository keeps burying.
 
 The generation identifier is a monotonic counter the ARMING side owns
 (KC-2-1: startedAt plus owner identity is not unique across heals — whole
-seconds, constant owner): `state.json` carries `generation`, incremented by
-every arming and every self-heal that replaces a component, and the census
+seconds, constant owner): `state.json` carries `generation`, incremented exactly when a new component
+set is PUBLISHED — a fresh arming or a self-heal that replaces a component —
+and never by an arm call that joins an already-live owner without writing
+state (KC-4-5), and the census
 echoes the value it observed. Liveness gets a real owner rather than an
 assumed one (KC-2-2), and coherence is structural rather than hoped for
 (KC-3-2): the census reads `state.json` ONCE into memory, and verifies owner,
@@ -63,8 +65,9 @@ gains the generation comparison with its own message.
 
 Proof, two-sided AND state-machine-explicit (KC-1-8, KC-3-8): the harness
 runs twenty iterations on the old code refusing at least five times, and
-twenty on the new code refusing zero — but sampling alone cannot pass, so it
-additionally ASSERTS, per iteration: generation strictly increases across
+twenty on the new code refusing zero — but sampling alone cannot pass, so on the NEW
+implementation only (the old one necessarily violates these, which is the
+point — KC-4-6) it additionally ASSERTS, per iteration: generation strictly increases across
 every heal; generation never repeats after an owner restart; the census's
 echoed generation always equals the state snapshot it verified aliveness
 against; and dispatch's comparison refuses when handed a deliberately
@@ -99,8 +102,14 @@ deliverable, and the design's scope fence is upheld twice over.
 Root cause: freshness is a point predicate against a live, ticking process.
 
 DECISION (three-way mapping over one deadline, KC-1-5 + KC-2-9):
-`deadline = max(interval, min(2 x interval, 180s))` — the absolute cap can
-never pull the deadline below one interval (KC-3-6). Age below ONE interval: proceed
+`deadline = min(2 x interval, 180s)` for the REFUSAL threshold, and the
+maximum time dispatch may ever spend waiting is 180 seconds regardless of
+interval (KC-4-4: an hour-long interval must not authorize an hour-long
+wait). Where a configured interval exceeds the cap, dispatch proceeds on any
+census younger than one interval and otherwise waits at most the cap before
+deciding on what it has — the cap is an absolute bound on waiting, never a
+floor raised by configuration (KC-3-6 is satisfied by the proceed rule
+below, not by inflating the deadline). Age below ONE interval: proceed
 immediately, no wait — the ordinary healthy case. Age between one interval
 and the deadline: wait for the next census until the deadline, then proceed
 or refuse on what arrives. Age at or past the deadline: refuse. Healthy
@@ -122,10 +131,13 @@ adapter self-test, once per runtime version+config fingerprint AND PER
 SHIPPED PRESET (KC-1-4: `none` and `workspace` produce materially different
 sandboxes, so each is probed; a custom envelope file is recorded as
 `measured: false` in the job record, honestly unmeasured rather than
-falsely covered). Each real adapter's `selftest` gains behavioural probes: attempt an
-out-of-root write, attempt network under deny, attempt a read outside
-readRoots; record observed outcomes in the capability snapshot as
-`measuredEnvelope`. Dispatch records then cite the snapshot that measured
+falsely covered). Each real adapter's `selftest` probes only what that adapter actually MAPS
+(KC-4-1: codex maps writeRoots and network; readRoots completeness is
+already recorded as a constraint, not an enforcement): an out-of-root write
+attempt and, where the envelope denies it, a network attempt. Anything the
+adapter does not map is recorded `notEnforced` with the adapter's existing
+constraint note, never probed and never claimed. Outcomes land in the
+capability snapshot as `measuredEnvelope`. Dispatch records then cite the snapshot that measured
 the preset they requested. Per-dispatch behavioural probing was rejected as
 pure overhead: the sandbox implementation does not vary between dispatches
 of the same runtime version and preset.
@@ -138,7 +150,11 @@ KC-3-3), and the workspace topology (repository root versus an explicit
 `--workspace` root, KC-3-4). A probe positively observing that a requested
 denial did NOT hold is not a note but a refusal (KC-3-5): the snapshot
 records the failure, and every dispatch requesting that effective envelope
-refuses until the snapshot is replaced by a passing measurement. Absent
+refuses. Recovery is a defined transaction, not newest-wins drift (KC-4-2):
+selection for an effective envelope takes the newest snapshot that CARRIES a
+measurement for it, so a fresh probe snapshot cannot silently mask a
+recorded failure; clearing a failure requires a selftest producing a passing
+measurement for that same envelope, which is then the newest carrier. Absent
 measurement proceeds; FAILED measurement never does.
 And the circularity is broken by a stated bootstrap (KC-2-8): `probe` and
 `selftest` are the PRODUCERS of snapshots and therefore never require a
@@ -155,10 +171,12 @@ envelope.
 Proof (KC-3-7 — every registered runtime, or the row does not close): the
 suite fixture over the fake adapter's measured envelope (deny paths observed
 as denied) for the whole key matrix; a real `selftest` measurement recorded
-for BOTH claude and codex by the orchestrator; and devin recorded as
-`unmeasured` in the register with its selftest as the named closing
-condition, since its runbook already waits on the human's other machine —
-an honestly-scoped exception rather than silence.
+for BOTH claude and codex by the orchestrator; and devin — determinate, not deferred (KC-4-3): devin is REMOVED from
+`metasystem.runtimes` in the shipped template's default selection until its
+selftest runs on the human's other machine, so "every registered runtime is
+measured" holds literally with no exception clause. Re-registering it is
+part of that selftest's completion, and `development/devin-selftest.md`
+carries the step.
 
 ## KI-15 — delegates cannot run the gate of record
 
