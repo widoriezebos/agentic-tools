@@ -1595,10 +1595,12 @@ required = {
     "jobId", "role", "mission", "runtime", "round", "parentJob", "status", "phase", "error",
     "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "pid", "pidStartedAt", "pgid", "instanceTag", "custodyProcesses",
     "sessionId", "turnId", "requestedModel", "effectiveModel", "overridden", "capabilitySnapshot",
-    "input", "startedAt", "endedAt", "usage", "mirror",
+    "sessionEstablishedTimeoutSec", "input", "startedAt", "endedAt", "usage", "mirror",
 }
 assert required.issubset(record) and record["status"] == "completed"
 assert record["capabilitySnapshot"].endswith("-002.json")
+snapshot = json.loads((root / record["capabilitySnapshot"]).read_text())
+assert record["sessionEstablishedTimeoutSec"] == snapshot["capabilities"]["sessionEstablishedTimeoutSec"]
 assert record["permissions"]["requested"]["preset"] == "none"
 assert record["input"]["delivery"] == "stdin" and record["input"]["bytes"] > 0
 prompt = (root / "artifacts/agents/happy/rounds/1/prompt.md").read_text()
@@ -1670,6 +1672,46 @@ PY
   cp "$agent_repo/scripts/agents/templates/follow-up.md" "$pending_message"
   agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job pending-chain --message "$pending_message"
   wait_for_agent_fixture_process pending-chain-driver pending-chain "$pending_driver" || true
+
+  # A just-created pending record with no launched supervisor is inside its
+  # recorded handshake budget, so a sweep leaves it pending. Once the same
+  # record is older than its budget, the existing process-loss classification
+  # applies unchanged.
+  launch_window_source="$agent_fixture/launch-window.json"
+  python3 - "$agent_repo/artifacts/agents/jobs/happy.json" "$launch_window_source" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+record = json.loads(Path(sys.argv[1]).read_text())
+record.update({
+    "jobId": "launch-window", "parentJob": None, "round": 1,
+    "status": "pending", "phase": "handshake", "error": None,
+    "pid": None, "pidStartedAt": None, "pgid": None,
+    "instanceTag": "metasystem-job-launch-window", "custodyProcesses": [],
+    "sessionId": None, "endedAt": None, "usage": None, "mirror": None,
+    "sessionEstablishedTimeoutSec": 60,
+    "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+})
+for key in ("ownershipProof", "chainUsage"):
+    record.pop(key, None)
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+PY
+  run_agent_fixture launch-window-create launch-window "$agent_dispatch" __record-create --job launch-window --source "$launch_window_source"
+  run_agent_fixture launch-window-young-reap launch-window "$agent_dispatch" reap --job launch-window
+  [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$agent_repo/artifacts/agents/jobs/launch-window.json")" == pending ]] \
+    || { echo "pending record was reaped inside its handshake window" >&2; exit 1; }
+  python3 - "$agent_repo/artifacts/agents/jobs/launch-window.json" <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["startedAt"] = "2000-01-01T00:00:00Z"
+path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+PY
+  run_agent_fixture launch-window-old-reap launch-window "$agent_dispatch" reap --job launch-window
+  python3 - "$agent_repo/artifacts/agents/jobs/launch-window.json" <<'PY'
+import json, sys
+record = json.load(open(sys.argv[1]))
+assert record["status"] == "failed" and record["error"] == "process-lost" and record["phase"] == "supervision"
+PY
 
   pending_loss_brief="$agent_fixture/pending-loss.md"
   make_agent_brief "$pending_loss_brief" design 'FAKE:pending-process-loss'
@@ -1909,6 +1951,8 @@ from pathlib import Path
 root = Path(sys.argv[1]); parent = json.loads((root / "artifacts/agents/jobs/happy.json").read_text()); child = json.loads((root / "artifacts/agents/jobs/happy-r2.json").read_text())
 assert child["parentJob"] == "happy" and child["round"] == 2 and child["sessionId"] == parent["sessionId"]
 assert child["startedAt"] >= parent["startedAt"] and child["capMin"] == parent["capMin"]
+snapshot = json.loads((root / child["capabilitySnapshot"]).read_text())
+assert child["sessionEstablishedTimeoutSec"] == snapshot["capabilities"]["sessionEstablishedTimeoutSec"]
 assert parent["chainUsage"]["providerUnits"]["fake"]["fake-unit"] == 2
 assert parent["mirror"]["manifest"] == child["mirror"]["manifest"]
 PY
