@@ -68,8 +68,49 @@ for chain_dir in sorted(p for p in agents.iterdir() if p.is_dir() and p.name not
             log.unlink()
     collected.append(chain)
 
+# Beyond chain payloads, three residue classes accumulate per terminal job and
+# nobody else cleans them: heartbeats, lock files and lifecycle dirs, and the
+# mktemp leftovers of interrupted operations. And capability snapshots
+# supersede each other: only the newest per runtime+version can ever be read
+# again, because dispatch matches the CURRENT probe fingerprint.
+import shutil, time
+def job_status(job):
+    path = jobs / f"{job}.json"
+    try:
+        return json.loads(path.read_text()).get("status")
+    except (OSError, ValueError):
+        return None
+
+residue = 0
+hb = agents / "hb"
+if hb.is_dir():
+    for entry in sorted(hb.iterdir()):
+        job = entry.name.removesuffix(".start").removesuffix(".waiting")
+        if job_status(job) in TERMINAL:
+            entry.unlink(missing_ok=True); residue += 1
+locks_dir = agents / "record-locks"
+if locks_dir.is_dir():
+    for entry in sorted(locks_dir.iterdir()):
+        job = entry.name.removesuffix(".lock").removesuffix(".lifecycle.d")
+        if entry.name.endswith((".lock", ".lifecycle.d")):
+            if job_status(job) in TERMINAL:
+                (shutil.rmtree if entry.is_dir() else Path.unlink)(entry); residue += 1
+        elif entry.is_file() and time.time() - entry.stat().st_mtime > 3600:
+            entry.unlink(); residue += 1
+caps = agents / "capabilities"
+if caps.is_dir():
+    newest = {}
+    for snap in sorted(caps.glob("*.json")):
+        stem = snap.name.rsplit("-", 2)[0]  # runtime-version-confighash
+        runtime_version = "-".join(stem.split("-")[:2])
+        newest.setdefault(runtime_version, []).append(snap)
+    for runtime_version, snaps in newest.items():
+        for snap in snaps[:-1]:
+            snap.unlink(); residue += 1
+
 for chain in collected:
     print(f"collected {chain}")
+print(f"residue removed: {residue} heartbeat, lock, temp and superseded-snapshot entries")
 for chain, reason in kept:
     print(f"kept      {chain}: {reason}")
 print(f"evidence-gc: {len(collected)} collected, {len(kept)} kept")
