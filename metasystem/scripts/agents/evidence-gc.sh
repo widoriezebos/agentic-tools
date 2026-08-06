@@ -92,11 +92,16 @@ locks_dir = agents / "record-locks"
 if locks_dir.is_dir():
     for entry in sorted(locks_dir.iterdir()):
         job = entry.name.removesuffix(".lock").removesuffix(".lifecycle.d")
-        if entry.name.endswith((".lock", ".lifecycle.d")):
-            if job_status(job) in TERMINAL:
-                (shutil.rmtree if entry.is_dir() else Path.unlink)(entry); residue += 1
-        elif entry.is_file() and time.time() - entry.stat().st_mtime > 3600:
-            entry.unlink(); residue += 1
+        # Two collectors can run at once (the stop hook fires one per turn
+        # end); a peer having removed an entry first is success, not an error.
+        try:
+            if entry.name.endswith((".lock", ".lifecycle.d")):
+                if job_status(job) in TERMINAL:
+                    (shutil.rmtree if entry.is_dir() else Path.unlink)(entry); residue += 1
+            elif entry.is_file() and time.time() - entry.stat().st_mtime > 3600:
+                entry.unlink(); residue += 1
+        except FileNotFoundError:
+            pass
 caps = agents / "capabilities"
 if caps.is_dir():
     newest = {}
@@ -107,6 +112,19 @@ if caps.is_dir():
     for runtime_version, snaps in newest.items():
         for snap in snaps[:-1]:
             snap.unlink(); residue += 1
+
+# Empty directories are confusion, not placeholders: every writer here
+# mkdir-ps before writing, so a directory with nothing in it carries no
+# information and comes back the moment it is needed. Bottom-up, so nested
+# empties collapse in one pass; the supervision dir is skipped while armed.
+for directory in sorted((p for p in agents.rglob("*") if p.is_dir()), reverse=True):
+    if directory.name == "supervision" or "supervision" in directory.parts:
+        continue
+    try:
+        directory.rmdir()  # only succeeds when empty
+        residue += 1
+    except OSError:
+        pass
 
 for chain in collected:
     print(f"collected {chain}")
