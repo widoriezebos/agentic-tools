@@ -8,9 +8,9 @@ Usage: scripts/agents/assert-conformance.sh --stage review|merge --job <job-id>
 The review stage computes the implementer worktree's exact review object. A
 temporary index contains every tracked file plus every untracked, unignored
 file; ignored files are excluded. It writes diff.patch and review.json without
-changing the worktree's real index. The merge stage repeats conformance checks
-and requires either a mechanically valid waiver or a closed, independent
-code-critic chain over the branch's final committed tree.
+changing the worktree's real index. The merge stage leaves those review
+artifacts untouched and requires either a mechanically valid waiver or a
+closed, independent code-critic chain over the branch's final committed tree.
 
 Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 USAGE
@@ -18,6 +18,7 @@ USAGE
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 config="$root/scripts/metasystem-config.sh"
+instruction_paths_file="$root/scripts/agents/instruction-bearing-paths.txt"
 stage=
 job=
 while (($#)); do
@@ -78,26 +79,26 @@ review_file="$round_dir/review.json"
 git -C "$workspace" cat-file -e "$base_sha^{commit}" 2>/dev/null \
   || { echo "conformance failure: baseSha is not a commit in the implementer workspace" >&2; exit 1; }
 
-# This is the canonical worktree-content helper. A full add in an isolated
-# index includes tracked files and untracked files that are not ignored. Git's
-# normal ignore rules leave ignored untracked files out. No real staging choice
-# or worktree file is changed.
-snapshot_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-conformance.XXXXXX")
-trap 'rm -rf "$snapshot_dir"' EXIT
-index="$snapshot_dir/index"
-paths_file="$snapshot_dir/paths"
-numstat_file="$snapshot_dir/numstat"
-GIT_INDEX_FILE="$index" git -C "$workspace" read-tree HEAD
-GIT_INDEX_FILE="$index" git -C "$workspace" add -A -- .
-reviewed_tree=$(GIT_INDEX_FILE="$index" git -C "$workspace" write-tree)
-GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --binary --no-renames "$base_sha" -- >"$diff_file"
-GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --name-only -z --no-renames "$base_sha" -- >"$paths_file"
-GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --numstat --no-renames "$base_sha" -- >"$numstat_file"
-
 install_prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null || true)
 install_prefix=${install_prefix%/}
 
-python3 - "$workspace" "$return_file" "$paths_file" "$install_prefix" <<'PY'
+if [[ "$stage" == review ]]; then
+  # This is the canonical worktree-content helper. A full add in an isolated
+  # index includes tracked files and untracked files that are not ignored. Git's
+  # normal ignore rules leave ignored untracked files out. No real staging
+  # choice or worktree file is changed. Only review creates these artifacts;
+  # merge consumes the committed tree and never rewrites what the critic read.
+  snapshot_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-conformance.XXXXXX")
+  trap 'rm -rf "$snapshot_dir"' EXIT
+  index="$snapshot_dir/index"
+  paths_file="$snapshot_dir/paths"
+  GIT_INDEX_FILE="$index" git -C "$workspace" read-tree HEAD
+  GIT_INDEX_FILE="$index" git -C "$workspace" add -A -- .
+  reviewed_tree=$(GIT_INDEX_FILE="$index" git -C "$workspace" write-tree)
+  GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --binary --no-renames "$base_sha" -- >"$diff_file"
+  GIT_INDEX_FILE="$index" git -C "$workspace" diff --cached --name-only -z --no-renames "$base_sha" -- >"$paths_file"
+
+  python3 - "$workspace" "$return_file" "$paths_file" "$install_prefix" <<'PY'
 import json, os, sys
 from pathlib import Path
 
@@ -144,8 +145,6 @@ for violation in violations:
     print(f"conformance failure: {violation}", file=sys.stderr)
 raise SystemExit(1 if violations else 0)
 PY
-
-if [[ "$stage" == review ]]; then
   python3 - "$review_file" "$job" "$reviewed_tree" "$(basename "$diff_file")" <<'PY'
 import json, sys
 from pathlib import Path
@@ -167,8 +166,34 @@ final_tree=$(git -C "$workspace" rev-parse 'HEAD^{tree}' 2>/dev/null) \
 code_critic_runtime=$("$config" get --key role.code-critic.runtime --default __missing__ 2>/dev/null || printf '__missing__\n')
 independence=$("$config" get --key independence --default '' 2>/dev/null || true)
 
+# Waivers still need the committed diff to prove their claimed class. A normal
+# critiqued merge needs only the final tree, so it deliberately does not
+# reconstruct the base-to-branch path list: rebasing or merging an advanced
+# target must not invalidate an implementer's immutable review-stage claim.
+merge_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-conformance-merge.XXXXXX")
+trap 'rm -rf "$merge_dir"' EXIT
+paths_file="$merge_dir/paths"
+numstat_file="$merge_dir/numstat"
+: >"$paths_file"
+: >"$numstat_file"
+has_waiver=$(python3 - "$record" <<'PY'
+import json, sys
+from pathlib import Path
+try:
+    value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    raise SystemExit(1)
+print("yes" if value.get("critiqueWaived") is not None else "no")
+PY
+) || { echo "conformance failure: implementer job record is unreadable" >&2; exit 1; }
+if [[ "$has_waiver" == yes ]]; then
+  git -C "$workspace" diff --name-only -z --no-renames "$base_sha" HEAD -- >"$paths_file"
+  git -C "$workspace" diff --numstat --no-renames "$base_sha" HEAD -- >"$numstat_file"
+fi
+
 python3 - "$root" "$record" "$paths_file" "$numstat_file" "$install_prefix" \
-  "$final_tree" "$code_critic_runtime" "$independence" "$root_job" <<'PY'
+  "$final_tree" "$code_critic_runtime" "$independence" "$root_job" \
+  "$instruction_paths_file" <<'PY'
 import json
 import os
 import re
@@ -181,23 +206,35 @@ from pathlib import Path
     paths_path,
     numstat_path,
 ) = map(Path, sys.argv[1:5])
-install_prefix, final_tree, configured_runtime, independence, implementer_root = sys.argv[5:]
+(
+    install_prefix,
+    final_tree,
+    configured_runtime,
+    independence,
+    implementer_root,
+    instruction_paths_path,
+) = sys.argv[5:]
 jobs_dir = root / "artifacts" / "agents" / "jobs"
 job_id_pattern = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
-# One canonical list owns the paths that can steer agent behavior. Directory
-# entries end in a slash and match their whole subtree.
-INSTRUCTION_BEARING_PATHS = (
-    "AGENTS.md",
-    "wow.md",
-    "CLAUDE.md",
-    "docs/project-rules.md",
-    "skills/",
-    "scripts/",
-    "schemas/",
-    "templates/",
-    "roles/",
-)
+try:
+    INSTRUCTION_BEARING_PATHS = tuple(
+        line.strip()
+        for line in Path(instruction_paths_path).read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+except OSError as error:
+    print(
+        f"conformance failure: instruction-bearing path list is unreadable: {error}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if not INSTRUCTION_BEARING_PATHS or len(INSTRUCTION_BEARING_PATHS) != len(set(INSTRUCTION_BEARING_PATHS)):
+    print(
+        "conformance failure: instruction-bearing path list is empty or contains duplicates",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 
 def load(path, description):
@@ -366,21 +403,22 @@ def successor_text(successor_job):
     record = records.get(successor_job)
     if record is None:
         return None
-    root_job = chain_root(successor_job)
     round_number = record.get("round")
-    if root_job is None or not isinstance(round_number, int):
+    if not isinstance(round_number, int):
         return None
-    candidates = [
-        root / "artifacts" / "agents" / root_job / "brief.md",
-        root / "artifacts" / "agents" / root_job / "rounds" / str(round_number) / "prompt.md",
-    ]
-    parts = []
-    for path in candidates:
-        try:
-            parts.append(path.read_text(encoding="utf-8"))
-        except OSError:
-            continue
-    return "\n".join(parts) if parts else None
+    prompt = (
+        root
+        / "artifacts"
+        / "agents"
+        / implementer_root
+        / "rounds"
+        / str(round_number)
+        / "prompt.md"
+    )
+    try:
+        return prompt.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def enumerates(text, finding_id):
@@ -465,6 +503,17 @@ for critic_root in critic_roots:
         if not isinstance(successor, str) or not job_id_pattern.fullmatch(successor):
             failures.append(f"critiqueExhaustions[{index}].successorJobId is not a valid job identifier")
             continue
+        successor_record = records.get(successor)
+        if (
+            successor_record is None
+            or successor_record.get("role") != "implementer"
+            or successor_record.get("parentJob") is None
+            or chain_root(successor) != implementer_root
+        ):
+            failures.append(
+                f"successor job {successor!r} is not an implementer follow-up in the reviewed implementation chain"
+            )
+            continue
         text = successor_text(successor)
         missing = [finding_id for finding_id in open_ids if not enumerates(text, finding_id)]
         if missing:
@@ -475,16 +524,6 @@ for critic_root in critic_roots:
             failures.append(
                 f"critique exhausted at round {exhausted_round} with open material findings: {', '.join(open_ids)}"
             )
-        valid_exhaustions.append((exhausted_round, open_ids))
-    if (
-        len(valid_exhaustions) == 1
-        and isinstance(final_round, int)
-        and final_round >= valid_exhaustions[0][0] + 3
-        and (material_ids or verdict not in (0, None))
-    ):
-        failures.append(
-            "a second critique exhaustion is refused outright; waiting on the human is the only remedy"
-        )
 
     reviewed_tree = result.get("reviewedTree")
     if reviewed_tree != final_tree:
@@ -512,10 +551,19 @@ for critic_root in critic_roots:
         )
 
     if not failures:
-        print(
-            f"merge critique accepted: implementer job {implementer.get('jobId')} and "
-            f"code-critic chain {critic_id} agree on tree {final_tree}"
-        )
+        if implementer_model == critic_model and independence == "session-only":
+            print(
+                "merge critique accepted with independence=session-only recorded in gate evidence: "
+                f"implementer job {implementer.get('jobId')} and code-critic chain {critic_id} "
+                f"both use effective model {implementer_model}; their sessions alone are independent; "
+                f"both agree on tree {final_tree}"
+            )
+        else:
+            print(
+                f"merge critique accepted with model independence: implementer job {implementer.get('jobId')} "
+                f"uses effective model {implementer_model}, code-critic chain {critic_id} uses effective model "
+                f"{critic_model}, and both agree on tree {final_tree}"
+            )
         raise SystemExit(0)
     candidate_diagnostics.append((critic_id, failures))
 

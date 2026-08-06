@@ -231,6 +231,10 @@ case "$cmd" in
       [[ "${candidate%%|*}" == "$ref_epoch" ]] || continue
       candidate_sha1=$(printf '%s' "$candidate" | shasum -a 1 | awk '{print $1}')
       [[ "$candidate_sha1" == "$ref_sha1" ]] || continue
+      [[ "$candidate" == *'|RECEIPT|'* ]] || {
+        echo "correction reference must identify an original RECEIPT line" >&2
+        exit 2
+      }
       original=$candidate
       matches=$((matches + 1))
     done <"$file"

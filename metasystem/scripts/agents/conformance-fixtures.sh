@@ -15,8 +15,9 @@ new_case() { # name
   worktree="$case_root/worktree"
   mkdir -p "$controller/scripts/agents" "$controller/docs"
   cp "$source_root/scripts/agents/assert-conformance.sh" "$controller/scripts/agents/"
+  cp "$source_root/scripts/agents/instruction-bearing-paths.txt" "$controller/scripts/agents/"
   cp "$source_root/scripts/metasystem-config.sh" "$controller/scripts/"
-  printf 'artifacts/\n' >"$controller/.gitignore"
+  printf 'artifacts/\nlocal.conf\n' >"$controller/.gitignore"
   printf 'base\n' >"$controller/source.txt"
   printf 'base\n' >"$controller/docs/note.md"
   printf '#!/usr/bin/env bash\nprintf "base\\n"\n' >"$controller/scripts/tool.sh"
@@ -88,6 +89,13 @@ result = {
 (root / "artifacts/agents/impl/rounds/1/prompt.md").write_text(
     "Fixture prompt enumerates F-9.\n", encoding="utf-8"
 )
+child = dict(record)
+child.update({"jobId": "impl-r2", "round": 2, "parentJob": "impl"})
+(root / "artifacts/agents/jobs/impl-r2.json").write_text(json.dumps(child, indent=2) + "\n")
+(root / "artifacts/agents/impl/rounds/2").mkdir(parents=True, exist_ok=True)
+(root / "artifacts/agents/impl/rounds/2/prompt.md").write_text(
+    "Implementer follow-up enumerates F-9.\n", encoding="utf-8"
+)
 PY
 }
 
@@ -101,13 +109,15 @@ from pathlib import Path
 root, tree, material_id, exhaustion, model = Path(sys.argv[1]), *sys.argv[2:]
 items = []
 if exhaustion == "one":
-    items = [{"round": 1, "openFindingIds": ["F-9"], "successorJobId": "impl"}]
+    items = [{"round": 1, "openFindingIds": ["F-9"], "successorJobId": "impl-r2"}]
 elif exhaustion == "missing-successor-finding":
-    items = [{"round": 1, "openFindingIds": ["F-10"], "successorJobId": "impl"}]
+    items = [{"round": 1, "openFindingIds": ["F-10"], "successorJobId": "impl-r2"}]
+elif exhaustion == "critic-successor":
+    items = [{"round": 1, "openFindingIds": ["F-9"], "successorJobId": "other-critic"}]
 elif exhaustion == "two":
     items = [
-        {"round": 1, "openFindingIds": ["F-9"], "successorJobId": "impl"},
-        {"round": 4, "openFindingIds": ["F-11"], "successorJobId": "impl"},
+        {"round": 1, "openFindingIds": ["F-9"], "successorJobId": "impl-r2"},
+        {"round": 4, "openFindingIds": ["F-11"], "successorJobId": "impl-r2"},
     ]
 record = {
     "jobId": "critic",
@@ -121,6 +131,10 @@ record = {
     "critiqueExhaustions": items,
 }
 (root / "artifacts/agents/jobs/critic.json").write_text(json.dumps(record, indent=2) + "\n")
+if exhaustion == "critic-successor":
+    other = dict(record)
+    other.update({"jobId": "other-critic", "reviews": "unrelated"})
+    (root / "artifacts/agents/jobs/other-critic.json").write_text(json.dumps(other, indent=2) + "\n")
 findings = []
 if material_id:
     findings = [{
@@ -146,6 +160,47 @@ result = {
 (root / "artifacts/agents/critic/rounds/1/return.json").write_text(json.dumps(result, indent=2) + "\n")
 PY
 }
+
+# G-5, the canonical-instruction protection amendment: derive rule-owning
+# references from the contract, role preambles, and host-turn instruction, then
+# prove that the one conformance-owned list covers every one of them.
+python3 - "$source_root" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+entries = [
+    line.strip()
+    for line in (root / "scripts/agents/instruction-bearing-paths.txt").read_text().splitlines()
+    if line.strip() and not line.lstrip().startswith("#")
+]
+
+
+def covered(path):
+    return any(
+        path == entry
+        if not entry.endswith("/")
+        else path == entry[:-1] or path.startswith(entry)
+        for entry in entries
+    )
+
+
+owners = {"AGENTS.md"}
+contract = (root / "AGENTS.md").read_text(encoding="utf-8")
+for line in contract.splitlines():
+    lowered = line.lower()
+    if "owns" in lowered or "only routing index" in lowered or "lists the project" in lowered:
+        owners.update(re.findall(r"`((?:docs|skills)/[^`]+\.md|(?:AGENTS|CLAUDE|wow)\.md)`", line))
+for path in sorted((root / "scripts/agents/roles").glob("*.md")):
+    text = path.read_text(encoding="utf-8")
+    owners.update(re.findall(r'<!-- quote source="([^"]+)" -->', text))
+host = (root / "scripts/agents/templates/host-turn-instruction.md").read_text(encoding="utf-8")
+owners.update(re.findall(r"`((?:docs|skills)/[^`]+\.md|(?:AGENTS|CLAUDE|wow)\.md)`", host))
+missing = sorted(path for path in owners if not covered(path))
+if missing:
+    raise SystemExit("rule-owning documents missing from instruction-bearing path list: " + ", ".join(missing))
+PY
 
 commit_worktree() {
   git -C "$worktree" add .
@@ -213,6 +268,9 @@ expect_failure exhausted-open 'open material findings: F-9' \
 write_critic "$reviewed_tree" F-10 missing-successor-finding critic-model
 expect_failure exhausted-successor 'brief does not enumerate open findings: F-10' \
   "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+write_critic "$reviewed_tree" F-9 critic-successor critic-model
+expect_failure exhausted-wrong-party 'is not an implementer follow-up in the reviewed implementation chain' \
+  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
 write_critic "$reviewed_tree" F-9 two critic-model
 expect_failure second-exhaustion 'waiting on the human is the only remedy' \
   "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
@@ -229,7 +287,50 @@ grep -Fq 'dispatch a critic on a different model' "$fixture_root/same-model.out"
 grep -Fq 'declare independence=session-only' "$fixture_root/same-model.out" \
   || { echo "same-model refusal omitted the session-only remedy" >&2; exit 1; }
 printf 'independence=session-only\n' >>"$controller/metasystem.conf"
+"$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl \
+  >"$fixture_root/session-only.out"
+grep -Fq 'independence=session-only recorded in gate evidence' "$fixture_root/session-only.out" \
+  || { echo "session-only independence was accepted without an honest evidence record" >&2; exit 1; }
+
+# CC-1-1, the ignored-local-file boundary: ignored files are outside both the
+# temporary review index and the implementer's declared boundary.
+new_case ignored-local
+printf 'changed\n' >>"$worktree/source.txt"
+printf 'role.code-critic.runtime=fake\n' >"$worktree/local.conf"
+write_implementer '' source.txt
+"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
+grep -Fq 'local.conf' "$controller/artifacts/agents/impl/rounds/1/diff.patch" && {
+  echo "review artifact included an ignored local configuration file" >&2
+  exit 1
+}
+
+# CC-1-2 and CC-1-3: advancing the merge target does not make an immutable
+# review-stage boundary fail, and merge never overwrites the critic's artifact,
+# whether the first merge attempt passes or refuses a stale review.
+new_case recovery
+printf 'changed\n' >>"$worktree/source.txt"
+write_implementer '' source.txt
+"$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
+first_tree=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reviewedTree"])' \
+  "$controller/artifacts/agents/impl/rounds/1/review.json")
+artifact_sha=$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')
+commit_worktree
+printf 'advanced target\n' >"$controller/upstream.txt"
+git -C "$controller" add upstream.txt
+git -C "$controller" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm upstream
+controller_branch=$(git -C "$controller" branch --show-current)
+git -C "$worktree" -c user.name=metasystem -c user.email=metasystem@example.invalid merge -q "$controller_branch"
+final_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}')
+configure_critic
+write_critic "$first_tree" '' none critic-model
+expect_failure recovery-stale 'is stale' \
+  "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+[[ "$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')" == "$artifact_sha" ]] \
+  || { echo "a refused merge rewrote the stored review artifact" >&2; exit 1; }
+write_critic "$final_tree" '' none critic-model
 "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl >/dev/null
+[[ "$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')" == "$artifact_sha" ]] \
+  || { echo "a successful merge rewrote the stored review artifact" >&2; exit 1; }
 
 # The only waiver class rejects behavior-bearing paths, accepts and counts a
 # small non-instruction Markdown diff, and rejects the same prose above 30
@@ -256,5 +357,101 @@ write_implementer prose-under-30 docs/note.md
 commit_worktree
 expect_failure waiver-large 'the maximum is 30 additions plus deletions' \
   "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
+
+# CC-1-5, CC-1-7, and CC-1-10 exercise the dispatcher's deterministic
+# exhaustion owner without launching a delegate or inspecting processes.
+exhaustion_root="$fixture_root/exhaustion-dispatch"
+mkdir -p "$exhaustion_root/scripts/agents" "$exhaustion_root/artifacts/agents/jobs" \
+  "$exhaustion_root/artifacts/agents/critic/rounds/3"
+cp "$source_root/scripts/agents/dispatch.sh" "$exhaustion_root/scripts/agents/"
+git -C "$exhaustion_root" init -q
+printf 'fixture\n' >"$exhaustion_root/source.txt"
+git -C "$exhaustion_root" add .
+git -C "$exhaustion_root" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
+python3 - "$exhaustion_root" <<'PY'
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+jobs = root / "artifacts/agents/jobs"
+records = {
+    "impl": {"jobId":"impl","role":"implementer","round":1,"parentJob":None,"status":"completed","error":None,"critiqueExhaustions":[]},
+    "critic": {"jobId":"critic","role":"code-critic","round":1,"parentJob":None,"reviews":"impl","status":"completed","error":None,"critiqueExhaustions":[]},
+    "critic-r2": {"jobId":"critic-r2","role":"code-critic","round":2,"parentJob":"critic","reviews":"impl","status":"completed","error":None},
+    "critic-r3": {"jobId":"critic-r3","role":"code-critic","round":3,"parentJob":"critic-r2","reviews":"impl","status":"completed","error":None},
+}
+for name, value in records.items():
+    (jobs / f"{name}.json").write_text(json.dumps(value) + "\n")
+# The return deliberately lies that it is round two. The record's round three
+# must still trigger budget exhaustion.
+result = {"round":2,"findings":[{"id":"F-10","material":True}]}
+(root / "artifacts/agents/critic/rounds/3/return.json").write_text(json.dumps(result) + "\n")
+PY
+printf 'does not enumerate the finding\n' >"$exhaustion_root/missing.md"
+printf 'Fix F-10 in the implementation follow-up.\n' >"$exhaustion_root/present.md"
+exhaustion_manifest="$exhaustion_root/action.json"
+expect_failure exhaustion-wrong-party 'successor follow-up must enumerate every open finding identifier: F-10' \
+  "$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
+    --root-job impl --role implementer --latest "$exhaustion_root/artifacts/agents/jobs/impl.json" \
+    --message "$exhaustion_root/missing.md" --successor impl-r2 --output "$exhaustion_manifest"
+"$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
+  --root-job impl --role implementer --latest "$exhaustion_root/artifacts/agents/jobs/impl.json" \
+  --message "$exhaustion_root/present.md" --successor impl-r2 --output "$exhaustion_manifest" \
+  >"$fixture_root/exhaustion-record.out"
+expect_failure critic-cannot-own-successor 'dispatch an implementer follow-up that enumerates every open finding identifier' \
+  "$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
+    --root-job critic --role code-critic --latest "$exhaustion_root/artifacts/agents/jobs/critic-r3.json" \
+    --message "$exhaustion_root/present.md" --successor critic-r4 --output "$exhaustion_manifest"
+python3 - "$exhaustion_root" "$exhaustion_manifest" <<'PY'
+import json, sys
+from pathlib import Path
+root, manifest_path = map(Path, sys.argv[1:])
+manifest = json.loads(manifest_path.read_text())
+item = manifest["records"][0]
+assert item["jobId"] == "critic"
+entry = item["critiqueExhaustions"][0]
+assert entry == {"round": 3, "openFindingIds": ["F-10"], "successorJobId": "impl-r2"}
+path = root / "artifacts/agents/jobs/critic.json"
+record = json.loads(path.read_text()); record["critiqueExhaustions"] = item["critiqueExhaustions"]
+path.write_text(json.dumps(record) + "\n")
+PY
+"$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
+  --root-job critic --role code-critic --latest "$exhaustion_root/artifacts/agents/jobs/critic-r3.json" \
+  --message "$exhaustion_root/missing.md" --successor critic-r4 --output "$exhaustion_manifest" \
+  >"$fixture_root/critic-continuation.out"
+grep -Fxq none "$fixture_root/critic-continuation.out" \
+  || { echo "recorded implementer successor did not reopen the critic budget" >&2; exit 1; }
+python3 - "$exhaustion_root/artifacts/agents/jobs/critic-r3.json" <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1]); value = json.loads(path.read_text())
+value.update({"status":"failed","error":"protocol_error"}); path.write_text(json.dumps(value) + "\n")
+PY
+rm "$exhaustion_root/artifacts/agents/critic/rounds/3/return.json"
+"$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
+  --root-job critic --role code-critic --latest "$exhaustion_root/artifacts/agents/jobs/critic-r3.json" \
+  --message "$exhaustion_root/missing.md" --successor critic-r4 --output "$exhaustion_manifest" \
+  >"$fixture_root/protocol-recovery.out" 2>"$fixture_root/protocol-recovery.err"
+grep -Fxq none "$fixture_root/protocol-recovery.out" \
+  || { echo "protocol-error recovery did not bypass the absent return" >&2; exit 1; }
+[[ ! -s "$fixture_root/protocol-recovery.err" ]] \
+  || { echo "protocol-error recovery emitted a traceback or empty diagnostic" >&2; exit 1; }
+mkdir -p "$exhaustion_root/artifacts/agents/critic/rounds/6"
+python3 - "$exhaustion_root" <<'PY'
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1]); jobs = root / "artifacts/agents/jobs"
+parent = "critic-r3"
+for round_number in (4, 5, 6):
+    job_id = f"critic-r{round_number}"
+    value = {"jobId":job_id,"role":"code-critic","round":round_number,"parentJob":parent,"reviews":"impl","status":"completed","error":None}
+    (jobs / f"{job_id}.json").write_text(json.dumps(value) + "\n")
+    parent = job_id
+result = {"round":6,"findings":[{"id":"F-11","material":True}]}
+(root / "artifacts/agents/critic/rounds/6/return.json").write_text(json.dumps(result) + "\n")
+PY
+expect_failure second-budget-exhaustion 'waiting on the human is the only remedy' \
+  "$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
+    --root-job impl --role implementer --latest "$exhaustion_root/artifacts/agents/jobs/impl.json" \
+    --message "$exhaustion_root/present.md" --successor impl-r2 --output "$exhaustion_manifest"
 
 echo "conformance fixtures passed"

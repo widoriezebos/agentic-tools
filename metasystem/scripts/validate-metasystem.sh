@@ -149,6 +149,7 @@ for link in \
   scripts/agents/adapters/claude-session-signal.py \
   scripts/agents/assert-conformance.sh \
   scripts/agents/conformance-fixtures.sh \
+  scripts/agents/instruction-bearing-paths.txt \
   scripts/assert-critique-closed.sh \
   scripts/assert-return-complete.sh \
   scripts/assert-turn-prompt.sh \
@@ -3481,6 +3482,17 @@ scripts/receipt.sh correct --ref-epoch "$original_epoch" --ref-sha1 "$original_s
   || { echo "receipt correction did not append exactly one line" >&2; exit 1; }
 grep -Fq "|CORRECTION|ref_epoch=$original_epoch|ref_sha1=$original_sha1|field=skills|was=none|now=review|reason=fixture correction" "$correction_log" \
   || { echo "receipt correction line lost its unique reference or change fields" >&2; exit 1; }
+correction_line=$(sed -n '2p' "$correction_log")
+correction_epoch=${correction_line%%|*}
+correction_sha1=$(printf '%s' "$correction_line" | shasum -a 1 | awk '{print $1}')
+if scripts/receipt.sh correct --ref-epoch "$correction_epoch" --ref-sha1 "$correction_sha1" \
+    --field reason --was 'fixture correction' --now invalid --reason 'must not correct a correction' \
+    --file "$correction_log" >"$tmp/correct-correction.out" 2>&1; then
+  echo "receipt correction accepted an earlier CORRECTION line as its original" >&2
+  exit 1
+fi
+grep -Fq 'must identify an original RECEIPT line' "$tmp/correct-correction.out" \
+  || { echo "receipt correction rejected a non-receipt without naming the contract" >&2; exit 1; }
 
 # Every free-text field is sanitized by one shared path: CRLF through the
 # note, the skills list, delegates, and the retro summary must each stay one log line.
