@@ -2,7 +2,7 @@
 
 - Goal and current status: every reason the extractor stamped trial 006 invalid is fixed at its owner — two in the metasystem, two in the measuring kit — so the next run's validity verdict reflects behavior, not instrumentation debt. Status: IN CRITIQUE, round 1 folded (9 findings, 8 material, BV-1-1..9).
 - Next step: implement V-1 (adapter telemetry) and V-4 (census v2) through the loop; the protocol stream owns the rest.
-- In flight right now: nothing; round 2 dispatches next
+- In flight right now: V-1/V-4 implemented by implementer-20260807t073104z-b54f (zero gaps); code-critique running on claude-opus-5 with the mechanical --reviews linkage, job dispatched 2026-08-07
 - Waiting on: nothing
 
 ## The findings, from the run's own records

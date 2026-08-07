@@ -3,7 +3,7 @@
 - Goal and current status: the crash-recoverable protocol for how a mission ends — measurement persistence, chain closure, publication, run identity, and the cohort repetition machine, including the mission abandonment path that does not exist yet. Status: DRAFT seeded from the benchmark-validity chain's round-7 exhaustion; NOT yet critiqued as its own stream.
 - Next step: fresh design pass over the seven carried findings below, then critique from round 1 by the design-critic role (sol), with the critic worktree synced per KI-20's interim rule.
 - In flight right now: nothing
-- Waiting on: nothing — successor stream per the exhaustion contract; the human's standing ratification of 2026-08-07 covers this closure work
+- Waiting on: a fresh working session — seven carried protocol findings deserve full context, not the tail of this one; the V-1/V-4 code-critique and merge complete first. The human's standing ratification of 2026-08-07 covers the closure work
 
 ## Where this comes from
 
