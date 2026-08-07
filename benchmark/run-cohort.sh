@@ -20,7 +20,25 @@ die() { echo "$2" >&2; exit "$1"; }
 kit=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 top=$(cd "$kit/.." && pwd -P)
 results=$kit/results
-runs=$kit/.runs
+# Cohort runs live under the same trials root as ad-hoc provisioning:
+# $METASYSTEM_TRIALS_ROOT, else benchmark/trials-root.local, else the
+# kit-local .runs directory (the historical default).
+runs=$(python3 - "$kit" <<'PY'
+import os, sys
+from pathlib import Path
+kit = Path(sys.argv[1])
+env = os.environ.get("METASYSTEM_TRIALS_ROOT", "").strip()
+local = kit / "trials-root.local"
+if env:
+    print(Path(env).expanduser() / "cohorts")
+elif local.is_file():
+    lines = local.read_text().splitlines()
+    line = lines[0].strip() if lines and lines[0].strip() else ""
+    print((Path(line).expanduser() / "cohorts") if line else (kit / ".runs"))
+else:
+    print(kit / ".runs")
+PY
+)
 spec_arg=
 proposal_id=
 repetitions=

@@ -66,15 +66,30 @@ plan in the metasystem's `plans/`, and every finished trial is archived whole
 in the evidence store.
 
 
-## Where trials land
+## Where benchmark repositories land: the trials root
 
-Provisioned trial repositories (and their `.origin.git` / `.evidence`
-siblings) go to the trials root when you pass a bare name as the target.
-Set it once, either way:
+Every benchmark run creates real directories — the trial repository plus
+its `.origin.git` and `.evidence` siblings, and for cohorts a `cohorts/`
+tree. By default these land beside the kit's own repository, which
+clutters whatever folder you keep your checkouts in. Designate a home for
+them once, either way:
 
-    export METASYSTEM_TRIALS_ROOT=~/benchmark-trials
-    # or, persistently:
-    echo ~/benchmark-trials > benchmark/trials-root.local   # gitignored
+    # per shell:
+    export METASYSTEM_TRIALS_ROOT=~/meta-system-benchmarks
 
-Unset, the root is the repository's parent directory — the original
-behavior. Explicit paths (anything with a slash) always win verbatim.
+    # or persistently (the file is gitignored — a per-machine choice):
+    echo ~/meta-system-benchmarks > benchmark/trials-root.local
+
+With a root set:
+
+- `benchmark/provision.sh --spec … --target my-trial` puts the trial and
+  both siblings under the root. Only BARE names resolve this way — any
+  target containing a slash is honored verbatim, so scripted callers with
+  explicit paths are unaffected.
+- `benchmark/run-cohort.sh` places its cohort runs under `<root>/cohorts/`
+  instead of the kit-local `benchmark/.runs`.
+
+The environment variable wins over the file; with neither set, the
+historical defaults apply unchanged (repository parent for trials,
+`benchmark/.runs` for cohorts). Resolution is identical in both scripts,
+so one setting governs everything a benchmark writes outside the kit.
