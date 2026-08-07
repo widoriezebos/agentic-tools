@@ -179,6 +179,18 @@ record_handshake() { # session, turn, effective model
   handshake_done=1
 }
 
+record_result_effective_model() { # effective model reported by the completed runtime result
+  local model=$1 patch="$round_dir/result-model-patch.json"
+  [[ -n "$model" ]] || return 2
+  python3 - "$patch" "$model" <<'PY'
+import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({"effectiveModel": sys.argv[2]}) + "\n", encoding="utf-8")
+PY
+  "$dispatch" __record-cas --job "$job" --expect running --status running --patch "$patch" || return 1
+  effective_model=$model
+}
+
 write_patch() { # output, error|null, phase, usage file
   python3 - "$1" "$2" "$3" "$4" <<'PY'
 import json, sys
@@ -244,11 +256,11 @@ terminate_cli_child() { # exact child pid owned by this adapter
 normalize_return() { # candidate file, optional transcript file
   local candidate=$1 transcript=${2:-}
   python3 - "$candidate" "$transcript" "$record" "$round_dir/return.json" \
-    "$round_dir/return.md" "$session_id" "$effective_model" <<'PY'
+    "$round_dir/return.md" "$session_id" <<'PY'
 import json, re, sys
 from pathlib import Path
 
-candidate_path, transcript_path, record_path, output_path, markdown_path, session_id, effective_model = sys.argv[1:]
+candidate_path, transcript_path, record_path, output_path, markdown_path, session_id = sys.argv[1:]
 record = json.loads(Path(record_path).read_text(encoding="utf-8"))
 required = {
     "jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode"
@@ -316,9 +328,9 @@ result = dict(max(candidates, key=lambda item: item[0])[1])
 if result.get("sessionId") is None:
     result["sessionId"] = session_id
 model = result.get("model")
-if isinstance(model, dict) and model.get("effective") is None:
+if isinstance(model, dict):
     model = dict(model)
-    model["effective"] = effective_model or None
+    model["effective"] = record.get("effectiveModel")
     result["model"] = model
 
 Path(output_path).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")

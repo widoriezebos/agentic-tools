@@ -285,7 +285,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 output, interval, error_path, started_ns = Path(sys.argv[1]), int(sys.argv[2]), Path(sys.argv[3]), int(sys.argv[4])
 error = error_path.read_text(errors="replace").strip()
-value={"schemaVersion":1,"writer":"watch-background-jobs.sh","verdict":"CENSUS-FAILED","completedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),"completedAtEpoch":int(time.time()),"durationMs":round((time.time_ns()-started_ns)/1_000_000),"intervalSec":interval,"fingerprint":"FINGERPRINT-FAILED","counts":{"CUSTODY":0,"ANNOUNCED":0,"UNTRACKED":0},"inventory":[],"diagnostics":[],"errors":["fingerprint:"+error]}
+value={"schemaVersion":2,"writer":"watch-background-jobs.sh","verdict":"CENSUS-FAILED","completedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),"completedAtEpoch":int(time.time()),"durationMs":round((time.time_ns()-started_ns)/1_000_000),"intervalSec":interval,"fingerprint":"FINGERPRINT-FAILED","generation":None,"stateDigest":None,"counts":{"CUSTODY":0,"ANNOUNCED":0,"UNTRACKED":0},"inventory":[],"diagnostics":[],"errors":["fingerprint:"+error]}
 fd,tmp=tempfile.mkstemp(prefix=output.name+".",suffix=".tmp",dir=output.parent)
 with os.fdopen(fd,"w") as h: json.dump(value,h,indent=2,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
 os.replace(tmp,output)

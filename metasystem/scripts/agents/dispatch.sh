@@ -85,7 +85,7 @@ from pathlib import Path
 try: value=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 except (OSError,ValueError) as error: raise SystemExit(f"dispatch refused: census verdict is unreadable: {error}")
 required={"schemaVersion","writer","verdict","completedAtEpoch","intervalSec","fingerprint","counts","inventory","diagnostics","errors"}
-if not required.issubset(value) or value.get("schemaVersion") != 1 or value.get("writer") != "watch-background-jobs.sh":
+if not required.issubset(value) or value.get("schemaVersion") != 2 or value.get("writer") != "watch-background-jobs.sh":
     raise SystemExit("dispatch refused: census verdict schema or writer is invalid")
 if value.get("verdict") == "CENSUS-FAILED":
     raise SystemExit("dispatch refused: last census verdict is CENSUS-FAILED")
