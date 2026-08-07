@@ -420,6 +420,13 @@ def initialize_cursor(root: Path, main_id: str) -> None:
     )
 
 
+SUPERVISION_TAG_PREFIXES = ("metasystem-supervision-",)
+
+
+def is_supervision_tag(tag: str) -> bool:
+    return any(tag.startswith(prefix) for prefix in SUPERVISION_TAG_PREFIXES)
+
+
 def announce(args: argparse.Namespace) -> None:
     root = args.root.resolve()
     actual_start = started_at(root, args.pid)
@@ -583,6 +590,13 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
             verify_revision(load_lease(root), current["revision"])
             atomic_json(lease_path, renewed)
             renewal_completed = True
+        if is_supervision_tag(args.tag):
+            # A supervision component is not a writer. It announces so the
+            # census can see it, but claiming the checkout would steal the
+            # lease from the very main that launched it — which is exactly
+            # what happened: the detached owner claimed and its parent's
+            # arming was then refused as OWNED-ELSEWHERE.
+            renewal_completed = True
         if not renewal_completed:
             claimed_at = now()
             history = list(current.get("takeovers", [])) if current else []
@@ -699,7 +713,8 @@ def require_holder(args: argparse.Namespace) -> None:
         lease = load_lease(root)
     if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):
         fail(
-            f"OWNED-ELSEWHERE: this checkout is held by {lease.get('holderMainId')}; "
+            f"OWNED-ELSEWHERE: this checkout is held by {lease.get('holderMainId')} "
+            f"(caller is {identity.get('class')} {identity.get('mainId')}); "
             "use scripts/agents/second-session.sh for an isolated writer"
         )
     stamp = load_object(lease_paths(root)[3]) if lease_paths(root)[3].exists() else {}
