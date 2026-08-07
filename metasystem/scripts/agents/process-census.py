@@ -717,7 +717,18 @@ def announcements(fixture_by_pid: dict[int, Process], errors: list[str]) -> list
                 errors.append(f"announcement-identity:{path.name}")
                 continue
         synthetic = fixture_by_pid.get(pid)
-        alive = bool(synthetic and synthetic.alive and synthetic.started == start) if fixture_by_pid else identity_alive(pid, start)
+        # Fixture first, kernel second — the same precedence every other
+        # identity reader uses. A simulated process table ADDS processes for a
+        # census to inventory; it does not declare the rest of the machine
+        # dead. Treating absence from the fixture as death deleted the
+        # announcement of every real main that ran while a fixture was
+        # installed, and a main whose announcement is gone classifies as a
+        # delegate in its own checkout.
+        alive = (
+            bool(synthetic.alive and synthetic.started == start)
+            if synthetic is not None
+            else identity_alive(pid, start)
+        )
         if not alive:
             try:
                 path.unlink()

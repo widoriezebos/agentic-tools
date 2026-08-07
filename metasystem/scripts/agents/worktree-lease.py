@@ -601,7 +601,7 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
             verify_revision(load_lease(root), current["revision"])
             atomic_json(lease_path, renewed)
             renewal_completed = True
-        if is_supervision_tag(args.tag):
+        if is_supervision_tag(str(announcement.get("instanceTag", ""))):
             # A supervision component is not a writer. It announces so the
             # census can see it, but claiming the checkout would steal the
             # lease from the very main that launched it — which is exactly
@@ -680,33 +680,6 @@ def authorize(args: argparse.Namespace) -> None:
         identity["claimEpoch"] = lease["claimEpoch"]
         identity["revision"] = lease["revision"]
     print(json.dumps(identity, sort_keys=True))
-
-
-def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
-    """Claim an unheld lease for an already-announced main."""
-    lease_path, lock_path, _, stamp_path = lease_paths(root)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path.touch(exist_ok=True)
-    with lock_path.open("a+") as lock:
-        acquire_bounded(lock, "claim")
-        if lease_path.exists():
-            return
-        claimed = now()
-        atomic_json(
-            lease_path,
-            {
-                "holderMainId": announcement["mainId"],
-                "pid": announcement["pid"],
-                "pidStartedAt": announcement["pidStartedAt"],
-                "commandHash": announcement["commandHash"],
-                "claimedAt": claimed,
-                "renewedAt": claimed,
-                "revision": 1,
-                "claimEpoch": 1,
-                "takeovers": [],
-            },
-        )
-        atomic_json(stamp_path, {"claimEpoch": 1, "sweptAt": claimed, "reason": "first-claim"})
 
 
 def require_holder(args: argparse.Namespace) -> None:

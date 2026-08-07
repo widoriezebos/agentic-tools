@@ -156,6 +156,36 @@ wait_for_start_identity() { # name, pid
   return 1
 }
 
+# A launched component is not yet a supervising one. The staleness rule reads
+# heartbeats, and a component that has not written its first heartbeat looks
+# exactly like one that stopped writing them -- so a launch that returns at
+# spawn lets the supervisor declare its own newborn component stale and replace
+# it. Every replacement stops the running set, and each of those gaps is a
+# moment with no census writer at all. A launch therefore completes only once
+# both components have heartbeat under the identity it just started.
+#
+# Waiting for a heartbeat is not waiting for a live process, so this also stops
+# the moment the component dies: a process killed before its first heartbeat
+# never produces one, and blocking for the full ceiling on it would strand the
+# supervisor exactly when it is needed to replace the set.
+wait_for_first_heartbeat() { # name, heartbeat file, instance tag, pid, start
+  local name=$1 file=$2 tag=$3 pid=$4 start=$5 cap started deadline elapsed
+  cap=$(supervision_wait_cap 5)
+  started=$SECONDS
+  deadline=$((SECONDS + cap))
+  while (( SECONDS < deadline )); do
+    [[ "$(json_field "$file" instanceTag 2>/dev/null || true)" == "$tag" ]] && return 0
+    if ! identity_alive "$pid" "$start" "$tag"; then
+      echo "supervision component died before its first heartbeat: $name pid=$pid" >&2
+      return 1
+    fi
+    sleep 0.02
+  done
+  elapsed=$((SECONDS - started))
+  echo "supervision first-heartbeat ceiling reached: $name (elapsed: ${elapsed}s; scaled cap: ${cap}s)" >&2
+  return 1
+}
+
 read_component_identity() { # state, component => pid start tag
   python3 - "$1" "$2" <<'PY'
 import json, sys
@@ -254,9 +284,13 @@ with os.fdopen(fd,"w") as h: json.dump(value,h,indent=2,sort_keys=True); h.write
 os.replace(tmp,output)
 PY
     touch "$reaper_gate"
+    # An incomplete launch is not fatal: the supervision loop below detects the
+    # component that never reported and replaces the set on its next tick.
+    wait_for_first_heartbeat watcher "$watcher_heartbeat" "$watcher_tag" "$watcher_pid" "$watcher_start" || return 1
+    wait_for_first_heartbeat reaper "$reaper_heartbeat" "$reaper_tag" "$reaper_pid" "$reaper_start" || return 1
   }
 
-  launch_set
+  launch_set || true
   [[ -z "${METASYSTEM_WATCH_POLL_INTERVAL_MS:-}" ]] || sleep "$interval_sleep"
   while true; do
     stale=
@@ -269,7 +303,7 @@ PY
     done
     if [[ -n "$stale" ]]; then
       printf '%s STALE-SUPERVISOR component=%s generation=%s\n' "$(now_iso)" "$stale" "$generation" >>"$supervision/supervisor.log"
-      launch_set
+      launch_set || true
     fi
     sleep "$interval_sleep"
   done

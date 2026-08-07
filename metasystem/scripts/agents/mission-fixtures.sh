@@ -466,6 +466,16 @@ for name in ("watcher.heartbeat.json","reaper.heartbeat.json"):
 path=directory/"last-census.json"; value=json.loads(path.read_text()); value["completedAtEpoch"]=now; path.write_text(json.dumps(value)+"\n")
 PY
 
+# A mission runner reaps and closes job chains, and both are control-plane
+# writes reserved for the checkout's holder. This shell is that main: announce
+# it, which also claims the checkout, so the runner it starts authenticates
+# through an announced ancestor instead of classifying as a delegate of
+# whichever agent happens to be running the suite.
+"$repo/scripts/agents/worktree-lease.py" --root "$repo" announce \
+  --session mission-fixtures --pid $$ \
+  --start "$("$repo/scripts/agents/process-census.py" started-at --pid $$)" \
+  --tag fixture-mission-main --runtime fake >/dev/null
+
 make_end_state_contract() { # mission, fake-host behavior
   local mission=$1 behavior=$2 path="$repo/plans/mission-$1.contract.md" contract_sha
   cat >"$path" <<EOF

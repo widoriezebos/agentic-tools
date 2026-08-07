@@ -38,6 +38,9 @@ capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
 standing_reaper=0
+# How long the reaper waits past a record's handshake budget before calling a
+# still-pending job process-lost. See the pending branch in reap_record.
+handshake_backstop_grace_sec=2
 process_census="$root/scripts/agents/process-census.py"
 arm_supervision="$root/scripts/agents/arm-supervision.sh"
 mission_fence="$root/scripts/agents/mission-fence.py"
@@ -452,73 +455,109 @@ wind_down_group() { # record
   return 0
 }
 
-acquire_chain_lock() { # root id
-  local chain=$1 dir="$locks/$1.d" owner pid tag owner_state
-  mkdir -p "$locks"
-  while ! mkdir "$dir" 2>/dev/null; do
-    owner="$dir/owner.json"
-    [[ -f "$owner" ]] || die 1 "chain lock has no owner lease: $dir"
-    pid=$(json_field "$owner" pid 2>/dev/null || true)
-    tag=$(json_field "$owner" instanceTag 2>/dev/null || true)
-    owner_state=$(lock_owner_state "$pid" "$tag")
-    [[ "$owner_state" != live ]] || die 1 "chain is busy: $chain"
-    [[ "$owner_state" != unknown ]] || die 1 "chain lock owner liveness cannot be verified: $chain"
-    [[ "$(find "$dir" -mindepth 1 -maxdepth 1 -type f -print | wc -l | tr -d ' ')" == 1 && -f "$owner" ]] \
-      || die 1 "stale chain lock contains unexpected files: $dir"
-    rm "$owner"
-    rmdir "$dir"
-  done
-  python3 - "$dir/owner.json" "$$" "$process_instance_tag" <<'PY'
-import json, os, sys, tempfile
+# One primitive for both directory locks, because both got the same two rules
+# wrong. A claim publishes the directory and its owner in ONE step: a directory
+# rename replaces only an EMPTY directory, so it claims an absent lock, heals an
+# ownerless husk left by an older crash, and refuses an owned one. Creating the
+# directory first and writing the owner second left a window in which a
+# contender read an ownerless lock and refused. A release frees only a lock this
+# process still owns, and never fails when it no longer does -- a release that
+# deletes whatever it finds hands a live owner's lock to a third writer.
+owner_lock() { # claim|release, directory, pid, tag -> 0 done, 3 busy, 4 not-owner
+  python3 - "$@" <<'PY'
+import json, os, shutil, subprocess, sys, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-path = Path(sys.argv[1])
-value = {"pid": int(sys.argv[2]), "instanceTag": sys.argv[3], "acquiredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-fd, temp = tempfile.mkstemp(prefix="owner.", suffix=".tmp", dir=path.parent)
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    json.dump(value, handle, sort_keys=True)
-    handle.write("\n")
-    handle.flush()
-    os.fsync(handle.fileno())
-os.replace(temp, path)
+
+command, directory, pid, tag = sys.argv[1], Path(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+owner = directory / "owner.json"
+
+def identity():
+    try:
+        value = json.loads(owner.read_text(encoding="utf-8"))
+        return int(value["pid"]), str(value.get("instanceTag", ""))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+def holder_state(other_pid, other_tag):
+    try:
+        os.kill(other_pid, 0)
+    except ProcessLookupError:
+        return "dead"
+    except PermissionError:
+        return "live"
+    result = subprocess.run(
+        ["ps", "-p", str(other_pid), "-o", "command="],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+    )
+    if result.returncode != 0:
+        return "unknown"
+    return "live" if other_tag and other_tag in result.stdout else "stale"
+
+def owner_payload():
+    return json.dumps(
+        {"pid": pid, "instanceTag": tag,
+         "acquiredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
+        sort_keys=True,
+    ) + "\n"
+
+if command == "release":
+    current = identity()
+    if current != (pid, tag):
+        raise SystemExit(0 if current is None else 4)
+    retiring = directory.parent / f"{directory.name}.retiring.{pid}"
+    try:
+        os.rename(directory, retiring)
+    except OSError:
+        raise SystemExit(0)
+    shutil.rmtree(retiring, ignore_errors=True)
+    raise SystemExit(0)
+
+directory.parent.mkdir(parents=True, exist_ok=True)
+for attempt in range(3):
+    staging = Path(tempfile.mkdtemp(prefix=f"{directory.name}.claim.", dir=directory.parent))
+    (staging / "owner.json").write_text(owner_payload(), encoding="utf-8")
+    try:
+        os.rename(staging, directory)
+        raise SystemExit(0)
+    except OSError:
+        shutil.rmtree(staging, ignore_errors=True)
+    current = identity()
+    if current is None or holder_state(*current) in {"live", "unknown"}:
+        raise SystemExit(3)
+    husk = directory.parent / f"{directory.name}.dead.{pid}.{attempt}"
+    try:
+        os.rename(directory, husk)
+    except OSError:
+        continue
+    shutil.rmtree(husk, ignore_errors=True)
+raise SystemExit(3)
 PY
+}
+
+acquire_chain_lock() { # root id
+  local chain=$1 dir="$locks/$1.d" status=0 pid tag owner_state
+  mkdir -p "$locks"
+  owner_lock claim "$dir" "$$" "$process_instance_tag" || status=$?
+  (( status == 0 )) && return 0
+  pid=$(json_field "$dir/owner.json" pid 2>/dev/null || true)
+  tag=$(json_field "$dir/owner.json" instanceTag 2>/dev/null || true)
+  [[ -n "$pid" ]] || die 1 "chain lock has no owner lease: $dir"
+  owner_state=$(lock_owner_state "$pid" "$tag")
+  [[ "$owner_state" != unknown ]] || die 1 "chain lock owner liveness cannot be verified: $chain"
+  die 1 "chain is busy: $chain"
 }
 
 release_chain_lock() { # root id
-  local dir="$locks/$1.d" owner="$locks/$1.d/owner.json" pid tag
-  [[ -f "$owner" ]] || return 0
-  pid=$(json_field "$owner" pid 2>/dev/null || true)
-  tag=$(json_field "$owner" instanceTag 2>/dev/null || true)
-  [[ "$pid" == "$$" && "$tag" == "$process_instance_tag" ]] || die 1 "refusing to release another owner's chain lock"
-  rm "$owner"
-  rmdir "$dir"
+  local status=0
+  owner_lock release "$locks/$1.d" "$$" "$process_instance_tag" || status=$?
+  (( status == 4 )) && die 1 "refusing to release another owner's chain lock"
+  return 0
 }
 
 acquire_lifecycle_lock() { # job id; nonzero means a live owner has it
-  local job=$1 dir="$record_locks/$1.lifecycle.d" owner pid tag owner_state
   mkdir -p "$record_locks"
-  while ! mkdir "$dir" 2>/dev/null; do
-    owner="$dir/owner.json"
-    [[ -f "$owner" ]] || return 1
-    pid=$(json_field "$owner" pid 2>/dev/null || true)
-    tag=$(json_field "$owner" instanceTag 2>/dev/null || true)
-    owner_state=$(lock_owner_state "$pid" "$tag")
-    [[ "$owner_state" != live && "$owner_state" != unknown ]] || return 1
-    [[ "$(find "$dir" -mindepth 1 -maxdepth 1 -type f -print | wc -l | tr -d ' ')" == 1 && -f "$owner" ]] || return 1
-    rm "$owner"
-    rmdir "$dir"
-  done
-  python3 - "$dir/owner.json" "$$" "$process_instance_tag" <<'PY'
-import json, os, sys, tempfile
-from datetime import datetime, timezone
-from pathlib import Path
-path = Path(sys.argv[1])
-value = {"pid": int(sys.argv[2]), "instanceTag": sys.argv[3], "acquiredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-fd, temp = tempfile.mkstemp(prefix="owner.", suffix=".tmp", dir=path.parent)
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    json.dump(value, handle, sort_keys=True); handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
-os.replace(temp, path)
-PY
+  owner_lock claim "$record_locks/$1.lifecycle.d" "$$" "$process_instance_tag"
 }
 
 acquire_lifecycle_lock_until() { # job id, maximum wait seconds
@@ -537,10 +576,7 @@ acquire_lifecycle_lock_until() { # job id, maximum wait seconds
 }
 
 release_lifecycle_lock() { # job id
-  local dir="$record_locks/$1.lifecycle.d" owner="$record_locks/$1.lifecycle.d/owner.json"
-  [[ -f "$owner" ]] || return 0
-  rm "$owner"
-  rmdir "$dir"
+  owner_lock release "$record_locks/$1.lifecycle.d" "$$" "$process_instance_tag" || true
 }
 
 config_get() { "$config" get "$@"; }
@@ -1179,7 +1215,13 @@ except ValueError: raise SystemExit(1)
 print(int((datetime.now(timezone.utc) - started).total_seconds()))
 PY
     ) || true
-    if [[ "$pending_age" =~ ^-?[0-9]+$ ]] && (( pending_age < handshake_budget )); then
+    # The dispatcher owns the handshake verdict: it is the process that was
+    # waiting, and it names the failure handshake_timeout. The reaper is the
+    # backstop for a dispatcher that is no longer there. Both fired at exactly
+    # the same age, so which diagnosis a record kept was a coin flip. The
+    # backstop waits out the dispatcher's own write instead.
+    if [[ "$pending_age" =~ ^-?[0-9]+$ ]] \
+      && (( pending_age < handshake_budget + handshake_backstop_grace_sec )); then
       return
     fi
   fi

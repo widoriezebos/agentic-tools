@@ -186,47 +186,98 @@ os.replace(temporary, output)
 PY
 }
 
-acquire_census_writer() {
-  local lock="$supervision_dir/census-writer.d" owner="$supervision_dir/census-writer.d/owner.json" pid start
-  if mkdir "$lock" 2>/dev/null; then
-    atomic_identity_json "$owner" census-writer
-    census_writer_owned=1
-    return 0
-  fi
-  [[ -f "$owner" ]] || { echo "census writer lock has no provable owner" >&2; return 1; }
-  read -r pid start < <(python3 - "$owner" <<'PY'
-import json, sys
-try: v=json.load(open(sys.argv[1])); print(v["pid"], v["pidStartedAt"])
-except (OSError, ValueError, KeyError, TypeError): raise SystemExit(1)
+# The census-writer lock. Two rules make it safe, and both are enforced here
+# rather than left to the caller.
+#
+# A claim publishes the lock and its owner in ONE step. Building the owner file
+# inside a staging directory and renaming that directory into place means no
+# observer ever sees a lock without an owner: a directory rename replaces only
+# an EMPTY directory, so it claims an absent lock, heals an ownerless husk left
+# by an older crash, and refuses an owned one. Creating the directory first and
+# writing the owner second left a window in which a concurrent writer read an
+# ownerless lock and refused forever, since nothing could prove a live owner.
+#
+# A release frees the lock only while this process still owns it. Takeover
+# requires proven death, so a process that is alive to run its own release
+# cannot have been replaced -- but a process whose lock WAS taken over must not
+# delete its successor's owner file or hand the lock to a third writer.
+census_writer_lock() { # claim | release
+  python3 - "$1" "$supervision_dir" "$$" "$instance_tag" "$process_census" <<'PY'
+import json, os, shutil, subprocess, sys, tempfile, time
+from pathlib import Path
+
+command, supervision, pid = sys.argv[1], Path(sys.argv[2]), int(sys.argv[3])
+tag, helper = sys.argv[4], sys.argv[5]
+lock, owner = supervision / "census-writer.d", supervision / "census-writer.d" / "owner.json"
+
+def fail(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+def started_at(target):
+    return int(subprocess.check_output([helper, "started-at", "--pid", str(target)], text=True).strip())
+
+def alive(target, start):
+    return subprocess.run([helper, "alive", "--pid", str(target), "--start-time", str(start)],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+def owner_identity():
+    try:
+        value = json.loads(owner.read_text())
+        return int(value["pid"]), int(value["pidStartedAt"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+if command == "release":
+    try:
+        mine = (pid, started_at(pid))
+    except (subprocess.CalledProcessError, ValueError):
+        raise SystemExit(0)  # cannot prove ownership; a dead owner is taken over anyway
+    if owner_identity() != mine:
+        raise SystemExit(0)  # a successor owns it now: leave the successor's lock alone
+    retiring = supervision / f"census-writer.retiring.{pid}"
+    try:
+        os.rename(lock, retiring)
+    except OSError:
+        raise SystemExit(0)
+    shutil.rmtree(retiring, ignore_errors=True)
+    raise SystemExit(0)
+
+mine_started = started_at(pid)
+supervision.mkdir(parents=True, exist_ok=True)
+for attempt in range(3):
+    staging = Path(tempfile.mkdtemp(prefix="census-writer.claim.", dir=supervision))
+    (staging / "owner.json").write_text(json.dumps(
+        {"function": "census-writer", "pid": pid, "pidStartedAt": mine_started,
+         "instanceTag": tag, "observedAtEpoch": int(time.time())}, sort_keys=True) + "\n")
+    try:
+        os.rename(staging, lock)
+        raise SystemExit(0)
+    except OSError:
+        shutil.rmtree(staging, ignore_errors=True)
+    identity = owner_identity()
+    if identity is None:
+        fail("census writer lock has malformed owner identity")
+    if alive(*identity):
+        fail(f"live census writer already owns {supervision}")
+    dead = supervision / f"census-writer.dead.{pid}.{attempt}"
+    try:
+        os.rename(lock, dead)
+    except OSError:
+        continue  # another writer moved the husk aside first; try to claim again
+    shutil.rmtree(dead, ignore_errors=True)
+fail("census writer takeover lost a race")
 PY
-  ) || { echo "census writer lock has malformed owner identity" >&2; return 1; }
-  if "$process_census" alive --pid "$pid" --start-time "$start" >/dev/null 2>&1; then
-    echo "live census writer already owns $supervision_dir" >&2
-    return 1
-  fi
-  rm "$owner"
-  rmdir "$lock"
-  mkdir "$lock" || { echo "census writer takeover lost a race" >&2; return 1; }
-  atomic_identity_json "$owner" census-writer
+}
+
+acquire_census_writer() {
+  census_writer_lock claim || return 1
   census_writer_owned=1
 }
 
 release_census_writer() {
   (( census_writer_owned )) || return 0
-  # Release in ONE observable step. Removing the owner file first and the
-  # directory second leaves an ownerless husk whenever the writer dies between
-  # them, and an ownerless lock blocks every future writer forever: nothing can
-  # prove a live owner, so nothing may take over. Renaming the whole directory
-  # frees the lock atomically; a death after the rename leaves only a stray
-  # directory under a name no acquirer looks at.
-  local lock="$supervision_dir/census-writer.d"
-  local retiring="$supervision_dir/census-writer.retiring.$$"
-  if mv "$lock" "$retiring" 2>/dev/null; then
-    rm -rf "$retiring" 2>/dev/null || true
-  else
-    rm -f "$lock/owner.json" 2>/dev/null || true
-    rmdir "$lock" 2>/dev/null || true
-  fi
+  census_writer_lock release || true
 }
 
 append_census_log() { # captured scan output

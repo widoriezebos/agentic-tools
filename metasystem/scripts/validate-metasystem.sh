@@ -1863,7 +1863,13 @@ PY
   [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$agent_repo/artifacts/agents/jobs/no-signal.json")" == failed ]] \
     || { echo "non-signal handshake did not end failed" >&2; exit 1; }
   grep -Fq 'handshake_timeout' "$agent_repo/artifacts/agents/jobs/no-signal.json" \
-    || { echo "non-signal handshake did not retain its error" >&2; exit 1; }
+    || { echo "non-signal handshake did not retain its error" >&2
+         cat "$agent_repo/artifacts/agents/jobs/no-signal.json" >&2
+         echo "--- dispatch said:" >&2
+         cat "$agent_fixture/no-session-signal.out" >&2 2>/dev/null || true
+         echo "--- job log:" >&2
+         sed -n '1,60p' "$agent_repo/artifacts/agents/jobs/no-signal.log" >&2 2>/dev/null || true
+         exit 1; }
   handshake_failure="$agent_fixture/handshake-failure.md"
   make_agent_brief "$handshake_failure" design 'FAKE:handshake-failure'
   agent_fails handshake-failure '' "$agent_dispatch" dispatch --role design-critic --brief "$handshake_failure" --job-id handshake-failure --wait
@@ -1890,14 +1896,19 @@ PY
   # record is older than its budget, the existing process-loss classification
   # applies unchanged.
   launch_window_source="$agent_fixture/launch-window.json"
-  python3 - "$agent_repo/artifacts/agents/jobs/happy.json" "$launch_window_source" <<'PY'
+  launch_window_pending="$agent_fixture/launch-window-pending.json"
+  # A record is created in pending-setup and only then completed into pending,
+  # so the fixture takes both steps the dispatcher takes. Writing a pending
+  # record straight into creation tested a transition the dispatcher no longer
+  # performs.
+  python3 - "$agent_repo/artifacts/agents/jobs/happy.json" "$launch_window_source" "$launch_window_pending" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
 record = json.loads(Path(sys.argv[1]).read_text())
 record.update({
     "jobId": "launch-window", "parentJob": None, "round": 1,
-    "status": "pending", "phase": "handshake", "error": None,
+    "status": "pending-setup", "phase": "handshake", "error": None,
     "pid": None, "pidStartedAt": None, "pgid": None,
     "instanceTag": "metasystem-job-launch-window", "custodyProcesses": [],
     "sessionId": None, "endedAt": None, "usage": None, "mirror": None,
@@ -1907,8 +1918,10 @@ record.update({
 for key in ("ownershipProof", "chainUsage"):
     record.pop(key, None)
 Path(sys.argv[2]).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+Path(sys.argv[3]).write_text(json.dumps({**record, "status": "pending"}, indent=2, sort_keys=True) + "\n")
 PY
   run_agent_fixture launch-window-create launch-window "$agent_dispatch" __record-create --job launch-window --source "$launch_window_source"
+  run_agent_fixture launch-window-setup launch-window "$agent_dispatch" __record-setup --job launch-window --source "$launch_window_pending"
   run_agent_fixture launch-window-young-reap launch-window "$agent_dispatch" reap --job launch-window
   [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$agent_repo/artifacts/agents/jobs/launch-window.json")" == pending ]] \
     || { echo "pending record was reaped inside its handshake window" >&2; exit 1; }

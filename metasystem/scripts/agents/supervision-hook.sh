@@ -39,12 +39,15 @@ search_pid=$(ps -p "$PPID" -o ppid= 2>/dev/null | tr -d ' ' || true)
 [[ "$search_pid" =~ ^[1-9][0-9]*$ ]] || search_pid=$PPID
 identity=$("$helper" find-ancestor --repo "$repo" --pid "$search_pid" --runtime "$runtime" 2>/dev/null || true)
 main_id=
+main_class=
 main_holder=false
+identity_pid=
 if [[ -n "$identity" ]]; then
   identity_pid=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["pid"])' "$identity")
   lease_view=$("$lease_helper" --root "$harness_root" classify --caller-pid "$identity_pid" 2>/dev/null || true)
   if [[ -n "$lease_view" ]]; then
     main_id=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("mainId",""))' "$lease_view")
+    main_class=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("class",""))' "$lease_view")
     main_holder=$(python3 -c 'import json,sys; print("true" if json.loads(sys.argv[1]).get("holder") else "false")' "$lease_view")
   fi
 fi
@@ -111,17 +114,23 @@ if [[ "$event" == stop ]]; then
       protocol_counts=$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1]).get("counts",{}),separators=(",",":")))' "$protocol_growth")
     fi
   fi
-  if [[ "$main_holder" != true ]]; then
+  # "Advisor" is a positive finding, not a fallback. It means an announced main
+  # of THIS checkout is not the one holding it. A caller that could not be
+  # identified at all is not an advisor -- it is unclassified, and answering it
+  # with OWNED-ELSEWHERE replaces the entire turn-end report, including the
+  # refusal to walk away from open work, with a sentence about ownership.
+  if [[ "$main_class" == MAIN && "$main_holder" != true ]]; then
     advisor_message="OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run scripts/agents/second-session.sh."
     [[ -z "$protocol_message" ]] || advisor_message="$advisor_message
 $protocol_message"
     surface_json "$advisor_message"
-    [[ -z "$main_id" || -z "$protocol_message" ]] || \
+    [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
       "$lease_helper" --root "$harness_root" protocol-advance --main-id "$main_id" \
         --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
     exit 0
   fi
-  "$lease_helper" --root "$harness_root" renew --caller-pid "$identity_pid" >/dev/null 2>&1 || true
+  [[ -z "$identity_pid" ]] || \
+    "$lease_helper" --root "$harness_root" renew --caller-pid "$identity_pid" >/dev/null 2>&1 || true
   last="$harness_root/artifacts/agents/supervision/last-census.json"
   state="$harness_root/artifacts/agents/supervision/state.json"
   message=$(python3 - "$last" "$state" "$helper" <<'PY'
@@ -217,7 +226,7 @@ $message"
     # the silent-exit failure this very check exists to make visible.
     surface_json "$(work_sentence)"
   fi
-  [[ -z "$main_id" || -z "$protocol_message" ]] || \
+  [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
     "$lease_helper" --root "$harness_root" protocol-advance --main-id "$main_id" \
       --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
   exit 0

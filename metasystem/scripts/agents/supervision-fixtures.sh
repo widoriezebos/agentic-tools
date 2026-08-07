@@ -262,6 +262,20 @@ release_checkout() { # repo
   rm -f "$1/artifacts/agents/mains/worktree-lease.json" \
         "$1/artifacts/agents/mains/reaped-after-claim.json"
 }
+
+# Control-plane writes belong to the checkout's announced holder, so a fixture
+# that drives one must BE a main rather than borrow whatever class its ambient
+# ancestry happens to produce. Ambient class is not stable: the same phase
+# classifies as HUMAN from a terminal, as DELEGATE under an agent that runs the
+# suite, and as DELEGATE again whenever a census fixture puts a simulated agent
+# command on a real ancestor's process identifier. Announcing this shell claims
+# the checkout as a side effect, which is what a starting main does.
+become_main() { # repo, session
+  local repo=$1 session=$2
+  "$repo/scripts/agents/worktree-lease.py" --root "$repo" announce \
+    --session "$session" --pid $$ --start "$(process_started_at $$)" \
+    --tag "fixture-$session" --runtime fake >/dev/null
+}
 watcher="$repo/scripts/watch-background-jobs.sh"
 census="$repo/scripts/agents/process-census.py"
 process_fixture=$repo/process-fixture.json
@@ -620,6 +634,7 @@ make_repo "$gate_repo"
 brief=$gate_repo/brief.md
 sed 's/^Working Mode:.*/Working Mode: design/' "$gate_repo/scripts/agents/templates/brief.md" >"$brief"
 "$gate_repo/scripts/agents/adapters/fake.sh" probe >/dev/null
+become_main "$gate_repo" gate-session
 dispatch_fails() { # name, expected
   local name=$1 expected=$2
   set +e
@@ -732,8 +747,13 @@ python3 - "$gate_repo/artifacts/agents/supervision/state.json" <<'PY'
 import json,sys
 p=sys.argv[1]; v=json.load(open(p)); v["owner"]["pid"]=999999; v["owner"]["pidStartedAt"]=1; json.dump(v,open(p,"w"))
 PY
+# The hook reports on the main it belongs to, so it must run as one: the fake
+# runtime's ancestor variable names this shell, which become_main announced and
+# which therefore holds this checkout. Without it the hook correctly reports
+# that it is a read-only advisor and never reaches the drift it is asked about.
 printf '{"session_id":"stale-surface","cwd":"%s","hook_event_name":"Stop"}\n' "$gate_repo" \
-  | "$gate_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/stale-surface.out"
+  | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
+    "$gate_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/stale-surface.out"
 grep -Fq 'started against an older version of this code' "$tmp/stale-surface.out" \
   || { echo "S4-3/S4-4: end-turn hook hid fingerprint drift" >&2; exit 1; }
 grep -Fq 'its owner part is not running' "$tmp/stale-surface.out" \
@@ -791,8 +811,13 @@ wait_until "dead announcement pruning" test ! -e "$repo/artifacts/agents/mains/d
 
 write_process_fixture "$process_fixture" "$raw_pid|1|$raw_pid|$raw_start|metasystem-fake-agent raw|$repo"
 wait_until "UNTRACKED end-turn source" inventory_has "$last" UNTRACKED "$raw_pid"
+# The main that armed this checkout last was the dead one this phase buried, so
+# this shell takes the checkout back before ending a turn in it: an end-of-turn
+# report belongs to the main that holds the checkout.
+become_main "$repo" surface
 printf '{"session_id":"surface","cwd":"%s","hook_event_name":"Stop"}\n' "$repo" \
-  | "$repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/surface.out"
+  | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
+    "$repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/surface.out"
 grep -q 'UNTRACKED' "$tmp/surface.out" || { echo "end-of-turn hook hid UNTRACKED" >&2; exit 1; }
 
 # S4-15: a stop event inside a repository is NEVER silent. Silence reads
@@ -901,6 +926,10 @@ mkdir -p "$foreign/repo"
 mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
 cp "$source_root/scripts/agents/arm-supervision.sh" "$foreign/repo/metasystem/scripts/agents/"
 cp "$source_root/scripts/agents/process-census.py" "$foreign/repo/metasystem/scripts/agents/"
+# Shutting supervision down is a control-plane write, so arming needs the lease
+# helper here too; without it this sandbox refuses for the wrong reason and the
+# foreign-owner rule below is never actually exercised.
+cp "$source_root/scripts/agents/worktree-lease.py" "$foreign/repo/metasystem/scripts/agents/"
 foreign_sleep_pid=$(
   bash -c 'python3 -c "import signal; signal.pause()" metasystem-foreign-owner >/dev/null 2>&1 & echo $!'
 )
@@ -936,7 +965,8 @@ stop_root=$tmp/stop-hook
 mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
 cp "$source_root/scripts/agents/open-work.py" "$source_root/scripts/agents/stop-block.py" \
    "$source_root/scripts/agents/supervision-hook.sh" "$source_root/scripts/agents/process-census.py" \
-   "$source_root/scripts/agents/arm-supervision.sh" "$stop_root/scripts/agents/"
+   "$source_root/scripts/agents/arm-supervision.sh" "$source_root/scripts/agents/worktree-lease.py" \
+   "$stop_root/scripts/agents/"
 cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - In flight right now: nothing
 - Waiting on the human: nothing blocking
