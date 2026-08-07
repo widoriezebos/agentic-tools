@@ -213,9 +213,20 @@ PY
 
 release_census_writer() {
   (( census_writer_owned )) || return 0
-  local lock="$supervision_dir/census-writer.d" owner="$supervision_dir/census-writer.d/owner.json"
-  rm -f "$owner"
-  rmdir "$lock" 2>/dev/null || true
+  # Release in ONE observable step. Removing the owner file first and the
+  # directory second leaves an ownerless husk whenever the writer dies between
+  # them, and an ownerless lock blocks every future writer forever: nothing can
+  # prove a live owner, so nothing may take over. Renaming the whole directory
+  # frees the lock atomically; a death after the rename leaves only a stray
+  # directory under a name no acquirer looks at.
+  local lock="$supervision_dir/census-writer.d"
+  local retiring="$supervision_dir/census-writer.retiring.$$"
+  if mv "$lock" "$retiring" 2>/dev/null; then
+    rm -rf "$retiring" 2>/dev/null || true
+  else
+    rm -f "$lock/owner.json" 2>/dev/null || true
+    rmdir "$lock" 2>/dev/null || true
+  fi
 }
 
 append_census_log() { # captured scan output

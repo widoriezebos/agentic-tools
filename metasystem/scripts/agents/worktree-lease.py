@@ -195,7 +195,11 @@ def announcements(root: Path, strict: bool = True) -> list[tuple[Path, dict[str,
             if strict:
                 fail(f"caller classification refused: unreadable announcement {path.name}")
             continue
-        if not isinstance(value, dict) or set(value) != ANNOUNCEMENT_FIELDS:
+        # Same rule as the census: the base fields are required and the
+        # one-writer identity fields are the only permitted extras. Exact-set
+        # equality discarded every announcement of the other generation, and a
+        # discarded announcement makes its own main classify as a delegate.
+        if not isinstance(value, dict) or not ANNOUNCEMENT_FIELDS <= set(value):
             if strict:
                 fail(f"caller classification refused: invalid announcement schema {path.name}")
             continue
@@ -663,10 +667,14 @@ def authorize(args: argparse.Namespace) -> None:
     root = args.root.resolve()
     identity = classify(root, args.caller_pid)
     lease = load_lease(root, required=False)
+    # An UNCLAIMED checkout has no holder to be elsewhere: an authenticated
+    # main is its writer until someone claims, and the first gated write does
+    # claim. Reporting holder=false for an unclaimed checkout refused every
+    # first write in a fresh repository, which is the state every provisioned
+    # target and every fixture sandbox starts in.
     identity["holder"] = bool(
         identity.get("class") == "MAIN"
-        and lease is not None
-        and identity.get("mainId") == lease.get("holderMainId")
+        and (lease is None or identity.get("mainId") == lease.get("holderMainId"))
     )
     if lease is not None:
         identity["claimEpoch"] = lease["claimEpoch"]
@@ -707,6 +715,12 @@ def require_holder(args: argparse.Namespace) -> None:
     if identity.get("class") == "HUMAN":
         print(json.dumps({"class": "HUMAN", "holder": True, "claimEpoch": None, "mainId": None}))
         return
+    if identity.get("class") in {"DELEGATE", "ADAPTER-SUPERVISOR", "SUPERVISION"}:
+        # Same rule as holder_identity: internal helpers of an authorized
+        # operation are not writers and are not re-gated here.
+        print(json.dumps({"class": identity["class"], "holder": False,
+                          "claimEpoch": None, "mainId": None}, sort_keys=True))
+        return
     lease = load_lease(root, required=False)
     if lease is None:
         # An unclaimed checkout is claimable by an authenticated main: one
@@ -715,7 +729,10 @@ def require_holder(args: argparse.Namespace) -> None:
         # repository, and every fixture that dispatches before arming,
         # permanently unable to act.
         if identity.get("class") != "MAIN":
-            fail(f"checkout lease is absent and caller pid {args.caller_pid} is {identity.get('class')}, not an authenticated main")
+                        fail(
+                f"checkout lease is absent and caller pid {args.caller_pid} is "
+                f"{identity.get('class')}, not an authenticated main"
+            )
         claim_for_announcement(root, identity["announcement"])
         lease = load_lease(root)
     if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):
@@ -747,6 +764,14 @@ def holder_identity(root: Path, caller_pid: int, expected_epoch: int | None) -> 
     identity = classify(root, caller_pid)
     if identity.get("class") == "HUMAN":
         return {"class": "HUMAN", "claimEpoch": None, "mainId": None}
+    # A DELEGATE reaching this point is an internal helper of an operation the
+    # holder already authorized at entry (dispatch's own __lock-owner and the
+    # adapter supervisors it launches). Re-gating them would refuse work the
+    # holder is mid-way through, and they cannot claim or hold anything: the
+    # authority matrix keeps them out of every gated verb at ENTRY, which is
+    # where the decision belongs.
+    if identity.get("class") in {"DELEGATE", "ADAPTER-SUPERVISOR", "SUPERVISION"}:
+        return {"class": identity["class"], "claimEpoch": expected_epoch, "mainId": None}
     lease = load_lease(root)
     if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):
         fail(
@@ -792,6 +817,11 @@ def run_held(args: argparse.Namespace) -> None:
         raise SystemExit(result.returncode)
     lock_path = lease_paths(root)[1]
     try:
+        # Create on first use: the lock file is an implementation detail, and
+        # demanding that something else create it first made every first
+        # lease-gated operation in a fresh checkout fail.
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path.touch(exist_ok=True)
         lock = lock_path.open("r+")
     except OSError as error:
         fail(f"checkout lease lock cannot be opened: {error}")
