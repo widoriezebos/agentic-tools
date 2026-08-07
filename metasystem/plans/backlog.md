@@ -9,9 +9,10 @@
 
 0. **Finish KI-24's fixture alignment, then push the batch.** The only thing
    between the current state and a green, pushed, production-ready base. The
-   remaining shape: fixture phases that perform holder-only writes must run
-   under a real announced main identity, not a simulated-agent ancestor. After
-   green: full suite, kit gate, push all sixteen commits, then Devin.
+   rule is settled and applied to the supervision and mission suites: a fixture
+   that performs control-plane writes announces itself as the checkout's main
+   first. Applying it surfaced seven further product defects, all fixed (see
+   KI-24). After green: full suite, kit gate, push the batch, then Devin.
 
 
 1. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the

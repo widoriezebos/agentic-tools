@@ -39,7 +39,7 @@ worktrees="$agents/worktrees"
 process_instance_tag=
 standing_reaper=0
 # How long the reaper waits past a record's handshake budget before calling a
-# still-pending job process-lost. See the pending branch in reap_record.
+# unfinished-handshake job process-lost. See the handshake branch in reap_one_locked.
 handshake_backstop_grace_sec=2
 process_census="$root/scripts/agents/process-census.py"
 arm_supervision="$root/scripts/agents/arm-supervision.sh"
@@ -1173,7 +1173,7 @@ PY
 }
 
 reap_one_locked() { # job
-  local job=$1 record="$jobs/$1.json" status pid tag started cap handshake_budget pending_age elapsed patch root_id mission record_epoch lease_epoch
+  local job=$1 record="$jobs/$1.json" status pid tag started cap handshake_budget session pending_age elapsed patch root_id mission record_epoch lease_epoch
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
@@ -1206,7 +1206,13 @@ reap_one_locked() { # job
   started=$(json_field "$record" startedAt 2>/dev/null || true)
   cap=$(json_field "$record" capMin 2>/dev/null || true)
   handshake_budget=$(json_field "$record" sessionEstablishedTimeoutSec 2>/dev/null || true)
-  if [[ "$status" == pending && "$handshake_budget" =~ ^[1-9][0-9]*$ ]]; then
+  session=$(json_field "$record" sessionId 2>/dev/null || true)
+  # A job is inside its handshake while it has no session, whether its record
+  # still says pending or an adapter has already moved it to running. Reading
+  # only pending left the running-without-a-session window unprotected, which
+  # is precisely where a runtime that never signals ends up.
+  if [[ ( "$status" == pending || ( "$status" == running && ( -z "$session" || "$session" == null ) ) ) \
+      && "$handshake_budget" =~ ^[1-9][0-9]*$ ]]; then
     pending_age=$(python3 - "$started" <<'PY'
 from datetime import datetime, timezone
 import sys

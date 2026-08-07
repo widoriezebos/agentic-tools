@@ -71,6 +71,12 @@ def gates_running() -> bool:
     that says "waiting for the gates" while the gates are visibly running is
     accurate, and calling it stale teaches people to stop writing the truth
     into plans."""
+    # Whether a gate is running is a fact about the whole machine, not about
+    # this checkout, so a test that asserts what this reporter says about PLANS
+    # cannot control it. Fixtures state the answer instead of racing it.
+    declared = os.environ.get("METASYSTEM_GATES_RUNNING")
+    if declared in {"0", "1"}:
+        return declared == "1"
     probe = subprocess.run(
         ["pgrep", "-f", r"validate-metasystem\.sh|validate-kit\.sh"],
         stdout=subprocess.DEVNULL,

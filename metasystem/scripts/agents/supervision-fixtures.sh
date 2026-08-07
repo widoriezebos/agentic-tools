@@ -849,6 +849,10 @@ grep -Fq 'NOTHING LEFT TO WORK ON' "$idle_repo/scripts/agents/supervision-hook.s
 # S4-12: a turn that ends while a plan still names an unblocked next step and
 # nothing is in flight must say so. Continuation is the one part of the loop no
 # prompt can guarantee, so it is checked rather than requested in prose.
+# The reporter also treats a running gate as work in flight. That is a fact
+# about the whole machine -- and this suite IS a gate run -- so the fixture
+# states it rather than racing it, and asserts the plan-reading it is about.
+export METASYSTEM_GATES_RUNNING=0
 open_work_root=$tmp/open-work
 mkdir -p "$open_work_root/plans" "$open_work_root/artifacts/agents/jobs"
 cat >"$open_work_root/plans/stream.md" <<'EOF'

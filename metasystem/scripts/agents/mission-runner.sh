@@ -348,22 +348,61 @@ def cleanup_stale_lease(mission: str) -> None:
     lease_path.unlink(missing_ok=True)
 
 
-def arm_and_preflight(mission: str) -> None:
+def arming_identity(mission: str) -> tuple[str, int, int, str]:
+    """Who this runner arms supervision as: session, pid, start, tag.
+
+    A runner started BY the main that holds this checkout is part of that
+    main's work, not a second writer competing for the same checkout. Arming
+    under a fresh identity there announces a second main and is correctly
+    refused as OWNED-ELSEWHERE. Unattended -- a benchmark target, a scratch
+    checkout, anything with no live holder -- the runner IS the main, and
+    announces itself.
+    """
     pid = os.getpid()
-    started = process_started_at(pid)
+    view = run_command(
+        [
+            str(ROOT / "scripts" / "agents" / "worktree-lease.py"),
+            "--root",
+            str(ROOT),
+            "classify",
+            "--caller-pid",
+            str(pid),
+        ]
+    )
+    if view.returncode == 0:
+        try:
+            value = json.loads(view.stdout)
+        except json.JSONDecodeError:
+            value = {}
+        announcement = value.get("announcement")
+        if value.get("holder") is True and isinstance(announcement, dict):
+            try:
+                return (
+                    str(announcement["sessionId"]),
+                    int(announcement["pid"]),
+                    int(announcement["pidStartedAt"]),
+                    str(announcement["instanceTag"]),
+                )
+            except (KeyError, TypeError, ValueError):
+                pass
+    return (f"mission-runner-{mission}-{pid}", pid, process_started_at(pid), "mission-runner.sh")
+
+
+def arm_and_preflight(mission: str) -> None:
+    session, pid, started, tag = arming_identity(mission)
     arm = run_command(
         [
             str(ROOT / "scripts" / "agents" / "arm-supervision.sh"),
             "--repo",
             str(ROOT),
             "--session",
-            f"mission-runner-{mission}-{pid}",
+            session,
             "--pid",
             str(pid),
             "--start-time",
             str(started),
             "--tag",
-            "mission-runner.sh",
+            tag,
         ]
     )
     if arm.returncode != 0 or "ARMED" not in arm.stdout:

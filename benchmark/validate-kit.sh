@@ -382,7 +382,13 @@ PY
   # fresh target, the extractor-visible identity stamp, and a hard pause at
   # the unsigned human boundary. Do not resume past that boundary here.
   cohort_output=$tmp/cohort.out
-  if ! "${provision_identity[@]}" "$srcrepo/benchmark/run-cohort.sh" \
+  # The gate runs its cohort in its OWN trials root. The snapshot carries the
+  # operator's trials-root.local, so without this the gate provisions a fake
+  # cohort into the directory where real benchmark runs live, and then looks
+  # for it somewhere else entirely.
+  cohort_trials_root=$tmp/trials
+  if ! "${provision_identity[@]}" METASYSTEM_TRIALS_ROOT="$cohort_trials_root" \
+      "$srcrepo/benchmark/run-cohort.sh" \
       --spec bm-1 --repetitions 2 >"$cohort_output" 2>"$tmp/cohort.err"; then
     echo "benchmark cohort: initial staging failed" >&2
     cat "$tmp/cohort.err" >&2
@@ -399,7 +405,7 @@ PY
   [[ -n "$cohort_record" ]] \
     || { echo "benchmark cohort: cohort record is missing" >&2; exit 1; }
   cohort_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["cohortId"])' "$cohort_record")
-  cohort_target=$srcrepo/benchmark/.runs/$cohort_id/targets/1
+  cohort_target=$cohort_trials_root/cohorts/$cohort_id/targets/1
   track_armed_supervision "$cohort_target"
   python3 - "$cohort_record" "$cohort_target/artifacts/agents/benchmark-identity.json" \
     "$srcrepo/benchmark/kit-version" <<'PY'
@@ -419,7 +425,8 @@ assert identity["candidateSha"] == record["candidateSha"]
 assert identity["repetitionIndex"] == 1 and identity["repetitionCount"] == 2
 assert identity["measuringKitVersion"] == kit_version
 PY
-  if "${provision_identity[@]}" "$srcrepo/benchmark/run-cohort.sh" --resume "$cohort_id" \
+  if "${provision_identity[@]}" METASYSTEM_TRIALS_ROOT="$cohort_trials_root" \
+      "$srcrepo/benchmark/run-cohort.sh" --resume "$cohort_id" \
       >"$tmp/cohort-resume.out" 2>"$tmp/cohort-resume.err"; then
     echo "benchmark cohort: unsigned repetition resumed" >&2
     exit 1

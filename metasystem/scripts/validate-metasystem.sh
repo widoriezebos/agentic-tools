@@ -2071,7 +2071,12 @@ path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["startedAt
 PY
   run_agent_fixture timed-reap timed "$agent_dispatch" reap --job timed
   wait_for_agent_fixture_process timed-driver timed "$timeout_driver"
-  [[ "$(cat "$timeout_result")" == 4 ]] || { echo "timeout did not map to wait exit 4 (got $(cat "$timeout_result"))" >&2; exit 1; }
+  [[ "$(cat "$timeout_result")" == 4 ]] || {
+    echo "timeout did not map to wait exit 4 (got $(cat "$timeout_result"))" >&2
+    cat "$agent_repo/artifacts/agents/jobs/timed.json" >&2
+    echo "--- reaper log:" >&2
+    tail -20 "$agent_repo/artifacts/agents/supervision/reaper.log" >&2 2>/dev/null || true
+    exit 1; }
   grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/timed.json" \
     || { echo "absolute cap did not record budget-cap" >&2; exit 1; }
   [[ -f "$agent_repo/artifacts/agents/timed/rounds/1/child.stopped" ]] \
