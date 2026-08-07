@@ -39,44 +39,86 @@ asserts both. Telemetry is candidate-side evidence under the declared trust
 model, never attestation. Handshake holds the requested model only until
 the result replaces it.
 
-**V-2: chain closure at mission end, specified whole.**
-- Closure attempts every chain, collects failures, stamps what closes, and
-  reports failures together; no abort-on-first.
-- Closing an implementer chain mirrors its diff.patch as part of the close.
-- Chains close on completion only. A park never closes chains; parked
-  chains stay open under the mission lease for resume.
-- Completion publishes only after closure succeeds for every chain. If any
-  closure fails, the mission parks with reason `chain-closure-failure`.
-- That park persists the measurement it interrupted: the mission state
-  record gains `measuredOutcome = {classification, gatePassed,
-  measuredCandidateSha, measuredAt}` — gatePassed persisted explicitly so
-  resume knows whether the original result was a gate success (BV-5-2);
-  measuredCandidateSha matches the ledger's candidate-sha, the tree the
-  gate measured.
-- `resume` on that reason re-attempts closure only; on success it publishes
-  completed carrying the preserved measuredOutcome. No re-run, no
-  re-measurement.
-- The mission state record's schema bumps to version 2 for these fields,
-  with a versioned reader exactly like the census schema below; version-1
-  state records remain readable (BV-5-3).
+**V-2: mission completion as a crash-recoverable state machine.**
 
-**V-3: run identity, stamped by the party that knows each half.**
-- The runner owns `artifacts/agents/missions/<id>/execution-identity.json`:
-  append-only, one entry per execution attempt (start and each resume),
-  each entry carrying machine fingerprint, measuring metasystem commit, and
-  timestamp; completion appends the measured candidate sha. Run validity
-  requires every attempt to agree on machine fingerprint AND measuring
-  commit — an attributable run spans one machine and one measuring code
-  version (BV-5-4).
-- The cohort driver completes the record with cohort id, repetition index
-  and count, and proposal; a single-run extraction completes it with
-  repetition 1 of 1 and a generated cohort id. A missing runner half makes
-  the run invalid, fail-closed. Provision writes nothing.
-- A chain-closure-failure park has a durable cohort state: the cohort
-  record marks that repetition `ungradeable-pending-recovery`; a later
-  resume-to-completed lets re-extraction grade it; the cohort's finalize
-  step converts any still-pending entry to permanently ungradeable so a
-  cohort always terminates (BV-5-5).
+The durable order is measure, persist, close, publish — with the persist
+BEFORE closure, so no crash point can lose or repeat a measurement
+(BV-6-2):
+
+1. The gate measurement completes. The runner immediately writes
+   `measuredOutcome = {classification, gatePassed, measuredCandidateSha,
+   measuredAt}` into the mission state record. This write is the atomicity
+   anchor: from here, resume NEVER runs another host turn and NEVER
+   re-measures.
+2. Closure attempts every chain: collects failures, stamps what closes
+   (closing an implementer chain mirrors its diff.patch as part of the
+   close), never aborts on the first failure.
+3. Every chain closed: the runner publishes `completed`. Any failure: the
+   mission parks with reason `chain-closure-failure`, failures named in
+   the runner record.
+4. `resume` reads the state: `measuredOutcome` present means closure-only
+   — re-attempt step 2, publish `completed` with the preserved outcome on
+   success. A crash between any two steps lands in exactly one of these
+   states; each has one defined continuation.
+
+Parks never close chains — a park is a resumable suspension, its chains
+held open under the mission lease. Chains close on completion (step 2) or
+through the mission's explicit abandonment path, and nowhere else.
+
+The mission state record carrying `measuredOutcome` bumps its schema to
+version 2. Like every versioned evidence artifact, it has two owners by
+part (BV-6-1): the PRODUCER stamp and fields are metasystem code riding
+the loop and merge gate; the kit's pinned mission-state schema gains
+version 2 alongside version 1 and the extractor dispatches by the declared
+version, exactly as for the census — kit change, human-ratified, kit
+version bump. One pattern for all versioned evidence.
+
+**V-3: run identity — two files, one writer each, joined by copy.**
+
+- `execution-identity.json` (mission artifacts): owned and written ONLY by
+  the runner (BV-6-3). Append-only; one entry per execution attempt (start
+  and every resume), written before any turn executes. Entry fields:
+  `machineFingerprint`, `adoptedMetasystemSha` — the metasystem commit
+  adopted into the target, read from the adoption stamp provision writes,
+  never from any repository HEAD (BV-6-4) — and `timestamp`. Completion
+  appends `measuredCandidateSha`, the product tree the gate measured.
+- `benchmark-identity.json`: owned and written ONLY by the cohort driver
+  (or the single-run extraction path), which COPIES the execution half
+  from `execution-identity.json` and adds its own: `candidateSha` keeps
+  its established meaning — the source metasystem commit that selects the
+  scorecard — plus `measuringKitSha` (the measuring kit's own commit),
+  cohort id, repetition index and count, and proposal. The copy is the
+  join; neither party ever writes the other's file; a retry is an
+  idempotent rewrite from the two durable sources.
+- The extractor validates `benchmark-identity.json` against its schema AND
+  cross-checks the copied half against `execution-identity.json`;
+  disagreement or a missing half is invalid, fail-closed. Run validity
+  also requires every attempt entry to agree on `machineFingerprint` and
+  `adoptedMetasystemSha`: one machine, one adopted metasystem version per
+  attributable run.
+- Provision writes nothing of identity except the adoption stamp it
+  already writes.
+
+**V-3a: the cohort's repetition state machine, executable and terminal
+(BV-6-5).** All transitions are written by the cohort driver into its own
+cohort record; nothing else transitions a repetition.
+
+- `planned → running`: the driver provisions and starts the repetition.
+- `running → graded`: mission completed and extraction valid.
+- `running → pending-recovery`: mission parked, any reason — every park is
+  a resumable suspension, and closure-failure parks are not special here.
+  A pending repetition does NOT block the cohort: the driver proceeds to
+  the next repetition and tracks all pending ones as a list.
+- `pending-recovery → graded`: the operator runs the driver's `recover`
+  command for that repetition; the mission resumes, reaches completed, and
+  re-extraction grades it.
+- `pending-recovery → ungradeable (terminal)`: the driver's explicit
+  `finalize` command, run once at cohort end, converts every
+  still-pending repetition. As part of that transition the driver invokes
+  the mission's explicit abandonment path, which closes the parked
+  mission's chains legitimately — abandonment, not parking, is the chain-
+  closing act, so "parks never close chains" holds while nothing stays
+  open forever and every cohort terminates.
 
 **V-4: versioned census evidence.**
 - The census schema bumps to version 2; the shared kit version bumps.
@@ -90,12 +132,15 @@ the result replaces it.
   undeclared properties. Version-1 archives validate against version 1.
 
 **Ownership matrix (by part).** Metasystem, through the collaboration loop
-and merge gate: the claude adapter (V-1), runner closure, parking,
-mission-state v2, and identity stamping (V-2, V-3 runner half), the census
-producer stamp (V-4). Kit, human-ratified with the kit version bump, in
-commits separate from any metasystem commit: the cohort driver's park
-handling and identity completion (V-3), the census schema and extractor
-dispatch (V-4). The human ratified this closure in session on 2026-08-07:
+and merge gate: the claude adapter (V-1); the runner's measure-persist-
+close-publish machine, parking, the mission-state v2 producer stamp, and
+execution-identity.json (V-2, V-3); the census v2 producer stamp (V-4).
+Kit, human-ratified with the kit version bump, in commits separate from
+any metasystem commit: the cohort driver's repetition state machine,
+recover and finalize commands, and benchmark-identity.json (V-3a); the
+version-2 entries of BOTH pinned evidence schemas — census and mission
+state — and the extractor's version dispatch and identity cross-check
+(V-2, V-4). The human ratified this closure in session on 2026-08-07:
 "a sound solid yes to fixing all issues that you found now."
 
 ## What is deliberately not changed
