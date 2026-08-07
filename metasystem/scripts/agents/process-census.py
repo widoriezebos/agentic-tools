@@ -685,7 +685,12 @@ def announcements(fixture_by_pid: dict[int, Process], errors: list[str]) -> list
         except (OSError, ValueError) as error:
             errors.append(f"announcement-unreadable:{path.name}:{error}")
             continue
-        if not isinstance(value, dict) or set(value) != expected:
+        # Base fields are REQUIRED; the one-writer identity fields (mainId,
+        # commandHash) are optional extras. Exact-set equality rejected the
+        # new format the moment the base set was relaxed for the old one —
+        # both formats must read, or the census goes blind again.
+        if not isinstance(value, dict) or not expected <= set(value) \
+                or not set(value) <= expected | {"mainId", "commandHash"}:
             errors.append(f"announcement-schema:{path.name}")
             continue
         pid, start = value.get("pid"), value.get("pidStartedAt")

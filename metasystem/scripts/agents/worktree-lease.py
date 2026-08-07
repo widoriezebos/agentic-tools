@@ -76,10 +76,18 @@ def load_object(path: Path) -> dict[str, Any]:
     return value
 
 
+# The census helper is this script's own sibling. Resolving it against the
+# TARGET root broke every identity read in any repository that does not carry
+# the harness scripts — every fixture sandbox and every freshly provisioned
+# target — so announcements were refused as "not a live process" and no lease
+# could ever be claimed.
+CENSUS_HELPER = Path(__file__).resolve().parent / "process-census.py"
+
+
 def started_at(root: Path, pid: int) -> int | None:
     try:
         value = subprocess.check_output(
-            [str(root / "scripts/agents/process-census.py"), "started-at", "--pid", str(pid)],
+            [str(CENSUS_HELPER), "started-at", "--pid", str(pid)],
             text=True,
             stderr=subprocess.DEVNULL,
             timeout=2,
@@ -109,7 +117,7 @@ def process_identity(root: Path, pid: int) -> dict[str, Any] | None:
     try:
         raw = subprocess.check_output(
             [
-                str(root / "scripts/agents/process-census.py"),
+                str(CENSUS_HELPER),
                 "authentication-identity",
                 "--pid",
                 str(pid),
@@ -645,13 +653,50 @@ def authorize(args: argparse.Namespace) -> None:
     print(json.dumps(identity, sort_keys=True))
 
 
+def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
+    """Claim an unheld lease for an already-announced main."""
+    lease_path, lock_path, _, stamp_path = lease_paths(root)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.touch(exist_ok=True)
+    with lock_path.open("a+") as lock:
+        acquire_bounded(lock, "claim")
+        if lease_path.exists():
+            return
+        claimed = now()
+        atomic_json(
+            lease_path,
+            {
+                "holderMainId": announcement["mainId"],
+                "pid": announcement["pid"],
+                "pidStartedAt": announcement["pidStartedAt"],
+                "commandHash": announcement["commandHash"],
+                "claimedAt": claimed,
+                "renewedAt": claimed,
+                "revision": 1,
+                "claimEpoch": 1,
+                "takeovers": [],
+            },
+        )
+        atomic_json(stamp_path, {"claimEpoch": 1, "sweptAt": claimed, "reason": "first-claim"})
+
+
 def require_holder(args: argparse.Namespace) -> None:
     root = args.root.resolve()
     identity = classify(root, args.caller_pid)
     if identity.get("class") == "HUMAN":
         print(json.dumps({"class": "HUMAN", "holder": True, "claimEpoch": None, "mainId": None}))
         return
-    lease = load_lease(root)
+    lease = load_lease(root, required=False)
+    if lease is None:
+        # An unclaimed checkout is claimable by an authenticated main: one
+        # writer means first-come-first-served, not "nobody may write until
+        # some other command claims first". Refusing here made every fresh
+        # repository, and every fixture that dispatches before arming,
+        # permanently unable to act.
+        if identity.get("class") != "MAIN":
+            fail("checkout lease is absent and the caller is not an authenticated main")
+        claim_for_announcement(root, identity["announcement"])
+        lease = load_lease(root)
     if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):
         fail(
             f"OWNED-ELSEWHERE: this checkout is held by {lease.get('holderMainId')}; "
