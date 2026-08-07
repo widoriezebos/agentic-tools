@@ -55,11 +55,7 @@ parent-by-parent toward init, at each ancestor testing (pid, start time)
 against announcements (match authenticates as that main), then the
 command line against the adapter signature registry (match means delegate
 context, refused); reaching init with no match classifies the caller as
-the human's own tools, passed untouched. Same-second pid reuse is bounded
-and accepted rather than hash-closed (a command signature is not
-lifetime-unique, MM-5-2): collision requires pid AND start-second reuse
-between two checks, and the failure direction is refusal, never false
-authentication.
+the human's own tools, passed untouched. Same-second pid reuse cannot be waved at authentication (MM-6-1): every authentication re-reads the process table at call time and requires pid, start time, AND current command line to match the announcement together; any mismatch refuses, and the residual is that triple within one read, stated as the accepted bound.
 
 (The paragraph below is superseded where it conflicts:) A
 mediated operation classifies its caller: the caller's own pid matching an
@@ -85,8 +81,7 @@ alive — refusing to take over is the safe error. All lease mutations run
 under a dedicated flock on a lock sibling with generation compare — and
 the lock's guarantee is proven by a probe that cannot hang (MM-3-12,
 MM-4-7, MM-5-5): while holding the lock, spawn a NON-BLOCKING second
-acquisition (flock -n) and pass only if it FAILS — bounded, unambiguous,
-on the actual filesystem; refuse the claim otherwise.
+acquisition and pass only on the specific would-block failure, then prove the probe itself: after release the same acquisition must SUCCEED — held-lock and broken-probe distinguishable on the actual filesystem, anything else refuses the claim (MM-6-4).
 
 **W-4: non-holders are barred from every MEDIATED write; the unmediated
 residual is named, not euphemized (MM-4-3).** Dispatch, commit, and
@@ -99,7 +94,7 @@ refuse, naming the holder and offering the one-command escape hatch —
 `scripts/agents/second-session.sh`, which creates a git worktree under a
 sibling directory and prints the cd command; its isolation contract is
 explicit (MM-4-6): own artifacts root (jobs, mains, supervision, record
-locks, capabilities), own copied local configuration, own supervision,
+locks, capabilities), own copied local configuration, own supervision, and its own DURABLE evidence subtree — the evidence root gains a per-checkout segment derived from the checkout path, so two writing sessions never share a durable directory (MM-6-3),
 and an audit fixture that runs the mediated surface from inside a
 worktree and fails if any script resolves a path against the primary
 checkout's artifacts.
@@ -113,8 +108,7 @@ mitigated by the worktree path being easier than fighting.
 
 **W-5: death cleanup with a real fence (MM-4-1, MM-4-5, MM-5-3).** The
 "late orphans are inert" claim is dead: authorized-before-death work is
-live and races the successor. Three mechanisms: dispatch re-verifies the
-lease (holder and generation) immediately before record creation; every
+live and races the successor. Three mechanisms: record creation happens INSIDE the lease's own flock — dispatch takes the lock, verifies holder and generation, writes the record, releases — so creation serializes with claims and no window separates verify from write (MM-6-2); every
 job record carries its dispatch-time lease generation; the claim-time
 sweep KILLS running jobs whose generation predates the claim, enforced
 before first dispatch by a `reapedAfterClaim` stamp that carries the
