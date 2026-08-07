@@ -1,9 +1,7 @@
 # Multi-main coexistence: two sessions, one repository, no interference
 
-- Goal and current status: two main agents in one checkout can no longer interfere — streams carry mechanical owners, the working tree has one writer, the turn-end hook commands only work that is yours to start, and a delegate's identity claim can never overwrite what the adapter observed. Closes KI-21 and KI-22. Status: IN CRITIQUE, round 2 RECEIVED AND OPEN — 14 material findings (MM-2-1..14) in artifacts/agents/design-critic-20260807t081739z-df4e/rounds/2/return.json, none dispositioned yet. Round counts rising (13 then 14) is the validity chain's divergence pattern: judge at fold time whether this is one design or two — the deep protocol parts (mainId identity, return-schema versioning, adoption atomicity) overlap the parked mission-completion-protocol stream and may belong there.
-- Next step: none
-- Why paused here: this context is at its floor; a fourteen-finding structural fold at the tail would be the fatigue-quality failure the loop exists to prevent
-- Waiting on: the next fresh-context session, whose FIRST act is: fold MM-2-1..14 by rewrite (never layered amendments); the sharpest are MM-2-5 (the commit guard as designed refuses the HUMAN's own commits — any fix must exempt or recognize human callers), MM-2-4 (the ancestry premise is wrong), MM-2-1 (lease expiry mid-turn), MM-2-12 (returns lack a version discriminator). Then dispositions, join, sync critic worktree, round 3.
+- Goal and current status: two main agents in one checkout can no longer interfere — streams carry mechanical owners, the working tree has one writer, the turn-end hook commands only work that is yours to start, and a delegate's identity claim can never overwrite what the adapter observed. Closes KI-21 and KI-22. Status: IN CRITIQUE, rounds 1-2 folded by rewrite (13 + 14 material findings). Scope judged at the round-2 fold: this stays ONE design — every finding lands on the coexistence mechanisms themselves, and the two candidates for splitting (return-schema versioning, adoption) resolved into two paragraphs each, not protocols.
+- Next step: critique round 3 over the round-2 folds
 - In flight right now: nothing — the critique chain is between rounds, orchestrator adjudicating (the supported IL-16 state)
 - Waiting on: nothing. Devin integration is PARKED by the human's decision of 2026-08-07 until this design is implemented and proven.
 
@@ -29,116 +27,145 @@ Enforcement did not exist, and the peer session's transcript (read-only, at
 
 ## Changes
 
-**M-1: stream ownership is a lease, not an identity.** Durable ownership
-cannot ride a runtime session UUID that dies at every restart (MM-1-2).
-Every plan gains a tool-owned `Stream-Owner` line holding a claim into the
-lease system below; the turn-end open-work check resolves it: owned by the
-calling main — commanded; owned by a live lease-holder — reported as
-`OWNED-ELSEWHERE`, never commanded; lease expired — claimable, and the
-claim writes a takeover line (old holder, new holder, timestamp) into the
-plan. Two peers claiming simultaneously are serialized by the same
-compare-and-swap one-shot-patch mechanism dispatch already uses for record
-updates — the loser's swap fails and it re-reads (MM-1-3).
+**M-0: mainId, defined once and used everywhere.** The start hook mints
+`main-<pidStartedAt>-<pid>-<rand6>` at announce time and records it in the
+announcement file. It names one main PROCESS LIFETIME — no continuity across
+restart is promised or needed: a restarted main is a new mainId whose claim
+follows the dead-holder path below, and job records carry the dispatching
+mainId so a successor can find its predecessor's work (MM-2-3, MM-2-7).
+Authentication never takes a process's word for its mainId: mediated
+operations walk the caller's ancestry toward init, and the FIRST classified
+ancestor decides — an adapter's agent signature means delegate context,
+refused; a pid-plus-start-time match against an announcement means that
+main, authenticated, mainId read from the record; walk exhausted with no
+announced ancestor means not a main. Delegates always meet their adapter's
+signature before any main because the launcher sits between them — a rule
+proven by a fixture that calls a mediated operation from inside a dispatched
+fake delegate and is refused (MM-2-4).
 
-**M-2: one lease over the checkout's MEDIATED mutations — and an honest
-boundary.** The harness cannot prevent a second session from editing files;
-no hook sees an editor write (MM-1-1). What it can and now does serialize,
-fail-closed, is every mutation it mediates: dispatch, commit, and
-supervision arming require the checkout lease. The lease file
-`artifacts/agents/mains/worktree-lease.json` carries holder mainId, pid,
-pidStartedAt, claimedAt, renewedAt, ttlSec, and a takeover history
-(MM-1-5); the holder's stop/start hooks renew it each turn; acquisition and
-renewal go through the same compare-and-swap (MM-1-3). Expiry is the
-takeover path: a holder that stops renewing is dead or idle within one TTL,
-and a peer then claims cleanly — restart-and-resume costs at most one TTL
-of downtime instead of orphaning streams (MM-1-2). The residual risk —
-a peer editing shared files outside any mediation — is DETECTED, not
-prevented: each session's stop hook fingerprints `git status` and reports a
-working tree that changed outside the session's own recorded operations.
-Prevention would require sandboxing the human's own sessions; the design
-declines and says so.
+**M-0a: humans are not gated.** A caller with NO announced ancestor and no
+agent signature is the human's own shell or client, and every mediated
+operation allows it untouched — the threat model is agent-versus-agent
+interference; gating the human's own commits would be the harness
+overreaching, and this design says so as a trust decision rather than an
+oversight (MM-2-5).
 
-**M-2a: callers are authenticated by process ancestry (MM-1-4).** Every
-mediated operation resolves the calling process's ancestor to an announced
-main via the census's existing find-ancestor, and checks that main against
-the lease. Delegates run detached in their own sessions, so their ancestry
-never reaches a main and they can never act as one; a caller with no
-announced ancestor is refused.
+**M-1: stream ownership resolves through the checkout lease.** Plans carry
+`Stream-Owner: <mainId>`. The open-work check commands work owned by the
+calling main or unowned; reports `OWNED-ELSEWHERE` for a holder that is
+alive; treats a dead holder's streams as claimable, the claim writing a
+takeover line into the plan.
 
-**M-2b: recovery is claim-first and never circular (MM-1-6).** When the
-holder is dead and supervision is stale, the order is: wait out or
-human-override the lease (the typed-approval TTY path F-4 established),
-claim it, then arm as the holder. Arming checks the lease, not history —
-so the revived repository has exactly one legitimate armer and there is no
-state where nobody may arm.
+**M-2: the checkout lease — alive-or-expired, never both.** The lease file
+carries holder mainId, pid, pidStartedAt, claimedAt, renewedAt, ttlSec, a
+monotonically increasing `generation`, a `state` of `active` or
+`takeover-in-progress`, and takeover history. Liveness beats the clock:
+expiry requires BOTH renewedAt older than ttlSec AND the holder process
+dead by the census's pid-plus-start-time check — a live holder mid-long-turn
+can never be expired out from under (MM-2-1), and a crashed holder can be
+taken over the moment its death is provable, without waiting out any TTL.
+ttlSec is owned by `metasystem.lease.ttl-sec`, default 900, bounds 300 to
+3600; it only bounds how long an UNPROVABLE death (machine partition)
+blocks takeover. Every mutation — claim, renew, takeover — runs under a
+dedicated flock on the lease's lock sibling: re-read, validate expected
+generation, decide expiry under the lock, write via temp-and-rename,
+generation incremented. Linearization is the lock order; a renewal that
+finds its generation superseded has lost to a takeover and the old holder
+demotes itself on the spot (MM-2-2 — this is a new named mechanism, not the
+dispatcher's job-status helper, and the proof covers stale-renewal-after-
+takeover explicitly).
 
-**M-2c: takeover adopts surviving work (MM-1-7).** Claiming an expired
-lease runs the existing reaper over the previous holder's running jobs:
-dead processes are classified as today; live delegates are adopted —
-recorded in the takeover history with adoptedFrom — and their chains
-follow up via the documented resume-or-embed fallback. A new holder never
-races a survivor it does not know about.
+**M-2b: recovery is claim-first** — holder dead, supervision stale: claim
+(instant on provable death), then arm as holder. No circular state.
 
-**M-3: in-flight truth comes from records, and jobs name their stream
-(MM-1-8).** Dispatch gains `--stream <plan>`; the job record carries it;
-the open-work check derives per-stream in-flight state from job records
-alone. Plans' prose lines stay for humans and stop being load-bearing.
-Legacy stream-less jobs count globally, as today.
+**M-2c: takeover is a state, not a moment (MM-2-7).** The claim writes
+`state=takeover-in-progress`; while it stands, dispatch refuses everyone
+including the new holder. The adoption scan then walks the predecessor
+mainId's non-terminal jobs using the existing per-job record locks: a
+compare-and-swap of running to adopted records the new mainId; a swap lost
+to the delegate's own terminal write is accepted by re-read — terminal
+needs no adoption. Scan done, `state=active`. Classification and adoption
+sit inside the per-job lock; the takeover state spans the whole scan.
 
-**M-4: identity fields state their provenance, per runtime, honestly
-(MM-1-10).** The canonical sessionId and model.effective come from adapter
-observation where the runtime provides one — claude and codex both do
-(handshake signal; result telemetry per V-1) — and are recorded as the
-literal `unobserved` where it does not, rather than pretending. A
-delegate-claimed value never overwrites observation: it lands in an
-optional `claimed` object, added in a versioned bump of the return schemas
-with a migration window during which the validator accepts both versions
-(MM-1-11); the claim-versus-observation mismatch that burned six rounds
-becomes a recorded fact, not a protocol error.
+**M-3: jobs name their stream, with a defined argument (MM-2-14).**
+Dispatch accepts `--stream <plan>`; the value normalizes to a repository-
+relative path that must exist under plans/, and when the flag is absent
+dispatch derives it from the brief's plan reference. The reserved value
+`none` (used by adapter selftests and ad-hoc jobs) is exempt from
+derivation. Jobs with stream `none` or legacy records count as in-flight
+for EVERY plan — conservative, current behavior, no new suppression class.
 
-**M-5: protocol errors surface at detection, where the human already
-looks.** The counter on the chain root increments when
-assert-return-complete detects the violation — not at the next follow-up,
-which may never come (MM-1-12). The surface is the one line the human
-demonstrably reads: the turn-end status message this week built, which
-gains `PROTOCOL ERRORS: <chain> grew to N` whenever a counter grew since
-the session's last turn, tracked by a per-session cursor (MM-1-13).
+**M-4: identity provenance is a table, not a sentence (MM-2-13).**
+Per field and runtime: sessionId — claude observed at handshake, codex
+observed as the thread id, devin unobserved; model.effective — claude
+observed from result telemetry (V-1, a CLAUDE mechanism; the earlier codex
+citation was wrong), codex currently an unobserved requested-echo and
+therefore recorded as `unreported` until its adapter gains result
+telemetry (a small implementation item of this design), devin unobserved.
+Unobserved fields hold the literal `unobserved`; a delegate-claimed value
+lands only in the `claimed` object. Return schemas bump to version 2 with
+a REQUIRED `schemaVersion: 2` field; the discriminator is presence — a
+return without the field validates against the frozen v1 schema, one with
+it against v2; the v1 path retires once all adapters emit v2 (MM-2-12 —
+executable with the existing one-schema validator, no oneOf).
 
-**M-6: the identity hash covers configuration, not CLI bookkeeping
-(absorbs KI-19; closes the read-only-peer channel, MM-1-9).** A read-only
-peer still churns shared CLI state simply by existing; the fix is that the
-identity hash stops caring: each adapter declares the self-written
-sections of its config (codex: notice and TUI state; claude: its session
-bookkeeping) and the hash covers the filtered remainder. A fixture proves
-a notice-flag touch keeps identity while a model or permission change
-breaks it. With M-6, a read-only peer's presence changes nothing any gate
-reads, and KI-21's second tooth closes with its first.
+**M-5: protocol errors are a keyed set, surfaced once (MM-2-8, MM-2-9).**
+The chain root records `protocolErrors` as a set keyed by round and
+violation hash, written add-if-absent under the record lock at the adapter
+lifecycle point that persists the failed round; repeated validation runs
+are harmless and follow-ups only print. The turn-end line reports growth
+against a per-main cursor file initialized AT ANNOUNCE to the then-current
+set sizes and advanced only after the status line is emitted; a takeover
+prints the predecessor's outstanding counts once at claim, so inherited
+errors are seen exactly once rather than missed or replayed.
+
+**M-6: the identity hash filter is data, versioned, fail-closed (MM-2-10)
+— and its claim is narrowed to what it delivers (MM-2-11).** Each adapter
+ships an exact path list (`<runtime>-config-filter.v<N>.txt`, instruction-
+bearing, never waivable) naming the CLI's self-written bookkeeping keys for
+a declared CLI version range; only enumerated keys are excluded, unknown
+and new keys are hashed, and a CLI version outside the declared range
+hashes everything and warns — churn over blindness. What M-6 removes is
+FALSE churn. A peer that changes real shared behavior — saving a new
+default model, as the transcript's peer did — rightly churns identity, and
+the refusal now names the changed keys so the cause is visible in one
+line. Full per-main configuration isolation would be the complete fix and
+is recorded as future work, not smuggled in; until then the one-main
+interim rule and OWNED-ELSEWHERE reporting are the standing mitigation.
+
+**M-7: foreign-edit detection is withdrawn (MM-2-6).** The designed
+evidence cannot attribute an unmediated edit to a session — a fingerprint
+without attribution either accuses every legitimate edit or misses every
+foreign one. The stop hook keeps a purely informational dirty-tree line;
+the residual risk of unmediated peer edits is mitigated by the interim
+rule and M-2's serialization of everything mediated, and it is named here
+as accepted rather than papered over.
 
 ## Proof
 
-- Fixture: two fake mains registered; the open-work check commands the
-  owner, reports OWNED-ELSEWHERE to the peer, and permits takeover only
-  after the owner is dead — with the takeover line written.
-- Fixture: dispatch and commit from a non-owner refused while the owner
-  lives, naming the owner; permitted after death-plus-claim.
-- Fixture: arming by a non-owner refused.
-- Fixture: a return claiming the orchestrator's session id normalizes to
-  the adapter-observed id, the claim lands in `claimed` under the bumped
-  schema (both schema versions accepted during the window), the round is
-  not a protocol error, and a synthetic mismatch in the adapter-observed
-  value itself still fails.
-- Fixture: two simultaneous claims on one expired lease — exactly one
-  wins the compare-and-swap; the loser reads the winner's claim.
-- Fixture: holder dead, supervision stale — claim then arm succeeds;
-  arm before claim refuses; no circular state.
-- Fixture: takeover with a surviving live delegate — adopted, recorded,
-  chain follow-up works.
-- Fixture: a protocol error on a terminal round with no follow-up still
-  increments the counter and appears in the next turn-end line.
-- Fixture: the filtered identity hash — CLI bookkeeping churn keeps
-  identity; a model or permission change breaks it (M-6).
-- Fixture: a follow-up onto a protocol_error round prints the notice and
-  bumps the counter; the turn report names the chain.
+- Two fake mains: open-work commands the holder, reports OWNED-ELSEWHERE
+  to the live peer, permits claim only on provable death or lease expiry,
+  and writes the takeover line.
+- Lease under flock: two simultaneous claims — one winner by generation;
+  a stale renewal after takeover fails and the old holder demotes; a live
+  holder past its TTL is NOT expirable; a dead holder is claimable before
+  its TTL lapses.
+- Ancestry: a mediated call from inside a dispatched fake delegate refuses;
+  from an announced main authenticates; from a bare human shell passes
+  untouched (M-0a).
+- Takeover state: dispatch refuses during takeover-in-progress; adoption's
+  lost compare-and-swap against a delegate's terminal write is accepted by
+  re-read; adopted jobs carry the new mainId.
+- Returns: a v1 return without schemaVersion validates against v1; a v2
+  return with claimed object validates against v2; the claimed value never
+  overwrites an observed field; unobserved fields hold the literal.
+- Protocol errors: the same violation validated twice yields one set entry;
+  a terminal round with no follow-up still appears in the next turn line;
+  a fresh main's first turn reports only post-announce growth; a takeover
+  prints inherited counts once.
+- Filter: bookkeeping churn keeps identity; a model change breaks it AND
+  the refusal names the changed key; an out-of-range CLI version hashes
+  everything with a warning.
 
 ## What is deliberately not changed
 
