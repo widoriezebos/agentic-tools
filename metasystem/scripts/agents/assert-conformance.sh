@@ -143,6 +143,17 @@ except ValueError:
     violations.append(f"implementer round is not an integer: {round_text!r}")
     current_round = 0
 declared = set()
+# The chain's true round is the MAX across its job records — the root record
+# stays at round 1 while follow-ups live in -rN records, and reading only the
+# root silently discarded every later round's declarations the first time a
+# multi-round chain met this gate.
+records_dir = root / "artifacts" / "agents" / "jobs"
+for record_path in records_dir.glob(f"{root_job}*.json"):
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        current_round = max(current_round, int(record.get("round", 0)))
+    except (OSError, ValueError, TypeError):
+        continue
 rounds_root = root / "artifacts" / "agents" / root_job / "rounds"
 for candidate in sorted(rounds_root.glob("*/return.json")):
     try:
@@ -161,6 +172,13 @@ for candidate in sorted(rounds_root.glob("*/return.json")):
         violations.append(f"round {candidate_round} return diffBoundary is not an array of paths")
         continue
     declared.update(claim)
+# Delegates declare paths relative to the metasystem root; git computes them
+# relative to the repository toplevel. Normalize both sides to one form so a
+# prefix difference can never masquerade as an undeclared change.
+def unprefix(value):
+    return value[len("metasystem/"):] if value.startswith("metasystem/") else value
+declared = {unprefix(item) for item in declared}
+paths = [unprefix(item) for item in paths]
 outside = sorted(set(paths) - declared)
 if outside:
     violations.append(
