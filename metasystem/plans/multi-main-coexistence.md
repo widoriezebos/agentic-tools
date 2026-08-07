@@ -1,9 +1,9 @@
 # One writer, safe readers: sessions sharing a repository without interference
 
 - Goal and current status: sessions sharing a checkout cannot interfere because exactly ONE main holds the write role, enforced mechanically; every other session is a first-class read-only advisor with a paved one-command path to its own worktree when it wants to write. Closes KI-21 as experienced and KI-22. Status: RESCOPED at round 3 per IL-23 — material counts ran 13, 14, 13 with four criticals, and MM-3-8 named the truth: the mechanisms kept depending on the one-main rule, so the design now promises exactly that rule, enforced, instead of live two-writer coexistence it could not deliver. Rounds 1-5 folded. Note of record: the round-4 folds were written and asserted in-session, yet absent from the file at add time — commit e78a5c7 captured only dispositions; the mechanism is UNDETERMINED (an external revert by the peer session pid 45050 is one hypothesis; a same-session tooling failure is another, and this session reproduced a folds-absent commit by its own error once). What is certain: fold commits now verify content at HEAD before claiming success.
-- Next step: critique round 6
+- Next step: none
 - In flight right now: nothing — the critique chain is between rounds, orchestrator adjudicating (the supported IL-16 state)
-- Waiting on: nothing. Devin integration is PARKED by the human's decision of 2026-08-07 until this design is implemented and proven.
+- Waiting on: THE HUMAN, per the exhaustion contract's own rule. The critique chain design-critic-20260807t081739z-df4e has exhausted its budget twice (rounds 1-3, then 4-6; trend 13, 14, 13, 7, 5, 5; rounds 4-6 all folded and joined). The shipped remedy for a second exhaustion is a human decision. The decision: authorize a FRESH verification chain (new critic, round 1 over the folded design, open items enumerated: none — all 47 findings folded), or rule the design closed enough to implement with code-critique as the backstop. Devin stays parked per the same day's decision.
 
 ## The evidence this stands on
 
@@ -155,29 +155,24 @@ the changed keys. Per-main config isolation remains recorded future work;
 with W-4, a read-only peer that changes shared behavior config is a human
 action surfaced by name, not a silent breakage.
 
-## Proof
+## Proof (rewritten at round 6 to match the surviving mechanisms, MM-6-5)
 
-- Announce twice with one pid+start: one mainId, stable cursor.
-- Classification: the announced main's own pid classifies as itself before
-  any walk; a dispatched fake delegate refuses; a bare shell passes; a
-  marker contradicting the ancestor walk refuses.
-- Lease: claim on a live holder refuses regardless of clock; claim on a
-  provably dead holder succeeds immediately; permission-denied treats as
-  alive and refuses; two contenders on a dead holder — one generation
-  winner; network-mounted lease directory refuses with the plain message.
+- Identity: authentication re-reads the process table per call; a recycled
+  pid with matching start second but different command refuses.
+- Lease: record creation inside the lease flock — a claim and a dispatch
+  racing serialize, and the loser sees the new generation; claim on a live
+  holder refuses; provable death claims instantly; the two-phase probe
+  (would-block while held, success after release) gates every claim.
 - Non-holder posture: dispatch, commit, arming refused naming the holder
-  and printing the second-session command; the created worktree has its
-  own artifacts root and its session claims ITS lease independently;
-  open-work in the non-holder reports OWNED-ELSEWHERE and commands nothing.
-- Post-claim gate: dispatch refuses until reapedAfterClaim stamps; the
-  sweep run twice is a no-op the second time.
-- Returns and provenance: v1-without-field validates v1; v2 validates v2;
-  devin sessionId observed; every unobserved field holds the one literal.
-- Protocol errors: double validation, one entry; announce-then-error
-  reports exactly once; claim prints inherited counts once.
-- Filter: every excluded key carries its justification line or the kit
-  check fails; bookkeeping churn keeps identity; a model change breaks it
-  and the refusal names the key.
+  and printing the second-session command; open-work reports
+  OWNED-ELSEWHERE and commands nothing.
+- Second session: the created worktree has its own artifacts root AND its
+  own durable evidence subtree; the audit fixture runs the mediated
+  surface inside it and fails on any path resolved against the primary.
+- Death cleanup: the claim sweep kills stale-generation runners before
+  the generation-bound stamp opens dispatch; the sweep twice is a no-op.
+- Returns and provenance, protocol errors, filter: as in W-6, W-7, W-8
+  with their round-2 fixtures.
 
 ## What is deliberately not changed, and what was deleted
 
