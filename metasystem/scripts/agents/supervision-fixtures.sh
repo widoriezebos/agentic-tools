@@ -254,6 +254,14 @@ repo=$tmp/repo
 mkdir -p "$repo"
 make_repo "$repo"
 arm="$repo/scripts/agents/arm-supervision.sh"
+# One writer per checkout. Phases that arm a DIFFERENT main than the phase
+# before them release the checkout first, the way a departing main does.
+# Supervision components never hold the lease, so dropping the lease record
+# is a complete release and leaves the running supervision set untouched.
+release_checkout() { # repo
+  rm -f "$1/artifacts/agents/mains/worktree-lease.json" \
+        "$1/artifacts/agents/mains/reaped-after-claim.json"
+}
 watcher="$repo/scripts/watch-background-jobs.sh"
 census="$repo/scripts/agents/process-census.py"
 process_fixture=$repo/process-fixture.json
@@ -361,6 +369,11 @@ while [[ ! -e "$3" ]]; do sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:?}"; don
 SH
 chmod +x "$repo/metasystem-fake-agent"
 infer_release=$tmp/inferred-agent.release
+# One writer per checkout: this phase arms a different main than the phase
+# before it, so it releases the checkout first the way a departing main does.
+# Supervision components never hold the lease, so removing the lease record
+# once supervision is stopped is a complete release.
+release_checkout "$repo"
 METASYSTEM_SESSION_ID=inferred-session METASYSTEM_AGENT_RUNTIME=fake \
   "$repo/metasystem-fake-agent" "$arm" "$repo" "$infer_release" >"$tmp/inferred-arm.out" 2>&1 &
 infer_driver=$!
@@ -470,6 +483,7 @@ done
 # Double arming joins the same repository set and duplicate starts collapse.
 owner_before=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
 owner_start=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pidStartedAt)
+release_checkout "$repo"
 "$arm" --repo "$repo" --session duplicate --pid "$$" \
   --start-time "$(process_started_at "$$")" --tag fixture-main >/dev/null
 "$arm" --repo "$repo" --session duplicate --pid "$$" \
@@ -751,6 +765,7 @@ grep -q 'STALE-SUPERVISOR component=reaper' "$repo/artifacts/agents/supervision/
 stop_owned_pid "supervision owner for takeover" "$owner_before" "$owner_start"
 wait_until "proven-dead owner" bash -c '! "$1" alive --pid "$2" --start-time "$3" >/dev/null 2>&1' _ "$census" "$owner_before" "$owner_start"
 printf '[]\n' >"$process_fixture"
+release_checkout "$repo"
 "$arm" --repo "$repo" --session takeover --pid "$$" --start-time "$(process_started_at "$$")" --tag takeover-main >/dev/null
 new_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pid)
 [[ "$new_owner" != "$owner_before" ]] || { echo "stale supervision lock was not taken over" >&2; exit 1; }
@@ -769,6 +784,7 @@ PY
 )
 dead_start=$(process_started_at "$dead_pid")
 owned_pids+=("$dead_pid:$dead_start")
+release_checkout "$repo"
 "$arm" --repo "$repo" --session dead-main --pid "$dead_pid" --start-time "$dead_start" --tag dead-main >/dev/null
 stop_owned_pid "dead announcement" "$dead_pid" "$dead_start"
 wait_until "dead announcement pruning" test ! -e "$repo/artifacts/agents/mains/dead-main-$dead_pid.json"

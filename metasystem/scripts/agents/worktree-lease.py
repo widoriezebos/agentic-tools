@@ -98,6 +98,13 @@ def started_at(root: Path, pid: int) -> int | None:
 
 
 def process_command(pid: int) -> str | None:
+    # One reader for identity, always the census helper: it honours the
+    # simulated process table fixtures install, while a raw ps call does not.
+    # Two readers meant a main could not recognise its own announcement — it
+    # classified as DELEGATE through its ancestor instead.
+    identity = process_identity(None, pid)
+    if identity is not None:
+        return identity["command"]
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "command="],
@@ -708,7 +715,7 @@ def require_holder(args: argparse.Namespace) -> None:
         # repository, and every fixture that dispatches before arming,
         # permanently unable to act.
         if identity.get("class") != "MAIN":
-            fail("checkout lease is absent and the caller is not an authenticated main")
+            fail(f"checkout lease is absent and caller pid {args.caller_pid} is {identity.get('class')}, not an authenticated main")
         claim_for_announcement(root, identity["announcement"])
         lease = load_lease(root)
     if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):

@@ -134,22 +134,29 @@ def ps_identity(pid: int) -> dict[str, Any]:
 
 
 def authentication_identity(pid: int) -> dict[str, Any]:
-    try:
-        return ps_identity(pid)
-    except (CensusError, OSError, PermissionError, ProcessLookupError):
-        fixture = os.environ.get("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
-        if not fixture:
-            raise
-        values = json.loads(Path(fixture).read_text(encoding="utf-8"))
+    """Start time and command from ONE source.
+
+    The simulated table takes precedence when installed, exactly as
+    started_at treats it. Preferring the real process table here while
+    started_at preferred the fixture split one identity across two sources: a
+    main announced a real command hash beside a simulated start time and could
+    then never recognise its own announcement.
+    """
+    fixture = os.environ.get("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
+    if fixture:
+        try:
+            values = json.loads(Path(fixture).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            values = {}
         value = values.get(str(pid)) if isinstance(values, dict) else None
         if (
-            not isinstance(value, dict)
-            or type(value.get("started")) is not int
-            or not isinstance(value.get("command"), str)
-            or not value["command"]
+            isinstance(value, dict)
+            and type(value.get("started")) is int
+            and isinstance(value.get("command"), str)
+            and value["command"]
         ):
-            raise CensusError(f"fake process identity is unavailable for pid {pid}")
-        return {"pid": pid, "pidStartedAt": value["started"], "command": value["command"]}
+            return {"pid": pid, "pidStartedAt": value["started"], "command": value["command"]}
+    return ps_identity(pid)
 
 
 def started_at(pid: int) -> int:
