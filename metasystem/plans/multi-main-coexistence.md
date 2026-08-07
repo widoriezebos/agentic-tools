@@ -1,7 +1,7 @@
 # One writer, safe readers: sessions sharing a repository without interference
 
-- Goal and current status: sessions sharing a checkout cannot interfere because exactly ONE main holds the write role, enforced mechanically; every other session is a first-class read-only advisor with a paved one-command path to its own worktree when it wants to write. Closes KI-21 as experienced and KI-22. Status: RESCOPED at round 3 per IL-23 — material counts ran 13, 14, 13 with four criticals, and MM-3-8 named the truth: the mechanisms kept depending on the one-main rule, so the design now promises exactly that rule, enforced, instead of live two-writer coexistence it could not deliver. Rounds 1-3 folded.
-- Next step: critique round 4 over the rescoped specification
+- Goal and current status: sessions sharing a checkout cannot interfere because exactly ONE main holds the write role, enforced mechanically; every other session is a first-class read-only advisor with a paved one-command path to its own worktree when it wants to write. Closes KI-21 as experienced and KI-22. Status: RESCOPED at round 3 per IL-23 — material counts ran 13, 14, 13 with four criticals, and MM-3-8 named the truth: the mechanisms kept depending on the one-main rule, so the design now promises exactly that rule, enforced, instead of live two-writer coexistence it could not deliver. Rounds 1-5 folded. Note of record: the round-4 folds were written and asserted in-session, yet absent from the file at add time — commit e78a5c7 captured only dispositions; the mechanism is UNDETERMINED (an external revert by the peer session pid 45050 is one hypothesis; a same-session tooling failure is another, and this session reproduced a folds-absent commit by its own error once). What is certain: fold commits now verify content at HEAD before claiming success.
+- Next step: critique round 6
 - In flight right now: nothing — the critique chain is between rounds, orchestrator adjudicating (the supported IL-16 state)
 - Waiting on: nothing. Devin integration is PARKED by the human's decision of 2026-08-07 until this design is implemented and proven.
 
@@ -46,9 +46,22 @@ mainId and never re-mints (MM-3-5). Process identity is pid PLUS start
 time everywhere it is compared, which closes same-second pid reuse
 (MM-3-11).
 
-**W-2: caller classification, cooperative and self-first.** The session
-start hook exports `METASYSTEM_MAIN_ID` into the main's environment; the
-delegate launcher strips it and sets the delegate marker instead. A
+**W-2: caller classification by a SPECIFIED walk over kernel facts
+(MM-4-2, MM-5-4).** The environment marker is deleted — a hook subprocess
+cannot set variables in its parent, so no start hook can install one. The
+algorithm, ordered and deterministic: first the caller's own (pid, start
+time) against the announcements — a match IS that main; otherwise walk
+parent-by-parent toward init, at each ancestor testing (pid, start time)
+against announcements (match authenticates as that main), then the
+command line against the adapter signature registry (match means delegate
+context, refused); reaching init with no match classifies the caller as
+the human's own tools, passed untouched. Same-second pid reuse is bounded
+and accepted rather than hash-closed (a command signature is not
+lifetime-unique, MM-5-2): collision requires pid AND start-second reuse
+between two checks, and the failure direction is refusal, never false
+authentication.
+
+(The paragraph below is superseded where it conflicts:) A
 mediated operation classifies its caller: the caller's own pid matching an
 announcement decides FIRST, before any ancestor walk, resolving the
 main-classifying-itself ambiguity (MM-3-7); then the environment markers;
@@ -70,15 +83,26 @@ A live holder can never lose the lease; a dead holder loses it instantly.
 An uninspectable holder (permission-denied on the pid) is treated as
 alive — refusing to take over is the safe error. All lease mutations run
 under a dedicated flock on a lock sibling with generation compare — and
-the lease directory is asserted local at claim time; a network-mounted
-artifacts directory refuses with a plain message, which is the flock
-portability contract stated executable (MM-3-12).
+the lock's guarantee is proven by a probe that cannot hang (MM-3-12,
+MM-4-7, MM-5-5): while holding the lock, spawn a NON-BLOCKING second
+acquisition (flock -n) and pass only if it FAILS — bounded, unambiguous,
+on the actual filesystem; refuse the claim otherwise.
 
-**W-4: non-holders are read-only advisors, and the paving is real
-(MM-3-1, MM-3-8).** For a non-holder main: dispatch, commit, and arming
+**W-4: non-holders are barred from every MEDIATED write; the unmediated
+residual is named, not euphemized (MM-4-3).** Dispatch, commit, and
+arming refuse mechanically. A peer that ignores three refusals and edits
+shared files with its own editor is invisible to any harness (MM-2-6);
+that residual is accepted in writing, and the paved path exists to be
+easier than staying. (Superseding the advisor paragraph below where they
+conflict:) For a non-holder main: dispatch, commit, and arming
 refuse, naming the holder and offering the one-command escape hatch —
 `scripts/agents/second-session.sh`, which creates a git worktree under a
-sibling directory with its own artifacts root and prints the cd command.
+sibling directory and prints the cd command; its isolation contract is
+explicit (MM-4-6): own artifacts root (jobs, mains, supervision, record
+locks, capabilities), own copied local configuration, own supervision,
+and an audit fixture that runs the mediated surface from inside a
+worktree and fails if any script resolves a path against the primary
+checkout's artifacts.
 The open-work hook in a non-holder session reports OWNED-ELSEWHERE and
 never commands. KI-21's incident closes because the second WRITING main
 cannot exist in one checkout: the near-double-dispatch, the competing
@@ -87,7 +111,16 @@ the lease now refuses. What remains possible — a peer editing files with
 its own editor — is outside any harness's sight, stated as accepted, and
 mitigated by the worktree path being easier than fighting.
 
-**W-5: death cleanup is the existing reaper, idempotent (MM-3-4, MM-3-6).**
+**W-5: death cleanup with a real fence (MM-4-1, MM-4-5, MM-5-3).** The
+"late orphans are inert" claim is dead: authorized-before-death work is
+live and races the successor. Three mechanisms: dispatch re-verifies the
+lease (holder and generation) immediately before record creation; every
+job record carries its dispatch-time lease generation; the claim-time
+sweep KILLS running jobs whose generation predates the claim, enforced
+before first dispatch by a `reapedAfterClaim` stamp that carries the
+claim's generation (a predecessor's stamp can never open a successor's
+dispatch). Later-landing records fall to the standing reaper cadence,
+which judges by the generation rule. (Superseding below:)
 On claiming a dead holder's lease, the new holder runs the existing reaper
 sweep before its first dispatch — enforced by dispatch itself: a lease
 whose `reapedAfterClaim` stamp is absent refuses dispatch until the sweep
