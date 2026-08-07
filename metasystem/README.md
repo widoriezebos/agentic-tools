@@ -119,6 +119,53 @@ Underneath the modes sit five design rules, each backed by a script or an explic
 4. **Evidence before rules.** New instructions must pass a change gate: name the observed failure, show the model cannot infer the rule on its own, find the owner, and prefer executable enforcement. Task-local plans, ledgers, and incident notes never become global policy without deliberate promotion.
 5. **The metasystem measures itself.** Every repo-changing task appends a receipt. A cadence check triggers a retro. Retros change instructions through the change gate, and pruning carries the same weight as adding. Each adopted change records a testable expected effect in an instruction ledger, and the next retro reviews it: kept, amended, or reverted. Rule changes are experiments, and unsupported ones are removed by default.
 
+### Roles: a team of agents, each replaceable
+
+The metasystem's unit of work is not one agent doing everything — it is a
+small team of named roles, and every role can be filled by a different
+agent, on a different runtime, with a different model. Which agent fills
+which role is two lines of configuration per role, nothing more:
+
+```
+role.code-critic.runtime=claude
+role.code-critic.model.claude=claude-opus-5
+```
+
+The seven roles, in plain terms:
+
+- **Orchestrator** — the coordinator. Writes designs, decides what to
+  delegate, rules on every critique finding, and owns every merge. It never
+  builds the product itself.
+- **Implementer** — builds against an agreed design in its own isolated
+  copy of the repository, declares every file it changed, and stops with a
+  report when the design has a hole instead of quietly inventing an answer.
+- **Design-critic** — attacks a design before anything is built. Rounds of
+  critique continue until one comes back with no material findings: that is
+  agreement, and only then does implementation start.
+- **Code-critic** — reviews an implementation it did not write, against the
+  design and against the exact bytes to be merged. Its clean final round is
+  what authorizes the merge; without it, the merge is refused.
+- **Investigator** — digs into a question or a defect and returns evidence.
+  Changes nothing.
+- **Verifier** — re-runs and re-checks claimed results independently
+  instead of trusting the report that claimed them.
+- **Behavior-judge** — scores how the agents worked from the recorded
+  evidence: did they delegate, did critique really happen, did they stay
+  inside their limits. The benchmark uses this to judge process, not just
+  product.
+
+Why this matters: two instances of the same model share the same blind
+spots — a mistake that felt right when writing tends to feel right again in
+review. Filling builder and reviewer roles with **different models** is what
+makes review catch what the author cannot see. The system enforces the part
+of this it can check: the code-critic's model must differ from the
+implementer's, or the project must explicitly declare the weaker setup
+(`independence=session-only`) in its configuration — and that declaration,
+not a pretense of independence, is what shows up in the evidence. The full
+collaboration loop the roles play out — design, critique to agreement,
+build, critique to agreement, merge — is specified in
+[`docs/orchestration.md`](docs/orchestration.md).
+
 Runtime portability is handled by separating intent from mechanism: skills and docs are runtime-neutral, and each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (`claude-profile.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location.
 
 ### Layout
