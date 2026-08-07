@@ -878,6 +878,42 @@ EOF
 [[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
   || { echo "a settled next step was reported as open work" >&2; exit 1; }
 
+# A gate run is work in flight, and the reporter believes a gate marker only
+# while the process it names is alive. Asking the process table for anything
+# that MENTIONS the gate script reported "STILL WORKING: the test gates" with
+# no gate running anywhere -- and since a running gate counts as work in
+# flight, that false yes silenced this whole report.
+gate_probe_root=$tmp/gate-probe
+mkdir -p "$gate_probe_root/plans" "$gate_probe_root/artifacts/agents/jobs"
+cat >"$gate_probe_root/plans/stream.md" <<'EOF'
+- Waiting on the human: nothing blocking
+- Next step: dispatch the runner
+EOF
+gate_probe_markers=$gate_probe_root/artifacts/agents/supervision/gate-runs
+(
+  unset METASYSTEM_GATES_RUNNING
+  [[ -n "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$gate_probe_root")" ]] \
+    || { echo "open work went unreported with no gate marker at all" >&2; exit 1; }
+  "$source_root/scripts/agents/gate-run.py" register --root "$gate_probe_root" \
+    --gate fixture-gate.sh --pid $$ >/dev/null
+  [[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$gate_probe_root")" ]] \
+    || { echo "a live gate run was not counted as work in flight" >&2; exit 1; }
+  python3 - "$gate_probe_markers" <<'PY'
+import json, sys
+from pathlib import Path
+directory = Path(sys.argv[1])
+for path in directory.glob("*.json"):
+    value = json.loads(path.read_text())
+    value.update({"pid": 999999, "pidStartedAt": 1})
+    (directory / "999999.json").write_text(json.dumps(value) + "\n")
+    path.unlink()
+PY
+  [[ -n "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$gate_probe_root")" ]] \
+    || { echo "a gate marker whose process is dead still hid open work" >&2; exit 1; }
+  [[ -z "$(ls -A "$gate_probe_markers")" ]] \
+    || { echo "a gate marker whose process is dead was not pruned" >&2; exit 1; }
+)
+
 # S4-13: a plan whose own account of itself contradicts the job records. A check
 # that reads a stale plan reports the wrong work as confidently as the right
 # work, which is how this session lost a turn.

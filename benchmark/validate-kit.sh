@@ -11,6 +11,14 @@ top=$(cd "$kit/.." && pwd -P)
 
 tmp=$(mktemp -d)
 
+# Same marker as the metasystem suite: this gate is work in flight for the
+# sibling checkout whose turn-end report has to know about it.
+gate_run_marker=
+if [[ -x "$top/metasystem/scripts/agents/gate-run.py" ]]; then
+  gate_run_marker=$("$top/metasystem/scripts/agents/gate-run.py" register \
+    --root "$top/metasystem" --gate validate-kit.sh --pid $$ 2>/dev/null || true)
+fi
+
 # The kit gate is required to run in delegate sandboxes where process-table
 # visibility is denied. Provisioning still exercises the real supervision
 # bridge; only its OS process source is replaced, and only when even the
@@ -75,6 +83,7 @@ track_armed_supervision() { # repository
   armed_supervision_repos+=("$repo")
 }
 kit_cleanup() {
+  [[ -z "${gate_run_marker:-}" ]] || rm -f "$gate_run_marker"
   local repo
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
     [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue

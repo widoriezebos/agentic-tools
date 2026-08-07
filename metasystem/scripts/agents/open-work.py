@@ -29,6 +29,7 @@ import argparse
 import json
 import subprocess
 import os
+import sys
 import time
 import re
 from pathlib import Path
@@ -60,29 +61,40 @@ def jobs_in_flight(harness_root: Path) -> int:
             continue
         if record.get("status") in IN_FLIGHT:
             count += 1
-    if count == 0 and gates_running():
+    if count == 0 and gates_running(harness_root):
         count += 1
     return count
 
 
-def gates_running() -> bool:
+def gates_running(harness_root: Path) -> bool:
     """The orchestrator's own gate runs are work in flight that no job record
     describes: they run as background commands of the host session. A plan
-    that says "waiting for the gates" while the gates are visibly running is
-    accurate, and calling it stale teaches people to stop writing the truth
-    into plans."""
-    # Whether a gate is running is a fact about the whole machine, not about
-    # this checkout, so a test that asserts what this reporter says about PLANS
-    # cannot control it. Fixtures state the answer instead of racing it.
+    that says "waiting for the gates" while the gates are running is accurate,
+    and calling it stale teaches people to stop writing the truth into plans.
+
+    A gate says so itself, in a marker naming its process. Asking `pgrep -f`
+    instead matched anything that merely MENTIONED the gate script -- a
+    wait-loop, a grep, this session's own shell -- and answered for the whole
+    machine rather than for this checkout. It reported "STILL WORKING: the test
+    gates" with no gate running anywhere, and, because a running gate counts as
+    work in flight, a false yes silences the open-work report entirely.
+    """
+    # Fixtures state the answer rather than racing whatever else is on the
+    # machine; the suite that runs them is itself a gate run.
     declared = os.environ.get("METASYSTEM_GATES_RUNNING")
     if declared in {"0", "1"}:
         return declared == "1"
+    helper = Path(__file__).resolve().parent / "gate-run.py"
+    if not helper.is_file():
+        return False
     probe = subprocess.run(
-        ["pgrep", "-f", r"validate-metasystem\.sh|validate-kit\.sh"],
-        stdout=subprocess.DEVNULL,
+        [sys.executable, str(helper), "check", "--root", str(harness_root)],
+        stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
     )
-    return probe.returncode == 0
+    return probe.returncode == 0 and probe.stdout.strip() == "1"
 
 
 def stale_plans(harness_root: Path) -> list[str]:
@@ -151,7 +163,7 @@ def stale_plans(harness_root: Path) -> list[str]:
             # make this noise rather than signal.
             continue
         name = plan.relative_to(harness_root)
-        if "gate" in claim.lower() and gates_running():
+        if "gate" in claim.lower() and gates_running(harness_root):
             # The claim names the gates and the gates are running: accurate.
             continue
         if not current:

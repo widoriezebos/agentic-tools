@@ -34,6 +34,13 @@ cd "$root"
 # inherited the template's cwd and believed itself the template.
 metasystem_here=$(pwd -P)
 
+# A gate run is work in flight that no job record describes, so it says so
+# itself rather than being guessed at from process command lines. The marker
+# names this process by pid and start time; the turn-end report believes it
+# only while that exact process is alive.
+gate_run_marker=$(scripts/agents/gate-run.py register --root "$root" \
+  --gate validate-metasystem.sh --pid $$ 2>/dev/null || true)
+
 source scripts/agents/fixture-budget.sh
 if (( delegate_scope )); then
   # Load calibration is itself a real census. Delegate validation uses the
@@ -435,6 +442,7 @@ track_armed_supervision() { # repository
   armed_supervision_repos+=("$repo")
 }
 validation_cleanup() {
+  [[ -z "${gate_run_marker:-}" ]] || rm -f "$gate_run_marker"
   local repo
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
     [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
