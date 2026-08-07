@@ -1,9 +1,9 @@
 # One writer, safe readers: sessions sharing a repository without interference
 
 - Goal and current status: sessions sharing a checkout cannot interfere because exactly ONE main holds the write role, enforced mechanically; every other session is a first-class read-only advisor with a paved one-command path to its own worktree when it wants to write. Closes KI-21 as experienced and KI-22. Status: RESCOPED at round 3 per IL-23 — material counts ran 13, 14, 13 with four criticals, and MM-3-8 named the truth: the mechanisms kept depending on the one-main rule, so the design now promises exactly that rule, enforced, instead of live two-writer coexistence it could not deliver. Rounds 1-5 folded. Note of record: the round-4 folds were written and asserted in-session, yet absent from the file at add time — commit e78a5c7 captured only dispositions; the mechanism is UNDETERMINED (an external revert by the peer session pid 45050 is one hypothesis; a same-session tooling failure is another, and this session reproduced a folds-absent commit by its own error once). What is certain: fold commits now verify content at HEAD before claiming success.
-- Next step: none
+- Next step: fresh verification chain, authorized by the human (Option A, 2026-08-07) per the exhaustion contract's remedy
 - In flight right now: nothing — the critique chain is between rounds, orchestrator adjudicating (the supported IL-16 state)
-- Waiting on: THE HUMAN, per the exhaustion contract's own rule. The critique chain design-critic-20260807t081739z-df4e has exhausted its budget twice (rounds 1-3, then 4-6; trend 13, 14, 13, 7, 5, 5; rounds 4-6 all folded and joined). The shipped remedy for a second exhaustion is a human decision. The decision: authorize a FRESH verification chain (new critic, round 1 over the folded design, open items enumerated: none — all 47 findings folded), or rule the design closed enough to implement with code-critique as the backstop. Devin stays parked per the same day's decision.
+- Waiting on: nothing — the human ruled: Option A, fresh verification chain. Devin stays parked per the same day's decision.
 
 ## The evidence this stands on
 
