@@ -133,6 +133,7 @@ for link in \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-fixtures.sh \
+  scripts/agents/telemetry-census-fixtures.sh \
   scripts/agents/mission-fixtures.sh \
   scripts/agents/mission-contract.py \
   scripts/agents/mission-fence.py \
@@ -179,6 +180,7 @@ bash -n scripts/agents/fixture-budget.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
+bash -n scripts/agents/telemetry-census-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/mission-runner.sh
 bash -n scripts/agents/conformance-fixtures.sh
@@ -192,6 +194,7 @@ bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
 bash scripts/agents/conformance-fixtures.sh
+bash scripts/agents/telemetry-census-fixtures.sh
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \

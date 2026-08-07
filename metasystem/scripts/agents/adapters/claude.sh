@@ -157,7 +157,13 @@ except (OSError, json.JSONDecodeError):
 field = sys.argv[2]
 if field == "model":
     models = value.get("modelUsage")
-    result = next(iter(models), "") if isinstance(models, dict) else value.get("model", "")
+    keys = sorted(models) if isinstance(models, dict) else []
+    if len(keys) == 1:
+        result = keys[0]
+    elif not keys:
+        result = "unreported"
+    else:
+        result = "multi-model:" + ",".join(keys)
 else:
     result = value.get(field, "")
 if result is not None:
@@ -270,12 +276,13 @@ PY
 
   result_session=$(claude_result_field "$result_file" session_id 2>/dev/null || true)
   result_model=$(claude_result_field "$result_file" model 2>/dev/null || true)
-  [[ -n "$result_model" ]] || result_model=$requested_model
   if (( ! handshake_done )) && [[ -n "$result_session" ]]; then
     record_handshake "$result_session" "" "$result_model" || return 1
   elif (( handshake_done )) && [[ -n "$result_session" && "$result_session" != "$session_id" ]]; then
     finish_running failed resume_collision resume "$usage_file"
     return 1
+  elif (( handshake_done )) && [[ -n "$result_model" ]]; then
+    record_result_effective_model "$result_model" || return 1
   fi
   complete_from_cli "$cli_status" "$usage_file" "$result_file"
 }

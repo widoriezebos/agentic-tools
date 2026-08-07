@@ -385,7 +385,7 @@ from pathlib import Path
 last = json.loads(Path(sys.argv[1]).read_text())
 state_bytes = Path(sys.argv[2]).read_bytes()
 state = json.loads(state_bytes)
-assert last["schemaVersion"] == 1 and last["writer"] == "watch-background-jobs.sh"
+assert last["schemaVersion"] == 2 and last["writer"] == "watch-background-jobs.sh"
 assert last["verdict"] in {"SUCCESS", "CENSUS-FAILED"}
 assert isinstance(last["completedAtEpoch"], int) and isinstance(last["intervalSec"], int)
 assert isinstance(last["durationMs"], int) and last["durationMs"] >= 0

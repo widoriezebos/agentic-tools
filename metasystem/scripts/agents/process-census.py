@@ -729,7 +729,7 @@ def run_census(repo: Path, fingerprint: str, interval: int, output: Path) -> int
     completed_at = dt.datetime.now(dt.timezone.utc)
     duration_ms = round((time.monotonic() - scan_started) * 1000)
     value = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "writer": "watch-background-jobs.sh",
         "verdict": verdict,
         "completedAt": completed_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
