@@ -1,7 +1,9 @@
 # The Collaboration Loop: how orchestrator and delegate actually work together
 
 - Goal and current status: the loop that inspired this metasystem — orchestrator designs, delegate critiques to agreement, delegate implements, orchestrator critiques to agreement — stated once as canon, enforced where it can be, and honest where it cannot. Status: IMPLEMENTED AND MERGED 2026-08-07. The change went through all five of its own steps: design (4 closures), design critique (6 rounds), implementation (5 rounds, 3 honest gap-stops), code critique (4 rounds, 15 findings, zero-material authorization over the merged tree), gate and merge. The merged gate then correctly refused its own bootstrap case; the mechanical --reviews linkage binds every chain from here on. Historical receipts corrected append-only. Backlog: CC-4-1 fixture rides the next conformance change.
-- Next step: nothing open in this stream. Two follow-ons are recorded for the retro: the CC-4-1 fixture (rides the next conformance change, which the merge gate will force through the loop) and the open design question of whether the orchestrator's own direct commits should pass the same gate — tonight produced two self-inflicted suite bugs arguing yes.
+- Next step: none
+- Waiting on: benchmark trial 003 to release the machine, then re-arm supervision here — arming's first census times out under the trial's CPU load (verified in the open at 70s; an earlier attempt hid the same failure in /dev/null and I wrongly reported success)
+- Retro follow-ons: the CC-4-1 fixture rides the next conformance change; and the design question of whether the orchestrator's own direct commits should pass the merge gate — tonight produced two self-inflicted suite bugs arguing yes
 - In flight right now: nothing; benchmark trial 003 runs in its own repository under this design's coordinator instructions
 - Waiting on the human: nothing — implementation authorized under the standing instruction to fix all findings
 
