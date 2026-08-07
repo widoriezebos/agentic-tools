@@ -64,3 +64,17 @@ A spec below 1.0 produces scores, not verdicts, and is comparison-ineligible
 a builder. Trial records and their caveats live with the benchmark design
 plan in the metasystem's `plans/`, and every finished trial is archived whole
 in the evidence store.
+
+
+## Where trials land
+
+Provisioned trial repositories (and their `.origin.git` / `.evidence`
+siblings) go to the trials root when you pass a bare name as the target.
+Set it once, either way:
+
+    export METASYSTEM_TRIALS_ROOT=~/benchmark-trials
+    # or, persistently:
+    echo ~/benchmark-trials > benchmark/trials-root.local   # gitignored
+
+Unset, the root is the repository's parent directory — the original
+behavior. Explicit paths (anything with a slash) always win verbatim.

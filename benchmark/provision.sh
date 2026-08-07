@@ -3,7 +3,12 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE' >&2
-Usage: benchmark/provision.sh --spec <spec-dir> --target <dir>
+Usage: benchmark/provision.sh --spec <spec-dir> --target <dir-or-name>
+
+A bare NAME (no slash) resolves under the trials root: $METASYSTEM_TRIALS_ROOT
+if set, else the first line of benchmark/trials-root.local if present, else
+the repository's parent directory (the historical default). A path containing
+a slash is honored verbatim.
 
 Prepare a fresh local repository for one benchmark mission. The target must
 not exist. Provisioning copies only the manifest-declared seed and instruments,
@@ -37,12 +42,32 @@ spec=$(cd "$spec_arg" && pwd -P)
 manifest=$spec/manifest.json
 [[ -f "$manifest" ]] || die 2 "provision refused: spec manifest is missing: $manifest"
 
-target=$(python3 - "$target_arg" <<'PY'
-import sys
+# Where trials live. A BARE NAME (no slash) resolves under the trials root;
+# an explicit path (absolute or containing a slash) is honored verbatim, so
+# existing callers keep their behavior. The trials root itself resolves:
+#   1. $METASYSTEM_TRIALS_ROOT when set
+#   2. the first line of benchmark/trials-root.local when present (gitignored,
+#      the human's standing choice)
+#   3. the repository's parent directory — the previous behavior, unchanged.
+target=$(python3 - "$target_arg" "$root/.." <<'PY'
+import os, sys
 from pathlib import Path
-print(Path(sys.argv[1]).resolve(strict=False))
+arg, kit_root = sys.argv[1], Path(sys.argv[2])
+if "/" in arg or arg in (".", ".."):
+    print(Path(arg).resolve(strict=False)); raise SystemExit
+env = os.environ.get("METASYSTEM_TRIALS_ROOT", "").strip()
+local = kit_root / "benchmark" / "trials-root.local"
+if env:
+    root = Path(env).expanduser()
+elif local.is_file():
+    first = local.read_text().splitlines()
+    root = Path(first[0].strip()).expanduser() if first and first[0].strip() else kit_root.parent
+else:
+    root = kit_root.parent
+print((root / arg).resolve(strict=False))
 PY
 )
+mkdir -p "$(dirname "$target")"
 origin=$target.origin.git
 evidence_root=$target.evidence
 [[ ! -e "$target" && ! -L "$target" ]] \
