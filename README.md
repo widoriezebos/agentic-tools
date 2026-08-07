@@ -7,6 +7,12 @@ and humans build software together. One question organizes everything here:
 
 ## The layout answers that question
 
+The heart of the metasystem is a team of **named roles** — coordinator,
+builder, critics, investigator, verifier, judge — where every role can be
+filled by a different agent on a different model, so the one reviewing is
+never the one who wrote. The roles and the loop they play are explained in
+plain English in [`metasystem/README.md`](metasystem/README.md).
+
 | Folder | What it is | Ships? |
 | --- | --- | --- |
 | [`metasystem/`](metasystem/) | **The product.** The template that gets installed into other repositories. Its payload is an explicit allowlist; nothing else leaves. | The allowlisted parts, via `metasystem/scripts/adopt.sh` |
