@@ -1,9 +1,9 @@
 # One writer, safe readers: sessions sharing a repository without interference
 
 - Goal and current status: exactly one main session holds the write role per checkout, enforced mechanically; every other session is a first-class read-only advisor; a second session that wants to write gets a paved one-command path to its own worktree. Closes KI-21 as experienced and KI-22. Status: CONSOLIDATED REWRITE incorporating the MV-1 verification findings — one voice, no superseded text; awaiting verification round 2 on chain design-critic-20260807t094616z-ac0a.
-- Next step: verification round 2.
+- Next step: none
 - In flight right now: nothing
-- Waiting on: nothing. Devin integration stays PARKED (human decision, 2026-08-07) until this design is implemented and proven.
+- Waiting on: THE HUMAN's altitude ruling. Verification round 2 returned nine material (plans/mv2-findings-carried.md) against the clean rewrite — 74 findings total across three chains, and the last two rounds ran 9 and 9: at prose altitude against a large shipped codebase the finding surface is not converging. The orchestrator's recommendation: fold the nine, then IMPLEMENT — the remaining finding classes (adapter-owned transitions, lock semantics, matrix-versus-shipped-supervision) are exactly what the code-critic verifies against real code, as CC-1-6 already proved the loop can. The alternative is verification round 3 (the chain's last budgeted round) before implementing. Devin stays PARKED per the same day's decision.
 
 ## The evidence this stands on
 
