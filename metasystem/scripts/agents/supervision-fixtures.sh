@@ -406,7 +406,11 @@ if "$watcher" --dir "$repo/artifacts/agents/jobs" --scope "$repo" \
   exit 1
 fi
 grep -Fq 'live census writer already owns' "$tmp/second-writer.out" \
-  || { echo "S4-5: duplicate writer refusal did not name the live owner" >&2; exit 1; }
+  || { echo "S4-5: duplicate writer refusal did not name the live owner" >&2
+       echo "--- second writer said:" >&2; cat "$tmp/second-writer.out" >&2
+       echo "--- lock state:" >&2; ls -la "$repo/artifacts/agents/supervision/census-writer.d" >&2 2>/dev/null || true
+       cat "$repo/artifacts/agents/supervision/census-writer.d/owner.json" >&2 2>/dev/null || echo "(no owner.json)" >&2
+       exit 1; }
 
 # Duration is part of the authoritative artifact, and the watcher names an
 # over-interval scan as a supervision defect instead of silently looping it.
