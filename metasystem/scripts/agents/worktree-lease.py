@@ -14,6 +14,7 @@ import re
 import secrets
 import signal
 import subprocess
+import time
 import sys
 import tempfile
 from pathlib import Path
@@ -421,7 +422,7 @@ def announce(args: argparse.Namespace) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     registry_lock = directory / ".registry.lock"
     with registry_lock.open("a+") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        acquire_bounded(lock, "lease")
         for path, value in announcements(root, strict=False):
             if value.get("pid") == args.pid and value.get("pidStartedAt") == args.start:
                 print(path)
@@ -515,11 +516,11 @@ def cleanup_stale_jobs(root: Path, epoch: int) -> None:
 
 
 def prove_lock(lock: Any, lock_path: Path) -> None:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    acquire_bounded(lock, "lease")
     lock_probe_held(lock_path)
     fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
     lock_probe_released(lock_path)
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    acquire_bounded(lock, "lease")
     lock_probe_held(lock_path)
 
 
@@ -619,7 +620,7 @@ def retire(args: argparse.Namespace) -> None:
     root = args.root.resolve()
     directory = root / "artifacts/agents/mains"
     with (directory / ".registry.lock").open("a+") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        acquire_bounded(lock, "lease")
         for path, value in announcements(root, strict=False):
             if (
                 value.get("pid") == args.pid
@@ -690,6 +691,32 @@ def holder_identity(root: Path, caller_pid: int, expected_epoch: int | None) -> 
     return {"class": "HOLDER", "claimEpoch": lease["claimEpoch"], "mainId": lease["holderMainId"]}
 
 
+LOCK_WAIT_SEC = float(os.environ.get("METASYSTEM_LEASE_LOCK_WAIT_SEC", "10"))
+
+
+def acquire_bounded(handle, what: str) -> None:
+    """Take the lease lock without ever blocking forever.
+
+    A blocking LOCK_EX deadlocks the legitimate nested case — an arming that
+    runs inside an operation already holding the lease — and an operator sees
+    only a timeout with no cause. Bounded acquisition turns that into a plain
+    refusal naming what to do.
+    """
+    deadline = time.monotonic() + LOCK_WAIT_SEC
+    while True:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except OSError:
+            if time.monotonic() >= deadline:
+                fail(
+                    f"checkout lease lock is busy for {what} after {LOCK_WAIT_SEC:g}s; "
+                    "another lease-gated operation holds it. If this call is nested "
+                    "inside one, pass --lease-held; otherwise retry in a moment."
+                )
+            time.sleep(0.05)
+
+
 def run_held(args: argparse.Namespace) -> None:
     root = args.root.resolve()
     initial = classify(root, args.caller_pid)
@@ -702,7 +729,7 @@ def run_held(args: argparse.Namespace) -> None:
     except OSError as error:
         fail(f"checkout lease lock cannot be opened: {error}")
     with lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        acquire_bounded(lock, "run-held")
         holder_identity(root, args.caller_pid, args.expected_epoch)
         result = subprocess.run(args.argv, check=False)
     raise SystemExit(result.returncode)
@@ -712,7 +739,7 @@ def renew(args: argparse.Namespace) -> None:
     root = args.root.resolve()
     lease_path, lock_path, _, _ = lease_paths(root)
     with lock_path.open("a+") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        acquire_bounded(lock, "renew")
         identity = classify(root, args.caller_pid)
         lease = load_lease(root)
         if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):
@@ -761,7 +788,7 @@ def protocol_advance(args: argparse.Namespace) -> None:
     cursor_path = root / "artifacts/agents/mains" / f"{args.main_id}.protocol-cursor.json"
     lock_path = cursor_path.with_suffix(cursor_path.suffix + ".lock")
     with lock_path.open("a+") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        acquire_bounded(lock, "lease")
         current = load_object(cursor_path)
         if current.get("mainId") != args.main_id:
             fail("protocol-error cursor belongs to another main")
