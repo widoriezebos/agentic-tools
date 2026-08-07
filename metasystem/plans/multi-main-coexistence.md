@@ -1,7 +1,7 @@
-# Multi-main coexistence: two sessions, one repository, no interference
+# One writer, safe readers: sessions sharing a repository without interference
 
-- Goal and current status: two main agents in one checkout can no longer interfere — streams carry mechanical owners, the working tree has one writer, the turn-end hook commands only work that is yours to start, and a delegate's identity claim can never overwrite what the adapter observed. Closes KI-21 and KI-22. Status: IN CRITIQUE, rounds 1-2 folded by rewrite (13 + 14 material findings). Scope judged at the round-2 fold: this stays ONE design — every finding lands on the coexistence mechanisms themselves, and the two candidates for splitting (return-schema versioning, adoption) resolved into two paragraphs each, not protocols.
-- Next step: critique round 3 over the round-2 folds
+- Goal and current status: sessions sharing a checkout cannot interfere because exactly ONE main holds the write role, enforced mechanically; every other session is a first-class read-only advisor with a paved one-command path to its own worktree when it wants to write. Closes KI-21 as experienced and KI-22. Status: RESCOPED at round 3 per IL-23 — material counts ran 13, 14, 13 with four criticals, and MM-3-8 named the truth: the mechanisms kept depending on the one-main rule, so the design now promises exactly that rule, enforced, instead of live two-writer coexistence it could not deliver. Rounds 1-3 folded.
+- Next step: critique round 4 over the rescoped specification
 - In flight right now: nothing — the critique chain is between rounds, orchestrator adjudicating (the supported IL-16 state)
 - Waiting on: nothing. Devin integration is PARKED by the human's decision of 2026-08-07 until this design is implemented and proven.
 
@@ -25,152 +25,134 @@ Enforcement did not exist, and the peer session's transcript (read-only, at
    sessionId. The validator caught it every round; nothing surfaced it; the
    findings were used anyway.
 
+## The rescope decision (IL-23, recorded)
+
+Forty findings in three rounds kept landing on the same fault line: live
+two-writer coexistence in one checkout is a distributed-systems protocol
+that fights git's index, shared CLI state, and process-tree ambiguity. The
+peer session that triggered this design already demonstrated the working
+model — it stayed read-only, was useful, and asked the human before
+touching anything. This design now enforces that model instead of fighting
+for a harder one. Live takeover machinery (TTL dances, adoption scans,
+takeover states) is DELETED, not deferred: takeover exists only on provable
+death.
+
 ## Changes
 
-**M-0: mainId, defined once and used everywhere.** The start hook mints
-`main-<pidStartedAt>-<pid>-<rand6>` at announce time and records it in the
-announcement file. It names one main PROCESS LIFETIME — no continuity across
-restart is promised or needed: a restarted main is a new mainId whose claim
-follows the dead-holder path below, and job records carry the dispatching
-mainId so a successor can find its predecessor's work (MM-2-3, MM-2-7).
-Authentication never takes a process's word for its mainId: mediated
-operations walk the caller's ancestry toward init, and the FIRST classified
-ancestor decides — an adapter's agent signature means delegate context,
-refused; a pid-plus-start-time match against an announcement means that
-main, authenticated, mainId read from the record; walk exhausted with no
-announced ancestor means not a main. Delegates always meet their adapter's
-signature before any main because the launcher sits between them — a rule
-proven by a fixture that calls a mediated operation from inside a dispatched
-fake delegate and is refused (MM-2-4).
+**W-1: identity.** The start hook mints `main-<pidStartedAt>-<pid>-<rand6>`
+at announce and records it in the announcement. Announce is idempotent,
+keyed by pid plus start time: a duplicate start event returns the existing
+mainId and never re-mints (MM-3-5). Process identity is pid PLUS start
+time everywhere it is compared, which closes same-second pid reuse
+(MM-3-11).
 
-**M-0a: humans are not gated.** A caller with NO announced ancestor and no
-agent signature is the human's own shell or client, and every mediated
-operation allows it untouched — the threat model is agent-versus-agent
-interference; gating the human's own commits would be the harness
-overreaching, and this design says so as a trust decision rather than an
-oversight (MM-2-5).
+**W-2: caller classification, cooperative and self-first.** The session
+start hook exports `METASYSTEM_MAIN_ID` into the main's environment; the
+delegate launcher strips it and sets the delegate marker instead. A
+mediated operation classifies its caller: the caller's own pid matching an
+announcement decides FIRST, before any ancestor walk, resolving the
+main-classifying-itself ambiguity (MM-3-7); then the environment markers;
+then the ancestor walk as a cross-check — a marker that contradicts the
+walk refuses. Callers with neither marker nor announced ancestry are the
+human's own tools and pass untouched. This is stated plainly as
+COOPERATIVE discipline (MM-3-3): it prevents accident, not malice — an
+agent that strips its own identity to impersonate the human is outside
+this trust model, exactly as the benchmark's declared trust model already
+treats candidate-written records. Fail-open to humans is the deliberate
+cost of never gating the human; the design says so.
 
-**M-1: stream ownership resolves through the checkout lease.** Plans carry
-`Stream-Owner: <mainId>`. The open-work check commands work owned by the
-calling main or unowned; reports `OWNED-ELSEWHERE` for a holder that is
-alive; treats a dead holder's streams as claimable, the claim writing a
-takeover line into the plan.
+**W-3: the write role is a lease with ONE takeover predicate: provable
+death (MM-3-2).** The lease file carries holder mainId, pid,
+pidStartedAt, claimedAt, renewedAt, generation. Renewal happens on turn
+boundaries as hygiene, but expiry does not exist: the ONLY takeover
+condition is the census's pid-plus-start-time death check on the holder.
+A live holder can never lose the lease; a dead holder loses it instantly.
+An uninspectable holder (permission-denied on the pid) is treated as
+alive — refusing to take over is the safe error. All lease mutations run
+under a dedicated flock on a lock sibling with generation compare — and
+the lease directory is asserted local at claim time; a network-mounted
+artifacts directory refuses with a plain message, which is the flock
+portability contract stated executable (MM-3-12).
 
-**M-2: the checkout lease — alive-or-expired, never both.** The lease file
-carries holder mainId, pid, pidStartedAt, claimedAt, renewedAt, ttlSec, a
-monotonically increasing `generation`, a `state` of `active` or
-`takeover-in-progress`, and takeover history. Liveness beats the clock:
-expiry requires BOTH renewedAt older than ttlSec AND the holder process
-dead by the census's pid-plus-start-time check — a live holder mid-long-turn
-can never be expired out from under (MM-2-1), and a crashed holder can be
-taken over the moment its death is provable, without waiting out any TTL.
-ttlSec is owned by `metasystem.lease.ttl-sec`, default 900, bounds 300 to
-3600; it only bounds how long an UNPROVABLE death (machine partition)
-blocks takeover. Every mutation — claim, renew, takeover — runs under a
-dedicated flock on the lease's lock sibling: re-read, validate expected
-generation, decide expiry under the lock, write via temp-and-rename,
-generation incremented. Linearization is the lock order; a renewal that
-finds its generation superseded has lost to a takeover and the old holder
-demotes itself on the spot (MM-2-2 — this is a new named mechanism, not the
-dispatcher's job-status helper, and the proof covers stale-renewal-after-
-takeover explicitly).
+**W-4: non-holders are read-only advisors, and the paving is real
+(MM-3-1, MM-3-8).** For a non-holder main: dispatch, commit, and arming
+refuse, naming the holder and offering the one-command escape hatch —
+`scripts/agents/second-session.sh`, which creates a git worktree under a
+sibling directory with its own artifacts root and prints the cd command.
+The open-work hook in a non-holder session reports OWNED-ELSEWHERE and
+never commands. KI-21's incident closes because the second WRITING main
+cannot exist in one checkout: the near-double-dispatch, the competing
+arming, and the scooped-stage classes all require a second writer that
+the lease now refuses. What remains possible — a peer editing files with
+its own editor — is outside any harness's sight, stated as accepted, and
+mitigated by the worktree path being easier than fighting.
 
-**M-2b: recovery is claim-first** — holder dead, supervision stale: claim
-(instant on provable death), then arm as holder. No circular state.
+**W-5: death cleanup is the existing reaper, idempotent (MM-3-4, MM-3-6).**
+On claiming a dead holder's lease, the new holder runs the existing reaper
+sweep before its first dispatch — enforced by dispatch itself: a lease
+whose `reapedAfterClaim` stamp is absent refuses dispatch until the sweep
+runs. The sweep is already idempotent; a crash mid-cleanup re-runs it. A
+dispatch that passed authorization under the dead holder writes a record
+whose mainId is the dead holder's; the sweep classifies it like any other
+orphan — no fencing window, because there is no live takeover to fence.
 
-**M-2c: takeover is a state, not a moment (MM-2-7).** The claim writes
-`state=takeover-in-progress`; while it stands, dispatch refuses everyone
-including the new holder. The adoption scan then walks the predecessor
-mainId's non-terminal jobs using the existing per-job record locks: a
-compare-and-swap of running to adopted records the new mainId; a swap lost
-to the delegate's own terminal write is accepted by re-read — terminal
-needs no adoption. Scan done, `state=active`. Classification and adoption
-sit inside the per-job lock; the takeover state spans the whole scan.
+**W-6: identity provenance and schema v2 (KI-22), corrected.** The
+per-field, per-runtime table: sessionId — claude observed at handshake,
+codex observed as thread id, devin OBSERVED (the shipped adapter requires
+it; round 3 corrected my table, MM-3-9); model.effective — claude observed
+from result telemetry (V-1), codex and devin `unobserved` until their
+adapters observe it. ONE literal, `unobserved`, for every unobserved state
+(MM-3-10). Return schemas bump to v2 with required schemaVersion; presence
+discriminates; claimed values live in `claimed` and never overwrite.
 
-**M-3: jobs name their stream, with a defined argument (MM-2-14).**
-Dispatch accepts `--stream <plan>`; the value normalizes to a repository-
-relative path that must exist under plans/, and when the flag is absent
-dispatch derives it from the brief's plan reference. The reserved value
-`none` (used by adapter selftests and ad-hoc jobs) is exempt from
-derivation. Jobs with stream `none` or legacy records count as in-flight
-for EVERY plan — conservative, current behavior, no new suppression class.
+**W-7: protocol errors, keyed and cursored** — unchanged from round 2's
+fold: add-if-absent set under the record lock at the adapter lifecycle
+point, per-main cursor initialized at announce (idempotent announce keeps
+it stable, MM-3-5), advanced after emit, inherited counts printed once at
+claim.
 
-**M-4: identity provenance is a table, not a sentence (MM-2-13).**
-Per field and runtime: sessionId — claude observed at handshake, codex
-observed as the thread id, devin unobserved; model.effective — claude
-observed from result telemetry (V-1, a CLAUDE mechanism; the earlier codex
-citation was wrong), codex currently an unobserved requested-echo and
-therefore recorded as `unreported` until its adapter gains result
-telemetry (a small implementation item of this design), devin unobserved.
-Unobserved fields hold the literal `unobserved`; a delegate-claimed value
-lands only in the `claimed` object. Return schemas bump to version 2 with
-a REQUIRED `schemaVersion: 2` field; the discriminator is presence — a
-return without the field validates against the frozen v1 schema, one with
-it against v2; the v1 path retires once all adapters emit v2 (MM-2-12 —
-executable with the existing one-schema validator, no oneOf).
-
-**M-5: protocol errors are a keyed set, surfaced once (MM-2-8, MM-2-9).**
-The chain root records `protocolErrors` as a set keyed by round and
-violation hash, written add-if-absent under the record lock at the adapter
-lifecycle point that persists the failed round; repeated validation runs
-are harmless and follow-ups only print. The turn-end line reports growth
-against a per-main cursor file initialized AT ANNOUNCE to the then-current
-set sizes and advanced only after the status line is emitted; a takeover
-prints the predecessor's outstanding counts once at claim, so inherited
-errors are seen exactly once rather than missed or replayed.
-
-**M-6: the identity hash filter is data, versioned, fail-closed (MM-2-10)
-— and its claim is narrowed to what it delivers (MM-2-11).** Each adapter
-ships an exact path list (`<runtime>-config-filter.v<N>.txt`, instruction-
-bearing, never waivable) naming the CLI's self-written bookkeeping keys for
-a declared CLI version range; only enumerated keys are excluded, unknown
-and new keys are hashed, and a CLI version outside the declared range
-hashes everything and warns — churn over blindness. What M-6 removes is
-FALSE churn. A peer that changes real shared behavior — saving a new
-default model, as the transcript's peer did — rightly churns identity, and
-the refusal now names the changed keys so the cause is visible in one
-line. Full per-main configuration isolation would be the complete fix and
-is recorded as future work, not smuggled in; until then the one-main
-interim rule and OWNED-ELSEWHERE reporting are the standing mitigation.
-
-**M-7: foreign-edit detection is withdrawn (MM-2-6).** The designed
-evidence cannot attribute an unmediated edit to a session — a fingerprint
-without attribution either accuses every legitimate edit or misses every
-foreign one. The stop hook keeps a purely informational dirty-tree line;
-the residual risk of unmediated peer edits is mitigated by the interim
-rule and M-2's serialization of everything mediated, and it is named here
-as accepted rather than papered over.
+**W-8: the config filter has a semantic authority (MM-3-13).** Each
+adapter's filter file pairs every excluded key with a one-line
+justification citing the CLI's documentation or an observed churn record,
+and the file's owner is the adapter — changes ride the loop like any
+instruction-bearing file. Unknown keys hash; out-of-range CLI versions
+hash everything and warn. The filter's claim stays narrow: it removes
+false churn; real behavior changes rightly churn and the refusal names
+the changed keys. Per-main config isolation remains recorded future work;
+with W-4, a read-only peer that changes shared behavior config is a human
+action surfaced by name, not a silent breakage.
 
 ## Proof
 
-- Two fake mains: open-work commands the holder, reports OWNED-ELSEWHERE
-  to the live peer, permits claim only on provable death or lease expiry,
-  and writes the takeover line.
-- Lease under flock: two simultaneous claims — one winner by generation;
-  a stale renewal after takeover fails and the old holder demotes; a live
-  holder past its TTL is NOT expirable; a dead holder is claimable before
-  its TTL lapses.
-- Ancestry: a mediated call from inside a dispatched fake delegate refuses;
-  from an announced main authenticates; from a bare human shell passes
-  untouched (M-0a).
-- Takeover state: dispatch refuses during takeover-in-progress; adoption's
-  lost compare-and-swap against a delegate's terminal write is accepted by
-  re-read; adopted jobs carry the new mainId.
-- Returns: a v1 return without schemaVersion validates against v1; a v2
-  return with claimed object validates against v2; the claimed value never
-  overwrites an observed field; unobserved fields hold the literal.
-- Protocol errors: the same violation validated twice yields one set entry;
-  a terminal round with no follow-up still appears in the next turn line;
-  a fresh main's first turn reports only post-announce growth; a takeover
-  prints inherited counts once.
-- Filter: bookkeeping churn keeps identity; a model change breaks it AND
-  the refusal names the changed key; an out-of-range CLI version hashes
-  everything with a warning.
+- Announce twice with one pid+start: one mainId, stable cursor.
+- Classification: the announced main's own pid classifies as itself before
+  any walk; a dispatched fake delegate refuses; a bare shell passes; a
+  marker contradicting the ancestor walk refuses.
+- Lease: claim on a live holder refuses regardless of clock; claim on a
+  provably dead holder succeeds immediately; permission-denied treats as
+  alive and refuses; two contenders on a dead holder — one generation
+  winner; network-mounted lease directory refuses with the plain message.
+- Non-holder posture: dispatch, commit, arming refused naming the holder
+  and printing the second-session command; the created worktree has its
+  own artifacts root and its session claims ITS lease independently;
+  open-work in the non-holder reports OWNED-ELSEWHERE and commands nothing.
+- Post-claim gate: dispatch refuses until reapedAfterClaim stamps; the
+  sweep run twice is a no-op the second time.
+- Returns and provenance: v1-without-field validates v1; v2 validates v2;
+  devin sessionId observed; every unobserved field holds the one literal.
+- Protocol errors: double validation, one entry; announce-then-error
+  reports exactly once; claim prints inherited counts once.
+- Filter: every excluded key carries its justification line or the kit
+  check fails; bookkeeping churn keeps identity; a model change breaks it
+  and the refusal names the key.
 
-## What is deliberately not changed
+## What is deliberately not changed, and what was deleted
 
-The mains registry and census stay observation-only for anything that is
-not dispatch, commit, or arming — a read-only peer is legitimate and
-useful, as the transcript itself demonstrated. And the one-main-per-
-checkout INTERIM rule stays in force until this design is implemented and
-proven; this design is what makes the rule enforceable instead of polite.
+Deleted, not deferred: live-holder TTL expiry, takeover-in-progress
+states, adoption scans, and foreign-edit detection — each was a round-3
+critical or its direct cause, and each existed only to serve live
+two-writer coexistence, which this design no longer promises. The census
+and mains registry stay observation-only for everything but dispatch,
+commit, and arming. Read-only peers stay legitimate and unauthenticated
+reads stay free. The one-main-per-checkout rule stops being an interim
+apology and becomes the enforced design.
