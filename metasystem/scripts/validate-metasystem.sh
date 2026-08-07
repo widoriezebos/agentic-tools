@@ -2479,6 +2479,11 @@ PY
       printf '%s\n' "$output"
       [[ $driver_status -eq 0 ]] && break
       printf '%s' "$output" | grep -Fq 'censusGeneration=' || break
+      # Same record boundary as the shared runner: once the job exists, the
+      # nonzero status is the fixture's answer (here: the reaped job's exit 4).
+      # Re-dispatching a reaped job id spawned a zombie adapter that raced
+      # the suite's own git operations in this repository.
+      [[ -e artifacts/agents/jobs/mission-timeout-job.json ]] && break
       sleep 1
     done
     printf '%s\n' "$driver_status" >"$mission_timeout_result"
