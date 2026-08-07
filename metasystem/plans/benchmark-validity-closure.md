@@ -27,118 +27,76 @@ self-check — and was correctly stamped INVALID for four reasons:
    `generation` and `stateDigest` — fields the census has carried since the
    KI-18 fix. The ruler lags the thing it measures.
 
-## Changes
+## Changes (consolidated at round 5: one specification, no layered amendments)
 
-**V-1 (metasystem, claude adapter): record the answering model as the
-runtime's own telemetry — better than assumption, never claimed as
-attestation (BV-1-9).** The CLI result's `modelUsage` is read with a defined
-contract for every shape (BV-1-5): exactly one key — that key becomes
-`effectiveModel`; empty or absent — the literal `unreported`, which the
-rosterPinned check fails closed; more than one key — the literal
-`multi-model:<sorted,keys>`, which the check also fails closed, because the
-roster gate admits one scalar and certifying either key could certify the
-wrong roster. Dictionary-order selection dies. The same value flows into
-the canonical role return through the existing normalization point, so the
-job record and the return cannot disagree and a fail-closed roster result
-cannot mutate into an evidence-set failure (BV-1-7); the fixture asserts
-both copies. Handshake keeps its provisional requested-model value only
-until the result arrives; result telemetry always replaces it.
+**V-1: the answering model is recorded as runtime telemetry.** The claude
+adapter reads the CLI result's `modelUsage`: one key becomes
+`effectiveModel`; absent or empty becomes the literal `unreported`; multiple
+keys become `multi-model:<sorted,keys>`. The latter two fail the
+rosterPinned check closed. The value flows through the existing return
+normalization so job record and role return always agree, and the fixture
+asserts both. Telemetry is candidate-side evidence under the declared trust
+model, never attestation. Handshake holds the requested model only until
+the result replaces it.
 
-**V-2 (metasystem, runner): rebuilt on the trial's actual evidence.** The
-original V-2 was a no-op (BV-1-1): one shared closure path already exists.
-Trial 006's runner record holds the real defect — "runner could not close
-terminal job chain implementer-…a593: implementer diff.patch is not
-mirrored" — reproduced live by hand. Three changes:
+**V-2: chain closure at mission end, specified whole.**
+- Closure attempts every chain, collects failures, stamps what closes, and
+  reports failures together; no abort-on-first.
+- Closing an implementer chain mirrors its diff.patch as part of the close.
+- Chains close on completion only. A park never closes chains; parked
+  chains stay open under the mission lease for resume.
+- Completion publishes only after closure succeeds for every chain. If any
+  closure fails, the mission parks with reason `chain-closure-failure`.
+- That park persists the measurement it interrupted: the mission state
+  record gains `measuredOutcome = {classification, gatePassed,
+  measuredCandidateSha, measuredAt}` — gatePassed persisted explicitly so
+  resume knows whether the original result was a gate success (BV-5-2);
+  measuredCandidateSha matches the ledger's candidate-sha, the tree the
+  gate measured.
+- `resume` on that reason re-attempts closure only; on success it publishes
+  completed carrying the preserved measuredOutcome. No re-run, no
+  re-measurement.
+- The mission state record's schema bumps to version 2 for these fields,
+  with a versioned reader exactly like the census schema below; version-1
+  state records remain readable (BV-5-3).
 
-- **V-2a: closure never aborts the closable.** close_terminal_chains
-  attempts every chain, collects failures, stamps what it can, and reports
-  the failures together; one unmirrorable chain no longer strands the
-  chains sorted behind it.
-- **V-2b: the close path satisfies the custody it enforces.** Closing an
-  implementer chain mirrors the chain's diff.patch as part of the close —
-  the same mirror call the collaboration loop uses — instead of demanding
-  someone else already did.
-- **V-2c: completion is published after closure, and parking does not
-  close chains at all (BV-1-1, BV-1-6).** The completed status becomes
-  externally visible only once closure has run, so a cohort driver that
-  reacts to "completed" reads closed chains. A parked mission is a
-  suspension: its chains stay open so a resumed coordinator can follow up
-  through existing sessions; the mission lease already fences them from
-  everyone else. Chains close on completion, and on parking only via the
-  existing explicit abandonment path.
+**V-3: run identity, stamped by the party that knows each half.**
+- The runner owns `artifacts/agents/missions/<id>/execution-identity.json`:
+  append-only, one entry per execution attempt (start and each resume),
+  each entry carrying machine fingerprint, measuring metasystem commit, and
+  timestamp; completion appends the measured candidate sha. Run validity
+  requires every attempt to agree on machine fingerprint AND measuring
+  commit — an attributable run spans one machine and one measuring code
+  version (BV-5-4).
+- The cohort driver completes the record with cohort id, repetition index
+  and count, and proposal; a single-run extraction completes it with
+  repetition 1 of 1 and a generated cohort id. A missing runner half makes
+  the run invalid, fail-closed. Provision writes nothing.
+- A chain-closure-failure park has a durable cohort state: the cohort
+  record marks that repetition `ungradeable-pending-recovery`; a later
+  resume-to-completed lets re-extraction grade it; the cohort's finalize
+  step converts any still-pending entry to permanently ungradeable so a
+  cohort always terminates (BV-5-5).
 
-Proof: a fixture with one unmirrorable and one healthy chain — the healthy
-chain closes, the failure is reported, completion publishes after; a parked
-fixture mission resumes and successfully follows up a pre-park chain.
+**V-4: versioned census evidence.**
+- The census schema bumps to version 2; the shared kit version bumps.
+- `generation` and `stateDigest` are required PROPERTIES on every v2
+  census; they must be non-null when verdict is SUCCESS and may be null
+  otherwise — presence unconditional, nullability verdict-scoped.
+- The producer stamps schemaVersion 2 (metasystem change, rides the loop).
+- The extractor selects the validator by declared schemaVersion, rejects
+  unknown versions, and the kit suite carries per-version fixtures
+  including malformed-v2 rejections: missing SUCCESS fields, wrong types,
+  undeclared properties. Version-1 archives validate against version 1.
 
-**V-3 (kit, cohort driver): identity is written by the party that knows it
-(BV-1-2).** The provisioner cannot honestly write the eleven-field identity
-record — it does not know cohort, repetition, candidate commit, proposal,
-or measuring machine. run-cohort.sh owns all of them and already stamps
-extractor-visible identity per the kit's own rule; the fix completes that
-stamp to the full schema and adds the single-run path: an extraction
-invoked outside a cohort writes the same record with repetition 1 of 1 and
-a generated cohort id, so ad-hoc trials like tonight's are attributable
-too. Provision writes nothing. Proof: kit validation runs the extractor on
-a cohort-stamped and a single-run target; both pass the identity check.
-
-**V-4 (kit, schema): a versioned schema that describes every artifact the
-producer can emit (BV-1-3, BV-1-8).** The census schema bumps to version 2
-and the shared kit version bumps with it, per the kit's own measuring-stick
-rule. Version 2 requires `generation` and `stateDigest` for SUCCESS
-censuses and requires them null for the failure shapes the producer
-actually emits (state unreadable, fingerprint acquisition failed) — a
-diagnostic record must never be hidden behind a format error. The census
-producer stamps schemaVersion 2. The extractor dispatches by the
-artifact's declared version: version-1 archives validate against the
-version-1 schema, so re-extraction of archived trials keeps working.
-Proof: the schema suite validates a v2 success census, a v2 failure
-census, and an archived v1 census, and rejects a v2 success census missing
-either field.
-
-**Round-3 amendments.** A chain-closure-failure park preserves the already
-measured outcome: the ledger keeps the measured classification, the park
-record carries it as `measuredOutcome`, and a later resume that clears the
-closure failure publishes completed with the ORIGINAL measurement — no
-re-run, no contradiction with the mission-state contract (BV-3-2). The
-runner-stamped identity half is a named artifact with one owner:
-`artifacts/agents/missions/<id>/execution-identity.json`, written by the
-runner at start (machine fingerprint, measuring commit), candidate commit
-appended at completion measurement, append-only across resume — a resumed
-mission never rewrites the start half (BV-3-3). On a failed v2 census the
-two fields REMAIN required properties: present always, null permitted only
-when the verdict is not SUCCESS — presence is unconditional, nullability is
-verdict-scoped (BV-3-4).
-
-**Round-4 amendments.** The park's preserved measurement is a defined shape
-with an executable recovery: the park record carries
-`measuredOutcome={classification, measuredCandidateSha, measuredAt}` —
-named to match the ledger's candidate-sha, the tree the gate actually
-measured (BV-4-2, BV-4-3) — and `resume` on reason=chain-closure-failure
-re-attempts closure only, publishing completed with that outcome on
-success. Execution identity is append-only per attempt: each start or
-resume appends its machine fingerprint and timestamp, and run validity
-requires every attempt's fingerprint to match — attribution never assumes
-the first machine was the only machine (BV-4-4). Ownership is a matrix by
-part, not by fix number (BV-4-5): the runner's closure, parking, and
-identity stamping are metasystem; the cohort driver's park handling and
-the extraction-side identity completion are kit; each part rides its
-owner's gate.
-
-## Ownership boundary
-
-V-1 and V-2 change the metasystem and ride the collaboration loop:
-design-critic on gpt-5.6-sol, implementer delegate, code-critic on a model
-different from the implementer's, merge gated on the zero-material round.
-
-V-3 and V-4 change the ruler itself, and the kit's rules make that a
-human-approved, version-bumped change — kit validation alone is not an
-acceptance path (BV-1-4). The human ratified exactly this closure in
-session on 2026-08-07: "a sound solid yes to fixing all issues that you
-found now", given in response to the report naming these four findings.
-That ratification is recorded here, the kit version bumps in the same
-change, and the kit commit is separate from any metasystem commit so the
-candidate and the measuring stick never change in one batch.
+**Ownership matrix (by part).** Metasystem, through the collaboration loop
+and merge gate: the claude adapter (V-1), runner closure, parking,
+mission-state v2, and identity stamping (V-2, V-3 runner half), the census
+producer stamp (V-4). Kit, human-ratified with the kit version bump, in
+commits separate from any metasystem commit: the cohort driver's park
+handling and identity completion (V-3), the census schema and extractor
+dispatch (V-4). The human ratified this closure in session on 2026-08-07:
+"a sound solid yes to fixing all issues that you found now."
 
 ## What is deliberately not changed
 
