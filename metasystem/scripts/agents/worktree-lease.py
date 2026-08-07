@@ -22,17 +22,20 @@ from typing import Any
 
 
 TERMINAL = {"completed", "failed", "timeout", "cancelled"}
-ANNOUNCEMENT_FIELDS = {
+# What every announcement carries, in any generation.
+ANNOUNCEMENT_BASE_FIELDS = {
     "sessionId",
-    "mainId",
     "pid",
     "pidStartedAt",
     "pgid",
     "runtime",
     "instanceTag",
-    "commandHash",
     "announcedAt",
 }
+# What an announcement needs before it can authenticate anybody. An older
+# record without them is not corrupt; it simply identifies no main.
+ANNOUNCEMENT_IDENTITY_FIELDS = {"mainId", "commandHash"}
+ANNOUNCEMENT_FIELDS = ANNOUNCEMENT_BASE_FIELDS | ANNOUNCEMENT_IDENTITY_FIELDS
 
 
 def now() -> str:
@@ -199,9 +202,17 @@ def announcements(root: Path, strict: bool = True) -> list[tuple[Path, dict[str,
         # one-writer identity fields are the only permitted extras. Exact-set
         # equality discarded every announcement of the other generation, and a
         # discarded announcement makes its own main classify as a delegate.
-        if not isinstance(value, dict) or not ANNOUNCEMENT_FIELDS <= set(value):
+        if not isinstance(value, dict) or not ANNOUNCEMENT_BASE_FIELDS <= set(value):
             if strict:
                 fail(f"caller classification refused: invalid announcement schema {path.name}")
+            continue
+        # An announcement written before the one-writer fields existed can
+        # authenticate nobody, which is all it should cost: skip it. Failing
+        # the whole walk on it meant ONE pre-change file in a checkout refused
+        # every control-plane write in that checkout, naming the file and no
+        # remedy. Malformed identity fields are a different matter -- those are
+        # tampering-shaped, and they still refuse.
+        if not ANNOUNCEMENT_IDENTITY_FIELDS & set(value):
             continue
         if not isinstance(value.get("mainId"), str) or not re.fullmatch(
             r"main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}", value["mainId"]

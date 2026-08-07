@@ -927,7 +927,12 @@ await_handshake() { # job, maximum session-established seconds, dispatch claim e
   local job=$1 timeout=$2 claim_epoch=${3:-} record="$jobs/$1.json" deadline status session poll_sleep
   [[ "$timeout" =~ ^[1-9][0-9]*$ && "$timeout" -le 60 ]] || return 1
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-50}")
-  deadline=$(( $(date +%s) + timeout ))
+  # The deadline stamped at launch, so the waiter and the reaper's backstop
+  # work from ONE number. Computing a fresh one here started the clock again
+  # after setup had already run, which put this verdict later than the backstop
+  # that is supposed to defer to it -- and the backstop won every time.
+  deadline=$(json_field "$record" handshakeDeadline 2>/dev/null || true)
+  [[ "$deadline" =~ ^[1-9][0-9]*$ ]] || deadline=$(( $(date +%s) + timeout ))
   while (( $(date +%s) <= deadline )); do
     if [[ -f "$record" ]]; then
       status=$(json_field "$record" status 2>/dev/null || true)
@@ -2218,12 +2223,41 @@ internal_handshake_timeout() {
   # in running, not pending. Writing the verdict only from pending meant this
   # -- the exact case the handshake timeout exists for -- wrote nothing at all,
   # and the reaper's backstop later called it process-lost instead.
+  local attempt
   status=$(json_field "$record" status 2>/dev/null || true)
+  # This write is the dispatcher's verdict on its own wait. Every step of it
+  # used to fail silently, so a job that ended up diagnosed by the reaper's
+  # backstop instead gave no clue which step dropped it. The job log says.
+  printf '%s handshake-timeout entered status=%s\n' "$(now_iso)" "$status" >>"$jobs/$job.log"
   case "$status" in pending|running) ;; *) return 0 ;; esac
-  wind_down_group "$record" || return 1
+  if ! wind_down_group "$record"; then
+    printf '%s handshake-timeout could not wind down the process group\n' "$(now_iso)" >>"$jobs/$job.log"
+    return 1
+  fi
   patch=$(mktemp "$record_locks/handshake.XXXXXX")
   printf '{"error":"handshake_timeout","phase":"handshake"}\n' >"$patch"
-  record_cas "$job" "$status" failed "$patch" || true
+  # Compare-and-swap, so retry on a losing compare. An adapter moves the record
+  # from pending to running the moment it starts, which is exactly the window
+  # this verdict is written in: a single attempt against a status read moments
+  # earlier lost that race and dropped the verdict silently.
+  for attempt in 1 2 3; do
+    status=$(json_field "$record" status 2>/dev/null || true)
+    case "$status" in
+      pending|running) ;;
+      *)
+        printf '%s handshake-timeout stood down; record is already %s\n' "$(now_iso)" "$status" >>"$jobs/$job.log"
+        rm -f "$patch"
+        return 0
+        ;;
+    esac
+    if record_cas "$job" "$status" failed "$patch"; then
+      printf '%s handshake-timeout recorded from %s\n' "$(now_iso)" "$status" >>"$jobs/$job.log"
+      rm -f "$patch"
+      return 0
+    fi
+  done
+  printf '%s handshake-timeout lost three compares; the record kept changing\n' "$(now_iso)" >>"$jobs/$job.log"
+  rm -f "$patch"
 }
 
 # Lock-owning public commands re-exec once so their lease tag is part of the
