@@ -96,6 +96,20 @@ Proof: the schema suite validates a v2 success census, a v2 failure
 census, and an archived v1 census, and rejects a v2 success census missing
 either field.
 
+**Round-3 amendments.** A chain-closure-failure park preserves the already
+measured outcome: the ledger keeps the measured classification, the park
+record carries it as `measuredOutcome`, and a later resume that clears the
+closure failure publishes completed with the ORIGINAL measurement — no
+re-run, no contradiction with the mission-state contract (BV-3-2). The
+runner-stamped identity half is a named artifact with one owner:
+`artifacts/agents/missions/<id>/execution-identity.json`, written by the
+runner at start (machine fingerprint, measuring commit), candidate commit
+appended at completion measurement, append-only across resume — a resumed
+mission never rewrites the start half (BV-3-3). On a failed v2 census the
+two fields REMAIN required properties: present always, null permitted only
+when the verdict is not SUCCESS — presence is unconditional, nullability is
+verdict-scoped (BV-3-4).
+
 ## Ownership boundary
 
 V-1 and V-2 change the metasystem and ride the collaboration loop:
