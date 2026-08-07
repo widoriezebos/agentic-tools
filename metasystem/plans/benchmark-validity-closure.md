@@ -110,6 +110,21 @@ two fields REMAIN required properties: present always, null permitted only
 when the verdict is not SUCCESS — presence is unconditional, nullability is
 verdict-scoped (BV-3-4).
 
+**Round-4 amendments.** The park's preserved measurement is a defined shape
+with an executable recovery: the park record carries
+`measuredOutcome={classification, measuredCandidateSha, measuredAt}` —
+named to match the ledger's candidate-sha, the tree the gate actually
+measured (BV-4-2, BV-4-3) — and `resume` on reason=chain-closure-failure
+re-attempts closure only, publishing completed with that outcome on
+success. Execution identity is append-only per attempt: each start or
+resume appends its machine fingerprint and timestamp, and run validity
+requires every attempt's fingerprint to match — attribution never assumes
+the first machine was the only machine (BV-4-4). Ownership is a matrix by
+part, not by fix number (BV-4-5): the runner's closure, parking, and
+identity stamping are metasystem; the cohort driver's park handling and
+the extraction-side identity completion are kit; each part rides its
+owner's gate.
+
 ## Ownership boundary
 
 V-1 and V-2 change the metasystem and ride the collaboration loop:
