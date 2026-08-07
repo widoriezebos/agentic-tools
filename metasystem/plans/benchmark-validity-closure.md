@@ -4,7 +4,7 @@
 - Next step: none
 - Done 2026-08-07: V-1 and V-4 implemented, code-critiqued to zero material by claude-opus-5 (chain code-critic-20260807t075205z-29dd), merged through the mechanical gate, pushed
 - Waiting on: a fresh-context session for the kit halves (census/mission-state schema v2 entries, extractor version dispatch — human-ratified commits) and the five noted VC-1 backlog items; sequenced BEHIND the multi-main coexistence stream by the human's 2026-08-07 priority: interference first
-- In flight right now: V-1/V-4 implemented by implementer-20260807t073104z-b54f (zero gaps); code-critique running on claude-opus-5 with the mechanical --reviews linkage, job dispatched 2026-08-07
+- In flight right now: nothing
 - Waiting on: nothing
 
 ## The findings, from the run's own records

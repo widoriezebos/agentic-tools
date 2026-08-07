@@ -1,8 +1,8 @@
 # One writer, safe readers: sessions sharing a repository without interference
 
 - Goal and current status: exactly one main session holds the write role per checkout, enforced mechanically; every other session is a first-class read-only advisor; a second session that wants to write gets a paved one-command path to its own worktree. Closes KI-21 as experienced and KI-22. Status: CONSOLIDATED REWRITE incorporating the MV-1 verification findings — one voice, no superseded text; awaiting verification round 2 on chain design-critic-20260807t094616z-ac0a.
-- Next step: implementation follow-up (D-11 with the appendix data, plus the process-sensitive fixtures) — then the Fable code-critique of the whole
-- In flight right now: nothing
+- Next step: none
+- In flight right now: the Fable code-critique's authorizing round (chain code-critic-20260807t113620z-539a, round 2) over the folded 39-file tree; on zero material: merge, full suite with the orchestrator-owed process fixtures, push
 - Waiting on: nothing. The human ruled: fold and implement. The verification chain retains its final budgeted round, spendable over the implemented design if ever wanted. Devin stays PARKED.
 
 ## The evidence this stands on
