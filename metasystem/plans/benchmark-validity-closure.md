@@ -1,7 +1,7 @@
 # Benchmark validity closure: the four findings of trial 006
 
 - Goal and current status: every reason the extractor stamped trial 006 invalid is fixed at its owner — two in the metasystem, two in the measuring kit — so the next run's validity verdict reflects behavior, not instrumentation debt. Status: IN CRITIQUE, round 1 folded (9 findings, 8 material, BV-1-1..9).
-- Next step: design critique until closed by join; then implement through the loop.
+- Next step: implement V-1 (adapter telemetry) and V-4 (census v2) through the loop; the protocol stream owns the rest.
 - In flight right now: nothing; round 2 dispatches next
 - Waiting on: nothing
 
