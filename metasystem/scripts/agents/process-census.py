@@ -666,9 +666,15 @@ def announcements(fixture_by_pid: dict[int, Process], errors: list[str]) -> list
     directory.mkdir(parents=True, exist_ok=True)
     live: list[dict[str, Any]] = []
     by_identity: dict[tuple[int, int], tuple[Path, dict[str, Any]]] = {}
+    # mainId and commandHash arrived with the one-writer change. Requiring
+    # them made every announcement written before it — and every fixture's —
+    # schema-invalid, which dropped those mains from the census entirely: a
+    # blind census, not a strict one. They are OPTIONAL for classification;
+    # authentication (which is what actually needs them) refuses on its own
+    # when they are absent.
     expected = {
-        "sessionId", "mainId", "pid", "pidStartedAt", "pgid", "runtime",
-        "instanceTag", "commandHash", "announcedAt",
+        "sessionId", "pid", "pidStartedAt", "pgid", "runtime",
+        "instanceTag", "announcedAt",
     }
     for path in sorted(directory.glob("*.json")):
         if path.name in {"worktree-lease.json", "worktree-commit-token.json", "reaped-after-claim.json"} \
@@ -684,12 +690,20 @@ def announcements(fixture_by_pid: dict[int, Process], errors: list[str]) -> list
             continue
         pid, start = value.get("pid"), value.get("pidStartedAt")
         main_id, digest = value.get("mainId"), value.get("commandHash")
-        if (not isinstance(pid, int) or not isinstance(start, int)
-                or not isinstance(main_id, str)
-                or re.fullmatch(r"main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}", main_id) is None
-                or not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+        if not isinstance(pid, int) or not isinstance(start, int):
             errors.append(f"announcement-identity:{path.name}")
             continue
+        # When the one-writer fields ARE present they must be well formed —
+        # a malformed identity is a defect. Absent, the announcement is a
+        # pre-change or fixture record: it classifies normally and simply
+        # cannot authenticate, which authentication enforces on its own.
+        if main_id is not None or digest is not None:
+            if (not isinstance(main_id, str)
+                    or re.fullmatch(r"main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}", main_id) is None
+                    or not isinstance(digest, str)
+                    or re.fullmatch(r"[0-9a-f]{64}", digest) is None):
+                errors.append(f"announcement-identity:{path.name}")
+                continue
         synthetic = fixture_by_pid.get(pid)
         alive = bool(synthetic and synthetic.alive and synthetic.started == start) if fixture_by_pid else identity_alive(pid, start)
         if not alive:
