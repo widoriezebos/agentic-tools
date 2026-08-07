@@ -45,6 +45,7 @@ esac
 
 python3 - "$root" "$mode" "$role" "$file" "$job" <<'PY'
 import json
+import importlib.util
 import re
 import sys
 from pathlib import Path
@@ -53,6 +54,13 @@ root = Path(sys.argv[1])
 mode, requested_role, requested_file, requested_job = sys.argv[2:]
 violations = []
 job_id_pattern = re.compile(r"[a-z0-9][a-z0-9-]*\Z")
+
+schema_owner_path = root / "scripts" / "agents" / "return-schema.py"
+schema_owner_spec = importlib.util.spec_from_file_location("metasystem_return_schema", schema_owner_path)
+if schema_owner_spec is None or schema_owner_spec.loader is None:
+    raise SystemExit(f"cannot load return schema owner: {schema_owner_path}")
+schema_owner = importlib.util.module_from_spec(schema_owner_spec)
+schema_owner_spec.loader.exec_module(schema_owner)
 
 
 def violation(message):
@@ -101,7 +109,7 @@ def validate_schema_shape(schema, path="$schema"):
         violation(f"{path} must be a JSON object")
         return
     supported = {
-        "$schema", "$comment", "title", "description", "type", "enum",
+        "$schema", "$comment", "title", "description", "type", "enum", "const",
         "properties", "required", "additionalProperties", "items",
     }
     for keyword in schema:
@@ -137,6 +145,8 @@ def validate(value, schema, path="$"):
     if "enum" in schema and value not in schema["enum"]:
         allowed = ", ".join(repr(item) for item in schema["enum"])
         violation(f"{path} must be one of: {allowed}")
+    if "const" in schema and value != schema["const"]:
+        violation(f"{path} must equal {schema['const']!r}")
 
     if isinstance(value, dict):
         properties = schema.get("properties", {})
@@ -219,6 +229,14 @@ if role not in allowed_roles:
 
 result = load_json(return_path, "return file") if return_path is not None else None
 schema = load_json(root / "scripts" / "agents" / "schemas" / f"{role}.schema.json", "role schema") if role in allowed_roles else None
+
+versioned_roles = {"design-critic", "implementer", "code-critic", "verifier", "investigator", "behavior-judge"}
+if isinstance(result, dict) and "schemaVersion" in result:
+    version = result.get("schemaVersion")
+    if role not in versioned_roles or version != 2:
+        violation(f"unknown return schema version for role {role!r}: {version!r}")
+    elif schema is not None:
+        schema = schema_owner.version_two(schema)
 
 if result is not None and schema is not None:
     before_schema_check = len(violations)

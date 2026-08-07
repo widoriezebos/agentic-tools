@@ -127,6 +127,10 @@ for link in \
   metasystem.conf \
   scripts/metasystem-config.sh \
   scripts/agents/dispatch.sh \
+  scripts/agents/commit.sh \
+  scripts/agents/second-session.sh \
+  scripts/agents/worktree-lease.py \
+  scripts/agents/control-plane-authority.py \
   scripts/agents/arm-supervision.sh \
   scripts/agents/process-census.py \
   scripts/agents/fixture-budget.sh \
@@ -134,6 +138,17 @@ for link in \
   scripts/agents/supervision-hook.sh \
   scripts/agents/supervision-fixtures.sh \
   scripts/agents/telemetry-census-fixtures.sh \
+  scripts/agents/return-schema-fixtures.sh \
+  scripts/agents/config-identity-fixtures.sh \
+  scripts/agents/worktree-lease-fixtures.py \
+  scripts/agents/authority-regression-fixtures.py \
+  scripts/agents/pre-commit-guard-fixtures.sh \
+  scripts/agents/record-protocol-fixtures.sh \
+  scripts/agents/evidence-segment-fixtures.sh \
+  scripts/agents/second-session-fixtures.sh \
+  scripts/agents/second-session-isolation.py \
+  scripts/agents/config-identity.py \
+  scripts/agents/select-capability-snapshot.py \
   scripts/agents/mission-fixtures.sh \
   scripts/agents/mission-contract.py \
   scripts/agents/mission-fence.py \
@@ -147,6 +162,9 @@ for link in \
   scripts/agents/schemas/mission-state.schema.json \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
+  scripts/agents/adapters/codex-config-filter.v1.json \
+  scripts/agents/adapters/claude-config-filter.v1.json \
+  scripts/agents/adapters/devin-config-filter.v1.json \
   scripts/agents/adapters/claude-session-signal.py \
   scripts/agents/assert-conformance.sh \
   scripts/agents/conformance-fixtures.sh \
@@ -181,6 +199,12 @@ bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh
 bash -n scripts/agents/telemetry-census-fixtures.sh
+bash -n scripts/agents/return-schema-fixtures.sh
+bash -n scripts/agents/config-identity-fixtures.sh
+bash -n scripts/agents/record-protocol-fixtures.sh
+bash -n scripts/agents/evidence-segment-fixtures.sh
+bash -n scripts/agents/second-session-fixtures.sh
+bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/mission-runner.sh
 bash -n scripts/agents/conformance-fixtures.sh
@@ -195,6 +219,14 @@ bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
 bash scripts/agents/conformance-fixtures.sh
 bash scripts/agents/telemetry-census-fixtures.sh
+bash scripts/agents/return-schema-fixtures.sh
+bash scripts/agents/config-identity-fixtures.sh
+python3 scripts/agents/worktree-lease-fixtures.py
+python3 scripts/agents/authority-regression-fixtures.py
+bash scripts/agents/pre-commit-guard-fixtures.sh
+bash scripts/agents/record-protocol-fixtures.sh
+bash scripts/agents/evidence-segment-fixtures.sh
+bash scripts/agents/second-session-fixtures.sh
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
@@ -204,6 +236,10 @@ if grep -Eq '^(model\.tier\.[1-9][0-9]*|mode\.[a-z0-9-]+\.role\.)' metasystem.co
   exit 1
 fi
 python3 - scripts/agents/adapters/claude-session-signal.py scripts/agents/process-census.py \
+  scripts/agents/config-identity.py scripts/agents/select-capability-snapshot.py \
+  scripts/agents/worktree-lease.py scripts/agents/worktree-lease-fixtures.py \
+  scripts/agents/control-plane-authority.py scripts/agents/authority-regression-fixtures.py \
+  scripts/agents/second-session-isolation.py \
   scripts/agents/mission-contract.py scripts/agents/mission-fence.py \
   scripts/agents/mission-ledger.py scripts/agents/mission-state.py \
   scripts/agents/mission-prompt.py <<'PY'
@@ -227,7 +263,7 @@ for runtime in claude codex devin; do
   [[ -x "$adapter" ]] || { echo "$runtime runtime adapter is not executable: $adapter" >&2; exit 1; }
   bash -n "$adapter"
   adapter_usage=$($adapter --help 2>&1)
-  for verb in identity signature probe dispatch follow-up cancel selftest; do
+  for verb in identity config-identity signature probe dispatch follow-up cancel selftest; do
     grep -Fq "adapters/$runtime.sh $verb" <<<"$adapter_usage" \
       || { echo "$runtime adapter usage does not advertise $verb" >&2; exit 1; }
   done
@@ -1226,6 +1262,7 @@ mkdir -p "$job_fixture/scripts/agents" \
   "$job_fixture/artifacts/agents/jobs" \
   "$job_fixture/artifacts/agents/fixture-job/rounds/1"
 cp scripts/assert-return-complete.sh "$job_fixture/scripts/"
+cp scripts/agents/return-schema.py "$job_fixture/scripts/agents/"
 cp -R scripts/agents/schemas "$job_fixture/scripts/agents/"
 cat >"$job_fixture/artifacts/agents/jobs/fixture-job.json" <<'EOF'
 {

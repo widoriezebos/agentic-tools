@@ -1,0 +1,823 @@
+#!/usr/bin/env python3
+"""Own main-process identity, caller classification, and the checkout lease."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import errno
+import fcntl
+import hashlib
+import json
+import os
+import re
+import secrets
+import signal
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+
+TERMINAL = {"completed", "failed", "timeout", "cancelled"}
+ANNOUNCEMENT_FIELDS = {
+    "sessionId",
+    "mainId",
+    "pid",
+    "pidStartedAt",
+    "pgid",
+    "runtime",
+    "instanceTag",
+    "commandHash",
+    "announcedAt",
+}
+
+
+def now() -> str:
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def fail(message: str, status: int = 1) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(status)
+
+
+def atomic_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def load_object(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        fail(f"{path} is unreadable: {error}")
+    if not isinstance(value, dict):
+        fail(f"{path} is not a JSON object")
+    return value
+
+
+def started_at(root: Path, pid: int) -> int | None:
+    try:
+        value = subprocess.check_output(
+            [str(root / "scripts/agents/process-census.py"), "started-at", "--pid", str(pid)],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        ).strip()
+        return int(value)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def process_command(pid: int) -> str | None:
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            check=False,
+        )
+    except OSError:
+        return None
+    command = result.stdout.rstrip("\n")
+    return command if result.returncode == 0 and command else None
+
+
+def process_identity(root: Path, pid: int) -> dict[str, Any] | None:
+    try:
+        raw = subprocess.check_output(
+            [
+                str(root / "scripts/agents/process-census.py"),
+                "authentication-identity",
+                "--pid",
+                str(pid),
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+        value = json.loads(raw)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    if (
+        not isinstance(value, dict)
+        or value.get("pid") != pid
+        or type(value.get("pidStartedAt")) is not int
+        or not isinstance(value.get("command"), str)
+        or not value["command"]
+    ):
+        return None
+    return value
+
+
+def parent_pid(pid: int) -> int | None:
+    try:
+        value = subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "ppid="],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        ).strip()
+        parent = int(value)
+        return parent if parent > 0 and parent != pid else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def command_hash(command: str) -> str:
+    return hashlib.sha256(command.encode()).hexdigest()
+
+
+def live(root: Path, pid: Any, start: Any) -> bool:
+    if type(pid) is not int or type(start) is not int or pid < 1 or start < 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    actual_start = started_at(root, pid)
+    # The zero signal proved that some process currently owns the pid. An
+    # unreadable start time cannot prove that the recorded holder died, so the
+    # only safe result is alive. A readable mismatch does prove pid reuse.
+    return True if actual_start is None else actual_start == start
+
+
+def announcements(root: Path, strict: bool = True) -> list[tuple[Path, dict[str, Any]]]:
+    result: list[tuple[Path, dict[str, Any]]] = []
+    directory = root / "artifacts/agents/mains"
+    for path in sorted(directory.glob("*.json")):
+        if path.name.endswith(".protocol-cursor.json") or path.name in {
+            "worktree-lease.json", "worktree-commit-token.json", "reaped-after-claim.json",
+        }:
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            if strict:
+                fail(f"caller classification refused: unreadable announcement {path.name}")
+            continue
+        if not isinstance(value, dict) or set(value) != ANNOUNCEMENT_FIELDS:
+            if strict:
+                fail(f"caller classification refused: invalid announcement schema {path.name}")
+            continue
+        if not isinstance(value.get("mainId"), str) or not re.fullmatch(
+            r"main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}", value["mainId"]
+        ):
+            if strict:
+                fail(f"caller classification refused: invalid main identity {path.name}")
+            continue
+        if not isinstance(value.get("commandHash"), str) or not re.fullmatch(
+            r"[0-9a-f]{64}", value["commandHash"]
+        ):
+            if strict:
+                fail(f"caller classification refused: invalid command hash {path.name}")
+            continue
+        result.append((path, value))
+    return result
+
+
+def authenticated_announcement(
+    root: Path, pid: int, records: list[tuple[Path, dict[str, Any]]]
+) -> dict[str, Any] | None:
+    identity = process_identity(root, pid)
+    if identity is None:
+        return None
+    digest = command_hash(identity["command"])
+    return next(
+        (
+            value
+            for _, value in records
+            if value.get("pid") == pid
+            and value.get("pidStartedAt") == identity["pidStartedAt"]
+            and value.get("commandHash") == digest
+        ),
+        None,
+    )
+
+
+def adapter_patterns(root: Path) -> list[tuple[str, re.Pattern[str]]]:
+    result: list[tuple[str, re.Pattern[str]]] = []
+    adapters = root / "scripts/agents/adapters"
+    for path in sorted(adapters.glob("*.sh")):
+        if path.name == "runtime-common.sh":
+            continue
+        try:
+            lines = subprocess.check_output(
+                [str(path), "signature"], text=True, stderr=subprocess.DEVNULL, timeout=3
+            ).splitlines()
+        except (OSError, subprocess.SubprocessError):
+            fail(f"caller classification refused: signature registry failed for {path.name}")
+        matches: list[str] = []
+        excludes: list[str] = []
+        try:
+            for line in lines:
+                kind, pattern = line.split(" ", 1)
+                normalized = pattern.replace("[:space:]", r"\s")
+                re.compile(normalized)
+                (matches if kind == "match" else excludes if kind == "exclude" else []).append(normalized)
+        except (ValueError, re.error):
+            fail(f"caller classification refused: invalid signature registry for {path.name}")
+        # Exclusion is represented as a negative lookahead around the complete argv.
+        for match in matches:
+            result.append(
+                (
+                    path.stem,
+                    re.compile(
+                        "^(?!.*(?:" + "|".join(excludes) + ")).*(?:"
+                        + match
+                        + ")"
+                        if excludes
+                        else ".*(?:" + match + ")"
+                    ),
+                )
+            )
+    return result
+
+
+def custody_identities(root: Path) -> tuple[set[tuple[int, int]], dict[tuple[int, int], str]]:
+    supervision: set[tuple[int, int]] = set()
+    adapters: dict[tuple[int, int], str] = {}
+    state = root / "artifacts/agents/supervision/state.json"
+    if state.exists():
+        try:
+            value = json.loads(state.read_text(encoding="utf-8"))
+            candidates = [value.get("owner")] + list((value.get("components") or {}).values())
+            for item in candidates:
+                if isinstance(item, dict) and type(item.get("pid")) is int and type(item.get("pidStartedAt")) is int:
+                    supervision.add((item["pid"], item["pidStartedAt"]))
+        except (OSError, ValueError, AttributeError):
+            fail("caller classification refused: supervision state is unreadable")
+    for path in (root / "artifacts/agents/jobs").glob("*.json"):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        candidates = [value] + (value.get("custodyProcesses") or []) if isinstance(value, dict) else []
+        for item in candidates:
+            if isinstance(item, dict) and type(item.get("pid")) is int and type(item.get("pidStartedAt")) is int:
+                job_id = value.get("jobId")
+                if isinstance(job_id, str):
+                    adapters[(item["pid"], item["pidStartedAt"])] = job_id
+    return supervision, adapters
+
+
+def classify(root: Path, caller: int) -> dict[str, Any]:
+    records = announcements(root)
+    own = authenticated_announcement(root, caller, records)
+    if own is not None:
+        return {"class": "MAIN", "mainId": own["mainId"], "announcement": own}
+    patterns = adapter_patterns(root)
+    supervision, adapters = custody_identities(root)
+    seen: set[int] = {caller}
+    current = parent_pid(caller)
+    while current is not None and current not in seen:
+        seen.add(current)
+        announcement = authenticated_announcement(root, current, records)
+        if announcement is not None:
+            return {"class": "MAIN", "mainId": announcement["mainId"], "announcement": announcement}
+        command = process_command(current)
+        if command is not None and any(pattern.search(command) for _, pattern in patterns):
+            return {"class": "DELEGATE", "pid": current}
+        start = started_at(root, current)
+        identity = (current, start) if start is not None else None
+        if identity in supervision:
+            return {"class": "SUPERVISION", "pid": current}
+        if identity in adapters:
+            return {"class": "ADAPTER-SUPERVISOR", "pid": current, "jobId": adapters[identity]}
+        current = parent_pid(current)
+    return {"class": "HUMAN"}
+
+
+def lease_paths(root: Path) -> tuple[Path, Path, Path, Path]:
+    mains = root / "artifacts/agents/mains"
+    return (
+        mains / "worktree-lease.json",
+        mains / "worktree-lease.lock",
+        mains / "worktree-commit-token.json",
+        mains / "reaped-after-claim.json",
+    )
+
+
+def load_lease(root: Path, required: bool = True) -> dict[str, Any] | None:
+    path = lease_paths(root)[0]
+    if not path.exists():
+        if required:
+            fail("checkout lease is absent; start or arm an agent main first")
+        return None
+    value = load_object(path)
+    required_fields = {
+        "holderMainId",
+        "pid",
+        "pidStartedAt",
+        "commandHash",
+        "claimedAt",
+        "renewedAt",
+        "takeovers",
+        "revision",
+        "claimEpoch",
+    }
+    if set(value) != required_fields or type(value.get("revision")) is not int or type(value.get("claimEpoch")) is not int:
+        fail("checkout lease schema is invalid")
+    return value
+
+
+def lock_probe_held(lock_path: Path) -> None:
+    code = """import errno,fcntl,sys
+f=open(sys.argv[1],'a+')
+try: fcntl.flock(f.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+except OSError as e: raise SystemExit(0 if e.errno in (errno.EACCES,errno.EAGAIN) else 2)
+raise SystemExit(1)
+"""
+    result = subprocess.run([sys.executable, "-c", code, str(lock_path)], timeout=3, check=False)
+    if result.returncode != 0:
+        fail("checkout lease claim refused: held-lock self-probe did not report would-block")
+
+
+def lock_probe_released(lock_path: Path) -> None:
+    code = """import fcntl,sys
+f=open(sys.argv[1],'a+')
+fcntl.flock(f.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+fcntl.flock(f.fileno(),fcntl.LOCK_UN)
+"""
+    result = subprocess.run([sys.executable, "-c", code, str(lock_path)], timeout=3, check=False)
+    if result.returncode != 0:
+        fail("checkout lease claim refused: released-lock self-probe could not acquire")
+
+
+def verify_revision(current: dict[str, Any] | None, expected: int | None) -> None:
+    if expected is not None and (current is None or current.get("revision") != expected):
+        fail("checkout lease changed before the compare-and-swap write")
+
+
+def protocol_counts(root: Path) -> dict[str, int]:
+    jobs = root / "artifacts/agents/jobs"
+    records: dict[str, dict[str, Any]] = {}
+    for path in jobs.glob("*.json"):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(value, dict) and value.get("jobId") == path.stem:
+            records[path.stem] = value
+
+    def chain(job: str) -> str | None:
+        seen: set[str] = set()
+        while job in records and job not in seen:
+            seen.add(job)
+            parent = records[job].get("parentJob")
+            if parent is None:
+                return job
+            if not isinstance(parent, str):
+                return None
+            job = parent
+        return None
+
+    keys: dict[str, set[str]] = {}
+    for job, value in records.items():
+        error = value.get("protocolError")
+        root_job = chain(job)
+        if root_job and isinstance(error, dict) and isinstance(error.get("key"), str):
+            keys.setdefault(root_job, set()).add(error["key"])
+    return {job: len(items) for job, items in keys.items()}
+
+
+def initialize_cursor(root: Path, main_id: str) -> None:
+    atomic_json(
+        root / "artifacts/agents/mains" / f"{main_id}.protocol-cursor.json",
+        {"mainId": main_id, "counts": protocol_counts(root), "updatedAt": now()},
+    )
+
+
+def announce(args: argparse.Namespace) -> None:
+    root = args.root.resolve()
+    actual_start = started_at(root, args.pid)
+    command = process_command(args.pid)
+    if actual_start != args.start or command is None:
+        fail("announcement identity is not a live, readable process")
+    directory = root / "artifacts/agents/mains"
+    directory.mkdir(parents=True, exist_ok=True)
+    registry_lock = directory / ".registry.lock"
+    with registry_lock.open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        for path, value in announcements(root, strict=False):
+            if value.get("pid") == args.pid and value.get("pidStartedAt") == args.start:
+                print(path)
+                claim_for_announcement(root, value)
+                return
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "-", args.session).strip("-.").lower() or "session"
+        main_id = f"main-{args.start}-{args.pid}-{secrets.token_hex(3)}"
+        value = {
+            "sessionId": args.session,
+            "mainId": main_id,
+            "pid": args.pid,
+            "pidStartedAt": args.start,
+            "pgid": os.getpgid(args.pid),
+            "runtime": args.runtime,
+            "instanceTag": args.tag,
+            "commandHash": command_hash(command),
+            "announcedAt": now(),
+        }
+        path = directory / f"{safe}-{args.pid}.json"
+        atomic_json(path, value)
+        initialize_cursor(root, main_id)
+    claim_for_announcement(root, value)
+    print(path)
+
+
+def inherited_protocol_total(root: Path, predecessor: str) -> int:
+    counts = protocol_counts(root)
+    total = sum(counts.values())
+    if total:
+        print(
+            f"INHERITED-PROTOCOL-ERRORS predecessor={predecessor} total={total}",
+            file=sys.stderr,
+        )
+    return total
+
+
+def cleanup_stale_jobs(root: Path, epoch: int) -> None:
+    jobs = root / "artifacts/agents/jobs"
+    locks = root / "artifacts/agents/record-locks"
+    locks.mkdir(parents=True, exist_ok=True)
+    for path in sorted(jobs.glob("*.json")):
+        with (locks / f"{path.stem}.lock").open("a+") as record_lock:
+            fcntl.flock(record_lock.fileno(), fcntl.LOCK_EX)
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            record_epoch = value.get("claimEpoch")
+            if (
+                type(record_epoch) is not int
+                or record_epoch >= epoch
+                or value.get("status") in TERMINAL
+            ):
+                continue
+            status = value.get("status")
+            if status not in {"pending-setup", "pending", "running"}:
+                continue
+            pgid = value.get("pgid")
+            tag = value.get("instanceTag")
+            if type(pgid) is int and pgid > 1 and isinstance(tag, str):
+                try:
+                    listing = subprocess.check_output(
+                        ["ps", "-axo", "pgid=,command="],
+                        text=True,
+                        stderr=subprocess.DEVNULL,
+                        timeout=3,
+                    )
+                except (OSError, subprocess.SubprocessError):
+                    fail(f"claim sweep cannot prove ownership of stale job {path.stem}")
+                owned = any(
+                    fields and fields[0] == str(pgid) and tag in line
+                    for line in listing.splitlines()
+                    if (fields := line.strip().split(None, 1))
+                )
+                if owned:
+                    try:
+                        os.killpg(pgid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    except PermissionError:
+                        fail(f"claim sweep cannot stop stale job {path.stem}")
+            value.update(
+                {
+                    "status": "failed",
+                    "phase": "claim-sweep",
+                    "error": "stale-claim-epoch",
+                    "endedAt": value.get("endedAt") or now(),
+                }
+            )
+            atomic_json(path, value)
+
+
+def prove_lock(lock: Any, lock_path: Path) -> None:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    lock_probe_held(lock_path)
+    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    lock_probe_released(lock_path)
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    lock_probe_held(lock_path)
+
+
+def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
+    lease_path, lock_path, _, stamp_path = lease_paths(root)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    takeover = False
+    predecessor = "none"
+    report_inherited = False
+    renewal_completed = False
+    with lock_path.open("a+") as lock:
+        # Both lock-behavior probes finish before any lease state is persisted.
+        # Reacquiring and re-reading after the released probe closes the race
+        # with another claimant during the probe window.
+        prove_lock(lock, lock_path)
+        current = load_lease(root, required=False)
+        if current is not None and current.get("holderMainId") != announcement["mainId"]:
+            if live(root, current.get("pid"), current.get("pidStartedAt")):
+                return
+            takeover = True
+            predecessor = str(current.get("holderMainId"))
+        elif current is not None:
+            stamp = load_object(stamp_path) if stamp_path.exists() else {}
+            stamp_complete = (
+                stamp.get("holderMainId") == current["holderMainId"]
+                and stamp.get("claimEpoch") == current["claimEpoch"]
+            )
+            if not stamp_complete:
+                # A takeover writes the lease before sweeping so every stale
+                # record can be judged against the new generation. If cleanup
+                # crashed, the same holder's next announcement resumes it.
+                cleanup_stale_jobs(root, current["claimEpoch"])
+                atomic_json(
+                    stamp_path,
+                    {
+                        "holderMainId": current["holderMainId"],
+                        "claimEpoch": current["claimEpoch"],
+                        "reapedAt": now(),
+                    },
+                )
+                history = current.get("takeovers") or []
+                if (
+                    history
+                    and history[-1].get("toMainId") == current["holderMainId"]
+                    and history[-1].get("claimEpoch") == current["claimEpoch"]
+                ):
+                    predecessor = str(history[-1].get("fromMainId", "none"))
+                    report_inherited = True
+            renewed = dict(current)
+            renewed["renewedAt"] = now()
+            renewed["revision"] += 1
+            verify_revision(load_lease(root), current["revision"])
+            atomic_json(lease_path, renewed)
+            renewal_completed = True
+        if not renewal_completed:
+            claimed_at = now()
+            history = list(current.get("takeovers", [])) if current else []
+            epoch = int(current.get("claimEpoch", 0)) + 1 if current else 1
+            revision = int(current.get("revision", 0)) + 1 if current else 1
+            if takeover:
+                history.append(
+                    {
+                        "fromMainId": predecessor,
+                        "toMainId": announcement["mainId"],
+                        "claimEpoch": epoch,
+                        "takenAt": claimed_at,
+                        "reason": "holder-death",
+                    }
+                )
+            value = {
+                "holderMainId": announcement["mainId"],
+                "pid": announcement["pid"],
+                "pidStartedAt": announcement["pidStartedAt"],
+                "commandHash": announcement["commandHash"],
+                "claimedAt": claimed_at,
+                "renewedAt": claimed_at,
+                "takeovers": history,
+                "revision": revision,
+                "claimEpoch": epoch,
+            }
+            verify_revision(
+                load_lease(root, required=False), current.get("revision") if current else None
+            )
+            atomic_json(lease_path, value)
+            if takeover:
+                cleanup_stale_jobs(root, epoch)
+            atomic_json(
+                stamp_path,
+                {"holderMainId": announcement["mainId"], "claimEpoch": epoch, "reapedAt": now()},
+            )
+            report_inherited = takeover
+    if report_inherited:
+        inherited_protocol_total(root, predecessor)
+
+
+def retire(args: argparse.Namespace) -> None:
+    root = args.root.resolve()
+    directory = root / "artifacts/agents/mains"
+    with (directory / ".registry.lock").open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        for path, value in announcements(root, strict=False):
+            if (
+                value.get("pid") == args.pid
+                and value.get("pidStartedAt") == args.start
+                and value.get("sessionId") == args.session
+            ):
+                path.unlink(missing_ok=True)
+
+
+def authorize(args: argparse.Namespace) -> None:
+    root = args.root.resolve()
+    identity = classify(root, args.caller_pid)
+    lease = load_lease(root, required=False)
+    identity["holder"] = bool(
+        identity.get("class") == "MAIN"
+        and lease is not None
+        and identity.get("mainId") == lease.get("holderMainId")
+    )
+    if lease is not None:
+        identity["claimEpoch"] = lease["claimEpoch"]
+        identity["revision"] = lease["revision"]
+    print(json.dumps(identity, sort_keys=True))
+
+
+def require_holder(args: argparse.Namespace) -> None:
+    root = args.root.resolve()
+    identity = classify(root, args.caller_pid)
+    if identity.get("class") == "HUMAN":
+        print(json.dumps({"class": "HUMAN", "holder": True, "claimEpoch": None, "mainId": None}))
+        return
+    lease = load_lease(root)
+    if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):
+        fail(
+            f"OWNED-ELSEWHERE: this checkout is held by {lease.get('holderMainId')}; "
+            "use scripts/agents/second-session.sh for an isolated writer"
+        )
+    stamp = load_object(lease_paths(root)[3]) if lease_paths(root)[3].exists() else {}
+    if stamp.get("claimEpoch") != lease.get("claimEpoch"):
+        fail("checkout lease claim sweep is incomplete for the current claim epoch")
+    if args.expected_epoch is not None and lease.get("claimEpoch") != args.expected_epoch:
+        fail("checkout lease claim epoch changed before the final mutation")
+    print(
+        json.dumps(
+            {
+                "class": "HOLDER",
+                "holder": True,
+                "claimEpoch": lease["claimEpoch"],
+                "revision": lease["revision"],
+                "mainId": lease["holderMainId"],
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def holder_identity(root: Path, caller_pid: int, expected_epoch: int | None) -> dict[str, Any]:
+    identity = classify(root, caller_pid)
+    if identity.get("class") == "HUMAN":
+        return {"class": "HUMAN", "claimEpoch": None, "mainId": None}
+    lease = load_lease(root)
+    if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):
+        fail(
+            f"OWNED-ELSEWHERE: this checkout is held by {lease.get('holderMainId')}; "
+            "use scripts/agents/second-session.sh for an isolated writer"
+        )
+    if expected_epoch is not None and lease.get("claimEpoch") != expected_epoch:
+        fail("checkout lease claim epoch changed before the final mutation")
+    return {"class": "HOLDER", "claimEpoch": lease["claimEpoch"], "mainId": lease["holderMainId"]}
+
+
+def run_held(args: argparse.Namespace) -> None:
+    root = args.root.resolve()
+    initial = classify(root, args.caller_pid)
+    if initial.get("class") == "HUMAN":
+        result = subprocess.run(args.argv, check=False)
+        raise SystemExit(result.returncode)
+    lock_path = lease_paths(root)[1]
+    try:
+        lock = lock_path.open("r+")
+    except OSError as error:
+        fail(f"checkout lease lock cannot be opened: {error}")
+    with lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        holder_identity(root, args.caller_pid, args.expected_epoch)
+        result = subprocess.run(args.argv, check=False)
+    raise SystemExit(result.returncode)
+
+
+def renew(args: argparse.Namespace) -> None:
+    root = args.root.resolve()
+    lease_path, lock_path, _, _ = lease_paths(root)
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        identity = classify(root, args.caller_pid)
+        lease = load_lease(root)
+        if identity.get("class") != "MAIN" or identity.get("mainId") != lease.get("holderMainId"):
+            fail("checkout lease renewal refused: caller is not the authenticated holder")
+        expected = lease["revision"]
+        lease["renewedAt"] = now()
+        lease["revision"] += 1
+        verify_revision(load_lease(root), expected)
+        atomic_json(lease_path, lease)
+    print(json.dumps({"claimEpoch": lease["claimEpoch"], "revision": lease["revision"]}))
+
+
+def protocol_growth(args: argparse.Namespace) -> None:
+    root = args.root.resolve()
+    cursor_path = root / "artifacts/agents/mains" / f"{args.main_id}.protocol-cursor.json"
+    cursor = load_object(cursor_path)
+    if cursor.get("mainId") != args.main_id or not isinstance(cursor.get("counts"), dict):
+        fail("protocol-error cursor schema is invalid")
+    counts = protocol_counts(root)
+    growth = {
+        chain: count - int(cursor["counts"].get(chain, 0))
+        for chain, count in counts.items()
+        if count > int(cursor["counts"].get(chain, 0))
+    }
+    total = sum(growth.values())
+    message = ""
+    if total:
+        details = ", ".join(f"{chain}=+{count}" for chain, count in sorted(growth.items()))
+        message = f"PROTOCOL-ERRORS: {total} new validation error(s) since this main's last report ({details})."
+    print(json.dumps({"message": message, "counts": counts}, sort_keys=True))
+
+
+def protocol_advance(args: argparse.Namespace) -> None:
+    root = args.root.resolve()
+    identity = classify(root, args.caller_pid)
+    if identity.get("class") != "HUMAN" and not (
+        identity.get("class") == "MAIN" and identity.get("mainId") == args.main_id
+    ):
+        fail("a main may advance only its own protocol-error cursor")
+    try:
+        counts = json.loads(args.counts)
+    except ValueError:
+        fail("protocol-error cursor counts are not JSON")
+    if not isinstance(counts, dict) or any(not isinstance(key, str) or type(value) is not int for key, value in counts.items()):
+        fail("protocol-error cursor counts are invalid")
+    cursor_path = root / "artifacts/agents/mains" / f"{args.main_id}.protocol-cursor.json"
+    lock_path = cursor_path.with_suffix(cursor_path.suffix + ".lock")
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        current = load_object(cursor_path)
+        if current.get("mainId") != args.main_id:
+            fail("protocol-error cursor belongs to another main")
+        merged = dict(current.get("counts", {}))
+        for chain, count in counts.items():
+            merged[chain] = max(int(merged.get(chain, 0)), count)
+        atomic_json(cursor_path, {"mainId": args.main_id, "counts": merged, "updatedAt": now()})
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser()
+    result.add_argument("--root", type=Path, required=True)
+    commands = result.add_subparsers(dest="command", required=True)
+    announce_parser = commands.add_parser("announce")
+    announce_parser.add_argument("--session", required=True)
+    announce_parser.add_argument("--pid", type=int, required=True)
+    announce_parser.add_argument("--start", type=int, required=True)
+    announce_parser.add_argument("--tag", required=True)
+    announce_parser.add_argument("--runtime", required=True)
+    announce_parser.set_defaults(function=announce)
+    retire_parser = commands.add_parser("retire")
+    retire_parser.add_argument("--session", required=True)
+    retire_parser.add_argument("--pid", type=int, required=True)
+    retire_parser.add_argument("--start", type=int, required=True)
+    retire_parser.set_defaults(function=retire)
+    classify_parser = commands.add_parser("classify")
+    classify_parser.add_argument("--caller-pid", type=int, required=True)
+    classify_parser.set_defaults(function=authorize)
+    holder_parser = commands.add_parser("require-holder")
+    holder_parser.add_argument("--caller-pid", type=int, required=True)
+    holder_parser.add_argument("--expected-epoch", type=int)
+    holder_parser.set_defaults(function=require_holder)
+    renew_parser = commands.add_parser("renew")
+    renew_parser.add_argument("--caller-pid", type=int, required=True)
+    renew_parser.set_defaults(function=renew)
+    run_parser = commands.add_parser("run-held")
+    run_parser.add_argument("--caller-pid", type=int, required=True)
+    run_parser.add_argument("--expected-epoch", type=int)
+    run_parser.add_argument("argv", nargs=argparse.REMAINDER)
+    run_parser.set_defaults(function=run_held)
+    growth_parser = commands.add_parser("protocol-growth")
+    growth_parser.add_argument("--main-id", required=True)
+    growth_parser.set_defaults(function=protocol_growth)
+    advance_parser = commands.add_parser("protocol-advance")
+    advance_parser.add_argument("--main-id", required=True)
+    advance_parser.add_argument("--caller-pid", type=int, required=True)
+    advance_parser.add_argument("--counts", required=True)
+    advance_parser.set_defaults(function=protocol_advance)
+    return result
+
+
+if __name__ == "__main__":
+    arguments = parser().parse_args()
+    if getattr(arguments, "command", None) == "run-held":
+        if arguments.argv[:1] == ["--"]:
+            arguments.argv = arguments.argv[1:]
+        if not arguments.argv:
+            fail("run-held requires a command", 2)
+    arguments.function(arguments)

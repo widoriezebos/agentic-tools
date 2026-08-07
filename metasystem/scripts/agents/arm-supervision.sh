@@ -26,6 +26,7 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 script_path=$script_dir/$(basename "${BASH_SOURCE[0]}")
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 helper=$script_dir/process-census.py
+lease_helper=$script_dir/worktree-lease.py
 config=$harness_root/scripts/metasystem-config.sh
 watcher=$harness_root/scripts/watch-background-jobs.sh
 dispatch=$harness_root/scripts/agents/dispatch.sh
@@ -100,40 +101,12 @@ PY
 }
 
 write_announcement() { # repo, session, pid, start, tag, runtime
-  python3 - "$@" <<'PY'
-import fcntl, json, os, re, sys, tempfile
-from datetime import datetime, timezone
-from pathlib import Path
-repo, session, pid, started, tag, runtime = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), sys.argv[5], sys.argv[6]
-safe=re.sub(r"[^A-Za-z0-9._-]+","-",session).strip("-.").lower() or "session"
-directory=repo/"artifacts"/"agents"/"mains"; directory.mkdir(parents=True,exist_ok=True)
-with (directory/".registry.lock").open("a+") as lock:
-    fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
-    for path in directory.glob("*.json"):
-        try: old=json.loads(path.read_text())
-        except (OSError,ValueError): continue
-        if old.get("pid")==pid and old.get("pidStartedAt")==started and path.name != f"{safe}-{pid}.json":
-            path.unlink()
-    value={"sessionId":session,"pid":pid,"pidStartedAt":started,"pgid":os.getpgid(pid),"runtime":runtime,"instanceTag":tag,"announcedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    output=directory/f"{safe}-{pid}.json"
-    fd,tmp=tempfile.mkstemp(prefix=output.name+".",suffix=".tmp",dir=directory)
-    with os.fdopen(fd,"w") as h: json.dump(value,h,indent=2,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
-    os.replace(tmp,output)
-print(output)
-PY
+  "$lease_helper" --root "$1" announce --session "$2" --pid "$3" \
+    --start "$4" --tag "$5" --runtime "$6"
 }
 
 retire_announcement() { # repo, session, pid, start
-  python3 - "$@" <<'PY'
-import json, re, sys
-from pathlib import Path
-repo,session,pid,started=Path(sys.argv[1]),sys.argv[2],int(sys.argv[3]),int(sys.argv[4])
-safe=re.sub(r"[^A-Za-z0-9._-]+","-",session).strip("-.").lower() or "session"
-path=repo/"artifacts"/"agents"/"mains"/f"{safe}-{pid}.json"
-try: value=json.loads(path.read_text())
-except (OSError,ValueError): raise SystemExit(0)
-if value.get("pid")==pid and value.get("pidStartedAt")==started: path.unlink()
-PY
+  "$lease_helper" --root "$1" retire --session "$2" --pid "$3" --start "$4"
 }
 
 stop_identity() { # name, pid, start, tag
@@ -249,19 +222,20 @@ run_owner() {
   fi
 
   launch_set() {
-    local suffix watcher_heartbeat=$supervision/watcher.heartbeat.json reaper_heartbeat=$supervision/reaper.heartbeat.json
+    local suffix watcher_heartbeat=$supervision/watcher.heartbeat.json reaper_heartbeat=$supervision/reaper.heartbeat.json reaper_gate
     stop_recorded_components "$harness_root"
     generation=$((generation + 1))
     suffix="$generation-$(date +%s)"
     watcher_tag="$owner_tag-watcher-$suffix"
     reaper_tag="$owner_tag-reaper-$suffix"
+    reaper_gate="$supervision/reaper-start-gate-$suffix"
     launch_detached watcher_pid "$supervision/watcher.log" "$watcher" \
       --dir "$agents/jobs" --scope "$repo" --state "$supervision/jobs.state" \
       --interval "$interval" --census --supervision-dir "$supervision" \
       --heartbeat "$watcher_heartbeat" --instance-tag "$watcher_tag"
     watcher_start=$(wait_for_start_identity watcher "$watcher_pid") || exit 1
     launch_detached reaper_pid "$supervision/reaper.log" "$dispatch" reap --interval "$interval" \
-      --heartbeat "$reaper_heartbeat" --instance-tag "$reaper_tag"
+      --heartbeat "$reaper_heartbeat" --instance-tag "$reaper_tag" --start-gate "$reaper_gate"
     reaper_start=$(wait_for_start_identity reaper "$reaper_pid") || exit 1
     fingerprint=$("$helper" fingerprint --repo "$repo") || exit 1
     python3 - "$state" "$$" "$("$helper" started-at --pid "$$")" "$owner_tag" \
@@ -279,6 +253,7 @@ output.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix=
 with os.fdopen(fd,"w") as h: json.dump(value,h,indent=2,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
 os.replace(tmp,output)
 PY
+    touch "$reaper_gate"
   }
 
   launch_set
@@ -339,7 +314,7 @@ verify_armed() { # repo, owner pid/start/tag
 }
 
 arm_repository() {
-  local repo= session= pid= start= tag= runtime=${METASYSTEM_AGENT_RUNTIME:-} retire=0 shutdown=0 ancestor safe announcement
+  local repo= session= pid= start= tag= runtime=${METASYSTEM_AGENT_RUNTIME:-} retire=0 shutdown=0 lease_held=0 ancestor safe announcement
   local owner_cap owner_started owner_deadline elapsed expected_owner_prefix
   while (($#)); do
     case "$1" in
@@ -349,13 +324,26 @@ arm_repository() {
       --start-time) [[ $# -ge 2 ]] || { usage; exit 2; }; start=$2; shift 2 ;;
       --tag) [[ $# -ge 2 ]] || { usage; exit 2; }; tag=$2; shift 2 ;;
       --retire) retire=1; shift ;; --shutdown) shutdown=1; shift ;;
+      --lease-held) lease_held=1; shift ;;
       -h|--help) usage; exit 0 ;; *) usage; exit 2 ;;
     esac
   done
   [[ -n "$repo" ]] || { usage; exit 2; }
   repo=$(resolve_repo "$repo")
-  [[ -x "$helper" ]] || die 1 "process census helper is not executable"
+  [[ -x "$helper" && -x "$lease_helper" ]] \
+    || die 1 "process census or checkout lease helper is not executable"
   if (( shutdown )); then
+    if (( ! lease_held )); then
+      lease_result=$("$lease_helper" --root "$harness_root" require-holder --caller-pid "$$") || exit $?
+      lease_epoch=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("claimEpoch") is None else v["claimEpoch"])' "$lease_result")
+      if [[ -n "$lease_epoch" ]]; then
+        exec "$lease_helper" --root "$harness_root" run-held --caller-pid "$$" \
+          --expected-epoch "$lease_epoch" -- "$script_path" --repo "$repo" --shutdown --lease-held
+      fi
+      exec "$lease_helper" --root "$harness_root" run-held --caller-pid "$$" -- \
+        "$script_path" --repo "$repo" --shutdown --lease-held
+    fi
+    "$lease_helper" --root "$harness_root" require-holder --caller-pid "$$" >/dev/null
     lock=$agents/supervision/lock.d/owner.json
     [[ -f "$lock" ]] || exit 0
     owner_pid=$(json_field "$lock" pid); owner_start=$(json_field "$lock" pidStartedAt); owner_tag=$(json_field "$lock" instanceTag)
@@ -388,6 +376,7 @@ arm_repository() {
 
   # Fixed arming step 1: registry write precedes lock acquisition and census.
   announcement=$(write_announcement "$harness_root" "$session" "$pid" "$start" "$tag" "$runtime")
+  "$lease_helper" --root "$harness_root" require-holder --caller-pid "$pid" >/dev/null
   supervision=$agents/supervision
   mkdir -p "$supervision"
   printf '%s announcement-written registry=%s pid=%s start=%s\n' "$(now_iso)" "$announcement" "$pid" "$start" >>"$supervision/arming.log"

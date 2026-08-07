@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/adapters/claude.sh identity
+  scripts/agents/adapters/claude.sh config-identity
   scripts/agents/adapters/claude.sh signature
   scripts/agents/adapters/claude.sh probe
   scripts/agents/adapters/claude.sh dispatch --job <job-id> --start-gate <file>
@@ -13,6 +14,7 @@ Usage:
       --instance-tag <tag>
   scripts/agents/adapters/claude.sh cancel --job <job-id>
   scripts/agents/adapters/claude.sh selftest
+  scripts/agents/adapters/claude.sh local-config-paths
 USAGE
 }
 
@@ -30,27 +32,38 @@ print(match.group(0))
 '
 }
 
-claude_identity() {
-  local version hash config_dir
+claude_config_identity() {
+  local version config_dir project_root
   local -a settings_files
   version=$(claude_version)
   config_dir=${CLAUDE_CONFIG_DIR:-${HOME:?}/.claude}
+  project_root=$(git -C "$root" rev-parse --show-toplevel)
   # Declared configuration identity: the user, project, project-local, and
   # host-managed settings sources Claude merges for a session launched here.
   settings_files=(
     "$config_dir/settings.json"
-    "$root/.claude/settings.json"
-    "$root/.claude/settings.local.json"
+    "$project_root/.claude/settings.json"
+    "$project_root/.claude/settings.local.json"
     "/Library/Application Support/ClaudeCode/managed-settings.json"
     "/etc/claude-code/managed-settings.json"
   )
-  hash=$(configuration_hash "${settings_files[@]}")
+  configuration_identity claude "$version" "${settings_files[@]}"
+}
+
+claude_identity() {
+  local details version hash
+  details=$(claude_config_identity)
+  version=$(configuration_identity_field "$details" cliVersion)
+  hash=$(configuration_identity_field "$details" configHash)
   printf '%s %s\n' "$version" "$hash"
 }
 
 probe() {
-  local version hash
-  read -r version hash <<<"$(claude_identity)"
+  local details version hash key_hashes
+  details=$(claude_config_identity)
+  version=$(configuration_identity_field "$details" cliVersion)
+  hash=$(configuration_identity_field "$details" configHash)
+  key_hashes=$(configuration_identity_field "$details" configKeyHashes)
   claude auth status >/dev/null 2>&1 || {
     echo "claude authentication is unavailable; run claude auth login" >&2
     return 1
@@ -69,7 +82,8 @@ probe() {
       "nativeBudget": true
     }' \
     '{"unverified": []}' \
-    '{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}'
+    '{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}' \
+    "$key_hashes"
 }
 
 build_claude_settings() { # output settings, hook helper
@@ -161,7 +175,7 @@ if field == "model":
     if len(keys) == 1:
         result = keys[0]
     elif not keys:
-        result = "unreported"
+        result = "unobserved"
     else:
         result = "multi-model:" + ",".join(keys)
 else:
@@ -291,6 +305,10 @@ command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
 case "$command_name" in
+  local-config-paths)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' .claude/settings.json .claude/settings.local.json
+    ;;
   signature)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' \
@@ -302,6 +320,10 @@ case "$command_name" in
   identity)
     (($# == 0)) || { usage; exit 2; }
     claude_identity
+    ;;
+  config-identity)
+    (($# == 0)) || { usage; exit 2; }
+    claude_config_identity
     ;;
   probe)
     (($# == 0)) || { usage; exit 2; }

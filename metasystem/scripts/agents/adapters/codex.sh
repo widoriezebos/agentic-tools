@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/adapters/codex.sh identity
+  scripts/agents/adapters/codex.sh config-identity
   scripts/agents/adapters/codex.sh signature
   scripts/agents/adapters/codex.sh probe
   scripts/agents/adapters/codex.sh dispatch --job <job-id> --start-gate <file>
@@ -13,6 +14,7 @@ Usage:
       --instance-tag <tag>
   scripts/agents/adapters/codex.sh cancel --job <job-id>
   scripts/agents/adapters/codex.sh selftest
+  scripts/agents/adapters/codex.sh local-config-paths
 USAGE
 }
 
@@ -30,23 +32,34 @@ print(match.group(0))
 '
 }
 
-codex_identity() {
-  local version hash config_dir
+codex_config_identity() {
+  local version config_dir project_root
   local -a settings_files
   version=$(codex_version)
   config_dir=${CODEX_HOME:-${HOME:?}/.codex}
+  project_root=$(git -C "$root" rev-parse --show-toplevel)
   settings_files=(
     "$config_dir/config.toml"
-    "$root/.codex/config.toml"
+    "$project_root/.codex/config.toml"
     "/etc/codex/config.toml"
   )
-  hash=$(configuration_hash "${settings_files[@]}")
+  configuration_identity codex "$version" "${settings_files[@]}"
+}
+
+codex_identity() {
+  local details version hash
+  details=$(codex_config_identity)
+  version=$(configuration_identity_field "$details" cliVersion)
+  hash=$(configuration_identity_field "$details" configHash)
   printf '%s %s\n' "$version" "$hash"
 }
 
 probe() {
-  local version hash
-  read -r version hash <<<"$(codex_identity)"
+  local details version hash key_hashes
+  details=$(codex_config_identity)
+  version=$(configuration_identity_field "$details" cliVersion)
+  hash=$(configuration_identity_field "$details" configHash)
+  key_hashes=$(configuration_identity_field "$details" configKeyHashes)
   codex login status >/dev/null 2>&1 || {
     echo "codex authentication is unavailable; run codex login" >&2
     return 1
@@ -68,7 +81,8 @@ probe() {
       "nativeBudget": false
     }' \
     '{"unverified": []}' \
-    '{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}'
+    '{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}' \
+    "$key_hashes"
 }
 
 codex_event_field() { # events JSONL, session|turn
@@ -257,6 +271,10 @@ command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
 case "$command_name" in
+  local-config-paths)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' .codex/config.toml
+    ;;
   signature)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' \
@@ -267,6 +285,10 @@ case "$command_name" in
   identity)
     (($# == 0)) || { usage; exit 2; }
     codex_identity
+    ;;
+  config-identity)
+    (($# == 0)) || { usage; exit 2; }
+    codex_config_identity
     ;;
   probe)
     (($# == 0)) || { usage; exit 2; }

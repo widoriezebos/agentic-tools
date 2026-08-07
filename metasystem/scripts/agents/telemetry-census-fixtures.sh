@@ -90,7 +90,7 @@ PY
 }
 
 run_model_case one-key actual-model '{"actual-model": {}}'
-run_model_case zero-keys unreported '{}'
+run_model_case zero-keys unobserved '{}'
 run_model_case two-keys multi-model:a-model,z-model '{"z-model": {}, "a-model": {}}'
 
 python3 - "$root/scripts/agents/process-census.py" "$tmp" <<'PY'

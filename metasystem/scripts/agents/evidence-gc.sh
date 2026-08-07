@@ -16,6 +16,30 @@ set -euo pipefail
 metasystem_gc_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 cd "$metasystem_gc_root"
 
+if [[ ${1:-} != __lease-held ]]; then
+  lease_result=$(scripts/agents/worktree-lease.py --root "$metasystem_gc_root" \
+    require-holder --caller-pid "$$") || exit $?
+  lease_epoch=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("claimEpoch") is None else v["claimEpoch"])' "$lease_result")
+  if [[ -n "$lease_epoch" ]]; then
+    exec scripts/agents/worktree-lease.py --root "$metasystem_gc_root" run-held \
+      --caller-pid "$$" --expected-epoch "$lease_epoch" -- "$0" __lease-held "$lease_epoch"
+  fi
+  exec scripts/agents/worktree-lease.py --root "$metasystem_gc_root" run-held \
+    --caller-pid "$$" -- "$0" __lease-held human
+fi
+shift
+expected_epoch=${1:-}
+[[ -n "$expected_epoch" ]] || exit 2
+shift
+if [[ "$expected_epoch" =~ ^[1-9][0-9]*$ ]]; then
+  scripts/agents/worktree-lease.py --root "$metasystem_gc_root" require-holder \
+    --caller-pid "$$" --expected-epoch "$expected_epoch" >/dev/null
+else
+  [[ "$expected_epoch" == human ]] || exit 2
+  scripts/agents/worktree-lease.py --root "$metasystem_gc_root" require-holder \
+    --caller-pid "$$" >/dev/null
+fi
+
 evidence=$(scripts/metasystem-config.sh get --key evidence.root --default '' 2>/dev/null || true)
 [[ "$evidence" == /* ]] || { echo "evidence-gc refused: evidence.root is not configured" >&2; exit 1; }
 
@@ -55,7 +79,12 @@ for chain_dir in sorted(p for p in agents.iterdir() if p.is_dir() and p.name not
     root = next((r for r in records if r.get("jobId") == chain), None)
     if root is None or root.get("chainClosed") is not True:
         kept.append((chain, "chain not closed; working state")); continue
-    manifest_path = evidence / "agents" / chain / "manifest.json"
+    manifest_candidates = [evidence / "agents" / chain / "manifest.json"]
+    manifest_candidates.extend(sorted((evidence / "agents").glob(f"*/{chain}/manifest.json")))
+    mirrored_path = (root.get("mirror") or {}).get("path") if isinstance(root.get("mirror"), dict) else None
+    manifest_path = next((path for path in manifest_candidates if path.parent == Path(mirrored_path or "")), None)
+    if manifest_path is None:
+        manifest_path = next((path for path in manifest_candidates if path.exists()), manifest_candidates[0])
     if not manifest_path.exists():
         kept.append((chain, "no mirror manifest")); continue
     files = json.loads(manifest_path.read_text())["files"]
@@ -91,7 +120,9 @@ for record_path in sorted(jobs.glob("*.json")):
     root_chain = re.sub(r"-r[0-9]+$", "", record_path.stem)
     if (agents / root_chain).exists():
         continue  # chain payload not collected yet; records stay with it
-    manifest_path = evidence / "agents" / root_chain / "manifest.json"
+    manifest_candidates = [evidence / "agents" / root_chain / "manifest.json"]
+    manifest_candidates.extend(sorted((evidence / "agents").glob(f"*/{root_chain}/manifest.json")))
+    manifest_path = next((path for path in manifest_candidates if path.exists()), manifest_candidates[0])
     if not manifest_path.exists():
         continue
     manifest_files = json.loads(manifest_path.read_text())["files"]

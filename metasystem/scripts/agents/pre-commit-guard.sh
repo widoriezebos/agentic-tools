@@ -14,6 +14,47 @@
 # only additions can smuggle in a file the committer has never read.
 set -euo pipefail
 
+guard_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+git rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
+lease_helper=$guard_root/scripts/agents/worktree-lease.py
+if [[ -x "$lease_helper" ]]; then
+  classification=
+  caller_class=
+  if classification=$("$lease_helper" --root "$guard_root" classify --caller-pid "$$" 2>/dev/null) \
+    && caller_class=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["class"])' "$classification" 2>/dev/null); then
+    :
+  fi
+  # Human commits are sovereign. A broken classifier cannot positively prove
+  # agent ancestry, so this hook leaves the commit untouched; valid agent
+  # classifications still require the live wrapper token below.
+  if [[ -n "$caller_class" && "$caller_class" != HUMAN ]]; then
+    token=$guard_root/artifacts/agents/mains/worktree-commit-token.json
+    if ! python3 - "$token" "$guard_root/scripts/agents/process-census.py" "$$" <<'PY'
+import json,subprocess,sys
+from pathlib import Path
+path,helper,current=Path(sys.argv[1]),sys.argv[2],int(sys.argv[3])
+try: token=json.loads(path.read_text(encoding="utf-8"))
+except (OSError,ValueError): raise SystemExit(1)
+pid,start,nonce=token.get("wrapperPid"),token.get("wrapperPidStartedAt"),token.get("nonce")
+if type(pid) is not int or type(start) is not int or not isinstance(nonce,str) or len(nonce)!=32: raise SystemExit(1)
+seen=set()
+while current>0 and current not in seen:
+    seen.add(current)
+    if current==pid:
+        try: actual=int(subprocess.check_output([helper,"started-at","--pid",str(pid)],text=True,stderr=subprocess.DEVNULL).strip())
+        except (OSError,ValueError,subprocess.SubprocessError): raise SystemExit(1)
+        raise SystemExit(0 if actual==start else 1)
+    try: current=int(subprocess.check_output(["ps","-p",str(current),"-o","ppid="],text=True,stderr=subprocess.DEVNULL).strip())
+    except (OSError,ValueError,subprocess.SubprocessError): break
+raise SystemExit(1)
+PY
+    then
+      echo "pre-commit guard: agent commit requires scripts/agents/commit.sh; the live wrapper ancestry token is missing" >&2
+      exit 1
+    fi
+  fi
+fi
+
 [[ "${METASYSTEM_ALLOW_NEW_PLAN:-}" == "1" ]] && exit 0
 
 # An unborn branch has no peer work to capture: the initial commit stages the

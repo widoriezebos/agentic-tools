@@ -97,6 +97,61 @@ def ps_started_at(pid: int) -> int:
     return int(value.replace(tzinfo=dt.datetime.now().astimezone().tzinfo).timestamp())
 
 
+def ps_identity(pid: int) -> dict[str, Any]:
+    """Read authentication start time and command from one process-table row."""
+    env = {**os.environ, "LC_ALL": "C"}
+    result = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "lstart=,command="],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise ProcessLookupError(pid)
+    match = re.fullmatch(
+        r"\s*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+[0-9]{1,2}\s+"
+        r"[0-9]{2}:[0-9]{2}:[0-9]{2}\s+[0-9]{4})\s+(.+?)\s*",
+        result.stdout,
+        re.DOTALL,
+    )
+    if not match:
+        raise CensusError(f"unreadable process identity for pid {pid}")
+    try:
+        started = dt.datetime.strptime(match.group(1), "%a %b %d %H:%M:%S %Y")
+    except ValueError as error:
+        raise CensusError(f"unreadable start time for pid {pid}: {error}") from error
+    command = match.group(2).rstrip("\n")
+    if not command:
+        raise CensusError(f"unreadable command for pid {pid}")
+    return {
+        "pid": pid,
+        "pidStartedAt": int(
+            started.replace(tzinfo=dt.datetime.now().astimezone().tzinfo).timestamp()
+        ),
+        "command": command,
+    }
+
+
+def authentication_identity(pid: int) -> dict[str, Any]:
+    try:
+        return ps_identity(pid)
+    except (CensusError, OSError, PermissionError, ProcessLookupError):
+        fixture = os.environ.get("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
+        if not fixture:
+            raise
+        values = json.loads(Path(fixture).read_text(encoding="utf-8"))
+        value = values.get(str(pid)) if isinstance(values, dict) else None
+        if (
+            not isinstance(value, dict)
+            or type(value.get("started")) is not int
+            or not isinstance(value.get("command"), str)
+            or not value["command"]
+        ):
+            raise CensusError(f"fake process identity is unavailable for pid {pid}")
+        return {"pid": pid, "pidStartedAt": value["started"], "command": value["command"]}
+
+
 def started_at(pid: int) -> int:
     if sys.platform.startswith("linux") and Path(f"/proc/{pid}/stat").exists():
         try:
@@ -611,8 +666,14 @@ def announcements(fixture_by_pid: dict[int, Process], errors: list[str]) -> list
     directory.mkdir(parents=True, exist_ok=True)
     live: list[dict[str, Any]] = []
     by_identity: dict[tuple[int, int], tuple[Path, dict[str, Any]]] = {}
-    expected = {"sessionId", "pid", "pidStartedAt", "pgid", "runtime", "instanceTag", "announcedAt"}
+    expected = {
+        "sessionId", "mainId", "pid", "pidStartedAt", "pgid", "runtime",
+        "instanceTag", "commandHash", "announcedAt",
+    }
     for path in sorted(directory.glob("*.json")):
+        if path.name in {"worktree-lease.json", "worktree-commit-token.json", "reaped-after-claim.json"} \
+                or path.name.endswith(".protocol-cursor.json"):
+            continue
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as error:
@@ -622,7 +683,11 @@ def announcements(fixture_by_pid: dict[int, Process], errors: list[str]) -> list
             errors.append(f"announcement-schema:{path.name}")
             continue
         pid, start = value.get("pid"), value.get("pidStartedAt")
-        if not isinstance(pid, int) or not isinstance(start, int):
+        main_id, digest = value.get("mainId"), value.get("commandHash")
+        if (not isinstance(pid, int) or not isinstance(start, int)
+                or not isinstance(main_id, str)
+                or re.fullmatch(r"main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}", main_id) is None
+                or not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None):
             errors.append(f"announcement-identity:{path.name}")
             continue
         synthetic = fixture_by_pid.get(pid)
@@ -824,6 +889,8 @@ def main() -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     started = commands.add_parser("started-at")
     started.add_argument("--pid", required=True, type=int)
+    identity = commands.add_parser("authentication-identity")
+    identity.add_argument("--pid", required=True, type=int)
     alive = commands.add_parser("alive")
     alive.add_argument("--pid", required=True, type=int)
     alive.add_argument("--start-time", required=True, type=int)
@@ -846,6 +913,8 @@ def main() -> int:
     try:
         if args.command == "started-at":
             print(started_at(args.pid))
+        elif args.command == "authentication-identity":
+            print(json.dumps(authentication_identity(args.pid), separators=(",", ":")))
         elif args.command == "alive":
             return 0 if identity_alive(args.pid, args.start_time) else 1
         elif args.command == "signature-check":

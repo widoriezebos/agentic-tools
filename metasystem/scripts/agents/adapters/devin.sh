@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/adapters/devin.sh identity
+  scripts/agents/adapters/devin.sh config-identity
   scripts/agents/adapters/devin.sh signature
   scripts/agents/adapters/devin.sh probe
   scripts/agents/adapters/devin.sh dispatch --job <job-id> --start-gate <file>
@@ -13,6 +14,7 @@ Usage:
       --instance-tag <tag>
   scripts/agents/adapters/devin.sh cancel --job <job-id>
   scripts/agents/adapters/devin.sh selftest
+  scripts/agents/adapters/devin.sh local-config-paths
 USAGE
 }
 
@@ -30,25 +32,36 @@ print(match.group(0))
 '
 }
 
-devin_identity() {
-  local version hash config_dir
+devin_config_identity() {
+  local version config_dir project_root
   local -a settings_files
   version=$(devin_version)
   config_dir=${XDG_CONFIG_HOME:-${HOME:?}/.config}
+  project_root=$(git -C "$root" rev-parse --show-toplevel)
   settings_files=(
     "$config_dir/devin/config.json"
     "$config_dir/devin/hooks.v1.json"
-    "$root/.devin/config.json"
-    "$root/.devin/config.local.json"
-    "$root/.devin/hooks.v1.json"
+    "$project_root/.devin/config.json"
+    "$project_root/.devin/config.local.json"
+    "$project_root/.devin/hooks.v1.json"
   )
-  hash=$(configuration_hash "${settings_files[@]}")
+  configuration_identity devin "$version" "${settings_files[@]}"
+}
+
+devin_identity() {
+  local details version hash
+  details=$(devin_config_identity)
+  version=$(configuration_identity_field "$details" cliVersion)
+  hash=$(configuration_identity_field "$details" configHash)
   printf '%s %s\n' "$version" "$hash"
 }
 
 probe() {
-  local version hash
-  read -r version hash <<<"$(devin_identity)"
+  local details version hash key_hashes
+  details=$(devin_config_identity)
+  version=$(configuration_identity_field "$details" cliVersion)
+  hash=$(configuration_identity_field "$details" configHash)
+  key_hashes=$(configuration_identity_field "$details" configKeyHashes)
   devin auth status >/dev/null 2>&1 || {
     echo "devin authentication is unavailable; run devin auth login" >&2
     return 1
@@ -67,7 +80,8 @@ probe() {
       "nativeBudget": false
     }' \
     '{"unverified": []}' \
-    '{"writeRoots":"mapped","readRoots":"mapped","network":"notEnforced"}'
+    '{"writeRoots":"mapped","readRoots":"mapped","network":"notEnforced"}' \
+    "$key_hashes"
 }
 
 build_devin_config() { # output
@@ -272,6 +286,10 @@ command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
 case "$command_name" in
+  local-config-paths)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' .devin/config.json .devin/config.local.json .devin/hooks.v1.json
+    ;;
   signature)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' \
@@ -282,6 +300,10 @@ case "$command_name" in
   identity)
     (($# == 0)) || { usage; exit 2; }
     devin_identity
+    ;;
+  config-identity)
+    (($# == 0)) || { usage; exit 2; }
+    devin_config_identity
     ;;
   probe)
     (($# == 0)) || { usage; exit 2; }

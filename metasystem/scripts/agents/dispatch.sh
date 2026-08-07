@@ -34,16 +34,19 @@ jobs="$agents/jobs"
 heartbeats="$agents/hb"
 locks="$agents/locks"
 record_locks="$agents/record-locks"
-# Self-cleaning: every operation mktemps here and not every path removes its
-# file; the comb found 142k orphans holding 557MB. Age-based, so nothing live
-# is ever touched.
-find "$record_locks" -maxdepth 1 -type f -mmin +60 -delete 2>/dev/null || true
 capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
+standing_reaper=0
 process_census="$root/scripts/agents/process-census.py"
 arm_supervision="$root/scripts/agents/arm-supervision.sh"
 mission_fence="$root/scripts/agents/mission-fence.py"
+lease_helper="$root/scripts/agents/worktree-lease.py"
+entry_caller_pid=$$
+current_claim_epoch=
+current_main_id=
+current_caller_class=
+lease_reentry=0
 
 valid_id() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -157,9 +160,47 @@ record_create() { # job, source json
   "$0" __record-create --job "$1" --source "$2"
 }
 
+record_setup() { # job, complete source json
+  "$0" __record-setup --job "$1" --source "$2"
+}
+
+lease_entry_check() {
+  local result
+  result=$("$lease_helper" --root "$root" require-holder --caller-pid "$entry_caller_pid") \
+    || exit $?
+  current_claim_epoch=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("claimEpoch") is None else v["claimEpoch"])' "$result")
+  current_main_id=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("mainId") is None else v["mainId"])' "$result")
+  current_caller_class=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["class"])' "$result")
+}
+
+lease_run_held() { # expected epoch (empty for human), command...
+  local expected=$1
+  shift
+  if [[ -n "$expected" ]]; then
+    "$lease_helper" --root "$root" run-held --caller-pid "$entry_caller_pid" \
+      --expected-epoch "$expected" -- "$@"
+  else
+    "$lease_helper" --root "$root" run-held --caller-pid "$entry_caller_pid" -- "$@"
+  fi
+}
+
+internal_authority() { # holder-only|record-writer|adapter-writer|supervision-only, optional job id
+  local mode=$1 job=${2:-} result
+  result=$("$lease_helper" --root "$root" classify --caller-pid "$entry_caller_pid") \
+    || die 1 "control-plane write refused: caller classification failed"
+  if [[ -n "$job" ]]; then
+    "$root/scripts/agents/control-plane-authority.py" \
+      --mode "$mode" --classification "$result" --job "$job"
+  else
+    "$root/scripts/agents/control-plane-authority.py" \
+      --mode "$mode" --classification "$result"
+  fi
+}
+
 atomic_record_python() {
   python3 - "$root" "$@" <<'PY'
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -198,9 +239,52 @@ with (lock_dir / f"{job}.lock").open("a+") as lock:
         except (OSError, ValueError) as error:
             print(f"invalid initial record for {job}: {error}", file=sys.stderr)
             raise SystemExit(1)
-        if not isinstance(record, dict) or record.get("jobId") != job or record.get("status") != "pending":
+        if not isinstance(record, dict) or record.get("jobId") != job or record.get("status") != "pending-setup":
             print(f"invalid initial record identity or status for {job}", file=sys.stderr)
             raise SystemExit(1)
+    elif operation == "setup":
+        try:
+            current = json.loads(record_path.read_text(encoding="utf-8"))
+            record = json.loads(Path(values["source"]).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            print(f"cannot complete setup for job record {job}: {error}", file=sys.stderr)
+            raise SystemExit(1)
+        if (not isinstance(current, dict) or current.get("status") != "pending-setup"
+                or not isinstance(record, dict) or record.get("jobId") != job
+                or record.get("status") != "pending"
+                or record.get("claimEpoch") != current.get("claimEpoch")
+                or record.get("mainId") != current.get("mainId")):
+            print(f"invalid setup transition for {job}", file=sys.stderr)
+            raise SystemExit(1)
+    elif operation == "protocol-error":
+        try:
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            print(f"cannot record protocol error for {job}: {error}", file=sys.stderr)
+            raise SystemExit(1)
+        expected = values.get("expect")
+        violation = values.get("violation", "")
+        if not violation and values.get("violation-file"):
+            try:
+                violation = Path(values["violation-file"]).read_text(encoding="utf-8").strip()
+            except OSError as error:
+                print(f"cannot read protocol violation for {job}: {error}", file=sys.stderr)
+                raise SystemExit(1)
+        if not violation:
+            print(f"protocol violation text is empty for {job}", file=sys.stderr)
+            raise SystemExit(1)
+        key = hashlib.sha256(f"{job}{record.get('round')}{violation}".encode()).hexdigest()[:16]
+        existing = record.get("protocolError")
+        if record.get("status") == "failed" and record.get("error") == "protocol_error" \
+                and isinstance(existing, dict) and existing.get("key") == key:
+            raise SystemExit(0)
+        if record.get("status") != expected or expected not in {"pending", "running"}:
+            raise SystemExit(3)
+        record.update({
+            "status": "failed", "error": "protocol_error", "phase": "validation",
+            "protocolError": {"key": key, "violation": violation, "detectedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
+            "endedAt": record.get("endedAt") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
     elif operation == "cas":
         try:
             record = json.loads(record_path.read_text(encoding="utf-8"))
@@ -214,6 +298,7 @@ with (lock_dir / f"{job}.lock").open("a+") as lock:
         if current != expected:
             raise SystemExit(3)
         transitions = {
+            "pending-setup": {"failed"},
             "pending": {"running", "failed", "cancelled"},
             "running": {"completed", "failed", "cancelled", "timeout"},
         }
@@ -224,7 +309,7 @@ with (lock_dir / f"{job}.lock").open("a+") as lock:
         if not isinstance(patch, dict) or "status" in patch:
             print("record patch must be an object and cannot contain status", file=sys.stderr)
             raise SystemExit(1)
-        immutable = {"jobId", "role", "runtime", "round", "parentJob", "reviews", "workspaceRoot", "baseSha", "branch", "startedAt"}
+        immutable = {"jobId", "role", "runtime", "round", "parentJob", "reviews", "workspaceRoot", "baseSha", "branch", "startedAt", "claimEpoch", "mainId"}
         if immutable.intersection(patch):
             print("record patch attempts to change immutable identity", file=sys.stderr)
             raise SystemExit(1)
@@ -682,83 +767,14 @@ PY
 }
 
 select_snapshot() { # runtime, role, requested envelope, output json
-  local runtime=$1 role=$2 envelope=$3 output=$4 adapter="$root/scripts/agents/adapters/$1.sh" identity version hash max_age
+  local runtime=$1 role=$2 envelope=$3 output=$4 adapter="$root/scripts/agents/adapters/$1.sh" identity max_age
   [[ -x "$adapter" ]] || die 1 "runtime adapter is not installed: $runtime"
-  identity=$($adapter identity) || die 1 "could not read $runtime adapter identity"
-  read -r version hash extra <<<"$identity"
-  [[ -n "$version" && -n "$hash" && -z "${extra:-}" && "$version" =~ ^[A-Za-z0-9._-]+$ && "$hash" =~ ^[A-Za-z0-9._-]+$ ]] \
-    || die 1 "$runtime adapter returned a malformed identity"
+  identity=$($adapter config-identity) || die 1 "could not read $runtime adapter configuration identity"
   max_age=$(config_get --key capability.snapshot-max-age-days --default 30)
   [[ "$max_age" =~ ^[0-9]+$ ]] || die 1 "capability.snapshot-max-age-days must be a non-negative integer"
-  python3 - "$root" "$runtime" "$version" "$hash" "$max_age" "$role" "$envelope" "$output" <<'PY'
-import json, re, sys
-from datetime import datetime, timezone
-from pathlib import Path
-root = Path(sys.argv[1])
-runtime, version, config_hash, max_age, role, envelope_path, output = sys.argv[2:]
-max_age = int(max_age)
-directory = root / "artifacts" / "agents" / "capabilities"
-pattern = re.compile(rf"{re.escape(runtime)}-{re.escape(version)}-{re.escape(config_hash)}-(\d{{8}})-(\d{{3}})\.json$")
-candidates = []
-for path in directory.glob(f"{runtime}-{version}-{config_hash}-*.json") if directory.exists() else []:
-    match = pattern.fullmatch(path.name)
-    if not match:
-        continue
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        captured = datetime.fromisoformat(value["capturedAt"].replace("Z", "+00:00"))
-    except (OSError, ValueError, KeyError, TypeError):
-        continue
-    if value.get("runtime") != runtime or value.get("cliVersion") != version or value.get("configHash") != config_hash:
-        continue
-    candidates.append((match.group(1), int(match.group(2)), captured, path, value))
-if not candidates:
-    raise SystemExit(f"no capability snapshot matches {runtime} {version} {config_hash}; run {runtime} adapter probe")
-date, sequence, captured, path, snapshot = max(candidates, key=lambda item: (item[0], item[1]))
-age_days = (datetime.now(timezone.utc) - captured.astimezone(timezone.utc)).total_seconds() / 86400
-if age_days > max_age:
-    raise SystemExit(f"capability snapshot is stale ({age_days:.1f} days); re-run {runtime} adapter probe")
-requirements_path = root / "scripts" / "agents" / "roles" / f"{role}.requirements.json"
-try:
-    requirements = json.loads(requirements_path.read_text(encoding="utf-8"))
-    envelope = json.loads(Path(envelope_path).read_text(encoding="utf-8"))
-except (OSError, ValueError) as error:
-    raise SystemExit(f"cannot evaluate capabilities: {error}")
-caps = snapshot.get("capabilities", {})
-envelope_enforcement = snapshot.get("envelopeEnforcement")
-if (
-    not isinstance(envelope_enforcement, dict)
-    or set(envelope_enforcement) != {"writeRoots", "readRoots", "network"}
-    or any(value not in {"mapped", "notEnforced"} for value in envelope_enforcement.values())
-):
-    raise SystemExit("capability snapshot has no valid envelope enforcement declaration; re-run adapter probe")
-handshake_timeout = caps.get("sessionEstablishedTimeoutSec", 2)
-if (
-    isinstance(handshake_timeout, bool)
-    or not isinstance(handshake_timeout, int)
-    or not 1 <= handshake_timeout <= 60
-):
-    raise SystemExit("capability snapshot has an invalid session-established timeout")
-missing = [name for name in requirements.get("required", []) if caps.get(name) is not True]
-if missing:
-    raise SystemExit("required runtime capabilities are absent: " + ", ".join(sorted(missing)))
-fallbacks = []
-for name, declaration in requirements.get("optional", {}).items():
-    if caps.get(name) is not True:
-        fallbacks.append({"capability": name, "fallback": declaration.get("fallback")})
-waivers = requirements.get("waivers", {})
-unverified = snapshot.get("permissions", {}).get("unverified", [])
-for field in unverified:
-    if envelope.get(field) == "deny" and runtime not in waivers.get(field, []):
-        raise SystemExit(f"runtime cannot verify restrictive permission field {field}; add an explicit role waiver or choose another runtime")
-result = {
-    "path": str(path.relative_to(root)), "fallbacks": fallbacks,
-    "sessionEstablishedSignal": caps.get("sessionEstablishedSignal") is True,
-    "sessionEstablishedTimeoutSec": handshake_timeout,
-    "resume": caps.get("resume") is True,
-}
-Path(output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  "$root/scripts/agents/select-capability-snapshot.py" \
+    --root "$root" --runtime "$runtime" --role "$role" --identity "$identity" \
+    --max-age "$max_age" --envelope "$envelope" --output "$output"
 }
 
 root_job_id() { # job record
@@ -862,8 +878,8 @@ PY
   touch "$gate"
 }
 
-await_handshake() { # job, maximum session-established seconds
-  local job=$1 timeout=$2 record="$jobs/$1.json" deadline status session patch poll_sleep
+await_handshake() { # job, maximum session-established seconds, dispatch claim epoch
+  local job=$1 timeout=$2 claim_epoch=${3:-} record="$jobs/$1.json" deadline status session poll_sleep
   [[ "$timeout" =~ ^[1-9][0-9]*$ && "$timeout" -le 60 ]] || return 1
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-50}")
   deadline=$(( $(date +%s) + timeout ))
@@ -880,10 +896,7 @@ await_handshake() { # job, maximum session-established seconds
     fi
     sleep "$poll_sleep"
   done
-  wind_down_group "$record" || return 1
-  patch=$(mktemp "$record_locks/handshake.XXXXXX")
-  printf '{"error":"handshake_timeout","phase":"handshake"}\n' >"$patch"
-  record_cas "$job" pending failed "$patch" || true
+  lease_run_held "$claim_epoch" "$0" __handshake-timeout --job "$job" || true
   return 1
 }
 
@@ -895,11 +908,12 @@ wait_for_job() { # job
     status=$(json_field "$record" status 2>/dev/null || true)
     case "$status" in
       completed|failed|timeout|cancelled)
-        reap_one "$job"
+        lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job" \
+          || return 3
         case "$status" in completed) return 0 ;; failed) return 3 ;; timeout) return 4 ;; cancelled) return 8 ;; esac
         ;;
       pending|running)
-        if ! reap_one "$job"; then
+        if ! lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job"; then
           [[ -f "$record" ]] || return 5
           return 3
         fi
@@ -994,11 +1008,11 @@ PY
   case "${evidence%/}/" in "${repo_scope%/}/"*) mirror_fail "$job" "evidence.root is inside the repository"; return 1 ;; esac
   root_id=$(root_job_id "$job") || return 1
   result=$(mktemp "$record_locks/mirror-result.XXXXXX")
-  if ! python3 - "$root" "$evidence" "$root_id" "$job" "$result" <<'PY'
+  if ! python3 - "$root" "$repo_scope" "$evidence" "$root_id" "$job" "$result" <<'PY'
 import hashlib, json, os, shutil, sys, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-repo, evidence, root_job, job, result = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4], Path(sys.argv[5])
+repo, checkout, evidence, root_job, job, result = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5], Path(sys.argv[6])
 agents = repo / "artifacts" / "agents"
 record_path = agents / "jobs" / f"{job}.json"
 record = json.loads(record_path.read_text(encoding="utf-8"))
@@ -1008,7 +1022,8 @@ if (payload / ".mirror-fail-once").exists():
     (payload / ".mirror-fail-once").unlink()
     (payload / ".mirror-failed").write_text("scripted interruption\n")
     raise SystemExit("scripted mirror interruption")
-destination = evidence / "agents" / root_job
+checkout_segment = hashlib.sha256(str(checkout.resolve()).encode()).hexdigest()[:12]
+destination = evidence / "agents" / checkout_segment / root_job
 destination.mkdir(parents=True, exist_ok=True)
 manifest_path = destination / "manifest.json"
 
@@ -1122,20 +1137,34 @@ PY
 }
 
 reap_one_locked() { # job
-  local job=$1 record="$jobs/$1.json" status pid tag started cap handshake_budget pending_age elapsed patch root_id mission
+  local job=$1 record="$jobs/$1.json" status pid tag started cap handshake_budget pending_age elapsed patch root_id mission record_epoch lease_epoch
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
     completed|failed|timeout|cancelled)
+      (( standing_reaper == 0 )) || return 0
       root_id=$(root_job_id "$job" 2>/dev/null || true)
       [[ -n "$root_id" ]] && aggregate_chain_usage "$root_id"
       aggregate_mission_usage "$record" || true
       mirror_record "$job" || true
       return
       ;;
-    pending|running) ;;
+    pending-setup|pending|running) ;;
     *) return ;;
   esac
+  record_epoch=$(json_field "$record" claimEpoch 2>/dev/null || true)
+  lease_epoch=$(json_field "$agents/mains/worktree-lease.json" claimEpoch 2>/dev/null || true)
+  if (( standing_reaper )) && [[ "$record_epoch" =~ ^[0-9]+$ && "$lease_epoch" =~ ^[1-9][0-9]*$ ]] \
+      && (( record_epoch < lease_epoch )); then
+    if [[ "$status" != pending-setup ]]; then
+      wind_down_group "$record" || return 1
+    fi
+    patch=$(mktemp "$record_locks/stale-epoch.XXXXXX")
+    printf '{"error":"stale-claim-epoch","phase":"claim-sweep","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
+    record_cas "$job" "$status" failed "$patch" || true
+    return 0
+  fi
+  [[ "$status" != pending-setup ]] || return 0
   pid=$(json_field "$record" pid 2>/dev/null || true)
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
   started=$(json_field "$record" startedAt 2>/dev/null || true)
@@ -1200,7 +1229,7 @@ dispatch_job() {
   local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn cap watch_cap tiers_present=false roster_tier requested_tier escalation_required=0
   local cost_direction= approval_name= approved_at=
-  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget input_bytes input_hash max_kb payload round_dir record_json
+  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget input_bytes input_hash max_kb payload round_dir record_json setup_json
   while (($#)); do
     case "$1" in
       --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
@@ -1237,8 +1266,7 @@ dispatch_job() {
   fi
   mode=$(brief_mode "$brief") || die 1 "brief must contain exactly one filled Working Mode header"
   [[ -z "$mode_override" || "$mode_override" == "$mode" ]] || die 1 "--mode contradicts the brief's Working Mode header"
-  require_fresh_census
-  report_plan_drift
+  lease_entry_check
 
   roster_runtime=$(config_get --key "role.$role.runtime" --mode "$mode" --default __missing__)
   [[ "$roster_runtime" != __missing__ ]] || roster_runtime=$(config_get --key role.default.runtime --mode "$mode" --default __missing__)
@@ -1305,10 +1333,26 @@ PY
     )
   fi
   valid_id "$job" || die 2 "invalid job id: $job"
+  setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
+  python3 - "$setup_json" "$job" "$role" "$current_main_id" "$current_claim_epoch" <<'PY'
+import json,sys
+from datetime import datetime,timezone
+from pathlib import Path
+path,job,role,main_id,epoch=sys.argv[1:]
+Path(path).write_text(json.dumps({
+  "jobId":job,"role":role,"status":"pending-setup","phase":"setup",
+  "error":None,"mainId":main_id or None,"claimEpoch":int(epoch) if epoch else None,
+  "createdAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+},indent=2,sort_keys=True)+"\n")
+PY
+  lease_run_held "$current_claim_epoch" "$0" __record-create --job "$job" --source "$setup_json"
+  rm -f "$setup_json"
+  require_fresh_census
+  report_plan_drift
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
   acquire_chain_lock "$job"
   trap 'release_chain_lock "$job"' EXIT
-  [[ ! -e "$jobs/$job.json" && ! -e "$agents/$job" ]] || die 1 "job id collision: $job"
+  [[ ! -e "$agents/$job" ]] || die 1 "job payload collision: $job"
 
   cap=$(config_get --key dispatch.cap-min ${cap_override:+--flag "$cap_override"} --default 120)
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
@@ -1348,11 +1392,11 @@ PY
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
-  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" "$reviews" <<'PY'
+  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" "$reviews" "$current_main_id" "$current_claim_epoch" <<'PY'
 import json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
-out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, handshake_budget, approval_name, approved_at, roster_pair, requested_pair, cost_direction, reviews = sys.argv[1:]
+out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, handshake_budget, approval_name, approved_at, roster_pair, requested_pair, cost_direction, reviews, main_id, claim_epoch = sys.argv[1:]
 try: base = subprocess.check_output(["git", "-C", workspace, "rev-parse", "HEAD"], text=True).strip()
 except subprocess.SubprocessError: raise SystemExit("workspace is not a git worktree")
 branch = subprocess.check_output(["git", "-C", workspace, "branch", "--show-current"], text=True).strip()
@@ -1369,6 +1413,7 @@ record = {
   "jobId": job, "role": role, "mission": mission or None, "runtime": runtime,
   "round": 1, "parentJob": None, "reviews": reviews or None,
   "status": "pending", "phase": "handshake", "error": None,
+  "mainId": main_id or None, "claimEpoch": int(claim_epoch) if claim_epoch else None,
   "workspaceRoot": str(Path(workspace).resolve()), "baseSha": base, "branch": branch,
   "permissions": {
     "requested": json.loads(Path(permissions).read_text()),
@@ -1393,11 +1438,14 @@ PY
     "$mission_fence" reserve-job --repo "$root" --mission "$mission" --job "$job" --cap-min "$cap" \
       || die 1 "mission dispatch refused by a lifecycle fence"
   fi
-  record_create "$job" "$record_json"
+  lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
   release_chain_lock "$job"; trap - EXIT
-  launch_adapter "$runtime" dispatch "$job" "metasystem-job-$job" || {
-    patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"; record_cas "$job" pending failed "$patch" || true; return 3; }
-  await_handshake "$job" "$handshake_budget" || return 3
+  lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb dispatch \
+    --job "$job" --tag "metasystem-job-$job" || {
+    patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"
+    lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
+    rm -f "$patch"; return 3; }
+  await_handshake "$job" "$handshake_budget" "$current_claim_epoch" || return 3
   if (( wait )); then wait_for_job "$job"; return $?; fi
   printf '%s\n' "$job"
 }
@@ -1626,8 +1674,10 @@ item = manifest["records"][int(sys.argv[2])]
 Path(sys.argv[3]).write_text(json.dumps({"critiqueExhaustions": item["critiqueExhaustions"]}) + "\n")
 PY
     target_status=$(json_field "$jobs/$target.json" status)
-    record_cas "$target" "$target_status" "$target_status" "$patch" \
+    lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$target" \
+      --expect "$target_status" --status "$target_status" --patch "$patch" \
       || die 1 "could not record the critique exhaustion successor on code-critic chain $target"
+    rm -f "$patch"
   done < <(python3 - "$manifest" <<'PY'
 import json, sys
 from pathlib import Path
@@ -1640,7 +1690,7 @@ PY
 
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model workspace reviewed_commit round child payload round_dir cap permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
-  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round
+  local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
@@ -1650,6 +1700,7 @@ follow_up() {
     esac
   done
   valid_id "$job" && [[ -f "$message" && -f "$jobs/$job.json" ]] || { usage; exit 2; }
+  lease_entry_check
   require_fresh_census
   report_plan_drift
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
@@ -1677,6 +1728,22 @@ follow_up() {
   [[ -n "$session" && "$session" != null ]] || die 1 "follow-up has no resumable session id; use the fresh-context embed fallback"
   role=$(json_field "$latest" role); runtime=$(json_field "$latest" runtime); model=$(json_field "$latest" requestedModel)
   workspace=$(json_field "$latest" workspaceRoot)
+  round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
+  [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
+  setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
+  python3 - "$setup_json" "$child" "$role" "$root_id" "$current_main_id" "$current_claim_epoch" <<'PY'
+import json,sys
+from datetime import datetime,timezone
+from pathlib import Path
+path,job,role,parent,main_id,epoch=sys.argv[1:]
+Path(path).write_text(json.dumps({
+  "jobId":job,"role":role,"parentJob":parent,"status":"pending-setup","phase":"setup",
+  "error":None,"mainId":main_id or None,"claimEpoch":int(epoch) if epoch else None,
+  "createdAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+},indent=2,sort_keys=True)+"\n")
+PY
+  lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
+  rm -f "$setup_json"
   if [[ "$role" == design-critic ]]; then
     reviewed_commit=$(git -C "$repo_scope" rev-parse HEAD) \
       || die 1 "design-critic follow-up cannot resolve the current commit"
@@ -1687,8 +1754,6 @@ follow_up() {
         || die 1 "design-critic follow-up cannot fast-forward its worktree to current commit $reviewed_commit"
     fi
   fi
-  round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
-  [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
   if [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic ]]; then
     exhaustion_patch=$(mktemp "$record_locks/exhaustion.XXXXXX")
     if ! exhaustion_action=$(critique_exhaustion_action \
@@ -1729,15 +1794,16 @@ follow_up() {
   input_hash=$(sha256_file "$delivery_content")
   write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
-  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$handshake_budget" "$resume_mode" "$input_bytes" "$input_hash" "$mission_turn" <<'PY'
+  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$handshake_budget" "$resume_mode" "$input_bytes" "$input_hash" "$mission_turn" "$current_main_id" "$current_claim_epoch" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
 parent = json.loads(Path(sys.argv[1]).read_text()); out = Path(sys.argv[2])
-job, round_number, parent_job, snapshot, fallbacks, signal, handshake_budget, resume_mode, size, digest, mission_turn = sys.argv[3:]
+job, round_number, parent_job, snapshot, fallbacks, signal, handshake_budget, resume_mode, size, digest, mission_turn, main_id, claim_epoch = sys.argv[3:]
 record = {key: parent[key] for key in ("role", "mission", "runtime", "reviews", "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "requestedModel")}
 record.update({
   "jobId": job, "round": int(round_number), "parentJob": parent_job, "status": "pending", "phase": "handshake", "error": None,
+  "mainId": main_id or None, "claimEpoch": int(claim_epoch) if claim_epoch else None,
   "permissions": {
     "requested": parent["permissions"]["requested"],
     "effective": None,
@@ -1762,11 +1828,14 @@ PY
     "$mission_fence" reserve-job --repo "$root" --mission "$mission" --job "$child" --cap-min "$cap" \
       || die 1 "mission follow-up refused by a lifecycle fence"
   fi
-  record_create "$child" "$record_json"
+  lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$child" --source "$record_json"
   release_chain_lock "$root_id"; trap - EXIT
-  launch_adapter "$runtime" "$adapter_verb" "$child" "metasystem-job-$child" || {
-    patch=$(mktemp "$record_locks/follow-launch.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"; record_cas "$child" pending failed "$patch" || true; return 3; }
-  await_handshake "$child" "$handshake_budget" || return 3
+  lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
+    --job "$child" --tag "metasystem-job-$child" || {
+    patch=$(mktemp "$record_locks/follow-launch.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"
+    lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$child" --expect pending --status failed --patch "$patch" || true
+    rm -f "$patch"; return 3; }
+  await_handshake "$child" "$handshake_budget" "$current_claim_epoch" || return 3
   if (( wait )); then wait_for_job "$child"; return $?; fi
   printf '%s\n' "$child"
 }
@@ -1799,7 +1868,9 @@ cancel_job() {
   local job=
   [[ ${1:-} == --job && $# -eq 2 ]] || { usage; exit 2; }; job=$2
   valid_id "$job" && [[ -f "$jobs/$job.json" ]] || die 1 "unknown job: $job"
-  "$root/scripts/agents/adapters/$(json_field "$jobs/$job.json" runtime).sh" cancel --job "$job"
+  lease_entry_check
+  lease_run_held "$current_claim_epoch" \
+    "$root/scripts/agents/adapters/$(json_field "$jobs/$job.json" runtime).sh" cancel --job "$job"
 }
 
 close_chain() {
@@ -1810,6 +1881,7 @@ close_chain() {
     shift
   fi
   (($# == 0)) || { usage; exit 2; }
+  lease_entry_check
   valid_id "$job" && [[ -f "$jobs/$job.json" ]] || die 1 "unknown job: $job"
   root_id=$(root_job_id "$job") || die 1 "cannot resolve job chain"
   [[ "$root_id" == "$job" ]] || die 1 "close requires the root job id: $root_id"
@@ -1857,25 +1929,49 @@ PY
   else
     printf '{"chainClosed":true}\n' >"$patch"
   fi
-  record_cas "$root_id" "$status" "$status" "$patch"
+  lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$root_id" \
+    --expect "$status" --status "$status" --patch "$patch"
+  rm -f "$patch"
   release_chain_lock "$root_id"; trap - EXIT
 }
 
 reap_jobs() {
-  local job= interval= supervision_heartbeat= supervision_tag= interval_ms interval_sleep
+  local job= interval= supervision_heartbeat= supervision_tag= start_gate= interval_ms interval_sleep gate_cap gate_started
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
       --interval) [[ $# -ge 2 ]] || { usage; exit 2; }; interval=$2; shift 2 ;;
       --heartbeat) [[ $# -ge 2 ]] || { usage; exit 2; }; supervision_heartbeat=$2; shift 2 ;;
       --instance-tag) [[ $# -ge 2 ]] || { usage; exit 2; }; supervision_tag=$2; shift 2 ;;
+      --start-gate) [[ $# -ge 2 ]] || { usage; exit 2; }; start_gate=$2; shift 2 ;;
       *) usage; exit 2 ;;
     esac
   done
   [[ -z "$job" ]] || valid_id "$job" || { usage; exit 2; }
   [[ -z "$interval" || "$interval" =~ ^[1-9][0-9]*$ ]] || { usage; exit 2; }
   [[ -z "$supervision_heartbeat" || ( -n "$interval" && -n "$supervision_tag" ) ]] || { usage; exit 2; }
+  if [[ -z "$interval" && $lease_reentry -eq 0 ]]; then
+    lease_entry_check
+    if [[ -n "$job" ]]; then
+      lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job"
+    else
+      lease_run_held "$current_claim_epoch" "$0" __reap-held
+    fi
+    return
+  fi
   if [[ -n "$interval" ]]; then
+    if [[ -n "$start_gate" ]]; then
+      gate_cap=$(dispatch_fixture_wait_cap 10)
+      gate_started=$SECONDS
+      while [[ ! -e "$start_gate" ]]; do
+        (( SECONDS - gate_started < gate_cap )) \
+          || die 1 "standing reap start gate timed out before supervision custody was published"
+        sleep 0.02
+      done
+      rm -f "$start_gate"
+    fi
+    internal_authority supervision-only
+    standing_reaper=1
     interval_ms=${METASYSTEM_CENSUS_INTERVAL_MS:-$((interval * 1000))}
     interval_sleep=$(milliseconds_to_sleep "$interval_ms")
   fi
@@ -2017,6 +2113,41 @@ internal_critique_exhaustion() {
   critique_exhaustion_action "$root_job" "$role" "$latest" "$message" "$successor" "$output"
 }
 
+internal_reap_held() {
+  internal_authority holder-only
+  lease_reentry=1
+  reap_jobs "$@"
+}
+
+internal_launch() {
+  local runtime= verb= job= tag=
+  while (($#)); do
+    case "$1" in
+      --runtime) runtime=$2; shift 2 ;;
+      --verb) verb=$2; shift 2 ;;
+      --job) job=$2; shift 2 ;;
+      --tag) tag=$2; shift 2 ;;
+      *) exit 2 ;;
+    esac
+  done
+  [[ -n "$runtime" && ( "$verb" == dispatch || "$verb" == follow-up ) \
+    && -n "$job" && -n "$tag" ]] || exit 2
+  internal_authority holder-only "$job"
+  launch_adapter "$runtime" "$verb" "$job" "$tag"
+}
+
+internal_handshake_timeout() {
+  local job=
+  [[ ${1:-} == --job && $# -eq 2 ]] || exit 2
+  job=$2
+  internal_authority holder-only "$job"
+  local record="$jobs/$job.json" patch
+  wind_down_group "$record" || return 1
+  patch=$(mktemp "$record_locks/handshake.XXXXXX")
+  printf '{"error":"handshake_timeout","phase":"handshake"}\n' >"$patch"
+  record_cas "$job" pending failed "$patch" || true
+}
+
 # Lock-owning public commands re-exec once so their lease tag is part of the
 # process command line and a contender can distinguish this process from PID
 # reuse. Internal adapter callbacks never acquire a chain lock.
@@ -2040,11 +2171,36 @@ case "$command" in
   cancel) cancel_job "$@" ;;
   close) close_chain "$@" ;;
   reap) reap_jobs "$@" ;;
-  __record-create) atomic_record_python create "$@" ;;
-  __record-cas) atomic_record_python cas "$@" ;;
-  __handshake) internal_handshake "$@" ;;
-  __cancel-owned) [[ ${1:-} == --job && $# -eq 2 ]] || exit 2; internal_cancel "$2" ;;
-  __register-custody) internal_register_custody "$@" ;;
+  __record-create) internal_authority holder-only; atomic_record_python create "$@" ;;
+  __record-setup) internal_authority holder-only; atomic_record_python setup "$@" ;;
+  __record-cas)
+    [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
+    internal_authority record-writer "$2"
+    atomic_record_python cas "$@"
+    ;;
+  __protocol-error)
+    [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
+    internal_authority adapter-writer "$2"
+    atomic_record_python protocol-error "$@"
+    ;;
+  __launch) internal_launch "$@" ;;
+  __handshake-timeout) internal_handshake_timeout "$@" ;;
+  __reap-held) internal_reap_held "$@" ;;
+  __handshake)
+    [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
+    internal_authority adapter-writer "$2"
+    internal_handshake "$@"
+    ;;
+  __cancel-owned)
+    [[ ${1:-} == --job && $# -eq 2 ]] || exit 2
+    internal_authority holder-only "$2"
+    internal_cancel "$2"
+    ;;
+  __register-custody)
+    [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
+    internal_authority adapter-writer "$2"
+    internal_register_custody "$@"
+    ;;
   __critique-exhaustion) internal_critique_exhaustion "$@" ;;
   -h|--help) usage ;;
   *) usage; exit 2 ;;

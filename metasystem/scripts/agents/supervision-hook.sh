@@ -27,7 +27,8 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 helper=$script_dir/process-census.py
 arm=$script_dir/arm-supervision.sh
-[[ -x "$helper" && -x "$arm" ]] || exit 0
+lease_helper=$script_dir/worktree-lease.py
+[[ -x "$helper" && -x "$arm" && -x "$lease_helper" ]] || exit 0
 session=$(read_payload session_id)
 [[ -n "$session" ]] || session="session-$PPID"
 
@@ -37,6 +38,16 @@ session=$(read_payload session_id)
 search_pid=$(ps -p "$PPID" -o ppid= 2>/dev/null | tr -d ' ' || true)
 [[ "$search_pid" =~ ^[1-9][0-9]*$ ]] || search_pid=$PPID
 identity=$("$helper" find-ancestor --repo "$repo" --pid "$search_pid" --runtime "$runtime" 2>/dev/null || true)
+main_id=
+main_holder=false
+if [[ -n "$identity" ]]; then
+  identity_pid=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["pid"])' "$identity")
+  lease_view=$("$lease_helper" --root "$harness_root" classify --caller-pid "$identity_pid" 2>/dev/null || true)
+  if [[ -n "$lease_view" ]]; then
+    main_id=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("mainId",""))' "$lease_view")
+    main_holder=$(python3 -c 'import json,sys; print("true" if json.loads(sys.argv[1]).get("holder") else "false")' "$lease_view")
+  fi
+fi
 
 surface_json() { # message
   python3 - "$1" <<'PY'
@@ -91,6 +102,26 @@ work_sentence() {
 }
 
 if [[ "$event" == stop ]]; then
+  protocol_message=
+  protocol_counts='{}'
+  if [[ -n "$main_id" ]]; then
+    protocol_growth=$("$lease_helper" --root "$harness_root" protocol-growth --main-id "$main_id" 2>/dev/null || true)
+    if [[ -n "$protocol_growth" ]]; then
+      protocol_message=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("message",""))' "$protocol_growth")
+      protocol_counts=$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1]).get("counts",{}),separators=(",",":")))' "$protocol_growth")
+    fi
+  fi
+  if [[ "$main_holder" != true ]]; then
+    advisor_message="OWNED-ELSEWHERE: this main is a read-only advisor in this checkout. To write independently, run scripts/agents/second-session.sh."
+    [[ -z "$protocol_message" ]] || advisor_message="$advisor_message
+$protocol_message"
+    surface_json "$advisor_message"
+    [[ -z "$main_id" || -z "$protocol_message" ]] || \
+      "$lease_helper" --root "$harness_root" protocol-advance --main-id "$main_id" \
+        --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
+    exit 0
+  fi
+  "$lease_helper" --root "$harness_root" renew --caller-pid "$identity_pid" >/dev/null 2>&1 || true
   last="$harness_root/artifacts/agents/supervision/last-census.json"
   state="$harness_root/artifacts/agents/supervision/state.json"
   message=$(python3 - "$last" "$state" "$helper" <<'PY'
@@ -133,6 +164,7 @@ PY
   # still names an unblocked next step and nothing is in flight says so.
   open_work=$(python3 "$script_dir/open-work.py" --repo "$harness_root" 2>/dev/null || true)
   [[ -z "$open_work" ]] || message=$(printf '%s%s%s' "$message" "${message:+$'\n'}" "$open_work")
+  [[ -z "$protocol_message" ]] || message=$(printf '%s%s%s' "$message" "${message:+$'\n'}" "$protocol_message")
 
   # Leave evidence that this ran. Without it there is no telling a hook that
   # fired and found nothing from one that never fired, which is the confusion
@@ -185,6 +217,9 @@ $message"
     # the silent-exit failure this very check exists to make visible.
     surface_json "$(work_sentence)"
   fi
+  [[ -z "$main_id" || -z "$protocol_message" ]] || \
+    "$lease_helper" --root "$harness_root" protocol-advance --main-id "$main_id" \
+      --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
   exit 0
 fi
 

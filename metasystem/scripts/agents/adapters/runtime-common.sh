@@ -85,7 +85,9 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   events="$round_dir/events.jsonl"
   heartbeat="$agents/hb/$job"
   effective="$round_dir/effective-permissions.json"
-  schema="$root/scripts/agents/schemas/$(field "$record" role).schema.json"
+  schema="$round_dir/return-schema.v2.json"
+  "$root/scripts/agents/return-schema.py" --root "$root" --role "$(field "$record" role)" \
+    --version 2 --output "$schema"
   workspace=$(field "$record" workspaceRoot)
   requested_model=$(field "$record" requestedModel)
   requested_session=$(field "$record" sessionId 2>/dev/null || true)
@@ -229,6 +231,15 @@ finish_running() { # completed|failed, error|null, phase, usage file
   [[ $status -eq 0 || $status -eq 3 ]]
 }
 
+finish_protocol_error() { # violation file
+  local violation_file=$1 status
+  set +e
+  "$dispatch" __protocol-error --job "$job" --expect running --violation-file "$violation_file"
+  status=$?
+  set -e
+  [[ $status -eq 0 || $status -eq 3 ]]
+}
+
 wait_for_cli() { # child pid; sets cli_status and keeps liveness sidecars fresh
   local child=$1 tick=0 heartbeat_sleep
   heartbeat_sleep=$(adapter_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-100}") || return 2
@@ -325,13 +336,24 @@ if not candidates:
     raise SystemExit("no JSON return object found in runtime output")
 
 result = dict(max(candidates, key=lambda item: item[0])[1])
-if result.get("sessionId") is None:
-    result["sessionId"] = session_id
+observed_session = session_id or "unobserved"
+observed_model = record.get("effectiveModel") or "unobserved"
 model = result.get("model")
 if isinstance(model, dict):
     model = dict(model)
-    model["effective"] = record.get("effectiveModel")
+    claimed = dict(result.get("claimed")) if isinstance(result.get("claimed"), dict) else {}
+    if result.get("sessionId") not in (None, observed_session) and isinstance(result.get("sessionId"), str):
+        claimed["sessionId"] = result["sessionId"]
+    if model.get("effective") not in (None, observed_model) and isinstance(model.get("effective"), str):
+        claimed["model"] = model["effective"]
+    result["sessionId"] = observed_session
+    model["effective"] = observed_model
     result["model"] = model
+    if result.get("schemaVersion") == 2:
+        if claimed:
+            result["claimed"] = claimed
+        else:
+            result.pop("claimed", None)
 
 Path(output_path).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 Path(markdown_path).write_text(
@@ -341,7 +363,7 @@ PY
 }
 
 complete_from_cli() { # cli status, usage file, candidate file, optional transcript
-  local status=$1 usage_file=$2 candidate=$3 transcript=${4:-}
+  local status=$1 usage_file=$2 candidate=$3 transcript=${4:-} violation="$round_dir/protocol-violation.txt"
   if (( status != 0 )); then
     if (( handshake_done )); then
       finish_running failed runtime_error runtime "$usage_file"
@@ -354,49 +376,57 @@ complete_from_cli() { # cli status, usage file, candidate file, optional transcr
     fail_pending handshake_missing_session_id handshake "$usage_file"
     return 1
   fi
-  if ! normalize_return "$candidate" "$transcript" >>"$log" 2>&1; then
-    finish_running failed protocol_error validation "$usage_file"
+  if ! normalize_return "$candidate" "$transcript" >"$violation" 2>&1; then
+    printf 'return normalization failed: ' | cat - "$violation" >"$violation.tmp"
+    mv "$violation.tmp" "$violation"
+    cat "$violation" >>"$log"
+    finish_protocol_error "$violation"
     return 1
   fi
-  if "$root/scripts/assert-return-complete.sh" --job "$job" >>"$log" 2>&1; then
+  if "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1; then
+    rm -f "$violation"
     finish_running completed null completed "$usage_file"
   else
-    finish_running failed protocol_error validation "$usage_file"
+    cat "$violation" >>"$log"
+    finish_protocol_error "$violation"
     return 1
   fi
 }
 
-configuration_hash() { # declared settings files
-  python3 - "$@" <<'PY'
-import hashlib, sys
-from pathlib import Path
-digest = hashlib.sha256()
-for raw in sys.argv[1:]:
-    path = Path(raw).expanduser().resolve(strict=False)
-    digest.update(str(path).encode())
-    digest.update(b"\0")
-    try:
-        digest.update(path.read_bytes())
-    except OSError:
-        digest.update(b"<missing>")
-    digest.update(b"\0")
-print(digest.hexdigest()[:24])
+configuration_identity() { # runtime version declared settings files
+  local identity_runtime=$1 identity_version=$2
+  shift 2
+  "$root/scripts/agents/config-identity.py" \
+    --runtime "$identity_runtime" \
+    --version "$identity_version" \
+    --filter "$root/scripts/agents/adapters/$identity_runtime-config-filter.v1.json" \
+    "$@"
+}
+
+configuration_identity_field() { # identity JSON, field
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+value = json.loads(sys.argv[1])[sys.argv[2]]
+if isinstance(value, (dict, list)):
+    print(json.dumps(value, separators=(",", ":"), sort_keys=True))
+else:
+    print(value)
 PY
 }
 
-write_capability_snapshot() { # runtime version hash transports caps permissions envelope-enforcement
+write_capability_snapshot() { # runtime version hash transports caps permissions envelope-enforcement per-key-hashes
   local snapshot_runtime=$1 version=$2 config_hash=$3 transports=$4 caps=$5 permissions=$6
-  local envelope_enforcement=$7
+  local envelope_enforcement=$7 config_key_hashes=$8
   mkdir -p "$agents/capabilities"
   python3 - "$agents/capabilities" "$snapshot_runtime" "$version" "$config_hash" \
-    "$transports" "$caps" "$permissions" "$envelope_enforcement" <<'PY'
+    "$transports" "$caps" "$permissions" "$envelope_enforcement" "$config_key_hashes" <<'PY'
 import json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 directory = Path(sys.argv[1])
 runtime, version, config_hash = sys.argv[2:5]
-transports, capabilities, permissions, envelope_enforcement = map(json.loads, sys.argv[5:9])
+transports, capabilities, permissions, envelope_enforcement, config_key_hashes = map(json.loads, sys.argv[5:10])
 expected_enforcement_fields = {"writeRoots", "readRoots", "network"}
 if (
     not isinstance(envelope_enforcement, dict)
@@ -404,6 +434,11 @@ if (
     or any(value not in {"mapped", "notEnforced"} for value in envelope_enforcement.values())
 ):
     raise SystemExit("envelope enforcement declaration must map writeRoots, readRoots, and network to mapped or notEnforced")
+if (
+    not isinstance(config_key_hashes, dict)
+    or any(not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", value or "") for key, value in config_key_hashes.items())
+):
+    raise SystemExit("configuration key hashes must map dotted paths to SHA-256 hashes")
 captured = datetime.now(timezone.utc)
 date = captured.strftime("%Y%m%d")
 prefix = f"{runtime}-{version}-{config_hash}-{date}-"
@@ -418,6 +453,7 @@ value = {
     "runtime": runtime,
     "cliVersion": version,
     "configHash": config_hash,
+    "configKeyHashes": config_key_hashes,
     "capturedAt": captured.strftime("%Y-%m-%dT%H:%M:%SZ"),
     "sequence": sequence,
     "transports": transports,

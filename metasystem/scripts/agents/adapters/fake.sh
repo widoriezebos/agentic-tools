@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/adapters/fake.sh identity
+  scripts/agents/adapters/fake.sh config-identity
   scripts/agents/adapters/fake.sh signature
   scripts/agents/adapters/fake.sh probe [--profile current|old|unverified-network]
       [--age-days N]
@@ -14,6 +15,7 @@ Usage:
       --instance-tag <tag>
   scripts/agents/adapters/fake.sh cancel --job <job-id>
   scripts/agents/adapters/fake.sh selftest
+  scripts/agents/adapters/fake.sh local-config-paths
 
 The simulator reads FAKE:<behavior> markers from the assembled prompt.
 Supported behaviors include malformed-return, missing-session-id,
@@ -158,9 +160,10 @@ for line in Path(sys.argv[2]).read_text(encoding="utf-8").splitlines():
         mode = line.split(":", 1)[1].strip()
         break
 common = {
+  "schemaVersion": 2,
   "jobId": record["jobId"], "round": record["round"], "runtime": "fake",
-  "sessionId": record["sessionId"],
-  "model": {"requested": record["requestedModel"], "effective": record["effectiveModel"]},
+  "sessionId": record["sessionId"] or "unobserved",
+  "model": {"requested": record["requestedModel"], "effective": record["effectiveModel"] or "unobserved"},
   "evidence": [{"command": "fake protocol simulator", "observed": "canned role return", "level": "ran"}],
   "gaps": [], "mode": mode,
 }
@@ -191,11 +194,14 @@ PY
 }
 
 complete_valid() {
+  local violation="$round_dir/protocol-violation.txt"
   write_valid_return
-  if "$root/scripts/assert-return-complete.sh" --job "$job" >>"$log" 2>&1; then
+  if "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1; then
+    rm -f "$violation"
     cas_terminal completed null completed
   else
-    cas_terminal failed protocol_error validation
+    cat "$violation" >>"$log"
+    "$dispatch" __protocol-error --job "$job" --expect running --violation-file "$violation"
   fi
 }
 
@@ -303,10 +309,12 @@ PY
   if behavior_present malformed-return; then
     printf '{malformed\n' >"$round_dir/return.json"
     printf 'malformed return\n' >>"$log"
-    if "$root/scripts/assert-return-complete.sh" --job "$job" >>"$log" 2>&1; then
+    violation="$round_dir/protocol-violation.txt"
+    if "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1; then
       cas_terminal completed null completed
     else
-      cas_terminal failed protocol_error validation
+      cat "$violation" >>"$log"
+      "$dispatch" __protocol-error --job "$job" --expect running --violation-file "$violation"
     fi
     exit 0
   fi
@@ -377,6 +385,7 @@ envelope_enforcement = {
 }
 value = {
   "runtime": "fake", "cliVersion": "fake-1", "configHash": "fake-config-v1",
+  "configKeyHashes": {},
   "capturedAt": captured.strftime("%Y-%m-%dT%H:%M:%SZ"), "sequence": sequence,
   "transports": ["stdin", "file"], "capabilities": capabilities, "permissions": permissions,
   "envelopeEnforcement": envelope_enforcement, "profile": profile,
@@ -391,6 +400,9 @@ command=${1:-}
 [[ -n "$command" ]] || { usage; exit 2; }
 shift
 case "$command" in
+  local-config-paths)
+    (($# == 0)) || { usage; exit 2; }
+    ;;
   signature)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' \
@@ -403,6 +415,10 @@ case "$command" in
     # The fake has no runtime configuration inputs. Its deterministic identity
     # is deliberately fixed so fixtures can select snapshots without probing.
     printf 'fake-1 fake-config-v1\n'
+    ;;
+  config-identity)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' '{"cliVersion":"fake-1","configHash":"fake-config-v1","configKeyHashes":{},"runtime":"fake"}'
     ;;
   probe) probe "$@" ;;
   dispatch|follow-up) supervise "$command" "$@" ;;
