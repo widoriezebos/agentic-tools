@@ -1,7 +1,7 @@
 # One writer, safe readers: sessions sharing a repository without interference
 
 - Goal and current status: exactly one main session holds the write role per checkout, enforced mechanically; every other session is a first-class read-only advisor; a second session that wants to write gets a paved one-command path to its own worktree. Closes KI-21 as experienced and KI-22. Status: CONSOLIDATED REWRITE incorporating the MV-1 verification findings — one voice, no superseded text; awaiting verification round 2 on chain design-critic-20260807t094616z-ac0a.
-- Next step: implementation through the loop (the human's ruling of 2026-08-07: fold the nine, implement, code-critic verifies against real code)
+- Next step: implementation follow-up (D-11 with the appendix data, plus the process-sensitive fixtures) — then the Fable code-critique of the whole
 - In flight right now: nothing
 - Waiting on: nothing. The human ruled: fold and implement. The verification chain retains its final budgeted round, spendable over the implemented design if ever wanted. Devin stays PARKED.
 
@@ -228,6 +228,26 @@ rides the loop. The filter
 removes FALSE churn only: a peer changing real behavior (saving a default
 model) rightly churns identity, and the refusal names the changed keys.
 Per-main configuration isolation is recorded future work.
+
+## Appendix: initial filter data (D-11), evidence-cited, orchestrator-authored
+
+The gap-stop of implementer-20260807t103103z-fc4f was correct: filter
+contents are identity policy and belong to the design. Version 1, every
+entry citing its evidence, expandable only through the loop:
+
+- `codex-config-filter.v1.json`: cliVersionRange {min: "0.146.0",
+  max: "0.146.x"}; keys: `notice` (reason: CLI-written seen-notice state;
+  source: observed churn 2026-08-07 07:28, hash 18973d75→1ed2c21e with no
+  behavior change, register row KI-19), `notice.model_migrations` (same
+  incident), `tui.model_availability_nux` (same incident, TUI first-run
+  flag).
+- `claude-config-filter.v1.json`: cliVersionRange {min: "2.1.0",
+  max: "2.1.x"}; keys: EMPTY — no per-key churn record exists yet for
+  claude (tonight's claude hash change coincided with a version bump,
+  which must churn); the empty list means claude keeps full-hash behavior
+  until an observed record names a bookkeeping key.
+- `devin-config-filter.v1.json`: keys empty, range matching the probed
+  version at implementation time; full-hash behavior.
 
 ## Residuals, accepted in writing
 
