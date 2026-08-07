@@ -1851,7 +1851,7 @@ PY
   python3 - "$agent_repo/artifacts/agents/jobs/flag-runtime.json" <<'PY'
 import json, sys
 record = json.load(open(sys.argv[1])); assert record["runtime"] == "fake" and record["overridden"] is True
-assert record["reviews"] == "review-target"
+assert record["reviews"] == "review-target", record
 PY
   investigator_brief="$agent_fixture/investigator.md"
   make_agent_brief "$investigator_brief" take-a-step-back
@@ -1935,7 +1935,7 @@ PY
   python3 - "$agent_repo/artifacts/agents/jobs/launch-window.json" <<'PY'
 import json, sys
 record = json.load(open(sys.argv[1]))
-assert record["status"] == "failed" and record["error"] == "process-lost" and record["phase"] == "supervision"
+assert record["status"] == "failed" and record["error"] == "process-lost" and record["phase"] == "supervision", record
 PY
 
   pending_loss_brief="$agent_fixture/pending-loss.md"

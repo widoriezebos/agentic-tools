@@ -1263,7 +1263,15 @@ PY
 
 reap_one() { # job
   local job=$1 result
-  acquire_lifecycle_lock "$job" || return 0
+  # A standing reaper that finds the lock busy simply comes back on its next
+  # tick. An explicit `reap --job` has no next tick: skipping silently returns
+  # success to a caller whose job was never looked at, which is how a reap that
+  # raced the standing reaper reported nothing and changed nothing.
+  if (( standing_reaper )); then
+    acquire_lifecycle_lock "$job" || return 0
+  else
+    acquire_lifecycle_lock_until "$job" 5 || return 1
+  fi
   set +e
   reap_one_locked "$job"
   result=$?
