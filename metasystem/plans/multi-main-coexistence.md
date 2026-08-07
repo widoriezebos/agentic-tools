@@ -1,7 +1,8 @@
 # Multi-main coexistence: two sessions, one repository, no interference
 
 - Goal and current status: two main agents in one checkout can no longer interfere — streams carry mechanical owners, the working tree has one writer, the turn-end hook commands only work that is yours to start, and a delegate's identity claim can never overwrite what the adapter observed. Closes KI-21 and KI-22. Status: IN CRITIQUE, round 2 RECEIVED AND OPEN — 14 material findings (MM-2-1..14) in artifacts/agents/design-critic-20260807t081739z-df4e/rounds/2/return.json, none dispositioned yet. Round counts rising (13 then 14) is the validity chain's divergence pattern: judge at fold time whether this is one design or two — the deep protocol parts (mainId identity, return-schema versioning, adoption atomicity) overlap the parked mission-completion-protocol stream and may belong there.
-- Next step: none in this session — this context is at its floor and a fourteen-finding structural fold done here would be exactly the fatigue-quality failure the loop exists to prevent
+- Next step: none
+- Why paused here: this context is at its floor; a fourteen-finding structural fold at the tail would be the fatigue-quality failure the loop exists to prevent
 - Waiting on: the next fresh-context session, whose FIRST act is: fold MM-2-1..14 by rewrite (never layered amendments); the sharpest are MM-2-5 (the commit guard as designed refuses the HUMAN's own commits — any fix must exempt or recognize human callers), MM-2-4 (the ancestry premise is wrong), MM-2-1 (lease expiry mid-turn), MM-2-12 (returns lack a version discriminator). Then dispositions, join, sync critic worktree, round 3.
 - In flight right now: nothing — the critique chain is between rounds, orchestrator adjudicating (the supported IL-16 state)
 - Waiting on: nothing. Devin integration is PARKED by the human's decision of 2026-08-07 until this design is implemented and proven.
