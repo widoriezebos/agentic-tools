@@ -7,6 +7,13 @@
 
 ## Queued
 
+0. **Finish KI-24's fixture alignment, then push the batch.** The only thing
+   between the current state and a green, pushed, production-ready base. The
+   remaining shape: fixture phases that perform holder-only writes must run
+   under a real announced main identity, not a simulated-agent ancestor. After
+   green: full suite, kit gate, push all sixteen commits, then Devin.
+
+
 1. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
    next retro's change gate).** A chain closes on a round with zero
    UNREFUTED material findings: each refutation carries evidence, survives
