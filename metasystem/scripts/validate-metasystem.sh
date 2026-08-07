@@ -1915,7 +1915,10 @@ record.update({
     "sessionEstablishedTimeoutSec": 60,
     "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 })
-for key in ("ownershipProof", "chainUsage"):
+# This record has not launched, so it carries no launch-time stamps: the
+# handshake deadline among them, which is stamped when a dispatcher starts
+# waiting on an adapter it just started.
+for key in ("ownershipProof", "chainUsage", "handshakeDeadline"):
     record.pop(key, None)
 Path(sys.argv[2]).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 Path(sys.argv[3]).write_text(json.dumps({**record, "status": "pending"}, indent=2, sort_keys=True) + "\n")

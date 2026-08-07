@@ -899,16 +899,25 @@ PY
     sleep "$poll_sleep"
   done
   patch=$(mktemp "$record_locks/launch.XXXXXX")
-  python3 - "$patch" "$pid" "$pid_started" "$tag" <<'PY'
-import json, sys
+  # The handshake deadline is stamped HERE, at launch, because that is when the
+  # dispatcher starts waiting. Derived from the record's creation time instead,
+  # the reaper's copy of the same deadline ran early by however long setup took,
+  # and the backstop then overwrote the dispatcher's own verdict.
+  handshake_budget=$(json_field "$jobs/$job.json" sessionEstablishedTimeoutSec 2>/dev/null || echo 0)
+  python3 - "$patch" "$pid" "$pid_started" "$tag" "$handshake_budget" <<'PY'
+import json, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 pid = int(sys.argv[2])
 pid_started = int(sys.argv[3])
-Path(sys.argv[1]).write_text(json.dumps({
+budget = int(sys.argv[5]) if sys.argv[5].isdigit() else 0
+value = {
   "pid": pid, "pidStartedAt": pid_started, "pgid": pid,
   "ownershipProof": {"pid": pid, "pidStartedAt": pid_started, "pgid": pid, "instanceTag": sys.argv[4], "provenAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "source": "trusted-launcher"},
-}) + "\n")
+}
+if budget > 0:
+    value["handshakeDeadline"] = int(time.time()) + budget
+Path(sys.argv[1]).write_text(json.dumps(value) + "\n")
 PY
   record_cas "$job" pending pending "$patch" || return 1
   touch "$gate"
@@ -1173,7 +1182,7 @@ PY
 }
 
 reap_one_locked() { # job
-  local job=$1 record="$jobs/$1.json" status pid tag started cap handshake_budget session pending_age elapsed patch root_id mission record_epoch lease_epoch
+  local job=$1 record="$jobs/$1.json" status pid tag started cap handshake_budget handshake_deadline session pending_age elapsed patch root_id mission record_epoch lease_epoch
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
@@ -1206,6 +1215,7 @@ reap_one_locked() { # job
   started=$(json_field "$record" startedAt 2>/dev/null || true)
   cap=$(json_field "$record" capMin 2>/dev/null || true)
   handshake_budget=$(json_field "$record" sessionEstablishedTimeoutSec 2>/dev/null || true)
+  handshake_deadline=$(json_field "$record" handshakeDeadline 2>/dev/null || true)
   session=$(json_field "$record" sessionId 2>/dev/null || true)
   # A job is inside its handshake while it has no session, whether its record
   # still says pending or an adapter has already moved it to running. Reading
@@ -1213,22 +1223,28 @@ reap_one_locked() { # job
   # is precisely where a runtime that never signals ends up.
   if [[ ( "$status" == pending || ( "$status" == running && ( -z "$session" || "$session" == null ) ) ) \
       && "$handshake_budget" =~ ^[1-9][0-9]*$ ]]; then
-    pending_age=$(python3 - "$started" <<'PY'
+    # The dispatcher owns the handshake verdict: it is the process that was
+    # waiting, and it names the failure handshake_timeout. The reaper is the
+    # backstop for a dispatcher that is no longer there, so it waits out the
+    # dispatcher's own deadline -- the one stamped at launch -- rather than
+    # recomputing a different one from the record's creation time.
+    if [[ "$handshake_deadline" =~ ^[1-9][0-9]*$ ]]; then
+      if (( $(date +%s) < handshake_deadline + handshake_backstop_grace_sec )); then
+        return
+      fi
+    else
+      pending_age=$(python3 - "$started" <<'PY'
 from datetime import datetime, timezone
 import sys
 try: started = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
 except ValueError: raise SystemExit(1)
 print(int((datetime.now(timezone.utc) - started).total_seconds()))
 PY
-    ) || true
-    # The dispatcher owns the handshake verdict: it is the process that was
-    # waiting, and it names the failure handshake_timeout. The reaper is the
-    # backstop for a dispatcher that is no longer there. Both fired at exactly
-    # the same age, so which diagnosis a record kept was a coin flip. The
-    # backstop waits out the dispatcher's own write instead.
-    if [[ "$pending_age" =~ ^-?[0-9]+$ ]] \
-      && (( pending_age < handshake_budget + handshake_backstop_grace_sec )); then
-      return
+      ) || true
+      if [[ "$pending_age" =~ ^-?[0-9]+$ ]] \
+        && (( pending_age < handshake_budget + handshake_backstop_grace_sec )); then
+        return
+      fi
     fi
   fi
   if ! job_supervisor_matches "$record"; then
@@ -2197,11 +2213,17 @@ internal_handshake_timeout() {
   [[ ${1:-} == --job && $# -eq 2 ]] || exit 2
   job=$2
   internal_authority holder-only "$job"
-  local record="$jobs/$job.json" patch
+  local record="$jobs/$job.json" patch status
+  # An adapter that starts and then never signals a session leaves the record
+  # in running, not pending. Writing the verdict only from pending meant this
+  # -- the exact case the handshake timeout exists for -- wrote nothing at all,
+  # and the reaper's backstop later called it process-lost instead.
+  status=$(json_field "$record" status 2>/dev/null || true)
+  case "$status" in pending|running) ;; *) return 0 ;; esac
   wind_down_group "$record" || return 1
   patch=$(mktemp "$record_locks/handshake.XXXXXX")
   printf '{"error":"handshake_timeout","phase":"handshake"}\n' >"$patch"
-  record_cas "$job" pending failed "$patch" || true
+  record_cas "$job" "$status" failed "$patch" || true
 }
 
 # Lock-owning public commands re-exec once so their lease tag is part of the
