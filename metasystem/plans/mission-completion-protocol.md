@@ -1,7 +1,8 @@
 # Mission completion, run identity, and the cohort machine
 
 - Goal and current status: the crash-recoverable protocol for how a mission ends — measurement persistence, chain closure, publication, run identity, and the cohort repetition machine, including the mission abandonment path that does not exist yet. Status: DRAFT seeded from the benchmark-validity chain's round-7 exhaustion; NOT yet critiqued as its own stream.
-- Next step: fresh design pass over the seven carried findings below, then critique from round 1 by the design-critic role (sol), with the critic worktree synced per KI-20's interim rule.
+- Next step: none in this session
+- Blocked by: the multi-main coexistence stream, which the human put first on 2026-08-07 (interference before everything); when that closes, a fresh-context session does the design pass over the seven carried findings, then critique from round 1 (sol, critic worktree synced per KI-20)
 - In flight right now: nothing
 - Waiting on: a fresh working session — seven carried protocol findings deserve full context, not the tail of this one; the V-1/V-4 code-critique and merge complete first. The human's standing ratification of 2026-08-07 covers the closure work
 
