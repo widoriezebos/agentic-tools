@@ -61,9 +61,18 @@ always the first branch.
 O-3. A mission is driven by a CHAIN of short-lived processes, not one. The kit
 deliberately splits staging from the resume at the human sign boundary, so
 staging arms and exits, the human signs, and the resume arms again — a second
-process, a second `mainId`, over a now-dead holder. Any re-arm during the run
-adds more. Each succession is O-1's takeover against the mission's own
-predecessor.
+process, a second `mainId`, over a now-dead holder.
+
+O-3a. The DOMINANT chain is host turns, which the first version of this design
+missed. `launch_host` starts a fresh host process per TURN
+(`start_new_session=True`), and that process arms in the target and becomes the
+lease holder under its own per-process `mainId`. So every turn boundary is a
+succession, and a turn that ends with a delegate still running has that delegate
+swept by the next turn's host. Threading a lineage through the mission runner's
+OWN arming was therefore not enough: the first retry after the fix still showed
+`ownerLineage` defaulted to a `mainId` and two holder-death takeovers, because
+the holder was a host session, not the runner. Each succession is O-1's takeover
+against the mission's own predecessor.
 
 O-4. So a mission takes the lease from ITSELF, repeatedly, and each self-takeover
 cancels the delegate work the previous process had in flight. Nothing foreign
@@ -230,6 +239,13 @@ The mission runner already scopes its arming session to the mission
 stranger. Every process that arms for the same mission — staging, resume, any
 re-arm — must derive the SAME lineage from the mission id alone, so no token is
 stored or shared.
+
+Host turns inherit it rather than deriving it: `launch_host` exports
+`METASYSTEM_OWNER_LINEAGE`, which `arm-supervision.sh` takes as the default for
+`--owner-lineage`. The host's own arming (a session hook, not a call this code
+makes directly) therefore carries the mission's lineage without the host adapter
+knowing anything about lineages. That is what makes every turn of one mission
+the same logical writer.
 
 The lineage is DERIVED, not concatenated: `mission-<first 32 hex of
 sha256(missionId)>`, a fixed 40 characters. Concatenating the mission id would

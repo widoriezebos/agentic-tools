@@ -751,6 +751,14 @@ def launch_host(
     environment.update(
         {
             "METASYSTEM_MISSION_ID": mission,
+            # Every TURN launches a fresh host process, which arms in the target
+            # and becomes the lease holder under its own per-process mainId.
+            # Without a shared lineage the next turn's host takes the lease from
+            # its own dead predecessor and sweeps whatever delegates that turn
+            # left in flight -- the loop that cost bm-2 two of three delegates.
+            # The host's arming inherits this, so every turn of one mission is
+            # the same logical writer and succession renews instead.
+            "METASYSTEM_OWNER_LINEAGE": mission_lineage(mission),
             "METASYSTEM_MISSION_LEASE": str(lease),
             "METASYSTEM_MISSION_TURN": turn_id,
             "METASYSTEM_HOST_START_GATE": str(host_gate),

@@ -213,4 +213,54 @@ grep -Fq "refusing to replace it" "$tmp/conflict.err" || {
   exit 1
 }
 
+# The bm-2 scenario itself: consecutive HOST TURNS are separate processes that
+# each arm and hold the lease. A turn that ends with a delegate still running
+# must not have it swept by the next turn's host. The lineage reaches those
+# processes through the environment, because a host's arming is a session hook
+# rather than a call this code makes.
+turns="$tmp/turns"
+mkdir -p "$turns"
+git -C "$turns" init -q .
+mkdir -p "$turns/artifacts/agents/jobs"
+cat >"$tmp/turn.sh" <<EOS
+start=\$(python3 -c "
+import importlib.util, pathlib
+spec = importlib.util.spec_from_file_location('wl', '$helper')
+wl = importlib.util.module_from_spec(spec); spec.loader.exec_module(wl)
+print(wl.started_at(pathlib.Path('$turns'), \$\$))")
+python3 "$helper" --root "$turns" announce --session "host-\$\$" --pid \$\$ \
+  --start "\$start" --tag metasystem-host-turn --runtime claude \
+  \${METASYSTEM_OWNER_LINEAGE:+--owner-lineage "\$METASYSTEM_OWNER_LINEAGE"} >/dev/null
+EOS
+export METASYSTEM_OWNER_LINEAGE=mission-fixture-lineage
+bash "$tmp/turn.sh"
+printf '%s\n' '{"jobId":"inflight","status":"pending","claimEpoch":1,"mainId":"m","role":"r","runtime":"devin"}' \
+  >"$turns/artifacts/agents/jobs/inflight.json"
+bash "$tmp/turn.sh"
+unset METASYSTEM_OWNER_LINEAGE
+python3 - "$turns" <<'PY'
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+lease = json.loads((root / "artifacts/agents/mains/worktree-lease.json").read_text())
+job = json.loads((root / "artifacts/agents/jobs/inflight.json").read_text())
+failures = []
+if lease["claimEpoch"] != 1:
+    failures.append("a second host turn must renew, not bump the epoch")
+if lease["takeovers"]:
+    failures.append("a second host turn of the same mission is not a takeover")
+if job["status"] != "pending":
+    failures.append("a delegate left in flight across a turn boundary must survive")
+for line in failures:
+    print(f"lease succession fixture failed: {line}", file=sys.stderr)
+raise SystemExit(1 if failures else 0)
+PY
+
+# The wiring itself: if launch_host stops exporting the lineage, host turns go
+# back to taking the lease from each other and this whole fix is inert.
+grep -Fq 'METASYSTEM_OWNER_LINEAGE": mission_lineage(mission)' "$root/scripts/agents/mission-runner.sh" || {
+  echo "lease succession fixture failed: launch_host no longer exports the mission lineage" >&2
+  exit 1
+}
+
 echo "lease succession fixtures: PASSED"
