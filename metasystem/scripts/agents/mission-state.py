@@ -462,8 +462,20 @@ def command_anchor(args: argparse.Namespace) -> None:
         f"Mission-Ledger-Path: {ledger_relative}\n"
         f"Mission-Cycle: {cycles}"
     )
+    # The anchor is a lease-holder mutation. If the target carries the
+    # pre-commit guard (an adopted repo, e.g. a benchmark target), a raw commit
+    # is refused: the guard requires the commit wrapper, which establishes the
+    # holder token. Route through the wrapper there; a repo without the guard
+    # (the template, a fixture sandbox) has no wrapper requirement, so a raw
+    # commit is correct and keeps those green.
+    guard = args.repo / ".git" / "hooks" / "pre-commit"
+    wrapper = args.repo / "scripts" / "agents" / "commit.sh"
+    if guard.exists() and wrapper.exists():
+        commit_command = [str(wrapper), "--allow-empty", "-m", subject, "-m", body]
+    else:
+        commit_command = ["git", "-C", str(args.repo), "commit", "--allow-empty", "-m", subject, "-m", body]
     for attempt in range(6):
-        result = git(args.repo, "commit", "--allow-empty", "-m", subject, "-m", body, check=False)
+        result = subprocess.run(commit_command, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             break
         if "index.lock" not in (result.stderr or "") or attempt == 5:
