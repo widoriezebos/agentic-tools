@@ -1,1 +1,5 @@
 .runs/
+
+# Benchmark run records are per-run outputs, not source. Committing one also
+# broke the kit gate, which picked an arbitrary record from this directory.
+results/

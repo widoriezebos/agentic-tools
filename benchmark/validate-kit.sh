@@ -418,10 +418,16 @@ PY
     && sed -n '3p' "$cohort_output" | grep -q '^Sign it: ' \
     && sed -n '4p' "$cohort_output" | grep -q '^Resume it: ' \
     || { echo "benchmark cohort: printed human boundary is incomplete" >&2; exit 1; }
-  cohort_record=$(find "$srcrepo/benchmark/results/cohorts" -maxdepth 1 -type f -name '*.json' -print -quit)
-  [[ -n "$cohort_record" ]] \
-    || { echo "benchmark cohort: cohort record is missing" >&2; exit 1; }
-  cohort_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["cohortId"])' "$cohort_record")
+  # Take the id from the cohort THIS gate just staged, not from whatever file
+  # happens to sort first: any run record left in the source tree would
+  # otherwise be picked and its target looked for in this gate's temp trials
+  # root, where it does not exist. The Resume line is already validated above.
+  cohort_id=$(sed -n '4p' "$cohort_output" | awk '{print $NF}')
+  [[ -n "$cohort_id" ]] \
+    || { echo "benchmark cohort: could not read the staged cohort id" >&2; exit 1; }
+  cohort_record="$srcrepo/benchmark/results/cohorts/$cohort_id.json"
+  [[ -f "$cohort_record" ]] \
+    || { echo "benchmark cohort: cohort record is missing for $cohort_id" >&2; exit 1; }
   cohort_target=$cohort_trials_root/cohorts/$cohort_id/targets/1
   track_armed_supervision "$cohort_target"
   python3 - "$cohort_record" "$cohort_target/artifacts/agents/benchmark-identity.json" \
