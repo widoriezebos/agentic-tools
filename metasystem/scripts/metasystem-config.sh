@@ -193,6 +193,14 @@ for key, value in values.items():
             errors.append(f"{key} entry {member!r} names a runtime outside metasystem.runtimes")
         tier_members.append(member)
 tier_counts = Counter(tier_members)
+# Tiers must be contiguous from 1. Dispatch scans until the first missing index,
+# so a gap would silently truncate the ranking (model.tier.1,3 would hide 3).
+tier_indices = sorted(int(tier_key.fullmatch(k).group(1)) for k in tier_keys)
+if tier_indices and tier_indices != list(range(1, len(tier_indices) + 1)):
+    errors.append(
+        "model tiers must be numbered contiguously from 1 (no gaps); found "
+        + ", ".join(str(i) for i in tier_indices)
+    )
 
 plain_model = re.compile(r"^role\.([a-z0-9-]+)\.model\.([a-z0-9-]+)$")
 mode_model = re.compile(r"^mode\.([a-z0-9-]+)\.role\.([a-z0-9-]+)\.model\.([a-z0-9-]+)$")
@@ -284,8 +292,56 @@ PY
 command=${1:-}
 [[ -n "$command" ]] || { usage; exit 2; }
 shift
+keys_matching() { # --prefix <p>
+  local prefix=
+  while (($#)); do
+    case "$1" in
+      --prefix) [[ $# -ge 2 ]] || { usage; exit 2; }; prefix=$2; shift 2 ;;
+      *) usage; exit 2 ;;
+    esac
+  done
+  [[ -n "$prefix" ]] || die 2 "keys requires --prefix"
+  # Union of keys present in the base file and the .local override, matching the
+  # prefix. This is how a caller enumerates a family (e.g. model.tier.) without
+  # probing a fixed numeric range, so no arbitrary cap can hide a configured key.
+  python3 - "$config" "$prefix" <<'PY'
+import sys
+from pathlib import Path
+prefix = sys.argv[2]
+seen = []
+for base in (sys.argv[1], sys.argv[1] + ".local"):
+    path = Path(base)
+    if not path.is_file():
+        continue
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key.startswith(prefix) and key not in seen:
+            seen.append(key)
+# The resolver also honours per-key environment overrides, so a key present only
+# in the environment is a real key. Enumerate the numeric-suffix members of the
+# family from the environment too -- the shape model.tier.<n> maps to
+# METASYSTEM_MODEL_TIER_<n> -- so an env-only tier is not invisible to callers
+# that enumerate the family (which would otherwise miss it and skip its gap).
+import os, re
+env_prefix = "METASYSTEM_" + prefix.upper().replace(".", "_").replace("-", "_")
+for name in os.environ:
+    if name.startswith(env_prefix):
+        suffix = name[len(env_prefix):]
+        if re.fullmatch(r"[0-9]+", suffix):
+            key = prefix + suffix
+            if key not in seen:
+                seen.append(key)
+for key in seen:
+    print(key)
+PY
+}
+
 case "$command" in
   get) get_value "$@" ;;
+  keys) keys_matching "$@" ;;
   validate) (($# == 0)) || { usage; exit 2; }; validate_config ;;
   -h|--help) usage ;;
   *) usage; exit 2 ;;

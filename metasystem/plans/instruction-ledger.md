@@ -34,3 +34,23 @@ Standing ledger of instruction changes adopted by retros (`skills/retro/SKILL.md
 Period numbers, retro-2026-08-07: 32 receipts over 1.4 days, 30 shipped, 2 parked, 25 corrections, 16 caught by verify, 2 stop-loss, 0 critique waivers. Highlights: the collaboration loop designed, four-times closed, implemented and merged through itself; V-1/V-4 shipped with the first fully mechanical code-critique; benchmark trials 002 through 006 (0.981 solo, 0.019 luna loop, 0.981 luna-build with opus critics); four register rows born from live evidence (KI-19..22); the peer-session incident and its transcript.
 
 Period numbers, retro-2026-08-05: 44 receipts over 1.6 days, 42 shipped, 1 parked, 41 corrections, 6 caught by verify, 1 stop-loss. 97 commits: 80 touched plans or docs, 39 touched scripts or benchmark, 24 touched both. Mission Zero completed; the BM-1 case, its grader and its calibration shipped; two critique chains closed by join.
+
+## IL-24 — a dispatch that ends a turn arms its own wake-up (2026-08-08)
+
+A delegate finished at 06:50 and was noticed at 07:38, because the turn that
+dispatched it ended without arming a completion waiter. The orchestrator is
+turn-based: it stops when a turn ends and resumes only when something wakes it.
+A running delegate is not that something.
+
+Forty-seven minutes of a wall-clock-expensive loop were lost to it, and the
+human found it before the system did — they asked whether the work had really
+been running, having noticed it completed the moment they spoke.
+
+**The rule:** any dispatch or long-running command that the orchestrator will
+not sit and watch arms a background waiter in the same turn, so its completion
+wakes the orchestrator. A turn may end with work in flight; it may not end with
+work in flight and nothing watching for it.
+
+**Why here and not in prose elsewhere:** the metasystem already refuses a turn
+that ends with open work in a plan. This is the same failure one level up — the
+work was not open, it was finished, and no one was listening.

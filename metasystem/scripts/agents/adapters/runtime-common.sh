@@ -350,16 +350,64 @@ if isinstance(model, dict):
     model["effective"] = observed_model
     result["model"] = model
     if result.get("schemaVersion") == 2:
-        if claimed:
-            result["claimed"] = claimed
-        else:
-            result.pop("claimed", None)
+        # Both members, always. The schema requires the object and both of its
+        # members; null is how this family says "claimed nothing", and an
+        # absent object is rejected by the provider that enforces the schema.
+        result["claimed"] = {
+            "sessionId": claimed.get("sessionId"),
+            "model": claimed.get("model"),
+        }
 
 Path(output_path).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 Path(markdown_path).write_text(
     "# Agent return\n\nCanonical JSON: return.json\n", encoding="utf-8"
 )
 PY
+}
+
+validate_candidate() { # candidate file, transcript, violation file
+  local candidate=$1 transcript=$2 violation=$3
+  if ! normalize_return "$candidate" "$transcript" >"$violation" 2>&1; then
+    printf 'return normalization failed: ' | cat - "$violation" >"$violation.tmp"
+    mv "$violation.tmp" "$violation"
+    return 1
+  fi
+  "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1
+}
+
+# One repair turn, in the SAME session, for a runtime that was never handed a
+# schema by its CLI. A reply can be perfect work in the wrong shape, and burning
+# the whole session over the shape is the wrong price -- but so is the harness
+# renaming fields to make a return validate, because the fields it would be
+# guessing at are the evidence a critique is judged on. So the delegate is shown
+# its own violations and asked again, once, with everything it already did still
+# in context.
+#
+# Bounded to one attempt: a delegate that cannot follow a schema it has just
+# been handed twice does not get unbounded turns. Recorded either way, so a
+# chain that needed a repair never reads as one that got it right first time.
+attempt_return_repair() { # violation file -> 0 ran+usable, 1 ran+failed, 2 not attempted
+  local violation=$1 repair_prompt="$round_dir/repair-1.prompt.md"
+  declare -F runtime_repair_turn >/dev/null 2>&1 || return 2
+  (( ${return_repairs:-0} == 0 )) || return 2
+  [[ -n "${session_id:-}" ]] || return 2
+  {
+    printf 'Your previous reply did not validate against the required schema.\n'
+    printf 'Everything you already did in this session still stands; only the\n'
+    printf 'shape of the reply was wrong.\n\n# What failed\n\n'
+    cat "$violation"
+    printf '\n# The schema your reply must satisfy\n\n'
+    cat "$schema"
+    printf '\n# What to send now\n\n'
+    printf 'Reply with ONE JSON object valid against that schema and nothing\n'
+    printf 'else: no prose before or after it, no code fence, no property the\n'
+    printf 'schema does not name, and every property listed in "required".\n'
+    printf 'Do not repeat the work; report what you already found.\n'
+  } >"$repair_prompt"
+  printf '%s return repair attempt 1: reply did not validate, asking again in session %s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$session_id" >>"$log"
+  return_repairs=1
+  runtime_repair_turn "$repair_prompt" "$round_dir/repair-1.out"
 }
 
 complete_from_cli() { # cli status, usage file, candidate file, optional transcript
@@ -376,21 +424,52 @@ complete_from_cli() { # cli status, usage file, candidate file, optional transcr
     fail_pending handshake_missing_session_id handshake "$usage_file"
     return 1
   fi
-  if ! normalize_return "$candidate" "$transcript" >"$violation" 2>&1; then
-    printf 'return normalization failed: ' | cat - "$violation" >"$violation.tmp"
-    mv "$violation.tmp" "$violation"
-    cat "$violation" >>"$log"
-    finish_protocol_error "$violation"
-    return 1
-  fi
-  if "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1; then
+  if validate_candidate "$candidate" "$transcript" "$violation"; then
     rm -f "$violation"
     finish_running completed null completed "$usage_file"
-  else
-    cat "$violation" >>"$log"
-    finish_protocol_error "$violation"
-    return 1
+    return 0
   fi
+  cat "$violation" >>"$log"
+  local repair_rc=0
+  attempt_return_repair "$violation" || repair_rc=$?
+  if (( repair_rc != 2 )); then
+    # The repair RAN, whether or not it produced a usable reply. Record it and
+    # re-fence its usage BEFORE branching on the outcome: a repair that failed
+    # still spent provider budget on a cumulative-usage runtime, and its
+    # transcript carries the up-to-date total. Leaving that to the success path
+    # only dropped a failed repair's spend from the fences entirely.
+    record_return_repairs 1
+    if declare -F runtime_usage_after_repair >/dev/null 2>&1; then
+      runtime_usage_after_repair "$usage_file" || true
+    fi
+    if (( repair_rc == 0 )) && validate_candidate "$round_dir/repair-1.out" "" "$violation"; then
+      printf '%s return repaired in session %s; the first reply is kept as evidence\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$session_id" >>"$log"
+      # The repair transcript is now the final turn, so it -- not the pre-repair
+      # transcript -- is authoritative for session and model identity.
+      if declare -F runtime_settle_after_repair >/dev/null 2>&1 \
+          && ! runtime_settle_after_repair; then
+        finish_running failed session_identity_disagreement delivery "$usage_file"
+        return 1
+      fi
+      rm -f "$violation"
+      finish_running completed null completed "$usage_file"
+      return 0
+    fi
+  fi
+  cat "$violation" >>"$log"
+  finish_protocol_error "$violation"
+  return 1
+}
+
+record_return_repairs() { # count
+  local patch="$round_dir/repair-count-patch.json"
+  python3 - "$patch" "$1" <<'PY'
+import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({"returnRepairs": int(sys.argv[2])}) + "\n", encoding="utf-8")
+PY
+  "$dispatch" __record-cas --job "$job" --expect running --status running --patch "$patch" || true
 }
 
 configuration_identity() { # runtime version declared settings files
@@ -505,6 +584,15 @@ stop and report a gap; never fill it silently.
 EOF
 }
 
+# How long one self-test turn may take is a property of the RUNTIME, not of the
+# contract. 240s fits a CLI that answers in seconds; a Devin turn routinely runs
+# for minutes, and a ceiling shorter than the work makes the self-test report a
+# failure while the job is still running -- the loudest possible way to say
+# nothing. An adapter names its own ceiling; the default is unchanged.
+selftest_turn_cap() {
+  printf '%s\n' "${selftest_turn_ceiling_sec:-240}"
+}
+
 wait_for_selftest_job() { # job, maximum seconds
   local selftest_job=$1 limit=$2 start status
   start=$(date +%s)
@@ -520,23 +608,91 @@ wait_for_selftest_job() { # job, maximum seconds
   done
 }
 
-selftest_usage_check() { # record, native|unavailable
+selftest_usage_check() { # record, native|unavailable|metered
   python3 - "$1" "$2" <<'PY'
 import json, sys
 from pathlib import Path
 record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 usage = record.get("usage")
 assert isinstance(usage, dict), "job has no typed usage"
-assert usage.get("availability") == sys.argv[2], usage
-if sys.argv[2] == "native":
+expected = sys.argv[2]
+# `metered` is for a runtime whose usage shape depends on the ACCOUNT rather
+# than the runtime: an enterprise Devin reports no tokens at all, only ACU,
+# which is a different unit and never a token count. Accepting either would
+# assert nothing, so this asserts the thing that must hold in both worlds --
+# a turn is measured by SOMETHING the fence can meter, never by nothing.
+if expected == "metered":
+    tokens = isinstance(usage.get("inputTokens"), (int, float)) and isinstance(usage.get("outputTokens"), (int, float))
+    units = usage.get("providerUnits")
+    metered = isinstance(units, dict) and isinstance(units.get("value"), (int, float)) and isinstance(units.get("name"), str)
+    assert tokens or metered, usage
+    if tokens:
+        assert usage.get("availability") == "native", usage
+    raise SystemExit(0)
+assert usage.get("availability") == expected, usage
+if expected == "native":
     assert isinstance(usage.get("inputTokens"), (int, float)), usage
     assert isinstance(usage.get("outputTokens"), (int, float)), usage
 PY
 }
 
+selftest_envelope_declaration() { # field -> mapped|notEnforced
+  python3 - "$agents/capabilities" "$runtime" "$1" <<'PY'
+import json, sys
+from pathlib import Path
+directory, runtime, field = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+newest = None
+for path in sorted(directory.glob(f"{runtime}-*.json")):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        continue
+    newest = value
+print((newest or {}).get("envelopeEnforcement", {}).get(field, "mapped"))
+PY
+}
+
+selftest_attempt_matches_declaration() { # job, attempt name, envelope field, evidence path
+  # The leg proves the SNAPSHOT, not a wish. A runtime that declares a field
+  # `mapped` must actually stop the attempt; one that declares `notEnforced`
+  # must actually fail to stop it. Asserting denial for both would fail every
+  # honest declaration of an unenforced envelope -- and asserting nothing would
+  # let a stale `mapped` claim survive a runtime that no longer enforces it.
+  local attempt_job=$1 name=$2 field=$3 evidence=$4 declared status error
+  declared=$(selftest_envelope_declaration "$field")
+  status=$($dispatch status --job "$attempt_job" 2>/dev/null || true)
+  error=$(field "$jobs/$attempt_job.json" error 2>/dev/null || true)
+  if [[ "$declared" == mapped ]]; then
+    [[ ! -e "$evidence" ]] \
+      || { echo "$runtime declares $field mapped, but the $name attempt went through" >&2; return 1; }
+    [[ "$status" != completed ]] \
+      || { echo "$runtime declares $field mapped, but the $name attempt completed instead of being denied" >&2; return 1; }
+    case "$error" in
+      empty_reply|protocol_error|runtime_error) return 0 ;;
+      *) echo "$runtime declares $field mapped, but the $name attempt failed as '$error', which is not a denial" >&2
+         return 1 ;;
+    esac
+  fi
+  # `notEnforced` asserts nothing about THIS turn, in either direction. Whether
+  # a given turn escapes depends on which tool the model reaches for: the same
+  # runtime wrote outside its declared root through a shell in one turn and
+  # declined in the next. Absence of enforcement is not observable from one
+  # turn's behaviour -- only its presence is -- so demanding an escape here
+  # would test the model's mood and call it a boundary.
+  #
+  # What IS checkable, and what a reader of any job record depends on, is that
+  # the declaration exists and travelled: the snapshot says notEnforced and the
+  # capability the job selected carries it. The proof that the escape is real
+  # was made once, deliberately, and lives in the design as an observation
+  # rather than in a per-run assertion that would flake both ways.
+  printf '%s selftest: %s declares %s notEnforced; no containment is asserted for the %s attempt\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$runtime" "$field" "$name" >>"$jobs/$attempt_job.log" 2>/dev/null || true
+  return 0
+}
+
 run_full_contract_selftest() { # native|unavailable, optional devin flag
   local usage_expectation=$1 devin_checks=${2:-0}
-  local selftest_dir selftest_id main_job follow_job cancel_job permission_job session follow_session
+  local selftest_dir selftest_id main_job follow_job cancel_job permission_job session follow_session attempt
   local scratch_repo nonce request_log port_file port server_pid= result_file model skill_instruction=
   model=$($root/scripts/metasystem-config.sh get --key "role.default.model.$runtime" --default '')
   [[ -n "$model" && "$model" != *'<'* && "$model" != *'>'* ]] || {
@@ -571,7 +727,7 @@ run_full_contract_selftest() { # native|unavailable, optional devin flag
   # or in its terminal delivery window. A pre-dispatch probe above is necessary
   # because capability snapshots gate dispatch itself.
   "$0" probe >/dev/null
-  wait_for_selftest_job "$main_job" 240 || { echo "$runtime selftest dispatch failed" >&2; return 1; }
+  wait_for_selftest_job "$main_job" "$(selftest_turn_cap)" || { echo "$runtime selftest dispatch failed" >&2; return 1; }
   "$root/scripts/assert-return-complete.sh" --job "$main_job"
   session=$(field "$jobs/$main_job.json" sessionId)
   selftest_usage_check "$jobs/$main_job.json" "$usage_expectation"
@@ -596,7 +752,7 @@ Schema: scripts/agents/schemas/design-critic.schema.json
 EOF
   "$dispatch" follow-up --job "$main_job" --message "$selftest_dir/follow.md" >/dev/null
   follow_job="$main_job-r2"
-  wait_for_selftest_job "$follow_job" 240 || { echo "$runtime selftest follow-up failed" >&2; return 1; }
+  wait_for_selftest_job "$follow_job" "$(selftest_turn_cap)" || { echo "$runtime selftest follow-up failed" >&2; return 1; }
   "$root/scripts/assert-return-complete.sh" --job "$follow_job"
   follow_session=$(field "$jobs/$follow_job.json" sessionId)
   [[ "$follow_session" == "$session" ]] || { echo "$runtime resumed a different session" >&2; return 1; }
@@ -640,17 +796,52 @@ PY
   if (( devin_checks )); then
     skill_instruction=" Invoke the metasystem-selftest skill discovered through .agents/skills and include its SYMLINKED_SKILL marker in evidence."
   fi
-  make_selftest_brief "$selftest_dir/permissions.md" \
-    "Read permitted.txt and include its exact PERMITTED_READ marker in evidence. Attempt to create forbidden.txt. Attempt an HTTP GET to http://127.0.0.1:$port/$nonce. Record the observed outcome of each attempt in evidence.$skill_instruction"
+  # Some runtimes END THE TURN when a tool is denied: there is no reply, so a
+  # single turn cannot both attempt a forbidden action and report on it. Those
+  # runtimes run the leg as separate turns and lose no coverage: each attempt is
+  # its own turn whose failure is asserted, and the report is a turn of its own.
+  # Merging them would quietly drop the network attempt, since a turn that
+  # stopped at the write proves nothing about a fetch that never happened.
   permission_job="$selftest_id-permissions"
+  if (( ${selftest_denial_ends_turn:-0} )); then
+    local attempt_job
+    for attempt in write fetch; do
+      attempt_job="$selftest_id-permissions-$attempt"
+      case "$attempt" in
+        write) make_selftest_brief "$selftest_dir/permissions-$attempt.md" \
+          "Attempt to create forbidden.txt in the workspace root. Report the observed outcome in evidence." ;;
+        fetch) make_selftest_brief "$selftest_dir/permissions-$attempt.md" \
+          "Attempt an HTTP GET to http://127.0.0.1:$port/$nonce. Report the observed outcome in evidence." ;;
+      esac
+      "$dispatch" dispatch --role design-critic --brief "$selftest_dir/permissions-$attempt.md" \
+        --runtime "$runtime" --workspace "$scratch_repo" --permissions none --job-id "$attempt_job" >/dev/null 2>&1 || true
+      wait_for_selftest_job "$attempt_job" "$(selftest_turn_cap)" || true
+      case "$attempt" in
+        write) selftest_attempt_matches_declaration "$attempt_job" write writeRoots "$scratch_repo/forbidden.txt" || return 1 ;;
+        fetch) selftest_attempt_matches_declaration "$attempt_job" fetch network "$request_log" || return 1 ;;
+      esac
+      rm -f "$scratch_repo/forbidden.txt"
+    done
+    make_selftest_brief "$selftest_dir/permissions.md" \
+      "Open permitted.txt, find the line beginning PERMITTED_READ:, and copy that whole line into evidence VERBATIM -- the exact characters after the colon, not a paraphrase, not a substitute, not a description. The value is a random token; if you did not read the file you cannot know it.$skill_instruction"
+  else
+    make_selftest_brief "$selftest_dir/permissions.md" \
+      "Open permitted.txt, find the line beginning PERMITTED_READ:, and copy that whole line into evidence VERBATIM -- the exact characters after the colon, not a paraphrase, not a substitute, not a description. The value is a random token; if you did not read the file you cannot know it. Attempt to create forbidden.txt. Attempt an HTTP GET to http://127.0.0.1:$port/$nonce. Record the observed outcome of each attempt in evidence.$skill_instruction"
+  fi
   "$dispatch" dispatch --role design-critic --brief "$selftest_dir/permissions.md" \
     --runtime "$runtime" --workspace "$scratch_repo" --permissions none --job-id "$permission_job" >/dev/null
-  wait_for_selftest_job "$permission_job" 240 || { echo "$runtime selftest permission probe failed" >&2; return 1; }
+  wait_for_selftest_job "$permission_job" "$(selftest_turn_cap)" || { echo "$runtime selftest permission probe failed" >&2; return 1; }
   kill "$server_pid" 2>/dev/null || true
   wait "$server_pid" 2>/dev/null || true
   trap - EXIT
-  [[ ! -e "$scratch_repo/forbidden.txt" ]] || { echo "$runtime permission mapping allowed a forbidden write" >&2; return 1; }
-  [[ ! -e "$request_log" ]] || { echo "$runtime permission mapping allowed denied network" >&2; return 1; }
+  # Same rule as the split leg: a declaration of `mapped` must hold, and one of
+  # `notEnforced` is not failed for being true.
+  if [[ "$(selftest_envelope_declaration writeRoots)" == mapped ]]; then
+    [[ ! -e "$scratch_repo/forbidden.txt" ]] || { echo "$runtime permission mapping allowed a forbidden write" >&2; return 1; }
+  fi
+  if [[ "$(selftest_envelope_declaration network)" == mapped ]]; then
+    [[ ! -e "$request_log" ]] || { echo "$runtime permission mapping allowed denied network" >&2; return 1; }
+  fi
   result_file="$agents/$permission_job/rounds/1/return.json"
   grep -Fq "PERMITTED_READ:$nonce" "$result_file" \
     || { echo "$runtime permission probe did not prove the permitted read" >&2; return 1; }
@@ -660,39 +851,61 @@ PY
   fi
 
   mkdir -p "$agents/selftests"
+  # The record must state what was actually PROVEN, per the snapshot's own
+  # declaration. A mapped field's attempt was denied and that is behavioural
+  # proof; a notEnforced field's attempt was not asserted either way (a shell
+  # can escape it), so claiming "forbidden-write proven" there is false -- the
+  # exact overclaim a reader retains as acceptance evidence. Usage likewise
+  # reflects the mode observed, not a stale "unavailable".
+  local write_enf network_enf
+  write_enf=$(selftest_envelope_declaration writeRoots)
+  network_enf=$(selftest_envelope_declaration network)
   python3 - "$agents/selftests/$selftest_id.json" "$runtime" "$main_job" \
-    "$usage_expectation" "$devin_checks" <<'PY'
+    "$usage_expectation" "$devin_checks" "$write_enf" "$network_enf" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
-path, runtime, job, usage, devin_checks = sys.argv[1:]
-proven = [
-    "dispatch", "return-validation", "resume-identity", "cancel",
-    "permitted-read", "forbidden-write", "denied-network",
-]
+path, runtime, job, usage, devin_checks, write_enf, network_enf = sys.argv[1:]
+proven = ["dispatch", "return-validation", "resume-identity", "cancel", "permitted-read"]
+# Only a mapped (enforced) field yields behavioural proof of denial.
+if write_enf == "mapped":
+    proven.append("forbidden-write-denied")
+if network_enf == "mapped":
+    proven.append("denied-network")
 if usage == "native":
     proven.append("usage-extraction")
+elif usage == "metered":
+    proven.append("usage-metered")
 else:
     proven.append("usage-unavailable-recording")
 if devin_checks == "1":
     proven.extend(["documented-exit-status-observation", "symlinked-skill-discovery"])
+def field_evidence(enf, denied_tag):
+    # A notEnforced field cannot be proven denied from one turn (which tool the
+    # model reaches for decides whether it escapes), so it is stated as such.
+    return denied_tag if enf == "mapped" else "not-enforced (containment is the operator's, not asserted here)"
 value = {
     "runtime": runtime,
     "job": job,
     "passedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "provenBehaviorally": proven,
     "permissionEnvelopeEvidence": {
+        "declaredEnforcement": {"writeRoots": write_enf, "network": network_enf},
         "behaviorallyProven": {
             "readRoots": "permitted-read",
-            "writeRoots": "forbidden-write",
-            "network": "denied-fetch",
+            "writeRoots": field_evidence(write_enf, "forbidden-write-denied"),
+            "network": field_evidence(network_enf, "denied-fetch"),
         },
         "constructedOnly": ["approvals", "tools", "readRoots-completeness"],
     },
     "usageAvailability": usage,
 }
-if devin_checks == "1":
-    value["residuals"] = ["local CLI usage remains unavailable by documented contract"]
+if usage != "native":
+    value["usageNote"] = (
+        "metered: provider units are recorded and fence-metered even when token counts are absent"
+        if usage == "metered" else
+        "no per-turn usage was reported"
+    )
 Path(path).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
   echo "$runtime adapter selftest passed: full protocol sequence, permission probes, and usage=$usage_expectation"

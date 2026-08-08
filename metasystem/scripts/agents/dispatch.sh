@@ -605,36 +605,56 @@ print(values[0])
 PY
 }
 
-model_tier() { # runtime, model; prints 999999 if absent
-  python3 - "$root/metasystem.conf" "$1:$2" <<'PY'
-import re, sys
-from pathlib import Path
-wanted = sys.argv[2]
-tiers = []
-for raw in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
-    if "=" not in raw:
-        continue
-    key, value = (part.strip() for part in raw.split("=", 1))
-    match = re.fullmatch(r"model\.tier\.([1-9][0-9]*)", key)
-    if match and wanted in [item.strip() for item in value.split(",")]:
-        tiers.append(int(match.group(1)))
-print(tiers[0] if len(tiers) == 1 else 999999)
-PY
+# Tiers are read through the configuration resolver, not by parsing the
+# template. Reading metasystem.conf directly made every tier in
+# metasystem.conf.local invisible -- the file the system itself tells you to put
+# local settings in -- so a dispatch refused as "unrankable" pointed the caller
+# at a key they had already set, in the place they were told to set it.
+# Tiers are contiguous from 1 -- config validation refuses a gap -- so scanning
+# stops at the first missing index rather than at a fixed cap. A fixed cap
+# silently ignored model.tier.<cap+1> and beyond; there is no cap now, and a
+# non-contiguous config never reaches dispatch because validation rejects it.
+model_tier() { # runtime, model; prints 999999 if absent or ambiguous
+  local wanted="$1:$2" index=1 value found=0 rank=999999
+  while value=$(config_get --key "model.tier.$index" --default ''); [[ -n "$value" ]]; do
+    while IFS= read -r entry; do
+      entry="${entry#"${entry%%[![:space:]]*}"}"
+      entry="${entry%"${entry##*[![:space:]]}"}"
+      [[ "$entry" == "$wanted" ]] || continue
+      found=$((found + 1))
+      rank=$index
+    done < <(printf '%s\n' "${value//,/$'\n'}")
+    index=$((index + 1))
+  done
+  (( found == 1 )) && printf '%s\n' "$rank" || printf '999999\n'
+}
+
+# The configured tier indices, enumerated from the MERGED config the resolver
+# actually reads (base + .local), not probed over a fixed range. A fixed bound
+# was itself a cap: a tier above it would be silently dropped even though config
+# validation accepts any positive index. Enumerating the real keys removes the
+# cap entirely.
+configured_tier_indices() {
+  "$config" keys --prefix model.tier. 2>/dev/null \
+    | sed -n 's/^model\.tier\.\([1-9][0-9]*\)$/\1/p' | sort -n
 }
 
 model_tiers_configured() {
-  python3 - "$root/metasystem.conf" <<'PY'
-import re, sys
-from pathlib import Path
-for raw in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
-    line = raw.strip()
-    if not line or line.startswith("#") or "=" not in line:
-        continue
-    key = line.split("=", 1)[0].strip()
-    if re.fullmatch(r"model\.tier\.[1-9][0-9]*", key):
-        raise SystemExit(0)
-raise SystemExit(1)
-PY
+  [[ -n "$(configured_tier_indices)" ]]
+}
+
+# A gap is a config error, not a truncation: dispatch stops ranking at the first
+# missing index, so a gap in the merged config would silently drop every tier
+# above it. The set of present indices must be exactly 1..n.
+assert_tiers_contiguous() {
+  local indices expected=1 index
+  indices=$(configured_tier_indices)
+  for index in $indices; do
+    if (( index != expected )); then
+      die 1 "model tiers must be contiguous from 1: found index $index where $expected was expected (a gap would be silently ignored during ranking)"
+    fi
+    expected=$((expected + 1))
+  done
 }
 
 signed_dispatch_envelope_allows() { # mission id, exact runtime:model pair
@@ -1233,6 +1253,15 @@ reap_one_locked() { # job
     # backstop for a dispatcher that is no longer there, so it waits out the
     # dispatcher's own deadline -- the one stamped at launch -- rather than
     # recomputing a different one from the record's creation time.
+    # The window defers to a dispatcher that is still waiting. A supervisor that
+    # is provably gone will never complete a handshake, so there is nothing left
+    # to defer to and waiting out the budget only delays the true diagnosis.
+    #
+    # "Provably gone" needs the record to name a supervisor first. Between
+    # creating the record and the adapter publishing its identity there is no
+    # pid to match, and treating that absence as death reaped every job in its
+    # own launch window -- the supervisor had not died, it had not arrived.
+    if [[ -z "$pid" || "$pid" == null ]] || job_supervisor_matches "$record"; then
     if [[ "$handshake_deadline" =~ ^[1-9][0-9]*$ ]]; then
       if (( $(date +%s) < handshake_deadline + handshake_backstop_grace_sec )); then
         return
@@ -1250,6 +1279,7 @@ PY
         && (( pending_age < handshake_budget + handshake_backstop_grace_sec )); then
         return
       fi
+    fi
     fi
   fi
   if ! job_supervisor_matches "$record"; then
@@ -1370,6 +1400,7 @@ dispatch_job() {
   IFS='|' read -r mission lease mission_turn <<<"$mission_data"
   if [[ "$overridden" == true && "$requested_pair" != "$roster_pair" ]]; then
     if model_tiers_configured; then
+      assert_tiers_contiguous
       tiers_present=true
       roster_tier=$(model_tier "$roster_runtime" "$roster_model")
       requested_tier=$(model_tier "$runtime" "$model")
@@ -1410,6 +1441,12 @@ PY
     )
   fi
   valid_id "$job" || die 2 "invalid job id: $job"
+  # Preconditions BEFORE the id is reserved. The reservation record exists to
+  # stop two mains racing one job id; a refusal after it left a pending-setup
+  # husk that burned that id permanently, so a stale census cost the caller
+  # their chosen name as well as their dispatch.
+  require_fresh_census
+  report_plan_drift
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
   python3 - "$setup_json" "$job" "$role" "$current_main_id" "$current_claim_epoch" <<'PY'
 import json,sys
@@ -1424,8 +1461,6 @@ Path(path).write_text(json.dumps({
 PY
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$job" --source "$setup_json"
   rm -f "$setup_json"
-  require_fresh_census
-  report_plan_drift
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
   acquire_chain_lock "$job"
   trap 'release_chain_lock "$job"' EXIT
@@ -1822,13 +1857,33 @@ PY
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
   rm -f "$setup_json"
   if [[ "$role" == design-critic ]]; then
-    reviewed_commit=$(git -C "$repo_scope" rev-parse HEAD) \
-      || die 1 "design-critic follow-up cannot resolve the current commit"
-    if [[ "$(cd "$workspace" && pwd -P)" != "$repo_scope" ]]; then
-      [[ -z "$(git -C "$workspace" status --porcelain)" ]] \
-        || die 1 "design-critic follow-up cannot synchronize a dirty critic worktree"
-      git -C "$workspace" merge --ff-only -q "$reviewed_commit" \
-        || die 1 "design-critic follow-up cannot fast-forward its worktree to current commit $reviewed_commit"
+    # A critic's workspace is one of two different things, and treating them
+    # alike broke the second. A WORKTREE of this repository is synchronised to
+    # this repository's HEAD, because the design under review moved. A workspace
+    # that is its OWN repository -- a benchmark target, a scratch checkout -- has
+    # its own history, and this repository's HEAD is not a commit it has ever
+    # heard of: merging it produced "not something we can merge". The test that
+    # told them apart was "is the path different", which every separate
+    # repository also satisfies. The test is now shared history.
+    local workspace_git harness_git
+    workspace_git=$( (cd "$workspace" && git rev-parse --git-common-dir 2>/dev/null) || true)
+    harness_git=$( (cd "$repo_scope" && git rev-parse --git-common-dir 2>/dev/null) || true)
+    [[ -n "$workspace_git" ]] && workspace_git=$( (cd "$workspace" && cd "$workspace_git" && pwd -P) 2>/dev/null || true)
+    [[ -n "$harness_git" ]] && harness_git=$( (cd "$repo_scope" && cd "$harness_git" && pwd -P) 2>/dev/null || true)
+    if [[ -n "$workspace_git" && "$workspace_git" == "$harness_git" ]]; then
+      reviewed_commit=$(git -C "$repo_scope" rev-parse HEAD) \
+        || die 1 "design-critic follow-up cannot resolve the current commit"
+      if [[ "$(cd "$workspace" && pwd -P)" != "$repo_scope" ]]; then
+        [[ -z "$(git -C "$workspace" status --porcelain)" ]] \
+          || die 1 "design-critic follow-up cannot synchronize a dirty critic worktree"
+        git -C "$workspace" merge --ff-only -q "$reviewed_commit" \
+          || die 1 "design-critic follow-up cannot fast-forward its worktree to current commit $reviewed_commit"
+      fi
+    else
+      # An independent repository reviews its own head, and nothing is merged
+      # into it: this dispatcher does not own its history.
+      reviewed_commit=$(git -C "$workspace" rev-parse HEAD) \
+        || die 1 "design-critic follow-up cannot resolve the workspace commit"
     fi
   fi
   if [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic ]]; then
@@ -2218,7 +2273,7 @@ internal_handshake_timeout() {
   [[ ${1:-} == --job && $# -eq 2 ]] || exit 2
   job=$2
   internal_authority holder-only "$job"
-  local record="$jobs/$job.json" patch status
+  local record="$jobs/$job.json" patch status session
   # An adapter that starts and then never signals a session leaves the record
   # in running, not pending. Writing the verdict only from pending meant this
   # -- the exact case the handshake timeout exists for -- wrote nothing at all,
@@ -2230,34 +2285,55 @@ internal_handshake_timeout() {
   # backstop instead gave no clue which step dropped it. The job log says.
   printf '%s handshake-timeout entered status=%s\n' "$(now_iso)" "$status" >>"$jobs/$job.log"
   case "$status" in pending|running) ;; *) return 0 ;; esac
-  if ! wind_down_group "$record"; then
-    printf '%s handshake-timeout could not wind down the process group\n' "$(now_iso)" >>"$jobs/$job.log"
-    return 1
+  # Stand down BEFORE killing anything if a session already landed. The waiter
+  # gave up at the deadline and the adapter can record a session a moment later;
+  # a session in the record means the wait was won, just late. Winding down the
+  # group first killed that live, successful turn before this check could see it.
+  session=$(json_field "$record" sessionId 2>/dev/null || true)
+  if [[ -n "$session" && "$session" != null ]]; then
+    printf '%s handshake-timeout stood down; session %s landed before wind-down\n' \
+      "$(now_iso)" "$session" >>"$jobs/$job.log"
+    return 0
   fi
-  patch=$(mktemp "$record_locks/handshake.XXXXXX")
-  printf '{"error":"handshake_timeout","phase":"handshake"}\n' >"$patch"
-  # Compare-and-swap, so retry on a losing compare. An adapter moves the record
-  # from pending to running the moment it starts, which is exactly the window
-  # this verdict is written in: a single attempt against a status read moments
-  # earlier lost that race and dropped the verdict silently.
+  # Record the verdict BEFORE killing the group, not after. Winding down first
+  # left a gap in which the reaper swept, saw the freshly-killed supervisor as
+  # process-lost, and wrote that before this verdict landed -- the dispatcher
+  # owns the handshake verdict, so it claims the record first and kills the
+  # now-condemned group second. Compare-and-swap, so retry on a losing compare:
+  # an adapter moves the record pending->running in exactly this window. The
+  # record wrapper deletes the patch after each call, so each attempt makes its
+  # own.
+  local recorded=0
   for attempt in 1 2 3; do
     status=$(json_field "$record" status 2>/dev/null || true)
     case "$status" in
       pending|running) ;;
       *)
         printf '%s handshake-timeout stood down; record is already %s\n' "$(now_iso)" "$status" >>"$jobs/$job.log"
-        rm -f "$patch"
         return 0
         ;;
     esac
-    if record_cas "$job" "$status" failed "$patch"; then
-      printf '%s handshake-timeout recorded from %s\n' "$(now_iso)" "$status" >>"$jobs/$job.log"
-      rm -f "$patch"
+    session=$(json_field "$record" sessionId 2>/dev/null || true)
+    if [[ -n "$session" && "$session" != null ]]; then
+      printf '%s handshake-timeout stood down; session %s landed while it was being written\n' \
+        "$(now_iso)" "$session" >>"$jobs/$job.log"
       return 0
     fi
+    patch=$(mktemp "$record_locks/handshake.XXXXXX")
+    printf '{"error":"handshake_timeout","phase":"handshake"}\n' >"$patch"
+    if record_cas "$job" "$status" failed "$patch"; then
+      printf '%s handshake-timeout recorded from %s\n' "$(now_iso)" "$status" >>"$jobs/$job.log"
+      recorded=1
+      break
+    fi
   done
-  printf '%s handshake-timeout lost three compares; the record kept changing\n' "$(now_iso)" >>"$jobs/$job.log"
-  rm -f "$patch"
+  if (( ! recorded )); then
+    printf '%s handshake-timeout lost three compares; the record kept changing\n' "$(now_iso)" >>"$jobs/$job.log"
+    return 1
+  fi
+  # The verdict stands; cleaning up the stalled group is best-effort now.
+  wind_down_group "$record" \
+    || printf '%s handshake-timeout recorded, but the group did not wind down cleanly\n' "$(now_iso)" >>"$jobs/$job.log"
 }
 
 # Lock-owning public commands re-exec once so their lease tag is part of the

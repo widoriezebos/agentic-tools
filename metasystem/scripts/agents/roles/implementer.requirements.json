@@ -4,5 +4,13 @@
     "resume": {
       "fallback": "fresh dispatch with the prior brief, prior return, and correction embedded"
     }
+  },
+  "waivers": {
+    "readRoots": [
+      "devin"
+    ],
+    "writeRoots": [
+      "devin"
+    ]
   }
 }

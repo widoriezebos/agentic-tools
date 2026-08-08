@@ -258,15 +258,25 @@ def aggregate_usage(args: argparse.Namespace) -> None:
             if record.get("mission") != args.mission or record.get("status") not in TERMINAL:
                 continue
             usage = record.get("usage")
-            if not isinstance(usage, dict) or usage.get("availability") == "unavailable":
+            if not isinstance(usage, dict):
                 unavailable.append(record.get("jobId", path.stem))
                 continue
             provider = record.get("runtime", "unknown")
-            for field in ("inputTokens", "cachedInputTokens", "outputTokens", "reasoningTokens"):
-                value = usage.get(field)
-                if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
-                    key = (provider, f"tokens.{field}")
-                    units[key] = units.get(key, 0) + value
+            # `availability: unavailable` means no TOKEN counts, not "no usage".
+            # A runtime that reports provider units instead of tokens -- an
+            # enterprise Devin reporting ACU -- is measured, and gating the
+            # whole record on availability discarded that measurement before it
+            # was read, leaving the fence unable to stop a runaway mission on
+            # exactly the account that reports no tokens. Tokens depend on
+            # availability; provider units and cost are metered whenever present.
+            measured = False
+            if usage.get("availability") != "unavailable":
+                for field in ("inputTokens", "cachedInputTokens", "outputTokens", "reasoningTokens"):
+                    value = usage.get(field)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+                        key = (provider, f"tokens.{field}")
+                        units[key] = units.get(key, 0) + value
+                        measured = True
             cost = usage.get("cost")
             if (
                 isinstance(cost, dict)
@@ -277,6 +287,7 @@ def aggregate_usage(args: argparse.Namespace) -> None:
             ):
                 key = (provider, f"cost.{cost['currency']}")
                 units[key] = units.get(key, 0) + cost["amount"]
+                measured = True
             native = usage.get("providerUnits")
             if (
                 isinstance(native, dict)
@@ -287,6 +298,12 @@ def aggregate_usage(args: argparse.Namespace) -> None:
             ):
                 key = (provider, f"provider.{native['name']}")
                 units[key] = units.get(key, 0) + native["value"]
+                measured = True
+            # A record measured by nothing at all is the one the fence cannot
+            # bound; that, not "reported no tokens", is what belongs on the
+            # unavailable list.
+            if not measured:
+                unavailable.append(record.get("jobId", path.stem))
         value = {
             "schemaVersion": 1,
             "missionId": args.mission,

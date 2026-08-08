@@ -1,7 +1,8 @@
 # One writer, safe readers: sessions sharing a repository without interference
 
 - Goal and current status: exactly one main session holds the write role per checkout, enforced mechanically; every other session is a first-class read-only advisor; a second session that wants to write gets a paved one-command path to its own worktree. Closes KI-21 as experienced and KI-22. Status: CONSOLIDATED REWRITE incorporating the MV-1 verification findings — one voice, no superseded text; awaiting verification round 2 on chain design-critic-20260807t094616z-ac0a.
-- Next step: align the S4 fixtures with the authority matrix — the phases performing holder-only writes must run under a real announced main identity instead of a simulated-agent ancestor (KI-24's remainder). Then the full suite, the kit gate, and the push of the batch.
+- Next step: none
+- Closed 2026-08-07: the fixture alignment landed, the defects it surfaced are fixed (KI-24), both gates are green, and the batch is pushed.
 - In flight right now: nothing. The implementation is MERGED locally and certified (code-critic-20260807t113620z-539a, round 3, zero material over reviewedTree 7d0a0081). Sixteen commits are unpushed behind a red suite; twelve product defects found and fixed since the merge are among them.
 - Waiting on: nothing. The human ruled: fold and implement. The verification chain retains its final budgeted round, spendable over the implemented design if ever wanted. Devin stays PARKED.
 

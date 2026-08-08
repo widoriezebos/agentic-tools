@@ -15,13 +15,30 @@ def version_two(schema: dict) -> dict:
     value = json.loads(json.dumps(schema))
     value["$comment"] = "metasystem.version=2"
     value["title"] = value.get("title", "Agent return") + " version 2"
-    value["required"] = ["schemaVersion", *value["required"]]
+    # Every property is listed in `required`, which is both this family's own
+    # convention and what a provider's structured output enforces. "Nothing
+    # claimed" is expressed by null members, not by an absent object.
+    value["required"] = ["schemaVersion", "claimed", *value["required"]]
     properties = value["properties"]
-    properties["schemaVersion"] = {"const": 2}
+    # `type` alongside the value: a bare `const` is rejected by OpenAI
+    # structured output ("In context=('properties', 'schemaVersion'), schema
+    # must have a 'type' key").
+    properties["schemaVersion"] = {"type": "integer", "enum": [2]}
+    # Both members are listed in `required` and typed nullable, the same shape
+    # every other object in these schemas uses. An object schema without
+    # `required` is rejected outright by OpenAI structured output
+    # ("In context=('properties', 'claimed'), 'required' is required to be
+    # supplied"), which failed every codex delegate dispatch before the model
+    # produced a single token. Null means the agent claimed nothing for that
+    # member; the key's absence is not how this schema family says that.
     properties["claimed"] = {
         "type": "object",
         "additionalProperties": False,
-        "properties": {"sessionId": {"type": "string"}, "model": {"type": "string"}},
+        "required": ["sessionId", "model"],
+        "properties": {
+            "sessionId": {"type": ["string", "null"]},
+            "model": {"type": ["string", "null"]},
+        },
     }
     properties["sessionId"] = {"type": "string"}
     properties["model"]["properties"]["effective"] = {"type": "string"}

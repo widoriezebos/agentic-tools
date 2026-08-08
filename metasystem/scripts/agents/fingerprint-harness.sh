@@ -226,6 +226,17 @@ for ((iteration = 1; iteration <= iterations; iteration++)); do
     refusals=$((refusals + 1))
   elif (( status != 0 )); then
     echo "fingerprint harness dispatch failed outside the fingerprint gate" >&2
+    # A refusal names itself; anything else has to be shown, or this failure is
+    # a sentence with no cause attached.
+    printf 'dispatch exit status: %s\n' "$status" >&2
+    printf 'dispatch said (%s bytes):\n' "$(wc -c <"$output" | tr -d ' ')" >&2
+    sed -n '1,40p' "$output" >&2
+    printf 'job record:\n' >&2
+    python3 -c 'import json,sys
+v=json.load(open(sys.argv[1]))
+print("status:",v.get("status"),"error:",v.get("error"))
+pe=v.get("protocolError") or {}
+print("violation:",(pe.get("violation") or "")[:600])' "$repo/artifacts/agents/jobs/fingerprint-$iteration.json" >&2 2>/dev/null || true
     cat "$output" >&2
     exit 1
   fi

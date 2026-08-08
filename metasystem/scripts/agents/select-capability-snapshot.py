@@ -134,11 +134,38 @@ def select(args: argparse.Namespace) -> None:
             fallbacks.append({"capability": name, "fallback": declaration.get("fallback")})
     waivers = requirements.get("waivers", {})
     unverified = snapshot.get("permissions", {}).get("unverified", [])
+
+    # What counts as a RESTRICTION the runtime cannot enforce is per field, not
+    # one literal. The old rule fired only on the string "deny", but the two
+    # root fields are arrays and network/approvals/tools have their own most-
+    # permissive value, so a bounded grant sailed through unread: a job asked
+    # for a confined workspace, the runtime could not confine it, and nothing
+    # refused. A non-empty root array is a bounded grant; an empty writeRoots is
+    # not a restriction the runtime fails, because "no writes" is what denying
+    # the write tools already achieves.
+    def is_restrictive(field, value):
+        if field == "writeRoots":
+            if isinstance(value, list) and len(value) > 0:
+                return True
+            # An empty writeRoots normally means "no writes", enforced by
+            # denying the write tools. But a runtime whose write boundary is
+            # notEnforced can still write through a shell (it is granted exec to
+            # be usable at all), so "no writes" is not guaranteed and the human
+            # acceptance must be on record for THIS role -- otherwise a new role
+            # with empty writeRoots would dispatch an uncontained write-capable
+            # delegate with no waiver.
+            return envelope_enforcement.get("writeRoots") == "notEnforced"
+        if field == "readRoots":
+            return isinstance(value, list) and len(value) > 0
+        most_permissive = {"network": "allow", "approvals": "allow", "tools": "runtime-default"}
+        return field in most_permissive and value != most_permissive[field]
+
     for field in unverified:
-        if envelope.get(field) == "deny" and args.runtime not in waivers.get(field, []):
+        if is_restrictive(field, envelope.get(field)) and args.runtime not in waivers.get(field, []):
             raise SystemExit(
-                f"runtime cannot verify restrictive permission field {field}; "
-                "add an explicit role waiver or choose another runtime"
+                f"runtime {args.runtime} cannot enforce restrictive permission field {field} "
+                f"(requested {envelope.get(field)!r}); record a role waiver for {args.runtime} "
+                f"in {requirements_path.name} or choose another runtime"
             )
     result = {
         "path": str(path.relative_to(root)),

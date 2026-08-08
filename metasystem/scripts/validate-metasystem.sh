@@ -165,6 +165,7 @@ for link in \
   scripts/agents/mission-runner.sh \
   scripts/agents/hosts/claude.sh \
   scripts/agents/hosts/codex.sh \
+  scripts/agents/hosts/devin.sh \
   scripts/agents/hosts/fake.sh \
   scripts/agents/schemas/mission-state.schema.json \
   scripts/agents/adapters/fake.sh \
@@ -217,6 +218,7 @@ bash -n scripts/agents/mission-runner.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
+bash -n scripts/agents/hosts/devin.sh
 bash -n scripts/agents/hosts/fake.sh
 bash -n scripts/assert-mission.sh
 bash -n scripts/assert-return-complete.sh
@@ -285,7 +287,15 @@ grep -Fq '{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}' 
 grep -Fq '{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}' \
   scripts/agents/adapters/claude.sh \
   || { echo "claude adapter envelope enforcement declaration drifted" >&2; exit 1; }
-grep -Fq '{"writeRoots":"mapped","readRoots":"mapped","network":"notEnforced"}' \
+# Devin declares every member unenforced, and that is the measured truth rather
+# than a weakening. --sandbox is the only flag that would enforce roots at the
+# OS level and this organisation's policy refuses the mode it needs; with a
+# shell granted, a Devin turn wrote outside its declared write root and read
+# outside its declared read root. Both were demonstrated on 2026-08-08 and are
+# recorded in plans/devin-support.md as O-9 and O-10. Changing this line back
+# requires evidence that enforcement returned, which is exactly why the guard
+# is here.
+grep -Fq '{"writeRoots":"notEnforced","readRoots":"notEnforced","network":"notEnforced"}' \
   scripts/agents/adapters/devin.sh \
   || { echo "devin adapter envelope enforcement declaration drifted" >&2; exit 1; }
 for runtime in claude codex fake; do
@@ -2332,11 +2342,51 @@ PY
   # This refusal is about a runtime that cannot verify a field the envelope
   # restricts, so the envelope has to restrict it. Since the presets now grant
   # network, the request is made restrictive explicitly rather than by default.
-  agent_fails unverified-deny 'cannot verify restrictive permission field network' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id unverified-deny
-  perl -0pi -e 's/"optional": \{\}/"optional": {},\n  "waivers": {"network": ["fake"]}/' "$requirements"
+  agent_fails unverified-deny 'cannot enforce restrictive permission field network' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id unverified-deny
+  # Merge the network waiver into whatever waivers the role already declares
+  # (the shipped roles now waive readRoots/writeRoots for devin), rather than
+  # string-injecting a second waivers key and producing invalid JSON.
+  python3 - "$requirements" <<'PY'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1]); v = json.loads(p.read_text())
+v.setdefault("waivers", {}).setdefault("network", []).append("fake")
+p.write_text(json.dumps(v, indent=2) + "\n")
+PY
   run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id waived-deny --wait
   cp "$saved_requirements" "$requirements"
   "$fake_adapter" probe >/dev/null
+
+  # An EMPTY write scope is still restrictive on a runtime whose write boundary
+  # is notEnforced (it can write through a shell), so such a role is refused
+  # without a recorded writeRoots waiver and runs with one. Exercises the real
+  # selector against a laid-down snapshot -- no live CLI, no dispatch.
+  ew_caps="$agent_repo/artifacts/agents/capabilities"
+  mkdir -p "$ew_caps"
+  ew_snap="$ew_caps/ghostrt-1.0-20990101-001.json"
+  printf '%s\n' '{"runtime":"ghostrt","cliVersion":"1.0","capturedAt":"2099-01-01T00:00:00Z","configHash":"cfg1","configKeyHashes":{},"sequence":1,"transports":[],"capabilities":{"sessionEstablishedTimeoutSec":10},"permissions":{"unverified":["readRoots","writeRoots","network"]},"envelopeEnforcement":{"writeRoots":"notEnforced","readRoots":"notEnforced","network":"notEnforced"}}' >"$ew_snap"
+  ew_identity='{"runtime":"ghostrt","cliVersion":"1.0","configHash":"cfg1","configKeyHashes":{}}'
+  ew_env="$agent_fixture/empty-write-envelope.json"
+  printf '%s\n' '{"readRoots":[],"writeRoots":[],"network":"allow","approvals":"deny","tools":"read-only"}' >"$ew_env"
+  ew_role="$agent_repo/scripts/agents/roles/design-critic.requirements.json"
+  ew_role_saved="$agent_fixture/ew-role-saved.json"
+  cp "$ew_role" "$ew_role_saved"
+  printf '%s\n' '{"required":[],"optional":{},"waivers":{}}' >"$ew_role"
+  if scripts/agents/select-capability-snapshot.py --root "$agent_repo" --runtime ghostrt \
+      --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
+      --output "$agent_fixture/ew-unwaived.out" 2>"$agent_fixture/ew-unwaived.err"; then
+    cp "$ew_role_saved" "$ew_role"
+    echo "empty writeRoots on a notEnforced runtime ran without a waiver (the bypass is open)" >&2; exit 1
+  fi
+  grep -Fq 'writeRoots' "$agent_fixture/ew-unwaived.err" \
+    || { cp "$ew_role_saved" "$ew_role"; echo "empty-writeRoots refusal did not name the field" >&2; cat "$agent_fixture/ew-unwaived.err" >&2; exit 1; }
+  printf '%s\n' '{"required":[],"optional":{},"waivers":{"writeRoots":["ghostrt"]}}' >"$ew_role"
+  scripts/agents/select-capability-snapshot.py --root "$agent_repo" --runtime ghostrt \
+    --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
+    --output "$agent_fixture/ew-waived.out" \
+    || { cp "$ew_role_saved" "$ew_role"; echo "empty writeRoots was refused even with the writeRoots waiver on record" >&2; exit 1; }
+  cp "$ew_role_saved" "$ew_role"
+  rm -f "$ew_snap"
 
   nested_brief="$agent_fixture/nested.md"
   make_agent_brief "$nested_brief" design 'FAKE:nested-agent-events'
@@ -2556,7 +2606,7 @@ PY
       sleep 1
     done
     printf '%s\n' "$driver_status" >"$mission_timeout_result"
-  ) &
+  ) >"$agent_fixture/mission-timeout.out" 2>&1 &
   mission_timeout_driver=$!
   wait_for_agent_status mission-timeout-job running
   python3 - "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" <<'PY'
@@ -2566,7 +2616,11 @@ path=Path(sys.argv[1]); value=json.loads(path.read_text()); value["startedAt"]="
 PY
   run_agent_fixture mission-timeout-reap mission-timeout-job "$agent_dispatch" reap --job mission-timeout-job
   wait_for_agent_fixture_process mission-timeout-driver mission-timeout-job "$mission_timeout_driver"
-  [[ "$(cat "$mission_timeout_result")" == 4 ]] || { echo "mission job timeout did not map to exit 4" >&2; exit 1; }
+  [[ "$(cat "$mission_timeout_result")" == 4 ]] || {
+    echo "mission job timeout did not map to exit 4 (got $(cat "$mission_timeout_result"))" >&2
+    python3 -c 'import json,sys;v=json.load(open(sys.argv[1]));print("status:",v.get("status"),"error:",v.get("error"),"phase:",v.get("phase"))' "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" >&2 2>/dev/null || true
+    echo "--- driver output:" >&2; sed -n '1,40p' "$agent_fixture/mission-timeout.out" >&2 2>/dev/null || true
+    exit 1; }
   assert_fence_ask mission-timeout job-cap-min
 
   # A provider-native unit with the same spelling from another provider stays

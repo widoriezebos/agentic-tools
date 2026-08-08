@@ -1,4 +1,12 @@
 {
   "required": [],
-  "optional": {}
+  "optional": {},
+  "waivers": {
+    "readRoots": [
+      "devin"
+    ],
+    "writeRoots": [
+      "devin"
+    ]
+  }
 }

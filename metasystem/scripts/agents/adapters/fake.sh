@@ -166,6 +166,10 @@ common = {
   "model": {"requested": record["requestedModel"], "effective": record["effectiveModel"] or "unobserved"},
   "evidence": [{"command": "fake protocol simulator", "observed": "canned role return", "level": "ran"}],
   "gaps": [], "mode": mode,
+  # The simulator stands in for a compliant agent, and a compliant agent emits
+  # `claimed` with both members: null means it claims nothing, which is what a
+  # simulator that observes its own identity honestly reports.
+  "claimed": {"sessionId": None, "model": None},
 }
 role = record["role"]
 if role in {"design-critic", "code-critic"}:
