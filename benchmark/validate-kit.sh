@@ -201,7 +201,15 @@ srcrepo="$tmp/snapshot"
 mkdir -p "$srcrepo"
 for part in metasystem benchmark; do
   mkdir -p "$srcrepo/$part"
-  (cd "$top/$part" && tar -cf - --exclude './artifacts' --exclude './target' .) | (cd "$srcrepo/$part" && tar -xf -)
+  # Stage through a temp archive rather than a create|extract pipe. bsdtar
+  # reports a spurious "Write error" when the reading tar closes the pipe at
+  # end-of-archive, and a larger tree (a second spec) makes it deterministic;
+  # the copy is complete regardless, but the nonzero create exit fails the gate.
+  # A temp file has no pipe to break, and each tar exits 0.
+  part_archive="$tmp/snapshot-$part.tar"
+  ( cd "$top/$part" && tar -cf "$part_archive" --exclude './artifacts' --exclude './target' . )
+  ( cd "$srcrepo/$part" && tar -xf "$part_archive" )
+  rm -f "$part_archive"
 done
 git -C "$srcrepo" init -q
 git -C "$srcrepo" add .
