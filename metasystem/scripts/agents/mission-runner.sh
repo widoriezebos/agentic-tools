@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import fcntl
+import hashlib
 import importlib.util
 import json
 import math
@@ -348,8 +349,26 @@ def cleanup_stale_lease(mission: str) -> None:
     lease_path.unlink(missing_ok=True)
 
 
-def arming_identity(mission: str) -> tuple[str, int, int, str]:
-    """Who this runner arms supervision as: session, pid, start, tag.
+def mission_lineage(mission: str) -> str:
+    """The ownership lineage every process of one mission shares.
+
+    Derived, not concatenated: a mission id has no length bound, so
+    "mission-runner-<id>" would overflow the 128-character lineage bound for a
+    long id and the mission could not arm at all. Truncating instead would let
+    two missions sharing a prefix share a lineage, which would misread a foreign
+    takeover as a renewal and suppress the epoch bump and sweep. A hash is
+    fixed-length for any id and stays recomputable from the mission id.
+    """
+    return "mission-" + hashlib.sha256(mission.encode("utf-8")).hexdigest()[:32]
+
+
+def arming_identity(mission: str) -> tuple[str, int, int, str, str | None]:
+    """Who this runner arms supervision as: session, pid, start, tag, lineage.
+
+    The lineage is the mission's own ONLY when this runner is the main. Beneath
+    a live holder the runner is part of that main's work, so it announces
+    nothing new and must not rewrite that holder's lineage -- see D-3a in
+    plans/lease-succession.md, which scopes this fix to the unattended branch.
 
     A runner started BY the main that holds this checkout is part of that
     main's work, not a second writer competing for the same checkout. Arming
@@ -382,29 +401,40 @@ def arming_identity(mission: str) -> tuple[str, int, int, str]:
                     int(announcement["pid"]),
                     int(announcement["pidStartedAt"]),
                     str(announcement["instanceTag"]),
+                    None,
                 )
             except (KeyError, TypeError, ValueError):
                 pass
-    return (f"mission-runner-{mission}-{pid}", pid, process_started_at(pid), "mission-runner.sh")
+    return (
+        f"mission-runner-{mission}-{pid}",
+        pid,
+        process_started_at(pid),
+        "mission-runner.sh",
+        mission_lineage(mission),
+    )
 
 
 def arm_and_preflight(mission: str) -> None:
-    session, pid, started, tag = arming_identity(mission)
-    arm = run_command(
-        [
-            str(ROOT / "scripts" / "agents" / "arm-supervision.sh"),
-            "--repo",
-            str(ROOT),
-            "--session",
-            session,
-            "--pid",
-            str(pid),
-            "--start-time",
-            str(started),
-            "--tag",
-            tag,
-        ]
-    )
+    session, pid, started, tag, lineage = arming_identity(mission)
+    command = [
+        str(ROOT / "scripts" / "agents" / "arm-supervision.sh"),
+        "--repo",
+        str(ROOT),
+        "--session",
+        session,
+        "--pid",
+        str(pid),
+        "--start-time",
+        str(started),
+        "--tag",
+        tag,
+    ]
+    if lineage is not None:
+        # Every process of this mission derives the same lineage, so a
+        # successor renews the lease instead of taking it over and sweeping
+        # the predecessor's in-flight delegates.
+        command += ["--owner-lineage", lineage]
+    arm = run_command(command)
     if arm.returncode != 0 or "ARMED" not in arm.stdout:
         detail = (arm.stderr or arm.stdout).strip()
         raise RunnerError(f"mission start refused: supervision did not arm: {detail}")

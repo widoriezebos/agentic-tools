@@ -100,9 +100,14 @@ os.replace(tmp,path)
 PY
 }
 
-write_announcement() { # repo, session, pid, start, tag, runtime
-  "$lease_helper" --root "$1" announce --session "$2" --pid "$3" \
-    --start "$4" --tag "$5" --runtime "$6"
+write_announcement() { # repo, session, pid, start, tag, runtime, optional lineage
+  if [[ -n "${7:-}" ]]; then
+    "$lease_helper" --root "$1" announce --session "$2" --pid "$3" \
+      --start "$4" --tag "$5" --runtime "$6" --owner-lineage "$7"
+  else
+    "$lease_helper" --root "$1" announce --session "$2" --pid "$3" \
+      --start "$4" --tag "$5" --runtime "$6"
+  fi
 }
 
 retire_announcement() { # repo, session, pid, start
@@ -349,6 +354,7 @@ verify_armed() { # repo, owner pid/start/tag
 
 arm_repository() {
   local repo= session= pid= start= tag= runtime=${METASYSTEM_AGENT_RUNTIME:-} retire=0 shutdown=0 lease_held=0 ancestor safe announcement
+  local owner_lineage=${METASYSTEM_OWNER_LINEAGE:-}
   local owner_cap owner_started owner_deadline elapsed expected_owner_prefix
   while (($#)); do
     case "$1" in
@@ -359,6 +365,7 @@ arm_repository() {
       --tag) [[ $# -ge 2 ]] || { usage; exit 2; }; tag=$2; shift 2 ;;
       --retire) retire=1; shift ;; --shutdown) shutdown=1; shift ;;
       --lease-held) lease_held=1; shift ;;
+      --owner-lineage) [[ $# -ge 2 ]] || { usage; exit 2; }; owner_lineage=$2; shift 2 ;;
       -h|--help) usage; exit 0 ;; *) usage; exit 2 ;;
     esac
   done
@@ -409,7 +416,7 @@ arm_repository() {
   if (( retire )); then retire_announcement "$harness_root" "$session" "$pid" "$start"; exit 0; fi
 
   # Fixed arming step 1: registry write precedes lock acquisition and census.
-  announcement=$(write_announcement "$harness_root" "$session" "$pid" "$start" "$tag" "$runtime")
+  announcement=$(write_announcement "$harness_root" "$session" "$pid" "$start" "$tag" "$runtime" "$owner_lineage")
   "$lease_helper" --root "$harness_root" require-holder --caller-pid "$pid" >/dev/null
   supervision=$agents/supervision
   mkdir -p "$supervision"

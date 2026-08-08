@@ -359,6 +359,16 @@ def load_lease(root: Path, required: bool = True) -> dict[str, Any] | None:
             fail("checkout lease is absent; start or arm an agent main first")
         return None
     value = load_object(path)
+    # A lease written before ownership lineages existed is READ, never refused:
+    # its holder is one process, so its lineage is its own mainId. Refusing
+    # instead would make every already-claimed checkout unable to arm or
+    # authorise its holder the moment this change landed. The default persists
+    # on the next lease write, so the migration needs no separate step.
+    if isinstance(value, dict) and "ownerLineage" not in value and isinstance(
+        value.get("holderMainId"), str
+    ):
+        value = dict(value)
+        value["ownerLineage"] = value["holderMainId"]
     required_fields = {
         "holderMainId",
         "pid",
@@ -369,6 +379,7 @@ def load_lease(root: Path, required: bool = True) -> dict[str, Any] | None:
         "takeovers",
         "revision",
         "claimEpoch",
+        "ownerLineage",
     }
     if set(value) != required_fields or type(value.get("revision")) is not int or type(value.get("claimEpoch")) is not int:
         fail("checkout lease schema is invalid")
@@ -451,6 +462,8 @@ def is_supervision_tag(tag: str) -> bool:
 
 def announce(args: argparse.Namespace) -> None:
     root = args.root.resolve()
+    if getattr(args, "owner_lineage", None) and not valid_lineage(args.owner_lineage):
+        fail("owner lineage must match [A-Za-z0-9._-]{1,128}")
     actual_start = started_at(root, args.pid)
     command = process_command(args.pid)
     if actual_start != args.start or command is None:
@@ -462,6 +475,28 @@ def announce(args: argparse.Namespace) -> None:
         acquire_bounded(lock, "lease")
         for path, value in announcements(root, strict=False):
             if value.get("pid") == args.pid and value.get("pidStartedAt") == args.start:
+                supplied = getattr(args, "owner_lineage", None)
+                stored = value.get("ownerLineage")
+                if supplied and stored is not None and stored != supplied:
+                    # A process does not change its logical owner mid-life.
+                    # Silently preferring either value would hide a caller bug
+                    # behind a guess.
+                    fail(
+                        f"announcement already carries owner lineage {stored}; "
+                        f"refusing to replace it with {supplied}"
+                    )
+                if supplied and stored is None:
+                    # Absent-to-present fill, the one permitted transition.
+                    # The LEASE is written first (claim_for_announcement), then
+                    # the announcement: the lease is what a claim reads, so
+                    # writing it first leaves no window in which a sibling
+                    # process is judged foreign and sweeps.
+                    value = dict(value)
+                    value["ownerLineage"] = supplied
+                    claim_for_announcement(root, value)
+                    atomic_json(path, value)
+                    print(path)
+                    return
                 print(path)
                 claim_for_announcement(root, value)
                 return
@@ -478,6 +513,8 @@ def announce(args: argparse.Namespace) -> None:
             "commandHash": command_hash(command),
             "announcedAt": now(),
         }
+        if getattr(args, "owner_lineage", None):
+            value["ownerLineage"] = args.owner_lineage
         path = directory / f"{safe}-{args.pid}.json"
         atomic_json(path, value)
         initialize_cursor(root, main_id)
@@ -561,6 +598,29 @@ def prove_lock(lock: Any, lock_path: Path) -> None:
     lock_probe_held(lock_path)
 
 
+LINEAGE_RE = re.compile(r"[A-Za-z0-9._-]{1,128}")
+
+
+def valid_lineage(value: Any) -> bool:
+    return isinstance(value, str) and bool(LINEAGE_RE.fullmatch(value))
+
+
+def announcement_lineage(announcement: dict[str, Any]) -> str:
+    """The logical writer this announcement belongs to.
+
+    Absent means one process, one lineage: the announcement's own mainId. That
+    default is what keeps an ad-hoc agent session behaving exactly as before --
+    a different session succeeding it is still a foreign takeover.
+    """
+    value = announcement.get("ownerLineage")
+    return value if valid_lineage(value) else str(announcement.get("mainId"))
+
+
+def lease_lineage(lease: dict[str, Any]) -> str:
+    value = lease.get("ownerLineage")
+    return value if valid_lineage(value) else str(lease.get("holderMainId"))
+
+
 def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
     lease_path, lock_path, _, stamp_path = lease_paths(root)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -568,6 +628,7 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
     predecessor = "none"
     report_inherited = False
     renewal_completed = False
+    succeeds_predecessor = False
     with lock_path.open("a+") as lock:
         # Both lock-behavior probes finish before any lease state is persisted.
         # Reacquiring and re-reading after the released probe closes the race
@@ -576,8 +637,19 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
         current = load_lease(root, required=False)
         if current is not None and current.get("holderMainId") != announcement["mainId"]:
             if live(root, current.get("pid"), current.get("pidStartedAt")):
+                # A LIVE holder never loses the lease, whatever the lineage.
+                # Letting a same-lineage claimant displace a live holder would
+                # let an accidental duplicate launcher steal the checkout and
+                # let siblings alternate custody.
                 return
-            takeover = True
+            if lease_lineage(current) == announcement_lineage(announcement):
+                # The same logical writer continued in a new process -- a
+                # mission's staging, resume, or re-arm succeeding its own
+                # predecessor. Preserve the epoch so the predecessor's
+                # in-flight jobs stay valid instead of being swept.
+                succeeds_predecessor = True
+            else:
+                takeover = True
             predecessor = str(current.get("holderMainId"))
         elif current is not None:
             stamp = load_object(stamp_path) if stamp_path.exists() else {}
@@ -607,6 +679,9 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
                     predecessor = str(history[-1].get("fromMainId", "none"))
                     report_inherited = True
             renewed = dict(current)
+            # D-1c: every announcement reconciles the lease it holds, so an
+            # interrupted migration heals here instead of persisting.
+            renewed["ownerLineage"] = announcement_lineage(announcement)
             renewed["renewedAt"] = now()
             renewed["revision"] += 1
             verify_revision(load_lease(root), current["revision"])
@@ -618,6 +693,44 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
             # lease from the very main that launched it — which is exactly
             # what happened: the detached owner claimed and its parent's
             # arming was then refused as OWNED-ELSEWHERE.
+            renewal_completed = True
+        if succeeds_predecessor and not renewal_completed:
+            # Finish a predecessor's interrupted sweep BEFORE renewing. A
+            # foreign takeover writes its epoch before sweeping, so a crash
+            # between the two leaves a stamp naming the prior epoch. Completing
+            # it here never certifies unreaped jobs, and cannot touch this
+            # epoch's jobs: cleanup_stale_jobs fails only records BELOW the
+            # lease epoch, and a renewal does not raise it.
+            stamp = load_object(stamp_path) if stamp_path.exists() else {}
+            if not (
+                stamp.get("holderMainId") == current["holderMainId"]
+                and stamp.get("claimEpoch") == current["claimEpoch"]
+            ):
+                cleanup_stale_jobs(root, int(current["claimEpoch"]))
+            successor = dict(current)
+            # The WHOLE holder identity moves: liveness is the pair
+            # (pid, pidStartedAt), so a new pid beside the predecessor's start
+            # time would make the live successor test as dead and invite the
+            # very takeover this prevents.
+            successor["holderMainId"] = announcement["mainId"]
+            successor["pid"] = announcement["pid"]
+            successor["pidStartedAt"] = announcement["pidStartedAt"]
+            successor["commandHash"] = announcement["commandHash"]
+            successor["ownerLineage"] = announcement_lineage(announcement)
+            successor["renewedAt"] = now()
+            successor["revision"] = int(current["revision"]) + 1
+            # claimEpoch is preserved -- that is the whole point -- and
+            # takeovers is not appended: this is not a seizure.
+            verify_revision(load_lease(root), current["revision"])
+            atomic_json(lease_path, successor)
+            atomic_json(
+                stamp_path,
+                {
+                    "holderMainId": announcement["mainId"],
+                    "claimEpoch": int(current["claimEpoch"]),
+                    "reapedAt": now(),
+                },
+            )
             renewal_completed = True
         if not renewal_completed:
             claimed_at = now()
@@ -636,6 +749,7 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
                 )
             value = {
                 "holderMainId": announcement["mainId"],
+                "ownerLineage": announcement_lineage(announcement),
                 "pid": announcement["pid"],
                 "pidStartedAt": announcement["pidStartedAt"],
                 "commandHash": announcement["commandHash"],
@@ -889,6 +1003,7 @@ def parser() -> argparse.ArgumentParser:
     announce_parser.add_argument("--start", type=int, required=True)
     announce_parser.add_argument("--tag", required=True)
     announce_parser.add_argument("--runtime", required=True)
+    announce_parser.add_argument("--owner-lineage", default=None)
     announce_parser.set_defaults(function=announce)
     retire_parser = commands.add_parser("retire")
     retire_parser.add_argument("--session", required=True)

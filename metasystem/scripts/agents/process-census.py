@@ -697,7 +697,7 @@ def announcements(fixture_by_pid: dict[int, Process], errors: list[str]) -> list
         # new format the moment the base set was relaxed for the old one —
         # both formats must read, or the census goes blind again.
         if not isinstance(value, dict) or not expected <= set(value) \
-                or not set(value) <= expected | {"mainId", "commandHash"}:
+                or not set(value) <= expected | {"mainId", "commandHash", "ownerLineage"}:
             errors.append(f"announcement-schema:{path.name}")
             continue
         pid, start = value.get("pid"), value.get("pidStartedAt")
