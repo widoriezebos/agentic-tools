@@ -7,12 +7,17 @@
   now, and the live runs contradict several of its assumptions — including one
   that matters more than the rest: on this account Devin cannot confine a
   delegate at all.
-- Next step: get the adapter self-test green against the real CLI, then
-  code-critique the implementation and run both gates
+- Next step: none for the metasystem. The adapter, host, and bm-2 spec are
+  implemented, reviewed, gate-green, and pushed (origin bc21214). The bm-2
+  cohort is provisioned and stopped at its seal/sign boundary.
+- Waiting on the human: the bm-2 cohort signature. Cohort
+  bm-2-20260808t170805z-35043 is staged; seal and sign its contract, then
+  `benchmark/run-cohort.sh --resume bm-2-20260808t170805z-35043` runs the
+  repetition. The kit is designed to stop here; nothing routes around it.
 - Design status: closed. The successor chain returned 3 material findings after
-  the round-3 rescope (9, 9, 12, then 3), and all four of its findings —
-  including the non-material one — are fixed in this document and in the bm-2
-  manifest.
+  the round-3 rescope (9, 9, 12, then 3); all fixed. The implementation review
+  ran four rounds (11, 7, 4, 2) plus three confirming rounds; every finding was
+  real and is fixed or recorded (KI-26..KI-29).
 - In flight right now: nothing
 - Waiting on the human: nothing. The containment question was decided on
   2026-08-08 — see "The ruling" below.
