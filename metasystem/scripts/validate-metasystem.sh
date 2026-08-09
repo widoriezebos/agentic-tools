@@ -480,9 +480,22 @@ validation_cleanup() {
     pgrep -f "$tmp" >/dev/null 2>&1 || break
     sleep 0.5
   done
+  # PRESERVE FAILURE EVIDENCE (flight-recorder D-8, direct-fix bar): a
+  # failing run's temp tree is the diagnosis, and deleting it forced every
+  # investigation to re-run the suite with the trap stripped by hand. On a
+  # nonzero exit the tree moves aside and its path is printed; only green
+  # runs clean up. Evidence beats disk.
+  if [[ "${validation_exit_status:-1}" != 0 && -d "$tmp" ]]; then
+    keep="artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    mkdir -p "$(dirname "$keep")"
+    if mv "$tmp" "$keep" 2>/dev/null; then
+      echo "suite failure evidence preserved: $keep" >&2
+    fi
+    return 0
+  fi
   rm -rf "$tmp" 2>/dev/null || { sleep 1; rm -rf "$tmp" 2>/dev/null || true; }
 }
-trap validation_cleanup EXIT
+trap 'validation_exit_status=$?; validation_cleanup' EXIT
 
 # IL-3: prove the audit's fallback with a PATH that contains its ordinary POSIX
 # tools but deliberately contains no rg binary.
