@@ -2,33 +2,36 @@
 
 - Goal and current status: a delegate job's time budget is declared where
   its runtime and model are declared — keyed on the (runtime × model)
-  pair, optionally sharpened per role. Revised against critique round 1
-  (14 material findings, all folded below); the revision's spine is ONE
-  rule the draft lacked: THE SIGNED CONTRACT IS THE ONLY AUTHORITY THAT
-  CAN RAISE A MISSION JOB'S BUDGET.
-- Next step: IMPLEMENT the authority core, adversarial fixtures as arbiter.
-  CLOSE RULE (human-authorized 2026-08-09): the chain did not converge in
-  prose (6 -> 9) but the findings dropped to interface/implementation
-  grain; the human authorized building with fixtures that ATTACK the
-  invariant to settle the two remaining criticals, plus mandatory
-  code-critique. This is a DELIBERATE deviation from the usual
-  no-invariant-grade-findings condition, recorded as such. Each round-2
-  finding's resolution is fixed below; every one becomes a named fixture.
-  ruling (2026-08-09). The original chain spent its rounds at 14, 11, 10
-  material; round 3 carries a CRITICAL authority finding, so the
-  fixtures-as-arbiter exit is unavailable by its own conditions. The
-  successor chain clears ONLY: R3-001 signed-byte freshness (pin the
-  approved contract hash into fence state; dispatch verifies before
-  honoring a pair cap), R3-002 (Proof's config-copy transport test
-  deleted; the contract is the only transport), R3-003 (watcher
-  lifecycle: explicit caps bound by the recorded ceiling; re-arm
-  replaces; arming gains a max-cap input). The experiment and
-  measurement legs (R3-004..R3-010, recorded below) follow in their own
-  short chain.
+  pair, optionally sharpened per role. Load-bearing rule, established
+  across the critique chain: THE SIGNED CONTRACT IS THE ONLY AUTHORITY
+  THAT CAN RAISE A MISSION JOB'S BUDGET, and the sovereign MISSION FENCE
+  (not dispatch) enforces it.
+- Next step: none
 - In flight right now: nothing
 - Waiting on the human: nothing
 
+The authority-core implementation is DELEGATED TO CODEX (by the human,
+2026-08-09) and running as an external coding agent — not a
+metasystem-tracked job, so it is deliberately not claimed as an in-flight
+job above. Codex builds against the resolutions in this plan and leaves
+the work in the tree for review; the orchestrator does not touch the same
+files while it runs, and reviews the result when it returns.
+
+CHAIN HISTORY. The main caps chain ran 14 → 11 → 10 material and, on a
+critical authority finding, the human ruled a SPLIT (authority core
+first). The authority-core chain then ran 6 → 9 — not converging in
+prose, but with findings dropping to interface/implementation grain. The
+human authorized a fixtures-as-arbiter CLOSE: build the authority core
+with ADVERSARIAL fixtures that attack the invariant, plus mandatory
+code-critique, to settle the two remaining criticals — a deliberate,
+recorded deviation from the usual no-invariant-grade-findings condition.
+The nine round-2 findings' resolutions are fixed in the resolutions
+section below; each becomes a named fixture. The experiment and
+measurement legs (R3-004..R3-010) remain for their own later chain.
+
 ## Why, with the evidence
+
+
 
 bm-2's uniform 15-minute cap killed a Devin/swe-1-7 implementer holding
 1,322 compiling lines; the mission shipped a skeleton (acceptance 1/53,
