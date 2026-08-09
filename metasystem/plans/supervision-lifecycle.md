@@ -11,12 +11,15 @@
   component DEATHS (the draft's launch-failure counter would not have
   caught the real incident), and the dead-man's switch is dropped as
   unsafe.
-- Next step: HANDED TO THE HUMAN. The chain is exhausted (13 -> 10 -> 13
-  material; round 3 carries EIGHT criticals) and is NOT converging. The
-  human takes the plan for an independent critique. Do not implement any
-  part of this design in its current state.
+- Next step: none
 - In flight right now: nothing
-- Waiting on the human: nothing
+- Waiting on the human: an independent critique of this design. The
+  chain is exhausted (13 -> 10 -> 13 material; round 3 carries EIGHT
+  criticals) and is NOT converging, so the human took the plan on
+  2026-08-09 for review by another model. Round 3's findings are
+  recorded below and deliberately NOT folded, so a fresh critic sees the
+  real state. Do not implement any part of this design until that review
+  returns.
 
 ## What happened, measured
 
