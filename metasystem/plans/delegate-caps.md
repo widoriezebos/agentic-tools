@@ -6,7 +6,18 @@
   (14 material findings, all folded below); the revision's spine is ONE
   rule the draft lacked: THE SIGNED CONTRACT IS THE ONLY AUTHORITY THAT
   CAN RAISE A MISSION JOB'S BUDGET.
-- Next step: fold round 2's 11 findings (recorded below), then round 3
+- Next step: the AUTHORITY-CORE successor chain, per the human's split
+  ruling (2026-08-09). The original chain spent its rounds at 14, 11, 10
+  material; round 3 carries a CRITICAL authority finding, so the
+  fixtures-as-arbiter exit is unavailable by its own conditions. The
+  successor chain clears ONLY: R3-001 signed-byte freshness (pin the
+  approved contract hash into fence state; dispatch verifies before
+  honoring a pair cap), R3-002 (Proof's config-copy transport test
+  deleted; the contract is the only transport), R3-003 (watcher
+  lifecycle: explicit caps bound by the recorded ceiling; re-arm
+  replaces; arming gains a max-cap input). The experiment and
+  measurement legs (R3-004..R3-010, recorded below) follow in their own
+  short chain.
 - In flight right now: nothing
 - Waiting on the human: nothing
 
