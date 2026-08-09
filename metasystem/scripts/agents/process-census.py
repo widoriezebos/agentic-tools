@@ -598,17 +598,17 @@ def _emit_census_witness(repo, verdict, generation, untracked):
         except BaseException:
             started = 0
         path = os.path.join(str(repo), "artifacts", "agents", "events.jsonl")
-        payload = b""
-        for body in events:
-            _WITNESS_SEQ += 1
-            body.update({"schemaVersion": 1,
-                         "ts": now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z",
-                         "component": "census", "level": "info", "pid": pid,
-                         "pidStartedAt": started, "seq": _WITNESS_SEQ})
-            payload += b"\n" + _json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
         try:
-            os.write(fd, payload)
+            for body in events:
+                _WITNESS_SEQ += 1
+                body.update({"schemaVersion": 1,
+                             "ts": now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z",
+                             "component": "census", "level": "info", "pid": pid,
+                             "pidStartedAt": started, "seq": _WITNESS_SEQ})
+                line = b"\n" + _json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
+                if len(line) <= 4096:
+                    os.write(fd, line)  # one framed write per event (D-2)
         finally:
             os.close(fd)
     except BaseException:

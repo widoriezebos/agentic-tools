@@ -278,12 +278,12 @@ run_owner() {
 
   launch_set() {
     local suffix watcher_heartbeat=$supervision/watcher.heartbeat.json reaper_heartbeat=$supervision/reaper.heartbeat.json reaper_gate
-    # Supervision components NEVER carry the driver's execution id: a joined
-    # watcher cannot receive one, so none may depend on timing
-    # (flight-recorder FRCF-002). The scrub is this one line.
-    unset METASYSTEM_EXECUTION_ID
-    METASYSTEM_HARNESS_ROOT="$harness_root" emit_event arming arming-started "summary=establishing launch_set"
-    rotate_event_stream "$harness_root"
+    # (scrub moved to arm_repository entry -- FRCC-006: lease events emitted
+    # during arming must not carry the id either)
+    if [[ "${1:-}" == --establishing ]]; then
+      METASYSTEM_HARNESS_ROOT="$harness_root" emit_event arming arming-started "summary=establishing launch_set"
+      rotate_event_stream "$harness_root"
+    fi
     stop_recorded_components "$harness_root"
     generation=$((generation + 1))
     suffix="$generation-$(date +%s)"
@@ -321,7 +321,7 @@ PY
     wait_for_first_heartbeat reaper "$reaper_heartbeat" "$reaper_tag" "$reaper_pid" "$reaper_start" || return 1
   }
 
-  launch_set && METASYSTEM_HARNESS_ROOT="$harness_root" emit_event arming arming-complete "summary=components launched" || true
+  launch_set --establishing && METASYSTEM_HARNESS_ROOT="$harness_root" emit_event arming arming-complete "summary=components launched" || true
   [[ -z "${METASYSTEM_WATCH_POLL_INTERVAL_MS:-}" ]] || sleep "$interval_sleep"
   while true; do
     stale=
@@ -379,6 +379,10 @@ verify_armed() { # repo, owner pid/start/tag
 }
 
 arm_repository() {
+  # Supervision and everything arming does NEVER carry the driver's execution
+  # id: a joined watcher cannot receive one, so none may depend on timing --
+  # and the lease events emitted DURING arming must not leak it (FRCC-006).
+  unset METASYSTEM_EXECUTION_ID
   local repo= session= pid= start= tag= runtime=${METASYSTEM_AGENT_RUNTIME:-} retire=0 shutdown=0 lease_held=0 ancestor safe announcement
   local owner_lineage=${METASYSTEM_OWNER_LINEAGE:-}
   local owner_cap owner_started owner_deadline elapsed expected_owner_prefix

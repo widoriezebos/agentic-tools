@@ -231,11 +231,20 @@ if archive_dir.is_dir():
         if not match:
             continue
         durable = events_root / item.name
+        def _digest(path):
+            h = hashlib.sha256()
+            with open(path, "rb") as handle:
+                for block in iter(lambda: handle.read(1 << 20), b""):
+                    h.update(block)
+            return h.hexdigest()
         try:
-            if not durable.exists() or durable.stat().st_size != item.stat().st_size:
+            local_digest = _digest(item)
+            if not durable.exists() or _digest(durable) != local_digest:
                 events_root.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, durable)
-            copied = durable.exists() and durable.stat().st_size == item.stat().st_size
+            # Verified means BYTE-IDENTICAL, not same-sized: a corrupt or
+            # foreign same-name file must never license deleting evidence.
+            copied = durable.exists() and _digest(durable) == local_digest
         except OSError:
             copied = False  # keep local, retry next pass
         try:

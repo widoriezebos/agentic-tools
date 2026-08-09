@@ -81,6 +81,21 @@ def emit(args: dict[str, str]) -> None:
     if overshoot > 0:
         event["summary"] = clip(summary, max(0, len(summary.encode("utf-8")) - overshoot - 8))
         line = "\n" + json.dumps(event, separators=(",", ":"), sort_keys=True)
+    if len(line.encode("utf-8")) > CAP_BYTES:
+        # Still over: drop optional payload fields (never required envelope
+        # or id fields), largest first, until it fits. The cap is HARD.
+        required = {"schemaVersion", "ts", "component", "event", "level",
+                    "summary", "pid", "pidStartedAt", "seq"}
+        for name in sorted(
+            (k for k in event if k not in required and k not in ID_FIELDS),
+            key=lambda k: -len(str(event[k])),
+        ):
+            del event[name]
+            line = "\n" + json.dumps(event, separators=(",", ":"), sort_keys=True)
+            if len(line.encode("utf-8")) <= CAP_BYTES:
+                break
+    if len(line.encode("utf-8")) > CAP_BYTES:
+        return  # a pathological event is dropped whole, never written torn
 
     path = os.path.join(root, "artifacts", "agents", "events.jsonl")
     os.makedirs(os.path.dirname(path), exist_ok=True)
