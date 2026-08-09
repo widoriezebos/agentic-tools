@@ -15,10 +15,11 @@ The authority-core implementation is DELEGATED TO CODEX (by the human,
 metasystem-tracked job, so it is deliberately not claimed as an in-flight
 job above. Codex builds against the resolutions in this plan and leaves
 the work in the tree; the orchestrator does not touch the same files
-while it runs. HUMAN RULING (2026-08-09): Codex owns this end to end —
-the orchestrator does NOT review the security work and does not
-second-guess it. The orchestrator's only remaining role here is to
-report completion.
+while it runs. HUMAN RULING (2026-08-09, as refined): the orchestrator MAY
+review the implementation, but CODEX HAS THE FINAL WORD on this security
+work — any finding the orchestrator raises goes to Codex to accept or
+reject, and Codex's judgement stands. The orchestrator does not overrule
+it, and reports completion to the human.
 
 CHAIN HISTORY. The main caps chain ran 14 → 11 → 10 material and, on a
 critical authority finding, the human ruled a SPLIT (authority core
