@@ -129,8 +129,18 @@
    manifest through mission fences to dispatch --cap-min. The human asked
    for exactly this: "where we specify the agent we should also specify
    the budget for that agent".
-   (b) Re-run bm-2 with a Devin-sized implementer cap to learn whether it
-   can complete AT ALL — the human's explicit question.
+   (b) THE CAP-DISCOVERY EXPERIMENT (human-specified 2026-08-09): the
+   mechanism is per agent TYPE and possibly per role x type. For Devin on
+   swe-1-7, do not guess: set the cap ONCE deliberately very high
+   (effectively unbounded within the mission), run, and CLOSELY MONITOR
+   actual demand while verifying it is still progressing — progress proxy
+   until adapter streaming lands: worktree churn (files appearing and
+   changing) plus the session state, sampled by the watch. The observed
+   natural completion time, with a safety margin, IS the sensible cap.
+   The experiment mission must account for fence interactions: one long
+   implementer job consumes most of a 3-hour wall clock, so the
+   experiment's spec raises the wall-clock fence (or runs one repetition)
+   rather than letting the outer fence masquerade as the answer.
    (c) Comparison cohorts on the same spec: Opus delegates and codex sol
    delegates (new specs per the bm-2 precedent, each with its roster
    ruling and cost note — both are PAID delegates, unlike swe-1-7).
