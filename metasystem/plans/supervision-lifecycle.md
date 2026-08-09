@@ -65,92 +65,145 @@ system: it was.
   killed, crashes, or is interrupted by a human — the situations where
   leaks matter most. `--shutdown` failures are also swallowed (`|| true`).
 
-## D-1. The owner requires continuous proof of purpose
+## D-1. The owner exits on facts it can prove, and exit means TEARDOWN
 
-The owner's loop gains a PRECONDITION evaluated every iteration, before
-any self-heal decision. It exits — cleanly, logging why — when any of:
+Round 1 corrected two assumptions. First, the owner is not identity-less:
+it holds `owner_tag` and the `generation` it published, and it knows the
+watcher and reaper tags IT launched. Those are the facts it may reason
+from — not "its own announcement", which is undefined (one owner is
+shared by every joined session, and a session end deletes only that
+session's record).
 
-- the supervised repository root no longer exists, or is no longer a
-  git repository (its identity is gone);
-- the supervision state file it owns no longer exists, or names a
-  DIFFERENT owner (a newer generation legitimately replaced it);
-- its own announcement/lease record is absent.
+EXIT CONDITIONS, each decidable from a fact the owner holds:
 
-These are all kernel-or-file facts, not claims, consistent with the rest
-of the system. "My purpose is gone" is a fact the owner can verify; it
-should not need anyone's permission to stop.
+- E1 PURPOSE GONE: the supervised repository root does not exist, or is
+  not a git repository.
+- E2 SUPERSEDED: the supervision state file names a generation HIGHER
+  than the one this owner published — a legitimate successor exists.
+- E3 REVOKED: the state file existed and now does not (a shutdown or a
+  deliberate teardown removed it).
 
-## D-2. A crash-loop breaker on self-heal
+EXIT IS A TEARDOWN, NOT A RETURN (SLC-R1-001). Before exiting, the owner
+stops exactly the components IT launched, identified by the tags it holds
+and verified live by (pid, pidStartedAt, tag) — never components named by
+a state file it no longer owns, so a departing owner can never kill a
+successor's watcher. Under E2 it stops ONLY its own tagged components and
+leaves the successor's alone; under E1 the components are dead already
+and the stop is a no-op that still runs for certainty.
 
-`launch_set` failures become a counted, backed-off sequence rather than
-an unbounded retry:
+INDETERMINACY PREFERS THE LEAK (SLC-R1-003): a check that cannot be
+evaluated — permission error, I/O failure, unreadable state — is NOT a
+proof of absence. The owner keeps running and records the failed check.
+Killing live supervision on a transient filesystem error is worse than
+carrying one leaked owner, which D-2 bounds anyway.
 
-- consecutive failed relaunch attempts back off exponentially from the
-  census interval to a ceiling (e.g. 1×, 2×, 4×, … up to 10 minutes);
-- after N consecutive failures (proposal: 5) the owner STOPS
-  self-healing, records `SUPERVISION-GIVING-UP` with the last error, and
-  exits. A supervisor that cannot start its components five times in a
-  row is not healing anything; it is a fork bomb with good intentions.
+ESTABLISHMENT IS NOT REVOCATION (SLC-R1-004): E3 applies only after this
+owner has PUBLISHED its state at least once. Before first publication a
+missing state file is startup, and D-2's counter governs.
 
-This alone bounds the blast radius of every future variant of this bug,
-including ones this design has not imagined.
+## D-2. The breaker counts what actually happened last time
 
-## D-3. A dead-man's switch for the arming intent
+The draft counted failed `launch_set` calls. The real incident had
+components that STARTED (each emitted its first heartbeat, so launch_set
+"succeeded") and then died immediately because their checkout was gone —
+so the draft's counter would never have incremented (SLC-R1-005). The
+breaker therefore counts COMPONENT DEATHS, not launch failures:
 
-Cleanup paths cannot be the primary defence (RC-3), so supervision gains
-an INTENT LEASE independent of any cleanup path: the armed checkout
-carries `artifacts/agents/supervision/intent.json` with an expiry, and
-the owner exits when it lapses. Renewal comes from the things that
-legitimately want supervision — an armed session's stop hook, a running
-mission, an active cohort driver — each of which already touches the
-checkout regularly.
+- every self-heal cycle that finds a component stale increments a
+  consecutive counter, whether the previous launch reported success or
+  not; a full interval with both components healthy resets it;
+- consecutive cycles back off exponentially from the census interval to
+  a ceiling;
+- after N consecutive stale-cycles the owner records
+  `SUPERVISION-GIVING-UP` with the last diagnosis, TEARS DOWN per D-1,
+  and exits.
 
-The honest trade-off to settle in critique: the renewal period must
-exceed the longest legitimate quiet interval (a long unattended mission
-turn), or the mechanism kills live supervision. A conservative first
-value (proposal: 6 hours, renewed hourly) leaks at most one owner for a
-bounded time instead of forever, and never fires during a working
-session. Alternative for the critique to weigh: make expiry
-CONDITIONAL on the checkout also being idle (no live jobs, no mission
-state), which is safer but more complex.
+BLAST-RADIUS BOUND (SLC-R1-006): the bound that matters is machine-wide,
+not per-owner. `launch_set` therefore refuses to start a component while
+the checkout already has more than a fixed number of live processes
+carrying this owner's tags — a leaked owner cannot multiply helpers even
+if every other rule fails. The Proof asserts a NUMBER of processes across
+a fixed window, not merely that the owner eventually stops.
 
-## D-4. Fixture and cohort sandboxes stop being special
+## D-3. No dead-man's switch
 
-Every sandbox that arms supervision registers itself in a
-checkout-independent registry (`~/.metasystem/armed-checkouts.jsonl`,
-append-only, one line per arming), and `scripts/agents/reap-orphans.sh`
-— runnable by hand, and run by the suite at START — stops any owner
-whose checkout is gone. This is the janitor that exists because D-1 might
-be bypassed by a future path nobody anticipated, and because today there
-is NO way to answer "what supervision is running on this machine?"
-without grepping `ps`.
+The draft's intent lease is DROPPED. Round 1 showed it cannot be made
+safe with the mechanisms available: nothing guarantees renewal (stop
+hooks run only at turn end — SLC-R1-007), its schema, renewers,
+generation binding, and malformed-record behaviour were undefined
+(SLC-R1-008), and the idle-predicate alternative misreads completed
+missions whose state files persist (SLC-R1-009). A mechanism that can
+kill healthy supervision is a worse bug than the one it fixes.
 
-The suite runs it at start rather than only at end: a suite that was
-killed last time is exactly the case that leaked, and the next run is the
-first moment anyone can clean it.
+D-1 (purpose) and D-2 (breaker) already terminate every owner whose
+checkout is gone or whose components cannot stay alive; D-4 catches
+whatever escapes both. The design accepts that an owner supervising a
+LIVE, HEALTHY, but permanently unattended checkout runs forever — that is
+supervision working as intended, and stopping it is the human's call.
 
-## D-5. What must not change
+## D-4. The janitor stops orphans directly
 
-- Detachment (`setsid`) and self-healing for a LIVE checkout. Supervision
-  outliving its launching shell, and restarting components that genuinely
-  crash, are the properties that make it worth having.
-- Observation stays separate from killing: the census still reports
-  UNTRACKED processes without acting on them. The owner's new exits are
-  about ITS OWN life, not about judging others — the flight recorder's
-  witness rule and this are the same discipline.
-- The death-only takeover semantics of the checkout lease.
+`scripts/agents/reap-orphans.sh`, run by hand and by the suite AT START
+(the run that leaked is the one that never reached its cleanup):
+
+- reads the append-only registry `~/.metasystem/armed-checkouts.jsonl`
+  (one line per arming: checkout path, owner pid, pidStartedAt,
+  owner_tag, armedAt);
+- for each entry whose CHECKOUT NO LONGER EXISTS, stops the recorded
+  owner and its recorded component tags DIRECTLY by (pid, pidStartedAt,
+  tag) — it cannot call `--shutdown`, which resolves scripts and state
+  inside the vanished checkout (SLC-R1-011);
+- verifies each kill by identity before signalling, so a recycled pid is
+  never a casualty; entries whose checkout still exists are left
+  untouched, whatever their state.
+
+## D-5. Failures stop being swallowed, and the record survives the checkout
+
+- RC-3 gets a changed outcome (SLC-R1-013): `--shutdown` failures in the
+  suite's cleanup and in cohort teardown are REPORTED — a failed teardown
+  prints the surviving owner's identity and the run's exit reflects it.
+  Silent `|| true` on a custody teardown is how leaks became invisible.
+- Terminal owner events (exit reason, GIVING-UP, janitor kills) are
+  appended to the REGISTRY and to the user-level log outside the
+  checkout (SLC-R1-012), because an owner exiting because its checkout
+  vanished cannot log inside that checkout.
+
+## D-6. Numbers are decisions, not examples (SLC-R1-010)
+
+Fixed here so no implementer chooses: breaker N = 5 consecutive stale
+cycles; backoff = interval × 2^(k-1) capped at 10 minutes; per-owner live
+process ceiling = 12; janitor runs at suite start and on demand. These
+are revisable by a recorded ruling, but they are not open questions in
+the implementation.
+
+## D-7. What must not change
+
+- Detachment (`setsid`) and self-healing for a LIVE checkout.
+- Observation stays separate from killing OTHER processes: the census
+  still reports UNTRACKED without acting. D-1's exits govern the owner's
+  own life; D-4 acts only on owners it has a registry record for and
+  whose checkout is provably gone.
+- Death-only takeover of the checkout lease. E2 is not a takeover: the
+  superseded owner leaves voluntarily.
 
 ## Proof
 
 - Purpose gone: arm supervision in a temp checkout, delete the checkout,
-  and the owner exits within one interval — with no relaunch attempt and
-  a logged reason. (Today: it relaunches forever.)
+  and the owner exits within one interval, TEARS DOWN its own components
+  (none survive), and records the reason OUTSIDE the checkout.
 - Generation replaced: a newer owner claims the state file; the older
   owner exits rather than competing.
-- Crash-loop breaker: with components made unstartable (chmod 000 on the
-  watcher script), the owner backs off and exits after N attempts,
-  recording SUPERVISION-GIVING-UP; total spawned processes across the
-  episode are bounded and asserted.
+- Breaker on the REAL shape: components that start, heartbeat once, then
+  die every cycle (not merely unstartable) trip the counter and the owner
+  gives up after 5 — the incident's own shape, which the draft's counter
+  would not have caught.
+- Blast radius: across the whole episode the checkout never carries more
+  than 12 live tagged processes, asserted as a number.
+- Superseded: a higher-generation owner appears; the old owner stops ONLY
+  its own tagged components and exits, and the successor's watcher and
+  reaper are still alive afterwards.
+- Indeterminacy: with the state file unreadable (chmod 000), the owner
+  keeps running and logs the failed check — it does not exit.
 - Live supervision unharmed: a healthy checkout with a component killed
   by hand relaunches it exactly as today, and a long quiet mission turn
   does not trip the intent lease.
