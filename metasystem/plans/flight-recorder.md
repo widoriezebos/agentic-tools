@@ -17,17 +17,21 @@
   FR2-009, FR2-015) and must be resolved by their own chains before their
   implementation. The original chain spent its three rounds on a falling
   count; a successor confirming chain judges the round-3 dispositions.
-- Next step: none — the hardening batch is folded (all 14, 2026-08-09):
-  correctness five (hard cap enforced with whole-drop fallback; census
-  per-event capped writes; retention verifies by sha256; rotation only on
-  the establishing path; scrub at arm_repository entry) and wiring nine
-  (registry enforced at the emitter's door; driver exports the cohort id
-  on every invocation and emits registry-valid phases including
-  extracting; reap events carry missionId; job-setup/pending/running
-  emitted from the record wrappers; lease-refused witnessed;
-  census-writer-claimed/released witnessed; fence-check witnessed; the
-  fixture arbiter grew registry-enforcement and hard-cap proofs). Suite
-  and gates pending as of this line.
+- Next step: none
+
+The hardening batch is folded, gated, and PUSHED (5aab1ff; all 14 findings,
+2026-08-09): correctness five (hard cap enforced with whole-drop fallback;
+census per-event capped writes; retention verifies by sha256; rotation
+only on the establishing path; scrub at arm_repository entry) and wiring
+nine (registry enforced at the emitter's door; driver exports the cohort
+id on every invocation and emits registry-valid phases including
+extracting; reap events carry missionId; job-setup/pending/running emitted
+from the record wrappers; lease-refused witnessed; census-writer events
+witnessed; fence-check witnessed; the fixture arbiter grew
+registry-enforcement and hard-cap proofs). The CORE leg is closed end to
+end: designed, critiqued, built, flight-proven, code-critiqued, hardened.
+The turn-interior and bundle/surfaces legs remain queued with their
+carried findings.
 
 The owed code-critique returned 14 material findings (fr-code-critique,
 2026-08-09) — the hardening worklist the fixtures-as-arbiter close assigned
