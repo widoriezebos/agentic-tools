@@ -157,8 +157,10 @@ for link in \
   scripts/agents/flight-recorder-fixtures.sh \
   scripts/agents/second-session-isolation.py \
   scripts/agents/config-identity.py \
+  scripts/agents/canonical-model.py \
   scripts/agents/select-capability-snapshot.py \
   scripts/agents/mission-fixtures.sh \
+  scripts/agents/delegate-caps-fixtures.sh \
   scripts/agents/mission-contract.py \
   scripts/agents/mission-fence.py \
   scripts/agents/mission-ledger.py \
@@ -219,6 +221,7 @@ bash -n scripts/agents/flight-recorder-fixtures.sh
 bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
+bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/mission-runner.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
@@ -243,6 +246,7 @@ bash scripts/agents/evidence-segment-fixtures.sh
 bash scripts/agents/second-session-fixtures.sh
 bash scripts/agents/lease-succession-fixtures.sh
 bash scripts/agents/flight-recorder-fixtures.sh
+bash scripts/agents/delegate-caps-fixtures.sh
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
@@ -252,7 +256,7 @@ if grep -Eq '^(model\.tier\.[1-9][0-9]*|mode\.[a-z0-9-]+\.role\.)' metasystem.co
   exit 1
 fi
 python3 - scripts/agents/adapters/claude-session-signal.py scripts/agents/process-census.py \
-  scripts/agents/config-identity.py scripts/agents/select-capability-snapshot.py \
+  scripts/agents/config-identity.py scripts/agents/canonical-model.py scripts/agents/select-capability-snapshot.py \
   scripts/agents/worktree-lease.py scripts/agents/worktree-lease-fixtures.py \
   scripts/agents/control-plane-authority.py scripts/agents/authority-regression-fixtures.py \
   scripts/agents/second-session-isolation.py \
@@ -2502,6 +2506,26 @@ path = contract_path
 text = path.read_text()
 path.write_text(text + f"\nApproval: name=Fixture-Human; date=2026-08-06; contract-sha256={module.contract_hash(text)}\n")
 PY
+  stamp_fixture_contract() { # mission — seed the runner-owned contract pin
+    # (Codex's caps ruling: fixtures below the runner lifecycle seed
+    # approvedContractSha256 as the digest of the exact raw contract bytes.)
+    python3 - "$agent_repo/plans/mission-$1.contract.md" "$agent_repo/artifacts/agents/missions/$1/fences.json" "$1" <<'PY_STAMP'
+import hashlib, json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+contract, fences_path, mission = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+if fences_path.exists():
+    value = json.loads(fences_path.read_text())
+else:
+    value = {"schemaVersion": 1, "missionId": mission,
+             "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+             "cycles": 0, "reservations": {}}
+value["approvedContractSha256"] = hashlib.sha256(contract.read_bytes()).hexdigest()
+fences_path.parent.mkdir(parents=True, exist_ok=True)
+fences_path.write_text(json.dumps(value) + "\n")
+PY_STAMP
+  }
+  stamp_fixture_contract mission-alpha
   dispatch_origin="$agent_fixture/dispatch-origin.git"
   git init -q --bare "$dispatch_origin"
   git -C "$agent_repo" remote add origin "$dispatch_origin"
@@ -2535,9 +2559,17 @@ PY
   METASYSTEM_MISSION_ID=mission-alpha METASYSTEM_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
     METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture \
     run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --wait
-  agent_fails mission-cap 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min "$fixture_dispatch_over_envelope_cap_min"
-  [[ -f "$agent_repo/artifacts/agents/missions/mission-alpha/asks/fence-bound.json" ]] \
-    || { echo "job-cap refusal did not write the batched mission ask" >&2; exit 1; }
+  # The caps implementation refuses over-cap mission dispatches with the
+  # sharper pair-cap message (names both numbers) instead of the generic
+  # lifecycle-fence wrapper; the expectation follows the sharper contract.
+  agent_fails mission-cap 'above signed fence.job-cap-min' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min "$fixture_dispatch_over_envelope_cap_min"
+  # Under the caps contract an over-cap request is an AUTHORIZATION
+  # refusal — a synchronous host error, deliberately without a
+  # fence-bound ask (Codex's delegate-caps fixtures assert exactly
+  # this); asks remain the currency of genuine fence violations,
+  # proven by the fence-* fixtures below and the timeout-ask above.
+  [[ ! -f "$agent_repo/artifacts/agents/missions/mission-alpha/asks/fence-bound.json" ]] \
+    || { echo "an authorization refusal wrote a fence-bound ask; that is the fence-violation channel" >&2; exit 1; }
   python3 - "$agent_repo" <<'PY'
 import json, sys
 from pathlib import Path
@@ -2581,30 +2613,35 @@ PY
   make_fence_mission mission-wall 10 10 2 1
   printf '{"schemaVersion":1,"missionId":"mission-wall","startedAt":"2000-01-01T00:00:00Z","cycles":0,"reservations":{}}\n' \
     >"$agent_repo/artifacts/agents/missions/mission-wall/fences.json"
-  agent_fails fence-wall 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-wall --mission mission-wall --wait
+  stamp_fixture_contract mission-wall
+  agent_fails fence-wall 'mission fence refused job (wall-clock-hours)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-wall --mission mission-wall --wait
   assert_fence_ask mission-wall wall-clock-hours
 
   make_fence_mission mission-cycles 1 10 2 2
   printf '{"schemaVersion":1,"missionId":"mission-cycles","startedAt":"%s","cycles":1,"reservations":{}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     >"$agent_repo/artifacts/agents/missions/mission-cycles/fences.json"
-  agent_fails fence-cycles 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-cycles --mission mission-cycles --wait
+  stamp_fixture_contract mission-cycles
+  agent_fails fence-cycles 'mission fence refused job (cycles)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-cycles --mission mission-cycles --wait
   assert_fence_ask mission-cycles cycles
 
   make_fence_mission mission-jobs 10 1 2 2
   printf '{"schemaVersion":1,"missionId":"mission-jobs","startedAt":"%s","cycles":0,"reservations":{"prior":{"reservedAt":"2000-01-01T00:00:00Z","capMin":%s}}}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
     >"$agent_repo/artifacts/agents/missions/mission-jobs/fences.json"
-  agent_fails fence-jobs 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --wait
+  stamp_fixture_contract mission-jobs
+  agent_fails fence-jobs 'mission fence refused job (jobs)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --wait
   assert_fence_ask mission-jobs jobs
 
   make_fence_mission mission-concurrency 10 10 1 2
   printf '{"schemaVersion":1,"missionId":"mission-concurrency","startedAt":"%s","cycles":0,"reservations":{"active":{"reservedAt":"2000-01-01T00:00:00Z","capMin":%s}}}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
     >"$agent_repo/artifacts/agents/missions/mission-concurrency/fences.json"
-  agent_fails fence-concurrency 'lifecycle fence' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --wait
+  stamp_fixture_contract mission-concurrency
+  agent_fails fence-concurrency 'mission fence refused job (concurrency)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --wait
   assert_fence_ask mission-concurrency concurrency
 
   make_fence_mission mission-timeout 10 10 2 2
+  stamp_fixture_contract mission-timeout
   mission_timeout_result="$agent_fixture/mission-timeout.status"
   wait_for_agent_census_fresh mission-timeout-job
   (
@@ -3788,6 +3825,18 @@ if (( template_mode )); then
   # acknowledgment; modifying a tracked plan stays free. The prose form of this
   # rule was violated by its own author, so it is a mechanism now.
   guard_repo="$tmp/guard-repo"
+  # This fixture proves the NEW-PLAN rule, not the agent-wrapper rule,
+  # so it must be invocation-shape independent (KI-31: the real
+  # classifier answers differently under a live agent ancestor than
+  # detached). Same pattern as pre-commit-guard-fixtures.sh: a copied
+  # guard beside a refusing classifier stub takes the fail-open HUMAN
+  # path; the wrapper-token rule keeps its own coverage.
+  guard_stub_root="$tmp/guard-stub-metasystem"
+  mkdir -p "$guard_stub_root/scripts/agents"
+  cp "$root/scripts/agents/pre-commit-guard.sh" "$guard_stub_root/scripts/agents/pre-commit-guard.sh"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"$guard_stub_root/scripts/agents/worktree-lease.py"
+  chmod +x "$guard_stub_root/scripts/agents/worktree-lease.py"
+  guard_under_test="$guard_stub_root/scripts/agents/pre-commit-guard.sh"
   mkdir -p "$guard_repo/plans"
   git -C "$guard_repo" init -q
   echo old >"$guard_repo/plans/existing.md"
@@ -3795,22 +3844,22 @@ if (( template_mode )); then
   git -C "$guard_repo" -c user.name=m -c user.email=m@example.invalid commit -qm seed
   echo new >"$guard_repo/plans/surprise.md"
   git -C "$guard_repo" add plans/surprise.md
-  if (cd "$guard_repo" && "$root/scripts/agents/pre-commit-guard.sh" >/dev/null 2>&1); then
+  if (cd "$guard_repo" && "$guard_under_test" >/dev/null 2>&1); then
     echo "guard allowed a new plan file without acknowledgment" >&2; exit 1
   fi
-  (cd "$guard_repo" && METASYSTEM_ALLOW_NEW_PLAN=1 "$root/scripts/agents/pre-commit-guard.sh") \
+  (cd "$guard_repo" && METASYSTEM_ALLOW_NEW_PLAN=1 "$guard_under_test") \
     || { echo "guard refused an acknowledged new plan" >&2; exit 1; }
   unborn_repo="$tmp/guard-unborn"
   mkdir -p "$unborn_repo/plans"
   git -C "$unborn_repo" init -q
   echo first >"$unborn_repo/plans/new.md"
   git -C "$unborn_repo" add plans/new.md
-  (cd "$unborn_repo" && "$root/scripts/agents/pre-commit-guard.sh") \
+  (cd "$unborn_repo" && "$guard_under_test") \
     || { echo "guard refused the initial commit of an unborn branch" >&2; exit 1; }
   git -C "$guard_repo" reset -q
   echo changed >"$guard_repo/plans/existing.md"
   git -C "$guard_repo" add plans/existing.md
-  (cd "$guard_repo" && "$root/scripts/agents/pre-commit-guard.sh") \
+  (cd "$guard_repo" && "$guard_under_test") \
     || { echo "guard refused a modification to a tracked plan" >&2; exit 1; }
   [[ -x "$nested_tgt/.git/hooks/pre-commit" ]] \
     || { echo "adoption did not install the pre-commit guard hook" >&2; exit 1; }

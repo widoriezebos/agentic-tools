@@ -34,7 +34,10 @@ harness_fixture_base_cap() { # named harness cap
 
 harness_fixture_semantic_cap() { # named product cap used as fixture input
   case "$1" in
-    dormant-job-minutes) printf '999999\n' ;;
+    # Dormancy comes from the fixture job's FUTURE startedAt (2099), not
+    # from an absurd cap: the cap must stay below any derivable watcher
+    # ceiling or the caps interlock rightly refuses to arm over it.
+    dormant-job-minutes) printf '120\n' ;;
     mission-job-minutes) printf '5\n' ;;
     mission-turn-minutes) printf '5\n' ;;
     minimum-minutes) printf '1\n' ;;

@@ -115,7 +115,8 @@ get_value() {
 }
 
 validate_config() {
-  python3 - "$config" "${repo_scope:-$root}" <<'PY'
+  python3 - "$config" "${repo_scope:-$root}" "$root/scripts/agents/canonical-model.py" <<'PY'
+import importlib.util
 import os
 import re
 import sys
@@ -124,7 +125,14 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 repo = Path(sys.argv[2]).resolve()
+canonical_path = Path(sys.argv[3])
 errors = []
+
+specification = importlib.util.spec_from_file_location("metasystem_config_canonical_model", canonical_path)
+if specification is None or specification.loader is None:
+    raise SystemExit(f"cannot load canonical model helper: {canonical_path}")
+canonical_module = importlib.util.module_from_spec(specification)
+specification.loader.exec_module(canonical_module)
 
 try:
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -132,6 +140,7 @@ except OSError as error:
     raise SystemExit(f"cannot read metasystem configuration: {path}: {error}")
 
 values = {}
+cap_key_locations = []
 for number, raw in enumerate(lines, 1):
     line = raw.strip()
     if not line or line.startswith("#"):
@@ -147,6 +156,29 @@ for number, raw in enumerate(lines, 1):
         errors.append(f"{path}:{number}: duplicate key {key}")
         continue
     values[key] = value
+    if key.startswith("cap.min."):
+        cap_key_locations.append((path, number, key, value))
+
+local_path = Path(str(path) + ".local")
+if local_path.is_file():
+    try:
+        local_lines = local_path.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        errors.append(f"cannot read metasystem local configuration: {local_path}: {error}")
+        local_lines = []
+    local_seen = set()
+    for number, raw in enumerate(local_lines, 1):
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if not key.startswith("cap.min."):
+            continue
+        if key in local_seen:
+            errors.append(f"{local_path}:{number}: duplicate key {key}")
+            continue
+        local_seen.add(key)
+        cap_key_locations.append((local_path, number, key, value))
 
 for key in values:
     if key.startswith("mode.") and not re.fullmatch(
@@ -163,6 +195,31 @@ runtime_set = set(runtimes)
 supported_runtimes = {"claude", "codex", "devin", "fake"}
 for runtime in sorted(runtime_set - supported_runtimes):
     errors.append(f"metasystem.runtimes names unsupported runtime {runtime!r}")
+
+for source, number, key, value in cap_key_locations:
+    parts = key.split(".")
+    if len(parts) >= 4 and parts[2] in runtime_set:
+        prefix = f"cap.min.{parts[2]}."
+        raw_model = ".".join(parts[3:])
+    elif len(parts) >= 5 and parts[3] in runtime_set:
+        prefix = f"cap.min.{parts[2]}.{parts[3]}."
+        raw_model = ".".join(parts[4:])
+    else:
+        errors.append(f"{source}:{number}: unsupported cap key {key}")
+        continue
+    canonical_model = canonical_module.canonical_model(raw_model)
+    canonical_key = prefix + canonical_model
+    if not canonical_model or key != canonical_key:
+        errors.append(
+            f"{source}:{number}: non-canonical cap key {key}; use {canonical_key} "
+            f"(canonical model {canonical_model or '<empty>'})"
+        )
+    if not re.fullmatch(r"[1-9][0-9]*", value):
+        errors.append(f"{source}:{number}: {key} must be a positive integer")
+
+for name, value in os.environ.items():
+    if name.startswith("METASYSTEM_CAP_MIN_") and not re.fullmatch(r"[1-9][0-9]*", value):
+        errors.append(f"environment cap source {name} must be a positive integer")
 
 runtime_key = re.compile(r"(?:^|\.)role\.[a-z0-9-]+\.runtime$")
 for key, value in values.items():

@@ -411,6 +411,30 @@ grep -Fq '`job-cap-min`' "$timeout_ask" || { echo "mission timeout ask omitted i
 # exact subprocess waits are named and ceiling-bounded (IL-1).
 race_contract=$repo/plans/mission-race.contract.md
 sed 's/fence.concurrency=2/fence.concurrency=1/' "$base" >"$race_contract"
+# This fixture enters below the runner lifecycle to isolate the fence lock, so
+# seed the runner-owned contract pin explicitly. The delegate-caps fixtures
+# separately prove that production start and resume pin only preflight-verified
+# bytes; here the exact raw bytes must merely stay fixed across both contenders.
+race_fences=$repo/artifacts/agents/missions/race/fences.json
+mkdir -p "$(dirname "$race_fences")"
+python3 - "$race_contract" "$race_fences" <<'PY'
+import hashlib
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+contract_path, fences_path = Path(sys.argv[1]), Path(sys.argv[2])
+raw = contract_path.read_bytes()
+fences_path.write_text(json.dumps({
+    "schemaVersion": 1,
+    "missionId": "race",
+    "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "cycles": 0,
+    "reservations": {},
+    "approvedContractSha256": hashlib.sha256(raw).hexdigest(),
+}) + "\n")
+PY
 (
   set +e
   "$root/scripts/agents/mission-fence.py" reserve-job --repo "$repo" --mission race --job race-a --cap-min "$minimum_cap_min" >"$fixture_root/race-a.out" 2>&1

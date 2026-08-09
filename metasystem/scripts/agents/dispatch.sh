@@ -38,6 +38,7 @@ capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
 standing_reaper=0
+cap_authority_lock_held=0
 # Flight-recorder witness (plans/flight-recorder.md). emit_event never fails.
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
@@ -63,6 +64,7 @@ handshake_backstop_grace_sec=2
 process_census="$root/scripts/agents/process-census.py"
 arm_supervision="$root/scripts/agents/arm-supervision.sh"
 mission_fence="$root/scripts/agents/mission-fence.py"
+canonical_model_helper="$root/scripts/agents/canonical-model.py"
 lease_helper="$root/scripts/agents/worktree-lease.py"
 entry_caller_pid=$$
 current_claim_epoch=
@@ -105,7 +107,7 @@ require_fresh_census() {
   local verdict="$agents/supervision/last-census.json" state="$agents/supervision/state.json" expected
   [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
   python3 - "$verdict" "$state" "$arm_supervision" "$repo_scope" <<'PY' || exit $?
-import json, re, sys, time
+import hashlib, json, re, sys, time
 from pathlib import Path
 try: value=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 except (OSError,ValueError) as error: raise SystemExit(f"dispatch refused: census verdict is unreadable: {error}")
@@ -124,7 +126,9 @@ window=min(2 * interval, 180)
 census_generation, state_digest = value.get("generation"), value.get("stateDigest")
 if type(census_generation) is not int or census_generation < 1 or not isinstance(state_digest,str) or not re.fullmatch(r"[0-9a-f]{64}",state_digest):
     raise SystemExit("dispatch refused: census generation fields are invalid")
-try: armed=json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+try:
+    armed_bytes=Path(sys.argv[2]).read_bytes()
+    armed=json.loads(armed_bytes)
 except (OSError,ValueError) as error: raise SystemExit(f"dispatch refused: arming record is unreadable: {error}")
 armed_generation=armed.get("generation") if isinstance(armed,dict) else None
 if type(armed_generation) is not int or armed_generation < 1:
@@ -135,6 +139,8 @@ if census_generation != armed_generation:
         f"censusGeneration={census_generation} armedGeneration={armed_generation}); "
         f"retry in a moment; re-arm with {sys.argv[3]} --repo {sys.argv[4]} if supervision is dead"
     )
+if hashlib.sha256(armed_bytes).hexdigest() != state_digest:
+    raise SystemExit("dispatch refused: census verdict does not attest the current supervision state")
 if age >= window:
     raise SystemExit(
         f"dispatch refused: census verdict is stale (age={age}s window={window}s); "
@@ -345,7 +351,7 @@ with (lock_dir / f"{job}.lock").open("a+") as lock:
         if not isinstance(patch, dict) or "status" in patch:
             print("record patch must be an object and cannot contain status", file=sys.stderr)
             raise SystemExit(1)
-        immutable = {"jobId", "role", "runtime", "round", "parentJob", "reviews", "workspaceRoot", "baseSha", "branch", "startedAt", "claimEpoch", "mainId"}
+        immutable = {"jobId", "role", "runtime", "round", "parentJob", "reviews", "workspaceRoot", "baseSha", "branch", "startedAt", "claimEpoch", "mainId", "capMin", "capDeadline", "capResolution"}
         if immutable.intersection(patch):
             print("record patch attempts to change immutable identity", file=sys.stderr)
             raise SystemExit(1)
@@ -612,7 +618,133 @@ release_lifecycle_lock() { # job id
   owner_lock release "$record_locks/$1.lifecycle.d" "$$" "$process_instance_tag" || true
 }
 
+acquire_cap_authority_lock() {
+  local directory="$agents/supervision/cap-authority.lock.d" maximum started deadline elapsed
+  mkdir -p "${directory%/*}"
+  maximum=$(dispatch_fixture_wait_cap 10)
+  started=$SECONDS
+  deadline=$((SECONDS + maximum))
+  while ! mkdir "$directory" 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      elapsed=$((SECONDS - started))
+      die 1 "timed out acquiring repository cap-authority lock (elapsed: ${elapsed}s; scaled cap: ${maximum}s)"
+    fi
+    sleep 0.05
+  done
+  cap_authority_lock_held=1
+}
+
+release_cap_authority_lock() {
+  (( cap_authority_lock_held )) || return 0
+  rmdir "$agents/supervision/cap-authority.lock.d" 2>/dev/null \
+    || die 1 "repository cap-authority lock disappeared or is not empty"
+  cap_authority_lock_held=0
+}
+
 config_get() { "$config" get "$@"; }
+
+canonical_model() { "$canonical_model_helper" "$1"; }
+
+config_key_origin() { # exact resolved key; prints env, conf-local, conf, or default
+  local key=$1 env_name
+  env_name=$(printf 'METASYSTEM_%s' "$key" | tr '[:lower:]' '[:upper:]' | tr '.-' '__')
+  if [[ ${!env_name+x} ]]; then
+    printf 'env\n'
+    return
+  fi
+  python3 - "$root/metasystem.conf" "$key" <<'PY'
+import sys
+from pathlib import Path
+base, key = Path(sys.argv[1]), sys.argv[2]
+for path, origin in ((Path(str(base) + ".local"), "conf-local"), (base, "conf")):
+    if not path.is_file():
+        continue
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#") and "=" in line and line.split("=", 1)[0].strip() == key:
+            print(origin)
+            raise SystemExit(0)
+print("default")
+PY
+}
+
+resolve_nonmission_cap() { # role, runtime, canonical model, explicit override, output json
+  local role=$1 runtime=$2 model=$3 explicit=$4 output=$5 key value rule origin cap deadline
+  if [[ -n "$explicit" ]]; then
+    cap=$explicit; rule=argument; origin=argument
+  else
+    key="cap.min.$role.$runtime.$model"
+    value=$(config_get --key "$key" --default __missing__)
+    if [[ "$value" != __missing__ ]]; then
+      cap=$value; rule=config-role-pair; origin=$(config_key_origin "$key")
+    else
+      key="cap.min.$runtime.$model"
+      value=$(config_get --key "$key" --default __missing__)
+      if [[ "$value" != __missing__ ]]; then
+        cap=$value; rule=config-pair; origin=$(config_key_origin "$key")
+      else
+        key=dispatch.cap-min
+        value=$(config_get --key "$key" --default __missing__)
+        if [[ "$value" != __missing__ ]]; then
+          cap=$value; rule=config-general; origin=$(config_key_origin "$key")
+        else
+          cap=120; rule=built-in; origin=default
+        fi
+      fi
+    fi
+  fi
+  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
+  deadline=$(python3 - "$cap" <<'PY'
+from datetime import datetime, timedelta, timezone
+import sys
+print((datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=int(sys.argv[1]))).strftime("%Y-%m-%dT%H:%M:%SZ"))
+PY
+  )
+  python3 - "$output" "$cap" "$deadline" "$rule" "$origin" <<'PY'
+import json, sys
+from pathlib import Path
+output, cap, deadline, rule, origin = sys.argv[1:]
+Path(output).write_text(json.dumps({
+    "capMin": int(cap), "capDeadline": deadline,
+    "source": {"rule": rule, "origin": origin, "truncatedBy": None},
+}, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+refuse_unsigned_mission_cap_override() { # role, runtime, canonical model
+  local role=$1 runtime=$2 model=$3 key origin
+  for key in "cap.min.$role.$runtime.$model" "cap.min.$runtime.$model"; do
+    origin=$(config_key_origin "$key")
+    if [[ "$origin" == conf-local || "$origin" == env ]]; then
+      die 1 "mission dispatch refused: the mission fence is cap authority; unsigned $origin key $key cannot set a mission cap"
+    fi
+  done
+}
+
+attested_watcher_ceiling() {
+  local state="$agents/supervision/state.json"
+  python3 - "$state" <<'PY'
+import json, sys, time
+from pathlib import Path
+state_path = Path(sys.argv[1])
+try:
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    watcher = state["components"]["watcher"]
+    heartbeat = json.loads(Path(watcher["heartbeat"]).read_text(encoding="utf-8"))
+except (OSError, ValueError, KeyError, TypeError) as error:
+    raise SystemExit(f"dispatch refused: watcher ceiling attestation is unreadable: {error}")
+if any(heartbeat.get(key) != watcher.get(key) for key in ("pid", "pidStartedAt", "instanceTag")):
+    raise SystemExit("dispatch refused: watcher ceiling attestation identity does not match the armed watcher")
+ceiling = heartbeat.get("loadedCapMin")
+observed, interval = heartbeat.get("observedAtEpoch"), state.get("intervalSec")
+if type(ceiling) is not int or ceiling < 1:
+    raise SystemExit("dispatch refused: watcher heartbeat has no valid loadedCapMin attestation")
+age = int(time.time()) - observed if type(observed) is int else None
+if type(interval) is not int or age is None or age < -5 or age > interval * 2 + 2:
+    raise SystemExit("dispatch refused: watcher ceiling attestation is stale")
+print(ceiling)
+PY
+}
 
 registered_runtime() { # runtime
   local configured
@@ -1240,7 +1372,7 @@ PY
 }
 
 reap_one_locked() { # job
-  local job=$1 record="$jobs/$1.json" status pid tag started cap handshake_budget handshake_deadline session pending_age elapsed patch root_id mission record_epoch lease_epoch
+  local job=$1 record="$jobs/$1.json" status pid tag started cap cap_deadline budget_expired handshake_budget handshake_deadline session pending_age elapsed patch root_id mission record_epoch lease_epoch refusal_reason truncated_by
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
@@ -1296,6 +1428,7 @@ PY
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
   started=$(json_field "$record" startedAt 2>/dev/null || true)
   cap=$(json_field "$record" capMin 2>/dev/null || true)
+  cap_deadline=$(json_field "$record" capDeadline 2>/dev/null || true)
   handshake_budget=$(json_field "$record" sessionEstablishedTimeoutSec 2>/dev/null || true)
   handshake_deadline=$(json_field "$record" handshakeDeadline 2>/dev/null || true)
   session=$(json_field "$record" sessionId 2>/dev/null || true)
@@ -1354,10 +1487,24 @@ except ValueError: raise SystemExit(1)
 print(int((datetime.now(timezone.utc) - started).total_seconds()))
 PY
   ) || return 1
+  if [[ -n "$cap_deadline" && "$cap_deadline" != null ]]; then
+    budget_expired=$(python3 - "$cap_deadline" <<'PY'
+from datetime import datetime, timezone
+import sys
+try: deadline = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+except ValueError: raise SystemExit(1)
+print(1 if datetime.now(timezone.utc) >= deadline.astimezone(timezone.utc) else 0)
+PY
+    ) || return 1
+  elif [[ "$cap" =~ ^[1-9][0-9]*$ && "$elapsed" =~ ^-?[0-9]+$ ]] && (( elapsed >= cap * 60 )); then
+    budget_expired=1
+  else
+    budget_expired=0
+  fi
   # The priority applies only to a job that actually RAN: a pending job's
   # budget never started burning, its legal failure is process-lost or
   # handshake_timeout, and pending->timeout is not a lawful transition.
-  if [[ "$status" != running ]] || ! [[ "$cap" =~ ^[1-9][0-9]*$ ]] || (( elapsed < cap * 60 )); then
+  if [[ "$status" != running || "$budget_expired" != 1 ]]; then
     if ! job_supervisor_matches "$record"; then
       wind_down_group "$record" || return 1
       patch=$(mktemp "$record_locks/lost.XXXXXX")
@@ -1368,15 +1515,18 @@ PY
       return
     fi
   fi
-  if [[ "$cap" =~ ^[1-9][0-9]*$ ]] && (( elapsed >= cap * 60 )); then
+  if [[ "$budget_expired" == 1 ]]; then
     wind_down_group "$record" || return 1
     patch=$(mktemp "$record_locks/timeout.XXXXXX")
     printf '{"error":"budget-cap","phase":"supervision","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
     cas_out=$(record_cas "$job" "$status" timeout "$patch" 2>/dev/null) && cas_rc=0 || cas_rc=$?
     reap_verdict_events "$job" timeout budget-cap "$cas_rc" "$cas_out"
     mission=$(json_field "$record" mission 2>/dev/null || true)
-    if [[ -n "$mission" && "$mission" != null ]]; then
-      "$mission_fence" refuse --repo "$root" --mission "$mission" --reason job-cap-min >/dev/null || true
+    if [[ $cas_rc -eq 0 && -n "$mission" && "$mission" != null ]]; then
+      truncated_by=$(json_field "$record" capResolution.truncatedBy 2>/dev/null || true)
+      refusal_reason=job-cap-min
+      [[ "$truncated_by" == wall-clock ]] && refusal_reason=wall-clock-hours
+      "$mission_fence" refuse --repo "$root" --mission "$mission" --reason "$refusal_reason" >/dev/null || true
       aggregate_mission_usage "$record" || true
     fi
     mirror_record "$job" || true
@@ -1405,7 +1555,7 @@ reap_one() { # job
 dispatch_job() {
   local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override=
   local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
-  local overridden=false mission_data mission lease mission_turn cap watch_cap tiers_present=false roster_tier requested_tier escalation_required=0
+  local overridden=false mission_data mission lease mission_turn cap watch_cap canonical model_key cap_result cap_resolution tiers_present=false roster_tier requested_tier escalation_required=0
   local cost_direction= approval_name= approved_at=
   local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget input_bytes input_hash max_kb payload round_dir record_json setup_json
   while (($#)); do
@@ -1534,17 +1684,29 @@ PY
   rm -f "$setup_json"
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
   acquire_chain_lock "$job"
-  trap 'release_chain_lock "$job"' EXIT
+  trap 'release_cap_authority_lock; release_chain_lock "$job"' EXIT
+  acquire_cap_authority_lock
   [[ ! -e "$agents/$job" ]] || die 1 "job payload collision: $job"
 
-  cap=$(config_get --key dispatch.cap-min ${cap_override:+--flag "$cap_override"} --default 120)
-  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
+  cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
   if [[ -n "$mission" ]]; then
-    "$mission_fence" check-job --repo "$root" --mission "$mission" --job "$job" --cap-min "$cap" \
-      || die 1 "mission dispatch refused by a lifecycle fence"
+    refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key"
+    cap_args=(authorize-cap --repo "$root" --mission "$mission" --job "$job" --runtime "$runtime" --model "$model_key")
+    [[ -z "$cap_override" ]] || cap_args+=(--requested "$cap_override")
+    if ! cap_result=$("$mission_fence" "${cap_args[@]}" 2>&1); then
+      die 1 "mission dispatch refused by the mission fence: $cap_result"
+    fi
+    printf '%s\n' "$cap_result" >"$cap_resolution"
+  else
+    resolve_nonmission_cap "$role" "$runtime" "$model_key" "$cap_override" "$cap_resolution"
   fi
-  watch_cap=$(config_get --key watch.cap-min --default 180)
-  [[ "$watch_cap" =~ ^[1-9][0-9]*$ && $cap -lt $watch_cap ]] || die 1 "dispatch cap must stay below watch.cap-min"
+  cap=$(json_field "$cap_resolution" capMin)
+  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap authority returned an invalid capMin"
+  watch_cap=$(attested_watcher_ceiling)
+  (( cap < watch_cap )) \
+    || die 1 "dispatch cap ${cap}m must stay below the live watcher's attested ${watch_cap}m ceiling; re-arm supervision with --rearm --max-cap $cap"
 
   if (( use_worktree )); then
     workspace="$worktrees/$job"
@@ -1575,14 +1737,16 @@ PY
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
-  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" "$reviews" "$current_main_id" "$current_claim_epoch" <<'PY'
+  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$cap_resolution" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" "$reviews" "$current_main_id" "$current_claim_epoch" <<'PY'
 import json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
-out, job, role, mission, mission_turn, runtime, workspace, cap, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, handshake_budget, approval_name, approved_at, roster_pair, requested_pair, cost_direction, reviews, main_id, claim_epoch = sys.argv[1:]
+out, job, role, mission, mission_turn, runtime, workspace, cap, cap_resolution_path, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, handshake_budget, approval_name, approved_at, roster_pair, requested_pair, cost_direction, reviews, main_id, claim_epoch = sys.argv[1:]
 try: base = subprocess.check_output(["git", "-C", workspace, "rev-parse", "HEAD"], text=True).strip()
 except subprocess.SubprocessError: raise SystemExit("workspace is not a git worktree")
 branch = subprocess.check_output(["git", "-C", workspace, "branch", "--show-current"], text=True).strip()
+authority = json.loads(Path(cap_resolution_path).read_text(encoding="utf-8"))
+source = authority["source"]
 escalation_approval = None
 if approval_name:
     escalation_approval = {
@@ -1603,7 +1767,12 @@ record = {
     "effective": None,
     "enforcementSnapshot": snapshot,
   },
-  "capMin": int(cap), "pid": None, "pidStartedAt": None, "pgid": None, "instanceTag": f"metasystem-job-{job}",
+  "capMin": int(cap), "capDeadline": authority["capDeadline"],
+  "capResolution": {
+    "requestedMin": int(cap), "rule": source["rule"], "origin": source["origin"],
+    "truncatedBy": source["truncatedBy"], "deadline": authority["capDeadline"],
+  },
+  "pid": None, "pidStartedAt": None, "pgid": None, "instanceTag": f"metasystem-job-{job}",
   "custodyProcesses": [],
   "sessionId": None, "turnId": mission_turn or None, "requestedModel": model, "effectiveModel": None,
   "overridden": overridden == "true", "capabilitySnapshot": snapshot,
@@ -1617,11 +1786,9 @@ record = {
 }
 Path(out).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 PY
-  if [[ -n "$mission" ]]; then
-    "$mission_fence" reserve-job --repo "$root" --mission "$mission" --job "$job" --cap-min "$cap" \
-      || die 1 "mission dispatch refused by a lifecycle fence"
-  fi
+  rm -f "$cap_resolution"
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
+  release_cap_authority_lock
   release_chain_lock "$job"; trap - EXIT
   lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb dispatch \
     --job "$job" --tag "metasystem-job-$job" || {
@@ -1872,7 +2039,7 @@ PY
 }
 
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model workspace reviewed_commit round child payload round_dir cap permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
+  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap watch_cap cap_result cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json
   while (($#)); do
     case "$1" in
@@ -1973,7 +2140,26 @@ PY
     mission_data=$(resolve_mission "$mission")
     IFS='|' read -r mission lease mission_turn <<<"$mission_data"
   fi
-  cap=$(json_field "$latest" capMin)
+  trap 'release_cap_authority_lock; release_chain_lock "$root_id"' EXIT
+  acquire_cap_authority_lock
+  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  if [[ -n "$mission" ]]; then
+    refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key"
+    if ! cap_result=$("$mission_fence" authorize-cap --repo "$root" --mission "$mission" \
+        --job "$child" --runtime "$runtime" --model "$model_key" 2>&1); then
+      die 1 "mission follow-up refused by the mission fence: $cap_result"
+    fi
+    printf '%s\n' "$cap_result" >"$cap_resolution"
+  else
+    resolve_nonmission_cap "$role" "$runtime" "$model_key" "" "$cap_resolution"
+  fi
+  cap=$(json_field "$cap_resolution" capMin)
+  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap authority returned an invalid capMin"
+  watch_cap=$(attested_watcher_ceiling)
+  (( cap < watch_cap )) \
+    || die 1 "dispatch cap ${cap}m must stay below the live watcher's attested ${watch_cap}m ceiling; re-arm supervision with --rearm --max-cap $cap"
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
   snapshot_json=$(mktemp "$record_locks/follow-snapshot.XXXXXX")
@@ -1997,13 +2183,15 @@ PY
   input_hash=$(sha256_file "$delivery_content")
   write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
-  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$handshake_budget" "$resume_mode" "$input_bytes" "$input_hash" "$mission_turn" "$current_main_id" "$current_claim_epoch" <<'PY'
+  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$handshake_budget" "$resume_mode" "$input_bytes" "$input_hash" "$mission_turn" "$current_main_id" "$current_claim_epoch" "$cap_resolution" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
 parent = json.loads(Path(sys.argv[1]).read_text()); out = Path(sys.argv[2])
-job, round_number, parent_job, snapshot, fallbacks, signal, handshake_budget, resume_mode, size, digest, mission_turn, main_id, claim_epoch = sys.argv[3:]
-record = {key: parent[key] for key in ("role", "mission", "runtime", "reviews", "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "requestedModel")}
+job, round_number, parent_job, snapshot, fallbacks, signal, handshake_budget, resume_mode, size, digest, mission_turn, main_id, claim_epoch, cap_resolution_path = sys.argv[3:]
+authority = json.loads(Path(cap_resolution_path).read_text(encoding="utf-8"))
+source = authority["source"]
+record = {key: parent[key] for key in ("role", "mission", "runtime", "reviews", "workspaceRoot", "baseSha", "branch", "permissions", "requestedModel")}
 record.update({
   "jobId": job, "round": int(round_number), "parentJob": parent_job, "status": "pending", "phase": "handshake", "error": None,
   "mainId": main_id or None, "claimEpoch": int(claim_epoch) if claim_epoch else None,
@@ -2015,6 +2203,11 @@ record.update({
   "custodyProcesses": [],
   "instanceTag": f"metasystem-job-{job}", "sessionId": parent["sessionId"] if resume_mode == "resumed" else None,
   "turnId": mission_turn or None,
+  "capMin": authority["capMin"], "capDeadline": authority["capDeadline"],
+  "capResolution": {
+    "requestedMin": authority["capMin"], "rule": source["rule"], "origin": source["origin"],
+    "truncatedBy": source["truncatedBy"], "deadline": authority["capDeadline"],
+  },
   "effectiveModel": None, "overridden": False, "capabilitySnapshot": snapshot,
   "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
   "sessionEstablishedTimeoutSec": int(handshake_budget),
@@ -2025,13 +2218,9 @@ record.update({
 })
 out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
 PY
-  if [[ -n "$mission" ]]; then
-    "$mission_fence" check-job --repo "$root" --mission "$mission" --job "$child" --cap-min "$cap" \
-      || die 1 "mission follow-up refused by a lifecycle fence"
-    "$mission_fence" reserve-job --repo "$root" --mission "$mission" --job "$child" --cap-min "$cap" \
-      || die 1 "mission follow-up refused by a lifecycle fence"
-  fi
+  rm -f "$cap_resolution"
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$child" --source "$record_json"
+  release_cap_authority_lock
   release_chain_lock "$root_id"; trap - EXIT
   lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
     --job "$child" --tag "metasystem-job-$child" || {

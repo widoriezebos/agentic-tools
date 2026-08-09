@@ -6,11 +6,17 @@ usage() {
 Usage:
   scripts/agents/arm-supervision.sh --repo <root> [--session <id>]
       [--pid <pid>] [--start-time <epoch>] [--tag <tag>]
+      [--rearm] [--max-cap <minutes>]
   scripts/agents/arm-supervision.sh fingerprint --repo <root>
 
 Arming order is fixed: announce the session process; acquire or join the
 per-repository supervisor lock; start missing functions; wait for a complete
 census; verify watcher, reaper, and census; print ARMED.
+
+An ordinary arm joins a live supervisor and never changes its ceiling.
+--rearm replaces the live set after refusing any derived ceiling below a
+currently reserved delegate-job cap. --max-cap participates in the config-only
+ceiling derivation; the loaded watcher ceiling is the maximum cap plus 30.
 
 When session identity options are omitted, --pid is the immediate
 agent-signature ancestor, --start-time is read from the census identity source,
@@ -31,14 +37,98 @@ config=$harness_root/scripts/metasystem-config.sh
 watcher=$harness_root/scripts/watch-background-jobs.sh
 dispatch=$harness_root/scripts/agents/dispatch.sh
 agents=$harness_root/artifacts/agents
+cap_authority_lock_held=0
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+derive_watcher_ceiling() { # optional declared maximum cap
+  local declared=${1:-} key value maximum=120
+  if [[ -n "$declared" ]]; then
+    [[ "$declared" =~ ^[1-9][0-9]*$ ]] || die 2 "--max-cap must be a positive integer"
+    (( declared > maximum )) && maximum=$declared
+  fi
+  value=$("$config" get --key dispatch.cap-min --default 120)
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch.cap-min must be a positive integer"
+  (( value > maximum )) && maximum=$value
+  value=$("$config" get --key fence.job-cap-min --default '')
+  if [[ -n "$value" ]]; then
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die 1 "fence.job-cap-min must be a positive integer"
+    (( value > maximum )) && maximum=$value
+  fi
+  while IFS= read -r key; do
+    [[ "$key" == cap.min.* ]] || continue
+    value=$("$config" get --key "$key" --default '')
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die 1 "$key must be a positive integer"
+    (( value > maximum )) && maximum=$value
+  done < <("$config" keys --prefix cap.min.)
+  while IFS='=' read -r key value; do
+    [[ "$key" == METASYSTEM_CAP_MIN_* ]] || continue
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die 1 "$key must be a positive integer"
+    (( value > maximum )) && maximum=$value
+  done < <(env)
+  printf '%s\n' "$((maximum + 30))"
+}
+
+blocking_reserved_cap() { # proposed watcher ceiling; prints job|cap for first blocker
+  python3 - "$agents" "$1" <<'PY'
+import json, sys
+from pathlib import Path
+agents, ceiling = Path(sys.argv[1]), int(sys.argv[2])
+terminal = {"completed", "failed", "timeout", "cancelled"}
+reserved = {}
+jobs = agents / "jobs"
+for path in sorted(jobs.glob("*.json")) if jobs.exists() else []:
+    try: value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError): continue
+    cap, status, job = value.get("capMin"), value.get("status"), value.get("jobId", path.stem)
+    if type(cap) is int and cap >= ceiling and status not in terminal:
+        reserved[str(job)] = cap
+missions = agents / "missions"
+for path in sorted(missions.glob("*/fences.json")) if missions.exists() else []:
+    try: value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError): continue
+    for job, reservation in value.get("reservations", {}).items():
+        cap = reservation.get("capMin") if isinstance(reservation, dict) else None
+        if type(cap) is not int or cap < ceiling:
+            continue
+        try: status = json.loads((jobs / f"{job}.json").read_text(encoding="utf-8")).get("status")
+        except (OSError, ValueError): status = None
+        if status not in terminal:
+            reserved[str(job)] = max(cap, reserved.get(str(job), 0))
+if reserved:
+    job = sorted(reserved, key=lambda item: (-reserved[item], item))[0]
+    print(f"{job}|{reserved[job]}")
+PY
+}
 
 supervision_wait_cap() { # base seconds; fixture validation may export a scale
   local base=$1 scale_milli=${METASYSTEM_FIXTURE_CAP_SCALE_MILLI:-1000}
   [[ "$base" =~ ^[1-9][0-9]*$ && "$scale_milli" =~ ^[1-9][0-9]*$ ]] \
     || die 2 "supervision wait cap inputs must be positive integers"
   printf '%s\n' "$(( (base * scale_milli + 999) / 1000 ))"
+}
+
+acquire_cap_authority_lock() {
+  local directory="$agents/supervision/cap-authority.lock.d" maximum started deadline elapsed
+  mkdir -p "${directory%/*}"
+  maximum=$(supervision_wait_cap 10)
+  started=$SECONDS
+  deadline=$((SECONDS + maximum))
+  while ! mkdir "$directory" 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      elapsed=$((SECONDS - started))
+      die 1 "timed out acquiring repository cap-authority lock (elapsed: ${elapsed}s; scaled cap: ${maximum}s)"
+    fi
+    sleep 0.05
+  done
+  cap_authority_lock_held=1
+}
+
+release_cap_authority_lock() {
+  (( cap_authority_lock_held )) || return 0
+  rmdir "$agents/supervision/cap-authority.lock.d" 2>/dev/null \
+    || die 1 "repository cap-authority lock disappeared or is not empty"
+  cap_authority_lock_held=0
 }
 
 milliseconds_to_sleep() { # positive integer milliseconds
@@ -135,7 +225,7 @@ retire_announcement() { # repo, session, pid, start
 }
 
 stop_identity() { # name, pid, start, tag
-  local name=$1 pid=$2 start=$3 tag=$4 cap started deadline elapsed
+  local name=$1 pid=$2 start=$3 tag=$4 cap started deadline elapsed kill_cap
   identity_alive "$pid" "$start" "$tag" || return 0
   kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
   cap=$(supervision_wait_cap 5)
@@ -146,7 +236,12 @@ stop_identity() { # name, pid, start, tag
       elapsed=$((SECONDS - started))
       echo "supervision stop ceiling reached: $name pid=$pid (elapsed: ${elapsed}s; scaled cap: ${cap}s); sending KILL" >&2
       kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-      return 1
+      kill_cap=$(supervision_wait_cap 1)
+      deadline=$((SECONDS + kill_cap))
+      while identity_alive "$pid" "$start" "$tag" && (( SECONDS < deadline )); do sleep 0.05; done
+      identity_alive "$pid" "$start" "$tag" && return 1
+      wait "$pid" 2>/dev/null || true
+      return 0
     fi
     sleep 0.05
   done
@@ -229,15 +324,16 @@ stop_recorded_components() {
 }
 
 run_owner() {
-  local repo= gate= owner_tag= interval interval_ms interval_sleep supervision state lock owner watcher_pid watcher_start reaper_pid reaper_start
+  local repo= gate= owner_tag= watcher_cap= interval interval_ms interval_sleep supervision state lock owner watcher_pid watcher_start reaper_pid reaper_start
   local watcher_tag reaper_tag generation=0 fingerprint component pid start tag stale gate_cap gate_started elapsed
   while (($#)); do
     case "$1" in
       --repo) repo=$2; shift 2 ;; --gate) gate=$2; shift 2 ;; --tag) owner_tag=$2; shift 2 ;;
+      --watcher-cap) watcher_cap=$2; shift 2 ;;
       *) exit 2 ;;
     esac
   done
-  [[ -n "$repo" && -n "$gate" && -n "$owner_tag" ]] || exit 2
+  [[ -n "$repo" && -n "$gate" && -n "$owner_tag" && "$watcher_cap" =~ ^[1-9][0-9]*$ ]] || exit 2
   supervision=$agents/supervision
   state=$supervision/state.json
   lock=$supervision/lock.d
@@ -293,7 +389,8 @@ run_owner() {
     launch_detached watcher_pid "$supervision/watcher.log" "$watcher" \
       --dir "$agents/jobs" --scope "$repo" --state "$supervision/jobs.state" \
       --interval "$interval" --census --supervision-dir "$supervision" \
-      --heartbeat "$watcher_heartbeat" --instance-tag "$watcher_tag"
+      --heartbeat "$watcher_heartbeat" --ceiling-state "$state" --expected-cap "$watcher_cap" \
+      --instance-tag "$watcher_tag"
     watcher_start=$(wait_for_start_identity watcher "$watcher_pid") || exit 1
     launch_detached reaper_pid "$supervision/reaper.log" "$dispatch" reap --interval "$interval" \
       --heartbeat "$reaper_heartbeat" --instance-tag "$reaper_tag" --start-gate "$reaper_gate"
@@ -301,15 +398,15 @@ run_owner() {
     fingerprint=$("$helper" fingerprint --repo "$repo") || exit 1
     python3 - "$state" "$$" "$("$helper" started-at --pid "$$")" "$owner_tag" \
       "$watcher_pid" "$watcher_start" "$watcher_tag" "$watcher_heartbeat" \
-      "$reaper_pid" "$reaper_start" "$reaper_tag" "$reaper_heartbeat" "$interval" "$generation" "$fingerprint" <<'PY'
+      "$reaper_pid" "$reaper_start" "$reaper_tag" "$reaper_heartbeat" "$interval" "$generation" "$fingerprint" "$watcher_cap" <<'PY'
 import json, os, sys, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 args=sys.argv[1:]; output=Path(args[0]); owner_pid,owner_start,owner_tag=int(args[1]),int(args[2]),args[3]
 w_pid,w_start,w_tag,w_hb=int(args[4]),int(args[5]),args[6],args[7]
 r_pid,r_start,r_tag,r_hb=int(args[8]),int(args[9]),args[10],args[11]
-interval,generation,fingerprint=int(args[12]),int(args[13]),args[14]
-value={"schemaVersion":1,"owner":{"pid":owner_pid,"pidStartedAt":owner_start,"instanceTag":owner_tag},"components":{"watcher":{"pid":w_pid,"pidStartedAt":w_start,"instanceTag":w_tag,"heartbeat":w_hb},"reaper":{"pid":r_pid,"pidStartedAt":r_start,"instanceTag":r_tag,"heartbeat":r_hb}},"intervalSec":interval,"generation":generation,"fingerprint":fingerprint,"startedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+interval,generation,fingerprint,watcher_cap=int(args[12]),int(args[13]),args[14],int(args[15])
+value={"schemaVersion":1,"owner":{"pid":owner_pid,"pidStartedAt":owner_start,"instanceTag":owner_tag},"components":{"watcher":{"pid":w_pid,"pidStartedAt":w_start,"instanceTag":w_tag,"heartbeat":w_hb},"reaper":{"pid":r_pid,"pidStartedAt":r_start,"instanceTag":r_tag,"heartbeat":r_hb}},"intervalSec":interval,"generation":generation,"fingerprint":fingerprint,"derivedWatcherCapMin":watcher_cap,"startedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 output.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix=output.name+".",suffix=".tmp",dir=output.parent)
 with os.fdopen(fd,"w") as h: json.dump(value,h,indent=2,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
 os.replace(tmp,output)
@@ -341,7 +438,7 @@ PY
 }
 
 verify_armed() { # repo, owner pid/start/tag
-  local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 supervision state last interval cap started deadline elapsed component pid start tag heartbeat observed expected actual verdict completed expected_generation actual_generation
+  local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 supervision state last interval cap started deadline elapsed component pid start tag heartbeat observed expected actual verdict completed expected_generation actual_generation derived_cap loaded_cap
   supervision=$agents/supervision; state=$supervision/state.json; last=$supervision/last-census.json
   interval=$("$config" get --key watch.interval-sec --default 60)
   cap=$(supervision_wait_cap "$((interval + 10))")
@@ -356,6 +453,12 @@ verify_armed() { # repo, owner pid/start/tag
         heartbeat=$(json_field "$state" "components.$component.heartbeat" 2>/dev/null || true)
         observed=$(json_field "$heartbeat" observedAtEpoch 2>/dev/null || echo 0)
         (( $(date +%s) - observed <= interval * 2 + 2 )) || { functions_live=0; break; }
+        if [[ "$component" == watcher ]]; then
+          derived_cap=$(json_field "$state" derivedWatcherCapMin 2>/dev/null || true)
+          loaded_cap=$(json_field "$heartbeat" loadedCapMin 2>/dev/null || true)
+          [[ "$derived_cap" =~ ^[1-9][0-9]*$ && "$loaded_cap" == "$derived_cap" ]] \
+            || { functions_live=0; break; }
+        fi
       done
       if (( functions_live )); then
         verdict=$(json_field "$last" verdict 2>/dev/null || true)
@@ -383,7 +486,7 @@ arm_repository() {
   # id: a joined watcher cannot receive one, so none may depend on timing --
   # and the lease events emitted DURING arming must not leak it (FRCC-006).
   unset METASYSTEM_EXECUTION_ID
-  local repo= session= pid= start= tag= runtime=${METASYSTEM_AGENT_RUNTIME:-} retire=0 shutdown=0 lease_held=0 ancestor safe announcement
+  local repo= session= pid= start= tag= runtime=${METASYSTEM_AGENT_RUNTIME:-} retire=0 shutdown=0 lease_held=0 rearm=0 max_cap= watcher_cap= blocker= ancestor safe announcement
   local owner_lineage=${METASYSTEM_OWNER_LINEAGE:-}
   local owner_cap owner_started owner_deadline elapsed expected_owner_prefix
   while (($#)); do
@@ -396,6 +499,8 @@ arm_repository() {
       --retire) retire=1; shift ;; --shutdown) shutdown=1; shift ;;
       --lease-held) lease_held=1; shift ;;
       --owner-lineage) [[ $# -ge 2 ]] || { usage; exit 2; }; owner_lineage=$2; shift 2 ;;
+      --rearm) rearm=1; shift ;;
+      --max-cap) [[ $# -ge 2 ]] || { usage; exit 2; }; max_cap=$2; shift 2 ;;
       -h|--help) usage; exit 0 ;; *) usage; exit 2 ;;
     esac
   done
@@ -444,6 +549,7 @@ arm_repository() {
   tag=${tag:-${METASYSTEM_INSTANCE_TAG:-metasystem-main-$runtime-$safe}}
   [[ -n "$tag" ]] || die 2 "--tag cannot be empty"
   if (( retire )); then retire_announcement "$harness_root" "$session" "$pid" "$start"; exit 0; fi
+  watcher_cap=$(derive_watcher_ceiling "$max_cap")
 
   # Fixed arming step 1: registry write precedes lock acquisition and census.
   announcement=$(write_announcement "$harness_root" "$session" "$pid" "$start" "$tag" "$runtime" "$owner_lineage")
@@ -454,11 +560,35 @@ arm_repository() {
 
   lock_dir=$supervision/lock.d; owner_file=$lock_dir/owner.json
   owner_tag="metasystem-supervision-owner-$(sanitize "$(git -C "$repo" rev-parse --show-toplevel)")-$(date +%s)-$$"
+  trap 'release_cap_authority_lock' EXIT
+  acquire_cap_authority_lock
+  if (( rearm )); then
+    blocker=$(blocking_reserved_cap "$watcher_cap")
+    if [[ -n "$blocker" ]]; then
+      IFS='|' read -r blocking_job blocking_cap <<<"$blocker"
+      die 1 "supervision re-arm refused: derived ${watcher_cap}m ceiling is not strictly above reserved cap ${blocking_cap}m for job $blocking_job"
+    fi
+  fi
+  if (( rearm )) && [[ -f "$owner_file" ]]; then
+    owner_pid=$(json_field "$owner_file" pid) || die 1 "supervision lock owner is malformed"
+    owner_start=$(json_field "$owner_file" pidStartedAt) || die 1 "supervision lock owner is malformed"
+    existing_tag=$(json_field "$owner_file" instanceTag) || die 1 "supervision lock owner is malformed"
+    identity_alive "$owner_pid" "$owner_start" "$existing_tag" \
+      || die 1 "supervision re-arm refused: existing owner identity is not live"
+    stop_identity owner "$owner_pid" "$owner_start" "$existing_tag" \
+      || die 1 "supervision re-arm refused: existing owner did not stop; replacement was not established"
+  fi
   if mkdir "$lock_dir" 2>/dev/null; then
+    blocker=$(blocking_reserved_cap "$watcher_cap")
+    if [[ -n "$blocker" ]]; then
+      IFS='|' read -r blocking_job blocking_cap <<<"$blocker"
+      rmdir "$lock_dir" 2>/dev/null || true
+      die 1 "supervision establishment refused: derived ${watcher_cap}m ceiling is not strictly above reserved cap ${blocking_cap}m for job $blocking_job"
+    fi
     # The process is launched only after this arming call owns the repository
     # lock. This preserves the fixed order and avoids speculative supervisors.
     gate=$supervision/owner-gate.$$.$RANDOM
-    launch_detached candidate_pid "$supervision/owner.log" "$script_path" __owner --repo "$repo" --gate "$gate" --tag "$owner_tag"
+    launch_detached candidate_pid "$supervision/owner.log" "$script_path" __owner --repo "$repo" --gate "$gate" --tag "$owner_tag" --watcher-cap "$watcher_cap"
     candidate_start=$(wait_for_start_identity owner-candidate "$candidate_pid") || {
       rmdir "$lock_dir" 2>/dev/null || true
       die 1 "could not start supervision owner"
@@ -482,15 +612,22 @@ arm_repository() {
     owner_start=$(json_field "$owner_file" pidStartedAt) || die 1 "supervision lock owner is malformed"
     existing_tag=$(json_field "$owner_file" instanceTag) || die 1 "supervision lock owner is malformed"
     if identity_alive "$owner_pid" "$owner_start" "$existing_tag"; then
+      (( ! rearm )) \
+        || die 1 "supervision re-arm refused: another live owner won replacement; refusing to join it"
       owner_tag=$existing_tag
     else
       # Takeover is legal only after exact pid+start identity is proven dead.
+      blocker=$(blocking_reserved_cap "$watcher_cap")
+      if [[ -n "$blocker" ]]; then
+        IFS='|' read -r blocking_job blocking_cap <<<"$blocker"
+        die 1 "supervision takeover refused: derived ${watcher_cap}m ceiling is not strictly above reserved cap ${blocking_cap}m for job $blocking_job"
+      fi
       stop_recorded_components "$harness_root"
       rm "$owner_file"
       rmdir "$lock_dir" || die 1 "supervision lock takeover lost a race"
       mkdir "$lock_dir" || die 1 "supervision lock takeover lost a race"
       gate=$supervision/owner-gate.$$.$RANDOM
-      launch_detached candidate_pid "$supervision/owner.log" "$script_path" __owner --repo "$repo" --gate "$gate" --tag "$owner_tag"
+      launch_detached candidate_pid "$supervision/owner.log" "$script_path" __owner --repo "$repo" --gate "$gate" --tag "$owner_tag" --watcher-cap "$watcher_cap"
       candidate_start=$(wait_for_start_identity takeover-owner "$candidate_pid") || {
         rmdir "$lock_dir" 2>/dev/null || true
         die 1 "could not start takeover owner"
@@ -501,6 +638,8 @@ arm_repository() {
     fi
   fi
   verify_armed "$repo" "$owner_pid" "$owner_start" "$owner_tag" || exit 1
+  release_cap_authority_lock
+  trap - EXIT
   printf '%s ARMED repo=%s owner=%s start=%s tag=%s announcement=%s\n' "$(now_iso)" "$repo" "$owner_pid" "$owner_start" "$owner_tag" "$announcement"
 }
 

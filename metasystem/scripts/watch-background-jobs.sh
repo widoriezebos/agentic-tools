@@ -55,6 +55,8 @@ Options:
   --census         inventory agent-signature processes in --scope on every pass
   --supervision-dir DIR  census/heartbeat directory (arming-only option)
   --heartbeat FILE watcher function heartbeat (arming-only option)
+  --ceiling-state FILE  supervision state carrying derivedWatcherCapMin
+  --expected-cap N  wait for ceiling state to publish this derived value
   --instance-tag TAG  watcher process identity tag (arming-only option)
   --baseline       record every currently-terminal job as already reported and
                    exit; use once when adopting the watcher on a repository
@@ -93,6 +95,8 @@ start_verify_min=5
 census_enabled=0
 supervision_dir=
 watcher_heartbeat=
+ceiling_state=
+expected_cap=
 instance_tag=
 census_writer_owned=0
 census_budget_percent=
@@ -111,6 +115,8 @@ while [ $# -gt 0 ]; do
     --census) census_enabled=1; shift ;;
     --supervision-dir) [ $# -ge 2 ] || { usage; exit 2; }; supervision_dir=$2; shift 2 ;;
     --heartbeat) [ $# -ge 2 ] || { usage; exit 2; }; watcher_heartbeat=$2; shift 2 ;;
+    --ceiling-state) [ $# -ge 2 ] || { usage; exit 2; }; ceiling_state=$2; shift 2 ;;
+    --expected-cap) [ $# -ge 2 ] || { usage; exit 2; }; expected_cap=$2; shift 2 ;;
     --instance-tag) [ $# -ge 2 ] || { usage; exit 2; }; instance_tag=$2; shift 2 ;;
     --baseline) baseline=1; shift ;;
     --start-verify-min) [ $# -ge 2 ] || { usage; exit 2; }; start_verify_min="$2"; shift 2 ;;
@@ -133,6 +139,27 @@ stale_min=$("$config" "${stale_args[@]}")
 cap_min=$("$config" "${cap_args[@]}")
 interval=$("$config" "${interval_args[@]}")
 census_budget_percent=$("$config" get --key census.max-interval-share-percent --default 50)
+
+if [[ -n "$expected_cap" && ! "$expected_cap" =~ ^[1-9][0-9]*$ ]]; then
+  echo "--expected-cap must be a positive integer" >&2
+  exit 2
+fi
+if [[ -n "$ceiling_state" ]]; then
+  ceiling_deadline=$((SECONDS + 10))
+  while ! cap_min=$(python3 - "$ceiling_state" <<'PY'
+import json, sys
+from pathlib import Path
+try: value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["derivedWatcherCapMin"]
+except (OSError, ValueError, KeyError, TypeError): raise SystemExit(1)
+if type(value) is not int or value < 1: raise SystemExit(1)
+print(value)
+PY
+  ) || [[ -n "$expected_cap" && "$cap_min" != "$expected_cap" ]]; do
+    (( SECONDS < ceiling_deadline )) \
+      || { echo "watcher startup refused: supervision state did not publish derivedWatcherCapMin" >&2; exit 1; }
+    sleep 0.02
+  done
+fi
 
 [ ${#dirs[@]} -gt 0 ] || { usage; exit 2; }
 case "$stale_min$cap_min$interval$start_verify_min" in *[!0-9]*) usage; exit 2 ;; esac
@@ -172,12 +199,12 @@ printf 'ARMED watcher fp=%s dirs=%s scope=%s state=%s stale=%sm cap=%sm start-ve
 now_epoch() { date +%s; }
 
 atomic_identity_json() { # output, function
-  python3 - "$1" "$2" "$$" "$instance_tag" "$process_census" <<'PY'
+  python3 - "$1" "$2" "$$" "$instance_tag" "$process_census" "$cap_min" <<'PY'
 import json, os, subprocess, sys, tempfile, time
 from pathlib import Path
-output, function, pid, tag, helper = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+output, function, pid, tag, helper, loaded_cap = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5], int(sys.argv[6])
 started = int(subprocess.check_output([helper, "started-at", "--pid", str(pid)], text=True).strip())
-value = {"function": function, "pid": pid, "pidStartedAt": started, "instanceTag": tag, "observedAtEpoch": int(time.time())}
+value = {"function": function, "pid": pid, "pidStartedAt": started, "instanceTag": tag, "observedAtEpoch": int(time.time()), "loadedCapMin": loaded_cap}
 output.parent.mkdir(parents=True, exist_ok=True)
 fd, temporary = tempfile.mkstemp(prefix=output.name + ".", suffix=".tmp", dir=output.parent)
 with os.fdopen(fd, "w") as handle:

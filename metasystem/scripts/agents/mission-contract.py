@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -78,6 +79,7 @@ class ContractError(RuntimeError):
 class Contract:
     path: Path
     text: str
+    raw_bytes: bytes
     values: dict[str, str]
     sealed: dict[str, str]
     approval: re.Match[str] | None
@@ -220,6 +222,7 @@ def validate_contract(contract: Contract, project_root: Path) -> None:
     guards: dict[str, dict[str, str]] = {}
     streams: dict[str, str] = {}
     envelopes: dict[str, str] = {}
+    pair_caps: dict[str, str] = {}
     allowed_patterns = (
         re.compile(rf"^gate\.threshold\.({ID})$"),
         re.compile(rf"^gate\.noise-floor\.({ID})$"),
@@ -229,6 +232,18 @@ def validate_contract(contract: Contract, project_root: Path) -> None:
     )
     for key, value in values.items():
         if key in SCALARS:
+            continue
+        if key.startswith("cap.min."):
+            parts = key.split(".", 3)
+            if len(parts) != 4 or not re.fullmatch(ID, parts[2]):
+                fail(f"mission contract has an invalid pair-cap key: {key}")
+            canonical = canonical_model(parts[3])
+            expected = f"cap.min.{parts[2]}.{canonical}"
+            if not canonical or key != expected:
+                fail(f"mission contract pair-cap key {key} is not canonical; use {expected}")
+            if not re.fullmatch(r"[1-9][0-9]*", value):
+                fail(f"{key} must be a positive integer")
+            pair_caps[key] = value
             continue
         match = allowed_patterns[0].fullmatch(key)
         if match:
@@ -324,8 +339,9 @@ def validate_contract(contract: Contract, project_root: Path) -> None:
 
 def read_contract(path: Path) -> Contract:
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
+        raw_bytes = path.read_bytes()
+        text = raw_bytes.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as error:
         fail(f"cannot read contract: {error}")
     authored = fenced_blocks(text, "mission")
     seals = fenced_blocks(text, "mission-seal")
@@ -342,6 +358,7 @@ def read_contract(path: Path) -> Contract:
     return Contract(
         path=path,
         text=text,
+        raw_bytes=raw_bytes,
         values=parse_key_values(authored[0], "mission block"),
         sealed=parse_key_values(seals[0], "mission-seal block") if seals else {},
         approval=approval,
@@ -356,6 +373,16 @@ def canonical_signed_bytes(text: str) -> bytes:
 
 def contract_hash(text: str) -> str:
     return hashlib.sha256(canonical_signed_bytes(text)).hexdigest()
+
+
+def canonical_model(name: str) -> str:
+    helper = METASYSTEM_ROOT / "scripts" / "agents" / "canonical-model.py"
+    specification = importlib.util.spec_from_file_location("mission_contract_canonical_model", helper)
+    if specification is None or specification.loader is None:
+        fail("canonical model helper is unavailable")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return str(module.canonical_model(name))
 
 
 def tree_paths(repo: Path, ref: str) -> list[str]:
@@ -474,9 +501,10 @@ def expected_seal(contract: Contract, repo: Path, project_root: Path, run_baseli
         "sealed.truth-integrity.sha256": manifest_hash(repo, gate_ref, truth_paths),
         "sealed.baseline.failure-identifiers": "unavailable",
     }
-    for key in FENCE_KEYS:
+    exposure_keys = [*FENCE_KEYS, *sorted(key for key in values if key.startswith("cap.min."))]
+    for key in exposure_keys:
         seal[f"sealed.exposure.{key}"] = values[key]
-    echo = ",".join(f"{key}={values[key]}" for key in FENCE_KEYS)
+    echo = ",".join(f"{key}={values[key]}" for key in exposure_keys)
     seal["sealed.exposure.statement"] = f"{values['exposure']}|{echo}"
     if run_baseline:
         candidate_sha, metrics, failures = run_gate(contract, repo, project_root)
@@ -507,6 +535,9 @@ def seal_contract(contract: Contract, repo: Path, project_root: Path) -> str:
     ]
     ordered += sorted(key for key in seal if key.startswith("sealed.baseline.") and key not in ordered)
     ordered += [f"sealed.exposure.{key}" for key in FENCE_KEYS]
+    ordered += [
+        f"sealed.exposure.{key}" for key in sorted(contract.values) if key.startswith("cap.min.")
+    ]
     ordered += ["sealed.exposure.statement"]
     block = "\n".join(f"{key}={seal[key]}" for key in ordered)
     updated = contract.text.rstrip() + f"\n\n```mission-seal\n{block}\n```\n"
@@ -589,8 +620,24 @@ def verify_origin(contract: Contract, repo: Path) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    if result.returncode != 0 or result.stdout != contract.path.read_bytes():
+    if result.returncode != 0 or result.stdout != contract.raw_bytes:
         fail("preflight refused: signed contract bytes are absent from fetched origin default branch")
+
+
+def atomic_bytes(path: Path, value: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
 
 
 def process_has_tag(project_root: Path, pid: int, started: int, tag: str) -> bool:
@@ -721,6 +768,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("validate", "seal", "preflight"))
     parser.add_argument("--file", required=True, type=Path)
+    parser.add_argument("--verified-bytes-output", type=Path)
     args = parser.parse_args()
     path = args.file.resolve()
     try:
@@ -728,11 +776,19 @@ def main() -> int:
         repo = repository_for(path)
         project_root = project_root_for(path, repo)
         validate_contract(contract, project_root)
+        if args.verified_bytes_output is not None and args.mode != "preflight":
+            fail("--verified-bytes-output is valid only for preflight")
         if args.mode == "seal":
             print(seal_contract(contract, repo, project_root))
         elif args.mode == "preflight":
             preflight(contract, repo, project_root)
-            print(f"mission preflight passed: {mission_id_from_path(path)}")
+            raw_sha256 = hashlib.sha256(contract.raw_bytes).hexdigest()
+            if args.verified_bytes_output is not None:
+                atomic_bytes(args.verified_bytes_output, contract.raw_bytes)
+            print(
+                f"mission preflight passed: {mission_id_from_path(path)} "
+                f"approvedContractSha256={raw_sha256}"
+            )
         else:
             print(f"mission contract valid: {path}")
     except ContractError as error:

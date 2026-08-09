@@ -322,9 +322,9 @@ devin_record_effective_model() { # transcript
   # would invalidate every Devin benchmark run. Canonicalise the same way an
   # identifier is written -- lowercase, non-alphanumeric runs become one hyphen
   # -- and record whatever that yields, including a genuine disagreement.
-  local observed
-  observed=$(python3 - "$1" <<'PY'
-import json, re, sys
+  local observed observed_display
+  observed_display=$(python3 - "$1" <<'PY'
+import json, sys
 from pathlib import Path
 try:
     value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -332,8 +332,11 @@ except (OSError, ValueError):
     raise SystemExit(0)
 name = (value.get("agent") or {}).get("model_name")
 if isinstance(name, str) and name.strip():
-    print(re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-"))
+    print(name)
 PY
+  ) || observed_display=""
+  observed=$(
+    "$root/scripts/agents/canonical-model.py" "$observed_display"
   ) || observed=""
   # An unreadable or absent model name is recorded as `unobserved`, NOT left as
   # the requested value the handshake seeded: a job record must never present a

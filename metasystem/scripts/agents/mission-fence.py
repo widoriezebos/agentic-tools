@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
+import importlib.util
 import json
 import os
 import re
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -54,12 +56,21 @@ def atomic_json(path: Path, value: dict[str, Any]) -> None:
             pass
 
 
-def contract_values(repo: Path, mission: str) -> dict[str, str]:
-    path = repo / "plans" / f"mission-{mission}.contract.md"
+def canonical_model(name: str, repo: Path) -> str:
+    helper = repo / "scripts" / "agents" / "canonical-model.py"
+    specification = importlib.util.spec_from_file_location("mission_fence_canonical_model", helper)
+    if specification is None or specification.loader is None:
+        raise FenceError("canonical model helper is unavailable")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return str(module.canonical_model(name))
+
+
+def contract_values_from_bytes(data: bytes, repo: Path) -> dict[str, str]:
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise FenceError(f"mission contract is unreadable: {error}") from error
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise FenceError(f"mission contract is not UTF-8: {error}") from error
     blocks = re.findall(r"^```mission[ \t]*\n(.*?)^```[ \t]*$", text, re.MULTILINE | re.DOTALL)
     if len(blocks) != 1:
         raise FenceError("mission contract does not have exactly one authored block")
@@ -89,7 +100,47 @@ def contract_values(repo: Path, mission: str) -> dict[str, str]:
     for key in required - {"fence.wall-clock-hours"}:
         if not re.fullmatch(r"[1-9][0-9]*", values[key]):
             raise FenceError(f"mission {key} is invalid")
+    for key, value in values.items():
+        if not key.startswith("cap.min."):
+            continue
+        parts = key.split(".", 3)
+        if len(parts) != 4 or not ID_RE.fullmatch(parts[2]):
+            raise FenceError(f"mission pair-cap key is invalid: {key}")
+        encoded = canonical_model(parts[3], repo)
+        expected = f"cap.min.{parts[2]}.{encoded}"
+        if not encoded or key != expected:
+            raise FenceError(f"mission pair-cap key is not canonical: {key}; use {expected}")
+        if not re.fullmatch(r"[1-9][0-9]*", value):
+            raise FenceError(f"mission {key} is invalid")
     return values
+
+
+def verified_contract_values(
+    repo: Path,
+    mission: str,
+    fences: dict[str, Any],
+    after_buffer_read: Any = None,
+) -> dict[str, str]:
+    """Read, hash, compare, and parse one raw-file snapshot while the caller holds the fence lock."""
+    # approvedContractSha256 is always the SHA-256 digest of the exact raw file
+    # bytes, including the Approval line and trailing whitespace. It is not the
+    # canonical signed-content digest carried by the Approval line.
+    approved = fences.get("approvedContractSha256")
+    if not isinstance(approved, str) or not re.fullmatch(r"[0-9a-f]{64}", approved):
+        raise FenceError("mission fence refused: approvedContractSha256 is absent or invalid")
+    path = repo / "plans" / f"mission-{mission}.contract.md"
+    try:
+        snapshot = path.read_bytes()
+    except OSError as error:
+        raise FenceError(f"mission contract is unreadable: {error}") from error
+    if after_buffer_read is not None:
+        after_buffer_read()
+    actual = hashlib.sha256(snapshot).hexdigest()
+    if actual != approved:
+        raise FenceError(
+            "mission fence refused: live contract raw-file sha256 does not match approvedContractSha256"
+        )
+    return contract_values_from_bytes(snapshot, repo)
 
 
 def mission_paths(repo: Path, mission: str) -> tuple[Path, Path, Path]:
@@ -155,11 +206,12 @@ def violations(repo: Path, values: dict[str, str], fences: dict[str, Any], cap_m
         result.append("wall-clock-hours")
     if fences["cycles"] >= int(values["fence.cycles"]):
         result.append("cycles")
-    if reserve == "job":
+    if reserve in {"job", "authorized-job"}:
         if len(fences["reservations"]) >= int(values["fence.jobs"]):
             result.append("jobs")
         if len(active_reservations(repo, fences)) >= int(values["fence.concurrency"]):
             result.append("concurrency")
+    if reserve == "job":
         if cap_min is None or cap_min > int(values["fence.job-cap-min"]):
             result.append("job-cap-min")
     return result
@@ -210,12 +262,12 @@ def write_batched_ask(repo: Path, mission: str, reasons: list[str]) -> Path:
 
 
 def check_or_reserve(args: argparse.Namespace, reserve: bool) -> None:
-    values = contract_values(args.repo, args.mission)
     directory, path, lock_path = mission_paths(args.repo, args.mission)
     directory.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         fences = load_fences(args.repo, args.mission)
+        values = verified_contract_values(args.repo, args.mission, fences)
         found = violations(args.repo, values, fences, args.cap_min, "job")
         if found:
             ask = write_batched_ask(args.repo, args.mission, found)
@@ -228,18 +280,76 @@ def check_or_reserve(args: argparse.Namespace, reserve: bool) -> None:
 
 
 def reserve_cycle(args: argparse.Namespace) -> None:
-    values = contract_values(args.repo, args.mission)
     directory, path, lock_path = mission_paths(args.repo, args.mission)
     directory.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         fences = load_fences(args.repo, args.mission)
+        values = verified_contract_values(args.repo, args.mission, fences)
         found = violations(args.repo, values, fences, None, "cycle")
         if found:
             ask = write_batched_ask(args.repo, args.mission, found)
             raise FenceError(f"mission fence refused cycle ({', '.join(found)}); batched ask written: {ask}")
         fences["cycles"] += 1
         atomic_json(path, fences)
+
+
+def authorize_cap_transaction(args: argparse.Namespace, after_buffer_read: Any = None) -> dict[str, Any]:
+    directory, path, lock_path = mission_paths(args.repo, args.mission)
+    directory.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        fences = load_fences(args.repo, args.mission)
+        values = verified_contract_values(args.repo, args.mission, fences, after_buffer_read)
+        pair_key = f"cap.min.{args.runtime}.{args.model}"
+        if pair_key in values:
+            authorized = int(values[pair_key])
+            signed_rule = "contract-pair"
+        else:
+            authorized = int(values["fence.job-cap-min"])
+            signed_rule = "fence-default"
+        if args.requested is not None and args.requested > authorized:
+            raise FenceError(
+                f"mission fence refused requested cap {args.requested}m above signed {pair_key if pair_key in values else 'fence.job-cap-min'}={authorized}m"
+            )
+        cap_min = args.requested if args.requested is not None else authorized
+        found = violations(args.repo, values, fences, None, "authorized-job")
+        if found:
+            ask = write_batched_ask(args.repo, args.mission, found)
+            raise FenceError(f"mission fence refused job ({', '.join(found)}); batched ask written: {ask}")
+
+        launch_time = now().replace(microsecond=0)
+        mission_started = datetime.fromisoformat(fences["startedAt"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        mission_end = mission_started + timedelta(seconds=float(Decimal(values["fence.wall-clock-hours"]) * 3600))
+        remaining_seconds = int((mission_end - launch_time).total_seconds())
+        if remaining_seconds < 120:
+            raise FenceError(
+                f"mission has {remaining_seconds} seconds of wall clock; refusing to start a job that cannot run"
+            )
+        requested_deadline = launch_time + timedelta(minutes=cap_min)
+        truncated = requested_deadline > mission_end
+        deadline = min(requested_deadline, mission_end).strftime("%Y-%m-%dT%H:%M:%SZ")
+        source = {
+            "rule": "argument" if args.requested is not None else signed_rule,
+            "origin": "argument" if args.requested is not None else "contract",
+            "truncatedBy": "wall-clock" if truncated else None,
+        }
+        if args.job in fences["reservations"]:
+            raise FenceError(f"mission fence reservation already exists for job: {args.job}")
+        fences["reservations"][args.job] = {
+            "reservedAt": now_iso(),
+            "capMin": cap_min,
+            "capDeadline": deadline,
+            "runtime": args.runtime,
+            "model": args.model,
+            "source": source,
+        }
+        atomic_json(path, fences)
+        return {"capMin": cap_min, "capDeadline": deadline, "source": source}
+
+
+def authorize_cap(args: argparse.Namespace) -> None:
+    print(json.dumps(authorize_cap_transaction(args), separators=(",", ":"), sort_keys=True))
 
 
 def aggregate_usage(args: argparse.Namespace) -> None:
@@ -341,6 +451,13 @@ def main() -> int:
     cycle = subparsers.add_parser("reserve-cycle")
     cycle.add_argument("--repo", required=True, type=Path)
     cycle.add_argument("--mission", required=True)
+    authorize = subparsers.add_parser("authorize-cap")
+    authorize.add_argument("--repo", required=True, type=Path)
+    authorize.add_argument("--mission", required=True)
+    authorize.add_argument("--job", required=True)
+    authorize.add_argument("--runtime", required=True)
+    authorize.add_argument("--model", required=True)
+    authorize.add_argument("--requested", type=int)
     usage = subparsers.add_parser("aggregate-usage")
     usage.add_argument("--repo", required=True, type=Path)
     usage.add_argument("--mission", required=True)
@@ -359,6 +476,16 @@ def main() -> int:
             check_or_reserve(args, reserve=args.command == "reserve-job")
         elif args.command == "reserve-cycle":
             reserve_cycle(args)
+        elif args.command == "authorize-cap":
+            if (
+                not ID_RE.fullmatch(args.job)
+                or not ID_RE.fullmatch(args.runtime)
+                or args.model != canonical_model(args.model, args.repo)
+                or not args.model
+                or (args.requested is not None and args.requested < 1)
+            ):
+                raise FenceError("invalid mission cap authorization request")
+            authorize_cap(args)
         elif args.command == "aggregate-usage":
             aggregate_usage(args)
         else:

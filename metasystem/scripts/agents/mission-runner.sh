@@ -108,6 +108,27 @@ def atomic_text(path: Path, value: str) -> None:
             pass
 
 
+def atomic_bytes(path: Path, value: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
 def read_json(path: Path, label: str, code: int = 3) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -146,12 +167,24 @@ def mission_dir(mission: str) -> Path:
     return MISSIONS / mission
 
 
-def parse_contract(mission: str) -> tuple[str, dict[str, str], dict[str, str]]:
-    path = contract_path(mission)
+def approved_contract_path(mission: str) -> Path:
+    return mission_dir(mission) / f"mission-{mission}.contract.md"
+
+
+def parse_contract(mission: str, *, approved: bool = True) -> tuple[str, dict[str, str], dict[str, str]]:
+    path = approved_contract_path(mission) if approved else contract_path(mission)
     try:
-        text = path.read_text(encoding="utf-8")
+        raw_bytes = path.read_bytes()
+        text = raw_bytes.decode("utf-8")
     except OSError as error:
         raise RunnerError(f"mission contract is unreadable: {path}: {error}") from error
+    except UnicodeDecodeError as error:
+        raise RunnerError(f"mission contract is not UTF-8: {path}: {error}") from error
+    if approved:
+        fences = read_json(mission_dir(mission) / "fences.json", "mission fence counters")
+        expected = fences.get("approvedContractSha256")
+        if not isinstance(expected, str) or hashlib.sha256(raw_bytes).hexdigest() != expected:
+            raise RunnerError("approved mission contract snapshot does not match approvedContractSha256")
     authored_blocks = re.findall(r"^```mission[ \t]*\n(.*?)^```[ \t]*$", text, re.MULTILINE | re.DOTALL)
     seal_blocks = re.findall(r"^```mission-seal[ \t]*\n(.*?)^```[ \t]*$", text, re.MULTILINE | re.DOTALL)
     if len(authored_blocks) != 1 or len(seal_blocks) != 1:
@@ -464,7 +497,39 @@ def arming_identity(mission: str) -> tuple[str, int, int, str, str | None]:
     )
 
 
-def arm_and_preflight(mission: str) -> None:
+def pin_verified_contract(mission: str, mode: str, snapshot: bytes, approved_sha256: str) -> None:
+    directory = mission_dir(mission)
+    fences_path = directory / "fences.json"
+    lock_path = directory / "mission-fence.lock"
+    directory.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        if fences_path.exists():
+            fences = read_json(fences_path, "mission fence counters")
+        else:
+            if mode != "start":
+                raise RunnerError("mission resume refused: fence state is absent")
+            fences = {
+                "schemaVersion": 1,
+                "missionId": mission,
+                "startedAt": now_iso(),
+                "cycles": 0,
+                "reservations": {},
+            }
+        if fences.get("schemaVersion") != 1 or fences.get("missionId") != mission:
+            raise RunnerError("mission fence counters have an invalid identity")
+        if mode == "start" and fences.get("approvedContractSha256") is not None:
+            raise RunnerError("mission start refused: approved contract is already pinned; use resume")
+        if hashlib.sha256(snapshot).hexdigest() != approved_sha256:
+            raise RunnerError("mission preflight snapshot does not match its verified raw-file sha256")
+        # This snapshot and digest come from one preflight invocation. The pin
+        # is the raw-file SHA-256, including Approval and trailing whitespace.
+        atomic_bytes(approved_contract_path(mission), snapshot)
+        fences["approvedContractSha256"] = approved_sha256
+        atomic_json(fences_path, fences)
+
+
+def arm_and_preflight(mission: str, mode: str) -> None:
     session, pid, started, tag, lineage = arming_identity(mission)
     command = [
         str(ROOT / "scripts" / "agents" / "arm-supervision.sh"),
@@ -488,9 +553,32 @@ def arm_and_preflight(mission: str) -> None:
     if arm.returncode != 0 or "ARMED" not in arm.stdout:
         detail = (arm.stderr or arm.stdout).strip()
         raise RunnerError(f"mission start refused: supervision did not arm: {detail}")
-    preflight = run_command([str(ROOT / "scripts" / "assert-mission.sh"), "--preflight", "--file", str(contract_path(mission))])
-    if preflight.returncode != 0:
-        raise RunnerError(f"mission start refused by preflight: {(preflight.stderr or preflight.stdout).strip()}")
+    descriptor, verified_name = tempfile.mkstemp(prefix=f"mission-{mission}-verified.", suffix=".contract.md")
+    os.close(descriptor)
+    verified_path = Path(verified_name)
+    try:
+        preflight = run_command(
+            [
+                str(ROOT / "scripts" / "agents" / "mission-contract.py"),
+                "preflight",
+                "--file",
+                str(contract_path(mission)),
+                "--verified-bytes-output",
+                str(verified_path),
+            ]
+        )
+        if preflight.returncode != 0:
+            raise RunnerError(f"mission start refused by preflight: {(preflight.stderr or preflight.stdout).strip()}")
+        match = re.search(r"approvedContractSha256=([0-9a-f]{64})", preflight.stdout)
+        if match is None:
+            raise RunnerError("mission start refused: preflight omitted the verified raw-file sha256")
+        try:
+            verified_bytes = verified_path.read_bytes()
+        except OSError as error:
+            raise RunnerError(f"mission start refused: verified contract snapshot is unreadable: {error}") from error
+        pin_verified_contract(mission, mode, verified_bytes, match.group(1))
+    finally:
+        verified_path.unlink(missing_ok=True)
 
 
 def verify_state(path: Path, *, anchor: bool = False) -> dict[str, Any]:
@@ -635,7 +723,7 @@ def initialize_state(mission: str, lease: Path) -> tuple[Path, Path, dict[str, A
             "--state",
             str(state_path),
             "--contract",
-            str(contract_path(mission)),
+            str(approved_contract_path(mission)),
             "--ledger",
             str(ledger),
             "--lease",
@@ -1633,7 +1721,7 @@ def launch_runner(command: str, mission: str, foreground: bool) -> int:
         if state["status"] != "running":
             raise RunnerError(f"mission is {state['status']}; answer its park reason before resume")
     cleanup_stale_lease(mission)
-    arm_and_preflight(mission)
+    arm_and_preflight(mission, command)
     tag = f"metasystem-mission-runner-{mission}-{secrets.token_hex(3)}"
     signal_path = directory / f"runner-start-{secrets.token_hex(4)}.json"
     _, _, log_path = runner_paths(mission)
@@ -1840,7 +1928,7 @@ def answer_command(arguments: list[str]) -> int:
         if preflight.returncode != 0:
             print(f"answer refused: fence contract amendment is not preflight-ready: {(preflight.stderr or preflight.stdout).strip()}", file=sys.stderr)
             return 3
-        _, values, _ = parse_contract(mission)
+        _, values, _ = parse_contract(mission, approved=False)
         if not fence_reached(mission, values):
             proposed.update({"status": "running", "parkReason": None, "gatePassed": False})
     proposed["waitingList"] = [value for value in proposed["waitingList"] if value != ask_id]
