@@ -174,6 +174,7 @@
    batch.
 11. **Confirming benchmark re-run** (Opus critics vs luna builders, the
    0.019→0.981 effect) — with the human present, after the above.
-12. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
-   implemented, proven by both gates, and pushed. Next: the probe and
-   `development/devin-selftest.md`; a `hosts/devin.sh` is a separate build.
+12. **Devin integration** — DONE 2026-08-09: adapter and host proven, bm-2
+   cohort complete with two graded repetitions; follow-on work lives in
+   item 6 (caps and comparison cohorts).
+
