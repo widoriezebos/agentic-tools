@@ -1,23 +1,68 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Pinned mission turn evidence fields",
-  "type": "object",
-  "required": [
-    "cycle", "endedAt", "error", "missionId", "model", "outcome", "result",
-    "runtime", "startedAt", "status", "turnCapMin", "turnId"
-  ],
   "properties": {
-    "cycle": {"type": "integer", "minimum": 1},
-    "endedAt": {"type": ["string", "null"]},
-    "error": {"type": ["string", "null"]},
-    "missionId": {"type": "string"},
-    "model": {"type": "string"},
-    "outcome": {"type": "string"},
-    "result": {"type": ["object", "null"]},
-    "runtime": {"type": "string"},
-    "startedAt": {"type": "string", "format": "date-time"},
-    "status": {"type": "string"},
-    "turnCapMin": {"type": "integer", "minimum": 1},
-    "turnId": {"type": "string"}
-  }
+    "cycle": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "endedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "missionId": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "outcome": {
+      "type": "string"
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "runtime": {
+      "type": "string"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "turnCapMin": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "cycle",
+    "endedAt",
+    "error",
+    "missionId",
+    "model",
+    "outcome",
+    "runtime",
+    "startedAt",
+    "status",
+    "turnCapMin",
+    "turnId"
+  ],
+  "title": "Pinned mission turn evidence fields",
+  "type": "object"
 }

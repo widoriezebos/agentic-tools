@@ -1,40 +1,138 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "$comment": "metasystem.version=1",
-  "title": "Verifier return",
-  "type": "object",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "riskiestPart", "whatWasDone"],
   "properties": {
-    "jobId": {"type": "string"},
-    "round": {"type": "integer"},
-    "runtime": {"type": "string"},
-    "sessionId": {"type": ["string", "null"]},
-    "model": {
-      "type": "object",
+    "chainClosed": {
+      "type": "boolean"
+    },
+    "claimed": {
       "additionalProperties": false,
-      "required": ["requested", "effective"],
       "properties": {
-        "requested": {"type": "string"},
-        "effective": {"type": ["string", "null"]}
-      }
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "model"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "evidence": {
-      "type": "array",
       "items": {
-        "type": "object",
         "additionalProperties": false,
-        "required": ["command", "observed", "level"],
         "properties": {
-          "command": {"type": "string"},
-          "observed": {"type": "string"},
-          "level": {"enum": ["ran", "read", "inferred"]}
-        }
-      }
+          "command": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "ran",
+              "read",
+              "inferred"
+            ]
+          },
+          "observed": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "observed",
+          "level"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
-    "gaps": {"type": "array", "items": {"type": "string"}},
-    "mode": {"type": "string"},
-    "riskiestPart": {"type": "string"},
-    "whatWasDone": {"type": "string"}
-  }
+    "gaps": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "model": {
+      "additionalProperties": false,
+      "properties": {
+        "effective": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requested": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requested",
+        "effective"
+      ],
+      "type": "object"
+    },
+    "reviewedCommit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "riskiestPart": {
+      "type": "string"
+    },
+    "round": {
+      "type": "integer"
+    },
+    "runtime": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "enum": [
+        1,
+        2
+      ],
+      "type": "integer"
+    },
+    "sessionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "whatWasDone": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "jobId",
+    "round",
+    "runtime",
+    "sessionId",
+    "model",
+    "evidence",
+    "gaps",
+    "mode",
+    "riskiestPart",
+    "whatWasDone"
+  ],
+  "title": "Verifier return",
+  "type": "object"
 }

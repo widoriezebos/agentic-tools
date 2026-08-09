@@ -169,9 +169,16 @@
    implementation lands (same files).
 9. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
    seven carried findings) — after the coexistence stream closes.
-10. **Benchmark kit halves** of the validity closure (schema v2 entries,
-   extractor version dispatch; human-ratified) — with the next kit-gate
-   batch.
+10. **Benchmark kit halves** — schema-v2 alignment DONE 2026-08-09: every
+   role return schema accepts schemaVersion/claimed/reviewedCommit/
+   chainClosed, the census schema accepts v2 (generation, stateDigest),
+   turn result is optional (failed turns have none), chainClosed is
+   root-only in job records. Proof: re-extracting the finished bm-2 cohort
+   yields ZERO schema-shaped gaps (was four kinds). REMAINING in this
+   item: the censusScanMilliseconds watch samples only the FINAL census,
+   which always completes after the run window, so the watch never has a
+   value — it needs a during-run duration source (pre-existing limitation,
+   visible in every scorecard to date).
 11. **Confirming benchmark re-run** (Opus critics vs luna builders, the
    0.019→0.981 effect) — with the human present, after the above.
 12. **Devin integration** — DONE 2026-08-09: adapter and host proven, bm-2

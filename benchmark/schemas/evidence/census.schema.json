@@ -1,34 +1,106 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Pinned process census evidence",
-  "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion", "writer", "verdict", "completedAt", "completedAtEpoch",
-    "durationMs", "intervalSec", "fingerprint", "counts", "inventory",
-    "diagnostics", "errors"
-  ],
   "properties": {
-    "schemaVersion": {"const": 1},
-    "writer": {"type": "string"},
-    "verdict": {"enum": ["SUCCESS", "CENSUS-FAILED"]},
-    "completedAt": {"type": "string", "format": "date-time"},
-    "completedAtEpoch": {"type": "integer"},
-    "durationMs": {"type": "integer", "minimum": 0},
-    "intervalSec": {"type": "integer", "minimum": 1},
-    "fingerprint": {"type": "string"},
-    "counts": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["CUSTODY", "ANNOUNCED", "UNTRACKED"],
-      "properties": {
-        "CUSTODY": {"type": "integer", "minimum": 0},
-        "ANNOUNCED": {"type": "integer", "minimum": 0},
-        "UNTRACKED": {"type": "integer", "minimum": 0}
-      }
+    "completedAt": {
+      "format": "date-time",
+      "type": "string"
     },
-    "inventory": {"type": "array"},
-    "diagnostics": {"type": "array", "items": {"type": "string"}},
-    "errors": {"type": "array", "items": {"type": "string"}}
-  }
+    "completedAtEpoch": {
+      "type": "integer"
+    },
+    "counts": {
+      "additionalProperties": false,
+      "properties": {
+        "ANNOUNCED": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "CUSTODY": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "UNTRACKED": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "CUSTODY",
+        "ANNOUNCED",
+        "UNTRACKED"
+      ],
+      "type": "object"
+    },
+    "diagnostics": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "durationMs": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "errors": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "fingerprint": {
+      "type": "string"
+    },
+    "generation": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "intervalSec": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "inventory": {
+      "type": "array"
+    },
+    "schemaVersion": {
+      "enum": [
+        1,
+        2
+      ],
+      "type": "integer"
+    },
+    "stateDigest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "SUCCESS",
+        "CENSUS-FAILED"
+      ]
+    },
+    "writer": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "writer",
+    "verdict",
+    "completedAt",
+    "completedAtEpoch",
+    "durationMs",
+    "intervalSec",
+    "fingerprint",
+    "counts",
+    "inventory",
+    "diagnostics",
+    "errors"
+  ],
+  "title": "Pinned process census evidence",
+  "type": "object"
 }

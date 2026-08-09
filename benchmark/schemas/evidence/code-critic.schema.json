@@ -1,54 +1,171 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "$comment": "metasystem.version=1",
-  "title": "Code critic return",
-  "type": "object",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "findings", "verdictMaterialCount"],
   "properties": {
-    "jobId": {"type": "string"},
-    "round": {"type": "integer"},
-    "runtime": {"type": "string"},
-    "sessionId": {"type": ["string", "null"]},
-    "model": {
-      "type": "object",
+    "chainClosed": {
+      "type": "boolean"
+    },
+    "claimed": {
       "additionalProperties": false,
-      "required": ["requested", "effective"],
       "properties": {
-        "requested": {"type": "string"},
-        "effective": {"type": ["string", "null"]}
-      }
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "model"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "evidence": {
-      "type": "array",
       "items": {
-        "type": "object",
         "additionalProperties": false,
-        "required": ["command", "observed", "level"],
         "properties": {
-          "command": {"type": "string"},
-          "observed": {"type": "string"},
-          "level": {"enum": ["ran", "read", "inferred"]}
-        }
-      }
+          "command": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "ran",
+              "read",
+              "inferred"
+            ]
+          },
+          "observed": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "observed",
+          "level"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
-    "gaps": {"type": "array", "items": {"type": "string"}},
-    "mode": {"type": "string"},
     "findings": {
-      "type": "array",
       "items": {
-        "type": "object",
         "additionalProperties": false,
-        "required": ["id", "severity", "material", "claim", "evidence"],
         "properties": {
-          "id": {"type": "string"},
-          "severity": {"enum": ["critical", "high", "medium", "low"]},
-          "material": {"type": "boolean"},
-          "claim": {"type": "string"},
-          "evidence": {"type": "string"}
-        }
-      }
+          "claim": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "material": {
+            "type": "boolean"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "material",
+          "claim",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
-    "verdictMaterialCount": {"type": "integer"}
-  }
+    "gaps": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "model": {
+      "additionalProperties": false,
+      "properties": {
+        "effective": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requested": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requested",
+        "effective"
+      ],
+      "type": "object"
+    },
+    "reviewedCommit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "round": {
+      "type": "integer"
+    },
+    "runtime": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "enum": [
+        1,
+        2
+      ],
+      "type": "integer"
+    },
+    "sessionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verdictMaterialCount": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "jobId",
+    "round",
+    "runtime",
+    "sessionId",
+    "model",
+    "evidence",
+    "gaps",
+    "mode",
+    "findings",
+    "verdictMaterialCount"
+  ],
+  "title": "Code critic return",
+  "type": "object"
 }

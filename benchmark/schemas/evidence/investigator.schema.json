@@ -1,62 +1,185 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "$comment": "metasystem.version=1",
-  "title": "Investigator return",
-  "type": "object",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "frozenFrame", "theories", "classifications", "stopLoss"],
   "properties": {
-    "jobId": {"type": "string"},
-    "round": {"type": "integer"},
-    "runtime": {"type": "string"},
-    "sessionId": {"type": ["string", "null"]},
-    "model": {
-      "type": "object",
+    "chainClosed": {
+      "type": "boolean"
+    },
+    "claimed": {
       "additionalProperties": false,
-      "required": ["requested", "effective"],
       "properties": {
-        "requested": {"type": "string"},
-        "effective": {"type": ["string", "null"]}
-      }
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "model"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "classifications": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "evidence": {
-      "type": "array",
       "items": {
-        "type": "object",
         "additionalProperties": false,
-        "required": ["command", "observed", "level"],
         "properties": {
-          "command": {"type": "string"},
-          "observed": {"type": "string"},
-          "level": {"enum": ["ran", "read", "inferred"]}
-        }
-      }
+          "command": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "ran",
+              "read",
+              "inferred"
+            ]
+          },
+          "observed": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "observed",
+          "level"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
-    "gaps": {"type": "array", "items": {"type": "string"}},
-    "mode": {"type": "string"},
-    "frozenFrame": {"type": "string"},
-    "theories": {
-      "type": "array",
+    "frozenFrame": {
+      "type": "string"
+    },
+    "gaps": {
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["statement", "evidenceFor", "evidenceAgainst"],
-        "properties": {
-          "statement": {"type": "string"},
-          "evidenceFor": {"type": "string"},
-          "evidenceAgainst": {"type": "string"}
-        }
-      }
+        "type": "string"
+      },
+      "type": "array"
     },
-    "classifications": {"type": "array", "items": {"type": "string"}},
-    "stopLoss": {
-      "type": "object",
+    "jobId": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "model": {
       "additionalProperties": false,
-      "required": ["triggered", "trigger"],
       "properties": {
-        "triggered": {"type": "boolean"},
-        "trigger": {"type": ["string", "null"]}
-      }
+        "effective": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requested": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requested",
+        "effective"
+      ],
+      "type": "object"
+    },
+    "reviewedCommit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "round": {
+      "type": "integer"
+    },
+    "runtime": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "enum": [
+        1,
+        2
+      ],
+      "type": "integer"
+    },
+    "sessionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stopLoss": {
+      "additionalProperties": false,
+      "properties": {
+        "trigger": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "triggered": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "triggered",
+        "trigger"
+      ],
+      "type": "object"
+    },
+    "theories": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "evidenceAgainst": {
+            "type": "string"
+          },
+          "evidenceFor": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "statement",
+          "evidenceFor",
+          "evidenceAgainst"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     }
-  }
+  },
+  "required": [
+    "jobId",
+    "round",
+    "runtime",
+    "sessionId",
+    "model",
+    "evidence",
+    "gaps",
+    "mode",
+    "frozenFrame",
+    "theories",
+    "classifications",
+    "stopLoss"
+  ],
+  "title": "Investigator return",
+  "type": "object"
 }

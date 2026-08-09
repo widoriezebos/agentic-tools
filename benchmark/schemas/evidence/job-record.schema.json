@@ -1,28 +1,96 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Pinned job-record evidence fields",
-  "type": "object",
-  "required": [
-    "jobId", "role", "mission", "runtime", "round", "parentJob", "status",
-    "error", "capMin", "sessionId", "requestedModel", "effectiveModel",
-    "startedAt", "endedAt", "usage", "chainClosed"
-  ],
   "properties": {
-    "jobId": {"type": "string"},
-    "role": {"type": "string"},
-    "mission": {"type": ["string", "null"]},
-    "runtime": {"type": "string"},
-    "round": {"type": "integer", "minimum": 1},
-    "parentJob": {"type": ["string", "null"]},
-    "status": {"type": "string"},
-    "error": {"type": ["string", "null"]},
-    "capMin": {"type": "integer", "minimum": 1},
-    "sessionId": {"type": ["string", "null"]},
-    "requestedModel": {"type": "string"},
-    "effectiveModel": {"type": ["string", "null"]},
-    "startedAt": {"type": "string", "format": "date-time"},
-    "endedAt": {"type": ["string", "null"]},
-    "usage": {"type": ["object", "null"]},
-    "chainClosed": {"type": "boolean"}
-  }
+    "capMin": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "chainClosed": {
+      "type": "boolean"
+    },
+    "effectiveModel": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "endedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "mission": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parentJob": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "requestedModel": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "round": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "runtime": {
+      "type": "string"
+    },
+    "sessionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "usage": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "jobId",
+    "role",
+    "mission",
+    "runtime",
+    "round",
+    "parentJob",
+    "status",
+    "error",
+    "capMin",
+    "sessionId",
+    "requestedModel",
+    "effectiveModel",
+    "startedAt",
+    "endedAt",
+    "usage"
+  ],
+  "title": "Pinned job-record evidence fields",
+  "type": "object"
 }
