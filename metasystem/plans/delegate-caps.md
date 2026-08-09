@@ -45,21 +45,26 @@ instrumented run, not guessed.
 Cap keys use the CANONICAL MODEL FORM, computed by a pre-dispatch helper
 (`scripts/agents/canonical-model.py`, extracted from the devin adapter's
 existing canonicalisation so there is exactly one implementation):
-lowercase, every run of characters outside [a-z0-9] collapsed to one
-hyphen (`SWE-1.7` → `swe-1-7`, `gpt-5.6-sol` → `gpt-5-6-sol`). Dispatch
-canonicalises BEFORE resolution. Because the encoding is lossy, dispatch
-also REFUSES a configuration that binds two distinct requested model
-strings to the same canonical key with different cap values — collision
-is a loud config error, never a silent winner.
+the ADAPTER'S EXACT ALGORITHM (lowercase, runs outside [a-z0-9] collapse
+to one hyphen, EDGE HYPHENS STRIPPED — the extracted helper is the single
+truth and this prose defers to it). Dispatch canonicalises BEFORE
+resolution. Collisions are detected WHERE RAW SPELLINGS EXIST:
+provisioning refuses a manifest whose distinct raw strings collapse to
+one canonical key with different values; config validation refuses the
+same across cap.min.* keys; dispatch needs no raw provenance.
 
 ## D-2. Transport: provisioning writes what the host will read (folds CAPS-R1-002)
 
 The mission runner does not dispatch delegates; the HOST does, inside the
 target. So the roster's caps travel as configuration, not prompts: the
-spec manifest gains a sibling map `"delegateCaps": {"devin:swe-1-7": 90}`
-(the roster string map itself is unchanged — no schema migration), and
+spec manifest gains a TOP-LEVEL map `"delegateCaps"` whose keys are the
+RAW `"runtime:model"` strings and MUST each match a roster delegate entry
+(unmatched keys refuse at provisioning), whose values are positive
+integer minutes, and whose absence for a pair is legal — that pair uses
+`fence.job-cap-min` (the roster string map is unchanged — no schema
+migration), and
 PROVISIONING writes the keys into the generated mission contract's
-```mission block ONLY — no configuration copy exists, so nothing can
+```mission block ONLY — and each pair cap becomes a `sealed.exposure.cap.min.<runtime>.<model>` seal entry, part of the human-visible exposure they sign (R2-008) — no configuration copy exists, so nothing can
 drift and nothing needs reconciling (round 2 killed the duplicate: two
 readable sources is two authorities). For a MISSION job, dispatch
 resolves the pair cap FROM THE SEALED CONTRACT via the mission fence
@@ -105,10 +110,13 @@ had, from the record, not the witness stream.
 
 Dispatch's rule that every cap stays below the watcher's inactivity
 ceiling stands. Therefore ARMING derives the watcher ceiling from the
-maximum cap resolvable in that checkout (max of config pair caps,
-contract pair caps, fence.job-cap-min) plus a fixed margin, instead of a
-constant 180. The experiment does not disable anything: raising the
-contract's pair cap automatically raises the derived ceiling, visibly.
+maximum of EVERY resolvable cap source (contract pair caps, config pair
+and role-pair caps, dispatch.cap-min, fence.job-cap-min, built-in) plus
+30 minutes, WRITES it into the supervision state file, and the watcher
+reads it from there. Dispatch compares against THE STATE FILE'S recorded
+ceiling — what the live watcher actually enforces — never a recomputed
+value; raising a cap past it requires re-arming, and the refusal says so
+(R2-002's lifecycle).
 
 ## D-6. The discovery experiment, honestly framed (folds CAPS-R1-011/012)
 
@@ -122,7 +130,14 @@ record's startedAt and end = its endedAt. PREDECLARED CRITERIA: a job
 with no worktree change for 45 consecutive minutes is classified STALLED
 (practical noncompletion); a job ended by cap or fence is CENSORED and
 reported as "exceeds T", never as a completion time; only natural
-terminations produce completion times. A censored 150-minute result does
+terminations that are COMPLETED AND CERTIFIED (the delegation-floor bar)
+produce completion times; an uncertified natural return classifies
+PARTIAL (R2-009). Sampling is per implementer CHAIN (root jobId keys the
+series; rounds continue it), samples schema {ts, jobId, newestMtime,
+fileCount} (R2-011). PREDECLARED DERIVATION (R2-010): standing cap =
+ceil(max qualifying completion minutes x 1.5) rounded up to the nearest
+5, recorded as a ruling; only-stalled/partial/censored outcomes set NO
+cap and escalate to the human with the distributions. A censored 150-minute result does
 NOT conclude "cannot complete" — it concludes "needs more than 150
 minutes or a different structure", and the comparison cohorts inform
 which.
