@@ -2,10 +2,21 @@
 
 - Goal and current status: stop the single-writer checkout lease from
   cancelling a mission's in-flight work every time the mission's own next
-  process takes the lease. Design in critique round 2; not yet implemented.
-- Next step: critique round 2 with sol, then implement
-- In flight right now: design critique round 2 with sol
-- Waiting on the human: nothing
+  process takes the lease. DESIGNED, CRITIQUED, IMPLEMENTED, and pushed
+  (3765027). The chain ran 8, 2, 1 material findings and then a clean
+  confirming round; the fixtures prove both halves, and the first benchmark
+  retry proved the host-turn chain (O-3a) that the first implementation
+  missed.
+- Next step: none
+- In flight right now: nothing
+- Waiting on the human: nothing. The cohort signatures are pre-authorized for
+  this absence; see the rulings below.
+
+What remains is confirmation under load, which belongs to the benchmark rather
+than to this design: bm-2 cohort bm-2-20260809t001324z-34429 is running as
+attempt 2 of the human's three-attempt budget, with the lease lineage verified
+as `mission-e522644f...` before any delegate was dispatched — the check that
+caught attempt 1 within a minute.
 
 ## Human rulings for the unattended run of 2026-08-08
 
