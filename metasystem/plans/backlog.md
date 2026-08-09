@@ -130,7 +130,10 @@
    for exactly this: "where we specify the agent we should also specify
    the budget for that agent".
    (b) THE CAP-DISCOVERY EXPERIMENT (human-specified 2026-08-09): the
-   mechanism is per agent TYPE and possibly per role x type. For Devin on
+   cap keys on the (RUNTIME x MODEL) PAIR — the roster entry — not the
+   runtime alone (human's refinement: Devin on a fast model and Devin on
+   a slow model are different animals; runtime-only would be too crude),
+   with role as an optional further dimension. For Devin on
    swe-1-7, do not guess: set the cap ONCE deliberately very high
    (effectively unbounded within the mission), run, and CLOSELY MONITOR
    actual demand while verifying it is still progressing — progress proxy
