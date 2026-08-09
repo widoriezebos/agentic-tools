@@ -64,17 +64,25 @@ and the session identity settled onto the job record. The common layer
 functions (`runtime_repair_turn`, `runtime_usage_after_repair`,
 `runtime_settle_after_repair`, `runtime_error`).
 
-This design makes that contract THE interface, and adds exactly one member:
+This design makes that contract THE interface, and adds exactly two
+members, both settled by critique round 1 (FR-012, FR-014):
 
-- Everything an adapter produces today, unchanged in name, shape, and timing.
-- NEW, additive: a per-round sidecar heartbeat, `round_dir/liveness.json`,
-  maintained while the turn runs (D-3).
+- Everything an adapter produces today, unchanged in name, shape, and timing
+  — with the ONE declared exception in D-2's claude leg (FR-018).
+- NEW, additive: throttled activity events emitted into the flight
+  recorder's stream (plans/flight-recorder.md D-1), at most one per round
+  per 5 seconds. The earlier liveness sidecar is REMOVED from this design —
+  the stream does its job with one mechanism.
+- NEW, additive: the round records WHICH TRANSPORT actually carried the turn
+  (`"transport": "print" | "stream-json" | "jsonl" | "acp"`), so a mixed
+  ACP-and-fallback history is provenance in the record, not an inference
+  from the witness stream.
 
 Nothing else crosses the boundary. Dispatch, the lease, the census, the
 verdict machinery, and the return schema are untouched. An adapter that never
-writes the sidecar (or a round from before this change) behaves exactly as
-today — absence of the file IS the legacy behaviour, so the rollout can be
-one runtime at a time.
+emits activity events (or a round from before this change) behaves exactly
+as today — absence IS the legacy behaviour, so the rollout can be one
+runtime at a time.
 
 ## D-2. Per-runtime transports, hidden behind the interface
 
@@ -85,11 +93,13 @@ How each adapter obtains its event stream is its own business:
   adapter reads: tail during the turn instead of parsing after exit. No CLI
   flag changes. This is the cheapest leg and goes first.
 - claude — switch the internal invocation from `--output-format json` to
-  `--output-format stream-json`; append events to the transcript as they
-  arrive; assemble the SAME final result object the batch mode prints today
-  (stream-json's terminal event carries it). Outside: byte-identical
-  artifacts. Note the sequencing consequence: bm-2's HOST runs on this
-  adapter, so even this invisible change waits for the cohort.
+  `--output-format stream-json`; assemble the SAME final result object the
+  batch mode prints today (stream-json's terminal event carries it). ONE
+  DECLARED ARTIFACT DELTA (FR-018): `round_dir/events.jsonl` becomes a true
+  event-by-event stream instead of one post-exit batch object. The
+  contracts the rest of the system reads — return.json, usage, transcript,
+  session identity — are byte-compatible, and the selftest asserts THOSE,
+  which is what "outside cannot tell" means precisely.
 - devin — run `devin acp` PER TURN (the human's synthesis, 2026-08-09: ACP as
   a transport inside the turn, not as a persistent server). The adapter
   speaks JSON-RPC over the child's stdio: initialize, open or load the
@@ -99,37 +109,30 @@ How each adapter obtains its event stream is its own business:
   same filename, same downstream readers (`devin_record_effective_model`,
   `devin_settle_session_identity`, usage extraction). Custody is unchanged:
   the child is one process, one group, owned for exactly one turn.
-- fake (fixtures) — emits scripted heartbeats, which is what makes the
+- mission HOST adapters (scripts/agents/hosts/claude.sh, codex.sh,
+  devin.sh) — the same transports apply to the benchmark's most expensive
+  turns; the first draft covered only delegates (FR-011). The host leg lands
+  with the same conformance proof: the mission fixtures unchanged.
+- fake (fixtures) — emits scripted activity events, which is what makes the
   stall-visibility fixtures in Proof possible at all.
 
-## D-3. The liveness sidecar, specified
+## D-3. Liveness through the flight recorder's stream
 
-`round_dir/liveness.json`, written atomically (tmp + rename), holds:
+The earlier draft specified a per-round `liveness.json` sidecar here. It is
+GONE (critique FR-012): the flight recorder's event stream carries the same
+information with one mechanism — each adapter emits an `activity` event at
+most once per 5 seconds per round while its turn runs, and "last event for
+round X" is a filtered tail. What this section retains is the RULES, which
+outlive the mechanism:
 
-    {"lastEventAt": "<ISO-8601>", "events": <count>, "schemaVersion": 1}
-
-  OPEN QUESTION for the critique: one optional `lastEventSummary` field — a
-  single truncated line ("running mvn test", "inference"), no payloads. It is
-  what turns the status surface (D-5) from "alive 11s ago" into "doing X, 11s
-  ago". Recommendation: yes, bounded at 120 characters, best-effort.
-
-- WRITER: the adapter's own supervision of the turn (the same code path that
-  today waits for the CLI), updating on every event, throttled to at most one
-  write per second. No new process.
-- READERS, strictly OPT-IN: a watch script's "no event for N minutes" line;
-  a human tailing a run. The REAPER DOES NOT ACT ON IT in this design. That
-  is deliberate, twice over: first, observability must not become a kill
-  signal — the reaper acting on event-age would recreate exactly the verdict
-  race fixed on 2026-08-09 (budget-cap versus process-lost, KI-29), where two
-  authorities judged one job by different clocks. Second, a slow inference IS
-  silent; killing on silence would execute the innocent. If diagnostics ever
-  want event-age, that is a separate design with its own critique.
-- ABSENCE means legacy: no reader may treat a missing sidecar as a fault.
-- POSSIBLY SUBSUMED: the human's 2026-08-09 observability requirement
-  (plans/flight-recorder.md) proposes one append-only event stream for the
-  whole metasystem; "last event for round X" is then a query over that
-  stream and tailing one file replaces this sidecar. The two critiques
-  should be read together; flight-recorder.md's draft position is stream-only.
+- Observation is not a kill signal. The reaper does not act on event age —
+  the KI-29 lesson: two authorities judging one job by different clocks is
+  how verdict races are made, and a healthy inference IS silent.
+- Absence means legacy. A runtime not yet emitting activity events behaves
+  exactly as today, and no reader may treat the absence as a fault.
+- The status surface (D-5) reads the stream plus the state files; usage
+  shown is COMPLETED ROUNDS ONLY (FR-013) — adapters meter usage at turn
+  end, and this design does not invent live metering.
 
 ## D-4. What ACP-per-turn additionally buys, and what it costs
 
@@ -163,12 +166,38 @@ Costs, stated honestly (the probe questions for the critique):
   the wind-down path must be proven against the 2026-08-09 lesson: never die
   over a group whose ownership proof vanished (mission-runner
   terminate_group), and record verdicts before wind-down.
-- `session/load` SUPPORT. Follow-up turns need the prior session in a fresh
-  per-turn process. `devin -p -r <session>` does this today; the ACP leg
-  needs a probe that `devin acp` can load a session created by a previous
-  ACP turn (and one created by a `-p` turn, for migration). If it cannot,
-  follow-ups keep the `-p` transport while dispatch turns use ACP — the
-  interface permits mixed transports because nothing outside can tell.
+- `session/load` SUPPORT, BOTH DIRECTIONS (FR-015). Follow-up turns need
+  the prior session in a fresh per-turn process. Probes required: ACP loads
+  an ACP-created session; ACP loads a `-p`-created session (migration); and
+  the REVERSE — `devin -p -r` resumes an ACP-created session — because the
+  declared fallback (follow-ups on `-p` when ACP loading fails) and the
+  unchanged same-session repair turn both depend on that bridge. A
+  direction that fails closes the corresponding fallback, and the design
+  must then say so rather than assume it.
+- PERMISSION PARITY, the fourth probe (FR-016). Client-side permission
+  answering is a PRIZE, not an assumption. Before any enforcement claim:
+  prove every gated operation class actually produces a client permission
+  request under `devin acp`; prove a denial is honored (the operation does
+  not happen); and define what replaces the generated config file and
+  permission mode while ACP carries the turn. Until all three hold, the
+  capability snapshot's `notEnforced` declarations and the role waivers
+  STAND UNCHANGED — certifying enforcement the transport never supplied
+  would be worse than the status quo.
+- SNAPSHOT HONESTY (FR-014). ACP changes what the runtime observably offers
+  (protocol session identity, native events, possibly enforcement). The
+  adapter probe therefore captures a DISTINCT snapshot for the ACP
+  transport rather than reusing `-p`'s, and the round's recorded
+  `transport` field (D-1) says which snapshot governed each turn.
+- OUTCOME MAPPING AND CRASH-SAFE ASSEMBLY (FR-017). The design maps every
+  ACP failure shape onto the EXISTING verdict phases: JSON-RPC error
+  response → runtime_error; EOF before the prompt response → the same
+  failure the current empty-reply path records; malformed notification →
+  protocol violation; close timeout → wind-down with the mission-runner's
+  never-die rule. Transcript assembly is crash-surviving by construction:
+  updates append to a journal file as they arrive (the journal IS the
+  partial evidence), and the ATIF document is assembled from the journal at
+  turn end — never rewritten in place mid-turn, so a kill leaves a valid
+  journal instead of a torn JSON object.
 
 ## D-5. The status surface this makes possible
 
@@ -177,9 +206,10 @@ Yes, and cheaply, because every input already lives in one artifact tree. A
 read-only status command aggregates, per checkout: mission state and fences
 (turn N of M, wall-clock remaining), the lease (epoch, lineage, takeovers),
 every non-terminal job (runtime, model, elapsed versus cap), each live
-round's sidecar (last event age, and the summary line if the open question
-above lands), and usage so far. One page, human-readable, refreshed on
-demand or under `watch`.
+round's latest activity event (age, and the summary line if the open
+question above lands), and usage for COMPLETED rounds (FR-013 — live
+in-turn metering does not exist and is not invented here). One page,
+human-readable, refreshed on demand or under `watch`.
 
 Constraints that keep it honest:
 
@@ -189,8 +219,36 @@ Constraints that keep it honest:
   ad-hoc watch scripts of 2026-08-08/09 were this tool's hand-rolled
   ancestors and are retired by it.
 - It consumes ONLY the interface: job records, mission state, lease,
-  sidecars. If it needs anything more, that is a sign the interface is
-  missing a member, not a license to reach into adapter internals.
+  the flight recorder's stream. If it needs anything more, that is a sign
+  the interface is missing a member, not a license to reach into adapter
+  internals.
+
+## Carried critique (round 2 of the flight-recorder chain)
+
+These five findings belong to THIS leg and BLOCK its implementation; the
+core-scoped chain did not resolve them, by the recorded rescope. This leg's
+own chain must:
+
+- FR2-010: define the activity contract as a FLOOR, not just a ceiling —
+  what an adapter must emit during provider silence (a periodic heartbeat
+  event vs notification-driven only), since that difference decides
+  visibility during the five-minute inferences that motivated everything.
+- FR2-011: the DELEGATE compatibility obligation stands on its own — the
+  design must define byte-compatibility versus shape-compatibility per
+  artifact, and the proof requires a BATCH BASELINE the current selftest
+  does not have (it exercises only the installed transport): capture the
+  batch-path artifacts first, cut over, compare per the defined contract.
+  Filename equality is not artifact compatibility.
+- FR2-012: real conformance proofs per host — the suite's host fixture
+  drives only codex today; claude and devin hosts need live-path fixtures
+  before their transports can claim the mission fixtures as proof.
+- FR2-013: snapshot SELECTION must key on transport, not just record it —
+  two Devin snapshots (print, acp) under one config hash otherwise compete
+  by capture time, and a post-launch fallback can leave the job governed by
+  the wrong one. Attempted-then-fell-back provenance needs representing.
+- FR2-014: the ACP-to-ATIF mapping (fields, ordering, tool records, session
+  identity, effective model, final_metrics) must be specified per protocol
+  shape, not left as "assemble from the journal".
 
 ## D-6. What explicitly does not change
 
@@ -206,13 +264,15 @@ Constraints that keep it honest:
 
 ## Sequencing and classification
 
-- AFTER the bm-2 cohort completes, without exception — changing the
-  measuring instrument mid-cohort makes repetitions incomparable, and the
-  claude adapter hosts bm-2's missions.
-- Fix-bar classification: DESIGN LOOP. The sidecar is a (small) contract
-  addition and the ACP leg moves a turn-end boundary; both are exactly the
-  "contract or invariant" category of the two-bars rule. This document is
-  the draft for that loop; sol critiques it before any implementation.
+- Sequenced by the stream head (plans/flight-recorder.md): this leg lands
+  AFTER the recorder core and after benchmark attempt 3 runs under that
+  core. Never mid-cohort — changing the measuring instrument between
+  repetitions makes them incomparable, and the claude adapter hosts bm-2's
+  missions.
+- Fix-bar classification: DESIGN LOOP. The activity events and transport
+  field are (small) contract additions and the ACP leg moves a turn-end
+  boundary; both are exactly the "contract or invariant" category of the
+  two-bars rule. This document is part of the flight-recorder design loop.
 - Implementation order inside the stream: codex (tail what already streams),
   then claude (flag swap + assembly), then devin ACP (carries all the probe
   questions). Each leg lands with its fixtures and the full gates before the
@@ -225,12 +285,12 @@ Constraints that keep it honest:
   same transcript filename and shape, same usage file), proven by running the
   existing selftest unchanged — the selftest not needing to know is itself
   the proof that the outside cannot tell.
-- Liveness sidecar: monotone lastEventAt and event count under a scripted
-  fake-adapter turn; atomic (a reader never sees a partial file); throttled;
-  ABSENT for a runtime still on the batch path, with all consumers content.
-- Stall visibility: a fake turn that goes silent mid-stream yields a sidecar
-  whose age grows while the job stays `running` and is NOT reaped for it —
-  proving observability without a kill signal.
+- Activity events: monotone timestamps and per-round throttling (max one
+  per 5 seconds) under a scripted fake-adapter turn; ABSENT for a runtime
+  still on the batch path, with all consumers content.
+- Stall visibility: a fake turn that goes silent mid-stream leaves a last
+  activity event whose age grows while the job stays `running` and is NOT
+  reaped for it — proving observability without a kill signal.
 - ACP permission answering: a gated call inside a `devin acp` turn receives
   the adapter's policy answer, and the answer plus the call land in the
   assembled transcript.

@@ -1,0 +1,565 @@
+{
+  "envelope": {
+    "caps": {
+      "component": 16,
+      "event": 40,
+      "id": 160,
+      "level": 8,
+      "payload": 256
+    },
+    "components": [
+      "lease",
+      "census",
+      "reaper",
+      "dispatch",
+      "runner",
+      "adapter",
+      "host",
+      "driver",
+      "suite",
+      "arming"
+    ],
+    "executionId": "required-when-exported",
+    "levels": [
+      "info",
+      "warning",
+      "error"
+    ],
+    "required": [
+      "schemaVersion",
+      "ts",
+      "component",
+      "event",
+      "level",
+      "summary",
+      "pid",
+      "pidStartedAt",
+      "seq"
+    ]
+  },
+  "events": {
+    "activity": {
+      "emitters": [
+        "adapter",
+        "host"
+      ],
+      "ids": {
+        "adapter": {
+          "jobId": "required"
+        },
+        "host": {
+          "missionId": "required",
+          "turnId": "required"
+        }
+      },
+      "payload": {
+        "note": {
+          "required": false,
+          "type": "str"
+        }
+      }
+    },
+    "arming-complete": {
+      "emitters": [
+        "arming"
+      ],
+      "ids": {},
+      "payload": {}
+    },
+    "arming-started": {
+      "emitters": [
+        "arming"
+      ],
+      "ids": {},
+      "payload": {}
+    },
+    "census-untracked": {
+      "emitters": [
+        "census"
+      ],
+      "ids": {},
+      "payload": {
+        "argvSummary": {
+          "required": true,
+          "type": "str"
+        },
+        "observedPid": {
+          "required": true,
+          "type": "int"
+        }
+      }
+    },
+    "census-verdict": {
+      "emitters": [
+        "census"
+      ],
+      "ids": {},
+      "payload": {
+        "generation": {
+          "required": true,
+          "type": "int"
+        },
+        "verdict": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "SUCCESS",
+            "FAILED"
+          ]
+        }
+      }
+    },
+    "census-writer-claimed": {
+      "emitters": [
+        "census"
+      ],
+      "ids": {},
+      "payload": {}
+    },
+    "census-writer-released": {
+      "emitters": [
+        "census"
+      ],
+      "ids": {},
+      "payload": {}
+    },
+    "driver-phase": {
+      "emitters": [
+        "driver"
+      ],
+      "ids": {
+        "cohortId": "required",
+        "repetitionIndex": "optional"
+      },
+      "payload": {
+        "phase": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "provisioning",
+            "awaiting-approval",
+            "mission-running",
+            "grading",
+            "extracting",
+            "complete"
+          ]
+        }
+      }
+    },
+    "fence-check": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "fence": {
+          "required": true,
+          "type": "str"
+        },
+        "remaining": {
+          "required": false,
+          "type": "str"
+        }
+      }
+    },
+    "job-created": {
+      "emitters": [
+        "dispatch"
+      ],
+      "ids": {
+        "jobId": "required",
+        "missionId": "optional"
+      },
+      "payload": {}
+    },
+    "job-pending": {
+      "emitters": [
+        "dispatch"
+      ],
+      "ids": {
+        "jobId": "required",
+        "missionId": "optional"
+      },
+      "payload": {}
+    },
+    "job-running": {
+      "emitters": [
+        "dispatch"
+      ],
+      "ids": {
+        "jobId": "required",
+        "missionId": "optional"
+      },
+      "payload": {}
+    },
+    "job-setup": {
+      "emitters": [
+        "dispatch"
+      ],
+      "ids": {
+        "jobId": "required",
+        "missionId": "optional"
+      },
+      "payload": {}
+    },
+    "job-verdict": {
+      "emitters": [
+        "dispatch",
+        "reaper",
+        "lease"
+      ],
+      "ids": {
+        "jobId": "required",
+        "missionId": "optional"
+      },
+      "payload": {
+        "reason": {
+          "required": false,
+          "type": "str"
+        },
+        "verdict": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "completed",
+            "failed",
+            "timeout",
+            "cancelled"
+          ]
+        }
+      }
+    },
+    "lease-claimed": {
+      "emitters": [
+        "lease"
+      ],
+      "ids": {},
+      "payload": {
+        "epoch": {
+          "required": true,
+          "type": "int"
+        }
+      }
+    },
+    "lease-refused": {
+      "emitters": [
+        "lease"
+      ],
+      "ids": {},
+      "payload": {
+        "holder": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "lease-renewed": {
+      "emitters": [
+        "lease"
+      ],
+      "ids": {},
+      "payload": {
+        "epoch": {
+          "required": true,
+          "type": "int"
+        }
+      }
+    },
+    "lease-takeover": {
+      "emitters": [
+        "lease"
+      ],
+      "ids": {},
+      "payload": {
+        "epoch": {
+          "required": true,
+          "type": "int"
+        },
+        "predecessor": {
+          "required": true,
+          "type": "str"
+        },
+        "reason": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "holder-death"
+          ]
+        }
+      }
+    },
+    "mission-parked": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "parkReason": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "repair-attempted": {
+      "emitters": [
+        "adapter",
+        "host"
+      ],
+      "ids": {
+        "adapter": {
+          "jobId": "required"
+        },
+        "host": {
+          "missionId": "required",
+          "turnId": "required"
+        }
+      },
+      "payload": {}
+    },
+    "repair-outcome": {
+      "emitters": [
+        "adapter",
+        "host"
+      ],
+      "ids": {
+        "adapter": {
+          "jobId": "required"
+        },
+        "host": {
+          "missionId": "required",
+          "turnId": "required"
+        }
+      },
+      "payload": {
+        "outcome": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "usable",
+            "failed",
+            "not-attempted"
+          ]
+        }
+      }
+    },
+    "runner-failed": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "runner-started": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {}
+    },
+    "session-established": {
+      "emitters": [
+        "adapter",
+        "host"
+      ],
+      "ids": {
+        "adapter": {
+          "jobId": "required"
+        },
+        "host": {
+          "missionId": "required",
+          "turnId": "required"
+        }
+      },
+      "payload": {
+        "sessionId": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "stream-rotated": {
+      "emitters": [
+        "arming"
+      ],
+      "ids": {},
+      "payload": {
+        "previousPath": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "suite-fixture": {
+      "emitters": [
+        "suite"
+      ],
+      "ids": {},
+      "payload": {
+        "attempt": {
+          "required": false,
+          "type": "int"
+        },
+        "durationMs": {
+          "required": true,
+          "type": "int"
+        },
+        "evidencePath": {
+          "required": false,
+          "type": "str"
+        },
+        "name": {
+          "required": true,
+          "type": "str"
+        },
+        "verdict": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "passed",
+            "failed"
+          ]
+        }
+      }
+    },
+    "sweep-completed": {
+      "emitters": [
+        "lease"
+      ],
+      "ids": {},
+      "payload": {
+        "epoch": {
+          "required": true,
+          "type": "int"
+        },
+        "sweptCount": {
+          "required": true,
+          "type": "int"
+        }
+      }
+    },
+    "turn-ended": {
+      "emitters": [
+        "adapter",
+        "host"
+      ],
+      "ids": {
+        "adapter": {
+          "jobId": "required"
+        },
+        "host": {
+          "missionId": "required",
+          "turnId": "required"
+        }
+      },
+      "payload": {
+        "usageSummary": {
+          "required": false,
+          "type": "str"
+        },
+        "verdict": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "turn-launched": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required",
+        "turnId": "required"
+      },
+      "payload": {}
+    },
+    "turn-result": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required",
+        "turnId": "required"
+      },
+      "payload": {
+        "outcome": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "turn-started": {
+      "emitters": [
+        "adapter",
+        "host"
+      ],
+      "ids": {
+        "adapter": {
+          "jobId": "required"
+        },
+        "host": {
+          "missionId": "required",
+          "turnId": "required"
+        }
+      },
+      "payload": {}
+    },
+    "verdict-refused": {
+      "emitters": [
+        "dispatch",
+        "reaper"
+      ],
+      "ids": {
+        "jobId": "required",
+        "missionId": "optional"
+      },
+      "payload": {
+        "attempted": {
+          "required": true,
+          "type": "str"
+        },
+        "observed": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "wind-down": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required",
+        "turnId": "optional"
+      },
+      "payload": {
+        "action": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "sigterm",
+            "sigkill",
+            "skipped-unowned"
+          ]
+        },
+        "reason": {
+          "required": false,
+          "type": "str"
+        }
+      }
+    }
+  },
+  "schemaVersion": 1
+}

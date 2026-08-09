@@ -214,6 +214,39 @@ for directory in sorted((p for p in agents.rglob("*") if p.is_dir()), reverse=Tr
     except OSError:
         pass
 
+# Flight-recorder archives (plans/flight-recorder.md D-4): copy-then-keep is
+# the norm. Delete a local archive ONLY when BOTH hold: a verified durable
+# copy exists AND the filename age is >= 14 days. Age comes from the filename
+# timestamp, never mtime.
+import shutil
+from datetime import datetime, timezone
+_fr_checkout = Path(sys.argv[1])  # fresh names: the heredoc rebinds root/evidence in loops above
+_fr_evidence = Path(sys.argv[2])
+archive_dir = _fr_checkout / "artifacts" / "agents" / "events-archive"
+events_root = _fr_evidence / "events" / _fr_checkout.name
+stamp_re = re.compile(r"^events-(\d{8}T\d{6}Z)")
+if archive_dir.is_dir():
+    for item in sorted(archive_dir.glob("events-*.jsonl")):
+        match = stamp_re.match(item.name)
+        if not match:
+            continue
+        durable = events_root / item.name
+        try:
+            if not durable.exists() or durable.stat().st_size != item.stat().st_size:
+                events_root.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, durable)
+            copied = durable.exists() and durable.stat().st_size == item.stat().st_size
+        except OSError:
+            copied = False  # keep local, retry next pass
+        try:
+            age_days = (datetime.now(timezone.utc) - datetime.strptime(
+                match.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)).days
+        except ValueError:
+            continue
+        if copied and age_days >= 14:
+            item.unlink(missing_ok=True)
+            print(f"collected events archive {item.name}")
+
 for chain in collected:
     print(f"collected {chain}")
 print(f"residue removed: {residue} heartbeat, lock, temp and superseded-snapshot entries")

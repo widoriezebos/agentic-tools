@@ -78,7 +78,32 @@
    sidecar, ACP-per-turn with its probe questions) lives there; this entry is
    now just the queue marker.
 
-4. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
+4. **Fixtures-as-arbiter: a principled exit from fine-grained critique
+   (human-ratified in one instance 2026-08-09; generalize).** During the
+   flight-recorder chain the human set a close rule after six falling rounds
+   (21, 15, 10, 4, 3, 2): remaining detail-grain findings are folded, then
+   implementation STARTS, with the folded findings expressed as NAMED
+   FIXTURES and code-critique as the next reviewer — prose review stops
+   being the arbiter once the grain drops to timestamp formats and field
+   caps, because at that grain the implementation's own tests judge better
+   and cheaper than another prose round. The human: "I really like the
+   approach... you fold the remaining issues into fixtures that then
+   together with code critique become the arbiter." Not yet a standing
+   rule; it lived in one plan header. Conditions that keep it from becoming
+   an escape hatch, to be designed into the critique skills alongside the
+   stop-rule sharpening below:
+   (a) the trajectory must be FALLING and the chain past its round budget;
+   (b) every remaining finding must be mechanical-grain — it names a value,
+   format, or bounded choice, not an invariant or contract shape; one
+   invariant-grade finding and the exit is unavailable;
+   (c) the fold is 1:1 — each finding becomes a NAMED fixture obligation in
+   the plan's Proof section, so nothing dissolves into prose;
+   (d) code-critique of the implementation becomes MANDATORY, not the
+   usual per-batch judgement call;
+   (e) the switch is RECORDED in the plan header with the trajectory, as
+   the flight-recorder instance was.
+
+5. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
    next retro's change gate).** A chain closes on a round with zero
    UNREFUTED material findings: each refutation carries evidence, survives
    exactly one rebuttal round, and persistent disagreement escalates to
@@ -88,15 +113,15 @@
    `skills/design-critique/SKILL.md` (and code-critique's mirror section);
    the join script gains the unrefuted-count check. Wido: "I like the
    sharpening and I think we should implement it."
-5. **KI-23 acknowledged-process mechanism** — after the one-writer
+6. **KI-23 acknowledged-process mechanism** — after the one-writer
    implementation lands (same files).
-6. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
+7. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
    seven carried findings) — after the coexistence stream closes.
-7. **Benchmark kit halves** of the validity closure (schema v2 entries,
+8. **Benchmark kit halves** of the validity closure (schema v2 entries,
    extractor version dispatch; human-ratified) — with the next kit-gate
    batch.
-8. **Confirming benchmark re-run** (Opus critics vs luna builders, the
+9. **Confirming benchmark re-run** (Opus critics vs luna builders, the
    0.019→0.981 effect) — with the human present, after the above.
-9. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
+10. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
    implemented, proven by both gates, and pushed. Next: the probe and
    `development/devin-selftest.md`; a `hosts/devin.sh` is a separate build.

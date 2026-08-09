@@ -569,6 +569,52 @@ def path_below(candidate: str | Path, root: Path) -> bool:
     return True
 
 
+_WITNESS_SEQ = 0
+
+
+def _emit_census_witness(repo, verdict, generation, untracked):
+    """Flight-recorder witness (plans/flight-recorder.md). Never raises.
+
+    In-process on purpose: the census runs at fixture intervals of 50ms, and
+    a per-event interpreter spawn blew that budget the day this was added.
+    A direct O_APPEND write costs microseconds.
+    """
+    global _WITNESS_SEQ
+    try:
+        import json as _json
+        events = [{"event": "census-verdict",
+                   "summary": f"census {'FAILED' if verdict != 'SUCCESS' else 'SUCCESS'}",
+                   "verdict": "FAILED" if verdict != "SUCCESS" else "SUCCESS",
+                   "generation": int(generation or 0)}]
+        for item in untracked[:5]:
+            events.append({"event": "census-untracked",
+                           "summary": "untracked process observed",
+                           "observedPid": int(item.get("pid", 0)),
+                           "argvSummary": str(item.get("argv", ""))[:200]})
+        now = dt.datetime.now(dt.timezone.utc)
+        pid = os.getpid()
+        try:
+            started = int(started_at(pid))
+        except BaseException:
+            started = 0
+        path = os.path.join(str(repo), "artifacts", "agents", "events.jsonl")
+        payload = b""
+        for body in events:
+            _WITNESS_SEQ += 1
+            body.update({"schemaVersion": 1,
+                         "ts": now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z",
+                         "component": "census", "level": "info", "pid": pid,
+                         "pidStartedAt": started, "seq": _WITNESS_SEQ})
+            payload += b"\n" + _json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
+    except BaseException:
+        pass
+
+
 def argv_paths(argv: str, cwd: str | None) -> list[Path]:
     try:
         tokens = shlex.split(argv)
@@ -828,6 +874,9 @@ def run_census(repo: Path, fingerprint: str, interval: int, output: Path) -> int
             "argv": process.argv,
         })
     verdict = "CENSUS-FAILED" if errors else "SUCCESS"
+    _emit_census_witness(repo, verdict, generation, [
+        item for item in inventory if item.get("class") == "UNTRACKED"
+    ])
     completed_at = dt.datetime.now(dt.timezone.utc)
     duration_ms = round((time.monotonic() - scan_started) * 1000)
     value = {

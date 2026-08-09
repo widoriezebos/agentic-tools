@@ -537,6 +537,7 @@ def cleanup_stale_jobs(root: Path, epoch: int) -> None:
     jobs = root / "artifacts/agents/jobs"
     locks = root / "artifacts/agents/record-locks"
     locks.mkdir(parents=True, exist_ok=True)
+    swept = 0
     for path in sorted(jobs.glob("*.json")):
         with (locks / f"{path.stem}.lock").open("a+") as record_lock:
             fcntl.flock(record_lock.fileno(), fcntl.LOCK_EX)
@@ -587,6 +588,15 @@ def cleanup_stale_jobs(root: Path, epoch: int) -> None:
                 }
             )
             atomic_json(path, value)
+            swept += 1
+            # Post-write, under the record lock: the verdict is committed
+            # state before the witness mentions it (flight-recorder D-3a).
+            emit_event(root, "job-verdict", "stale-claim-epoch sweep",
+                       jobId=path.stem, verdict="failed",
+                       reason="stale-claim-epoch",
+                       missionId=value.get("mission"))
+    emit_event(root, "sweep-completed", f"epoch {epoch}", epoch=epoch,
+               sweptCount=swept)
 
 
 def prove_lock(lock: Any, lock_path: Path) -> None:
@@ -596,6 +606,29 @@ def prove_lock(lock: Any, lock_path: Path) -> None:
     lock_probe_released(lock_path)
     acquire_bounded(lock, "lease")
     lock_probe_held(lock_path)
+
+
+_EVENT_SEQ = 0
+
+
+def emit_event(root: Path, event: str, summary: str, **fields: object) -> None:
+    """Flight-recorder witness (plans/flight-recorder.md). Never raises."""
+    global _EVENT_SEQ
+    try:
+        _EVENT_SEQ += 1
+        helper = Path(__file__).resolve().parent / "emit-event.py"
+        try:
+            started = started_at(root, os.getpid())
+        except BaseException:
+            started = 0
+        args = [sys.executable, str(helper), f"root={root}", "component=lease",
+                f"event={event}", f"summary={summary}", f"pid={os.getpid()}",
+                f"pidStartedAt={started}", f"seq={_EVENT_SEQ}"]
+        args += [f"{k}={v}" for k, v in fields.items() if v is not None]
+        subprocess.run(args, check=False, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=10)
+    except BaseException:
+        pass
 
 
 LINEAGE_RE = re.compile(r"[A-Za-z0-9._-]{1,128}")
@@ -687,6 +720,7 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
             verify_revision(load_lease(root), current["revision"])
             atomic_json(lease_path, renewed)
             renewal_completed = True
+            emit_event(root, "lease-renewed", "same-process renewal", epoch=renewed["claimEpoch"])
         if is_supervision_tag(str(announcement.get("instanceTag", ""))):
             # A supervision component is not a writer. It announces so the
             # census can see it, but claiming the checkout would steal the
@@ -723,6 +757,9 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
             # takeovers is not appended: this is not a seizure.
             verify_revision(load_lease(root), current["revision"])
             atomic_json(lease_path, successor)
+            emit_event(root, "lease-renewed",
+                       f"same-lineage succession from {predecessor}",
+                       epoch=successor["claimEpoch"])
             atomic_json(
                 stamp_path,
                 {
@@ -763,6 +800,10 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
                 load_lease(root, required=False), current.get("revision") if current else None
             )
             atomic_json(lease_path, value)
+            emit_event(root, "lease-takeover" if takeover else "lease-claimed",
+                       f"predecessor {predecessor}" if takeover else "fresh claim",
+                       epoch=epoch,
+                       **({"reason": "holder-death", "predecessor": predecessor} if takeover else {}))
             if takeover:
                 cleanup_stale_jobs(root, epoch)
             atomic_json(

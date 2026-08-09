@@ -100,6 +100,26 @@ os.replace(tmp,path)
 PY
 }
 
+# An adopted or fixture copy may lack the emitter; a failed `source` under
+# set -e kills the script before || can catch it, so test first.
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
+else
+  emit_event() { :; }
+fi
+
+rotate_event_stream() { # harness root -- only on the ESTABLISHING path (D-4)
+  local stream="$1/artifacts/agents/events.jsonl" archive_dir="$1/artifacts/agents/events-archive"
+  [[ -s "$stream" ]] || return 0
+  mkdir -p "$archive_dir"
+  local stamp name n=1
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  name="$archive_dir/events-$stamp-$$.jsonl"
+  while [[ -e "$name" ]]; do n=$((n+1)); name="$archive_dir/events-$stamp-$$-$n.jsonl"; done
+  mv "$stream" "$name" 2>/dev/null || return 0
+  METASYSTEM_HARNESS_ROOT="$1" emit_event arming stream-rotated "previousPath=${name#"$1"/}" "summary=rotated at arming"
+}
+
 write_announcement() { # repo, session, pid, start, tag, runtime, optional lineage
   if [[ -n "${7:-}" ]]; then
     "$lease_helper" --root "$1" announce --session "$2" --pid "$3" \
@@ -258,6 +278,12 @@ run_owner() {
 
   launch_set() {
     local suffix watcher_heartbeat=$supervision/watcher.heartbeat.json reaper_heartbeat=$supervision/reaper.heartbeat.json reaper_gate
+    # Supervision components NEVER carry the driver's execution id: a joined
+    # watcher cannot receive one, so none may depend on timing
+    # (flight-recorder FRCF-002). The scrub is this one line.
+    unset METASYSTEM_EXECUTION_ID
+    METASYSTEM_HARNESS_ROOT="$harness_root" emit_event arming arming-started "summary=establishing launch_set"
+    rotate_event_stream "$harness_root"
     stop_recorded_components "$harness_root"
     generation=$((generation + 1))
     suffix="$generation-$(date +%s)"
@@ -295,7 +321,7 @@ PY
     wait_for_first_heartbeat reaper "$reaper_heartbeat" "$reaper_tag" "$reaper_pid" "$reaper_start" || return 1
   }
 
-  launch_set || true
+  launch_set && METASYSTEM_HARNESS_ROOT="$harness_root" emit_event arming arming-complete "summary=components launched" || true
   [[ -z "${METASYSTEM_WATCH_POLL_INTERVAL_MS:-}" ]] || sleep "$interval_sleep"
   while true; do
     stale=

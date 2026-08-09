@@ -38,6 +38,24 @@ capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
 standing_reaper=0
+# Flight-recorder witness (plans/flight-recorder.md). emit_event never fails.
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
+else
+  emit_event() { :; }
+fi
+emit_component() { # reaper when standing, dispatch otherwise (D-3a attribution)
+  (( standing_reaper )) && printf reaper || printf dispatch
+}
+reap_verdict_events() { # job, verdict, reason, cas_rc, cas_out
+  local job=$1 verdict=$2 reason=$3 cas_rc=$4 observed=$5
+  if [[ "$cas_rc" == 0 ]]; then
+    emit_event "$(emit_component)" job-verdict "jobId=$job" "verdict=$verdict" "reason=$reason" "summary=$reason"
+  elif [[ "$cas_rc" == 3 ]]; then
+    observed=${observed#observed=}
+    emit_event "$(emit_component)" verdict-refused "jobId=$job" "attempted=$verdict" "observed=${observed:-unknown}" "summary=CAS refused: wanted $verdict, found ${observed:-unknown}"
+  fi
+}
 # How long the reaper waits past a record's handshake budget before calling a
 # unfinished-handshake job process-lost. See the handshake branch in reap_one_locked.
 handshake_backstop_grace_sec=2
@@ -160,7 +178,7 @@ record_cas() { # job, expected status, target status, patch file
 }
 
 record_create() { # job, source json
-  "$0" __record-create --job "$1" --source "$2"
+  "$0" __record-create --job "$1" --source "$2" && emit_event dispatch job-created "jobId=$1" "summary=record created"
 }
 
 record_setup() { # job, complete source json
@@ -299,6 +317,10 @@ with (lock_dir / f"{job}.lock").open("a+") as lock:
         target = values.get("status")
         current = record.get("status")
         if current != expected:
+            # The atomic compare's own observation, for the caller's
+            # verdict-refused witness event (flight-recorder D-3a): a later
+            # re-read could not honestly say what THIS compare saw.
+            print(f"observed={current}")
             raise SystemExit(3)
         transitions = {
             "pending-setup": {"failed"},
@@ -1329,7 +1351,8 @@ PY
       wind_down_group "$record" || return 1
       patch=$(mktemp "$record_locks/lost.XXXXXX")
       printf '{"error":"process-lost","phase":"supervision","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
-      record_cas "$job" "$status" failed "$patch" || true
+      cas_out=$(record_cas "$job" "$status" failed "$patch" 2>/dev/null) && cas_rc=0 || cas_rc=$?
+      reap_verdict_events "$job" failed process-lost "$cas_rc" "$cas_out"
       mirror_record "$job" || true
       return
     fi
@@ -1338,7 +1361,8 @@ PY
     wind_down_group "$record" || return 1
     patch=$(mktemp "$record_locks/timeout.XXXXXX")
     printf '{"error":"budget-cap","phase":"supervision","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
-    record_cas "$job" "$status" timeout "$patch" || true
+    cas_out=$(record_cas "$job" "$status" timeout "$patch" 2>/dev/null) && cas_rc=0 || cas_rc=$?
+    reap_verdict_events "$job" timeout budget-cap "$cas_rc" "$cas_out"
     mission=$(json_field "$record" mission 2>/dev/null || true)
     if [[ -n "$mission" && "$mission" != null ]]; then
       "$mission_fence" refuse --repo "$root" --mission "$mission" --reason job-cap-min >/dev/null || true

@@ -320,7 +320,12 @@ def terminate_group(pgid: int, tag: str, *, allow_fake: bool = False) -> None:
             "leaving it to the census rather than signaling an unowned group",
             file=sys.stderr,
         )
+        emit_event("wind-down", f"group {pgid} unowned; skipped",
+                   missionId=CURRENT_MISSION, action="skipped-unowned",
+                   reason="ownership-proof-absent")
         return
+    emit_event("wind-down", f"group {pgid}", missionId=CURRENT_MISSION,
+               action="sigterm")
     os.killpg(pgid, signal.SIGTERM)
     deadline = time.monotonic() + scaled_seconds(5)
     poll_interval = interval_seconds("METASYSTEM_HEARTBEAT_INTERVAL_MS", 50)
@@ -370,6 +375,28 @@ def cleanup_stale_lease(mission: str) -> None:
             path.unlink()
         marker.rmdir()
     lease_path.unlink(missing_ok=True)
+
+
+_EVENT_SEQ = 0
+
+
+def emit_event(event: str, summary: str, **fields: object) -> None:
+    """Flight-recorder witness (plans/flight-recorder.md). Never raises."""
+    global _EVENT_SEQ
+    try:
+        _EVENT_SEQ += 1
+        helper = ROOT / "scripts" / "agents" / "emit-event.py"
+        args = [sys.executable, str(helper), f"root={ROOT}", "component=runner",
+                f"event={event}", f"summary={summary}", f"pid={os.getpid()}",
+                f"pidStartedAt={RUNNER_STARTED_AT or 0}", f"seq={_EVENT_SEQ}"]
+        args += [f"{k}={v}" for k, v in fields.items() if v is not None]
+        subprocess.run(args, check=False, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=10)
+    except BaseException:
+        pass
+
+
+RUNNER_STARTED_AT: int | None = None
 
 
 def mission_lineage(mission: str) -> str:
@@ -665,7 +692,13 @@ def runner_record(mission: str, pid: int, pgid: int, started: int, tag: str) -> 
     }
 
 
+CURRENT_MISSION: str | None = None
+
+
 def finish_runner(mission: str, status: str, error: str | None) -> None:
+    if status == "failed":
+        emit_event("runner-failed", str(error or "unknown")[:200],
+                   missionId=mission, error=str(error or "unknown"))
     record_path, _, _ = runner_paths(mission)
     try:
         record = read_json(record_path, "mission runner record")
@@ -1254,6 +1287,7 @@ def park_state(
     mission: str,
     identity: str,
 ) -> dict[str, Any]:
+    emit_event("mission-parked", str(reason)[:200], missionId=mission, parkReason=str(reason))
     proposed = copy.deepcopy(state)
     asks_dir = mission_dir(mission) / "asks"
     if reason in {"host-failure", "stop-loss"}:
@@ -1396,8 +1430,14 @@ def one_cycle(
         patch_turn(turn_path, status="failed", outcome="failed", error="prompt-refused", detail=detail, endedAt=now_iso())
         return record_failed_turn(state_path, ledger, state, turn, detail, "failed", 2, mission)
 
+    emit_event("turn-launched", f"cycle {turn.get('cycle')}",
+               missionId=mission, turnId=turn_id)
     exit_code, result, launch_detail = launch_host(mission, turn_id, turn_dir, turn, lease, start_signal, notified)
     turn = read_json(turn_path, "turn record")
+    emit_event("turn-result",
+               f"exit {exit_code}" + (f" ({launch_detail})" if launch_detail else ""),
+               missionId=mission, turnId=turn_id,
+               outcome=launch_detail or ("ok" if exit_code == 0 else f"exit-{exit_code}"))
     if launch_detail == "start-unverified":
         return record_failed_turn(state_path, ledger, state, turn, launch_detail, "failed", 2, mission)
     if exit_code == 6:
@@ -1841,6 +1881,13 @@ def main() -> int:
             required = {"mission", "mode", "instance-tag", "start-signal"}
             if set(values) != required or not ID_RE.fullmatch(values["mission"]) or values["mode"] not in {"start", "resume"}:
                 return 2
+            globals()["CURRENT_MISSION"] = values["mission"]
+            try:
+                globals()["RUNNER_STARTED_AT"] = process_started_at(os.getpid())
+            except BaseException:
+                pass
+            emit_event("runner-started", f"mode={values['mode']}",
+                       missionId=values["mission"])
             return internal_run(
                 values["mission"], values["mode"], values["instance-tag"], Path(values["start-signal"])
             )

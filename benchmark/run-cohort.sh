@@ -65,6 +65,15 @@ else
     || die 2 "cohort start refused: invalid proposal id"
 fi
 
+# Flight-recorder witness: the driver exports the cohort id as the execution
+# id (it IS the cohort id -- nothing is minted; plans/flight-recorder.md
+# D-1a) and emits a driver-phase event on every transition.
+if [[ -f "$top/metasystem/scripts/agents/emit-event.sh" ]]; then
+  source "$top/metasystem/scripts/agents/emit-event.sh"
+else
+  emit_event() { :; }
+fi
+
 atomic_state() { # state path, phase, repetition index
   python3 - "$1" "$2" "$3" <<'PY'
 import json
@@ -85,6 +94,7 @@ with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
     os.fsync(handle.fileno())
 os.replace(temporary, path)
 PY
+  METASYSTEM_HARNESS_ROOT="${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" emit_event driver driver-phase "cohortId=${cohort_id:-unknown}" "phase=$2" "repetitionIndex=${3:-0}" "summary=phase $2"
 }
 
 prepare_repetition() { # cohort id, spec dir, repetition, state path
@@ -264,6 +274,9 @@ if [[ "$phase" == awaiting-approval ]]; then
   grep -qE '^Approval:[[:space:]]' "$contract" \
     || die 1 "cohort resume refused: repetition $repetition contract has no Approval line"
   if [[ ! -f "$target/artifacts/agents/missions/$mission_id/state.json" ]]; then
+    # The execution id IS the cohort id (flight-recorder D-1a); everything
+    # this driver spawns inherits it, and only what it spawns.
+    export METASYSTEM_EXECUTION_ID="$cohort_id"
     if ! (cd "$target" && scripts/agents/mission-runner.sh start --mission "$mission_id"); then
       die 1 "cohort resume refused: mission start failed for repetition $repetition"
     fi

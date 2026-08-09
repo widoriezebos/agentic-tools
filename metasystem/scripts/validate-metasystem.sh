@@ -154,6 +154,7 @@ for link in \
   scripts/agents/evidence-segment-fixtures.sh \
   scripts/agents/second-session-fixtures.sh \
   scripts/agents/lease-succession-fixtures.sh \
+  scripts/agents/flight-recorder-fixtures.sh \
   scripts/agents/second-session-isolation.py \
   scripts/agents/config-identity.py \
   scripts/agents/select-capability-snapshot.py \
@@ -214,6 +215,8 @@ bash -n scripts/agents/record-protocol-fixtures.sh
 bash -n scripts/agents/evidence-segment-fixtures.sh
 bash -n scripts/agents/second-session-fixtures.sh
 bash -n scripts/agents/lease-succession-fixtures.sh
+bash -n scripts/agents/flight-recorder-fixtures.sh
+bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/mission-runner.sh
@@ -239,6 +242,7 @@ bash scripts/agents/record-protocol-fixtures.sh
 bash scripts/agents/evidence-segment-fixtures.sh
 bash scripts/agents/second-session-fixtures.sh
 bash scripts/agents/lease-succession-fixtures.sh
+bash scripts/agents/flight-recorder-fixtures.sh
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
