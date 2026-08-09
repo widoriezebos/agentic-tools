@@ -103,7 +103,19 @@
    (e) the switch is RECORDED in the plan header with the trajectory, as
    the flight-recorder instance was.
 
-5. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
+5. **Qualified-name sweep of agent-facing text (human-raised 2026-08-09).**
+   The glossary's namespacing rule — projects own bare words in their own
+   workspace; metasystem prose speaks "delegate job", "recorder event",
+   "mission gate", "mission runner", "host turn" — is stated but not yet
+   enforced where it matters: the dispatch prompt templates, role briefs
+   (`scripts/agents/roles/*`), the skills, and docs/. Sweep them, and add
+   the rule to whatever lints prose (the audit's placeholder check is the
+   natural home for a collision-prone-bare-word check in agent-facing
+   templates). Raised because bm-2 literally builds a task runner: a
+   delegate reading "check the job record" inside that workspace cannot
+   know which system is meant.
+
+6. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
    next retro's change gate).** A chain closes on a round with zero
    UNREFUTED material findings: each refutation carries evidence, survives
    exactly one rebuttal round, and persistent disagreement escalates to
@@ -113,15 +125,15 @@
    `skills/design-critique/SKILL.md` (and code-critique's mirror section);
    the join script gains the unrefuted-count check. Wido: "I like the
    sharpening and I think we should implement it."
-6. **KI-23 acknowledged-process mechanism** — after the one-writer
+7. **KI-23 acknowledged-process mechanism** — after the one-writer
    implementation lands (same files).
-7. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
+8. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
    seven carried findings) — after the coexistence stream closes.
-8. **Benchmark kit halves** of the validity closure (schema v2 entries,
+9. **Benchmark kit halves** of the validity closure (schema v2 entries,
    extractor version dispatch; human-ratified) — with the next kit-gate
    batch.
-9. **Confirming benchmark re-run** (Opus critics vs luna builders, the
+10. **Confirming benchmark re-run** (Opus critics vs luna builders, the
    0.019→0.981 effect) — with the human present, after the above.
-10. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
+11. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
    implemented, proven by both gates, and pushed. Next: the probe and
    `development/devin-selftest.md`; a `hosts/devin.sh` is a separate build.

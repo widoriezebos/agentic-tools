@@ -4,6 +4,20 @@ The metasystem's working vocabulary. Each term names a mechanism, not a
 metaphor: the definition here is what the code enforces, and the named
 scripts are where to look when a definition and reality seem to disagree.
 
+NAMESPACING RULE (2026-08-09): the metasystem builds OTHER systems, and a
+project may legitimately own the same generic nouns — a task runner has
+jobs, an emitter library has events. So: INSIDE A PROJECT WORKSPACE, THE
+PROJECT OWNS THE BARE WORDS, and metasystem prose — role briefs, prompt
+templates, reports, these docs — speaks the QUALIFIED canonical forms for
+the collision-prone subset: **delegate job**, **recorder event**,
+**mission gate**, **mission runner**, **host turn**. The already
+distinctive names (lease, census, reaper, arming, sweep, fence, flight
+recorder) need no qualification — which is the pattern to imitate when
+naming anything new. Code identifiers (`jobId`, `artifacts/agents/jobs/`)
+are unaffected: paths are already namespaced under `scripts/agents/` and
+`artifacts/agents/`, and the confusion this rule prevents lives in prose,
+not paths.
+
 ## Custody: who may write to a checkout
 
 - **Checkout lease** — the single-writer claim on one repository checkout,
