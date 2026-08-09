@@ -36,7 +36,9 @@ instrumented run, not guessed.
   `cap.min.<role>.<runtime>.<canonical-model>` resolve through the normal
   config chain (base, .local, env), most specific wins, explicit
   `--cap-min` wins over all — today's trust model for uncontracted work,
-  unchanged in spirit.
+  unchanged in spirit. The existing general `dispatch.cap-min` config key
+  REMAINS the fallback below the pair keys (provenance `config-general`),
+  and the built-in default closes the chain (provenance `built-in`).
 
 ## D-1a. Canonical key encoding (folds CAPS-R1-014)
 
@@ -56,21 +58,25 @@ The mission runner does not dispatch delegates; the HOST does, inside the
 target. So the roster's caps travel as configuration, not prompts: the
 spec manifest gains a sibling map `"delegateCaps": {"devin:swe-1-7": 90}`
 (the roster string map itself is unchanged — no schema migration), and
-PROVISIONING (a) writes the corresponding `cap.min.*` keys into the
-target's metasystem.conf during its existing tailoring step and (b)
-writes the same keys into the generated mission contract's ```mission
-block, so the sealed bytes and the target config agree and preflight can
-compare them. The host's dispatches then resolve caps from the target
-config exactly like any dispatch, with the contract as the mission-job
-authority per D-1.
+PROVISIONING writes the keys into the generated mission contract's
+```mission block ONLY — no configuration copy exists, so nothing can
+drift and nothing needs reconciling (round 2 killed the duplicate: two
+readable sources is two authorities). For a MISSION job, dispatch
+resolves the pair cap FROM THE SEALED CONTRACT via the mission fence
+state; config cap keys are IGNORED for mission jobs, and the refusal
+message says so when one is present.
 
 ## D-3. Deadlines, not just durations (folds CAPS-R1-005/006/008/009)
 
 - At LAUNCH, dispatch computes the job's absolute `capDeadline` =
   startedAt + resolved cap, TRUNCATED to the mission's wall-clock end
-  when a mission fence applies. Sub-minute or negative remainder refuses
+  when a mission fence applies — the end derived from ONE clock, the
+  persisted fence counters' startedAt (the signed mission's own start),
+  never the lease's or runner's, which reset on resume and would
+  silently extend the signed fence. A remainder below TWO minutes refuses
   the dispatch ("mission has N seconds of wall clock; refusing to start
-  a job that cannot run"). The reaper enforces `capDeadline` when
+  a job that cannot run") — ONE threshold, used verbatim by the proof
+  (the draft's text and proof disagreed at 90 seconds). The reaper enforces `capDeadline` when
   present (fallback: today's startedAt + capMin arithmetic).
 - FOLLOW-UPS RE-RESOLVE: a follow-up job resolves its cap fresh at its
   own dispatch and truncates against the wall clock as of THEN — never a
@@ -140,7 +146,8 @@ which.
 - Canonicalisation: `SWE-1.7` and `swe-1-7` resolve to one binding; two
   distinct models colliding on one canonical key with different caps
   refuse loudly at dispatch.
-- Deadlines: a job launched with 90s of mission wall clock left refuses;
+- Deadlines: a job launched with less than two minutes of mission wall
+  clock left refuses (the D-3 threshold, verbatim);
   one truncated mid-cap carries truncatedBy=wall-clock and its reap
   attributes wall-clock-hours; a follow-up re-resolves and re-truncates.
 - Post-CAS: a completed verdict that wins against the timeout write
