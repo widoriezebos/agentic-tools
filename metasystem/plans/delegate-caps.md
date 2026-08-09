@@ -6,7 +6,14 @@
   (14 material findings, all folded below); the revision's spine is ONE
   rule the draft lacked: THE SIGNED CONTRACT IS THE ONLY AUTHORITY THAT
   CAN RAISE A MISSION JOB'S BUDGET.
-- Next step: WAITING ON THE HUMAN — authority-core count is not falling (6 -> 9) on an already-split chain; escalated with options (see the round-2 decision section).
+- Next step: IMPLEMENT the authority core, adversarial fixtures as arbiter.
+  CLOSE RULE (human-authorized 2026-08-09): the chain did not converge in
+  prose (6 -> 9) but the findings dropped to interface/implementation
+  grain; the human authorized building with fixtures that ATTACK the
+  invariant to settle the two remaining criticals, plus mandatory
+  code-critique. This is a DELIBERATE deviation from the usual
+  no-invariant-grade-findings condition, recorded as such. Each round-2
+  finding's resolution is fixed below; every one becomes a named fixture.
   ruling (2026-08-09). The original chain spent its rounds at 14, 11, 10
   material; round 3 carries a CRITICAL authority finding, so the
   fixtures-as-arbiter exit is unavailable by its own conditions. The
@@ -275,3 +282,54 @@ locking transaction, the exact hash domain raw-vs-canonical). That grain
 is where code plus fixtures judge better than prose — EXCEPT two findings
 are still critical, so the fixtures-as-arbiter exit is not automatically
 available. The human's call.
+
+## Authority-core resolutions (folds AUTH-R2-001..009; each is a fixture)
+
+- R2-001 FENCE INTERFACE: dispatch calls `mission-fence.py authorize-cap
+  --runtime R --model M [--requested N]` and receives `{capMin,
+  capDeadline, source}` or a refusal. The FENCE selects the signed pair
+  cap even with no `--requested` (an omitted cap does not fall back to
+  job-cap-min when a pair cap is signed); `--requested` at or below the
+  authorized value is honored as-is; above it refuses. Dispatch never
+  resolves a mission cap itself. Fixture: signed 150 pair cap is selected
+  with no argument; requested 200 refuses; requested 90 honored.
+- R2-002 ATOMIC TRANSACTION: under the fence state lock, in this order and
+  on ONE in-memory snapshot — read `approvedContractSha256`; read the
+  contract file bytes ONCE into a buffer; hash the buffer; compare to the
+  pin; parse the SAME buffer; reserve. No reopen between hash and parse.
+  Fixture: a contract file swapped AFTER the buffer read but before
+  reserve changes nothing (the buffer governs); a swap that changes the
+  pinned bytes on the next call refuses.
+- R2-003 HASH DOMAIN: `approvedContractSha256` is the RAW-FILE sha256 of
+  the exact on-disk bytes, NOT the canonical signed-content digest —
+  drift detection needs exact bytes, including the Approval line and
+  trailing whitespace. Stated in the field's definition. Fixture: a
+  trailing-whitespace-only edit refuses.
+- R2-004 RE-PIN: the pin is written ONCE, by the mission runner at start
+  and at resume, from the bytes preflight just verified, in the same
+  invocation (no independent re-hash). Amendment flows through amend ->
+  reseal -> sign -> preflight -> resume, and resume re-pins. Fixture: an
+  amended+resigned+resumed contract re-pins and is honored; an amended
+  but UNsigned contract refuses at resume.
+- R2-005 WATCHER AUTHORITY RECORD: the ATTESTED ceiling in the watcher
+  heartbeat is the sole authority dispatch reads; the derived value in
+  supervision state is an input to the watcher, not the dispatch
+  reference. Fixture: dispatch refuses against the attested value even
+  when state carries a higher derived number.
+- R2-006 DOWNWARD RE-ARM: `--rearm` refuses to lower the ceiling below
+  any currently-reserved cap (a live job's budget cannot be
+  retroactively invalidated); it names the blocking job. Fixture: a
+  re-arm below a reserved cap refuses.
+- R2-007 WATCHER DERIVATION SCOPE: supervision is repo-wide and arming
+  does not enumerate contracts, so the derived ceiling comes from the
+  CONFIG cap sources plus `--max-cap`, NOT from contracts; a mission
+  needing more raises it explicitly at its arming via `--max-cap`.
+  Fixture: arming with no --max-cap derives from config only; --max-cap
+  raises it.
+- R2-008 NON-CANONICAL REFUSAL: config validation refuses a non-canonical
+  `cap.min.*` key, the message naming the offending key AND its canonical
+  form. Fixture: `cap.min.devin.swe-1.7` refuses naming `swe-1-7`.
+- R2-009 PROOF: every resolution above ships with the named fixture; the
+  suite gains a delegate-caps fixture file, and the authority fixtures are
+  ADVERSARIAL (they attempt the bypass and assert refusal), per the close
+  rule.
