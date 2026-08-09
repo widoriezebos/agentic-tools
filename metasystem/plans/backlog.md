@@ -52,7 +52,33 @@
    a design-chain reference before they can be committed to. Whether that is
    enforceable without becoming bureaucratic is the real design question.
 
-3. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
+3. **Streaming visibility inside the per-turn lifecycle (human-ratified
+   direction, 2026-08-09).** Delegates are silent until exit: a 319-second
+   SWE-1.7 inference is indistinguishable from a hang, an empty reply costs
+   the whole session to discover, and a dead runner went unnoticed for 4.5
+   hours. The fix is NOT a lifecycle change: one process per turn stays (the
+   lease, census, and reaper are built on process exit as the turn boundary).
+   Each runtime's native streaming lands inside that pattern: claude
+   `--output-format stream-json`; codex `exec --json` already emits JSONL we
+   merely fail to tail; devin runs `devin acp` PER TURN -- the human's
+   synthesis: ACP as a transport within the turn, not a persistent server --
+   which also moves permission answering to our side of the wire (devin is
+   the one runtime with notEnforced everywhere). Supervision gains one
+   additive signal: a per-turn last-event-age heartbeat the reaper and any
+   watch can read. Honest gaps to resolve in the design: ACP has no standard
+   usage reporting (today ACU/tokens come from ATIF final_metrics at exit),
+   the turn-end evidence boundary moves to the JSON-RPC response for devin,
+   and devin's ACP loadSession support needs a probe. Sequenced AFTER the
+   bm-2 cohort completes -- changing the instrument mid-cohort makes
+   repetitions incomparable. Design loop: it touches the turn-end and usage
+   contracts. None of this makes inference faster; it makes slowness and
+   death visible while they happen. CONSOLIDATED 2026-08-09 into
+   plans/adapter-streaming.md at the human's request (since folded into the flight-recorder stream, plans/flight-recorder.md, which owns sequencing) -- the full design draft
+   (the abstract adapter interface, per-runtime transports, the liveness
+   sidecar, ACP-per-turn with its probe questions) lives there; this entry is
+   now just the queue marker.
+
+4. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
    next retro's change gate).** A chain closes on a round with zero
    UNREFUTED material findings: each refutation carries evidence, survives
    exactly one rebuttal round, and persistent disagreement escalates to
@@ -62,15 +88,15 @@
    `skills/design-critique/SKILL.md` (and code-critique's mirror section);
    the join script gains the unrefuted-count check. Wido: "I like the
    sharpening and I think we should implement it."
-4. **KI-23 acknowledged-process mechanism** — after the one-writer
+5. **KI-23 acknowledged-process mechanism** — after the one-writer
    implementation lands (same files).
-5. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
+6. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
    seven carried findings) — after the coexistence stream closes.
-6. **Benchmark kit halves** of the validity closure (schema v2 entries,
+7. **Benchmark kit halves** of the validity closure (schema v2 entries,
    extractor version dispatch; human-ratified) — with the next kit-gate
    batch.
-7. **Confirming benchmark re-run** (Opus critics vs luna builders, the
+8. **Confirming benchmark re-run** (Opus critics vs luna builders, the
    0.019→0.981 effect) — with the human present, after the above.
-8. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
+9. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
    implemented, proven by both gates, and pushed. Next: the probe and
    `development/devin-selftest.md`; a `hosts/devin.sh` is a separate build.

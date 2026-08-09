@@ -299,10 +299,28 @@ def interval_seconds(name: str, default_ms: int) -> float:
 
 
 def terminate_group(pgid: int, tag: str, *, allow_fake: bool = False) -> None:
+    """Best-effort wind-down of a host group this runner launched.
+
+    Ownership is proven by the tag on a live member. When the proof is gone --
+    the tagged host exited and only untagged children linger, or the pgid was
+    recycled -- the group is NOT ours to signal, and that is a normal way for
+    a turn to end, not a mission-fatal error: the thing we launched is no
+    longer running. Raising here killed a whole mission at the moment its
+    host finished (the runner died with "lost ownership proof" seconds after
+    the turn result landed, and the driver then polled a dead mission for
+    hours). We never signal without proof; we also never die over a group
+    that already stopped being ours. Anything genuinely left behind is
+    UNTRACKED to the census, which is the safety net designed to catch it.
+    """
     if not group_alive(pgid):
         return
     if not group_owned(pgid, tag, allow_fake=allow_fake):
-        raise RunnerError(f"refusing to signal unowned host process group {pgid}")
+        print(
+            f"host process group {pgid} is no longer provably ours; "
+            "leaving it to the census rather than signaling an unowned group",
+            file=sys.stderr,
+        )
+        return
     os.killpg(pgid, signal.SIGTERM)
     deadline = time.monotonic() + scaled_seconds(5)
     poll_interval = interval_seconds("METASYSTEM_HEARTBEAT_INTERVAL_MS", 50)
@@ -310,7 +328,12 @@ def terminate_group(pgid: int, tag: str, *, allow_fake: bool = False) -> None:
         time.sleep(poll_interval)
     if group_alive(pgid):
         if not group_owned(pgid, tag, allow_fake=allow_fake):
-            raise RunnerError(f"lost ownership proof for host process group {pgid}")
+            print(
+                f"ownership proof for host process group {pgid} disappeared "
+                "during wind-down; skipping the kill of an unowned group",
+                file=sys.stderr,
+            )
+            return
         os.killpg(pgid, signal.SIGKILL)
 
 
@@ -1640,6 +1663,43 @@ def status_command(mission: str) -> int:
         print(f"mission={mission} status=unreadable reason={str(error).replace(' ', '-')}")
         return 7
     reason = state.get("parkReason") or "none"
+    if state["status"] == "running":
+        # "Running" is a claim about a PROCESS, and the state file cannot make
+        # it alone: when the runner has died, the mission advances nothing,
+        # enforces no fence, and a driver trusting this status polls forever
+        # (four and a half hours, the night this was written). The runner
+        # record and the kernel decide whether anyone is actually driving.
+        record_path, _, _ = runner_paths(mission)
+        record = read_json(record_path, "mission runner record") if record_path.exists() else None
+        if record is None:
+            print(f"mission={mission} status=abandoned reason=no-runner-record")
+            return 13
+        if record.get("status") == "failed":
+            failure = str(record.get("error") or "unknown").replace(" ", "-")
+            print(f"mission={mission} status=runner-failed reason={failure}")
+            return 13
+        if record.get("status") == "completed":
+            # The previous runner CONCLUDED -- it parked or finished and
+            # finalized its record -- and a human's answer has reopened the
+            # mission. "Running with no live runner" is the legitimate
+            # awaiting-resume resting state here, not abandonment: the next
+            # step is `resume`, by whoever answered. Only a runner that died
+            # without concluding is a defect worth stopping a driver for.
+            pass
+        else:
+            pid, started = record.get("pid"), record.get("pidStartedAt")
+            try:
+                alive = (
+                    isinstance(pid, int)
+                    and isinstance(started, int)
+                    and process_started_at(pid) == started
+                )
+            except RunnerError:
+                # A pid that cannot be resolved is a pid that is gone.
+                alive = False
+            if not alive:
+                print(f"mission={mission} status=abandoned reason=runner-process-gone")
+                return 13
     print(f"mission={mission} status={state['status']} reason={reason}")
     return {"running": 0, "completed": 10, "parked": 11}.get(state["status"], 7)
 

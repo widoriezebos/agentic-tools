@@ -1234,7 +1234,31 @@ reap_one_locked() { # job
     record_cas "$job" "$status" failed "$patch" || true
     return 0
   fi
-  [[ "$status" != pending-setup ]] || return 0
+  if [[ "$status" == pending-setup ]]; then
+    # No process has been launched for a pending-setup record, so reaping one
+    # can orphan nothing. Its creating dispatcher finishes setup in seconds --
+    # a record still here after ten minutes belongs to a dispatcher that died
+    # between create and setup, and skipping it unconditionally left such
+    # debris pending forever (one sat untouched for seven hours in a live
+    # mission). The generous age keeps a slow live dispatcher unraced.
+    created=$(json_field "$record" createdAt 2>/dev/null || true)
+    if (( standing_reaper )) && [[ -n "$created" && "$created" != null ]] && python3 - "$created" <<'PY'
+import sys
+from datetime import datetime, timezone
+try:
+    created = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+except ValueError:
+    raise SystemExit(1)
+age = (datetime.now(timezone.utc) - created).total_seconds()
+raise SystemExit(0 if age > 600 else 1)
+PY
+    then
+      patch=$(mktemp "$record_locks/abandoned-setup.XXXXXX")
+      printf '{"error":"abandoned-setup","phase":"claim-sweep"}\n' >"$patch"
+      record_cas "$job" pending-setup failed "$patch" || true
+    fi
+    return 0
+  fi
   pid=$(json_field "$record" pid 2>/dev/null || true)
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
   started=$(json_field "$record" startedAt 2>/dev/null || true)
@@ -1282,14 +1306,13 @@ PY
     fi
     fi
   fi
-  if ! job_supervisor_matches "$record"; then
-    wind_down_group "$record" || return 1
-    patch=$(mktemp "$record_locks/lost.XXXXXX")
-    printf '{"error":"process-lost","phase":"supervision","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
-    record_cas "$job" "$status" failed "$patch" || true
-    mirror_record "$job" || true
-    return
-  fi
+  # The cap is judged BEFORE process liveness. An expired budget is a fact of
+  # the record alone (startedAt + capMin); whether the job's process happens to
+  # be dead by the time a reaper looks is scheduling noise. Judging liveness
+  # first made the verdict a race: the same expired job read timeout from the
+  # waiting dispatcher but process-lost from the standing reaper whenever its
+  # process had already exited -- two different verdicts for one fact, and the
+  # fence's job-cap-min refusal was skipped on the losing side.
   elapsed=$(python3 - "$started" <<'PY'
 from datetime import datetime, timezone
 import sys
@@ -1298,6 +1321,19 @@ except ValueError: raise SystemExit(1)
 print(int((datetime.now(timezone.utc) - started).total_seconds()))
 PY
   ) || return 1
+  # The priority applies only to a job that actually RAN: a pending job's
+  # budget never started burning, its legal failure is process-lost or
+  # handshake_timeout, and pending->timeout is not a lawful transition.
+  if [[ "$status" != running ]] || ! [[ "$cap" =~ ^[1-9][0-9]*$ ]] || (( elapsed < cap * 60 )); then
+    if ! job_supervisor_matches "$record"; then
+      wind_down_group "$record" || return 1
+      patch=$(mktemp "$record_locks/lost.XXXXXX")
+      printf '{"error":"process-lost","phase":"supervision","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
+      record_cas "$job" "$status" failed "$patch" || true
+      mirror_record "$job" || true
+      return
+    fi
+  fi
   if [[ "$cap" =~ ^[1-9][0-9]*$ ]] && (( elapsed >= cap * 60 )); then
     wind_down_group "$record" || return 1
     patch=$(mktemp "$record_locks/timeout.XXXXXX")

@@ -37,11 +37,13 @@ authorization that exists only in a conversation cannot be audited later.
   appends each contract's own ordinary approval line. F-1/F-3 are not built
   yet, which is exactly why the human had to delegate the transcription by
   hand.
-- RETRY BUDGET. At most THREE full cohort attempts. If the harness still is
-  not behaving after the third, stop, write the diagnosis, and wait for the
-  human rather than continuing to spend. Each bm-2 repetition declares EUR:40
-  exposure; swe-1-7 delegates are free under the roster ruling, so the real
-  spend is the Opus host.
+- RETRY BUDGET. Originally at most THREE full cohort attempts. Two were
+  spent (each found and fixed a distinct real defect). On the morning of
+  2026-08-09 the human, present and monitoring, raised the budget: up to TEN
+  further attempts as needed. The discipline is unchanged -- every failed
+  attempt is diagnosed and fixed before the next; no blind retries. Each bm-2
+  repetition declares EUR:40 exposure; swe-1-7 delegates are free under the
+  roster ruling, so the real spend is the Opus host.
 - FIX BAR. A mechanical defect (a wrong argument, a missing field, a bad path)
   is fixed directly, proven, and gated. Anything that changes a contract or an
   invariant goes through design -> sol critique -> implement, as usual.
