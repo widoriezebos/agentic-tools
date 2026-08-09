@@ -32,9 +32,15 @@ not patched mid-cohort): a NORMALLY completed job emits no job-verdict
 (only the reap paths were wired; the happy path completes through the
 adapter's runtime-common CAS), and some dispatch flows call __record-create
 directly, bypassing the instrumented record_create wrapper, so job-created
-is missing for them. Then: then the turn-interior and
-bundle/surfaces legs via their own chains (their carried findings are
-recorded in the leg sections).
+is missing for them. Third, raised by the human on the first flight: the
+JUDGMENT layer is absent — the runner measures the mission gate every
+cycle and classifies progress, but only the ledger sees it. The critique
+batch adds `cycle-measured {classification, observed, gatePassed}`
+(runner, post-ledger-append, missionId required) to the registry and
+wiring, and `turn-ended` gains the host's own one-line summary from its
+accepted return, so a tail shows whether the mission is WORKING, not
+merely running. Then the turn-interior and bundle/surfaces legs via their
+own chains (their carried findings are recorded in the leg sections).
 - In flight right now: nothing
 - Waiting on the human: nothing
 
