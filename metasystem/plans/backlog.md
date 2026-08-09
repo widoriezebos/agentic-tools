@@ -133,7 +133,13 @@
    cap keys on the (RUNTIME x MODEL) PAIR — the roster entry — not the
    runtime alone (human's refinement: Devin on a fast model and Devin on
    a slow model are different animals; runtime-only would be too crude),
-   with role as an optional further dimension. For Devin on
+   with role as an optional further dimension. WHERE (human, 2026-08-09):
+   the cap is declared exactly where the binding is declared — in
+   metasystem.conf beside the role.<role>.runtime and
+   role.<role>.model.<tier> keys for ordinary operation, and in the
+   benchmark manifest's roster for cohorts; dispatch resolves the cap from
+   the most specific binding that matches the job, and the design decides
+   the precedence order once. For Devin on
    swe-1-7, do not guess: set the cap ONCE deliberately very high
    (effectively unbounded within the mission), run, and CLOSELY MONITOR
    actual demand while verifying it is still progressing — progress proxy
