@@ -87,6 +87,21 @@ scripts are where to look when a definition and reality seem to disagree.
   by a **host** (the orchestrating agent session), which dispatches
   **delegates** for the actual work. Run by
   `scripts/agents/mission-runner.sh`.
+- **Cycle** — one plan-act-measure iteration of a mission: the host takes
+  a turn, the runner measures the gate, the ledger gains a line. Bounded
+  by the cycle fence and the no-gain budget (consecutive cycles without
+  measured progress).
+- **Mission ledger** — the append-only, per-cycle record of what a mission
+  measured (`artifacts/agents/missions/<id>/ledger.md`): classification
+  (progress or no-progress), candidate sha, observed gate value. THE
+  LEDGER IS TRUTH: state that disagrees with it parks the mission, and
+  each anchor commit binds the ledger's bytes to git history. State files
+  can be rebuilt; the ledger is the mission's memory.
+- **Gate (mission gate)** — the mission's own success measurement, named
+  in its contract (`gate.command`, e.g. bm-2's `self-assessment`): the
+  runner runs it every cycle and the completion threshold decides when the
+  mission is done. Distinct from the verification **gates** below, and
+  from the held-out grader, which the mission never sees.
 - **Seal / sign / preflight** — the human boundary: sealing freezes the
   contract and prints its hash; the human signs by adding the Approval
   line; preflight verifies the signed bytes are on origin before anything
