@@ -26,7 +26,13 @@ integration defects (census hot-path spawns, the set -e `source ||` trap,
 gc heredoc shadowing) — the fixtures-as-arbiter close doing its job.
 Remaining for this stream, in order: code-critique of the core (owed under
 the close rule) once bm-2 attempt 3 — running now UNDER the recorder as
-its acceptance test — completes; then the turn-interior and
+its acceptance test — completes. The first flight already found two
+coverage gaps for that critique to own (observed 2026-08-09, deliberately
+not patched mid-cohort): a NORMALLY completed job emits no job-verdict
+(only the reap paths were wired; the happy path completes through the
+adapter's runtime-common CAS), and some dispatch flows call __record-create
+directly, bypassing the instrumented record_create wrapper, so job-created
+is missing for them. Then: then the turn-interior and
 bundle/surfaces legs via their own chains (their carried findings are
 recorded in the leg sections).
 - In flight right now: nothing
