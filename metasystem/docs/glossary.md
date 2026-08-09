@@ -70,6 +70,12 @@ scripts are where to look when a definition and reality seem to disagree.
   decision reads the stream; verdicts come from records, liveness from the
   kernel, custody from the lease. The log may be lossy or absent without
   making the system wrong — which is also why writers need no locks.
+- **Event (recorder event)** — one line of the stream: a single decision
+  or observation, narrated by exactly one component, named from the
+  registry, attributed to its writer by self-reported pid and start time.
+  A diary entry, not a message: nothing consumes events, nothing waits on
+  them, and losing one loses detail, never correctness. A bare "event" in
+  this repository always means this.
 - **Event registry** — `scripts/agents/event-registry.json`, the closed
   catalogue of event names, allowed emitters, required ids, and typed
   payloads. An event not in the registry is a bug, not a feature.
@@ -125,6 +131,15 @@ scripts are where to look when a definition and reality seem to disagree.
 
 ## Delegation plumbing
 
+- **Job (delegate job)** — the unit of delegation: one piece of work
+  dispatched to one delegate runtime session. Its record —
+  `artifacts/agents/jobs/<jobId>.json` — is the authority on its life:
+  `pending-setup → pending → running → completed | failed | timeout |
+  cancelled`, transitions made only by compare-and-swap, stamped at
+  creation with the epoch and main that own it, and carrying its budget
+  (`capMin`). Dispatch creates it, the adapter runs it, the reaper and the
+  sweep judge it. A bare "job" in this repository always means this; a
+  mission's host TURNS are not jobs.
 - **Adapter** — the per-runtime driver (`scripts/agents/adapters/*.sh`)
   that turns one dispatched job into one runtime session: claude, codex,
   devin, or the fixture-only `fake`. A **host adapter**
