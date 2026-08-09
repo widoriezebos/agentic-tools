@@ -50,6 +50,21 @@ def emit(args: dict[str, str]) -> None:
     root = args.pop("root", "") or os.environ.get("METASYSTEM_HARNESS_ROOT", "")
     if not root:
         return
+    # FRCC-001: the registry is the contract, enforced at the door. An
+    # unregistered event or a disallowed emitter is dropped with a stderr
+    # note -- never written, never fatal (the emitter cannot fail its caller).
+    try:
+        registry = json.load(open(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "event-registry.json")))
+        entry = registry["events"].get(args.get("event", ""))
+        if entry is None:
+            print(f"emit-event: dropped unregistered event {args.get('event')}", file=sys.stderr)
+            return
+        if args.get("component") not in entry.get("emitters", []):
+            print(f"emit-event: dropped {args.get('event')}: {args.get('component')} may not emit it", file=sys.stderr)
+            return
+    except BaseException:
+        pass  # a broken registry must not silence the witness entirely
     now_ms = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
     event = {
         "schemaVersion": 1,

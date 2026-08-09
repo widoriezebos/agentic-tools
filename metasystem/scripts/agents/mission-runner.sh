@@ -1745,6 +1745,13 @@ def status_command(mission: str) -> int:
 
 
 def fence_reached(mission: str, values: dict[str, str]) -> bool:
+    result = _fence_reached_inner(mission, values)
+    emit_event("fence-check", f"reached={result}", missionId=mission,
+               fence="mission-fences")
+    return result
+
+
+def _fence_reached_inner(mission: str, values: dict[str, str]) -> bool:
     path = mission_dir(mission) / "fences.json"
     if not path.exists():
         return False

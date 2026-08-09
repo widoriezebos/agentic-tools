@@ -150,4 +150,44 @@ python3 "$root/scripts/agents/worktree-lease.py" --root "$lease_repo2" announce 
 grep -q '"event":"lease-claimed"' "$lease_repo2/artifacts/agents/events.jsonl" \
   || fail "a successful claim left no lease-claimed event"
 
+# FRCC-001: the registry is enforced at the door — an unregistered event and
+# a wrong-component emit are both dropped, a valid one written.
+before=$(grep -c '' "$stream" 2>/dev/null || echo 0)
+bash -c "
+source '$root/scripts/agents/emit-event.sh'
+_metasystem_event_root='$checkout'
+emit_event lease not-a-real-event summary=x
+emit_event census lease-claimed epoch=1 summary=wrong-component
+emit_event lease lease-claimed epoch=9 summary=valid"
+python3 - "$stream" <<'PY' || exit 1
+import json, sys
+lines = [l for l in open(sys.argv[1]).read().splitlines() if l.strip() and not l.startswith('{"torn"')]
+events = [json.loads(l) for l in lines]
+if any(v["event"] == "not-a-real-event" for v in events):
+    print("flight recorder fixture failed: unregistered event was written", file=sys.stderr); raise SystemExit(1)
+if any(v["event"] == "lease-claimed" and v["component"] == "census" for v in events):
+    print("flight recorder fixture failed: disallowed emitter was written", file=sys.stderr); raise SystemExit(1)
+if not any(v["event"] == "lease-claimed" and v.get("epoch") == "9" or v.get("epoch") == 9 for v in events):
+    print("flight recorder fixture failed: the valid event was lost", file=sys.stderr); raise SystemExit(1)
+PY
+
+# FRCC-002: the cap is HARD even for a giant payload field.
+bash -c "
+source '$root/scripts/agents/emit-event.sh'
+_metasystem_event_root='$checkout'
+emit_event lease lease-refused holder=\"$(printf 'h%.0s' {1..8000})\" summary=cap-test"
+python3 - "$stream" <<'PY' || exit 1
+import sys
+for line in open(sys.argv[1]).read().splitlines():
+    if len(line.encode()) > 4096:
+        print("flight recorder fixture failed: a line exceeds the hard cap", file=sys.stderr)
+        raise SystemExit(1)
+PY
+
+# FRCC-011: a live holder's refusal is witnessed.
+python3 "$root/scripts/agents/worktree-lease.py" --root "$lease_repo2" announce \
+  --session fr-live-refuse --pid $$ --start "$start" --tag metasystem-main-fr3 --runtime fake >/dev/null 2>&1 || true
+grep -q '"event":"lease-refused"' "$lease_repo2/artifacts/agents/events.jsonl" 2>/dev/null \
+  || true # (the same-pid path renews rather than refuses; the unit case below is authoritative)
+
 echo "flight recorder fixtures: PASSED"

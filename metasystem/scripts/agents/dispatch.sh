@@ -48,12 +48,13 @@ emit_component() { # reaper when standing, dispatch otherwise (D-3a attribution)
   (( standing_reaper )) && printf reaper || printf dispatch
 }
 reap_verdict_events() { # job, verdict, reason, cas_rc, cas_out
-  local job=$1 verdict=$2 reason=$3 cas_rc=$4 observed=$5
+  local job=$1 verdict=$2 reason=$3 cas_rc=$4 observed=$5 job_mission
+  job_mission=$(json_field "$agents/jobs/$job.json" mission 2>/dev/null || true)
   if [[ "$cas_rc" == 0 ]]; then
-    emit_event "$(emit_component)" job-verdict "jobId=$job" "verdict=$verdict" "reason=$reason" "summary=$reason"
+    emit_event "$(emit_component)" job-verdict "jobId=$job" "missionId=$job_mission" "verdict=$verdict" "reason=$reason" "summary=$reason"
   elif [[ "$cas_rc" == 3 ]]; then
     observed=${observed#observed=}
-    emit_event "$(emit_component)" verdict-refused "jobId=$job" "attempted=$verdict" "observed=${observed:-unknown}" "summary=CAS refused: wanted $verdict, found ${observed:-unknown}"
+    emit_event "$(emit_component)" verdict-refused "jobId=$job" "missionId=$job_mission" "attempted=$verdict" "observed=${observed:-unknown}" "summary=CAS refused: wanted $verdict, found ${observed:-unknown}"
   fi
 }
 # How long the reaper waits past a record's handshake budget before calling a
@@ -170,6 +171,16 @@ PY
 record_cas() { # job, expected status, target status, patch file
   local cas_rc=0
   "$0" __record-cas --job "$1" --expect "$2" --status "$3" --patch "$4" || cas_rc=$?
+  # FRCC-010: witness the lifecycle transitions post-CAS. Only genuine
+  # status changes emit; metadata updates (expect == target) stay silent.
+  if [[ "$cas_rc" == 0 && "$2" != "$3" ]]; then
+    case "$3" in
+      pending|running)
+        emit_event dispatch "job-$3" "jobId=$1" \
+          "missionId=$(json_field "$agents/jobs/$1.json" mission 2>/dev/null || true)" \
+          "summary=transition $2 -> $3" ;;
+    esac
+  fi
   # One-shot by contract: twenty call sites mktemp a patch and none cleaned it,
   # which is how record-locks reached 142k files. The wrapper is the one point
   # that always runs.
@@ -182,7 +193,7 @@ record_create() { # job, source json
 }
 
 record_setup() { # job, complete source json
-  "$0" __record-setup --job "$1" --source "$2"
+  "$0" __record-setup --job "$1" --source "$2" && emit_event dispatch job-setup "jobId=$1" "summary=setup complete"
 }
 
 lease_entry_check() {

@@ -272,13 +272,21 @@ PY
 
 acquire_census_writer() {
   census_writer_lock claim || return 1
+  emit_event census census-writer-claimed "summary=census writer lock claimed" || true
   census_writer_owned=1
 }
 
 release_census_writer() {
   (( census_writer_owned )) || return 0
   census_writer_lock release || true
+  emit_event census census-writer-released "summary=census writer lock released" || true
 }
+
+if [[ -f "$(dirname "${BASH_SOURCE[0]}")/agents/emit-event.sh" ]]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/agents/emit-event.sh"
+else
+  emit_event() { :; }
+fi
 
 append_census_log() { # captured scan output
   local captured=$1 log="$supervision_dir/census.log" max_bytes current=0 incoming

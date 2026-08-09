@@ -674,6 +674,9 @@ def claim_for_announcement(root: Path, announcement: dict[str, Any]) -> None:
                 # Letting a same-lineage claimant displace a live holder would
                 # let an accidental duplicate launcher steal the checkout and
                 # let siblings alternate custody.
+                emit_event(root, "lease-refused",
+                           f"live holder {current.get('holderMainId')} keeps the lease",
+                           holder=str(current.get("holderMainId")))
                 return
             if lease_lineage(current) == announcement_lineage(announcement):
                 # The same logical writer continued in a new process -- a

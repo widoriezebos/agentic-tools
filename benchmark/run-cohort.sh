@@ -94,7 +94,11 @@ with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
     os.fsync(handle.fileno())
 os.replace(temporary, path)
 PY
-  METASYSTEM_HARNESS_ROOT="${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" emit_event driver driver-phase "cohortId=${cohort_id:-unknown}" "phase=$2" "repetitionIndex=${3:-0}" "summary=phase $2"
+  local witness_phase=$2
+  # The registry's phase enum is the contract (FRCC-008): the driver's
+  # internal "new" state is the provisioning boundary in witness terms.
+  [[ "$witness_phase" == new ]] && witness_phase=provisioning
+  METASYSTEM_HARNESS_ROOT="${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" emit_event driver driver-phase "cohortId=${cohort_id:-unknown}" "phase=$witness_phase" "repetitionIndex=${3:-0}" "summary=phase $witness_phase"
 }
 
 prepare_repetition() { # cohort id, spec dir, repetition, state path
@@ -181,6 +185,7 @@ if [[ -z "$resume_id" ]]; then
       || die 2 "cohort start refused: proposal does not exist: $proposal_id"
   fi
   cohort_id=$spec_id-$(date -u +%Y%m%dt%H%M%Sz)-$$
+  export METASYSTEM_EXECUTION_ID="$cohort_id"  # FRCC-007: every invocation
   record=$results/cohorts/$cohort_id.json
   state_path=$runs/$cohort_id/state.json
   [[ ! -e "$record" && ! -e "$state_path" ]] || die 1 "cohort start refused: generated cohort id already exists"
@@ -237,6 +242,11 @@ PY
 fi
 
 cohort_id=$resume_id
+# The execution id IS the cohort id (flight-recorder D-1a): exported by EVERY
+# driver invocation, resume included, so attribution survives the human
+# boundary (FRCC-007). Everything this driver spawns inherits it; arming
+# scrubs it for supervision.
+export METASYSTEM_EXECUTION_ID="$cohort_id"
 state_path=$runs/$cohort_id/state.json
 record=$results/cohorts/$cohort_id.json
 [[ -f "$state_path" && -f "$record" ]] || die 2 "cohort resume refused: unknown cohort: $cohort_id"
@@ -274,9 +284,6 @@ if [[ "$phase" == awaiting-approval ]]; then
   grep -qE '^Approval:[[:space:]]' "$contract" \
     || die 1 "cohort resume refused: repetition $repetition contract has no Approval line"
   if [[ ! -f "$target/artifacts/agents/missions/$mission_id/state.json" ]]; then
-    # The execution id IS the cohort id (flight-recorder D-1a); everything
-    # this driver spawns inherits it, and only what it spawns.
-    export METASYSTEM_EXECUTION_ID="$cohort_id"
     if ! (cd "$target" && scripts/agents/mission-runner.sh start --mission "$mission_id"); then
       die 1 "cohort resume refused: mission start failed for repetition $repetition"
     fi
@@ -317,6 +324,7 @@ if [[ "$phase" == grading ]]; then
   mv "$grader_tmp" "$mission_root/grader.out"
   scorecard_dir=$results/$candidate_sha/$cohort_id
   scorecard=$scorecard_dir/$repetition.json
+  METASYSTEM_HARNESS_ROOT="${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" emit_event driver driver-phase "cohortId=${cohort_id:-unknown}" "phase=extracting" "repetitionIndex=${repetition:-0}" "summary=phase extracting"
   [[ ! -e "$scorecard" ]] || die 1 "cohort extraction refused: scorecard already exists: $scorecard"
   mkdir -p "$scorecard_dir"
   "$kit/extract.sh" "$target" --spec "$spec" --out "$scorecard" >"$runs/$cohort_id/extract-$repetition.out"
