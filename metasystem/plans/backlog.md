@@ -115,7 +115,28 @@
    delegate reading "check the job record" inside that workspace cannot
    know which system is meant.
 
-6. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
+6. **Per-delegate caps in the benchmark roster (human-directed 2026-08-09),
+   then the two comparison cohorts.** The bm-2 post-mortem was decisive: a
+   timed-out Devin implementer left 11 Java files, 1,322 COMPILING lines in
+   its worktree — killed by the uniform 15-minute job cap, work discarded,
+   mission shipped a skeleton (acceptance 1/53 in both repetitions). Not
+   the model, not the CLI, not a harness bug: the cap fits claude/codex
+   pacing and truncates Devin's slower-but-productive pace (91-98% of its
+   wall clock is inference). Work, in order:
+   (a) DESIGN LOOP (fence/roster contract change): the spec's roster gains
+   per-delegate caps — at minimum wall-clock minutes per job, considered
+   alongside the other fence dimensions (jobs, concurrency) — flowing from
+   manifest through mission fences to dispatch --cap-min. The human asked
+   for exactly this: "where we specify the agent we should also specify
+   the budget for that agent".
+   (b) Re-run bm-2 with a Devin-sized implementer cap to learn whether it
+   can complete AT ALL — the human's explicit question.
+   (c) Comparison cohorts on the same spec: Opus delegates and codex sol
+   delegates (new specs per the bm-2 precedent, each with its roster
+   ruling and cost note — both are PAID delegates, unlike swe-1-7).
+   Together the three runs separate model, product, and structure.
+
+7. **Critique stop-rule sharpening (human-ratified 2026-08-07, rides the
    next retro's change gate).** A chain closes on a round with zero
    UNREFUTED material findings: each refutation carries evidence, survives
    exactly one rebuttal round, and persistent disagreement escalates to
@@ -125,15 +146,15 @@
    `skills/design-critique/SKILL.md` (and code-critique's mirror section);
    the join script gains the unrefuted-count check. Wido: "I like the
    sharpening and I think we should implement it."
-7. **KI-23 acknowledged-process mechanism** — after the one-writer
+8. **KI-23 acknowledged-process mechanism** — after the one-writer
    implementation lands (same files).
-8. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
+9. **Mission-completion protocol design** (plans/mission-completion-protocol.md,
    seven carried findings) — after the coexistence stream closes.
-9. **Benchmark kit halves** of the validity closure (schema v2 entries,
+10. **Benchmark kit halves** of the validity closure (schema v2 entries,
    extractor version dispatch; human-ratified) — with the next kit-gate
    batch.
-10. **Confirming benchmark re-run** (Opus critics vs luna builders, the
+11. **Confirming benchmark re-run** (Opus critics vs luna builders, the
    0.019→0.981 effect) — with the human present, after the above.
-11. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
+12. **Devin integration** — UNPARKED 2026-08-07: the one-writer fix is
    implemented, proven by both gates, and pushed. Next: the probe and
    `development/devin-selftest.md`; a `hosts/devin.sh` is a separate build.
