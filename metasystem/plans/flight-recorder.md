@@ -17,13 +17,18 @@
   FR2-009, FR2-015) and must be resolved by their own chains before their
   implementation. The original chain spent its three rounds on a falling
   count; a successor confirming chain judges the round-3 dispositions.
-- Next step: IMPLEMENT the core leg. The critique chain is CLOSED under
-  the human's recorded close rule (2026-08-09): six rounds ran (21, 15,
-  10, 4, 3, 2 — every finding folded or carried), the final two
-  detail-grain findings (emitter attribution for the standing reaper; the
-  executionId scrub at the supervision launch boundary) are folded above,
-  and the implementation's fixtures plus code-critique arbitrate from
-  here.
+- Next step: none
+
+The core is IMPLEMENTED, fixture-proven, and pushed (bcf69ee): emitter
+pair, event-registry.json, witnesses in the lease, dispatch, runner,
+driver, arming, census, and evidence-gc retention. Landing it caught three
+integration defects (census hot-path spawns, the set -e `source ||` trap,
+gc heredoc shadowing) — the fixtures-as-arbiter close doing its job.
+Remaining for this stream, in order: code-critique of the core (owed under
+the close rule) once bm-2 attempt 3 — running now UNDER the recorder as
+its acceptance test — completes; then the turn-interior and
+bundle/surfaces legs via their own chains (their carried findings are
+recorded in the leg sections).
 - In flight right now: nothing
 - Waiting on the human: nothing
 
