@@ -17,7 +17,26 @@
   FR2-009, FR2-015) and must be resolved by their own chains before their
   implementation. The original chain spent its three rounds on a falling
   count; a successor confirming chain judges the round-3 dispositions.
-- Next step: none
+- Next step: fold the code-critique's 14 findings (the hardening batch)
+
+The owed code-critique returned 14 material findings (fr-code-critique,
+2026-08-09) — the hardening worklist the fixtures-as-arbiter close assigned
+to code review, all recorded here so none is lost:
+FRCC-001 emitter does not validate against the registry; FRCC-002 the
+4096 cap is not actually hard (arithmetic hole); FRCC-003 census writes
+multiple events in one uncapped write; FRCC-004 retention verifies durable
+copies by size only, can delete against a corrupt copy; FRCC-005 internal
+launch_set restarts rotate when only public establish/takeover may;
+FRCC-006 executionId scrub happens too late (lease events during cohort
+arming carry it); FRCC-007 driver exports the cohort id only on one path,
+resumed invocations lose attribution; FRCC-008 driver phase names drift
+from the registry enum and omit two; FRCC-009 most terminal CAS outcomes
+unwitnessed and instrumented ones omit missionId; FRCC-010 job-setup/
+pending/running never emitted; FRCC-011 live-holder lease refusal silent
+though lease-refused is registered; FRCC-012 census-writer-claimed/
+released have no producer; FRCC-013 fence-check never emitted; FRCC-014
+the fixture file does not cover most of the contract and could not have
+caught the above — the arbiter itself must grow with each fix.
 
 The core is IMPLEMENTED, fixture-proven, and pushed (bcf69ee): emitter
 pair, event-registry.json, witnesses in the lease, dispatch, runner,
