@@ -1,0 +1,145 @@
+# Glossary
+
+The metasystem's working vocabulary. Each term names a mechanism, not a
+metaphor: the definition here is what the code enforces, and the named
+scripts are where to look when a definition and reality seem to disagree.
+
+## Custody: who may write to a checkout
+
+- **Checkout lease** — the single-writer claim on one repository checkout,
+  stored at `artifacts/agents/mains/worktree-lease.json`. One holder at a
+  time; everything else reads. Owned by `scripts/agents/worktree-lease.py`.
+- **Holder / main** — the process (a "main" agent session) currently
+  holding the lease. Identified by kernel facts — pid plus its start time —
+  never by claims. A **delegate** is a worker dispatched *by* a holder; it
+  never holds or claims a lease itself.
+- **Epoch** (`claimEpoch`) — the ownership generation of a lease. It
+  increments only on a **takeover**, and every job record is stamped with
+  the epoch it was created under; a job whose epoch is below the lease's is
+  stale by definition. Distinct from **revision**, which increments on
+  every lease write and exists only for compare-and-swap.
+- **Lineage** (`ownerLineage`) — the identity of the *logical* writer,
+  which can outlive any single process. A mission's staging, resume, and
+  every host turn all derive the same lineage (`mission-<hash>`), so when
+  one of its processes succeeds a dead predecessor the lease is **renewed**
+  — same epoch, in-flight work preserved. A claim from a *different*
+  lineage over a dead holder is a **takeover**: epoch bump, stale jobs
+  swept. A live holder is never displaced by anyone.
+- **Sweep** — the takeover's cleanup: every non-terminal job stamped with
+  an older epoch is failed with `stale-claim-epoch`, so an abandoned
+  session's children cannot keep mutating a checkout that changed hands.
+- **Handshake** — the window between launching a delegate and its runtime
+  reporting a live session. A job that never completes the handshake is
+  failed as `handshake_timeout` by whoever holds the stamped deadline.
+
+## Supervision: who watches the processes
+
+- **Arming** — starting supervision for a checkout
+  (`scripts/agents/arm-supervision.sh`): announce the session, claim or
+  join the lease, launch the watcher and reaper, and wait for a first
+  healthy census. "Armed" means the checkout is being watched.
+- **Census** — the periodic scan (`scripts/agents/process-census.py`, run
+  by `scripts/watch-background-jobs.sh`) that classifies every process
+  touching the checkout: **ANNOUNCED** (a registered main), **CUSTODY**
+  (owned by a tracked job), or **UNTRACKED** (nobody can account for it —
+  surfaced, never killed). Each scan ends in a **verdict**: SUCCESS or
+  CENSUS-FAILED.
+- **Watcher** — the long-lived supervision component that runs the census
+  on an interval.
+- **Reaper** — the supervision component that applies *verdicts* to jobs
+  whose processes are gone or whose budgets are spent: `process-lost`,
+  `budget-cap` (timeout), `abandoned-setup`. Budget expiry outranks
+  process-lost for a job that actually ran, so the verdict is
+  deterministic rather than a race.
+- **Heartbeat** — a small file each long-lived component rewrites on every
+  cycle (`*.heartbeat.json`), carrying its pid and start time. Staleness
+  plus a dead pid is how a component is *proven* dead rather than assumed.
+- **Wind-down** — terminating a job's or turn's process group, permitted
+  only while ownership of that group can be proven (the tag is visible on
+  a live member). Lost proof means: stop signaling, let the census surface
+  the leftovers. Never kill what you cannot prove is yours.
+
+## The flight recorder: how a run explains itself
+
+- **Flight recorder** — the append-only event stream
+  (`artifacts/agents/events.jsonl`, one per checkout) in which every
+  component narrates its decisions: lease claims and renewals, census
+  verdicts, job verdicts, turns, phases. One `tail -F` is the live view; a
+  collected bundle is the post-mortem. Design: `plans/flight-recorder.md`.
+- **Witness, never an authority** — the recorder's one law. No machinery
+  decision reads the stream; verdicts come from records, liveness from the
+  kernel, custody from the lease. The log may be lossy or absent without
+  making the system wrong — which is also why writers need no locks.
+- **Event registry** — `scripts/agents/event-registry.json`, the closed
+  catalogue of event names, allowed emitters, required ids, and typed
+  payloads. An event not in the registry is a bug, not a feature.
+- **Emitter** — the never-fail append helpers
+  (`scripts/agents/emit-event.{sh,py}`). An emit may silently lose its own
+  event; it may never fail its caller.
+- **executionId** — the cohort id, exported by the benchmark driver to
+  everything it spawns so one run's events can be joined across the
+  harness and its targets. Supervision components never carry it.
+
+## Missions and benchmarks
+
+- **Mission** — a contract-governed unit of autonomous work: a sealed and
+  human-signed `mission-*.contract.md`, executed as a series of **turns**
+  by a **host** (the orchestrating agent session), which dispatches
+  **delegates** for the actual work. Run by
+  `scripts/agents/mission-runner.sh`.
+- **Seal / sign / preflight** — the human boundary: sealing freezes the
+  contract and prints its hash; the human signs by adding the Approval
+  line; preflight verifies the signed bytes are on origin before anything
+  runs. The kit is built to stop here, on purpose.
+- **Anchor** — a commit the runner makes in the target after each cycle,
+  binding the mission ledger's bytes to git history so progress claims are
+  auditable.
+- **Fence** — a hard resource boundary a mission may not cross: wall-clock
+  hours, cycle count, job count, concurrency, per-job minutes, and spend.
+  Enforced by the runner and `scripts/agents/mission-fence.py`.
+- **Park / ask / answer** — a mission that cannot safely continue parks
+  with a reason and an **ask**; a human answers; `resume` continues it.
+  "Running with no live runner but a cleanly concluded record" is the
+  legitimate awaiting-resume state, distinct from a crashed runner.
+- **Cohort / repetition / target** — one benchmark run: a **cohort** is N
+  **repetitions** of a spec, each in its own freshly provisioned
+  **target** repository, graded by a held-out grader the mission must not
+  read. Driven by `benchmark/run-cohort.sh`.
+- **Roster** — the pinned assignment of runtimes and models for a spec:
+  which model hosts, which model delegates. Changing it is a human ruling.
+
+## Delegation plumbing
+
+- **Adapter** — the per-runtime driver (`scripts/agents/adapters/*.sh`)
+  that turns one dispatched job into one runtime session: claude, codex,
+  devin, or the fixture-only `fake`. A **host adapter**
+  (`scripts/agents/hosts/*.sh`) does the same for mission turns.
+- **Capability snapshot** — the probed record of what a runtime CLI can
+  actually do and enforce, captured by `<adapter> probe`. Its
+  **envelopeEnforcement** declares, per boundary, `mapped` (the runtime
+  enforces it) or `notEnforced` (it cannot).
+- **Envelope / waiver** — the permission bounds a job requests (write
+  roots, read roots, network). Where a runtime cannot enforce a requested
+  bound, dispatch refuses — unless the role carries a **waiver**: a
+  recorded human acceptance of that named residual for that runtime.
+- **Return schema** — the JSON contract a delegate's final answer must
+  satisfy (`scripts/agents/return-schema.py`); one bounded same-session
+  **repair turn** may fix a malformed return, recorded, never invented.
+- **ATIF transcript** — the exported trajectory of a runtime session
+  (agent trajectory interchange format); the source of settled session
+  identity, effective model, and usage.
+- **ACU** — Devin's enterprise metering unit, carried as a provider unit
+  and fenced like money; never converted into tokens or cost.
+
+## Verification
+
+- **Gates** — the checks that must pass, chained with the push in one
+  command: the metasystem **suite** (`scripts/validate-metasystem.sh`) and
+  the benchmark **kit gate** (`benchmark/validate-kit.sh`). A verdict is
+  read from the chain's exit, never from a log tail.
+- **Fixture** — a self-contained proof of one behavior inside the suite;
+  the design loop's findings land as fixtures so they cannot regress
+  silently.
+- **Design loop** — design → critique by an independent model to zero
+  material findings (or a recorded close rule) → implement → code-critique
+  → gates. `docs/collaboration.md` owns the details.
