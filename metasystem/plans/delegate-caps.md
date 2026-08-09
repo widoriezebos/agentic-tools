@@ -80,7 +80,13 @@ drift and nothing needs reconciling (round 2 killed the duplicate: two
 readable sources is two authorities). For a MISSION job, dispatch
 resolves the pair cap FROM THE SEALED CONTRACT via the mission fence
 state; config cap keys are IGNORED for mission jobs, and the refusal
-message says so when one is present.
+message says so when one is present. FRESHNESS (R3-001, critical): the
+mission fence state gains `approvedContractSha256`, written at mission
+start from the preflight-verified contract; EVERY dispatch that honors a
+pair cap first recomputes the contract file's hash and refuses on
+mismatch ("contract bytes changed after approval") — preflight is a
+gate, the pinned hash is the standing proof, and an unsigned local edit
+after preflight can never raise a budget.
 
 ## D-3. Deadlines, not just durations (folds CAPS-R1-005/006/008/009)
 
@@ -126,8 +132,13 @@ and role-pair caps, dispatch.cap-min, fence.job-cap-min, built-in) plus
 30 minutes, WRITES it into the supervision state file, and the watcher
 reads it from there. Dispatch compares against THE STATE FILE'S recorded
 ceiling — what the live watcher actually enforces — never a recomputed
-value; raising a cap past it requires re-arming, and the refusal says so
-(R2-002's lifecycle).
+value; raising a cap past it requires re-arming, and the refusal says so.
+R3-003 completes the lifecycle: EXPLICIT `--cap-min` arguments are bound
+by the recorded ceiling too (the trust chain lets them win among
+CONFIGURED values, never against the live watcher); an establishing
+re-arm REPLACES the watcher and recomputes the ceiling (a join never
+does); and arming accepts `--max-cap <min>` so an operator raising a cap
+beyond every configured source has a declared input instead of a puzzle.
 
 ## D-6. The discovery experiment, honestly framed (folds CAPS-R1-011/012)
 
@@ -180,8 +191,10 @@ which.
   produces NO fence refusal (staged as the dispatcher-vs-reaper shape).
 - Watcher ceiling: arming over a 150-minute contract cap yields a ceiling
   above it; dispatch still refuses a cap above the derived ceiling.
-- Transport: a manifest delegateCaps entry lands byte-identically in the
-  target conf AND the sealed contract, and preflight fails on a mismatch.
+- Transport: a manifest delegateCaps entry lands in the sealed contract's
+  mission block and its sealed.exposure entry, and NOWHERE else — the
+  round-2/round-3 rule: the contract is the only transport, so the proof
+  asserts the ABSENCE of any cap key in the target configuration.
 - Experiment: the sampler produces monotone timestamps; a synthetic
   stalled worktree classifies STALLED at exactly 45 minutes; a
   cap-ended job reports censored, not completed.
