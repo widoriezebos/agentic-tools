@@ -2,126 +2,153 @@
 
 - Goal and current status: a delegate job's time budget is declared where
   its runtime and model are declared — keyed on the (runtime × model)
-  pair, optionally sharpened per role — instead of one uniform cap for
-  every delegate. DESIGN DRAFT, 2026-08-09, from the human's direction
-  after the bm-2 post-mortem; not yet critiqued.
-- Next step: critique this design with sol
+  pair, optionally sharpened per role. Revised against critique round 1
+  (14 material findings, all folded below); the revision's spine is ONE
+  rule the draft lacked: THE SIGNED CONTRACT IS THE ONLY AUTHORITY THAT
+  CAN RAISE A MISSION JOB'S BUDGET.
+- Next step: critique round 2 with sol
 - In flight right now: nothing
 - Waiting on the human: nothing
 
 ## Why, with the evidence
 
-bm-2's uniform 15-minute job cap killed a Devin/swe-1-7 implementer that
-had produced 11 Java files — 1,322 COMPILING lines — mid-flight. The work
-was discarded, the mission shipped a skeleton (acceptance 1/53 in both
-repetitions), and the delegation-floor gate correctly recorded that no
-implementer job was ever certified. Not the model (productive), not the
-CLI (functioning), not a harness bug (everything behaved as configured):
-the CONFIGURATION was the defect. A cap sized for claude/codex pacing
-truncates a runtime whose wall clock is 91–98% inference.
+bm-2's uniform 15-minute cap killed a Devin/swe-1-7 implementer holding
+1,322 compiling lines; the mission shipped a skeleton (acceptance 1/53,
+both repetitions). Not the model, not the CLI, not a bug: the
+configuration. The human ruled: cap keyed on (runtime × model), declared
+where bindings are declared, and Devin's number DISCOVERED by one
+instrumented run, not guessed.
 
-The human's rulings, verbatim in effect:
-- the cap keys on the (runtime × model) PAIR, "not necessarily per agent —
-  that might be too crude; Devin on a very fast model will behave
-  different from Devin using a very slow or poor model";
-- "where we define what agents and models to use per role, that is also
-  where we will have to specify the cap";
-- the Devin number is DISCOVERED, not guessed: one deliberately very high
-  cap, one closely monitored run, the observed natural completion time
-  plus margin becomes the standing cap.
+## D-1. Two regimes, one authority rule (folds CAPS-R1-001/003/004)
 
-## D-1. Declaration: the cap lives beside the binding
+- MISSION JOBS: `fence.job-cap-min` in the signed contract remains the
+  SOVEREIGN UNIVERSAL CEILING. Per-pair caps for a mission exist ONLY as
+  contract keys in the ```mission block —
+  `cap.min.<runtime>.<canonical-model>=N` — sealed, signed, and
+  preflight-verified like every other mission key. A contract pair cap
+  may exceed fence.job-cap-min for its pair (the human signed exactly
+  that); nothing UNSIGNED ever can: dispatch REFUSES a `--cap-min` above
+  the contract-resolved value for a mission job, and refuses
+  `.local`/environment cap overrides for mission-fenced dispatches
+  outright. Authority, not precedence.
+- NON-MISSION JOBS (ordinary harness work, no contract exists):
+  `cap.min.<runtime>.<canonical-model>` and the role-sharpened
+  `cap.min.<role>.<runtime>.<canonical-model>` resolve through the normal
+  config chain (base, .local, env), most specific wins, explicit
+  `--cap-min` wins over all — today's trust model for uncontracted work,
+  unchanged in spirit.
 
-Two surfaces declare bindings today, and each gains the cap in place:
+## D-1a. Canonical key encoding (folds CAPS-R1-014)
 
-- HARNESS CONFIG (`metasystem.conf`, resolved by `metasystem-config.sh`
-  with `.local` and env overrides exactly like every other key):
-  `cap.min.<runtime>.<model>` — e.g. `cap.min.devin.swe-1-7=90` — with an
-  optional role-sharpened form `cap.min.<role>.<runtime>.<model>`. Model
-  names use the canonical form the adapters already record (the
-  `swe-1-7` canonicalisation exists).
-- BENCHMARK ROSTER (the spec manifest): each roster delegate entry may
-  carry `"capMin": <int>`, and the host entry likewise for turn caps.
-  The manifest is sealed into the contract, so a cohort's caps are part
-  of what the human signs.
+Cap keys use the CANONICAL MODEL FORM, computed by a pre-dispatch helper
+(`scripts/agents/canonical-model.py`, extracted from the devin adapter's
+existing canonicalisation so there is exactly one implementation):
+lowercase, every run of characters outside [a-z0-9] collapsed to one
+hyphen (`SWE-1.7` → `swe-1-7`, `gpt-5.6-sol` → `gpt-5-6-sol`). Dispatch
+canonicalises BEFORE resolution. Because the encoding is lossy, dispatch
+also REFUSES a configuration that binds two distinct requested model
+strings to the same canonical key with different cap values — collision
+is a loud config error, never a silent winner.
 
-## D-2. Resolution: most specific binding wins, once, at dispatch
+## D-2. Transport: provisioning writes what the host will read (folds CAPS-R1-002)
 
-Dispatch resolves the cap when it creates the job record, stamps it as
-`capMin` (the field every fence and reaper already reads), and NOTHING
-downstream changes — the reaper still judges `startedAt + capMin`, the
-mission fence still meters `job-cap-min`. Precedence, most specific
-first, decided here once:
+The mission runner does not dispatch delegates; the HOST does, inside the
+target. So the roster's caps travel as configuration, not prompts: the
+spec manifest gains a sibling map `"delegateCaps": {"devin:swe-1-7": 90}`
+(the roster string map itself is unchanged — no schema migration), and
+PROVISIONING (a) writes the corresponding `cap.min.*` keys into the
+target's metasystem.conf during its existing tailoring step and (b)
+writes the same keys into the generated mission contract's ```mission
+block, so the sealed bytes and the target config agree and preflight can
+compare them. The host's dispatches then resolve caps from the target
+config exactly like any dispatch, with the contract as the mission-job
+authority per D-1.
 
-1. an explicit `--cap-min` argument (existing; used by fixtures and the
-   mission runner's roster-driven dispatches),
-2. `cap.min.<role>.<runtime>.<model>`,
-3. `cap.min.<runtime>.<model>`,
-4. the mission fence's `fence.job-cap-min` (the contract's uniform
-   floor-setting, now explicitly a DEFAULT rather than a universal),
-5. the current built-in default.
+## D-3. Deadlines, not just durations (folds CAPS-R1-005/006/008/009)
 
-A roster `capMin` reaches dispatch as the mission runner's `--cap-min`
-(rule 1), so the benchmark surface needs no new dispatch flags. The
-resolved value and WHICH rule produced it are recorded on the job record
-(`capMin`, `capMinSource`) — provenance, not inference, when a scorecard
-asks why a job had the budget it had.
+- At LAUNCH, dispatch computes the job's absolute `capDeadline` =
+  startedAt + resolved cap, TRUNCATED to the mission's wall-clock end
+  when a mission fence applies. Sub-minute or negative remainder refuses
+  the dispatch ("mission has N seconds of wall clock; refusing to start
+  a job that cannot run"). The reaper enforces `capDeadline` when
+  present (fallback: today's startedAt + capMin arithmetic).
+- FOLLOW-UPS RE-RESOLVE: a follow-up job resolves its cap fresh at its
+  own dispatch and truncates against the wall clock as of THEN — never a
+  copy of the parent's stamp.
+- VERDICT ATTRIBUTION: a job ended at a wall-clock-truncated deadline is
+  attributed to the WALL CLOCK — the fence refusal names
+  wall-clock-hours, not job-cap-min, so the human is never asked to
+  amend the wrong contract term.
+- POST-CAS CONSEQUENCES ONLY: the reaper files its mission fence refusal
+  ONLY when its terminal CAS won. A completed verdict that beat the
+  timeout write means no cap-exhaustion ask — the committed winner owns
+  the consequences (the flight recorder's D-3a rule, applied here).
 
-## D-3. Fences stay sovereign
+## D-4. Provenance that survives questions (folds CAPS-R1-007)
 
-A per-binding cap does not weaken the mission fences: `fence.jobs`,
-`fence.wall-clock-hours`, and `fence.concurrency` still bound the
-mission, and a cap LARGER than the remaining mission wall clock is
-truncated to it at resolution time (recorded in `capMinSource` as
-`fence-truncated`). The cap experiment therefore needs a spec whose
-wall-clock fence accommodates one long implementer job — the experiment
-raises the fence deliberately rather than letting the fence silently
-become the cap.
+The job record gains one object:
+`"capResolution": {"requestedMin": int, "rule":
+"argument|contract-pair|config-role-pair|config-pair|fence-default|
+built-in", "origin": "contract|conf|conf-local|env|argument|default",
+"truncatedBy": "wall-clock"|null, "deadline": ISO-8601}`.
+Nothing overwrites the rule when truncation applies — truncation is its
+own field. A scorecard can reconstruct why every job had the budget it
+had, from the record, not the witness stream.
 
-## D-4. The discovery experiment (one run, instrumented)
+## D-5. The watcher ceiling is derived, not discovered (folds CAPS-R1-010)
 
-A bm-2-derived spec (`bm-2c`, cap-discovery) with: roster
-`devin: swe-1-7` delegates carrying `capMin` effectively unbounded within
-the mission (e.g. 150), `fence.wall-clock-hours` raised to match, ONE
-repetition, and the same gate and grader. The watch samples progress —
-worktree churn plus session state until adapter streaming lands — and the
-deliverable is the OBSERVED time-to-completion distribution of implementer
-jobs, from which the standing `cap.min.devin.swe-1-7` is set with margin
-and recorded as a human ruling in the roster. If jobs do NOT complete even
-unbounded, that is the answer the human asked for ("whether it can
-complete at all"), and the comparison cohorts decide what replaces Devin
-as implementer.
+Dispatch's rule that every cap stays below the watcher's inactivity
+ceiling stands. Therefore ARMING derives the watcher ceiling from the
+maximum cap resolvable in that checkout (max of config pair caps,
+contract pair caps, fence.job-cap-min) plus a fixed margin, instead of a
+constant 180. The experiment does not disable anything: raising the
+contract's pair cap automatically raises the derived ceiling, visibly.
 
-## D-5. What does not change
+## D-6. The discovery experiment, honestly framed (folds CAPS-R1-011/012)
 
-- `capMin` on the job record, the reaper's budget arithmetic, the fence
-  metering, and the timeout verdict semantics (budget-cap outranks
-  process-lost for jobs that ran).
-- Roles without a specific binding: the existing default chain applies
-  unchanged.
-- Host turn caps: the same declaration surfaces exist (`host.turn-cap-min`
-  in the mission block already; the roster host entry may carry it), but
-  host turns are missions' business and their resolution is already
-  contract-driven — this design only ADDS the per-model config form for
-  symmetry, it does not move authority.
+`bm-2c`: bm-2's spec with ONE repetition, contract pair cap
+`cap.min.devin.swe-1-7=150`, `fence.wall-clock-hours` raised to 4, same
+gate and grader. Measurement is DRIVER-SIDE (the witness stream stays a
+witness): the experiment runs under a named watch script that samples the
+implementer worktree's newest-mtime and file count every 60s into the
+cohort directory (`cap-experiment-samples.jsonl`), with start = the job
+record's startedAt and end = its endedAt. PREDECLARED CRITERIA: a job
+with no worktree change for 45 consecutive minutes is classified STALLED
+(practical noncompletion); a job ended by cap or fence is CENSORED and
+reported as "exceeds T", never as a completion time; only natural
+terminations produce completion times. A censored 150-minute result does
+NOT conclude "cannot complete" — it concludes "needs more than 150
+minutes or a different structure", and the comparison cohorts inform
+which.
+
+## D-7. What does not change (folds CAPS-R1-013)
+
+- Host turn caps remain CONTRACT-ONLY (`host.turn-cap-min`). The draft's
+  "config form for symmetry" is DROPPED: it was decorative at best and an
+  unsigned override at worst.
+- `capMin` on the record, the fence metering interfaces, timeout-vs-
+  process-lost priority, and every non-cap dispatch path.
 
 ## Proof
 
-- Resolution precedence: fixtures for each rule of D-2, including the
-  role-sharpened form beating the pair form, the pair form beating the
-  fence default, and explicit `--cap-min` beating everything.
-- Provenance: a dispatched job's record carries `capMinSource` naming the
-  winning rule; the fence-truncation case records `fence-truncated` and
-  the truncated value.
-- Fence sovereignty: a cap larger than remaining wall clock truncates; the
-  mission fence still ends the mission on schedule with the long job
-  reaped as budget-cap.
-- Config hygiene: an unparseable or non-positive cap value refuses loudly
-  at dispatch (the tier-gap lesson: config errors are errors, not silent
-  defaults).
-- Roster flow: a manifest capMin reaches the job record byte-identical
-  through the runner's dispatch, and the sealed contract's exposure
-  statement reflects it.
-- End to end: the bm-2c experiment spec provisions, seals with its raised
-  fences visible in the contract, and one unbounded implementer job runs
-  to a natural end under the watch.
+- Authority: a mission dispatch with `--cap-min` above the
+  contract-resolved value REFUSES; a `.local` cap override on a
+  mission-fenced dispatch REFUSES; the same override on a non-mission
+  dispatch applies and its provenance says conf-local.
+- Precedence and provenance: one fixture per D-1 rule; each asserts the
+  full capResolution object including origin.
+- Canonicalisation: `SWE-1.7` and `swe-1-7` resolve to one binding; two
+  distinct models colliding on one canonical key with different caps
+  refuse loudly at dispatch.
+- Deadlines: a job launched with 90s of mission wall clock left refuses;
+  one truncated mid-cap carries truncatedBy=wall-clock and its reap
+  attributes wall-clock-hours; a follow-up re-resolves and re-truncates.
+- Post-CAS: a completed verdict that wins against the timeout write
+  produces NO fence refusal (staged as the dispatcher-vs-reaper shape).
+- Watcher ceiling: arming over a 150-minute contract cap yields a ceiling
+  above it; dispatch still refuses a cap above the derived ceiling.
+- Transport: a manifest delegateCaps entry lands byte-identically in the
+  target conf AND the sealed contract, and preflight fails on a mismatch.
+- Experiment: the sampler produces monotone timestamps; a synthetic
+  stalled worktree classifies STALLED at exactly 45 minutes; a
+  cap-ended job reports censored, not completed.
