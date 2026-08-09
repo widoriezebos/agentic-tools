@@ -6,7 +6,7 @@
   (14 material findings, all folded below); the revision's spine is ONE
   rule the draft lacked: THE SIGNED CONTRACT IS THE ONLY AUTHORITY THAT
   CAN RAISE A MISSION JOB'S BUDGET.
-- Next step: fold authority-core round 1 (6 findings recorded below; the fence becomes the pair-cap authority) and continue that chain
+- Next step: authority-core round 2 (the fence-owns-caps reframe folded)
   ruling (2026-08-09). The original chain spent its rounds at 14, 11, 10
   material; round 3 carries a CRITICAL authority finding, so the
   fixtures-as-arbiter exit is unavailable by its own conditions. The
@@ -30,63 +30,68 @@ configuration. The human ruled: cap keyed on (runtime × model), declared
 where bindings are declared, and Devin's number DISCOVERED by one
 instrumented run, not guessed.
 
-## D-1. Two regimes, one authority rule (folds CAPS-R1-001/003/004)
+## D-1. The mission fence owns pair-cap authority (folds AUTH-001/002, R1-001/003/004)
 
-- MISSION JOBS: `fence.job-cap-min` in the signed contract remains the
-  SOVEREIGN UNIVERSAL CEILING. Per-pair caps for a mission exist ONLY as
-  contract keys in the ```mission block —
-  `cap.min.<runtime>.<canonical-model>=N` — sealed, signed, and
-  preflight-verified like every other mission key. A contract pair cap
-  may exceed fence.job-cap-min for its pair (the human signed exactly
-  that); nothing UNSIGNED ever can: dispatch REFUSES a `--cap-min` above
-  the contract-resolved value for a mission job, and refuses
-  `.local`/environment cap overrides for mission-fenced dispatches
-  outright. Authority, not precedence.
-- NON-MISSION JOBS (ordinary harness work, no contract exists):
-  `cap.min.<runtime>.<canonical-model>` and the role-sharpened
-  `cap.min.<role>.<runtime>.<canonical-model>` resolve through the normal
-  config chain (base, .local, env), most specific wins, explicit
-  `--cap-min` wins over all — today's trust model for uncontracted work,
-  unchanged in spirit. The existing general `dispatch.cap-min` config key
-  REMAINS the fallback below the pair keys (provenance `config-general`),
-  and the built-in default closes the chain (provenance `built-in`).
+Round 1 of the authority chain corrected the draft's core mistake: caps
+were treated as a DISPATCH-resolution concern, but the mission FENCE is
+the sovereign, so the fence must be the component that knows and enforces
+pair caps. The revised model:
 
-## D-1a. Canonical key encoding (folds CAPS-R1-014)
+- The mission fence (`mission-fence.py`) is extended to accept the job's
+  (runtime, canonical-model) and to authorize a per-pair cap that MAY
+  exceed the general `fence.job-cap-min`. It authorizes this because it,
+  the sovereign, has verified the signed contract (D-2) — dispatch never
+  becomes a competing authority. The fence's existing "reject any cap
+  above job-cap-min" check is replaced by "reject any cap above the
+  SIGNED pair cap for this runtime+model, or above job-cap-min when the
+  pair has none".
+- Dispatch ASKS the fence for the authorized cap; it does not resolve
+  mission caps itself. For a mission job the answer comes only from the
+  fence's verified contract state; unsigned inputs (`--cap-min` above the
+  authorized value, `.local`/env cap keys) are refused, and the refusal
+  names the fence as the authority.
+- NON-MISSION JOBS keep today's config trust chain unchanged
+  (`cap.min.<role>.<runtime>.<model>` > `cap.min.<runtime>.<model>` >
+  `dispatch.cap-min` > built-in; explicit `--cap-min` wins), because no
+  contract and no sovereign fence exist to defer to.
 
-Cap keys use the CANONICAL MODEL FORM, computed by a pre-dispatch helper
-(`scripts/agents/canonical-model.py`, extracted from the devin adapter's
-existing canonicalisation so there is exactly one implementation):
-the ADAPTER'S EXACT ALGORITHM (lowercase, runs outside [a-z0-9] collapse
-to one hyphen, EDGE HYPHENS STRIPPED — the extracted helper is the single
-truth and this prose defers to it). Dispatch canonicalises BEFORE
-resolution. Collisions are detected WHERE RAW SPELLINGS EXIST:
-provisioning refuses a manifest whose distinct raw strings collapse to
-one canonical key with different values; config validation refuses the
-same across cap.min.* keys; dispatch needs no raw provenance.
+## D-1a. Canonical key encoding (folds R1-014, AUTH-006)
 
-## D-2. Transport: provisioning writes what the host will read (folds CAPS-R1-002)
+Cap keys use the CANONICAL MODEL FORM from one extracted helper
+(`scripts/agents/canonical-model.py`, lifted verbatim from the devin
+adapter: lowercase, non-[a-z0-9] runs to one hyphen, edge hyphens
+stripped — the helper is the single truth, this prose defers to it).
+Config VALIDATION refuses ANY `cap.min.*` key that is not already
+canonical (AUTH-006: a solitary non-canonical key like
+`cap.min.devin.swe-1.7` is a loud error, never normalized and never
+silently ignored into a fallback), which also subsumes collision refusal:
+two raw spellings cannot both be present if neither non-canonical form is
+accepted. Provisioning refuses a manifest whose raw `runtime:model`
+strings collapse to one canonical key with different values.
 
-The mission runner does not dispatch delegates; the HOST does, inside the
-target. So the roster's caps travel as configuration, not prompts: the
-spec manifest gains a TOP-LEVEL map `"delegateCaps"` whose keys are the
-RAW `"runtime:model"` strings and MUST each match a roster delegate entry
-(unmatched keys refuse at provisioning), whose values are positive
-integer minutes, and whose absence for a pair is legal — that pair uses
-`fence.job-cap-min` (the roster string map is unchanged — no schema
-migration), and
-PROVISIONING writes the keys into the generated mission contract's
-```mission block ONLY — and each pair cap becomes a `sealed.exposure.cap.min.<runtime>.<model>` seal entry, part of the human-visible exposure they sign (R2-008) — no configuration copy exists, so nothing can
-drift and nothing needs reconciling (round 2 killed the duplicate: two
-readable sources is two authorities). For a MISSION job, dispatch
-resolves the pair cap FROM THE SEALED CONTRACT via the mission fence
-state; config cap keys are IGNORED for mission jobs, and the refusal
-message says so when one is present. FRESHNESS (R3-001, critical): the
-mission fence state gains `approvedContractSha256`, written at mission
-start from the preflight-verified contract; EVERY dispatch that honors a
-pair cap first recomputes the contract file's hash and refuses on
-mismatch ("contract bytes changed after approval") — preflight is a
-gate, the pinned hash is the standing proof, and an unsigned local edit
-after preflight can never raise a budget.
+## D-2. Contract-only transport, with freshness on EVERY signed limit (folds AUTH-002/003, R1-002, R2-001/008)
+
+- The HOST dispatches inside the target, so caps travel as a signed
+  CONTRACT, never configuration. The manifest gains a top-level
+  `delegateCaps` map (raw `"runtime:model"` keys matching roster
+  delegates, positive-integer minutes, absence legal → job-cap-min);
+  provisioning writes them into the generated contract's ```mission block
+  AND a `sealed.exposure.cap.min.<runtime>.<model>` seal entry, and
+  NOWHERE ELSE. No configuration copy exists (R2-001).
+- THE PIN GOVERNS EVERY SIGNED LIMIT, not just pair caps (AUTH-002): the
+  fence state carries `approvedContractSha256`, and the fence verifies
+  the live contract file against it on EVERY metering call before reading
+  ANY signed value — pair cap, the fallback `fence.job-cap-min`, and the
+  `fence.wall-clock-hours` D-3 consumes. An unsigned post-preflight edit
+  cannot raise a pair cap, the fallback cap, OR extend the wall clock.
+- THE PIN'S LIFECYCLE is explicit (AUTH-003): preflight verifies the
+  signed+approved bytes and, in the SAME step that consumes its result,
+  hashes THOSE verified bytes into `approvedContractSha256` — never a
+  later re-hash of a file that could have drifted between preflight and
+  fence-state creation. The only legal way to change the pin is the
+  existing amend → reseal → sign → preflight → resume flow, whose resume
+  re-pins from its own fresh preflight; any other change to the contract
+  bytes makes the fence refuse until re-approval.
 
 ## D-3. Deadlines, not just durations (folds CAPS-R1-005/006/008/009)
 
@@ -133,12 +138,17 @@ and role-pair caps, dispatch.cap-min, fence.job-cap-min, built-in) plus
 reads it from there. Dispatch compares against THE STATE FILE'S recorded
 ceiling — what the live watcher actually enforces — never a recomputed
 value; raising a cap past it requires re-arming, and the refusal says so.
-R3-003 completes the lifecycle: EXPLICIT `--cap-min` arguments are bound
-by the recorded ceiling too (the trust chain lets them win among
-CONFIGURED values, never against the live watcher); an establishing
-re-arm REPLACES the watcher and recomputes the ceiling (a join never
-does); and arming accepts `--max-cap <min>` so an operator raising a cap
-beyond every configured source has a declared input instead of a puzzle.
+The lifecycle, completed against AUTH-004/005: the watcher, AFTER loading
+its ceiling at startup, ATTESTS it by writing the loaded value into its
+own heartbeat; dispatch compares a job against the ATTESTED ceiling the
+live watcher actually enforces, not a freshly derived number, so there is
+no compute-new-enforce-old split. Re-arming is a PUBLIC establishing
+operation (`arm-supervision.sh --rearm`) that replaces the live watcher
+and re-derives; a join never changes the ceiling. Arming accepts
+`--max-cap <min>` so an operator raising a cap beyond every configured
+source has a declared input, and an explicit `--cap-min` is bound by the
+attested ceiling exactly like a configured one — the trust chain lets an
+argument win among CONFIGURED values, never against the live watcher.
 
 ## D-6. The discovery experiment, honestly framed (folds CAPS-R1-011/012)
 
