@@ -6,7 +6,7 @@
   (14 material findings, all folded below); the revision's spine is ONE
   rule the draft lacked: THE SIGNED CONTRACT IS THE ONLY AUTHORITY THAT
   CAN RAISE A MISSION JOB'S BUDGET.
-- Next step: authority-core round 2 (the fence-owns-caps reframe folded)
+- Next step: WAITING ON THE HUMAN — authority-core count is not falling (6 -> 9) on an already-split chain; escalated with options (see the round-2 decision section).
   ruling (2026-08-09). The original chain spent its rounds at 14, 11, 10
   material; round 3 carries a CRITICAL authority finding, so the
   fixtures-as-arbiter exit is unavailable by its own conditions. The
@@ -251,3 +251,27 @@ model, and the pinned approved hash, verifies ALL signed limits it
 consumes against that hash on every metering call, and the pin's
 lifecycle (atomic handoff at preflight, legal replacement on an
 approved amendment) becomes part of the fence state contract.
+
+## Authority-core round 2 findings (9 material, 2 critical) — DECISION POINT
+
+- CAPS-AUTH-R2-001 (critical): CAPS-AUTH-R2-001, the unresolved fence authorization interface in Sections D-1 and D-3: the design says both that the fence rejects a caller-supplied cap above the signed limit and that dispatch asks the fence for the resolved cap. It defines no request and response contract for an omitted cap, an equal or lower explicit cap, the signed fallback, or the verified wall-clock end. A minimal implementation could [...]
+- CAPS-AUTH-R2-002 (critical): CAPS-AUTH-R2-002, the non-atomic verified-byte transaction in Section D-2: verifying a path before reading its signed values does not prove that the parsed values are the bytes whose hash matched the pin. The design also does not require reading the pin, hashing and parsing one immutable snapshot, and reserving against it under the same fence lock. An implementer can therefore follow the written order by [...]
+- CAPS-AUTH-R2-003 (medium): CAPS-AUTH-R2-003, the undefined approved-contract hash domain in Section D-2: the design alternates between a hash of the contract file, the signed and approved bytes, and the bytes already verified by preflight. It never states whether approvedContractSha256 is the raw-file Secure Hash Algorithm 256-bit digest or the existing canonical signed-content digest. Those domains differ because the existing digest [...]
+- CAPS-AUTH-R2-004 (high): CAPS-AUTH-R2-004, the unenforceable re-pin transition in Section D-2: the text says preflight writes approvedContractSha256, but also says only resume may re-pin after amendment. It does not identify the pin-writing command, required mission state, lock, or caller authority that distinguishes a resume-owned preflight from the public preflight used elsewhere. One implementation can make every successful [...]
+- CAPS-AUTH-R2-005 (high): CAPS-AUTH-R2-005, the contradictory watcher bootstrap and authority record in Section D-5: the first half says dispatch compares the ceiling recorded in supervision state and that the watcher reads that file at startup; the second half says dispatch compares the value attested in the watcher heartbeat. These records are distinct, and the current state schema cannot be the watcher's startup input because it is [...]
+- CAPS-AUTH-R2-006 (high): CAPS-AUTH-R2-006, the unsafe downward re-arm in Section D-5: re-arming derives a new ceiling only from current configuration, contracts, defaults, and an optional maximum-cap argument; active delegate-job records are not included. A 300-minute explicit job can legally start after arming with a matching maximum-cap input, then a later re-arm without that input can load a 150-minute ceiling while the 300-minute [...]
+- CAPS-AUTH-R2-007 (medium): CAPS-AUTH-R2-007, the undefined contract population for watcher derivation in Section D-5: supervision is repository-wide and arming receives no mission identifier, yet its maximum includes contract pair caps and fence.job-cap-min. A repository can contain multiple active, dormant, unsigned, stale, or amended mission contracts. The design does not say which contracts qualify, nor whether --max-cap is itself a [...]
+- CAPS-AUTH-R2-008 (medium): CAPS-AUTH-R2-008, the incomplete noncanonical-key refusal in Section D-1a: saying configuration validation rejects every noncanonical cap.min key does not define whether this includes metasystem.conf.local and environment-backed configuration, both of which Section D-1 retains for non-mission cap resolution. Updating only the existing validator leaves a solitary noncanonical local key silently ignored into a [...]
+- CAPS-AUTH-R2-009 (high): CAPS-AUTH-R2-009, the stale authority proof in the Proof section: none of the new load-bearing claims has a corresponding assertion that the fence accepts a signed pair cap above fence.job-cap-min, all fence-read signed limits fail after byte drift, a generic preflight cannot re-pin a live mission, resume can legally re-pin an approved amendment, or dispatch compares a fresh identity-matched heartbeat [...]
+
+Trajectory: authority-core round 1 = 6 material, round 2 = 9 — NOT
+falling. Per IL-23 (two rounds without a falling count) and the fact
+that the caps chain was ALREADY split once by human ruling, this is a
+recorded escalation, not a unilateral round 3. The findings have shifted
+from architecture (round 1: 'the fence must own caps' — accepted and
+folded) to INTERFACE/IMPLEMENTATION grain (round 2: the exact
+request/response of the fence call, the exact read-hash-parse-reserve
+locking transaction, the exact hash domain raw-vs-canonical). That grain
+is where code plus fixtures judge better than prose — EXCEPT two findings
+are still critical, so the fixtures-as-arbiter exit is not automatically
+available. The human's call.
