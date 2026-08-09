@@ -4,8 +4,13 @@
   is immortal by construction and self-heals against a purpose that may no
   longer exist, which turned leaked fixture sandboxes into an unbounded
   respawn loop that took this machine to load 134 with 2,126 processes.
-  DESIGN DRAFT 2026-08-09, written from a live incident; not yet critiqued.
-- Next step: critique this design with sol
+  Revised against critique round 1 (13 material, 5 critical — all folded).
+  The reframe: the owner DOES have identity (its tag and generation), exit
+  must be a TEARDOWN of its own components, the breaker must count
+  component DEATHS (the draft's launch-failure counter would not have
+  caught the real incident), and the dead-man's switch is dropped as
+  unsafe.
+- Next step: critique round 2
 - In flight right now: nothing
 - Waiting on the human: nothing
 
