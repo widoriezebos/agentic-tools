@@ -1,0 +1,14 @@
+# Dispositions: supervision lifecycle, round 12 — the last folds' edges, cut again
+
+Round 12 (gpt-5.6-sol, job supervision-lifecycle-r13, 4 material,
+verdict NOT-CONVERGED) verified the round-11 folds and cut at their
+edges: the count fell 6 → 4 and the failures narrowed to two safety
+predicates and two custody transitions. All four accepted and
+folded. Round 13 is the close rule's cap.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| SLC-R12-001 | accepted | Checkout-wide shutdown succeeded on owner-death alone, but watcher and reaper hold their own setsid process groups and survive an owner killed mid-teardown — an escalated shutdown recording sweepPending could still report success over incident-class survivors. | D-1: the lock speaks for the OWNER only; success additionally requires every recorded component identity of the claim definitively dead. A shutdown whose escalation left sweepPending exits nonzero naming the survivors; the janitor's sweep is the recovery and the sweepable claim holds its slot. |
+| SLC-R12-002 | accepted | The fire-time marker READ still left check-to-signal exposed to an arbitrary pause: marker read fresh, pause across the staleness boundary, arm cleans + joins, janitor signals a joined session. Reads cannot close a check-act gap. | D-3: the marker is HELD — an exclusive flock spanning final check through last signal; cleaning or replacing any marker requires the lock; kernel release on janitor death; a joiner refusing on the bounded lock wait fails toward not-joining. D-6: 10 s scaled join wait. Accepted consequence: a paused lock-holding janitor blocks joins until it dies — prefer-the-leak applied to the fence. |
+| SLC-R12-003 | accepted | REG-5's no-append rule (a clean self-close is janitor success) contradicted REG-2's duty to append custody-released after a custodian-dead reap — the bound custody would stay actionable and compaction-retained forever. | REG-5: the no-append rule covers CLAIM terminals only; custody transitions the run owes are appended regardless — custodian-dead reaps always land custody-released, whatever became of the bound claim. |
+| SLC-R12-004 | accepted | A failed custodied arm cannot leave the unbound custody D-3 promised: binding rides the arming append, which precedes every failure the armed guard can produce — leaving contradictory compaction readings (drop the stale arming vs retain the bound skeleton). | REG-5: arming failure CLOSES what it opened — the armer appends `reaped establishment-orphan` for its own reservation (a legal reaped writer for that one case). Custody ladder: the same-lifetime provisioner fails provisioning and releases; a dead provisioner is the janitor's custodian-dead case. D-3's grace-expiry covers only custody whose arming never landed. |

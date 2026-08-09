@@ -184,4 +184,35 @@
 12. **Devin integration** — DONE 2026-08-09: adapter and host proven, bm-2
    cohort complete with two graded repetitions; follow-on work lives in
    item 6 (caps and comparison cohorts).
+13. **Incremental Go migration, ruled 2026-08-09 (the human).** The standing
+   rule: NEW process-critical components are built in Go behind the
+   EXISTING file/CLI contracts; proven bash stays until a component comes
+   up for rewrite anyway; there is never a big-bang port. Rationale: the
+   components talk through files and CLI verbs, so a Go binary is invisible
+   behind the same interface, and the fixture suite — subprocess in, files
+   out — remains the arbiter unchanged. Go's wins are implementation-level
+   (no set -e/quoting/torn-string bug classes; exact kernel process start
+   times shrink the REG-6 whole-second residual); protocol design stays
+   language-independent and keeps the design loop. First component:
+   supervision (the ruling is recorded in plans/supervision-lifecycle.md,
+   Implementation order). Candidates after that, only as they come up for
+   rewrite: dispatch's record/CAS layer, the census, the registry tooling.
+   THE CUT, refined 2026-08-09 (the human): the end state is TWO languages
+   — Go and shell — with NO Python or other scripting languages. The
+   principle: A DECISION LIVES IN GO; AN INVOCATION LIVES IN SHELL. Go
+   owns everything that writes a record, takes a lock, proves a death, or
+   validates a contract; shell owns composition — adapters invoking
+   runtime CLIs, the suite sequencing fixtures, hooks, and thin
+   contract-stable wrappers (`arm-supervision.sh` ends as
+   `exec metasystem supervise "$@"`). A wrapper that grows an `if` about
+   system state has strayed. Shape: ONE multi-verb binary (`metasystem
+   supervise|lease|census|event|record ...`), git-style, shared internal
+   packages; binaries are never committed — the suite builds first and
+   wrappers fail loudly when the binary is missing. Every `.py` file dies
+   by the come-up-for-rewrite rule, never by a sweep; inline python
+   heredocs in bash (json_field and kin) become binary verbs as their
+   host scripts thin, which also removes dispatch's dozens of
+   python3 spawns per verb (the KI-4 lesson). Fixtures stay shell on
+   purpose: black-box and language-neutral is what makes them the
+   migration's arbiter.
 

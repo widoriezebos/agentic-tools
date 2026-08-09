@@ -1,0 +1,32 @@
+# Dispositions: supervision lifecycle, round 5 — fold failures against round 4
+
+Round 5 (gpt-5.6-sol, job supervision-lifecycle-r5, 18 material,
+verdict NOT-CONVERGED) verified the round-4 folds and broke them on
+interleavings and under-specified contracts — no structural reframes
+survived the round, but every amendment with a window or an enum got
+caught. All eighteen accepted. This fold SIMPLIFIES where possible:
+custody binds at arming (the separate binding event is deleted,
+closing two findings at once), claim-opening appends are guarded under
+the registry lock (retiring tombstone retention entirely), and janitor
+kill authority collapses to one rule — prove it or report it.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| SLC-R5-001 | accepted | An `arming` reservation consumed no cap slot, so two serialized armers still reach K+1. | REG-3/D-4: slots = live-verified claims + open reservations + unknown-liveness claims. Proof: reservation is a slot. |
+| SLC-R5-002 | accepted | Verified-alive vs provably-dead leaves owner-liveness UNKNOWN with no defined gate outcome. | REG-3/D-4: UNKNOWN counts TOWARD the cap — the gate under-admits, never over-admits. Proof: gate indeterminacy. |
+| SLC-R5-003 | accepted | Compaction can revoke a paused armer's reservation; nothing forced it to re-prove before `armed`. | REG-3: `armed` is a GUARDED append — refused unless its reservation still reduces open, checked under the same lock; a refused armer tears down its owner. |
+| SLC-R5-004 | accepted | Compaction deletes the tombstone that made terminals absorbing; a late `armed` reopens the tag. | Solved by the same guard: reopening is refused at the door, so compaction may drop closed claims freely. No tombstone retention rule needed. |
+| SLC-R5-005 | accepted | The post-arm `custody-bound` window leaves an owner no custody governs when the provisioner dies between arm and bind. | D-3/REG-2: custody binds AT arming — the claim's own `arming`/`armed` carry the custodyId; the binding event is DELETED. |
+| SLC-R5-006 | accepted | A human joining a custodied owner mints no claim; the custodian's death would reap supervision the human is using. | D-3/D-4: custodian-dead reap additionally requires NO live announced session on the checkout; otherwise report, never reap. Proof: joined custody. |
+| SLC-R5-007 | accepted | "Marked complete or abandoned" named no durable authority; the committed phase/scorecard states wedge a driver killed between scorecard and transition. | D-3: per-repetition TEARDOWN LEDGER in the cohort state dir — `teardown-due` written BEFORE completion state advances, `teardown-done` after verified teardown; entry recovery executes every due-without-done. The ledger is the authority. |
+| SLC-R5-008 | accepted | Batching `launched` after both components leaves the watcher's first-fork helper unrecorded if owner and watcher die early. | REG-2/D-2: `launched` per COMPONENT, appended the moment that identity is captured. Residual sub-second window accepted and stated: single-flight helpers are bounded-lifetime and self-terminate. |
+| SLC-R5-009 | accepted | Observation cadence bounds overshoot DURATION, not population; a single-interval storm is unbounded. | D-2: the number property comes from SINGLE-FLIGHT spawning (at most one helper of each kind in flight — the committed census-writer lock already enforces this for census); the ceiling observation is the backstop. Machine bound restated as K × (ceiling + single-flight transient). |
+| SLC-R5-010 | accepted | An empty group's number is recyclable; membership alone can kill a stranger's new group. | REG-6/D-4: groups are killed through proven members or a live proven leader, never by group number alone. Proof: pgid recycle. |
+| SLC-R5-011 | accepted | A prefix sweep would signal any process whose argv mentions the tag — grep included; committed code itself says tags never authorize signalling. | REG-6/D-4: signature-verified kills only — argv must match a component INVOCATION shape with the tag in the instance-tag position; everything else is reported. |
+| SLC-R5-012 | accepted | Closing a SIGKILLed owner's claim as bookkeeping hides its surviving detached components; repeated across checkouts the population is unbounded while the cap reads under K. | D-4/REG-3: an owner-dead close also STOPS the claim's recorded set (death-only legality, identical to takeover cleanup); such claims stay sweepable until `swept`. Proof: hidden survivors. |
+| SLC-R5-013 | accepted | Tag uniqueness was asserted, not enforced: same-second epoch + recycled pid + repeated repo name can collide reducer keys. | REG-2/D-6: 4-hex random suffix, and the gate refuses a reservation whose tag already reduces open (free — it holds the lock and the fold). |
+| SLC-R5-014 | accepted | Inherited leading-newline framing turns every tolerated torn tail into fatal mid-file corruption at the next append — a permanent fail-closed wedge. | REG-1: the registry defines its OWN framing — trailing-newline JSONL with append-time torn-tail repair under the lock and a `torn` marker record the reducer recognizes. |
+| SLC-R5-015 | accepted | The reaped enum lacked establishment-orphan and sweep-completion transitions; absorbing reduction had no way to clear sweepable. | REG-2: reasons + `establishment-orphan`; new `swept` event, the ONE post-terminal update, clearing sweepable and reopening nothing. |
+| SLC-R5-016 | accepted | The one-rename residual race left state.json naming the revenant indefinitely — a healthy successor never relaunches, violating the one-cycle convergence proof. | D-1: the current owner REPUBLISHES state from held identities within the cycle that observes the mismatch — a repair rule, not a hope. |
+| SLC-R5-017 | accepted | "Every record carries ownerTag, custody carries custodyId instead" is a schema contradiction that a strict validator turns into whole-registry corruption. | REG-2: common fields are {schemaVersion, event, checkoutPath, at}; claim events add ownerTag, custody events add custodyId, custodied claims carry both. Per-event validators. (The binding-event deletion removed the worst case.) |
+| SLC-R5-018 | accepted | Four-increment/reset cycles relaunch forever without tripping the breaker; per-claim event counts are unbounded and the growth claim was false. | REG-3/REG-7/D-6: growth is bounded by a compaction TRIGGER (1 MiB or 10k records, any writer, under the lock), not by a per-claim count; the false claim is retracted. |
