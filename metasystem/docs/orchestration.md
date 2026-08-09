@@ -154,7 +154,7 @@ Capability prose is explanatory; immutable JSON snapshots under `artifacts/agent
 | Snapshot capability | Semantics when present; fallback when absent |
 | --- | --- |
 | `resume` | Continue the exact session; otherwise use the explicit fresh-dispatch embed fallback |
-| `sessionEstablishedSignal` | Authenticate and identify the session from a correlated event; otherwise use the adapter's declared weaker startup predicate and refuse exact-session follow-up without an id |
+| `sessionEstablishedSignal` | Authenticate and identify the session from a correlated session signal in the runtime's output; otherwise use the adapter's declared weaker startup predicate and refuse exact-session follow-up without an id |
 | `nativeStructuredOutput` | Provider constrains the return schema; otherwise JSON-only prompting plus local schema validation |
 | `nativeEvents` | Normalize provider events; otherwise retain raw output |
 | `nativeUsage` | Record provider telemetry; otherwise record usage as unavailable, never estimated |
@@ -221,7 +221,7 @@ The specific shared paths, caches, and lock locations are project facts for `doc
 
 ## Runtime Mechanics
 
-Adapters own launch, resume, model, permissions, event, and cancellation flags. Do not copy those flags into prose.
+Adapters own launch, resume, model, permissions, output-format, and cancellation flags. Do not copy those flags into prose.
 
 | Runtime | Rostered adapter | Skill and profile registration |
 | --- | --- | --- |
