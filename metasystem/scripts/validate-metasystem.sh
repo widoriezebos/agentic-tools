@@ -66,6 +66,8 @@ if stale:
 SEAMS
   # Owner-alone Go supervision fixtures drive the running binary.
   bash scripts/agents/supervision-go-fixtures.sh
+  # Census signature port: differential conformance (Go RE2 == grep -E).
+  bash scripts/agents/census-signature-conformance.sh
 fi
 
 source scripts/agents/fixture-budget.sh

@@ -37,6 +37,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "census",
+			summary: "process census classification (port of process-census.py)",
+			verbs: []verb{
+				{"classify", "classify argvs against runtime signatures (differential-conformance surface)", runCensusClassify},
+			},
+		},
+		{
 			name:    "json",
 			summary: "JSON field access for shell callers (replaces the python heredocs)",
 			verbs: []verb{
