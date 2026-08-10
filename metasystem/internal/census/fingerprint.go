@@ -25,7 +25,7 @@ import (
 var fingerprintFiles = []string{
 	"scripts/agents/arm-supervision.sh",
 	"scripts/agents/dispatch.sh",
-	"scripts/agents/process-census.py",
+	"bin/metasystem",
 	"scripts/agents/adapters/runtime-common.sh",
 	"scripts/watch-background-jobs.sh",
 }

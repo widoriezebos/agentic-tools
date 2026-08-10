@@ -1292,10 +1292,10 @@ func contractVerifySupervision(projectRoot string) error {
 }
 
 // contractProcessHasTag reports whether a pid is live at its recorded start and
-// carries the expected instance tag in its command. When a census helper is
-// installed it additionally demands exact-start liveness; the command tag is
-// read from the process table, falling back to a fixture identity file when the
-// table is unreadable.
+// carries the expected instance tag in its command. When the engine is present
+// it additionally demands exact-start liveness; the command tag is read from
+// the process table, falling back to a fixture identity file when the table is
+// unreadable.
 func contractProcessHasTag(projectRoot string, pid, started int64, tag string) bool {
 	if pid <= 1 || started < 1 || tag == "" {
 		return false
@@ -1303,7 +1303,7 @@ func contractProcessHasTag(projectRoot string, pid, started int64, tag string) b
 	if err := unix.Kill(int(pid), 0); err != nil {
 		return false
 	}
-	if fileExists(filepath.Join(projectRoot, "scripts", "agents", "process-census.py")) {
+	if fileExists(filepath.Join(projectRoot, "bin", "metasystem")) {
 		if !census.Alive(pid, started) {
 			return false
 		}
