@@ -7,11 +7,9 @@ token=$root/artifacts/agents/mains/worktree-commit-token.json
 
 if [[ ${1:-} != __lease-held ]]; then
   result=$("$ms" lease require-holder --root "$root" --caller-pid "$$") || exit $?
-  # TODO(go-wiring): `metasystem json get --field claimEpoch` prints the literal
-  # "null" (rc 0) for a null field, but this reader collapses null -> "" so the
-  # human-commit branch below is taken. json get is NOT identical to this reader,
-  # so leave it until a null-collapsing read (or empty-on-null json get) exists.
-  epoch=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("claimEpoch") is None else v["claimEpoch"])' "$result")
+  # --default "" collapses an absent or null claimEpoch to empty, so the
+  # human-commit branch below is taken when there is no epoch.
+  epoch=$("$ms" json get --value "$result" --field claimEpoch --default "")
   if [[ -n "$epoch" ]]; then
     exec "$ms" lease run-held --root "$root" --caller-pid "$$" \
       --expected-epoch "$epoch" -- "$0" __lease-held "$epoch" "$@"
@@ -34,13 +32,10 @@ started=$("$ms" identity started-at --pid $$) || {
   echo "agent commit wrapper refused: wrapper process start time is unreadable" >&2
   exit 1
 }
-# TODO(go-wiring): random nonce generation is not in the CLI map; no binary verb
-# emits a token_hex nonce, so this stays python3 until one exists.
-nonce=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
-# TODO(go-wiring): the block below assembles and atomically writes the live
-# wrapper token (worktree-commit-token.json) with a computed createdAt timestamp.
-# This is state assembly, not a JSON field read, and no binary verb writes this
-# token; it stays python3 until a `commit-token write` verb exists.
+nonce=$("$ms" util token-hex --bytes 16)
+# TODO(go-wiring): the block below atomically writes the live wrapper token
+# (worktree-commit-token.json) with a computed createdAt timestamp. Pending a
+# `lease commit-token` verb (state assembly, not a field read).
 python3 - "$token" "$$" "$started" "$nonce" <<'PY'
 import json,os,sys,tempfile
 from datetime import datetime,timezone
