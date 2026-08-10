@@ -99,6 +99,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "util",
+			summary: "small utilities for shell callers",
+			verbs: []verb{
+				{"token-hex", "print a random hex token of --bytes length", runUtilTokenHex},
+			},
+		},
+		{
 			name:    "event",
 			summary: "append a flight-recorder event",
 			verbs: []verb{

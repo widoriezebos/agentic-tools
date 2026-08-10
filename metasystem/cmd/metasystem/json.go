@@ -17,9 +17,16 @@ func runJSONGet(args []string) int {
 	file := flags.String("file", "", "JSON file to read")
 	value := flags.String("value", "", "JSON string to read (instead of --file)")
 	field := flags.String("field", "", "dotted field path (a.b.c)")
+	def := flags.String("default", "", "value to print when the field is missing or null (exit 0)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	defaultSet := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "default" {
+			defaultSet = true
+		}
+	})
 	if *field == "" || (*file == "") == (*value == "") {
 		fmt.Fprintln(os.Stderr, "json get: --field and exactly one of --file or --value are required")
 		return 2
@@ -39,10 +46,20 @@ func runJSONGet(args []string) int {
 	for _, key := range strings.Split(*field, ".") {
 		object, ok := current.(map[string]any)
 		if !ok {
+			if defaultSet {
+				fmt.Println(*def)
+				return 0
+			}
 			return 1
 		}
 		current, ok = object[key]
 		if !ok {
+			// A missing field prints the default when one was given, matching
+			// the lenient readers that treat absent and null the same.
+			if defaultSet {
+				fmt.Println(*def)
+				return 0
+			}
 			return 1
 		}
 	}
@@ -60,6 +77,10 @@ func runJSONGet(args []string) int {
 	case bool:
 		fmt.Println(typed)
 	case nil:
+		if defaultSet {
+			fmt.Println(*def)
+			return 0
+		}
 		fmt.Println("null")
 	default:
 		encoded, err := json.Marshal(typed)
