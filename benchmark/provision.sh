@@ -24,6 +24,16 @@ die() { echo "$2" >&2; exit "$1"; }
 # one way, kit into equipment. root is the metasystem checkout.
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../metasystem" && pwd -P)
 kit=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+# The engine decides identity, leases, and the census. A snapshot carries no
+# built binary (bin/ is ignored), so build one exactly as adoption does.
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+if [[ ! -x "$ms" ]]; then
+  command -v go >/dev/null 2>&1 \
+    || { echo "provision refused: the metasystem engine is not built and go is unavailable" >&2; exit 1; }
+  (cd "$root" && go build -o bin/metasystem ./cmd/metasystem) \
+    || { echo "provision refused: could not build the metasystem engine" >&2; exit 1; }
+  ms="$root/bin/metasystem"
+fi
 spec_arg=
 target_arg=
 
@@ -290,19 +300,13 @@ if [[ -e "$target" ]] && [[ -n "$(ls -A "$target" 2>/dev/null)" ]]; then
   residue_lease="$target/artifacts/agents/mains/worktree-lease.json"
   [[ -f "$residue_lease" ]] \
     || die 1 "provision refused: target exists without a lease record; foreign content is never replaced silently: $target"
-  python3 - "$residue_lease" "$root/scripts/agents/process-census.py" <<'RESIDUE'
-import json, subprocess, sys
-lease = json.load(open(sys.argv[1]))
-pid, started = lease.get("pid"), lease.get("pidStartedAt")
-if type(pid) is not int or type(started) is not int:
-    raise SystemExit("provision refused: residue lease is malformed; uninspectable is alive")
-probe = subprocess.run([sys.argv[2], "started-at", "--pid", str(pid)],
-                       capture_output=True, text=True)
-if probe.returncode != 0:
-    raise SystemExit(0)  # a successful absence read: the pid is gone
-if probe.stdout.strip() == str(started):
-    raise SystemExit(f"provision refused: target lease holder pid {pid} is LIVE; not replacing a held target")
-RESIDUE
+  residue_pid=$("$ms" json get --file "$residue_lease" --field pid 2>/dev/null || true)
+  residue_started=$("$ms" json get --file "$residue_lease" --field pidStartedAt 2>/dev/null || true)
+  [[ "$residue_pid" =~ ^[1-9][0-9]*$ && "$residue_started" =~ ^[0-9]+$ ]] \
+    || die 1 "provision refused: residue lease is malformed; uninspectable is alive"
+  if "$ms" census alive --pid "$residue_pid" --start-time "$residue_started" >/dev/null 2>&1; then
+    die 1 "provision refused: target lease holder pid $residue_pid is LIVE; not replacing a held target"
+  fi
   rm -rf "$target"
 fi
 mkdir -p "$target"
@@ -322,13 +326,13 @@ fi
 # D-P1.2 (plans/provisioning-identity.md): the provisioner is the target's
 # first main. Announce AFTER adoption (the helpers now exist), then VERIFY
 # holdership — announce alone does not fail against a live holder.
-provisioner_start=$("$target/scripts/agents/process-census.py" started-at --pid $$) \
+provisioner_start=$("$ms" identity started-at --pid $$) \
   || die 1 "provision refused: cannot read the provisioner's own start time"
-"$target/scripts/agents/worktree-lease.py" --root "$target" announce \
+"$ms" lease announce --root "$target" \
   --session "provision-$mission_id" --pid $$ --start "$provisioner_start" \
   --tag "metasystem-provisioner-$mission_id" --runtime "$host_runtime" >/dev/null \
   || die 1 "provision refused: could not announce the provisioner in the target"
-"$target/scripts/agents/worktree-lease.py" --root "$target" require-holder --caller-pid $$ >/dev/null \
+"$ms" lease require-holder --root "$target" --caller-pid $$ >/dev/null \
   || die 1 "provision refused: the provisioner did not become the target's lease holder"
 
 mkdir -p "$evidence_root"
@@ -488,7 +492,7 @@ git -C "$target" remote set-head origin main
 # D-P1.4: the provisioner's identity ends with its own invocation; the
 # human's later seal/sign commits are sovereign, and the runner's resume
 # establishes its own identity.
-"$target/scripts/agents/worktree-lease.py" --root "$target" retire \
+"$ms" lease retire --root "$target" \
   --session "provision-$mission_id" --pid $$ --start "$provisioner_start" >/dev/null \
   || die 1 "provision refused: could not retire the provisioner's announcement"
 # ... and RELEASE the checkout the way a departing main does (the S4-8
@@ -497,7 +501,7 @@ git -C "$target" remote set-head origin main
 # the arming below establishes its own identity on an unheld checkout.
 rm -f "$target/artifacts/agents/mains/worktree-lease.json"
 
-provision_started=$("$target/scripts/agents/process-census.py" started-at --pid "$$")
+provision_started=$("$ms" identity started-at --pid "$$")
 if ! METASYSTEM_AGENT_RUNTIME="$host_runtime" \
   "$target/scripts/agents/arm-supervision.sh" --repo "$target" \
     --session "benchmark-provision-$mission_id-$$" --pid "$$" \

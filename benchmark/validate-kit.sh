@@ -14,8 +14,8 @@ tmp=$(mktemp -d)
 # Same marker as the metasystem suite: this gate is work in flight for the
 # sibling checkout whose turn-end report has to know about it.
 gate_run_marker=
-if [[ -x "$top/metasystem/scripts/agents/gate-run.py" ]]; then
-  gate_run_marker=$("$top/metasystem/scripts/agents/gate-run.py" register \
+if [[ -x "$top/metasystem/bin/metasystem" ]]; then
+  gate_run_marker=$("$top/metasystem/bin/metasystem" gate register \
     --root "$top/metasystem" --gate validate-kit.sh --pid $$ 2>/dev/null || true)
 fi
 
@@ -289,8 +289,8 @@ PY
   # deterministic in every outer invocation shape — the target's guard must
   # REFUSE a raw commit and CARRY a wrapped one. The provisioner retired, so
   # the gate announces itself for the control, then retires.
-  control_start=$("$provision_target/scripts/agents/process-census.py" started-at --pid $$)
-  "$provision_target/scripts/agents/worktree-lease.py" --root "$provision_target" announce \
+  control_start=$("$provision_target/bin/metasystem" identity started-at --pid $$)
+  "$provision_target/bin/metasystem" lease announce --root "$provision_target" \
     --session kit-gate-control --pid $$ --start "$control_start" \
     --tag metasystem-kit-gate-control --runtime fake >/dev/null
   echo control >"$provision_target/control-file.txt"
@@ -307,7 +307,7 @@ PY
       scripts/agents/commit.sh -qm "wrapped control commit") \
     || { echo "benchmark provision: the wrapper route failed to carry a commit" >&2; exit 1; }
   git -C "$provision_target" reset -q --hard HEAD~1
-  "$provision_target/scripts/agents/worktree-lease.py" --root "$provision_target" retire \
+  "$provision_target/bin/metasystem" lease retire --root "$provision_target" \
     --session kit-gate-control --pid $$ --start "$control_start" >/dev/null
 
   # The grader must be absent by world state, not merely by provisioner claim.
