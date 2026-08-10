@@ -99,6 +99,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "event",
+			summary: "append a flight-recorder event",
+			verbs: []verb{
+				{"emit", "append one event (key=value args); best-effort, never fails", runEventEmit},
+			},
+		},
+		{
 			name:    "json",
 			summary: "JSON field access for shell callers",
 			verbs: []verb{

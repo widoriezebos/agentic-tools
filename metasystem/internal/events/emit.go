@@ -41,6 +41,16 @@ var clock = time.Now
 // Emit appends one event. It is best-effort and never panics: any failure is
 // silently dropped, because the recorder must never take down its caller.
 func (e *Emitter) Emit(root, event, summary string, fields map[string]string) {
+	e.emitWithSeq(root, event, summary, atomic.AddInt64(&e.seq, 1), fields)
+}
+
+// EmitOnce emits a single event with an explicit sequence number, for a
+// one-shot caller (such as a shell command) that supplies its own seq.
+func EmitOnce(root, component, event, summary string, pid, pidStartedAt, seq int64, fields map[string]string) {
+	(&Emitter{Component: component, Pid: pid, PidStartedAt: pidStartedAt}).emitWithSeq(root, event, summary, seq, fields)
+}
+
+func (e *Emitter) emitWithSeq(root, event, summary string, seq int64, fields map[string]string) {
 	defer func() { _ = recover() }()
 	if root == "" {
 		root = os.Getenv("METASYSTEM_HARNESS_ROOT")
@@ -48,7 +58,6 @@ func (e *Emitter) Emit(root, event, summary string, fields map[string]string) {
 	if root == "" {
 		return
 	}
-	seq := atomic.AddInt64(&e.seq, 1)
 
 	args := map[string]string{}
 	for k, v := range fields {
