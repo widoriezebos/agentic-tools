@@ -65,6 +65,27 @@ func families() []family {
 			},
 		},
 		{
+			name:    "authority",
+			summary: "control-plane authority matrix (port of control-plane-authority.py)",
+			verbs: []verb{
+				{"check", "exit 0 if a classified caller may write in a mode, else refuse", runAuthorityCheck},
+			},
+		},
+		{
+			name:    "report",
+			summary: "turn-end report decisions (port of stop-block.py)",
+			verbs: []verb{
+				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
+			},
+		},
+		{
+			name:    "schema",
+			summary: "role-return schema materialization (port of return-schema.py)",
+			verbs: []verb{
+				{"materialize", "write a role's return schema at a version", runSchemaMaterialize},
+			},
+		},
+		{
 			name:    "json",
 			summary: "JSON field access for shell callers (replaces the python heredocs)",
 			verbs: []verb{
