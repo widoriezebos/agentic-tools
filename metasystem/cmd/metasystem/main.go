@@ -87,6 +87,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "hooks",
+			summary: "self-check that the repo runs under its own metasystem (port of check-own-hooks.py)",
+			verbs: []verb{
+				{"check", "verify live settings carry the shipped lifecycle hooks", runHooksCheck},
+			},
+		},
+		{
 			name:    "json",
 			summary: "JSON field access for shell callers (replaces the python heredocs)",
 			verbs: []verb{
