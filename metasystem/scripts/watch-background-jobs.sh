@@ -147,18 +147,15 @@ if [[ -n "$expected_cap" && ! "$expected_cap" =~ ^[1-9][0-9]*$ ]]; then
 fi
 if [[ -n "$ceiling_state" ]]; then
   ceiling_deadline=$((SECONDS + 10))
-  # TODO(go-wiring): needs a positive-integer field read of derivedWatcherCapMin
-  # (validates type==int and value>=1 before accepting). `json get` would print
-  # the raw value without that validation; left as python3.
-  while ! cap_min=$(python3 - "$ceiling_state" <<'PY'
-import json, sys
-from pathlib import Path
-try: value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["derivedWatcherCapMin"]
-except (OSError, ValueError, KeyError, TypeError): raise SystemExit(1)
-if type(value) is not int or value < 1: raise SystemExit(1)
-print(value)
-PY
-  ) || [[ -n "$expected_cap" && "$cap_min" != "$expected_cap" ]]; do
+  # The ceiling is accepted only as a positive integer: a non-integer or
+  # sub-1 value re-polls rather than being trusted.
+  read_watcher_cap() {
+    local value
+    value=$("$ms" json get --file "$ceiling_state" --field derivedWatcherCapMin 2>/dev/null) || return 1
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] || return 1
+    printf '%s\n' "$value"
+  }
+  while ! cap_min=$(read_watcher_cap) || [[ -n "$expected_cap" && "$cap_min" != "$expected_cap" ]]; do
     (( SECONDS < ceiling_deadline )) \
       || { echo "watcher startup refused: supervision state did not publish derivedWatcherCapMin" >&2; exit 1; }
     sleep 0.02
@@ -350,13 +347,7 @@ monitor_census_duration() { # start-ns, share-marker, interval-marker
     wait "$sleeper"
     sleeper=
     atomic_identity_json "$watcher_heartbeat" watcher
-    # TODO(go-wiring): needs a monotonic elapsed-milliseconds-since helper
-    # (time.time_ns arithmetic). Timing, not a field read; left as python3.
-    elapsed_ms=$(python3 - "$started_ns" <<'PY'
-import sys, time
-print(round((time.time_ns() - int(sys.argv[1])) / 1_000_000))
-PY
-    )
+    elapsed_ms=$(( ($("$ms" util now-ns) - started_ns) / 1000000 ))
     if (( elapsed_ms > interval_ms )) && [[ ! -e "$interval_marker" ]]; then
       touch "$share_marker" "$interval_marker"
       printf 'WARNING CENSUS-SLOW durationMs=%s intervalMs=%s budgetPercent=%s budgetMs=%s defect=scan-exceeds-interval\n' \
@@ -375,9 +366,7 @@ run_process_census() {
   captured=$(mktemp "${TMPDIR:-/tmp}/metasystem-census-pass.XXXXXX")
   share_marker=$captured.warned-share
   interval_marker=$captured.warned-interval
-  # TODO(go-wiring): needs a monotonic-nanoseconds helper (time.time_ns). Timing;
-  # left as python3.
-  started_ns=$(python3 -c 'import time; print(time.time_ns())')
+  started_ns=$("$ms" util now-ns)
   # A scan is active work, not a stale watcher. Publish liveness before the
   # scan as well as after it so the owner does not mistake startup for death.
   atomic_identity_json "$watcher_heartbeat" watcher
