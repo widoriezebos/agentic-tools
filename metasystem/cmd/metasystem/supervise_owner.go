@@ -93,7 +93,10 @@ func runSuperviseOwnerLoop(args []string) int {
 			self, _ := os.Executable()
 			argv := []string{self, "supervise", "component",
 				"--component", string(component), "--tag", componentTag,
-				"--heartbeat", heartbeatPath, "--interval", fmt.Sprint(*intervalSec)}
+				"--heartbeat", heartbeatPath, "--interval", fmt.Sprint(*intervalSec),
+				// The component operates on this checkout: the watcher censuses
+				// it and the reaper sweeps its job records.
+				"--repo", *repo}
 			// Fixture-only crash-loop injection (D-2 breaker proof): the
 			// component crashes on start and never beats, so the owner
 			// sees Failing every observation.
