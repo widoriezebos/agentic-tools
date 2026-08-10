@@ -126,63 +126,83 @@ func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, int
 	}
 	for _, assignment := range Classify(argvs, signatures) {
 		process := processes[assignment.Index]
-		runtime := assignment.Runtime
-		if !process.Alive {
-			diagnostics = append(diagnostics, fmt.Sprintf("RACED-EXIT pid=%d", process.Pid))
+		item, ok := classifyProcess(process, assignment.Runtime, repoReal, custody, announced, &errors, &diagnostics)
+		if !ok {
 			continue
 		}
-		if process.Started < 0 {
-			errors = append(errors, fmt.Sprintf("start-time-unreadable:%d", process.Pid))
-			continue
-		}
-		resolvedCwd := ""
-		if process.Cwd != "" {
-			resolvedCwd = realpath(process.Cwd)
-		}
-		cwdInScope := resolvedCwd != "" && PathBelow(resolvedCwd, repoReal)
-		namedPaths, err := ArgvPaths(process.Argv, resolvedCwd)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("argv-unreadable:%d:%s", process.Pid, err))
-			continue
-		}
-		argvInScope := false
-		for _, path := range namedPaths {
-			if PathBelow(path, repoReal) {
-				argvInScope = true
-				break
-			}
-		}
-		if process.CwdError {
-			diagnostics = append(diagnostics, fmt.Sprintf("UNRESOLVED-CWD pid=%d argv=%s", process.Pid, process.Argv))
-		}
-		if !cwdInScope && !argvInScope {
-			if process.CwdError {
-				errors = append(errors, fmt.Sprintf("scope-unresolved:%d", process.Pid))
-			}
-			continue
-		}
-		classification, registry, tag := classifyOwnership(process, custody, announced)
-		counts[classification]++
-		cwd := resolvedCwd
-		if cwd == "" {
-			cwd = "UNRESOLVED-CWD"
-		}
-		scope := "argv"
-		if cwdInScope {
-			scope = "cwd"
-		}
-		inventory = append(inventory, InventoryItem{
-			Key:   fmt.Sprintf("%s|%d|%d", registry, process.Pid, process.Started),
-			Class: classification, Registry: registry,
-			Pid: process.Pid, PidStartedAt: process.Started, PGID: process.PGID,
-			Runtime: runtime, InstanceTag: tag, Cwd: cwd, Scope: scope, Argv: process.Argv,
-		})
+		counts[item.Class]++
+		inventory = append(inventory, item)
 	}
+	return assembleVerdict(verdictLabelFor(errors), fingerprint, interval, generation, stateDigest,
+		counts, inventory, diagnostics, errors, now), nil
+}
 
-	verdictLabel := "SUCCESS"
-	if len(errors) > 0 {
-		verdictLabel = "CENSUS-FAILED"
+// classifyProcess applies the census's per-process decision: liveness, scope
+// (cwd or argv below the repo), and ownership (CUSTODY/ANNOUNCED/UNTRACKED).
+// It appends diagnostics/errors and returns the inventory item, or ok=false
+// when the process is skipped. Shared by the fixture and production paths so
+// the classification core is identical (and conformance-covered).
+func classifyProcess(process Process, runtime, repoReal string, custody, announced []identityRecord, errors, diagnostics *[]string) (InventoryItem, bool) {
+	if !process.Alive {
+		*diagnostics = append(*diagnostics, fmt.Sprintf("RACED-EXIT pid=%d", process.Pid))
+		return InventoryItem{}, false
 	}
+	if process.Started < 0 {
+		*errors = append(*errors, fmt.Sprintf("start-time-unreadable:%d", process.Pid))
+		return InventoryItem{}, false
+	}
+	resolvedCwd := ""
+	if process.Cwd != "" {
+		resolvedCwd = realpath(process.Cwd)
+	}
+	cwdInScope := resolvedCwd != "" && PathBelow(resolvedCwd, repoReal)
+	namedPaths, err := ArgvPaths(process.Argv, resolvedCwd)
+	if err != nil {
+		*errors = append(*errors, fmt.Sprintf("argv-unreadable:%d:%s", process.Pid, err))
+		return InventoryItem{}, false
+	}
+	argvInScope := false
+	for _, path := range namedPaths {
+		if PathBelow(path, repoReal) {
+			argvInScope = true
+			break
+		}
+	}
+	if process.CwdError {
+		*diagnostics = append(*diagnostics, fmt.Sprintf("UNRESOLVED-CWD pid=%d argv=%s", process.Pid, process.Argv))
+	}
+	if !cwdInScope && !argvInScope {
+		if process.CwdError {
+			*errors = append(*errors, fmt.Sprintf("scope-unresolved:%d", process.Pid))
+		}
+		return InventoryItem{}, false
+	}
+	classification, registry, tag := classifyOwnership(process, custody, announced)
+	cwd := resolvedCwd
+	if cwd == "" {
+		cwd = "UNRESOLVED-CWD"
+	}
+	scope := "argv"
+	if cwdInScope {
+		scope = "cwd"
+	}
+	return InventoryItem{
+		Key:   fmt.Sprintf("%s|%d|%d", registry, process.Pid, process.Started),
+		Class: classification, Registry: registry,
+		Pid: process.Pid, PidStartedAt: process.Started, PGID: process.PGID,
+		Runtime: runtime, InstanceTag: tag, Cwd: cwd, Scope: scope, Argv: process.Argv,
+	}, true
+}
+
+func verdictLabelFor(errors []string) string {
+	if len(errors) > 0 {
+		return "CENSUS-FAILED"
+	}
+	return "SUCCESS"
+}
+
+func assembleVerdict(label, fingerprint string, interval int, generation *int64, stateDigest *string,
+	counts map[string]int, inventory []InventoryItem, diagnostics, errors []string, now time.Time) Verdict {
 	sort.SliceStable(inventory, func(i, j int) bool { return inventory[i].Pid < inventory[j].Pid })
 	if inventory == nil {
 		inventory = []InventoryItem{}
@@ -195,14 +215,14 @@ func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, int
 	}
 	completed := now.UTC()
 	return Verdict{
-		SchemaVersion: 2, Writer: "watch-background-jobs.sh", Verdict: verdictLabel,
+		SchemaVersion: 2, Writer: "watch-background-jobs.sh", Verdict: label,
 		CompletedAt:      completed.Format("2006-01-02T15:04:05Z"),
 		CompletedAtEpoch: completed.Unix(),
-		DurationMs:       0, // deterministic for conformance; the real scan measures it
+		DurationMs:       0,
 		IntervalSec:      interval, Fingerprint: fingerprint,
 		Generation: generation, StateDigest: stateDigest,
 		Counts: counts, Inventory: inventory, Diagnostics: diagnostics, Errors: errors,
-	}, nil
+	}
 }
 
 func classifyOwnership(process Process, custody, announced []identityRecord) (string, string, any) {
