@@ -10,27 +10,11 @@ USAGE
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 
 atomic_result() { # result path, session, outcome, usage JSON path, raw, return or empty
-  python3 - "$@" <<'PY'
-import json,os,sys,tempfile
-from pathlib import Path
-path,session,outcome,usage_path,raw,return_path=sys.argv[1:]
-try: usage=json.loads(Path(usage_path).read_text())
-except (OSError,ValueError): usage={"availability":"unavailable"}
-value={"sessionId":session or None,"outcome":outcome,"usage":usage,"rawPath":raw,"returnPath":return_path or None}
-path=Path(path); path.parent.mkdir(parents=True,exist_ok=True); fd,temp=tempfile.mkstemp(prefix=path.name+".",suffix=".tmp",dir=path.parent)
-try:
-    with os.fdopen(fd,"w",encoding="utf-8") as handle:
-        json.dump(value,handle,indent=2,sort_keys=True); handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
-    os.replace(temp,path)
-    directory=os.open(path.parent,os.O_RDONLY)
-    try: os.fsync(directory)
-    finally: os.close(directory)
-finally:
-    try: os.unlink(temp)
-    except FileNotFoundError: pass
-PY
+  "$ms" host result-write --result "$1" --session "$2" --outcome "$3" \
+    --usage-file "$4" --raw "$5" --return-path "${6:-}"
 }
 
 wait_for_start_gate() {
@@ -76,8 +60,8 @@ provider_result="$turn_dir/claude-result.json"
 usage_path="$turn_dir/usage.json"
 log="$turn_dir/host.log"
 schema="$root/scripts/agents/schemas/orchestrator.schema.json"
-model=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"])' "$turn_record")
-schema_json=$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])),separators=(",",":")))' "$schema")
+model=$("$ms" json get --file "$turn_record" --field model)
+schema_json=$("$ms" host json-compact --file "$schema")
 max_budget=${METASYSTEM_CLAUDE_MAX_BUDGET_USD:-5.00}
 max_turns=${METASYSTEM_CLAUDE_MAX_TURNS:-50}
 [[ "$max_budget" =~ ^[0-9]+([.][0-9]+)?$ && "$max_turns" =~ ^[1-9][0-9]*$ ]] || {
@@ -102,36 +86,8 @@ cli_status=$?
 set -e
 cp "$provider_result" "$raw" 2>/dev/null || : >"$raw"
 
-python3 - "$provider_result" "$return_path" "$usage_path" <<'PY'
-import json,sys
-from pathlib import Path
-source,out,usage_out=Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3])
-try: value=json.loads(source.read_text(encoding="utf-8"))
-except (OSError,json.JSONDecodeError): value={}
-candidate=value.get("structured_output")
-if not isinstance(candidate,dict):
-    result=value.get("result")
-    if isinstance(result,str):
-        try: candidate=json.loads(result)
-        except json.JSONDecodeError: candidate=None
-if isinstance(candidate,dict): out.write_text(json.dumps(candidate,indent=2,sort_keys=True)+"\n",encoding="utf-8")
-native=value.get("usage") if isinstance(value.get("usage"),dict) else {}
-cost=value.get("total_cost_usd")
-usage={
-  "availability":"native","inputTokens":native.get("input_tokens"),
-  "cachedInputTokens":native.get("cache_read_input_tokens"),"outputTokens":native.get("output_tokens"),
-  "reasoningTokens":native.get("reasoning_tokens"),
-  "cost":{"amount":cost,"currency":"USD"} if isinstance(cost,(int,float)) else None,"providerUnits":None,
-}
-usage_out.write_text(json.dumps(usage,sort_keys=True)+"\n",encoding="utf-8")
-PY
-session=$(python3 - "$provider_result" <<'PY'
-import json,sys
-try: value=json.load(open(sys.argv[1]))
-except (OSError,ValueError): value={}
-print(value.get("session_id") or "")
-PY
-)
+"$ms" host claude-result --provider "$provider_result" --return "$return_path" --usage "$usage_path"
+session=$("$ms" json get --file "$provider_result" --field session_id --default "" 2>/dev/null || true)
 if (( cli_status != 0 )); then
   atomic_result "$result" "$session" failed "$usage_path" "$raw" ""
   exit 3

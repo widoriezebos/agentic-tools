@@ -77,6 +77,34 @@ func families() []family {
 			},
 		},
 		{
+			name:    "adapter",
+			summary: "shared runtime-adapter plumbing: permissions, patches, snapshots",
+			verbs: []verb{
+				{"root-job", "print a job's root ancestor by walking parentJob", runAdapterRootJob},
+				{"effective-init", "materialize the effective permissions from a job record", runAdapterEffectiveInit},
+				{"effective-workspace", "pin the effective writeRoots to the resolved workspace", runAdapterEffectiveWorkspace},
+				{"permission-check", "report which effective permission fields are wider than requested", runAdapterPermissionCheck},
+				{"model-patch", "write an {effectiveModel} record patch", runAdapterModelPatch},
+				{"repairs-patch", "write a {returnRepairs} record patch", runAdapterRepairsPatch},
+				{"result-patch", "write an {error,phase,usage} record patch", runAdapterResultPatch},
+				{"capability-snapshot", "write a validated capability snapshot", runAdapterCapabilitySnapshot},
+			},
+		},
+		{
+			name:    "host",
+			summary: "host-loop plumbing: result envelopes, usage, and return extraction",
+			verbs: []verb{
+				{"result-write", "write a host turn's result envelope", runHostResultWrite},
+				{"json-compact", "print a JSON file as one line", runHostJSONCompact},
+				{"claude-result", "extract the Claude return and usage", runHostClaudeResult},
+				{"devin-config", "assemble the Devin job config", runHostDevinConfig},
+				{"devin-return", "extract the Devin return", runHostDevinReturn},
+				{"devin-usage", "compute the Devin per-round usage delta", runHostDevinUsage},
+				{"fake-return", "write the fake-runtime return and terminal record", runHostFakeReturn},
+				{"fake-result", "write the fake-runtime result envelope", runHostFakeResult},
+			},
+		},
+		{
 			name:    "gate",
 			summary: "gate-run markers: know when a gate is in flight",
 			verbs: []verb{

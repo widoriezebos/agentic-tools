@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 # The runtime adapter owns Codex command construction, permission mapping,
 # event identity, and typed usage. It sources runtime-common.sh and is guarded
 # so hosts can reuse those contracts without entering its dispatch verb loop.
@@ -16,25 +17,8 @@ USAGE
 }
 
 atomic_result() { # result path, session, outcome, usage JSON path, raw, return or empty
-  python3 - "$@" <<'PY'
-import json,os,sys,tempfile
-from pathlib import Path
-path,session,outcome,usage_path,raw,return_path=sys.argv[1:]
-try: usage=json.loads(Path(usage_path).read_text())
-except (OSError,ValueError): usage={"availability":"unavailable"}
-value={"sessionId":session or None,"outcome":outcome,"usage":usage,"rawPath":raw,"returnPath":return_path or None}
-path=Path(path); path.parent.mkdir(parents=True,exist_ok=True); fd,temp=tempfile.mkstemp(prefix=path.name+".",suffix=".tmp",dir=path.parent)
-try:
-    with os.fdopen(fd,"w",encoding="utf-8") as handle:
-        json.dump(value,handle,indent=2,sort_keys=True); handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
-    os.replace(temp,path)
-    directory=os.open(path.parent,os.O_RDONLY)
-    try: os.fsync(directory)
-    finally: os.close(directory)
-finally:
-    try: os.unlink(temp)
-    except FileNotFoundError: pass
-PY
+  "$ms" host result-write --result "$1" --session "$2" --outcome "$3" \
+    --usage-file "$4" --raw "$5" --return-path "${6:-}"
 }
 
 wait_for_start_gate() {

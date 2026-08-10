@@ -11,27 +11,11 @@ USAGE
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 
 atomic_result() { # result path, session, outcome, usage JSON path, raw, return or empty
-  python3 - "$@" <<'PY'
-import json,os,sys,tempfile
-from pathlib import Path
-path,session,outcome,usage_path,raw,return_path=sys.argv[1:]
-try: usage=json.loads(Path(usage_path).read_text())
-except (OSError,ValueError): usage={"availability":"unavailable"}
-value={"sessionId":session or None,"outcome":outcome,"usage":usage,"rawPath":raw,"returnPath":return_path or None}
-path=Path(path); path.parent.mkdir(parents=True,exist_ok=True); fd,temp=tempfile.mkstemp(prefix=path.name+".",suffix=".tmp",dir=path.parent)
-try:
-    with os.fdopen(fd,"w",encoding="utf-8") as handle:
-        json.dump(value,handle,indent=2,sort_keys=True); handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
-    os.replace(temp,path)
-    directory=os.open(path.parent,os.O_RDONLY)
-    try: os.fsync(directory)
-    finally: os.close(directory)
-finally:
-    try: os.unlink(temp)
-    except FileNotFoundError: pass
-PY
+  "$ms" host result-write --result "$1" --session "$2" --outcome "$3" \
+    --usage-file "$4" --raw "$5" --return-path "${6:-}"
 }
 
 wait_for_start_gate() {
@@ -80,7 +64,7 @@ usage_path="$turn_dir/usage.json"
 log="$turn_dir/host.log"
 schema="$root/scripts/agents/schemas/orchestrator.schema.json"
 permissions="$root/scripts/agents/permissions/workspace.json"
-model=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"])' "$turn_record")
+model=$("$ms" json get --file "$turn_record" --field model)
 
 # The host edits the repository it is advancing, so it runs write-capable:
 # accept-edits with the workspace permission preset. A host confined to `auto`
@@ -91,28 +75,7 @@ model=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["model"]
 # the declared write root. The human accepted that residual globally on
 # 2026-08-08; the capability snapshot declares it, and this host does not
 # pretend otherwise.
-python3 - "$permissions" "$config_file" "$root" <<'PY'
-import json, os, sys
-from pathlib import Path
-
-requested = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-workspace = Path(sys.argv[3]).resolve()
-allow = ["read", "grep", "glob", "edit", "exec", f"Read({workspace}/**)", f"Write({workspace}/**)"]
-deny = ["mcp__*"]
-config_home = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-try:
-    value = json.loads((Path(config_home) / "devin" / "config.json").read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        value = {}
-except (OSError, ValueError):
-    value = {}
-# The user's file is the base so the organisation id and onboarding marker
-# survive; a config without them makes the CLI print a welcome banner into the
-# turn's stdout, which is where this host reads the return from.
-value.pop("sandbox", None)
-value["permissions"] = {"allow": allow, "ask": [], "deny": deny}
-Path(sys.argv[2]).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+"$ms" host devin-config --root "$root" --output "$config_file"
 
 # This runtime has no schema flag, so the schema goes in the prompt or the model
 # invents field names -- the exact failure seen on the delegate side. The
@@ -152,24 +115,7 @@ set -e
 # printed, kept only when it parses as an object. Anything else leaves the
 # return absent for the runner's own validation to report, rather than being
 # passed on as a return that is not one.
-python3 - "$raw" "$return_path" <<'PY'
-import json, sys
-from pathlib import Path
-source, out = Path(sys.argv[1]), Path(sys.argv[2])
-try:
-    text = source.read_text(encoding="utf-8")
-except OSError:
-    raise SystemExit(0)
-start, end = text.find("{"), text.rfind("}")
-if start < 0 or end <= start:
-    raise SystemExit(0)
-try:
-    value = json.loads(text[start:end + 1])
-except ValueError:
-    raise SystemExit(0)
-if isinstance(value, dict):
-    out.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+"$ms" host devin-return --raw "$raw" --output "$return_path"
 
 # final_metrics is CUMULATIVE for a session (a resumed turn reports the session
 # total, not its own), and mission and benchmark consumers ADD turn records, so
@@ -183,90 +129,18 @@ PY
 # parent so it survives across a mission's turns.
 session_store="$(cd "$turn_dir/.." && pwd -P)/.session-usage"
 mkdir -p "$session_store"
-session_key=$(python3 -c 'import re,sys; print(re.sub(r"[^A-Za-z0-9._-]+","-",sys.argv[1]).strip("-.") or "session")' "${resume_session:-}")
+session_key=$("$ms" util slug "${resume_session:-}")
 previous_cumulative=
 if [[ -n "$resume_session" && -f "$session_store/$session_key.json" ]]; then
   previous_cumulative="$session_store/$session_key.json"
 fi
 expect_previous=0
 [[ -n "$resume_session" ]] && expect_previous=1
-python3 - "$usage_path" "$transcript" "$cumulative" "${previous_cumulative:-}" "$expect_previous" <<'PY'
-import json, sys
-from pathlib import Path
+"$ms" host devin-usage --transcript "$transcript" --usage "$usage_path" \
+  --cumulative "$cumulative" --previous "${previous_cumulative:-}" \
+  --expect-previous="$expect_previous"
 
-def load(path):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-FIELDS = ("total_prompt_tokens", "total_completion_tokens", "total_cached_tokens", "total_steps")
-metrics = (load(sys.argv[2]) or {}).get("final_metrics")
-totals = {}
-if isinstance(metrics, dict):
-    totals = {name: metrics.get(name) for name in FIELDS if isinstance(metrics.get(name), int)}
-
-# Same rule as the delegate adapter: an enterprise account reports ACU and no
-# tokens; ACU rides in providerUnits (metered by the fence), never as a token
-# or a cost, and nothing is invented when no acu-named field exists.
-def provider_unit(source):
-    if not isinstance(source, dict):
-        return None
-    for name, value in sorted(source.items()):
-        if "acu" in name.lower() and isinstance(value, (int, float)) and not isinstance(value, bool):
-            return {"name": "acu", "value": value, "sourceKey": name}
-    return None
-
-acu = provider_unit(metrics)
-previous_path = sys.argv[4]
-expect_previous = sys.argv[5] == "1"
-previous = load(previous_path) if previous_path else None
-# A resumed turn that cannot find its predecessor's totals cannot compute a
-# delta; publishing session totals would double-count earlier turns.
-predecessor_missing = expect_previous and not isinstance(previous, dict)
-unavailable = {
-    "availability": "unavailable", "inputTokens": None, "cachedInputTokens": None,
-    "outputTokens": None, "reasoningTokens": None, "cost": None,
-    "providerUnits": {"name": acu["name"], "value": acu["value"]} if acu else None,
-}
-if len(totals) != len(FIELDS):
-    if acu:
-        Path(sys.argv[3]).write_text(json.dumps({acu["sourceKey"]: acu["value"]}, sort_keys=True) + "\n", encoding="utf-8")
-        base = previous if isinstance(previous, dict) else {}
-        earlier = base.get(acu["sourceKey"])
-        if predecessor_missing:
-            unavailable["providerUnits"] = None
-        elif isinstance(earlier, (int, float)) and not isinstance(earlier, bool):
-            unavailable["providerUnits"] = {"name": "acu", "value": acu["value"] - earlier}
-    Path(sys.argv[1]).write_text(json.dumps(unavailable, sort_keys=True) + "\n", encoding="utf-8")
-    raise SystemExit(0)
-Path(sys.argv[3]).write_text(json.dumps(totals, sort_keys=True) + "\n", encoding="utf-8")
-if predecessor_missing:
-    Path(sys.argv[1]).write_text(json.dumps(unavailable, sort_keys=True) + "\n", encoding="utf-8")
-    raise SystemExit(0)
-base = previous if isinstance(previous, dict) else {}
-def delta(name):
-    earlier = base.get(name)
-    return totals[name] - earlier if isinstance(earlier, int) else totals[name]
-Path(sys.argv[1]).write_text(json.dumps({
-    "availability": "native",
-    "inputTokens": delta("total_prompt_tokens"),
-    "cachedInputTokens": delta("total_cached_tokens"),
-    "outputTokens": delta("total_completion_tokens"),
-    "reasoningTokens": None,
-    "cost": None,
-    "providerUnits": {"name": "devin-steps", "value": delta("total_steps")},
-}, sort_keys=True) + "\n", encoding="utf-8")
-PY
-
-session=$(python3 - "$transcript" <<'PY'
-import json,sys
-from pathlib import Path
-try: value=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-except (OSError,ValueError): value={}
-print(value.get("session_id") or "")
-PY
-)
+session=$("$ms" json get --file "$transcript" --field session_id --default "" 2>/dev/null || true)
 if (( cli_status != 0 )); then
   atomic_result "$result" "$session" failed "$usage_path" "$raw" ""
   exit 3
@@ -286,7 +160,7 @@ fi
 # turn of THIS session subtracts the right predecessor. Keyed by the confirmed
 # session, written only on a clean, resumable completion.
 if [[ -s "$cumulative" ]]; then
-  completed_key=$(python3 -c 'import re,sys; print(re.sub(r"[^A-Za-z0-9._-]+","-",sys.argv[1]).strip("-.") or "session")' "$session")
+  completed_key=$("$ms" util slug "$session")
   cp "$cumulative" "$session_store/$completed_key.json" 2>/dev/null || true
 fi
 atomic_result "$result" "$session" completed "$usage_path" "$raw" "$return_path"

@@ -30,24 +30,7 @@ parse_supervisor_args() {
 }
 
 root_job_id() { # job id
-  # TODO(go-wiring): needs a job root-ancestor verb (parentJob chain walk with
-  # cycle detection); not covered by the CLI map.
-  python3 - "$jobs" "$1" <<'PY'
-import json, sys
-from pathlib import Path
-jobs, job = Path(sys.argv[1]), sys.argv[2]
-seen = set()
-while True:
-    if job in seen:
-        raise SystemExit("cyclic job chain")
-    seen.add(job)
-    value = json.loads((jobs / f"{job}.json").read_text(encoding="utf-8"))
-    parent = value.get("parentJob")
-    if parent is None:
-        print(job)
-        break
-    job = parent
-PY
+  "$ms" adapter root-job --jobs "$jobs" --job "$1"
 }
 
 adapter_milliseconds_to_sleep() { # positive integer milliseconds
@@ -85,18 +68,7 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   mkdir -p "$round_dir" "$(dirname "$heartbeat")"
   printf '%s adapter supervisor started value=%s\n' "$runtime" "$instance_tag" >"$log"
   printf '{"pid":%s,"pgid":%s,"instanceTag":"%s"}\n' "$$" "$$" "$instance_tag" >"$heartbeat"
-  # TODO(go-wiring): needs a verb to materialize permissions.requested from the
-  # job record into the effective-permissions file (indented file write, not a
-  # field read).
-  python3 - "$record" "$effective" <<'PY'
-import json, sys
-from pathlib import Path
-record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-Path(sys.argv[2]).write_text(
-    json.dumps(record["permissions"]["requested"], indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
-PY
+  "$ms" adapter effective-init --record "$record" --output "$effective"
 }
 
 register_cli_custody() { # child pid
@@ -115,47 +87,12 @@ register_cli_custody() { # child pid
 }
 
 record_actual_workspace_write_scope() {
-  # TODO(go-wiring): needs a verb to rewrite writeRoots in the effective file to
-  # the resolved workspace root (state edit).
-  python3 - "$effective" "$workspace" <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1])
-value = json.loads(path.read_text(encoding="utf-8"))
-if value.get("writeRoots"):
-    # All three baseline CLIs make their cwd/workspace the OS-sandbox write
-    # boundary. A custom subdirectory-only request therefore fails the shared
-    # effective-wider handshake instead of being recorded as falsely exact.
-    value["writeRoots"] = [str(Path(sys.argv[2]).resolve())]
-path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  "$ms" adapter effective-workspace --effective "$effective" --workspace "$workspace"
 }
 
 fail_if_effective_wider_before_launch() {
   local mismatch
-  # TODO(go-wiring): needs a permission-comparison verb (effective roots ⊆
-  # requested, plus network/approvals/tools ordering checks).
-  mismatch=$(python3 - "$record" "$effective" <<'PY'
-import json, sys
-from pathlib import Path
-record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-effective = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-requested = record["permissions"]["requested"]
-errors = []
-for field in ("readRoots", "writeRoots"):
-    if not set(effective.get(field, [])).issubset(set(requested[field])):
-        errors.append(field)
-orders = {
-    "network": {"deny": 0, "ask": 1, "allow": 2},
-    "approvals": {"deny": 0, "ask": 1, "allow": 2},
-    "tools": {"read-only": 0, "runtime-default": 1},
-}
-for field, order in orders.items():
-    if field in effective and order.get(effective[field], 999) > order.get(requested[field], -1):
-        errors.append(field)
-print(",".join(errors))
-PY
-  )
+  mismatch=$("$ms" adapter permission-check --record "$record" --effective "$effective")
   [[ -z "$mismatch" ]] || {
     fail_pending "permissions_mismatch:$mismatch" handshake
     return 1
@@ -180,33 +117,13 @@ record_handshake() { # session, turn, effective model
 record_result_effective_model() { # effective model reported by the completed runtime result
   local model=$1 patch="$round_dir/result-model-patch.json"
   [[ -n "$model" ]] || return 2
-  # TODO(go-wiring): needs a verb to write an {effectiveModel} CAS patch file
-  # (state edit).
-  python3 - "$patch" "$model" <<'PY'
-import json, sys
-from pathlib import Path
-Path(sys.argv[1]).write_text(json.dumps({"effectiveModel": sys.argv[2]}) + "\n", encoding="utf-8")
-PY
+  "$ms" adapter model-patch --output "$patch" --model "$model"
   "$dispatch" __record-cas --job "$job" --expect running --status running --patch "$patch" || return 1
   effective_model=$model
 }
 
 write_patch() { # output, error|null, phase, usage file
-  # TODO(go-wiring): needs a verb to build an {error,phase,usage} patch file
-  # from an optional usage file (state edit).
-  python3 - "$1" "$2" "$3" "$4" <<'PY'
-import json, sys
-from pathlib import Path
-output, error, phase, usage_path = sys.argv[1:]
-usage = None
-if usage_path and Path(usage_path).is_file():
-    usage = json.loads(Path(usage_path).read_text(encoding="utf-8"))
-Path(output).write_text(json.dumps({
-    "error": None if error == "null" else error,
-    "phase": phase,
-    "usage": usage,
-}) + "\n", encoding="utf-8")
-PY
+  "$ms" adapter result-patch --output "$1" --error "$2" --phase "$3" --usage "$4"
 }
 
 fail_pending() { # error, phase, optional usage file
@@ -467,13 +384,7 @@ complete_from_cli() { # cli status, usage file, candidate file, optional transcr
 
 record_return_repairs() { # count
   local patch="$round_dir/repair-count-patch.json"
-  # TODO(go-wiring): needs a verb to write a {returnRepairs} CAS patch file
-  # (state edit).
-  python3 - "$patch" "$1" <<'PY'
-import json, sys
-from pathlib import Path
-Path(sys.argv[1]).write_text(json.dumps({"returnRepairs": int(sys.argv[2])}) + "\n", encoding="utf-8")
-PY
+  "$ms" adapter repairs-patch --output "$patch" --count "$1"
   "$dispatch" __record-cas --job "$job" --expect running --status running --patch "$patch" || true
 }
 
@@ -495,57 +406,16 @@ write_capability_snapshot() { # runtime version hash transports caps permissions
   local snapshot_runtime=$1 version=$2 config_hash=$3 transports=$4 caps=$5 permissions=$6
   local envelope_enforcement=$7 config_key_hashes=$8
   mkdir -p "$agents/capabilities"
-  # TODO(go-wiring): needs a capability-snapshot writer verb (validate envelope
-  # enforcement and per-key hashes, allocate the dated sequence, emit the
-  # snapshot JSON).
-  python3 - "$agents/capabilities" "$snapshot_runtime" "$version" "$config_hash" \
-    "$transports" "$caps" "$permissions" "$envelope_enforcement" "$config_key_hashes" <<'PY'
-import json, re, sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-directory = Path(sys.argv[1])
-runtime, version, config_hash = sys.argv[2:5]
-transports, capabilities, permissions, envelope_enforcement, config_key_hashes = map(json.loads, sys.argv[5:10])
-expected_enforcement_fields = {"writeRoots", "readRoots", "network"}
-if (
-    not isinstance(envelope_enforcement, dict)
-    or set(envelope_enforcement) != expected_enforcement_fields
-    or any(value not in {"mapped", "notEnforced"} for value in envelope_enforcement.values())
-):
-    raise SystemExit("envelope enforcement declaration must map writeRoots, readRoots, and network to mapped or notEnforced")
-if (
-    not isinstance(config_key_hashes, dict)
-    or any(not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", value or "") for key, value in config_key_hashes.items())
-):
-    raise SystemExit("configuration key hashes must map dotted paths to SHA-256 hashes")
-captured = datetime.now(timezone.utc)
-date = captured.strftime("%Y%m%d")
-prefix = f"{runtime}-{version}-{config_hash}-{date}-"
-sequences = []
-for path in directory.glob(prefix + "*.json"):
-    match = re.fullmatch(re.escape(prefix) + r"(\d{3})\.json", path.name)
-    if match:
-        sequences.append(int(match.group(1)))
-sequence = max(sequences, default=0) + 1
-path = directory / f"{runtime}-{version}-{config_hash}-{date}-{sequence:03d}.json"
-value = {
-    "runtime": runtime,
-    "cliVersion": version,
-    "configHash": config_hash,
-    "configKeyHashes": config_key_hashes,
-    "capturedAt": captured.strftime("%Y-%m-%dT%H:%M:%SZ"),
-    "sequence": sequence,
-    "transports": transports,
-    "capabilities": capabilities,
-    "permissions": permissions,
-    "envelopeEnforcement": envelope_enforcement,
-}
-with path.open("x", encoding="utf-8") as handle:
-    json.dump(value, handle, indent=2, sort_keys=True)
-    handle.write("\n")
-print(path)
-PY
+  "$ms" adapter capability-snapshot \
+    --dir "$agents/capabilities" \
+    --runtime "$snapshot_runtime" \
+    --version "$version" \
+    --config-hash "$config_hash" \
+    --transports "$transports" \
+    --capabilities "$caps" \
+    --permissions "$permissions" \
+    --envelope-enforcement "$envelope_enforcement" \
+    --config-key-hashes "$config_key_hashes"
 }
 
 make_selftest_brief() { # output, goal text
