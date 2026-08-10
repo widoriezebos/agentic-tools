@@ -512,10 +512,7 @@ arm_repository() {
   if (( shutdown )); then
     if (( ! lease_held )); then
       lease_result=$("$ms" lease require-holder --root "$harness_root" --caller-pid "$$") || exit $?
-      # TODO(go-wiring): needs a JSON-string field read that coerces null/absent
-      # claimEpoch to "" (json get --value prints "null", which would be handed
-      # to --expected-epoch). Left as python3.
-      lease_epoch=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("claimEpoch") is None else v["claimEpoch"])' "$lease_result")
+      lease_epoch=$("$ms" json get --value "$lease_result" --field claimEpoch --default "")
       if [[ -n "$lease_epoch" ]]; then
         exec "$ms" lease run-held --root "$harness_root" --caller-pid "$$" \
           --expected-epoch "$lease_epoch" -- "$script_path" --repo "$repo" --shutdown --lease-held

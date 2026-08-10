@@ -7,9 +7,7 @@ ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
 checkout=$(git -C "$harness_root" rev-parse --show-toplevel)
 checkout=$(cd "$checkout" && pwd -P)
 parent=${checkout%/*}
-# TODO(go-wiring): the random session-name suffix is not in the CLI map; no
-# binary verb emits a token_hex suffix, so this stays python3 until one exists.
-name=${1:-$(basename "$checkout")-session-$(date -u +%Y%m%dt%H%M%Sz)-$(python3 -c 'import secrets; print(secrets.token_hex(2))')}
+name=${1:-$(basename "$checkout")-session-$(date -u +%Y%m%dt%H%M%Sz)-$("$ms" util token-hex --bytes 2)}
 [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || {
   echo "second-session name must contain only letters, numbers, dot, underscore, and hyphen" >&2
   exit 2
