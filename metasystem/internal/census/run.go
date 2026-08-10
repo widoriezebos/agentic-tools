@@ -501,7 +501,7 @@ func configuredSignatures(metasystemRoot string) ([]Signature, error) {
 		if err != nil {
 			return nil, err
 		}
-		matches, excludes := parseSignatureText(text)
+		matches, excludes := ParseSignatureText(text)
 		sig, err := CompileSignature(runtime, matches, excludes)
 		if err != nil {
 			return nil, err
@@ -511,7 +511,10 @@ func configuredSignatures(metasystemRoot string) ([]Signature, error) {
 	return out, nil
 }
 
-func parseSignatureText(text string) (matches, excludes []string) {
+// ParseSignatureText splits an adapter's `signature` output into its match
+// and exclude ERE patterns. Exported so the lease's caller-classification can
+// build its delegate signatures from the same one parser.
+func ParseSignatureText(text string) (matches, excludes []string) {
 	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
 		if line == "" {
 			continue

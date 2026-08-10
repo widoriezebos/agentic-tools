@@ -62,7 +62,7 @@ func SignatureCheck(adapterPath, positive, lookalike string) error {
 	if err != nil {
 		return err
 	}
-	matches, excludes := parseSignatureText(text)
+	matches, excludes := ParseSignatureText(text)
 	sig, err := CompileSignature("check", matches, excludes)
 	if err != nil {
 		return err
