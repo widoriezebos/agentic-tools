@@ -77,7 +77,7 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	// The budget is judged first: an expired capMin is a fact of the record,
 	// independent of whether the process happens to have exited already, so a
 	// running job over budget is always a timeout rather than a race with loss.
-	if status == "running" && capExpired(record, now) {
+	if status == "running" && CapExpired(record, now) {
 		return cfg.transition(path, record, status, "timeout", "budget-cap", now)
 	}
 
@@ -118,9 +118,11 @@ func (cfg ReaperConfig) transition(path string, record map[string]any, from, to,
 	return nil
 }
 
-// capExpired reports whether a job is past its absolute budget: the explicit
+// CapExpired reports whether a job is past its absolute budget: the explicit
 // capDeadline when the record carries one, else startedAt plus capMin minutes.
-func capExpired(record map[string]any, now time.Time) bool {
+// Exported because it is THE budget verdict: the dispatch-side reap and the
+// supervision reaper must reach the same conclusion from the same record.
+func CapExpired(record map[string]any, now time.Time) bool {
 	if deadline, ok := record["capDeadline"].(string); ok && deadline != "" {
 		if t, err := parseISOSecond(deadline); err == nil {
 			return !now.Before(t)

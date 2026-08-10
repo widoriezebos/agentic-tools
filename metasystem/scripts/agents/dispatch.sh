@@ -98,56 +98,16 @@ report_plan_drift() {
   # runtime it is, so a plan contradicting the job records cannot stay invisible
   # on Codex or Devin merely because their hooks are unproven. Reporting only:
   # a stale plan is never a reason to refuse work.
-  local reporter="$root/scripts/agents/open-work.py" output
-  [[ -f "$reporter" ]] || return 0
-  output=$(python3 "$reporter" --repo "$root" 2>/dev/null | grep '^STALE-PLAN' || true)
+  local output
+  output=$("$ms" report open-work --repo "$root" 2>/dev/null | grep '^STALE-PLAN' || true)
   [[ -z "$output" ]] || printf '%s\n' "$output" >&2
 }
 
 require_fresh_census() {
   local verdict="$agents/supervision/last-census.json" state="$agents/supervision/state.json" expected
   [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
-  python3 - "$verdict" "$state" "$arm_supervision" "$repo_scope" <<'PY' || exit $?
-import hashlib, json, re, sys, time
-from pathlib import Path
-try: value=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-except (OSError,ValueError) as error: raise SystemExit(f"dispatch refused: census verdict is unreadable: {error}")
-required={"schemaVersion","writer","verdict","completedAtEpoch","intervalSec","fingerprint","counts","inventory","diagnostics","errors"}
-if not required.issubset(value) or value.get("schemaVersion") != 2 or value.get("writer") != "watch-background-jobs.sh":
-    raise SystemExit("dispatch refused: census verdict schema or writer is invalid")
-if value.get("verdict") == "CENSUS-FAILED":
-    raise SystemExit("dispatch refused: last census verdict is CENSUS-FAILED")
-if value.get("verdict") != "SUCCESS":
-    raise SystemExit("dispatch refused: census verdict is not successful")
-completed, interval = value.get("completedAtEpoch"), value.get("intervalSec")
-if type(completed) is not int or type(interval) is not int or interval < 1:
-    raise SystemExit("dispatch refused: census freshness fields are invalid")
-age=int(time.time())-completed
-window=min(2 * interval, 180)
-census_generation, state_digest = value.get("generation"), value.get("stateDigest")
-if type(census_generation) is not int or census_generation < 1 or not isinstance(state_digest,str) or not re.fullmatch(r"[0-9a-f]{64}",state_digest):
-    raise SystemExit("dispatch refused: census generation fields are invalid")
-try:
-    armed_bytes=Path(sys.argv[2]).read_bytes()
-    armed=json.loads(armed_bytes)
-except (OSError,ValueError) as error: raise SystemExit(f"dispatch refused: arming record is unreadable: {error}")
-armed_generation=armed.get("generation") if isinstance(armed,dict) else None
-if type(armed_generation) is not int or armed_generation < 1:
-    raise SystemExit("dispatch refused: arming record generation is invalid")
-if census_generation != armed_generation:
-    raise SystemExit(
-        f"dispatch refused: census verdict is stale (age={age}s window={window}s "
-        f"censusGeneration={census_generation} armedGeneration={armed_generation}); "
-        f"retry in a moment; re-arm with {sys.argv[3]} --repo {sys.argv[4]} if supervision is dead"
-    )
-if hashlib.sha256(armed_bytes).hexdigest() != state_digest:
-    raise SystemExit("dispatch refused: census verdict does not attest the current supervision state")
-if age >= window:
-    raise SystemExit(
-        f"dispatch refused: census verdict is stale (age={age}s window={window}s); "
-        f"retry in a moment; re-arm with {sys.argv[3]} --repo {sys.argv[4]} if supervision is dead"
-    )
-PY
+  "$ms" dispatch census-fresh --verdict "$verdict" --state "$state" \
+    --arm "$arm_supervision" --repo "$repo_scope" || exit $?
   expected=$("$arm_supervision" fingerprint --repo "$repo_scope" 2>&1) \
     || die 1 "dispatch refused: census fingerprint cannot be computed: $expected"
   [[ "$(json_field "$verdict" fingerprint 2>/dev/null || true)" == "$expected" ]] \
@@ -228,6 +188,9 @@ process_matches() { # pid, tag
 }
 
 process_exists() { # pid; permission denied still proves the pid exists
+  # TODO(go-wiring): a kill(pid, 0) probe that treats EPERM as existence; bash
+  # kill -0 cannot tell EPERM from ESRCH, so this stays python until a process
+  # probe verb exists.
   python3 - "$1" <<'PY'
 import os, sys
 try:
@@ -261,18 +224,15 @@ job_supervisor_matches() { # record
   proof=$(json_field "$record" ownershipProof 2>/dev/null || true)
   heartbeat="$heartbeats/$(json_field "$record" jobId 2>/dev/null || true)"
   [[ "$proof" == *"\"pid\":$pid"* && "$proof" == *"\"instanceTag\":\"$tag\""* && -f "$heartbeat" ]] || return 1
-  python3 - "$heartbeat" "$pid" "$tag" <<'PY'
-import json, sys
-from pathlib import Path
-try: value = json.loads(Path(sys.argv[1]).read_text())
-except (OSError, ValueError): raise SystemExit(1)
-raise SystemExit(0 if value.get("pid") == int(sys.argv[2]) and value.get("instanceTag") == sys.argv[3] else 1)
-PY
+  [[ "$(json_field "$heartbeat" pid 2>/dev/null || true)" == "$pid" \
+    && "$(json_field "$heartbeat" instanceTag 2>/dev/null || true)" == "$tag" ]]
 }
 
 group_alive() { # pgid
   local pgid=$1
   [[ "$pgid" =~ ^[1-9][0-9]*$ ]] || return 1
+  # TODO(go-wiring): a killpg(pgid, 0) probe that treats EPERM as liveness;
+  # stays python for the same EPERM/ESRCH distinction as process_exists.
   python3 - "$pgid" <<'PY'
 import os, sys
 try:
@@ -334,6 +294,9 @@ wind_down_group() { # record
 # contender read an ownerless lock and refused. A release frees only a lock this
 # process still owns, and never fails when it no longer does -- a release that
 # deletes whatever it finds hands a live owner's lock to a third writer.
+# TODO(go-wiring): the claim/release protocol (staged rename, holder liveness,
+# husk healing) is one atomic unit around ps and kill probes; it moves to Go
+# whole or not at all.
 owner_lock() { # claim|release, directory, pid, tag -> 0 done, 3 busy, 4 not-owner
   python3 - "$@" <<'PY'
 import json, os, shutil, subprocess, sys, tempfile
@@ -478,30 +441,29 @@ config_get() { "$config" get "$@"; }
 canonical_model() { "$canonical_model_helper" "$1"; }
 
 config_key_origin() { # exact resolved key; prints env, conf-local, conf, or default
-  local key=$1 env_name
+  local key=$1 env_name path origin rc
   env_name=$(printf 'METASYSTEM_%s' "$key" | tr '[:lower:]' '[:upper:]' | tr '.-' '__')
   if [[ ${!env_name+x} ]]; then
     printf 'env\n'
     return
   fi
-  python3 - "$root/metasystem.conf" "$key" <<'PY'
-import sys
-from pathlib import Path
-base, key = Path(sys.argv[1]), sys.argv[2]
-for path, origin in ((Path(str(base) + ".local"), "conf-local"), (base, "conf")):
-    if not path.is_file():
-        continue
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if line and not line.startswith("#") and "=" in line and line.split("=", 1)[0].strip() == key:
-            print(origin)
-            raise SystemExit(0)
-print("default")
-PY
+  for origin in conf-local conf; do
+    path="$root/metasystem.conf"
+    [[ "$origin" == conf-local ]] && path="$root/metasystem.conf.local"
+    [[ -f "$path" ]] || continue
+    rc=0
+    "$ms" config conf-value --file "$path" --key "$key" >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+      0) printf '%s\n' "$origin"; return ;;
+      3) ;; # absent here; keep looking
+      *) die 1 "config origin probe failed for $key in $path" ;;
+    esac
+  done
+  printf 'default\n'
 }
 
 resolve_nonmission_cap() { # role, runtime, canonical model, explicit override, output json
-  local role=$1 runtime=$2 model=$3 explicit=$4 output=$5 key value rule origin cap deadline
+  local role=$1 runtime=$2 model=$3 explicit=$4 output=$5 key value rule origin cap
   if [[ -n "$explicit" ]]; then
     cap=$explicit; rule=argument; origin=argument
   else
@@ -526,21 +488,7 @@ resolve_nonmission_cap() { # role, runtime, canonical model, explicit override, 
     fi
   fi
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
-  deadline=$(python3 - "$cap" <<'PY'
-from datetime import datetime, timedelta, timezone
-import sys
-print((datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=int(sys.argv[1]))).strftime("%Y-%m-%dT%H:%M:%SZ"))
-PY
-  )
-  python3 - "$output" "$cap" "$deadline" "$rule" "$origin" <<'PY'
-import json, sys
-from pathlib import Path
-output, cap, deadline, rule, origin = sys.argv[1:]
-Path(output).write_text(json.dumps({
-    "capMin": int(cap), "capDeadline": deadline,
-    "source": {"rule": rule, "origin": origin, "truncatedBy": None},
-}, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  "$ms" dispatch cap-resolution --cap "$cap" --rule "$rule" --origin "$origin" --output "$output"
 }
 
 refuse_unsigned_mission_cap_override() { # role, runtime, canonical model
@@ -554,52 +502,22 @@ refuse_unsigned_mission_cap_override() { # role, runtime, canonical model
 }
 
 attested_watcher_ceiling() {
-  local state="$agents/supervision/state.json"
-  python3 - "$state" <<'PY'
-import json, sys, time
-from pathlib import Path
-state_path = Path(sys.argv[1])
-try:
-    state = json.loads(state_path.read_text(encoding="utf-8"))
-    watcher = state["components"]["watcher"]
-    heartbeat = json.loads(Path(watcher["heartbeat"]).read_text(encoding="utf-8"))
-except (OSError, ValueError, KeyError, TypeError) as error:
-    raise SystemExit(f"dispatch refused: watcher ceiling attestation is unreadable: {error}")
-if any(heartbeat.get(key) != watcher.get(key) for key in ("pid", "pidStartedAt", "instanceTag")):
-    raise SystemExit("dispatch refused: watcher ceiling attestation identity does not match the armed watcher")
-ceiling = heartbeat.get("loadedCapMin")
-observed, interval = heartbeat.get("observedAtEpoch"), state.get("intervalSec")
-if type(ceiling) is not int or ceiling < 1:
-    raise SystemExit("dispatch refused: watcher heartbeat has no valid loadedCapMin attestation")
-age = int(time.time()) - observed if type(observed) is int else None
-if type(interval) is not int or age is None or age < -5 or age > interval * 2 + 2:
-    raise SystemExit("dispatch refused: watcher ceiling attestation is stale")
-print(ceiling)
-PY
+  "$ms" dispatch watcher-ceiling --state "$agents/supervision/state.json"
 }
 
 registered_runtime() { # runtime
-  local configured
+  local configured entry
   configured=$(config_get --key metasystem.runtimes --default '')
-  python3 - "$configured" "$1" <<'PY'
-import sys
-items = [item.strip() for item in sys.argv[1].split(",") if item.strip()]
-raise SystemExit(0 if sys.argv[2] in items else 1)
-PY
+  while IFS= read -r entry; do
+    entry="${entry#"${entry%%[![:space:]]*}"}"
+    entry="${entry%"${entry##*[![:space:]]}"}"
+    [[ -n "$entry" && "$entry" == "$1" ]] && return 0
+  done < <(printf '%s\n' "${configured//,/$'\n'}")
+  return 1
 }
 
 brief_mode() { # brief
-  python3 - "$1" <<'PY'
-import sys
-from pathlib import Path
-values = []
-for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
-    if line.startswith("Working Mode:"):
-        values.append(line.split(":", 1)[1].strip())
-if len(values) != 1 or not values[0] or values[0].startswith("<"):
-    raise SystemExit(1)
-print(values[0])
-PY
+  "$ms" dispatch brief-mode --brief "$1"
 }
 
 # Tiers are read through the configuration resolver, not by parsing the
@@ -655,6 +573,9 @@ assert_tiers_contiguous() {
 }
 
 signed_dispatch_envelope_allows() { # mission id, exact runtime:model pair
+  # TODO(go-wiring): needs the sealed-contract reader (seal, approval, origin,
+  # envelope.dispatch-allow validation) exported from internal/mission before a
+  # `dispatch envelope-allows` verb can own this decision.
   python3 - "$root" "$1" "$2" <<'PY'
 import importlib.util
 import sys
@@ -694,62 +615,14 @@ confirm_escalation() { # roster pair, requested pair, displayed cost direction
     die 1 "escalation approval declined; re-run without the override, or repeat from an interactive TTY with --approve-escalation and type APPROVE <name>"
   fi
   name=${confirmation#APPROVE }
-  python3 - "$name" <<'PY' || die 1 "escalation approval declined; type APPROVE followed by a non-empty name without leading, trailing, or control characters"
-import sys
-name = sys.argv[1]
-raise SystemExit(0 if name and name == name.strip() and not any(ord(char) < 32 for char in name) else 1)
-PY
+  if [[ -z "$name" || "$name" =~ ^[[:space:]] || "$name" =~ [[:space:]]$ || "$name" =~ [[:cntrl:]] ]]; then
+    die 1 "escalation approval declined; type APPROVE followed by a non-empty name without leading, trailing, or control characters"
+  fi
   printf '%s\n' "$name"
 }
 
 validate_mission() { # mission id, lease path
-  python3 - "$root" "$1" "$2" <<'PY'
-import json, os, subprocess, sys
-from pathlib import Path
-root = Path(sys.argv[1]).resolve()
-mission, supplied = sys.argv[2:]
-if not mission or not all(c.islower() or c.isdigit() or c == "-" for c in mission) or not mission[0].isalnum():
-    raise SystemExit("invalid mission id")
-expected = (root / "artifacts" / "agents" / "missions" / mission / "lease.json").resolve()
-lease_path = Path(supplied).resolve()
-if lease_path != expected:
-    raise SystemExit("mission lease path is ambiguous or non-canonical")
-try:
-    lease = json.loads(lease_path.read_text(encoding="utf-8"))
-except (OSError, ValueError) as error:
-    raise SystemExit(f"mission has no readable live lease: {error}")
-required = {"missionId", "pid", "pgid", "instanceTag", "startedAt", "renewedAt"}
-if set(lease) != required or lease.get("missionId") != mission:
-    raise SystemExit("mission lease has an invalid shape or identity")
-pid, pgid, tag = lease.get("pid"), lease.get("pgid"), lease.get("instanceTag")
-if not isinstance(pid, int) or not isinstance(pgid, int) or not isinstance(tag, str) or not tag:
-    raise SystemExit("mission lease has invalid ownership fields")
-try:
-    os.kill(pid, 0)
-    actual_pgid = os.getpgid(pid)
-except OSError:
-    raise SystemExit("mission lease holder is not alive")
-try:
-    command = subprocess.check_output(["ps", "-p", str(pid), "-o", "command="], text=True).strip()
-except (OSError, subprocess.SubprocessError):
-    fixture_path = os.environ.get("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
-    configured = ""
-    for raw in (root / "metasystem.conf").read_text().splitlines():
-        if raw.startswith("metasystem.runtimes="):
-            configured = raw.split("=", 1)[1].strip()
-    if configured != "fake" or not fixture_path:
-        raise SystemExit("mission process command line could not be verified")
-    try:
-        fixture = json.loads(Path(fixture_path).read_text())
-        identity = fixture[str(pid)]
-        command = identity["command"]
-        if identity["pgid"] != actual_pgid:
-            raise ValueError("pgid mismatch")
-    except (OSError, ValueError, KeyError, TypeError):
-        raise SystemExit("fake mission process identity fixture is invalid")
-if tag not in command or actual_pgid != pgid:
-    raise SystemExit("mission lease holder failed process identity proof")
-PY
+  "$ms" dispatch validate-mission --root "$root" --mission "$1" --lease "$2"
 }
 
 resolve_mission() { # explicit id; prints mission|lease|turn or ||
@@ -781,42 +654,9 @@ expand_permissions() { # requested value, workspace root, worktree flag, output
   # narrows: a repository cannot grant access a preset withholds.
   network_floor=$(config_get --key dispatch.permissions.network --default '')
   case "$network_floor" in ''|deny|allow) ;; *) die 1 "dispatch.permissions.network must be deny or allow" ;; esac
-  python3 - "$source" "$repo_scope" "$workspace" "$is_worktree" "$preset" "$output" "$network_floor" <<'PY'
-import json, os, sys
-from pathlib import Path
-source, repo, workspace, is_worktree, preset, output, network_floor = sys.argv[1:]
-repo = Path(repo).resolve()
-workspace = Path(workspace).resolve()
-try:
-    envelope = json.loads(Path(source).read_text(encoding="utf-8"))
-except (OSError, ValueError) as error:
-    raise SystemExit(f"invalid permissions envelope: {error}")
-expected = {"readRoots", "writeRoots", "network", "approvals", "tools"}
-if not isinstance(envelope, dict) or set(envelope) != expected:
-    raise SystemExit("permissions envelope must contain exactly readRoots, writeRoots, network, approvals, and tools")
-if not isinstance(envelope["readRoots"], list) or not isinstance(envelope["writeRoots"], list):
-    raise SystemExit("permission roots must be arrays")
-def expand(value):
-    if value == ".":
-        return str(repo)
-    if value == "<worktree>":
-        return str(workspace)
-    path = Path(value)
-    return str((repo / path).resolve()) if not path.is_absolute() else str(path.resolve())
-envelope["readRoots"] = [expand(item) for item in envelope["readRoots"] if isinstance(item, str)]
-envelope["writeRoots"] = [expand(item) for item in envelope["writeRoots"] if isinstance(item, str)]
-if envelope["writeRoots"] and is_worktree != "1":
-    raise SystemExit("writable permissions require --worktree")
-for item in envelope["writeRoots"]:
-    try:
-        Path(item).resolve().relative_to(workspace)
-    except ValueError:
-        raise SystemExit(f"permission write root escapes the job worktree: {item}")
-if network_floor == "deny":
-    envelope["network"] = "deny"
-envelope = {"preset": preset, **envelope}
-Path(output).write_text(json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  "$ms" dispatch expand-permissions --source "$source" --repo "$repo_scope" \
+    --workspace "$workspace" --worktree "$is_worktree" --preset "$preset" \
+    --network-floor "$network_floor" --output "$output"
 }
 
 select_snapshot() { # runtime, role, requested envelope, output json
@@ -831,57 +671,11 @@ select_snapshot() { # runtime, role, requested envelope, output json
 }
 
 root_job_id() { # job record
-  # TODO(go-wiring): a `dispatch root-job` verb should walk parentJob to the
-  # chain root (cycle-guarded), so close and reap resolve the root in Go.
-  python3 - "$jobs" "$1" <<'PY'
-import json, sys
-from pathlib import Path
-jobs = Path(sys.argv[1])
-job = sys.argv[2]
-seen = set()
-while True:
-    if job in seen:
-        raise SystemExit(1)
-    seen.add(job)
-    value = json.loads((jobs / f"{job}.json").read_text(encoding="utf-8"))
-    parent = value.get("parentJob")
-    if parent is None:
-        print(job)
-        break
-    job = parent
-PY
+  "$ms" adapter root-job --jobs "$jobs" --job "$1"
 }
 
 latest_chain_record() { # root job
-  # TODO(go-wiring): a `dispatch latest-chain-record` verb should return the
-  # highest-round record whose chain root is this job, for follow-up.
-  python3 - "$jobs" "$1" <<'PY'
-import json, sys
-from pathlib import Path
-jobs = Path(sys.argv[1]); root = sys.argv[2]
-records = []
-for path in jobs.glob("*.json"):
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        continue
-    current = value
-    seen = set()
-    while current.get("parentJob") is not None:
-        parent = current.get("parentJob")
-        if parent in seen:
-            break
-        seen.add(parent)
-        try:
-            current = json.loads((jobs / f"{parent}.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            break
-    if current.get("jobId") == root:
-        records.append((value.get("round", 0), path))
-if not records:
-    raise SystemExit(1)
-print(max(records, key=lambda item: item[0])[1])
-PY
+  "$ms" dispatch latest-chain-record --jobs "$jobs" --root "$1"
 }
 
 write_prompt() { # path job role runtime model round mission content
@@ -895,9 +689,12 @@ write_prompt() { # path job role runtime model round mission content
 }
 
 launch_adapter() { # runtime verb job tag
-  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed poll_sleep
+  local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}")
   mkdir -p "$heartbeats"
+  # TODO(go-wiring): the setsid/exec daemonization below hands the adapter its
+  # own session and identity env in one process image; it stays python until a
+  # dedicated launcher exists.
   python3 - "$root" "$adapter" "$verb" "$job" "$gate" "$tag" >/dev/null 2>&1 <<'PY' &
 import os, sys
 root, adapter, verb, job, gate, tag = sys.argv[1:]
@@ -925,21 +722,18 @@ PY
   # the reaper's copy of the same deadline ran early by however long setup took,
   # and the backstop then overwrote the dispatcher's own verdict.
   handshake_budget=$(json_field "$jobs/$job.json" sessionEstablishedTimeoutSec 2>/dev/null || echo 0)
-  python3 - "$patch" "$pid" "$pid_started" "$tag" "$handshake_budget" <<'PY'
-import json, sys, time
-from datetime import datetime, timezone
-from pathlib import Path
-pid = int(sys.argv[2])
-pid_started = int(sys.argv[3])
-budget = int(sys.argv[5]) if sys.argv[5].isdigit() else 0
-value = {
-  "pid": pid, "pidStartedAt": pid_started, "pgid": pid,
-  "ownershipProof": {"pid": pid, "pidStartedAt": pid_started, "pgid": pid, "instanceTag": sys.argv[4], "provenAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "source": "trusted-launcher"},
-}
-if budget > 0:
-    value["handshakeDeadline"] = int(time.time()) + budget
-Path(sys.argv[1]).write_text(json.dumps(value) + "\n")
-PY
+  proven_at=$(now_iso)
+  handshake_deadline=
+  if [[ "$handshake_budget" =~ ^[1-9][0-9]*$ ]]; then
+    handshake_deadline=$(( $(date +%s) + handshake_budget ))
+  fi
+  {
+    printf '{"pid":%s,"pidStartedAt":%s,"pgid":%s,' "$pid" "$pid_started" "$pid"
+    printf '"ownershipProof":{"pid":%s,"pidStartedAt":%s,"pgid":%s,"instanceTag":"%s","provenAt":"%s","source":"trusted-launcher"}' \
+      "$pid" "$pid_started" "$pid" "$tag" "$proven_at"
+    [[ -z "$handshake_deadline" ]] || printf ',"handshakeDeadline":%s' "$handshake_deadline"
+    printf '}\n'
+  } >"$patch"
   record_cas "$job" pending pending "$patch" || return 1
   touch "$gate"
 }
@@ -1003,46 +797,7 @@ aggregate_chain_usage() { # root id
   case "$status" in completed|failed|timeout|cancelled) ;; *) return 0 ;; esac
   patch=$(mktemp "$record_locks/usage.XXXXXX")
   local aggregate_rc=0
-  python3 - "$jobs" "$chain" "$patch" <<'PY' || aggregate_rc=$?
-import json, sys
-from pathlib import Path
-jobs, root, output = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
-records = []
-for path in jobs.glob("*.json"):
-    try: value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError): continue
-    current = value; seen = set()
-    while current.get("parentJob") is not None:
-        parent = current.get("parentJob")
-        if parent in seen: break
-        seen.add(parent)
-        try: current = json.loads((jobs / f"{parent}.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError): break
-    if current.get("jobId") == root: records.append(value)
-tokens = {}; costs = {}; units = {}
-for record in records:
-    usage = record.get("usage")
-    if not isinstance(usage, dict): continue
-    runtime = record.get("runtime", "unknown")
-    target = tokens.setdefault(runtime, {name: None for name in ("inputTokens", "cachedInputTokens", "outputTokens", "reasoningTokens")})
-    for name in target:
-        value = usage.get(name)
-        if isinstance(value, (int, float)) and not isinstance(value, bool): target[name] = (target[name] or 0) + value
-    cost = usage.get("cost")
-    if isinstance(cost, dict) and isinstance(cost.get("amount"), (int, float)) and isinstance(cost.get("currency"), str):
-        costs[cost["currency"]] = costs.get(cost["currency"], 0) + cost["amount"]
-    unit = usage.get("providerUnits")
-    if isinstance(unit, dict) and isinstance(unit.get("name"), str) and isinstance(unit.get("value"), (int, float)):
-        units.setdefault(runtime, {})[unit["name"]] = units.setdefault(runtime, {}).get(unit["name"], 0) + unit["value"]
-value = {"chainUsage": {"tokens": tokens, "cost": costs, "providerUnits": units}}
-try:
-    current = json.loads((jobs / f"{root}.json").read_text()).get("chainUsage")
-except (OSError, ValueError):
-    current = None
-if current == value["chainUsage"]:
-    raise SystemExit(7)
-output.write_text(json.dumps(value, sort_keys=True) + "\n")
-PY
+  "$ms" dispatch chain-usage --jobs "$jobs" --root "$chain" --output "$patch" || aggregate_rc=$?
   if (( aggregate_rc == 7 )); then
     rm -f -- "$patch" 2>/dev/null || true
     return 0
@@ -1070,134 +825,22 @@ mirror_record() { # job
   case "$status" in completed|failed|timeout|cancelled) ;; *) return 0 ;; esac
   evidence=$(config_get --key evidence.root --default '')
   [[ "$evidence" == /* ]] || { mirror_fail "$job" "evidence.root must be absolute"; return 1; }
-  evidence=$(python3 - "$evidence" <<'PY'
-import sys
-from pathlib import Path
-print(Path(sys.argv[1]).resolve(strict=False))
-PY
-  )
-  case "${evidence%/}/" in "${repo_scope%/}/"*) mirror_fail "$job" "evidence.root is inside the repository"; return 1 ;; esac
   root_id=$(root_job_id "$job") || return 1
   result=$(mktemp "$record_locks/mirror-result.XXXXXX")
-  if ! python3 - "$root" "$repo_scope" "$evidence" "$root_id" "$job" "$result" <<'PY'
-import hashlib, json, os, shutil, sys, tempfile
-from datetime import datetime, timezone
-from pathlib import Path
-repo, checkout, evidence, root_job, job, result = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5], Path(sys.argv[6])
-agents = repo / "artifacts" / "agents"
-record_path = agents / "jobs" / f"{job}.json"
-record = json.loads(record_path.read_text(encoding="utf-8"))
-round_number = record["round"]
-payload = agents / root_job
-if (payload / ".mirror-fail-once").exists():
-    (payload / ".mirror-fail-once").unlink()
-    (payload / ".mirror-failed").write_text("scripted interruption\n")
-    raise SystemExit("scripted mirror interruption")
-checkout_segment = hashlib.sha256(str(checkout.resolve()).encode()).hexdigest()[:12]
-destination = evidence / "agents" / checkout_segment / root_job
-destination.mkdir(parents=True, exist_ok=True)
-manifest_path = destination / "manifest.json"
-
-def digest(path):
-    value = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            value.update(chunk)
-    return value.hexdigest()
-
-def semantic_record_hash(path):
-    value = json.loads(path.read_text(encoding="utf-8"))
-    value["mirror"] = None
-    return hashlib.sha256((json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()).hexdigest()
-
-sources = [(record_path, Path("jobs") / record_path.name)]
-log = agents / "jobs" / f"{job}.log"
-if log.exists(): sources.append((log, Path("jobs") / log.name))
-if round_number == 1 and (payload / "brief.md").exists(): sources.append((payload / "brief.md", Path("brief.md")))
-round_dir = payload / "rounds" / str(round_number)
-if round_dir.exists():
-    for source in sorted(path for path in round_dir.rglob("*") if path.is_file()):
-        sources.append((source, Path("rounds") / str(round_number) / source.relative_to(round_dir)))
-snapshot = repo / record["capabilitySnapshot"]
-if snapshot.exists(): sources.append((snapshot, Path("capabilities") / snapshot.name))
-
-old = {}
-if manifest_path.exists():
-    try: old = json.loads(manifest_path.read_text(encoding="utf-8")).get("files", {})
-    except (OSError, ValueError): old = {}
-unchanged = True
-for source, relative in sources:
-    item = old.get(str(relative))
-    target = destination / relative
-    if not isinstance(item, dict) or not target.exists() or digest(target) != item.get("sha256"):
-        unchanged = False; break
-    if source == record_path:
-        if item.get("sourceStateHash") != semantic_record_hash(source): unchanged = False; break
-    elif digest(source) != item.get("sha256"):
-        unchanged = False; break
-if unchanged and manifest_path.exists():
-    manifest_hash = digest(manifest_path)
-else:
-    files = dict(old)
-    for source, relative in sources:
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=target.parent)
-        os.close(fd)
-        try:
-            shutil.copyfile(source, temp_name)
-            os.replace(temp_name, target)
-        finally:
-            try: os.unlink(temp_name)
-            except FileNotFoundError: pass
-        if digest(source) != digest(target): raise SystemExit(f"mirror verification failed for {relative}")
-        item = {"sha256": digest(target), "bytes": target.stat().st_size}
-        if source == record_path: item["sourceStateHash"] = semantic_record_hash(source)
-        files[str(relative)] = item
-    manifest = {"rootJob": root_job, "files": files, "updatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    fd, temp_name = tempfile.mkstemp(prefix="manifest.", suffix=".tmp", dir=destination)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, indent=2, sort_keys=True); handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
-    os.replace(temp_name, manifest_path)
-    manifest_hash = digest(manifest_path)
-Path(result).write_text(json.dumps({"path": str(destination), "manifest": manifest_hash, "unchanged": bool(unchanged and manifest_path.exists()), "mirroredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}) + "\n")
-PY
-  then
+  if ! "$ms" dispatch mirror --repo "$root" --checkout "$repo_scope" --evidence "$evidence" \
+      --root-job "$root_id" --job "$job" --result "$result"; then
     mirror_fail "$job" "copy or verification failed (see stderr above)"
     return 1
   fi
-  if [[ "$(python3 -c '
-import json, sys
-result = json.load(open(sys.argv[1]))
-record = json.load(open(sys.argv[2]))
-mirror = record.get("mirror") or {}
-print(int(bool(result.get("unchanged")) and mirror.get("manifest") == result.get("manifest")))' "$result" "$record")" == 1 ]]; then
+  if [[ "$(json_field "$result" unchanged)" == true \
+      && "$(json_field "$record" mirror.manifest 2>/dev/null || true)" == "$(json_field "$result" manifest)" ]]; then
     rm -f -- "$result" 2>/dev/null || true
     return 0
   fi
   patch=$(mktemp "$record_locks/mirror-patch.XXXXXX")
-  python3 - "$result" "$patch" <<'PY'
-import json, sys
-from pathlib import Path
-Path(sys.argv[2]).write_text(json.dumps({"mirror": json.loads(Path(sys.argv[1]).read_text())}) + "\n")
-PY
-  python3 - "$jobs" "$root_id" <<'PY' | while IFS='|' read -r chain_job chain_status; do
-import json, sys
-from pathlib import Path
-jobs, root = Path(sys.argv[1]), sys.argv[2]
-for path in jobs.glob("*.json"):
-    try: value = json.loads(path.read_text())
-    except (OSError, ValueError): continue
-    current = value; seen = set()
-    while current.get("parentJob") is not None:
-        parent = current.get("parentJob")
-        if parent in seen: break
-        seen.add(parent)
-        try: current = json.loads((jobs / f"{parent}.json").read_text())
-        except (OSError, ValueError): break
-    if current.get("jobId") == root and value.get("status") in {"completed", "failed", "timeout", "cancelled"}:
-        print(f"{value['jobId']}|{value['status']}")
-PY
+  printf '{"mirror":%s}\n' "$(cat "$result")" >"$patch"
+  "$ms" dispatch chain-members --jobs "$jobs" --root "$root_id" --terminal-only \
+    | while IFS='|' read -r chain_job chain_status; do
     # record_cas consumes its patch (one-shot); this loop applies the same
     # content to every job in the chain, so each call gets its own copy.
     patch_copy=$(mktemp "$record_locks/mirror-patch.XXXXXX")
@@ -1208,11 +851,7 @@ PY
 }
 
 reap_one_locked() { # job
-  # TODO(go-wiring): the reap verdict date-math below (elapsed since startedAt,
-  # cap-deadline expiry, the handshake-window backstop, and the pending-setup
-  # abandonment age) should become `dispatch reap-verdict` helpers; the terminal
-  # writes already run through the Go record-cas verb.
-  local job=$1 record="$jobs/$1.json" status pid tag started cap cap_deadline budget_expired handshake_budget handshake_deadline session pending_age elapsed patch root_id mission record_epoch lease_epoch refusal_reason truncated_by
+  local job=$1 record="$jobs/$1.json" status pid tag facts budget_expired patch root_id mission record_epoch lease_epoch refusal_reason truncated_by
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
@@ -1239,25 +878,19 @@ reap_one_locked() { # job
     record_cas "$job" "$status" failed "$patch" || true
     return 0
   fi
+  # One verb call yields every record-only reap fact: pending-setup
+  # abandonment, the handshake window, and budget expiry. Budget expiry is the
+  # SAME decision code the supervision reaper runs, so the two can never
+  # disagree about one record.
+  facts=$("$ms" dispatch reap-facts --record "$record" --grace "$handshake_backstop_grace_sec") || return 1
   if [[ "$status" == pending-setup ]]; then
     # No process has been launched for a pending-setup record, so reaping one
     # can orphan nothing. Its creating dispatcher finishes setup in seconds --
-    # a record still here after ten minutes belongs to a dispatcher that died
-    # between create and setup, and skipping it unconditionally left such
-    # debris pending forever (one sat untouched for seven hours in a live
-    # mission). The generous age keeps a slow live dispatcher unraced.
-    created=$(json_field "$record" createdAt 2>/dev/null || true)
-    if (( standing_reaper )) && [[ -n "$created" && "$created" != null ]] && python3 - "$created" <<'PY'
-import sys
-from datetime import datetime, timezone
-try:
-    created = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
-except ValueError:
-    raise SystemExit(1)
-age = (datetime.now(timezone.utc) - created).total_seconds()
-raise SystemExit(0 if age > 600 else 1)
-PY
-    then
+    # a record still abandoned after the generous setup age belongs to a
+    # dispatcher that died between create and setup, and skipping it
+    # unconditionally left such debris pending forever (one sat untouched for
+    # seven hours in a live mission).
+    if (( standing_reaper )) && [[ "$("$ms" json get --value "$facts" --field setupAbandoned)" == true ]]; then
       patch=$(mktemp "$record_locks/abandoned-setup.XXXXXX")
       printf '{"error":"abandoned-setup","phase":"claim-sweep"}\n' >"$patch"
       record_cas "$job" pending-setup failed "$patch" || true
@@ -1266,50 +899,25 @@ PY
   fi
   pid=$(json_field "$record" pid 2>/dev/null || true)
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
-  started=$(json_field "$record" startedAt 2>/dev/null || true)
-  cap=$(json_field "$record" capMin 2>/dev/null || true)
-  cap_deadline=$(json_field "$record" capDeadline 2>/dev/null || true)
-  handshake_budget=$(json_field "$record" sessionEstablishedTimeoutSec 2>/dev/null || true)
-  handshake_deadline=$(json_field "$record" handshakeDeadline 2>/dev/null || true)
-  session=$(json_field "$record" sessionId 2>/dev/null || true)
   # A job is inside its handshake while it has no session, whether its record
-  # still says pending or an adapter has already moved it to running. Reading
-  # only pending left the running-without-a-session window unprotected, which
-  # is precisely where a runtime that never signals ends up.
-  if [[ ( "$status" == pending || ( "$status" == running && ( -z "$session" || "$session" == null ) ) ) \
-      && "$handshake_budget" =~ ^[1-9][0-9]*$ ]]; then
-    # The dispatcher owns the handshake verdict: it is the process that was
-    # waiting, and it names the failure handshake_timeout. The reaper is the
-    # backstop for a dispatcher that is no longer there, so it waits out the
-    # dispatcher's own deadline -- the one stamped at launch -- rather than
-    # recomputing a different one from the record's creation time.
-    # The window defers to a dispatcher that is still waiting. A supervisor that
-    # is provably gone will never complete a handshake, so there is nothing left
-    # to defer to and waiting out the budget only delays the true diagnosis.
+  # still says pending or an adapter has already moved it to running. The
+  # dispatcher owns the handshake verdict: it is the process that was waiting,
+  # and it names the failure handshake_timeout. The reaper is the backstop for
+  # a dispatcher that is no longer there, so it waits out the dispatcher's own
+  # deadline -- the one stamped at launch -- rather than recomputing a
+  # different one from the record's creation time.
+  if [[ "$("$ms" json get --value "$facts" --field handshakeWaiting)" == true ]]; then
+    # The window defers to a dispatcher that is still waiting. A supervisor
+    # that is provably gone will never complete a handshake, so there is
+    # nothing left to defer to and waiting out the budget only delays the true
+    # diagnosis.
     #
     # "Provably gone" needs the record to name a supervisor first. Between
     # creating the record and the adapter publishing its identity there is no
     # pid to match, and treating that absence as death reaped every job in its
     # own launch window -- the supervisor had not died, it had not arrived.
     if [[ -z "$pid" || "$pid" == null ]] || job_supervisor_matches "$record"; then
-    if [[ "$handshake_deadline" =~ ^[1-9][0-9]*$ ]]; then
-      if (( $(date +%s) < handshake_deadline + handshake_backstop_grace_sec )); then
-        return
-      fi
-    else
-      pending_age=$(python3 - "$started" <<'PY'
-from datetime import datetime, timezone
-import sys
-try: started = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
-except ValueError: raise SystemExit(1)
-print(int((datetime.now(timezone.utc) - started).total_seconds()))
-PY
-      ) || true
-      if [[ "$pending_age" =~ ^-?[0-9]+$ ]] \
-        && (( pending_age < handshake_budget + handshake_backstop_grace_sec )); then
-        return
-      fi
-    fi
+      return
     fi
   fi
   # The cap is judged BEFORE process liveness. An expired budget is a fact of
@@ -1319,24 +927,7 @@ PY
   # waiting dispatcher but process-lost from the standing reaper whenever its
   # process had already exited -- two different verdicts for one fact, and the
   # fence's job-cap-min refusal was skipped on the losing side.
-  elapsed=$(python3 - "$started" <<'PY'
-from datetime import datetime, timezone
-import sys
-try: started = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
-except ValueError: raise SystemExit(1)
-print(int((datetime.now(timezone.utc) - started).total_seconds()))
-PY
-  ) || return 1
-  if [[ -n "$cap_deadline" && "$cap_deadline" != null ]]; then
-    budget_expired=$(python3 - "$cap_deadline" <<'PY'
-from datetime import datetime, timezone
-import sys
-try: deadline = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
-except ValueError: raise SystemExit(1)
-print(1 if datetime.now(timezone.utc) >= deadline.astimezone(timezone.utc) else 0)
-PY
-    ) || return 1
-  elif [[ "$cap" =~ ^[1-9][0-9]*$ && "$elapsed" =~ ^-?[0-9]+$ ]] && (( elapsed >= cap * 60 )); then
+  if [[ "$("$ms" json get --value "$facts" --field budgetExpired)" == true ]]; then
     budget_expired=1
   else
     budget_expired=0
@@ -1503,17 +1094,8 @@ dispatch_job() {
   require_fresh_census
   report_plan_drift
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
-  python3 - "$setup_json" "$job" "$role" "$current_main_id" "$current_claim_epoch" <<'PY'
-import json,sys
-from datetime import datetime,timezone
-from pathlib import Path
-path,job,role,main_id,epoch=sys.argv[1:]
-Path(path).write_text(json.dumps({
-  "jobId":job,"role":role,"status":"pending-setup","phase":"setup",
-  "error":None,"mainId":main_id or None,"claimEpoch":int(epoch) if epoch else None,
-  "createdAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-},indent=2,sort_keys=True)+"\n")
-PY
+  "$ms" dispatch build-setup --output "$setup_json" --job "$job" --role "$role" \
+    --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$job" --source "$setup_json"
   rm -f "$setup_json"
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
@@ -1571,59 +1153,16 @@ PY
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
-  # TODO(go-wiring): this full pending-record assembly (and the pending-setup
-  # source above) feed the Go record-setup/record-create verbs; a
-  # `dispatch build-record` verb should assemble the record so the Go lifecycle
-  # owns both the shape and the write.
-  python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$cap_resolution" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" "$reviews" "$current_main_id" "$current_claim_epoch" <<'PY'
-import json, subprocess, sys
-from datetime import datetime, timezone
-from pathlib import Path
-out, job, role, mission, mission_turn, runtime, workspace, cap, cap_resolution_path, model, overridden, snapshot, size, digest, permissions, fallbacks, signal, handshake_budget, approval_name, approved_at, roster_pair, requested_pair, cost_direction, reviews, main_id, claim_epoch = sys.argv[1:]
-try: base = subprocess.check_output(["git", "-C", workspace, "rev-parse", "HEAD"], text=True).strip()
-except subprocess.SubprocessError: raise SystemExit("workspace is not a git worktree")
-branch = subprocess.check_output(["git", "-C", workspace, "branch", "--show-current"], text=True).strip()
-authority = json.loads(Path(cap_resolution_path).read_text(encoding="utf-8"))
-source = authority["source"]
-escalation_approval = None
-if approval_name:
-    escalation_approval = {
-        "name": approval_name,
-        "approvedAt": approved_at,
-        "rosterResolution": roster_pair,
-        "requestedPair": requested_pair,
-        "costDirection": cost_direction,
-    }
-record = {
-  "jobId": job, "role": role, "mission": mission or None, "runtime": runtime,
-  "round": 1, "parentJob": None, "reviews": reviews or None,
-  "status": "pending", "phase": "handshake", "error": None,
-  "mainId": main_id or None, "claimEpoch": int(claim_epoch) if claim_epoch else None,
-  "workspaceRoot": str(Path(workspace).resolve()), "baseSha": base, "branch": branch,
-  "permissions": {
-    "requested": json.loads(Path(permissions).read_text()),
-    "effective": None,
-    "enforcementSnapshot": snapshot,
-  },
-  "capMin": int(cap), "capDeadline": authority["capDeadline"],
-  "capResolution": {
-    "requestedMin": int(cap), "rule": source["rule"], "origin": source["origin"],
-    "truncatedBy": source["truncatedBy"], "deadline": authority["capDeadline"],
-  },
-  "pid": None, "pidStartedAt": None, "pgid": None, "instanceTag": f"metasystem-job-{job}",
-  "custodyProcesses": [],
-  "sessionId": None, "turnId": mission_turn or None, "requestedModel": model, "effectiveModel": None,
-  "overridden": overridden == "true", "capabilitySnapshot": snapshot,
-  "escalationApproval": escalation_approval,
-  "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
-  "sessionEstablishedTimeoutSec": int(handshake_budget),
-  "input": {"bytes": int(size), "hash": digest, "delivery": "stdin"},
-  "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "endedAt": None,
-  "usage": None, "mirror": None, "chainClosed": False, "runnerClosed": False,
-  "critiqueExhaustions": [],
-}
-Path(out).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-PY
+  "$ms" dispatch build-record --output "$record_json" --job "$job" --role "$role" \
+    --mission "$mission" --mission-turn "$mission_turn" --runtime "$runtime" \
+    --workspace "$workspace" --cap-resolution "$cap_resolution" --model "$model" \
+    --overridden "$overridden" --snapshot "$snapshot_path" \
+    --input-bytes "$input_bytes" --input-hash "$input_hash" \
+    --permissions "$permission_json" --fallbacks "$fallbacks" --signal "$signal" \
+    --handshake-budget "$handshake_budget" --approval-name "$approval_name" \
+    --approved-at "$approved_at" --roster-pair "$roster_pair" \
+    --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
+    --reviews "$reviews" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
   rm -f "$cap_resolution"
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
   release_cap_authority_lock
@@ -1639,241 +1178,19 @@ PY
 }
 
 critique_exhaustion_action() { # root job, role, latest record, message, successor id, output manifest
-  python3 - "$root" "$1" "$2" "$3" "$4" "$5" "$6" <<'PY'
-import json
-import re
-import sys
-from pathlib import Path
-
-repository, root_job, role, latest_path, message_path, successor, output_path = sys.argv[1:]
-repository, latest_path, message_path, output_path = map(
-    Path, (repository, latest_path, message_path, output_path)
-)
-jobs = repository / "artifacts" / "agents" / "jobs"
-agents = repository / "artifacts" / "agents"
-
-
-def fail(message):
-    print(message, file=sys.stderr)
-    raise SystemExit(1)
-
-
-def load(path, description):
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        fail(f"{description} is unreadable: {error}")
-    if not isinstance(value, dict):
-        fail(f"{description} is not a JSON object")
-    return value
-
-
-records = {}
-for path in jobs.glob("*.json"):
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        continue
-    if isinstance(value, dict) and value.get("jobId") == path.stem:
-        records[path.stem] = value
-
-
-def chain_root(job_id):
-    current = job_id
-    seen = set()
-    while current in records and current not in seen:
-        seen.add(current)
-        parent = records[current].get("parentJob")
-        if parent is None:
-            return current
-        if not isinstance(parent, str):
-            return None
-        current = parent
-    return None
-
-
-def chain_members(chain_id):
-    return [
-        value for job_id, value in records.items() if chain_root(job_id) == chain_id
-    ]
-
-
-def latest_member(chain_id):
-    members = [
-        value
-        for value in chain_members(chain_id)
-        if isinstance(value.get("round"), int)
-        and not isinstance(value.get("round"), bool)
-    ]
-    return max(members, key=lambda value: value["round"]) if members else None
-
-
-def open_material_ids(record, chain_id):
-    # The job record owns round identity. A delegate-returned round is data and
-    # cannot decide whether a three-round budget has elapsed.
-    round_number = record.get("round")
-    if not isinstance(round_number, int) or isinstance(round_number, bool) or round_number < 1:
-        fail(f"job record {record.get('jobId')!r} has an invalid round number")
-    if record.get("status") == "failed" and record.get("error") == "protocol_error":
-        return None
-    if record.get("status") != "completed":
-        return None
-    return_path = agents / chain_id / "rounds" / str(round_number) / "return.json"
-    result = load(return_path, f"critique return for job {record.get('jobId')!r}")
-    findings = result.get("findings")
-    if not isinstance(findings, list):
-        fail(f"critique return for job {record.get('jobId')!r} has no findings array")
-    found = []
-    for item in findings:
-        if not isinstance(item, dict) or item.get("material") is not True:
-            continue
-        finding_id = item.get("id")
-        if isinstance(finding_id, str) and finding_id and finding_id not in found:
-            found.append(finding_id)
-    return found
-
-
-def exhaustions(record):
-    value = record.get("critiqueExhaustions", [])
-    if not isinstance(value, list):
-        fail("critiqueExhaustions is malformed; waiting on the human is the only remedy")
-    if len(value) > 1:
-        fail("a second critique exhaustion is refused outright; waiting on the human is the only remedy")
-    return value
-
-
-try:
-    message = message_path.read_text(encoding="utf-8")
-except OSError as error:
-    fail(f"critique exhaustion successor message is unreadable: {error}")
-
-
-def require_enumeration(open_ids):
-    missing = [
-        finding_id
-        for finding_id in open_ids
-        if re.search(
-            rf"(?<![A-Za-z0-9_-]){re.escape(finding_id)}(?![A-Za-z0-9_-])",
-            message,
-        )
-        is None
-    ]
-    if missing:
-        fail(
-            "critique budget exhausted; the implementer or design successor follow-up "
-            "must enumerate every open finding identifier: " + ", ".join(missing)
-        )
-
-
-def entry(round_number, open_ids):
-    return {
-        "round": round_number,
-        "openFindingIds": open_ids,
-        "successorJobId": successor,
-    }
-
-
-latest = load(latest_path, "latest follow-up job record")
-if latest.get("status") == "failed" and latest.get("error") == "protocol_error":
-    # Protocol recovery deliberately does not read the missing or malformed
-    # return that caused the protocol error.
-    print("none")
-    raise SystemExit(0)
-
-actions = []
-if role == "design-critic":
-    round_number = latest.get("round")
-    open_ids = open_material_ids(latest, root_job)
-    if not open_ids or round_number % 3:
-        print("none")
-        raise SystemExit(0)
-    current = records.get(root_job) or load(jobs / f"{root_job}.json", "critique root record")
-    previous = exhaustions(current)
-    if previous:
-        if previous[0].get("round") == round_number and previous[0].get("successorJobId") == successor:
-            print("none")
-            raise SystemExit(0)
-        fail("a second critique exhaustion is refused outright; waiting on the human is the only remedy")
-    require_enumeration(open_ids)
-    actions.append({"jobId": root_job, "critiqueExhaustions": [entry(round_number, open_ids)]})
-
-elif role == "code-critic":
-    round_number = latest.get("round")
-    open_ids = open_material_ids(latest, root_job)
-    if not open_ids or round_number % 3:
-        print("none")
-        raise SystemExit(0)
-    current = records.get(root_job) or load(jobs / f"{root_job}.json", "critique root record")
-    previous = exhaustions(current)
-    if not previous:
-        fail(
-            "code critique budget exhausted; dispatch an implementer follow-up that enumerates "
-            "every open finding identifier before continuing the code-critic chain: "
-            + ", ".join(open_ids)
-        )
-    if previous[0].get("round") != round_number:
-        fail("a second critique exhaustion is refused outright; waiting on the human is the only remedy")
-
-elif role == "implementer":
-    implementation_ids = {
-        job_id for job_id in records if chain_root(job_id) == root_job
-    }
-    critic_roots = [
-        value
-        for value in records.values()
-        if value.get("role") == "code-critic"
-        and value.get("parentJob") is None
-        and value.get("reviews") in implementation_ids
-    ]
-    for critic_root in critic_roots:
-        critic_id = critic_root["jobId"]
-        critic_latest = latest_member(critic_id)
-        if critic_latest is None:
-            continue
-        round_number = critic_latest["round"]
-        open_ids = open_material_ids(critic_latest, critic_id)
-        if not open_ids or round_number % 3:
-            continue
-        previous = exhaustions(critic_root)
-        if previous:
-            if previous[0].get("round") == round_number:
-                continue
-            fail("a second critique exhaustion is refused outright; waiting on the human is the only remedy")
-        require_enumeration(open_ids)
-        actions.append({"jobId": critic_id, "critiqueExhaustions": [entry(round_number, open_ids)]})
-
-if not actions:
-    print("none")
-    raise SystemExit(0)
-output_path.write_text(json.dumps({"records": actions}, sort_keys=True) + "\n", encoding="utf-8")
-print("record")
-PY
+  "$ms" dispatch critique-exhaustion --repo "$root" --root-job "$1" --role "$2" \
+    --latest "$3" --message "$4" --successor "$5" --output "$6"
 }
 
 record_critique_exhaustions() { # manifest
-  local manifest=$1 index target patch target_status
-  while IFS=$'\t' read -r index target; do
-    patch=$(mktemp "$record_locks/exhaustion-record.XXXXXX")
-    python3 - "$manifest" "$index" "$patch" <<'PY'
-import json, sys
-from pathlib import Path
-manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-item = manifest["records"][int(sys.argv[2])]
-Path(sys.argv[3]).write_text(json.dumps({"critiqueExhaustions": item["critiqueExhaustions"]}) + "\n")
-PY
+  local manifest=$1 target patch target_status
+  while IFS=$'\t' read -r target patch; do
     target_status=$(json_field "$jobs/$target.json" status)
     lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$target" \
       --expect "$target_status" --status "$target_status" --patch "$patch" \
       || die 1 "could not record the critique exhaustion successor on code-critic chain $target"
     rm -f "$patch"
-  done < <(python3 - "$manifest" <<'PY'
-import json, sys
-from pathlib import Path
-value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-for index, item in enumerate(value["records"]):
-    print(f"{index}\t{item['jobId']}")
-PY
-)
+  done < <("$ms" dispatch exhaustion-patches --manifest "$manifest" --dir "$record_locks")
 }
 
 follow_up() {
@@ -1919,17 +1236,8 @@ follow_up() {
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
   [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
-  python3 - "$setup_json" "$child" "$role" "$root_id" "$current_main_id" "$current_claim_epoch" <<'PY'
-import json,sys
-from datetime import datetime,timezone
-from pathlib import Path
-path,job,role,parent,main_id,epoch=sys.argv[1:]
-Path(path).write_text(json.dumps({
-  "jobId":job,"role":role,"parentJob":parent,"status":"pending-setup","phase":"setup",
-  "error":None,"mainId":main_id or None,"claimEpoch":int(epoch) if epoch else None,
-  "createdAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-},indent=2,sort_keys=True)+"\n")
-PY
+  "$ms" dispatch build-setup --output "$setup_json" --job "$child" --role "$role" \
+    --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
   rm -f "$setup_json"
   if [[ "$role" == design-critic ]]; then
@@ -2021,41 +1329,13 @@ PY
   input_hash=$(sha256_file "$delivery_content")
   write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
-  python3 - "$latest" "$record_json" "$child" "$round" "$(basename "${latest%.json}")" "$snapshot_path" "$fallbacks" "$signal" "$handshake_budget" "$resume_mode" "$input_bytes" "$input_hash" "$mission_turn" "$current_main_id" "$current_claim_epoch" "$cap_resolution" <<'PY'
-import json, sys
-from datetime import datetime, timezone
-from pathlib import Path
-parent = json.loads(Path(sys.argv[1]).read_text()); out = Path(sys.argv[2])
-job, round_number, parent_job, snapshot, fallbacks, signal, handshake_budget, resume_mode, size, digest, mission_turn, main_id, claim_epoch, cap_resolution_path = sys.argv[3:]
-authority = json.loads(Path(cap_resolution_path).read_text(encoding="utf-8"))
-source = authority["source"]
-record = {key: parent[key] for key in ("role", "mission", "runtime", "reviews", "workspaceRoot", "baseSha", "branch", "permissions", "requestedModel")}
-record.update({
-  "jobId": job, "round": int(round_number), "parentJob": parent_job, "status": "pending", "phase": "handshake", "error": None,
-  "mainId": main_id or None, "claimEpoch": int(claim_epoch) if claim_epoch else None,
-  "permissions": {
-    "requested": parent["permissions"]["requested"],
-    "effective": None,
-    "enforcementSnapshot": snapshot,
-  }, "pid": None, "pidStartedAt": None, "pgid": None,
-  "custodyProcesses": [],
-  "instanceTag": f"metasystem-job-{job}", "sessionId": parent["sessionId"] if resume_mode == "resumed" else None,
-  "turnId": mission_turn or None,
-  "capMin": authority["capMin"], "capDeadline": authority["capDeadline"],
-  "capResolution": {
-    "requestedMin": authority["capMin"], "rule": source["rule"], "origin": source["origin"],
-    "truncatedBy": source["truncatedBy"], "deadline": authority["capDeadline"],
-  },
-  "effectiveModel": None, "overridden": False, "capabilitySnapshot": snapshot,
-  "capabilityFallbacks": json.loads(fallbacks), "sessionEstablishedSignal": signal == "true",
-  "sessionEstablishedTimeoutSec": int(handshake_budget),
-  "resumeMode": resume_mode,
-  "input": {"bytes": int(size), "hash": digest, "delivery": "stdin"},
-  "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "endedAt": None,
-  "usage": None, "mirror": None,
-})
-out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-PY
+  "$ms" dispatch build-follow-record --output "$record_json" --parent "$latest" \
+    --job "$child" --round "$round" --parent-job "$(basename "${latest%.json}")" \
+    --snapshot "$snapshot_path" --fallbacks "$fallbacks" --signal "$signal" \
+    --handshake-budget "$handshake_budget" --resume-mode "$resume_mode" \
+    --input-bytes "$input_bytes" --input-hash "$input_hash" \
+    --mission-turn "$mission_turn" --main-id "$current_main_id" \
+    --claim-epoch "$current_claim_epoch" --cap-resolution "$cap_resolution"
   rm -f "$cap_resolution"
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$child" --source "$record_json"
   release_cap_authority_lock
@@ -2117,41 +1397,7 @@ close_chain() {
   [[ "$root_id" == "$job" ]] || die 1 "close requires the root job id: $root_id"
   acquire_chain_lock "$root_id"; trap 'release_chain_lock "$root_id"' EXIT
   root_record="$jobs/$root_id.json"
-  python3 - "$root" "$root_id" <<'PY'
-import hashlib, json, sys
-from pathlib import Path
-repo, root = Path(sys.argv[1]), sys.argv[2]
-jobs = repo / "artifacts" / "agents" / "jobs"
-records = []
-for path in jobs.glob("*.json"):
-    try: value = json.loads(path.read_text())
-    except (OSError, ValueError): continue
-    current = value; seen = set()
-    while current.get("parentJob") is not None:
-        parent = current.get("parentJob")
-        if parent in seen: break
-        seen.add(parent)
-        try: current = json.loads((jobs / f"{parent}.json").read_text())
-        except (OSError, ValueError): break
-    if current.get("jobId") == root: records.append(value)
-if not records or any(value.get("status") not in {"completed", "failed", "timeout", "cancelled"} for value in records):
-    raise SystemExit("cannot close a chain with a non-terminal record")
-mirror = json.loads((jobs / f"{root}.json").read_text()).get("mirror")
-if not isinstance(mirror, dict): raise SystemExit("cannot close an unmirrored chain")
-manifest_path = Path(mirror.get("path", "")) / "manifest.json"
-try: manifest = json.loads(manifest_path.read_text())
-except (OSError, ValueError): raise SystemExit("cannot close a chain without its durable manifest")
-files = manifest.get("files", {})
-for value in records:
-    job = value["jobId"]; round_number = value["round"]
-    if f"jobs/{job}.json" not in files: raise SystemExit(f"manifest does not cover job record {job}")
-    if value.get("role") == "implementer":
-        relative = f"rounds/{round_number}/diff.patch"
-        source = repo / "artifacts" / "agents" / root / relative
-        if relative not in files or not source.exists(): raise SystemExit(f"implementer diff.patch is not mirrored for {job}")
-        digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        if files[relative].get("sha256") != digest: raise SystemExit(f"manifest has a stale implementer diff.patch for {job}")
-PY
+  "$ms" dispatch close-check --repo "$root" --root "$root_id"
   status=$(json_field "$root_record" status)
   patch=$(mktemp "$record_locks/close.XXXXXX")
   if [[ "$runner_closed" == true ]]; then
@@ -2211,6 +1457,9 @@ reap_jobs() {
       for record in "$jobs"/*.json; do [[ -f "$record" ]] && reap_one "$(basename "${record%.json}")"; done
     fi
     if [[ -n "$supervision_heartbeat" ]]; then
+      # TODO(go-wiring): the reaper heartbeat (identity probe + fsynced atomic
+      # replace) belongs beside the other supervision heartbeat writers, not in
+      # the dispatch verb family; it stays python until that surface exists.
       python3 - "$supervision_heartbeat" "$$" "$supervision_tag" "$process_census" <<'PY'
 import json,os,subprocess,sys,tempfile,time
 from pathlib import Path
@@ -2228,27 +1477,15 @@ PY
 }
 
 internal_register_custody() {
-  local job= pid= record status tag started patch
+  local job= pid= started
   while (($#)); do
     case "$1" in --job) job=$2; shift 2 ;; --pid) pid=$2; shift 2 ;; *) exit 2 ;; esac
   done
   valid_id "$job" && [[ "$pid" =~ ^[1-9][0-9]*$ && -f "$jobs/$job.json" ]] || exit 2
-  record="$jobs/$job.json"; status=$(json_field "$record" status); tag=$(json_field "$record" instanceTag)
-  case "$status" in pending|running) ;; *) exit 1 ;; esac
   started=$("$process_census" started-at --pid "$pid") || exit 1
-  patch=$(mktemp "$record_locks/custody.XXXXXX")
-  # TODO(go-wiring): a `dispatch custody-add` verb should build the
-  # custodyProcesses patch (dedupe by pid+pidStartedAt, then append) so this
-  # custody write lives beside the record lifecycle it patches.
-  python3 - "$record" "$patch" "$pid" "$started" "$tag" <<'PY'
-import json,sys
-from pathlib import Path
-record=json.loads(Path(sys.argv[1]).read_text()); output=Path(sys.argv[2]); pid,start,tag=int(sys.argv[3]),int(sys.argv[4]),sys.argv[5]
-items=[item for item in record.get("custodyProcesses",[]) if item.get("pid") != pid or item.get("pidStartedAt") != start]
-items.append({"pid":pid,"pidStartedAt":start,"instanceTag":tag})
-output.write_text(json.dumps({"custodyProcesses":items})+"\n")
-PY
-  record_cas "$job" "$status" "$status" "$patch"
+  # The read-dedupe-append-write runs under the record lock in one verb, so a
+  # custody registration can never race a status transition.
+  "$ms" dispatch custody-add --root "$root" --job "$job" --pid "$pid" --pid-started "$started"
 }
 
 internal_handshake() {
@@ -2262,54 +1499,9 @@ internal_handshake() {
   done
   valid_id "$job" && [[ -f "$effective" && -f "$jobs/$job.json" ]] || exit 2
   patch=$(mktemp "$record_locks/handshake-patch.XXXXXX")
-  set +e
-  # TODO(go-wiring): a `dispatch handshake-eval` verb should compare the
-  # effective permissions against the requested floor and emit the running or
-  # failed target plus its patch, so the pending->running transition decision
-  # lives in internal/dispatch with the other status transitions.
-  python3 - "$jobs/$job.json" "$effective" "$session" "$turn" "$model" "$signal" "$patch" <<'PY'
-import json, sys
-from pathlib import Path
-record = json.loads(Path(sys.argv[1]).read_text()); effective = json.loads(Path(sys.argv[2]).read_text())
-session, turn, model, signal, output = sys.argv[3:]
-requested = record["permissions"]["requested"]
-errors = []
-orders = {
-    "network": {"deny": 0, "ask": 1, "allow": 2},
-    "approvals": {"deny": 0, "ask": 1, "allow": 2},
-    "tools": {"read-only": 0, "runtime-default": 1},
-}
-for field, order in orders.items():
-    if field not in effective:
-        continue
-    requested_value, effective_value = requested[field], effective[field]
-    if requested_value in order and effective_value in order:
-        if order[effective_value] > order[requested_value]: errors.append(field)
-    elif effective_value != requested_value:
-        errors.append(field)
-for field in ("readRoots", "writeRoots"):
-    if field in effective and not set(effective[field]).issubset(set(requested[field])): errors.append(field)
-if signal == "true" and not session: errors.append("sessionId")
-patch = {
-    "permissions": {
-        "requested": requested,
-        "effective": effective,
-        "enforcementSnapshot": record["permissions"]["enforcementSnapshot"],
-    },
-    "effectiveModel": model,
-    "turnId": record.get("turnId") or turn or None,
-}
-if session: patch["sessionId"] = session
-if errors:
-    patch.update({"error": "permissions_mismatch:" + ",".join(errors) if errors != ["sessionId"] else "handshake_missing_session_id", "phase": "handshake"})
-    target = "failed"
-else:
-    patch.update({"error": None, "phase": "running"}); target = "running"
-Path(output).write_text(json.dumps({"target": target, "patch": patch}) + "\n")
-PY
-  py_status=$?
-  set -e
-  [[ $py_status -eq 0 ]] || exit 1
+  "$ms" dispatch handshake-eval --record "$jobs/$job.json" --effective "$effective" \
+    --session "$session" --turn "$turn" --model "$model" --signal "$signal" \
+    --output "$patch" || exit 1
   target=$(json_field "$patch" target)
   body=$(mktemp "$record_locks/handshake-body.XXXXXX")
   json_field "$patch" patch >"$body"

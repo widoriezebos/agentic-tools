@@ -1,0 +1,638 @@
+package dispatch
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// writeJSONFile marshals a value into dir/name and returns the path.
+func writeJSONFile(t *testing.T, dir, name string, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal %s: %v", name, err)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir for %s: %v", name, err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+	return path
+}
+
+func readJSONFile(t *testing.T, path string) map[string]any {
+	t.Helper()
+	record, err := readObject(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return record
+}
+
+// jobsDirWithChain lays down a root record, a round-2 follow-up, and an
+// unrelated job.
+func jobsDirWithChain(t *testing.T) string {
+	t.Helper()
+	jobs := t.TempDir()
+	writeJSONFile(t, jobs, "root-a.json", map[string]any{
+		"jobId": "root-a", "round": 1, "parentJob": nil, "status": "completed",
+		"runtime": "fake", "usage": map[string]any{"inputTokens": 10, "outputTokens": 2},
+	})
+	writeJSONFile(t, jobs, "root-a-r2.json", map[string]any{
+		"jobId": "root-a-r2", "round": 2, "parentJob": "root-a", "status": "failed",
+		"runtime": "fake", "usage": map[string]any{"inputTokens": 5,
+			"cost": map[string]any{"amount": 1.5, "currency": "USD"}},
+	})
+	writeJSONFile(t, jobs, "other.json", map[string]any{
+		"jobId": "other", "round": 1, "parentJob": nil, "status": "running",
+	})
+	return jobs
+}
+
+func TestLatestChainRecordPicksHighestRound(t *testing.T) {
+	jobs := jobsDirWithChain(t)
+	path, err := LatestChainRecord(jobs, "root-a")
+	if err != nil {
+		t.Fatalf("LatestChainRecord: %v", err)
+	}
+	if filepath.Base(path) != "root-a-r2.json" {
+		t.Fatalf("latest = %s, want root-a-r2.json", path)
+	}
+	if _, err := LatestChainRecord(jobs, "nobody"); err == nil {
+		t.Fatalf("expected a refusal for an unknown chain")
+	}
+}
+
+func TestChainMemberStatusesTerminalOnly(t *testing.T) {
+	jobs := jobsDirWithChain(t)
+	lines, err := ChainMemberStatuses(jobs, "root-a", true)
+	if err != nil {
+		t.Fatalf("ChainMemberStatuses: %v", err)
+	}
+	want := []string{"root-a-r2|failed", "root-a|completed"}
+	if strings.Join(lines, ",") != strings.Join(want, ",") {
+		t.Fatalf("members = %v, want %v", lines, want)
+	}
+}
+
+func TestChainUsageAggregatesAndDetectsUnchanged(t *testing.T) {
+	jobs := jobsDirWithChain(t)
+	patch := filepath.Join(t.TempDir(), "usage.json")
+	unchanged, err := ChainUsage(jobs, "root-a", patch)
+	if err != nil || unchanged {
+		t.Fatalf("ChainUsage first pass: unchanged=%v err=%v", unchanged, err)
+	}
+	value := readJSONFile(t, patch)
+	usage, _ := value["chainUsage"].(map[string]any)
+	tokens := usage["tokens"].(map[string]any)["fake"].(map[string]any)
+	if tokens["inputTokens"].(json.Number).String() != "15" {
+		t.Fatalf("inputTokens = %v, want 15", tokens["inputTokens"])
+	}
+	if tokens["reasoningTokens"] != nil {
+		t.Fatalf("reasoningTokens = %v, want null", tokens["reasoningTokens"])
+	}
+	if usage["cost"].(map[string]any)["USD"].(json.Number).String() != "1.5" {
+		t.Fatalf("cost = %v, want USD 1.5", usage["cost"])
+	}
+
+	// Stamp the aggregate onto the root record; the second pass is unchanged.
+	root := readJSONFile(t, filepath.Join(jobs, "root-a.json"))
+	root["chainUsage"] = usage
+	writeRecord(filepath.Join(jobs, "root-a.json"), root)
+	unchanged, err = ChainUsage(jobs, "root-a", patch)
+	if err != nil || !unchanged {
+		t.Fatalf("ChainUsage second pass: unchanged=%v err=%v, want true", unchanged, err)
+	}
+}
+
+func TestCustodyAddDedupesAndRefusesTerminal(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	writeJSONFile(t, jobs, "job-c.json", map[string]any{
+		"jobId": "job-c", "status": "running", "instanceTag": "metasystem-job-job-c",
+		"custodyProcesses": []any{map[string]any{"pid": 41, "pidStartedAt": 5, "instanceTag": "metasystem-job-job-c"}},
+	})
+	// The exact identity again collapses to one entry; a recycled pid with a
+	// different start time is a distinct process and keeps its own entry.
+	if err := CustodyAdd(root, "job-c", 41, 5); err != nil {
+		t.Fatalf("CustodyAdd exact duplicate: %v", err)
+	}
+	record := readJSONFile(t, filepath.Join(jobs, "job-c.json"))
+	if items := record["custodyProcesses"].([]any); len(items) != 1 {
+		t.Fatalf("custody entries after duplicate = %d, want 1", len(items))
+	}
+	if err := CustodyAdd(root, "job-c", 41, 9); err != nil {
+		t.Fatalf("CustodyAdd recycled pid: %v", err)
+	}
+	record = readJSONFile(t, filepath.Join(jobs, "job-c.json"))
+	if items := record["custodyProcesses"].([]any); len(items) != 2 {
+		t.Fatalf("custody entries after recycled pid = %d, want 2", len(items))
+	}
+
+	writeJSONFile(t, jobs, "job-done.json", map[string]any{
+		"jobId": "job-done", "status": "completed", "instanceTag": "t",
+	})
+	err := CustodyAdd(root, "job-done", 1, 1)
+	var op *OpError
+	if err == nil || !asOpError(err, &op) || op.Code != 1 || op.Message != "" {
+		t.Fatalf("terminal custody add = %v, want silent exit 1", err)
+	}
+}
+
+func asOpError(err error, target **OpError) bool {
+	op, ok := err.(*OpError)
+	if ok {
+		*target = op
+	}
+	return ok
+}
+
+func TestHandshakeEvalVerdicts(t *testing.T) {
+	dir := t.TempDir()
+	requested := map[string]any{
+		"readRoots": []any{"/repo"}, "writeRoots": []any{},
+		"network": "deny", "approvals": "deny", "tools": "read-only",
+	}
+	record := writeJSONFile(t, dir, "record.json", map[string]any{
+		"jobId": "j", "permissions": map[string]any{
+			"requested": requested, "effective": nil, "enforcementSnapshot": "snap.json",
+		},
+	})
+	output := filepath.Join(dir, "out.json")
+
+	matching := writeJSONFile(t, dir, "effective-ok.json", map[string]any{
+		"readRoots": []any{"/repo"}, "writeRoots": []any{},
+		"network": "deny", "approvals": "deny", "tools": "read-only",
+	})
+	if err := HandshakeEval(record, matching, "sess-1", "turn-1", "model-x", true, output); err != nil {
+		t.Fatalf("HandshakeEval: %v", err)
+	}
+	result := readJSONFile(t, output)
+	if result["target"] != "running" {
+		t.Fatalf("target = %v, want running", result["target"])
+	}
+	patch := result["patch"].(map[string]any)
+	if patch["sessionId"] != "sess-1" || patch["turnId"] != "turn-1" || patch["error"] != nil {
+		t.Fatalf("running patch = %v", patch)
+	}
+
+	wider := writeJSONFile(t, dir, "effective-wide.json", map[string]any{
+		"network": "allow", "readRoots": []any{"/repo", "/etc"},
+	})
+	if err := HandshakeEval(record, wider, "sess-1", "", "model-x", true, output); err != nil {
+		t.Fatalf("HandshakeEval wide: %v", err)
+	}
+	result = readJSONFile(t, output)
+	patch = result["patch"].(map[string]any)
+	if result["target"] != "failed" || patch["error"] != "permissions_mismatch:network,readRoots" {
+		t.Fatalf("wide verdict = %v / %v", result["target"], patch["error"])
+	}
+
+	silent := writeJSONFile(t, dir, "effective-silent.json", map[string]any{"network": "deny"})
+	if err := HandshakeEval(record, silent, "", "", "model-x", true, output); err != nil {
+		t.Fatalf("HandshakeEval silent: %v", err)
+	}
+	result = readJSONFile(t, output)
+	patch = result["patch"].(map[string]any)
+	if result["target"] != "failed" || patch["error"] != "handshake_missing_session_id" {
+		t.Fatalf("missing-session verdict = %v / %v", result["target"], patch["error"])
+	}
+	if _, present := patch["sessionId"]; present {
+		t.Fatalf("missing-session patch must not carry a sessionId")
+	}
+}
+
+func TestComputeReapFacts(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	iso := func(at time.Time) string { return at.Format("2006-01-02T15:04:05Z") }
+
+	abandoned := writeJSONFile(t, dir, "setup-old.json", map[string]any{
+		"status": "pending-setup", "createdAt": iso(now.Add(-11 * time.Minute)),
+	})
+	facts, err := ComputeReapFacts(abandoned, 2, now)
+	if err != nil || !facts.SetupAbandoned {
+		t.Fatalf("old pending-setup facts = %+v err=%v", facts, err)
+	}
+	fresh := writeJSONFile(t, dir, "setup-new.json", map[string]any{
+		"status": "pending-setup", "createdAt": iso(now.Add(-1 * time.Minute)),
+	})
+	if facts, _ = ComputeReapFacts(fresh, 2, now); facts.SetupAbandoned {
+		t.Fatalf("fresh pending-setup marked abandoned")
+	}
+
+	// Inside the launch-stamped handshake deadline the job is deferred; past
+	// it (plus grace) it is not.
+	waiting := writeJSONFile(t, dir, "waiting.json", map[string]any{
+		"status": "pending", "sessionEstablishedTimeoutSec": 30,
+		"handshakeDeadline": now.Unix() + 10, "startedAt": iso(now),
+	})
+	if facts, _ = ComputeReapFacts(waiting, 2, now); !facts.HandshakeWaiting {
+		t.Fatalf("job inside its handshake deadline is not waiting")
+	}
+	overdue := writeJSONFile(t, dir, "overdue.json", map[string]any{
+		"status": "pending", "sessionEstablishedTimeoutSec": 30,
+		"handshakeDeadline": now.Unix() - 5, "startedAt": iso(now),
+	})
+	if facts, _ = ComputeReapFacts(overdue, 2, now); facts.HandshakeWaiting {
+		t.Fatalf("job past its handshake deadline still waiting")
+	}
+
+	// A running job with a session is out of its handshake, and its budget
+	// verdict matches the supervision reaper's.
+	expired := writeJSONFile(t, dir, "expired.json", map[string]any{
+		"status": "running", "sessionId": "s", "sessionEstablishedTimeoutSec": 30,
+		"startedAt": iso(now.Add(-2 * time.Hour)), "capMin": 60,
+	})
+	facts, err = ComputeReapFacts(expired, 2, now)
+	if err != nil || facts.HandshakeWaiting || !facts.BudgetExpired {
+		t.Fatalf("expired running facts = %+v err=%v", facts, err)
+	}
+}
+
+func TestExpandPermissions(t *testing.T) {
+	dir := t.TempDir()
+	repo := t.TempDir()
+	workspace := filepath.Join(repo, "wt")
+	os.MkdirAll(workspace, 0o755)
+	envelope := writeJSONFile(t, dir, "envelope.json", map[string]any{
+		"readRoots": []any{".", "docs"}, "writeRoots": []any{"<worktree>"},
+		"network": "allow", "approvals": "deny", "tools": "read-only",
+	})
+	output := filepath.Join(dir, "expanded.json")
+	if err := ExpandPermissions(envelope, repo, workspace, true, "builder", "deny", output); err != nil {
+		t.Fatalf("ExpandPermissions: %v", err)
+	}
+	expanded := readJSONFile(t, output)
+	if expanded["preset"] != "builder" || expanded["network"] != "deny" {
+		t.Fatalf("expanded = %v", expanded)
+	}
+	reads := expanded["readRoots"].([]any)
+	if reads[0] != resolvePath(repo) || reads[1] != resolvePath(filepath.Join(repo, "docs")) {
+		t.Fatalf("readRoots = %v", reads)
+	}
+	if expanded["writeRoots"].([]any)[0] != resolvePath(workspace) {
+		t.Fatalf("writeRoots = %v", expanded["writeRoots"])
+	}
+
+	if err := ExpandPermissions(envelope, repo, workspace, false, "builder", "", output); err == nil ||
+		!strings.Contains(err.Error(), "require --worktree") {
+		t.Fatalf("writable without worktree = %v", err)
+	}
+	escape := writeJSONFile(t, dir, "escape.json", map[string]any{
+		"readRoots": []any{}, "writeRoots": []any{"/"},
+		"network": "deny", "approvals": "deny", "tools": "read-only",
+	})
+	if err := ExpandPermissions(escape, repo, workspace, true, "custom", "", output); err == nil ||
+		!strings.Contains(err.Error(), "escapes the job worktree") {
+		t.Fatalf("escaping write root = %v", err)
+	}
+}
+
+func TestBriefMode(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.md")
+	os.WriteFile(good, []byte("Title\nWorking Mode: deep-work\nBody\n"), 0o644)
+	mode, err := BriefMode(good)
+	if err != nil || mode != "deep-work" {
+		t.Fatalf("BriefMode = %q, %v", mode, err)
+	}
+	for name, content := range map[string]string{
+		"none.md":        "Title\n",
+		"double.md":      "Working Mode: a\nWorking Mode: b\n",
+		"placeholder.md": "Working Mode: <fill me>\n",
+	} {
+		path := filepath.Join(dir, name)
+		os.WriteFile(path, []byte(content), 0o644)
+		if _, err := BriefMode(path); err == nil {
+			t.Fatalf("%s: expected a refusal", name)
+		}
+	}
+}
+
+func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
+	root := t.TempDir()
+	tmp := t.TempDir()
+	workspace := filepath.Join(tmp, "ws")
+	os.MkdirAll(workspace, 0o755)
+	for _, args := range [][]string{
+		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
+		{"commit", "-q", "--allow-empty", "-m", "base"},
+	} {
+		cmd := exec.Command("git", append([]string{"-C", workspace}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	capResolution := filepath.Join(tmp, "cap.json")
+	if err := WriteCapResolution(capResolution, 120, "built-in", "default"); err != nil {
+		t.Fatalf("WriteCapResolution: %v", err)
+	}
+	permissions := writeJSONFile(t, tmp, "perm.json", map[string]any{
+		"preset": "none", "readRoots": []any{}, "writeRoots": []any{},
+		"network": "deny", "approvals": "deny", "tools": "read-only",
+	})
+
+	setup := filepath.Join(tmp, "setup.json")
+	if err := BuildSetup(setup, "job-b", "implementer", "", "main-1", "7"); err != nil {
+		t.Fatalf("BuildSetup: %v", err)
+	}
+	if err := RecordCreate(root, "job-b", setup); err != nil {
+		t.Fatalf("RecordCreate from built setup: %v", err)
+	}
+
+	recordPath := filepath.Join(tmp, "record.json")
+	err := BuildRecord(BuildRecordParams{
+		Output: recordPath, Job: "job-b", Role: "implementer", Runtime: "fake",
+		Workspace: workspace, CapResolution: capResolution, Model: "m1",
+		Snapshot: "artifacts/agents/capabilities/x.json", InputBytes: 12, InputHash: "h",
+		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
+		MainID: "main-1", ClaimEpoch: "7",
+	})
+	if err != nil {
+		t.Fatalf("BuildRecord: %v", err)
+	}
+	if err := RecordSetup(root, "job-b", recordPath); err != nil {
+		t.Fatalf("RecordSetup from built record: %v", err)
+	}
+	record := readJSONFile(t, filepath.Join(root, "artifacts", "agents", "jobs", "job-b.json"))
+	if record["capMin"].(json.Number).String() != "120" || record["baseSha"] == "" {
+		t.Fatalf("built record identity = capMin %v baseSha %v", record["capMin"], record["baseSha"])
+	}
+
+	// The follow-up round inherits the parent identity and resumes its session.
+	parent := readJSONFile(t, filepath.Join(root, "artifacts", "agents", "jobs", "job-b.json"))
+	parent["sessionId"] = "sess-9"
+	parentPath := filepath.Join(tmp, "parent.json")
+	writeRecord(parentPath, parent)
+	followPath := filepath.Join(tmp, "follow.json")
+	err = BuildFollowRecord(BuildFollowRecordParams{
+		Output: followPath, Parent: parentPath, Job: "job-b-r2", Round: 2,
+		ParentJob: "job-b", Snapshot: "artifacts/agents/capabilities/x.json",
+		Fallbacks: "[]", Signal: true, HandshakeBudget: 20, ResumeMode: "resumed",
+		InputBytes: 3, InputHash: "h2", MainID: "main-1", ClaimEpoch: "7",
+		CapResolution: capResolution,
+	})
+	if err != nil {
+		t.Fatalf("BuildFollowRecord: %v", err)
+	}
+	follow := readJSONFile(t, followPath)
+	if follow["sessionId"] != "sess-9" || follow["parentJob"] != "job-b" || follow["resumeMode"] != "resumed" {
+		t.Fatalf("follow record = sessionId %v parentJob %v resumeMode %v",
+			follow["sessionId"], follow["parentJob"], follow["resumeMode"])
+	}
+}
+
+func TestCensusFreshVerdicts(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	statePath := writeJSONFile(t, dir, "state.json", map[string]any{"generation": 3})
+	stateBytes, _ := os.ReadFile(statePath)
+	digest := sha256.Sum256(stateBytes)
+	base := map[string]any{
+		"schemaVersion": 2, "writer": "watch-background-jobs.sh", "verdict": "SUCCESS",
+		"completedAtEpoch": now.Unix() - 5, "intervalSec": 30, "fingerprint": "f",
+		"counts": map[string]any{}, "inventory": []any{}, "diagnostics": []any{}, "errors": []any{},
+		"generation": 3, "stateDigest": hex.EncodeToString(digest[:]),
+	}
+	verdict := writeJSONFile(t, dir, "census.json", base)
+	if err := CensusFresh(verdict, statePath, "arm.sh", "/repo", now); err != nil {
+		t.Fatalf("fresh census refused: %v", err)
+	}
+
+	stale := map[string]any{}
+	for k, v := range base {
+		stale[k] = v
+	}
+	stale["completedAtEpoch"] = now.Unix() - 500
+	verdict = writeJSONFile(t, dir, "census-stale.json", stale)
+	err := CensusFresh(verdict, statePath, "arm.sh", "/repo", now)
+	if err == nil || !strings.Contains(err.Error(), "census verdict is stale") {
+		t.Fatalf("stale census = %v", err)
+	}
+
+	mismatch := map[string]any{}
+	for k, v := range base {
+		mismatch[k] = v
+	}
+	mismatch["generation"] = 2
+	verdict = writeJSONFile(t, dir, "census-gen.json", mismatch)
+	err = CensusFresh(verdict, statePath, "arm.sh", "/repo", now)
+	if err == nil || !strings.Contains(err.Error(), "censusGeneration=2 armedGeneration=3") {
+		t.Fatalf("generation mismatch = %v", err)
+	}
+}
+
+func TestWatcherCeiling(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	heartbeat := writeJSONFile(t, dir, "hb.json", map[string]any{
+		"pid": 42, "pidStartedAt": 100, "instanceTag": "w-1",
+		"loadedCapMin": 240, "observedAtEpoch": now.Unix() - 3,
+	})
+	state := writeJSONFile(t, dir, "state.json", map[string]any{
+		"intervalSec": 30,
+		"components": map[string]any{"watcher": map[string]any{
+			"pid": 42, "pidStartedAt": 100, "instanceTag": "w-1", "heartbeat": heartbeat,
+		}},
+	})
+	ceiling, err := WatcherCeiling(state, now)
+	if err != nil || ceiling != 240 {
+		t.Fatalf("WatcherCeiling = %d, %v", ceiling, err)
+	}
+
+	writeJSONFile(t, dir, "hb.json", map[string]any{
+		"pid": 43, "pidStartedAt": 100, "instanceTag": "w-1",
+		"loadedCapMin": 240, "observedAtEpoch": now.Unix(),
+	})
+	if _, err := WatcherCeiling(state, now); err == nil ||
+		!strings.Contains(err.Error(), "does not match the armed watcher") {
+		t.Fatalf("identity mismatch = %v", err)
+	}
+}
+
+// mirrorFixture builds a repo with one terminal single-record chain plus its
+// payload, returning (repoRoot, evidence, job).
+func mirrorFixture(t *testing.T) (string, string, string) {
+	t.Helper()
+	repo := t.TempDir()
+	evidence := t.TempDir()
+	agents := filepath.Join(repo, "artifacts", "agents")
+	writeJSONFile(t, filepath.Join(agents, "jobs"), "job-m.json", map[string]any{
+		"jobId": "job-m", "round": 1, "parentJob": nil, "status": "completed",
+		"role": "implementer", "mirror": nil,
+		"capabilitySnapshot": "artifacts/agents/capabilities/snap.json",
+	})
+	os.WriteFile(filepath.Join(agents, "jobs", "job-m.log"), []byte("log\n"), 0o644)
+	payload := filepath.Join(agents, "job-m")
+	os.MkdirAll(filepath.Join(payload, "rounds", "1"), 0o755)
+	os.WriteFile(filepath.Join(payload, "brief.md"), []byte("brief\n"), 0o644)
+	os.WriteFile(filepath.Join(payload, "rounds", "1", "diff.patch"), []byte("patch\n"), 0o644)
+	writeJSONFile(t, filepath.Join(agents, "capabilities"), "snap.json", map[string]any{"ok": true})
+	return repo, evidence, "job-m"
+}
+
+func TestMirrorAndCloseCheck(t *testing.T) {
+	repo, evidence, job := mirrorFixture(t)
+	result := filepath.Join(t.TempDir(), "result.json")
+	if err := Mirror(repo, repo, evidence, job, job, result); err != nil {
+		t.Fatalf("Mirror: %v", err)
+	}
+	first := readJSONFile(t, result)
+	if first["unchanged"] != false || asString(first["manifest"]) == "" {
+		t.Fatalf("first mirror result = %v", first)
+	}
+	// A second pass with nothing changed is a no-op with the same manifest.
+	if err := Mirror(repo, repo, evidence, job, job, result); err != nil {
+		t.Fatalf("Mirror second pass: %v", err)
+	}
+	second := readJSONFile(t, result)
+	if second["unchanged"] != true || second["manifest"] != first["manifest"] {
+		t.Fatalf("second mirror result = %v", second)
+	}
+
+	// Closing requires the mirror stamp on the root record.
+	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+	if err := CloseCheck(repo, job); err == nil {
+		t.Fatalf("CloseCheck passed without a mirror stamp")
+	}
+	record := readJSONFile(t, filepath.Join(jobs, job+".json"))
+	record["mirror"] = map[string]any{"path": asString(first["path"]), "manifest": first["manifest"]}
+	writeRecord(filepath.Join(jobs, job+".json"), record)
+	// The record changed after mirroring, so the manifest is stale until the
+	// mirror runs once more.
+	if err := Mirror(repo, repo, evidence, job, job, result); err != nil {
+		t.Fatalf("Mirror after stamp: %v", err)
+	}
+	if err := CloseCheck(repo, job); err != nil {
+		t.Fatalf("CloseCheck: %v", err)
+	}
+
+	// A drifted implementer diff refuses the close.
+	os.WriteFile(filepath.Join(repo, "artifacts", "agents", job, "rounds", "1", "diff.patch"), []byte("drift\n"), 0o644)
+	if err := CloseCheck(repo, job); err == nil ||
+		!strings.Contains(err.Error(), "stale implementer diff.patch") {
+		t.Fatalf("stale diff close = %v", err)
+	}
+}
+
+func TestMirrorRefusesEvidenceInsideRepository(t *testing.T) {
+	repo, _, job := mirrorFixture(t)
+	result := filepath.Join(t.TempDir(), "result.json")
+	err := Mirror(repo, repo, filepath.Join(repo, "evidence"), job, job, result)
+	if err == nil || !strings.Contains(err.Error(), "inside the repository") {
+		t.Fatalf("evidence inside repo = %v", err)
+	}
+}
+
+// critiqueFixture lays out a design-critic chain at round 3 with one open
+// material finding.
+func critiqueFixture(t *testing.T) (repo string) {
+	t.Helper()
+	repo = t.TempDir()
+	agents := filepath.Join(repo, "artifacts", "agents")
+	writeJSONFile(t, filepath.Join(agents, "jobs"), "crit.json", map[string]any{
+		"jobId": "crit", "role": "design-critic", "round": 1, "parentJob": nil,
+		"status": "completed", "critiqueExhaustions": []any{},
+	})
+	writeJSONFile(t, filepath.Join(agents, "jobs"), "crit-r3.json", map[string]any{
+		"jobId": "crit-r3", "role": "design-critic", "round": 3, "parentJob": "crit",
+		"status": "completed",
+	})
+	writeJSONFile(t, filepath.Join(agents, "crit", "rounds", "3"), "return.json", map[string]any{
+		"findings": []any{
+			map[string]any{"id": "F-1", "material": true},
+			map[string]any{"id": "F-2", "material": false},
+		},
+	})
+	return repo
+}
+
+func TestCritiqueExhaustionDesignCritic(t *testing.T) {
+	repo := critiqueFixture(t)
+	dir := t.TempDir()
+	latest := filepath.Join(repo, "artifacts", "agents", "jobs", "crit-r3.json")
+	output := filepath.Join(dir, "manifest.json")
+
+	vague := filepath.Join(dir, "vague.md")
+	os.WriteFile(vague, []byte("please continue\n"), 0o644)
+	_, err := CritiqueExhaustionAction(repo, "crit", "design-critic", latest, vague, "crit-r4", output)
+	if err == nil || !strings.Contains(err.Error(), "F-1") {
+		t.Fatalf("unenumerated successor = %v", err)
+	}
+
+	named := filepath.Join(dir, "named.md")
+	os.WriteFile(named, []byte("Addressing F-1 head-on.\n"), 0o644)
+	action, err := CritiqueExhaustionAction(repo, "crit", "design-critic", latest, named, "crit-r4", output)
+	if err != nil || action != "record" {
+		t.Fatalf("enumerated successor = %q, %v", action, err)
+	}
+	lines, err := ExhaustionPatches(output, dir)
+	if err != nil || len(lines) != 1 || !strings.HasPrefix(lines[0], "crit\t") {
+		t.Fatalf("ExhaustionPatches = %v, %v", lines, err)
+	}
+	patch := readJSONFile(t, strings.SplitN(lines[0], "\t", 2)[1])
+	entries := patch["critiqueExhaustions"].([]any)
+	entry := entries[0].(map[string]any)
+	if entry["successorJobId"] != "crit-r4" {
+		t.Fatalf("patch entry = %v", entry)
+	}
+
+	// A recorded second exhaustion at a different round refuses outright.
+	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+	rootRecord := readJSONFile(t, filepath.Join(jobs, "crit.json"))
+	rootRecord["critiqueExhaustions"] = []any{map[string]any{"round": 6, "successorJobId": "other"}}
+	writeRecord(filepath.Join(jobs, "crit.json"), rootRecord)
+	_, err = CritiqueExhaustionAction(repo, "crit", "design-critic", latest, named, "crit-r4", output)
+	if err == nil || !strings.Contains(err.Error(), "second critique exhaustion") {
+		t.Fatalf("second exhaustion = %v", err)
+	}
+}
+
+func TestCritiqueExhaustionRoundOffBudget(t *testing.T) {
+	repo := critiqueFixture(t)
+	agents := filepath.Join(repo, "artifacts", "agents")
+	writeJSONFile(t, filepath.Join(agents, "jobs"), "crit-r2.json", map[string]any{
+		"jobId": "crit-r2", "role": "design-critic", "round": 2, "parentJob": "crit",
+		"status": "completed",
+	})
+	writeJSONFile(t, filepath.Join(agents, "crit", "rounds", "2"), "return.json", map[string]any{
+		"findings": []any{map[string]any{"id": "F-9", "material": true}},
+	})
+	message := filepath.Join(t.TempDir(), "m.md")
+	os.WriteFile(message, []byte("x\n"), 0o644)
+	action, err := CritiqueExhaustionAction(repo, "crit", "design-critic",
+		filepath.Join(agents, "jobs", "crit-r2.json"), message, "next", filepath.Join(t.TempDir(), "out.json"))
+	if err != nil || action != "none" {
+		t.Fatalf("off-budget round = %q, %v", action, err)
+	}
+}
+
+func TestValidateMissionRefusals(t *testing.T) {
+	root := t.TempDir()
+	if err := ValidateMission(root, "Bad_ID", "/x"); err == nil ||
+		!strings.Contains(err.Error(), "invalid mission id") {
+		t.Fatalf("invalid id = %v", err)
+	}
+	lease := filepath.Join(root, "elsewhere", "lease.json")
+	if err := ValidateMission(root, "m-1", lease); err == nil ||
+		!strings.Contains(err.Error(), "non-canonical") {
+		t.Fatalf("non-canonical lease = %v", err)
+	}
+	canonical := filepath.Join(root, "artifacts", "agents", "missions", "m-1", "lease.json")
+	os.MkdirAll(filepath.Dir(canonical), 0o755)
+	os.WriteFile(canonical, []byte(`{"missionId":"m-1"}`), 0o644)
+	if err := ValidateMission(root, "m-1", canonical); err == nil ||
+		!strings.Contains(err.Error(), "invalid shape or identity") {
+		t.Fatalf("bad shape = %v", err)
+	}
+}
