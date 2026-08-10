@@ -28,6 +28,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 repo_scope=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) \
   || die 1 "metasystem installation is not inside a git repository: $root"
 repo_scope=$(cd "$repo_scope" && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 config="$root/scripts/metasystem-config.sh"
 agents="$root/artifacts/agents"
 jobs="$agents/jobs"
@@ -154,24 +155,7 @@ PY
 }
 
 json_field() { # file, dotted field
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-from pathlib import Path
-try:
-    value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    for part in sys.argv[2].split("."):
-        value = value[part]
-except (OSError, ValueError, KeyError, TypeError):
-    raise SystemExit(1)
-if value is None:
-    print("null")
-elif isinstance(value, bool):
-    print("true" if value else "false")
-elif isinstance(value, (dict, list)):
-    print(json.dumps(value, separators=(",", ":")))
-else:
-    print(value)
-PY
+  "$ms" json get --file "$1" --field "$2"
 }
 
 record_cas() { # job, expected status, target status, patch file
@@ -206,9 +190,9 @@ lease_entry_check() {
   local result
   result=$("$lease_helper" --root "$root" require-holder --caller-pid "$entry_caller_pid") \
     || exit $?
-  current_claim_epoch=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("claimEpoch") is None else v["claimEpoch"])' "$result")
-  current_main_id=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("mainId") is None else v["mainId"])' "$result")
-  current_caller_class=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["class"])' "$result")
+  current_claim_epoch=$("$ms" json get --value "$result" --field claimEpoch --default "")
+  current_main_id=$("$ms" json get --value "$result" --field mainId --default "")
+  current_caller_class=$("$ms" json get --value "$result" --field class)
 }
 
 lease_run_held() { # expected epoch (empty for human), command...
@@ -233,158 +217,6 @@ internal_authority() { # holder-only|record-writer|adapter-writer|supervision-on
     "$root/scripts/agents/control-plane-authority.py" \
       --mode "$mode" --classification "$result"
   fi
-}
-
-atomic_record_python() {
-  python3 - "$root" "$@" <<'PY'
-import fcntl
-import hashlib
-import json
-import os
-import re
-import sys
-import tempfile
-from datetime import datetime, timezone
-from pathlib import Path
-
-root = Path(sys.argv[1])
-operation = sys.argv[2]
-args = sys.argv[3:]
-values = {}
-while args:
-    if len(args) < 2 or not args[0].startswith("--"):
-        raise SystemExit(2)
-    values[args[0][2:]] = args[1]
-    args = args[2:]
-job = values.get("job", "")
-if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", job):
-    raise SystemExit(2)
-
-jobs = root / "artifacts" / "agents" / "jobs"
-lock_dir = root / "artifacts" / "agents" / "record-locks"
-jobs.mkdir(parents=True, exist_ok=True)
-lock_dir.mkdir(parents=True, exist_ok=True)
-record_path = jobs / f"{job}.json"
-
-with (lock_dir / f"{job}.lock").open("a+") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    if operation == "create":
-        if record_path.exists():
-            print(f"job id collision: {job}", file=sys.stderr)
-            raise SystemExit(1)
-        try:
-            record = json.loads(Path(values["source"]).read_text(encoding="utf-8"))
-        except (OSError, ValueError) as error:
-            print(f"invalid initial record for {job}: {error}", file=sys.stderr)
-            raise SystemExit(1)
-        if not isinstance(record, dict) or record.get("jobId") != job or record.get("status") != "pending-setup":
-            print(f"invalid initial record identity or status for {job}", file=sys.stderr)
-            raise SystemExit(1)
-    elif operation == "setup":
-        try:
-            current = json.loads(record_path.read_text(encoding="utf-8"))
-            record = json.loads(Path(values["source"]).read_text(encoding="utf-8"))
-        except (OSError, ValueError) as error:
-            print(f"cannot complete setup for job record {job}: {error}", file=sys.stderr)
-            raise SystemExit(1)
-        if (not isinstance(current, dict) or current.get("status") != "pending-setup"
-                or not isinstance(record, dict) or record.get("jobId") != job
-                or record.get("status") != "pending"
-                or record.get("claimEpoch") != current.get("claimEpoch")
-                or record.get("mainId") != current.get("mainId")):
-            print(f"invalid setup transition for {job}", file=sys.stderr)
-            raise SystemExit(1)
-    elif operation == "protocol-error":
-        try:
-            record = json.loads(record_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as error:
-            print(f"cannot record protocol error for {job}: {error}", file=sys.stderr)
-            raise SystemExit(1)
-        expected = values.get("expect")
-        violation = values.get("violation", "")
-        if not violation and values.get("violation-file"):
-            try:
-                violation = Path(values["violation-file"]).read_text(encoding="utf-8").strip()
-            except OSError as error:
-                print(f"cannot read protocol violation for {job}: {error}", file=sys.stderr)
-                raise SystemExit(1)
-        if not violation:
-            print(f"protocol violation text is empty for {job}", file=sys.stderr)
-            raise SystemExit(1)
-        key = hashlib.sha256(f"{job}{record.get('round')}{violation}".encode()).hexdigest()[:16]
-        existing = record.get("protocolError")
-        if record.get("status") == "failed" and record.get("error") == "protocol_error" \
-                and isinstance(existing, dict) and existing.get("key") == key:
-            raise SystemExit(0)
-        if record.get("status") != expected or expected not in {"pending", "running"}:
-            raise SystemExit(3)
-        record.update({
-            "status": "failed", "error": "protocol_error", "phase": "validation",
-            "protocolError": {"key": key, "violation": violation, "detectedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
-            "endedAt": record.get("endedAt") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        })
-    elif operation == "cas":
-        try:
-            record = json.loads(record_path.read_text(encoding="utf-8"))
-            patch = json.loads(Path(values["patch"]).read_text(encoding="utf-8"))
-        except (OSError, ValueError) as error:
-            print(f"cannot update job record {job}: {error}", file=sys.stderr)
-            raise SystemExit(1)
-        expected = values.get("expect")
-        target = values.get("status")
-        current = record.get("status")
-        if current != expected:
-            # The atomic compare's own observation, for the caller's
-            # verdict-refused witness event (flight-recorder D-3a): a later
-            # re-read could not honestly say what THIS compare saw.
-            print(f"observed={current}")
-            raise SystemExit(3)
-        transitions = {
-            "pending-setup": {"failed"},
-            "pending": {"running", "failed", "cancelled"},
-            "running": {"completed", "failed", "cancelled", "timeout"},
-        }
-        metadata_update = current == target
-        if not metadata_update and target not in transitions.get(current, set()):
-            print(f"illegal job transition: {current} to {target}", file=sys.stderr)
-            raise SystemExit(1)
-        if not isinstance(patch, dict) or "status" in patch:
-            print("record patch must be an object and cannot contain status", file=sys.stderr)
-            raise SystemExit(1)
-        immutable = {"jobId", "role", "runtime", "round", "parentJob", "reviews", "workspaceRoot", "baseSha", "branch", "startedAt", "claimEpoch", "mainId", "capMin", "capDeadline", "capResolution"}
-        if immutable.intersection(patch):
-            print("record patch attempts to change immutable identity", file=sys.stderr)
-            raise SystemExit(1)
-        terminal = {"completed", "failed", "cancelled", "timeout"}
-        if current in terminal and metadata_update and not set(patch).issubset({"mirror", "chainClosed", "chainUsage", "runnerClosed", "critiqueExhaustions"}):
-            print("terminal record metadata is final except mirror, closure, aggregate usage, and critique exhaustion", file=sys.stderr)
-            raise SystemExit(1)
-        record.update(patch)
-        record["status"] = target
-        if target in terminal and not record.get("endedAt"):
-            record["endedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    else:
-        raise SystemExit(2)
-
-    fd, temp_name = tempfile.mkstemp(prefix=f"{job}.", suffix=".tmp", dir=lock_dir)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(record, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_name, record_path)
-        dir_fd = os.open(jobs, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-    finally:
-        try:
-            os.unlink(temp_name)
-        except FileNotFoundError:
-            pass
-PY
 }
 
 process_matches() { # pid, tag
@@ -999,6 +831,8 @@ select_snapshot() { # runtime, role, requested envelope, output json
 }
 
 root_job_id() { # job record
+  # TODO(go-wiring): a `dispatch root-job` verb should walk parentJob to the
+  # chain root (cycle-guarded), so close and reap resolve the root in Go.
   python3 - "$jobs" "$1" <<'PY'
 import json, sys
 from pathlib import Path
@@ -1019,6 +853,8 @@ PY
 }
 
 latest_chain_record() { # root job
+  # TODO(go-wiring): a `dispatch latest-chain-record` verb should return the
+  # highest-round record whose chain root is this job, for follow-up.
   python3 - "$jobs" "$1" <<'PY'
 import json, sys
 from pathlib import Path
@@ -1372,6 +1208,10 @@ PY
 }
 
 reap_one_locked() { # job
+  # TODO(go-wiring): the reap verdict date-math below (elapsed since startedAt,
+  # cap-deadline expiry, the handshake-window backstop, and the pending-setup
+  # abandonment age) should become `dispatch reap-verdict` helpers; the terminal
+  # writes already run through the Go record-cas verb.
   local job=$1 record="$jobs/$1.json" status pid tag started cap cap_deadline budget_expired handshake_budget handshake_deadline session pending_age elapsed patch root_id mission record_epoch lease_epoch refusal_reason truncated_by
   [[ -f "$record" ]] || return 0
   status=$(json_field "$record" status 2>/dev/null || true)
@@ -1653,13 +1493,7 @@ dispatch_job() {
   fi
 
   if [[ -z "$job" ]]; then
-    job=$(python3 - "$role" <<'PY'
-import secrets, sys
-from datetime import datetime, timezone
-stamp = datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%Sz").lower()
-print(f"{sys.argv[1]}-{stamp}-{secrets.token_hex(2)}")
-PY
-    )
+    job="$role-$(date -u +%Y%m%dt%H%M%Sz)-$("$ms" util token-hex --bytes 2)"
   fi
   valid_id "$job" || die 2 "invalid job id: $job"
   # Preconditions BEFORE the id is reserved. The reservation record exists to
@@ -1737,6 +1571,10 @@ PY
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
+  # TODO(go-wiring): this full pending-record assembly (and the pending-setup
+  # source above) feed the Go record-setup/record-create verbs; a
+  # `dispatch build-record` verb should assemble the record so the Go lifecycle
+  # owns both the shape and the write.
   python3 - "$record_json" "$job" "$role" "$mission" "$mission_turn" "$runtime" "$workspace" "$cap" "$cap_resolution" "$model" "$overridden" "$snapshot_path" "$input_bytes" "$input_hash" "$permission_json" "$fallbacks" "$signal" "$handshake_budget" "$approval_name" "$approved_at" "$roster_pair" "$requested_pair" "$cost_direction" "$reviews" "$current_main_id" "$current_claim_epoch" <<'PY'
 import json, subprocess, sys
 from datetime import datetime, timezone
@@ -2399,6 +2237,9 @@ internal_register_custody() {
   case "$status" in pending|running) ;; *) exit 1 ;; esac
   started=$("$process_census" started-at --pid "$pid") || exit 1
   patch=$(mktemp "$record_locks/custody.XXXXXX")
+  # TODO(go-wiring): a `dispatch custody-add` verb should build the
+  # custodyProcesses patch (dedupe by pid+pidStartedAt, then append) so this
+  # custody write lives beside the record lifecycle it patches.
   python3 - "$record" "$patch" "$pid" "$started" "$tag" <<'PY'
 import json,sys
 from pathlib import Path
@@ -2422,6 +2263,10 @@ internal_handshake() {
   valid_id "$job" && [[ -f "$effective" && -f "$jobs/$job.json" ]] || exit 2
   patch=$(mktemp "$record_locks/handshake-patch.XXXXXX")
   set +e
+  # TODO(go-wiring): a `dispatch handshake-eval` verb should compare the
+  # effective permissions against the requested floor and emit the running or
+  # failed target plus its patch, so the pending->running transition decision
+  # lives in internal/dispatch with the other status transitions.
   python3 - "$jobs/$job.json" "$effective" "$session" "$turn" "$model" "$signal" "$patch" <<'PY'
 import json, sys
 from pathlib import Path
@@ -2619,17 +2464,17 @@ case "$command" in
   cancel) cancel_job "$@" ;;
   close) close_chain "$@" ;;
   reap) reap_jobs "$@" ;;
-  __record-create) internal_authority holder-only; atomic_record_python create "$@" ;;
-  __record-setup) internal_authority holder-only; atomic_record_python setup "$@" ;;
+  __record-create) internal_authority holder-only; "$ms" dispatch record-create --root "$root" "$@" ;;
+  __record-setup) internal_authority holder-only; "$ms" dispatch record-setup --root "$root" "$@" ;;
   __record-cas)
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
     internal_authority record-writer "$2"
-    atomic_record_python cas "$@"
+    "$ms" dispatch record-cas --root "$root" "$@"
     ;;
   __protocol-error)
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
     internal_authority adapter-writer "$2"
-    atomic_record_python protocol-error "$@"
+    "$ms" dispatch record-protocol-error --root "$root" "$@"
     ;;
   __launch) internal_launch "$@" ;;
   __handshake-timeout) internal_handshake_timeout "$@" ;;

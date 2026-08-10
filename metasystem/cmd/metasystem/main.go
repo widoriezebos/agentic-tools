@@ -60,6 +60,20 @@ func families() []family {
 			verbs: []verb{
 				{"canonical-model", "print the canonical model key for a name", runConfigCanonicalModel},
 				{"identity", "print an adapter's canonical configuration identity", runConfigIdentity},
+				{"get", "resolve a config key with flag/env/local/mode/conf/default precedence", runConfigGet},
+				{"validate", "validate the whole metasystem.conf domain", runConfigValidate},
+				{"keys", "enumerate config keys, optionally by prefix", runConfigKeys},
+				{"conf-value", "print a single conf value (exit 3 absent, 1 on duplicate)", runConfigConfValue},
+			},
+		},
+		{
+			name:    "dispatch",
+			summary: "the job-record lifecycle: create, setup, protocol-error, compare-and-swap",
+			verbs: []verb{
+				{"record-create", "reserve a job by writing its pending-setup record", runDispatchRecordCreate},
+				{"record-setup", "complete a reservation into the full pending record", runDispatchRecordSetup},
+				{"record-cas", "compare-and-swap a record's status and fields", runDispatchRecordCAS},
+				{"record-protocol-error", "stamp a job failed with a protocol violation", runDispatchRecordProtocolError},
 			},
 		},
 		{
