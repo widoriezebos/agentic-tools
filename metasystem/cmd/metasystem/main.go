@@ -41,6 +41,7 @@ func families() []family {
 			summary: "process census classification (port of process-census.py)",
 			verbs: []verb{
 				{"classify", "classify argvs against runtime signatures (differential-conformance surface)", runCensusClassify},
+				{"fingerprint", "print a checkout's supervision fingerprint (port of process-census.py fingerprint)", runCensusFingerprint},
 			},
 		},
 		{

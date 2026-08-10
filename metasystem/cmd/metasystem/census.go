@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 )
@@ -55,5 +56,35 @@ func runCensusClassify(args []string) int {
 		return 1
 	}
 	fmt.Println(string(encoded))
+	return 0
+}
+
+// runCensusFingerprint prints the supervision fingerprint for --repo, using
+// --root as the metasystem root (defaults to the binary's checkout). Strict
+// port of process-census.py fingerprint; the conformance harness diffs it
+// against the python.
+func runCensusFingerprint(args []string) int {
+	flags := flag.NewFlagSet("census fingerprint", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root to fingerprint")
+	root := flags.String("root", "", "metasystem root (defaults to this checkout)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "census fingerprint: --repo is required")
+		return 2
+	}
+	metasystemRoot := *root
+	if metasystemRoot == "" {
+		if exe, err := os.Executable(); err == nil {
+			metasystemRoot = filepath.Dir(filepath.Dir(filepath.Dir(exe)))
+		}
+	}
+	fp, err := census.Fingerprint(metasystemRoot, *repo)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "census fingerprint:", err)
+		return 1
+	}
+	fmt.Println(fp)
 	return 0
 }
