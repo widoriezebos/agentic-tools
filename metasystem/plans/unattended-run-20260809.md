@@ -11,10 +11,9 @@
   stop until fully done."
 - Next step: none
 - In flight right now: nothing in this checkout's job records —
-  cohort A (bm-2s, sol delegates) is being provisioned by
-  run-cohort.sh as a tracked background task; the orchestrator
-  session holds the waiter and crosses each seal/sign boundary
-  under the standing pre-authorization.
+  cohort A repetition 1 (bm-2s-20260810t010831z-53362) runs
+  through grading as a tracked background task; the orchestrator
+  session holds the waiter.
 - Waiting on the human: nothing.
 
 ## Rulings collected before departure (AskUserQuestion, 2026-08-09)
@@ -106,9 +105,13 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
    gate green from a live agent session for the first time. The
    seal step is explicitly the simulated-human act; preflight's pin
    asserted against contract bytes.
-9. TODO — benchmark cohort A (host Opus 5, delegates gpt-5.6-sol,
-   2 reps): seal, sign (standing pre-auth), preflight, run,
-   watch tracked, grade.
+9. IN PROGRESS — cohort A = bm-2s-20260810t010831z-53362 (host
+   Opus 5, delegates gpt-5.6-sol, 2 reps). Repetition 1: target
+   provisioned through the NEW identity-carried path, sealed
+   (9810af0b...), signed per the pre-auth, pushed, lease released
+   (departing-main), RESUMED ~01:15Z — running through grading
+   with a tracked waiter. On completion: provision rep 2, same
+   flow, then cohort B (bm-2, Devin).
 10. TODO — benchmark cohort B (host Opus 5, delegates devin
     swe-1.7, 2 reps): same.
 11. TODO — final report for the human: chain outcome, Go
