@@ -147,6 +147,11 @@ func families() []family {
 				{"fake-guarded-network", "attempt a permission-guarded connection (77 = refused)", runAdapterFakeGuardedNetwork},
 				{"fake-capability-snapshot", "write a fake capability-snapshot profile", runAdapterFakeCapabilitySnapshot},
 				{"fake-selftest-record", "write the fake selftest pass record", runAdapterFakeSelftestRecord},
+				{"normalize-return", "normalize the runtime reply into return.json/return.md", runAdapterNormalizeReturn},
+				{"selftest-usage", "assert a selftest job's typed usage", runAdapterSelftestUsage},
+				{"selftest-envelope", "print the newest snapshot's envelope declaration for a field", runAdapterSelftestEnvelope},
+				{"selftest-record", "write the selftest pass record", runAdapterSelftestRecord},
+				{"selftest-listener", "one-shot loopback listener for the denied-fetch probe", runAdapterSelftestListener},
 			},
 		},
 		{
@@ -281,6 +286,24 @@ func families() []family {
 			summary: "assemble a mission host-turn prompt",
 			verbs: []verb{
 				{"assemble", "assemble the byte-stable host-turn prompt", runMissionPromptAssemble},
+			},
+		},
+		{
+			name:    "mission-runner",
+			summary: "the unattended mission runner",
+			verbs: []verb{
+				{"start", "start a mission's detached run loop", runMissionRunnerStart},
+				{"resume", "resume a parked or interrupted mission", runMissionRunnerResume},
+				{"status", "print the mission's runner status line", runMissionRunnerStatus},
+				{"answer", "record a human answer to an open ask", runMissionRunnerAnswer},
+				{"run-loop", "the detached mission loop (internal; spawned by start/resume)", runMissionRunnerRunLoop},
+			},
+		},
+		{
+			name:    "evidence",
+			summary: "durable-evidence lifecycle: collect mirrored chains, prune residue, age archives",
+			verbs: []verb{
+				{"gc", "collect closed mirrored chains, prune residue, age flight-recorder archives", runEvidenceGC},
 			},
 		},
 		{

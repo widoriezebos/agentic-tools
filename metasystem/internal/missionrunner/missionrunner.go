@@ -1,10 +1,12 @@
-// Package missionrunner holds the mission runner's decisions: adjudicating an
-// orchestrator's turn return against the mission state, projecting fence
-// counters into that state, proposing the state after a completed, failed, or
-// parked turn, and selecting the mission jobs the runner must reap or close.
-// Everything here computes and reports; the runner applies the results (writes
-// asks, advances the hash-chained state, signals processes) so that state
-// writes keep their single owner.
+// Package missionrunner is the mission runner: the engine that launches and
+// drives a mission's unattended host turns, and the decisions that engine
+// rests on — adjudicating an orchestrator's turn return against the mission
+// state, projecting fence counters into that state, proposing the state after
+// a completed, failed, or parked turn, and selecting the mission jobs the
+// runner must reap or close. The decision surfaces stay pure and compute
+// proposals; the Engine is the single writer that applies them (writes asks,
+// advances the hash-chained state, signals processes) so every artifact keeps
+// one owner.
 package missionrunner
 
 import (
@@ -12,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -131,6 +134,10 @@ func readJSONDoc(path string) (map[string]any, error) {
 	return decodeJSONDoc(data)
 }
 
+// errNotJSONObject marks a document that parsed but is not an object, so
+// callers can word that refusal differently from unreadable bytes.
+var errNotJSONObject = errors.New("not a JSON object")
+
 func decodeJSONDoc(data []byte) (map[string]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
@@ -140,7 +147,7 @@ func decodeJSONDoc(data []byte) (map[string]any, error) {
 	}
 	doc, ok := value.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("not a JSON object")
+		return nil, errNotJSONObject
 	}
 	return doc, nil
 }

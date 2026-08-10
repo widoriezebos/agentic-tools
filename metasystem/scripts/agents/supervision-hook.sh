@@ -68,10 +68,10 @@ count_running_work() { # sets: running, elsewhere
   while IFS= read -r other; do
     [[ -n "$other" ]] || continue
     elsewhere="$elsewhere $other"
-  done < <(pgrep -f 'mission-runner.sh __run' 2>/dev/null \
+  done < <(pgrep -f 'mission-runner run-loop' 2>/dev/null \
     | while read -r pid; do
         ps -p "$pid" -o command= 2>/dev/null \
-          | sed -n 's|.*/\([^/ ]*\)/scripts/agents/mission-runner.sh.*|\1|p'
+          | sed -n 's|.*--root [^ ]*/\([^/ ]*\) .*|\1|p; s|.*--root [^ ]*/\([^/ ]*\)$|\1|p' | head -1
       done | sort -u)
 }
 

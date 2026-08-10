@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,7 +14,9 @@ import (
 // decision surface (internal/missionrunner). Each verb reads the runner's
 // records, judges, and prints a JSON proposal; the runner applies it — writes
 // the asks, advances the hash-chained state, and drives the dispatch tooling
-// — so every artifact keeps its single writer.
+// — so every artifact keeps its single writer. The mission-runner family at
+// the bottom of this file IS that runner: the long-lived process that drives
+// a mission's cycles end to end.
 
 // runnerNowISO is the timestamp format runner artifacts carry.
 func runnerNowISO() string {
@@ -72,66 +71,13 @@ func runMissionTurnAdjudicate(args []string) int {
 		fmt.Fprintln(os.Stderr, "mission-turn adjudicate: --state, --turn, --result, and --turn-dir are required")
 		return 2
 	}
-	verdict, err := adjudicateTurn(*root, *mission, *statePath, *turnPath, *resultPath, *turnDir)
+	verdict, err := missionrunner.AdjudicateFiles(*root, *mission, *statePath, *turnPath, *resultPath, *turnDir, runnerNowISO())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	printJSON(verdict)
 	return 0
-}
-
-func adjudicateTurn(root, mission, statePath, turnPath, resultPath, turnDir string) (*missionrunner.Verdict, error) {
-	state, err := runnerDoc(statePath, "mission state")
-	if err != nil {
-		return nil, err
-	}
-	turnDoc, err := runnerDoc(turnPath, "turn record")
-	if err != nil {
-		return nil, err
-	}
-	turn, err := missionrunner.TurnFromDoc(turnDoc)
-	if err != nil {
-		return nil, err
-	}
-	result, err := runnerDoc(resultPath, "host result")
-	if err != nil {
-		return nil, err
-	}
-	validation, err := missionrunner.ValidateReturn(turn, result, turnDir, returnCompletenessChecker(root))
-	if err != nil {
-		return nil, err
-	}
-	verdict, err := missionrunner.Adjudicate(root, mission, turn, state, validation.Returned, runnerNowISO())
-	if err != nil {
-		return nil, err
-	}
-	verdict.RawPath = validation.RawPath
-	verdict.ReturnPath = validation.ReturnPath
-	return verdict, nil
-}
-
-// returnCompletenessChecker runs the shipped role checker on a return file,
-// wrapping a refusal in the runner's own words.
-func returnCompletenessChecker(root string) func(returnPath string) error {
-	return func(returnPath string) error {
-		command := exec.Command(
-			filepath.Join(root, "scripts", "assert-return-complete.sh"),
-			"--role", "orchestrator", "--file", returnPath,
-		)
-		command.Dir = root
-		var stdout, stderr bytes.Buffer
-		command.Stdout = &stdout
-		command.Stderr = &stderr
-		if err := command.Run(); err != nil {
-			detail := strings.TrimSpace(stderr.String())
-			if detail == "" {
-				detail = strings.TrimSpace(stdout.String())
-			}
-			return fmt.Errorf("orchestrator return is invalid: %s", detail)
-		}
-		return nil
-	}
 }
 
 // runMissionTurnConclude proposes the state after a turn whose return was
@@ -159,47 +105,7 @@ func runMissionTurnConclude(args []string) int {
 		fmt.Fprintln(os.Stderr, "mission-turn conclude: --state, --turn, --verdict, --return, --result, and --measurement are required")
 		return 2
 	}
-	inputs := map[string]map[string]any{}
-	var err error
-	for label, path := range map[string]string{
-		"mission state":        *statePath,
-		"turn record":          *turnPath,
-		"adjudication verdict": *verdictPath,
-		"orchestrator return":  *returnPath,
-		"host result":          *resultPath,
-		"measurement":          *measurementPath,
-	} {
-		if inputs[label], err = runnerDoc(path, label); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-	}
-	turn, err := missionrunner.TurnFromDoc(inputs["turn record"])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	state := inputs["mission state"]
-	verdict := inputs["adjudication verdict"]
-	streams, ok := verdict["streams"].(map[string]any)
-	if !ok {
-		fmt.Fprintln(os.Stderr, "adjudication verdict has no stream map")
-		return 1
-	}
-	// The proposal builds on the adjudicated streams, not the streams as the
-	// last write left them: the verdict is what this turn already decided.
-	state["streams"] = streams
-	gatePassed, _ := inputs["measurement"]["gatePassed"].(bool)
-	proposed, err := missionrunner.ConcludeTurn(*root, *mission, state, turn, missionrunner.TurnConclusion{
-		SessionID:      inputs["host result"]["sessionId"],
-		Measurement:    inputs["measurement"]["measurement"],
-		GatePassed:     gatePassed,
-		Accepted:       verdict["accepted"],
-		Rejected:       verdict["rejected"],
-		Certified:      inputs["orchestrator return"]["certified"],
-		FactsForLedger: inputs["orchestrator return"]["factsForLedger"],
-		Gaps:           inputs["orchestrator return"]["gaps"],
-	})
+	proposed, err := missionrunner.ConcludeFiles(*root, *mission, *statePath, *turnPath, *verdictPath, *returnPath, *resultPath, *measurementPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -315,4 +221,99 @@ func runMissionJobsList(args []string, name, field string, list func(root, missi
 	}
 	printJSON(map[string]any{field: list(*root, *mission)})
 	return 0
+}
+
+// The mission-runner family: the runner process itself. start and resume
+// launch the detached run loop and hold the caller until the first host turn
+// verifiably starts; run-loop is that detached child; status and answer are
+// the human/driver surface over a mission's artifacts.
+
+// missionRunnerUsage prints the runner's public usage, which names the shell
+// entry point callers actually invoke.
+func missionRunnerUsage() {
+	fmt.Fprint(os.Stderr,
+		"Usage:\n"+
+			"  scripts/agents/mission-runner.sh start --mission <id> [--foreground]\n"+
+			"  scripts/agents/mission-runner.sh resume --mission <id> [--foreground]\n"+
+			"  scripts/agents/mission-runner.sh status --mission <id>\n"+
+			"  scripts/agents/mission-runner.sh answer --mission <id> --ask <ask-id> --answer <text>\n")
+}
+
+// parseRunnerArgs reads --key value pairs and bare switches with the
+// runner's strict grammar: only the given keys, every valued key valued, and
+// nothing else. It reports whether the arguments parsed cleanly.
+func parseRunnerArgs(args []string, valued map[string]*string, switches map[string]*bool) bool {
+	for index := 0; index < len(args); {
+		if target, known := valued[args[index]]; known && index+1 < len(args) {
+			*target = args[index+1]
+			index += 2
+			continue
+		}
+		if target, known := switches[args[index]]; known {
+			*target = true
+			index++
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func runMissionRunnerStart(args []string) int {
+	return runMissionRunnerLaunch("start", args)
+}
+
+func runMissionRunnerResume(args []string) int {
+	return runMissionRunnerLaunch("resume", args)
+}
+
+func runMissionRunnerLaunch(mode string, args []string) int {
+	var root, mission string
+	foreground := false
+	ok := parseRunnerArgs(args,
+		map[string]*string{"--root": &root, "--mission": &mission},
+		map[string]*bool{"--foreground": &foreground})
+	if !ok || root == "" || !missionIDRe.MatchString(mission) {
+		missionRunnerUsage()
+		return 2
+	}
+	return missionrunner.NewEngine(root, mission).Launch(mode, foreground)
+}
+
+func runMissionRunnerStatus(args []string) int {
+	var root, mission string
+	ok := parseRunnerArgs(args, map[string]*string{"--root": &root, "--mission": &mission}, nil)
+	if !ok || root == "" || !missionIDRe.MatchString(mission) {
+		missionRunnerUsage()
+		return 2
+	}
+	return missionrunner.NewEngine(root, mission).Status()
+}
+
+func runMissionRunnerAnswer(args []string) int {
+	var root, mission, askID, answer string
+	ok := parseRunnerArgs(args, map[string]*string{
+		"--root": &root, "--mission": &mission, "--ask": &askID, "--answer": &answer,
+	}, nil)
+	if !ok || root == "" || !missionIDRe.MatchString(mission) || !missionIDRe.MatchString(askID) ||
+		answer == "" || strings.ContainsRune(answer, 0) {
+		missionRunnerUsage()
+		return 2
+	}
+	return missionrunner.NewEngine(root, mission).Answer(askID, answer)
+}
+
+// runMissionRunnerRunLoop is the detached child that start/resume spawn; it
+// is internal and deliberately prints no usage.
+func runMissionRunnerRunLoop(args []string) int {
+	var root, mission, mode, tag, signal string
+	ok := parseRunnerArgs(args, map[string]*string{
+		"--root": &root, "--mission": &mission, "--mode": &mode,
+		"--instance-tag": &tag, "--start-signal": &signal,
+	}, nil)
+	if !ok || root == "" || tag == "" || signal == "" ||
+		!missionIDRe.MatchString(mission) || (mode != "start" && mode != "resume") {
+		return 2
+	}
+	return missionrunner.NewEngine(root, mission).RunLoop(mode, tag, signal)
 }

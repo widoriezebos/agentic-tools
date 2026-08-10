@@ -183,106 +183,9 @@ terminate_cli_child() { # exact child pid owned by this adapter
 
 normalize_return() { # candidate file, optional transcript file
   local candidate=$1 transcript=${2:-}
-  # TODO(go-wiring): needs a return-normalization verb (scan runtime output and
-  # transcript for the return object, reconcile session/model identity, emit
-  # return.json and return.md).
-  python3 - "$candidate" "$transcript" "$record" "$round_dir/return.json" \
-    "$round_dir/return.md" "$session_id" <<'PY'
-import json, re, sys
-from pathlib import Path
-
-candidate_path, transcript_path, record_path, output_path, markdown_path, session_id = sys.argv[1:]
-record = json.loads(Path(record_path).read_text(encoding="utf-8"))
-required = {
-    "jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode"
-}
-
-def parse_text(text):
-    values = []
-    stripped = text.strip()
-    if stripped:
-        try:
-            values.append(json.loads(stripped))
-        except json.JSONDecodeError:
-            pass
-    for match in re.finditer(r"```(?:json)?\s*(.*?)```", text, re.I | re.S):
-        try:
-            values.append(json.loads(match.group(1).strip()))
-        except json.JSONDecodeError:
-            pass
-    decoder = json.JSONDecoder()
-    for index, char in enumerate(text):
-        if char != "{":
-            continue
-        try:
-            value, _ = decoder.raw_decode(text[index:])
-            values.append(value)
-        except json.JSONDecodeError:
-            pass
-    return values
-
-def nested_values(value):
-    yield value
-    if isinstance(value, dict):
-        if isinstance(value.get("structured_output"), dict):
-            yield value["structured_output"]
-        if isinstance(value.get("result"), str):
-            yield from parse_text(value["result"])
-        for child in value.values():
-            if isinstance(child, (dict, list)):
-                yield from nested_values(child)
-            elif isinstance(child, str) and "{" in child:
-                yield from parse_text(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from nested_values(child)
-
-sources = []
-for path_text in (candidate_path, transcript_path):
-    if not path_text:
-        continue
-    path = Path(path_text)
-    if path.is_file():
-        sources.extend(parse_text(path.read_text(encoding="utf-8", errors="replace")))
-
-candidates = []
-for source in sources:
-    for value in nested_values(source):
-        if isinstance(value, dict):
-            score = len(required.intersection(value))
-            if score:
-                candidates.append((score, value))
-if not candidates:
-    raise SystemExit("no JSON return object found in runtime output")
-
-result = dict(max(candidates, key=lambda item: item[0])[1])
-observed_session = session_id or "unobserved"
-observed_model = record.get("effectiveModel") or "unobserved"
-model = result.get("model")
-if isinstance(model, dict):
-    model = dict(model)
-    claimed = dict(result.get("claimed")) if isinstance(result.get("claimed"), dict) else {}
-    if result.get("sessionId") not in (None, observed_session) and isinstance(result.get("sessionId"), str):
-        claimed["sessionId"] = result["sessionId"]
-    if model.get("effective") not in (None, observed_model) and isinstance(model.get("effective"), str):
-        claimed["model"] = model["effective"]
-    result["sessionId"] = observed_session
-    model["effective"] = observed_model
-    result["model"] = model
-    if result.get("schemaVersion") == 2:
-        # Both members, always. The schema requires the object and both of its
-        # members; null is how this family says "claimed nothing", and an
-        # absent object is rejected by the provider that enforces the schema.
-        result["claimed"] = {
-            "sessionId": claimed.get("sessionId"),
-            "model": claimed.get("model"),
-        }
-
-Path(output_path).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-Path(markdown_path).write_text(
-    "# Agent return\n\nCanonical JSON: return.json\n", encoding="utf-8"
-)
-PY
+  "$ms" adapter normalize-return --candidate "$candidate" --transcript "$transcript" \
+    --record "$record" --output "$round_dir/return.json" \
+    --markdown "$round_dir/return.md" --session "$session_id"
 }
 
 validate_candidate() { # candidate file, transcript, violation file
@@ -480,51 +383,11 @@ wait_for_selftest_job() { # job, maximum seconds
 }
 
 selftest_usage_check() { # record, native|unavailable|metered
-  # TODO(go-wiring): needs a usage-assertion verb (native/unavailable/metered
-  # typed-usage check).
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-from pathlib import Path
-record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-usage = record.get("usage")
-assert isinstance(usage, dict), "job has no typed usage"
-expected = sys.argv[2]
-# `metered` is for a runtime whose usage shape depends on the ACCOUNT rather
-# than the runtime: an enterprise Devin reports no tokens at all, only ACU,
-# which is a different unit and never a token count. Accepting either would
-# assert nothing, so this asserts the thing that must hold in both worlds --
-# a turn is measured by SOMETHING the fence can meter, never by nothing.
-if expected == "metered":
-    tokens = isinstance(usage.get("inputTokens"), (int, float)) and isinstance(usage.get("outputTokens"), (int, float))
-    units = usage.get("providerUnits")
-    metered = isinstance(units, dict) and isinstance(units.get("value"), (int, float)) and isinstance(units.get("name"), str)
-    assert tokens or metered, usage
-    if tokens:
-        assert usage.get("availability") == "native", usage
-    raise SystemExit(0)
-assert usage.get("availability") == expected, usage
-if expected == "native":
-    assert isinstance(usage.get("inputTokens"), (int, float)), usage
-    assert isinstance(usage.get("outputTokens"), (int, float)), usage
-PY
+  "$ms" adapter selftest-usage --record "$1" --expect "$2"
 }
 
 selftest_envelope_declaration() { # field -> mapped|notEnforced
-  # TODO(go-wiring): needs a verb to read the newest capability snapshot's
-  # envelopeEnforcement.<field> (glob-newest plus nested read).
-  python3 - "$agents/capabilities" "$runtime" "$1" <<'PY'
-import json, sys
-from pathlib import Path
-directory, runtime, field = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
-newest = None
-for path in sorted(directory.glob(f"{runtime}-*.json")):
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        continue
-    newest = value
-print((newest or {}).get("envelopeEnforcement", {}).get(field, "mapped"))
-PY
+  "$ms" adapter selftest-envelope --dir "$agents/capabilities" --runtime "$runtime" --field "$1"
 }
 
 selftest_attempt_matches_declaration() { # job, attempt name, envelope field, evidence path
@@ -643,27 +506,7 @@ EOF
 
   request_log="$selftest_dir/network-requested"
   port_file="$selftest_dir/network-port"
-  # TODO(go-wiring): selftest one-shot network listener; no CLI verb, keep as python.
-  python3 - "$request_log" "$port_file" <<'PY' &
-import socket, sys
-from pathlib import Path
-request_log, port_file = Path(sys.argv[1]), Path(sys.argv[2])
-server = socket.socket()
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind(("127.0.0.1", 0))
-server.listen(1)
-server.settimeout(180)
-port_file.write_text(str(server.getsockname()[1]))
-try:
-    connection, _ = server.accept()
-    request_log.write_text(connection.recv(4096).decode(errors="replace"))
-    connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
-    connection.close()
-except TimeoutError:
-    pass
-finally:
-    server.close()
-PY
+  "$ms" adapter selftest-listener --port-file "$port_file" --request-log "$request_log" &
   server_pid=$!
   trap 'kill '"$server_pid"' 2>/dev/null || true; wait '"$server_pid"' 2>/dev/null || true' EXIT
   for _ in {1..100}; do [[ -s "$port_file" ]] && break; sleep 0.02; done
@@ -736,55 +579,9 @@ PY
   local write_enf network_enf
   write_enf=$(selftest_envelope_declaration writeRoots)
   network_enf=$(selftest_envelope_declaration network)
-  # TODO(go-wiring): needs a verb to write the selftest pass record (derive
-  # proven-behaviors from the envelope declarations).
-  python3 - "$agents/selftests/$selftest_id.json" "$runtime" "$main_job" \
-    "$usage_expectation" "$devin_checks" "$write_enf" "$network_enf" <<'PY'
-import json, sys
-from datetime import datetime, timezone
-from pathlib import Path
-path, runtime, job, usage, devin_checks, write_enf, network_enf = sys.argv[1:]
-proven = ["dispatch", "return-validation", "resume-identity", "cancel", "permitted-read"]
-# Only a mapped (enforced) field yields behavioural proof of denial.
-if write_enf == "mapped":
-    proven.append("forbidden-write-denied")
-if network_enf == "mapped":
-    proven.append("denied-network")
-if usage == "native":
-    proven.append("usage-extraction")
-elif usage == "metered":
-    proven.append("usage-metered")
-else:
-    proven.append("usage-unavailable-recording")
-if devin_checks == "1":
-    proven.extend(["documented-exit-status-observation", "symlinked-skill-discovery"])
-def field_evidence(enf, denied_tag):
-    # A notEnforced field cannot be proven denied from one turn (which tool the
-    # model reaches for decides whether it escapes), so it is stated as such.
-    return denied_tag if enf == "mapped" else "not-enforced (containment is the operator's, not asserted here)"
-value = {
-    "runtime": runtime,
-    "job": job,
-    "passedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    "provenBehaviorally": proven,
-    "permissionEnvelopeEvidence": {
-        "declaredEnforcement": {"writeRoots": write_enf, "network": network_enf},
-        "behaviorallyProven": {
-            "readRoots": "permitted-read",
-            "writeRoots": field_evidence(write_enf, "forbidden-write-denied"),
-            "network": field_evidence(network_enf, "denied-fetch"),
-        },
-        "constructedOnly": ["approvals", "tools", "readRoots-completeness"],
-    },
-    "usageAvailability": usage,
-}
-if usage != "native":
-    value["usageNote"] = (
-        "metered: provider units are recorded and fence-metered even when token counts are absent"
-        if usage == "metered" else
-        "no per-turn usage was reported"
-    )
-Path(path).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  "$ms" adapter selftest-record --output "$agents/selftests/$selftest_id.json" \
+    --runtime "$runtime" --job "$main_job" --usage "$usage_expectation" \
+    --devin-checks "$devin_checks" --write-enforcement "$write_enf" \
+    --network-enforcement "$network_enf"
   echo "$runtime adapter selftest passed: full protocol sequence, permission probes, and usage=$usage_expectation"
 }
