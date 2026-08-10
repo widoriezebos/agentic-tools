@@ -49,6 +49,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "capability",
+			summary: "select and validate a capability snapshot (port of select-capability-snapshot.py)",
+			verbs: []verb{
+				{"select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
+			},
+		},
+		{
 			name:    "config",
 			summary: "configuration and identity helpers (canonical-model, config-identity, return-schema)",
 			verbs: []verb{
