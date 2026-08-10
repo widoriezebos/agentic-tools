@@ -210,6 +210,7 @@ func families() []family {
 				{"validate", "validate a mission contract's authored block", runMissionContractValidate},
 				{"seal", "seal a validated contract and print its digest", runMissionContractSeal},
 				{"preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},
+				{"measure", "run the gate and guards and classify metrics against a prior measurement", runMissionContractMeasure},
 			},
 		},
 		{

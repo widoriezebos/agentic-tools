@@ -10,13 +10,11 @@ from __future__ import annotations
 import copy
 import fcntl
 import hashlib
-import importlib.util
 import json
 import math
 import os
 import re
 import secrets
-import shutil
 import signal
 import subprocess
 import sys
@@ -1247,118 +1245,41 @@ def close_terminal_chains(mission: str) -> None:
             raise RunnerError(f"runner could not close terminal job chain {root_id}: {detail}")
 
 
-def load_contract_module():
-    # TODO(go-wiring): needs a `mission-contract measure`/gate-run verb. The
-    # measurement path (load_contract_module, run_guard, previous_metrics,
-    # measure) imports mission-contract.py as a Python library and calls its
-    # internals -- git, expand_paths, run_gate, validate_contract, read_contract,
-    # repository_for, project_root_for, METRIC_RE, validate_globs. The binary's
-    # mission-contract family only exposes validate|seal|preflight, none of which
-    # returns per-metric measurements, so this stays Python until a verb does.
-    path = ROOT / "scripts" / "agents" / "mission-contract.py"
-    specification = importlib.util.spec_from_file_location("harness_mission_contract", path)
-    if specification is None or specification.loader is None:
-        raise RunnerError("cannot load mission contract measurement library")
-    module = importlib.util.module_from_spec(specification)
-    sys.modules[specification.name] = module
-    specification.loader.exec_module(module)
-    return module
+def previous_metrics(state: dict[str, Any], names: list[str]) -> str | None:
+    """The prior per-metric values a regression is judged against.
 
-
-def run_guard(module: Any, contract: Any, repo: Path, project_root: Path, name: str, command: str) -> Decimal:
-    values = contract.values
-    gate_ref = str(module.git(repo, "rev-parse", f"{values['gate.ref']}^{{commit}}")).strip()
-    branch = contract.sealed["candidate.branch"]
-    candidate_sha = str(module.git(repo, "rev-parse", f"{branch}^{{commit}}")).strip()
-    gate_paths = module.expand_paths(repo, project_root, gate_ref, module.validate_globs(values["gate.paths"], "gate.paths"), "gate.paths")
-    truth_paths = module.expand_paths(repo, project_root, gate_ref, module.validate_globs(values["truth.paths"], "truth.paths"), "truth.paths")
-    scratch = Path(tempfile.mkdtemp(prefix="mission-guard."))
-    worktree = scratch / "candidate"
-    try:
-        module.git(repo, "worktree", "add", "--detach", "--quiet", str(worktree), candidate_sha)
-        module.git(worktree, "checkout", "--quiet", gate_ref, "--", *sorted(set(gate_paths + truth_paths)))
-        prefix = project_root.resolve().relative_to(repo.resolve())
-        result = subprocess.run(
-            ["bash", "-lc", command],
-            cwd=worktree / prefix,
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=int(values["fence.job-cap-min"]) * 60,
-        )
-        if result.returncode != 0:
-            raise RunnerError(f"guard {name} measurement failed with exit {result.returncode}")
-        metrics: dict[str, Decimal] = {}
-        for line in result.stdout.splitlines():
-            match = module.METRIC_RE.fullmatch(line.strip())
-            if match:
-                metrics[match.group(1)] = Decimal(match.group(2))
-        if name not in metrics:
-            raise RunnerError(f"guard {name} output omitted metric={name}=<value>")
-        return metrics[name]
-    finally:
-        if worktree.exists():
-            module.git(repo, "worktree", "remove", "--force", str(worktree), check=False)
-        shutil.rmtree(scratch, ignore_errors=True)
-
-
-def previous_metrics(state: dict[str, Any], seal: dict[str, str], names: list[str]) -> dict[str, Decimal]:
+    The most recent turn whose measurement carries every declared metric wins;
+    when none does, None lets the gate measure against the sealed baseline.
+    """
     for item in reversed(state["turnLog"]):
         measurement = item.get("measurement")
-        if isinstance(measurement, dict) and isinstance(measurement.get("metrics"), dict):
-            try:
-                return {name: Decimal(str(measurement["metrics"][name])) for name in names}
-            except (KeyError, ArithmeticError):
-                continue
-    return {name: Decimal(seal[f"sealed.baseline.{name}"]) for name in names}
+        if not isinstance(measurement, dict):
+            continue
+        metrics = measurement.get("metrics")
+        if isinstance(metrics, dict) and all(name in metrics for name in names):
+            return ",".join(f"{name}={metrics[name]}" for name in names)
+    return None
 
 
 def measure(mission: str, state: dict[str, Any]) -> tuple[str, str, dict[str, Any], bool]:
-    module = load_contract_module()
-    path = contract_path(mission).resolve()
-    contract = module.read_contract(path)
-    repo = module.repository_for(path)
-    project_root = module.project_root_for(path, repo)
-    module.validate_contract(contract, project_root)
-    candidate_sha, raw_metrics, failures = module.run_gate(contract, repo, project_root)
-    names = sorted(raw_metrics)
-    current = {name: Decimal(raw_metrics[name]) for name in names}
-    previous = previous_metrics(state, contract.sealed, names)
-    direction = contract.values["gate.direction"]
-    improved = False
-    regressed = False
-    within = True
-    for name in names:
-        noise = Decimal(contract.values[f"gate.noise-floor.{name}"])
-        delta = current[name] - previous[name]
-        directed = delta if direction == "max" else -delta
-        if directed > noise:
-            improved = True
-            within = False
-        elif directed < -noise:
-            regressed = True
-            within = False
-    if improved and not regressed:
-        classification = "contract-improved"
-    elif within:
-        classification = "unresolved"
-    else:
-        classification = "no-progress"
-    guards_passed = True
-    guards: dict[str, str] = {}
-    for key in sorted(contract.values):
-        match = re.fullmatch(r"guard\.([a-z0-9][a-z0-9-]*)\.command", key)
-        if not match:
-            continue
-        name = match.group(1)
-        guard_value = run_guard(module, contract, repo, project_root, name, contract.values[key])
-        guards[name] = str(guard_value)
-        if guard_value < Decimal(contract.values[f"guard.{name}.floor"]):
-            guards_passed = False
-    observed = ",".join(f"{name}={raw_metrics[name]}" for name in names)
-    measurement = {"metrics": raw_metrics, "guards": guards, "candidateSha": candidate_sha}
-    return classification, observed, measurement, failures == 0 and guards_passed
+    _, values, _ = parse_contract(mission, approved=False)
+    names = sorted(
+        key.removeprefix("gate.threshold.") for key in values if key.startswith("gate.threshold.")
+    )
+    command = [MS, "mission-contract", "measure", "--file", str(contract_path(mission))]
+    previous = previous_metrics(state, names)
+    if previous is not None:
+        command += ["--previous", previous]
+    result = run_command(command)
+    if result.returncode != 0:
+        raise RunnerError((result.stderr or result.stdout).strip() or "mission measurement refused")
+    payload = json.loads(result.stdout)
+    measurement = {
+        "metrics": payload["metrics"],
+        "guards": payload["guards"],
+        "candidateSha": payload["candidateSha"],
+    }
+    return payload["classification"], payload["observed"], measurement, bool(payload["gatePassed"])
 
 
 def append_ledger(ledger: Path, cycle: int, classification: str, candidate_sha: str, observed: str) -> None:
