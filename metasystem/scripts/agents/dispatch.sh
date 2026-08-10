@@ -139,6 +139,20 @@ record_create() { # job, source json
   "$0" __record-create --job "$1" --source "$2" && emit_event dispatch job-created "jobId=$1" "summary=record created"
 }
 
+# A refusal between the reservation and the full record must not leave a
+# pending-setup husk holding a fence slot: the exiting dispatch fails its own
+# reservation. The compare-and-swap no-ops once the record advanced past
+# pending-setup, so a successful dispatch is untouched.
+fail_setup_husk() { # job id
+  local husk_job=$1 husk_patch
+  [[ -n "$husk_job" && -f "$jobs/$husk_job.json" ]] || return 0
+  husk_patch=$(mktemp "${TMPDIR:-/tmp}/metasystem-husk-fail.XXXXXX")
+  printf '{"error":"dispatch-refused","phase":"setup"}\n' >"$husk_patch"
+  "$ms" dispatch record-cas --root "$root" --job "$husk_job" \
+    --expect pending-setup --status failed --patch "$husk_patch" >/dev/null 2>&1 || true
+  rm -f "$husk_patch"
+}
+
 record_setup() { # job, complete source json
   "$0" __record-setup --job "$1" --source "$2" && emit_event dispatch job-setup "jobId=$1" "summary=setup complete"
 }
@@ -974,7 +988,7 @@ dispatch_job() {
   rm -f "$setup_json"
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
   acquire_chain_lock "$job"
-  trap 'release_cap_authority_lock; release_chain_lock "$job"' EXIT
+  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$job"; release_cap_authority_lock; release_chain_lock "$job"' EXIT
   acquire_cap_authority_lock
   [[ ! -e "$agents/$job" ]] || die 1 "job payload collision: $job"
 
@@ -1160,7 +1174,7 @@ follow_up() {
     mission_data=$(resolve_mission "$mission")
     IFS='|' read -r mission lease mission_turn <<<"$mission_data"
   fi
-  trap 'release_cap_authority_lock; release_chain_lock "$root_id"' EXIT
+  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$child"; release_cap_authority_lock; release_chain_lock "$root_id"' EXIT
   acquire_cap_authority_lock
   cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
   model_key=$(canonical_model "$model")
