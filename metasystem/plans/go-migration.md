@@ -95,11 +95,15 @@ with the human's sign-off; none is currently claimed.
    REFUSALS MANIFEST of COMPLETE LINES (GO-MIG-R2-004, sharpened by
    GO-MIG-R3-006: anchored substrings admit changed prefixes,
    suffixes, and extra lines): each entry is the FULL refusal line
-   with named placeholders for variable fields; the oracle requires
-   end-to-end matches with no unmatched extra refusal lines; the
-   fixtures migrate their greps to manifest references as each
-   component ports. Changing a refusal string fails the oracle
-   until the manifest changes with review.
+   with named placeholders for variable fields; fixtures migrate
+   their greps to manifest references as each component ports, and
+   changing a refusal string fails the oracle until the manifest
+   changes with review. IN THE REPLAY ORACLE the manifest is for
+   ATTRIBUTION ONLY: the comparison itself is the WHOLE stderr
+   stream, byte-equal after the enumerated normalizations —
+   diagnostics, warnings, and their ordering included
+   (GO-MIG-R4-011: an interface pinned only at refusal lines
+   leaves the rest of the stream free to drift).
    Anything not normalized by an enumerated rule must match
    byte-for-byte, and NORMALIZATION PRESERVES VALIDITY,
    RELATIONS, AND ORDER (GO-MIG-R2-003, completed by
@@ -134,11 +138,15 @@ with the human's sign-off; none is currently claimed.
    SEAM, NOT A PROSE LIST (GO-MIG-R2-005, completed by
    GO-MIG-R3-003: any enumerated list rots — announcements, job
    records, cwd resolutions are consumed too): the python
-   classifier is instrumented ONCE to log every file read and
-   process query a scan performs; that logged closure IS the
-   bundle schema; the replay harness FAILS any comparison in which
-   the go side attempts a read outside the recorded bundle —
-   "consumes nothing live" enforced, not promised. Same input,
+   classifier is instrumented ONCE to log every input a scan
+   consumes — file reads, process queries, CLOCK READINGS,
+   environment lookups, timezone, working-directory and path
+   resolutions (GO-MIG-R4-006: reads-and-queries alone leave
+   nondeterminism outside the bundle); that logged closure IS the
+   bundle schema; replay INJECTS every recorded input class
+   (clocks included, via the existing injection pattern) and FAILS
+   any comparison in which the go side consumes anything outside
+   the bundle — "consumes nothing live" enforced, not promised. Same input,
    deterministic comparison, and therefore ZERO divergences of any
    kind is the bar: there is no "explained" category. Every real
    scan still becomes a free test case; it just becomes a
@@ -170,8 +178,13 @@ template's git history nor the cutover commit): every adoption
 records the template SOURCE COMMIT in the target's provenance;
 during a soak window the payload still carries the shell
 originals so mid-window targets can flip locally; after deletion
-the recipe is re-adoption from the tagged pre-cutover commit,
-which the tag keeps resolvable. Single writer holds throughout: the conf file is
+the recipe for a deployed target is RE-PROVISION FROM THE TAGGED
+PRE-CUTOVER COMMIT — replace the disposable target wholesale
+(GO-MIG-R4-010: in-place re-adoption from an older commit would
+be refused by adoption's own identity checks, so the recipe that
+works is the one targets are built for: replacement; in-flight
+mission state, if any matters, is parked by the ledger the same
+way any re-provision parks it). Single writer holds throughout: the conf file is
 the one engine selector per checkout, read at arm/dispatch entry,
 recorded into the state the fingerprint covers.
 
@@ -190,12 +203,15 @@ rewritten alongside the fixtures it serves.
   gate-run.py; open-work.py (its KI-34 fix is post-cutover,
   port-then-fix); select-capability-snapshot.py;
   control-plane-authority.py; second-session-isolation.py;
-  dispatch.sh's record/CAS/reap logic; arm-supervision.sh's
-  arming-gate logic; the json_field heredocs (ported once as
-  `metasystem json get`).
+  dispatch.sh's record/CAS/reap logic; the json_field heredocs
+  (ported once as `metasystem json get`).
 - REPLACEMENT: arm-supervision.sh's run_owner loop and trap
-  (KI-32 is the defect being designed away); the registry, gate,
-  and janitor (new components — no original exists).
+  (KI-32 is the defect being designed away); its ARMING-GATE logic
+  too (GO-MIG-R4-001: the closed design REPLACES arming — born-
+  owning checkout lock, registry reservation, armed-before-lock
+  ordering — so strict conformance would preserve the ownerless
+  window being designed away); the registry, gate, and janitor
+  (new components — no original exists).
 - RETIRE: worktree-lease-fixtures.py and
   authority-regression-fixtures.py (python test scaffolds) are
   REWRITTEN as engine-agnostic fixtures when their subject ports —
@@ -211,12 +227,18 @@ rewritten alongside the fixtures it serves.
   Phase 4 as `metasystem adopt`; the thin copy layer may stay
   shell; until then it is declared seam 3 in engine-seams.json.
 
-INVENTORY COMPLETENESS IS ENFORCED (GO-MIG-R3-005): a
-machine-readable mirror lives at
-scripts/agents/engine-inventory.json; the suite checks every *.py
-under scripts/ appears there with a classification — an
-unclassified python file is red, so nothing reaches the deletion
-sweep with its survival behavior undefined.
+INVENTORY COMPLETENESS IS ENFORCED AND GENERATED, NOT CURATED
+(GO-MIG-R3-005, completed by GO-MIG-R4-004 — four live python
+components were already missing from the hand list — and
+GO-MIG-R4-005): engine-inventory.json is checked against a
+FILESYSTEM SWEEP of every *.py AND every *.sh under scripts/ and
+benchmark/; every file carries a classification (PORT /
+REPLACEMENT / RETIRE / STAYS-SHELL-COMPOSES), and for shell files
+the classification asserts DECIDES vs COMPOSES — a shell file
+that decides (hooks included) must name its port phase; category
+waivers are not classifications. Any unclassified file is red.
+The prose lists above are illustration; the json under the sweep
+is the contract.
 
 ## Phases
 
@@ -280,6 +302,20 @@ sweep with its survival behavior undefined.
   conformance fixture for seam 2; the adopt port fixture for seam
   3). The suite check: for each unretired seam whose
   retireWhenExists path exists, fail red. No prose parsing.
+- PHASE 0b — the machine-wide safety pieces, a real phase
+  (GO-MIG-R4-002: a fixture filename is not an implementation
+  map): the registry bootstrap (~/.metasystem location, first
+  append), the ARMING GATE wired at arm entry (slot accounting
+  under the registry lock, gate-resolves-actionable), the JANITOR
+  as `metasystem janitor sweep` invoked at suite start and on
+  demand, the held-flock reap fence, and the syscall-seam
+  negative-proof fixture — all with their own fixture file, which
+  is item (b) of the flip bar. PLUS the COHORT TEARDOWN LEDGER in
+  the bash driver (GO-MIG-R4-003: the flip's matched pair demands
+  zero leaked processes, and the closed design says today's driver
+  has NO teardown — deferring it to Phase 3 would make the pair
+  unable to pass; it is driver logic, stays bash per the scope
+  ruling, and moves HERE because the flip depends on it).
 - PHASE 1 — custody core native: census in Go (sysctl enumeration,
   exact start times; recorded-input replay first, then engine
   flip), THEN the lease — the lease port takes a design note and
@@ -312,10 +348,14 @@ sweep with its survival behavior undefined.
   (2) CONTROL cohort on the shell engine — which BREAKS quiescence
   by design (GO-MIG-R3-002: the control runs real jobs), so
   quiescence is never claimed to span the window;
-  (2b) RE-QUIESCE: the identical verification runs again after the
-  control completes and before any configuration edit — the
-  single-writer claim attaches to the flip INSTANT, fenced by two
-  verified quiescent states;
+  (2b) RE-QUIESCE UNDER THE ADMISSION LOCK (GO-MIG-R4-007: a
+  check-to-use race lets a dispatch read the old selector, pause,
+  and create work after re-quiescence): the flip script takes the
+  cap-authority lock — the lock arming and dispatch admission
+  already serialize on — and holds it across re-quiesce, the conf
+  edit, and the re-arm; dispatch reads the engine selector under
+  that same lock at record creation, so no admission can straddle
+  the flip instant;
   (3) flip the conf key, re-arm (the fingerprint forces the new
   generation);
   (4) CANDIDATE cohort on the go engine — same spec version,
@@ -324,12 +364,24 @@ sweep with its survival behavior undefined.
   census durations, refusal counts, handshake failures, leaked
   processes (go must be ZERO), AND the mission outcomes —
   acceptance, requirement coverage, every validity gate — equal
-  or better under go (GO-MIG-R2-013). EACH SCORECARD BINDS ITS
-  ENGINE (GO-MIG-R3-013): extraction records engine name, template
-  source commit, binary sha256, and configuration fingerprint INTO
-  the scorecard, verified against the target's provenance record —
-  a pair whose scorecards cannot prove which engine ran fails the
-  protocol;
+  or better under go (GO-MIG-R2-013). THE PAIR SUPPLEMENTS PORT
+  CONFORMANCE, NEVER SUBSTITUTES FOR IT (GO-MIG-R4-008: aggregates
+  can mask a port that silently stopped refusing something —
+  "fewer refusals" can be a defect): port equivalence is proven
+  ONLY by the conformance instruments; in the pair, mission
+  outcomes must be equal-or-better while refusal and mechanical
+  COUNTS must be equal within the recorded run-to-run variance,
+  and ANY unexplained difference — in either direction — blocks
+  deletion until attributed. EACH SCORECARD BINDS ITS
+  ENGINE (GO-MIG-R3-013), BY EXECUTION ATTESTATION, NOT
+  INSTALLATION RECORDS (GO-MIG-R4-009: installed-and-selected does
+  not prove executed — a faulty wrapper could route to shell while
+  the paperwork says go): the go binary STAMPS its build hash and
+  engine name into the artifacts it actually writes (census
+  verdicts, registry appends, state publications carry
+  engine+hash fields), and extraction verifies the WORKLOAD'S OWN
+  artifacts carry the expected stamps — a pair whose artifacts
+  cannot prove which engine executed fails the protocol;
   (6) soak, then deletion per the cutover discipline. This — not
   a green unit run — is what "the binary works" means here.
 
@@ -363,6 +415,21 @@ failure instead of a silent one.
   and the temptation to "improve" ports mid-port — a port changes
   NOTHING; improvements come after deletion of the original,
   through the loop.
+
+## Review model from round 4 on (IL-23 applied)
+
+Four rounds ran 11, 13, 13, 11 material — the count stopped
+falling, and rounds 3-4 cut mostly at the precision edges of
+earlier folds. IL-23 says split or rescope at exactly this
+signature, and the ratified fixtures-as-arbiter discipline names
+the exit: THIS DOCUMENT is the strategy and freezes except for
+structural change (a structural change reopens a master round);
+each phase's IMPLEMENTATION PRECISION — the gate wiring, the
+bundle instrumentation, the flip script's lock choreography —
+gets its own SHORT design note and ONE just-in-time sol round
+immediately before that phase implements, with the phase's
+fixtures adjudicating everything below that altitude. The human
+may order further master rounds at any time; none is scheduled.
 
 ## Proof (the migration's own)
 
