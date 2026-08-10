@@ -21,6 +21,7 @@ USAGE
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 roles_dir="$root/scripts/agents/roles"
 
 while (($#)); do
@@ -31,62 +32,4 @@ while (($#)); do
   esac
 done
 
-# TODO(go-wiring): needs a preamble-quote verb that verifies every role
-# preamble's `<!-- quote source=... -->` block is a byte-exact, contiguous
-# substring of its named source under the metasystem root. A whole validator
-# (byte-level regex over the preambles), so it stays here.
-python3 - "$root" "$roles_dir" <<'PY'
-import os
-import re
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1]).resolve()
-roles_dir = Path(sys.argv[2]).resolve()
-violations = []
-pattern = re.compile(
-    br'^<!-- quote source="([^"\r\n]+)" -->\n(.*?)^<!-- /quote -->$',
-    re.MULTILINE | re.DOTALL,
-)
-
-if not roles_dir.is_dir():
-    violations.append(f"roles directory does not exist: {roles_dir}")
-else:
-    preambles = sorted(roles_dir.glob("*.md"))
-    if not preambles:
-        violations.append(f"roles directory contains no Markdown preambles: {roles_dir}")
-    for preamble in preambles:
-        body = preamble.read_bytes()
-        matches = list(pattern.finditer(body))
-        start_count = body.count(b'<!-- quote source="')
-        end_count = body.count(b'<!-- /quote -->')
-        if not matches:
-            violations.append(f"{preamble}: no verbatim quote block")
-            continue
-        if start_count != len(matches) or end_count != len(matches):
-            violations.append(f"{preamble}: malformed or unpaired quote marker")
-            continue
-        for match in matches:
-            source_name = match.group(1).decode("utf-8", errors="replace")
-            source = (root / source_name).resolve()
-            try:
-                inside_root = os.path.commonpath((str(root), str(source))) == str(root)
-            except ValueError:
-                inside_root = False
-            if not inside_root:
-                violations.append(f"{preamble}: quote source escapes the metasystem root: {source_name}")
-                continue
-            if not source.is_file():
-                violations.append(f"{preamble}: quote source does not exist: {source_name}")
-                continue
-            inner = match.group(2)
-            quoted = inner[:-1] if inner.endswith(b"\n") else inner
-            if not quoted:
-                violations.append(f"{preamble}: quote from {source_name} is empty")
-            elif quoted not in source.read_bytes():
-                violations.append(f"{preamble}: quote drifted from {source_name}")
-
-for item in violations:
-    print(f"quote violation: {item}", file=sys.stderr)
-sys.exit(1 if violations else 0)
-PY
+exec "$ms" validate preamble-quotes --root "$root" --roles-dir "$roles_dir"

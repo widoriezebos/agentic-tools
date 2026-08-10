@@ -23,10 +23,7 @@ cwd=$(read_payload cwd)
 repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
 repo=$(cd "$repo" && pwd -P)
 arm=$script_dir/arm-supervision.sh
-# process-census.py is still required by the FLAGGED watchdog heredoc below
-# (TODO(go-wiring)); every other census/lease call in this hook is wired to $ms.
-helper=$script_dir/process-census.py
-[[ -x "$ms" && -x "$helper" && -x "$arm" ]] || exit 0
+[[ -x "$ms" && -x "$arm" ]] || exit 0
 session=$(read_payload session_id)
 [[ -n "$session" ]] || session="session-$PPID"
 
@@ -126,47 +123,7 @@ $protocol_message"
   fi
   [[ -z "$identity_pid" ]] || \
     "$ms" lease renew --root "$harness_root" --caller-pid "$identity_pid" >/dev/null 2>&1 || true
-  last="$harness_root/artifacts/agents/supervision/last-census.json"
-  state="$harness_root/artifacts/agents/supervision/state.json"
-  # TODO(go-wiring): needs verb `supervise watchdog-report` (read last-census/
-  # state, check freshness, list UNTRACKED, verify owner/component liveness, emit
-  # re-arm advice). Non-trivial multi-step logic and per-identity liveness
-  # probes; left as python3, still shelling out to process-census.py ($helper).
-  message=$(python3 - "$last" "$state" "$helper" <<'PY'
-import json,subprocess,sys,time
-from pathlib import Path
-last_path,state_path,helper=Path(sys.argv[1]),Path(sys.argv[2]),sys.argv[3]
-arm_cmd="scripts/agents/arm-supervision.sh --repo ."
-lines=[]
-try: last=json.loads(last_path.read_text())
-except (OSError,ValueError): last=None
-if last is None:
-    lines.append("WATCHDOG: it has not reported at all yet. Re-arm it with " + arm_cmd + " if this persists.")
-else:
-    age=int(time.time())-int(last.get("completedAtEpoch",0)); interval=int(last.get("intervalSec",0) or 0)
-    window=min(2*interval,180) if interval>=1 else 0
-    if last.get("verdict") != "SUCCESS" or interval < 1 or age >= window:
-        lines.append(f"WATCHDOG: its last report is {age}s old or unsuccessful, so it may not be watching. Re-arm it with {arm_cmd}.")
-    for item in last.get("inventory",[]):
-        if item.get("class")=="UNTRACKED": lines.append(f"UNTRACKED pid={item.get('pid')} runtime={item.get('runtime')} argv={item.get('argv')}")
-try: state=json.loads(state_path.read_text())
-except (OSError,ValueError): state=None
-if not isinstance(state,dict) or not isinstance(state.get("owner"),dict) or not isinstance(state.get("components"),dict):
-    lines.append("WATCHDOG: its record of what it is watching is missing or unreadable. Re-arm it with " + arm_cmd + ".")
-    state={}
-elif last is not None and state.get("fingerprint") != last.get("fingerprint"):
-    lines.append("WATCHDOG: it was started against an older version of this code and is now watching something that has changed. Re-arm it with " + arm_cmd + ".")
-identities={}
-if isinstance(state.get("owner"),dict): identities["owner"]=state["owner"]
-identities.update(state.get("components",{}))
-for name,item in identities.items():
-    try:
-        ok=subprocess.run([helper,"alive","--pid",str(item["pid"]),"--start-time",str(item["pidStartedAt"])],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
-    except (KeyError,TypeError,OSError): ok=False
-    if not ok: lines.append(f"WATCHDOG: its {name} part is not running. Re-arm it with {arm_cmd}.")
-print("\n".join(lines[:20]))
-PY
-  )
+  message=$("$ms" supervise watchdog-report --repo "$harness_root" 2>/dev/null || true)
   # Continuation is the one part of the loop no prompt can guarantee, so it is
   # checked here rather than asked for in prose: a turn ending while a plan
   # still names an unblocked next step and nothing is in flight says so.

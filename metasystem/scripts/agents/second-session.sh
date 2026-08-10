@@ -29,9 +29,9 @@ for adapter in "$script_dir"/adapters/*.sh; do
 done
 sort -u -o "$paths" "$paths"
 
-# TODO(go-wiring): second-session-isolation.py is not yet ported to the binary;
-# no metasystem verb performs the isolated-checkout copy, so this stays python3.
-new_harness=$("$script_dir/second-session-isolation.py" \
+# Copy the adapter-declared local configuration into the new worktree and
+# audit its isolation; the printed path is the new checkout's harness root.
+new_harness=$("$ms" validate session-isolation \
   --source-root "$checkout" --destination-root "$destination" \
   --manifest "$paths" --harness-root "$harness_root")
 # started-at is an OS-level start-time query independent of which checkout runs

@@ -51,69 +51,9 @@ while (($#)); do
 done
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 [[ -n "$plans_dir" ]] || plans_dir="$root/plans"
 [[ -d "$plans_dir" ]] || { echo "no such plans directory: $plans_dir" >&2; exit 2; }
 
-# TODO(go-wiring): needs a plan-consistency verb that reports any term a plan
-# retires (RETIRED: <term> -- <by>) still prescribed on a non-explaining line in
-# another plan. A whole validator over plans/*.md, so it stays here.
-python3 - "$plans_dir" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-plans = Path(sys.argv[1])
-# A line that mentions a retired term while explaining the change, rather than
-# prescribing it. Kept small on purpose: every word here is a way to say "this
-# used to be true", and a longer list would start excusing real drift.
-EXPLAINS = re.compile(
-    r"RETIRED|SUPERSEDED|superseded|replaces|replaced|no longer|removed|"
-    r"used to|earlier|first draft|was vacuous",
-)
-RETIRE = re.compile(r"^RETIRED:\s*(?P<term>.+?)\s*--\s*(?P<by>.+?)\s*$", re.MULTILINE)
-
-retired = {}
-for path in sorted(plans.glob("*.md")):
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        continue
-    for match in RETIRE.finditer(text):
-        term = match.group("term").strip()
-        if term:
-            retired[term] = (path.name, match.group("by").strip())
-
-violations = []
-for term, (declared_in, replacement) in sorted(retired.items()):
-    pattern = re.compile(re.escape(term), re.IGNORECASE)
-    for path in sorted(plans.glob("*.md")):
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            continue
-        for number, line in enumerate(lines, start=1):
-            if not pattern.search(line):
-                continue
-            if line.lstrip().startswith("RETIRED:"):
-                continue
-            if EXPLAINS.search(line):
-                continue
-            violations.append(
-                f"{path.name}:{number}: prescribes '{term}', retired in "
-                f"{declared_in} in favour of {replacement}"
-            )
-
-if violations:
-    print("plan consistency: a retired term is still prescribed", file=sys.stderr)
-    for item in violations:
-        print(f"  {item}", file=sys.stderr)
-    print(
-        "  Either state the change on that line (say it was replaced, or mark it "
-        "SUPERSEDED) or bring the line up to date.",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
-
-print(f"plan consistency: {len(retired)} retired term(s), none prescribed")
-PY
+exec "$ms" validate plan-consistency --plans-dir "$plans_dir"
 

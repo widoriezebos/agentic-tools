@@ -29,32 +29,11 @@ if [[ -x "$ms" ]]; then
   # classifications still require the live wrapper token below.
   if [[ -n "$caller_class" && "$caller_class" != HUMAN ]]; then
     token=$guard_root/artifacts/agents/mains/worktree-commit-token.json
-    # TODO(go-wiring): this heredoc validates the wrapper token's fields, walks
-    # the process ancestry (ps -o ppid=) to find the wrapper pid, then confirms
-    # its start time via process-census.py started-at. It is a multi-step
-    # ancestry proof, not a JSON field read or a single mapped verb (nearest are
-    # census find-ancestor / signature-check, which is not exposed by the binary),
-    # so it stays python3 until a `census verify-wrapper-token` verb exists.
-    if ! python3 - "$token" "$guard_root/scripts/agents/process-census.py" "$$" <<'PY'
-import json,subprocess,sys
-from pathlib import Path
-path,helper,current=Path(sys.argv[1]),sys.argv[2],int(sys.argv[3])
-try: token=json.loads(path.read_text(encoding="utf-8"))
-except (OSError,ValueError): raise SystemExit(1)
-pid,start,nonce=token.get("wrapperPid"),token.get("wrapperPidStartedAt"),token.get("nonce")
-if type(pid) is not int or type(start) is not int or not isinstance(nonce,str) or len(nonce)!=32: raise SystemExit(1)
-seen=set()
-while current>0 and current not in seen:
-    seen.add(current)
-    if current==pid:
-        try: actual=int(subprocess.check_output([helper,"started-at","--pid",str(pid)],text=True,stderr=subprocess.DEVNULL).strip())
-        except (OSError,ValueError,subprocess.SubprocessError): raise SystemExit(1)
-        raise SystemExit(0 if actual==start else 1)
-    try: current=int(subprocess.check_output(["ps","-p",str(current),"-o","ppid="],text=True,stderr=subprocess.DEVNULL).strip())
-    except (OSError,ValueError,subprocess.SubprocessError): break
-raise SystemExit(1)
-PY
-    then
+    # The wrapper-token proof: the token's fields must be valid, the wrapper
+    # pid must appear in this process's ancestry, and the process at that pid
+    # must have started at exactly the recorded second, so a recycled pid
+    # never passes.
+    if ! "$ms" validate wrapper-token --token "$token" --caller-pid "$$" 2>/dev/null; then
       echo "pre-commit guard: agent commit requires scripts/agents/commit.sh; the live wrapper ancestry token is missing" >&2
       exit 1
     fi

@@ -64,6 +64,21 @@ func families() []family {
 				{"validate", "validate the whole metasystem.conf domain", runConfigValidate},
 				{"keys", "enumerate config keys, optionally by prefix", runConfigKeys},
 				{"conf-value", "print a single conf value (exit 3 absent, 1 on duplicate)", runConfigConfValue},
+				{"tailor", "rewrite metasystem.conf in place for a selected runtime set", runConfigTailor},
+			},
+		},
+		{
+			name:    "validate",
+			summary: "whole-artifact validators the assert scripts exec into",
+			verbs: []verb{
+				{"turn-prompt", "validate an assembled host-turn prompt against its turn record and the shipped preamble", runValidateTurnPrompt},
+				{"plan-consistency", "report retired terms still prescribed in plans", runValidatePlanConsistency},
+				{"critique-closed", "join a critic return's findings against the dispositions table", runValidateCritiqueClosed},
+				{"preamble-quotes", "verify role-preamble quote blocks are byte-exact substrings of their sources", runValidatePreambleQuotes},
+				{"code-critique-claim", "verify a receipt's code-critique delegate claim", runValidateCodeCritiqueClaim},
+				{"waiver-facts", "print an implementer delegate's critique-waiver class and mission stream", runValidateWaiverFacts},
+				{"wrapper-token", "prove the caller's ancestry contains the live commit wrapper", runValidateWrapperToken},
+				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 			},
 		},
 		{
@@ -255,6 +270,7 @@ func families() []family {
 				{"write-owner-identity", "atomically write the owner-identity record", runSuperviseWriteOwnerIdentity},
 				{"component-identity", "print a recorded component's pid, start, and tag", runSuperviseComponentIdentity},
 				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
+				{"watchdog-report", "report a stale census, untracked processes, and dead components", runSuperviseWatchdogReport},
 			},
 		},
 	}

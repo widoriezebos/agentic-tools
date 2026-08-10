@@ -10,6 +10,9 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 )
 
 // The arming-side supervision verbs: the reserved-cap ceiling check, the
@@ -249,4 +252,116 @@ func jsonIntField(v any) (int64, bool) {
 		return 0, false
 	}
 	return int64(f), true
+}
+
+// runSuperviseWatchdogReport reads the last census and the supervision state
+// and reports what a session should know at turn end: a stale or unsuccessful
+// census, untracked agent processes, a fingerprint older than the code, and
+// any recorded identity that is no longer running — each with re-arm advice.
+func runSuperviseWatchdogReport(args []string) int {
+	flags := flag.NewFlagSet("supervise watchdog-report", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "supervise watchdog-report: --repo is required")
+		return 2
+	}
+	const armCmd = "scripts/agents/arm-supervision.sh --repo ."
+	supervision := filepath.Join(*repo, "artifacts", "agents", "supervision")
+	var lines []string
+
+	last, lastErr := readJSONObject(filepath.Join(supervision, "last-census.json"))
+	if lastErr != nil {
+		lines = append(lines, "WATCHDOG: it has not reported at all yet. Re-arm it with "+armCmd+" if this persists.")
+	} else {
+		completed, _ := jsonIntField(last["completedAtEpoch"])
+		interval, _ := jsonIntField(last["intervalSec"])
+		age := time.Now().Unix() - completed
+		window := int64(0)
+		if interval >= 1 {
+			window = 2 * interval
+			if window > 180 {
+				window = 180
+			}
+		}
+		verdict, _ := last["verdict"].(string)
+		if verdict != "SUCCESS" || interval < 1 || age >= window {
+			lines = append(lines, fmt.Sprintf("WATCHDOG: its last report is %ds old or unsuccessful, so it may not be watching. Re-arm it with %s.", age, armCmd))
+		}
+		if inventory, ok := last["inventory"].([]any); ok {
+			for _, raw := range inventory {
+				item, _ := raw.(map[string]any)
+				if item == nil {
+					continue
+				}
+				if class, _ := item["class"].(string); class == "UNTRACKED" {
+					pid, _ := jsonIntField(item["pid"])
+					runtime, _ := item["runtime"].(string)
+					argv, _ := item["argv"].(string)
+					lines = append(lines, fmt.Sprintf("UNTRACKED pid=%d runtime=%s argv=%s", pid, runtime, argv))
+				}
+			}
+		}
+	}
+
+	state, stateErr := readJSONObject(filepath.Join(supervision, "state.json"))
+	owner, ownerOK := stateOwner(state)
+	components, componentsOK := stateComponents(state)
+	if stateErr != nil || !ownerOK || !componentsOK {
+		lines = append(lines, "WATCHDOG: its record of what it is watching is missing or unreadable. Re-arm it with "+armCmd+".")
+		state = nil
+	} else if lastErr == nil {
+		stateFP, _ := state["fingerprint"].(string)
+		lastFP, _ := last["fingerprint"].(string)
+		if stateFP != lastFP {
+			lines = append(lines, "WATCHDOG: it was started against an older version of this code and is now watching something that has changed. Re-arm it with "+armCmd+".")
+		}
+	}
+
+	identities := map[string]map[string]any{}
+	if owner != nil {
+		identities["owner"] = owner
+	}
+	for name, raw := range components {
+		if item, ok := raw.(map[string]any); ok {
+			identities[name] = item
+		}
+	}
+	names := make([]string, 0, len(identities))
+	for name := range identities {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		item := identities[name]
+		pid, pidOK := jsonIntField(item["pid"])
+		start, startOK := jsonIntField(item["pidStartedAt"])
+		if !pidOK || !startOK || !census.Alive(pid, start) {
+			lines = append(lines, fmt.Sprintf("WATCHDOG: its %s part is not running. Re-arm it with %s.", name, armCmd))
+		}
+	}
+
+	if len(lines) > 20 {
+		lines = lines[:20]
+	}
+	fmt.Println(strings.Join(lines, "\n"))
+	return 0
+}
+
+func stateOwner(state map[string]any) (map[string]any, bool) {
+	if state == nil {
+		return nil, false
+	}
+	owner, ok := state["owner"].(map[string]any)
+	return owner, ok
+}
+
+func stateComponents(state map[string]any) (map[string]any, bool) {
+	if state == nil {
+		return nil, false
+	}
+	components, ok := state["components"].(map[string]any)
+	return components, ok
 }

@@ -32,6 +32,7 @@ USAGE
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 file=plans/receipts.log
 max_age_days=
 max_receipts=
@@ -94,102 +95,16 @@ sanitize() {
 }
 
 validate_code_critique_claim() {
-  # TODO(go-wiring): needs a verb that verifies a code-critique claim — the
-  # delegate jobs must include a top-level code-critic chain whose reviews field
-  # names one of the implementer delegate jobs. Cross-references several job
-  # records, so it stays here.
-  python3 - "$root" ${delegates[@]+"${delegates[@]}"} <<'PY'
-import json
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1])
-jobs = root / "artifacts" / "agents" / "jobs"
-records = []
-for triple in sys.argv[2:]:
-    job_id = triple.rsplit(":", 1)[-1]
-    path = jobs / f"{job_id}.json"
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        continue
-    if isinstance(value, dict) and value.get("jobId") == job_id:
-        records.append(value)
-
-implementers = {
-    value["jobId"]: value
-    for value in records
-    if value.get("role") == "implementer"
-}
-critics = [
-    value
-    for value in records
-    if value.get("role") == "code-critic" and value.get("parentJob") is None
-]
-for critic in critics:
-    reviewed = critic.get("reviews")
-    if reviewed in implementers:
-        raise SystemExit(0)
-print(
-    "receipt refused: skills=code-critique requires delegate entries naming a "
-    "code-critic chain id and the implementer job id in that chain's reviews field",
-    file=sys.stderr,
-)
-raise SystemExit(1)
-PY
+  # The delegate jobs must include a top-level code-critic chain whose
+  # reviews field names one of the implementer delegate jobs.
+  "$ms" validate code-critique-claim --root "$root" ${delegates[@]+"${delegates[@]}"}
 }
 
 waiver_receipt_facts() {
-  # TODO(go-wiring): needs a verb that resolves an implementer delegate's
-  # critique-waiver facts — the waiver class from the job record and the mission
-  # stream read from the chain-root brief. Walks the parentJob chain, so it
-  # stays here.
-  python3 - "$root" ${delegates[@]+"${delegates[@]}"} <<'PY'
-import json
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1])
-jobs = root / "artifacts" / "agents" / "jobs"
-for triple in sys.argv[2:]:
-    job_id = triple.rsplit(":", 1)[-1]
-    path = jobs / f"{job_id}.json"
-    try:
-        record = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        continue
-    if not isinstance(record, dict) or record.get("jobId") != job_id or record.get("role") != "implementer":
-        continue
-    claim = record.get("critiqueWaived")
-    if not isinstance(claim, dict) or not isinstance(claim.get("class"), str):
-        continue
-    current = record
-    seen = set()
-    while current.get("parentJob") is not None:
-        parent = current.get("parentJob")
-        if not isinstance(parent, str) or parent in seen:
-            break
-        seen.add(parent)
-        try:
-            current = json.loads((jobs / f"{parent}.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            break
-    root_job = current.get("jobId", job_id)
-    stream = "standalone"
-    brief = root / "artifacts" / "agents" / root_job / "brief.md"
-    try:
-        for line in brief.read_text(encoding="utf-8").splitlines():
-            if line.startswith("Mission Stream:"):
-                stream = line.split(":", 1)[1].strip() or "standalone"
-                break
-    except OSError:
-        pass
-    print(claim["class"])
-    print(stream)
-    raise SystemExit(0)
-print("none")
-print("none")
-PY
+  # Prints an implementer delegate's critique-waiver facts on two lines:
+  # the waiver class from the job record and the mission stream read from
+  # the chain-root brief, or none/none when no delegate carries a waiver.
+  "$ms" validate waiver-facts --root "$root" ${delegates[@]+"${delegates[@]}"}
 }
 
 case "$cmd" in
