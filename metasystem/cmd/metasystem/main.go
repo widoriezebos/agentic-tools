@@ -57,6 +57,14 @@ func families() []family {
 			},
 		},
 		{
+			name:    "gate",
+			summary: "gate-run markers: know when a gate is in flight (port of gate-run.py)",
+			verbs: []verb{
+				{"register", "record that this process is a running gate", runGateRegister},
+				{"check", "print 1 when a gate is running in this checkout, else 0", runGateCheck},
+			},
+		},
+		{
 			name:    "json",
 			summary: "JSON field access for shell callers (replaces the python heredocs)",
 			verbs: []verb{
