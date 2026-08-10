@@ -32,6 +32,8 @@ func families() []family {
 			verbs: []verb{
 				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
 				{"probe", "print a pid's exact identity as JSON", runIdentityProbe},
+				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
+				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
 			},
 		},
 		{
@@ -309,6 +311,7 @@ func families() []family {
 				{"component-identity", "print a recorded component's pid, start, and tag", runSuperviseComponentIdentity},
 				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
 				{"watchdog-report", "report a stale census, untracked processes, and dead components", runSuperviseWatchdogReport},
+				{"heartbeat", "atomically write a component heartbeat with its kernel identity", runSuperviseHeartbeat},
 			},
 		},
 	}

@@ -188,18 +188,7 @@ process_matches() { # pid, tag
 }
 
 process_exists() { # pid; permission denied still proves the pid exists
-  # TODO(go-wiring): a kill(pid, 0) probe that treats EPERM as existence; bash
-  # kill -0 cannot tell EPERM from ESRCH, so this stays python until a process
-  # probe verb exists.
-  python3 - "$1" <<'PY'
-import os, sys
-try:
-    os.kill(int(sys.argv[1]), 0)
-except ProcessLookupError:
-    raise SystemExit(1)
-except (PermissionError, ValueError):
-    pass
-PY
+  "$ms" identity exists --pid "$1"
 }
 
 lock_owner_state() { # pid, tag -> live, dead, stale, or unknown
@@ -231,17 +220,7 @@ job_supervisor_matches() { # record
 group_alive() { # pgid
   local pgid=$1
   [[ "$pgid" =~ ^[1-9][0-9]*$ ]] || return 1
-  # TODO(go-wiring): a killpg(pgid, 0) probe that treats EPERM as liveness;
-  # stays python for the same EPERM/ESRCH distinction as process_exists.
-  python3 - "$pgid" <<'PY'
-import os, sys
-try:
-    os.killpg(int(sys.argv[1]), 0)
-except ProcessLookupError:
-    raise SystemExit(1)
-except PermissionError:
-    pass
-PY
+  "$ms" identity group-exists --pgid "$pgid"
 }
 
 group_owned() { # record
@@ -695,20 +674,13 @@ launch_adapter() { # runtime verb job tag
   # TODO(go-wiring): the setsid/exec daemonization below hands the adapter its
   # own session and identity env in one process image; it stays python until a
   # dedicated launcher exists.
-  python3 - "$root" "$adapter" "$verb" "$job" "$gate" "$tag" >/dev/null 2>&1 <<'PY' &
-import os, sys
-root, adapter, verb, job, gate, tag = sys.argv[1:]
-os.chdir(root)
-os.setsid()
-os.environ["GIT_AUTHOR_NAME"] = job
-os.environ["GIT_AUTHOR_EMAIL"] = f"{job}@metasystem.invalid"
-os.execv(adapter, [adapter, verb, "--job", job, "--start-gate", gate, "--instance-tag", tag])
-PY
-  pid=$!
+  pid=$("$ms" supervise launch-detached --cwd "$root" \
+    --env "GIT_AUTHOR_NAME=$job" --env "GIT_AUTHOR_EMAIL=$job@metasystem.invalid" -- \
+    "$adapter" "$verb" --job "$job" --start-gate "$gate" --instance-tag "$tag") || return 1
   cap=$(dispatch_fixture_wait_cap 5)
   started=$SECONDS
   deadline=$((SECONDS + cap))
-  until pid_started=$("$process_census" started-at --pid "$pid" 2>/dev/null); do
+  until pid_started=$("$ms" identity started-at --pid "$pid" 2>/dev/null); do
     if (( SECONDS >= deadline )); then
       elapsed=$((SECONDS - started))
       echo "adapter start identity ceiling reached for $job (elapsed: ${elapsed}s; scaled cap: ${cap}s)" >&2
@@ -1457,19 +1429,8 @@ reap_jobs() {
       for record in "$jobs"/*.json; do [[ -f "$record" ]] && reap_one "$(basename "${record%.json}")"; done
     fi
     if [[ -n "$supervision_heartbeat" ]]; then
-      # TODO(go-wiring): the reaper heartbeat (identity probe + fsynced atomic
-      # replace) belongs beside the other supervision heartbeat writers, not in
-      # the dispatch verb family; it stays python until that surface exists.
-      python3 - "$supervision_heartbeat" "$$" "$supervision_tag" "$process_census" <<'PY'
-import json,os,subprocess,sys,tempfile,time
-from pathlib import Path
-p=Path(sys.argv[1]); pid=int(sys.argv[2]); tag=sys.argv[3]; helper=sys.argv[4]
-started=int(subprocess.check_output([helper,"started-at","--pid",str(pid)],text=True).strip())
-v={"function":"reaper","pid":pid,"pidStartedAt":started,"instanceTag":tag,"observedAtEpoch":int(time.time())}
-p.parent.mkdir(parents=True,exist_ok=True); fd,t=tempfile.mkstemp(prefix=p.name+".",suffix=".tmp",dir=p.parent)
-with os.fdopen(fd,"w") as h: json.dump(v,h,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
-os.replace(t,p)
-PY
+      "$ms" supervise heartbeat --path "$supervision_heartbeat" --function reaper \
+        --pid "$$" --tag "$supervision_tag" || true
     fi
     [[ -n "$interval" ]] || break
     sleep "$interval_sleep"
@@ -1482,7 +1443,7 @@ internal_register_custody() {
     case "$1" in --job) job=$2; shift 2 ;; --pid) pid=$2; shift 2 ;; *) exit 2 ;; esac
   done
   valid_id "$job" && [[ "$pid" =~ ^[1-9][0-9]*$ && -f "$jobs/$job.json" ]] || exit 2
-  started=$("$process_census" started-at --pid "$pid") || exit 1
+  started=$("$ms" identity started-at --pid "$pid") || exit 1
   # The read-dedupe-append-write runs under the record lock in one verb, so a
   # custody registration can never race a status transition.
   "$ms" dispatch custody-add --root "$root" --job "$job" --pid "$pid" --pid-started "$started"

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // The arming-side supervision verbs: the reserved-cap ceiling check, the
@@ -198,16 +199,26 @@ func runSuperviseComponentIdentity(args []string) int {
 // the child pid.
 func runSuperviseLaunchDetached(args []string) int {
 	flags := flag.NewFlagSet("supervise launch-detached", flag.ContinueOnError)
-	log := flags.String("log", "", "log file the child's output appends to")
+	log := flags.String("log", "", "log file the child's output appends to (default /dev/null)")
+	cwd := flags.String("cwd", "", "working directory for the child (optional)")
+	var env []string
+	flags.Func("env", "KEY=VALUE to add to the child's environment (repeatable)", func(value string) error {
+		env = append(env, value)
+		return nil
+	})
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	argv := flags.Args()
-	if *log == "" || len(argv) == 0 {
-		fmt.Fprintln(os.Stderr, "supervise launch-detached: --log and a command are required")
+	if len(argv) == 0 {
+		fmt.Fprintln(os.Stderr, "supervise launch-detached: a command is required")
 		return 2
 	}
-	logFile, err := os.OpenFile(*log, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	logPath := *log
+	if logPath == "" {
+		logPath = os.DevNull
+	}
+	logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -223,6 +234,10 @@ func runSuperviseLaunchDetached(args []string) int {
 	cmd.Stdin = devNull
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
+	cmd.Dir = *cwd
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -364,4 +379,36 @@ func stateComponents(state map[string]any) (map[string]any, bool) {
 	}
 	components, ok := state["components"].(map[string]any)
 	return components, ok
+}
+
+// runSuperviseHeartbeat writes a component heartbeat: the process identity
+// (pid + kernel start second), its function and tag, and the observation time,
+// atomically.
+func runSuperviseHeartbeat(args []string) int {
+	flags := flag.NewFlagSet("supervise heartbeat", flag.ContinueOnError)
+	path := flags.String("path", "", "heartbeat file path")
+	function := flags.String("function", "", "component function name")
+	pid := flags.Int64("pid", 0, "component pid")
+	tag := flags.String("tag", "", "instance tag")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *path == "" || *function == "" || *pid < 1 || *tag == "" {
+		fmt.Fprintln(os.Stderr, "supervise heartbeat: --path, --function, --pid, and --tag are required")
+		return 2
+	}
+	exact, state, err := identity.KernelProber{}.Probe(*pid)
+	if err != nil || state != identity.Alive {
+		fmt.Fprintln(os.Stderr, "supervise heartbeat: pid identity unreadable")
+		return 1
+	}
+	value := map[string]any{
+		"function": *function, "pid": *pid, "pidStartedAt": exact.StartedAt.Unix(),
+		"instanceTag": *tag, "observedAtEpoch": time.Now().Unix(),
+	}
+	if err := writeIdentityJSON(*path, value); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }
