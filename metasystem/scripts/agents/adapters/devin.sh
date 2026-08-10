@@ -505,8 +505,7 @@ supervise() { # dispatch|follow-up and supervisor args
   # A command that succeeded but emitted unparseable JSON is not an empty
   # baseline: reading it as empty makes every pre-existing session look new,
   # which is the peer-attribution bug the baseline exists to prevent.
-  # TODO(go-wiring): needs a json-validate verb (is-this-file-parseable-JSON check).
-  if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$before_sessions" 2>/dev/null; then
+  if ! "$ms" util json-validate --file "$before_sessions"; then
     fail_pending session_baseline_unreadable handshake
     return 1
   fi
