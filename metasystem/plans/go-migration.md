@@ -69,7 +69,13 @@ with the human's sign-off; none is currently claimed.
    binding to the component (fixtures, scripts, hooks), rewrite
    each to the stable wrapper, and land that as its own reviewed
    no-op commit — fixtures still green against shell — BEFORE the
-   engine switch exists. The switch itself lives in the wrapper
+   engine switch exists. THE PASS IS GUARDED, NOT TRUSTED
+   (GO-MIG-R3-009: one missed binding recreates the false green):
+   once a component's normalization lands, the suite greps the
+   tree for direct invocations of that component's original (its
+   filename after python3 or as an executable path) outside the
+   wrapper and the original itself — any hit is permanently red.
+   The switch itself lives in the wrapper
    shim and is read from METASYSTEM.CONF, never from an environment
    variable (GO-MIG-R1-006: a process-local flag cannot enforce the
    single-writer claim — two processes with different environments
@@ -85,37 +91,54 @@ with the human's sign-off; none is currently claimed.
    normalization is an enumerated regex in the harness (timestamps,
    pids, nonces, hostnames, temp paths), reviewed once, applied
    identically to both sides; stderr matched by the ANCHORED
-   patterns the existing fixtures already grep for, extracted into
-   a VERSIONED REFUSALS MANIFEST that both the harness and the
-   fixtures reference (GO-MIG-R2-004: without the shared manifest,
-   the "refusal-message interface" was a promise with no artifact —
-   the manifest IS the interface, and a port changing any refusal
-   string fails the oracle until the manifest changes with review).
+   patterns the existing fixtures grep for, PROMOTED to a VERSIONED
+   REFUSALS MANIFEST of COMPLETE LINES (GO-MIG-R2-004, sharpened by
+   GO-MIG-R3-006: anchored substrings admit changed prefixes,
+   suffixes, and extra lines): each entry is the FULL refusal line
+   with named placeholders for variable fields; the oracle requires
+   end-to-end matches with no unmatched extra refusal lines; the
+   fixtures migrate their greps to manifest references as each
+   component ports. Changing a refusal string fails the oracle
+   until the manifest changes with review.
    Anything not normalized by an enumerated rule must match
-   byte-for-byte, and NORMALIZATION PRESERVES VALIDITY AND
-   RELATIONS (GO-MIG-R2-003: erasing a timestamp must not erase its
-   wrongness): normalized fields are still schema-validated on both
-   sides before erasure, and equal source values map to equal
-   placeholders within a comparison — pid 41 becomes PID_A
-   everywhere on both sides, so cross-record identity survives the
-   wash while the incidental value does not. REPLAY IS NECESSARY, NOT
+   byte-for-byte, and NORMALIZATION PRESERVES VALIDITY,
+   RELATIONS, AND ORDER (GO-MIG-R2-003, completed by
+   GO-MIG-R3-007): normalized fields are schema-validated on both
+   sides before erasure; equal source values map to equal
+   placeholders on both sides (pid 41 is PID_A everywhere); and
+   DERIVED CONSTRAINTS are asserted before the wash — timestamps
+   mutually ordered as the records' semantics require, dual
+   representations of one instant agreeing, durations equal to
+   their endpoints' difference within recorded precision. The
+   wash removes incidental values, never the propositions they
+   participate in. REPLAY IS NECESSARY, NOT
    SUFFICIENT (GO-MIG-R1-004: corpora cannot reach live and
    clock-dependent branches): each port's checklist NAMES the
    branch classes replay covers and those it cannot, and the
    uncovered classes must be reached by the engine-switched
    fixtures — with fixture-injected clocks where the branch is
-   clock-dependent (the existing env-override pattern).
+   clock-dependent (the existing env-override pattern). STATEFUL
+   PORTS GET A STATE CONTRACT (GO-MIG-R3-008: lease and CAS verbs
+   cannot share one sandbox sequentially): each stateful replay
+   case declares its INITIAL STATE (a seeded sandbox, identical
+   copies to both engines) and the port's COMPLETE EFFECTS SET
+   (every file its original may write); the oracle compares the
+   full effects set — including files the verb must NOT have
+   touched, which must equal the seed on both sides.
 3. RECORDED-INPUT REPLAY IN PRODUCTION (GO-MIG-R1-005: a live
    "shadow scan" at a different instant sees a different process
    table, so divergence would be ambient noise and "unexplained
    divergences" an invitation to explain defects away). The
    production watcher RECORDS its raw decision inputs AS ONE
-   BUNDLE — the enumerated process table AND the signature
-   declarations, configuration values, and supervision-state bytes
-   the classification consumed (GO-MIG-R2-005: the table is only
-   one mutable input; replaying it against live config would
-   compare two different questions) — and the Go classifier
-   replays THAT RECORDED BUNDLE offline, consuming nothing live. Same input,
+   BUNDLE whose CONTENTS ARE DEFINED BY THE CLASSIFIER'S INPUT
+   SEAM, NOT A PROSE LIST (GO-MIG-R2-005, completed by
+   GO-MIG-R3-003: any enumerated list rots — announcements, job
+   records, cwd resolutions are consumed too): the python
+   classifier is instrumented ONCE to log every file read and
+   process query a scan performs; that logged closure IS the
+   bundle schema; the replay harness FAILS any comparison in which
+   the go side attempts a read outside the recorded bundle —
+   "consumes nothing live" enforced, not promised. Same input,
    deterministic comparison, and therefore ZERO divergences of any
    kind is the bar: there is no "explained" category. Every real
    scan still becomes a free test case; it just becomes a
@@ -141,7 +164,14 @@ a rehearsal cannot vouch for a future tree): the recipe is
 warranted until the next change touching that component's
 contract; after that, roll-FORWARD (fix through the loop) is the
 contract, which is exactly the standing rule for every other
-component in the system. Single writer holds throughout: the conf file is
+component in the system. DEPLOYED TARGETS ROLL BACK BY
+RE-ADOPTION (GO-MIG-R3-012: a fresh target has neither the
+template's git history nor the cutover commit): every adoption
+records the template SOURCE COMMIT in the target's provenance;
+during a soak window the payload still carries the shell
+originals so mid-window targets can flip locally; after deletion
+the recipe is re-adoption from the tagged pre-cutover commit,
+which the tag keeps resolvable. Single writer holds throughout: the conf file is
 the one engine selector per checkout, read at arm/dispatch entry,
 recorded into the state the fingerprint covers.
 
@@ -172,8 +202,21 @@ rewritten alongside the fixtures it serves.
   their assertions carry over one-for-one, recorded in the port's
   checklist.
 - STAYS SHELL: runtime adapters, hosts, the fixture suite,
-  hooks, adopt.sh, commit wrappers (thin), benchmark drivers (for
-  now, recorded scope ruling).
+  hooks, commit wrappers (thin), benchmark drivers (for now,
+  recorded scope ruling).
+- ADOPT.SH IS A LATE PORT, NOT A RESIDENT (GO-MIG-R3-004: it
+  DECIDES — source cleanliness, payload membership, collisions,
+  configuration transformation, refusals — and the settled end
+  state retires decision-making bash): its decision core ports in
+  Phase 4 as `metasystem adopt`; the thin copy layer may stay
+  shell; until then it is declared seam 3 in engine-seams.json.
+
+INVENTORY COMPLETENESS IS ENFORCED (GO-MIG-R3-005): a
+machine-readable mirror lives at
+scripts/agents/engine-inventory.json; the suite checks every *.py
+under scripts/ appears there with a classification — an
+unclassified python file is red, so nothing reaches the deletion
+sweep with its survival behavior undefined.
 
 ## Phases
 
@@ -203,19 +246,40 @@ rewritten alongside the fixtures it serves.
   janitor exist would run the new owner without the pieces the
   design says make it safe): Phase 0 ends with the binary
   fixture-proven in sandboxes; the PRODUCTION FLIP is its own
-  step, THE FLIP PROTOCOL below, and it requires Phase 0b
-  (gate + janitor + the observes-never-kills fixture) complete.
+  step, THE FLIP PROTOCOL below. THE FLIP'S PREREQUISITE BAR IS
+  ENUMERATED (GO-MIG-R3-001): green runs of exactly (a) the Phase
+  0 owner-alone fixture file, (b) the Phase 0b gate+janitor
+  fixture file including the syscall-seam negative proof below,
+  and (c) the S4 fixtures under the go engine. The Proof rows
+  those files DEFER (custody, cohort ledger, registry-lock crash
+  cases beyond the gate's own) gate the LATER cutovers that touch
+  them — each later cutover names its required fixture files the
+  same way — and Phase 0b is a DEFINED phase with its own entry
+  below, not an aside. The observes-never-kills invariant gets its
+  OWN fixture with the assertion AT THE SYSCALL SEAM
+  (GO-MIG-R2-006, first fold lost, re-applied and sharpened per
+  GO-MIG-R3-011: survivor checks miss delivered-but-ignored,
+  raced-with-exit, and mistargeted signals): the census under test
+  runs with its signal function behind an interface whose test
+  implementation RECORDS every (pid, signal) requested and
+  delivers nothing; the fixture asserts the recorded list is EMPTY
+  over a table full of kill-shaped candidates — zero requested
+  signals, not zero observed casualties.
   TWO transitional seams, both declared with RETIREMENT TRIPWIRES
   (GO-MIG-R1-007, GO-MIG-R1-009): (seam 1) the Go watcher shells to
   process-census.py for the scan; (seam 2) arming's lease
   operations (announce, require-holder, classify) remain
   worktree-lease.py calls in the shell arm wrapper — the Go OWNER
   itself touches no lease by design (D-1/REG-7), which is what
-  makes the seam legal. The tripwire: the suite carries a
-  seam-registry check listing each seam with its retiring phase;
-  when a phase completes (its plan row flips), a seam it should
-  have retired turns the check RED. A seam cannot silently outlive
-  its phase.
+  makes the seam legal. The tripwire is EXECUTABLE (GO-MIG-R2-009,
+  re-applied after GO-MIG-R3-010 caught the first fold silently
+  failing to land): seams live in scripts/agents/engine-seams.json,
+  each entry {seam, retireWhenExists: <path>} where the path is
+  the ARTIFACT whose existence proves the retiring work landed
+  (the census conformance fixture for seam 1; the lease
+  conformance fixture for seam 2; the adopt port fixture for seam
+  3). The suite check: for each unretired seam whose
+  retireWhenExists path exists, fail red. No prose parsing.
 - PHASE 1 — custody core native: census in Go (sysctl enumeration,
   exact start times; recorded-input replay first, then engine
   flip), THEN the lease — the lease port takes a design note and
@@ -242,11 +306,16 @@ rewritten alongside the fixtures it serves.
   deleted — and GO-MIG-R1-011): for EACH major cutover
   (supervision first, dispatch custody later), the matched pair
   runs INSIDE the cutover window while both engines exist:
-  (1) QUIESCE (GO-MIG-R2-007: a conf value alone fences nothing
-  in flight): supervision shutdown, dispatch quiesced — no
-  pending/pending-setup/running jobs in the records, lifecycle
+  (1) QUIESCE (GO-MIG-R2-007): supervision shutdown, dispatch
+  quiesced — no pending/pending-setup/running jobs, lifecycle
   locks free — verified by the flip script, not assumed;
-  (2) CONTROL cohort on the shell engine;
+  (2) CONTROL cohort on the shell engine — which BREAKS quiescence
+  by design (GO-MIG-R3-002: the control runs real jobs), so
+  quiescence is never claimed to span the window;
+  (2b) RE-QUIESCE: the identical verification runs again after the
+  control completes and before any configuration edit — the
+  single-writer claim attaches to the flip INSTANT, fenced by two
+  verified quiescent states;
   (3) flip the conf key, re-arm (the fingerprint forces the new
   generation);
   (4) CANDIDATE cohort on the go engine — same spec version,
@@ -255,8 +324,12 @@ rewritten alongside the fixtures it serves.
   census durations, refusal counts, handshake failures, leaked
   processes (go must be ZERO), AND the mission outcomes —
   acceptance, requirement coverage, every validity gate — equal
-  or better under go (GO-MIG-R2-013: mechanical metrics alone
-  would bless an engine that quietly ruins missions);
+  or better under go (GO-MIG-R2-013). EACH SCORECARD BINDS ITS
+  ENGINE (GO-MIG-R3-013): extraction records engine name, template
+  source commit, binary sha256, and configuration fingerprint INTO
+  the scorecard, verified against the target's provenance record —
+  a pair whose scorecards cannot prove which engine ran fails the
+  protocol;
   (6) soak, then deletion per the cutover discipline. This — not
   a green unit run — is what "the binary works" means here.
 
