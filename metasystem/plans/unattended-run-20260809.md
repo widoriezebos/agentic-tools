@@ -11,8 +11,10 @@
   stop until fully done."
 - Next step: none
 - In flight right now: nothing in this checkout's job records —
-  the provisioning-identity critique (job provisioning-identity-r1)
-  runs in the slc-r4 worktree (KI-34) with a tracked waiter.
+  cohort A (bm-2s, sol delegates) is being provisioned by
+  run-cohort.sh as a tracked background task; the orchestrator
+  session holds the waiter and crosses each seal/sign boundary
+  under the standing pre-authorization.
 - Waiting on the human: nothing.
 
 ## Rulings collected before departure (AskUserQuestion, 2026-08-09)
@@ -94,18 +96,16 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
 7. TODO — cohort driver: teardown ledger + entry recovery +
    completion continuation (D-3; bash — driver logic, not
    process-critical).
-8. BLOCKED on item 8a — the first chained gates+push run passed
-   the SUITE but failed the KIT GATE's provisioning leg on KI-31's
-   ancestry shape (raw target commits refused under a live agent
-   ancestor; the classifier rightly refused an orphaned relaunch).
-   24 commits wait locally.
-8a. IN PROGRESS — close KI-31 at the root instead of scheduling
-   around it: plans/provisioning-identity.md (the provisioner is
-   the fresh target's first main; wrapper-carried commits per the
-   KI-30 anchor precedent; retire at seal). One defect-driven sol
-   round running; implement in provision.sh on return; kit gate
-   then passes under ANY invocation shape, which also unblocks
-   cohort provisioning (items 9-10) without detachment.
+8. DONE — GATES-AND-PUSH-GREEN: suite && kit gate && push, one
+   chain; origin/main at 18eab0b, ZERO unpushed commits (26
+   banked, including the prior session's 21).
+8a. DONE — KI-31 CLOSED AT THE ROOT (plans/provisioning-identity.md,
+   one sol round, six findings folded; commit 0fe6a1c): the
+   provisioner is the target's first main, wrapper-carried commits,
+   departing-main release (KI-33 second occurrence recorded), kit
+   gate green from a live agent session for the first time. The
+   seal step is explicitly the simulated-human act; preflight's pin
+   asserted against contract bytes.
 9. TODO — benchmark cohort A (host Opus 5, delegates gpt-5.6-sol,
    2 reps): seal, sign (standing pre-auth), preflight, run,
    watch tracked, grade.
