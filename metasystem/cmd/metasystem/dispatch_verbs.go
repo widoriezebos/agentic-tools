@@ -494,3 +494,44 @@ func runDispatchBriefMode(args []string) int {
 	fmt.Println(mode)
 	return 0
 }
+
+// runDispatchOwnerLock claims or releases the dispatch owner lock.
+// Exit codes: 0 done, 3 busy, 4 not-owner.
+func runDispatchOwnerLock(args []string) int {
+	flags := flag.NewFlagSet("dispatch owner-lock", flag.ContinueOnError)
+	command := flags.String("command", "", "claim | release")
+	directory := flags.String("dir", "", "lock directory")
+	pid := flags.Int64("pid", 0, "claimant pid")
+	tag := flags.String("tag", "", "claimant instance tag")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *directory == "" || *pid < 1 || *tag == "" {
+		fmt.Fprintln(os.Stderr, "dispatch owner-lock: --command, --dir, --pid, and --tag are required")
+		return 2
+	}
+	switch *command {
+	case "claim":
+		switch err := dispatchcore.OwnerLockClaim(*directory, *pid, *tag); err {
+		case nil:
+			return 0
+		case dispatchcore.OwnerLockBusy:
+			return 3
+		default:
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	case "release":
+		switch err := dispatchcore.OwnerLockRelease(*directory, *pid, *tag); err {
+		case nil:
+			return 0
+		case dispatchcore.OwnerLockNotOwner:
+			return 4
+		default:
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+	fmt.Fprintln(os.Stderr, "dispatch owner-lock: --command must be claim or release")
+	return 2
+}

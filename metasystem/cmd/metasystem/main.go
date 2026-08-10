@@ -111,6 +111,7 @@ func families() []family {
 				{"exhaustion-patches", "list the exhaustion patches a manifest names", runDispatchExhaustionPatches},
 				{"cap-resolution", "write a cap-resolution record", runDispatchCapResolution},
 				{"brief-mode", "check a brief names a known mode", runDispatchBriefMode},
+				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 			},
 		},
 		{
@@ -262,6 +263,7 @@ func families() []family {
 				{"seal", "seal a validated contract and print its digest", runMissionContractSeal},
 				{"preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},
 				{"measure", "run the gate and guards and classify metrics against a prior measurement", runMissionContractMeasure},
+				{"envelope-allows", "exit 0 when the signed contract's dispatch-allow carries a pair", runMissionContractEnvelopeAllows},
 			},
 		},
 		{

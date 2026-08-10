@@ -62,3 +62,24 @@ func parsePreviousMetrics(list string) (map[string]string, error) {
 	}
 	return values, nil
 }
+
+// runMissionContractEnvelopeAllows exits 0 when the mission's signed contract
+// carries the exact runtime:model pair in envelope.dispatch-allow.
+func runMissionContractEnvelopeAllows(args []string) int {
+	flags := flag.NewFlagSet("mission-contract envelope-allows", flag.ContinueOnError)
+	root := flags.String("root", "", "project root")
+	missionID := flags.String("mission", "", "mission id")
+	pair := flags.String("pair", "", "exact runtime:model pair")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *missionID == "" || *pair == "" {
+		fmt.Fprintln(os.Stderr, "mission-contract envelope-allows: --root, --mission, and --pair are required")
+		return 2
+	}
+	if err := mission.DispatchEnvelopeAllows(*root, *missionID, *pair); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}

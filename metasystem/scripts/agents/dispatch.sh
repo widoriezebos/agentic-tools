@@ -62,7 +62,6 @@ reap_verdict_events() { # job, verdict, reason, cas_rc, cas_out
 # How long the reaper waits past a record's handshake budget before calling a
 # unfinished-handshake job process-lost. See the handshake branch in reap_one_locked.
 handshake_backstop_grace_sec=2
-process_census="$root/scripts/agents/process-census.py"
 arm_supervision="$root/scripts/agents/arm-supervision.sh"
 mission_fence="$root/scripts/agents/mission-fence.py"
 canonical_model_helper="$root/scripts/agents/canonical-model.py"
@@ -277,76 +276,9 @@ wind_down_group() { # record
 # husk healing) is one atomic unit around ps and kill probes; it moves to Go
 # whole or not at all.
 owner_lock() { # claim|release, directory, pid, tag -> 0 done, 3 busy, 4 not-owner
-  python3 - "$@" <<'PY'
-import json, os, shutil, subprocess, sys, tempfile
-from datetime import datetime, timezone
-from pathlib import Path
-
-command, directory, pid, tag = sys.argv[1], Path(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
-owner = directory / "owner.json"
-
-def identity():
-    try:
-        value = json.loads(owner.read_text(encoding="utf-8"))
-        return int(value["pid"]), str(value.get("instanceTag", ""))
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
-
-def holder_state(other_pid, other_tag):
-    try:
-        os.kill(other_pid, 0)
-    except ProcessLookupError:
-        return "dead"
-    except PermissionError:
-        return "live"
-    result = subprocess.run(
-        ["ps", "-p", str(other_pid), "-o", "command="],
-        text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
-    )
-    if result.returncode != 0:
-        return "unknown"
-    return "live" if other_tag and other_tag in result.stdout else "stale"
-
-def owner_payload():
-    return json.dumps(
-        {"pid": pid, "instanceTag": tag,
-         "acquiredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
-        sort_keys=True,
-    ) + "\n"
-
-if command == "release":
-    current = identity()
-    if current != (pid, tag):
-        raise SystemExit(0 if current is None else 4)
-    retiring = directory.parent / f"{directory.name}.retiring.{pid}"
-    try:
-        os.rename(directory, retiring)
-    except OSError:
-        raise SystemExit(0)
-    shutil.rmtree(retiring, ignore_errors=True)
-    raise SystemExit(0)
-
-directory.parent.mkdir(parents=True, exist_ok=True)
-for attempt in range(3):
-    staging = Path(tempfile.mkdtemp(prefix=f"{directory.name}.claim.", dir=directory.parent))
-    (staging / "owner.json").write_text(owner_payload(), encoding="utf-8")
-    try:
-        os.rename(staging, directory)
-        raise SystemExit(0)
-    except OSError:
-        shutil.rmtree(staging, ignore_errors=True)
-    current = identity()
-    if current is None or holder_state(*current) in {"live", "unknown"}:
-        raise SystemExit(3)
-    husk = directory.parent / f"{directory.name}.dead.{pid}.{attempt}"
-    try:
-        os.rename(directory, husk)
-    except OSError:
-        continue
-    shutil.rmtree(husk, ignore_errors=True)
-raise SystemExit(3)
-PY
+  "$ms" dispatch owner-lock --command "$1" --dir "$2" --pid "$3" --tag "$4"
 }
+
 
 acquire_chain_lock() { # root id
   local chain=$1 dir="$locks/$1.d" status=0 pid tag owner_state
@@ -552,35 +484,7 @@ assert_tiers_contiguous() {
 }
 
 signed_dispatch_envelope_allows() { # mission id, exact runtime:model pair
-  # TODO(go-wiring): needs the sealed-contract reader (seal, approval, origin,
-  # envelope.dispatch-allow validation) exported from internal/mission before a
-  # `dispatch envelope-allows` verb can own this decision.
-  python3 - "$root" "$1" "$2" <<'PY'
-import importlib.util
-import sys
-from pathlib import Path
-
-root, mission, requested = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
-module_path = root / "scripts" / "agents" / "mission-contract.py"
-specification = importlib.util.spec_from_file_location("dispatch_mission_contract", module_path)
-if specification is None or specification.loader is None:
-    raise SystemExit(1)
-module = importlib.util.module_from_spec(specification)
-sys.modules[specification.name] = module
-specification.loader.exec_module(module)
-try:
-    contract = module.read_contract(root / "plans" / f"mission-{mission}.contract.md")
-    if not contract.sealed:
-        module.fail("dispatch-allow envelope is not sealed")
-    module.verify_approval(contract)
-    module.verify_origin(contract, module.repository_for(contract.path))
-    value = contract.values.get("envelope.dispatch-allow")
-    allowed = module.validate_dispatch_allow(value) if value is not None else []
-except module.ContractError as error:
-    print(f"signed dispatch envelope unavailable: {error}", file=sys.stderr)
-    raise SystemExit(1)
-raise SystemExit(0 if requested in allowed else 1)
-PY
+  "$ms" mission-contract envelope-allows --root "$root" --mission "$1" --pair "$2"
 }
 
 confirm_escalation() { # roster pair, requested pair, displayed cost direction
