@@ -10,11 +10,13 @@
   `swe-1.7`, 2 repetitions each. "Complete this mission. Do not
   stop until fully done."
 - Next step: none
-- In flight right now: nothing in this checkout's job records —
-  cohort B repetition 1 (bm-2-20260810t021945z-40975, Devin) runs
-  through grading as a tracked background task; the orchestrator
-  session holds the waiter.
-- Waiting on the human: nothing.
+- In flight right now: nothing — both cohorts complete, all
+  waiters drained; the final gates+push chain over these plan
+  edits is the only thing running.
+- Waiting on the human: review of the overnight run — the report
+  names the carried risks (round-13 folds uncritiqued, Go wiring
+  remaining) and the recommended next run (the bm-2c cap
+  experiment).
 
 ## Rulings collected before departure (AskUserQuestion, 2026-08-09)
 
@@ -119,14 +121,14 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
    cohort's (1/53 in every repetition so far) — evidence the
    binding constraint is the shared 15-minute job cap, not the
    delegate model. Cohort B sequential for comparability.
-10. IN PROGRESS — cohort B = bm-2-20260810t021945z-40975 (bm-2,
-    Devin swe-1-7, 2 reps). Rep 1 sealed/signed/pushed/released
-    and RESUMED ~02:25Z, tracked waiter armed; rep 2 provisions
-    automatically on rep 1's completion (keep the template CLEAN —
-    commit plan edits before every provisioning boundary).
-11. TODO — final report for the human: chain outcome, Go
-    implementation state, suite/gate evidence, both scorecards,
-    costs, and anything parked.
+10. DONE — cohort B = bm-2-20260810t021945z-40975 COMPLETE. Rep 1:
+    acceptance 0.018868, buildClean 1, host $9.32. Rep 2:
+    acceptance 0.018868, buildClean 1 (host-cost line empty in the
+    scorecard). FIVE repetitions across two delegate models now
+    share one acceptance number — the job cap is the ceiling.
+11. DONE — final report delivered to the human
+    (scratchpad/unattended-run-report.md via SendUserFile) and this
+    plan is the durable copy of everything it says.
 
 ## Dead ends and cautions for this run
 
