@@ -95,6 +95,56 @@ type Exit struct {
 	TeardownComplete bool
 }
 
+// CycleTrace narrates ONE observation cycle completely: the three
+// D-1 reads, the classification, the breaker's state, and every
+// action taken — the extreme-observability ruling of 2026-08-10
+// made structural. One trace line reconstructs WHY without a
+// debugger.
+type CycleTrace struct {
+	At          time.Time `json:"at"`
+	Root        string    `json:"root"`
+	Currency    string    `json:"currency"`
+	StateFile   string    `json:"stateFile"`
+	Verdict     string    `json:"verdict"`
+	Observation string    `json:"observation,omitempty"`
+	Breaker     int       `json:"breakerConsecutive"`
+	GroupCount  int       `json:"groupCount,omitempty"`
+	Actions     []string  `json:"actions,omitempty"`
+	Exit        string    `json:"exit,omitempty"`
+}
+
+func fileStateName(state FileState) string {
+	switch state {
+	case Present:
+		return "present"
+	case Absent:
+		return "absent"
+	}
+	return "indeterminate"
+}
+
+func currencyName(state CurrencyState) string {
+	switch state {
+	case NamesSelf:
+		return "names-self"
+	case NamesOther:
+		return "names-other"
+	case NoLock:
+		return "no-lock"
+	}
+	return "unreadable"
+}
+
+func observationName(observation Observation) string {
+	switch observation {
+	case Healthy:
+		return "healthy"
+	case Failing:
+		return "failing"
+	}
+	return "indeterminable"
+}
+
 // Owner runs the supervision lifecycle for one checkout.
 type Owner struct {
 	Checkout   Checkout
@@ -113,6 +163,10 @@ type Owner struct {
 
 	// TagPrefix mints component tags: <prefix>-<component>-<gen>-<n>.
 	TagPrefix string
+
+	// Narrate receives one CycleTrace per cycle and per exit; nil
+	// disables narration (tests that do not assert on it).
+	Narrate func(CycleTrace)
 
 	held           []Held
 	generation     int64
@@ -146,11 +200,19 @@ func (o *Owner) Run() Exit {
 // continue or the exit to perform. Exposed so tests drive the loop
 // deterministically.
 func (o *Owner) Cycle(now time.Time) *Exit {
+	trace := CycleTrace{At: now, Breaker: o.Breaker.Consecutive}
+	defer func() {
+		if o.Narrate != nil {
+			o.Narrate(trace)
+		}
+	}()
 	// D-1: the purpose/currency check runs every cycle, independent
 	// of backoff (SLC-R2-008), but only arms after first publication
 	// (SLC-R1-004).
 	if o.published {
-		switch Classify(o.Checkout.RootState(), o.Checkout.Currency(), o.Checkout.StateFileState()) {
+		root, currency, state := o.Checkout.RootState(), o.Checkout.Currency(), o.Checkout.StateFileState()
+		trace.Root, trace.Currency, trace.StateFile = fileStateName(root), currencyName(currency), fileStateName(state)
+		switch Classify(root, currency, state) {
 		case PurposeGone:
 			return o.exitVia("purpose-gone", "checkout root or state token definitively absent")
 		case Superseded:
