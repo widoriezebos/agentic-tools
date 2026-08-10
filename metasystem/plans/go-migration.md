@@ -416,23 +416,54 @@ failure instead of a silent one.
   NOTHING; improvements come after deletion of the original,
   through the loop.
 
-## The 2026-08-10 sequencing ruling: port first, benchmark last
+## The 2026-08-10 sequencing rulings: port first; benchmarks as
+## the port's test instrument, sol roster only
 
-The human: "We will postpone the whole dev and benchmarking thing
-until we have everything ported and running perfectly fine on go."
-Consequences, folded into the protocol: (1) all benchmark work —
-the high-cap Devin cohort, cap discovery, agent comparison — is
-POSTPONED; bm-2 v0.2's fences stay committed and ready. (2) Each
-component's FLIP proceeds on fixture and conformance evidence
-alone; the per-cutover cohort steps of the flip protocol are
-DEFERRED. (3) NOTHING IS DELETED during the porting run: every
-original stays in the tree, which keeps rollback a conf-flip away
-for the entire migration. (4) The matched-pair cohorts run ONCE,
-at the end, over the fully ported system — the final acceptance —
-and only after that pair passes does the deletion sweep (and each
-tagged cutover commit) land. This is a structural change made by
-the human's direct ruling; the next JIT round is instructed to
-check its coherence rather than reopening a master round for it.
+The human, in three rulings the same day: (1) "postpone the whole
+dev and benchmarking thing until we have everything ported and
+running perfectly fine on go" — benchmark EXPERIMENTS (cap
+discovery, agent comparison, anything Devin) are postponed;
+(2) "You can use the benchmark to test the work you're doing on
+the Go port, but the benchmark should be Opus and Sol on Claude
+and Codex. So leave Devin out of the picture for now" — the flip
+protocol's matched pairs are IN, as migration verification, using
+the bm-2s spec (host claude-opus-5, delegates gpt-5.6-sol)
+EXCLUSIVELY; no Devin cohorts until the port is done and the
+human reopens them; (3) NOTHING IS DELETED during the porting
+run: originals stay in the tree, rollback stays a conf-flip away;
+the deletion sweep waits for the end-state acceptance pair over
+the fully ported system. bm-2 v0.2's Devin fences stay committed,
+dormant.
+
+## Observability: a first-class requirement (the human, 2026-08-10)
+
+"From the get-go focus on extreme observability so that it will be
+very easy to diagnose and then fix issues with the meta-system."
+Folded into the engineering standard for every Go component:
+- EVERY DECISION NARRATES ITS INPUTS: the owner logs each cycle as
+  one structured line — the three D-1 reads and their three-way
+  results, the classification, the breaker observation and
+  counter, the ceiling count, and every action taken — so a single
+  log reconstructs WHY without a debugger. Same rule for the gate
+  (every slot's class), the janitor (every target and every
+  not-killed reason), and every refusal (what was read, what it
+  meant, what would have satisfied it).
+- THE FLIGHT RECORDER IS THE SPINE: the binary emits witness
+  events for every lifecycle transition through the existing
+  stream and registry (never-fail, never-authority), so one
+  `tail -F` and one registry read tell the whole story across
+  engines during the migration.
+- SELF-DESCRIBING ARTIFACTS: everything the binary writes carries
+  engine and build-stamp fields (already required by
+  GO-MIG-R4-009) — observability and attestation are one
+  mechanism.
+- INTROSPECTION VERBS: every family gets its `status`-class verb
+  (supervise status exists; registry reduce, janitor plan —
+  print-what-would-happen without acting — follow with their
+  phases).
+- DIAGNOSIS-FIRST ERRORS: a refusal names the file, the value
+  found, the value required, and the remedy — the census gate's
+  refusal style, made law for the binary.
 
 ## Review model from round 4 on (IL-23 applied)
 
