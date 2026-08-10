@@ -14,17 +14,21 @@
 # silently. Job records (jobs/*.json) always stay: they are the registry.
 set -euo pipefail
 metasystem_gc_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+ms="${METASYSTEM_BIN:-$metasystem_gc_root/bin/metasystem}"
 cd "$metasystem_gc_root"
 
 if [[ ${1:-} != __lease-held ]]; then
-  lease_result=$(scripts/agents/worktree-lease.py --root "$metasystem_gc_root" \
-    require-holder --caller-pid "$$") || exit $?
+  lease_result=$("$ms" lease require-holder --root "$metasystem_gc_root" \
+    --caller-pid "$$") || exit $?
+  # TODO(go-wiring): needs a JSON-string field read that coerces null/absent
+  # claimEpoch to "" (json get --value prints "null", which would be handed to
+  # --expected-epoch). Left as python3.
   lease_epoch=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("claimEpoch") is None else v["claimEpoch"])' "$lease_result")
   if [[ -n "$lease_epoch" ]]; then
-    exec scripts/agents/worktree-lease.py --root "$metasystem_gc_root" run-held \
+    exec "$ms" lease run-held --root "$metasystem_gc_root" \
       --caller-pid "$$" --expected-epoch "$lease_epoch" -- "$0" __lease-held "$lease_epoch"
   fi
-  exec scripts/agents/worktree-lease.py --root "$metasystem_gc_root" run-held \
+  exec "$ms" lease run-held --root "$metasystem_gc_root" \
     --caller-pid "$$" -- "$0" __lease-held human
 fi
 shift
@@ -32,17 +36,23 @@ expected_epoch=${1:-}
 [[ -n "$expected_epoch" ]] || exit 2
 shift
 if [[ "$expected_epoch" =~ ^[1-9][0-9]*$ ]]; then
-  scripts/agents/worktree-lease.py --root "$metasystem_gc_root" require-holder \
+  "$ms" lease require-holder --root "$metasystem_gc_root" \
     --caller-pid "$$" --expected-epoch "$expected_epoch" >/dev/null
 else
   [[ "$expected_epoch" == human ]] || exit 2
-  scripts/agents/worktree-lease.py --root "$metasystem_gc_root" require-holder \
+  "$ms" lease require-holder --root "$metasystem_gc_root" \
     --caller-pid "$$" >/dev/null
 fi
 
 evidence=$(scripts/metasystem-config.sh get --key evidence.root --default '' 2>/dev/null || true)
 [[ "$evidence" == /* ]] || { echo "evidence-gc refused: evidence.root is not configured" >&2; exit 1; }
 
+# TODO(go-wiring): needs verb `supervise evidence-gc` (the whole collector:
+# collect closed terminal chains verified against the mirror manifest, prune
+# live-only job records past the grace window, sweep heartbeat/lock/temp/
+# superseded-snapshot residue, prune empty non-spine dirs, and copy-then-age
+# flight-recorder archives). Large multi-step filesystem logic with hashing;
+# left as python3.
 python3 - "$metasystem_gc_root" "$evidence" <<'PY'
 import hashlib
 import json

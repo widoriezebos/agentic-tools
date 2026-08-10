@@ -23,6 +23,8 @@ adapter_common_init claude
 
 claude_version() {
   command -v claude >/dev/null 2>&1 || { echo "claude CLI is not installed" >&2; return 1; }
+  # TODO(go-wiring): needs a version-parse verb (regex-extract a semver from CLI
+  # --version output).
   claude --version 2>/dev/null | python3 -c '
 import re, sys
 text = sys.stdin.read()
@@ -88,6 +90,10 @@ probe() {
 
 build_claude_settings() { # output settings, hook helper
   local output=$1 hook_helper=$2
+  # TODO(go-wiring): needs a verb to build the Claude settings file (permissions,
+  # sandbox filesystem/network, SessionStart hook; state edit). The emitted hook
+  # command still shells out to python3 claude-session-signal.py, which is not
+  # yet ported.
   python3 - "$record" "$output" "$hook_helper" <<'PY'
 import json, shlex, sys
 from pathlib import Path
@@ -137,6 +143,8 @@ PY
 }
 
 claude_usage() { # result JSON, usage output
+  # TODO(go-wiring): needs a Claude usage-extraction verb (native token/cost
+  # usage from the result JSON; state edit).
   python3 - "$1" "$2" <<'PY'
 import json, sys
 from pathlib import Path
@@ -161,6 +169,9 @@ PY
 }
 
 claude_result_field() { # result JSON, field
+  # TODO(go-wiring): needs a verb to read a result field with the modelUsage
+  # collapse (model -> single key, "multi-model:...", or "unobserved"); not a
+  # pure field read.
   python3 - "$1" "$2" <<'PY'
 import json, sys
 from pathlib import Path
@@ -193,6 +204,8 @@ supervise() { # dispatch|follow-up and supervisor args
   local signal_file="$round_dir/claude-session-signal.json"
   local result_file="$round_dir/claude-result.json"
   local usage_file="$round_dir/usage.json"
+  # TODO(go-wiring): claude-session-signal.py is not yet ported; the SessionStart
+  # hook keeps calling it as python.
   local hook_helper="$root/scripts/agents/adapters/claude-session-signal.py"
   local permission_mode tools allowed_tools schema_json max_budget max_turns cli_pid
   local signalled_session signalled_model result_session result_model
@@ -203,6 +216,8 @@ supervise() { # dispatch|follow-up and supervisor args
   fail_if_effective_wider_before_launch || return 1
   : >"$events"
   build_claude_settings "$settings_file" "$hook_helper"
+  # TODO(go-wiring): needs a json-compact/canonicalize verb (re-emit a whole JSON
+  # file as compact single-line JSON).
   schema_json=$(python3 - "$schema" <<'PY'
 import json, sys
 from pathlib import Path
@@ -238,7 +253,10 @@ PY
   if [[ $(field "$record" permissions.requested.writeRoots) == '[]' ]]; then
     while IFS= read -r read_root; do
       read_roots+=("$read_root")
-    done < <(python3 - "$record" <<'PY'
+    done < <(
+      # TODO(go-wiring): needs a verb to list requested readRoots excluding the
+      # workspaceRoot (filter/iteration, not a single field read).
+      python3 - "$record" <<'PY'
 import json, sys
 from pathlib import Path
 value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -276,6 +294,8 @@ PY
   done
   wait_for_cli "$cli_pid"
   cp "$result_file" "$raw" 2>/dev/null || : >"$raw"
+  # TODO(go-wiring): needs a verb to append the result JSON as one compact event
+  # line (read result, append to events.jsonl; state edit).
   python3 - "$result_file" "$events" <<'PY'
 import json, sys
 from pathlib import Path

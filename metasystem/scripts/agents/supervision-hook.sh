@@ -10,25 +10,23 @@ payload=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX")
 trap 'rm -f "$payload"' EXIT
 cat >"$payload"
 
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+harness_root=$(cd "$script_dir/../.." && pwd -P)
+ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
+
 read_payload() {
-  python3 - "$payload" "$1" <<'PY'
-import json,sys
-try: value=json.load(open(sys.argv[1])).get(sys.argv[2])
-except (OSError,ValueError,AttributeError): value=None
-if value is not None: print(value)
-PY
+  "$ms" json get --file "$payload" --field "$1" 2>/dev/null || true
 }
 
 cwd=$(read_payload cwd)
 [[ -n "$cwd" ]] || cwd=${CLAUDE_PROJECT_DIR:-${DEVIN_PROJECT_DIR:-$PWD}}
 repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
 repo=$(cd "$repo" && pwd -P)
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-harness_root=$(cd "$script_dir/../.." && pwd -P)
-helper=$script_dir/process-census.py
 arm=$script_dir/arm-supervision.sh
-lease_helper=$script_dir/worktree-lease.py
-[[ -x "$helper" && -x "$arm" && -x "$lease_helper" ]] || exit 0
+# process-census.py is still required by the FLAGGED watchdog heredoc below
+# (TODO(go-wiring)); every other census/lease call in this hook is wired to $ms.
+helper=$script_dir/process-census.py
+[[ -x "$ms" && -x "$helper" && -x "$arm" ]] || exit 0
 session=$(read_payload session_id)
 [[ -n "$session" ]] || session="session-$PPID"
 
@@ -37,22 +35,24 @@ session=$(read_payload session_id)
 # cannot become a false signature match.
 search_pid=$(ps -p "$PPID" -o ppid= 2>/dev/null | tr -d ' ' || true)
 [[ "$search_pid" =~ ^[1-9][0-9]*$ ]] || search_pid=$PPID
-identity=$("$helper" find-ancestor --repo "$repo" --pid "$search_pid" --runtime "$runtime" 2>/dev/null || true)
+identity=$("$ms" census find-ancestor --repo "$repo" --pid "$search_pid" --runtime "$runtime" 2>/dev/null || true)
 main_id=
 main_class=
 main_holder=false
 identity_pid=
 if [[ -n "$identity" ]]; then
-  identity_pid=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["pid"])' "$identity")
-  lease_view=$("$lease_helper" --root "$harness_root" classify --caller-pid "$identity_pid" 2>/dev/null || true)
+  identity_pid=$("$ms" json get --value "$identity" --field pid)
+  lease_view=$("$ms" lease classify --root "$harness_root" --caller-pid "$identity_pid" 2>/dev/null || true)
   if [[ -n "$lease_view" ]]; then
-    main_id=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("mainId",""))' "$lease_view")
-    main_class=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("class",""))' "$lease_view")
-    main_holder=$(python3 -c 'import json,sys; print("true" if json.loads(sys.argv[1]).get("holder") else "false")' "$lease_view")
+    main_id=$("$ms" json get --value "$lease_view" --field mainId 2>/dev/null || true)
+    main_class=$("$ms" json get --value "$lease_view" --field class 2>/dev/null || true)
+    main_holder=$("$ms" json get --value "$lease_view" --field holder 2>/dev/null || true)
   fi
 fi
 
 surface_json() { # message
+  # TODO(go-wiring): needs a verb to emit {"systemMessage": <arg>} as compact
+  # JSON (JSON construction from a string, not a field read). Left as python3.
   python3 - "$1" <<'PY'
 import json,sys
 print(json.dumps({"systemMessage":sys.argv[1]},separators=(",",":")))
@@ -108,10 +108,10 @@ if [[ "$event" == stop ]]; then
   protocol_message=
   protocol_counts='{}'
   if [[ -n "$main_id" ]]; then
-    protocol_growth=$("$lease_helper" --root "$harness_root" protocol-growth --main-id "$main_id" 2>/dev/null || true)
+    protocol_growth=$("$ms" lease protocol-growth --root "$harness_root" --main-id "$main_id" 2>/dev/null || true)
     if [[ -n "$protocol_growth" ]]; then
-      protocol_message=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("message",""))' "$protocol_growth")
-      protocol_counts=$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1]).get("counts",{}),separators=(",",":")))' "$protocol_growth")
+      protocol_message=$("$ms" json get --value "$protocol_growth" --field message)
+      protocol_counts=$("$ms" json get --value "$protocol_growth" --field counts)
     fi
   fi
   # "Advisor" is a positive finding, not a fallback. It means an announced main
@@ -125,14 +125,18 @@ if [[ "$event" == stop ]]; then
 $protocol_message"
     surface_json "$advisor_message"
     [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
-      "$lease_helper" --root "$harness_root" protocol-advance --main-id "$main_id" \
+      "$ms" lease protocol-advance --root "$harness_root" --main-id "$main_id" \
         --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
     exit 0
   fi
   [[ -z "$identity_pid" ]] || \
-    "$lease_helper" --root "$harness_root" renew --caller-pid "$identity_pid" >/dev/null 2>&1 || true
+    "$ms" lease renew --root "$harness_root" --caller-pid "$identity_pid" >/dev/null 2>&1 || true
   last="$harness_root/artifacts/agents/supervision/last-census.json"
   state="$harness_root/artifacts/agents/supervision/state.json"
+  # TODO(go-wiring): needs verb `supervise watchdog-report` (read last-census/
+  # state, check freshness, list UNTRACKED, verify owner/component liveness, emit
+  # re-arm advice). Non-trivial multi-step logic and per-identity liveness
+  # probes; left as python3, still shelling out to process-census.py ($helper).
   message=$(python3 - "$last" "$state" "$helper" <<'PY'
 import json,subprocess,sys,time
 from pathlib import Path
@@ -171,7 +175,7 @@ PY
   # Continuation is the one part of the loop no prompt can guarantee, so it is
   # checked here rather than asked for in prose: a turn ending while a plan
   # still names an unblocked next step and nothing is in flight says so.
-  open_work=$(python3 "$script_dir/open-work.py" --repo "$harness_root" 2>/dev/null || true)
+  open_work=$("$ms" report open-work --repo "$harness_root" 2>/dev/null || true)
   [[ -z "$open_work" ]] || message=$(printf '%s%s%s' "$message" "${message:+$'\n'}" "$open_work")
   [[ -z "$protocol_message" ]] || message=$(printf '%s%s%s' "$message" "${message:+$'\n'}" "$protocol_message")
 
@@ -202,7 +206,7 @@ PY
     signature=$(printf '%s' "$open_only" | shasum | cut -d' ' -f1)
     if [[ "$(cat "$blocked_state" 2>/dev/null || true)" != "$signature" ]]; then
       printf '%s' "$signature" >"$blocked_state" 2>/dev/null || true
-      python3 "$script_dir/stop-block.py" "$message"
+      "$ms" report stop-block "$message"
       exit 0
     fi
   else
@@ -227,7 +231,7 @@ $message"
     surface_json "$(work_sentence)"
   fi
   [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
-    "$lease_helper" --root "$harness_root" protocol-advance --main-id "$main_id" \
+    "$ms" lease protocol-advance --root "$harness_root" --main-id "$main_id" \
       --caller-pid "$identity_pid" --counts "$protocol_counts" >/dev/null 2>&1 || true
   exit 0
 fi
@@ -236,8 +240,11 @@ if [[ -z "$identity" ]]; then
   surface_json "Metasystem supervision could not identify the immediate $runtime agent process; arming was refused."
   exit 0
 fi
-pid=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["pid"])' "$identity")
-started=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["pidStartedAt"])' "$identity")
+pid=$("$ms" json get --value "$identity" --field pid)
+started=$("$ms" json get --value "$identity" --field pidStartedAt)
+# TODO(go-wiring): the tag suffix needs the same slug/sanitize verb as
+# arm-supervision.sh sanitize() (lowercase, collapse [^A-Za-z0-9._-] to '-',
+# strip '-.', default "session"). Regex transform; left as python3.
 tag="metasystem-main-$runtime-$(python3 -c 'import re,sys; print(re.sub(r"[^A-Za-z0-9._-]+","-",sys.argv[1]).strip("-.").lower() or "session")' "$session")"
 
 if [[ "$event" == end ]]; then

@@ -44,6 +44,7 @@ func families() []family {
 				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
 				{"authentication-identity", "print a pid's start time and command from one source", runCensusAuthIdentity},
 				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
+				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
 			},
 		},
 		{

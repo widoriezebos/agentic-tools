@@ -20,11 +20,14 @@ USAGE
 die() { echo "$2" >&2; exit "$1"; }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 config="$root/metasystem.conf"
 repo_scope=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || true)
 [[ -n "$repo_scope" ]] && repo_scope=$(cd "$repo_scope" && pwd -P)
 
 conf_value() { # key
+  # TODO(go-wiring): needs a config-value reader verb (metasystem.conf key=value
+  # lookup with duplicate-key detection); the .conf format is not JSON.
   python3 - "$config" "$1" <<'PY'
 import sys
 from pathlib import Path
@@ -115,6 +118,8 @@ get_value() {
 }
 
 validate_config() {
+  # TODO(go-wiring): needs a config-validate verb (full metasystem.conf domain
+  # validation: runtimes, tiers, cap keys, role/model resolution, evidence root).
   python3 - "$config" "${repo_scope:-$root}" "$root/scripts/agents/canonical-model.py" <<'PY'
 import importlib.util
 import os
@@ -358,6 +363,8 @@ keys_matching() { # --prefix <p>
     esac
   done
   [[ -n "$prefix" ]] || die 2 "keys requires --prefix"
+  # TODO(go-wiring): needs a config-keys verb (enumerate metasystem.conf keys by
+  # prefix, union base+.local plus numeric-suffix env overrides).
   # Union of keys present in the base file and the .local override, matching the
   # prefix. This is how a caller enumerates a family (e.g. model.tier.) without
   # probing a fixed numeric range, so no arbitrary cap can hide a configured key.

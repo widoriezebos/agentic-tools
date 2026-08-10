@@ -16,12 +16,12 @@ set -euo pipefail
 
 guard_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 git rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
-lease_helper=$guard_root/scripts/agents/worktree-lease.py
-if [[ -x "$lease_helper" ]]; then
+ms="${METASYSTEM_BIN:-$guard_root/bin/metasystem}"
+if [[ -x "$ms" ]]; then
   classification=
   caller_class=
-  if classification=$("$lease_helper" --root "$guard_root" classify --caller-pid "$$" 2>/dev/null) \
-    && caller_class=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["class"])' "$classification" 2>/dev/null); then
+  if classification=$("$ms" lease classify --root "$guard_root" --caller-pid "$$" 2>/dev/null) \
+    && caller_class=$("$ms" json get --value "$classification" --field class 2>/dev/null); then
     :
   fi
   # Human commits are sovereign. A broken classifier cannot positively prove
@@ -29,6 +29,12 @@ if [[ -x "$lease_helper" ]]; then
   # classifications still require the live wrapper token below.
   if [[ -n "$caller_class" && "$caller_class" != HUMAN ]]; then
     token=$guard_root/artifacts/agents/mains/worktree-commit-token.json
+    # TODO(go-wiring): this heredoc validates the wrapper token's fields, walks
+    # the process ancestry (ps -o ppid=) to find the wrapper pid, then confirms
+    # its start time via process-census.py started-at. It is a multi-step
+    # ancestry proof, not a JSON field read or a single mapped verb (nearest are
+    # census find-ancestor / signature-check, which is not exposed by the binary),
+    # so it stays python3 until a `census verify-wrapper-token` verb exists.
     if ! python3 - "$token" "$guard_root/scripts/agents/process-census.py" "$$" <<'PY'
 import json,subprocess,sys
 from pathlib import Path

@@ -128,6 +128,7 @@ done
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/.." && pwd -P)
+ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
 config=$script_dir/metasystem-config.sh
 stale_args=(get --key watch.stale-min --default 20)
 cap_args=(get --key watch.cap-min --default 180)
@@ -146,6 +147,9 @@ if [[ -n "$expected_cap" && ! "$expected_cap" =~ ^[1-9][0-9]*$ ]]; then
 fi
 if [[ -n "$ceiling_state" ]]; then
   ceiling_deadline=$((SECONDS + 10))
+  # TODO(go-wiring): needs a positive-integer field read of derivedWatcherCapMin
+  # (validates type==int and value>=1 before accepting). `json get` would print
+  # the raw value without that validation; left as python3.
   while ! cap_min=$(python3 - "$ceiling_state" <<'PY'
 import json, sys
 from pathlib import Path
@@ -174,7 +178,7 @@ printf -v supervision_interval_sleep '%d.%03d' \
 
 process_census=$script_dir/agents/process-census.py
 if (( census_enabled )); then
-  [[ -n "$scope" && -x "$process_census" ]] || { echo "--census requires --scope and process-census.py" >&2; exit 2; }
+  [[ -n "$scope" && -x "$process_census" && -x "$ms" ]] || { echo "--census requires --scope, process-census.py, and the metasystem binary" >&2; exit 2; }
   scope=$(git -C "$scope" rev-parse --show-toplevel 2>/dev/null) \
     || { echo "--census scope is not a git repository" >&2; exit 2; }
   scope=$(cd "$scope" && pwd -P)
@@ -199,6 +203,10 @@ printf 'ARMED watcher fp=%s dirs=%s scope=%s state=%s stale=%sm cap=%sm start-ve
 now_epoch() { date +%s; }
 
 atomic_identity_json() { # output, function
+  # TODO(go-wiring): needs verb `supervise heartbeat` (atomic write of the
+  # watcher/reaper heartbeat identity: function/pid/pidStartedAt/instanceTag/
+  # observedAtEpoch/loadedCapMin, resolving started-at itself). Atomic write plus
+  # a started-at probe; left as python3, still shelling to process-census.py.
   python3 - "$1" "$2" "$$" "$instance_tag" "$process_census" "$cap_min" <<'PY'
 import json, os, subprocess, sys, tempfile, time
 from pathlib import Path
@@ -229,6 +237,10 @@ PY
 # cannot have been replaced -- but a process whose lock WAS taken over must not
 # delete its successor's owner file or hand the lock to a third writer.
 census_writer_lock() { # claim | release
+  # TODO(go-wiring): needs verb `supervise census-writer-lock claim|release`
+  # (single-step directory-rename claim, proven-death takeover, owner-scoped
+  # release). Non-trivial lock protocol and liveness probes; left as python3,
+  # still shelling to process-census.py.
   python3 - "$1" "$supervision_dir" "$$" "$instance_tag" "$process_census" <<'PY'
 import json, os, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
@@ -338,6 +350,8 @@ monitor_census_duration() { # start-ns, share-marker, interval-marker
     wait "$sleeper"
     sleeper=
     atomic_identity_json "$watcher_heartbeat" watcher
+    # TODO(go-wiring): needs a monotonic elapsed-milliseconds-since helper
+    # (time.time_ns arithmetic). Timing, not a field read; left as python3.
     elapsed_ms=$(python3 - "$started_ns" <<'PY'
 import sys, time
 print(round((time.time_ns() - int(sys.argv[1])) / 1_000_000))
@@ -361,12 +375,18 @@ run_process_census() {
   captured=$(mktemp "${TMPDIR:-/tmp}/metasystem-census-pass.XXXXXX")
   share_marker=$captured.warned-share
   interval_marker=$captured.warned-interval
+  # TODO(go-wiring): needs a monotonic-nanoseconds helper (time.time_ns). Timing;
+  # left as python3.
   started_ns=$(python3 -c 'import time; print(time.time_ns())')
   # A scan is active work, not a stale watcher. Publish liveness before the
   # scan as well as after it so the owner does not mistake startup for death.
   atomic_identity_json "$watcher_heartbeat" watcher
-  if fingerprint=$("$process_census" fingerprint --repo "$scope" 2>"$captured.error"); then
+  if fingerprint=$("$ms" census fingerprint --repo "$scope" 2>"$captured.error"); then
     started_ns=$(python3 -c 'import time; print(time.time_ns())')
+    # TODO(go-wiring): the production census scan (process-census.py census
+    # --repo --fingerprint --interval --output) is NOT mapped; the binary's
+    # `census run` is the fixture path, not this production scan. Left as python3
+    # pending confirmation of the production census verb/flags.
     "$process_census" census --repo "$scope" --fingerprint "$fingerprint" --interval "$interval" --output "$last" >"$captured" &
     census_pid=$!
     monitor_census_duration "$started_ns" "$share_marker" "$interval_marker" &
@@ -376,6 +396,9 @@ run_process_census() {
     wait "$monitor_pid" 2>/dev/null || true
     (( scan_status == 0 )) || return "$scan_status"
   else
+    # TODO(go-wiring): needs verb `census write-failed-verdict` (write a
+    # CENSUS-FAILED last-census.json when fingerprinting fails). JSON
+    # construction and atomic write; left as python3.
     python3 - "$last" "$interval" "$captured.error" "$started_ns" <<'PY'
 import json, os, sys, tempfile, time
 from datetime import datetime, timezone
@@ -390,6 +413,9 @@ PY
     printf 'CENSUS-FAILED fingerprint=%s\n' "$(tr '\n' ' ' <"$captured.error")" >"$captured"
   fi
   append_census_log "$captured"
+  # TODO(go-wiring): needs a census-duration-budget check (read durationMs from
+  # last-census, compare against interval and budget, emit the CENSUS-SLOW
+  # warnings). Arithmetic and conditional emission; left as python3.
   python3 - "$last" "$supervision_interval_ms" "$census_budget_percent" "$share_marker" "$interval_marker" <<'PY'
 import json, sys
 from pathlib import Path
@@ -436,17 +462,7 @@ file_mtime() {
 }
 
 job_field() { # record field -> value ("" when absent/unparseable)
-  python3 - "$1" "$2" 2>/dev/null <<'JSONQ' || true
-import json, sys
-try:
-    with open(sys.argv[1]) as fh:
-        d = json.load(fh)
-    v = d.get(sys.argv[2]) if isinstance(d, dict) else None
-    if isinstance(v, str):
-        print(v)
-except Exception:
-    pass
-JSONQ
+  "$ms" json get --file "$1" --field "$2" 2>/dev/null || true
 }
 
 in_scope() { # record -> 0 when the job belongs to this scope
@@ -459,16 +475,7 @@ in_scope() { # record -> 0 when the job belongs to this scope
 
 job_status() {
   # Top-level JSON "status" if the record parses as JSON, else empty.
-  python3 - "$1" <<'PY' 2>/dev/null || true
-import json, sys
-try:
-    with open(sys.argv[1]) as fh:
-        d = json.load(fh)
-    if isinstance(d, dict) and isinstance(d.get("status"), str):
-        print(d["status"])
-except Exception:
-    pass
-PY
+  "$ms" json get --file "$1" --field status 2>/dev/null || true
 }
 
 is_terminal() {

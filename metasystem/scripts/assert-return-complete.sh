@@ -16,6 +16,7 @@ USAGE
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 role=
 file=
 job=
@@ -43,6 +44,9 @@ case "$role" in
   *) echo "violation: unknown role: $role" >&2; exit 1 ;;
 esac
 
+# TODO(go-wiring): needs a return-complete verb (materialize the role schema,
+# validate the return against it, walk the parentJob chain to the round return,
+# and check jobId/round/runtime/sessionId identity); not covered by the CLI map.
 python3 - "$root" "$mode" "$role" "$file" "$job" <<'PY'
 import json
 import importlib.util

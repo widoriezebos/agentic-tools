@@ -6,27 +6,14 @@
 adapter_common_init() { # runtime
   runtime=$1
   root=$(cd "$(dirname "${BASH_SOURCE[1]}")/../../.." && pwd -P)
+  ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
   dispatch="$root/scripts/agents/dispatch.sh"
   agents="$root/artifacts/agents"
   jobs="$agents/jobs"
 }
 
 field() { # json file, dotted field
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-from pathlib import Path
-value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-for part in sys.argv[2].split("."):
-    value = value[part]
-if value is None:
-    print("null")
-elif isinstance(value, bool):
-    print("true" if value else "false")
-elif isinstance(value, (dict, list)):
-    print(json.dumps(value, separators=(",", ":")))
-else:
-    print(value)
-PY
+  "$ms" json get --file "$1" --field "$2"
 }
 
 parse_supervisor_args() {
@@ -43,6 +30,8 @@ parse_supervisor_args() {
 }
 
 root_job_id() { # job id
+  # TODO(go-wiring): needs a job root-ancestor verb (parentJob chain walk with
+  # cycle detection); not covered by the CLI map.
   python3 - "$jobs" "$1" <<'PY'
 import json, sys
 from pathlib import Path
@@ -86,7 +75,7 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   heartbeat="$agents/hb/$job"
   effective="$round_dir/effective-permissions.json"
   schema="$round_dir/return-schema.v2.json"
-  "$root/scripts/agents/return-schema.py" --root "$root" --role "$(field "$record" role)" \
+  "$ms" schema materialize --root "$root" --role "$(field "$record" role)" \
     --version 2 --output "$schema"
   workspace=$(field "$record" workspaceRoot)
   requested_model=$(field "$record" requestedModel)
@@ -96,6 +85,9 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   mkdir -p "$round_dir" "$(dirname "$heartbeat")"
   printf '%s adapter supervisor started value=%s\n' "$runtime" "$instance_tag" >"$log"
   printf '{"pid":%s,"pgid":%s,"instanceTag":"%s"}\n' "$$" "$$" "$instance_tag" >"$heartbeat"
+  # TODO(go-wiring): needs a verb to materialize permissions.requested from the
+  # job record into the effective-permissions file (indented file write, not a
+  # field read).
   python3 - "$record" "$effective" <<'PY'
 import json, sys
 from pathlib import Path
@@ -123,6 +115,8 @@ register_cli_custody() { # child pid
 }
 
 record_actual_workspace_write_scope() {
+  # TODO(go-wiring): needs a verb to rewrite writeRoots in the effective file to
+  # the resolved workspace root (state edit).
   python3 - "$effective" "$workspace" <<'PY'
 import json, sys
 from pathlib import Path
@@ -139,6 +133,8 @@ PY
 
 fail_if_effective_wider_before_launch() {
   local mismatch
+  # TODO(go-wiring): needs a permission-comparison verb (effective roots ⊆
+  # requested, plus network/approvals/tools ordering checks).
   mismatch=$(python3 - "$record" "$effective" <<'PY'
 import json, sys
 from pathlib import Path
@@ -184,6 +180,8 @@ record_handshake() { # session, turn, effective model
 record_result_effective_model() { # effective model reported by the completed runtime result
   local model=$1 patch="$round_dir/result-model-patch.json"
   [[ -n "$model" ]] || return 2
+  # TODO(go-wiring): needs a verb to write an {effectiveModel} CAS patch file
+  # (state edit).
   python3 - "$patch" "$model" <<'PY'
 import json, sys
 from pathlib import Path
@@ -194,6 +192,8 @@ PY
 }
 
 write_patch() { # output, error|null, phase, usage file
+  # TODO(go-wiring): needs a verb to build an {error,phase,usage} patch file
+  # from an optional usage file (state edit).
   python3 - "$1" "$2" "$3" "$4" <<'PY'
 import json, sys
 from pathlib import Path
@@ -266,6 +266,9 @@ terminate_cli_child() { # exact child pid owned by this adapter
 
 normalize_return() { # candidate file, optional transcript file
   local candidate=$1 transcript=${2:-}
+  # TODO(go-wiring): needs a return-normalization verb (scan runtime output and
+  # transcript for the return object, reconcile session/model identity, emit
+  # return.json and return.md).
   python3 - "$candidate" "$transcript" "$record" "$round_dir/return.json" \
     "$round_dir/return.md" "$session_id" <<'PY'
 import json, re, sys
@@ -464,6 +467,8 @@ complete_from_cli() { # cli status, usage file, candidate file, optional transcr
 
 record_return_repairs() { # count
   local patch="$round_dir/repair-count-patch.json"
+  # TODO(go-wiring): needs a verb to write a {returnRepairs} CAS patch file
+  # (state edit).
   python3 - "$patch" "$1" <<'PY'
 import json, sys
 from pathlib import Path
@@ -475,7 +480,7 @@ PY
 configuration_identity() { # runtime version declared settings files
   local identity_runtime=$1 identity_version=$2
   shift 2
-  "$root/scripts/agents/config-identity.py" \
+  "$ms" config identity \
     --runtime "$identity_runtime" \
     --version "$identity_version" \
     --filter "$root/scripts/agents/adapters/$identity_runtime-config-filter.v1.json" \
@@ -483,20 +488,16 @@ configuration_identity() { # runtime version declared settings files
 }
 
 configuration_identity_field() { # identity JSON, field
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-value = json.loads(sys.argv[1])[sys.argv[2]]
-if isinstance(value, (dict, list)):
-    print(json.dumps(value, separators=(",", ":"), sort_keys=True))
-else:
-    print(value)
-PY
+  "$ms" json get --value "$1" --field "$2"
 }
 
 write_capability_snapshot() { # runtime version hash transports caps permissions envelope-enforcement per-key-hashes
   local snapshot_runtime=$1 version=$2 config_hash=$3 transports=$4 caps=$5 permissions=$6
   local envelope_enforcement=$7 config_key_hashes=$8
   mkdir -p "$agents/capabilities"
+  # TODO(go-wiring): needs a capability-snapshot writer verb (validate envelope
+  # enforcement and per-key hashes, allocate the dated sequence, emit the
+  # snapshot JSON).
   python3 - "$agents/capabilities" "$snapshot_runtime" "$version" "$config_hash" \
     "$transports" "$caps" "$permissions" "$envelope_enforcement" "$config_key_hashes" <<'PY'
 import json, re, sys
@@ -609,6 +610,8 @@ wait_for_selftest_job() { # job, maximum seconds
 }
 
 selftest_usage_check() { # record, native|unavailable|metered
+  # TODO(go-wiring): needs a usage-assertion verb (native/unavailable/metered
+  # typed-usage check).
   python3 - "$1" "$2" <<'PY'
 import json, sys
 from pathlib import Path
@@ -637,6 +640,8 @@ PY
 }
 
 selftest_envelope_declaration() { # field -> mapped|notEnforced
+  # TODO(go-wiring): needs a verb to read the newest capability snapshot's
+  # envelopeEnforcement.<field> (glob-newest plus nested read).
   python3 - "$agents/capabilities" "$runtime" "$1" <<'PY'
 import json, sys
 from pathlib import Path
@@ -768,6 +773,7 @@ EOF
 
   request_log="$selftest_dir/network-requested"
   port_file="$selftest_dir/network-port"
+  # TODO(go-wiring): selftest one-shot network listener; no CLI verb, keep as python.
   python3 - "$request_log" "$port_file" <<'PY' &
 import socket, sys
 from pathlib import Path
@@ -860,6 +866,8 @@ PY
   local write_enf network_enf
   write_enf=$(selftest_envelope_declaration writeRoots)
   network_enf=$(selftest_envelope_declaration network)
+  # TODO(go-wiring): needs a verb to write the selftest pass record (derive
+  # proven-behaviors from the envelope declarations).
   python3 - "$agents/selftests/$selftest_id.json" "$runtime" "$main_job" \
     "$usage_expectation" "$devin_checks" "$write_enf" "$network_enf" <<'PY'
 import json, sys

@@ -3,9 +3,12 @@ set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
+ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
 checkout=$(git -C "$harness_root" rev-parse --show-toplevel)
 checkout=$(cd "$checkout" && pwd -P)
 parent=${checkout%/*}
+# TODO(go-wiring): the random session-name suffix is not in the CLI map; no
+# binary verb emits a token_hex suffix, so this stays python3 until one exists.
 name=${1:-$(basename "$checkout")-session-$(date -u +%Y%m%dt%H%M%Sz)-$(python3 -c 'import secrets; print(secrets.token_hex(2))')}
 [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || {
   echo "second-session name must contain only letters, numbers, dot, underscore, and hyphen" >&2
@@ -28,10 +31,14 @@ for adapter in "$script_dir"/adapters/*.sh; do
 done
 sort -u -o "$paths" "$paths"
 
+# TODO(go-wiring): second-session-isolation.py is not yet ported to the binary;
+# no metasystem verb performs the isolated-checkout copy, so this stays python3.
 new_harness=$("$script_dir/second-session-isolation.py" \
   --source-root "$checkout" --destination-root "$destination" \
   --manifest "$paths" --harness-root "$harness_root")
-bootstrap_start=$("$new_harness/scripts/agents/process-census.py" started-at --pid "$$")
+# started-at is an OS-level start-time query independent of which checkout runs
+# it, so the current harness binary is equivalent to the new harness's helper.
+bootstrap_start=$("$ms" identity started-at --pid "$$")
 "$new_harness/scripts/agents/arm-supervision.sh" --repo "$destination" \
   --session "second-session-bootstrap-$name-$$" --pid "$$" \
   --start-time "$bootstrap_start" --tag "metasystem-main-bootstrap-$name-$$" >/dev/null

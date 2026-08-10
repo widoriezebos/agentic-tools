@@ -31,8 +31,7 @@ die() { echo "$2" >&2; exit "$1"; }
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 script_path=$script_dir/$(basename "${BASH_SOURCE[0]}")
 harness_root=$(cd "$script_dir/../.." && pwd -P)
-helper=$script_dir/process-census.py
-lease_helper=$script_dir/worktree-lease.py
+ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
 config=$harness_root/scripts/metasystem-config.sh
 watcher=$harness_root/scripts/watch-background-jobs.sh
 dispatch=$harness_root/scripts/agents/dispatch.sh
@@ -70,6 +69,9 @@ derive_watcher_ceiling() { # optional declared maximum cap
 }
 
 blocking_reserved_cap() { # proposed watcher ceiling; prints job|cap for first blocker
+  # TODO(go-wiring): needs verb `supervise blocking-reserved-cap` (scan jobs/ and
+  # missions/*/fences.json for a non-terminal reserved capMin >= ceiling, print
+  # the highest blocker as job|cap). Non-trivial state scan; left as python3.
   python3 - "$agents" "$1" <<'PY'
 import json, sys
 from pathlib import Path
@@ -146,6 +148,9 @@ resolve_repo() {
 }
 
 sanitize() {
+  # TODO(go-wiring): needs a slug/sanitize verb (lowercase, collapse
+  # [^A-Za-z0-9._-] to '-', strip leading/trailing '-.', default "session").
+  # Regex transform, not a field read; left as python3.
   python3 - "$1" <<'PY'
 import re, sys
 value=re.sub(r"[^A-Za-z0-9._-]+", "-", sys.argv[1]).strip("-.").lower()
@@ -154,21 +159,12 @@ PY
 }
 
 json_field() { # file, dotted field
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-try:
-    value=json.load(open(sys.argv[1]))
-    for part in sys.argv[2].split("."): value=value[part]
-except (OSError, ValueError, KeyError, TypeError): raise SystemExit(1)
-if isinstance(value, bool): print("true" if value else "false")
-elif isinstance(value, (dict, list)): print(json.dumps(value,separators=(",",":")))
-elif value is not None: print(value)
-PY
+  "$ms" json get --file "$1" --field "$2"
 }
 
 identity_alive() { # pid, start, optional tag
   local pid=$1 start=$2 tag=${3:-} command
-  "$helper" alive --pid "$pid" --start-time "$start" >/dev/null 2>&1 || return 1
+  "$ms" census alive --pid "$pid" --start-time "$start" >/dev/null 2>&1 || return 1
   [[ -z "$tag" ]] && return 0
   command=$(ps -p "$pid" -o command= 2>/dev/null || true)
   # Exact pid/start proves the recorded process is still live. If argv is not
@@ -179,6 +175,8 @@ identity_alive() { # pid, start, optional tag
 }
 
 atomic_json_identity() { # path, pid, start, tag, acquired-at
+  # TODO(go-wiring): needs verb `supervise write-owner-identity` (atomic write of
+  # {pid,pidStartedAt,instanceTag,acquiredAt}). Atomic JSON write; left as python3.
   python3 - "$@" <<'PY'
 import json, os, sys, tempfile
 from pathlib import Path
@@ -212,16 +210,16 @@ rotate_event_stream() { # harness root -- only on the ESTABLISHING path (D-4)
 
 write_announcement() { # repo, session, pid, start, tag, runtime, optional lineage
   if [[ -n "${7:-}" ]]; then
-    "$lease_helper" --root "$1" announce --session "$2" --pid "$3" \
+    "$ms" lease announce --root "$1" --session "$2" --pid "$3" \
       --start "$4" --tag "$5" --runtime "$6" --owner-lineage "$7"
   else
-    "$lease_helper" --root "$1" announce --session "$2" --pid "$3" \
+    "$ms" lease announce --root "$1" --session "$2" --pid "$3" \
       --start "$4" --tag "$5" --runtime "$6"
   fi
 }
 
 retire_announcement() { # repo, session, pid, start
-  "$lease_helper" --root "$1" retire --session "$2" --pid "$3" --start "$4"
+  "$ms" lease retire --root "$1" --session "$2" --pid "$3" --start "$4"
 }
 
 stop_identity() { # name, pid, start, tag
@@ -251,6 +249,8 @@ stop_identity() { # name, pid, start, tag
 launch_detached() { # output pid variable name, log path, command...
   local __name=$1 log=$2
   shift 2
+  # TODO(go-wiring): needs verb `supervise launch-detached` (open log, redirect
+  # stdio, setsid, exec the command). Process daemonization; left as python3.
   python3 - "$log" "$@" <<'PY' &
 import os, sys
 log=os.open(sys.argv[1], os.O_WRONLY|os.O_CREAT|os.O_APPEND, 0o600)
@@ -268,7 +268,7 @@ wait_for_start_identity() { # name, pid
   started=$SECONDS
   deadline=$((SECONDS + cap))
   while (( SECONDS < deadline )); do
-    if value=$("$helper" started-at --pid "$pid" 2>/dev/null); then printf '%s\n' "$value"; return 0; fi
+    if value=$("$ms" identity started-at --pid "$pid" 2>/dev/null); then printf '%s\n' "$value"; return 0; fi
     sleep 0.02
   done
   elapsed=$((SECONDS - started))
@@ -307,6 +307,10 @@ wait_for_first_heartbeat() { # name, heartbeat file, instance tag, pid, start
 }
 
 read_component_identity() { # state, component => pid start tag
+  # TODO(go-wiring): needs a multi-field read of components.<c>.{pid,pidStartedAt,
+  # instanceTag} that fails as a unit when the component is absent (three
+  # separate `json get` calls would not share the all-or-nothing exit). Left as
+  # python3 pending a `supervise component-identity` verb.
   python3 - "$1" "$2" <<'PY'
 import json, sys
 try: v=json.load(open(sys.argv[1]))["components"][sys.argv[2]]; print(v["pid"],v["pidStartedAt"],v["instanceTag"])
@@ -395,8 +399,12 @@ run_owner() {
     launch_detached reaper_pid "$supervision/reaper.log" "$dispatch" reap --interval "$interval" \
       --heartbeat "$reaper_heartbeat" --instance-tag "$reaper_tag" --start-gate "$reaper_gate"
     reaper_start=$(wait_for_start_identity reaper "$reaper_pid") || exit 1
-    fingerprint=$("$helper" fingerprint --repo "$repo") || exit 1
-    python3 - "$state" "$$" "$("$helper" started-at --pid "$$")" "$owner_tag" \
+    fingerprint=$("$ms" census fingerprint --repo "$repo") || exit 1
+    # TODO(go-wiring): needs verb `supervise write-state` (atomic write of the
+    # supervision state.json: owner/components/generation/fingerprint/
+    # derivedWatcherCapMin/startedAt). Left as python3; the started-at read below
+    # is wired to the binary.
+    python3 - "$state" "$$" "$("$ms" identity started-at --pid "$$")" "$owner_tag" \
       "$watcher_pid" "$watcher_start" "$watcher_tag" "$watcher_heartbeat" \
       "$reaper_pid" "$reaper_start" "$reaper_tag" "$reaper_heartbeat" "$interval" "$generation" "$fingerprint" "$watcher_cap" <<'PY'
 import json, os, sys, tempfile
@@ -506,20 +514,23 @@ arm_repository() {
   done
   [[ -n "$repo" ]] || { usage; exit 2; }
   repo=$(resolve_repo "$repo")
-  [[ -x "$helper" && -x "$lease_helper" ]] \
-    || die 1 "process census or checkout lease helper is not executable"
+  [[ -x "$ms" ]] \
+    || die 1 "metasystem binary is not executable"
   if (( shutdown )); then
     if (( ! lease_held )); then
-      lease_result=$("$lease_helper" --root "$harness_root" require-holder --caller-pid "$$") || exit $?
+      lease_result=$("$ms" lease require-holder --root "$harness_root" --caller-pid "$$") || exit $?
+      # TODO(go-wiring): needs a JSON-string field read that coerces null/absent
+      # claimEpoch to "" (json get --value prints "null", which would be handed
+      # to --expected-epoch). Left as python3.
       lease_epoch=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1]); print("" if v.get("claimEpoch") is None else v["claimEpoch"])' "$lease_result")
       if [[ -n "$lease_epoch" ]]; then
-        exec "$lease_helper" --root "$harness_root" run-held --caller-pid "$$" \
+        exec "$ms" lease run-held --root "$harness_root" --caller-pid "$$" \
           --expected-epoch "$lease_epoch" -- "$script_path" --repo "$repo" --shutdown --lease-held
       fi
-      exec "$lease_helper" --root "$harness_root" run-held --caller-pid "$$" -- \
+      exec "$ms" lease run-held --root "$harness_root" --caller-pid "$$" -- \
         "$script_path" --repo "$repo" --shutdown --lease-held
     fi
-    "$lease_helper" --root "$harness_root" require-holder --caller-pid "$$" >/dev/null
+    "$ms" lease require-holder --root "$harness_root" --caller-pid "$$" >/dev/null
     lock=$agents/supervision/lock.d/owner.json
     [[ -f "$lock" ]] || exit 0
     owner_pid=$(json_field "$lock" pid); owner_start=$(json_field "$lock" pidStartedAt); owner_tag=$(json_field "$lock" instanceTag)
@@ -533,14 +544,14 @@ arm_repository() {
     exit 0
   fi
   if [[ -z "$pid" ]]; then
-    if ! ancestor=$("$helper" find-ancestor --repo "$repo" --pid "$PPID" ${runtime:+--runtime "$runtime"} 2>&1); then
+    if ! ancestor=$("$ms" census find-ancestor --repo "$repo" --pid "$PPID" ${runtime:+--runtime "$runtime"} 2>&1); then
       die 1 "cannot infer arming identity: no agent-signature ancestor was proven. Pass --pid <agent-pid> and --start-time <epoch-seconds>, or run from a session whose ancestor matches a configured runtime signature. Detail: $ancestor"
     fi
-    pid=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["pid"])' "$ancestor")
-    [[ -n "$runtime" ]] || runtime=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["runtime"])' "$ancestor")
+    pid=$("$ms" json get --value "$ancestor" --field pid)
+    [[ -n "$runtime" ]] || runtime=$("$ms" json get --value "$ancestor" --field runtime)
   fi
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || die 2 "--pid must be a positive integer"
-  start=${start:-$("$helper" started-at --pid "$pid")} || die 1 "cannot read pid start time"
+  start=${start:-$("$ms" identity started-at --pid "$pid")} || die 1 "cannot read pid start time"
   [[ "$start" =~ ^[1-9][0-9]*$ ]] || die 2 "--start-time must be epoch seconds"
   identity_alive "$pid" "$start" || die 1 "announcement pid identity is not live"
   session=${session:-${METASYSTEM_SESSION_ID:-session-$pid}}
@@ -553,7 +564,7 @@ arm_repository() {
 
   # Fixed arming step 1: registry write precedes lock acquisition and census.
   announcement=$(write_announcement "$harness_root" "$session" "$pid" "$start" "$tag" "$runtime" "$owner_lineage")
-  "$lease_helper" --root "$harness_root" require-holder --caller-pid "$pid" >/dev/null
+  "$ms" lease require-holder --root "$harness_root" --caller-pid "$pid" >/dev/null
   supervision=$agents/supervision
   mkdir -p "$supervision"
   printf '%s announcement-written registry=%s pid=%s start=%s\n' "$(now_iso)" "$announcement" "$pid" "$start" >>"$supervision/arming.log"
@@ -649,7 +660,7 @@ case ${1:-} in
     shift
     [[ ${1:-} == --repo && $# -eq 2 ]] || { usage; exit 2; }
     repo=$(resolve_repo "$2")
-    "$helper" fingerprint --repo "$repo"
+    "$ms" census fingerprint --repo "$repo"
     ;;
   *) arm_repository "$@" ;;
 esac

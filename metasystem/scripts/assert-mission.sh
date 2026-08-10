@@ -17,6 +17,7 @@ USAGE
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 mode=validate
 file=
 
@@ -31,4 +32,4 @@ while (($#)); do
 done
 
 [[ -n "$file" && -f "$file" ]] || { echo "missing --file mission contract" >&2; exit 2; }
-exec python3 "$root/scripts/agents/mission-contract.py" "$mode" --file "$file"
+exec "$ms" mission-contract "$mode" --file "$file"

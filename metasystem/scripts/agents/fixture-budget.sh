@@ -61,6 +61,9 @@ harness_fixture_budget_init() { # metasystem root
   local harness_root=$1 resolved calibration_cap interval_name interval_value
   calibration_cap=$(harness_fixture_base_cap calibration-census) || return 1
   if [[ -n "${METASYSTEM_FIXTURE_CAP_SCALE:-}" ]]; then
+    # TODO(go-wiring): needs a decimal-validation helper (parse a decimal in
+    # [1,20], reject non-finite/out-of-range, print "<scale> <millis-ceil>").
+    # Decimal arithmetic and validation; left as python3.
     resolved=$(python3 - "$METASYSTEM_FIXTURE_CAP_SCALE" <<'PY'
 import decimal
 import sys
@@ -76,6 +79,10 @@ print(f"{scale.normalize():f} {millis}")
 PY
     ) || return 1
   else
+    # TODO(go-wiring): needs a calibration verb that times the production census
+    # scan (process-census.py census, NOT the fixture `census run`) under a
+    # timeout and derives a cap scale from the elapsed milliseconds. Depends on
+    # the production census verb plus timing/arithmetic; left as python3.
     resolved=$(python3 - "$harness_root" "$calibration_cap" <<'PY'
 import math
 import subprocess

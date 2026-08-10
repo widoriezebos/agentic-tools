@@ -31,6 +31,7 @@ done
 [[ "$iterations" =~ ^[1-9][0-9]*$ ]] || { echo "--iterations must be a positive integer" >&2; exit 2; }
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
 source "$source_root/scripts/agents/fixture-budget.sh"
 : "${METASYSTEM_FIXTURE_POLL_INTERVAL_MS:=10}"
 : "${METASYSTEM_CENSUS_INTERVAL_MS:=250}"
@@ -71,16 +72,13 @@ wait_until() { # description, command...
 }
 
 json_field() { # file, dotted field
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-for part in sys.argv[2].split("."):
-    value = value[part]
-print(value)
-PY
+  "$ms" json get --file "$1" --field "$2"
 }
 
 component_healed() { # state, component, old pid, old generation
+  # TODO(go-wiring): needs a compare verb (component.pid != old AND
+  # state.generation > old-generation). State comparison, not a field read; left
+  # as python3.
   python3 - "$1" "$2" "$3" "$4" <<'PY'
 import json, sys
 value = json.load(open(sys.argv[1]))
@@ -96,6 +94,9 @@ census_matches_snapshot() { # census, LIVE state path
   # dispatch enforces — SUCCESS, and the census's generation equal to the
   # live arming generation, with its digest genuinely describing the state
   # bytes that carried that generation.
+  # TODO(go-wiring): needs a census-vs-state provenance check (SUCCESS verdict,
+  # census.generation == state.generation, digest provenance over the state
+  # bytes). Hashing and comparison; left as python3.
   python3 - "$1" "$2" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
@@ -116,6 +117,8 @@ PY
 }
 
 watcher_pass_complete() { # heartbeat, census
+  # TODO(go-wiring): needs a compare verb (heartbeat.observedAtEpoch >=
+  # census.completedAtEpoch). Comparison across two files; left as python3.
   python3 - "$1" "$2" <<'PY'
 import json, sys
 heartbeat = json.load(open(sys.argv[1]))
@@ -126,12 +129,15 @@ PY
 
 prove_process_ownership() { # pid, start, tag
   local pid=$1 start=$2 tag=$3 command
-  "$census" alive --pid "$pid" --start-time "$start" >/dev/null || return 1
+  "$ms" census alive --pid "$pid" --start-time "$start" >/dev/null || return 1
   command=$(ps -p "$pid" -o command= 2>/dev/null || true)
   [[ "$command" == *"$tag"* || "$command" == *"$repo"* ]]
 }
 
 backdate_census_generation() { # census, generation
+  # TODO(go-wiring): needs a census-mutation verb (set generation and
+  # completedAtEpoch, atomic rewrite). JSON mutation and atomic write; left as
+  # python3.
   python3 - "$1" "$2" <<'PY'
 import json, os, sys, tempfile, time
 from pathlib import Path
@@ -174,14 +180,13 @@ export METASYSTEM_CENSUS_PROCESS_FILE=$process_fixture
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_fixture
 
 arm=$repo/scripts/agents/arm-supervision.sh
-census=$repo/scripts/agents/process-census.py
 dispatch=$repo/scripts/agents/dispatch.sh
 state=$repo/artifacts/agents/supervision/state.json
 last=$repo/artifacts/agents/supervision/last-census.json
 brief=$tmp/brief.md
 sed 's/^Working Mode:.*/Working Mode: design/' "$repo/scripts/agents/templates/brief.md" >"$brief"
 "$repo/scripts/agents/adapters/fake.sh" probe >/dev/null
-main_start=$("$census" started-at --pid "$$")
+main_start=$("$ms" identity started-at --pid "$$")
 
 refusals=0
 last_published_generation=0
@@ -232,6 +237,9 @@ for ((iteration = 1; iteration <= iterations; iteration++)); do
     printf 'dispatch said (%s bytes):\n' "$(wc -c <"$output" | tr -d ' ')" >&2
     sed -n '1,40p' "$output" >&2
     printf 'job record:\n' >&2
+    # TODO(go-wiring): needs a multi-field diagnostic read (status, error, and a
+    # truncated protocolError.violation) formatted on two lines. Multi-field
+    # extraction with formatting; left as python3.
     python3 -c 'import json,sys
 v=json.load(open(sys.argv[1]))
 print("status:",v.get("status"),"error:",v.get("error"))

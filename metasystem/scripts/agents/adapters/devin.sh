@@ -33,6 +33,8 @@ selftest_denial_ends_turn=1
 
 devin_version() {
   command -v devin >/dev/null 2>&1 || { echo "devin CLI is not installed" >&2; return 1; }
+  # TODO(go-wiring): needs a version-parse verb (regex-extract a semver from CLI
+  # --version output).
   devin --version 2>/dev/null | python3 -c '
 import re, sys
 text = sys.stdin.read()
@@ -103,6 +105,8 @@ build_devin_config() { # output
   # survive, and nothing the user set is silently dropped. Replacing the
   # permissions member (never merging it) is the only safe direction, because
   # merging can only widen what the job may attempt.
+  # TODO(go-wiring): needs a verb to build the Devin job config (swap the
+  # permissions block into the inherited user config; state edit).
   python3 - "$record" "$1" "$2" <<'PY'
 import json, os, sys
 from pathlib import Path
@@ -155,6 +159,8 @@ list_devin_sessions() { # output file
 # launches in one directory cannot be told apart, and guessing records a peer's
 # session as this job's identity.
 new_devin_session() { # before list, current list, optional hook signal, workspace
+  # TODO(go-wiring): needs a session-correlation verb (diff before/after session
+  # lists scoped to the workspace; refuse on ambiguity).
   python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
 import json, sys
 from pathlib import Path
@@ -231,6 +237,8 @@ devin_usage() { # output, transcript, cumulative-out, previous-cumulative-or-emp
   # A resumed round whose predecessor artifact is missing publishes UNAVAILABLE
   # rather than the session totals. An aggregator never reads a job log, so
   # "wrong but explained in a log" is just wrong.
+  # TODO(go-wiring): needs a Devin usage-delta verb (cumulative session totals ->
+  # per-round token/ACU delta with predecessor subtraction).
   python3 - "$1" "$2" "$3" "${4:-}" "${5:-0}" <<'PY'
 import json, sys
 from pathlib import Path
@@ -323,6 +331,9 @@ devin_record_effective_model() { # transcript
   # identifier is written -- lowercase, non-alphanumeric runs become one hyphen
   # -- and record whatever that yields, including a genuine disagreement.
   local observed observed_display
+  # TODO(go-wiring): lenient JSON string-field read (agent.model_name; print
+  # nothing unless a non-empty string). `json get` diverges here: it prints
+  # "null" for a present-null field, which would be canonicalized as a model.
   observed_display=$(python3 - "$1" <<'PY'
 import json, sys
 from pathlib import Path
@@ -336,7 +347,7 @@ if isinstance(name, str) and name.strip():
 PY
   ) || observed_display=""
   observed=$(
-    "$root/scripts/agents/canonical-model.py" "$observed_display"
+    "$ms" config canonical-model "$observed_display"
   ) || observed=""
   # An unreadable or absent model name is recorded as `unobserved`, NOT left as
   # the requested value the handshake seeded: a job record must never present a
@@ -350,6 +361,8 @@ devin_settle_session_identity() { # transcript
   # not a preference: the record must not certify a session the provider's own
   # transcript contradicts.
   local exported
+  # TODO(go-wiring): lenient JSON string-field read (session_id; print nothing
+  # unless a non-empty string). Same `json get` null divergence as above.
   exported=$(python3 - "$1" <<'PY'
 import json, sys
 from pathlib import Path
@@ -392,6 +405,7 @@ runtime_usage_after_repair() { # usage file
   # usage cannot be trusted as complete. Record it unavailable rather than
   # leaving the pre-repair figure standing and undercounting provider budget.
   if [[ ! -s "$repair_transcript" ]]; then
+    # TODO(go-wiring): needs a verb to write an unavailable-usage file (state edit).
     python3 - "$usage_file" <<'PY'
 import json, sys
 from pathlib import Path
@@ -491,6 +505,7 @@ supervise() { # dispatch|follow-up and supervisor args
   # A command that succeeded but emitted unparseable JSON is not an empty
   # baseline: reading it as empty makes every pre-existing session look new,
   # which is the peer-attribution bug the baseline exists to prevent.
+  # TODO(go-wiring): needs a json-validate verb (is-this-file-parseable-JSON check).
   if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$before_sessions" 2>/dev/null; then
     fail_pending session_baseline_unreadable handshake
     return 1

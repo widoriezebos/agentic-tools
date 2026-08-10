@@ -3,7 +3,8 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-exec python3 - "$root" "$script" "$@" <<'PY'
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+exec python3 - "$root" "$script" "$ms" "$@" <<'PY'
 from __future__ import annotations
 
 import copy
@@ -29,7 +30,8 @@ from typing import Any
 
 ROOT = Path(sys.argv[1]).resolve()
 SCRIPT = Path(sys.argv[2]).resolve()
-ARGV = sys.argv[3:]
+MS = sys.argv[3]
+ARGV = sys.argv[4:]
 AGENTS = ROOT / "artifacts" / "agents"
 MISSIONS = AGENTS / "missions"
 RUNNERS = MISSIONS / "runners"
@@ -206,7 +208,7 @@ def parse_contract(mission: str, *, approved: bool = True) -> tuple[str, dict[st
 
 def process_started_at(pid: int) -> int:
     output = require_command(
-        [str(ROOT / "scripts" / "agents" / "process-census.py"), "started-at", "--pid", str(pid)],
+        [MS, "identity", "started-at", "--pid", str(pid)],
         f"cannot resolve process start identity for pid {pid}",
     )
     try:
@@ -418,8 +420,7 @@ def emit_event(event: str, summary: str, **fields: object) -> None:
     global _EVENT_SEQ
     try:
         _EVENT_SEQ += 1
-        helper = ROOT / "scripts" / "agents" / "emit-event.py"
-        args = [sys.executable, str(helper), f"root={ROOT}", "component=runner",
+        args = [MS, "event", "emit", f"root={ROOT}", "component=runner",
                 f"event={event}", f"summary={summary}", f"pid={os.getpid()}",
                 f"pidStartedAt={RUNNER_STARTED_AT or 0}", f"seq={_EVENT_SEQ}"]
         args += [f"{k}={v}" for k, v in fields.items() if v is not None]
@@ -463,10 +464,11 @@ def arming_identity(mission: str) -> tuple[str, int, int, str, str | None]:
     pid = os.getpid()
     view = run_command(
         [
-            str(ROOT / "scripts" / "agents" / "worktree-lease.py"),
+            MS,
+            "lease",
+            "classify",
             "--root",
             str(ROOT),
-            "classify",
             "--caller-pid",
             str(pid),
         ]
@@ -559,7 +561,8 @@ def arm_and_preflight(mission: str, mode: str) -> None:
     try:
         preflight = run_command(
             [
-                str(ROOT / "scripts" / "agents" / "mission-contract.py"),
+                MS,
+                "mission-contract",
                 "preflight",
                 "--file",
                 str(contract_path(mission)),
@@ -582,7 +585,7 @@ def arm_and_preflight(mission: str, mode: str) -> None:
 
 
 def verify_state(path: Path, *, anchor: bool = False) -> dict[str, Any]:
-    command = [str(ROOT / "scripts" / "agents" / "mission-state.py"), "verify", "--state", str(path)]
+    command = [MS, "mission-state", "verify", "--state", str(path)]
     if anchor:
         command += ["--repo", str(ROOT), "--ledger", str(path.with_name("ledger.md"))]
     result = run_command(command)
@@ -603,7 +606,8 @@ def write_state(path: Path, proposed: dict[str, Any]) -> dict[str, Any]:
     try:
         result = run_command(
             [
-                str(ROOT / "scripts" / "agents" / "mission-state.py"),
+                MS,
+                "mission-state",
                 "write",
                 "--state",
                 str(path),
@@ -634,7 +638,8 @@ def git_author_environment(identity: str) -> dict[str, str]:
 def anchor_state(state_path: Path, ledger: Path, identity: str) -> None:
     result = run_command(
         [
-            str(ROOT / "scripts" / "agents" / "mission-state.py"),
+            MS,
+            "mission-state",
             "anchor",
             "--state",
             str(state_path),
@@ -705,7 +710,8 @@ def initialize_state(mission: str, lease: Path) -> tuple[Path, Path, dict[str, A
     _, values, _ = parse_contract(mission)
     require_command(
         [
-            str(ROOT / "scripts" / "agents" / "mission-ledger.py"),
+            MS,
+            "mission-ledger",
             "init",
             "--file",
             str(ledger),
@@ -718,7 +724,8 @@ def initialize_state(mission: str, lease: Path) -> tuple[Path, Path, dict[str, A
     )
     require_command(
         [
-            str(ROOT / "scripts" / "agents" / "mission-state.py"),
+            MS,
+            "mission-state",
             "init",
             "--state",
             str(state_path),
@@ -743,7 +750,8 @@ def resume_state(mission: str) -> tuple[Path, Path, dict[str, Any]]:
         raise RunnerError("mission state does not exist", 7)
     result = run_command(
         [
-            str(ROOT / "scripts" / "agents" / "mission-state.py"),
+            MS,
+            "mission-state",
             "reconcile",
             "--state",
             str(state_path),
@@ -1240,6 +1248,13 @@ def close_terminal_chains(mission: str) -> None:
 
 
 def load_contract_module():
+    # TODO(go-wiring): needs a `mission-contract measure`/gate-run verb. The
+    # measurement path (load_contract_module, run_guard, previous_metrics,
+    # measure) imports mission-contract.py as a Python library and calls its
+    # internals -- git, expand_paths, run_gate, validate_contract, read_contract,
+    # repository_for, project_root_for, METRIC_RE, validate_globs. The binary's
+    # mission-contract family only exposes validate|seal|preflight, none of which
+    # returns per-metric measurements, so this stays Python until a verb does.
     path = ROOT / "scripts" / "agents" / "mission-contract.py"
     specification = importlib.util.spec_from_file_location("harness_mission_contract", path)
     if specification is None or specification.loader is None:
@@ -1349,7 +1364,8 @@ def measure(mission: str, state: dict[str, Any]) -> tuple[str, str, dict[str, An
 def append_ledger(ledger: Path, cycle: int, classification: str, candidate_sha: str, observed: str) -> None:
     result = run_command(
         [
-            str(ROOT / "scripts" / "agents" / "mission-ledger.py"),
+            MS,
+            "mission-ledger",
             "append",
             "--file",
             str(ledger),
@@ -1459,7 +1475,7 @@ def one_cycle(
     notified: list[bool],
 ) -> dict[str, Any]:
     reserve = run_command(
-        [str(ROOT / "scripts" / "agents" / "mission-fence.py"), "reserve-cycle", "--repo", str(ROOT), "--mission", mission]
+        [MS, "mission-fence", "reserve-cycle", "--repo", str(ROOT), "--mission", mission]
     )
     if reserve.returncode != 0:
         return park_state(state_path, ledger, state, "fence", mission, mission)
@@ -1497,7 +1513,11 @@ def one_cycle(
     atomic_json(turn_path, turn)
     prompt = run_command(
         [
-            str(ROOT / "scripts" / "agents" / "mission-prompt.py"),
+            MS,
+            "mission-prompt",
+            "assemble",
+            "--repo",
+            str(ROOT),
             "--mission",
             mission,
             "--turn",
