@@ -104,6 +104,9 @@ func families() []family {
 			summary: "small utilities for shell callers",
 			verbs: []verb{
 				{"token-hex", "print a random hex token of --bytes length", runUtilTokenHex},
+				{"slug", "print a stable slug of the argument (matches the sanitize rule)", runUtilSlug},
+				{"json-validate", "exit 0 if --file/--value is valid JSON, else 1", runUtilJSONValidate},
+				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
 			},
 		},
 		{

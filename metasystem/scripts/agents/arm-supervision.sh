@@ -147,15 +147,8 @@ resolve_repo() {
   (cd "$top" && pwd -P)
 }
 
-sanitize() {
-  # TODO(go-wiring): needs a slug/sanitize verb (lowercase, collapse
-  # [^A-Za-z0-9._-] to '-', strip leading/trailing '-.', default "session").
-  # Regex transform, not a field read; left as python3.
-  python3 - "$1" <<'PY'
-import re, sys
-value=re.sub(r"[^A-Za-z0-9._-]+", "-", sys.argv[1]).strip("-.").lower()
-print(value or "session")
-PY
+sanitize() { # value
+  "$ms" util slug "$1"
 }
 
 json_field() { # file, dotted field

@@ -242,10 +242,9 @@ if [[ -z "$identity" ]]; then
 fi
 pid=$("$ms" json get --value "$identity" --field pid)
 started=$("$ms" json get --value "$identity" --field pidStartedAt)
-# TODO(go-wiring): the tag suffix needs the same slug/sanitize verb as
-# arm-supervision.sh sanitize() (lowercase, collapse [^A-Za-z0-9._-] to '-',
-# strip '-.', default "session"). Regex transform; left as python3.
-tag="metasystem-main-$runtime-$(python3 -c 'import re,sys; print(re.sub(r"[^A-Za-z0-9._-]+","-",sys.argv[1]).strip("-.").lower() or "session")' "$session")"
+# The tag suffix is slugged the same way as arm-supervision.sh, so the arming
+# and hook paths derive the identical instance tag.
+tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
 
 if [[ "$event" == end ]]; then
   METASYSTEM_AGENT_RUNTIME="$runtime" "$arm" --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" --tag "$tag" --retire >/dev/null 2>&1 || true
