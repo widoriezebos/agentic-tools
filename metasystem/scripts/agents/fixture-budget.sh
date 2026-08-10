@@ -61,68 +61,45 @@ harness_fixture_budget_init() { # metasystem root
   local harness_root=$1 resolved calibration_cap interval_name interval_value
   calibration_cap=$(harness_fixture_base_cap calibration-census) || return 1
   if [[ -n "${METASYSTEM_FIXTURE_CAP_SCALE:-}" ]]; then
-    # TODO(go-wiring): needs a decimal-validation helper (parse a decimal in
-    # [1,20], reject non-finite/out-of-range, print "<scale> <millis-ceil>").
-    # Decimal arithmetic and validation; left as python3.
-    resolved=$(python3 - "$METASYSTEM_FIXTURE_CAP_SCALE" <<'PY'
-import decimal
-import sys
-
-try:
-    scale = decimal.Decimal(sys.argv[1])
-except decimal.InvalidOperation:
-    raise SystemExit("METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 20")
-if not scale.is_finite() or not decimal.Decimal("1") <= scale <= decimal.Decimal("20"):
-    raise SystemExit("METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 20")
-millis = int((scale * 1000).to_integral_value(rounding=decimal.ROUND_CEILING))
-print(f"{scale.normalize():f} {millis}")
-PY
-    ) || return 1
+    # The scale must be a plain decimal from 1 through 20; the paired value is
+    # its millisecond ceiling.
+    resolved=$(awk -v s="$METASYSTEM_FIXTURE_CAP_SCALE" 'BEGIN {
+      if (s !~ /^[0-9]+(\.[0-9]+)?$/) { print "METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 20" > "/dev/stderr"; exit 1 }
+      v = s + 0
+      if (v < 1 || v > 20) { print "METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 20" > "/dev/stderr"; exit 1 }
+      m = v * 1000; mi = int(m); if (mi < m) mi++
+      printf "%s %d\n", v, mi
+    }') || return 1
   else
-    # TODO(go-wiring): needs a calibration verb that times the production census
-    # scan (process-census.py census, NOT the fixture `census run`) under a
-    # timeout and derives a cap scale from the elapsed milliseconds. Depends on
-    # the production census verb plus timing/arithmetic; left as python3.
-    resolved=$(python3 - "$harness_root" "$calibration_cap" <<'PY'
-import math
-import subprocess
-import sys
-import tempfile
-import time
-from pathlib import Path
-
-root = Path(sys.argv[1]).resolve()
-cap = int(sys.argv[2])
-started = time.monotonic()
-try:
-    with tempfile.TemporaryDirectory(prefix="metasystem-fixture-probe.") as directory:
-        subprocess.run(
-            [
-                sys.executable,
-                str(root / "scripts/agents/process-census.py"),
-                "census",
-                "--repo", str(root),
-                "--fingerprint", "fixture-budget-probe",
-                "--interval", "60",
-                "--output", str(Path(directory) / "census.json"),
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            timeout=cap,
-        )
-except subprocess.TimeoutExpired:
-    elapsed = math.ceil(time.monotonic() - started)
-    raise SystemExit(
-        f"fixture calibration timed out: census probe "
-        f"(elapsed: {elapsed}s; scaled cap: {cap}s)"
-    )
-
-elapsed_ms = max(1, math.ceil((time.monotonic() - started) * 1000))
-scale = min(12, max(3, math.ceil(elapsed_ms / 250)))
-print(f"{scale} {scale * 1000}")
-PY
-    ) || return 1
+    # Calibrate by timing one live census scan under the calibration cap, then
+    # derive the cap scale from the elapsed milliseconds.
+    local ms_bin probe_dir probe_started probe_pid probe_deadline probe_elapsed_ms probe_scale
+    ms_bin="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
+    probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fixture-probe.XXXXXX") || return 1
+    probe_started=$("$ms_bin" util now-ns)
+    "$ms_bin" census run --repo "$harness_root" --root "$harness_root" \
+      --fingerprint fixture-budget-probe --interval 60 \
+      --output "$probe_dir/census.json" >/dev/null 2>&1 &
+    probe_pid=$!
+    probe_deadline=$((SECONDS + calibration_cap))
+    while kill -0 "$probe_pid" 2>/dev/null && (( SECONDS < probe_deadline )); do
+      sleep 0.05
+    done
+    if kill -0 "$probe_pid" 2>/dev/null; then
+      kill "$probe_pid" 2>/dev/null || true
+      wait "$probe_pid" 2>/dev/null || true
+      rm -rf "$probe_dir"
+      echo "fixture calibration timed out: census probe (scaled cap: ${calibration_cap}s)" >&2
+      return 1
+    fi
+    wait "$probe_pid" 2>/dev/null || true
+    rm -rf "$probe_dir"
+    probe_elapsed_ms=$(( ($("$ms_bin" util now-ns) - probe_started) / 1000000 ))
+    (( probe_elapsed_ms >= 1 )) || probe_elapsed_ms=1
+    probe_scale=$(( (probe_elapsed_ms + 249) / 250 ))
+    (( probe_scale < 3 )) && probe_scale=3
+    (( probe_scale > 12 )) && probe_scale=12
+    resolved="$probe_scale $((probe_scale * 1000))"
   fi
 
   read -r METASYSTEM_FIXTURE_CAP_SCALE METASYSTEM_FIXTURE_CAP_SCALE_MILLI <<EOF
