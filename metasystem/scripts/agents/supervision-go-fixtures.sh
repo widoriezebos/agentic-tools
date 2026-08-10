@@ -117,10 +117,29 @@ raise SystemExit(0 if ok else 1)
 PY
 echo "go supervision: cycle-trace observability PASSED" >&2
 
+# --- CRASH-LOOP BREAKER (D-2, RC-2): components that beat once then die
+#     every cycle trip the breaker at N=5; the owner gives up with a
+#     complete teardown and an honest terminal — the OTHER half of the
+#     KI-32 fix (a self-heal that cannot bound itself is the incident).
+repo4="$tmp/breaker"; mkdir -p "$repo4"
+owner4=$(METASYSTEM_GO_COMPONENT_CRASH_ON_START=1 arm "$repo4" "gofix-breaker" "$registry" 1)
+# At interval 1s and N=5, giving-up lands within ~10s even with backoff
+# (backoff gates relaunches, never observations — SLC-R3-005).
+wait_until 30 "owner gives up on the crash loop" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner4"
+python3 - "$registry" <<'PY' || fail "no giving-up terminal with complete teardown"
+import json, sys
+exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
+mine = [e for e in exits if e.get("ownerTag") == "gofix-breaker"]
+ok = mine and mine[-1]["reason"] == "giving-up" and mine[-1]["teardownComplete"] is True
+raise SystemExit(0 if ok else 1)
+PY
+! pgrep -f "gofix-breaker" >/dev/null 2>&1 || fail "a component survived giving-up teardown"
+echo "go supervision: crash-loop breaker giving-up PASSED" >&2
+
 # DEFERRED Proof rows, named so the acceptance set is closed
 # (GO-MIG-R3-001): breaker-at-five and one-clock backoff need a
 # fail-on-purpose component (Phase 0 completion); ceiling stop-the-set,
 # write-ahead gating, and launched-append retry likewise; the gate,
 # janitor, custody, cohort-ledger, and registry-lock-crash rows are
 # Phase 0b/1/3 and carry their own fixture files.
-echo "go supervision fixtures: PASSED (owner-alone: establish, purpose-gone, superseded, observability)"
+echo "go supervision fixtures: PASSED (owner-alone: establish, purpose-gone, superseded, observability, crash-loop breaker)"

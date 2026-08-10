@@ -24,12 +24,23 @@ func runSuperviseComponent(args []string) int {
 	tag := flags.String("tag", "", "component instance tag")
 	heartbeat := flags.String("heartbeat", "", "heartbeat file path")
 	intervalSec := flags.Int("interval", 60, "heartbeat interval seconds")
+	// crashOnStart reproduces the pure crash-loop shape (D-2): a
+	// component that dies on startup WITHOUT ever beating, so it never
+	// reads Healthy and the breaker advances monotonically to N. A
+	// component that beat even once would reset the breaker (the
+	// four-fail-then-reset pattern), which is a different, non-terminal
+	// shape. Fixture-only.
+	crashOnStart := flags.Bool("crash-on-start", false, "exit immediately without beating (fixture-only)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *component == "" || *tag == "" || *heartbeat == "" {
 		fmt.Fprintln(os.Stderr, "supervise component: --component, --tag, --heartbeat required")
 		return 2
+	}
+	if *crashOnStart {
+		fmt.Fprintln(os.Stderr, "supervise component: crash-on-start (fixture)")
+		return 1
 	}
 
 	stop := make(chan os.Signal, 1)

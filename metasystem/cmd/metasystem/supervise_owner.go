@@ -91,9 +91,16 @@ func runSuperviseOwnerLoop(args []string) int {
 		StopCeiling:    5 * time.Second,
 		Command: func(component supervise.Component, componentTag, heartbeatPath string) []string {
 			self, _ := os.Executable()
-			return []string{self, "supervise", "component",
+			argv := []string{self, "supervise", "component",
 				"--component", string(component), "--tag", componentTag,
 				"--heartbeat", heartbeatPath, "--interval", fmt.Sprint(*intervalSec)}
+			// Fixture-only crash-loop injection (D-2 breaker proof): the
+			// component crashes on start and never beats, so the owner
+			// sees Failing every observation.
+			if os.Getenv("METASYSTEM_GO_COMPONENT_CRASH_ON_START") != "" {
+				argv = append(argv, "--crash-on-start")
+			}
+			return argv
 		},
 	}
 	intents := &supervise.DiskIntents{

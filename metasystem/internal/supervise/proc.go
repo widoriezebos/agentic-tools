@@ -132,6 +132,11 @@ type heartbeatRecord struct {
 // AND heartbeat fresh is Healthy; a definitively dead identity is
 // Failing; anything unreadable is Indeterminable (SLC-R3-004).
 func (p *ProcComponents) Observe(held Held) Observation {
+	// Reap first: a component that exited but is still our unreaped
+	// child is a ZOMBIE the kernel still lists, which would read as
+	// alive-with-no-heartbeat (Indeterminable) forever and stall the
+	// breaker. Reaping makes its death visible as Dead → Failing.
+	p.reap(held.Identity.Pid)
 	switch identity.AliveRef(p.Prober, held.Identity) {
 	case identity.Dead:
 		return Failing
