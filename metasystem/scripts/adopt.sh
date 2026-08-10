@@ -230,6 +230,20 @@ done
 [[ -f "$target/metasystem.conf" && -f "$target/scripts/agents/dispatch.sh" ]] \
   || die 1 "adopted payload is missing metasystem.conf or scripts/agents/"
 
+# Adoption ships the engine: the harness scripts decide nothing without the
+# metasystem binary, so a target without it would be armed but inert. The
+# binary is built in the template (it has the module root) and copied in;
+# bin/ stays gitignored in the target through the merged ignore rules.
+if [[ ! -x "$root/bin/metasystem" ]]; then
+  command -v go >/dev/null 2>&1 \
+    || die 1 "the metasystem engine is not built and go is unavailable; run scripts/agents/go-gate.sh in the template first"
+  (cd "$root" && go build -o bin/metasystem ./cmd/metasystem) \
+    || die 1 "could not build the metasystem engine for adoption"
+fi
+mkdir -p "$target/bin"
+cp "$root/bin/metasystem" "$target/bin/metasystem"
+chmod +x "$target/bin/metasystem"
+
 mkdir -p "$target/artifacts"
 touch "$target/.gitignore"
 grep -qxF 'artifacts/' "$target/.gitignore" || echo 'artifacts/' >>"$target/.gitignore"
