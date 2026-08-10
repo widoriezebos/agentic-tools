@@ -76,15 +76,10 @@ json_field() { # file, dotted field
 }
 
 component_healed() { # state, component, old pid, old generation
-  # TODO(go-wiring): needs a compare verb (component.pid != old AND
-  # state.generation > old-generation). State comparison, not a field read; left
-  # as python3.
-  python3 - "$1" "$2" "$3" "$4" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-component = value["components"][sys.argv[2]]
-raise SystemExit(0 if component["pid"] != int(sys.argv[3]) and value["generation"] > int(sys.argv[4]) else 1)
-PY
+  local pid generation
+  pid=$(json_field "$1" "components.$2.pid") || return 1
+  generation=$(json_field "$1" generation) || return 1
+  [[ "$pid" != "$3" ]] && (( generation > $4 ))
 }
 
 census_matches_snapshot() { # census, LIVE state path
@@ -117,14 +112,10 @@ PY
 }
 
 watcher_pass_complete() { # heartbeat, census
-  # TODO(go-wiring): needs a compare verb (heartbeat.observedAtEpoch >=
-  # census.completedAtEpoch). Comparison across two files; left as python3.
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-heartbeat = json.load(open(sys.argv[1]))
-census = json.load(open(sys.argv[2]))
-raise SystemExit(0 if heartbeat.get("observedAtEpoch", 0) >= census.get("completedAtEpoch", 1) else 1)
-PY
+  local observed completed
+  observed=$("$ms" json get --file "$1" --field observedAtEpoch --default 0)
+  completed=$("$ms" json get --file "$2" --field completedAtEpoch --default 1)
+  (( observed >= completed ))
 }
 
 prove_process_ownership() { # pid, start, tag
@@ -237,14 +228,14 @@ for ((iteration = 1; iteration <= iterations; iteration++)); do
     printf 'dispatch said (%s bytes):\n' "$(wc -c <"$output" | tr -d ' ')" >&2
     sed -n '1,40p' "$output" >&2
     printf 'job record:\n' >&2
-    # TODO(go-wiring): needs a multi-field diagnostic read (status, error, and a
-    # truncated protocolError.violation) formatted on two lines. Multi-field
-    # extraction with formatting; left as python3.
-    python3 -c 'import json,sys
-v=json.load(open(sys.argv[1]))
-print("status:",v.get("status"),"error:",v.get("error"))
-pe=v.get("protocolError") or {}
-print("violation:",(pe.get("violation") or "")[:600])' "$repo/artifacts/agents/jobs/fingerprint-$iteration.json" >&2 2>/dev/null || true
+    diag_record="$repo/artifacts/agents/jobs/fingerprint-$iteration.json"
+    {
+      printf 'status: %s error: %s\n' \
+        "$("$ms" json get --file "$diag_record" --field status --default None)" \
+        "$("$ms" json get --file "$diag_record" --field error --default None)"
+      violation=$("$ms" json get --file "$diag_record" --field protocolError.violation --default "")
+      printf 'violation: %s\n' "${violation:0:600}"
+    } >&2 2>/dev/null || true
     cat "$output" >&2
     exit 1
   fi
