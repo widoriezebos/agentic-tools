@@ -54,6 +54,9 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 [[ -n "$plans_dir" ]] || plans_dir="$root/plans"
 [[ -d "$plans_dir" ]] || { echo "no such plans directory: $plans_dir" >&2; exit 2; }
 
+# TODO(go-wiring): needs a plan-consistency verb that reports any term a plan
+# retires (RETIRED: <term> -- <by>) still prescribed on a non-explaining line in
+# another plan. A whole validator over plans/*.md, so it stays here.
 python3 - "$plans_dir" <<'PY'
 import re
 import sys

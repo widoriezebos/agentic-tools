@@ -94,6 +94,10 @@ sanitize() {
 }
 
 validate_code_critique_claim() {
+  # TODO(go-wiring): needs a verb that verifies a code-critique claim — the
+  # delegate jobs must include a top-level code-critic chain whose reviews field
+  # names one of the implementer delegate jobs. Cross-references several job
+  # records, so it stays here.
   python3 - "$root" ${delegates[@]+"${delegates[@]}"} <<'PY'
 import json
 import sys
@@ -136,6 +140,10 @@ PY
 }
 
 waiver_receipt_facts() {
+  # TODO(go-wiring): needs a verb that resolves an implementer delegate's
+  # critique-waiver facts — the waiver class from the job record and the mission
+  # stream read from the chain-root brief. Walks the parentJob chain, so it
+  # stays here.
   python3 - "$root" ${delegates[@]+"${delegates[@]}"} <<'PY'
 import json
 import sys

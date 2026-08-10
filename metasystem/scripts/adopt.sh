@@ -193,6 +193,11 @@ rm -rf "$stage/optional-skills"
 # repository.
 conf="$stage/metasystem.conf"
 [[ -f "$conf" ]] || die 1 "payload is missing metasystem.conf"
+# TODO(go-wiring): needs a conf-tailoring verb that rewrites metasystem.conf for
+# the selected runtime set — dropping unselected runtimes' role and mode
+# bindings, their per-runtime model keys, and their model-tier members, and
+# setting the default runtime. Large and entangled (a stateful line rewrite over
+# many key shapes), so it stays here.
 python3 - "$conf" "${selected_runtimes[@]}" <<'PY'
 import os
 import re

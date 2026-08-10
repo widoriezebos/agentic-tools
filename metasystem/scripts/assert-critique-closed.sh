@@ -44,6 +44,11 @@ done
 
 [[ -n "$findings" && -n "$dispositions" ]] || { usage; exit 2; }
 
+# TODO(go-wiring): needs a critique-closed verb that joins a critic return's
+# findings array against the Markdown dispositions table on finding id — every
+# finding must be dispositioned, material findings may not be 'noted', and no
+# disposition may name an unknown id. A whole validator (JSON plus fenced-table
+# parsing that reports every violation), so it stays here.
 python3 - "$findings" "$dispositions" <<'PY'
 import json
 import re

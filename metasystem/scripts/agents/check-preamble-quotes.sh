@@ -31,6 +31,10 @@ while (($#)); do
   esac
 done
 
+# TODO(go-wiring): needs a preamble-quote verb that verifies every role
+# preamble's `<!-- quote source=... -->` block is a byte-exact, contiguous
+# substring of its named source under the metasystem root. A whole validator
+# (byte-level regex over the preambles), so it stays here.
 python3 - "$root" "$roles_dir" <<'PY'
 import os
 import re

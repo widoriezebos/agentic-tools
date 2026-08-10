@@ -27,6 +27,12 @@ done
 
 [[ -n "$file" && -n "$turn" ]] || { usage; exit 2; }
 
+# TODO(go-wiring): needs a turn-prompt verify verb that checks the assembled
+# prompt against its turn.json and the shipped orchestrator preamble — LF
+# framing, the ordered machine header, the byte-exact preamble, section fencing,
+# and the tab-separated Ledger/Asks/Streams/Reconciliation records. A whole
+# validator whose identity reads are interwoven with byte-level parsing, so it
+# stays here rather than being split.
 python3 - "$root" "$file" "$turn" <<'PY'
 import json
 import re
