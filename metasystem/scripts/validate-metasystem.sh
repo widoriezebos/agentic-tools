@@ -2695,7 +2695,12 @@ PY
   python3 - "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" <<'PY'
 import json,sys
 from pathlib import Path
-path=Path(sys.argv[1]); value=json.loads(path.read_text()); value["startedAt"]="2000-01-01T00:00:00Z"; path.write_text(json.dumps(value)+"\n")
+# capDeadline first, startedAt only as fallback — backdate both (see the
+# timed fixture above).
+path=Path(sys.argv[1]); value=json.loads(path.read_text())
+value["startedAt"]="2000-01-01T00:00:00Z"
+value["capDeadline"]="2000-01-01T00:01:00Z"
+path.write_text(json.dumps(value)+"\n")
 PY
   run_agent_fixture mission-timeout-reap mission-timeout-job "$agent_dispatch" reap --job mission-timeout-job
   wait_for_agent_fixture_process mission-timeout-driver mission-timeout-job "$mission_timeout_driver"
