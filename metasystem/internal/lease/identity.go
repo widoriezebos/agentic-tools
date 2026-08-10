@@ -1,10 +1,8 @@
 // Package lease owns the checkout write-authority model: it identifies the
 // main process of a session, classifies who is calling a gated command
 // (MAIN, DELEGATE, SUPERVISION, ADAPTER-SUPERVISOR, or HUMAN), and holds the
-// single checkout lease that decides which main may write. It is the Go
-// implementation of the design that worktree-lease.py grew, written as clean
-// Go rather than a transliteration: real types, error returns, and the KI-33
-// same-process lockout fixed rather than reproduced.
+// single checkout lease that decides which main may write. It uses real types
+// and error returns, and fixes the KI-33 same-process lockout.
 package lease
 
 import (

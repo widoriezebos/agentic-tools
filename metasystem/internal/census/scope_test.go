@@ -21,7 +21,7 @@ func TestPathBelow(t *testing.T) {
 		t.Fatal("a sibling dir must not be below root")
 	}
 	// A non-existent path UNDER root is still "below" — realpath resolves the
-	// existing prefix and relative_to succeeds, exactly as python path_below.
+	// existing prefix, which is at or under root.
 	if !PathBelow(filepath.Join(root, "does-not-exist"), root) {
 		t.Fatal("a non-existent path under root is below (prefix resolves)")
 	}

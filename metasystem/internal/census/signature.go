@@ -1,9 +1,8 @@
-// Package census is the Go port of process-census.py (plans/go-migration.md,
-// Phase 1). It is a strict-conformance PORT: its observable behavior must be
-// indistinguishable from the python original, proven by differential replay
-// over a shared corpus. This file ports the runtime-signature classification
-// that decides which processes are agent-shaped — the core of census
-// classification, find-ancestor, and signature-check.
+// Package census classifies the machine's processes: which processes are
+// agent-shaped, ancestor lookups, and signature checks. This file holds the
+// runtime-signature classification that decides which processes are
+// agent-shaped — the core of census classification, find-ancestor, and
+// signature-check.
 package census
 
 import (
@@ -13,10 +12,8 @@ import (
 
 // Signature is one runtime's compiled match/exclude patterns. A process
 // argv is that runtime iff SOME match pattern hits and NO exclude pattern
-// does (process-census.py signature_runtime). The patterns are POSIX ERE
-// as the adapters emit them; Go's RE2 matches them identically for the
-// anchored word-boundary shapes in use, which the conformance harness
-// verifies against grep -E.
+// does. The patterns are POSIX ERE as the adapters emit them; Go's RE2
+// matches them identically for the anchored word-boundary shapes in use.
 type Signature struct {
 	Runtime  string
 	Matches  []*regexp.Regexp
@@ -66,9 +63,8 @@ func (s Signature) matches(argv string) bool {
 }
 
 // Runtime classifies one argv against an ORDERED signature list, returning
-// the first runtime that matches or "" for none. Order is load-bearing and
-// matches the python's insertion-ordered dict + setdefault: the first
-// runtime (in declaration order) that claims an argv wins.
+// the first runtime that matches or "" for none. Order is load-bearing: the
+// first runtime (in declaration order) that claims an argv wins.
 func Runtime(argv string, signatures []Signature) string {
 	for _, sig := range signatures {
 		if sig.matches(argv) {
@@ -85,9 +81,8 @@ type Assignment struct {
 }
 
 // Classify assigns runtimes to a batch of argvs, first-match-wins per argv
-// in signature order — the port of signature_processes. Only agent-shaped
-// argvs appear in the result; unmatched processes are omitted, exactly as
-// the python returns only assigned indices.
+// in signature order. Only agent-shaped argvs appear in the result; unmatched
+// processes are omitted, so the result holds only assigned indices.
 func Classify(argvs []string, signatures []Signature) []Assignment {
 	var assigned []Assignment
 	for index, argv := range argvs {

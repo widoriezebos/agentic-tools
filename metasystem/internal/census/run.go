@@ -16,17 +16,15 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// run_census port (process-census.py run_census): the per-interval scan the
-// watcher runs. It classifies every in-scope agent-shaped process as
-// ANNOUNCED (a registered main), CUSTODY (owned by a live job), or UNTRACKED
-// (nobody can account for it — surfaced, never killed), and writes the
-// verdict. This file ports the FIXTURE-driven path — the recorded process
-// table plus recorded state/announcements/custody — which is exactly the
-// differential-replay bundle the conformance harness feeds both engines.
-// The production ps/lsof enumeration is a separate binding over the same
+// run census: the per-interval scan the watcher runs. It classifies every
+// in-scope agent-shaped process as ANNOUNCED (a registered main), CUSTODY
+// (owned by a live job), or UNTRACKED (nobody can account for it — surfaced,
+// never killed), and writes the verdict. This file holds the FIXTURE-driven
+// path — the recorded process table plus recorded state/announcements/custody.
+// The production enumeration is a separate binding over the same
 // classification core.
 
-// Process is one enumerated process (the census Process class / fixture row).
+// Process is one enumerated process (a fixture row, or one live process).
 type Process struct {
 	Pid      int64  `json:"pid"`
 	PPID     int64  `json:"ppid"`
@@ -81,9 +79,9 @@ var sha256Re = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // RunFixtureCensus computes the verdict from a recorded bundle rooted at
 // metasystemRoot: the process fixture at processFile, plus state.json,
 // mains/, and jobs|missions custody records under metasystemRoot/artifacts.
-// The clock is injected so the verdict's timestamps are deterministic for
-// conformance. This is the census core; the production path substitutes ps
-// enumeration and lsof cwd resolution for the fixture, over the same logic.
+// The clock is injected so the verdict's timestamps are deterministic. This is
+// the census core; the production path substitutes live enumeration and cwd
+// resolution for the fixture, over the same logic.
 func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, interval int, now time.Time) (Verdict, error) {
 	metasystemRoot = realpath(metasystemRoot)
 	repoReal := realpath(repo)
@@ -140,7 +138,7 @@ func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, int
 // (cwd or argv below the repo), and ownership (CUSTODY/ANNOUNCED/UNTRACKED).
 // It appends diagnostics/errors and returns the inventory item, or ok=false
 // when the process is skipped. Shared by the fixture and production paths so
-// the classification core is identical (and conformance-covered).
+// the classification core is identical.
 func classifyProcess(process Process, runtime, repoReal string, custody, announced []identityRecord, errors, diagnostics *[]string) (InventoryItem, bool) {
 	if !process.Alive {
 		*diagnostics = append(*diagnostics, fmt.Sprintf("RACED-EXIT pid=%d", process.Pid))
@@ -315,11 +313,10 @@ func readSupervisionSnapshot(metasystemRoot string) (map[string]identityRecord, 
 	return ids, *state.Generation, hex.EncodeToString(sum[:]), nil
 }
 
-// verifySupervisionSnapshot ports verify_supervision_snapshot: each of
-// owner/watcher/reaper must be alive (by the fixture identity file when set,
-// else the kernel) and its command must carry its tag. A dead identity yields
-// supervision-not-live; a live one whose command lacks the tag yields
-// supervision-tag-mismatch.
+// verifySupervisionSnapshot checks each of owner/watcher/reaper: it must be
+// alive (by the fixture identity file when set, else the kernel) and its
+// command must carry its tag. A dead identity yields supervision-not-live; a
+// live one whose command lacks the tag yields supervision-tag-mismatch.
 func verifySupervisionSnapshot(ids map[string]identityRecord, errors *[]string) {
 	for _, name := range []string{"owner", "watcher", "reaper"} {
 		id := ids[name]
@@ -338,9 +335,9 @@ func verifySupervisionSnapshot(ids map[string]identityRecord, errors *[]string) 
 	}
 }
 
-// identityAlive ports identity_alive: the fixture identity file
-// (METASYSTEM_FAKE_PROCESS_IDENTITY_FILE) takes precedence when installed,
-// else the kernel start time must equal expected.
+// identityAlive reports whether pid is alive at expectedStart: the fixture
+// identity file (METASYSTEM_FAKE_PROCESS_IDENTITY_FILE) takes precedence when
+// installed, else the kernel start time must equal expected.
 func identityAlive(pid, expectedStart int64) bool {
 	if fixture := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"); fixture != "" {
 		if data, err := os.ReadFile(fixture); err == nil {
@@ -482,8 +479,7 @@ func announcementsList(metasystemRoot string, errors *[]string) []identityRecord
 }
 
 // configuredSignatures builds the ordered signature list from
-// metasystem.runtimes, running each adapter — the port of
-// configured_signatures.
+// metasystem.runtimes, running each adapter.
 func configuredSignatures(metasystemRoot string) ([]Signature, error) {
 	confPath := filepath.Join(metasystemRoot, "metasystem.conf")
 	selected := splitRuntimes(config.ConfValue(confPath, "metasystem.runtimes", ""))
@@ -560,8 +556,8 @@ func kernelProbe(pid int64) (int64, probeState, error) {
 	}
 }
 
-// processCommand reads a pid's command NATIVELY (kernel argv, the tag check
-// in verify_supervision_snapshot). A dead or unreadable pid yields an error.
+// processCommand reads a pid's command NATIVELY (kernel argv), for the tag
+// check in verifySupervisionSnapshot. A dead or unreadable pid yields an error.
 func processCommand(pid int64) (string, error) {
 	exact, state, err := identity.KernelProber{}.Probe(pid)
 	if err != nil || state != identity.Alive {

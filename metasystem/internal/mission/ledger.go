@@ -1,5 +1,5 @@
-// Package mission holds the mission lifecycle decisions ported from the
-// mission-*.py helpers. This file is the atomic owner of the mission-wide
+// Package mission holds the mission lifecycle decisions. This file is the
+// atomic owner of the mission-wide
 // stop-loss ledger: a markdown file with a cycle and no-gain budget and one
 // contiguous "### Cycle N" block per adjudicated cycle. Every mutation takes
 // the ledger's flock and writes atomically.

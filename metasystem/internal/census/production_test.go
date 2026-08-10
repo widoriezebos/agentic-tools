@@ -8,7 +8,7 @@ import (
 // RunProductionCensus runs against the live machine: assert it yields a valid
 // schemaVersion-2 verdict (classification of real processes is
 // non-deterministic, so only the envelope is asserted here; the fixture-path
-// conformance proves the classification).
+// tests cover the classification).
 func TestRunProductionCensusEnvelope(t *testing.T) {
 	root := t.TempDir()
 	// No supervision state, no runtimes -> errors, but a well-formed verdict.

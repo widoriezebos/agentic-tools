@@ -1,9 +1,8 @@
 // Package capability selects and validates the capability snapshot for one
-// dispatch (the Go port of select-capability-snapshot.py). It matches the
-// current configuration identity to a captured snapshot, checks the snapshot
-// is fresh and its declared capabilities meet the role's requirements, and
-// refuses when the runtime cannot enforce a restrictive permission the job
-// requests without a role waiver.
+// dispatch. It matches the current configuration identity to a captured
+// snapshot, checks the snapshot is fresh and its declared capabilities meet
+// the role's requirements, and refuses when the runtime cannot enforce a
+// restrictive permission the job requests without a role waiver.
 package capability
 
 import (

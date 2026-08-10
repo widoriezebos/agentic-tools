@@ -19,7 +19,7 @@ import (
 // records. Continuation is the one part of the loop no prompt can guarantee,
 // so this reporter makes stopping with open work a visible fact. It reads only
 // the structured fields plans/README.md mandates, so its answer is the same
-// under any runtime or none. This is the Go port of open-work.py.
+// under any runtime or none.
 func OpenWork(root string) []string {
 	root = resolveRepo(root)
 	if info, err := os.Stat(filepath.Join(root, "plans")); err != nil || !info.IsDir() {

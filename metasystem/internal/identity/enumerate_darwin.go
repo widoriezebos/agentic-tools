@@ -87,8 +87,7 @@ func ProcessCwd(pid int64) (string, bool) {
 // (PROC_PIDTBSDINFO), the native replacement for `ps -p PID -o ppid=`. The
 // returned bool is false when the pid cannot be read (gone or denied) or when
 // the parent is not a real distinct ancestor — ppid <= 0 or ppid == pid — so
-// the caller stops its ancestry walk exactly where the python's parent_pid
-// returned None.
+// the caller stops its ancestry walk where there is no distinct live ancestor.
 //
 // proc_bsdinfo is a stable public darwin ABI: pbi_ppid is the fifth uint32,
 // at offset 16 (after pbi_flags, pbi_status, pbi_xstatus, pbi_pid). The whole

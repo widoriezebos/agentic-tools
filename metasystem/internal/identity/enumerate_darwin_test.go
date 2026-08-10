@@ -88,8 +88,7 @@ func TestParentPidMatchesGroundTruth(t *testing.T) {
 	}
 }
 
-// A pid that does not exist reports no parent, matching python's parent_pid
-// returning None on a dead process.
+// A pid that does not exist reports no parent.
 func TestParentPidDeadProcess(t *testing.T) {
 	if _, ok := ParentPid(2147483645); ok {
 		t.Fatal("ParentPid claimed a parent for a nonexistent pid")

@@ -1,9 +1,7 @@
-// Command metasystem is the metasystem's one binary: every decision
-// the shell scripts used to delegate to Python lives behind a verb
-// here (plans/go-migration.md). Families are git-style; wrappers keep
-// their historical names and exec into these verbs, so the rest of
-// the system cannot tell the engine changed until the originals are
-// deleted.
+// Command metasystem is the metasystem's one binary: each family
+// groups the decisions the shell wrappers invoke, exposed as git-style
+// verbs. Wrappers keep their historical names and exec into these
+// verbs.
 package main
 
 import (
@@ -32,40 +30,40 @@ func families() []family {
 			name:    "identity",
 			summary: "kernel process identity: exact start times, argv, three-way liveness",
 			verbs: []verb{
-				{"started-at", "print a pid's start time in epoch seconds (port of process-census.py started-at)", runIdentityStartedAt},
+				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
 				{"probe", "print a pid's exact identity as JSON", runIdentityProbe},
 			},
 		},
 		{
 			name:    "census",
-			summary: "process census classification (port of process-census.py)",
+			summary: "process census classification",
 			verbs: []verb{
-				{"classify", "classify argvs against runtime signatures (differential-conformance surface)", runCensusClassify},
-				{"fingerprint", "print a checkout's supervision fingerprint (port of process-census.py fingerprint)", runCensusFingerprint},
-				{"run", "compute a fixture-driven census verdict (port of process-census.py census)", runCensusRun},
-				{"alive", "exit 0 if a pid is live at its expected start (port of alive)", runCensusAlive},
+				{"classify", "classify argvs against runtime signatures", runCensusClassify},
+				{"fingerprint", "print a checkout's supervision fingerprint", runCensusFingerprint},
+				{"run", "compute a fixture-driven census verdict", runCensusRun},
+				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
 				{"authentication-identity", "print a pid's start time and command from one source", runCensusAuthIdentity},
 				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 			},
 		},
 		{
 			name:    "capability",
-			summary: "select and validate a capability snapshot (port of select-capability-snapshot.py)",
+			summary: "select and validate a capability snapshot",
 			verbs: []verb{
 				{"select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
 			},
 		},
 		{
 			name:    "config",
-			summary: "configuration and identity helpers (canonical-model, config-identity, return-schema)",
+			summary: "configuration and identity helpers",
 			verbs: []verb{
-				{"canonical-model", "print the canonical model key for a name (port of canonical-model.py)", runConfigCanonicalModel},
-				{"identity", "print an adapter's canonical configuration identity (port of config-identity.py)", runConfigIdentity},
+				{"canonical-model", "print the canonical model key for a name", runConfigCanonicalModel},
+				{"identity", "print an adapter's canonical configuration identity", runConfigIdentity},
 			},
 		},
 		{
 			name:    "gate",
-			summary: "gate-run markers: know when a gate is in flight (port of gate-run.py)",
+			summary: "gate-run markers: know when a gate is in flight",
 			verbs: []verb{
 				{"register", "record that this process is a running gate", runGateRegister},
 				{"check", "print 1 when a gate is running in this checkout, else 0", runGateCheck},
@@ -73,14 +71,14 @@ func families() []family {
 		},
 		{
 			name:    "authority",
-			summary: "control-plane authority matrix (port of control-plane-authority.py)",
+			summary: "control-plane authority matrix",
 			verbs: []verb{
 				{"check", "exit 0 if a classified caller may write in a mode, else refuse", runAuthorityCheck},
 			},
 		},
 		{
 			name:    "report",
-			summary: "turn-end report decisions (port of stop-block.py, open-work.py)",
+			summary: "turn-end report decisions",
 			verbs: []verb{
 				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
@@ -88,28 +86,28 @@ func families() []family {
 		},
 		{
 			name:    "schema",
-			summary: "role-return schema materialization (port of return-schema.py)",
+			summary: "role-return schema materialization",
 			verbs: []verb{
 				{"materialize", "write a role's return schema at a version", runSchemaMaterialize},
 			},
 		},
 		{
 			name:    "hooks",
-			summary: "self-check that the repo runs under its own metasystem (port of check-own-hooks.py)",
+			summary: "self-check that the repo runs under its own metasystem",
 			verbs: []verb{
 				{"check", "verify live settings carry the shipped lifecycle hooks", runHooksCheck},
 			},
 		},
 		{
 			name:    "json",
-			summary: "JSON field access for shell callers (replaces the python heredocs)",
+			summary: "JSON field access for shell callers",
 			verbs: []verb{
 				{"get", "print a dotted field from a JSON file", runJSONGet},
 			},
 		},
 		{
 			name:    "lease",
-			summary: "checkout write-authority: announce/classify/hold/renew (port of worktree-lease.py)",
+			summary: "checkout write-authority: announce/classify/hold/renew",
 			verbs: []verb{
 				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
 				{"retire", "remove this process's announcement", runLeaseRetire},
@@ -123,7 +121,7 @@ func families() []family {
 		},
 		{
 			name:    "mission-ledger",
-			summary: "the mission stop-loss ledger (port of mission-ledger.py)",
+			summary: "the mission stop-loss ledger",
 			verbs: []verb{
 				{"init", "create a ledger with cycle and no-gain budgets", runMissionLedgerInit},
 				{"append", "append the next cycle's verdict", runMissionLedgerAppend},

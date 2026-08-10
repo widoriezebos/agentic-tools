@@ -1,7 +1,7 @@
 // Package authority applies the control-plane authority matrix to one
-// classified caller (the Go port of control-plane-authority.py). Given a
-// write mode and a caller's classification, it decides whether the write is
-// permitted, returning a typed refusal naming why when it is not.
+// classified caller: given a write mode and a caller's classification, it
+// decides whether the write is permitted, returning a typed refusal naming
+// why when it is not.
 package authority
 
 import "fmt"

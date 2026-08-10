@@ -1,6 +1,6 @@
 // Package report holds the turn-end report decisions: the stop-hook block that
-// refuses to end a turn while planned work is unblocked and idle (the Go port
-// of stop-block.py), and later the open-work check.
+// refuses to end a turn while planned work is unblocked and idle, and the
+// open-work check.
 package report
 
 // stopBlockReason is the fixed guidance a block carries. The refusal is

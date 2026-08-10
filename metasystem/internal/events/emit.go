@@ -1,10 +1,9 @@
-// Package events is the native flight-recorder emitter (the Go port of
-// emit-event.py, plans/flight-recorder.md). The stream is a witness, not an
-// authority, so emitting an event must NEVER fail the caller: every error —
-// bad input, missing registry, unwritable stream, full disk — is swallowed.
-// Framing is one append of "\n" + compact JSON with no trailing newline,
-// capped hard at 4096 bytes, so a torn short write can never corrupt the next
-// writer's line.
+// Package events is the flight-recorder emitter (plans/flight-recorder.md).
+// The stream is a witness, not an authority, so emitting an event must NEVER
+// fail the caller: every error — bad input, missing registry, unwritable
+// stream, full disk — is swallowed. Framing is one append of "\n" + compact
+// JSON with no trailing newline, capped hard at 4096 bytes, so a torn short
+// write can never corrupt the next writer's line.
 package events
 
 import (

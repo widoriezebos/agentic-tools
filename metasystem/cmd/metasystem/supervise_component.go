@@ -15,9 +15,9 @@ import (
 // in its minimal Phase 0 form: it rewrites its heartbeat file every
 // interval and lives until signalled. The owner observes it by that
 // heartbeat plus kernel liveness. The component's real work — running
-// the census, applying reaper verdicts — arrives in Phase 0b/1 as
-// those pieces port; this is the lifecycle skeleton the owner-alone
-// fixtures need to drive the running binary.
+// the census, applying reaper verdicts — arrives in Phase 0b/1; this
+// is the lifecycle skeleton the owner-alone fixtures need to drive the
+// running binary.
 func runSuperviseComponent(args []string) int {
 	flags := flag.NewFlagSet("supervise component", flag.ContinueOnError)
 	component := flags.String("component", "", "watcher | reaper")

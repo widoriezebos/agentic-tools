@@ -8,8 +8,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/capability"
 )
 
-// runCapabilitySelect ports select-capability-snapshot.py: select and validate
-// the capability snapshot for one dispatch, writing the result to --output.
+// runCapabilitySelect selects and validates the capability snapshot for one
+// dispatch, writing the result to --output.
 func runCapabilitySelect(args []string) int {
 	flags := flag.NewFlagSet("capability select", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")

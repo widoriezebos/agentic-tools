@@ -12,12 +12,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 )
 
-// runCensusClassify is the differential-conformance surface for the census
-// signature port (plans/go-migration.md): it reads a JSON job on stdin —
-// {signatures: [{runtime, matches[], excludes[]}], argvs: [...]} — and
-// prints the classification as JSON {assignments: [{index, runtime}]}. The
-// conformance harness feeds the SAME job to this and to a python reference
-// and diffs, proving the Go classifier is indistinguishable.
+// runCensusClassify classifies process argvs against runtime signatures: it
+// reads a JSON job on stdin —
+// {signatures: [{runtime, matches[], excludes[]}], argvs: [...]} — and prints
+// the classification as JSON {assignments: [{index, runtime}]}.
 func runCensusClassify(args []string) int {
 	flags := flag.NewFlagSet("census classify", flag.ContinueOnError)
 	if flags.Parse(args) != nil {
@@ -61,9 +59,7 @@ func runCensusClassify(args []string) int {
 }
 
 // runCensusFingerprint prints the supervision fingerprint for --repo, using
-// --root as the metasystem root (defaults to the binary's checkout). Strict
-// port of process-census.py fingerprint; the conformance harness diffs it
-// against the python.
+// --root as the metasystem root (defaults to the binary's checkout).
 func runCensusFingerprint(args []string) int {
 	flags := flag.NewFlagSet("census fingerprint", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root to fingerprint")
@@ -91,8 +87,7 @@ func runCensusFingerprint(args []string) int {
 }
 
 // runCensusRun computes a fixture-driven census verdict and writes it to
-// --output, printing the same inventory/diagnostic lines the python does.
-// The conformance harness diffs its verdict against process-census.py's.
+// --output, printing the inventory and diagnostic lines for the run.
 func runCensusRun(args []string) int {
 	flags := flag.NewFlagSet("census run", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
@@ -112,8 +107,8 @@ func runCensusRun(args []string) int {
 	if metasystemRoot == "" {
 		metasystemRoot = *repo
 	}
-	// A fixed clock keeps the verdict deterministic for conformance; the
-	// harness normalizes the time fields anyway.
+	// A fixed clock keeps the verdict deterministic; the time fields are
+	// normalized downstream anyway.
 	now := time.Unix(1786000000, 0)
 	verdict, err := census.RunFixtureCensus(metasystemRoot, *repo, processFile, *fp, *interval, now)
 	if err != nil {

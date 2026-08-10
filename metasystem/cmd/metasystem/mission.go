@@ -8,8 +8,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
-// The mission-ledger family ports mission-ledger.py: the atomic owner of the
-// stop-loss ledger (init, append, verify, count).
+// The mission-ledger family is the atomic owner of the stop-loss ledger
+// (init, append, verify, count).
 
 func runMissionLedgerInit(args []string) int {
 	flags := flag.NewFlagSet("mission-ledger init", flag.ContinueOnError)

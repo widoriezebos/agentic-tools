@@ -7,8 +7,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 )
 
-// runHooksCheck ports check-own-hooks.py: verify this repository runs under the
-// metasystem it ships. Two positional args: the live settings and shipped hooks.
+// runHooksCheck verifies this repository runs under the metasystem it ships.
+// Two positional args: the live settings and shipped hooks.
 func runHooksCheck(args []string) int {
 	if len(args) != 2 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem hooks check <live settings> <shipped hooks>")

@@ -9,14 +9,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The PRODUCTION enumeration path (process-census.py enumerate_ps +
-// resolve_cwds): the real process table via ps, and cwd resolution via lsof.
-// It feeds the SAME classification core the fixture path proves, so the
-// verdict logic is conformance-covered; this file is the process-touching
-// binding. Start times come from ps lstart (whole-second local epoch), NOT
-// the kernel-exact prober, because the rest of the system's (pid, started)
-// join keys — announcements, custody — are lstart-derived, and a
-// microsecond-exact census would fail to match them.
+// The PRODUCTION enumeration path: the real process table, and cwd resolution
+// per matched process. It feeds the SAME classification core the fixture path
+// exercises, so the verdict logic is shared; this file is the process-touching
+// binding. Start times are whole-second local epoch, NOT microsecond-exact,
+// because the rest of the system's (pid, started) join keys — announcements,
+// custody — are whole-second, and a microsecond-exact census would fail to
+// match them.
 
 // EnumerateProcesses returns the live process table NATIVELY: sysctl
 // kern.proc.all for the pid list, the kernel prober for each pid's start
@@ -112,8 +111,8 @@ func RunProductionCensus(metasystemRoot, repo, fingerprint string, interval int,
 		argvs[i] = p.Argv
 	}
 	matched := Classify(argvs, signatures)
-	// Resolve cwds only for matched processes (the python's
-	// resolve_signature_cwds), the lsof cost the census is careful about.
+	// Resolve cwds only for matched processes — the cwd-resolution cost the
+	// census is careful about.
 	var matchedPids []int64
 	for _, a := range matched {
 		matchedPids = append(matchedPids, processes[a.Index].Pid)

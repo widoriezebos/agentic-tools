@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// A synthetic bundle exercises the classification branches without the
-// conformance harness (which proves byte-equality against python).
+// A synthetic bundle exercises the classification branches directly.
 func writeBundle(t *testing.T) (root, procFile string) {
 	t.Helper()
 	root = t.TempDir()
@@ -36,7 +35,7 @@ func TestRunFixtureCensusClassifies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// No state.json → supervision-state error → CENSUS-FAILED (matches python).
+	// No state.json → supervision-state error → CENSUS-FAILED.
 	if v.Verdict != "CENSUS-FAILED" {
 		t.Fatalf("missing state must fail the census: %+v", v.Errors)
 	}

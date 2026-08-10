@@ -2,10 +2,10 @@ package census
 
 import "fmt"
 
-// find-ancestor port (process-census.py find_ancestor): walk up the process
-// tree from a pid and return the first ancestor whose argv matches a runtime
-// signature — the agent session a delegate or wrapper runs under. arm uses it
-// to infer arming identity when --pid is omitted.
+// find-ancestor walks up the process tree from a pid and returns the first
+// ancestor whose argv matches a runtime signature — the agent session a
+// delegate or wrapper runs under. arm uses it to infer arming identity when
+// --pid is omitted.
 
 // ProcInfo is one process's tree facts, as `ps -o ppid,pgid,command` yields.
 type ProcInfo struct {
@@ -31,8 +31,8 @@ type Ancestor struct {
 
 // FindAncestor walks parents from pid (exclusive of pid 1 and below) and
 // returns the first signature-matched ancestor. It is loop-safe: a pid seen
-// twice ends the walk. Faithful to the python: start AT pid, classify each
-// level, stop at the first match, and error when none is found.
+// twice ends the walk. It starts AT pid, classifies each level, stops at the
+// first match, and errors when none is found.
 func FindAncestor(tree ProcTree, pid int64, signatures []Signature) (Ancestor, error) {
 	current := pid
 	seen := map[int64]bool{}

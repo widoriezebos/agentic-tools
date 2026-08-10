@@ -1,5 +1,5 @@
-// Package returnschema materializes the versioned role-return schemas (the Go
-// port of return-schema.py). Version 1 is the frozen source on disk; version 2
+// Package returnschema materializes the versioned role-return schemas.
+// Version 1 is the frozen source on disk; version 2
 // adds the schemaVersion and claimed envelope a provider's structured output
 // enforces, without touching the v1 files.
 package returnschema

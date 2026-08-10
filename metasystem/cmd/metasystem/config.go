@@ -8,8 +8,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
-// runConfigCanonicalModel ports canonical-model.py: print the canonical model
-// key for a name given as the sole positional argument.
+// runConfigCanonicalModel prints the canonical model key for a name given as
+// the sole positional argument.
 func runConfigCanonicalModel(args []string) int {
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem config canonical-model <name>")
@@ -19,8 +19,8 @@ func runConfigCanonicalModel(args []string) int {
 	return 0
 }
 
-// runConfigIdentity ports config-identity.py: print one adapter's canonical
-// configuration identity as JSON.
+// runConfigIdentity prints one adapter's canonical configuration identity as
+// JSON.
 func runConfigIdentity(args []string) int {
 	flags := flag.NewFlagSet("config identity", flag.ContinueOnError)
 	runtime := flags.String("runtime", "", "runtime name")

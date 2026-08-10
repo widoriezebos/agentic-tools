@@ -15,16 +15,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
-// fingerprint port (process-census.py fingerprint): the supervision code
-// staleness detector. It hashes the supervision scripts, the runtime
-// signature declarations, and the relevant config into one digest;
-// verify_armed forces a re-arm when it changes. This is a STRICT PORT — the
-// digest must equal the python's byte-for-byte, proven by conformance
-// against the real repo.
+// The fingerprint is the supervision code staleness detector. It hashes the
+// supervision scripts, the runtime signature declarations, and the relevant
+// config into one digest; a re-arm is forced when the digest changes.
 
 // fingerprintFiles are the fixed supervision inputs, relative to the
-// metasystem root, in the python's list order (order does not affect the
-// hash — the map is sorted — but it documents the contract).
+// metasystem root (order does not affect the hash — the map is sorted — but
+// it documents the contract).
 var fingerprintFiles = []string{
 	"scripts/agents/arm-supervision.sh",
 	"scripts/agents/dispatch.sh",
@@ -33,8 +30,7 @@ var fingerprintFiles = []string{
 	"scripts/watch-background-jobs.sh",
 }
 
-// fingerprintConfig maps each relevant config key to its default, matching
-// the python's dict.
+// fingerprintConfig maps each relevant config key to its default.
 var fingerprintConfig = map[string]string{
 	"metasystem.runtimes":               "",
 	"watch.interval-sec":                "60",
@@ -45,9 +41,8 @@ var fingerprintConfig = map[string]string{
 }
 
 // SignatureText returns an adapter's normalized signature declaration — the
-// `match`/`exclude` lines joined by newlines with a trailing newline, exactly
-// as process-census.py adapter_signatures' third tuple element. This is the
-// value hashed per runtime.
+// `match`/`exclude` lines joined by newlines with a trailing newline. This is
+// the value hashed per runtime.
 func SignatureText(adapterPath string) (string, error) {
 	out, err := exec.Command(adapterPath, "signature").Output()
 	if err != nil {
@@ -71,7 +66,7 @@ func SignatureText(adapterPath string) (string, error) {
 }
 
 // Fingerprint computes the supervision fingerprint for a repo, hashing files
-// and config from metasystemRoot. It matches process-census.py fingerprint.
+// and config from metasystemRoot.
 func Fingerprint(metasystemRoot, repo string) (string, error) {
 	repoReal, err := filepath.EvalSymlinks(repo)
 	if err != nil {
@@ -123,11 +118,9 @@ func Fingerprint(metasystemRoot, repo string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// canonicalJSON serializes v the way python's
-// json.dumps(sort_keys=True, separators=(",", ":")) does: sorted keys,
-// compact, and — crucially — WITHOUT Go's default HTML escaping of < > &,
-// which python does not do. Inputs here are ASCII, matching python's
-// ensure_ascii default.
+// canonicalJSON serializes v canonically: sorted keys, compact (no spaces
+// after separators), and — crucially — WITHOUT Go's default HTML escaping of
+// < > &. Inputs here are ASCII, so no non-ASCII escaping arises.
 func canonicalJSON(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
@@ -135,7 +128,7 @@ func canonicalJSON(v any) ([]byte, error) {
 	if err := encoder.Encode(v); err != nil {
 		return nil, err
 	}
-	// json.Encoder appends a newline; python's dumps does not.
+	// json.Encoder appends a newline; the canonical form has none.
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 

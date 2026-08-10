@@ -8,7 +8,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 )
 
-// The gate family ports gate-run.py: a running gate registers a marker so the
+// The gate family tracks gate runs: a running gate registers a marker so the
 // turn-end report knows work is in flight, and check answers whether one still
 // runs in this checkout.
 

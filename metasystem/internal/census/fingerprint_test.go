@@ -31,8 +31,8 @@ func TestSignatureText(t *testing.T) {
 	}
 }
 
-// canonicalJSON matches python json.dumps(sort_keys=True, separators=(",",":"))
-// including no HTML escaping and no trailing newline.
+// canonicalJSON emits compact, key-sorted JSON with no HTML escaping and no
+// trailing newline.
 func TestCanonicalJSON(t *testing.T) {
 	got, err := canonicalJSON(map[string]any{"b": "x<y>&z", "a": 1})
 	if err != nil {

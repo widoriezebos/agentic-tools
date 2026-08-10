@@ -8,12 +8,10 @@ import (
 	"strings"
 )
 
-// runJSONGet replaces the `json_field` python heredoc every shell
-// script carries: print a dotted field from a JSON file, exit 1 when
-// the file or field is absent or unparseable. It is a PORT of the
-// heredoc's observable contract — scalar values print bare (no
-// quotes), composite values print as compact JSON — because dozens
-// of call sites string-compare the output.
+// runJSONGet prints a dotted field from a JSON file, exiting 1 when
+// the file or field is absent or unparseable. Scalar values print bare
+// (no quotes) and composite values print as compact JSON, because
+// dozens of shell call sites string-compare the output.
 func runJSONGet(args []string) int {
 	flags := flag.NewFlagSet("json get", flag.ContinueOnError)
 	file := flags.String("file", "", "JSON file to read")
@@ -47,8 +45,8 @@ func runJSONGet(args []string) int {
 	case string:
 		fmt.Println(typed)
 	case float64:
-		// Integers print without a decimal point, matching python's
-		// json round-trip for whole numbers stored as ints.
+		// Integers print without a decimal point, so whole numbers
+		// are emitted without a trailing ".0".
 		if typed == float64(int64(typed)) {
 			fmt.Println(int64(typed))
 		} else {

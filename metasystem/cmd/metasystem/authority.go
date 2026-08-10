@@ -9,8 +9,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 )
 
-// runAuthorityCheck ports control-plane-authority.py: exit 0 if the classified
-// caller may perform the mode's write, else exit 1 with the refusal.
+// runAuthorityCheck exits 0 if the classified caller may perform the mode's
+// write, else exits 1 with the refusal.
 func runAuthorityCheck(args []string) int {
 	flags := flag.NewFlagSet("authority check", flag.ContinueOnError)
 	mode := flags.String("mode", "", "control-plane write mode")

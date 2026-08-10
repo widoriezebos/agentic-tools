@@ -8,8 +8,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
-// runSchemaMaterialize ports return-schema.py: write a role's return schema at
-// the requested version to an output file.
+// runSchemaMaterialize writes a role's return schema at the requested version
+// to an output file.
 func runSchemaMaterialize(args []string) int {
 	flags := flag.NewFlagSet("schema materialize", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")

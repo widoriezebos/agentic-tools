@@ -17,13 +17,12 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 )
 
-// BuildConfigIdentity is the Go port of config-identity.py: it produces one
-// runtime adapter's versioned, canonical configuration identity — a stable
-// fingerprint of the configuration that actually affects behavior. Volatile
-// keys named by a version-gated filter are excluded so a cosmetic change does
-// not read as a capability change. Sources are merged in order (a later source
-// overrides an earlier key), missing sources are skipped, and an unparsable
-// existing source is a hard error.
+// BuildConfigIdentity produces one runtime adapter's versioned, canonical
+// configuration identity — a stable fingerprint of the configuration that
+// actually affects behavior. Volatile keys named by a version-gated filter are
+// excluded so a cosmetic change does not read as a capability change. Sources
+// are merged in order (a later source overrides an earlier key), missing
+// sources are skipped, and an unparsable existing source is a hard error.
 func BuildConfigIdentity(runtime, version, filterPath string, sourcePaths []string) (map[string]any, error) {
 	flattened := map[string]any{}
 	for _, raw := range sourcePaths {

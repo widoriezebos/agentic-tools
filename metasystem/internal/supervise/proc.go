@@ -222,8 +222,8 @@ func (p *ProcComponents) signalGroup(pid int64, sig syscall.Signal) {
 
 // processGroupMembers counts live processes in the group led by pgid.
 func processGroupMembers(pgid int64) (int, error) {
-	// getpgid on each candidate would need a full scan; the census
-	// port (Phase 1) owns enumeration. Until then GroupCount is used
+	// getpgid on each candidate would need a full scan; census
+	// enumeration owns that. Until then GroupCount is used
 	// only for the ceiling, and the owner-alone fixtures inject it.
 	// Here we count the leader if alive as a conservative floor.
 	if err := syscall.Kill(int(pgid), 0); err == nil {

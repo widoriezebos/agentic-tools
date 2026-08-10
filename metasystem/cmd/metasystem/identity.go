@@ -9,10 +9,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// runIdentityStartedAt is a PORT (plans/go-migration.md): it must be
-// indistinguishable from `process-census.py started-at --pid N` —
-// epoch seconds on stdout, exit 1 with no output when the pid cannot
-// be read. The conformance harness holds it to that.
+// runIdentityStartedAt prints a pid's start time in epoch seconds on
+// stdout, exiting 1 with no output when the pid cannot be read.
 func runIdentityStartedAt(args []string) int {
 	flags := flag.NewFlagSet("identity started-at", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
@@ -27,8 +25,8 @@ func runIdentityStartedAt(args []string) int {
 	return 0
 }
 
-// runIdentityProbe prints the full exact identity as JSON — new
-// surface (no python original), used by fixtures and diagnostics.
+// runIdentityProbe prints the full exact identity as JSON, used by
+// fixtures and diagnostics.
 func runIdentityProbe(args []string) int {
 	flags := flag.NewFlagSet("identity probe", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")

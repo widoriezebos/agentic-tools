@@ -56,7 +56,7 @@ func TestRuntimeClassification(t *testing.T) {
 }
 
 // Order is load-bearing: the first runtime in the list that claims an argv
-// wins (the python's insertion-ordered setdefault).
+// wins (first match in declaration order).
 func TestClassifyIsOrderedFirstMatchWins(t *testing.T) {
 	// Two runtimes that both match the same argv; the first wins.
 	a, _ := CompileSignature("first", []string{`shared`}, nil)

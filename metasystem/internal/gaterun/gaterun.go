@@ -1,5 +1,5 @@
 // Package gaterun records that a gate is running and answers whether one
-// still is (the Go port of gate-run.py). A gate run is work in flight that no
+// still is. A gate run is work in flight that no
 // job record describes, so the turn-end report needs to know about it. It
 // cannot be found by matching command lines — that answers for the whole
 // machine and matches wait-loops and greps — so a gate writes a marker naming

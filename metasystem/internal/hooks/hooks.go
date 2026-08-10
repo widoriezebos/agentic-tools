@@ -1,5 +1,5 @@
-// Package hooks checks that this repository runs under the metasystem it ships
-// (the Go port of check-own-hooks.py). The template never adopts itself, so its
+// Package hooks checks that this repository runs under the metasystem it ships.
+// The template never adopts itself, so its
 // own lifecycle hooks can silently be inert; a metasystem whose own repository
 // does not run under it is testing a claim it never makes true of itself.
 package hooks

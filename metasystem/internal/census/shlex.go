@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-// shellSplit tokenizes a command line the way python's shlex.split(posix=True)
-// does: whitespace separates words; single quotes are literal; double quotes
-// allow backslash escaping of $ ` " and backslash; a bare backslash escapes
-// the next character. An unbalanced quote is an error, matching shlex. This
-// is what argv_paths relies on to find path tokens in a process's argv.
+// shellSplit tokenizes a POSIX shell command line: whitespace separates
+// words; single quotes are literal; double quotes allow backslash escaping of
+// $ ` " and backslash; a bare backslash escapes the next character. An
+// unbalanced quote is an error. ArgvPaths relies on this to find path tokens
+// in a process's argv.
 func shellSplit(input string) ([]string, error) {
 	var tokens []string
 	var current strings.Builder
@@ -37,7 +37,7 @@ func shellSplit(input string) ([]string, error) {
 			if c == '\\' && i+1 < len(runes) {
 				next := runes[i+1]
 				// In double quotes, backslash escapes only these; otherwise
-				// the backslash is literal (posix shlex behavior).
+				// the backslash is literal (POSIX shell behavior).
 				if next == '$' || next == '`' || next == '"' || next == '\\' {
 					current.WriteRune(next)
 					i++
