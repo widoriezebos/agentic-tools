@@ -68,11 +68,25 @@ func (cfg ReaperConfig) reapOne(path string) error {
 		return nil // an unparseable record is not this reaper's to rewrite
 	}
 	status, _ := record["status"].(string)
+
+	now := cfg.Now()
+
+	// A pending-setup record is a reservation husk: its creating dispatcher
+	// finishes setup in seconds, so one old enough has been abandoned by a
+	// crashed dispatch. It carries no mission stamp yet, so no mission's own
+	// drain can see it — while its fence reservation still consumes a
+	// concurrency slot. This reaper is the layer that must clear it.
+	if status == "pending-setup" {
+		if created, ok := record["createdAt"].(string); ok {
+			if at, err := time.Parse(time.RFC3339, created); err == nil && now.Sub(at) > 10*time.Minute {
+				return cfg.transition(path, record, status, "failed", "abandoned-setup", now)
+			}
+		}
+		return nil
+	}
 	if status != "running" && status != "pending" {
 		return nil // only a job still believed live can be reaped
 	}
-
-	now := cfg.Now()
 
 	// The budget is judged first: an expired capMin is a fact of the record,
 	// independent of whether the process happens to have exited already, so a

@@ -186,3 +186,30 @@ func TestReaperPassHonorsCapDeadline(t *testing.T) {
 		t.Fatalf("cap-deadline job: want timeout/budget-cap, got %v/%v", got["status"], got["error"])
 	}
 }
+
+func TestReaperPassClearsAbandonedSetupHusks(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 8, 10, 22, 0, 0, 0, time.UTC)
+	stale := writeJobRecord(t, dir, "husk", map[string]any{
+		"jobId": "husk", "status": "pending-setup", "phase": "setup",
+		"createdAt": now.Add(-11 * time.Minute).Format(time.RFC3339),
+	})
+	fresh := writeJobRecord(t, dir, "settingup", map[string]any{
+		"jobId": "settingup", "status": "pending-setup", "phase": "setup",
+		"createdAt": now.Add(-1 * time.Minute).Format(time.RFC3339),
+	})
+	cfg := ReaperConfig{
+		JobsDir:   dir,
+		Now:       func() time.Time { return now },
+		Custodian: func(int64, int64, string) identity.Liveness { return identity.Unknown },
+	}
+	if err := cfg.ReaperPass(); err != nil {
+		t.Fatalf("reaper pass: %v", err)
+	}
+	if got := readStatus(t, stale); got["status"] != "failed" || got["error"] != "abandoned-setup" {
+		t.Fatalf("stale husk: want failed/abandoned-setup, got %v/%v", got["status"], got["error"])
+	}
+	if got := readStatus(t, fresh); got["status"] != "pending-setup" {
+		t.Fatalf("a setup still inside its grace must be untouched, got %v", got["status"])
+	}
+}

@@ -60,3 +60,20 @@ func TestCloseableChainsRootAlone(t *testing.T) {
 		t.Fatalf("a lone terminal root closes its own chain: got %v", got)
 	}
 }
+
+func TestActiveJobsSeesUnstampedReservationHusks(t *testing.T) {
+	// A dispatch that crashes during setup leaves a pending-setup record with
+	// no mission stamp while the mission's fence reservation already names
+	// the job. The drain must see it, or the concurrency slot leaks forever.
+	root := t.TempDir()
+	mission := "demo"
+	writeJSONFile(t, filepath.Join(jobsDirPath(root), "husk-1.json"),
+		map[string]any{"jobId": "husk-1", "status": "pending-setup"})
+	writeJSONFile(t, filepath.Join(root, "artifacts", "agents", "missions", mission, "fences.json"),
+		map[string]any{"reservations": map[string]any{"husk-1": map[string]any{"capMin": 15}}})
+	got := ActiveJobs(root, mission)
+	want := []string{"husk-1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("active jobs: got %v, want %v", got, want)
+	}
+}

@@ -21,6 +21,12 @@ type jobRecord struct {
 // every downstream decision is deterministic. Unreadable records are skipped:
 // they cannot prove mission membership.
 func missionJobs(root, mission string) []jobRecord {
+	// A record normally names its mission, but a pending-setup husk dies
+	// before the stamp is written — while the mission's fence reservation
+	// already names the job and holds its concurrency slot. The reservation
+	// keys are therefore part of this mission's job set: without them a
+	// crashed setup is invisible to the drain and the slot leaks forever.
+	reserved := reservedJobIDs(root, mission)
 	paths, _ := filepath.Glob(filepath.Join(jobsDirPath(root), "*.json"))
 	sort.Strings(paths)
 	records := []jobRecord{}
@@ -29,11 +35,28 @@ func missionJobs(root, mission string) []jobRecord {
 		if err != nil {
 			continue
 		}
-		if stamped, _ := doc["mission"].(string); stamped == mission {
+		stamped, _ := doc["mission"].(string)
+		id, _ := doc["jobId"].(string)
+		if stamped == mission || (stamped == "" && reserved[id]) {
 			records = append(records, jobRecord{path: path, doc: doc})
 		}
 	}
 	return records
+}
+
+// reservedJobIDs reads the mission's fence reservations, whose keys name
+// every job the mission has ever reserved a slot for.
+func reservedJobIDs(root, mission string) map[string]bool {
+	ids := map[string]bool{}
+	doc, err := readJSONDoc(filepath.Join(root, "artifacts", "agents", "missions", mission, "fences.json"))
+	if err != nil {
+		return ids
+	}
+	reservations, _ := doc["reservations"].(map[string]any)
+	for job := range reservations {
+		ids[job] = true
+	}
+	return ids
 }
 
 // ActiveJobs lists the mission's jobs that are not yet terminal — the set the
