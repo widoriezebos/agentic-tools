@@ -30,9 +30,6 @@ type DiskCheckout struct {
 	IntervalSec int
 	Fingerprint string
 	WatcherCap  int
-	// generation counts publications the way the shell owner counts
-	// launch_set generations; the owner loop sets it per relaunch.
-	Generation int64
 
 	// clock is injectable for tests; nil means time.Now.
 	clock func() time.Time
@@ -153,9 +150,21 @@ func (c *DiskCheckout) StateNamesSelf() (bool, error) {
 // lock that no longer names this owner aborts the publication — the
 // caller's next cycle classifies the supersession.
 func (c *DiskCheckout) PublishState(held []Held) error {
+	// The current set is the HIGHEST generation present in held — the
+	// owner's live generation, not a field this adapter has to be told
+	// (an earlier static-field version published generation 0 with no
+	// components; the running binary caught it). Unproven survivors of
+	// older generations stay held for teardown but are not the
+	// published set.
+	current := int64(0)
+	for _, member := range held {
+		if member.Generation > current {
+			current = member.Generation
+		}
+	}
 	components := map[string]stateComponent{}
 	for _, member := range held {
-		if member.Generation != c.Generation {
+		if member.Generation != current {
 			continue
 		}
 		components[string(member.Component)] = stateComponent{
@@ -170,7 +179,7 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 		Owner:                stateIdentity{Pid: c.Self.Pid, PidStartedAt: c.Self.StartedAtSec, InstanceTag: c.SelfTag},
 		Components:           components,
 		IntervalSec:          c.IntervalSec,
-		Generation:           c.Generation,
+		Generation:           current,
 		Fingerprint:          c.Fingerprint,
 		DerivedWatcherCapMin: c.WatcherCap,
 		StartedAt:            c.now().UTC().Format("2006-01-02T15:04:05Z"),

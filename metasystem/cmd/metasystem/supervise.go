@@ -66,12 +66,3 @@ func runSuperviseStatus(args []string) int {
 	fmt.Println(string(encoded))
 	return 0
 }
-
-// runSuperviseOwner will run the owner loop once the real-process
-// adapters land. Refusing loudly until then is the honest contract:
-// a verb that pretended to supervise would be the overnight lesson
-// repeated in code.
-func runSuperviseOwner(args []string) int {
-	fmt.Fprintln(os.Stderr, "supervise owner: not yet wired — the real-process adapters are Phase 0 work in flight (plans/go-migration.md); refusing rather than pretending")
-	return 3
-}

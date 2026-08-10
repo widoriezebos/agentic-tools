@@ -47,7 +47,8 @@ func families() []family {
 			name:    "supervise",
 			summary: "the supervision lifecycle (plans/supervision-lifecycle.md)",
 			verbs: []verb{
-				{"owner", "run the owner loop for a checkout (internal; launched by arm)", runSuperviseOwner},
+				{"owner", "run the owner loop for a checkout (internal; launched by arm)", runSuperviseOwnerLoop},
+				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
 				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},
 			},
 		},

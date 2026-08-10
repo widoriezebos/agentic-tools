@@ -23,7 +23,6 @@ func diskCheckout(t *testing.T) (*DiskCheckout, string) {
 		IntervalSec: 5,
 		Fingerprint: "f",
 		WatcherCap:  150,
-		Generation:  1,
 	}
 	return checkout, root
 }
