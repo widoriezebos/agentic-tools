@@ -24,17 +24,17 @@
     "maven": "Builds still run with -o against a pre-populated repository, because the build must be deterministic and must work whether or not the network is up. That is a spec requirement, not a sandbox constraint."
   },
   "fences": {
-    "approved": "2026-08-05, under the human's blanket approval; still an experiment per the promotion rule",
+    "approved": "jobCapMin/hostTurnCapMin/wallClockHours revised 2026-08-10 by the human's direct ruling in session ('change the caps for Devin in such a way that you will think it will complete the mission'); the 2026-08-05 blanket approval covers the untouched fences; still an experiment per the promotion rule",
     "concurrency": 2,
     "cycles": 8,
-    "hostTurnCapMin": 20,
-    "jobCapMin": 15,
+    "hostTurnCapMin": 240,
+    "jobCapMin": 180,
     "jobs": 12,
     "ledgerCycleBudget": 8,
     "ledgerNoGainBudget": 3,
-    "wallClockHours": 3
+    "wallClockHours": 12
   },
-  "fencesNote": "Provisional and unapproved. These are an experiment, not a belief: trial runs record what they consume and each fence becomes ceil(observed_max * 1.5), excluding trials that parked at that fence. A human must approve them before any run spends money.",
+  "fencesNote": "Revised 2026-08-10 by the human's ruling, made while reviewing five repetitions across two delegate models that all scored acceptance 0.018868 under jobCapMin=15: caps exist to protect against a stuck loop burning money, NOT to define the experiment \u2014 an agent must get the chance to COMPLETE its mission, because completion (and its time and cost) is itself a reported result and a capped run measures the fence rather than the agent. Evidence for the sizes: a 15-minute timeout killed an implementer worktree holding 1,322 compiling lines (the 2026-08-09 post-mortem), and Devin single inference calls measure ~5 minutes, so substantive jobs get a 180-minute circuit breaker, host turns 240 minutes (a turn waits on its longest job), and the mission 12 wall-clock hours. Previous fences (jobCapMin 15, hostTurnCapMin 20, wallClockHours 3) produced the flat-floor cohorts recorded under version 0.1. The other fences stay: cycles, jobs, concurrency, and the ledger budgets are loop protection, not time pressure. Cost exposure rises with the wall-clock ceiling; the fences still stop a runaway long before the exposure does.",
   "grader": {
     "calibration": {
       "probeVectors": {
@@ -306,7 +306,7 @@
     "requirement": 10
   },
   "title": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster",
-  "version": "0.1",
+  "version": "0.2",
   "watches": {
     "grammar": "watch=<name>=<value> lines on standard output beside the metric lines: seed_wrapper_intact 0 or 1, seed_release_level the integer pom.xml declares, seed_files_replaced a count",
     "note": "Observations, never gates and never targets. A scored seed_respected metric for a build-from-scratch case can only encode hidden preferences about legitimate build edits (BA-3-3); grading what a builder does with inherited code is BM-2's business, where the seed is a working system and inheritance is the point. The human's intent to grade seed handling is honoured there, and observed here.",
