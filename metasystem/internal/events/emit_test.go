@@ -2,6 +2,7 @@ package events
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,31 @@ func TestEmitHonorsHardCap(t *testing.T) {
 	lines := readLines(t, root)
 	if len(lines) != 1 || lines[0]["event"] != "lease-claimed" || lines[0]["pid"] == nil {
 		t.Fatalf("required envelope lost under cap: %v", lines)
+	}
+}
+
+func TestEmitShrinksOptionalFieldsUnderCap(t *testing.T) {
+	root := sandbox(t, leaseRegistry)
+	e := &Emitter{Component: "lease"}
+	// Many payload fields (each already clipped to the payload cap) whose sum
+	// exceeds the hard cap even with an empty summary, forcing shrink() to drop
+	// optional fields largest-first.
+	fields := map[string]string{}
+	for i := 0; i < 40; i++ {
+		fields[fmt.Sprintf("f%02d", i)] = strings.Repeat("Z", 256)
+	}
+	e.Emit(root, "lease-claimed", "", fields)
+
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > capBytes {
+		t.Fatalf("shrink failed to bring the line under the cap: %d bytes", len(data))
+	}
+	lines := readLines(t, root)
+	if len(lines) != 1 || lines[0]["event"] != "lease-claimed" || lines[0]["seq"] == nil {
+		t.Fatalf("required envelope must survive shrink: %v", lines)
 	}
 }
 
