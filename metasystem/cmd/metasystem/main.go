@@ -230,6 +230,7 @@ func families() []family {
 				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},
 				{"protocol-growth", "report new protocol errors since a main last advanced its cursor", runLeaseProtocolGrowth},
 				{"protocol-advance", "merge a main's protocol-error counts into its cursor", runLeaseProtocolAdvance},
+				{"commit-token", "atomically write the live commit wrapper token", runLeaseCommitToken},
 			},
 		},
 		{

@@ -33,20 +33,6 @@ started=$("$ms" identity started-at --pid $$) || {
   exit 1
 }
 nonce=$("$ms" util token-hex --bytes 16)
-# TODO(go-wiring): the block below atomically writes the live wrapper token
-# (worktree-commit-token.json) with a computed createdAt timestamp. Pending a
-# `lease commit-token` verb (state assembly, not a field read).
-python3 - "$token" "$$" "$started" "$nonce" <<'PY'
-import json,os,sys,tempfile
-from datetime import datetime,timezone
-from pathlib import Path
-path,pid,started,nonce=Path(sys.argv[1]),int(sys.argv[2]),int(sys.argv[3]),sys.argv[4]
-path.parent.mkdir(parents=True,exist_ok=True)
-value={"wrapperPid":pid,"wrapperPidStartedAt":started,"nonce":nonce,"createdAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-fd,temp=tempfile.mkstemp(prefix=path.name+".",suffix=".tmp",dir=path.parent)
-with os.fdopen(fd,"w") as handle:
-    json.dump(value,handle,sort_keys=True); handle.write("\n"); handle.flush(); os.fsync(handle.fileno())
-os.replace(temp,path)
-PY
+"$ms" lease commit-token --path "$token" --pid "$$" --start "$started" --nonce "$nonce"
 trap 'rm -f -- "$token"' EXIT
 git -C "$root" commit "$@"

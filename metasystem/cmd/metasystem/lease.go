@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
@@ -167,6 +168,33 @@ func runLeaseProtocolAdvance(args []string) int {
 		return 2
 	}
 	if err := lease.ProtocolAdvance(*root, *mainID, *caller, *counts); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+// runLeaseCommitToken atomically writes the live wrapper token that the
+// pre-commit guard verifies: the wrapper's pid and kernel start second, a
+// fresh nonce, and the creation time.
+func runLeaseCommitToken(args []string) int {
+	flags := flag.NewFlagSet("lease commit-token", flag.ContinueOnError)
+	path := flags.String("path", "", "token file path")
+	pid := flags.Int64("pid", 0, "wrapper pid")
+	start := flags.Int64("start", 0, "wrapper start epoch seconds")
+	nonce := flags.String("nonce", "", "wrapper nonce")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *path == "" || *pid < 1 || *start < 1 || *nonce == "" {
+		fmt.Fprintln(os.Stderr, "lease commit-token: --path, --pid, --start, and --nonce are required")
+		return 2
+	}
+	value := map[string]any{
+		"wrapperPid": *pid, "wrapperPidStartedAt": *start, "nonce": *nonce,
+		"createdAt": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+	}
+	if err := writeIdentityJSON(*path, value); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
