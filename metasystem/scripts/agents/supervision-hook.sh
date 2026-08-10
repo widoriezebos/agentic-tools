@@ -51,12 +51,7 @@ if [[ -n "$identity" ]]; then
 fi
 
 surface_json() { # message
-  # TODO(go-wiring): needs a verb to emit {"systemMessage": <arg>} as compact
-  # JSON (JSON construction from a string, not a field read). Left as python3.
-  python3 - "$1" <<'PY'
-import json,sys
-print(json.dumps({"systemMessage":sys.argv[1]},separators=(",",":")))
-PY
+  "$ms" json object "systemMessage=$1"
 }
 
 count_running_work() { # sets: running, elsewhere

@@ -120,7 +120,8 @@ func families() []family {
 			name:    "json",
 			summary: "JSON field access for shell callers",
 			verbs: []verb{
-				{"get", "print a dotted field from a JSON file", runJSONGet},
+				{"get", "print a dotted field from a JSON file or string", runJSONGet},
+				{"object", "build a compact JSON object from key=value args", runJSONObject},
 			},
 		},
 		{

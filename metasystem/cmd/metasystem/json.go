@@ -1,12 +1,34 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
 )
+
+// runJSONObject builds a compact JSON object from key=value arguments (string
+// values, split on the first '='), printed without HTML escaping. For shell
+// callers that need to construct a small JSON object from strings.
+func runJSONObject(args []string) int {
+	object := map[string]any{}
+	for _, arg := range args {
+		if i := strings.IndexByte(arg, '='); i >= 0 {
+			object[arg[:i]] = arg[i+1:]
+		}
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(object); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(strings.TrimRight(buf.String(), "\n"))
+	return 0
+}
 
 // runJSONGet prints a dotted field from a JSON file, exiting 1 when
 // the file or field is absent or unparseable. Scalar values print bare
