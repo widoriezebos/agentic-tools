@@ -14,6 +14,27 @@
 - Waiting on the human: nothing — the plan itself was requested and
   is hereby recorded; Phase 0 is unblocked.
 
+## Native-only rule (the human, 2026-08-10): no CLI tool shell-outs
+
+"Make sure that we have nothing in the current Go implementation
+reaching out to command line tools if we can have native support.
+Straight in Go." Standing rule for all Go code, enforced going
+forward: a decision component NEVER shells out to a generic CLI
+tool (ps, lsof, grep, awk, sed, ...) when a native syscall or Go
+library does the job. The more the binary does natively, the more
+trustworthy it is. Applied so far: process enumeration uses sysctl
+kern.proc.all (not ps); cwd resolution uses the proc_info syscall,
+PROC_PIDVNODEPATHINFO — the exact call lsof makes (not lsof);
+process start times and argv use sysctl kern.proc.pid /
+kern.procargs2 (not ps); signature matching uses RE2 (not grep).
+The ONLY permitted exec calls are (a) INVOKING a metasystem
+component whose job is shell — a runtime adapter declaring its
+signature — and (b) LAUNCHING a process the system supervises;
+both are "invocation", not tool reach-out, and both are the
+two-language design's shell layer. A grep for exec.Command in the
+Go tree must return only those two shapes; a new CLI shell-out is a
+review stop.
+
 ## The two standing rulings this plan implements
 
 1. Two-language end state (backlog item 13): a decision lives in

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -558,14 +557,14 @@ func kernelProbe(pid int64) (int64, probeState, error) {
 	}
 }
 
-// processCommand reads a pid's command via ps (the tag check in
-// verify_supervision_snapshot). A dead pid yields an error.
+// processCommand reads a pid's command NATIVELY (kernel argv, the tag check
+// in verify_supervision_snapshot). A dead or unreadable pid yields an error.
 func processCommand(pid int64) (string, error) {
-	out, err := exec.Command("ps", "-p", fmt.Sprint(pid), "-o", "command=").Output()
-	if err != nil {
-		return "", err
+	exact, state, err := identity.KernelProber{}.Probe(pid)
+	if err != nil || state != identity.Alive {
+		return "", fmt.Errorf("no command for pid %d", pid)
 	}
-	command := strings.TrimSpace(string(out))
+	command := strings.Join(exact.Argv, " ")
 	if command == "" {
 		return "", fmt.Errorf("no command for pid %d", pid)
 	}

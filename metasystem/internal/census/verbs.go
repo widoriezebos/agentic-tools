@@ -4,10 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"regexp"
 	"strings"
-	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // The remaining small census verbs, completing the surface that mirrors
@@ -19,9 +18,6 @@ import (
 func Alive(pid, expectedStart int64) bool {
 	return identityAlive(pid, expectedStart)
 }
-
-var psIdentityLine = regexp.MustCompile(
-	`(?s)\s*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+[0-9]{1,2}\s+[0-9]{2}:[0-9]{2}:[0-9]{2}\s+[0-9]{4})\s+(.+?)\s*$`)
 
 // AuthIdentity ports authentication_identity: start time and command from ONE
 // source — the fixture identity file when installed (its `started` and
@@ -45,25 +41,16 @@ func AuthIdentity(pid int64) (map[string]any, error) {
 }
 
 func psIdentity(pid int64) (map[string]any, error) {
-	cmd := exec.Command("ps", "-p", fmt.Sprint(pid), "-o", "lstart=,command=")
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
-	out, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(out)) == "" {
+	// Native: the kernel prober gives the start time (whole seconds) and argv.
+	exact, state, err := identity.KernelProber{}.Probe(pid)
+	if err != nil || state != identity.Alive {
 		return nil, fmt.Errorf("no such process: %d", pid)
 	}
-	m := psIdentityLine.FindStringSubmatch(string(out))
-	if m == nil {
-		return nil, fmt.Errorf("unreadable process identity for pid %d", pid)
-	}
-	parsed, err := time.ParseInLocation("Mon Jan 2 15:04:05 2006", normalizeLstart(m[1]), time.Now().Location())
-	if err != nil {
-		return nil, fmt.Errorf("unreadable start time for pid %d: %w", pid, err)
-	}
-	command := strings.TrimRight(m[2], "\n")
+	command := strings.Join(exact.Argv, " ")
 	if command == "" {
 		return nil, fmt.Errorf("unreadable command for pid %d", pid)
 	}
-	return map[string]any{"pid": pid, "pidStartedAt": parsed.Unix(), "command": command}, nil
+	return map[string]any{"pid": pid, "pidStartedAt": exact.StartedAt.Unix(), "command": command}, nil
 }
 
 // SignatureCheck ports the `signature-check` verb: the positive argv must
