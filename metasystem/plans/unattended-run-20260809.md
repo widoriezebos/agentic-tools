@@ -111,13 +111,14 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
    gate green from a live agent session for the first time. The
    seal step is explicitly the simulated-human act; preflight's pin
    asserted against contract bytes.
-9. IN PROGRESS — cohort A = bm-2s-20260810t010831z-53362 (host
-   Opus 5, delegates gpt-5.6-sol, 2 reps). Repetition 1: target
-   provisioned through the NEW identity-carried path, sealed
-   (9810af0b...), signed per the pre-auth, pushed, lease released
-   (departing-main), RESUMED ~01:15Z — running through grading
-   with a tracked waiter. On completion: provision rep 2, same
-   flow, then cohort B (bm-2, Devin).
+9. DONE — cohort A = bm-2s-20260810t010831z-53362 COMPLETE, both
+   reps graded through the identity-carried provisioning path.
+   Rep 1: acceptance 0.018868, buildClean 1, host $8.31. Rep 2:
+   acceptance 0.018868, buildClean 1, host $3.17. HEADLINE: the
+   sol cohort's acceptance is BYTE-IDENTICAL to the Devin
+   cohort's (1/53 in every repetition so far) — evidence the
+   binding constraint is the shared 15-minute job cap, not the
+   delegate model. Cohort B sequential for comparability.
 10. TODO — benchmark cohort B (host Opus 5, delegates devin
     swe-1.7, 2 reps): same.
 11. TODO — final report for the human: chain outcome, Go
