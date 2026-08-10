@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -26,8 +28,11 @@ import (
 func runSuperviseOwnerLoop(args []string) int {
 	flags := flag.NewFlagSet("supervise owner", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
+	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
 	tag := flags.String("tag", "", "owner instance tag")
 	intervalSec := flags.Int("interval", 60, "base observation interval seconds")
+	fingerprint := flags.String("fingerprint", "", "supervision fingerprint the armer computed; published in state.json and matched against the watcher's census verdicts")
+	watcherCap := flags.Int("watcher-cap", 0, "derived watcher cap ceiling in minutes; published as derivedWatcherCapMin and loaded into the watcher heartbeat attestation")
 	registryPath := flags.String("registry", defaultRegistryPath(), "machine-wide registry file")
 	gate := flags.String("gate", "", "start-gate file: wait for it to appear, then delete it, before supervising (the armer publishes the lock, then signals the gate — avoids the lock/pid chicken-and-egg)")
 	if flags.Parse(args) != nil {
@@ -36,6 +41,9 @@ func runSuperviseOwnerLoop(args []string) int {
 	if *repo == "" || *tag == "" {
 		fmt.Fprintln(os.Stderr, "supervise owner: --repo and --tag are required")
 		return 2
+	}
+	if *scope == "" {
+		*scope = *repo
 	}
 
 	// Wait for the armer's start gate: it captures our pid, publishes
@@ -70,6 +78,8 @@ func runSuperviseOwnerLoop(args []string) int {
 	checkout := &supervise.DiskCheckout{
 		Root: *repo, Self: self, SelfTag: ownerTag,
 		IntervalSec: *intervalSec,
+		Fingerprint: *fingerprint,
+		WatcherCap:  *watcherCap,
 	}
 	prober := identity.KernelProber{}
 	lockSelf := lock.Identity{Pid: self.Pid, PidStartedAt: self.StartedAtSec, Tag: ownerTag}
@@ -94,9 +104,10 @@ func runSuperviseOwnerLoop(args []string) int {
 			argv := []string{self, "supervise", "component",
 				"--component", string(component), "--tag", componentTag,
 				"--heartbeat", heartbeatPath, "--interval", fmt.Sprint(*intervalSec),
+				"--cap-min", fmt.Sprint(*watcherCap),
 				// The component operates on this checkout: the watcher censuses
-				// it and the reaper sweeps its job records.
-				"--repo", *repo}
+				// the scope and the reaper sweeps this checkout's job records.
+				"--repo", *repo, "--scope", *scope}
 			// Fixture-only crash-loop injection (D-2 breaker proof): the
 			// component crashes on start and never beats, so the owner
 			// sees Failing every observation.
@@ -120,6 +131,26 @@ func runSuperviseOwnerLoop(args []string) int {
 		Establishment: supervise.Establishment{Deadline: 5},
 		TagPrefix:     ownerTag,
 		Narrate:       narrator(logPath),
+		// Generations stay monotone across owner restarts (the fingerprint
+		// harness's staleness discipline): continue from the last published
+		// state rather than restarting at one.
+		SeedGeneration: checkout.PriorGeneration(),
+	}
+	// TERM/INT take the ExitOnSignal path (D-1): latch the shutdown intent,
+	// tear the held set down BY IDENTITY, append the terminal. The check
+	// lives in the injected Sleep so it runs between cycles, never
+	// concurrently with one — an unhandled TERM used to kill the owner with
+	// the default action and leak its detached components forever.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+	owner.Sleep = func(d time.Duration) {
+		select {
+		case <-time.After(d):
+		case <-stop:
+			exit := owner.ExitOnSignal()
+			fmt.Printf("owner exit: reason=%s teardownComplete=%v\n", exit.Reason, exit.TeardownComplete)
+			os.Exit(0)
+		}
 	}
 	exit := owner.Run()
 	fmt.Printf("owner exit: reason=%s teardownComplete=%v\n", exit.Reason, exit.TeardownComplete)

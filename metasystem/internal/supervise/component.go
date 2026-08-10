@@ -33,15 +33,18 @@ func JobsDir(repo string) string {
 // WriteHeartbeat atomically rewrites a component's heartbeat with a fresh
 // observedAtEpoch. The owner reads pid and observedAtEpoch to judge liveness;
 // the component calls this every interval so a stale heartbeat means the
-// component is stuck or gone.
-func WriteHeartbeat(path, component string, self identity.Ref, tag string, intervalSec int) error {
+// component is stuck or gone. capMin is the watcher's loaded cap ceiling —
+// the attestation dispatch reads (internal/dispatch/attest.go) and arming
+// verifies against state.derivedWatcherCapMin; it must be the derived cap
+// the armer loaded, never a placeholder.
+func WriteHeartbeat(path, component string, self identity.Ref, tag string, intervalSec, capMin int) error {
 	record := map[string]any{
 		"function":        component,
 		"pid":             self.Pid,
 		"pidStartedAt":    self.StartedAtSec,
 		"instanceTag":     tag,
 		"observedAtEpoch": time.Now().Unix(),
-		"loadedCapMin":    intervalSec,
+		"loadedCapMin":    capMin,
 		"engine":          "go",
 	}
 	line, err := json.Marshal(record)

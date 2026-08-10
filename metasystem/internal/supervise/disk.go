@@ -132,6 +132,21 @@ type stateComponent struct {
 // paperwork).
 var BuildStamp = "dev"
 
+// PriorGeneration reads the previously published state's generation so a
+// replacement owner can continue the sequence rather than repeat it. A
+// missing or unreadable state seeds zero (a fresh checkout).
+func (c *DiskCheckout) PriorGeneration() int64 {
+	content, err := os.ReadFile(c.statePath())
+	if err != nil {
+		return 0
+	}
+	var document stateDocument
+	if err := json.Unmarshal(content, &document); err != nil {
+		return 0
+	}
+	return document.Generation
+}
+
 func (c *DiskCheckout) StateNamesSelf() (bool, error) {
 	content, err := os.ReadFile(c.statePath())
 	if err != nil {

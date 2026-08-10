@@ -120,7 +120,7 @@ func RunProductionCensus(metasystemRoot, repo, fingerprint string, interval int,
 	cwds := ResolveCwds(matchedPids)
 
 	custody := liveCustody(metasystemRoot)
-	announced := announcementsList(metasystemRoot, &errors)
+	announced := announcementsList(metasystemRoot, processes, &errors)
 	var inventory []InventoryItem
 	for _, assignment := range matched {
 		process := processes[assignment.Index]

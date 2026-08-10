@@ -1,6 +1,7 @@
 package census
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -74,20 +75,24 @@ func TestRunFixtureCensusFixtureGuard(t *testing.T) {
 // "alive" via the fixture identity file, an announcement, and a clean scan.
 func TestRunFixtureCensusSuccessPath(t *testing.T) {
 	root, procFile := writeBundle(t)
+	// The supervision pids must EXIST: the identity file is the start-time
+	// source, but kernel death vetoes it (a provably dead pid is dead
+	// regardless of its fixture entry — the semantics stop verification
+	// depends on). Use three genuinely live pids.
+	ownPid, parentPid, initPid := os.Getpid(), os.Getppid(), 1
 	// Valid supervision state.
 	os.WriteFile(filepath.Join(root, "artifacts", "agents", "supervision", "state.json"),
-		[]byte(`{"generation":2,"owner":{"pid":9001,"pidStartedAt":100,"instanceTag":"owner-t"},
-		 "components":{"watcher":{"pid":9002,"pidStartedAt":100,"instanceTag":"watcher-t"},
-		 "reaper":{"pid":9003,"pidStartedAt":100,"instanceTag":"reaper-t"}}}`), 0o644)
-	// Make the supervision pids "alive" AND carry their tags via BOTH the
-	// identity file (liveness) and a stubbed ps is not available, so instead
-	// point the identity file at them; the tag check runs ps which will fail
-	// for fake pids -> supervision-command-unavailable. To keep this a clean
-	// SUCCESS we use the SAME pids as the running test process is not
-	// possible, so assert the identities are at least seen live (no
-	// not-live error) and the command-unavailable path is exercised.
+		[]byte(fmt.Sprintf(`{"generation":2,"owner":{"pid":%d,"pidStartedAt":100,"instanceTag":"owner-t"},
+		 "components":{"watcher":{"pid":%d,"pidStartedAt":100,"instanceTag":"watcher-t"},
+		 "reaper":{"pid":%d,"pidStartedAt":100,"instanceTag":"reaper-t"}}}`,
+			ownPid, parentPid, initPid)), 0o644)
+	// The identity file supplies the expected start times, so liveness reads
+	// from it while the tag check still consults the real process table (a
+	// tag mismatch there is a real, faithful error this test tolerates).
 	idFile := filepath.Join(t.TempDir(), "identity.json")
-	os.WriteFile(idFile, []byte(`{"9001":{"pidStartedAt":100},"9002":{"pidStartedAt":100},"9003":{"pidStartedAt":100}}`), 0o644)
+	os.WriteFile(idFile, []byte(fmt.Sprintf(
+		`{"%d":{"pidStartedAt":100},"%d":{"pidStartedAt":100},"%d":{"pidStartedAt":100}}`,
+		ownPid, parentPid, initPid)), 0o644)
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", idFile)
 	// An announcement for 4103 (so it classifies ANNOUNCED, not UNTRACKED).
 	os.WriteFile(filepath.Join(root, "artifacts", "agents", "mains", "s.json"),

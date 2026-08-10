@@ -37,8 +37,9 @@ metasystem_here=$(pwd -P)
 # A gate run is work in flight that no job record describes, so it says so
 # itself rather than being guessed at from process command lines. The marker
 # names this process by pid and start time; the turn-end report believes it
-# only while that exact process is alive.
-gate_run_marker=$(scripts/agents/gate-run.py register --root "$root" \
+# only while that exact process is alive. On a first build the binary does
+# not exist yet; the marker is best-effort and the register is skipped.
+gate_run_marker=$(bin/metasystem gate register --root "$root" \
   --gate validate-metasystem.sh --pid $$ 2>/dev/null || true)
 
 # The Go engine gate runs first (plans/go-migration.md): gofmt, vet, the
@@ -53,23 +54,12 @@ gate_run_marker=$(scripts/agents/gate-run.py register --root "$root" \
 # delegate scope.
 if (( ! delegate_scope )) && [[ -f go.mod ]]; then
   bash scripts/agents/go-gate.sh
-  # The seam tripwire (GO-MIG-R3-010): a declared engine seam whose
-  # retiring artifact already exists has outlived its phase — fail red.
-  python3 - scripts/agents/engine-seams.json <<'SEAMS'
-import json, sys
-from pathlib import Path
-seams = json.load(open(sys.argv[1]))["seams"]
-stale = [s["seam"] for s in seams if Path(s["retireWhenExists"]).exists()]
-if stale:
-    print("engine seam(s) outlived their phase; retire them: " + ", ".join(stale), file=sys.stderr)
-    raise SystemExit(1)
-SEAMS
+  # The engine-seam tripwire and the Go-vs-python census conformance
+  # harnesses (signature, fingerprint, run) retired with the migration:
+  # the python reference no longer exists to diff against, and the Go
+  # packages carry their own unit coverage under the go gate above.
   # Owner-alone Go supervision fixtures drive the running binary.
   bash scripts/agents/supervision-go-fixtures.sh
-  # Census signature port: differential conformance (Go RE2 == grep -E).
-  bash scripts/agents/census-signature-conformance.sh
-  bash scripts/agents/census-fingerprint-conformance.sh
-  bash scripts/agents/census-run-conformance.sh
 fi
 
 source scripts/agents/fixture-budget.sh
@@ -167,10 +157,7 @@ for link in \
   scripts/agents/dispatch.sh \
   scripts/agents/commit.sh \
   scripts/agents/second-session.sh \
-  scripts/agents/worktree-lease.py \
-  scripts/agents/control-plane-authority.py \
   scripts/agents/arm-supervision.sh \
-  scripts/agents/process-census.py \
   scripts/agents/fixture-budget.sh \
   scripts/agents/fingerprint-harness.sh \
   scripts/agents/supervision-hook.sh \
@@ -178,25 +165,15 @@ for link in \
   scripts/agents/telemetry-census-fixtures.sh \
   scripts/agents/return-schema-fixtures.sh \
   scripts/agents/config-identity-fixtures.sh \
-  scripts/agents/worktree-lease-fixtures.py \
-  scripts/agents/authority-regression-fixtures.py \
+  scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
   scripts/agents/second-session-fixtures.sh \
   scripts/agents/lease-succession-fixtures.sh \
   scripts/agents/flight-recorder-fixtures.sh \
-  scripts/agents/second-session-isolation.py \
-  scripts/agents/config-identity.py \
-  scripts/agents/canonical-model.py \
-  scripts/agents/select-capability-snapshot.py \
   scripts/agents/mission-fixtures.sh \
   scripts/agents/delegate-caps-fixtures.sh \
-  scripts/agents/mission-contract.py \
-  scripts/agents/mission-fence.py \
-  scripts/agents/mission-ledger.py \
-  scripts/agents/mission-state.py \
-  scripts/agents/mission-prompt.py \
   scripts/agents/mission-runner.sh \
   scripts/agents/hosts/claude.sh \
   scripts/agents/hosts/codex.sh \
@@ -208,7 +185,6 @@ for link in \
   scripts/agents/adapters/codex-config-filter.v1.json \
   scripts/agents/adapters/claude-config-filter.v1.json \
   scripts/agents/adapters/devin-config-filter.v1.json \
-  scripts/agents/adapters/claude-session-signal.py \
   scripts/agents/assert-conformance.sh \
   scripts/agents/conformance-fixtures.sh \
   scripts/agents/instruction-bearing-paths.txt \
@@ -269,8 +245,13 @@ bash scripts/agents/conformance-fixtures.sh
 bash scripts/agents/telemetry-census-fixtures.sh
 bash scripts/agents/return-schema-fixtures.sh
 bash scripts/agents/config-identity-fixtures.sh
-python3 scripts/agents/worktree-lease-fixtures.py
-python3 scripts/agents/authority-regression-fixtures.py
+# worktree-lease-fixtures.py retired with the python lease helper: it
+# monkeypatched that module's internals (started_at, live, classify, ...),
+# which cannot be expressed against the Go engine and is owned by
+# internal/lease's unit tests under the go gate. The cross-process
+# behavioral coverage it also carried (succession, lock contention)
+# lives in scripts/agents/lease-succession-fixtures.sh below.
+bash scripts/agents/authority-regression-fixtures.sh
 bash scripts/agents/pre-commit-guard-fixtures.sh
 bash scripts/agents/record-protocol-fixtures.sh
 bash scripts/agents/evidence-segment-fixtures.sh
@@ -286,19 +267,6 @@ if grep -Eq '^(model\.tier\.[1-9][0-9]*|mode\.[a-z0-9-]+\.role\.)' metasystem.co
   echo "template demotion fixture: an optional tier or mode role key is still active" >&2
   exit 1
 fi
-python3 - scripts/agents/adapters/claude-session-signal.py scripts/agents/process-census.py \
-  scripts/agents/config-identity.py scripts/agents/canonical-model.py scripts/agents/select-capability-snapshot.py \
-  scripts/agents/worktree-lease.py scripts/agents/worktree-lease-fixtures.py \
-  scripts/agents/control-plane-authority.py scripts/agents/authority-regression-fixtures.py \
-  scripts/agents/second-session-isolation.py \
-  scripts/agents/mission-contract.py scripts/agents/mission-fence.py \
-  scripts/agents/mission-ledger.py scripts/agents/mission-state.py \
-  scripts/agents/mission-prompt.py <<'PY'
-import ast, sys
-from pathlib import Path
-for source in sys.argv[1:]:
-    ast.parse(Path(source).read_text(encoding="utf-8"), filename=source)
-PY
 python3 - scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json scripts/enforcement/devin-hooks.json <<'PY'
 import json, sys
 for source in sys.argv[1:]:
@@ -346,9 +314,18 @@ for runtime in claude codex fake; do
   grep -Fq 'start-turn' <<<"$($host --help 2>&1)" \
     || { echo "$runtime host adapter does not advertise start-turn" >&2; exit 1; }
 done
-grep -Fq 'path = directory / f"{runtime}-{version}-{config_hash}-{date}-{sequence:03d}.json"' \
-  scripts/agents/adapters/runtime-common.sh \
-  || { echo "real adapter capability snapshot naming contract drifted" >&2; exit 1; }
+# The capability snapshot naming contract
+# (<runtime>-<version>-<configHash>-<date>-<seq %03d>.json) moved into the
+# engine with the python port; pin it at its Go source when that is present
+# (template mode). Adopted repositories carry only the binary, whose
+# selection fixtures above exercise the same names end to end.
+if [[ -f go.mod ]]; then
+  grep -Fq 'prefix := fmt.Sprintf("%s-%s-%s-%s-", runtime, version, configHash, date)' \
+    internal/adapter/snapshot.go \
+    && grep -Fq 'name := fmt.Sprintf("%s%03d.json", prefix, sequence)' \
+      internal/adapter/snapshot.go \
+    || { echo "real adapter capability snapshot naming contract drifted" >&2; exit 1; }
+fi
 for role in design-critic implementer code-critic verifier investigator behavior-judge; do
   for suffix in md requirements.json; do
     [[ -f "scripts/agents/roles/$role.$suffix" ]] \
@@ -1242,7 +1219,7 @@ if [[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/develo
   harness_own_settings=$(cd "$root/.." && pwd -P)/.claude/settings.json
   [[ -f "$harness_own_settings" ]] \
     || { echo "this repository has no .claude/settings.json: the metasystem is not running under itself" >&2; exit 1; }
-  python3 "$root/scripts/agents/check-own-hooks.py" "$harness_own_settings" \
+  "$root/bin/metasystem" hooks check "$harness_own_settings" \
     "$root/scripts/enforcement/claude-code-hooks.json"
   echo "metasystem runs under its own hooks"
 fi
@@ -1337,7 +1314,11 @@ mkdir -p "$job_fixture/scripts/agents" \
   "$job_fixture/artifacts/agents/jobs" \
   "$job_fixture/artifacts/agents/fixture-job/rounds/1"
 cp scripts/assert-return-complete.sh "$job_fixture/scripts/"
-cp scripts/agents/return-schema.py "$job_fixture/scripts/agents/"
+# The copied assert script resolves its engine as <fixture>/bin/metasystem;
+# give the fixture checkout the real one (the python schema helper it used
+# to copy is gone — the binary materializes schemas itself).
+mkdir -p "$job_fixture/bin"
+cp bin/metasystem "$job_fixture/bin/metasystem"
 cp -R scripts/agents/schemas "$job_fixture/scripts/agents/"
 cat >"$job_fixture/artifacts/agents/jobs/fixture-job.json" <<'EOF'
 {
@@ -1437,6 +1418,12 @@ if delegate_process_section "dispatcher, adapter selftest, and mission-runner pr
   git -C "$agent_repo" init -q
   git -C "$agent_repo" add .
   git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
+  # Production resolves its engine as <repo>/bin/metasystem — an untracked
+  # build artifact that adoption ships. Stage the real engine the same way,
+  # after the base commit so it stays untracked exactly like production.
+  # The runner and selftest repositories below inherit it via cp -R.
+  mkdir -p "$agent_repo/bin"
+  cp bin/metasystem "$agent_repo/bin/metasystem"
   agent_dispatch="$agent_repo/scripts/agents/dispatch.sh"
   fake_adapter="$agent_repo/scripts/agents/adapters/fake.sh"
   agent_config="$agent_repo/scripts/metasystem-config.sh"
@@ -1763,8 +1750,9 @@ PY
 
   # Configuration resolution is flag, environment, mode, plain, default.
   config_order="$agent_fixture/config-order"
-  mkdir -p "$config_order/scripts"
+  mkdir -p "$config_order/scripts" "$config_order/bin"
   cp scripts/metasystem-config.sh "$config_order/scripts/"
+  cp bin/metasystem "$config_order/bin/metasystem"
   cat >"$config_order/metasystem.conf" <<EOF
 role.implementer.runtime=plain
 mode.refactor.role.implementer.runtime=mode
@@ -1848,7 +1836,7 @@ PY
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
   agent_supervision_repo=$agent_repo
   track_armed_supervision "$agent_repo"
-  agent_main_start=$("$agent_repo/scripts/agents/process-census.py" started-at --pid "$$")
+  agent_main_start=$("$agent_repo/bin/metasystem" identity started-at --pid "$$")
   METASYSTEM_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
     --repo "$agent_repo" --session validator --pid "$$" \
     --start-time "$agent_main_start" --tag metasystem-main-fake-validator \
@@ -2145,7 +2133,14 @@ EOF
   python3 - "$agent_repo/artifacts/agents/jobs/timed.json" <<'PY'
 import json, sys
 from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["startedAt"] = "2000-01-01T00:00:00Z"; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+# The engine judges the budget by capDeadline first (startedAt+capMin is
+# only the fallback), so the fixture must backdate BOTH: backdating only
+# startedAt left the real one-minute deadline live and the explicit reap
+# inert, a coin-flip against the fixture's own wait ceiling.
+path = Path(sys.argv[1]); value = json.loads(path.read_text())
+value["startedAt"] = "2000-01-01T00:00:00Z"
+value["capDeadline"] = "2000-01-01T00:01:00Z"
+path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 PY
   run_agent_fixture timed-reap timed "$agent_dispatch" reap --job timed
   wait_for_agent_fixture_process timed-driver timed "$timeout_driver"
@@ -2429,7 +2424,7 @@ PY
   ew_role_saved="$agent_fixture/ew-role-saved.json"
   cp "$ew_role" "$ew_role_saved"
   printf '%s\n' '{"required":[],"optional":{},"waivers":{}}' >"$ew_role"
-  if scripts/agents/select-capability-snapshot.py --root "$agent_repo" --runtime ghostrt \
+  if bin/metasystem capability select --root "$agent_repo" --runtime ghostrt \
       --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
       --output "$agent_fixture/ew-unwaived.out" 2>"$agent_fixture/ew-unwaived.err"; then
     cp "$ew_role_saved" "$ew_role"
@@ -2438,7 +2433,7 @@ PY
   grep -Fq 'writeRoots' "$agent_fixture/ew-unwaived.err" \
     || { cp "$ew_role_saved" "$ew_role"; echo "empty-writeRoots refusal did not name the field" >&2; cat "$agent_fixture/ew-unwaived.err" >&2; exit 1; }
   printf '%s\n' '{"required":[],"optional":{},"waivers":{"writeRoots":["ghostrt"]}}' >"$ew_role"
-  scripts/agents/select-capability-snapshot.py --root "$agent_repo" --runtime ghostrt \
+  bin/metasystem capability select --root "$agent_repo" --runtime ghostrt \
     --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
     --output "$agent_fixture/ew-waived.out" \
     || { cp "$ew_role_saved" "$ew_role"; echo "empty writeRoots was refused even with the writeRoots waiver on record" >&2; exit 1; }
@@ -2525,20 +2520,18 @@ sealed.version=1
 EOF
   perl -0pi -e 's/FIXTURE_DISPATCH_CAP_MIN/'"$fixture_dispatch_envelope_cap_min"'/g' \
     "$agent_repo/plans/mission-mission-alpha.contract.md"
-  python3 - "$agent_repo/scripts/agents/mission-contract.py" "$agent_repo/plans/mission-mission-alpha.contract.md" <<'PY'
-import importlib.util
-import sys
-from pathlib import Path
-module_path, contract_path = map(Path, sys.argv[1:])
-specification = importlib.util.spec_from_file_location("dispatch_fixture_contract", module_path)
-module = importlib.util.module_from_spec(specification)
-sys.modules[specification.name] = module
-assert specification.loader is not None
-specification.loader.exec_module(module)
-path = contract_path
-text = path.read_text()
-path.write_text(text + f"\nApproval: name=Fixture-Human; date=2026-08-06; contract-sha256={module.contract_hash(text)}\n")
-PY
+  # The digest a human approval signs: Approval lines removed, every line
+  # stripped of trailing spaces/tabs, trailing blank lines dropped. This is
+  # contractCanonicalSignedBytes (internal/mission/contract.go), verified
+  # byte-identical to the retired python contract_hash before its deletion.
+  fixture_contract_hash() { # contract path
+    awk '!/^Approval:/{sub(/[ \t]+$/,""); line[++n]=$0}
+      END{while(n>0 && line[n]=="") n--; for(i=1;i<=n;i++) printf "%s%s", line[i], (i<n ? "\n" : "")}' \
+      "$1" | shasum -a 256 | awk '{print $1}'
+  }
+  printf '\nApproval: name=Fixture-Human; date=2026-08-06; contract-sha256=%s\n' \
+    "$(fixture_contract_hash "$agent_repo/plans/mission-mission-alpha.contract.md")" \
+    >>"$agent_repo/plans/mission-mission-alpha.contract.md"
   stamp_fixture_contract() { # mission — seed the runner-owned contract pin
     # (Codex's caps ruling: fixtures below the runner lifecycle seed
     # approvedContractSha256 as the digest of the exact raw contract bytes.)
@@ -2569,8 +2562,8 @@ PY_STAMP
   git -C "$agent_repo" remote set-head origin -a >/dev/null
   # The lease holder has no private lifetime: its bounded teardown below is the
   # only event that ends it, so section growth cannot turn its lifetime into a cap.
-  python3 -c 'import signal; signal.pause()' mission-lease-tag & mission_pid=$!
-  mission_pgid=$(python3 -c 'import os,sys; print(os.getpgid(int(sys.argv[1])))' "$mission_pid")
+  "$agent_repo/bin/metasystem" util hold --tag mission-lease-tag & mission_pid=$!
+  mission_pgid=$(ps -p "$mission_pid" -o pgid= | tr -d ' ')
   mission_identity="$agent_fixture/mission-process-identity.json"
   python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" "$mission_identity" "$mission_pid" "$mission_pgid" <<'PY'
 import json, sys
@@ -2579,7 +2572,7 @@ from pathlib import Path
 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 pid, pgid = int(sys.argv[3]), int(sys.argv[4])
 Path(sys.argv[1]).write_text(json.dumps({"missionId":"mission-alpha","pid":pid,"pgid":pgid,"instanceTag":"mission-lease-tag","startedAt":now,"renewedAt":now}) + "\n")
-Path(sys.argv[2]).write_text(json.dumps({str(pid): {"pgid": pgid, "command": "python3 fixture mission-lease-tag"}}) + "\n")
+Path(sys.argv[2]).write_text(json.dumps({str(pid): {"pgid": pgid, "command": "metasystem util hold --tag mission-lease-tag"}}) + "\n")
 PY
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
   run_agent_fixture envelope-model-override envelope-model-override "$agent_dispatch" dispatch \
@@ -2720,7 +2713,7 @@ import json,sys
 from pathlib import Path
 Path(sys.argv[1]).write_text(json.dumps({"jobId":"other-provider","mission":"mission-alpha","runtime":"other","status":"completed","usage":{"availability":"native","inputTokens":3,"cachedInputTokens":None,"outputTokens":None,"reasoningTokens":None,"cost":None,"providerUnits":{"name":"fake-unit","value":5}}})+"\n")
 PY
-  "$agent_repo/scripts/agents/mission-fence.py" aggregate-usage --repo "$agent_repo" --mission mission-alpha
+  "$agent_repo/bin/metasystem" mission-fence aggregate-usage --repo "$agent_repo" --mission mission-alpha
   python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/usage.json" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1])); units={(item["provider"],item["unit"]):item["value"] for item in value["units"]}
@@ -2806,7 +2799,7 @@ fi
 ARM
   chmod +x "$runner_repo/scripts/agents/arm-supervision.sh"
   runner_main_start=$("${runner_process_env[@]}" \
-    "$runner_repo/scripts/agents/process-census.py" started-at --pid "$$")
+    "$runner_repo/bin/metasystem" identity started-at --pid "$$")
   agent_supervision_repo=$runner_repo
   track_armed_supervision "$runner_repo"
   "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
@@ -3180,12 +3173,13 @@ assert second_return["identity"]["sessionId"] == second_turn["hostSession"]
 PY
   runner_git push -qu origin "$runner_branch"
 
-  run_runner_expect prompt-missing-turn 1 "$runner_repo/scripts/agents/mission-prompt.py" \
+  run_runner_expect prompt-missing-turn 1 "$runner_repo/bin/metasystem" mission-prompt assemble \
+    --repo "$runner_repo" \
     --mission runner-cycle --turn runner-cycle-t99-missing --output "$agent_fixture/missing-prompt.md"
   grep -Fq 'missing turn record' "$agent_fixture/prompt-missing-turn.out" \
     || { echo "prompt assembler did not name its missing turn record refusal" >&2; exit 1; }
   run_runner_expect prompt-oversized 1 env METASYSTEM_MISSION_MAX_PROMPT_KB=1 \
-    "$runner_repo/scripts/agents/mission-prompt.py" --mission runner-cycle \
+    "$runner_repo/bin/metasystem" mission-prompt assemble --repo "$runner_repo" --mission runner-cycle \
     --turn "$(basename "$cycle_turn")" --output "$agent_fixture/oversized-prompt.md"
   grep -Fq 'oversized block' "$agent_fixture/prompt-oversized.out" \
     || { echo "prompt assembler did not name the oversized block" >&2; exit 1; }
@@ -3277,7 +3271,7 @@ PY
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_selftest_identity_fixture"
   agent_supervision_repo=$agent_selftest_repo
   track_armed_supervision "$agent_selftest_repo"
-  agent_selftest_main_start=$("$agent_selftest_repo/scripts/agents/process-census.py" started-at --pid "$$")
+  agent_selftest_main_start=$("$agent_selftest_repo/bin/metasystem" identity started-at --pid "$$")
   METASYSTEM_AGENT_RUNTIME=fake "$agent_selftest_repo/scripts/agents/arm-supervision.sh" \
     --repo "$agent_selftest_repo" --session selftest-validator --pid "$$" \
     --start-time "$agent_selftest_main_start" --tag metasystem-main-fake-selftest-validator \
@@ -3323,8 +3317,9 @@ fi
 if command -v python3 >/dev/null; then
   hook_cmd=$(python3 -c "import json; print(json.load(open('$hooks_json'))['hooks']['Stop'][0]['hooks'][0]['command'])")
   hookrepo="$tmp/hookrepo"
-  mkdir -p "$hookrepo/scripts" "$hookrepo/plans"
+  mkdir -p "$hookrepo/scripts" "$hookrepo/plans" "$hookrepo/bin"
   cp scripts/receipt.sh scripts/metasystem-config.sh "$hookrepo/scripts/"
+  cp bin/metasystem "$hookrepo/bin/metasystem"
   cp metasystem.conf "$hookrepo/"
   printf '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n' >"$hookrepo/plans/receipts.log"
   out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
@@ -3598,8 +3593,10 @@ if scripts/assert-stop-loss.sh --file "$tmp/nogain-fakegain.md" >/dev/null 2>&1;
 fi
 
 knob_fixture="$tmp/conf-consuming-scripts"
-mkdir -p "$knob_fixture/receipt/scripts" "$knob_fixture/watch/scripts" "$knob_fixture/watch/jobs"
+mkdir -p "$knob_fixture/receipt/scripts" "$knob_fixture/watch/scripts" "$knob_fixture/watch/jobs" \
+  "$knob_fixture/receipt/bin" "$knob_fixture/watch/bin"
 cp scripts/receipt.sh scripts/metasystem-config.sh "$knob_fixture/receipt/scripts/"
+cp bin/metasystem "$knob_fixture/receipt/bin/metasystem"
 printf 'retro.max-receipts=0\nretro.max-age-days=30\n' >"$knob_fixture/receipt/metasystem.conf"
 "$knob_fixture/receipt/scripts/receipt.sh" add --type implement --outcome shipped --file "$knob_fixture/receipt/receipts.log" >/dev/null
 if "$knob_fixture/receipt/scripts/receipt.sh" check --file "$knob_fixture/receipt/receipts.log" >/dev/null 2>&1; then
@@ -3612,6 +3609,7 @@ METASYSTEM_RETRO_MAX_RECEIPTS=0 "$knob_fixture/receipt/scripts/receipt.sh" check
   || { echo "receipt did not prefer the flag over the environment" >&2; exit 1; }
 
 cp scripts/watch-background-jobs.sh scripts/metasystem-config.sh "$knob_fixture/watch/scripts/"
+cp bin/metasystem "$knob_fixture/watch/bin/metasystem"
 printf 'watch.stale-min=7\nwatch.cap-min=%s\n' "$fixture_watcher_config_cap_min" >"$knob_fixture/watch/metasystem.conf"
 touch "$knob_fixture/watch/state"
 "$knob_fixture/watch/scripts/watch-background-jobs.sh" --dir "$knob_fixture/watch/jobs" --state "$knob_fixture/watch/state" --once >"$knob_fixture/watch.out"
@@ -3619,12 +3617,16 @@ grep -q "stale=7m cap=${fixture_watcher_config_cap_min}m" "$knob_fixture/watch.o
   || { echo "watcher ignored metasystem.conf ceilings" >&2; exit 1; }
 
 refactor_knob="$knob_fixture/refactor"
-mkdir -p "$refactor_knob/scripts"
+mkdir -p "$refactor_knob/scripts" "$refactor_knob/bin"
 cp scripts/refactor-baseline.sh scripts/metasystem-config.sh "$refactor_knob/scripts/"
+cp bin/metasystem "$refactor_knob/bin/metasystem"
+# The baseline recorder demands a clean worktree; the engine is a build
+# artifact there exactly as in production.
+printf 'bin/\n' >"$refactor_knob/.gitignore"
 printf 'refactor.max-age-minutes=1440\nrefactor.max-commits=0\n' >"$refactor_knob/metasystem.conf"
 git init -q "$refactor_knob"
 printf 'fixture\n' >"$refactor_knob/source.txt"
-git -C "$refactor_knob" add source.txt metasystem.conf scripts
+git -C "$refactor_knob" add source.txt metasystem.conf scripts .gitignore
 git -C "$refactor_knob" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm initial
 (cd "$refactor_knob" && scripts/refactor-baseline.sh record --gate fixture >/dev/null)
 git -C "$refactor_knob" add plans/refactor-baseline
@@ -3665,8 +3667,9 @@ scripts/receipt.sh stats --file "$rfile" | grep -q '^type_improve=1$' || { echo 
 scripts/receipt.sh stats --all --file "$rfile" | grep -q '^receipts=3$' || { echo "receipt stats --all miscounted" >&2; exit 1; }
 
 receipt_relation="$tmp/receipt-relation"
-mkdir -p "$receipt_relation/scripts" "$receipt_relation/artifacts/agents/jobs"
+mkdir -p "$receipt_relation/scripts" "$receipt_relation/artifacts/agents/jobs" "$receipt_relation/bin"
 cp scripts/receipt.sh scripts/metasystem-config.sh "$receipt_relation/scripts/"
+cp bin/metasystem "$receipt_relation/bin/metasystem"
 printf 'retro.max-receipts=25\nretro.max-age-days=30\n' >"$receipt_relation/metasystem.conf"
 python3 - "$receipt_relation/artifacts/agents/jobs" <<'PY'
 import json, sys
@@ -3862,13 +3865,13 @@ if (( template_mode )); then
   # so it must be invocation-shape independent (KI-31: the real
   # classifier answers differently under a live agent ancestor than
   # detached). Same pattern as pre-commit-guard-fixtures.sh: a copied
-  # guard beside a refusing classifier stub takes the fail-open HUMAN
+  # guard beside a refusing engine stub takes the fail-open HUMAN
   # path; the wrapper-token rule keeps its own coverage.
   guard_stub_root="$tmp/guard-stub-metasystem"
-  mkdir -p "$guard_stub_root/scripts/agents"
+  mkdir -p "$guard_stub_root/scripts/agents" "$guard_stub_root/bin"
   cp "$root/scripts/agents/pre-commit-guard.sh" "$guard_stub_root/scripts/agents/pre-commit-guard.sh"
-  printf '#!/usr/bin/env bash\nexit 1\n' >"$guard_stub_root/scripts/agents/worktree-lease.py"
-  chmod +x "$guard_stub_root/scripts/agents/worktree-lease.py"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"$guard_stub_root/bin/metasystem"
+  chmod +x "$guard_stub_root/bin/metasystem"
   guard_under_test="$guard_stub_root/scripts/agents/pre-commit-guard.sh"
   mkdir -p "$guard_repo/plans"
   git -C "$guard_repo" init -q
@@ -3909,9 +3912,9 @@ if (( template_mode )); then
 PLAN
   printf '{"jobId":"implementer-20260101t000000z-cccc","status":"completed"}\n' \
     >"$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json"
-  [[ -z "$(python3 "$root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+  [[ -z "$("$root/bin/metasystem" report open-work --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "a plan naming an open chain between rounds was called stale" >&2; exit 1; }
-  [[ -n "$(METASYSTEM_CHAIN_GRACE_SECONDS=0 python3 "$root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+  [[ -n "$(METASYSTEM_CHAIN_GRACE_SECONDS=0 "$root/bin/metasystem" report open-work --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "an aged-out chain still suppressed the stale report" >&2; exit 1; }
   python3 - "$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json" <<'PYEOF'
 import json, sys
@@ -3920,7 +3923,7 @@ record = json.load(open(path))
 record["chainClosed"] = True
 json.dump(record, open(path, "w"))
 PYEOF
-  [[ -n "$(python3 "$root/scripts/agents/open-work.py" --repo "$chain_root" | grep STALE-PLAN)" ]] \
+  [[ -n "$("$root/bin/metasystem" report open-work --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "a closed chain still suppressed the stale report" >&2; exit 1; }
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
   echo junk >"$srcrepo/ignored-fixture.txt"

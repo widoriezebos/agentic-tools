@@ -164,6 +164,12 @@ type Owner struct {
 	// TagPrefix mints component tags: <prefix>-<component>-<gen>-<n>.
 	TagPrefix string
 
+	// SeedGeneration seeds the generation counter from the previous
+	// owner's published state, so generations stay monotone across owner
+	// restarts — the staleness discipline the fingerprint harness holds
+	// (a repeated generation would let a stale census read as fresh).
+	SeedGeneration int64
+
 	// Narrate receives one CycleTrace per cycle and per exit; nil
 	// disables narration (tests that do not assert on it).
 	Narrate func(CycleTrace)
@@ -182,6 +188,9 @@ type Owner struct {
 func (o *Owner) Run() Exit {
 	if o.Sleep == nil {
 		o.Sleep = time.Sleep
+	}
+	if o.generation < o.SeedGeneration {
+		o.generation = o.SeedGeneration
 	}
 	for {
 		exit := o.Cycle(time.Now())
@@ -293,6 +302,14 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 			trace.Actions = append(trace.Actions, "relaunch")
 			o.relaunchSet()
 			o.relaunchDue = time.Time{}
+			// The replacement set is only real once state.json names it:
+			// dispatch's attestation and arming's verification read the
+			// published component identities, and a relaunch that leaves
+			// the old generation's pids in state strands them on a dead
+			// set. A fenced abort here is classified by the next cycle.
+			if err := o.Checkout.PublishState(o.held); err == nil {
+				trace.Actions = append(trace.Actions, "republish-state")
+			}
 		}
 	}
 	return nil

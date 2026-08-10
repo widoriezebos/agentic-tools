@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -34,9 +36,11 @@ func runSuperviseComponent(args []string) int {
 	flags := flag.NewFlagSet("supervise component", flag.ContinueOnError)
 	component := flags.String("component", "", "watcher | reaper")
 	repo := flags.String("repo", "", "checkout root the component operates on")
+	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
 	tag := flags.String("tag", "", "component instance tag")
 	heartbeat := flags.String("heartbeat", "", "heartbeat file path")
 	intervalSec := flags.Int("interval", 60, "heartbeat/work interval seconds")
+	capMin := flags.Int("cap-min", 0, "loaded watcher cap ceiling for the heartbeat attestation (defaults to the interval when unset)")
 	// crashOnStart reproduces the pure crash-loop shape (D-2): a
 	// component that dies on startup WITHOUT ever beating, so it never
 	// reads Healthy and the breaker advances monotonically to N. A
@@ -72,12 +76,18 @@ func runSuperviseComponent(args []string) int {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 
-	beat := heartbeatWriter(*heartbeat, *component, self, *tag, *intervalSec)
+	if *capMin < 1 {
+		*capMin = *intervalSec
+	}
+	beat := heartbeatWriter(*heartbeat, *component, self, *tag, *intervalSec, *capMin)
 
+	if *scope == "" {
+		*scope = *repo
+	}
 	var work func()
 	switch *component {
 	case "watcher":
-		release, pass, ok := setupWatcher(*repo, self, *tag, *intervalSec)
+		release, pass, ok := setupWatcher(*repo, *scope, self, *tag, *intervalSec)
 		if !ok {
 			return 1
 		}
@@ -91,6 +101,23 @@ func runSuperviseComponent(args []string) int {
 		work = func() {}
 	}
 
+	// A definitively absent checkout root means the supervised thing is gone:
+	// exit rather than beat. A heartbeat or verdict write would re-create the
+	// supervision tree (atomic writes make parent directories), resurrecting
+	// a deleted checkout and turning the owner's purpose-gone into a
+	// spurious superseded.
+	rootGone := func() bool {
+		if *repo == "" {
+			return false
+		}
+		_, statErr := os.Stat(*repo)
+		return errors.Is(statErr, os.ErrNotExist)
+	}
+
+	if rootGone() {
+		fmt.Fprintln(os.Stderr, "supervise component: checkout root is gone; exiting")
+		return 0
+	}
 	beat() // beat once immediately so the owner sees liveness fast
 	work() // and produce a first verdict/sweep without waiting a full interval
 	ticker := time.NewTicker(time.Duration(*intervalSec) * time.Second)
@@ -100,6 +127,10 @@ func runSuperviseComponent(args []string) int {
 		case <-stop:
 			return 0
 		case <-ticker.C:
+			if rootGone() {
+				fmt.Fprintln(os.Stderr, "supervise component: checkout root is gone; exiting")
+				return 0
+			}
 			beat()
 			work()
 		}
@@ -109,9 +140,9 @@ func runSuperviseComponent(args []string) int {
 // heartbeatWriter returns a never-failing closure that rewrites the component's
 // heartbeat with a fresh observedAtEpoch. A write error is swallowed so a full
 // disk cannot crash a component (the stale heartbeat makes the owner replace it).
-func heartbeatWriter(path, component string, self identity.Ref, tag string, intervalSec int) func() {
+func heartbeatWriter(path, component string, self identity.Ref, tag string, intervalSec, capMin int) func() {
 	return func() {
-		_ = supervise.WriteHeartbeat(path, component, self, tag, intervalSec)
+		_ = supervise.WriteHeartbeat(path, component, self, tag, intervalSec, capMin)
 	}
 }
 
@@ -119,7 +150,7 @@ func heartbeatWriter(path, component string, self identity.Ref, tag string, inte
 // and the per-interval census pass. It returns ok=false (and logs) when a live
 // writer already owns the lock — the owner then sees this watcher fail and, once
 // the incumbent stops, relaunches one that can claim it.
-func setupWatcher(repo string, self identity.Ref, tag string, intervalSec int) (release func(), pass func(), ok bool) {
+func setupWatcher(repo, scope string, self identity.Ref, tag string, intervalSec int) (release func(), pass func(), ok bool) {
 	supervisionDir := supervise.SupervisionDir(repo)
 	lock := &supervise.CensusWriterLock{
 		Dir: supervisionDir, Self: self, Tag: tag, Prober: identity.KernelProber{},
@@ -146,12 +177,18 @@ func setupWatcher(repo string, self identity.Ref, tag string, intervalSec int) (
 		Interval:       intervalSec,
 		IntervalMS:     intervalMS,
 		BudgetPercent:  budgetPercent,
-		// The metasystem root and the repository scope are the same checkout for
-		// a supervised component; the fingerprint and the live scan both key off
-		// it.
-		Fingerprint: func() (string, error) { return census.Fingerprint(repo, repo) },
+		// The metasystem root (where scripts, config, and the engine live) and
+		// the repository scope (the git toplevel the census bounds to) differ
+		// in a nested checkout; both travel from the armer.
+		Fingerprint: func() (string, error) { return census.Fingerprint(repo, scope) },
 		Census: func(fingerprint string, now time.Time) (census.Verdict, error) {
-			return census.RunProductionCensus(repo, repo, fingerprint, intervalSec, now)
+			// The fixture enumeration override mirrors watcher-pass: a fake-
+			// runtime fixture feeds the process table through a file (and the
+			// enumerator itself refuses it outside metasystem.runtimes=fake).
+			if processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE"); processFile != "" {
+				return census.RunFixtureCensus(repo, scope, processFile, fingerprint, intervalSec, now)
+			}
+			return census.RunProductionCensus(repo, scope, fingerprint, intervalSec, now)
 		},
 		Now:  func() time.Time { return time.Now().UTC() },
 		Warn: func(message string) { fmt.Fprintln(os.Stderr, message) },
@@ -184,12 +221,37 @@ func setupReaper(repo string) func() {
 // table: it is the SAME custodian only if the pid is alive at its recorded
 // start AND its command still carries the job's tag — a recycled pid, or a
 // process no longer bearing the tag, is a stranger and reads as dead-to-us.
+// The fixture identity file (METASYSTEM_FAKE_PROCESS_IDENTITY_FILE) supplies
+// the start time and command when it carries an entry for the pid — the same
+// one-source override the census uses — but kernel death always vetoes it.
 func kernelCustodian(pid, start int64, tag string) identity.Liveness {
 	exact, state, err := (identity.KernelProber{}).Probe(pid)
+	if err == nil && state == identity.Dead {
+		return identity.Dead
+	}
+	if fixture := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"); fixture != "" {
+		if data, readErr := os.ReadFile(fixture); readErr == nil {
+			var table map[string]struct {
+				Started int64  `json:"pidStartedAt"`
+				Command string `json:"command"`
+			}
+			if json.Unmarshal(data, &table) == nil {
+				if entry, ok := table[fmt.Sprint(pid)]; ok {
+					if entry.Started != start {
+						return identity.Dead
+					}
+					if tag != "" && !strings.Contains(entry.Command, tag) {
+						return identity.Dead
+					}
+					return identity.Alive
+				}
+			}
+		}
+	}
 	if err != nil || state == identity.Unknown {
 		return identity.Unknown
 	}
-	if state == identity.Dead || exact.StartedAt.Unix() != start {
+	if exact.StartedAt.Unix() != start {
 		return identity.Dead
 	}
 	if tag != "" && !strings.Contains(strings.Join(exact.Argv, " "), tag) {

@@ -40,7 +40,7 @@ func stageCheckout(t *testing.T) string {
 	for _, rel := range []string{
 		"scripts/agents/arm-supervision.sh",
 		"scripts/agents/dispatch.sh",
-		"scripts/agents/process-census.py",
+		"bin/metasystem",
 		"scripts/agents/adapters/runtime-common.sh",
 		"scripts/watch-background-jobs.sh",
 	} {
@@ -88,7 +88,7 @@ func TestWatcherPassPublishesVerdictAndHeartbeat(t *testing.T) {
 	}
 	self := identity.Ref{Pid: int64(os.Getpid()), StartedAtSec: 42}
 	heartbeatPath := filepath.Join(SupervisionDir(root), "watcher.heartbeat.json")
-	if err := WriteHeartbeat(heartbeatPath, "watcher", self, "watcher-tag", 5); err != nil {
+	if err := WriteHeartbeat(heartbeatPath, "watcher", self, "watcher-tag", 5, 230); err != nil {
 		t.Fatalf("heartbeat: %v", err)
 	}
 

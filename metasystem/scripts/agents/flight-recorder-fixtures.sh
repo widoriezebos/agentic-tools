@@ -11,8 +11,12 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-flight-recorder.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
 checkout="$tmp/checkout"
-mkdir -p "$checkout/artifacts/agents"
+mkdir -p "$checkout/artifacts/agents" "$checkout/scripts/agents"
 stream="$checkout/artifacts/agents/events.jsonl"
+# The engine reads the registry from the EVENT ROOT (an absent registry must
+# not silence the witness, so it admits everything). FRCC-001 below proves
+# enforcement, which therefore needs the real registry inside this checkout.
+cp "$root/scripts/agents/event-registry.json" "$checkout/scripts/agents/"
 
 fail() { echo "flight recorder fixture failed: $1" >&2; exit 1; }
 
@@ -30,15 +34,15 @@ echo SURVIVED"
 touch "$stream"; chmod 000 "$stream"
 [[ "$(run_caller ':')" == SURVIVED ]] || fail "chmod-000 stream aborted the caller"
 chmod 644 "$stream"
-[[ "$(run_caller 'PATH=/nonexistent')" == SURVIVED ]] || fail "missing python3 aborted the caller"
+[[ "$(run_caller 'PATH=/nonexistent')" == SURVIVED ]] || fail "a broken PATH aborted the caller"
 broken="$tmp/broken-root"; mkdir -p "$broken/scripts/agents"
 [[ "$(bash -c "
 set -euo pipefail
 source '$root/scripts/agents/emit-event.sh'
 _metasystem_event_root='$broken'
-_metasystem_event_helper='$broken/scripts/agents/emit-event.py'
+_metasystem_event_bin='$broken/bin/metasystem'
 emit_event lease lease-claimed epoch=1 summary=probe
-echo SURVIVED")" == SURVIVED ]] || fail "missing helper aborted the caller"
+echo SURVIVED")" == SURVIVED ]] || fail "a missing engine binary aborted the caller"
 
 # 2. Concurrent writers: framing keeps every writer's every event parseable,
 #    per-writer seq gapless.
@@ -130,8 +134,8 @@ git -C "$lease_repo" init -q .
 mkdir -p "$lease_repo/artifacts/agents"
 touch "$lease_repo/artifacts/agents/events.jsonl"
 chmod 000 "$lease_repo/artifacts/agents/events.jsonl"
-start=$(python3 "$root/scripts/agents/process-census.py" started-at --pid $$)
-python3 "$root/scripts/agents/worktree-lease.py" --root "$lease_repo" announce \
+start=$("$root/bin/metasystem" identity started-at --pid $$)
+"$root/bin/metasystem" lease announce --root "$lease_repo" \
   --session fr-fixture --pid $$ --start "$start" --tag metasystem-main-fr --runtime fake >/dev/null \
   || fail "a lease claim failed because the witness stream was unwritable"
 chmod 644 "$lease_repo/artifacts/agents/events.jsonl"
@@ -145,7 +149,7 @@ assert v['claimEpoch'] == 1
 lease_repo2="$tmp/lease-repo2"
 mkdir -p "$lease_repo2/artifacts/agents/jobs"
 git -C "$lease_repo2" init -q .
-python3 "$root/scripts/agents/worktree-lease.py" --root "$lease_repo2" announce \
+"$root/bin/metasystem" lease announce --root "$lease_repo2" \
   --session fr-fixture2 --pid $$ --start "$start" --tag metasystem-main-fr2 --runtime fake >/dev/null
 grep -q '"event":"lease-claimed"' "$lease_repo2/artifacts/agents/events.jsonl" \
   || fail "a successful claim left no lease-claimed event"
@@ -185,7 +189,7 @@ for line in open(sys.argv[1]).read().splitlines():
 PY
 
 # FRCC-011: a live holder's refusal is witnessed.
-python3 "$root/scripts/agents/worktree-lease.py" --root "$lease_repo2" announce \
+"$root/bin/metasystem" lease announce --root "$lease_repo2" \
   --session fr-live-refuse --pid $$ --start "$start" --tag metasystem-main-fr3 --runtime fake >/dev/null 2>&1 || true
 grep -q '"event":"lease-refused"' "$lease_repo2/artifacts/agents/events.jsonl" 2>/dev/null \
   || true # (the same-pid path renews rather than refuses; the unit case below is authoritative)

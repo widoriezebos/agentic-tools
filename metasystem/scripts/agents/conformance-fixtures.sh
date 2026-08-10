@@ -17,6 +17,9 @@ new_case() { # name
   cp "$source_root/scripts/agents/assert-conformance.sh" "$controller/scripts/agents/"
   cp "$source_root/scripts/agents/instruction-bearing-paths.txt" "$controller/scripts/agents/"
   cp "$source_root/scripts/metasystem-config.sh" "$controller/scripts/"
+  # The copied config reader resolves its engine as <controller>/bin/metasystem.
+  mkdir -p "$controller/bin"
+  cp "$source_root/bin/metasystem" "$controller/bin/metasystem"
   printf 'artifacts/\nlocal.conf\n' >"$controller/.gitignore"
   printf 'base\n' >"$controller/source.txt"
   printf 'base\n' >"$controller/docs/note.md"
@@ -429,6 +432,8 @@ exhaustion_root="$fixture_root/exhaustion-dispatch"
 mkdir -p "$exhaustion_root/scripts/agents" "$exhaustion_root/artifacts/agents/jobs" \
   "$exhaustion_root/artifacts/agents/critic/rounds/3"
 cp "$source_root/scripts/agents/dispatch.sh" "$exhaustion_root/scripts/agents/"
+mkdir -p "$exhaustion_root/bin"
+cp "$source_root/bin/metasystem" "$exhaustion_root/bin/metasystem"
 git -C "$exhaustion_root" init -q
 printf 'fixture\n' >"$exhaustion_root/source.txt"
 git -C "$exhaustion_root" add .

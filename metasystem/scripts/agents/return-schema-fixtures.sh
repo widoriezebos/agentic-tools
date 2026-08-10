@@ -2,6 +2,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+[[ -x "$ms" ]] || { echo "return schema fixtures: binary absent; run the go gate first" >&2; exit 1; }
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-return-schema.XXXXXX")
 trap 'rm -rf "$fixture"' EXIT
 
@@ -35,7 +37,7 @@ PY
 # produced a token. The rules are cheap to state, so they are checked here
 # instead of being rediscovered live.
 for role in behavior-judge code-critic design-critic implementer investigator verifier; do
-  "$root/scripts/agents/return-schema.py" --root "$root" --role "$role" --version 2 \
+  "$ms" schema materialize --root "$root" --role "$role" --version 2 \
     --output "$fixture/strict-$role.json"
 done
 python3 - "$fixture" <<'PY'

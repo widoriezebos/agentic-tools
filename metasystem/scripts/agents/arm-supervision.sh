@@ -356,6 +356,13 @@ arm_repository() {
     [[ "$owner_tag" == "$expected_owner_prefix"* ]] \
       || die 1 "supervision lock names an owner armed for another repository ($owner_tag); refusing to stop a process this repository does not own"
     stop_identity owner "$owner_pid" "$owner_start" "$owner_tag"
+    # The stopped owner's lock is a husk now: this shutdown proved the exact
+    # identity dead, so retiring the lock is safe and leaves the checkout
+    # cleanly disarmed rather than parked on a provably-dead record.
+    if [[ "$(json_field "$lock" pid 2>/dev/null || true)" == "$owner_pid" ]]; then
+      rm -f "$lock"
+      rmdir "$agents/supervision/lock.d" 2>/dev/null || true
+    fi
     exit 0
   fi
   if [[ -z "$pid" ]]; then
@@ -376,6 +383,14 @@ arm_repository() {
   [[ -n "$tag" ]] || die 2 "--tag cannot be empty"
   if (( retire )); then retire_announcement "$harness_root" "$session" "$pid" "$start"; exit 0; fi
   watcher_cap=$(derive_watcher_ceiling "$max_cap")
+  # The owner publishes state.json from what it is handed: the config
+  # interval, the supervision fingerprint, and the derived cap. Arming
+  # verifies exactly these against the watcher's census and heartbeat, so
+  # they must travel to the owner rather than defaulting inside it.
+  watch_interval=$("$config" get --key watch.interval-sec --default 60)
+  [[ "$watch_interval" =~ ^[1-9][0-9]*$ ]] || die 1 "watch.interval-sec must be a positive integer"
+  armed_fingerprint=$("$ms" census fingerprint --root "$harness_root" --repo "$repo") \
+    || die 1 "could not compute the supervision fingerprint"
 
   # Fixed arming step 1: registry write precedes lock acquisition and census.
   announcement=$(write_announcement "$harness_root" "$session" "$pid" "$start" "$tag" "$runtime" "$owner_lineage")
@@ -414,7 +429,7 @@ arm_repository() {
     # The process is launched only after this arming call owns the repository
     # lock. This preserves the fixed order and avoids speculative supervisors.
     gate=$supervision/owner-gate.$$.$RANDOM
-    launch_detached candidate_pid "$supervision/owner.log" "$ms" supervise owner --repo "$repo" --gate "$gate" --tag "$owner_tag" --interval 60
+    launch_detached candidate_pid "$supervision/owner.log" "$ms" supervise owner --repo "$harness_root" --scope "$repo" --gate "$gate" --tag "$owner_tag" --interval "$watch_interval" --fingerprint "$armed_fingerprint" --watcher-cap "$watcher_cap"
     candidate_start=$(wait_for_start_identity owner-candidate "$candidate_pid") || {
       rmdir "$lock_dir" 2>/dev/null || true
       die 1 "could not start supervision owner"
@@ -453,7 +468,7 @@ arm_repository() {
       rmdir "$lock_dir" || die 1 "supervision lock takeover lost a race"
       mkdir "$lock_dir" || die 1 "supervision lock takeover lost a race"
       gate=$supervision/owner-gate.$$.$RANDOM
-      launch_detached candidate_pid "$supervision/owner.log" "$ms" supervise owner --repo "$repo" --gate "$gate" --tag "$owner_tag" --interval 60
+      launch_detached candidate_pid "$supervision/owner.log" "$ms" supervise owner --repo "$harness_root" --scope "$repo" --gate "$gate" --tag "$owner_tag" --interval "$watch_interval" --fingerprint "$armed_fingerprint" --watcher-cap "$watcher_cap"
       candidate_start=$(wait_for_start_identity takeover-owner "$candidate_pid") || {
         rmdir "$lock_dir" 2>/dev/null || true
         die 1 "could not start takeover owner"
@@ -464,6 +479,10 @@ arm_repository() {
     fi
   fi
   verify_armed "$repo" "$owner_pid" "$owner_start" "$owner_tag" || exit 1
+  # The arming log proves the fixed order: the announcement precedes the
+  # first verified census, so an arming session can never census itself
+  # as UNTRACKED.
+  printf '%s first-census-complete repo=%s owner=%s\n' "$(now_iso)" "$repo" "$owner_pid" >>"$supervision/arming.log"
   release_cap_authority_lock
   trap - EXIT
   printf '%s ARMED repo=%s owner=%s start=%s tag=%s announcement=%s\n' "$(now_iso)" "$repo" "$owner_pid" "$owner_start" "$owner_tag" "$announcement"
@@ -475,7 +494,7 @@ case ${1:-} in
     shift
     [[ ${1:-} == --repo && $# -eq 2 ]] || { usage; exit 2; }
     repo=$(resolve_repo "$2")
-    "$ms" census fingerprint --repo "$repo"
+    "$ms" census fingerprint --root "$harness_root" --repo "$repo"
     ;;
   *) arm_repository "$@" ;;
 esac

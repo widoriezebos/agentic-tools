@@ -114,7 +114,7 @@ func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, int
 	}
 
 	custody := liveCustody(metasystemRoot)
-	announced := announcementsList(metasystemRoot, &errors)
+	announced := announcementsList(metasystemRoot, processes, &errors)
 
 	var inventory []InventoryItem
 	argvs := make([]string, len(processes))
@@ -336,9 +336,15 @@ func verifySupervisionSnapshot(ids map[string]identityRecord, errors *[]string) 
 }
 
 // identityAlive reports whether pid is alive at expectedStart: the fixture
-// identity file (METASYSTEM_FAKE_PROCESS_IDENTITY_FILE) takes precedence when
-// installed, else the kernel start time must equal expected.
+// identity file (METASYSTEM_FAKE_PROCESS_IDENTITY_FILE) takes precedence as
+// the START TIME source when installed, but never overrides kernel death —
+// a provably dead pid is dead regardless of its fixture entry (the retired
+// python checked pid_exists first for exactly this reason: supervision stop
+// verification must be able to observe a stopped process).
 func identityAlive(pid, expectedStart int64) bool {
+	if _, state, err := kernelProbe(pid); err == nil && state == probeDead {
+		return false
+	}
 	if fixture := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"); fixture != "" {
 		if data, err := os.ReadFile(fixture); err == nil {
 			var table map[string]struct {
@@ -413,7 +419,16 @@ func liveCustody(metasystemRoot string) []identityRecord {
 	return records
 }
 
-func announcementsList(metasystemRoot string, errors *[]string) []identityRecord {
+func announcementsList(metasystemRoot string, processes []Process, errors *[]string) []identityRecord {
+	// Fixture first, kernel second — the same precedence every other identity
+	// reader uses. A simulated process table ADDS processes for a census to
+	// inventory; it does not declare the rest of the machine dead (treating
+	// absence from the fixture as death deleted every real main's
+	// announcement while a fixture was installed).
+	synthetic := map[int64]Process{}
+	for _, process := range processes {
+		synthetic[process.Pid] = process
+	}
 	directory := filepath.Join(metasystemRoot, "artifacts", "agents", "mains")
 	os.MkdirAll(directory, 0o755)
 	paths, _ := filepath.Glob(filepath.Join(directory, "*.json"))
@@ -471,6 +486,21 @@ func announcementsList(metasystemRoot string, errors *[]string) []identityRecord
 				*errors = append(*errors, "announcement-identity:"+name)
 				continue
 			}
+		}
+		// A dead main's announcement is pruned, exactly as the retired
+		// python census did: the file is the registry of LIVE mains, and a
+		// stale one classifies its checkout's next process as a delegate.
+		alive := false
+		if process, ok := synthetic[pid]; ok {
+			alive = process.Alive && process.Started == started
+		} else {
+			alive = identityAlive(pid, started)
+		}
+		if !alive {
+			if err := os.Remove(path); err != nil {
+				*errors = append(*errors, "announcement-prune:"+name+":"+err.Error())
+			}
+			continue
 		}
 		tag, _ := value["instanceTag"].(string)
 		live = append(live, identityRecord{Pid: pid, Started: started, InstanceTag: tag, Registry: path})

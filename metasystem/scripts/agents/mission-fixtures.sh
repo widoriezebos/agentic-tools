@@ -60,7 +60,9 @@ expect_failure() { # name, expected text, command...
   fi
 }
 
-mkdir -p "$repo/scripts/agents" "$repo/scripts" "$repo/truth" "$repo/plans" "$repo/docs"
+mkdir -p "$repo/scripts/agents" "$repo/scripts" "$repo/truth" "$repo/plans" "$repo/docs" "$repo/bin"
+# The copied assert scripts resolve their engine as <repo>/bin/metasystem.
+cp "$root/bin/metasystem" "$repo/bin/metasystem"
 git init -q -b main "$repo"
 git init -q --bare "$remote"
 git -C "$repo" config user.name metasystem
@@ -206,23 +208,13 @@ expect_failure malformed-dispatch-allow "exact runtime:model pairs" "$root/scrip
 dispatch_allow=$repo/plans/mission-dispatch-allow.contract.md
 sed 's/envelope.dependencies=jq/envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol/' "$base" >"$dispatch_allow"
 "$root/scripts/assert-mission.sh" --seal --file "$dispatch_allow" >/dev/null
-python3 - "$root/scripts/agents/mission-contract.py" "$dispatch_allow" "$repo" <<'PY'
-import importlib.util
-import sys
-from pathlib import Path
-module_path, contract_path, project_root = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-specification = importlib.util.spec_from_file_location("fixture_mission_contract", module_path)
-module = importlib.util.module_from_spec(specification)
-sys.modules[specification.name] = module
-assert specification.loader is not None
-specification.loader.exec_module(module)
-contract = module.read_contract(contract_path)
-module.validate_contract(contract, project_root)
-expected = "fake:fake-model,codex:gpt-5.6-sol"
-assert contract.values["envelope.dispatch-allow"] == expected
-assert module.validate_dispatch_allow(contract.values["envelope.dispatch-allow"]) == expected.split(",")
-assert "envelope.dispatch-allow=" + expected in contract.text
-PY
+# The dispatch-allow value survives sealing byte-exactly and the sealed
+# contract still validates. (The parser-internal assertions the python
+# module leg made — the values map and pair splitting — are owned by
+# internal/mission's contract unit tests under the go gate.)
+"$root/bin/metasystem" mission-contract validate --file "$dispatch_allow" >/dev/null
+grep -Fq 'envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol' "$dispatch_allow" \
+  || { echo "sealing altered the dispatch-allow envelope line" >&2; exit 1; }
 
 unsealed=$repo/plans/mission-unsealed.contract.md
 cp "$base" "$unsealed"
@@ -265,26 +257,31 @@ git -C "$repo" push -qu origin main
 # Fabricate only the supervisor facts preflight reads. Each process is a real
 # live process whose argv carries the recorded tag; cleanup waits are named
 # and ceiling-bounded above.
-python3 -c 'import signal; signal.pause()' mission-watcher-tag & watcher_pid=$!
-python3 -c 'import signal; signal.pause()' mission-reaper-tag & reaper_pid=$!
+"$root/bin/metasystem" util hold --tag mission-watcher-tag & watcher_pid=$!
+"$root/bin/metasystem" util hold --tag mission-reaper-tag & reaper_pid=$!
+# The engine ships in this fixture repo, so preflight demands EXACT-START
+# liveness: record the holders' real start times, not synthetic ones.
+watcher_start=$("$root/bin/metasystem" identity started-at --pid "$watcher_pid")
+reaper_start=$("$root/bin/metasystem" identity started-at --pid "$reaper_pid")
 identity_file=$fixture_root/mission-process-identities.json
 printf '{"%s":{"pidStartedAt":%s,"command":"fixture mission-watcher-tag"},"%s":{"pidStartedAt":%s,"command":"fixture mission-reaper-tag"}}\n' \
-  "$watcher_pid" "$watcher_pid" "$reaper_pid" "$reaper_pid" >"$identity_file"
+  "$watcher_pid" "$watcher_start" "$reaper_pid" "$reaper_start" >"$identity_file"
 export METASYSTEM_MISSION_PROCESS_IDENTITY_FILE=$identity_file
 supervision=$repo/artifacts/agents/supervision
 mkdir -p "$supervision"
-python3 - "$supervision" "$watcher_pid" "$reaper_pid" <<'PY'
+python3 - "$supervision" "$watcher_pid" "$reaper_pid" "$watcher_start" "$reaper_start" <<'PY'
 import json, sys, time
 from pathlib import Path
-directory, watcher, reaper = Path(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
+directory = Path(sys.argv[1])
+watcher, reaper, watcher_start, reaper_start = map(int, sys.argv[2:6])
 now = int(time.time())
 watcher_hb = directory / "watcher.heartbeat.json"
 reaper_hb = directory / "reaper.heartbeat.json"
-watcher_hb.write_text(json.dumps({"function":"watcher","pid":watcher,"pidStartedAt":watcher,"observedAtEpoch":now}) + "\n")
-reaper_hb.write_text(json.dumps({"function":"reaper","pid":reaper,"pidStartedAt":reaper,"observedAtEpoch":now}) + "\n")
+watcher_hb.write_text(json.dumps({"function":"watcher","pid":watcher,"pidStartedAt":watcher_start,"observedAtEpoch":now}) + "\n")
+reaper_hb.write_text(json.dumps({"function":"reaper","pid":reaper,"pidStartedAt":reaper_start,"observedAtEpoch":now}) + "\n")
 state = {"intervalSec":60,"fingerprint":"fixture-fingerprint","components":{
-    "watcher":{"pid":watcher,"pidStartedAt":watcher,"instanceTag":"mission-watcher-tag","heartbeat":str(watcher_hb)},
-    "reaper":{"pid":reaper,"pidStartedAt":reaper,"instanceTag":"mission-reaper-tag","heartbeat":str(reaper_hb)},
+    "watcher":{"pid":watcher,"pidStartedAt":watcher_start,"instanceTag":"mission-watcher-tag","heartbeat":str(watcher_hb)},
+    "reaper":{"pid":reaper,"pidStartedAt":reaper_start,"instanceTag":"mission-reaper-tag","heartbeat":str(reaper_hb)},
 }}
 (directory / "state.json").write_text(json.dumps(state) + "\n")
 (directory / "last-census.json").write_text(json.dumps({"verdict":"SUCCESS","completedAtEpoch":now,"fingerprint":"fixture-fingerprint"}) + "\n")
@@ -307,18 +304,18 @@ expect_failure unrunnable-gate "gate measurement failed" "$root/scripts/assert-m
 # Mission ledger grammar is consumed by assert-stop-loss.sh without any
 # adapter or conversion layer.
 ledger=$repo/artifacts/agents/missions/alpha/ledger.md
-"$root/scripts/agents/mission-ledger.py" init --file "$ledger" --cycle-budget 2 --no-gain-budget 2
+"$root/bin/metasystem" mission-ledger init --file "$ledger" --cycle-budget 2 --no-gain-budget 2
 current_sha=$(git -C "$repo" rev-parse HEAD)
-"$root/scripts/agents/mission-ledger.py" append --file "$ledger" --cycle 1 --classification no-progress --candidate-sha "$current_sha" --observed score=1
-"$root/scripts/agents/mission-ledger.py" append --file "$ledger" --cycle 2 --classification unresolved --candidate-sha "$current_sha" --observed score=1
+"$root/bin/metasystem" mission-ledger append --file "$ledger" --cycle 1 --classification no-progress --candidate-sha "$current_sha" --observed score=1
+"$root/bin/metasystem" mission-ledger append --file "$ledger" --cycle 2 --classification unresolved --candidate-sha "$current_sha" --observed score=1
 expect_failure mission-stop-loss "stop-loss triggered" "$root/scripts/assert-stop-loss.sh" --file "$ledger"
 
 # State updates prove one reserved stream can park while another remains
 # active, and that parked-stop-loss cannot be self-assigned or self-unparked.
 state_ledger=$repo/artifacts/agents/missions/alpha/state-ledger.md
-"$root/scripts/agents/mission-ledger.py" init --file "$state_ledger" --cycle-budget 3 --no-gain-budget 2
+"$root/bin/metasystem" mission-ledger init --file "$state_ledger" --cycle-budget 3 --no-gain-budget 2
 state=$repo/artifacts/agents/missions/alpha/state.json
-"$root/scripts/agents/mission-state.py" init --state "$state" --contract "$contract" --ledger "$state_ledger" --branch main
+"$root/bin/metasystem" mission-state init --state "$state" --contract "$contract" --ledger "$state_ledger" --branch main
 state_hash=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["integrity"]["hash"])' "$state")
 proposal=$fixture_root/state-proposal.json
 python3 - "$state" "$proposal" <<'PY'
@@ -328,8 +325,8 @@ value=json.loads(Path(sys.argv[1]).read_text()); value.pop("integrity")
 value["streams"]["primary"].update({"state":"parked-reserved","reason":"reserved-decision","answeredAsk":None})
 Path(sys.argv[2]).write_text(json.dumps(value) + "\n")
 PY
-"$root/scripts/agents/mission-state.py" write --state "$state" --source "$proposal" --expect "$state_hash"
-"$root/scripts/agents/mission-state.py" verify --state "$state" >/dev/null
+"$root/bin/metasystem" mission-state write --state "$state" --source "$proposal" --expect "$state_hash"
+"$root/bin/metasystem" mission-state verify --state "$state" >/dev/null
 python3 - "$state" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1]))
@@ -347,7 +344,7 @@ value["streams"]["secondary"].update({"state":"parked-stop-loss","reason":"stop-
 Path(sys.argv[2]).write_text(json.dumps(value) + "\n")
 PY
 state_hash=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["integrity"]["hash"])' "$state")
-expect_failure self-park-stop-loss "reserved for a human answer" "$root/scripts/agents/mission-state.py" write --state "$state" --source "$stoploss_proposal" --expect "$state_hash"
+expect_failure self-park-stop-loss "reserved for a human answer" "$root/bin/metasystem" mission-state write --state "$state" --source "$stoploss_proposal" --expect "$state_hash"
 
 forked=$fixture_root/forked-state.json
 cp "$state" "$forked"
@@ -358,9 +355,9 @@ path=Path(sys.argv[1]); value=json.loads(path.read_text())
 value["integrity"]["history"][-1]["previousHash"]="f"*64
 path.write_text(json.dumps(value) + "\n")
 PY
-expect_failure state-chain-fork "fork" "$root/scripts/agents/mission-state.py" verify --state "$forked"
+expect_failure state-chain-fork "fork" "$root/bin/metasystem" mission-state verify --state "$forked"
 set +e
-"$root/scripts/agents/mission-state.py" reconcile --state "$forked" --repo "$repo" --ledger "$state_ledger"
+"$root/bin/metasystem" mission-state reconcile --state "$forked" --repo "$repo" --ledger "$state_ledger"
 fork_reconcile_status=$?
 set -e
 [[ $fork_reconcile_status -eq 3 ]] || { echo "forked state reconciliation did not park with exit 3" >&2; exit 1; }
@@ -371,22 +368,22 @@ path=Path(sys.argv[1]); value=json.loads(path.read_text())
 assert value["status"] == "parked" and value["parkReason"] == "state-integrity"
 assert value["integrity"]["recoveryOf"] and list(path.parent.glob("state.corrupt.*.json"))
 PY
-"$root/scripts/agents/mission-state.py" verify --state "$forked" >/dev/null
+"$root/bin/metasystem" mission-state verify --state "$forked" >/dev/null
 
 anchor_state=$repo/artifacts/agents/missions/alpha/anchor-state.json
 anchor_ledger=$repo/artifacts/agents/missions/alpha/anchor-ledger.md
-"$root/scripts/agents/mission-ledger.py" init --file "$anchor_ledger" --cycle-budget 3 --no-gain-budget 2
-"$root/scripts/agents/mission-state.py" init --state "$anchor_state" --contract "$contract" --ledger "$anchor_ledger" --branch main
-"$root/scripts/agents/mission-state.py" anchor --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
-"$root/scripts/agents/mission-state.py" verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
-"$root/scripts/agents/mission-ledger.py" append --file "$anchor_ledger" --cycle 1 --classification unresolved --candidate-sha "$current_sha" --observed score=1
-"$root/scripts/agents/mission-state.py" reconcile --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger"
+"$root/bin/metasystem" mission-ledger init --file "$anchor_ledger" --cycle-budget 3 --no-gain-budget 2
+"$root/bin/metasystem" mission-state init --state "$anchor_state" --contract "$contract" --ledger "$anchor_ledger" --branch main
+"$root/bin/metasystem" mission-state anchor --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
+"$root/bin/metasystem" mission-state verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
+"$root/bin/metasystem" mission-ledger append --file "$anchor_ledger" --cycle 1 --classification unresolved --candidate-sha "$current_sha" --observed score=1
+"$root/bin/metasystem" mission-state reconcile --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger"
 python3 - "$anchor_state" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1])); assert value["ledger"]["cycles"] == 1 and value["fences"]["cycles"] == 1
 PY
-"$root/scripts/agents/mission-state.py" anchor --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
-"$root/scripts/agents/mission-state.py" verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
+"$root/bin/metasystem" mission-state anchor --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
+"$root/bin/metasystem" mission-state verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
 anchor_hash=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["integrity"]["hash"])' "$anchor_state")
 python3 - "$anchor_state" "$proposal" <<'PY'
 import json,sys
@@ -395,14 +392,14 @@ value=json.loads(Path(sys.argv[1]).read_text()); value.pop("integrity")
 value["streams"]["primary"].update({"state":"parked-reserved","reason":"reserved-decision","answeredAsk":None})
 Path(sys.argv[2]).write_text(json.dumps(value) + "\n")
 PY
-"$root/scripts/agents/mission-state.py" write --state "$anchor_state" --source "$proposal" --expect "$anchor_hash"
-expect_failure rewritten-anchor "anchor disagrees" "$root/scripts/agents/mission-state.py" verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger"
+"$root/bin/metasystem" mission-state write --state "$anchor_state" --source "$proposal" --expect "$anchor_hash"
+expect_failure rewritten-anchor "anchor disagrees" "$root/bin/metasystem" mission-state verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger"
 
 # The reaper uses this same locked refusal operation when a mission-stamped
 # job reaches its cap; prove the resulting ask as a world-state fact.
 mkdir -p "$repo/plans" "$repo/artifacts/agents/missions/timeout-ask"
 cp "$base" "$repo/plans/mission-timeout-ask.contract.md"
-"$root/scripts/agents/mission-fence.py" refuse --repo "$repo" --mission timeout-ask --reason job-cap-min >/dev/null
+"$root/bin/metasystem" mission-fence refuse --repo "$repo" --mission timeout-ask --reason job-cap-min >/dev/null
 timeout_ask=$repo/artifacts/agents/missions/timeout-ask/asks/fence-bound.json
 [[ -f "$timeout_ask" ]] || { echo "mission timeout refusal did not write its ask" >&2; exit 1; }
 grep -Fq '`job-cap-min`' "$timeout_ask" || { echo "mission timeout ask omitted its reached fence" >&2; exit 1; }
@@ -437,13 +434,13 @@ fences_path.write_text(json.dumps({
 PY
 (
   set +e
-  "$root/scripts/agents/mission-fence.py" reserve-job --repo "$repo" --mission race --job race-a --cap-min "$minimum_cap_min" >"$fixture_root/race-a.out" 2>&1
+  "$root/bin/metasystem" mission-fence reserve-job --repo "$repo" --mission race --job race-a --cap-min "$minimum_cap_min" >"$fixture_root/race-a.out" 2>&1
   printf '%s\n' "$?" >"$fixture_root/race-a.status"
 ) &
 race_a_pid=$!
 (
   set +e
-  "$root/scripts/agents/mission-fence.py" reserve-job --repo "$repo" --mission race --job race-b --cap-min "$minimum_cap_min" >"$fixture_root/race-b.out" 2>&1
+  "$root/bin/metasystem" mission-fence reserve-job --repo "$repo" --mission race --job race-b --cap-min "$minimum_cap_min" >"$fixture_root/race-b.out" 2>&1
   printf '%s\n' "$?" >"$fixture_root/race-b.status"
 ) &
 race_b_pid=$!
@@ -495,9 +492,9 @@ PY
 # it, which also claims the checkout, so the runner it starts authenticates
 # through an announced ancestor instead of classifying as a delegate of
 # whichever agent happens to be running the suite.
-"$repo/scripts/agents/worktree-lease.py" --root "$repo" announce \
+"$root/bin/metasystem" lease announce --root "$repo" \
   --session mission-fixtures --pid $$ \
-  --start "$("$repo/scripts/agents/process-census.py" started-at --pid $$)" \
+  --start "$("$root/bin/metasystem" identity started-at --pid $$)" \
   --tag fixture-mission-main --runtime fake >/dev/null
 
 make_end_state_contract() { # mission, fake-host behavior

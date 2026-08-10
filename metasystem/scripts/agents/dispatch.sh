@@ -63,9 +63,7 @@ reap_verdict_events() { # job, verdict, reason, cas_rc, cas_out
 # unfinished-handshake job process-lost. See the handshake branch in reap_one_locked.
 handshake_backstop_grace_sec=2
 arm_supervision="$root/scripts/agents/arm-supervision.sh"
-mission_fence="$root/scripts/agents/mission-fence.py"
-canonical_model_helper="$root/scripts/agents/canonical-model.py"
-lease_helper="$root/scripts/agents/worktree-lease.py"
+mission_fence() { "$ms" mission-fence "$@"; }
 entry_caller_pid=$$
 current_claim_epoch=
 current_main_id=
@@ -147,7 +145,7 @@ record_setup() { # job, complete source json
 
 lease_entry_check() {
   local result
-  result=$("$lease_helper" --root "$root" require-holder --caller-pid "$entry_caller_pid") \
+  result=$("$ms" lease require-holder --root "$root" --caller-pid "$entry_caller_pid") \
     || exit $?
   current_claim_epoch=$("$ms" json get --value "$result" --field claimEpoch --default "")
   current_main_id=$("$ms" json get --value "$result" --field mainId --default "")
@@ -158,22 +156,22 @@ lease_run_held() { # expected epoch (empty for human), command...
   local expected=$1
   shift
   if [[ -n "$expected" ]]; then
-    "$lease_helper" --root "$root" run-held --caller-pid "$entry_caller_pid" \
+    "$ms" lease run-held --root "$root" --caller-pid "$entry_caller_pid" \
       --expected-epoch "$expected" -- "$@"
   else
-    "$lease_helper" --root "$root" run-held --caller-pid "$entry_caller_pid" -- "$@"
+    "$ms" lease run-held --root "$root" --caller-pid "$entry_caller_pid" -- "$@"
   fi
 }
 
 internal_authority() { # holder-only|record-writer|adapter-writer|supervision-only, optional job id
   local mode=$1 job=${2:-} result
-  result=$("$lease_helper" --root "$root" classify --caller-pid "$entry_caller_pid") \
+  result=$("$ms" lease classify --root "$root" --caller-pid "$entry_caller_pid") \
     || die 1 "control-plane write refused: caller classification failed"
   if [[ -n "$job" ]]; then
-    "$root/scripts/agents/control-plane-authority.py" \
+    "$ms" authority check \
       --mode "$mode" --classification "$result" --job "$job"
   else
-    "$root/scripts/agents/control-plane-authority.py" \
+    "$ms" authority check \
       --mode "$mode" --classification "$result"
   fi
 }
@@ -349,7 +347,7 @@ release_cap_authority_lock() {
 
 config_get() { "$config" get "$@"; }
 
-canonical_model() { "$canonical_model_helper" "$1"; }
+canonical_model() { "$ms" config canonical-model "$1"; }
 
 config_key_origin() { # exact resolved key; prints env, conf-local, conf, or default
   local key=$1 env_name path origin rc
@@ -548,7 +546,7 @@ select_snapshot() { # runtime, role, requested envelope, output json
   identity=$($adapter config-identity) || die 1 "could not read $runtime adapter configuration identity"
   max_age=$(config_get --key capability.snapshot-max-age-days --default 30)
   [[ "$max_age" =~ ^[0-9]+$ ]] || die 1 "capability.snapshot-max-age-days must be a non-negative integer"
-  "$root/scripts/agents/select-capability-snapshot.py" \
+  "$ms" capability select \
     --root "$root" --runtime "$runtime" --role "$role" --identity "$identity" \
     --max-age "$max_age" --envelope "$envelope" --output "$output"
 }
@@ -685,7 +683,7 @@ aggregate_mission_usage() { # job record
   local record=$1 mission
   mission=$(json_field "$record" mission 2>/dev/null || true)
   [[ -n "$mission" && "$mission" != null ]] || return 0
-  "$mission_fence" aggregate-usage --repo "$root" --mission "$mission"
+  mission_fence aggregate-usage --repo "$root" --mission "$mission"
 }
 
 mirror_fail() { # job, reason — durable trace beside the jobs it failed for
@@ -833,7 +831,7 @@ reap_one_locked() { # job
       truncated_by=$(json_field "$record" capResolution.truncatedBy 2>/dev/null || true)
       refusal_reason=job-cap-min
       [[ "$truncated_by" == wall-clock ]] && refusal_reason=wall-clock-hours
-      "$mission_fence" refuse --repo "$root" --mission "$mission" --reason "$refusal_reason" >/dev/null || true
+      mission_fence refuse --repo "$root" --mission "$mission" --reason "$refusal_reason" >/dev/null || true
       aggregate_mission_usage "$record" || true
     fi
     mirror_record "$job" || true
@@ -987,7 +985,7 @@ dispatch_job() {
     refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key"
     cap_args=(authorize-cap --repo "$root" --mission "$mission" --job "$job" --runtime "$runtime" --model "$model_key")
     [[ -z "$cap_override" ]] || cap_args+=(--requested "$cap_override")
-    if ! cap_result=$("$mission_fence" "${cap_args[@]}" 2>&1); then
+    if ! cap_result=$(mission_fence "${cap_args[@]}" 2>&1); then
       die 1 "mission dispatch refused by the mission fence: $cap_result"
     fi
     printf '%s\n' "$cap_result" >"$cap_resolution"
@@ -1169,7 +1167,7 @@ follow_up() {
   [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
   if [[ -n "$mission" ]]; then
     refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key"
-    if ! cap_result=$("$mission_fence" authorize-cap --repo "$root" --mission "$mission" \
+    if ! cap_result=$(mission_fence authorize-cap --repo "$root" --mission "$mission" \
         --job "$child" --runtime "$runtime" --model "$model_key" 2>&1); then
       die 1 "mission follow-up refused by the mission fence: $cap_result"
     fi
@@ -1410,6 +1408,11 @@ internal_critique_exhaustion() {
 internal_reap_held() {
   internal_authority holder-only
   lease_reentry=1
+  # The native owner lock refuses an empty instance tag (the retired python
+  # accepted one, which silently disabled holder-liveness discrimination).
+  # This internal entry has no __lock-owner re-exec, so default to the verb
+  # name — a token genuinely present in this process's command line.
+  process_instance_tag=${process_instance_tag:-__reap-held}
   reap_jobs "$@"
 }
 

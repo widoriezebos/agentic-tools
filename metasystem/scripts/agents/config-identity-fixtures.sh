@@ -2,8 +2,10 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-helper="$root/scripts/agents/config-identity.py"
-selector="$root/scripts/agents/select-capability-snapshot.py"
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+[[ -x "$ms" ]] || { echo "config identity fixtures: binary absent; run the go gate first" >&2; exit 1; }
+helper() { "$ms" config identity "$@"; }
+selector() { "$ms" capability select "$@"; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-config-identity.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
@@ -22,7 +24,7 @@ hide_rate_limit_model_nudge = false
 TOML
 
 identity_before=$(
-  "$helper" --runtime codex --version 0.146.0 \
+  helper --runtime codex --version 0.146.0 \
     --filter "$root/scripts/agents/adapters/codex-config-filter.v1.json" "$config"
 )
 cat >"$config" <<'TOML'
@@ -38,7 +40,7 @@ hide_rate_limit_model_nudge = true
 "gpt-5.6-sol" = 2
 TOML
 identity_bookkeeping=$(
-  "$helper" --runtime codex --version 0.146.0 \
+  helper --runtime codex --version 0.146.0 \
     --filter "$root/scripts/agents/adapters/codex-config-filter.v1.json" "$config"
 )
 
@@ -52,7 +54,7 @@ PY
 
 sed 's/gpt-5.6-sol/gpt-5.6-terra/' "$config" >"$tmp/config-changed.toml"
 identity_changed=$(
-  "$helper" --runtime codex --version 0.146.0 \
+  helper --runtime codex --version 0.146.0 \
     --filter "$root/scripts/agents/adapters/codex-config-filter.v1.json" "$tmp/config-changed.toml"
 )
 python3 - "$identity_before" "$identity_changed" <<'PY'
@@ -71,8 +73,8 @@ cat >"$full_filter" <<'JSON'
 JSON
 printf '%s\n' '{"nested":{"beta":2,"alpha":1},"model":"same"}' >"$tmp/a.json"
 printf '%s\n' '{' '  "model": "same",' '  "nested": {"alpha": 1, "beta": 2}' '}' >"$tmp/b.json"
-canonical_a=$("$helper" --runtime fixture --version 1.0.0 --filter "$full_filter" "$tmp/a.json")
-canonical_b=$("$helper" --runtime fixture --version 1.0.0 --filter "$full_filter" "$tmp/b.json")
+canonical_a=$(helper --runtime fixture --version 1.0.0 --filter "$full_filter" "$tmp/a.json")
+canonical_b=$(helper --runtime fixture --version 1.0.0 --filter "$full_filter" "$tmp/b.json")
 python3 - "$canonical_a" "$canonical_b" <<'PY'
 import json, sys
 left, right = map(json.loads, sys.argv[1:])
@@ -85,15 +87,15 @@ PY
 # canonical map. Their result must equal the valid empty-filter identity.
 printf '{not-json\n' >"$tmp/malformed-filter.json"
 malformed=$(
-  "$helper" --runtime fixture --version 1.0.0 --filter "$tmp/malformed-filter.json" \
+  helper --runtime fixture --version 1.0.0 --filter "$tmp/malformed-filter.json" \
     "$tmp/a.json" 2>"$tmp/malformed.err"
 )
 out_of_range=$(
-  "$helper" --runtime codex --version 0.147.0 \
+  helper --runtime codex --version 0.147.0 \
     --filter "$root/scripts/agents/adapters/codex-config-filter.v1.json" \
     "$tmp/a.json" 2>"$tmp/out-of-range.err"
 )
-full=$("$helper" --runtime fixture --version 1.0.0 --filter "$full_filter" "$tmp/a.json")
+full=$(helper --runtime fixture --version 1.0.0 --filter "$full_filter" "$tmp/a.json")
 grep -Fq 'hashing all canonical configuration keys' "$tmp/malformed.err"
 grep -Fq 'outside filter range' "$tmp/out-of-range.err"
 python3 - "$malformed" "$out_of_range" "$full" <<'PY'
@@ -134,7 +136,7 @@ value = {
 }
 path.write_text(json.dumps(value) + "\n", encoding="utf-8")
 PY
-if "$selector" --root "$fixture_root" --runtime codex --role implementer \
+if selector --root "$fixture_root" --runtime codex --role implementer \
   --identity "$identity_changed" --max-age 30 --envelope "$tmp/envelope.json" \
   --output "$tmp/selected.json" 2>"$tmp/refusal.err"; then
   echo "configuration identity fixture: changed model unexpectedly selected an old snapshot" >&2

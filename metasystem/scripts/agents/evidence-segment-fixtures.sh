@@ -13,10 +13,10 @@ mirror_checkout() { # checkout directory
     "$fixture_root/artifacts/agents/jobs" "$fixture_root/artifacts/agents/segment-chain/rounds/1"
   git -C "$checkout" init -q
   cp "$source_root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/dispatch.sh"
-  cp "$source_root/scripts/agents/worktree-lease.py" "$fixture_root/scripts/agents/worktree-lease.py"
-  cp "$source_root/scripts/agents/process-census.py" "$fixture_root/scripts/agents/process-census.py"
-  cp "$source_root/scripts/agents/control-plane-authority.py" \
-    "$fixture_root/scripts/agents/control-plane-authority.py"
+  # The copied dispatcher resolves its engine as <fixture>/bin/metasystem;
+  # the retired .py helpers live inside that one binary now.
+  mkdir -p "$fixture_root/bin"
+  cp "$source_root/bin/metasystem" "$fixture_root/bin/metasystem"
   cp "$source_root/scripts/metasystem-config.sh" "$fixture_root/scripts/metasystem-config.sh"
   printf 'evidence.root=%s\n' "$evidence" >"$fixture_root/metasystem.conf"
   cat >"$fixture_root/artifacts/agents/jobs/segment-chain.json" <<'JSON'
@@ -60,8 +60,8 @@ mkdir -p "$legacy_root/scripts/agents" "$legacy_root/scripts" \
   "$legacy_root/artifacts/agents/jobs" "$legacy_root/artifacts/agents/legacy-chain" \
   "$evidence/agents/legacy-chain"
 cp "$source_root/scripts/agents/evidence-gc.sh" "$legacy_root/scripts/agents/evidence-gc.sh"
-cp "$source_root/scripts/agents/worktree-lease.py" "$legacy_root/scripts/agents/worktree-lease.py"
-cp "$source_root/scripts/agents/process-census.py" "$legacy_root/scripts/agents/process-census.py"
+mkdir -p "$legacy_root/bin"
+cp "$source_root/bin/metasystem" "$legacy_root/bin/metasystem"
 cp "$source_root/scripts/metasystem-config.sh" "$legacy_root/scripts/metasystem-config.sh"
 printf 'evidence.root=%s\n' "$evidence" >"$legacy_root/metasystem.conf"
 cat >"$legacy_root/artifacts/agents/jobs/legacy-chain.json" <<JSON

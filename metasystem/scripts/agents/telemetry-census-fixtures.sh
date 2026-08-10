@@ -93,39 +93,27 @@ run_model_case one-key actual-model '{"actual-model": {}}'
 run_model_case zero-keys unobserved '{}'
 run_model_case two-keys multi-model:a-model,z-model '{"z-model": {}, "a-model": {}}'
 
-python3 - "$root/scripts/agents/process-census.py" "$tmp" <<'PY'
-import importlib.util
-import json
-import sys
-from pathlib import Path
-
-source, output_dir = Path(sys.argv[1]), Path(sys.argv[2])
-spec = importlib.util.spec_from_file_location("process_census_fixture", source)
-module = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
-
-module.verify_supervision_snapshot = lambda identities, errors: None
-module.configured_signatures = lambda: {}
-module.enumerate_processes = lambda repo: []
-module.live_custody = lambda: []
-module.announcements = lambda fixture_by_pid, errors: []
-
-success_path = output_dir / "success-census.json"
-module.read_supervision_snapshot = lambda: ({}, 7, "a" * 64)
-module.run_census(output_dir, "fixture-fingerprint", 10, success_path)
-success = json.loads(success_path.read_text(encoding="utf-8"))
-assert success["schemaVersion"] == 2
-assert success["verdict"] == "SUCCESS"
-assert success["generation"] == 7
-assert success["stateDigest"] == "a" * 64
-
-failure_path = output_dir / "failure-census.json"
-def failed_snapshot():
-    raise module.CensusError("fixture failure")
-module.read_supervision_snapshot = failed_snapshot
-module.run_census(output_dir, "fixture-fingerprint", 10, failure_path)
-failure = json.loads(failure_path.read_text(encoding="utf-8"))
+# The census verdict schema, at the CLI boundary. The old leg imported
+# process-census.py and monkeypatched its internals; that module is gone and
+# the schema itself is owned by internal/census and internal/supervise unit
+# tests under the go gate. What stays here is the black-box contract: a
+# checkout whose supervision state is unavailable still publishes a
+# well-formed schema-2 CENSUS-FAILED verdict with a null generation and
+# stateDigest. (The SUCCESS shape is proven end to end by the armed
+# supervision fixtures, whose census freshness gate reads it.)
+census_checkout="$tmp/census-checkout"
+mkdir -p "$census_checkout/scripts/agents/adapters"
+printf 'metasystem.runtimes=fake\n' >"$census_checkout/metasystem.conf"
+printf '#!/usr/bin/env bash\ncase "$1" in signature) echo "match metasystem-fake-runtime-marker" ;; esac\n' \
+  >"$census_checkout/scripts/agents/adapters/fake.sh"
+chmod +x "$census_checkout/scripts/agents/adapters/fake.sh"
+printf '[]\n' >"$census_checkout/processes.json"
+METASYSTEM_CENSUS_PROCESS_FILE="$census_checkout/processes.json" \
+  "$root/bin/metasystem" census run --root "$census_checkout" --repo "$census_checkout" \
+  --fingerprint fixture-fingerprint --interval 10 --output "$tmp/failure-census.json"
+python3 - "$tmp/failure-census.json" <<'PY'
+import json, sys
+failure = json.load(open(sys.argv[1]))
 assert failure["schemaVersion"] == 2
 assert failure["verdict"] == "CENSUS-FAILED"
 assert "generation" in failure and failure["generation"] is None

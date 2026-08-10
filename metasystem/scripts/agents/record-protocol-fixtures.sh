@@ -10,10 +10,11 @@ mkdir -p "$fixture_root/scripts/agents" "$fixture_root/artifacts/agents/jobs" \
   "$fixture_root/artifacts/agents/record-locks"
 git -C "$repository" init -q
 cp "$source_root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/dispatch.sh"
-cp "$source_root/scripts/agents/worktree-lease.py" "$fixture_root/scripts/agents/worktree-lease.py"
-cp "$source_root/scripts/agents/process-census.py" "$fixture_root/scripts/agents/process-census.py"
-cp "$source_root/scripts/agents/control-plane-authority.py" \
-  "$fixture_root/scripts/agents/control-plane-authority.py"
+# The copied dispatcher resolves its engine as <fixture>/bin/metasystem; the
+# lease, identity, and authority helpers it used to need as .py files live
+# inside that one binary now.
+mkdir -p "$fixture_root/bin"
+cp "$source_root/bin/metasystem" "$fixture_root/bin/metasystem"
 dispatch="$fixture_root/scripts/agents/dispatch.sh"
 
 # Dispatch setup persists the epoch-tagged pending-setup identity first. The

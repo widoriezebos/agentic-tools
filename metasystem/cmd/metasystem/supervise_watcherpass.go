@@ -26,8 +26,12 @@ func runSuperviseWatcherPass(args []string) int {
 	heartbeat := flags.String("heartbeat", "", "watcher heartbeat file")
 	tag := flags.String("tag", "", "watcher instance tag")
 	interval := flags.Int("interval", 60, "observation interval seconds")
+	capMin := flags.Int("cap-min", 0, "loaded watcher cap ceiling for the heartbeat attestation (defaults to the interval when unset)")
 	if flags.Parse(args) != nil {
 		return 2
+	}
+	if *capMin < 1 {
+		*capMin = *interval
 	}
 	if *root == "" || *supervisionDir == "" || *heartbeat == "" || *tag == "" {
 		fmt.Fprintln(os.Stderr, "supervise watcher-pass: --root, --supervision-dir, --heartbeat, and --tag are required")
@@ -49,7 +53,7 @@ func runSuperviseWatcherPass(args []string) int {
 	}
 	defer lock.Release()
 
-	_ = supervise.WriteHeartbeat(*heartbeat, "watcher", self, *tag, *interval)
+	_ = supervise.WriteHeartbeat(*heartbeat, "watcher", self, *tag, *interval, *capMin)
 
 	intervalMS := *interval * 1000
 	if override := os.Getenv("METASYSTEM_CENSUS_INTERVAL_MS"); override != "" {
@@ -86,6 +90,6 @@ func runSuperviseWatcherPass(args []string) int {
 		fmt.Fprintln(os.Stderr, "supervise watcher-pass:", err)
 		return 1
 	}
-	_ = supervise.WriteHeartbeat(*heartbeat, "watcher", self, *tag, *interval)
+	_ = supervise.WriteHeartbeat(*heartbeat, "watcher", self, *tag, *interval, *capMin)
 	return 0
 }

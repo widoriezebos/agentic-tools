@@ -2,7 +2,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-helper="$root/scripts/agents/second-session-isolation.py"
+ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+[[ -x "$ms" ]] || { echo "second-session fixtures: binary absent; run the go gate first" >&2; exit 1; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-second-session.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 source_checkout="$tmp/source"
@@ -30,7 +31,7 @@ assert Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() == [
     ".devin/hooks.v1.json",
 ]
 PY
-new_harness=$("$helper" --source-root "$source_checkout" \
+new_harness=$("$ms" validate session-isolation --source-root "$source_checkout" \
   --destination-root "$isolated_checkout" --manifest "$manifest" \
   --harness-root "$source_checkout/metasystem")
 [[ "$new_harness" == "$(cd "$isolated_checkout/metasystem" && pwd -P)" ]]
@@ -43,7 +44,7 @@ cmp "$source_checkout/.devin/hooks.v1.json" "$isolated_checkout/.devin/hooks.v1.
 unsafe_checkout="$tmp/unsafe"
 mkdir -p "$unsafe_checkout/metasystem" "$unsafe_checkout/.codex"
 ln -s "$source_checkout/.codex/config.toml" "$unsafe_checkout/.codex/config.toml"
-if "$helper" --source-root "$source_checkout" --destination-root "$unsafe_checkout" \
+if "$ms" validate session-isolation --source-root "$source_checkout" --destination-root "$unsafe_checkout" \
   --manifest "$manifest" --harness-root "$source_checkout/metasystem" \
   >"$tmp/unsafe.out" 2>"$tmp/unsafe.err"; then
   echo "second-session fixture: audit accepted a local-config link into the primary checkout" >&2
@@ -61,29 +62,32 @@ bootstrap_harness="$bootstrap_source/metasystem"
 mkdir -p "$bootstrap_harness/scripts/agents/adapters"
 cp "$root/scripts/agents/second-session.sh" \
   "$bootstrap_harness/scripts/agents/second-session.sh"
-cp "$root/scripts/agents/second-session-isolation.py" \
-  "$bootstrap_harness/scripts/agents/second-session-isolation.py"
+# The paved script resolves its engine as <harness>/bin/metasystem. The stub
+# keeps process visibility deterministic (a fixed start time) and hands every
+# other verb to the real engine, replacing the retired process-census.py stub.
+mkdir -p "$bootstrap_harness/bin"
+cat >"$bootstrap_harness/bin/metasystem" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-} \${2:-}" == "identity started-at" ]]; then
+  printf '1786104000\n'
+  exit 0
+fi
+exec "$ms" "\$@"
+SH
 cat >"$bootstrap_harness/scripts/agents/adapters/fake.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ ${1:-} == local-config-paths ]] || exit 2
 SH
-cat >"$bootstrap_harness/scripts/agents/process-census.py" <<'PY'
-#!/usr/bin/env python3
-import sys
-assert sys.argv[1:3] == ["started-at", "--pid"]
-assert int(sys.argv[3]) > 0
-print(1786104000)
-PY
 cat >"$bootstrap_harness/scripts/agents/arm-supervision.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" >"$METASYSTEM_SECOND_SESSION_ARM_LOG"
 SH
 chmod +x "$bootstrap_harness/scripts/agents/second-session.sh" \
-  "$bootstrap_harness/scripts/agents/second-session-isolation.py" \
   "$bootstrap_harness/scripts/agents/adapters/fake.sh" \
-  "$bootstrap_harness/scripts/agents/process-census.py" \
+  "$bootstrap_harness/bin/metasystem" \
   "$bootstrap_harness/scripts/agents/arm-supervision.sh"
 git -C "$bootstrap_source" init -q
 git -C "$bootstrap_source" add metasystem

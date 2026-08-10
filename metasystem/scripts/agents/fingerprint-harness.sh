@@ -127,6 +127,10 @@ printf '\nmodel.tier.1=fake:fake-model\n' >>"$repo/metasystem.conf"
 git -C "$repo" init -q
 git -C "$repo" add .
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
+# Production resolves its engine as <repo>/bin/metasystem — an untracked
+# build artifact that adoption ships. Stage the real engine the same way.
+mkdir -p "$repo/bin"
+cp "$ms" "$repo/bin/metasystem"
 
 process_fixture=$tmp/processes.json
 identity_fixture=$tmp/process-identities.json

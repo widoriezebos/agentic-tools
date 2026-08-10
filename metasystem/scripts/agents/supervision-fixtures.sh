@@ -13,12 +13,15 @@ tmp=$(mktemp -d)
 owned_pids=()
 fixture_harness_roots=()
 
+ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
+[[ -x "$ms" ]] || { echo "supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
+
 process_started_at() {
-  "$source_root/scripts/agents/process-census.py" started-at --pid "$1"
+  "$ms" identity started-at --pid "$1"
 }
 
 process_identity_alive() { # pid, start
-  "$source_root/scripts/agents/process-census.py" alive --pid "$1" --start-time "$2" >/dev/null 2>&1
+  "$ms" census alive --pid "$1" --start-time "$2" >/dev/null 2>&1
 }
 
 wait_until() { # name, shell predicate...
@@ -110,6 +113,10 @@ make_repo() { # destination
   git -C "$repo" init -q
   git -C "$repo" add .
   git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
+  # Stage the engine the way production ships it: an untracked build artifact
+  # at <repo>/bin/metasystem, added after the base commit.
+  mkdir -p "$repo/bin"
+  cp "$ms" "$repo/bin/metasystem"
 }
 
 json_field() { # file, dotted field
@@ -174,7 +181,7 @@ git -C "$operator_scope" add metasystem
 git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
 fixture_harness_roots+=("$operator_harness")
 operator_arm=$operator_harness/scripts/agents/arm-supervision.sh
-operator_census=$operator_harness/scripts/agents/process-census.py
+operator_engine=$operator_harness/bin/metasystem
 
 # A plain shell with no matching ancestor must refuse, but the refusal tells an
 # operator both supported ways forward. Restricting discovery to the fake
@@ -213,7 +220,7 @@ if [[ -n "${METASYSTEM_SUPERVISION_OPERATOR_FIXTURE_FAKE:-}" ]] \
   operator_env=(env METASYSTEM_CENSUS_PROCESS_FILE="$operator_process_fixture"
     METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$operator_identity_fixture")
 fi
-operator_start=$("${operator_env[@]}" "$operator_census" started-at --pid "$$")
+operator_start=$("${operator_env[@]}" "$operator_engine" identity started-at --pid "$$")
 (
   cd "$operator_harness"
   "${operator_env[@]}" \
@@ -221,7 +228,7 @@ operator_start=$("${operator_env[@]}" "$operator_census" started-at --pid "$$")
       --start-time "$operator_start" --tag operator-path
 ) >"$tmp/operator-arm.out" 2>&1 &
 operator_driver=$!
-operator_driver_start=$("${operator_env[@]}" "$operator_census" started-at --pid "$operator_driver")
+operator_driver_start=$("${operator_env[@]}" "$operator_engine" identity started-at --pid "$operator_driver")
 owned_pids+=("$operator_driver:$operator_driver_start")
 wait_for_child_exit "nested ordinary operator arming" "$operator_driver"
 grep -Eq "(^|[[:space:]])ARMED repo=$operator_scope([[:space:]]|$)" "$tmp/operator-arm.out" \
@@ -272,61 +279,46 @@ release_checkout() { # repo
 # the checkout as a side effect, which is what a starting main does.
 become_main() { # repo, session
   local repo=$1 session=$2
-  "$repo/scripts/agents/worktree-lease.py" --root "$repo" announce \
+  "$repo/bin/metasystem" lease announce --root "$repo" \
     --session "$session" --pid $$ --start "$(process_started_at $$)" \
     --tag "fixture-$session" --runtime fake >/dev/null
 }
 watcher="$repo/scripts/watch-background-jobs.sh"
-census="$repo/scripts/agents/process-census.py"
+census_engine="$repo/bin/metasystem"
 process_fixture=$repo/process-fixture.json
 identity_fixture=$repo/process-identities.json
 printf '[]\n' >"$process_fixture"
 printf '{}\n' >"$identity_fixture"
 
 # Census cost must be proportional to agent-shaped processes, not to the host
-# process count. Feed one ps snapshot with 1,000 unrelated rows and two agent
-# rows, then count the cwd resolver calls made by the real census pipeline.
-python3 - "$census" "$repo" "$tmp/enumerate-filter-resolve.json" <<'PY'
-import importlib.util
-import os
-import subprocess
-import sys
-from pathlib import Path
-
-helper, repo, output = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-spec = importlib.util.spec_from_file_location("fixture_process_census", helper)
-module = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
-real_run = subprocess.run
+# process count. The retired python leg counted the module's cwd-resolver
+# calls under a stubbed ps; the engine enforces the same rule structurally
+# (internal/census/production.go resolves cwds only for MATCHED processes).
+# What stays observable from outside is the classification boundary: feed
+# 1,000 unrelated rows and two agent rows through the fixture enumeration
+# and the inventory must contain exactly the two agent processes.
+python3 - "$repo" "$tmp/enumerate-filter-resolve-procs.json" <<'PY'
+import json, sys
+repo, output = sys.argv[1], sys.argv[2]
 rows = [
-    f"{50000 + index} 1 {50000 + index} Mon Aug  4 12:34:56 2026 /usr/bin/non-agent-{index} --flag value"
+    {"pid": 50000 + index, "ppid": 1, "pgid": 50000 + index, "pidStartedAt": 100,
+     "argv": f"/usr/bin/non-agent-{index} --flag value", "cwd": repo, "cwdError": False, "alive": True}
     for index in range(1000)
 ]
-rows.extend([
-    "61001 1 61001 Mon Aug  4 12:34:56 2026 metasystem-fake-agent first",
-    "61002 1 61002 Mon Aug  4 12:34:56 2026 /tool/metasystem-fake-agent second",
-])
-ps_output = "\n".join(rows) + "\n"
-
-def fixture_run(command, *args, **kwargs):
-    if command[:2] == ["ps", "-axo"]:
-        return subprocess.CompletedProcess(command, 0, ps_output, "")
-    return real_run(command, *args, **kwargs)
-
-cwd_resolutions = []
-module.subprocess.run = fixture_run
-module.configured_signatures = lambda: {
-    "fake": ([r"(^|[[:space:]/-])metasystem-fake-agent([[:space:]]|$)"], [], "fixture\n")
-}
-module.resolve_cwd = lambda pid: (cwd_resolutions.append(pid) or (str(repo), False))
-module.live_custody = lambda: []
-module.announcements = lambda fixture_by_pid, errors: []
-os.environ.pop("METASYSTEM_CENSUS_PROCESS_FILE", None)
-module.run_census(repo, "ordering-fixture", 60, output)
-assert cwd_resolutions == [61001, 61002], cwd_resolutions
-value = __import__("json").loads(output.read_text())
-assert [item["pid"] for item in value["inventory"]] == [61001, 61002]
+rows.append({"pid": 61001, "ppid": 1, "pgid": 61001, "pidStartedAt": 100,
+             "argv": "metasystem-fake-agent first", "cwd": repo, "cwdError": False, "alive": True})
+rows.append({"pid": 61002, "ppid": 1, "pgid": 61002, "pidStartedAt": 100,
+             "argv": "/tool/metasystem-fake-agent second", "cwd": repo, "cwdError": False, "alive": True})
+json.dump(rows, open(output, "w"))
+PY
+METASYSTEM_CENSUS_PROCESS_FILE="$tmp/enumerate-filter-resolve-procs.json" \
+  "$census_engine" census run --root "$repo" --repo "$repo" \
+  --fingerprint ordering-fixture --interval 60 \
+  --output "$tmp/enumerate-filter-resolve.json" >/dev/null
+python3 - "$tmp/enumerate-filter-resolve.json" <<'PY'
+import json, sys
+value = json.load(open(sys.argv[1]))
+assert [item["pid"] for item in value["inventory"]] == [61001, 61002], value["inventory"]
 assert isinstance(value["durationMs"], int) and value["durationMs"] >= 0
 PY
 echo "enumerate-filter-resolve census fixture passed" >&2
@@ -355,7 +347,7 @@ for runtime in claude codex devin fake; do
   # its processes carry the fixture name, and a bare-word positive was exactly
   # the looseness that let commit-message prose in a tool shell match (KI-14).
   [[ "$runtime" == fake ]] && positive=metasystem-fake-agent
-  "$census" signature-check --adapter "$adapter" --positive "$positive" \
+  "$census_engine" census signature-check --adapter "$adapter" --positive "$positive" \
     --lookalike "metasystem-${runtime}-lookalike" >/dev/null
 done
 for failure in malformed invalid-ere adapter-failed exclude-tie; do
@@ -367,7 +359,7 @@ for failure in malformed invalid-ere adapter-failed exclude-tie; do
     exclude-tie) printf '#!/usr/bin/env bash\nprintf "match ^tie$\\nexclude ^tie$\\n"\n' >"$bad_adapter" ;;
   esac
   chmod +x "$bad_adapter"
-  if "$census" signature-check --adapter "$bad_adapter" --positive tie \
+  if "$census_engine" census signature-check --adapter "$bad_adapter" --positive tie \
       --lookalike lookalike >/dev/null 2>&1; then
     echo "S4-7: $failure signature adapter did not fail closed" >&2
     exit 1
@@ -542,6 +534,19 @@ tag="metasystem-job-owned"
 json.dump({"jobId":"owned","status":"running","runtime":"fake","workspaceRoot":repo,"pid":supervisor,"pidStartedAt":supervisor_start,"pgid":supervisor_pgid,"instanceTag":tag,"ownershipProof":{"pid":supervisor,"pidStartedAt":supervisor_start,"pgid":supervisor_pgid,"instanceTag":tag},"startedAt":"2099-01-01T00:00:00Z","capMin":int(cap_min),"custodyProcesses":[{"pid":int(child),"pidStartedAt":int(child_start)-1,"instanceTag":tag}]}, open(record, "w"))
 json.dump({"pid":supervisor,"instanceTag":tag},open(heartbeat,"w"))
 PY
+# The reaper proves the record's custodian (this shell) by pid+start+tag.
+# This shell's real command line does not carry the job tag, so the fixture
+# identity source supplies it — the same one-source override the census
+# uses; kernel death still vetoes it.
+python3 - "$identity_fixture" "$$" "$supervisor_start" <<'PY'
+import json, sys
+from pathlib import Path
+path, pid, started = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+value = json.loads(path.read_text())
+value[pid] = {"started": started, "pidStartedAt": started,
+              "command": "fixture-supervisor metasystem-job-owned"}
+path.write_text(json.dumps(value) + "\n")
+PY
 wait_until "three-class census" inventory_has "$last" ANNOUNCED "$announced_pid"
 inventory_has "$last" UNTRACKED "$raw_pid"
 inventory_has "$last" UNTRACKED "$custody_pid"
@@ -554,8 +559,15 @@ import json, sys
 v=json.load(open(sys.argv[1])); raise SystemExit(0 if any(str(x.get("pid"))==sys.argv[2] for x in v["inventory"]) else 1)
 PY
 then echo "peer repository process entered scope" >&2; exit 1; fi
-grep -q "UNRESOLVED-CWD.*pid=$unresolved_pid" "$repo/artifacts/agents/supervision/census.log" \
+# The engine surfaces the per-process unresolved cwd in the verdict's
+# diagnostics (the shell watcher's census.log transcript retired with it).
+python3 - "$last" "$unresolved_pid" <<'PY' \
   || { echo "S4-6: unresolved cwd was not surfaced per process" >&2; exit 1; }
+import json, sys
+value = json.load(open(sys.argv[1]))
+needle = f"UNRESOLVED-CWD pid={sys.argv[2]}"
+raise SystemExit(0 if any(needle in item for item in value.get("diagnostics", [])) else 1)
+PY
 
 # Correcting the child start alone must not gain custody while the third join
 # key is wrong; only the exact pid+start+tag triple may classify the real CLI
@@ -578,8 +590,10 @@ wait_until "S4-2 child custody exact join" inventory_has "$last" CUSTODY "$custo
 # process-table race that has already exited is a named exclusion (S4-6).
 printf '{broken\n' >"$process_fixture"
 wait_until "S4-6 enumeration failure" bash -c '[[ $(python3 -c '\''import json,sys; print(json.load(open(sys.argv[1]))["verdict"])'\'' "$1" 2>/dev/null) == CENSUS-FAILED ]]' _ "$last"
-wait_until "S4-6 enumeration surfaced" grep -q 'enumeration' \
-  "$repo/artifacts/agents/supervision/census.log" "$repo/artifacts/agents/supervision/census.log.1"
+# The engine surfaces the enumeration failure in the verdict's errors
+# (the shell watcher's census.log transcript retired with it).
+wait_until "S4-6 enumeration surfaced" bash -c \
+  '[[ -n $(python3 -c '\''import json,sys; print("".join(e for e in json.load(open(sys.argv[1])).get("errors",[]) if "enumeration" in e))'\'' "$1" 2>/dev/null) ]]' _ "$last"
 printf '[]\n' >"$process_fixture"
 wait_until "census recovery" bash -c '[[ $(python3 -c '\''import json,sys; print(json.load(open(sys.argv[1]))["verdict"])'\'' "$1") == SUCCESS ]]' _ "$last"
 
@@ -771,7 +785,10 @@ reaper_before_watcher_kill=$(json_field "$state" components.reaper.pid)
 stop_owned_pid "S4-4 watcher" "$watcher_pid" "$watcher_start"
 wait_until "S4-4 watcher recovery" component_replaced watcher "$watcher_pid"
 wait_until "S4-4 watcher recovery replaces set" component_replaced reaper "$reaper_before_watcher_kill"
-grep -q 'STALE-SUPERVISOR component=watcher' "$repo/artifacts/agents/supervision/supervisor.log" \
+# The engine owner narrates the failing observation and the relaunch to
+# owner.ndjson (the shell owner's supervisor.log retired with it).
+grep -q '"observation":"failing"' "$repo/artifacts/agents/supervision/owner.ndjson" \
+  && grep -q '"relaunch"' "$repo/artifacts/agents/supervision/owner.ndjson" \
   || { echo "watcher death was not surfaced" >&2; exit 1; }
 reaper_pid=$(json_field "$state" components.reaper.pid)
 reaper_start=$(json_field "$state" components.reaper.pidStartedAt)
@@ -779,11 +796,13 @@ watcher_before_reaper_kill=$(json_field "$state" components.watcher.pid)
 stop_owned_pid "S4-4 reaper" "$reaper_pid" "$reaper_start"
 wait_until "S4-4 reaper recovery" component_replaced reaper "$reaper_pid"
 wait_until "S4-4 reaper recovery replaces set" component_replaced watcher "$watcher_before_reaper_kill"
-grep -q 'STALE-SUPERVISOR component=reaper' "$repo/artifacts/agents/supervision/supervisor.log" \
+# Surfaced the same way: a failing observation followed by a relaunch in the
+# owner's narration (three generations now exist, so at least two relaunches).
+[[ $(grep -c '"relaunch"' "$repo/artifacts/agents/supervision/owner.ndjson") -ge 2 ]] \
   || { echo "reaper death was not surfaced" >&2; exit 1; }
 
 stop_owned_pid "supervision owner for takeover" "$owner_before" "$owner_start"
-wait_until "proven-dead owner" bash -c '! "$1" alive --pid "$2" --start-time "$3" >/dev/null 2>&1' _ "$census" "$owner_before" "$owner_start"
+wait_until "proven-dead owner" bash -c '! "$1" census alive --pid "$2" --start-time "$3" >/dev/null 2>&1' _ "$census_engine" "$owner_before" "$owner_start"
 printf '[]\n' >"$process_fixture"
 release_checkout "$repo"
 "$arm" --repo "$repo" --session takeover --pid "$$" --start-time "$(process_started_at "$$")" --tag takeover-main >/dev/null
@@ -827,9 +846,10 @@ grep -q 'UNTRACKED' "$tmp/surface.out" || { echo "end-of-turn hook hid UNTRACKED
 # all — the hook must say something, and when nothing is left it must say so
 # in plain words.
 idle_repo=$tmp/idle-hook
-mkdir -p "$idle_repo/artifacts/agents/jobs" "$idle_repo/artifacts/agents/supervision" "$idle_repo/plans" "$idle_repo/scripts"
+mkdir -p "$idle_repo/artifacts/agents/jobs" "$idle_repo/artifacts/agents/supervision" "$idle_repo/plans" "$idle_repo/scripts" "$idle_repo/bin"
 cp -R "$source_root/scripts/agents" "$idle_repo/scripts/"
 cp "$source_root/metasystem.conf" "$idle_repo/"
+cp "$ms" "$idle_repo/bin/metasystem"
 # The hook refuses outside a git repository, correctly: it reports on a
 # repository's work. The sandbox must be one.
 git -C "$idle_repo" init -q
@@ -859,23 +879,23 @@ cat >"$open_work_root/plans/stream.md" <<'EOF'
 - Waiting on the human: nothing blocking
 - Next step: dispatch the runner
 EOF
-[[ "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" == "OPEN-WORK plans/stream.md: dispatch the runner" ]] \
+[[ "$("$ms" report open-work --repo "$open_work_root")" == "OPEN-WORK plans/stream.md: dispatch the runner" ]] \
   || { echo "open work with nothing in flight was not reported" >&2; exit 1; }
 printf '{"status":"running"}\n' >"$open_work_root/artifacts/agents/jobs/live.json"
-[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
+[[ -z "$("$ms" report open-work --repo "$open_work_root")" ]] \
   || { echo "open work was reported while a job was in flight" >&2; exit 1; }
 rm -f "$open_work_root/artifacts/agents/jobs/live.json"
 cat >"$open_work_root/plans/stream.md" <<'EOF'
 - Waiting on the human: D-9, which model tier to use
 - Next step: dispatch the runner
 EOF
-[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
+[[ -z "$("$ms" report open-work --repo "$open_work_root")" ]] \
   || { echo "a stream waiting on the human was reported as open work" >&2; exit 1; }
 cat >"$open_work_root/plans/stream.md" <<'EOF'
 - Waiting on the human: nothing blocking
 - Next step: none
 EOF
-[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
+[[ -z "$("$ms" report open-work --repo "$open_work_root")" ]] \
   || { echo "a settled next step was reported as open work" >&2; exit 1; }
 
 # A gate run is work in flight, and the reporter believes a gate marker only
@@ -892,11 +912,11 @@ EOF
 gate_probe_markers=$gate_probe_root/artifacts/agents/supervision/gate-runs
 (
   unset METASYSTEM_GATES_RUNNING
-  [[ -n "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$gate_probe_root")" ]] \
+  [[ -n "$("$ms" report open-work --repo "$gate_probe_root")" ]] \
     || { echo "open work went unreported with no gate marker at all" >&2; exit 1; }
-  "$source_root/scripts/agents/gate-run.py" register --root "$gate_probe_root" \
+  "$ms" gate register --root "$gate_probe_root" \
     --gate fixture-gate.sh --pid $$ >/dev/null
-  [[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$gate_probe_root")" ]] \
+  [[ -z "$("$ms" report open-work --repo "$gate_probe_root")" ]] \
     || { echo "a live gate run was not counted as work in flight" >&2; exit 1; }
   python3 - "$gate_probe_markers" <<'PY'
 import json, sys
@@ -908,7 +928,7 @@ for path in directory.glob("*.json"):
     (directory / "999999.json").write_text(json.dumps(value) + "\n")
     path.unlink()
 PY
-  [[ -n "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$gate_probe_root")" ]] \
+  [[ -n "$("$ms" report open-work --repo "$gate_probe_root")" ]] \
     || { echo "a gate marker whose process is dead still hid open work" >&2; exit 1; }
   [[ -z "$(ls -A "$gate_probe_markers")" ]] \
     || { echo "a gate marker whose process is dead was not pruned" >&2; exit 1; }
@@ -922,26 +942,52 @@ cat >"$open_work_root/plans/stream.md" <<'EOF'
 - Waiting on the human: nothing blocking
 - Next step: none
 EOF
-python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root" \
+"$ms" report open-work --repo "$open_work_root" \
   | grep -q 'STALE-PLAN plans/stream.md: claims work in flight while no job is running' \
   || { echo "a plan claiming absent work was not reported stale" >&2; exit 1; }
 printf '{"jobId":"design-critic-20260101t000000z-aaaa-r3","status":"running"}\n' \
   >"$open_work_root/artifacts/agents/jobs/live.json"
-[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root" | grep STALE-PLAN)" ]] \
+[[ -z "$("$ms" report open-work --repo "$open_work_root" | grep STALE-PLAN)" ]] \
   || { echo "a plan naming the chain root of a live round was called stale" >&2; exit 1; }
 cat >"$open_work_root/plans/other.md" <<'EOF'
 - In flight right now: nothing
 - Waiting on the human: nothing blocking
 - Next step: none
 EOF
-[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root" | grep 'STALE-PLAN plans/other.md')" ]] \
+[[ -z "$("$ms" report open-work --repo "$open_work_root" | grep 'STALE-PLAN plans/other.md')" ]] \
   || { echo "an idle stream was called stale because another stream had a job" >&2; exit 1; }
 rm -f "$open_work_root/plans/other.md" "$open_work_root/artifacts/agents/jobs/live.json"
 cp "$source_root/plans/README.md" "$open_work_root/plans/README.md"
 rm -f "$open_work_root/plans/stream.md"
-[[ -z "$(python3 "$source_root/scripts/agents/open-work.py" --repo "$open_work_root")" ]] \
+[[ -z "$("$ms" report open-work --repo "$open_work_root")" ]] \
   || { echo "the plans README was mistaken for a stream" >&2; exit 1; }
-wait_until "census log rotation" test -f "$repo/artifacts/agents/supervision/census.log.1"
+# The armed engine watcher publishes verdicts, not a census.log; the
+# transcript log and its byte-capped rotation belong to the shell job
+# watcher's --census mode, so rotation is proven there, in its own sandbox
+# (the armed repository's census-writer lock is held by the live watcher).
+rotation_repo=$tmp/rotation-repo
+make_repo "$rotation_repo"
+rotation_supervision=$rotation_repo/artifacts/agents/supervision
+mkdir -p "$rotation_supervision" "$rotation_repo/artifacts/agents/jobs"
+printf '[]\n' >"$rotation_repo/processes.json"
+touch "$rotation_supervision/jobs.state"
+# A healthy engine pass prints nothing, so the transcript only grows on
+# warnings; a 1ms interval budget makes every pass a CENSUS-SLOW warning,
+# which is exactly the content the transcript exists to keep.
+rotation_passes=0
+until [[ -f "$rotation_supervision/census.log.1" ]]; do
+  (( rotation_passes < 40 )) \
+    || { echo "census log rotation never happened after $rotation_passes passes" >&2; exit 1; }
+  METASYSTEM_CENSUS_PROCESS_FILE="$rotation_repo/processes.json" \
+  METASYSTEM_CENSUS_INTERVAL_MS=1 \
+    "$rotation_repo/scripts/watch-background-jobs.sh" \
+      --dir "$rotation_repo/artifacts/agents/jobs" --scope "$rotation_repo" \
+      --state "$rotation_supervision/jobs.state" --interval 1 --once --census \
+      --supervision-dir "$rotation_supervision" \
+      --heartbeat "$rotation_supervision/watcher.heartbeat.json" \
+      --instance-tag rotation-fixture >/dev/null 2>&1 || true
+  rotation_passes=$((rotation_passes + 1))
+done
 
 # The arming event log proves write-announcement precedes the first census and
 # therefore never labels the arming session UNTRACKED.
@@ -965,13 +1011,14 @@ mkdir -p "$foreign/repo"
 (cd "$foreign/repo" && git init -q .)
 mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
 cp "$source_root/scripts/agents/arm-supervision.sh" "$foreign/repo/metasystem/scripts/agents/"
-cp "$source_root/scripts/agents/process-census.py" "$foreign/repo/metasystem/scripts/agents/"
-# Shutting supervision down is a control-plane write, so arming needs the lease
-# helper here too; without it this sandbox refuses for the wrong reason and the
-# foreign-owner rule below is never actually exercised.
-cp "$source_root/scripts/agents/worktree-lease.py" "$foreign/repo/metasystem/scripts/agents/"
+# Shutting supervision down is a control-plane write, so the sandbox needs the
+# engine (census identity, lease classification); without it this sandbox
+# refuses for the wrong reason and the foreign-owner rule below is never
+# actually exercised.
+mkdir -p "$foreign/repo/metasystem/bin"
+cp "$ms" "$foreign/repo/metasystem/bin/metasystem"
 foreign_sleep_pid=$(
-  bash -c 'python3 -c "import signal; signal.pause()" metasystem-foreign-owner >/dev/null 2>&1 & echo $!'
+  bash -c '"$1" util hold --tag metasystem-foreign-owner >/dev/null 2>&1 & echo $!' _ "$ms"
 )
 foreign_start=$(process_started_at "$foreign_sleep_pid")
 owned_pids+=("$foreign_sleep_pid:$foreign_start")
@@ -1003,10 +1050,13 @@ stop_owned_pid "foreign owner" "$foreign_sleep_pid" "$foreign_start" >/dev/null 
 # session; an unbounded refusal is the loop the design forbids.
 stop_root=$tmp/stop-hook
 mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
-cp "$source_root/scripts/agents/open-work.py" "$source_root/scripts/agents/stop-block.py" \
-   "$source_root/scripts/agents/supervision-hook.sh" "$source_root/scripts/agents/process-census.py" \
-   "$source_root/scripts/agents/arm-supervision.sh" "$source_root/scripts/agents/worktree-lease.py" \
-   "$stop_root/scripts/agents/"
+cp "$source_root/scripts/agents/supervision-hook.sh" \
+   "$source_root/scripts/agents/arm-supervision.sh" "$stop_root/scripts/agents/"
+# The hook resolves its engine as <root>/bin/metasystem; the open-work,
+# stop-block, identity, and lease helpers it used to need as .py files all
+# live inside it now.
+mkdir -p "$stop_root/bin"
+cp "$ms" "$stop_root/bin/metasystem"
 cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - In flight right now: nothing
 - Waiting on the human: nothing blocking

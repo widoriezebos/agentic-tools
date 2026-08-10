@@ -8,12 +8,16 @@ fixture_root="$tmp/metasystem"
 repository="$tmp/repository"
 mkdir -p "$fixture_root/scripts/agents" "$repository/plans"
 cp "$root/scripts/agents/pre-commit-guard.sh" "$fixture_root/scripts/agents/pre-commit-guard.sh"
-cat >"$fixture_root/scripts/agents/worktree-lease.py" <<'SH'
+# The copied guard resolves its engine as $fixture_root/bin/metasystem. A
+# refusing stub there reproduces the old refusing worktree-lease.py leg:
+# classification fails strictly, and the guard must fail open to HUMAN.
+mkdir -p "$fixture_root/bin"
+cat >"$fixture_root/bin/metasystem" <<'SH'
 #!/usr/bin/env bash
 # A malformed or unreadable registry makes strict classification refuse.
 exit 1
 SH
-chmod +x "$fixture_root/scripts/agents/worktree-lease.py"
+chmod +x "$fixture_root/bin/metasystem"
 
 git -C "$repository" init -q
 printf 'tracked\n' >"$repository/tracked.txt"
