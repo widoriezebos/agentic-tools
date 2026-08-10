@@ -83,6 +83,45 @@ func ProcessCwd(pid int64) (string, bool) {
 	return string(path[:end]), true
 }
 
+// ParentPid returns a process's parent pid via the proc_info syscall
+// (PROC_PIDTBSDINFO), the native replacement for `ps -p PID -o ppid=`. The
+// returned bool is false when the pid cannot be read (gone or denied) or when
+// the parent is not a real distinct ancestor — ppid <= 0 or ppid == pid — so
+// the caller stops its ancestry walk exactly where the python's parent_pid
+// returned None.
+//
+// proc_bsdinfo is a stable public darwin ABI: pbi_ppid is the fifth uint32,
+// at offset 16 (after pbi_flags, pbi_status, pbi_xstatus, pbi_pid). The whole
+// struct is 136 bytes; the kernel returns that count on success, so a short
+// return is treated as a read failure rather than trusted.
+func ParentPid(pid int64) (int64, bool) {
+	const (
+		sysProcInfo         = 336 // SYS_proc_info
+		procInfoCallPidInfo = 2   // PROC_INFO_CALL_PIDINFO
+		procPidTBSDInfo     = 3   // PROC_PIDTBSDINFO
+		bsdInfoSize         = 136
+		ppidOffset          = 16
+	)
+	buffer := make([]byte, bsdInfoSize)
+	r1, _, errno := unix.Syscall6(
+		sysProcInfo,
+		uintptr(procInfoCallPidInfo),
+		uintptr(pid),
+		uintptr(procPidTBSDInfo),
+		0,
+		uintptr(bytesPointer(buffer)),
+		uintptr(len(buffer)),
+	)
+	if errno != 0 || int(r1) < bsdInfoSize {
+		return 0, false
+	}
+	ppid := int64(int32(binary.LittleEndian.Uint32(buffer[ppidOffset:])))
+	if ppid <= 0 || ppid == pid {
+		return 0, false
+	}
+	return ppid, true
+}
+
 func bytesPointer(b []byte) unsafe.Pointer {
 	return unsafe.Pointer(&b[0])
 }

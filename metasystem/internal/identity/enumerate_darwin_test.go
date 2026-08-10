@@ -4,6 +4,7 @@ package identity
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -55,5 +56,42 @@ func TestProcessCwdSelf(t *testing.T) {
 	wantResolved, _ := filepath.EvalSymlinks(wd)
 	if gotResolved != wantResolved {
 		t.Fatalf("ProcessCwd = %q, want %q", gotResolved, wantResolved)
+	}
+}
+
+// ParentPid is validated against two independent ground truths: our own
+// parent (os.Getppid) and a child we spawn ourselves (whose parent is us).
+// A wrong pbi_ppid offset fails both, so the ABI is pinned, not assumed.
+func TestParentPidMatchesGroundTruth(t *testing.T) {
+	got, ok := ParentPid(int64(os.Getpid()))
+	if !ok {
+		t.Fatal("ParentPid could not read our own parent")
+	}
+	if want := int64(os.Getppid()); got != want {
+		t.Fatalf("ParentPid(self) = %d, want os.Getppid() = %d (offset wrong?)", got, want)
+	}
+
+	child := exec.Command("/bin/sleep", "30")
+	if err := child.Start(); err != nil {
+		t.Fatalf("could not spawn a child to test against: %v", err)
+	}
+	defer func() {
+		_ = child.Process.Kill()
+		_ = child.Wait()
+	}()
+	got, ok = ParentPid(int64(child.Process.Pid))
+	if !ok {
+		t.Fatal("ParentPid could not read our spawned child's parent")
+	}
+	if want := int64(os.Getpid()); got != want {
+		t.Fatalf("ParentPid(child) = %d, want our pid %d", got, want)
+	}
+}
+
+// A pid that does not exist reports no parent, matching python's parent_pid
+// returning None on a dead process.
+func TestParentPidDeadProcess(t *testing.T) {
+	if _, ok := ParentPid(2147483645); ok {
+		t.Fatal("ParentPid claimed a parent for a nonexistent pid")
 	}
 }
