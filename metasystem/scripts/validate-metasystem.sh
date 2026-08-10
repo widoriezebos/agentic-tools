@@ -460,7 +460,9 @@ mkdir -p "$fake_probe_root/scripts/agents/adapters"
 cp scripts/agents/adapters/fake.sh "$fake_probe_root/scripts/agents/adapters/"
 cp scripts/agents/fixture-budget.sh "$fake_probe_root/scripts/agents/"
 fake_probe_result="$tmp/fake-envelope-probe-result.json"
+# The bare probe root carries no engine; point the adapter at this checkout's.
 fake_snapshot=$(METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="$fake_probe_result" \
+  METASYSTEM_BIN="$PWD/bin/metasystem" \
   "$fake_probe_root/scripts/agents/adapters/fake.sh" probe)
 python3 - "$fake_snapshot" "$fake_probe_result" <<'PY'
 import json, sys

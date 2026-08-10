@@ -140,6 +140,13 @@ func families() []family {
 				{"devin-session", "correlate the new Devin session against the baseline", runAdapterDevinSession},
 				{"devin-usage", "compute the Devin per-round usage delta", runAdapterDevinUsage},
 				{"usage-unavailable", "write the unavailable-usage record", runAdapterUsageUnavailable},
+				{"fake-return", "write the fake runtime's canned role return", runAdapterFakeReturn},
+				{"fake-usage", "write the fake runtime's fixed native usage", runAdapterFakeUsage},
+				{"fake-effective-network", "edit the effective network for permission fixtures", runAdapterFakeEffectiveNetwork},
+				{"fake-guarded-write", "attempt a permission-guarded write (77 = refused)", runAdapterFakeGuardedWrite},
+				{"fake-guarded-network", "attempt a permission-guarded connection (77 = refused)", runAdapterFakeGuardedNetwork},
+				{"fake-capability-snapshot", "write a fake capability-snapshot profile", runAdapterFakeCapabilitySnapshot},
+				{"fake-selftest-record", "write the fake selftest pass record", runAdapterFakeSelftestRecord},
 			},
 		},
 		{
@@ -201,6 +208,7 @@ func families() []family {
 				{"slug", "print a stable slug of the argument (matches the sanitize rule)", runUtilSlug},
 				{"json-validate", "exit 0 if --file/--value is valid JSON, else 1", runUtilJSONValidate},
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
+				{"hold", "stay alive carrying --tag until SIGTERM, then write the stopped file", runUtilHold},
 			},
 		},
 		{

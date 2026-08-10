@@ -10,9 +10,10 @@ import (
 )
 
 // These verbs are the per-runtime half of the adapter family: the small
-// transformations a claude, codex, or devin delegate turn asks for around its
-// CLI invocation. They complement the runtime-neutral adapter verbs (root-job,
-// the effective-permissions handshake, the patch and snapshot writers).
+// transformations a claude, codex, devin, or fake delegate turn asks for
+// around its CLI invocation. They complement the runtime-neutral adapter
+// verbs (root-job, the effective-permissions handshake, the patch and
+// snapshot writers).
 
 // runAdapterVersionParse prints the first dotted version token read from stdin,
 // the way each runtime's --version output is turned into a config identity.
@@ -298,6 +299,162 @@ func runAdapterDevinUsage(args []string) int {
 		return 2
 	}
 	if err := adapter.DevinUsage(*usage, *transcript, *cumulative, *previous, *expectPrevious); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+// runAdapterFakeReturn writes the fake runtime's canned, schema-valid return
+// for a turn from its job record and assembled prompt.
+func runAdapterFakeReturn(args []string) int {
+	flags := flag.NewFlagSet("adapter fake-return", flag.ContinueOnError)
+	record := flags.String("record", "", "job record file")
+	prompt := flags.String("prompt", "", "assembled prompt file")
+	output := flags.String("output", "", "return object file to write")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *record == "" || *prompt == "" || *output == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-return --record FILE --prompt FILE --output FILE")
+		return 2
+	}
+	if err := adapter.WriteFakeReturn(*record, *prompt, *output); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+// runAdapterFakeUsage writes the fixed typed usage the fake runtime reports
+// for every turn.
+func runAdapterFakeUsage(args []string) int {
+	flags := flag.NewFlagSet("adapter fake-usage", flag.ContinueOnError)
+	output := flags.String("output", "", "typed usage output file")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *output == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-usage --output FILE")
+		return 2
+	}
+	if err := adapter.WriteFakeUsage(*output); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+// runAdapterFakeEffectiveNetwork rewrites the network field of an
+// effective-permissions file, simulating a runtime whose real grant differs
+// from the request.
+func runAdapterFakeEffectiveNetwork(args []string) int {
+	flags := flag.NewFlagSet("adapter fake-effective-network", flag.ContinueOnError)
+	effective := flags.String("effective", "", "effective-permissions file")
+	network := flags.String("network", "", "network grant to record (allow|ask|deny)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *effective == "" || *network == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-effective-network --effective FILE --network VALUE")
+		return 2
+	}
+	if err := adapter.SetEffectiveNetwork(*effective, *network); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+// runAdapterFakeGuardedWrite attempts a write through the fake runtime's
+// permission envelope: exit 0 when a writeRoots member contains the target
+// and the probe line was written, 77 when the envelope refuses it.
+func runAdapterFakeGuardedWrite(args []string) int {
+	flags := flag.NewFlagSet("adapter fake-guarded-write", flag.ContinueOnError)
+	permissions := flags.String("permissions", "", "permissions envelope file")
+	target := flags.String("target", "", "file the guarded write is aimed at")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *permissions == "" || *target == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-guarded-write --permissions FILE --target FILE")
+		return 2
+	}
+	allowed, err := adapter.FakeGuardedWrite(*permissions, *target)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if !allowed {
+		return 77
+	}
+	return 0
+}
+
+// runAdapterFakeGuardedNetwork attempts one network call through the fake
+// runtime's permission envelope: exit 0 when the envelope allows it and the
+// probe request was sent, 77 when the envelope refuses it.
+func runAdapterFakeGuardedNetwork(args []string) int {
+	flags := flag.NewFlagSet("adapter fake-guarded-network", flag.ContinueOnError)
+	permissions := flags.String("permissions", "", "permissions envelope file")
+	host := flags.String("host", "", "host to probe")
+	port := flags.String("port", "", "port to probe")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *permissions == "" || *host == "" || *port == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-guarded-network --permissions FILE --host HOST --port PORT")
+		return 2
+	}
+	allowed, err := adapter.FakeGuardedNetwork(*permissions, *host, *port)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if !allowed {
+		return 77
+	}
+	return 0
+}
+
+// runAdapterFakeCapabilitySnapshot writes the fake probe's capability
+// snapshot for a profile, printing the written path.
+func runAdapterFakeCapabilitySnapshot(args []string) int {
+	flags := flag.NewFlagSet("adapter fake-capability-snapshot", flag.ContinueOnError)
+	dir := flags.String("dir", "", "capabilities directory")
+	profile := flags.String("profile", "", "current, old, or unverified-network")
+	ageDays := flags.Int("age-days", 0, "days to backdate the capture")
+	handshake := flags.Int("handshake-sec", 0, "session-established ceiling in seconds")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *dir == "" || *profile == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-capability-snapshot --dir DIR --profile P [--age-days N] --handshake-sec S")
+		return 2
+	}
+	path, err := adapter.WriteFakeCapabilitySnapshot(*dir, *profile, *ageDays, *handshake)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(path)
+	return 0
+}
+
+// runAdapterFakeSelftestRecord writes the pass record the fake adapter's
+// selftest leaves behind.
+func runAdapterFakeSelftestRecord(args []string) int {
+	flags := flag.NewFlagSet("adapter fake-selftest-record", flag.ContinueOnError)
+	output := flags.String("output", "", "selftest record file to write")
+	job := flags.String("job", "", "selftest job id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *output == "" || *job == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-selftest-record --output FILE --job ID")
+		return 2
+	}
+	if err := adapter.WriteFakeSelftestRecord(*output, *job); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
