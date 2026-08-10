@@ -108,16 +108,64 @@ func runMissionStateWrite(args []string) int {
 func runMissionStateVerify(args []string) int {
 	flags := flag.NewFlagSet("mission-state verify", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
+	repo := flags.String("repo", "", "repository (with --ledger, verifies the anchor)")
+	ledger := flags.String("ledger", "", "ledger path (with --repo, verifies the anchor)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	seq, hash, err := mission.VerifyStateShape(*state)
+	if (*repo == "") != (*ledger == "") {
+		fmt.Fprintln(os.Stderr, "--repo and --ledger are required together for anchor verification")
+		return 1
+	}
+	var (
+		seq  int64
+		hash string
+		err  error
+	)
+	if *repo != "" {
+		seq, hash, err = mission.VerifyStateWithAnchor(*state, *repo, *ledger)
+	} else {
+		seq, hash, err = mission.VerifyStateShape(*state)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	fmt.Printf("mission state valid: sequence=%d hash=%s\n", seq, hash)
 	return 0
+}
+
+func runMissionStateAnchor(args []string) int {
+	flags := flag.NewFlagSet("mission-state anchor", flag.ContinueOnError)
+	state := flags.String("state", "", "state path")
+	repo := flags.String("repo", "", "repository")
+	ledger := flags.String("ledger", "", "ledger path")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if err := mission.Anchor(*state, *repo, *ledger); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runMissionStateReconcile(args []string) int {
+	flags := flag.NewFlagSet("mission-state reconcile", flag.ContinueOnError)
+	state := flags.String("state", "", "state path")
+	repo := flags.String("repo", "", "repository")
+	ledger := flags.String("ledger", "", "ledger path")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	code, err := mission.Reconcile(*state, *repo, *ledger)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		if code == 0 {
+			code = 1
+		}
+	}
+	return code
 }
 
 func singleFileFlag(name string, args []string) (string, bool) {

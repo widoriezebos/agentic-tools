@@ -125,7 +125,9 @@ func families() []family {
 			verbs: []verb{
 				{"init", "create a mission's initial state from its sealed contract", runMissionStateInit},
 				{"write", "advance the state via a compare-and-write on its hash", runMissionStateWrite},
-				{"verify", "validate the state's shape, aggregation, and hash chain", runMissionStateVerify},
+				{"verify", "validate the state's shape, aggregation, hash chain, and anchor", runMissionStateVerify},
+				{"anchor", "write the local anchor commit binding the state hash and ledger", runMissionStateAnchor},
+				{"reconcile", "reconcile the state against its ledger and anchor, parking on disagreement", runMissionStateReconcile},
 			},
 		},
 		{
