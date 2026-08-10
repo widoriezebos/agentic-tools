@@ -84,6 +84,12 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
    held identity, shutdown-intent latch), then gate+janitor
    (D-4), checkout-wide shutdown, cmd/metasystem verbs, wrapper
    wiring, suite gates (gofmt/vet/build/test + 90% floor).
+   PROGRESS during cohort A rep 1: the owner loop shipped earlier
+   (95.5%), and internal/janitor now carries D-4 target selection
+   (ordered kinds, all guards, 93.8%, commit e2ca0b6) beside the
+   kill proof — the DOMAIN LOGIC of the whole design is implemented
+   and green; remaining are cmd verbs + real-world adapters, the
+   bash cohort teardown ledger, and Proof fixtures.
    Remaining per the design's Implementation order
    (registry → D-1 → D-2 → D-4+D-3 → D-5), in
    `metasystem/` as one module, one multi-verb binary, packages
