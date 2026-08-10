@@ -87,28 +87,10 @@ census_matches_snapshot() { # census, LIVE state path
   # is NOW: heals keep republishing state, so a frozen byte snapshot can never
   # be matched by a later census. The invariant that matters is the one
   # dispatch enforces — SUCCESS, and the census's generation equal to the
-  # live arming generation, with its digest genuinely describing the state
-  # bytes that carried that generation.
-  # TODO(go-wiring): needs a census-vs-state provenance check (SUCCESS verdict,
-  # census.generation == state.generation, digest provenance over the state
-  # bytes). Hashing and comparison; left as python3.
-  python3 - "$1" "$2" <<'PY'
-import hashlib, json, sys
-from pathlib import Path
-census = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-state_bytes = Path(sys.argv[2]).read_bytes()
-state = json.loads(state_bytes)
-if census.get("verdict") != "SUCCESS":
-    raise SystemExit(1)
-if census.get("generation") != state.get("generation"):
-    raise SystemExit(1)
-# When the census described exactly these bytes the digest must match; when
-# state has moved on since, the generation equality above is the binding
-# check and the digest legitimately describes an earlier byte image.
-if census.get("stateDigest") == hashlib.sha256(state_bytes).hexdigest():
-    raise SystemExit(0)
-raise SystemExit(0)
-PY
+  # live arming generation. (The digest legitimately describes an earlier
+  # byte image when state has moved on, so it does not bind here.)
+  [[ "$(json_field "$1" verdict)" == SUCCESS ]] || return 1
+  [[ "$(json_field "$1" generation)" == "$(json_field "$2" generation)" ]]
 }
 
 watcher_pass_complete() { # heartbeat, census
@@ -126,24 +108,7 @@ prove_process_ownership() { # pid, start, tag
 }
 
 backdate_census_generation() { # census, generation
-  # TODO(go-wiring): needs a census-mutation verb (set generation and
-  # completedAtEpoch, atomic rewrite). JSON mutation and atomic write; left as
-  # python3.
-  python3 - "$1" "$2" <<'PY'
-import json, os, sys, tempfile, time
-from pathlib import Path
-path, generation = Path(sys.argv[1]), int(sys.argv[2])
-value = json.loads(path.read_text(encoding="utf-8"))
-value["generation"] = generation
-value["completedAtEpoch"] = int(time.time())
-fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    json.dump(value, handle, indent=2, sort_keys=True)
-    handle.write("\n")
-    handle.flush()
-    os.fsync(handle.fileno())
-os.replace(temporary, path)
-PY
+  "$ms" json set --file "$1" --int "generation=$2" --int "completedAtEpoch=$(date +%s)"
 }
 
 
