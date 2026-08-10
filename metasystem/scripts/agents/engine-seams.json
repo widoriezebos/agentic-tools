@@ -1,0 +1,19 @@
+{
+  "seams": [
+    {
+      "seam": "go-watcher-shells-to-python-census",
+      "description": "The Go supervise component is a heartbeat skeleton; the real census still runs via process-census.py until the census port (Phase 1).",
+      "retireWhenExists": "scripts/agents/census-go-fixtures.sh"
+    },
+    {
+      "seam": "arm-lease-ops-stay-python",
+      "description": "arm-supervision.sh's announce/require-holder/classify remain worktree-lease.py; the Go owner touches no lease by design (D-1/REG-7).",
+      "retireWhenExists": "scripts/agents/lease-go-fixtures.sh"
+    },
+    {
+      "seam": "adopt-decisions-stay-bash",
+      "description": "adopt.sh decides source cleanliness, payload membership, collisions, config transform; its decision core ports in Phase 4 as `metasystem adopt`.",
+      "retireWhenExists": "scripts/agents/adopt-go-fixtures.sh"
+    }
+  ]
+}

@@ -41,6 +41,28 @@ metasystem_here=$(pwd -P)
 gate_run_marker=$(scripts/agents/gate-run.py register --root "$root" \
   --gate validate-metasystem.sh --pid $$ 2>/dev/null || true)
 
+# The Go engine gate runs first (plans/go-migration.md): gofmt, vet, the
+# race unit suite, and the build. A broken binary fails here, before any
+# fixture tries to drive it. Skipped only in delegate scope (no toolchain
+# guarantee in a delegate sandbox, and it needs no process visibility).
+if (( ! delegate_scope )); then
+  bash scripts/agents/go-gate.sh
+  # The seam tripwire (GO-MIG-R3-010): a declared engine seam whose
+  # retiring artifact already exists has outlived its phase — fail red.
+  python3 - scripts/agents/engine-seams.json <<'SEAMS'
+import json, sys
+from pathlib import Path
+seams = json.load(open(sys.argv[1]))["seams"]
+stale = [s["seam"] for s in seams if Path(s["retireWhenExists"]).exists()]
+if stale:
+    print("engine seam(s) outlived their phase; retire them: " + ", ".join(stale), file=sys.stderr)
+    raise SystemExit(1)
+SEAMS
+  # Owner-alone Go supervision fixtures need process visibility, so they
+  # run in the process-sensitive band, not delegate scope.
+  bash scripts/agents/supervision-go-fixtures.sh
+fi
+
 source scripts/agents/fixture-budget.sh
 if (( delegate_scope )); then
   # Load calibration is itself a real census. Delegate validation uses the
