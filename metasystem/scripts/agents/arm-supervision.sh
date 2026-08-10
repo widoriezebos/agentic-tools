@@ -69,38 +69,7 @@ derive_watcher_ceiling() { # optional declared maximum cap
 }
 
 blocking_reserved_cap() { # proposed watcher ceiling; prints job|cap for first blocker
-  # TODO(go-wiring): needs verb `supervise blocking-reserved-cap` (scan jobs/ and
-  # missions/*/fences.json for a non-terminal reserved capMin >= ceiling, print
-  # the highest blocker as job|cap). Non-trivial state scan; left as python3.
-  python3 - "$agents" "$1" <<'PY'
-import json, sys
-from pathlib import Path
-agents, ceiling = Path(sys.argv[1]), int(sys.argv[2])
-terminal = {"completed", "failed", "timeout", "cancelled"}
-reserved = {}
-jobs = agents / "jobs"
-for path in sorted(jobs.glob("*.json")) if jobs.exists() else []:
-    try: value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError): continue
-    cap, status, job = value.get("capMin"), value.get("status"), value.get("jobId", path.stem)
-    if type(cap) is int and cap >= ceiling and status not in terminal:
-        reserved[str(job)] = cap
-missions = agents / "missions"
-for path in sorted(missions.glob("*/fences.json")) if missions.exists() else []:
-    try: value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError): continue
-    for job, reservation in value.get("reservations", {}).items():
-        cap = reservation.get("capMin") if isinstance(reservation, dict) else None
-        if type(cap) is not int or cap < ceiling:
-            continue
-        try: status = json.loads((jobs / f"{job}.json").read_text(encoding="utf-8")).get("status")
-        except (OSError, ValueError): status = None
-        if status not in terminal:
-            reserved[str(job)] = max(cap, reserved.get(str(job), 0))
-if reserved:
-    job = sorted(reserved, key=lambda item: (-reserved[item], item))[0]
-    print(f"{job}|{reserved[job]}")
-PY
+  "$ms" supervise blocking-reserved-cap --agents "$agents" --ceiling "$1"
 }
 
 supervision_wait_cap() { # base seconds; fixture validation may export a scale
@@ -168,17 +137,7 @@ identity_alive() { # pid, start, optional tag
 }
 
 atomic_json_identity() { # path, pid, start, tag, acquired-at
-  # TODO(go-wiring): needs verb `supervise write-owner-identity` (atomic write of
-  # {pid,pidStartedAt,instanceTag,acquiredAt}). Atomic JSON write; left as python3.
-  python3 - "$@" <<'PY'
-import json, os, sys, tempfile
-from pathlib import Path
-path=Path(sys.argv[1]); value={"pid":int(sys.argv[2]),"pidStartedAt":int(sys.argv[3]),"instanceTag":sys.argv[4],"acquiredAt":sys.argv[5]}
-path.parent.mkdir(parents=True,exist_ok=True)
-fd,tmp=tempfile.mkstemp(prefix=path.name+".",suffix=".tmp",dir=path.parent)
-with os.fdopen(fd,"w") as h: json.dump(value,h,indent=2,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
-os.replace(tmp,path)
-PY
+  "$ms" supervise write-owner-identity --path "$1" --pid "$2" --start "$3" --tag "$4" --acquired-at "$5"
 }
 
 # An adopted or fixture copy may lack the emitter; a failed `source` under
@@ -240,19 +199,10 @@ stop_identity() { # name, pid, start, tag
 }
 
 launch_detached() { # output pid variable name, log path, command...
-  local __name=$1 log=$2
+  local __name=$1 log=$2 detached_pid
   shift 2
-  # TODO(go-wiring): needs verb `supervise launch-detached` (open log, redirect
-  # stdio, setsid, exec the command). Process daemonization; left as python3.
-  python3 - "$log" "$@" <<'PY' &
-import os, sys
-log=os.open(sys.argv[1], os.O_WRONLY|os.O_CREAT|os.O_APPEND, 0o600)
-null=os.open(os.devnull, os.O_RDONLY)
-os.dup2(null, 0); os.dup2(log, 1); os.dup2(log, 2)
-os.setsid()
-os.execv(sys.argv[2], sys.argv[2:])
-PY
-  printf -v "$__name" '%s' "$!"
+  detached_pid=$("$ms" supervise launch-detached --log "$log" -- "$@") || return 1
+  printf -v "$__name" '%s' "$detached_pid"
 }
 
 wait_for_start_identity() { # name, pid
@@ -300,15 +250,7 @@ wait_for_first_heartbeat() { # name, heartbeat file, instance tag, pid, start
 }
 
 read_component_identity() { # state, component => pid start tag
-  # TODO(go-wiring): needs a multi-field read of components.<c>.{pid,pidStartedAt,
-  # instanceTag} that fails as a unit when the component is absent (three
-  # separate `json get` calls would not share the all-or-nothing exit). Left as
-  # python3 pending a `supervise component-identity` verb.
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-try: v=json.load(open(sys.argv[1]))["components"][sys.argv[2]]; print(v["pid"],v["pidStartedAt"],v["instanceTag"])
-except (OSError,ValueError,KeyError,TypeError): raise SystemExit(1)
-PY
+  "$ms" supervise component-identity --state "$1" --component "$2"
 }
 
 stop_recorded_components() {
@@ -320,123 +262,6 @@ stop_recorded_components() {
   done
 }
 
-run_owner() {
-  local repo= gate= owner_tag= watcher_cap= interval interval_ms interval_sleep supervision state lock owner watcher_pid watcher_start reaper_pid reaper_start
-  local watcher_tag reaper_tag generation=0 fingerprint component pid start tag stale gate_cap gate_started elapsed
-  while (($#)); do
-    case "$1" in
-      --repo) repo=$2; shift 2 ;; --gate) gate=$2; shift 2 ;; --tag) owner_tag=$2; shift 2 ;;
-      --watcher-cap) watcher_cap=$2; shift 2 ;;
-      *) exit 2 ;;
-    esac
-  done
-  [[ -n "$repo" && -n "$gate" && -n "$owner_tag" && "$watcher_cap" =~ ^[1-9][0-9]*$ ]] || exit 2
-  supervision=$agents/supervision
-  state=$supervision/state.json
-  lock=$supervision/lock.d
-  owner=$lock/owner.json
-  interval=$("$config" get --key watch.interval-sec --default 60)
-  [[ "$interval" =~ ^[1-9][0-9]*$ ]] || exit 1
-  interval_ms=${METASYSTEM_WATCH_POLL_INTERVAL_MS:-$((interval * 1000))}
-  interval_sleep=$(milliseconds_to_sleep "$interval_ms")
-  gate_cap=$(supervision_wait_cap 10)
-  gate_started=$SECONDS
-  deadline=$((SECONDS + gate_cap))
-  while [[ ! -e "$gate" ]]; do
-    if (( SECONDS >= deadline )); then
-      elapsed=$((SECONDS - gate_started))
-      echo "supervision owner start-gate ceiling reached (elapsed: ${elapsed}s; scaled cap: ${gate_cap}s)" >&2
-      exit 1
-    fi
-    sleep 0.02
-  done
-  rm -f "$gate"
-
-  cleanup_owner() {
-    stop_recorded_components "$harness_root"
-    if [[ -f "$owner" ]] && [[ "$(json_field "$owner" pid 2>/dev/null || true)" == "$$" ]]; then
-      rm -f "$owner"
-      rmdir "$lock" 2>/dev/null || true
-    fi
-  }
-  trap cleanup_owner EXIT
-  trap 'exit 0' TERM INT
-
-  if [[ -f "$state" ]]; then
-    generation=$(json_field "$state" generation 2>/dev/null) \
-      || { echo "supervision state has no readable generation" >&2; exit 1; }
-    [[ "$generation" =~ ^[0-9]+$ ]] \
-      || { echo "supervision state generation is not a non-negative integer" >&2; exit 1; }
-  fi
-
-  launch_set() {
-    local suffix watcher_heartbeat=$supervision/watcher.heartbeat.json reaper_heartbeat=$supervision/reaper.heartbeat.json reaper_gate
-    # (scrub moved to arm_repository entry -- FRCC-006: lease events emitted
-    # during arming must not carry the id either)
-    if [[ "${1:-}" == --establishing ]]; then
-      METASYSTEM_HARNESS_ROOT="$harness_root" emit_event arming arming-started "summary=establishing launch_set"
-      rotate_event_stream "$harness_root"
-    fi
-    stop_recorded_components "$harness_root"
-    generation=$((generation + 1))
-    suffix="$generation-$(date +%s)"
-    watcher_tag="$owner_tag-watcher-$suffix"
-    reaper_tag="$owner_tag-reaper-$suffix"
-    reaper_gate="$supervision/reaper-start-gate-$suffix"
-    launch_detached watcher_pid "$supervision/watcher.log" "$watcher" \
-      --dir "$agents/jobs" --scope "$repo" --state "$supervision/jobs.state" \
-      --interval "$interval" --census --supervision-dir "$supervision" \
-      --heartbeat "$watcher_heartbeat" --ceiling-state "$state" --expected-cap "$watcher_cap" \
-      --instance-tag "$watcher_tag"
-    watcher_start=$(wait_for_start_identity watcher "$watcher_pid") || exit 1
-    launch_detached reaper_pid "$supervision/reaper.log" "$dispatch" reap --interval "$interval" \
-      --heartbeat "$reaper_heartbeat" --instance-tag "$reaper_tag" --start-gate "$reaper_gate"
-    reaper_start=$(wait_for_start_identity reaper "$reaper_pid") || exit 1
-    fingerprint=$("$ms" census fingerprint --repo "$repo") || exit 1
-    # TODO(go-wiring): needs verb `supervise write-state` (atomic write of the
-    # supervision state.json: owner/components/generation/fingerprint/
-    # derivedWatcherCapMin/startedAt). Left as python3; the started-at read below
-    # is wired to the binary.
-    python3 - "$state" "$$" "$("$ms" identity started-at --pid "$$")" "$owner_tag" \
-      "$watcher_pid" "$watcher_start" "$watcher_tag" "$watcher_heartbeat" \
-      "$reaper_pid" "$reaper_start" "$reaper_tag" "$reaper_heartbeat" "$interval" "$generation" "$fingerprint" "$watcher_cap" <<'PY'
-import json, os, sys, tempfile
-from datetime import datetime, timezone
-from pathlib import Path
-args=sys.argv[1:]; output=Path(args[0]); owner_pid,owner_start,owner_tag=int(args[1]),int(args[2]),args[3]
-w_pid,w_start,w_tag,w_hb=int(args[4]),int(args[5]),args[6],args[7]
-r_pid,r_start,r_tag,r_hb=int(args[8]),int(args[9]),args[10],args[11]
-interval,generation,fingerprint,watcher_cap=int(args[12]),int(args[13]),args[14],int(args[15])
-value={"schemaVersion":1,"owner":{"pid":owner_pid,"pidStartedAt":owner_start,"instanceTag":owner_tag},"components":{"watcher":{"pid":w_pid,"pidStartedAt":w_start,"instanceTag":w_tag,"heartbeat":w_hb},"reaper":{"pid":r_pid,"pidStartedAt":r_start,"instanceTag":r_tag,"heartbeat":r_hb}},"intervalSec":interval,"generation":generation,"fingerprint":fingerprint,"derivedWatcherCapMin":watcher_cap,"startedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-output.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix=output.name+".",suffix=".tmp",dir=output.parent)
-with os.fdopen(fd,"w") as h: json.dump(value,h,indent=2,sort_keys=True); h.write("\n"); h.flush(); os.fsync(h.fileno())
-os.replace(tmp,output)
-PY
-    touch "$reaper_gate"
-    # An incomplete launch is not fatal: the supervision loop below detects the
-    # component that never reported and replaces the set on its next tick.
-    wait_for_first_heartbeat watcher "$watcher_heartbeat" "$watcher_tag" "$watcher_pid" "$watcher_start" || return 1
-    wait_for_first_heartbeat reaper "$reaper_heartbeat" "$reaper_tag" "$reaper_pid" "$reaper_start" || return 1
-  }
-
-  launch_set --establishing && METASYSTEM_HARNESS_ROOT="$harness_root" emit_event arming arming-complete "summary=components launched" || true
-  [[ -z "${METASYSTEM_WATCH_POLL_INTERVAL_MS:-}" ]] || sleep "$interval_sleep"
-  while true; do
-    stale=
-    for component in watcher reaper; do
-      read -r pid start tag < <(read_component_identity "$state" "$component") || { stale=$component; break; }
-      if ! identity_alive "$pid" "$start" "$tag"; then stale=$component; break; fi
-      heartbeat=$(json_field "$state" "components.$component.heartbeat")
-      observed=$(json_field "$heartbeat" observedAtEpoch 2>/dev/null || echo 0)
-      (( $(date +%s) - observed <= interval * 2 + 2 )) || { stale=$component; break; }
-    done
-    if [[ -n "$stale" ]]; then
-      printf '%s STALE-SUPERVISOR component=%s generation=%s\n' "$(now_iso)" "$stale" "$generation" >>"$supervision/supervisor.log"
-      launch_set || true
-    fi
-    sleep "$interval_sleep"
-  done
-}
 
 verify_armed() { # repo, owner pid/start/tag
   local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 supervision state last interval cap started deadline elapsed component pid start tag heartbeat observed expected actual verdict completed expected_generation actual_generation derived_cap loaded_cap
@@ -645,7 +470,7 @@ arm_repository() {
 }
 
 case ${1:-} in
-  __owner) shift; run_owner "$@" ;;
+  __owner) echo "the supervision owner runs as 'metasystem supervise owner'; arming launches it directly" >&2; exit 2 ;;
   fingerprint)
     shift
     [[ ${1:-} == --repo && $# -eq 2 ]] || { usage; exit 2; }

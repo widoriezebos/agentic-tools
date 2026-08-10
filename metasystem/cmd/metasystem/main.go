@@ -251,6 +251,10 @@ func families() []family {
 				{"owner", "run the owner loop for a checkout (internal; launched by arm)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
 				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},
+				{"blocking-reserved-cap", "print the highest live reservation at or above a ceiling", runSuperviseBlockingReservedCap},
+				{"write-owner-identity", "atomically write the owner-identity record", runSuperviseWriteOwnerIdentity},
+				{"component-identity", "print a recorded component's pid, start, and tag", runSuperviseComponentIdentity},
+				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
 			},
 		},
 	}
