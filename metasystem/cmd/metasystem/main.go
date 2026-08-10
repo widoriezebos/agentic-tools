@@ -73,9 +73,10 @@ func families() []family {
 		},
 		{
 			name:    "report",
-			summary: "turn-end report decisions (port of stop-block.py)",
+			summary: "turn-end report decisions (port of stop-block.py, open-work.py)",
 			verbs: []verb{
 				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
+				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
 			},
 		},
 		{
