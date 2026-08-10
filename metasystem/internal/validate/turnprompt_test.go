@@ -122,3 +122,26 @@ func TestTurnPromptRejectsRecordMismatch(t *testing.T) {
 		t.Fatalf("empty turnId must fail the turn-record check, got %+v", violation)
 	}
 }
+
+func TestTurnPromptAcceptsRunnerRaisedAsks(t *testing.T) {
+	// The runner itself raises fence and stop-loss asks; a prompt carrying
+	// one must validate, or the first fence refusal poisons every later
+	// turn into prompt-refused (the failure that parked the first bm-2s
+	// cohort run).
+	for _, reason := range []string{"fence", "stop-loss"} {
+		root, promptPath, turnDir := promptFixture(t)
+		raw, err := os.ReadFile(promptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prompt := strings.Replace(string(raw),
+			"ask-1\tstream-a\treserved-decision\tmay we drop the flag",
+			"ask-1\tstream-a\treserved-decision\tmay we drop the flag\nfence-bound\tnone\t"+reason+"\tchoose whether to amend the contract", 1)
+		if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if violation := TurnPrompt(root, promptPath, turnDir); violation != nil {
+			t.Fatalf("%s ask rejected: [%s] %s", reason, violation.Check, violation.Message)
+		}
+	}
+}

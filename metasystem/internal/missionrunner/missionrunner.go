@@ -33,6 +33,20 @@ var KnownAskReasons = map[string]bool{
 	"host-failure":      true,
 }
 
+// PromptAskReasons are the reason classes an open ask may CARRY when it is
+// shown in a turn prompt: everything an orchestrator may raise plus the
+// runner's own reasons — "fence" (a batched fence refusal) and "stop-loss"
+// (the budget park). The turn-prompt validator must accept these, or the
+// first runner-raised ask poisons every later prompt into refusal — the
+// deterministic park that ended cohort bm-2s-20260810t195923z-80785.
+var PromptAskReasons = func() map[string]bool {
+	reasons := map[string]bool{"fence": true, "stop-loss": true}
+	for reason := range KnownAskReasons {
+		reasons[reason] = true
+	}
+	return reasons
+}()
+
 // TerminalJobStatuses are the job statuses that count as finished for fence
 // projection, job draining, and chain closing. A job whose record is missing
 // or unreadable is treated as still active: losing sight of a job must never

@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 )
 
 // Violation is one named check failure: the check family the failure
@@ -40,9 +42,10 @@ var turnClassifications = map[string]bool{
 	"no-progress": true, "unresolved": true, "invalid-run": true,
 }
 
-var turnReasonClasses = map[string]bool{
-	"reserved-decision": true, "red-test": true, "merge-conflict": true, "host-failure": true,
-}
+// The legal reason set is owned by the runner: what an orchestrator may
+// raise plus the runner's own fence and stop-loss asks. One source of truth,
+// so the adjudicator and this validator can never disagree again.
+var turnReasonClasses = missionrunner.PromptAskReasons
 
 var turnStreamStates = map[string]bool{
 	"active": true, "parked-reserved": true, "parked-stop-loss": true, "done": true,
