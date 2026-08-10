@@ -69,6 +69,7 @@ SEAMS
   # Census signature port: differential conformance (Go RE2 == grep -E).
   bash scripts/agents/census-signature-conformance.sh
   bash scripts/agents/census-fingerprint-conformance.sh
+  bash scripts/agents/census-run-conformance.sh
 fi
 
 source scripts/agents/fixture-budget.sh

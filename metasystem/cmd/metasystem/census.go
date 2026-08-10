@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 )
@@ -86,5 +87,47 @@ func runCensusFingerprint(args []string) int {
 		return 1
 	}
 	fmt.Println(fp)
+	return 0
+}
+
+// runCensusRun computes a fixture-driven census verdict and writes it to
+// --output, printing the same inventory/diagnostic lines the python does.
+// The conformance harness diffs its verdict against process-census.py's.
+func runCensusRun(args []string) int {
+	flags := flag.NewFlagSet("census run", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	root := flags.String("root", "", "metasystem root (defaults to --repo)")
+	fp := flags.String("fingerprint", "", "fingerprint to stamp")
+	interval := flags.Int("interval", 60, "interval seconds")
+	output := flags.String("output", "", "verdict output path")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE")
+	if *repo == "" || *output == "" || processFile == "" {
+		fmt.Fprintln(os.Stderr, "census run: --repo, --output, and METASYSTEM_CENSUS_PROCESS_FILE required (fixture path)")
+		return 2
+	}
+	metasystemRoot := *root
+	if metasystemRoot == "" {
+		metasystemRoot = *repo
+	}
+	// A fixed clock keeps the verdict deterministic for conformance; the
+	// harness normalizes the time fields anyway.
+	now := time.Unix(1786000000, 0)
+	verdict, err := census.RunFixtureCensus(metasystemRoot, *repo, processFile, *fp, *interval, now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "census run:", err)
+		return 1
+	}
+	encoded, err := json.MarshalIndent(verdict, "", "  ")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "census run:", err)
+		return 1
+	}
+	if err := os.WriteFile(*output, append(encoded, '\n'), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "census run:", err)
+		return 1
+	}
 	return 0
 }
