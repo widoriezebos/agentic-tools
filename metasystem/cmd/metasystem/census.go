@@ -131,3 +131,47 @@ func runCensusRun(args []string) int {
 	}
 	return 0
 }
+
+func runCensusAlive(args []string) int {
+	flags := flag.NewFlagSet("census alive", flag.ContinueOnError)
+	pid := flags.Int64("pid", 0, "process id")
+	start := flags.Int64("start-time", 0, "expected start epoch seconds")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if census.Alive(*pid, *start) {
+		return 0
+	}
+	return 1
+}
+
+func runCensusAuthIdentity(args []string) int {
+	flags := flag.NewFlagSet("census authentication-identity", flag.ContinueOnError)
+	pid := flags.Int64("pid", 0, "process id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	id, err := census.AuthIdentity(*pid)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	encoded, _ := json.Marshal(id)
+	fmt.Println(string(encoded))
+	return 0
+}
+
+func runCensusSignatureCheck(args []string) int {
+	flags := flag.NewFlagSet("census signature-check", flag.ContinueOnError)
+	adapter := flags.String("adapter", "", "adapter path")
+	positive := flags.String("positive", "", "argv that must classify")
+	lookalike := flags.String("lookalike", "", "argv that must NOT classify")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if err := census.SignatureCheck(*adapter, *positive, *lookalike); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}

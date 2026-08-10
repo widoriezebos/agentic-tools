@@ -43,6 +43,9 @@ func families() []family {
 				{"classify", "classify argvs against runtime signatures (differential-conformance surface)", runCensusClassify},
 				{"fingerprint", "print a checkout's supervision fingerprint (port of process-census.py fingerprint)", runCensusFingerprint},
 				{"run", "compute a fixture-driven census verdict (port of process-census.py census)", runCensusRun},
+				{"alive", "exit 0 if a pid is live at its expected start (port of alive)", runCensusAlive},
+				{"authentication-identity", "print a pid's start time and command from one source", runCensusAuthIdentity},
+				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 			},
 		},
 		{
