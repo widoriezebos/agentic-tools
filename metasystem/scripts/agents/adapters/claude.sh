@@ -23,15 +23,7 @@ adapter_common_init claude
 
 claude_version() {
   command -v claude >/dev/null 2>&1 || { echo "claude CLI is not installed" >&2; return 1; }
-  # TODO(go-wiring): needs a version-parse verb (regex-extract a semver from CLI
-  # --version output).
-  claude --version 2>/dev/null | python3 -c '
-import re, sys
-text = sys.stdin.read()
-match = re.search(r"[0-9]+(?:\.[0-9A-Za-z_-]+)+", text)
-if not match: raise SystemExit("could not parse claude CLI version")
-print(match.group(0))
-'
+  claude --version 2>/dev/null | "$ms" adapter version-parse
 }
 
 claude_config_identity() {
@@ -88,112 +80,18 @@ probe() {
     "$key_hashes"
 }
 
-build_claude_settings() { # output settings, hook helper
-  local output=$1 hook_helper=$2
-  # TODO(go-wiring): needs a verb to build the Claude settings file (permissions,
-  # sandbox filesystem/network, SessionStart hook; state edit). The emitted hook
-  # command still shells out to python3 claude-session-signal.py, which is not
-  # yet ported.
-  python3 - "$record" "$output" "$hook_helper" <<'PY'
-import json, shlex, sys
-from pathlib import Path
-
-record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-output, hook_helper = Path(sys.argv[2]), str(Path(sys.argv[3]).resolve())
-requested = record["permissions"]["requested"]
-write_roots = requested["writeRoots"]
-network = requested.get("network", "deny")
-allow = ["Read", "Glob", "Grep"]
-deny = []
-if network == "allow":
-    allow.extend(["WebFetch", "WebSearch"])
-else:
-    deny.extend(["WebFetch", "WebSearch"])
-if write_roots:
-    allow.extend(["Bash", "Edit", "Write", "NotebookEdit"])
-else:
-    deny.extend(["Bash", "Edit", "Write", "NotebookEdit"])
-settings = {
-    "permissions": {"allow": allow, "ask": [], "deny": deny},
-    "sandbox": {
-        "enabled": True,
-        "failIfUnavailable": True,
-        "autoAllowBashIfSandboxed": True,
-        "allowUnsandboxedCommands": False,
-        "filesystem": {"allowWrite": write_roots},
-        # An empty allowlist with an empty denylist permits ordinary egress;
-        # the non-resolving sentinel makes every usable destination unavailable.
-        # The tool layer above agrees with whichever is chosen.
-        "network": ({"allowedDomains": [], "deniedDomains": []} if network == "allow"
-                    else {"allowedDomains": ["metasystem.invalid"], "deniedDomains": []}),
-    },
-    "hooks": {
-        "SessionStart": [{
-            "matcher": "startup|resume",
-            "hooks": [{
-                "type": "command",
-                "command": "python3 " + shlex.quote(hook_helper),
-                "timeout": 5,
-            }],
-        }],
-    },
-}
-output.write_text(json.dumps(settings, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+build_claude_settings() { # output settings
+  # The emitted SessionStart hook runs the metasystem session-signal verb, which
+  # signals session establishment back to this adapter.
+  "$ms" adapter claude-settings --record "$record" --output "$1" --metasystem-bin "$ms"
 }
 
 claude_usage() { # result JSON, usage output
-  # TODO(go-wiring): needs a Claude usage-extraction verb (native token/cost
-  # usage from the result JSON; state edit).
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-from pathlib import Path
-
-try:
-    result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    result = {}
-usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
-cost = result.get("total_cost_usd")
-value = {
-    "availability": "native",
-    "inputTokens": usage.get("input_tokens"),
-    "cachedInputTokens": usage.get("cache_read_input_tokens"),
-    "outputTokens": usage.get("output_tokens"),
-    "reasoningTokens": usage.get("reasoning_tokens"),
-    "cost": {"amount": cost, "currency": "USD"} if isinstance(cost, (int, float)) else None,
-    "providerUnits": None,
-}
-Path(sys.argv[2]).write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  "$ms" adapter claude-usage --result "$1" --output "$2"
 }
 
 claude_result_field() { # result JSON, field
-  # TODO(go-wiring): needs a verb to read a result field with the modelUsage
-  # collapse (model -> single key, "multi-model:...", or "unobserved"); not a
-  # pure field read.
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-from pathlib import Path
-try:
-    value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    raise SystemExit(1)
-field = sys.argv[2]
-if field == "model":
-    models = value.get("modelUsage")
-    keys = sorted(models) if isinstance(models, dict) else []
-    if len(keys) == 1:
-        result = keys[0]
-    elif not keys:
-        result = "unobserved"
-    else:
-        result = "multi-model:" + ",".join(keys)
-else:
-    result = value.get(field, "")
-if result is not None:
-    print(result)
-PY
+  "$ms" adapter claude-result-field --result "$1" --field "$2"
 }
 
 supervise() { # dispatch|follow-up and supervisor args
@@ -204,9 +102,6 @@ supervise() { # dispatch|follow-up and supervisor args
   local signal_file="$round_dir/claude-session-signal.json"
   local result_file="$round_dir/claude-result.json"
   local usage_file="$round_dir/usage.json"
-  # TODO(go-wiring): claude-session-signal.py is not yet ported; the SessionStart
-  # hook keeps calling it as python.
-  local hook_helper="$root/scripts/agents/adapters/claude-session-signal.py"
   local permission_mode tools allowed_tools schema_json max_budget max_turns cli_pid
   local signalled_session signalled_model result_session result_model
   local -a command read_roots
@@ -215,15 +110,8 @@ supervise() { # dispatch|follow-up and supervisor args
   record_actual_workspace_write_scope
   fail_if_effective_wider_before_launch || return 1
   : >"$events"
-  build_claude_settings "$settings_file" "$hook_helper"
-  # TODO(go-wiring): needs a json-compact/canonicalize verb (re-emit a whole JSON
-  # file as compact single-line JSON).
-  schema_json=$(python3 - "$schema" <<'PY'
-import json, sys
-from pathlib import Path
-print(json.dumps(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")), separators=(",", ":")))
-PY
-  )
+  build_claude_settings "$settings_file"
+  schema_json=$("$ms" host json-compact --file "$schema")
   if [[ $(field "$record" permissions.requested.writeRoots) == '[]' ]]; then
     permission_mode=dontAsk
     tools=Read,Glob,Grep
@@ -253,18 +141,7 @@ PY
   if [[ $(field "$record" permissions.requested.writeRoots) == '[]' ]]; then
     while IFS= read -r read_root; do
       read_roots+=("$read_root")
-    done < <(
-      # TODO(go-wiring): needs a verb to list requested readRoots excluding the
-      # workspaceRoot (filter/iteration, not a single field read).
-      python3 - "$record" <<'PY'
-import json, sys
-from pathlib import Path
-value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-for root in value["permissions"]["requested"]["readRoots"]:
-    if root != value["workspaceRoot"]:
-        print(root)
-PY
-    )
+    done < <("$ms" adapter claude-read-roots --record "$record")
   fi
   for read_root in "${read_roots[@]}"; do command+=(--add-dir "$read_root"); done
   [[ "$verb" == dispatch ]] || command+=(--resume "$requested_session")
@@ -294,18 +171,7 @@ PY
   done
   wait_for_cli "$cli_pid"
   cp "$result_file" "$raw" 2>/dev/null || : >"$raw"
-  # TODO(go-wiring): needs a verb to append the result JSON as one compact event
-  # line (read result, append to events.jsonl; state edit).
-  python3 - "$result_file" "$events" <<'PY'
-import json, sys
-from pathlib import Path
-try:
-    value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    raise SystemExit(0)
-with Path(sys.argv[2]).open("a", encoding="utf-8") as handle:
-    handle.write(json.dumps(value, separators=(",", ":")) + "\n")
-PY
+  "$ms" adapter claude-append-result --result "$result_file" --events "$events"
   claude_usage "$result_file" "$usage_file"
 
   result_session=$(claude_result_field "$result_file" session_id 2>/dev/null || true)

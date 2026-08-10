@@ -33,15 +33,7 @@ selftest_denial_ends_turn=1
 
 devin_version() {
   command -v devin >/dev/null 2>&1 || { echo "devin CLI is not installed" >&2; return 1; }
-  # TODO(go-wiring): needs a version-parse verb (regex-extract a semver from CLI
-  # --version output).
-  devin --version 2>/dev/null | python3 -c '
-import re, sys
-text = sys.stdin.read()
-match = re.search(r"[0-9]+(?:\.[0-9A-Za-z_-]+)+", text)
-if not match: raise SystemExit("could not parse devin CLI version")
-print(match.group(0))
-'
+  devin --version 2>/dev/null | "$ms" adapter version-parse
 }
 
 devin_config_identity() {
@@ -97,7 +89,7 @@ probe() {
     "$key_hashes"
 }
 
-build_devin_config() { # output
+build_devin_config() { # config output, provenance output
   # --config REPLACES the user configuration rather than layering on it, and a
   # file without the onboarding marker makes the CLI print a welcome banner
   # into the turn's stdout. So the job's config is the user's file with the
@@ -105,42 +97,7 @@ build_devin_config() { # output
   # survive, and nothing the user set is silently dropped. Replacing the
   # permissions member (never merging it) is the only safe direction, because
   # merging can only widen what the job may attempt.
-  # TODO(go-wiring): needs a verb to build the Devin job config (swap the
-  # permissions block into the inherited user config; state edit).
-  python3 - "$record" "$1" "$2" <<'PY'
-import json, os, sys
-from pathlib import Path
-
-record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-requested = record["permissions"]["requested"]
-read_roots = requested["readRoots"]
-write_roots = requested["writeRoots"]
-allow = ["read", "grep", "glob", "exec"]
-allow.extend(f"Read({root}/**)" for root in read_roots)
-deny = ["Fetch(*)", "mcp__*"]
-if write_roots:
-    allow.extend(["edit"])
-    allow.extend(f"Write({root}/**)" for root in write_roots)
-else:
-    deny.extend(["edit", "Write(**)"])
-config_home = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-user_path = Path(config_home) / "devin" / "config.json"
-try:
-    value = json.loads(user_path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        value = {}
-except (OSError, ValueError):
-    value = {}
-replaced = sorted(key for key in ("permissions", "sandbox") if key in value)
-value.pop("sandbox", None)
-value["permissions"] = {"allow": allow, "ask": [], "deny": deny}
-Path(sys.argv[2]).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-Path(sys.argv[3]).write_text(json.dumps({
-    "userConfig": str(user_path),
-    "replacedMembers": replaced,
-    "inheritedMembers": sorted(key for key in value if key != "permissions"),
-}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  "$ms" adapter devin-config --record "$record" --output "$1" --provenance "$2"
 }
 
 list_devin_sessions() { # output file
@@ -159,71 +116,8 @@ list_devin_sessions() { # output file
 # launches in one directory cannot be told apart, and guessing records a peer's
 # session as this job's identity.
 new_devin_session() { # before list, current list, optional hook signal, workspace
-  # TODO(go-wiring): needs a session-correlation verb (diff before/after session
-  # lists scoped to the workspace; refuse on ambiguity).
-  python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
-import json, sys
-from pathlib import Path
-
-before_path, current_path, signal_path = (Path(a) for a in sys.argv[1:4])
-
-def load(path, fallback):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
-
-signal = load(signal_path, {})
-for key in ("session_id", "sessionId", "id"):
-    value = signal.get(key) if isinstance(signal, dict) else None
-    if isinstance(value, str) and value:
-        print(value)
-        raise SystemExit(0)
-
-def records(value):
-    if isinstance(value, dict):
-        if any(key in value for key in ("session_id", "sessionId", "id")):
-            yield value
-        for child in value.values():
-            yield from records(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from records(child)
-
-def session_id(record):
-    for key in ("session_id", "sessionId", "id"):
-        value = record.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None
-
-workspace = Path(sys.argv[4]).resolve() if len(sys.argv) > 4 and sys.argv[4] else None
-
-def in_workspace(record):
-    if workspace is None:
-        return True
-    directory = record.get("working_directory") or record.get("workingDirectory")
-    if not isinstance(directory, str) or not directory:
-        return False
-    try:
-        return Path(directory).resolve() == workspace
-    except OSError:
-        return False
-
-before = {session_id(item) for item in records(load(before_path, []))}
-candidates = sorted({
-    identifier
-    for item in records(load(current_path, []))
-    if (identifier := session_id(item)) and identifier not in before and in_workspace(item)
-})
-if len(candidates) == 1:
-    print(candidates[0])
-    raise SystemExit(0)
-if len(candidates) > 1:
-    print("ambiguous-session-correlation:" + ",".join(candidates), file=sys.stderr)
-    raise SystemExit(2)
-raise SystemExit(1)
-PY
+  "$ms" adapter devin-session \
+    --before "$1" --current "$2" --signal "$3" --workspace "${4:-}"
 }
 
 devin_usage() { # output, transcript, cumulative-out, previous-cumulative-or-empty, expect-previous(0|1)
@@ -236,83 +130,16 @@ devin_usage() { # output, transcript, cumulative-out, previous-cumulative-or-emp
   #
   # A resumed round whose predecessor artifact is missing publishes UNAVAILABLE
   # rather than the session totals. An aggregator never reads a job log, so
-  # "wrong but explained in a log" is just wrong.
-  # TODO(go-wiring): needs a Devin usage-delta verb (cumulative session totals ->
-  # per-round token/ACU delta with predecessor subtraction).
-  python3 - "$1" "$2" "$3" "${4:-}" "${5:-0}" <<'PY'
-import json, sys
-from pathlib import Path
-
-def load(path):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-FIELDS = ("total_prompt_tokens", "total_completion_tokens", "total_cached_tokens", "total_steps")
-transcript = load(sys.argv[2]) or {}
-metrics = transcript.get("final_metrics")
-totals = {}
-if isinstance(metrics, dict):
-    totals = {name: metrics.get(name) for name in FIELDS if isinstance(metrics.get(name), int)}
-
-# An enterprise Devin does not report tokens at all; it reports ACU, which is a
-# different thing and is never mixed into a token field or dressed up as cost.
-# It rides in providerUnits, which the mission fence meters by name, so a
-# tokenless environment is metered rather than silently unmetered. The exact
-# key is not observable from this account, so anything whose name contains
-# "acu" counts and nothing is invented when none does.
-def provider_unit(source):
-    if not isinstance(source, dict):
-        return None
-    for name, value in sorted(source.items()):
-        if "acu" in name.lower() and isinstance(value, (int, float)) and not isinstance(value, bool):
-            return {"name": "acu", "value": value, "sourceKey": name}
-    return None
-
-acu = provider_unit(metrics)
-previous_path = sys.argv[4]
-expect_previous = sys.argv[5] == "1"
-previous = load(previous_path) if previous_path else None
-# A resumed turn that cannot find its predecessor's totals cannot compute a
-# delta. Publishing the session totals here would double-count every earlier
-# turn in every aggregate, so this is unavailable -- the first-turn case (no
-# predecessor expected) still records totals as-is.
-predecessor_missing = expect_previous and not isinstance(previous, dict)
-unavailable = {
-    "availability": "unavailable", "inputTokens": None, "cachedInputTokens": None,
-    "outputTokens": None, "reasoningTokens": None, "cost": None,
-    "providerUnits": {"name": acu["name"], "value": acu["value"]} if acu else None,
-}
-if len(totals) != len(FIELDS):
-    if acu:
-        Path(sys.argv[3]).write_text(json.dumps({acu["sourceKey"]: acu["value"]}, sort_keys=True) + "\n", encoding="utf-8")
-        base = previous if isinstance(previous, dict) else {}
-        earlier = base.get(acu["sourceKey"])
-        if predecessor_missing:
-            unavailable["providerUnits"] = None
-        elif isinstance(earlier, (int, float)) and not isinstance(earlier, bool):
-            unavailable["providerUnits"] = {"name": "acu", "value": acu["value"] - earlier}
-    Path(sys.argv[1]).write_text(json.dumps(unavailable, sort_keys=True) + "\n", encoding="utf-8")
-    raise SystemExit(0)
-Path(sys.argv[3]).write_text(json.dumps(totals, sort_keys=True) + "\n", encoding="utf-8")
-if predecessor_missing:
-    Path(sys.argv[1]).write_text(json.dumps(unavailable, sort_keys=True) + "\n", encoding="utf-8")
-    raise SystemExit(0)
-base = previous if isinstance(previous, dict) else {}
-def delta(name):
-    earlier = base.get(name)
-    return totals[name] - earlier if isinstance(earlier, int) else totals[name]
-Path(sys.argv[1]).write_text(json.dumps({
-    "availability": "native",
-    "inputTokens": delta("total_prompt_tokens"),
-    "cachedInputTokens": delta("total_cached_tokens"),
-    "outputTokens": delta("total_completion_tokens"),
-    "reasoningTokens": None,
-    "cost": None,
-    "providerUnits": {"name": "devin-steps", "value": delta("total_steps")},
-}, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  # "wrong but explained in a log" is just wrong. An enterprise Devin reports
+  # ACU instead of tokens; ACU rides in providerUnits, metered by name, never
+  # mixed into a token field or dressed up as cost.
+  if [[ "${5:-0}" == 1 ]]; then
+    "$ms" adapter devin-usage --usage "$1" --transcript "$2" \
+      --cumulative "$3" --previous "${4:-}" --expect-previous
+  else
+    "$ms" adapter devin-usage --usage "$1" --transcript "$2" \
+      --cumulative "$3" --previous "${4:-}"
+  fi
 }
 
 previous_round_artifact() { # file name -> path of the previous round's copy, if any
@@ -331,21 +158,10 @@ devin_record_effective_model() { # transcript
   # identifier is written -- lowercase, non-alphanumeric runs become one hyphen
   # -- and record whatever that yields, including a genuine disagreement.
   local observed observed_display
-  # TODO(go-wiring): lenient JSON string-field read (agent.model_name; print
-  # nothing unless a non-empty string). `json get` diverges here: it prints
-  # "null" for a present-null field, which would be canonicalized as a model.
-  observed_display=$(python3 - "$1" <<'PY'
-import json, sys
-from pathlib import Path
-try:
-    value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-except (OSError, ValueError):
-    raise SystemExit(0)
-name = (value.get("agent") or {}).get("model_name")
-if isinstance(name, str) and name.strip():
-    print(name)
-PY
-  ) || observed_display=""
+  # A lenient read: a present-null or absent model_name prints empty (via the
+  # default), never the string "null" that canonicalising would take for a
+  # model. An empty result canonicalises away to the `unobserved` fallback.
+  observed_display=$("$ms" json get --file "$1" --field agent.model_name --default "" 2>/dev/null || true)
   observed=$(
     "$ms" config canonical-model "$observed_display"
   ) || observed=""
@@ -361,20 +177,9 @@ devin_settle_session_identity() { # transcript
   # not a preference: the record must not certify a session the provider's own
   # transcript contradicts.
   local exported
-  # TODO(go-wiring): lenient JSON string-field read (session_id; print nothing
-  # unless a non-empty string). Same `json get` null divergence as above.
-  exported=$(python3 - "$1" <<'PY'
-import json, sys
-from pathlib import Path
-try:
-    value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-except (OSError, ValueError):
-    raise SystemExit(0)
-sid = value.get("session_id")
-if isinstance(sid, str) and sid:
-    print(sid)
-PY
-  ) || exported=""
+  # A lenient read: a present-null or absent session_id prints empty (via the
+  # default), which the caller reads as "the transcript names no session".
+  exported=$("$ms" json get --file "$1" --field session_id --default "" 2>/dev/null || true)
   # Nothing was correlated (no handshake) -- nothing to settle.
   [[ -n "${session_id:-}" ]] || return 0
   # The transcript is authoritative. If we correlated a session but the
@@ -405,15 +210,7 @@ runtime_usage_after_repair() { # usage file
   # usage cannot be trusted as complete. Record it unavailable rather than
   # leaving the pre-repair figure standing and undercounting provider budget.
   if [[ ! -s "$repair_transcript" ]]; then
-    # TODO(go-wiring): needs a verb to write an unavailable-usage file (state edit).
-    python3 - "$usage_file" <<'PY'
-import json, sys
-from pathlib import Path
-Path(sys.argv[1]).write_text(json.dumps({
-    "availability": "unavailable", "inputTokens": None, "cachedInputTokens": None,
-    "outputTokens": None, "reasoningTokens": None, "cost": None, "providerUnits": None,
-}, sort_keys=True) + "\n", encoding="utf-8")
-PY
+    "$ms" adapter usage-unavailable --output "$usage_file"
     return 0
   fi
   devin_usage "$usage_file" "$repair_transcript" "${cumulative:-$round_dir/session-usage.json}" \

@@ -23,13 +23,7 @@ adapter_common_init codex
 
 codex_version() {
   command -v codex >/dev/null 2>&1 || { echo "codex CLI is not installed" >&2; return 1; }
-  codex --version 2>/dev/null | python3 -c '
-import re, sys
-text = sys.stdin.read()
-match = re.search(r"[0-9]+(?:\.[0-9A-Za-z_-]+)+", text)
-if not match: raise SystemExit("could not parse codex CLI version")
-print(match.group(0))
-'
+  codex --version 2>/dev/null | "$ms" adapter version-parse
 }
 
 codex_config_identity() {
@@ -86,72 +80,11 @@ probe() {
 }
 
 codex_event_field() { # events JSONL, session|turn
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-from pathlib import Path
-path, wanted = Path(sys.argv[1]), sys.argv[2]
-if not path.is_file():
-    raise SystemExit(1)
-for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
-    try:
-        event = json.loads(raw)
-    except json.JSONDecodeError:
-        continue
-    kind = event.get("type")
-    if wanted == "session" and kind in {"thread.started", "thread.created", "session.created"}:
-        value = event.get("thread_id") or event.get("session_id") or event.get("id")
-        if isinstance(value, str) and value:
-            print(value)
-            raise SystemExit(0)
-    if wanted == "turn" and kind in {"turn.started", "turn.created"}:
-        value = event.get("turn_id") or event.get("id")
-        if isinstance(value, str) and value:
-            print(value)
-            raise SystemExit(0)
-raise SystemExit(1)
-PY
+  "$ms" adapter codex-event --events "$1" --field "$2"
 }
 
 codex_usage() { # events JSONL, output
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-from pathlib import Path
-last = {}
-for raw in Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines():
-    try:
-        event = json.loads(raw)
-    except json.JSONDecodeError:
-        continue
-    usage = event.get("usage")
-    if isinstance(usage, dict):
-        last = usage
-
-def first_present(names):
-    for name in names:
-        if name in last and last[name] is not None:
-            return last[name]
-    return None
-
-value = {
-    "availability": "native",
-    "inputTokens": first_present(("input_tokens", "inputTokens")),
-    "cachedInputTokens": first_present(("cached_input_tokens", "cachedInputTokens")),
-    "outputTokens": first_present(("output_tokens", "outputTokens")),
-    "reasoningTokens": first_present(
-        ("reasoning_output_tokens", "reasoning_tokens", "reasoningTokens")
-    ),
-    "cost": None,
-    "providerUnits": None,
-}
-Path(sys.argv[2]).write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
-PY
-}
-
-toml_string() {
-  python3 - "$1" <<'PY'
-import json, sys
-print(json.dumps(sys.argv[1]))
-PY
+  "$ms" adapter codex-usage --events "$1" --output "$2"
 }
 
 codex_permission_settings() { # permissions JSON, optional dotted prefix
@@ -173,37 +106,26 @@ codex_permission_settings() { # permissions JSON, optional dotted prefix
 
 build_codex_command() { # dispatch|follow-up, model, workspace, schema, output, sandbox, network, session
   local verb=$1 command_model=$2 command_workspace=$3 command_schema=$4 command_output=$5
-  local command_sandbox=$6 command_network=$7 command_session=${8:-} model_toml
-  if [[ "$verb" == dispatch ]]; then
-    codex_cli_command=(
-      codex exec --json
-      -m "$command_model"
-      --sandbox "$command_sandbox"
-      -C "$command_workspace"
-      -c 'approval_policy="never"'
-      -c "sandbox_workspace_write.network_access=$command_network"
-      --output-schema "$command_schema"
-      -o "$command_output"
-      -
-    )
-  elif [[ "$verb" == follow-up && -n "$command_session" ]]; then
-    # `codex exec resume` has no --sandbox or -C flags. The thread inherits its
-    # cwd/config; supported per-turn overrides travel only through -c.
-    model_toml=$(toml_string "$command_model")
-    codex_cli_command=(
-      codex exec resume --json
-      -c "model=$model_toml"
-      -c "sandbox_mode=\"$command_sandbox\""
-      -c 'approval_policy="never"'
-      -c "sandbox_workspace_write.network_access=$command_network"
-      --output-schema "$command_schema"
-      -o "$command_output"
-      "$command_session"
-      -
-    )
-  else
-    return 2
-  fi
+  local command_sandbox=$6 command_network=$7 command_session=${8:-} token
+  # `codex exec resume` has no --sandbox or -C flags: a resumed thread inherits
+  # its cwd/config and takes supported per-turn overrides through -c only. The
+  # argv (including the TOML-quoted model on the resume path) is assembled once
+  # and read back token by token so nothing has to be requoted here.
+  codex_cli_command=()
+  while IFS= read -r -d '' token; do
+    codex_cli_command+=("$token")
+  done < <(
+    "$ms" adapter codex-command \
+      --verb "$verb" \
+      --model "$command_model" \
+      --workspace "$command_workspace" \
+      --schema "$command_schema" \
+      --output "$command_output" \
+      --sandbox "$command_sandbox" \
+      --network "$command_network" \
+      --session "$command_session"
+  )
+  (( ${#codex_cli_command[@]} > 0 )) || return 2
 }
 
 supervise() { # dispatch|follow-up and supervisor args
