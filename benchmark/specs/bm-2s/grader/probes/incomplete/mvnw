@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+case " $* " in
+  *" --version "*|*" -version "*)
+    echo "BM-1 calibration probe builder"
+    exit 0
+    ;;
+esac
+
+mkdir -p target/classes
+javac --release 21 -d target/classes src/main/java/ProbeTaskrun.java
+cp probe-mode.txt target/classes/probe-mode.txt
+jar --create --file target/taskrun.jar --main-class ProbeTaskrun -C target/classes .
