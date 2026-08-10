@@ -11,8 +11,8 @@
   stop until fully done."
 - Next step: none
 - In flight right now: nothing in this checkout's job records —
-  the gates are running (full-suite run 4 over the integrated caps
-  tree), with a tracked waiter in the orchestrator session.
+  the provisioning-identity critique (job provisioning-identity-r1)
+  runs in the slc-r4 worktree (KI-34) with a tracked waiter.
 - Waiting on the human: nothing.
 
 ## Rulings collected before departure (AskUserQuestion, 2026-08-09)
@@ -52,22 +52,15 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
    named risk. The Proof list is the arbiter; design defects
    exposed by implementation get one defect-driven sol round
    each. The slc-r4 worktree is KEPT for those rounds.
-4. IN PROGRESS — caps validation loop with Codex (final word
-   theirs). Closed classes: census-gate ordering (Codex r1,
-   integrated, S4 green); dormant cap 999999→120; fence-state
-   stamping — Codex r2's fixture-side seeding pattern applied to
-   the race fixture AND all six hand-built validate missions
-   (alpha, wall, cycles, jobs, concurrency, timeout — the last
-   found in run 8 masked as a status timeout); message
-   alignments RATIFIED by Codex r3 (mission-cap greps the
-   sharper 'above signed fence.job-cap-min'; fence-* grep their
-   per-fence 'mission fence refused job (<fence>)'; over-cap
-   authorization refusals write NO ask — inverted assertion);
-   AUTH-R2-005 check-act race hardened by Codex r3 (retry scoped
-   to the transient CENSUS-FAILED refusal). Suite run 9 is the
-   commit decider. Commit split on green: (a) supervision chain
-   documents, (b) Codex's caps implementation + integration
-   fixes.
+4. DONE — caps loop closed GREEN: suite run 10 passed end to end
+   after ten runs burned down seven classes (census-gate order,
+   dormant cap, fence-state stamps x7 missions, two message
+   contracts, the ask inversion, the AUTH-R2-005 race, the
+   KI-31-shaped guard fixture). All Codex rulings honored (three
+   rounds, two ratifications). COMMITTED as the ruled split:
+   43265c1 (supervision chain documents), 31e09eb (Codex's caps
+   authority core + integrations), 9ffac42 (Go foundation).
+   Gates+push chain running for the backlog of commits.
 5. IN PROGRESS — Go implementation. DONE: module
    (github.com/widoriezebos/agentic-tools/metasystem, go 1.26.5);
    internal/registry — REG-1 framing with two-part repair and
@@ -101,8 +94,18 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
 7. TODO — cohort driver: teardown ledger + entry recovery +
    completion continuation (D-3; bash — driver logic, not
    process-critical).
-8. TODO — gates + push: suite && kit gate && push, one chain (the
-   ~21 unpushed commits plus everything above).
+8. BLOCKED on item 8a — the first chained gates+push run passed
+   the SUITE but failed the KIT GATE's provisioning leg on KI-31's
+   ancestry shape (raw target commits refused under a live agent
+   ancestor; the classifier rightly refused an orphaned relaunch).
+   24 commits wait locally.
+8a. IN PROGRESS — close KI-31 at the root instead of scheduling
+   around it: plans/provisioning-identity.md (the provisioner is
+   the fresh target's first main; wrapper-carried commits per the
+   KI-30 anchor precedent; retire at seal). One defect-driven sol
+   round running; implement in provision.sh on return; kit gate
+   then passes under ANY invocation shape, which also unblocks
+   cohort provisioning (items 9-10) without detachment.
 9. TODO — benchmark cohort A (host Opus 5, delegates gpt-5.6-sol,
    2 reps): seal, sign (standing pre-auth), preflight, run,
    watch tracked, grade.

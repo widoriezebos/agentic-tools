@@ -283,6 +283,28 @@ host_runtime=$(printf '%s\n' "$manifest_facts" | sed -n '4p')
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 
+# PI-R1-004 (plans/provisioning-identity.md D-P1.1): a target that already
+# exists and carries a lease record is residue of a dead provisioning; the
+# next attempt IS the recovery. A live or unproven holder refuses loudly.
+if [[ -e "$target" ]] && [[ -n "$(ls -A "$target" 2>/dev/null)" ]]; then
+  residue_lease="$target/artifacts/agents/mains/worktree-lease.json"
+  [[ -f "$residue_lease" ]] \
+    || die 1 "provision refused: target exists without a lease record; foreign content is never replaced silently: $target"
+  python3 - "$residue_lease" "$root/scripts/agents/process-census.py" <<'RESIDUE'
+import json, subprocess, sys
+lease = json.load(open(sys.argv[1]))
+pid, started = lease.get("pid"), lease.get("pidStartedAt")
+if type(pid) is not int or type(started) is not int:
+    raise SystemExit("provision refused: residue lease is malformed; uninspectable is alive")
+probe = subprocess.run([sys.argv[2], "started-at", "--pid", str(pid)],
+                       capture_output=True, text=True)
+if probe.returncode != 0:
+    raise SystemExit(0)  # a successful absence read: the pid is gone
+if probe.stdout.strip() == str(started):
+    raise SystemExit(f"provision refused: target lease holder pid {pid} is LIVE; not replacing a held target")
+RESIDUE
+  rm -rf "$target"
+fi
 mkdir -p "$target"
 git -C "$target" init -q -b main
 seed_path=$(python3 - "$manifest" <<'PY'
@@ -296,6 +318,18 @@ if ! "$root/scripts/adopt.sh" "$target" --runtimes "$runtimes" >"$scratch/adopt.
   cat "$scratch/adopt.log" >&2
   die 1 "provision failed while adopting the metasystem"
 fi
+
+# D-P1.2 (plans/provisioning-identity.md): the provisioner is the target's
+# first main. Announce AFTER adoption (the helpers now exist), then VERIFY
+# holdership — announce alone does not fail against a live holder.
+provisioner_start=$("$target/scripts/agents/process-census.py" started-at --pid $$) \
+  || die 1 "provision refused: cannot read the provisioner's own start time"
+"$target/scripts/agents/worktree-lease.py" --root "$target" announce \
+  --session "provision-$mission_id" --pid $$ --start "$provisioner_start" \
+  --tag "metasystem-provisioner-$mission_id" --runtime "$host_runtime" >/dev/null \
+  || die 1 "provision refused: could not announce the provisioner in the target"
+"$target/scripts/agents/worktree-lease.py" --root "$target" require-holder --caller-pid $$ >/dev/null \
+  || die 1 "provision refused: the provisioner did not become the target's lease holder"
 
 mkdir -p "$evidence_root"
 python3 - "$target/metasystem.conf" "$manifest" "$evidence_root" <<'PY'
@@ -361,7 +395,8 @@ PY
 git init -q --bare -b main "$origin"
 git -C "$target" remote add origin "$origin"
 git -C "$target" add -A
-git -C "$target" commit -qm "Provision benchmark $mission_id instruments"
+(cd "$target" && scripts/agents/commit.sh -qm "Provision benchmark $mission_id instruments") \
+  || die 1 "provision refused: the instruments commit was not wrapper-carried"
 git -C "$target" tag "$instrument_tag"
 
 contract_rel=plans/mission-$mission_id.contract.md
@@ -444,10 +479,23 @@ PY
 git -C "$target" add "$contract_rel"
 # The contract is a deliberately added plan file; say so through the guard's
 # front door instead of weakening the guard.
-METASYSTEM_ALLOW_NEW_PLAN=1 git -C "$target" commit -qm "Add unsigned $mission_id mission contract"
+(cd "$target" && METASYSTEM_ALLOW_NEW_PLAN=1 scripts/agents/commit.sh -qm "Add unsigned $mission_id mission contract") \
+  || die 1 "provision refused: the contract commit was not wrapper-carried"
 git -C "$target" push -q -u origin main
 git -C "$target" push -q origin "refs/tags/$instrument_tag"
 git -C "$target" remote set-head origin main
+
+# D-P1.4: the provisioner's identity ends with its own invocation; the
+# human's later seal/sign commits are sovereign, and the runner's resume
+# establishes its own identity.
+"$target/scripts/agents/worktree-lease.py" --root "$target" retire \
+  --session "provision-$mission_id" --pid $$ --start "$provisioner_start" >/dev/null \
+  || die 1 "provision refused: could not retire the provisioner's announcement"
+# ... and RELEASE the checkout the way a departing main does (the S4-8
+# precedent): the lease record goes with the retired announcement, because a
+# lease naming a retired-but-live pid locks the next identity out (KI-33) —
+# the arming below establishes its own identity on an unheld checkout.
+rm -f "$target/artifacts/agents/mains/worktree-lease.json"
 
 provision_started=$("$target/scripts/agents/process-census.py" started-at --pid "$$")
 if ! METASYSTEM_AGENT_RUNTIME="$host_runtime" \

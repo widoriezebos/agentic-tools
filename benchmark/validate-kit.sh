@@ -284,6 +284,32 @@ PY
   "$provision_target/scripts/assert-mission.sh" --file "$provision_contract" >/dev/null \
     || { echo "benchmark provision: unsigned contract is structurally invalid" >&2; exit 1; }
 
+  # PI-R1-006 (plans/provisioning-identity.md Proof): the wrapper route is
+  # PROVEN, not hoped for. With an announced main in the caller's ancestry —
+  # deterministic in every outer invocation shape — the target's guard must
+  # REFUSE a raw commit and CARRY a wrapped one. The provisioner retired, so
+  # the gate announces itself for the control, then retires.
+  control_start=$("$provision_target/scripts/agents/process-census.py" started-at --pid $$)
+  "$provision_target/scripts/agents/worktree-lease.py" --root "$provision_target" announce \
+    --session kit-gate-control --pid $$ --start "$control_start" \
+    --tag metasystem-kit-gate-control --runtime fake >/dev/null
+  echo control >"$provision_target/control-file.txt"
+  git -C "$provision_target" add control-file.txt
+  if git -C "$provision_target" -c user.name=m -c user.email=m@example.invalid \
+      commit -qm "raw control commit" >"$tmp/raw-control.out" 2>&1; then
+    echo "benchmark provision: a RAW agent commit passed the target's guard" >&2
+    exit 1
+  fi
+  grep -q "requires scripts/agents/commit.sh" "$tmp/raw-control.out" \
+    || { echo "benchmark provision: raw-commit refusal lost its message" >&2; cat "$tmp/raw-control.out" >&2; exit 1; }
+  (cd "$provision_target" && GIT_AUTHOR_NAME=m GIT_AUTHOR_EMAIL=m@example.invalid \
+      GIT_COMMITTER_NAME=m GIT_COMMITTER_EMAIL=m@example.invalid \
+      scripts/agents/commit.sh -qm "wrapped control commit") \
+    || { echo "benchmark provision: the wrapper route failed to carry a commit" >&2; exit 1; }
+  git -C "$provision_target" reset -q --hard HEAD~1
+  "$provision_target/scripts/agents/worktree-lease.py" --root "$provision_target" retire \
+    --session kit-gate-control --pid $$ --start "$control_start" >/dev/null
+
   # The grader must be absent by world state, not merely by provisioner claim.
   [[ ! -e "$provision_target/benchmark" && ! -e "$provision_target/grader" ]] \
     || { echo "benchmark provision: held-out grader or benchmark kit reached the target" >&2; exit 1; }
@@ -468,12 +494,21 @@ PY
   printf '\nApproval: name=Metasystem Fixture; date=2026-08-05; contract-sha256=%s\n' \
     "$seal_hash" >>"$provision_contract"
   git -C "$provision_target" add plans/mission-bm-1.contract.md
-  "${provision_identity[@]}" git -C "$provision_target" commit -qm "Seal and sign fixture mission"
+  # The gate SIMULATES THE HUMAN here: sealing and signing are the human's
+  # own acts by design, and a human commit is sovereign under the guard. The
+  # gate cannot be a human, so this one simulated-human commit skips hooks
+  # explicitly — the guard's bite on agent commits is proven by the
+  # refuse-raw control above, and provisioning's own commits stay
+  # wrapper-carried under every invocation shape.
+  "${provision_identity[@]}" git -C "$provision_target" commit -q --no-verify -m "Seal and sign fixture mission"
   git -C "$provision_target" push -q origin main
   preflight_output=$("$provision_target/scripts/assert-mission.sh" --preflight --file "$provision_contract") \
     || { echo "benchmark provision: provisioned BM-1 failed preflight" >&2; exit 1; }
-  [[ "$preflight_output" == "mission preflight passed: bm-1" ]] \
-    || { echo "benchmark provision: preflight did not report BM-1 success" >&2; exit 1; }
+  # The caps work extended the success line with the contract pin; assert
+  # the pin AGAINST THE BYTES rather than pattern-matching the sentence.
+  expected_pin=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$provision_contract")
+  [[ "$preflight_output" == "mission preflight passed: bm-1 approvedContractSha256=$expected_pin" ]] \
+    || { echo "benchmark provision: preflight did not report BM-1 success with the contract's own pin; it said:" >&2; printf '%s\n' "$preflight_output" >&2; exit 1; }
 
 echo "kit: provisioning bridge passed"
 echo "kit validation passed"
