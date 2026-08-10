@@ -124,6 +124,20 @@ $protocol_message"
   [[ -z "$identity_pid" ]] || \
     "$ms" lease renew --root "$harness_root" --caller-pid "$identity_pid" >/dev/null 2>&1 || true
   message=$("$ms" supervise watchdog-report --repo "$harness_root" 2>/dev/null || true)
+  # The same discipline the stop-block holds — a report is ignorable and was
+  # ignored — applies to the watchdog: an UNCHANGED report was surfaced once
+  # and repeating it every turn is noise, so it is suppressed until it
+  # changes (a component dies, recovers, or the census goes stale a
+  # different way). The state is keyed by session, like the stop block.
+  watchdog_state="$harness_root/artifacts/agents/supervision/watchdog-surfaced-$session.state"
+  if [[ -n "$message" && -f "$watchdog_state" ]] \
+    && [[ "$message" == "$(cat "$watchdog_state" 2>/dev/null)" ]]; then
+    message=""
+  elif [[ -n "$message" ]]; then
+    mkdir -p "${watchdog_state%/*}" && printf '%s' "$message" >"$watchdog_state" 2>/dev/null || true
+  else
+    rm -f "$watchdog_state" 2>/dev/null || true
+  fi
   # Continuation is the one part of the loop no prompt can guarantee, so it is
   # checked here rather than asked for in prose: a turn ending while a plan
   # still names an unblocked next step and nothing is in flight says so.
