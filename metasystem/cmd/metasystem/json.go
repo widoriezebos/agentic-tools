@@ -15,33 +15,38 @@ import (
 func runJSONGet(args []string) int {
 	flags := flag.NewFlagSet("json get", flag.ContinueOnError)
 	file := flags.String("file", "", "JSON file to read")
+	value := flags.String("value", "", "JSON string to read (instead of --file)")
 	field := flags.String("field", "", "dotted field path (a.b.c)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *file == "" || *field == "" {
-		fmt.Fprintln(os.Stderr, "json get: --file and --field are required")
+	if *field == "" || (*file == "") == (*value == "") {
+		fmt.Fprintln(os.Stderr, "json get: --field and exactly one of --file or --value are required")
 		return 2
 	}
-	content, err := os.ReadFile(*file)
-	if err != nil {
-		return 1
+	content := []byte(*value)
+	if *file != "" {
+		read, err := os.ReadFile(*file)
+		if err != nil {
+			return 1
+		}
+		content = read
 	}
-	var value any
-	if err := json.Unmarshal(content, &value); err != nil {
+	var current any
+	if err := json.Unmarshal(content, &current); err != nil {
 		return 1
 	}
 	for _, key := range strings.Split(*field, ".") {
-		object, ok := value.(map[string]any)
+		object, ok := current.(map[string]any)
 		if !ok {
 			return 1
 		}
-		value, ok = object[key]
+		current, ok = object[key]
 		if !ok {
 			return 1
 		}
 	}
-	switch typed := value.(type) {
+	switch typed := current.(type) {
 	case string:
 		fmt.Println(typed)
 	case float64:
