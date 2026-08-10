@@ -416,6 +416,24 @@ failure instead of a silent one.
   NOTHING; improvements come after deletion of the original,
   through the loop.
 
+## The 2026-08-10 sequencing ruling: port first, benchmark last
+
+The human: "We will postpone the whole dev and benchmarking thing
+until we have everything ported and running perfectly fine on go."
+Consequences, folded into the protocol: (1) all benchmark work —
+the high-cap Devin cohort, cap discovery, agent comparison — is
+POSTPONED; bm-2 v0.2's fences stay committed and ready. (2) Each
+component's FLIP proceeds on fixture and conformance evidence
+alone; the per-cutover cohort steps of the flip protocol are
+DEFERRED. (3) NOTHING IS DELETED during the porting run: every
+original stays in the tree, which keeps rollback a conf-flip away
+for the entire migration. (4) The matched-pair cohorts run ONCE,
+at the end, over the fully ported system — the final acceptance —
+and only after that pair passes does the deletion sweep (and each
+tagged cutover commit) land. This is a structural change made by
+the human's direct ruling; the next JIT round is instructed to
+check its coherence rather than reopening a master round for it.
+
 ## Review model from round 4 on (IL-23 applied)
 
 Four rounds ran 11, 13, 13, 11 material — the count stopped
