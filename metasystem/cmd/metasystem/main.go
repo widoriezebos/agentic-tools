@@ -115,6 +115,16 @@ func families() []family {
 			},
 		},
 		{
+			name:    "mission-ledger",
+			summary: "the mission stop-loss ledger (port of mission-ledger.py)",
+			verbs: []verb{
+				{"init", "create a ledger with cycle and no-gain budgets", runMissionLedgerInit},
+				{"append", "append the next cycle's verdict", runMissionLedgerAppend},
+				{"verify", "validate the ledger and print its cycle count", runMissionLedgerVerify},
+				{"count", "print the number of recorded cycles", runMissionLedgerCount},
+			},
+		},
+		{
 			name:    "supervise",
 			summary: "the supervision lifecycle (plans/supervision-lifecycle.md)",
 			verbs: []verb{
