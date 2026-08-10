@@ -53,6 +53,7 @@ func families() []family {
 			summary: "configuration and identity helpers (canonical-model, config-identity, return-schema)",
 			verbs: []verb{
 				{"canonical-model", "print the canonical model key for a name (port of canonical-model.py)", runConfigCanonicalModel},
+				{"identity", "print an adapter's canonical configuration identity (port of config-identity.py)", runConfigIdentity},
 			},
 		},
 		{
