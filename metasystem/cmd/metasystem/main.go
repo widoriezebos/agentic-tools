@@ -56,6 +56,20 @@ func families() []family {
 			},
 		},
 		{
+			name:    "lease",
+			summary: "checkout write-authority: announce/classify/hold/renew (port of worktree-lease.py)",
+			verbs: []verb{
+				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
+				{"retire", "remove this process's announcement", runLeaseRetire},
+				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
+				{"require-holder", "gate a write on the caller being the authenticated holder", runLeaseRequireHolder},
+				{"renew", "bump the holder's lease revision", runLeaseRenew},
+				{"run-held", "run a command while holding the lease lock (gated on holdership)", runLeaseRunHeld},
+				{"protocol-growth", "report new protocol errors since a main last advanced its cursor", runLeaseProtocolGrowth},
+				{"protocol-advance", "merge a main's protocol-error counts into its cursor", runLeaseProtocolAdvance},
+			},
+		},
+		{
 			name:    "supervise",
 			summary: "the supervision lifecycle (plans/supervision-lifecycle.md)",
 			verbs: []verb{
