@@ -11,12 +11,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// RealCheckout implements Checkout against the actual supervision
+// DiskCheckout implements Checkout against the actual supervision
 // surface of one checkout: the lock directory, the state file, and
 // the shutdown-intent channel. Every read is three-way (D-1): only a
 // definitive negative is Absent; any other failure is Indeterminate,
 // and Indeterminate never authorizes anything.
-type RealCheckout struct {
+type DiskCheckout struct {
 	// Root is the checkout root the owner supervises.
 	Root string
 	// Self is this owner's identity: pid, start second, instance tag.
@@ -38,22 +38,22 @@ type RealCheckout struct {
 	clock func() time.Time
 }
 
-func (c *RealCheckout) now() time.Time {
+func (c *DiskCheckout) now() time.Time {
 	if c.clock != nil {
 		return c.clock()
 	}
 	return time.Now()
 }
 
-func (c *RealCheckout) supervisionDir() string {
+func (c *DiskCheckout) supervisionDir() string {
 	return filepath.Join(c.Root, "artifacts", "agents", "supervision")
 }
 
-func (c *RealCheckout) ownerFile() string {
+func (c *DiskCheckout) ownerFile() string {
 	return filepath.Join(c.supervisionDir(), "lock.d", "owner.json")
 }
 
-func (c *RealCheckout) statePath() string {
+func (c *DiskCheckout) statePath() string {
 	return filepath.Join(c.supervisionDir(), "state.json")
 }
 
@@ -71,9 +71,9 @@ func threeWayStat(path string) FileState {
 	}
 }
 
-func (c *RealCheckout) RootState() FileState { return threeWayStat(c.Root) }
+func (c *DiskCheckout) RootState() FileState { return threeWayStat(c.Root) }
 
-func (c *RealCheckout) StateFileState() FileState { return threeWayStat(c.statePath()) }
+func (c *DiskCheckout) StateFileState() FileState { return threeWayStat(c.statePath()) }
 
 // ownerRecord is the checkout lock's owner file schema — the same
 // bytes the shell system writes and reads today.
@@ -83,7 +83,7 @@ type ownerRecord struct {
 	InstanceTag  string `json:"instanceTag"`
 }
 
-func (c *RealCheckout) Currency() CurrencyState {
+func (c *DiskCheckout) Currency() CurrencyState {
 	content, err := os.ReadFile(c.ownerFile())
 	if errors.Is(err, os.ErrNotExist) {
 		return NoLock
@@ -135,7 +135,7 @@ type stateComponent struct {
 // paperwork).
 var BuildStamp = "dev"
 
-func (c *RealCheckout) StateNamesSelf() (bool, error) {
+func (c *DiskCheckout) StateNamesSelf() (bool, error) {
 	content, err := os.ReadFile(c.statePath())
 	if err != nil {
 		return false, err
@@ -152,7 +152,7 @@ func (c *RealCheckout) StateNamesSelf() (bool, error) {
 // lock's owner file is re-read immediately before the rename, and a
 // lock that no longer names this owner aborts the publication — the
 // caller's next cycle classifies the supersession.
-func (c *RealCheckout) PublishState(held []Held) error {
+func (c *DiskCheckout) PublishState(held []Held) error {
 	components := map[string]stateComponent{}
 	for _, member := range held {
 		if member.Generation != c.Generation {
@@ -208,10 +208,10 @@ func (c *RealCheckout) PublishState(held []Held) error {
 	return nil
 }
 
-// RealIntents implements the shutdown-intent channel (D-1,
+// DiskIntents implements the shutdown-intent channel (D-1,
 // SLC-R7-009, SLC-R9-004): latch at exit initiation, consume on read,
 // honor only a fresh intent naming this owner.
-type RealIntents struct {
+type DiskIntents struct {
 	Root    string
 	Self    identity.Ref
 	SelfTag string
@@ -229,21 +229,21 @@ type intentRecord struct {
 	WrittenAt          string `json:"writtenAt"`
 }
 
-func (i *RealIntents) now() time.Time {
+func (i *DiskIntents) now() time.Time {
 	if i.clock != nil {
 		return i.clock()
 	}
 	return time.Now()
 }
 
-func (i *RealIntents) intentPath() string {
+func (i *DiskIntents) intentPath() string {
 	return filepath.Join(i.Root, "artifacts", "agents", "supervision", "lock.d", "shutdown-intent.json")
 }
 
 // LatchShutdown reads and CONSUMES the intent. True only when the
 // intent names exactly this owner and is fresh; stale or foreign
 // intents are consumed, reported on stderr, and not honored.
-func (i *RealIntents) LatchShutdown() bool {
+func (i *DiskIntents) LatchShutdown() bool {
 	path := i.intentPath()
 	content, err := os.ReadFile(path)
 	if err != nil {
