@@ -143,6 +143,22 @@ func families() []family {
 			},
 		},
 		{
+			name:    "mission-contract",
+			summary: "the mission contract parser, sealer, and preflight",
+			verbs: []verb{
+				{"validate", "validate a mission contract's authored block", runMissionContractValidate},
+				{"seal", "seal a validated contract and print its digest", runMissionContractSeal},
+				{"preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},
+			},
+		},
+		{
+			name:    "mission-prompt",
+			summary: "assemble a mission host-turn prompt",
+			verbs: []verb{
+				{"assemble", "assemble the byte-stable host-turn prompt", runMissionPromptAssemble},
+			},
+		},
+		{
 			name:    "mission-ledger",
 			summary: "the mission stop-loss ledger",
 			verbs: []verb{
