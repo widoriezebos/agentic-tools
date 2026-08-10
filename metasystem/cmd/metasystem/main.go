@@ -347,6 +347,7 @@ func families() []family {
 				{"launch-detached", "start a command in its own session with logged output", runSuperviseLaunchDetached},
 				{"watchdog-report", "report a stale census, untracked processes, and dead components", runSuperviseWatchdogReport},
 				{"heartbeat", "atomically write a component heartbeat with its kernel identity", runSuperviseHeartbeat},
+				{"watcher-pass", "run one census pass as a standalone writer under the census lock", runSuperviseWatcherPass},
 			},
 		},
 	}
