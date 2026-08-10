@@ -214,14 +214,19 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 		trace.Root, trace.Currency, trace.StateFile = fileStateName(root), currencyName(currency), fileStateName(state)
 		switch Classify(root, currency, state) {
 		case PurposeGone:
+			trace.Verdict, trace.Exit = "purpose-gone", "purpose-gone"
 			return o.exitVia("purpose-gone", "checkout root or state token definitively absent")
 		case Superseded:
+			trace.Verdict, trace.Exit = "superseded", "superseded"
 			return o.exitVia("superseded", "the lock names another identity")
 		case Blind:
+			trace.Verdict = "blind"
 			return nil // log-and-continue: no relaunch on indeterminacy
 		}
+		trace.Verdict = "continue"
 		// Stale state is REPAIRED, not tolerated (SLC-R5-016).
 		if namesSelf, err := o.Checkout.StateNamesSelf(); err == nil && !namesSelf {
+			trace.Actions = append(trace.Actions, "republish-state")
 			if err := o.Checkout.PublishState(o.held); err != nil {
 				// A fenced publication that aborts means we lost
 				// currency mid-cycle; the next cycle classifies it.
@@ -232,14 +237,18 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 
 	// Establishment: first publication within the deadline or give up.
 	if !o.published {
+		trace.Actions = append(trace.Actions, "establish")
 		if err := o.establish(); err != nil {
+			trace.Actions = append(trace.Actions, "establish-failed: "+err.Error())
 			if o.Establishment.Observe(false) {
+				trace.Exit = "establishment-failed"
 				return o.exitVia("establishment-failed", err.Error())
 			}
 			return nil
 		}
 		o.Establishment.Observe(true)
 		o.published = true
+		trace.Actions = append(trace.Actions, "published")
 		return nil
 	}
 
@@ -252,20 +261,26 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 	members, err := o.Components.GroupCount(o.held)
 	observation := o.observeComponents()
 	if err == nil {
+		trace.GroupCount = members
 		if stop, _ := CeilingVerdict(members, o.Ceiling); stop {
 			// Stop the set NOW: overshoot survives at most one
 			// interval (SLC-R4-010), and the observation increments.
+			trace.Actions = append(trace.Actions, "ceiling-stop-set")
 			o.stopHeldSet()
 			observation = Failing
 		}
 	}
 	if unrecordable && observation == Healthy {
+		trace.Actions = append(trace.Actions, "unrecordable-set")
 		observation = Failing
 	}
+	trace.Observation = observationName(observation)
 
 	verdict := o.Breaker.Advance(observation)
+	trace.Breaker = o.Breaker.Consecutive
 	switch {
 	case verdict.GiveUp:
+		trace.Exit = "giving-up"
 		return o.exitVia("giving-up", fmt.Sprintf("%d consecutive failing observations", o.Breaker.Consecutive))
 	case verdict.SkipRelaunch:
 		return nil
@@ -275,6 +290,7 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 			o.relaunchDue = now.Add(verdict.RelaunchAfter)
 		}
 		if !now.Before(o.relaunchDue) {
+			trace.Actions = append(trace.Actions, "relaunch")
 			o.relaunchSet()
 			o.relaunchDue = time.Time{}
 		}
