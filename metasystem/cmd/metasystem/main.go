@@ -49,6 +49,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "config",
+			summary: "configuration and identity helpers (canonical-model, config-identity, return-schema)",
+			verbs: []verb{
+				{"canonical-model", "print the canonical model key for a name (port of canonical-model.py)", runConfigCanonicalModel},
+			},
+		},
+		{
 			name:    "json",
 			summary: "JSON field access for shell callers (replaces the python heredocs)",
 			verbs: []verb{
