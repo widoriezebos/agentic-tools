@@ -233,3 +233,38 @@ func runValidateSessionIsolation(args []string) int {
 	fmt.Println(newHarness)
 	return 0
 }
+
+// runValidateReturnComplete validates a canonical agent return against the
+// shipped role schema — by role and file, or by job (walking the chain and
+// checking identity). Violations print to stderr, one per line.
+func runValidateReturnComplete(args []string) int {
+	flags := flag.NewFlagSet("validate return-complete", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	role := flags.String("role", "", "role name (with --file)")
+	file := flags.String("file", "", "return file (with --role)")
+	job := flags.String("job", "", "job id (instead of --role/--file)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" {
+		fmt.Fprintln(os.Stderr, "validate return-complete: --root is required")
+		return 2
+	}
+	var violations []string
+	switch {
+	case *job != "" && *role == "" && *file == "":
+		violations = validate.ReturnCompleteJob(*root, *job)
+	case *job == "" && *role != "" && *file != "":
+		violations = validate.ReturnCompleteRole(*root, *role, *file)
+	default:
+		fmt.Fprintln(os.Stderr, "validate return-complete: --job, or --role with --file")
+		return 2
+	}
+	for _, violation := range violations {
+		fmt.Fprintf(os.Stderr, "violation: %s\n", violation)
+	}
+	if len(violations) > 0 {
+		return 1
+	}
+	return 0
+}

@@ -79,6 +79,7 @@ func families() []family {
 				{"waiver-facts", "print an implementer delegate's critique-waiver class and mission stream", runValidateWaiverFacts},
 				{"wrapper-token", "prove the caller's ancestry contains the live commit wrapper", runValidateWrapperToken},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
+				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
 			},
 		},
 		{
