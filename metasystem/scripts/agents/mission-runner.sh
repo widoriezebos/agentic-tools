@@ -36,12 +36,6 @@ RUNNERS = MISSIONS / "runners"
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 TERMINAL_JOBS = {"completed", "failed", "timeout", "cancelled"}
 KNOWN_ASK_REASONS = {"reserved-decision", "red-test", "merge-conflict", "host-failure"}
-LEGAL_STREAM_TRANSITIONS = {
-    "active": {"active", "parked-reserved", "parked-stop-loss", "done"},
-    "parked-reserved": {"parked-reserved"},
-    "parked-stop-loss": {"parked-stop-loss"},
-    "done": {"done"},
-}
 
 
 class RunnerError(RuntimeError):
@@ -157,6 +151,20 @@ def require_command(command: list[str], message: str, code: int = 3) -> str:
         detail = (result.stderr or result.stdout).strip()
         raise RunnerError(f"{message}: {detail}", code)
     return result.stdout.strip()
+
+
+def ms_json(arguments: list[str], label: str) -> dict[str, Any]:
+    """Run a metasystem verb that prints a JSON object and parse it."""
+    result = run_command([MS] + arguments)
+    if result.returncode != 0:
+        raise RunnerError((result.stderr or result.stdout).strip() or f"{label} refused")
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise RunnerError(f"{label} produced unreadable JSON: {error}") from error
+    if not isinstance(value, dict):
+        raise RunnerError(f"{label} produced unreadable JSON")
+    return value
 
 
 def contract_path(mission: str) -> Path:
@@ -310,6 +318,7 @@ def group_alive(pgid: int) -> bool:
 
 
 def scaled_seconds(base: int) -> int:
+    # Twin of internal/missionrunner ScaledSeconds; keep the rounding identical.
     raw = os.environ.get("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1000")
     try:
         scale = int(raw)
@@ -321,6 +330,7 @@ def scaled_seconds(base: int) -> int:
 
 
 def interval_seconds(name: str, default_ms: int) -> float:
+    # Twin of internal/missionrunner Interval; keep the validation identical.
     raw = os.environ.get(name, str(default_ms))
     try:
         milliseconds = int(raw)
@@ -440,6 +450,9 @@ def mission_lineage(mission: str) -> str:
     two missions sharing a prefix share a lineage, which would misread a foreign
     takeover as a renewal and suppress the epoch bump and sweep. A hash is
     fixed-length for any id and stays recomputable from the mission id.
+
+    Twin of internal/missionrunner MissionLineage; the derivations must match
+    or a successor process stops renewing its own mission's lease.
     """
     return "mission-" + hashlib.sha256(mission.encode("utf-8")).hexdigest()[:32]
 
@@ -650,53 +663,6 @@ def anchor_state(state_path: Path, ledger: Path, identity: str) -> None:
     )
     if result.returncode != 0:
         raise RunnerError(f"mission anchor refused: {(result.stderr or result.stdout).strip()}")
-
-
-def open_ask_ids(directory: Path) -> list[str]:
-    result = []
-    if not directory.exists():
-        return result
-    for path in directory.glob("*.json"):
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(value, dict) and value.get("answeredAt") is None and isinstance(value.get("askId"), str):
-            result.append(value["askId"])
-    return sorted(set(result))
-
-
-def project_fences(mission: str, state: dict[str, Any]) -> None:
-    directory = mission_dir(mission)
-    fences_path = directory / "fences.json"
-    if fences_path.exists():
-        fences = read_json(fences_path, "mission fence counters")
-        reservations = fences.get("reservations", {})
-        if not isinstance(reservations, dict):
-            raise RunnerError("mission fence reservations are unreadable")
-        active = 0
-        for job in reservations:
-            path = AGENTS / "jobs" / f"{job}.json"
-            try:
-                status = json.loads(path.read_text(encoding="utf-8")).get("status")
-            except (OSError, json.JSONDecodeError):
-                status = None
-            if status not in TERMINAL_JOBS:
-                active += 1
-        state["fences"].update(
-            {
-                "startedAt": fences.get("startedAt", state["fences"]["startedAt"]),
-                "cycles": fences.get("cycles", state["fences"]["cycles"]),
-                "jobs": len(reservations),
-                "activeJobs": active,
-            }
-        )
-    usage_path = directory / "usage.json"
-    if usage_path.exists():
-        usage = read_json(usage_path, "mission usage")
-        units = usage.get("units")
-        if isinstance(units, list):
-            state["fences"]["usage"] = units
 
 
 def initialize_state(mission: str, lease: Path) -> tuple[Path, Path, dict[str, Any]]:
@@ -1014,168 +980,6 @@ def launch_host(
     return exit_code, result, "host exited without a usable result" if result is None else "host result received"
 
 
-def contained_path(turn_dir: Path, raw: Any, label: str, *, required: bool = True) -> Path | None:
-    if raw is None and not required:
-        return None
-    if not isinstance(raw, str) or not raw:
-        raise RunnerError(f"host result {label} is missing")
-    path = Path(raw).resolve()
-    try:
-        path.relative_to(turn_dir.resolve())
-    except ValueError as error:
-        raise RunnerError(f"host result {label} escapes the turn directory") from error
-    return path
-
-
-def validate_return(turn: dict[str, Any], result: dict[str, Any], turn_dir: Path) -> tuple[dict[str, Any], Path, Path]:
-    expected_result = {"sessionId", "outcome", "usage", "rawPath", "returnPath"}
-    if set(result) != expected_result:
-        raise RunnerError("host result has missing or unexpected fields")
-    if result["outcome"] != "completed":
-        raise RunnerError(f"host result outcome is not completed: {result['outcome']}")
-    raw_path = contained_path(turn_dir, result["rawPath"], "rawPath")
-    return_path = contained_path(turn_dir, result["returnPath"], "returnPath")
-    assert raw_path is not None and return_path is not None
-    checker = run_command(
-        [
-            str(ROOT / "scripts" / "assert-return-complete.sh"),
-            "--role",
-            "orchestrator",
-            "--file",
-            str(return_path),
-        ]
-    )
-    if checker.returncode != 0:
-        raise RunnerError(f"orchestrator return is invalid: {(checker.stderr or checker.stdout).strip()}")
-    returned = read_json(return_path, "orchestrator return")
-    identity = returned.get("identity")
-    expected_identity = {
-        "turnId": turn["turnId"],
-        "missionId": turn["missionId"],
-        "cycle": turn["cycle"],
-    }
-    for field, expected in expected_identity.items():
-        if returned.get(field) != expected:
-            raise RunnerError(f"orchestrator return identity mismatch at {field}")
-    if not isinstance(identity, dict):
-        raise RunnerError("orchestrator return identity is missing")
-    if identity.get("runtime") != turn["runtime"] or identity.get("model") != turn["model"]:
-        raise RunnerError("orchestrator return runtime/model identity mismatch")
-    # The orchestrator attests what the prompt told it (Host-Session header,
-    # null on a first or unresumable turn), not the session id the adapter
-    # discovered at launch, which the model cannot know. Mission Zero's first
-    # cycle failed on exactly this: a correct null against a discovered id
-    # (6.2c states the null explicitly).
-    if identity.get("sessionId") != turn.get("hostSession"):
-        raise RunnerError("orchestrator return session identity mismatch")
-    return returned, raw_path, return_path
-
-
-def next_ask_id(directory: Path, prefix: str) -> str:
-    base = prefix
-    candidate = base
-    index = 1
-    while (directory / f"{candidate}.json").exists():
-        index += 1
-        candidate = f"{base}-{index}"
-    return candidate
-
-
-def write_ask(directory: Path, ask_id: str, stream_id: str | None, reason: str, question: str) -> None:
-    atomic_json(
-        directory / f"{ask_id}.json",
-        {
-            "askId": ask_id,
-            "streamId": stream_id,
-            "reasonClass": reason,
-            "question": question.replace("\r", " ").replace("\n", " "),
-            "createdAt": now_iso(),
-            "answeredAt": None,
-            "answer": None,
-        },
-    )
-
-
-def apply_orchestrator_return(
-    mission: str,
-    turn: dict[str, Any],
-    state: dict[str, Any],
-    returned: dict[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    accepted: list[dict[str, Any]] = []
-    rejected: list[dict[str, Any]] = []
-    asks_dir = mission_dir(mission) / "asks"
-    asks_dir.mkdir(parents=True, exist_ok=True)
-
-    for entry in returned["dispatched"]:
-        record_path = AGENTS / "jobs" / f"{entry['jobId']}.json"
-        reason = None
-        try:
-            record = json.loads(record_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            reason = "job record does not exist or is unreadable"
-        else:
-            if record.get("mission") != mission:
-                reason = "job record is not stamped for this mission"
-            elif record.get("turnId") != turn["turnId"]:
-                reason = "job record was not created during this host turn"
-        if reason is None:
-            accepted.append({"kind": "dispatched", "value": entry})
-        else:
-            rejected.append({"kind": "dispatched", "value": entry, "reason": reason})
-
-    for entry in returned["streamUpdatesRequested"]:
-        stream_id = entry["streamId"]
-        stream = state["streams"].get(stream_id)
-        reason = None
-        if stream is None:
-            reason = "stream does not exist"
-        elif entry["requestedState"] not in LEGAL_STREAM_TRANSITIONS.get(stream["state"], set()):
-            reason = f"illegal stream transition {stream['state']} to {entry['requestedState']}"
-        elif entry["requestedState"].startswith("parked-") and not entry["reason"]:
-            reason = "parked stream request has no reason"
-        if reason is None:
-            stream["state"] = entry["requestedState"]
-            stream["reason"] = entry["reason"] or None
-            accepted.append({"kind": "streamUpdate", "value": entry})
-        else:
-            rejected.append({"kind": "streamUpdate", "value": entry, "reason": reason})
-
-    for index, entry in enumerate(returned["askCandidates"], 1):
-        reason = None
-        if entry["streamId"] not in state["streams"]:
-            reason = "stream does not exist"
-        elif entry["reasonClass"] not in KNOWN_ASK_REASONS:
-            reason = "reason class is unknown"
-        if reason is None:
-            ask_id = next_ask_id(asks_dir, f"ask-{turn['cycle']}-{index}")
-            write_ask(asks_dir, ask_id, entry["streamId"], entry["reasonClass"], entry["question"])
-            accepted.append({"kind": "askCandidate", "value": entry, "askId": ask_id})
-        else:
-            rejected.append({"kind": "askCandidate", "value": entry, "reason": reason})
-
-    fallback_stream = next(
-        (stream_id for stream_id, value in sorted(state["streams"].items()) if value["state"] == "active"),
-        next(iter(sorted(state["streams"]))),
-    )
-    for index, item in enumerate(rejected, 1):
-        value = item.get("value", {})
-        stream_id = value.get("stream") or value.get("streamId")
-        if stream_id not in state["streams"]:
-            stream_id = fallback_stream
-        ask_id = next_ask_id(asks_dir, f"rejected-{turn['cycle']}-{index}")
-        write_ask(
-            asks_dir,
-            ask_id,
-            stream_id,
-            "host-failure",
-            f"Runner rejected host return {item['kind']}: {item['reason']}. Review the return before proceeding.",
-        )
-        item["askId"] = ask_id
-    state["waitingList"] = open_ask_ids(asks_dir)
-    return accepted, rejected
-
-
 def mission_jobs(mission: str) -> list[tuple[Path, dict[str, Any]]]:
     records = []
     jobs = AGENTS / "jobs"
@@ -1190,53 +994,35 @@ def mission_jobs(mission: str) -> list[tuple[Path, dict[str, Any]]]:
 
 
 def drain_jobs(mission: str) -> None:
+    # Which jobs still need reaping is the binary's judgment; the reap itself
+    # stays with dispatch.sh, the owner of job lifecycles.
     poll_interval = interval_seconds("METASYSTEM_HEARTBEAT_INTERVAL_MS", 100)
     while True:
-        records = mission_jobs(mission)
-        active = [(path, value) for path, value in records if value.get("status") not in TERMINAL_JOBS]
+        listing = ms_json(
+            ["mission-jobs", "drain", "--root", str(ROOT), "--mission", mission],
+            "mission job drain",
+        )
+        active = listing.get("activeJobs") or []
         if not active:
             return
-        for path, value in active:
-            run_command(
-                [str(ROOT / "scripts" / "agents" / "dispatch.sh"), "reap", "--job", value.get("jobId", path.stem)]
-            )
+        for job_id in active:
+            run_command([str(ROOT / "scripts" / "agents" / "dispatch.sh"), "reap", "--job", str(job_id)])
         time.sleep(poll_interval)
 
 
 def close_terminal_chains(mission: str) -> None:
-    records = mission_jobs(mission)
-    by_id = {
-        value["jobId"]: value
-        for _, value in records
-        if isinstance(value.get("jobId"), str)
-    }
-    chains: dict[str, list[dict[str, Any]]] = {}
-    for value in by_id.values():
-        current = value
-        seen: set[str] = set()
-        while current.get("parentJob") is not None:
-            parent = current.get("parentJob")
-            if not isinstance(parent, str) or parent in seen or parent not in by_id:
-                current = {}
-                break
-            seen.add(parent)
-            current = by_id[parent]
-        root_id = current.get("jobId")
-        if isinstance(root_id, str):
-            chains.setdefault(root_id, []).append(value)
-    for root_id, chain in sorted(chains.items()):
-        if any(value.get("status") not in TERMINAL_JOBS for value in chain):
-            continue
-        root_record = by_id[root_id]
-        if root_record.get("chainClosed") is True:
-            continue
-        run_command([str(ROOT / "scripts" / "agents" / "dispatch.sh"), "reap", "--job", root_id])
+    listing = ms_json(
+        ["mission-jobs", "close-chains", "--root", str(ROOT), "--mission", mission],
+        "mission chain close",
+    )
+    for root_id in listing.get("chains") or []:
+        run_command([str(ROOT / "scripts" / "agents" / "dispatch.sh"), "reap", "--job", str(root_id)])
         closed = run_command(
             [
                 str(ROOT / "scripts" / "agents" / "dispatch.sh"),
                 "close",
                 "--job",
-                root_id,
+                str(root_id),
                 "--runner-closed",
             ]
         )
@@ -1304,46 +1090,42 @@ def append_ledger(ledger: Path, cycle: int, classification: str, candidate_sha: 
         raise RunnerError(f"mission ledger append refused: {(result.stderr or result.stdout).strip()}")
 
 
+def write_proposed_asks(mission: str, asks: list[dict[str, Any]]) -> None:
+    """Write the ask records a verb proposed, exactly as proposed.
+
+    The proposal's waiting list assumes these asks land; writing anything
+    else would make the state lie about what can be answered.
+    """
+    asks_dir = mission_dir(mission) / "asks"
+    for ask in asks:
+        atomic_json(asks_dir / f"{ask['askId']}.json", ask)
+
+
 def park_state(
     state_path: Path,
     ledger: Path,
-    state: dict[str, Any],
     reason: str,
     mission: str,
     identity: str,
 ) -> dict[str, Any]:
     emit_event("mission-parked", str(reason)[:200], missionId=mission, parkReason=str(reason))
-    proposed = copy.deepcopy(state)
-    asks_dir = mission_dir(mission) / "asks"
-    if reason in {"host-failure", "stop-loss"}:
-        has_reason = False
-        for path in asks_dir.glob("*.json") if asks_dir.exists() else []:
-            try:
-                ask = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if ask.get("answeredAt") is None and ask.get("reasonClass") == reason:
-                has_reason = True
-                break
-        if not has_reason:
-            asks_dir.mkdir(parents=True, exist_ok=True)
-            stream_id = next(
-                (name for name, value in sorted(proposed["streams"].items()) if value["state"] == "active"),
-                next(iter(sorted(proposed["streams"]))),
-            )
-            ask_id = next_ask_id(asks_dir, reason)
-            question = (
-                "Acknowledge the host failure before resuming the mission."
-                if reason == "host-failure"
-                else "Amend, price, reseal, and sign the mission budget before requesting stop-loss unpark."
-            )
-            write_ask(asks_dir, ask_id, stream_id, reason, question)
-    proposed["status"] = "parked"
-    proposed["parkReason"] = reason
-    proposed["gatePassed"] = False
-    proposed["waitingList"] = open_ask_ids(mission_dir(mission) / "asks")
-    project_fences(mission, proposed)
-    updated = write_state(state_path, proposed)
+    proposal = ms_json(
+        [
+            "mission-turn",
+            "park",
+            "--root",
+            str(ROOT),
+            "--mission",
+            mission,
+            "--state",
+            str(state_path),
+            "--reason",
+            reason,
+        ],
+        "mission park proposal",
+    )
+    write_proposed_asks(mission, proposal.get("asks") or [])
+    updated = write_state(state_path, proposal["state"])
     anchor_state(state_path, ledger, identity)
     return updated
 
@@ -1360,29 +1142,35 @@ def record_failed_turn(
 ) -> dict[str, Any]:
     candidate_sha = require_command(["git", "-C", str(ROOT), "rev-parse", state["branch"]], "cannot resolve candidate sha")
     append_ledger(ledger, turn["cycle"], "no-progress", candidate_sha, f"unmeasurable:{detail}".replace("\n", " "))
-    proposed = copy.deepcopy(state)
-    proposed["turnLog"].append(
-        {
-            "turnId": turn["turnId"],
-            "cycle": turn["cycle"],
-            "outcome": outcome,
-            "detail": detail,
-            "sessionId": None,
-            "measurement": None,
-        }
+    proposed = ms_json(
+        [
+            "mission-turn",
+            "record-failure",
+            "--root",
+            str(ROOT),
+            "--mission",
+            mission,
+            "--state",
+            str(state_path),
+            "--turn",
+            str(mission_dir(mission) / "turns" / turn["turnId"] / "turn.json"),
+            "--detail",
+            detail,
+            "--outcome",
+            outcome,
+            "--consecutive-failures",
+            str(consecutive_failures),
+        ],
+        "mission failed-turn proposal",
     )
-    proposed["ledger"]["cycles"] = turn["cycle"]
-    project_fences(mission, proposed)
-    if consecutive_failures >= 2:
-        proposed.update({"status": "parked", "parkReason": "host-failure", "gatePassed": False})
     updated = write_state(state_path, proposed)
     anchor_state(state_path, ledger, turn["turnId"])
     if updated["status"] == "parked" and updated.get("parkReason") == "host-failure":
-        return park_state(state_path, ledger, updated, "host-failure", mission, turn["turnId"])
+        return park_state(state_path, ledger, "host-failure", mission, turn["turnId"])
     if updated["status"] == "running":
         stop = run_command([str(ROOT / "scripts" / "assert-stop-loss.sh"), "--file", str(ledger)])
         if stop.returncode == 1:
-            updated = park_state(state_path, ledger, updated, "stop-loss", mission, turn["turnId"])
+            updated = park_state(state_path, ledger, "stop-loss", mission, turn["turnId"])
     return updated
 
 
@@ -1399,7 +1187,7 @@ def one_cycle(
         [MS, "mission-fence", "reserve-cycle", "--repo", str(ROOT), "--mission", mission]
     )
     if reserve.returncode != 0:
-        return park_state(state_path, ledger, state, "fence", mission, mission)
+        return park_state(state_path, ledger, "fence", mission, mission)
     fences = read_json(mission_dir(mission) / "fences.json", "mission fence counters")
     cycle = fences.get("cycles")
     if not isinstance(cycle, int) or isinstance(cycle, bool) or cycle < 1:
@@ -1477,14 +1265,35 @@ def one_cycle(
         patch_turn(turn_path, status="failed", outcome="failed", error="host-failure", detail=detail, endedAt=now_iso())
         return record_failed_turn(state_path, ledger, state, turn, detail, "failed", prior_failures + 1, mission)
     try:
-        returned, raw_path, return_path = validate_return(turn, result, turn_dir)
+        verdict = ms_json(
+            [
+                "mission-turn",
+                "adjudicate",
+                "--root",
+                str(ROOT),
+                "--mission",
+                mission,
+                "--state",
+                str(state_path),
+                "--turn",
+                str(turn_path),
+                "--result",
+                str(turn_dir / "result.json"),
+                "--turn-dir",
+                str(turn_dir),
+            ],
+            "orchestrator return adjudication",
+        )
     except RunnerError as error:
         detail = str(error)
         patch_turn(turn_path, status="failed", outcome="failed", error="protocol-error", detail=detail, endedAt=now_iso(), result=result)
         return record_failed_turn(state_path, ledger, state, turn, detail, "failed", prior_failures + 1, mission)
 
-    proposed = copy.deepcopy(state)
-    accepted, rejected = apply_orchestrator_return(mission, turn, proposed, returned)
+    # The verdict is the audit record of what this turn's return claimed and
+    # what the runner made of it; conclude reads it back below.
+    atomic_json(turn_dir / "adjudication.json", verdict)
+    (mission_dir(mission) / "asks").mkdir(parents=True, exist_ok=True)
+    write_proposed_asks(mission, verdict.get("asks") or [])
     drain_jobs(mission)
     try:
         classification, observed, measurement, gate_passed = measure(mission, state)
@@ -1501,30 +1310,30 @@ def one_cycle(
         else require_command(["git", "-C", str(ROOT), "rev-parse", state["branch"]], "cannot resolve candidate sha")
     )
     append_ledger(ledger, cycle, classification, candidate_sha, observed)
-    proposed["turnLog"].append(
-        {
-            "turnId": turn_id,
-            "cycle": cycle,
-            "outcome": "completed",
-            "detail": "host return accepted",
-            "sessionId": result.get("sessionId"),
-            "measurement": measurement,
-            "accepted": accepted,
-            "rejected": rejected,
-            "certified": returned["certified"],
-            "factsForLedger": returned["factsForLedger"],
-            "gaps": returned["gaps"],
-        }
+    atomic_json(turn_dir / "measurement.json", {"measurement": measurement, "gatePassed": gate_passed})
+    proposed = ms_json(
+        [
+            "mission-turn",
+            "conclude",
+            "--root",
+            str(ROOT),
+            "--mission",
+            mission,
+            "--state",
+            str(state_path),
+            "--turn",
+            str(turn_path),
+            "--verdict",
+            str(turn_dir / "adjudication.json"),
+            "--return",
+            verdict["returnPath"],
+            "--result",
+            str(turn_dir / "result.json"),
+            "--measurement",
+            str(turn_dir / "measurement.json"),
+        ],
+        "mission turn conclusion",
     )
-    proposed["ledger"]["cycles"] = cycle
-    proposed["waitingList"] = open_ask_ids(mission_dir(mission) / "asks")
-    project_fences(mission, proposed)
-    if gate_passed:
-        proposed.update({"status": "completed", "parkReason": None, "gatePassed": True})
-    elif not any(value["state"] == "active" for value in proposed["streams"].values()):
-        proposed.update({"status": "parked", "parkReason": "all-streams-parked", "gatePassed": False})
-    else:
-        proposed.update({"status": "running", "parkReason": None, "gatePassed": False})
     updated = write_state(state_path, proposed)
     patch_turn(
         turn_path,
@@ -1534,14 +1343,14 @@ def one_cycle(
         detail="host return accepted",
         result=result,
         endedAt=now_iso(),
-        rawPath=str(raw_path),
-        returnPath=str(return_path),
+        rawPath=verdict["rawPath"],
+        returnPath=verdict["returnPath"],
     )
     anchor_state(state_path, ledger, turn_id)
     if updated["status"] == "running":
         stop = run_command([str(ROOT / "scripts" / "assert-stop-loss.sh"), "--file", str(ledger)])
         if stop.returncode == 1:
-            updated = park_state(state_path, ledger, updated, "stop-loss", mission, turn_id)
+            updated = park_state(state_path, ledger, "stop-loss", mission, turn_id)
     return updated
 
 
@@ -1773,6 +1582,9 @@ def status_command(mission: str) -> int:
     return {"running": 0, "completed": 10, "parked": 11}.get(state["status"], 7)
 
 
+# TODO(go-wiring): fence_reached repeats the threshold math that lives in the
+# mission-fence family; it needs a mission-fence verb that reports whether a
+# contract's fences are reached, then the answer path can call that instead.
 def fence_reached(mission: str, values: dict[str, str]) -> bool:
     result = _fence_reached_inner(mission, values)
     emit_event("fence-check", f"reached={result}", missionId=mission,

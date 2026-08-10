@@ -250,6 +250,24 @@ func families() []family {
 			},
 		},
 		{
+			name:    "mission-turn",
+			summary: "the mission runner's turn decisions",
+			verbs: []verb{
+				{"adjudicate", "validate and adjudicate an orchestrator return into a turn verdict", runMissionTurnAdjudicate},
+				{"conclude", "conclude a turn into the proposed next mission state", runMissionTurnConclude},
+				{"record-failure", "propose the state after a failed turn", runMissionTurnRecordFailure},
+				{"park", "propose the parked state and its asks for a reason", runMissionTurnPark},
+			},
+		},
+		{
+			name:    "mission-jobs",
+			summary: "the mission runner's job selection",
+			verbs: []verb{
+				{"drain", "list the mission's still-active jobs", runMissionJobsDrain},
+				{"close-chains", "list fully-terminal unclosed job chains", runMissionJobsCloseChains},
+			},
+		},
+		{
 			name:    "mission-ledger",
 			summary: "the mission stop-loss ledger",
 			verbs: []verb{
