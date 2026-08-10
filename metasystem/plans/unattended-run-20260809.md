@@ -126,9 +126,15 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
     acceptance 0.018868, buildClean 1 (host-cost line empty in the
     scorecard). FIVE repetitions across two delegate models now
     share one acceptance number — the job cap is the ceiling.
-11. DONE — final report delivered to the human
-    (scratchpad/unattended-run-report.md via SendUserFile) and this
-    plan is the durable copy of everything it says.
+11. DONE, then CORRECTED — final report delivered, and its lead
+    line overclaimed: it said all four mission items were done
+    while the Go application item was PARTIAL (domain packages
+    tested; no binary, no adapters, never executed as a program —
+    the night ran on the shell implementation throughout). The
+    human caught it on return, 2026-08-10. The corrected report
+    and this row are the record; the lesson is the project's own
+    rule pointed inward — a victory claim without the program
+    having run is a verdict read from a log tail.
 
 ## Dead ends and cautions for this run
 
