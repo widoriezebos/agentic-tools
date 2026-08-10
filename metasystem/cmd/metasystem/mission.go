@@ -71,6 +71,55 @@ func runMissionLedgerCount(args []string) int {
 	return 0
 }
 
+// The mission-state family owns the atomic, hash-chained mission state.
+
+func runMissionStateInit(args []string) int {
+	flags := flag.NewFlagSet("mission-state init", flag.ContinueOnError)
+	state := flags.String("state", "", "state path")
+	contract := flags.String("contract", "", "contract path")
+	ledger := flags.String("ledger", "", "ledger path")
+	lease := flags.String("lease", "", "runner lease reference")
+	branch := flags.String("branch", "", "candidate branch override")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if err := mission.InitState(*state, *contract, *ledger, *lease, *branch); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runMissionStateWrite(args []string) int {
+	flags := flag.NewFlagSet("mission-state write", flag.ContinueOnError)
+	state := flags.String("state", "", "state path")
+	source := flags.String("source", "", "proposed next state path")
+	expect := flags.String("expect", "", "expected current state hash")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if err := mission.WriteState(*state, *source, *expect); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runMissionStateVerify(args []string) int {
+	flags := flag.NewFlagSet("mission-state verify", flag.ContinueOnError)
+	state := flags.String("state", "", "state path")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	seq, hash, err := mission.VerifyStateShape(*state)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Printf("mission state valid: sequence=%d hash=%s\n", seq, hash)
+	return 0
+}
+
 func singleFileFlag(name string, args []string) (string, bool) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	file := flags.String("file", "", "ledger path")

@@ -89,7 +89,7 @@ func InitLedger(file string, cycleBudget, noGainBudget int) error {
 	if cycleBudget < 1 || noGainBudget < 1 {
 		return fmt.Errorf("mission ledger budgets must be positive integers")
 	}
-	lock, err := lockLedger(file)
+	lock, err := lockFile(file)
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func InitLedger(file string, cycleBudget, noGainBudget int) error {
 // the last recorded cycle, the classification must be known, and the candidate
 // sha must be a resolved git sha.
 func AppendCycle(file string, cycle int, classification, candidateSHA, observed string) error {
-	lock, err := lockLedger(file)
+	lock, err := lockFile(file)
 	if err != nil {
 		return err
 	}
@@ -148,9 +148,9 @@ func oneLine(value, label string) (string, error) {
 	return value, nil
 }
 
-type ledgerLock struct{ f *os.File }
+type fileLock struct{ f *os.File }
 
-func lockLedger(file string) (*ledgerLock, error) {
+func lockFile(file string) (*fileLock, error) {
 	lockPath := file + ".lock"
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return nil, err
@@ -163,10 +163,10 @@ func lockLedger(file string) (*ledgerLock, error) {
 		f.Close()
 		return nil, err
 	}
-	return &ledgerLock{f: f}, nil
+	return &fileLock{f: f}, nil
 }
 
-func (l *ledgerLock) release() {
+func (l *fileLock) release() {
 	if l == nil || l.f == nil {
 		return
 	}

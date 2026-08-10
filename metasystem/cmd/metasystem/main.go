@@ -120,6 +120,15 @@ func families() []family {
 			},
 		},
 		{
+			name:    "mission-state",
+			summary: "the atomic, hash-chained mission state",
+			verbs: []verb{
+				{"init", "create a mission's initial state from its sealed contract", runMissionStateInit},
+				{"write", "advance the state via a compare-and-write on its hash", runMissionStateWrite},
+				{"verify", "validate the state's shape, aggregation, and hash chain", runMissionStateVerify},
+			},
+		},
+		{
 			name:    "mission-ledger",
 			summary: "the mission stop-loss ledger",
 			verbs: []verb{
