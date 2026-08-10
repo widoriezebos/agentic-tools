@@ -297,17 +297,12 @@ trap 'rm -rf "$scratch"' EXIT
 # exists and carries a lease record is residue of a dead provisioning; the
 # next attempt IS the recovery. A live or unproven holder refuses loudly.
 if [[ -e "$target" ]] && [[ -n "$(ls -A "$target" 2>/dev/null)" ]]; then
-  residue_lease="$target/artifacts/agents/mains/worktree-lease.json"
-  [[ -f "$residue_lease" ]] \
-    || die 1 "provision refused: target exists without a lease record; foreign content is never replaced silently: $target"
-  residue_pid=$("$ms" json get --file "$residue_lease" --field pid 2>/dev/null || true)
-  residue_started=$("$ms" json get --file "$residue_lease" --field pidStartedAt 2>/dev/null || true)
-  [[ "$residue_pid" =~ ^[1-9][0-9]*$ && "$residue_started" =~ ^[0-9]+$ ]] \
-    || die 1 "provision refused: residue lease is malformed; uninspectable is alive"
-  if "$ms" census alive --pid "$residue_pid" --start-time "$residue_started" >/dev/null 2>&1; then
-    die 1 "provision refused: target lease holder pid $residue_pid is LIVE; not replacing a held target"
-  fi
-  rm -rf "$target"
+  # Proof and deletion are ONE operation in the engine: the verb refuses a
+  # path not shaped like a checkout, a target without a lease record, and a
+  # live or unprovable holder — so no edit here can reorder the guards away
+  # from the delete.
+  "$ms" lease reclaim --target "$target" \
+    || die 1 "provision refused: target exists and could not be reclaimed: $target"
 fi
 mkdir -p "$target"
 git -C "$target" init -q -b main

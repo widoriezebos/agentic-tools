@@ -245,6 +245,7 @@ func families() []family {
 				{"protocol-growth", "report new protocol errors since a main last advanced its cursor", runLeaseProtocolGrowth},
 				{"protocol-advance", "merge a main's protocol-error counts into its cursor", runLeaseProtocolAdvance},
 				{"commit-token", "atomically write the live commit wrapper token", runLeaseCommitToken},
+				{"reclaim", "delete a directory only if it is a provably dead checkout", runLeaseReclaim},
 			},
 		},
 		{

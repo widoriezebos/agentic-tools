@@ -200,3 +200,23 @@ func runLeaseCommitToken(args []string) int {
 	}
 	return 0
 }
+
+// runLeaseReclaim deletes a directory only when it is provably an abandoned
+// checkout: lease record present, recorded holder provably dead, path shaped
+// like a checkout. Proof and deletion are one operation.
+func runLeaseReclaim(args []string) int {
+	flags := flag.NewFlagSet("lease reclaim", flag.ContinueOnError)
+	target := flags.String("target", "", "checkout directory to reclaim")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *target == "" {
+		fmt.Fprintln(os.Stderr, "lease reclaim: --target is required")
+		return 2
+	}
+	if err := lease.Reclaim(*target); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
