@@ -1,12 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
+
+var missionIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // The mission-ledger family is the atomic owner of the stop-loss ledger
 // (init, append, verify, count).
@@ -166,6 +171,129 @@ func runMissionStateReconcile(args []string) int {
 		}
 	}
 	return code
+}
+
+// The mission-fence family owns the lifecycle fences, cap authority, and usage.
+
+func runMissionFenceReserve(name string, reserve bool) func([]string) int {
+	return func(args []string) int {
+		flags := flag.NewFlagSet("mission-fence "+name, flag.ContinueOnError)
+		repo := flags.String("repo", "", "repository")
+		missionID := flags.String("mission", "", "mission id")
+		job := flags.String("job", "", "job id")
+		capMin := flags.Int("cap-min", 0, "per-job cap in minutes")
+		if flags.Parse(args) != nil {
+			return 2
+		}
+		if !missionIDRe.MatchString(*missionID) {
+			fmt.Fprintln(os.Stderr, "invalid mission id")
+			return 1
+		}
+		if !missionIDRe.MatchString(*job) || *capMin < 1 {
+			fmt.Fprintln(os.Stderr, "invalid mission job reservation")
+			return 1
+		}
+		if err := mission.CheckOrReserve(*repo, *missionID, *job, *capMin, reserve); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
+}
+
+func runMissionFenceReserveCycle(args []string) int {
+	flags := flag.NewFlagSet("mission-fence reserve-cycle", flag.ContinueOnError)
+	repo := flags.String("repo", "", "repository")
+	missionID := flags.String("mission", "", "mission id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if !missionIDRe.MatchString(*missionID) {
+		fmt.Fprintln(os.Stderr, "invalid mission id")
+		return 1
+	}
+	if err := mission.ReserveCycle(*repo, *missionID); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runMissionFenceAuthorizeCap(args []string) int {
+	flags := flag.NewFlagSet("mission-fence authorize-cap", flag.ContinueOnError)
+	repo := flags.String("repo", "", "repository")
+	missionID := flags.String("mission", "", "mission id")
+	job := flags.String("job", "", "job id")
+	runtime := flags.String("runtime", "", "runtime")
+	model := flags.String("model", "", "canonical model key")
+	requested := flags.Int("requested", 0, "requested cap in minutes (optional)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	var requestedPtr *int
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "requested" {
+			v := *requested
+			requestedPtr = &v
+		}
+	})
+	if !missionIDRe.MatchString(*missionID) {
+		fmt.Fprintln(os.Stderr, "invalid mission id")
+		return 1
+	}
+	if !missionIDRe.MatchString(*job) || !missionIDRe.MatchString(*runtime) ||
+		*model == "" || *model != config.CanonicalModel(*model) ||
+		(requestedPtr != nil && *requestedPtr < 1) {
+		fmt.Fprintln(os.Stderr, "invalid mission cap authorization request")
+		return 1
+	}
+	result, err := mission.AuthorizeCap(*repo, *missionID, *job, *runtime, *model, requestedPtr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	encoded, _ := json.Marshal(result)
+	fmt.Println(string(encoded))
+	return 0
+}
+
+func runMissionFenceAggregateUsage(args []string) int {
+	flags := flag.NewFlagSet("mission-fence aggregate-usage", flag.ContinueOnError)
+	repo := flags.String("repo", "", "repository")
+	missionID := flags.String("mission", "", "mission id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if !missionIDRe.MatchString(*missionID) {
+		fmt.Fprintln(os.Stderr, "invalid mission id")
+		return 1
+	}
+	if err := mission.AggregateUsage(*repo, *missionID); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runMissionFenceRefuse(args []string) int {
+	flags := flag.NewFlagSet("mission-fence refuse", flag.ContinueOnError)
+	repo := flags.String("repo", "", "repository")
+	missionID := flags.String("mission", "", "mission id")
+	reason := flags.String("reason", "", "fence refusal reason")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if !missionIDRe.MatchString(*missionID) {
+		fmt.Fprintln(os.Stderr, "invalid mission id")
+		return 1
+	}
+	ask, err := mission.Refuse(*repo, *missionID, *reason)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(ask)
+	return 0
 }
 
 func singleFileFlag(name string, args []string) (string, bool) {

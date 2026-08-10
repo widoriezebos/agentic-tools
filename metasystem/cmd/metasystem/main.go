@@ -131,6 +131,18 @@ func families() []family {
 			},
 		},
 		{
+			name:    "mission-fence",
+			summary: "the mission lifecycle fences, cap authority, and usage",
+			verbs: []verb{
+				{"check-job", "check the job fences without reserving", runMissionFenceReserve("check-job", false)},
+				{"reserve-job", "check the job fences and reserve the job", runMissionFenceReserve("reserve-job", true)},
+				{"reserve-cycle", "check the cycle fences and record a cycle", runMissionFenceReserveCycle},
+				{"authorize-cap", "authorize a per-job cap for a runtime/model pair", runMissionFenceAuthorizeCap},
+				{"aggregate-usage", "aggregate typed usage across the mission's finished jobs", runMissionFenceAggregateUsage},
+				{"refuse", "raise a batched fence ask for a reason", runMissionFenceRefuse},
+			},
+		},
+		{
 			name:    "mission-ledger",
 			summary: "the mission stop-loss ledger",
 			verbs: []verb{
