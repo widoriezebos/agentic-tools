@@ -45,7 +45,13 @@ gate_run_marker=$(scripts/agents/gate-run.py register --root "$root" \
 # race unit suite, and the build. A broken binary fails here, before any
 # fixture tries to drive it. Skipped only in delegate scope (no toolchain
 # guarantee in a delegate sandbox, and it needs no process visibility).
-if (( ! delegate_scope )); then
+# The Go engine section runs only where the engine is present (a go.mod
+# in this checkout). An adopted target that has not yet received the Go
+# engine (a Phase 4 port) runs pure shell/python, so the whole section is
+# a no-op there — the go gate, the seam tripwire, and the owner-alone
+# fixtures alike. It also needs process visibility, so it is out of
+# delegate scope.
+if (( ! delegate_scope )) && [[ -f go.mod ]]; then
   bash scripts/agents/go-gate.sh
   # The seam tripwire (GO-MIG-R3-010): a declared engine seam whose
   # retiring artifact already exists has outlived its phase — fail red.
@@ -58,8 +64,7 @@ if stale:
     print("engine seam(s) outlived their phase; retire them: " + ", ".join(stale), file=sys.stderr)
     raise SystemExit(1)
 SEAMS
-  # Owner-alone Go supervision fixtures need process visibility, so they
-  # run in the process-sensitive band, not delegate scope.
+  # Owner-alone Go supervision fixtures drive the running binary.
   bash scripts/agents/supervision-go-fixtures.sh
 fi
 

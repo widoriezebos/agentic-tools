@@ -8,8 +8,19 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 cd "$root"
 
+# A checkout without a Go module has not adopted the Go engine yet (adopt.sh
+# ships it as a Phase 4 port, plans/go-migration.md). It runs pure
+# shell/python, so the Go gate is a no-op there — SKIP, never fail. This is
+# what keeps an adopted target's own suite green before the engine arrives.
+if [[ ! -f "$root/go.mod" ]]; then
+  echo "go gate: no go.mod (this checkout has not adopted the Go engine); skipped" >&2
+  exit 0
+fi
+
+# From here the module exists, so a missing toolchain is a real failure: a
+# committed engine that cannot be built must stop the gate.
 if ! command -v go >/dev/null 2>&1; then
-  echo "go gate: no go toolchain on PATH; the Go engine cannot be built or tested" >&2
+  echo "go gate: go.mod present but no go toolchain on PATH; the committed engine cannot be built" >&2
   exit 1
 fi
 
