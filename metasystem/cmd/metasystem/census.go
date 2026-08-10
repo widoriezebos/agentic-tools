@@ -98,19 +98,26 @@ func runCensusRun(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE")
-	if *repo == "" || *output == "" || processFile == "" {
-		fmt.Fprintln(os.Stderr, "census run: --repo, --output, and METASYSTEM_CENSUS_PROCESS_FILE required (fixture path)")
+	if *repo == "" || *output == "" {
+		fmt.Fprintln(os.Stderr, "census run: --repo and --output are required")
 		return 2
 	}
 	metasystemRoot := *root
 	if metasystemRoot == "" {
 		metasystemRoot = *repo
 	}
-	// A fixed clock keeps the verdict deterministic; the time fields are
-	// normalized downstream anyway.
-	now := time.Unix(1786000000, 0)
-	verdict, err := census.RunFixtureCensus(metasystemRoot, *repo, processFile, *fp, *interval, now)
+	// With a recorded process table the verdict is fixture-driven and uses a
+	// fixed clock for a deterministic result; otherwise it scans the live
+	// process table with the real clock.
+	var (
+		verdict census.Verdict
+		err     error
+	)
+	if processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE"); processFile != "" {
+		verdict, err = census.RunFixtureCensus(metasystemRoot, *repo, processFile, *fp, *interval, time.Unix(1786000000, 0))
+	} else {
+		verdict, err = census.RunProductionCensus(metasystemRoot, *repo, *fp, *interval, time.Now().UTC())
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "census run:", err)
 		return 1
