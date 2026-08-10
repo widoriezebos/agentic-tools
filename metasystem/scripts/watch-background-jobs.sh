@@ -371,12 +371,10 @@ run_process_census() {
   # scan as well as after it so the owner does not mistake startup for death.
   atomic_identity_json "$watcher_heartbeat" watcher
   if fingerprint=$("$ms" census fingerprint --repo "$scope" 2>"$captured.error"); then
-    started_ns=$(python3 -c 'import time; print(time.time_ns())')
-    # TODO(go-wiring): the production census scan (process-census.py census
-    # --repo --fingerprint --interval --output) is NOT mapped; the binary's
-    # `census run` is the fixture path, not this production scan. Left as python3
-    # pending confirmation of the production census verb/flags.
-    "$process_census" census --repo "$scope" --fingerprint "$fingerprint" --interval "$interval" --output "$last" >"$captured" &
+    started_ns=$("$ms" util now-ns)
+    # The live process-table scan: signatures and adapters come from the
+    # harness root, scope bounds which processes count.
+    "$ms" census run --repo "$scope" --root "$harness_root" --fingerprint "$fingerprint" --interval "$interval" --output "$last" >"$captured" &
     census_pid=$!
     monitor_census_duration "$started_ns" "$share_marker" "$interval_marker" &
     monitor_pid=$!
