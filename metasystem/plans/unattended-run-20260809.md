@@ -11,7 +11,7 @@
   stop until fully done."
 - Next step: none
 - In flight right now: nothing in this checkout's job records —
-  cohort A repetition 1 (bm-2s-20260810t010831z-53362) runs
+  cohort B repetition 1 (bm-2-20260810t021945z-40975, Devin) runs
   through grading as a tracked background task; the orchestrator
   session holds the waiter.
 - Waiting on the human: nothing.
@@ -119,8 +119,11 @@ do not touch `plans/supervision-lifecycle.md`'s settled matter
    cohort's (1/53 in every repetition so far) — evidence the
    binding constraint is the shared 15-minute job cap, not the
    delegate model. Cohort B sequential for comparability.
-10. TODO — benchmark cohort B (host Opus 5, delegates devin
-    swe-1.7, 2 reps): same.
+10. IN PROGRESS — cohort B = bm-2-20260810t021945z-40975 (bm-2,
+    Devin swe-1-7, 2 reps). Rep 1 sealed/signed/pushed/released
+    and RESUMED ~02:25Z, tracked waiter armed; rep 2 provisions
+    automatically on rep 1's completion (keep the template CLEAN —
+    commit plan edits before every provisioning boundary).
 11. TODO — final report for the human: chain outcome, Go
     implementation state, suite/gate evidence, both scorecards,
     costs, and anything parked.
