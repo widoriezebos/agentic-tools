@@ -589,7 +589,7 @@ arm_repository() {
     # The process is launched only after this arming call owns the repository
     # lock. This preserves the fixed order and avoids speculative supervisors.
     gate=$supervision/owner-gate.$$.$RANDOM
-    launch_detached candidate_pid "$supervision/owner.log" "$script_path" __owner --repo "$repo" --gate "$gate" --tag "$owner_tag" --watcher-cap "$watcher_cap"
+    launch_detached candidate_pid "$supervision/owner.log" "$ms" supervise owner --repo "$repo" --gate "$gate" --tag "$owner_tag" --interval 60
     candidate_start=$(wait_for_start_identity owner-candidate "$candidate_pid") || {
       rmdir "$lock_dir" 2>/dev/null || true
       die 1 "could not start supervision owner"
@@ -628,7 +628,7 @@ arm_repository() {
       rmdir "$lock_dir" || die 1 "supervision lock takeover lost a race"
       mkdir "$lock_dir" || die 1 "supervision lock takeover lost a race"
       gate=$supervision/owner-gate.$$.$RANDOM
-      launch_detached candidate_pid "$supervision/owner.log" "$script_path" __owner --repo "$repo" --gate "$gate" --tag "$owner_tag" --watcher-cap "$watcher_cap"
+      launch_detached candidate_pid "$supervision/owner.log" "$ms" supervise owner --repo "$repo" --gate "$gate" --tag "$owner_tag" --interval 60
       candidate_start=$(wait_for_start_identity takeover-owner "$candidate_pid") || {
         rmdir "$lock_dir" 2>/dev/null || true
         die 1 "could not start takeover owner"
