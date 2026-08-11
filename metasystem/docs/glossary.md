@@ -39,6 +39,11 @@ not paths.
   — same epoch, in-flight work preserved. A claim from a *different*
   lineage over a dead holder is a **takeover**: epoch bump, stale jobs
   swept. A live holder is never displaced by anyone.
+- **Satellite** — a design unit severed from a critique-exhausted parent
+  design: evidence-born (accepted findings route to it), inheriting the
+  parent's ruling without re-litigation, converging through its own
+  critique loop, ordered by dependency on truth. A process mechanism; the
+  full definition lives in `skills/design-critique/SKILL.md`.
 - **Progress** — value produced and proven mechanically: a joined
   critique round, a gate metric beating its best, a requirement newly
   passing. Never an assertion. Per-activity definitions live in

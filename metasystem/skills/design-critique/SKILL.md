@@ -76,3 +76,21 @@ keep landing in one region, the generating cause (here: a mis-founded
 half) is rewritten or severed rather than patched; and the loop's verdict
 outranks the author's confidence, including when the author is the main
 agent and the design is about the loop's own governing mechanism.
+
+## Satellites: What a Split Produces
+
+A SATELLITE is a design unit severed from a critique-exhausted parent, and
+the word carries obligations. A satellite is born from evidence: it exists
+only because accepted findings route to it — when a loop's findings keep
+clustering in a separable region, that region is severed (the generating
+cause rule), never invented from ambition. A satellite inherits and does
+not re-litigate: the parent's human ruling travels unchanged, together
+with an explicit routing of the parent findings it must resolve. A
+satellite converges alone: its own design note, critique loop,
+dispositions, implementation, and tests — sized so the loop can close,
+which is exactly what the parent could not do. And satellites are ordered
+by dependency on truth: the ones that make a signal honest precede the
+mechanisms that consume the signal, all standing on whatever shared
+ground-truth mapping the split named as a precondition. Reference case:
+the stop-loss split (`plans/stop-loss-satellites.md`), where the parent's
+41 accepted findings route to one shipped core and four satellites.
