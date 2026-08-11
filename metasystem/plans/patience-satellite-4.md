@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11
-(plans/dispositions/patience-satellite-4-r{1..11}.md; 72/72
+after rounds 3-8, 11, and 12
+(plans/dispositions/patience-satellite-4-r{1..12}.md; 75/75
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -92,9 +92,10 @@ and provably STARTED (r9/P4-058, r10/P4-066, r11/P4-072).** Started
 is defined over shipped record fields only: status `completed` or
 `timeout` proves it structurally — the lifecycle CAS map reaches
 those statuses only through `running` (F Q3.3) — and a `cancelled` or
-`failed` record is started exactly when it carries
-sessionEstablishedSignal true, a recorded handshake success, a
-non-empty effectiveModel, or recorded usage. A pending-cancelled husk
+`failed` record is started exactly when it carries a recorded
+handshake SUCCESS (the handshake object's completion fact — not
+sessionEstablishedSignal, which is a pre-launch capability promise,
+r12/P4-073), a non-empty effectiveModel, or recorded usage. A pending-cancelled husk
 and launch/handshake failures (abandoned-setup, handshake_timeout,
 launch_failed) satisfy none of these and never count: nobody worked,
 so no one's patience is debited. Lawful-nonterminal jobs never
@@ -175,7 +176,7 @@ bypass floors (r7/P4-049). Rows in order, first applicable wins
 | --- | --- | --- |
 | 1 | some streak job qualifies as an evidence record (effectiveModel evidence, valid role and runtime, one record): take the NEWEST | the exact (role, runtime, model) entry, if present |
 | 2 | same evidence; no entry for that triple | infinite — configured-nothing |
-| 3 | no streak job has effective-model evidence; the newest STREAK job whose requestedModel IS model evidence, with valid role and runtime on that same record (r11/P4-070 — the pre-witness root is never consulted) | the exact entry, if present |
+| 3 | no streak job QUALIFIES as an effective-model evidence record (the r8/P4-054 absence rule, r12/P4-074); the newest STREAK job whose requestedModel IS model evidence, with valid role and runtime on that same record (r11/P4-070 — the pre-witness root is never consulted) | the exact entry, if present |
 | 4 | same as row 3; no entry for that triple | infinite — configured-nothing |
 | 5 | nothing in the streak qualifies | infinite — the streak carries no model identity, and configured-nothing is the honest verdict; the spend stays visible through Landed Returns and the usage ledger |
 
@@ -224,12 +225,17 @@ lives in the durable bytes:
     - Patience: excluded=<count>
     - Patience overflow: chains=<count>
 
-The excluded form (r11/P4-069) is the aggregate voice for records the
-participation boundary excluded: terminal identity damage is voiced
-by no wired jurisdiction today (the janitor is unwired — U1 in
+The excluded form (r11/P4-069, scoped by r12/P4-075) is the
+aggregate voice for the records patience can honestly attribute:
+mission-owned READABLE records that missionJobs yields and the
+participation boundary rejects (identity mismatch, unknown status).
+Terminal identity damage in that set is voiced by no wired
+jurisdiction today (the janitor is unwired — U1 in
 plans/go-production-grade.md), so a patience-configured mission books
 the count — no identities, no floors, no taxonomy — and hands the
-matter to the human.
+matter to the human. Fully unreadable or unattributable records
+cannot be charged to any mission and stay outside entirely:
+machine-global damage, the janitor's when it is wired.
 
 **Bound (r2/P4-027, r8/P4-051).** The landed-returns bound covers ALL
 Patience lines, breaches and orphans together: at most 20 lines per
@@ -334,6 +340,10 @@ ledger fixture including the chain-closed detail filter and the
 exempt overflow (r9/P4-061, r10/P4-068). Mission fixtures: a breached
 chain books the annotation and the NEXT prompt carries the line; an
 UNCONFIGURED mission's turn artifacts are byte-identical to today's
-including in the presence of orphans (r9/P4-059); a heal booking with
-no new counted jobs advances nothing. Suite green via the standing
+including in the presence of orphans (r9/P4-059); a mission-owned
+readable record with an identity mismatch books the excluded line
+while an unreadable foreign record books nothing (r12/P4-075); a
+pending-cancelled Codex job with sessionEstablishedSignal true never
+counts and its certification never resets a drought (r12/P4-073); a
+heal booking with no new counted jobs advances nothing. Suite green via the standing
 launch recipe.
