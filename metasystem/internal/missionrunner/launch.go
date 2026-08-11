@@ -331,6 +331,16 @@ func (e *Engine) launch(mode string, foreground bool) error {
 		if err != nil {
 			return err
 		}
+		if state["status"] == "parked" && state["parkReason"] == drainStalledReason {
+			// The drain-stalled park writes state then ask; a crash between
+			// the two leaves a park nobody can answer. The public resume
+			// re-raises the missing ask idempotently before anything else,
+			// then refuses as usual — the human answers the ask and resumes
+			// again.
+			if err := e.ensureDrainStallAsk(state); err != nil {
+				return err
+			}
+		}
 		if state["status"] != "running" {
 			return failf(3, "mission is %s; answer its park reason before resume", valueString(state["status"]))
 		}

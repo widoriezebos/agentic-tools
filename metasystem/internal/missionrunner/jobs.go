@@ -59,22 +59,36 @@ func reservedJobIDs(root, mission string) map[string]bool {
 	return ids
 }
 
-// ActiveJobs lists the mission's jobs that are not yet terminal — the set the
-// runner must keep reaping until it drains empty. A record without a readable
-// status counts as active. Jobs are identified by their recorded jobId,
-// falling back to the record's file stem.
-func ActiveJobs(root, mission string) []string {
-	active := []string{}
+// activeJobRecords lists the mission's non-terminal job records — the live
+// set the drain reaps, times its deadline over, and names as survivors when
+// it stalls. A record without a readable status counts as active.
+func activeJobRecords(root, mission string) []jobRecord {
+	records := []jobRecord{}
 	for _, record := range missionJobs(root, mission) {
 		status, _ := record.doc["status"].(string)
 		if TerminalJobStatuses[status] {
 			continue
 		}
-		id, ok := record.doc["jobId"].(string)
-		if !ok {
-			id = strings.TrimSuffix(filepath.Base(record.path), ".json")
-		}
-		active = append(active, id)
+		records = append(records, record)
+	}
+	return records
+}
+
+// jobRecordID identifies a job record: its recorded jobId, falling back to
+// the record's file stem.
+func jobRecordID(record jobRecord) string {
+	if id, ok := record.doc["jobId"].(string); ok && id != "" {
+		return id
+	}
+	return strings.TrimSuffix(filepath.Base(record.path), ".json")
+}
+
+// ActiveJobs lists the mission's jobs that are not yet terminal — the set the
+// runner must keep reaping until it drains empty.
+func ActiveJobs(root, mission string) []string {
+	active := []string{}
+	for _, record := range activeJobRecords(root, mission) {
+		active = append(active, jobRecordID(record))
 	}
 	sort.Strings(active)
 	return active

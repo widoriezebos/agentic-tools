@@ -296,7 +296,7 @@ func runDispatchHandshakeEval(args []string) int {
 func runDispatchReapFacts(args []string) int {
 	flags := flag.NewFlagSet("dispatch reap-facts", flag.ContinueOnError)
 	record := flags.String("record", "", "job record file")
-	grace := flags.Int64("grace", 2, "seconds past the handshake deadline before the backstop acts")
+	grace := flags.Int64("grace", dispatchcore.HandshakeBackstopGraceSec, "seconds past the handshake deadline before the backstop acts")
 	if flags.Parse(args) != nil {
 		return 2
 	}

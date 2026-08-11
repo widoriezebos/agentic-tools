@@ -55,10 +55,11 @@ var (
 	// facts recorded beside — never inside — the classification line. They are
 	// audit trail: parsers tolerate and expose them, the prompt's ledger tail
 	// ignores them, and the stop-loss replay never reads them as fuse input.
-	annotationLineRe = regexp.MustCompile(`(?m)^- ((?:Return|Outcome): [^\n]+?)[ \t]*$`)
-	// annotationWriteRe is the strict grammar for the two annotation kinds the
-	// runner writes: the fault that rejected a turn's return, and a fired cap.
-	annotationWriteRe = regexp.MustCompile(`^(Return: rejected:.+|Outcome: capped)$`)
+	annotationLineRe = regexp.MustCompile(`(?m)^- ((?:Return|Outcome|Drain): [^\n]+?)[ \t]*$`)
+	// annotationWriteRe is the strict grammar for the annotation kinds the
+	// runner writes: the fault that rejected a turn's return, a fired cap, and
+	// the survivor count of a drain-stalled cycle healed on resume.
+	annotationWriteRe = regexp.MustCompile(`^(Return: rejected:.+|Outcome: capped|Drain: stalled:(?:0|[1-9][0-9]*))$`)
 )
 
 // Stop-loss park kinds an ask record carries in its stopLossKind field. Only
@@ -76,6 +77,22 @@ const resetReasonMaxLen = 500
 // CappedAnnotation is the annotation naming a fired turn cap in the cycle
 // block, separate from the classification line so every parser keeps reading.
 const CappedAnnotation = "Outcome: capped"
+
+// DrainStalledObserved is the observed token a healed drain-stalled cycle
+// carries (plans/patience-mission-reap-drain.md): distinguishable from every
+// other no-progress cause, so starvation is recorded exactly once and
+// unambiguously.
+const DrainStalledObserved = "unmeasurable:drain-stalled"
+
+// DrainStalledAnnotation composes the annotation counting the unprovable
+// survivors a drain-stalled park named. Audit trail beside the healed
+// classification line, never fuse input.
+func DrainStalledAnnotation(survivors int) string {
+	if survivors < 0 {
+		survivors = 0
+	}
+	return fmt.Sprintf("Drain: stalled:%d", survivors)
+}
 
 // rejectedReasonMaxLen bounds the reason inside a Return: rejected annotation.
 // Unlike a human-authored reset reason, this reason is runner-composed from a

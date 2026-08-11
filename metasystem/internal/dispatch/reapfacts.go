@@ -27,11 +27,19 @@ type ReapFacts struct {
 	BudgetExpired bool `json:"budgetExpired"`
 }
 
-// A pending-setup record older than this has been abandoned: its creating
-// dispatcher finishes setup in seconds, so ten minutes of pending-setup means
-// that dispatcher died between create and setup. Generous so a slow live
-// dispatcher is never raced.
-const abandonedSetupAfter = 10 * time.Minute
+// AbandonedSetupGrace: a pending-setup record older than this has been
+// abandoned — its creating dispatcher finishes setup in seconds, so ten
+// minutes of pending-setup means that dispatcher died between create and
+// setup. Generous so a slow live dispatcher is never raced. Exported because
+// it is THE setup grace: the standing reaper's verdict and the mission
+// runner's drain clock must measure the same window.
+const AbandonedSetupGrace = 10 * time.Minute
+
+// HandshakeBackstopGraceSec is the slack past a recorded handshake deadline
+// before a backstop may act — the same number dispatch.sh passes as
+// handshake_backstop_grace_sec, named here so every Go caller computes
+// handshake expiry from one constant.
+const HandshakeBackstopGraceSec int64 = 2
 
 // ComputeReapFacts derives the record-only reap facts for one job record.
 // graceSec is the slack past a handshake deadline before the backstop may act.
@@ -45,7 +53,7 @@ func ComputeReapFacts(recordPath string, graceSec int64, now time.Time) (ReapFac
 	if facts.Status == "pending-setup" {
 		if created, ok := record["createdAt"].(string); ok {
 			if at, err := parseRecordTime(created); err == nil {
-				facts.SetupAbandoned = now.Sub(at) > abandonedSetupAfter
+				facts.SetupAbandoned = now.Sub(at) > AbandonedSetupGrace
 			}
 		}
 		return facts, nil

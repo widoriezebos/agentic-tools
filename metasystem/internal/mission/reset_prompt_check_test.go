@@ -63,6 +63,42 @@ func TestPromptLedgerRecordsSurviveAnnotationLines(t *testing.T) {
 	}
 }
 
+// The healed drain-stalled line and its survivor-count annotation must parse
+// everywhere the ledger is read: the strict one-classification rule, the
+// annotation surface, and the prompt's ledger tail.
+func TestHealedDrainStalledLineParsesAndSurvivesPromptAssembly(t *testing.T) {
+	dir := t.TempDir()
+	ledger := filepath.Join(dir, "ledger.md")
+	if err := InitLedger(ledger, 8, 6); err != nil {
+		t.Fatal(err)
+	}
+	sha := "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
+	if err := AppendCycle(ledger, 1, "unresolved", sha, "score=1", "no"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendCycle(ledger, 2, "no-progress", sha, DrainStalledObserved, "no", DrainStalledAnnotation(2)); err != nil {
+		t.Fatalf("healed drain-stalled line refused: %v", err)
+	}
+	_, _, cycles, err := ParseLedger(ledger)
+	if err != nil || len(cycles) != 2 {
+		t.Fatalf("healed ledger must parse with 2 cycles: %v (%d)", err, len(cycles))
+	}
+	if len(cycles[1].Annotations) != 1 || cycles[1].Annotations[0] != "Drain: stalled:2" {
+		t.Fatalf("the survivor-count annotation must be exposed: %v", cycles[1].Annotations)
+	}
+	records, err := promptLedgerRecords(ledger, 8)
+	if err != nil {
+		t.Fatalf("prompt assembly failed on a drain-stalled cycle block: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("want 2 cycle records, got %d", len(records))
+	}
+	row := records[1]
+	if len(row) != 5 || row[1] != "no-progress" || row[3] != DrainStalledObserved || row[4] != "no" {
+		t.Fatalf("drain-stalled row misread by prompt assembly: %v", row)
+	}
+}
+
 func TestHealedTurnLostLineParsesAndSurvivesPromptAssembly(t *testing.T) {
 	dir := t.TempDir()
 	ledger := filepath.Join(dir, "ledger.md")

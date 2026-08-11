@@ -35,12 +35,13 @@ var KnownAskReasons = map[string]bool{
 
 // PromptAskReasons are the reason classes an open ask may CARRY when it is
 // shown in a turn prompt: everything an orchestrator may raise plus the
-// runner's own reasons — "fence" (a batched fence refusal) and "stop-loss"
-// (the budget park). The turn-prompt validator must accept these, or the
-// first runner-raised ask poisons every later prompt into refusal — the
-// deterministic park that ended cohort bm-2s-20260810t195923z-80785.
+// runner's own reasons — "fence" (a batched fence refusal), "stop-loss"
+// (the budget park), and "drain-stalled" (the drain deadline park). The
+// turn-prompt validator must accept these, or the first runner-raised ask
+// poisons every later prompt into refusal — the deterministic park that
+// ended cohort bm-2s-20260810t195923z-80785.
 var PromptAskReasons = func() map[string]bool {
-	reasons := map[string]bool{"fence": true, "stop-loss": true}
+	reasons := map[string]bool{"fence": true, "stop-loss": true, "drain-stalled": true}
 	for reason := range KnownAskReasons {
 		reasons[reason] = true
 	}

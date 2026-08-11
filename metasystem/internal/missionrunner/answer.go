@@ -39,6 +39,9 @@ func (e *Engine) Answer(askID, answer string) int {
 	if reason == "stop-loss" {
 		return e.answerStopLoss(statePath, state, ask, askPath, askID, answer)
 	}
+	if reason == drainStalledReason {
+		return e.answerDrainStalled(statePath, state, ask, askPath, askID, answer)
+	}
 	if state["parkReason"] == "stop-loss" {
 		fmt.Fprintln(os.Stderr, "answer refused: a stop-loss park is answered through its stop-loss ask")
 		return 3
@@ -195,6 +198,85 @@ func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, ask
 		fmt.Fprintf(os.Stderr, "stop-loss reset is recorded and the ask is answered, but the unpark did not apply: %v; the next resume applies it\n", err)
 		return 3
 	}
+	fmt.Printf("mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
+	return 0
+}
+
+// answerDrainStalled applies a human's answer to a drain-stalled park's ask.
+// Only the resume: prefix unparks — the same vocal shape as the stop-loss
+// reset, because resuming past unprovable survivors is a judgment that must
+// be stated, never implied; every other answer keeps the refusal. Applying
+// it unparks AND writes the one additive state field,
+// lastDrainStall{cycle, survivors}, the durable label the resume heal
+// consumes into the cycle's unmeasurable:drain-stalled line. Unlike the
+// stop-loss reset there is no ledger line here (the heal writes it), so the
+// ask and the state advance together or not at all: a refused state write
+// rolls the ask back rather than stranding a parked mission behind an
+// answered ask.
+func (e *Engine) answerDrainStalled(statePath string, state, ask map[string]any, askPath, askID, answer string) int {
+	if !strings.HasPrefix(answer, "resume:") {
+		fmt.Fprintln(os.Stderr, "answer refused: a drain-stalled park is answered with resume:<note> once the named jobs are verified or cleared")
+		return 3
+	}
+	if strings.TrimSpace(strings.TrimPrefix(answer, "resume:")) == "" {
+		fmt.Fprintln(os.Stderr, "answer refused: resume: requires a non-empty note")
+		return 3
+	}
+	if state["status"] != "parked" || state["parkReason"] != drainStalledReason {
+		fmt.Fprintln(os.Stderr, "answer refused: resume: applies to a mission parked for drain-stalled")
+		return 3
+	}
+	stall, ok := ask["drainStall"].(map[string]any)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "answer refused: drain-stalled ask carries no survivor snapshot; delete the ask file and run mission-runner resume to re-raise it")
+		return 3
+	}
+	cycle, ok := jsonInt(stall["cycle"])
+	if !ok || cycle < 1 {
+		fmt.Fprintln(os.Stderr, "answer refused: drain-stalled ask names an invalid cycle; delete the ask file and run mission-runner resume to re-raise it")
+		return 3
+	}
+	survivors, ok := stall["survivors"].([]any)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "answer refused: drain-stalled ask carries no survivor list; delete the ask file and run mission-runner resume to re-raise it")
+		return 3
+	}
+	proposed := deepCopyDoc(state)
+	if !anyActiveStream(proposed) {
+		fmt.Fprintln(os.Stderr, "answer refused: drain-stalled mission has no active stream")
+		return 3
+	}
+	proposed["status"] = "running"
+	proposed["parkReason"] = nil
+	proposed["gatePassed"] = false
+	proposed["lastDrainStall"] = map[string]any{"cycle": cycle, "survivors": survivors}
+	waiting, _ := proposed["waitingList"].([]any)
+	remaining := []any{}
+	for _, item := range waiting {
+		if item != askID {
+			remaining = append(remaining, item)
+		}
+	}
+	proposed["waitingList"] = remaining
+	originalAsk := deepCopyDoc(ask)
+	ask["answeredAt"] = nowISO()
+	ask["answer"] = answer
+	if err := atomicWriteJSON(askPath, ask); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 3
+	}
+	updated, err := e.writeState(statePath, proposed)
+	if err == nil {
+		err = e.anchor(statePath, filepath.Join(e.missionDir(), "ledger.md"), e.Mission)
+	}
+	if err != nil {
+		_ = atomicWriteJSON(askPath, originalAsk)
+		fmt.Fprintf(os.Stderr, "answer refused: %s\n", err)
+		return 3
+	}
+	e.emit("drain-stall-resumed", clipSummary(answer), map[string]string{
+		"missionId": e.Mission, "askId": askID, "cycle": fmt.Sprintf("%d", cycle),
+	})
 	fmt.Printf("mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
 	return 0
 }

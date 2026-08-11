@@ -372,6 +372,42 @@ func TestAnnotationsNeverChangeAReplayVerdict(t *testing.T) {
 	}
 }
 
+// TestReplayCountsHealedDrainStalledLineOnce pins the stop-loss reading of
+// the heal's drain-stalled line: it counts as no-progress exactly once, and
+// its survivor-count annotation never changes the verdict.
+func TestReplayCountsHealedDrainStalledLineOnce(t *testing.T) {
+	engine, _ := stopLossEngine(t)
+	build := func(name string, annotated bool) string {
+		ledger := filepath.Join(t.TempDir(), name+".md")
+		if err := mission.InitLedger(ledger, 4, 2); err != nil {
+			t.Fatal(err)
+		}
+		var annotations []string
+		if annotated {
+			annotations = []string{mission.DrainStalledAnnotation(2)}
+		}
+		if err := mission.AppendCycle(ledger, 1, "no-progress", testSHA, mission.DrainStalledObserved, "no", annotations...); err != nil {
+			t.Fatal(err)
+		}
+		return ledger
+	}
+	annotated := build("annotated", true)
+	verdict, err := engine.stopLossVerdict(map[string]any{"ledgerSemantics": 2}, annotated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Cycles != 1 || verdict.Stagnant != 1 || verdict.Tripped {
+		t.Fatalf("the healed line must count as no-progress exactly once: %+v", verdict)
+	}
+	plain, err := engine.stopLossVerdict(map[string]any{"ledgerSemantics": 2}, build("plain", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *verdict != *plain {
+		t.Fatalf("the annotation changed the verdict: %+v vs %+v", *verdict, *plain)
+	}
+}
+
 func TestThresholdDeclarationOrder(t *testing.T) {
 	text := "```mission\ngate.threshold.zeta=>=1\ngate.noise-floor.zeta=0\ngate.threshold.alpha=>=1\ngate.noise-floor.alpha=0\n```\n"
 	metrics, err := thresholdDeclarationOrder(text)

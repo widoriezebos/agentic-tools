@@ -110,6 +110,9 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 
 	engine = NewEngine(root, "demo")
 	engine.anchorFn = func(string, string, string) error { return nil }
+	// The drain beats the runner heartbeat every pass, which reads the
+	// runner's own record; a real runner writes it before its first cycle.
+	seedRunnerRecord(t, engine)
 	contractPath := engine.contractPath()
 	write(filepath.Join("plans", "mission-demo.contract.md"), faultedContract(), 0o644)
 	if _, err := mission.ContractSeal(contractPath); err != nil {

@@ -380,6 +380,15 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 			}
 		}
 	}
+	if state["status"] == "parked" && state["parkReason"] == drainStalledReason {
+		// The drain-stalled park writes state then ask; a crash between the
+		// two leaves a park nobody can answer. Re-raise the missing ask
+		// idempotently before anything else — resume is the command the
+		// human was already going to run.
+		if err := e.ensureDrainStallAsk(state); err != nil {
+			return "", "", nil, err
+		}
+	}
 	if state["status"] != "running" {
 		return "", "", nil, failf(3, "mission is %s; answer or amend its park reason before resume", valueString(state["status"]))
 	}
@@ -403,7 +412,11 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 // weakening that check: it records the reserved cycle as a lost turn —
 // classification no-progress, observed unmeasurable:turn-lost, candidate sha
 // the repository HEAD at heal time — then advances the state and anchors,
-// the same binding order the failed-turn path uses. The append runs under
+// the same binding order the failed-turn path uses. One gap kind is
+// distinguishable: a drain-stalled park whose resume: answer left the
+// lastDrainStall label naming this exact cycle heals as
+// unmeasurable:drain-stalled with the survivor-count annotation, the label
+// consumed in the same conclude write. The append runs under
 // the ledger lock, and its contiguity check makes healing idempotent: once
 // the line exists the fences are no longer ahead, and a stale second heal is
 // refused rather than double-appended. It reports whether it healed.
@@ -430,10 +443,29 @@ func (e *Engine) healReservedCycle(statePath, ledger string, state map[string]an
 	if err != nil {
 		return false, err
 	}
-	if err := e.appendLedger(state, ledger, spent, "no-progress", candidateSHA, "unmeasurable:turn-lost"); err != nil {
+	// When the unpark's durable label names exactly this reserved cycle, the
+	// gap is a drain-stalled park, not a plain lost turn: book it
+	// distinguishably (observed unmeasurable:drain-stalled, plus the
+	// survivor-count annotation) and consume the label in the same conclude
+	// write. Any other gap heals as turn-lost, exactly as before.
+	observed := "unmeasurable:turn-lost"
+	var annotations []string
+	drainStalled := false
+	if stall, ok := state["lastDrainStall"].(map[string]any); ok {
+		if stallCycle, ok := jsonInt(stall["cycle"]); ok && stallCycle == spent {
+			survivors, _ := stall["survivors"].([]any)
+			observed = mission.DrainStalledObserved
+			annotations = []string{mission.DrainStalledAnnotation(len(survivors))}
+			drainStalled = true
+		}
+	}
+	if err := e.appendLedger(state, ledger, spent, "no-progress", candidateSHA, observed, annotations...); err != nil {
 		return false, err
 	}
 	proposed := deepCopyDoc(state)
+	if drainStalled {
+		delete(proposed, "lastDrainStall")
+	}
 	ledgerRef, ok := proposed["ledger"].(map[string]any)
 	if !ok {
 		return false, failf(3, "mission state ledger reference is unreadable")
@@ -450,7 +482,11 @@ func (e *Engine) healReservedCycle(statePath, ledger string, state map[string]an
 	if err := e.anchor(statePath, ledger, e.Mission); err != nil {
 		return false, err
 	}
-	e.emit("reserved-cycle-healed", fmt.Sprintf("resume recorded reserved cycle %d as a lost turn", spent), map[string]string{
+	summary := fmt.Sprintf("resume recorded reserved cycle %d as a lost turn", spent)
+	if drainStalled {
+		summary = fmt.Sprintf("resume recorded reserved cycle %d as drain-stalled", spent)
+	}
+	e.emit("reserved-cycle-healed", summary, map[string]string{
 		"missionId": e.Mission, "cycle": fmt.Sprintf("%d", spent),
 	})
 	return true, nil
@@ -670,27 +706,6 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, updated)
 }
 
-// drainJobs reaps the mission's jobs until none is active. Which jobs still
-// need reaping is this package's judgment; the reap itself stays with
-// dispatch.sh, the owner of job lifecycles.
-func (e *Engine) drainJobs() error {
-	poll, err := Interval("METASYSTEM_HEARTBEAT_INTERVAL_MS", 100)
-	if err != nil {
-		return err
-	}
-	dispatch := filepath.Join(e.Root, "scripts", "agents", "dispatch.sh")
-	for {
-		active := ActiveJobs(e.Root, e.Mission)
-		if len(active) == 0 {
-			return nil
-		}
-		for _, job := range active {
-			runCaptured(e.Root, nil, dispatch, "reap", "--job", job)
-		}
-		time.Sleep(poll)
-	}
-}
-
 // closeTerminalChains reaps and closes each fully-terminal delegation chain
 // at mission end, so no chain outlives the mission unclosed.
 func (e *Engine) closeTerminalChains() error {
@@ -765,20 +780,6 @@ func (e *Engine) stampObservedSession(turnDir string, result map[string]any) (an
 // measurement (ConcludeFaultedTurn). A host-failure park and the stop-loss
 // check follow exactly as on the plain failed-turn path.
 func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]any, turnPath, turnDir string, fault TurnFault, consecutiveFailures int) (map[string]any, error) {
-	if err := e.drainJobs(); err != nil {
-		return nil, err
-	}
-	classification, observed, measurement, gatePassed := e.measure(state)
-	var candidateSHA string
-	if measurement != nil {
-		candidateSHA, _ = measurement["candidateSha"].(string)
-	} else {
-		branch, _ := state["branch"].(string)
-		var err error
-		if candidateSHA, err = e.gitRevParse(branch); err != nil {
-			return nil, err
-		}
-	}
 	turnDoc, err := readDocLabeled(turnPath, "turn record", 3)
 	if err != nil {
 		return nil, err
@@ -790,6 +791,26 @@ func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]
 	cycle, ok := jsonInt(turn.Cycle)
 	if !ok {
 		return nil, failf(3, "turn record cycle is invalid")
+	}
+	parked, err := e.drainJobs(statePath, ledger, turn.TurnID, cycle)
+	if err != nil {
+		return nil, err
+	}
+	if parked != nil {
+		// The drain stalled: the reserved cycle never concludes here — the
+		// resume heal books it once the human answers the park.
+		return parked, nil
+	}
+	classification, observed, measurement, gatePassed := e.measure(state)
+	var candidateSHA string
+	if measurement != nil {
+		candidateSHA, _ = measurement["candidateSha"].(string)
+	} else {
+		branch, _ := state["branch"].(string)
+		var err error
+		if candidateSHA, err = e.gitRevParse(branch); err != nil {
+			return nil, err
+		}
 	}
 	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed, fault.Annotations...); err != nil {
 		return nil, err
@@ -1012,8 +1033,14 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 	if err := e.writeProposedAsks(verdict.Asks); err != nil {
 		return nil, err
 	}
-	if err := e.drainJobs(); err != nil {
+	parked, err := e.drainJobs(statePath, ledger, turnID, cycle)
+	if err != nil {
 		return nil, err
+	}
+	if parked != nil {
+		// The drain stalled: the reserved cycle never concludes here — the
+		// resume heal books it once the human answers the park.
+		return parked, nil
 	}
 	classification, observed, measurement, gatePassed := e.measure(state)
 	var candidateSHA string

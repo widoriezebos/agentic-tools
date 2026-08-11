@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -217,45 +215,10 @@ func setupReaper(repo string) func() {
 	}
 }
 
-// kernelCustodian proves a job's custodian three-way against the live process
-// table: it is the SAME custodian only if the pid is alive at its recorded
-// start AND its command still carries the job's tag — a recycled pid, or a
-// process no longer bearing the tag, is a stranger and reads as dead-to-us.
-// The fixture identity file (METASYSTEM_FAKE_PROCESS_IDENTITY_FILE) supplies
-// the start time and command when it carries an entry for the pid — the same
-// one-source override the census uses — but kernel death always vetoes it.
+// kernelCustodian binds the shared kernel custodian discipline
+// (identity.Custodian) as the reaper's custody prover: one implementation,
+// so the standing reaper and the mission runner's drain reap can never
+// disagree about one record's custodian.
 func kernelCustodian(pid, start int64, tag string) identity.Liveness {
-	exact, state, err := (identity.KernelProber{}).Probe(pid)
-	if err == nil && state == identity.Dead {
-		return identity.Dead
-	}
-	if fixture := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"); fixture != "" {
-		if data, readErr := os.ReadFile(fixture); readErr == nil {
-			var table map[string]struct {
-				Started int64  `json:"pidStartedAt"`
-				Command string `json:"command"`
-			}
-			if json.Unmarshal(data, &table) == nil {
-				if entry, ok := table[fmt.Sprint(pid)]; ok {
-					if entry.Started != start {
-						return identity.Dead
-					}
-					if tag != "" && !strings.Contains(entry.Command, tag) {
-						return identity.Dead
-					}
-					return identity.Alive
-				}
-			}
-		}
-	}
-	if err != nil || state == identity.Unknown {
-		return identity.Unknown
-	}
-	if exact.StartedAt.Unix() != start {
-		return identity.Dead
-	}
-	if tag != "" && !strings.Contains(strings.Join(exact.Argv, " "), tag) {
-		return identity.Dead
-	}
-	return identity.Alive
+	return identity.Custodian(pid, start, tag)
 }

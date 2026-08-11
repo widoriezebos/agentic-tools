@@ -176,6 +176,57 @@ func TestLegacyStateWithoutLedgerSemanticsStillValidates(t *testing.T) {
 	}
 }
 
+func TestDrainStalledParkReasonAndLabelValidate(t *testing.T) {
+	_, state, _ := initMission(t)
+	source := state + ".src"
+
+	// The drain-stalled park is an admitted reason.
+	_, hash, _ := VerifyStateShape(state)
+	doc, _ := readStateDoc(state)
+	doc["status"] = "parked"
+	doc["parkReason"] = "drain-stalled"
+	_ = atomicWriteJSON(source, doc)
+	if err := WriteState(state, source, hash); err != nil {
+		t.Fatalf("drain-stalled must be an admitted park reason: %v", err)
+	}
+
+	// The unpark writes the optional label; the heal's conclude write clears
+	// it again. Both transitions are legal.
+	_, hash, _ = VerifyStateShape(state)
+	doc, _ = readStateDoc(state)
+	doc["status"] = "running"
+	doc["parkReason"] = nil
+	doc["lastDrainStall"] = map[string]any{"cycle": 3, "survivors": []any{"job-a", "job-b"}}
+	_ = atomicWriteJSON(source, doc)
+	if err := WriteState(state, source, hash); err != nil {
+		t.Fatalf("lastDrainStall must be an admitted optional field: %v", err)
+	}
+	_, hash, _ = VerifyStateShape(state)
+	doc, _ = readStateDoc(state)
+	delete(doc, "lastDrainStall")
+	_ = atomicWriteJSON(source, doc)
+	if err := WriteState(state, source, hash); err != nil {
+		t.Fatalf("clearing lastDrainStall must be legal: %v", err)
+	}
+
+	// The label's shape is strict: an object with exactly {cycle, survivors},
+	// a positive cycle, and job-id survivors.
+	for name, value := range map[string]any{
+		"not an object":     "stalled",
+		"missing survivors": map[string]any{"cycle": 3},
+		"extra field":       map[string]any{"cycle": 3, "survivors": []any{}, "note": "x"},
+		"non-positive":      map[string]any{"cycle": 0, "survivors": []any{}},
+		"bad survivor id":   map[string]any{"cycle": 1, "survivors": []any{"NOT A JOB ID"}},
+		"non-array":         map[string]any{"cycle": 1, "survivors": "job-a"},
+	} {
+		bad, _ := readStateDoc(state)
+		bad["lastDrainStall"] = value
+		if err := validateShape(bad); err == nil {
+			t.Fatalf("%s must be rejected", name)
+		}
+	}
+}
+
 func TestVerifyRejectsMalformedState(t *testing.T) {
 	root := t.TempDir()
 	bad := filepath.Join(root, "bad.json")

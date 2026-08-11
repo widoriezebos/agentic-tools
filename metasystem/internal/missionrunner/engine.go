@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // The runner engine: one Engine drives one mission's lifecycle — launching
@@ -52,6 +53,11 @@ type Engine struct {
 	// anchors through the binary (anchorState); tests inject it because the
 	// anchor is an external git effect a unit test cannot shell out for.
 	anchorFn func(statePath, ledgerPath, identityName string) error
+	// custodianFn overrides the custodian prover for tests. Production binds
+	// identity.Custodian, the kernel custodian discipline the standing
+	// reaper judges by, so the runner's drain reap can never disagree with
+	// it about one record.
+	custodianFn func(pid, start int64, tag string) identity.Liveness
 }
 
 // anchor writes the state's anchor commit through the configured anchorer.

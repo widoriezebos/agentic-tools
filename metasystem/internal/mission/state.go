@@ -33,6 +33,7 @@ var streamStates = map[string]bool{
 var parkReasons = map[string]bool{
 	"all-streams-parked": true, "stop-loss": true, "fence": true, "gate-integrity": true,
 	"state-integrity": true, "contract-changed": true, "host-failure": true,
+	"drain-stalled": true,
 }
 
 var legalStreamTransitions = map[string]map[string]bool{
@@ -171,12 +172,14 @@ func exactKeys(m map[string]any, keys ...string) bool {
 }
 
 // stateTopLevelKeys checks the top-level state shape: every required field
-// present, nothing unknown, and ledgerSemantics as the one optional field —
-// absent on missions initialized before the replay semantics existed.
+// present, nothing unknown, and two optional fields — ledgerSemantics, absent
+// on missions initialized before the replay semantics existed, and
+// lastDrainStall, the durable label a drain-stalled unpark writes and the
+// resume heal consumes; legacy missions never carry it.
 func stateTopLevelKeys(state map[string]any) bool {
 	required := []string{"schemaVersion", "missionId", "branch", "status", "parkReason",
 		"gatePassed", "streams", "fences", "turnLog", "waitingList", "runnerLease", "ledger", "integrity"}
-	allowed := map[string]bool{"ledgerSemantics": true}
+	allowed := map[string]bool{"ledgerSemantics": true, "lastDrainStall": true}
 	for _, key := range required {
 		if _, ok := state[key]; !ok {
 			return false
@@ -207,6 +210,14 @@ func validateShape(state map[string]any) error {
 		// meaning (plans/stop-loss-core.md); absent on legacy missions.
 		if v, ok := intValue(raw); !ok || v < 1 {
 			return stateErr("mission state ledgerSemantics must be a positive integer")
+		}
+	}
+	if raw, present := state["lastDrainStall"]; present {
+		// Written by the drain-stalled unpark, consumed by the resume heal
+		// (plans/patience-mission-reap-drain.md): the cycle the stall parked
+		// and the survivor ids the park ask snapshotted.
+		if err := validateLastDrainStall(raw); err != nil {
+			return err
 		}
 	}
 	if v, _ := intValue(state["schemaVersion"]); v != 1 {
@@ -274,6 +285,26 @@ func validateShape(state map[string]any) error {
 		return err
 	}
 	return validateIntegrityShape(state["integrity"])
+}
+
+func validateLastDrainStall(raw any) error {
+	stall, ok := raw.(map[string]any)
+	if !ok || !exactKeys(stall, "cycle", "survivors") {
+		return stateErr("mission lastDrainStall has an invalid shape")
+	}
+	if cycle, ok := intValue(stall["cycle"]); !ok || cycle < 1 {
+		return stateErr("mission lastDrainStall cycle is invalid")
+	}
+	survivors, ok := stall["survivors"].([]any)
+	if !ok {
+		return stateErr("mission lastDrainStall survivors must be an array of job ids")
+	}
+	for _, item := range survivors {
+		if id, ok := item.(string); !ok || !idRe.MatchString(id) {
+			return stateErr("mission lastDrainStall survivors must be an array of job ids")
+		}
+	}
+	return nil
 }
 
 func validateFences(raw any) error {

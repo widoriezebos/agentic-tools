@@ -194,6 +194,33 @@ func TestAppendCycleAnnotations(t *testing.T) {
 	}
 }
 
+func TestDrainStalledAnnotationGrammar(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.md")
+	if err := InitLedger(file, 5, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendCycle(file, 1, "no-progress", goodSHA, DrainStalledObserved, "no", DrainStalledAnnotation(3)); err != nil {
+		t.Fatalf("the drain-stalled annotation must be writable: %v", err)
+	}
+	_, _, cycles, err := ParseLedger(file)
+	if err != nil || len(cycles) != 1 {
+		t.Fatalf("annotated ledger must parse: %v (%d)", err, len(cycles))
+	}
+	if len(cycles[0].Annotations) != 1 || cycles[0].Annotations[0] != "Drain: stalled:3" {
+		t.Fatalf("the survivor count must be exposed: %v", cycles[0].Annotations)
+	}
+	// The strict write grammar admits only a whole survivor count.
+	for _, bad := range []string{"Drain: stalled:", "Drain: stalled:x", "Drain: stalled:-1", "Drain: stalled:03", "Drain: stalled"} {
+		if err := AppendCycle(file, 2, "no-progress", goodSHA, DrainStalledObserved, "no", bad); err == nil {
+			t.Fatalf("%q must be refused", bad)
+		}
+	}
+	// The composer never emits a negative count.
+	if got := DrainStalledAnnotation(-2); got != "Drain: stalled:0" {
+		t.Fatalf("a negative count must clamp to zero: %q", got)
+	}
+}
+
 func TestReturnRejectedAnnotationBounds(t *testing.T) {
 	if got := ReturnRejectedAnnotation("line one\nline two"); got != "Return: rejected:line one line two" {
 		t.Fatalf("newlines must flatten: %q", got)

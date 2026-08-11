@@ -166,6 +166,65 @@ func TestHealReservedCycleNoopWithoutGap(t *testing.T) {
 	}
 }
 
+func TestHealReservedCycleConsumesDrainStall(t *testing.T) {
+	engine, statePath, ledgerPath, head := crashedMission(t, 2, 3)
+	// The drain-stalled unpark left the durable label naming exactly this
+	// reserved cycle.
+	proposed := deepCopyDoc(readTestDoc(t, statePath))
+	proposed["lastDrainStall"] = map[string]any{"cycle": 3, "survivors": []any{"job-a", "job-b"}}
+	if _, err := engine.writeState(statePath, proposed); err != nil {
+		t.Fatal(err)
+	}
+	healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath))
+	if err != nil || !healed {
+		t.Fatalf("the drain-stalled gap must heal: healed=%v err=%v", healed, err)
+	}
+	ledger, _ := os.ReadFile(ledgerPath)
+	want := "### Cycle 3\n- Classification: no-progress; candidate-sha=" + head +
+		"; observed=unmeasurable:drain-stalled; best=no\n- Drain: stalled:2\n"
+	if !strings.Contains(string(ledger), want) {
+		t.Fatalf("the healed drain-stalled line and its annotation are missing or misshapen:\n%s", ledger)
+	}
+	state := readTestDoc(t, statePath)
+	if _, present := state["lastDrainStall"]; present {
+		t.Fatalf("the label must be consumed in the same conclude write: %v", state["lastDrainStall"])
+	}
+	if cycles, _ := jsonInt(state["ledger"].(map[string]any)["cycles"]); cycles != 3 {
+		t.Fatalf("state ledger cycles must adopt the healed count: %v", state["ledger"])
+	}
+	// The healed ledger stays fully parseable and contiguous.
+	if _, _, cycles, err := mission.ParseLedger(ledgerPath); err != nil || len(cycles) != 3 {
+		t.Fatalf("healed ledger must parse with 3 cycles: %v (%d)", err, len(cycles))
+	}
+	if err := mission.AppendCycle(ledgerPath, 4, "unresolved", testSHA, "score=5", "no"); err != nil {
+		t.Fatalf("the next cycle must append contiguously after the heal: %v", err)
+	}
+}
+
+func TestHealReservedCycleIgnoresMismatchedDrainStall(t *testing.T) {
+	engine, statePath, ledgerPath, _ := crashedMission(t, 2, 3)
+	// A label from some older stall that does not name this gap's cycle:
+	// the gap heals as a plain lost turn, exactly as shipped, and the label
+	// is not consumed.
+	proposed := deepCopyDoc(readTestDoc(t, statePath))
+	proposed["lastDrainStall"] = map[string]any{"cycle": 2, "survivors": []any{"job-a"}}
+	if _, err := engine.writeState(statePath, proposed); err != nil {
+		t.Fatal(err)
+	}
+	healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath))
+	if err != nil || !healed {
+		t.Fatalf("the gap must still heal: healed=%v err=%v", healed, err)
+	}
+	ledger, _ := os.ReadFile(ledgerPath)
+	if !strings.Contains(string(ledger), "observed=unmeasurable:turn-lost") ||
+		strings.Contains(string(ledger), "drain-stalled") {
+		t.Fatalf("a mismatched label heals as plain turn-lost:\n%s", ledger)
+	}
+	if _, present := readTestDoc(t, statePath)["lastDrainStall"]; !present {
+		t.Fatal("a label that was not consumed must survive")
+	}
+}
+
 func TestHealReservedCycleLeavesWiderGapsAlone(t *testing.T) {
 	// A gap of more than one cycle is not this crash's signature: the heal
 	// covers exactly the one reserve a runner life can leave unappended, and
