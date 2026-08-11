@@ -101,9 +101,14 @@ verb it becomes. Plus a residue audit of every existing assert-*.sh
 shim. The complexity fence lands here as `audit shell-budget`
 (r1/KS-R1-008): a Go verb over a checked-in budget file that only
 ratchets down — total tracked shell lines, per-file caps, per-file
-control-flow construct counts, refusal of here-doc-generated shell,
-and the disposition-registry check — numbers set from measured
-values at landing.
+control-flow construct counts, a RATCHET over here-docs whose sink
+is a shell interpreter (a syntactic pattern: piped to bash/sh or
+written to a path later executed; prompt and payload here-docs are
+untouched — r2/KS-R2-003), and the disposition-registry check —
+numbers set from measured values at landing. The here-doc ratchet
+reaches zero in Phase F, when the fixture conversion removes the
+legitimate generated scripts; no refusal lands before the code it
+would refuse can be ported.
 
 Phase B — dispatch.sh lifecycle layer (the riskiest seam, its own
 design round inside the loop). Scope corrected by r1/KS-R1-002: the
@@ -113,8 +118,11 @@ held, and released; liveness sequencing; wind-down ramps; CAS
 choreography; cap resolution. The phase STARTS with characterization
 fixtures pinning the branches no test reaches today (r1/KS-R1-003):
 rename-born lock publication, the six holder classifications,
-non-owner release, lifecycle-lock timeout scaling, cap-authority lock
-disappearance, and the wind-down refusal ramps — behavior-preserving
+non-owner release, lifecycle-lock timeout scaling, the
+standing-vs-explicit reaper contention rule (a standing reaper skips
+a busy lifecycle lock while an explicit reap waits and fails on
+timeout), cap-authority acquisition timeout AND lock disappearance,
+and the wind-down refusal ramps (r2/KS-R2-001) — behavior-preserving
 is only meaningful against pinned behavior. Prerequisite pulled
 forward (r1/KS-R1-009): the coverage ratchet of
 plans/go-production-grade.md Phase 0c (mechanical, measured-value
@@ -127,8 +135,12 @@ move into internal/adapter drivers under an added constraint
 (r1/KS-R1-005): record authority and lifecycle serialization stay
 with dispatch — drivers get a narrow Go interface whose record
 mutations route through the same authority matrix the shell router
-enforces today, and this phase's design gate must show the
-classification equivalence. The host boundary is launch-wait-
+enforces today. The design gate is three-dimensional (r2/KS-R2-002):
+a table mapping every driver operation to (caller classification,
+authority mode, exact job scope), proven equal to the shell router's
+current mapping by a test that walks the table against
+internal/authority's matrix — any dimension differing fails the
+gate. The host boundary is launch-wait-
 parse-write, NOT final exec (r1/KS-R1-006): hosts must regain control
 after the runtime exits, so the shim keeps process custody while the
 post-exit DECISIONS — outcome classification, session and usage
@@ -141,8 +153,12 @@ supervise family; watch-background-jobs.sh classification into census;
 supervision-hook.sh stays a hook entry point but every sentence it
 prints comes from a report verb.
 
-Phase E — adopt.sh becomes `metasystem adopt run`; go-gate.sh stays a
-script by necessity (it builds the binary) and is already near-minimal.
+Phase E — adoption's decisions become `metasystem adopt run`, while
+adopt.sh stays a thin BOOTSTRAP shim by necessity, exactly like
+go-gate (r2/KS-R2-004): it builds or locates the binary on a fresh
+checkout, then execs the verb — zero decisions in shell, and the
+README's fresh-checkout path stays valid. go-gate.sh itself is
+already near-minimal.
 
 Phase F — fixtures, DECIDED by evidence (r1/KS-R1-007): bash stays
 the end-to-end driver — arrange via verbs, act by calling the CLI
