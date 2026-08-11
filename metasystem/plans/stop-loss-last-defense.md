@@ -1,6 +1,7 @@
 # Stop-loss as last defense
 
-Owner: main session (claude). Status: DESIGN — awaiting critique round 1.
+Owner: main session (claude). Status: DESIGN — round 1 adjudicated (13/13
+accepted, see `plans/stop-loss-dispositions-r1.md`), awaiting round 2.
 Ruling: human, 2026-08-11 — "the mechanism that killed the loop should be a
 last-defense kind of thing … really high caps set at the mission level …
 resetting should never be quiet." Evidence: the bm-2s trial cohorts
@@ -10,164 +11,200 @@ no-gain budget after 3 cycles with 82% of wall clock unused.
 
 # Intent
 
-The mission ledger's no-gain stop-loss exists to catch pathological
-non-convergence that no inner mechanism anticipated — an endless loop that
-materialized unexpectedly. It is NOT a pacing device. Today it fires during
-provably correct operation because its only progress sensor is the product
-gate, which is blind to every phase of work before code lands. The governed
-inner loops (design critique rounds with mechanical closure and an
-exhaustion budget) already own "is this phase stuck"; the stop-loss must own
-only "is the mission stuck in a way nothing else can see."
-
-Three changes, plus two contract-touching harness fixes the same evidence
-demands:
+The mission ledger's stop-loss exists to catch pathological non-convergence
+that no inner mechanism anticipated. It is NOT a pacing device. Today it
+fires during provably correct operation because its only progress sensor is
+the product gate, which is blind to every phase before code lands — and a
+second, hidden lifetime fuse (two no-progress classifications ever) parks
+lawful missions regardless of any budget. The governed inner loops own "is
+this phase stuck"; the stop-loss owns only "is the mission stuck in a way
+nothing else can see," and it must be impossible to trip it silently or
+reset it quietly.
 
 # Non-goals
 
 - No change to the design-critique loop itself (battle-tested; its closure
-  rule and round budget stay exactly as shipped).
+  rule and per-chain round budget stay exactly as shipped).
 - No change to the money fences: wall clock, EUR exposure, cycles, jobs
   remain the hard spend guards and are untouched.
-- No ambient "attended mode": a human's presence never silently alters
-  mechanism behavior; only explicit, recorded human actions do.
+- No ambient "attended mode": only explicit, recorded human actions alter
+  mechanism behavior.
 - The benchmark kit's gate redesign (count metric, requirement-5 ruling,
-  role-specific caps) is companion work in the kit, decided by the human
-  separately; this note covers the metasystem only.
+  role-specific caps) is companion kit work, decided by the human
+  separately.
 
 # Design
 
-## D1. Jurisdiction-aware gain: `loop-advanced` classification
+## D1. Jurisdiction-aware gain: `loop-advanced` with one-use credits
 
-A cycle whose turn mechanically advances a governed inner loop classifies as
-`loop-advanced` in the ledger — distinct from `contract-improved` (gate
-metric moved) and from `no-progress`/`unresolved`. Round 1:
+A cycle classifies `loop-advanced` only when the RUNNER itself mints a
+closure credit during conclude. Orchestrator assertions never qualify.
 
-- The only recognized advancement is: a design-critique round reached
-  mechanical closure this cycle — `assert-critique-closed.sh` exit 0 over
-  the round's findings and dispositions, the same proof the loop itself
-  uses. Nothing prose-based qualifies.
-- `loop-advanced` cycles do NOT increment the trailing no-gain counter.
-  They also do not reset it: only `contract-improved` resets. Rationale: a
-  mission alternating closure and stagnation forever must still trend
-  toward the fuse; not counting is enough to stop punishing lawful phases,
-  while resetting would let governance loops launder stagnation.
-- Unbounded-loop safety: critique rounds are numbered and capped by the
-  existing exhaustion machinery, so `loop-advanced` can occur at most
-  (round budget) times per stream. The fuse cannot be starved indefinitely.
+- Credit identity: (critique chain root job, round number). The runner
+  recognizes a chain only if the mission's own fence reservations name its
+  root job. For a candidate closure it mechanically re-runs the closure
+  check (`assert-critique-closed.sh` semantics) over that round's findings
+  and dispositions artifacts.
+- One-use: each (chain, round) credits at most once, recorded as a ledger
+  line (`- Loop credit: chain=<root> round=<n>`); rounds must be strictly
+  increasing per chain. Replaying an old round or re-joining the same
+  artifacts cannot credit again.
+- Farming bound: credits per stream are capped by the sealed contract key
+  `ledger.loop-credit-budget` (default: 2× the critique skill's per-chain
+  round budget). Beyond the cap, closures still happen but no longer
+  classify cycles as `loop-advanced` — the fuse resumes counting.
+- Counter algorithm (the single, binding rule — freeze semantics): one
+  counter, `stagnant`, incremented by every cycle classified `no-progress`
+  or `unresolved` without a credit; UNCHANGED by a `loop-advanced` cycle;
+  RESET to zero only by `contract-improved`. The fuse fires when
+  `stagnant` reaches `ledger.no-gain-budget`.
 
-## D2. The no-gain budget becomes a last-defense cap
+## D2. One fuse, sized as a last defense
 
-- Semantics unchanged mechanically (trailing non-improving cycles reach the
-  budget → park with the stop-loss ask), but the counted set shrinks per D1
-  and the calibration guidance inverts: the budget is sized ABOVE any
-  healthy runway, not at the expected pace. Contract guidance (docs +
-  template): unattended missions set `ledger.no-gain-budget` in the same
-  order as `fence.cycles` (e.g. cycles-2), never below the sum of the
-  mission's mandated pre-build stages plus margin.
-- The budget stays a sealed, human-signed contract key — "set at mission
-  level by the human" is already the instrument; no new mechanism.
-- validate: the contract validator warns (not refuses) when
-  no-gain-budget < 5, naming this design; refusing would break existing
-  fixtures and the human may knowingly run tight experiments.
+- The lifetime "two no-progress classifications ever" rule in
+  `assert-stop-loss.sh` is RETIRED. The no-gain counter above becomes the
+  only stop-loss trigger; `no-progress` cycles feed it like any stagnant
+  cycle instead of a separate lifetime tripwire. (The 2-consecutive
+  host-failure park is NOT touched: that is a host-health breaker, a
+  different jurisdiction, and it keeps its own ask.)
+- Calibration guidance inverts: `ledger.no-gain-budget` is sized ABOVE any
+  healthy runway — unattended missions in the order of `fence.cycles`,
+  never below the mission's mandated pre-build stages plus margin. It
+  stays a sealed, human-signed contract key.
+- The contract validator warns (never refuses) when the budget is below
+  half of `fence.cycles`, naming this design.
 
 ## D3. Vocal reset, by explicit human action only
 
-- Answering the stop-loss ask (the existing unpark path) now also RESETS
-  the trailing no-gain counter, and the reset is triple-recorded: a ledger
-  line (`- Stop-loss reset: by human answer <askId> at <time>`), a
-  flight-recorder event (`stop-loss-reset`), and the ask/answer record
-  itself. A reset that leaves no durable trace must be impossible; there is
-  no flag, environment variable, or config knob that resets quietly.
-- No other reset paths. Attended operation is expressed by the human
-  actually answering; presence without action changes nothing.
+- The stop-loss ask becomes answerable in one specific shape: an answer
+  beginning with the literal prefix `reset:` (the rest is the human's
+  reason). That answer unparks the mission and resets `stagnant` to zero.
+  The sealed budget LINE is untouched — the human is spending more of the
+  still-sealed wall-clock and exposure fences, not rewriting the
+  allowance. Any other answer keeps today's guidance: amend, price,
+  reseal, sign.
+- Authoritative record: the LEDGER append (`- Stop-loss reset: by human
+  answer <askId>: <reason> at <time>`) is written FIRST under the ledger
+  lock; the unpark state write happens only after it lands. The
+  flight-recorder event and the ask/answer file are best-effort echoes and
+  the docs say so. A reset that leaves no ledger line is impossible
+  because the unpark never happens without it.
+- No other reset path: no flag, no environment variable, no quiet code
+  path. Attended operation is expressed by the human actually answering.
 
-## D4. Turn identity: honesty must not be punishable
+## D4. Turn identity: announced and observed
 
-Evidence: bm-2s rep 3 cycle 1 — the prompt announced `Host-Session: none`
-(hostSession null), the host truthfully reported its real session id, and
-`adjudicate.go` discarded a fully productive turn (design committed, critic
-dispatched) as "unmeasurable", debiting the no-gain counter.
+The prompt header is assembled before launch, so the harness may learn the
+real session only mid-launch. Two identities, both recorded in turn.json:
 
-- The runner stamps `turn.hostSession` from the launch handshake's
-  session-established signal when one exists, BEFORE adjudication, so the
-  expected value is the real session whenever the harness knows it.
-- The return schema and the turn prompt document the rule: `identity.
-  sessionId` must echo the prompt's `Host-Session` header, `null` when the
-  header says `none`.
-- A session-identity mismatch on an otherwise schema-valid return
-  classifies the turn `invalid-run`: the turn's return is not applied, BUT
-  the cycle still runs measurement over the committed tree, the ledger
-  entry names the mismatch, and the cycle does not increment the no-gain
-  counter (the harness's own confusion is never the mission's stagnation).
+- `announcedSession`: what the prompt's `Host-Session` header said (null
+  when it said `none`). Written at assembly, never changed.
+- `observedSession`: stamped from the launch handshake's
+  session-established signal when one arrives; absent otherwise.
+- Adjudication accepts a return whose `identity.sessionId` equals EITHER —
+  the conservative echo of the header and the honest report of the real
+  session are both correct. When neither matches, that is a host protocol
+  violation: the turn fails normally, debits normally, and feeds the
+  existing consecutive-host-failure breaker. No blanket exemption exists.
+- Measurement is runner-run and trusted regardless of return validity: the
+  cycle classifies from the measured tree (an improvement counts and
+  resets the counter) even when the return itself is rejected; the ledger
+  entry names the identity fault beside the classification.
+- The return schema and turn prompt document the echo rule explicitly.
 
-## D5. The runner reaps its own dead reservations
+## D5. The runner reaps its own dead reservations — with real proof
 
-Evidence: bm-2s rep 2 — five reservation records stuck non-terminal froze
-dispatch (concurrency 2), and the janitor's sweep refused for lack of
-supervision custody while the mission starved.
-
-- The mission runner, as the live holder of the mission lease, gains
-  standing to reap records that (a) its own mission's fence reservations
-  name, and (b) are provably dead by the existing verdict facts (abandoned
-  setup, proven process loss). Implementation reuses `dispatch reap-facts`
-  + the record CAS; no new verdict logic. Custody rule: lease-holdership of
-  the mission IS custody over the mission's own reservations — narrower
-  than the janitor's machine-wide authority, so no new global power.
+- Authority: holding the mission lease authorizes the runner to act on
+  records that its own mission's fence reservations name — and nothing
+  else. Authority is not proof.
+- Proof: record-side facts come from `dispatch reap-facts` (abandoned
+  setup, handshake expiry, budget expiry — it carries NO liveness fact);
+  process-side death is proven exactly as the supervision reaper proves
+  it: the kernel custodian discipline (pid alive at its recorded start AND
+  command still bearing the job tag; anything less than provable death is
+  not death). The existing record CAS applies the verdict.
+- Bounded drain: drainJobs gains a deadline — the latest surviving
+  `capDeadline` among the mission's active records plus the standing
+  grace. When the deadline passes and non-terminal, unprovable records
+  remain, the runner parks with reason `drain-stalled` and an ask naming
+  each stuck record. The conservative posture (never reap the unprovable)
+  is kept, but it can no longer wedge the runner inside one cycle forever.
 
 ## D6. Nothing paid is silently discarded
 
-Evidence: two completed critic returns (~1.26M paid input tokens) landed
-seconds before parks and were never read; budget-capped jobs record
-`usage: null`; a delegate round's usage never rolled into fence usage.
-
-- At park, the runner drains landed-but-unadjudicated returns into the
-  ledger as `orphaned-return` entries naming the artifact paths, so the
-  resurrection turn starts from them instead of losing them.
-- Budget-capped and failed jobs record whatever usage their runtime
-  reported before death; the fence aggregator includes every round.
+- Applied rounds are recorded per stream in mission state; a landed
+  return.json for any round beyond its stream's applied mark is orphaned
+  by definition — no prose judgment involved.
+- At park, the runner writes one ledger line per orphan naming the
+  artifact paths (`- Orphaned return: job=<id> round=<n> path=<...>`).
+  The next turn's prior-context already carries the ledger tail, so the
+  resurrection reads its inheritance without new prompt machinery.
+- Usage single-writer rule: the adapter owns its round directory's
+  usage.json (written atomically; on a capped job, best effort from the
+  events already streamed before termination). Reapers never write usage.
+  The fence aggregator reads round directories independently of record
+  status, so late usage is picked up by the next aggregation regardless of
+  who terminalized the record.
 
 # Invariants
 
-1. The stop-loss can only fire after `no-gain-budget` trailing cycles in
-   which no gate improvement AND no mechanical inner-loop closure occurred.
-2. Every stop-loss reset is attributable to a named human action and leaves
-   ledger, event, and ask records; there is no quiet path.
-3. `loop-advanced` is grantable only by mechanical proof (the loop's own
-   closure checker), never by orchestrator assertion.
-4. A turn discarded for harness-side identity confusion never debits the
-   mission's no-gain counter and never skips measurement.
+1. The stop-loss fires only when the count of stagnant cycles since the
+   last `contract-improved` reaches `ledger.no-gain-budget`, where
+   credited `loop-advanced` cycles never increment that count. No other
+   stop-loss trigger exists.
+2. Every reset is attributable to a named human answer and has a ledger
+   line that preceded the unpark; there is no quiet path.
+3. A closure credit exists only for a (chain, round) the runner itself
+   proved, at most once, rounds monotone per chain, chains owned by the
+   mission, total credits bounded by the sealed credit budget.
+4. A trusted measured improvement always counts, even on a turn whose
+   return was rejected.
 5. The runner's reap authority never exceeds its own mission's reservation
-   set; machine-wide reaping remains the janitor's.
+   set; process death is only ever established by the kernel custodian
+   proof; machine-wide reaping remains the janitor's.
+6. drainJobs terminates: every drain ends in drained, reaped, or a
+   `drain-stalled` park naming the survivors.
 
 # Failure behavior
 
-- If the closure proof errors (checker crash, unreadable dispositions), the
-  cycle classifies as it would today (no `loop-advanced`) — fail toward the
-  fuse, never away from it.
-- If the reset's ledger append fails, the unpark itself fails loudly; the
-  mission stays parked rather than resetting quietly.
-- If reap-facts cannot prove death, the runner leaves the record alone and
-  the fence stays consumed — same conservative posture as every reaper.
+- Closure checker errors → no credit, cycle classifies as today (fail
+  toward the fuse, never away).
+- Ledger append failure during reset → the unpark fails loudly; the
+  mission stays parked.
+- Handshake signal absent → `observedSession` stays absent; adjudication
+  falls back to `announcedSession` alone.
+- Unprovable custodian → record left alone; the drain deadline, not the
+  loop, decides when that becomes a park.
 
 # Tests
 
-- missionrunner: `loop-advanced` classified only with a proven closure this
-  cycle; counter arithmetic (not-counted vs not-reset); fuse still fires
-  through interleaved closures once rounds exhaust.
-- missionrunner: stop-loss answer resets counter + writes all three records;
-  append failure blocks the unpark.
-- missionrunner: identity mismatch → `invalid-run`, measurement still runs,
-  counter not debited; hostSession stamped from the handshake when present.
-- missionrunner/dispatch: runner reaps its own mission's provably dead
-  reservation, refuses a foreign mission's and an unprovable one.
-- ledger fixtures: orphaned returns drained at park with paths named.
-- contract validator: warning below the guidance floor.
+- missionrunner: freeze arithmetic (increment/freeze/reset); fuse fires at
+  budget through interleaved credits; credit replay refused; per-chain
+  monotone rounds; credit budget exhaustion resumes counting; foreign
+  chain refused.
+- missionrunner: retired lifetime rule — a ledger with no-progress,
+  contract-improved, no-progress does NOT park.
+- missionrunner: `reset:` answer unparks + resets + ledger-line-first
+  ordering (append failure blocks unpark); non-reset answer still refused
+  toward amendment.
+- missionrunner: announced/observed matrix — echo-null accepted, honest
+  real id accepted, neither → failed turn feeding the host-failure
+  breaker; improvement on a rejected-return turn still resets the counter.
+- missionrunner/dispatch: reap needs both facts and custodian death;
+  unprovable → survives to drain deadline → `drain-stalled` park naming
+  the record.
+- ledger fixtures: loop-credit and orphaned-return lines parse; orphan
+  paths land in the next prompt's ledger tail.
+- validator: relative warning below half the cycle fence.
 
 # Migration
 
-On-disk: one new ledger classification string and one new ledger line kind —
-both additive; existing ledgers parse unchanged. The turn.json field set is
-unchanged (hostSession merely gets a real value earlier). No config or
-contract grammar changes; `ledger.no-gain-budget` keeps its type and
-meaning. The bm-2s spec's own fences change separately in the kit under the
-human's fence-approval rule.
+Additive ledger line kinds (`Loop credit`, `Stop-loss reset`, `Orphaned
+return`) and one classification string; existing ledgers parse unchanged.
+turn.json gains `announcedSession`/`observedSession` (hostSession retained,
+equal to announcedSession, until the fixtures migrate). One new sealed key
+`ledger.loop-credit-budget` with a default — absent keys behave as today
+plus the default, so existing sealed contracts stay valid. The retired
+lifetime rule changes `assert-stop-loss.sh` behavior; its fixtures are
+updated in the same change. bm-2s fence values change separately in the
+kit under the human's fence-approval rule.
