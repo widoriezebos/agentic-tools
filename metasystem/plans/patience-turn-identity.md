@@ -1,8 +1,11 @@
 # Patience satellite 1: turn identity
 
-Owner: main session (claude). Status: DESIGN — round 1 adjudicated (7/7
-accepted, `plans/patience-turn-identity-dispositions-r1.md`), awaiting
-round 2.
+Owner: main session (claude). Status: ACCEPTED FOR IMPLEMENTATION —
+rounds 1 and 2 adjudicated (7/7 and 4/4 accepted; dispositions r1/r2
+committed). Round 2 challenged no structure — all four findings were
+seams of round 1's own amendments — the documented diminishing-returns
+stop signal: the loop stops by judgment, rounds retained verbatim,
+implementation is the next source of truth.
 Program: `plans/stop-loss-satellites.md` satellite 1; concepts in
 `docs/patience.md`; ground truth in `docs/design/mission-cycle-sequence.md`
 (built for this purpose — cite it, not assumptions). Inherited findings:
@@ -61,13 +64,19 @@ telling the truth, and cannot lose by trusting the prompt. When it
 matches neither AND an observed identity exists, that is a host protocol
 violation: the turn fails normally and feeds the breaker. When it matches
 neither and NO observed identity exists (no signal, no envelope session):
-fail closed on APPLICATION, fail open on BLAME — the return's state
-mutations are NOT applied (an unwitnessed, mismatching return must not
-mutate mission state), the turn takes the T4 path (drain, measure,
-conclude on the measured truth), the mismatch-with-no-witness is recorded
-as its own annotation, and the turn does NOT feed the breaker (there is
-no witness to convict either side). The return schema and the turn prompt
+fail closed on APPLICATION, fail open on BLAME — the ONE application
+rule below governs (no witness ⇒ the return is not accepted ⇒ never
+applied), the turn takes the T4 path, the mismatch-with-no-witness is
+recorded as its own annotation, and the turn does NOT feed the breaker
+(no witness convicts either side). The return schema and the turn prompt
 document the echo rule.
+
+THE ONE APPLICATION RULE (referenced by T2 and T4, stated once): a
+return's state mutations (stream transitions, asks, waiting list) are
+applied ONLY when the return is accepted. Measurement effects (the
+cycle's classification, gatePassed, and completion) always conclude,
+from the measured tree, whatever the return's fate. There is no third
+case.
 
 ## T3. The adapter stops sentencing; the runner judges
 
@@ -104,6 +113,23 @@ the gate classifies as the movement it earned. When draining stalls, the
 drain-deadline rules (satellite 2) own the outcome; until then the
 existing drain behavior applies unchanged on this path exactly as on the
 success path.
+
+Conclusion inputs on a rejected return (round-2 PTI-R2-004): conclude
+receives an EMPTY verdict — no accepted entries, no asks, no stream
+transitions — plus the measurement. Streams keep the states they had at
+turn start; open asks stay open. Completion on measured gatePassed is
+the runner's own transition and is legal from any stream configuration:
+the streams' recorded states are untouched by it, and the completion
+ledger entry names the envelope fault beside the result.
+
+Breaker transition (round-2 PTI-R2-003), decoupled from classification:
+a WITNESSED protocol violation is a failed turn — consecutiveFailures
+increments and the host-failure park fires on the second consecutive
+one, exactly as today — while the CYCLE still books the classification
+its measurement earned. The two ledgers tell different stories because
+they answer different questions (host health vs mission progress). The
+no-witness case increments nothing. A turn whose return was accepted
+resets consecutiveFailures as today.
 
 ## T4b. Observed identity propagates forward
 
@@ -165,10 +191,17 @@ is untouched.
 # Migration
 
 turn.json gains `announcedSession`/`observedSession` (additive;
-`hostSession` retained). The ledger entry grammar gains the optional
-`; return=rejected:<reason>` and capped annotations — both inside the
-existing classification line, which prompt assembly tolerates (proven
-pattern: the best token). Adapter result envelopes already carry
-`sessionId`; no envelope change. The adapter rotation change is
-behavioral in the host scripts and the schema/prompt documentation gains
-the echo rule.
+`hostSession` retained). The ledger gains two ANNOTATION LINE kinds
+inside cycle blocks — `- Return: rejected:<reason>` and
+`- Outcome: capped` — never touching the classification line. Every
+cycle-block consumer is named and handled: `ParseLedger` and
+`ParseLedgerEvents` tolerate and expose them as annotations;
+`promptLedgerRecords` counts only Classification lines (pinned by the
+reset-line regression test — extend it to both new kinds); the stop-loss
+replay in internal/missionrunner/stoploss.go reads ONLY classification,
+best, and reset lines — annotations are audit trail, never fuse input,
+stated as an invariant of the replay; `assert-stop-loss.sh` serves
+non-mission ledgers that never contain these lines. Adapter result
+envelopes already carry `sessionId`; no envelope change. The adapter
+rotation change is behavioral in the host scripts, and the schema and
+prompt documentation gain the echo rule.
