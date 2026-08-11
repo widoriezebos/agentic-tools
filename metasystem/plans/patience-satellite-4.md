@@ -3,8 +3,9 @@
 Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
-Regenerated whole after rounds 1 and 2 (plans/dispositions/
-patience-satellite-4-r1.md, -r2.md; 28/28 accepted). Parent ruling,
+Regenerated whole after rounds 1 and 2, amended in place after round
+3 (plans/dispositions/patience-satellite-4-r{1,2,3}.md; 32/32
+accepted; convergence 15 → 13 → 4). Parent ruling,
 inherited and not re-litigated: stop-loss is a last defense, never a
 pacing target, recursively. Vocabulary per docs/patience.md and
 docs/glossary.md: progress is mechanically proven value; patience is
@@ -53,20 +54,27 @@ evaluation. Foreign or nonexistent jobIds are ignored by patience;
 adjudicating certification hygiene is a possible future satellite,
 not this one.
 
-## The count — a pure function, lineage-ordered
+## The count — a pure function over the chain set
 
-**Patience count = the length of the uncertified terminal suffix of
-the chain's lineage.** The chain is the parentJob walk (the existing
-chain authority); a round is terminal when its status is in
+**Patience count = the number of terminal, jobId-uncertified jobs in
+the chain's job set** — the set of records reachable from the root by
+the parentJob walk, which tolerates branches: sibling follow-ups
+simply belong to the set, and one annotation per root stays
+well-defined (r3/P4-029). A round is terminal when its status is in
 missionrunner.TerminalJobStatuses — completed, failed, timeout, AND
-cancelled (r2/P4-022) — so cancellation cannot launder a spent round.
-Certifications join by jobId; round numbers play no part
-(r2/P4-023), so duplicate or regressing numbers cannot heal unrelated
-work. Late certification of a suffix round retroactively shortens the
-suffix: healing is inherent, and faults cannot launder rounds
-(r1/P4-008) — a round run under a rejected-envelope turn still exists,
-still cost money, and still counts until certified; Landed Returns
-keeps re-surfacing it for exactly that purpose.
+cancelled (r2/P4-022) — so cancellation cannot launder a spent round;
+an attributable record whose status is missing or outside that
+vocabulary ALSO counts, deliberately diverging from the fence
+direction (r3/P4-031): fence projection acts on money, so losing
+sight must never finish a job; patience only speaks, so losing sight
+must never hide a drought. Certifications join by jobId; round
+numbers play no part (r2/P4-023). A certified job leaves the count
+wherever it sits — healing is inherent — and faults cannot launder
+rounds (r1/P4-008): a round run under a rejected-envelope turn still
+exists, still cost money, and still counts until certified; Landed
+Returns keeps re-surfacing it for exactly that purpose. Barren early
+rounds under a later certified sibling keep counting until certified
+or the chain closes: their spend never landed witnessed value.
 
 **Evidence damage (r1/P4-009, r2/P4-020, r2/P4-021).** The input set
 is the mission's own jobs; fully unreadable, unattributable records
@@ -108,15 +116,20 @@ strip the entries. Non-mission chains have no runner evaluating them;
 the human at the keyboard is their patience. Benchmark numbers ride
 kits and contracts by construction (the 2026-08-11 boundary ruling).
 
-**Floor selection (r2/P4-018, r2/P4-019).** A chain's floor is
-matched on (role, runtime, canonical model), where the model is: the
-newest terminal round's effectiveModel canonicalized; else the
-chain's round-1 requestedModel canonicalized (pre-handshake failures
-leave effectiveModel null, F: dispatch/build.go); else the SMALLEST
-floor among the contract's entries for that role and runtime —
-evidence damage must never widen patience; else, with no entries for
-the role and runtime at all, infinite patience — configured-nothing,
-not damage.
+**Floor selection (r2/P4-018, r2/P4-019, r3/P4-030).** A chain's
+floor is matched on (role, runtime, canonical model). The fallback
+chain exists for MISSING OR NON-CANONICALIZABLE model evidence only;
+a model that canonicalizes cleanly but matches no entry is
+configured-nothing for that pair. The resolution table:
+
+| model evidence | contract match | floor |
+| --- | --- | --- |
+| newest terminal round's effectiveModel canonicalizes | exact (role, runtime, model) entry | that entry |
+| newest terminal round's effectiveModel canonicalizes | no entry for that triple | infinite — configured-nothing |
+| no terminal round has a canonicalizable effectiveModel | round-1 requestedModel canonicalizes, entry exists | that entry |
+| round-1 requestedModel canonicalizes | no entry for that triple | infinite — configured-nothing |
+| no canonicalizable model evidence anywhere | any (role, runtime, *) entries exist | the SMALLEST such floor — damage must never widen patience |
+| no canonicalizable model evidence anywhere | no (role, runtime, *) entries | infinite |
 
 **Threshold (r1/P4-011).** A floor of F tolerates exactly F barren
 rounds silently; the breach books when the count strictly exceeds F.
@@ -169,8 +182,11 @@ runner projects the final cycle block's Patience annotations
 (readable because the read grammar round-trips) into `## This Turn`
 lines — runner-authored free text, validator-neutral — of the form
 `Patience: chain <root> has <n> uncertified rounds (floor <m>) —
-certify landed value or close the chain.` Restart-deterministic: the
-prompt derives from the ledger, not from runner memory. The
+certify landed value or close the chain.`, and an overflow annotation
+projects as `Patience: <count> more chains are past their floors
+(see ledger).` after the detail lines (r3/P4-032).
+Restart-deterministic: the prompt derives from the ledger, not from
+runner memory. The
 ask-candidate route stays dropped; candidates belong to the host's
 return (F Q3.13).
 
@@ -201,9 +217,10 @@ internal/mission/contract.go: `patience.` allow-list prefix; entry
 validation (identifier grammar, canonical model key, positive
 integer); sealing in expectedSeal AND the ordered emitter with the
 round-trip test (r1/P4-015). New internal/missionrunner/patience.go:
-the pure count function (mission job set → lineage suffixes vs
-jobId-joined accepted certifications; terminal set =
-TerminalJobStatuses; selection fallbacks; encoding replacement) →
+the pure count function (mission job set → chain sets via the
+branch-tolerant parent walk vs jobId-joined accepted certifications;
+terminal set = TerminalJobStatuses plus damaged-status records;
+selection table; encoding replacement) →
 (bounded annotations); called from the shared cycle-booking path.
 internal/mission/prompt.go: This Turn assembly projects the final
 cycle's Patience annotations into breach lines. No dispatch, adapter,
@@ -211,7 +228,7 @@ or host changes.
 
 ## Verification
 
-Race-detector unit tests: lineage-suffix counting (late certification
+Race-detector unit tests: chain-set counting (branches; late certification
 heals; rejected ignored; cancelled counts; duplicate round numbers
 harmless; foreign-jobId certifications ignored; damaged records
 barren; orphans isolate; invalid identifiers replaced; threshold
