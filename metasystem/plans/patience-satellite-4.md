@@ -3,9 +3,9 @@
 Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
-Regenerated whole after rounds 1 and 2, amended in place after round
-3 (plans/dispositions/patience-satellite-4-r{1,2,3}.md; 32/32
-accepted; convergence 15 → 13 → 4). Parent ruling,
+Regenerated whole after rounds 1 and 2, amended in place after
+rounds 3 and 4 (plans/dispositions/patience-satellite-4-r{1,2,3,4}.md;
+36/36 accepted; convergence 15 → 13 → 4 → 4). Parent ruling,
 inherited and not re-litigated: stop-loss is a last defense, never a
 pacing target, recursively. Vocabulary per docs/patience.md and
 docs/glossary.md: progress is mechanically proven value; patience is
@@ -76,16 +76,19 @@ Returns keeps re-surfacing it for exactly that purpose. Barren early
 rounds under a later certified sibling keep counting until certified
 or the chain closes: their spend never landed witnessed value.
 
-**Evidence damage (r1/P4-009, r2/P4-020, r2/P4-021).** The input set
-is the mission's own jobs; fully unreadable, unattributable records
-are outside patience (the janitor and usage jurisdictions, satellite
-3). Within the mission's set: a damaged-but-attributable record
-counts barren — losing sight of a round never counts as value; a
-record that cannot be joined to any chain forms a single-round chain
-keyed by its own jobId. Identifiers entering annotations or prompt
-lines must match the job-id grammar; a violating value is replaced by
-`invalid-<12-hex sha256 prefix>` so both surfaces interpolate only
-grammar-safe tokens.
+**Evidence damage (r1/P4-009, r2/P4-020, r2/P4-021, r4/P4-035).**
+The input set is the mission's own jobs (missionJobs ownership
+authority) that carry a valid-grammar jobId. Everything else —
+fully unreadable records, unattributable records, and attributable
+records WITHOUT a usable jobId — is outside patience and belongs to
+the janitor and usage jurisdictions (satellite 3): patience's only
+remedies are certify-by-jobId and close-by-chain, and neither can
+touch an identity-less record, so counting one would be a nag with no
+possible act. Within the input set: a damaged record counts (see the
+status rule above); a record whose parent walk cannot join a chain
+forms a single-round ORPHAN chain keyed by its own jobId. Every
+counted identifier is grammar-safe by construction, so annotations
+and prompt lines interpolate only job-id-grammar tokens.
 
 ## Floors: sealed mission-contract entries, nowhere else
 
@@ -118,18 +121,23 @@ kits and contracts by construction (the 2026-08-11 boundary ruling).
 
 **Floor selection (r2/P4-018, r2/P4-019, r3/P4-030).** A chain's
 floor is matched on (role, runtime, canonical model). The fallback
-chain exists for MISSING OR NON-CANONICALIZABLE model evidence only;
-a model that canonicalizes cleanly but matches no entry is
-configured-nothing for that pair. The resolution table:
+rows exist for MISSING OR NON-CANONICALIZABLE model evidence only; a
+model that canonicalizes cleanly but matches no entry is
+configured-nothing for that pair. **Job order is total
+(r4/P4-034):** jobs sort by (endedAt, startedAt, jobId) descending,
+missing timestamps sorting oldest, jobId the final lexicographic
+tiebreak — so "newest" is deterministic across sibling branches. The
+resolution table, rows tried in order, first applicable row wins
+(r4/P4-033):
 
-| model evidence | contract match | floor |
+| row | condition | floor |
 | --- | --- | --- |
-| newest terminal round's effectiveModel canonicalizes | exact (role, runtime, model) entry | that entry |
-| newest terminal round's effectiveModel canonicalizes | no entry for that triple | infinite — configured-nothing |
-| no terminal round has a canonicalizable effectiveModel | round-1 requestedModel canonicalizes, entry exists | that entry |
-| round-1 requestedModel canonicalizes | no entry for that triple | infinite — configured-nothing |
-| no canonicalizable model evidence anywhere | any (role, runtime, *) entries exist | the SMALLEST such floor — damage must never widen patience |
-| no canonicalizable model evidence anywhere | no (role, runtime, *) entries | infinite |
+| 1 | some terminal job in the chain set has a canonicalizable effectiveModel: take the NEWEST such job's model; an exact (role, runtime, model) entry exists | that entry |
+| 2 | same model evidence as row 1; no entry for that triple | infinite — configured-nothing |
+| 3 | no terminal job canonicalizes; the chain root's requestedModel canonicalizes; an exact entry exists | that entry |
+| 4 | same as row 3; no entry for that triple | infinite — configured-nothing |
+| 5 | no canonicalizable model evidence anywhere; any (role, runtime, *) entries exist | the SMALLEST such floor — damage must never widen patience |
+| 6 | no canonicalizable model evidence anywhere; no (role, runtime, *) entries | infinite |
 
 **Threshold (r1/P4-011).** A floor of F tolerates exactly F barren
 rounds silently; the breach books when the count strictly exceeds F.
@@ -180,11 +188,17 @@ source. The ledger annotation is the human audit trail. The
 orchestrator sees breaches in its NEXT prompt: at assembly time the
 runner projects the final cycle block's Patience annotations
 (readable because the read grammar round-trips) into `## This Turn`
-lines — runner-authored free text, validator-neutral — of the form
-`Patience: chain <root> has <n> uncertified rounds (floor <m>) —
-certify landed value or close the chain.`, and an overflow annotation
-projects as `Patience: <count> more chains are past their floors
-(see ledger).` after the detail lines (r3/P4-032).
+lines — runner-authored free text, validator-neutral. Wording is
+per chain kind (r4/P4-036): a well-formed chain projects `Patience:
+chain <root> has <n> uncertified rounds (floor <m>) — certify landed
+value or close the chain.`; an orphan singleton projects `Patience:
+orphan job <id> has uncertified spend — certify landed value or flag
+it to the human.` — the close offer is omitted because dispatch close
+cannot resolve a broken lineage and this design refuses dispatch
+changes; the persistent nag over an uncertifiable orphan is vocal
+noise pointing at real damage, which is the system working. An
+overflow annotation projects as `Patience: <count> more chains are
+past their floors (see ledger).` after the detail lines (r3/P4-032).
 Restart-deterministic: the prompt derives from the ledger, not from
 runner memory. The
 ask-candidate route stays dropped; candidates belong to the host's
@@ -220,7 +234,7 @@ round-trip test (r1/P4-015). New internal/missionrunner/patience.go:
 the pure count function (mission job set → chain sets via the
 branch-tolerant parent walk vs jobId-joined accepted certifications;
 terminal set = TerminalJobStatuses plus damaged-status records;
-selection table; encoding replacement) →
+selection table; valid-jobId input boundary) →
 (bounded annotations); called from the shared cycle-booking path.
 internal/mission/prompt.go: This Turn assembly projects the final
 cycle's Patience annotations into breach lines. No dispatch, adapter,
@@ -231,7 +245,8 @@ or host changes.
 Race-detector unit tests: chain-set counting (branches; late certification
 heals; rejected ignored; cancelled counts; duplicate round numbers
 harmless; foreign-jobId certifications ignored; damaged records
-barren; orphans isolate; invalid identifiers replaced; threshold
+barren; orphans isolate; identity-less records excluded; sibling
+ordering deterministic; threshold
 strictly-exceeds; 19+1 overflow; selection fallback chain including
 the null-effectiveModel and smallest-floor branches); contract
 validation and the seal round-trip; ledger write→parse round-trip of
