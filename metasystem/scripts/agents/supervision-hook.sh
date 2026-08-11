@@ -51,13 +51,22 @@ surface_json() { # message
   "$ms" json object "systemMessage=$1"
 }
 
-count_running_work() { # sets: running, elsewhere
+count_running_work() { # sets: running, running_details, elsewhere
   running=0
+  running_details=""
   elsewhere=""
   for record in "$harness_root/artifacts/agents/jobs"/*.json; do
     [[ -e "$record" ]] || break
     if grep -q '"status": *"\(pending\|running\)"' "$record" 2>/dev/null; then
       running=$((running + 1))
+      # Name the worker: a count alone tells the human nothing actionable.
+      local job_id job_role job_status job_runtime detail
+      job_id=$("$ms" json get --file "$record" --field jobId --default "${record##*/}")
+      job_role=$("$ms" json get --file "$record" --field role --default "?")
+      job_status=$("$ms" json get --file "$record" --field status --default "?")
+      job_runtime=$("$ms" json get --file "$record" --field runtime --default "?")
+      detail="$job_role $job_id [$job_status, $job_runtime]"
+      running_details="${running_details:+$running_details; }$detail"
     fi
   done
   # A mission started from this repository usually runs in ANOTHER repository
@@ -79,7 +88,7 @@ work_sentence() {
   count_running_work
   local missions="" active=""
   [[ -n "$elsewhere" ]] && missions=$(printf '%s' "$elsewhere" | sed 's/^ //; s/ /, /g')
-  (( running )) && active="$running helper agent(s)"
+  (( running )) && active="$running helper agent(s): $running_details"
   [[ -n "$missions" ]] && active="${active:+$active, and }a mission still going in $missions"
   # The orchestrator's own gate runs are neither delegate jobs nor missions,
   # and they are exactly what a human sees mid-flight and asks about.
