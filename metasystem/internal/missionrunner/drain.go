@@ -346,6 +346,7 @@ func (e *Engine) parkDrainStalled(statePath, ledger, identityName string, cycle 
 	proposed["parkReason"] = drainStalledReason
 	proposed["gatePassed"] = false
 	proposed["waitingList"] = mergedOpenAskIDs(asksDir, []string{askID})
+	aggregateUsageForProjection(e.Root, e.Mission, "park-drain-stalled")
 	if err := ProjectFences(e.Root, e.Mission, proposed); err != nil {
 		return nil, err
 	}

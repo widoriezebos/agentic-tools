@@ -60,6 +60,11 @@ func validPrompt() string {
 		"(none)",
 		"<<<END>>>",
 		"",
+		"## Landed Returns",
+		"<<<DATA>>>",
+		"(none)",
+		"<<<END>>>",
+		"",
 		"## This Turn",
 		"Decide the next step.",
 		"",
@@ -148,6 +153,47 @@ func TestTurnPromptLedgerTailBestMarker(t *testing.T) {
 	}
 	if violation := TurnPrompt(root, promptPath, turnDir); violation == nil || violation.Check != "records" {
 		t.Fatalf("a six-field ledger record must be refused: %v", violation)
+	}
+}
+
+// The Landed Returns section is the seventh validated heading: data rows and
+// all three marker forms (invalid, unreadable, overflow) pass the strict
+// three-field grammar, while a malformed row is refused.
+func TestTurnPromptLandedReturnsRows(t *testing.T) {
+	root, promptPath, turnDir := promptFixture(t)
+	rows := strings.Join([]string{
+		"chain-a\t2\tartifacts/agents/chain-a/rounds/2/return.json",
+		"chain-b\tinvalid\tartifacts/agents/chain-b/rounds/1/return.json",
+		"chain-c\tunreadable\tnone",
+		"overflow\t3\tnone",
+	}, "\n")
+	prompt := strings.Replace(validPrompt(),
+		"## Landed Returns\n<<<DATA>>>\n(none)\n<<<END>>>",
+		"## Landed Returns\n<<<DATA>>>\n"+rows+"\n<<<END>>>", 1)
+	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if violation := TurnPrompt(root, promptPath, turnDir); violation != nil {
+		t.Fatalf("landed rows and markers must pass strict validation: [%s] %s", violation.Check, violation.Message)
+	}
+
+	bad := strings.Replace(validPrompt(),
+		"## Landed Returns\n<<<DATA>>>\n(none)\n<<<END>>>",
+		"## Landed Returns\n<<<DATA>>>\nchain-a\t2\n<<<END>>>", 1)
+	if err := os.WriteFile(promptPath, []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if violation := TurnPrompt(root, promptPath, turnDir); violation == nil || violation.Check != "records" {
+		t.Fatalf("a two-field landed row must be refused: %+v", violation)
+	}
+
+	missing := strings.Replace(validPrompt(),
+		"## Landed Returns\n<<<DATA>>>\n(none)\n<<<END>>>\n\n", "", 1)
+	if err := os.WriteFile(promptPath, []byte(missing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if violation := TurnPrompt(root, promptPath, turnDir); violation == nil || violation.Check != "headings" {
+		t.Fatalf("a six-heading prompt must be refused: %+v", violation)
 	}
 }
 

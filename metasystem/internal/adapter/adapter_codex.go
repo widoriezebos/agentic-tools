@@ -33,18 +33,20 @@ func CodexEventField(eventsPath, field string) (string, bool) {
 	return "", false
 }
 
-// CodexUsage writes the typed usage for a Codex turn from the last usage block
-// its event stream reports. Codex spells the same counter more than one way
-// across builds, so each field takes the first present spelling. Codex reports
-// no cost or provider units, so both stay null.
-func CodexUsage(eventsPath, outputPath string) error {
+// CodexUsageValue derives the typed usage for a Codex turn in memory, from
+// the last usage block its event stream reports. Codex spells the same
+// counter more than one way across builds, so each field takes the first
+// present spelling. Codex reports no cost or provider units, so both stay
+// null. Callers that must never write — the mission aggregator recovering a
+// killed round's spend from its dead event stream — read this value directly.
+func CodexUsageValue(eventsPath string) map[string]any {
 	var last map[string]any
 	for _, event := range jsonlObjects(eventsPath) {
 		if usage, ok := event["usage"].(map[string]any); ok {
 			last = usage
 		}
 	}
-	value := map[string]any{
+	return map[string]any{
 		"availability":      "native",
 		"inputTokens":       firstPresent(last, "input_tokens", "inputTokens"),
 		"cachedInputTokens": firstPresent(last, "cached_input_tokens", "cachedInputTokens"),
@@ -53,7 +55,12 @@ func CodexUsage(eventsPath, outputPath string) error {
 		"cost":              nil,
 		"providerUnits":     nil,
 	}
-	if err := atomicWriteJSON(outputPath, value); err != nil {
+}
+
+// CodexUsage writes the typed usage for a Codex turn to its round artifact —
+// the adapter's own capture, the one writer of usage.json.
+func CodexUsage(eventsPath, outputPath string) error {
+	if err := atomicWriteJSON(outputPath, CodexUsageValue(eventsPath)); err != nil {
 		return fmt.Errorf("write codex usage: %w", err)
 	}
 	return nil

@@ -14,10 +14,11 @@ import (
 // A mission host-turn prompt is assembled deterministically from the frozen
 // authority (the shipped orchestrator preamble and the signed contract) plus
 // the mission's live control-plane data (ledger tail, open asks, stream goals,
-// and the prior turn awaiting reconciliation). The same inputs always produce
-// the same bytes: fields are collapsed to single safe lines, data blocks are
-// framed so quoted delegate output can never be mistaken for authority, and
-// sections are joined in a fixed order. This file owns that assembly.
+// the prior turn awaiting reconciliation, and the landed delegate returns the
+// host has not yet acted on). The same inputs always produce the same bytes:
+// fields are collapsed to single safe lines, data blocks are framed so quoted
+// delegate output can never be mistaken for authority, and sections are
+// joined in a fixed order. This file owns that assembly.
 
 // promptClassificationRe matches a ledger cycle's single classification line,
 // capturing the verdict, the candidate sha, the observed measurement, and the
@@ -478,6 +479,11 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 	if err != nil {
 		return err
 	}
+	// The Landed Returns list derives fresh from the tree and the turn log
+	// at every assembly (plans/patience-orphan-usage.md O1): landed work is
+	// inherited through the prompt, never through recorded surfacing state.
+	turnLog, _ := state["turnLog"].([]any)
+	landedRecords := LandedReturns(repo, mission, turnLog)
 
 	reconYesNo := "no"
 	if reconciliation {
@@ -511,6 +517,7 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 		{"## Open Asks", promptDataSection("## Open Asks", askRecords)},
 		{"## Streams", promptDataSection("## Streams", streamRecords)},
 		{"## Reconciliation", promptDataSection("## Reconciliation", reconRecords)},
+		{"## Landed Returns", promptDataSection("## Landed Returns", landedRecords)},
 		{"## This Turn", "## This Turn\n" + thisTurn},
 	}
 	parts := make([]string, len(blocks))

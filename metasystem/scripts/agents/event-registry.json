@@ -59,6 +59,24 @@
         }
       }
     },
+    "aggregation-failed": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        },
+        "site": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "arming-complete": {
       "emitters": [
         "arming"

@@ -197,11 +197,15 @@ and only refused at the *next* cycle's reserve). The prompt is, in order
 7. `## Reconciliation` — when `reconciliation=yes`, the single most recent
    non-completed prior turn as `[turnId, outcome, detail]`
    (prompt.go:196-226).
-8. `## This Turn` — the instruction template with cycle number and fence
+8. `## Landed Returns` — the delegate rounds whose return landed but which
+   no concluded turn certified or superseded, one row per owned chain as
+   `[chain-root, round-or-marker, return-path-or-none]`, capped at 20 rows
+   with an overflow summary (plans/patience-orphan-usage.md, landed.go).
+9. `## This Turn` — the instruction template with cycle number and fence
    headroom (`cycles=<n>,jobs=<n>` from contract limits minus fence
    counters, prompt.go:272-304).
 
-Sections 4-7 are framed between `<<<DATA>>>`/`<<<END>>>` markers with
+Sections 4-8 are framed between `<<<DATA>>>`/`<<<END>>>` markers with
 marker-defanging, one row per line, tab-joined (prompt.go:231-248). Total
 size is capped by `mission.max-prompt-kb` (default 256; over-size is a
 refusal naming the widest block, prompt.go:522-533). Assembly failure →

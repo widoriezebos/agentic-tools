@@ -26,10 +26,10 @@ var turnHeaderKeys = []string{
 	"Mission-Id", "Turn-Id", "Cycle", "Host-Session", "Runtime", "Model", "Reconciliation",
 }
 
-// The six required section headings, in order.
+// The seven required section headings, in order.
 var turnHeadings = []string{
 	"## Mission Contract", "## Ledger Tail", "## Open Asks",
-	"## Streams", "## Reconciliation", "## This Turn",
+	"## Streams", "## Reconciliation", "## Landed Returns", "## This Turn",
 }
 
 var (
@@ -55,8 +55,9 @@ var turnStreamStates = map[string]bool{
 // TurnPrompt validates an assembled unattended host-turn prompt against
 // its canonical turn record and the shipped orchestrator preamble: LF
 // framing, the ordered machine header, the byte-exact preamble, section
-// fencing, and the tab-separated Ledger/Asks/Streams/Reconciliation
-// records. It returns the first violation found, or nil on a pass.
+// fencing, and the tab-separated Ledger/Asks/Streams/Reconciliation/
+// Landed Returns records. It returns the first violation found, or nil
+// on a pass.
 func TurnPrompt(root, promptPath, turnDir string) *Violation {
 	preamblePath := filepath.Join(root, "scripts", "agents", "roles", "orchestrator.md")
 	turnRecordPath := filepath.Join(turnDir, "turn.json")
@@ -185,7 +186,7 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 		found = append(found, position.heading)
 	}
 	if !equalStrings(found, turnHeadings) {
-		return &Violation{"headings", "the six required headings are missing, duplicated, or out of order"}
+		return &Violation{"headings", "the seven required headings are missing, duplicated, or out of order"}
 	}
 
 	sections := map[string][]string{}
@@ -301,6 +302,13 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 		if outcome == "(none)" || detail == "(none)" {
 			return &Violation{"records", fmt.Sprintf("Reconciliation record %d uses (none) instead of literal none", number+1)}
 		}
+	}
+
+	// Landed Returns rows are chain-root, round-or-marker, path-or-none: the
+	// generic three-field grammar, under which the invalid, unreadable, and
+	// overflow marker rows are syntax-compatible by construction.
+	if _, violation := turnDataRecords(sections, "## Landed Returns", 3); violation != nil {
+		return violation
 	}
 
 	return nil

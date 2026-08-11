@@ -194,6 +194,56 @@ func TestAppendCycleAnnotations(t *testing.T) {
 	}
 }
 
+// AppendAnnotations is terminal delivery's write path: annotation lines land
+// in the FINAL cycle's block only, under the strict write grammar, and every
+// parser keeps reading around them.
+func TestAppendAnnotationsToFinalBlock(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.md")
+	if err := InitLedger(file, 5, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendCycle(file, 1, "unresolved", goodSHA, "score=1", "no"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendCycle(file, 2, "contract-improved", goodSHA, "score=2", "yes"); err != nil {
+		t.Fatal(err)
+	}
+	rows := []string{
+		LandedUnconsumedAnnotation("chain-a", "2", "artifacts/agents/chain-a/rounds/2/return.json"),
+		LandedUnconsumedAnnotation("chain-b", "invalid", "artifacts/agents/chain-b/rounds/1/return.json"),
+		LandedUnconsumedAnnotation("chain-c", "unreadable", "none"),
+		LandedUnconsumedAnnotation("overflow", "3", "none"),
+	}
+	if err := AppendAnnotations(file, 2, rows...); err != nil {
+		t.Fatalf("terminal delivery append refused: %v", err)
+	}
+	// Only the final block accepts the append; unknown kinds are refused.
+	if err := AppendAnnotations(file, 1, rows[0]); err == nil {
+		t.Fatal("an append to a closed history block must be refused")
+	}
+	if err := AppendAnnotations(file, 2, "Landed unconsumed: chain=UPPER round=x path="); err == nil {
+		t.Fatal("an annotation outside the write grammar must be refused")
+	}
+	_, _, cycles, err := ParseLedger(file)
+	if err != nil {
+		t.Fatalf("annotated ledger must parse: %v", err)
+	}
+	if len(cycles) != 2 || len(cycles[1].Annotations) != 4 {
+		t.Fatalf("the four landed rows must be exposed on cycle 2: %+v", cycles)
+	}
+	if cycles[1].Annotations[0] != "Landed unconsumed: chain=chain-a round=2 path=artifacts/agents/chain-a/rounds/2/return.json" {
+		t.Fatalf("annotation misread: %q", cycles[1].Annotations[0])
+	}
+	// Replay parsing and later appends keep working around the annotations.
+	_, _, events, err := ParseLedgerEvents(file)
+	if err != nil || len(events) != 2 || len(events[1].Annotations) != 4 {
+		t.Fatalf("events misread beside landed annotations: %v %+v", err, events)
+	}
+	if err := AppendCycle(file, 3, "no-progress", goodSHA, "score=2", "no"); err != nil {
+		t.Fatalf("append after landed annotations: %v", err)
+	}
+}
+
 func TestDrainStalledAnnotationGrammar(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "ledger.md")
 	if err := InitLedger(file, 5, 3); err != nil {

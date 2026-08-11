@@ -55,11 +55,16 @@ var (
 	// facts recorded beside — never inside — the classification line. They are
 	// audit trail: parsers tolerate and expose them, the prompt's ledger tail
 	// ignores them, and the stop-loss replay never reads them as fuse input.
-	annotationLineRe = regexp.MustCompile(`(?m)^- ((?:Return|Outcome|Drain): [^\n]+?)[ \t]*$`)
+	annotationLineRe = regexp.MustCompile(`(?m)^- ((?:Return|Outcome|Drain|Landed unconsumed): [^\n]+?)[ \t]*$`)
 	// annotationWriteRe is the strict grammar for the annotation kinds the
-	// runner writes: the fault that rejected a turn's return, a fired cap, and
-	// the survivor count of a drain-stalled cycle healed on resume.
-	annotationWriteRe = regexp.MustCompile(`^(Return: rejected:.+|Outcome: capped|Drain: stalled:(?:0|[1-9][0-9]*))$`)
+	// runner writes: the fault that rejected a turn's return, a fired cap,
+	// the survivor count of a drain-stalled cycle healed on resume, and the
+	// landed-unconsumed rows a completed mission's terminal delivery appends
+	// (plans/patience-orphan-usage.md): chain root, round number or the
+	// invalid/unreadable marker (the overflow row carries the remaining
+	// count), and a whitespace-free return path or the literal none.
+	annotationWriteRe = regexp.MustCompile(`^(Return: rejected:.+|Outcome: capped|Drain: stalled:(?:0|[1-9][0-9]*)` +
+		`|Landed unconsumed: chain=[a-z0-9][a-z0-9-]* round=(?:[1-9][0-9]*|invalid|unreadable) path=[^ \t]+)$`)
 )
 
 // Stop-loss park kinds an ask record carries in its stopLossKind field. Only
@@ -92,6 +97,15 @@ func DrainStalledAnnotation(survivors int) string {
 		survivors = 0
 	}
 	return fmt.Sprintf("Drain: stalled:%d", survivors)
+}
+
+// LandedUnconsumedAnnotation composes the terminal-delivery annotation for one
+// Landed Returns row (plans/patience-orphan-usage.md): the row's three fields
+// as chain/round/path tokens, one bounded ledger line per row. Audit trail
+// beside the final classification line, never a classification and never fuse
+// input.
+func LandedUnconsumedAnnotation(chainRoot, round, path string) string {
+	return fmt.Sprintf("Landed unconsumed: chain=%s round=%s path=%s", chainRoot, round, path)
 }
 
 // rejectedReasonMaxLen bounds the reason inside a Return: rejected annotation.
@@ -237,6 +251,47 @@ func AppendCycle(file string, cycle int, classification, candidateSHA, observed,
 		entry += "- " + annotation + "\n"
 	}
 	return atomicWriteText(file, existing+entry)
+}
+
+// AppendAnnotations appends annotation lines to an existing cycle's block —
+// the terminal delivery for facts that exist only after that cycle's own line
+// landed, such as the completion conclude's Landed Returns list
+// (plans/patience-orphan-usage.md). Only the FINAL cycle accepts the append:
+// any earlier block is closed history, and history is never rewritten. The
+// annotations must match the strict write grammar, and the append is one
+// atomic write under the ledger lock.
+func AppendAnnotations(file string, cycle int, annotations ...string) error {
+	if len(annotations) == 0 {
+		return nil
+	}
+	lock, err := lockFile(file)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+	_, _, cycles, err := ParseLedger(file)
+	if err != nil {
+		return err
+	}
+	if len(cycles) == 0 || cycle != len(cycles) {
+		return fmt.Errorf("annotations append only to the final ledger cycle (%d)", len(cycles))
+	}
+	for _, annotation := range annotations {
+		if !annotationWriteRe.MatchString(annotation) {
+			return fmt.Errorf("unknown mission ledger annotation kind: %q", annotation)
+		}
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("cannot read mission ledger: %w", err)
+	}
+	var appended strings.Builder
+	appended.WriteString(strings.TrimRightFunc(string(data), unicode.IsSpace))
+	for _, annotation := range annotations {
+		appended.WriteString("\n- " + annotation)
+	}
+	appended.WriteString("\n")
+	return atomicWriteText(file, appended.String())
 }
 
 // AppendReset appends the vocal stop-loss reset line naming the answered ask.

@@ -572,6 +572,23 @@ wait_end_state() { # mission, expected status exit
 }
 
 make_end_state_contract gate-and-close close-stream
+# A landed return no host ever acted on (plans/patience-orphan-usage.md):
+# the chain is already runner-closed — closure never hides a landed round —
+# so the completed mission must list it in every turn prompt and deliver it
+# into the final ledger block as a Landed unconsumed annotation.
+mkdir -p "$repo/artifacts/agents/jobs" "$repo/artifacts/agents/landed-orphan/rounds/1"
+cat >"$repo/artifacts/agents/jobs/landed-orphan.json" <<'EOF'
+{
+  "jobId": "landed-orphan",
+  "mission": "gate-and-close",
+  "status": "completed",
+  "round": 1,
+  "parentJob": null,
+  "chainClosed": true,
+  "runnerClosed": true
+}
+EOF
+printf '{"jobId":"landed-orphan"}\n' >"$repo/artifacts/agents/landed-orphan/rounds/1/return.json"
 METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
   --mission gate-and-close --foreground >/dev/null
 wait_end_state gate-and-close 10
@@ -580,6 +597,23 @@ import json,sys
 state=json.load(open(sys.argv[1]))
 assert state["status"]=="completed" and state["parkReason"] is None and state["gatePassed"] is True, state
 assert state["streams"]["primary"]["state"]=="done", state["streams"]
+PY
+python3 - "$repo/artifacts/agents/missions/gate-and-close" <<'PY'
+import json,sys
+from pathlib import Path
+mission=Path(sys.argv[1])
+prompts=sorted(mission.glob("turns/*/prompt.md"))
+assert prompts, "the completed mission left no archived turn prompt"
+prompt=prompts[-1].read_text()
+assert "## Landed Returns" in prompt, prompt
+assert "landed-orphan\tinvalid\tartifacts/agents/landed-orphan/rounds/1/return.json" in prompt, prompt
+ledger=(mission/"ledger.md").read_text()
+line="- Landed unconsumed: chain=landed-orphan round=invalid path=artifacts/agents/landed-orphan/rounds/1/return.json"
+assert line in ledger.splitlines(), ledger
+usage=json.loads((mission/"usage.json").read_text())
+entries={item["jobId"]:item for item in usage["rounds"]}
+assert set(entries["landed-orphan"])=={"jobId","round","provenance","source","detail"}, entries
+assert entries["landed-orphan"]["provenance"]=="unavailable", entries
 PY
 
 make_end_state_contract runner-closes-chain dispatch-terminal

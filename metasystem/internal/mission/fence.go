@@ -1,9 +1,11 @@
 package mission
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -13,7 +15,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // A mission's lifecycle fences bound how much work it may do — wall-clock
@@ -533,11 +537,53 @@ func Refuse(repo, mission, reason string) (string, error) {
 	return writeBatchedAsk(repo, mission, []string{reason})
 }
 
+// The provenance a terminal job's aggregate entry carries
+// (plans/patience-orphan-usage.md O3): the adapter reported the usage, the
+// aggregator derived it from a provably dead round's event stream, the group
+// is not yet provably dead, or the usage is unrecoverable by proof.
+const (
+	usageReported     = "reported"
+	usageDerived      = "derived"
+	usagePendingProof = "pending-death-proof"
+	usageUnavailable  = "unavailable"
+)
+
+// usageTokenFields are the typed token counters every per-round usage writer
+// emits.
+var usageTokenFields = []string{"inputTokens", "cachedInputTokens", "outputTokens", "reasoningTokens"}
+
+// probeGroupGone probes whether a recorded process group is provably absent.
+// Only ESRCH proves it — the shipped group-exists semantics: success or a
+// permission denial proves existence, and any other failure proves nothing.
+// Overridable in tests.
+var probeGroupGone = func(pgid int64) (gone bool, detail string) {
+	switch err := unix.Kill(-int(pgid), 0); err {
+	case unix.ESRCH:
+		return true, ""
+	case nil:
+		return false, fmt.Sprintf("process group %d is alive", pgid)
+	case unix.EPERM:
+		return false, fmt.Sprintf("process group %d exists (permission denial proves existence)", pgid)
+	default:
+		return false, fmt.Sprintf("process group %d probe failed: %v", pgid, err)
+	}
+}
+
+// custodianProver proves one recorded custodian through the shared kernel
+// custodian discipline — the one owner both reapers already judge by.
+// Overridable in tests.
+var custodianProver = identity.Custodian
+
 // AggregateUsage totals the typed usage — token counts, cost, and provider
-// units — across the mission's finished jobs, listing jobs the fence could not
-// measure at all, and writes usage.json. A record measured by nothing is what
-// the fence cannot bound; a runtime that reports provider units instead of
-// tokens is still measured.
+// units — across the mission's finished jobs and writes usage.json. A
+// terminal job whose record carries no measured usage is recovered by
+// DERIVATION from its round's event stream, in memory and never written
+// back, gated on proven whole-group death: the recorded pgid probes ESRCH
+// AND every recorded custodian is proven dead. A record with no recorded
+// pgid can never satisfy that gate and aggregates unavailable — honesty over
+// optimism. Every terminal job's provenance lands in the additive top-level
+// rounds array, and a content-equal aggregate skips the write entirely, so
+// updatedAt changes exactly when content changes.
 func AggregateUsage(repo, mission string) error {
 	dir, _, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -549,13 +595,21 @@ func AggregateUsage(repo, mission string) error {
 	}
 	defer lock.release()
 
+	type roundEntry struct {
+		jobID      string
+		round      any
+		provenance string
+		source     any
+		detail     any
+	}
 	units := map[[2]string]float64{}
 	unavailable := []string{}
-	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
-	paths, _ := filepath.Glob(filepath.Join(jobs, "*.json"))
+	var entries []roundEntry
+	jobsDir := filepath.Join(repo, "artifacts", "agents", "jobs")
+	paths, _ := filepath.Glob(filepath.Join(jobsDir, "*.json"))
 	sort.Strings(paths)
-	for _, path := range paths {
-		record, err := readJSONObjectFile(path)
+	for _, recordPath := range paths {
+		record, err := readJSONObjectFile(recordPath)
 		if err != nil {
 			continue
 		}
@@ -567,43 +621,23 @@ func AggregateUsage(repo, mission string) error {
 		}
 		jobID, _ := record["jobId"].(string)
 		if jobID == "" {
-			jobID = strings.TrimSuffix(filepath.Base(path), ".json")
-		}
-		usage, ok := record["usage"].(map[string]any)
-		if !ok {
-			unavailable = append(unavailable, jobID)
-			continue
+			jobID = strings.TrimSuffix(filepath.Base(recordPath), ".json")
 		}
 		provider, _ := record["runtime"].(string)
 		if provider == "" {
 			provider = "unknown"
 		}
-		measured := false
-		if a, _ := usage["availability"].(string); a != "unavailable" {
-			for _, field := range []string{"inputTokens", "cachedInputTokens", "outputTokens", "reasoningTokens"} {
-				if v, ok := nonNegNumber(usage[field]); ok {
-					units[[2]string{provider, "tokens." + field}] += v
-					measured = true
-				}
+		entry := roundEntry{jobID: jobID, provenance: usageReported}
+		if round, ok := intValue(record["round"]); ok {
+			entry.round = round
+		}
+		if !addReportedUsage(units, provider, record["usage"]) {
+			entry.provenance, entry.source, entry.detail = deriveRoundUsage(repo, jobsDir, jobID, provider, record, units)
+			if entry.provenance != usageDerived {
+				unavailable = append(unavailable, jobID)
 			}
 		}
-		if cost, ok := usage["cost"].(map[string]any); ok {
-			currency, cok := cost["currency"].(string)
-			if amount, aok := nonNegNumber(cost["amount"]); cok && aok {
-				units[[2]string{provider, "cost." + currency}] += amount
-				measured = true
-			}
-		}
-		if native, ok := usage["providerUnits"].(map[string]any); ok {
-			name, nok := native["name"].(string)
-			if value, vok := nonNegNumber(native["value"]); nok && vok {
-				units[[2]string{provider, "provider." + name}] += value
-				measured = true
-			}
-		}
-		if !measured {
-			unavailable = append(unavailable, jobID)
-		}
+		entries = append(entries, entry)
 	}
 
 	keys := make([][2]string, 0, len(units))
@@ -621,11 +655,134 @@ func AggregateUsage(repo, mission string) error {
 		unitList = append(unitList, map[string]any{"provider": key[0], "unit": key[1], "value": units[key]})
 	}
 	sort.Strings(unavailable)
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].jobID != entries[j].jobID {
+			return entries[i].jobID < entries[j].jobID
+		}
+		left, _ := intValue(entries[i].round)
+		right, _ := intValue(entries[j].round)
+		return left < right
+	})
+	roundList := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		roundList = append(roundList, map[string]any{
+			"jobId": entry.jobID, "round": entry.round, "provenance": entry.provenance,
+			"source": entry.source, "detail": entry.detail,
+		})
+	}
+
 	value := map[string]any{
 		"schemaVersion": 1, "missionId": mission, "units": unitList,
-		"unavailableJobs": unavailable, "updatedAt": fenceNowISO(),
+		"unavailableJobs": unavailable, "rounds": roundList,
 	}
-	return atomicWriteJSON(filepath.Join(dir, "usage.json"), value)
+	usagePath := filepath.Join(dir, "usage.json")
+	if existing, err := readJSONObjectFile(usagePath); err == nil && aggregateContentEqual(existing, value) {
+		return nil
+	}
+	value["updatedAt"] = fenceNowISO()
+	return atomicWriteJSON(usagePath, value)
+}
+
+// addReportedUsage sums a record's own usage object into the unit totals and
+// reports whether anything was measured. A runtime that reports provider
+// units or cost instead of tokens is still measured.
+func addReportedUsage(units map[[2]string]float64, provider string, rawUsage any) bool {
+	usage, ok := rawUsage.(map[string]any)
+	if !ok {
+		return false
+	}
+	measured := false
+	if a, _ := usage["availability"].(string); a != "unavailable" {
+		for _, field := range usageTokenFields {
+			if v, ok := nonNegNumber(usage[field]); ok {
+				units[[2]string{provider, "tokens." + field}] += v
+				measured = true
+			}
+		}
+	}
+	if cost, ok := usage["cost"].(map[string]any); ok {
+		currency, cok := cost["currency"].(string)
+		if amount, aok := nonNegNumber(cost["amount"]); cok && aok {
+			units[[2]string{provider, "cost." + currency}] += amount
+			measured = true
+		}
+	}
+	if native, ok := usage["providerUnits"].(map[string]any); ok {
+		name, nok := native["name"].(string)
+		if value, vok := nonNegNumber(native["value"]); nok && vok {
+			units[[2]string{provider, "provider." + name}] += value
+			measured = true
+		}
+	}
+	return measured
+}
+
+// deriveRoundUsage recovers one unmeasured terminal job's usage from its
+// round's event stream — the primary recovery, because no graceful cleanup
+// survives a cap or a reap. It derives only when the whole group is provably
+// gone: the recorded pgid probes ESRCH and every recorded custodian is
+// proven dead; a still-provable-alive group defers to a later pass, and a
+// record whose stream cannot prove anything aggregates unavailable. The
+// derived value is summed in memory and never written back.
+func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]any, units map[[2]string]float64) (provenance string, source, detail any) {
+	pgid, ok := intValue(record["pgid"])
+	if !ok || pgid < 1 {
+		return usageUnavailable, nil, "no recorded pgid: whole-group death is unprovable"
+	}
+	gone, why := probeGroupGone(pgid)
+	if !gone {
+		return usagePendingProof, nil, why
+	}
+	if pid, ok := intValue(record["pid"]); ok && pid >= 1 {
+		start, _ := intValue(record["pidStartedAt"])
+		tag, _ := record["instanceTag"].(string)
+		switch custodianProver(pid, start, tag) {
+		case identity.Dead:
+		case identity.Alive:
+			return usagePendingProof, nil, fmt.Sprintf("recorded custodian pid %d is still alive", pid)
+		default:
+			return usagePendingProof, nil, fmt.Sprintf("recorded custodian pid %d cannot be proven dead", pid)
+		}
+	}
+	rootID, err := adapter.RootJobID(jobsDir, jobID)
+	if err != nil {
+		return usageUnavailable, nil, fmt.Sprintf("chain root is unresolvable: %v", err)
+	}
+	round, ok := intValue(record["round"])
+	if !ok || round < 1 {
+		return usageUnavailable, nil, "job record round is unreadable"
+	}
+	rel := path.Join("artifacts", "agents", rootID, "rounds", strconv.FormatInt(round, 10), "events.jsonl")
+	eventsPath := filepath.Join(repo, filepath.FromSlash(rel))
+	if _, err := os.Stat(eventsPath); err != nil {
+		return usageUnavailable, nil, fmt.Sprintf("event stream is unreadable: %s", rel)
+	}
+	derived := adapter.CodexUsageValue(eventsPath)
+	measured := false
+	for _, field := range usageTokenFields {
+		if v, ok := nonNegNumber(derived[field]); ok {
+			units[[2]string{provider, "tokens." + field}] += v
+			measured = true
+		}
+	}
+	if !measured {
+		// The parser's native-with-nulls answer on an unusable stream
+		// normalizes here to plain unavailability.
+		return usageUnavailable, nil, fmt.Sprintf("event stream carries no usage block: %s", rel)
+	}
+	return usageDerived, rel, nil
+}
+
+// aggregateContentEqual compares the aggregate's content — everything except
+// updatedAt — against an existing file, canonicalized through JSON so number
+// representations never fake a difference.
+func aggregateContentEqual(existing, computed map[string]any) bool {
+	subset := func(doc map[string]any) any {
+		return []any{doc["schemaVersion"], doc["missionId"], doc["units"], doc["unavailableJobs"], doc["rounds"]}
+	}
+	before, errBefore := json.Marshal(subset(existing))
+	after, errAfter := json.Marshal(subset(computed))
+	return errBefore == nil && errAfter == nil && bytes.Equal(before, after)
 }
 
 // nonNegNumber returns a non-negative numeric value, excluding booleans.

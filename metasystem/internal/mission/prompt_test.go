@@ -96,6 +96,7 @@ func TestAssemblePromptByteStable(t *testing.T) {
 		"## Open Asks",
 		"## Streams",
 		"## Reconciliation",
+		"## Landed Returns",
 		"## This Turn",
 	} {
 		if !strings.Contains(got, want) {
@@ -124,7 +125,7 @@ func TestAssemblePromptOrdersAndFramesData(t *testing.T) {
 	}
 	text := string(got)
 
-	// The eight sections appear exactly once and in the fixed order.
+	// The nine sections appear exactly once and in the fixed order.
 	markers := []string{
 		"Mission-Id: m1",
 		"# Orchestrator",
@@ -133,6 +134,7 @@ func TestAssemblePromptOrdersAndFramesData(t *testing.T) {
 		"## Open Asks",
 		"## Streams",
 		"## Reconciliation",
+		"## Landed Returns",
 		"## This Turn",
 	}
 	last := -1

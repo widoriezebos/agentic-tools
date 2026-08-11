@@ -56,13 +56,19 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 	notified := false
 	leaseHeld := false
 	// fail is the one exit ramp for a runner that dies mid-mission: tell the
-	// launcher (when it is still waiting), free the lease, finalize the
-	// record, and surface the refusal's own exit code.
+	// launcher (when it is still waiting), settle the usage books, free the
+	// lease, finalize the record, and surface the refusal's own exit code.
+	// The ramp writes NO ledger annotation — it fires for lease-acquisition
+	// failures, pre-cycle init errors, and mid-run errors alike, so no
+	// ledger position is safe here; usage aggregation is idempotent and
+	// needs no ledger block, and an interrupted mission's landed returns are
+	// re-listed by its next assembled prompt on resume.
 	fail := func(err error) int {
 		if !notified {
 			_ = writeStartSignal(startSignal, false, nil, err.Error())
 		}
 		if leaseHeld {
+			aggregateUsageForProjection(e.Root, e.Mission, "failure-ramp")
 			e.releaseLease()
 			leaseHeld = false
 		}
@@ -706,6 +712,32 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, updated)
 }
 
+// deliverLandedUnconsumed is terminal delivery (plans/patience-orphan-usage.md
+// O1): a completed mission produces no next prompt, so its Landed Returns
+// list is appended to the final cycle's ledger block as Landed unconsumed
+// annotations — the place a terminal mission is read. It runs ONLY at the
+// completion conclude, where a ledger block for the final cycle exists and
+// is safely writable, and it runs before the state write so the closing
+// anchor binds the annotated ledger bytes. Best-effort: a mission that
+// passed its gate is never failed over its reminder list, so a refused
+// append is reported on stderr and the returns stay recoverable in the tree.
+func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[string]any) {
+	turnLog, _ := state["turnLog"].([]any)
+	annotations := []string{}
+	for _, row := range mission.LandedReturns(e.Root, e.Mission, turnLog) {
+		if len(row) != 3 {
+			continue
+		}
+		annotations = append(annotations, mission.LandedUnconsumedAnnotation(row[0], row[1], row[2]))
+	}
+	if len(annotations) == 0 {
+		return
+	}
+	if err := mission.AppendAnnotations(ledger, int(cycle), annotations...); err != nil {
+		fmt.Fprintf(os.Stderr, "landed-return terminal delivery refused: %v\n", err)
+	}
+}
+
 // closeTerminalChains reaps and closes each fully-terminal delegation chain
 // at mission end, so no chain outlives the mission unclosed.
 func (e *Engine) closeTerminalChains() error {
@@ -831,6 +863,9 @@ func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]
 	proposed, err := ConcludeFaultedTurn(e.Root, e.Mission, diskState, turn, fault, measurementValue, gatePassed, consecutiveFailures)
 	if err != nil {
 		return nil, err
+	}
+	if proposed["status"] == "completed" {
+		e.deliverLandedUnconsumed(ledger, cycle, proposed)
 	}
 	updated, err := e.writeState(statePath, proposed)
 	if err != nil {
@@ -1069,6 +1104,9 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 		verdictPath, verdict.ReturnPath, filepath.Join(turnDir, "result.json"), measurementPath)
 	if err != nil {
 		return nil, err
+	}
+	if proposed["status"] == "completed" {
+		e.deliverLandedUnconsumed(ledger, cycle, proposed)
 	}
 	updated, err := e.writeState(statePath, proposed)
 	if err != nil {

@@ -1029,6 +1029,13 @@ stream-b	parked-reserved	Publish the fixture	Awaiting approval
 (none)
 <<<END>>>
 
+## Landed Returns
+<<<DATA>>>
+chain-a	2	artifacts/agents/chain-a/rounds/2/return.json
+chain-b	invalid	artifacts/agents/chain-b/rounds/1/return.json
+chain-c	unreadable	none
+<<<END>>>
+
 ## This Turn
 Cycle: 3
 Fence headroom: cycles=2,jobs=3
@@ -2992,7 +2999,7 @@ preamble=(root/"scripts/agents/roles/orchestrator.md").read_bytes()
 assert prompt[header_end+2:header_end+2+len(preamble)] == preamble
 text=prompt.decode(); headings=[
     "## Mission Contract","## Ledger Tail","## Open Asks",
-    "## Streams","## Reconciliation","## This Turn",
+    "## Streams","## Reconciliation","## Landed Returns","## This Turn",
 ]
 positions=[text.index(heading) for heading in headings]
 assert positions == sorted(positions)

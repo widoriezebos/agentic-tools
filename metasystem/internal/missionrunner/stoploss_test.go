@@ -327,8 +327,9 @@ func TestBestMarkerComputedAtAppend(t *testing.T) {
 
 // TestAnnotationsNeverChangeAReplayVerdict pins the replay invariant: cycle
 // annotations are audit trail, never fuse input. Two ledgers with identical
-// classification, best, and reset lines — one annotated, one not — must
-// yield the identical verdict under both semantics.
+// classification, best, and reset lines — one annotated (including terminal
+// delivery's landed-unconsumed lines), one not — must yield the identical
+// verdict under both semantics.
 func TestAnnotationsNeverChangeAReplayVerdict(t *testing.T) {
 	engine, _ := stopLossEngine(t)
 	build := func(name string, annotated bool) string {
@@ -352,6 +353,15 @@ func TestAnnotationsNeverChangeAReplayVerdict(t *testing.T) {
 		if err := mission.AppendCycle(ledger, 2, "unresolved", testSHA, "score=5", "no",
 			annotations(mission.CappedAnnotation)...); err != nil {
 			t.Fatal(err)
+		}
+		if annotated {
+			// Terminal delivery appends its list to the final block; the
+			// replay must not read it as fuse input.
+			if err := mission.AppendAnnotations(ledger, 2,
+				mission.LandedUnconsumedAnnotation("chain-a", "2", "artifacts/agents/chain-a/rounds/2/return.json"),
+				mission.LandedUnconsumedAnnotation("overflow", "3", "none")); err != nil {
+				t.Fatal(err)
+			}
 		}
 		return ledger
 	}

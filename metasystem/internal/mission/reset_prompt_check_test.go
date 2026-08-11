@@ -63,6 +63,37 @@ func TestPromptLedgerRecordsSurviveAnnotationLines(t *testing.T) {
 	}
 }
 
+// Terminal delivery's landed-unconsumed lines are a cycle-block annotation
+// kind like every other: appended to the final block, they must pass the
+// strict one-classification rule and never leak into the ledger tail rows.
+func TestPromptLedgerRecordsSurviveLandedUnconsumedAnnotations(t *testing.T) {
+	dir := t.TempDir()
+	ledger := filepath.Join(dir, "ledger.md")
+	if err := InitLedger(ledger, 8, 6); err != nil {
+		t.Fatal(err)
+	}
+	sha := "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
+	if err := AppendCycle(ledger, 1, "contract-improved", sha, "score=3", "yes"); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendAnnotations(ledger, 1,
+		LandedUnconsumedAnnotation("chain-a", "2", "artifacts/agents/chain-a/rounds/2/return.json"),
+		LandedUnconsumedAnnotation("overflow", "4", "none")); err != nil {
+		t.Fatalf("terminal delivery append refused: %v", err)
+	}
+	_, _, cycles, err := ParseLedger(ledger)
+	if err != nil || len(cycles) != 1 || len(cycles[0].Annotations) != 2 {
+		t.Fatalf("landed annotations must parse and be exposed: %v (%+v)", err, cycles)
+	}
+	records, err := promptLedgerRecords(ledger, 8)
+	if err != nil {
+		t.Fatalf("prompt assembly failed on a landed-annotated block: %v", err)
+	}
+	if len(records) != 1 || records[0][1] != "contract-improved" || records[0][4] != "yes" {
+		t.Fatalf("annotated row misread: %v", records)
+	}
+}
+
 // The healed drain-stalled line and its survivor-count annotation must parse
 // everywhere the ledger is read: the strict one-classification rule, the
 // annotation surface, and the prompt's ledger tail.

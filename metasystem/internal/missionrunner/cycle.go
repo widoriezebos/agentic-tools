@@ -111,6 +111,7 @@ func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclus
 		return nil, err
 	}
 	proposed["waitingList"] = openAskIDs(asksDirPath(root, mission))
+	aggregateUsageForProjection(root, mission, "conclude")
 	if err := ProjectFences(root, mission, proposed); err != nil {
 		return nil, err
 	}
@@ -193,6 +194,7 @@ func ConcludeFaultedTurn(root, mission string, state map[string]any, turn Turn, 
 		return nil, err
 	}
 	proposed["waitingList"] = openAskIDs(asksDirPath(root, mission))
+	aggregateUsageForProjection(root, mission, "conclude-faulted")
 	if err := ProjectFences(root, mission, proposed); err != nil {
 		return nil, err
 	}
@@ -234,6 +236,7 @@ func RecordFailureProposal(root, mission string, state map[string]any, turn Turn
 	if err := setLedgerCycles(proposed, turn.Cycle); err != nil {
 		return nil, err
 	}
+	aggregateUsageForProjection(root, mission, "record-failure")
 	if err := ProjectFences(root, mission, proposed); err != nil {
 		return nil, err
 	}
@@ -304,6 +307,7 @@ func parkOutcome(root, mission string, state map[string]any, reason, question, s
 	proposed["parkReason"] = reason
 	proposed["gatePassed"] = false
 	proposed["waitingList"] = mergedOpenAskIDs(asksDir, newAskIDs)
+	aggregateUsageForProjection(root, mission, "park")
 	if err := ProjectFences(root, mission, proposed); err != nil {
 		return nil, err
 	}
