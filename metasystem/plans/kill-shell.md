@@ -55,7 +55,10 @@ watchers, cleanup traps).
 
 1. Every decision, transformation, gate, and report lives in a Go verb
    with unit tests under the coverage floor.
-2. A shell file may contain only: argument relay, environment guards,
+2. A shell file may contain only: argument relay — parsing that only
+   maps CLI ergonomics onto verb argv; any flag whose value selects
+   POLICY is a decision and moves (r5/KS-R5-003) — environment
+   guards,
    a consult of one or more Go verbs, and one of three legal shapes
    (r3/KS-R3-004, r4/KS-R4-002): the final `exec` of an external CLI
    (the default); launch-wait-consult custody where a protocol
@@ -73,15 +76,17 @@ watchers, cleanup traps).
    complexity budget that refuses regressions, the same way the
    word-budget audit fences prompt growth. Its checks are enumerated
    once, in Phase A, and include the no-python check and the
-   per-file function-count bound (r3/KS-R3-010). Honesty about
-   limits (r4/KS-R4-004): the fence mechanically enforces ratchets
-   and structural counts; the zero-decisions invariant itself is
-   enforced by the registry's per-script thin-shim verdict under
-   review discipline — syntax counts do not prove semantics, and the
-   plan does not pretend they do. Scope (r4/KS-R4-003): the budget
-   covers METASYSTEM-OWNED shell only — the shipped payload
-   allowlist plus template scripts — never an adopted project's own
-   files.
+   per-file function-count bound (r3/KS-R3-010), and per-file
+   counts of if, while, case, and for, ratcheted like every other
+   number (r5/KS-R5-007). Honesty about limits (r4/KS-R4-004): the
+   fence mechanically enforces ratchets and structural counts; the
+   zero-decisions invariant itself is enforced by the registry's
+   per-script thin-shim verdict under review discipline — syntax
+   counts do not prove semantics, and the plan does not pretend they
+   do. Scope (r4/KS-R4-003, r5/KS-R5-001): the budget's jurisdiction
+   is exactly the scripts REGISTERED in shell-dispositions.json —
+   metasystem-owned means registered; an adopted project's own files
+   are never registered and never judged.
 
 ## Dead code dies first (human ruling, same day)
 
@@ -92,9 +97,13 @@ Phase 0 and as a standing rule inside every later phase:
   it: suite, hooks, skills, docs, adopted contracts, nobody) and every
   function within the big scripts; run the Go dead-code analyzer
   (golang.org/x/tools/cmd/deadcode) over cmd + internal. The sweep's
-  product is a per-script DISPOSITION REGISTRY — port+shim,
-  port+delete, keep — checked in at
-  scripts/agents/shell-dispositions.json beside the budget
+  product is a DISPOSITION REGISTRY checked in at
+  scripts/agents/shell-dispositions.json beside the budget, one file
+  with two schema'd sections (r5/KS-R5-006): scripts (path, verdict
+  of port+shim / port+delete / keep, debt deadline) and go-packages
+  (import path, governing plan file) — the audit verb validates
+  both: the named plan must exist, the package must exist, and an
+  unreachable package without an entry fails. For scripts
   (r3/KS-R3-008): `keep` is lawful only for scripts already
   satisfying the thin-shim contract or carrying a dated port entry
   the fence treats as debt with a deadline. Adopted targets receive
@@ -103,8 +112,11 @@ Phase 0 and as a standing rule inside every later phase:
   payload automatically (r3/KS-R3-011); what a deletion REQUIRES is
   its registry verdict plus an entry in docs/migrations.md — shipped
   in the payload, one entry per deleted script naming path,
-  replacement verb, and date; the fence refuses a deletion whose
-  entry is missing (r4/KS-R4-010). The registry is what the fence
+  replacement verb, and date; port+delete entries stay in the
+  registry forever as TOMBSTONES, and the fence cross-checks
+  tombstones against migrations.md — two durable records that must
+  agree, so a vanished script cannot vanish quietly (r4/KS-R4-010,
+  r5/KS-R5-005). The registry is what the fence
   checks, not raw reachability. Keep-deadline expiry is
   TEMPLATE-ONLY enforcement; adopted targets get warnings — time
   passing never fails an installed target (r4/KS-R4-007).
@@ -130,7 +142,9 @@ several commands); audit-metasystem.sh → an audit family whose first
 verb it becomes. Plus a residue audit of every existing assert-*.sh
 shim. Prerequisite (r3/KS-R3-002): the coverage ratchet of
 plans/go-production-grade.md Phase 0c lands BEFORE Phase A — the
-first production ports are exactly what it protects. The complexity
+first production ports are exactly what it protects — implemented as
+a Go verb (audit coverage-ratchet) consulted by one go-gate shim
+line, never as gate shell logic (r5/KS-R5-004). The complexity
 fence lands here as `audit shell-budget`
 (r1/KS-R1-008): a Go verb over a checked-in budget file that only
 ratchets down — total tracked shell lines, per-file caps, per-file
@@ -239,6 +253,13 @@ as Go tests would vanish from the very repos the suite protects. The
 suite keeps driving the real CLI — the heading-order bug on
 2026-08-11 was caught only because fixtures drive the shipped
 surface, and that property is not negotiable.
+
+## Definition of done (r5/KS-R5-002)
+
+The program closes only when the registry carries zero debt entries
+and every registered script holds a verified verdict in one of the
+three legal shapes. Phases finishing is not the program finishing;
+`keep` debt outliving the last phase is the program still open.
 
 ## Ordering
 
