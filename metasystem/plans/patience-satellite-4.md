@@ -3,16 +3,18 @@
 Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
-Regenerated whole after round 1 (plans/dispositions/
-patience-satellite-4-r1.md, 15/15 accepted). Parent ruling, inherited
-and not re-litigated: stop-loss is a last defense, never a pacing
-target, recursively. Vocabulary per docs/patience.md and
+Regenerated whole after rounds 1 and 2 (plans/dispositions/
+patience-satellite-4-r1.md, -r2.md; 28/28 accepted). Parent ruling,
+inherited and not re-litigated: stop-loss is a last defense, never a
+pacing target, recursively. Vocabulary per docs/patience.md and
 docs/glossary.md: progress is mechanically proven value; patience is
 tolerated observation without progress; slower progress is still
 progress.
 
-Facts: plans/patience-satellite-4-facts.md (cited as F Qn.m); round-1
-corrections noted inline where the sheet was wrong (P4-006).
+Facts: plans/patience-satellite-4-facts.md (cited as F Qn.m). Two
+sheet corrections stand on the record: local config is NOT cap-only
+(r1/P4-006) and the dispatch transition map is not the terminal-status
+authority (r2/P4-022).
 
 ## The gap this satellite closes
 
@@ -25,171 +27,199 @@ delegate CHAIN burning round after capped round — each schema-valid
 value the orchestrator ever certifies. That drought is what patience
 floors measure.
 
-## What counts as value — one observable, not three
+## What counts as value — one observable
 
 **A chain round has produced value exactly when a concluded turn's
-durable log certifies that round's job with verdict `accepted`
-(F Q3.22).** Nothing else counts:
+durable log certifies that round's JOB, by jobId, with verdict
+`accepted` (F Q3.22, F Q3.13).** Nothing else counts:
 
 - Return validation is NOT value: it proves protocol, not worth
   (internal/validate/returncomplete.go checks schema and identity
-  only), and counting it would reset the exact drought this satellite
-  exists to catch — a critic returning schema-valid `inferred`
-  narrative every round would never look barren (P4-001).
-- Certifications with verdict `rejected` are NOT value (the schema
-  admits both verdicts and the runner copies them unadjudicated,
-  F Q3.32 / P4-003).
-- Chain close is NOT value. A closed chain leaves the evaluation set —
-  the drought ends by ending the spend, which is itself a recorded
-  decision — and its annotation history stays in the ledger. Unconsumed
-  landed value on closed chains remains the Landed Returns section's
-  jurisdiction (F Q3.31).
-- Critique closure is out of scope: no mechanically discoverable
-  dispositions artifact exists to join (P4-002), and with
-  certification as the sole observable none is needed. F Q3.18's
-  observability gap stays open and stays out of this satellite.
+  only); counting it would reset the drought this satellite exists to
+  catch (r1/P4-001).
+- Certifications with verdict `rejected` are NOT value (r1/P4-003).
+- Chain close is NOT value: a closed chain leaves the evaluation set —
+  ending the spend is itself a recorded decision — its annotation
+  history remaining in the ledger. Unconsumed landed value stays the
+  Landed Returns section's jurisdiction (F Q3.31).
+- Critique closure is out of scope (r1/P4-002): no discoverable
+  dispositions join exists, and none is needed.
 
-**The count.** A chain's patience count = the number of its terminal
-rounds (job records with status completed, failed, or timeout,
-F Q3.3) whose round number exceeds the chain's highest
-accepted-certified round. This is a pure function of the turn log and
-job records: no schema is consulted (P4-010 dissolved), late
-certification retroactively heals the streak (a round certified two
-turns later stops being barren), and faults cannot launder rounds
-(P4-008): a round that ran under a turn whose envelope was later
-rejected still exists, still cost money, and still counts until some
-turn certifies it — the Landed Returns section keeps re-surfacing it
-for exactly that purpose.
+**Certification join (r2/P4-024).** A certification counts only when
+its jobId resolves to a job inside the mission's own job set (the
+missionJobs ownership authority: mission stamp plus fence
+reservation) AND that job is a lineage member of the chain under
+evaluation. Foreign or nonexistent jobIds are ignored by patience;
+adjudicating certification hygiene is a possible future satellite,
+not this one.
 
-**Malformed evidence (P4-009).** An unreadable or malformed round
-record counts barren — losing sight of a round never counts as value
-(the TerminalJobStatuses principle inverted, F: missionrunner.go
-comment). A record that cannot be joined to any chain forms a
-single-round chain keyed by its own jobId. Chains never disappear
-from evaluation by evidence damage.
+## The count — a pure function, lineage-ordered
+
+**Patience count = the length of the uncertified terminal suffix of
+the chain's lineage.** The chain is the parentJob walk (the existing
+chain authority); a round is terminal when its status is in
+missionrunner.TerminalJobStatuses — completed, failed, timeout, AND
+cancelled (r2/P4-022) — so cancellation cannot launder a spent round.
+Certifications join by jobId; round numbers play no part
+(r2/P4-023), so duplicate or regressing numbers cannot heal unrelated
+work. Late certification of a suffix round retroactively shortens the
+suffix: healing is inherent, and faults cannot launder rounds
+(r1/P4-008) — a round run under a rejected-envelope turn still exists,
+still cost money, and still counts until certified; Landed Returns
+keeps re-surfacing it for exactly that purpose.
+
+**Evidence damage (r1/P4-009, r2/P4-020, r2/P4-021).** The input set
+is the mission's own jobs; fully unreadable, unattributable records
+are outside patience (the janitor and usage jurisdictions, satellite
+3). Within the mission's set: a damaged-but-attributable record
+counts barren — losing sight of a round never counts as value; a
+record that cannot be joined to any chain forms a single-round chain
+keyed by its own jobId. Identifiers entering annotations or prompt
+lines must match the job-id grammar; a violating value is replaced by
+`invalid-<12-hex sha256 prefix>` so both surfaces interpolate only
+grammar-safe tokens.
 
 ## Floors: sealed mission-contract entries, nowhere else
 
-Round 1 killed the conf layer (P4-006: the sheet's "local is cap-only"
-fact was false — the file is metasystem.conf.local, its non-cap keys
-are skipped by validation yet still resolved with precedence, and
-environment values outrank everything; P4-007: conf fallback lets a
-repository edit change a signed mission's behavior). The corrected
-design:
-
-**Patience floors exist only as mission-contract entries:**
+Round 1 killed the conf layer with evidence (r1/P4-006: the local
+file resolves any key with precedence and environment outranks it;
+r1/P4-007: an unsealed fallback lets a repository edit change a
+signed mission). Floors exist only as mission-contract entries:
 
     patience.rounds.<role>.<runtime>.<model>=<positive integer>
 
-validated by extending the contract allow-list (F Q2.17) with the
-`patience.` prefix — role required, runtime/model canonical
-(capability.IsCanonicalModel, the F Q2.18 pattern widened by one
-segment), value a positive integer — and folded into the seal beside
-the cap entries. There are NO metasystem.conf patience keys, no local
-keys, no environment override, no per-dispatch flag: a mission's
-patience behavior is exactly its sealed contract, verifiable at
-preflight from the contract body alone, so pre-feature contracts
-verify unchanged (no entries → none expected) and byte-identical
-degenerate behavior is structural rather than promised. Non-mission
-dispatch chains have no runner evaluating them; the human at the
-keyboard is their patience.
+validated by a `patience.` prefix in the contract allow-list
+(F Q2.17): role and runtime in the identifier grammar, model a
+CANONICAL model key in the same encoding cap keys use (config/
+model.go's canonical mapping — e.g. gpt-5.6-sol is keyed
+gpt-5-6-sol; r2/P4-018), value a positive integer. Entries are folded
+into the seal beside the cap entries in BOTH enumeration surfaces —
+expectedSeal and the ordered emitter — with a seal-then-preflight
+round-trip test (r1/P4-015, F Q2.22).
 
-Benchmark and mission numbers therefore ride kits and contracts by
-construction — the 2026-08-11 boundary ruling (docs/concepts.md)
-needs no separate enforcement here.
+No conf keys, no local keys, no environment override, no per-dispatch
+flag. A mission's patience behavior is exactly its sealed contract;
+pre-feature contracts verify unchanged under a new binary (no entries,
+none expected). **The reverse direction is unsupported by
+declaration (r2/P4-026):** a pre-feature binary refuses a
+patience-bearing contract through the existing unknown-key preflight
+rule — loud refusal, never silent misbehavior; upgrade the engine or
+strip the entries. Non-mission chains have no runner evaluating them;
+the human at the keyboard is their patience. Benchmark numbers ride
+kits and contracts by construction (the 2026-08-11 boundary ruling).
 
-**Selection (P4-014).** A chain's floor is selected by role plus the
-EFFECTIVE model of its most recent terminal round (F Q3.1 records
-both; fallbacks can make them differ): patience is doctrine about who
-actually worked. No entry matching (role, runtime, effective model) =
-infinite patience for that chain.
+**Floor selection (r2/P4-018, r2/P4-019).** A chain's floor is
+matched on (role, runtime, canonical model), where the model is: the
+newest terminal round's effectiveModel canonicalized; else the
+chain's round-1 requestedModel canonicalized (pre-handshake failures
+leave effectiveModel null, F: dispatch/build.go); else the SMALLEST
+floor among the contract's entries for that role and runtime —
+evidence damage must never widen patience; else, with no entries for
+the role and runtime at all, infinite patience — configured-nothing,
+not damage.
 
-**Threshold (P4-011).** A floor of F tolerates exactly F barren
-rounds silently. The breach books when the count strictly exceeds F.
+**Threshold (r1/P4-011).** A floor of F tolerates exactly F barren
+rounds silently; the breach books when the count strictly exceeds F.
 
-**No wall-time claim (P4-012).** Rounds-floors bound spend-shaped
-drought; wall fences bound time (F Q5.8); neither implies the other,
-and the design claims no composition.
+**No wall-time claim (r1/P4-012).** Rounds-floors bound spend-shaped
+drought; wall fences bound time; neither implies the other.
 
-## Booking: atomic with the cycle, bounded, and actually vocal
+## Booking: one write, bounded, with an honest crash contract
 
 **When.** Patience evaluates at EVERY cycle booking — ordinary,
-faulted, and heal (F Q4.7, F Q4.10, F Q4.17) — no exemptions
-(P4-008). Heal cycles evaluate the rounds drain ran to terminal; a
-booking with no new terminal rounds advances no count by
-construction, which is all the drain-stalled/turn-lost "exemption"
-ever honestly was.
+faulted, and heal (F Q4.7, F Q4.10, F Q4.17); no exemptions
+(r1/P4-008). A booking with no new terminal rounds advances no count
+by construction.
 
-**How (P4-004).** The derivation takes the in-flight TurnConclusion
-as an explicit input beside the durable turn log — the current turn's
-accepted certifications count before anything is written — and its
-annotations are passed to the SAME AppendCycle call as the cycle line
-(the annotations parameter, F Q1.16, exactly the faulted-path
-pattern, F Q4.10). One atomic ledger write; no ordering choice, no
-crash window between cycle and annotation.
+**How.** The derivation reads the mission's job records, the durable
+turn log, and the in-flight TurnConclusion (its accepted
+certifications suppress breaches before anything is written), and its
+annotations ride the SAME AppendCycle call as the cycle line
+(F Q1.16, the faulted-path pattern F Q4.10).
 
-**Grammar (extending the closed write set, F Q1.11), two forms:**
+**The crash and race contract (r2/P4-016, r2/P4-025) — stated, not
+wished away.** The pre-append read is the linearization point: booked
+counts are counts-as-read. Two windows exist and are accepted because
+the surface is non-acting audit, self-repairing at the next booking:
+a crash between AppendCycle and the state write can leave one cycle's
+vocal line stale against the healed log, and a reaper transition
+landing mid-write books one evaluation late. A "final booking" cannot
+strand a stale line anywhere that matters: a completed mission needs
+no nag and a parked mission's ask is the vocal surface. No retry loop
+is added around the flocked append.
+
+**Grammar — write AND read (r1/P4-013, r2/P4-027, r2/P4-028).** Two
+new annotation forms in BOTH annotationWriteRe and the read-side
+annotation grammar, with a parse round-trip test:
 
     - Patience: chain=<root> rounds=<n> floor=<m>
     - Patience overflow: chains=<count>
 
-**Bound (P4-013).** At most the 20 most-breached chains (by count
-descending, chain root ascending) book per cycle; the remainder books
-as the single overflow line — the landed-returns bound pattern
-(F Q3.31). Annotations remain audit trail, never fuse input: the
-replay invariant (F Q1.4, F Q4.18) is untouched.
+Bound copied exactly from the landed-returns implementation
+(F Q3.31): at most 20 lines total per booking — 20 detail lines, or
+19 detail plus 1 overflow when breaches exceed 20 — most-breached
+first, chain root ascending on ties. Annotations remain audit trail,
+never fuse input; the replay invariant (F Q1.4, F Q4.18) is
+untouched.
 
-**Vocal to whom (P4-005).** The Ledger Tail prompt projection drops
-annotations, so the prompt surface is the `## This Turn` section:
-runner-authored free text (not a validated data section) gains one
-line per booked breach, `Patience: chain <root> has <n> uncertified
-rounds (floor <m>) — certify landed value or close the chain.` The
-ledger annotation is the human audit trail. The ask-candidate route is
-dropped: candidates belong to the host's own return (F Q3.13).
+**Vocal to whom (r1/P4-005, r2/P4-017).** Two surfaces, one durable
+source. The ledger annotation is the human audit trail. The
+orchestrator sees breaches in its NEXT prompt: at assembly time the
+runner projects the final cycle block's Patience annotations
+(readable because the read grammar round-trips) into `## This Turn`
+lines — runner-authored free text, validator-neutral — of the form
+`Patience: chain <root> has <n> uncertified rounds (floor <m>) —
+certify landed value or close the chain.` Restart-deterministic: the
+prompt derives from the ledger, not from runner memory. The
+ask-candidate route stays dropped; candidates belong to the host's
+return (F Q3.13).
 
 **What expiry does not do.** Floors never kill, never park, never
-feed the breaker (F Q5.2), never write fuse-visible lines. The
-existing fuses remain the only actors (F Q1.23, F Q5.8). Escalation
-from vocal to acting is a future human ruling taken with trial
-evidence.
+feed the breaker (F Q5.2), never write fuse-visible lines. The fuses
+remain the only actors (F Q1.23, F Q5.8). Escalation from vocal to
+acting is a future human ruling taken with trial evidence.
 
 ## Non-goals
 
 - No conf/local/env/per-dispatch patience surface of any kind.
 - No wall-clock patience; rounds only.
-- No new validated prompt section and no Ledger Tail grammar change.
+- No new validated prompt section; no Ledger Tail grammar change.
 - No change to fuse semantics or ledgerSemantics versions (F Q1.7),
   the breaker (F Q5.2), drain (F Q5.19, F Q5.20), adapters, or hosts.
-- No critique-closure machinery (P4-002); no return revalidation
-  (P4-010).
-- Deferred unless trial evidence demands: loop-advanced credits (the
-  parent split's routing) — an accepted certification of a closed
-  critique round already lands through the one observable.
+- No critique-closure machinery; no return revalidation.
+- No certification-hygiene adjudication (r2/P4-024) — recorded as a
+  candidate future satellite.
+- Deferred unless trial evidence demands: loop-advanced credits; an
+  accepted certification of a closed critique round already lands
+  through the one observable.
 
 ## Implementation sketch
 
-internal/mission/ledger.go: two new annotationWriteRe alternatives
-(F Q1.11). internal/mission/contract.go: `patience.` prefix in the
-allow-list (F Q2.17); entry validation (role/runtime/model + positive
-integer); sealing in BOTH enumeration surfaces — expectedSeal and the
-ordered emitter (P4-015) — with a seal-then-preflight round-trip unit
-test proving field-count equality (F Q2.22). New
-internal/missionrunner/patience.go: pure derivation
-(contract entries, turn log, in-flight conclusion, job records) →
-(annotations, prompt lines); called from the shared cycle-booking
-path so ordinary, faulted, and heal conclusions all pass through it.
-internal/mission/prompt.go: This Turn assembly accepts the breach
-lines. No dispatch, adapter, or host changes.
+internal/mission/ledger.go: the two Patience forms in
+annotationWriteRe AND the read-side grammar (r2/P4-028).
+internal/mission/contract.go: `patience.` allow-list prefix; entry
+validation (identifier grammar, canonical model key, positive
+integer); sealing in expectedSeal AND the ordered emitter with the
+round-trip test (r1/P4-015). New internal/missionrunner/patience.go:
+the pure count function (mission job set → lineage suffixes vs
+jobId-joined accepted certifications; terminal set =
+TerminalJobStatuses; selection fallbacks; encoding replacement) →
+(bounded annotations); called from the shared cycle-booking path.
+internal/mission/prompt.go: This Turn assembly projects the final
+cycle's Patience annotations into breach lines. No dispatch, adapter,
+or host changes.
 
 ## Verification
 
-Race-detector unit tests: the count function (certification resets,
-late certification heals, rejected certifications ignored, malformed
-records barren, orphan records isolate, threshold strictly-exceeds,
-20+overflow bound, effective-model selection); contract validation
-and the seal round-trip (P4-015); ledger writer round-trips both
-annotation forms. Mission fixtures: a breached chain books annotation
-+ This Turn line and nothing else; an unconfigured mission's turn
-artifacts are byte-identical to today's; heal bookings with no new
-terminal rounds advance nothing. Suite green via the standing launch
-recipe.
+Race-detector unit tests: lineage-suffix counting (late certification
+heals; rejected ignored; cancelled counts; duplicate round numbers
+harmless; foreign-jobId certifications ignored; damaged records
+barren; orphans isolate; invalid identifiers replaced; threshold
+strictly-exceeds; 19+1 overflow; selection fallback chain including
+the null-effectiveModel and smallest-floor branches); contract
+validation and the seal round-trip; ledger write→parse round-trip of
+both forms; prompt projection from a ledger fixture. Mission
+fixtures: a breached chain books the annotation and the NEXT prompt
+carries the line; an unconfigured mission's turn artifacts are
+byte-identical to today's; a heal booking with no new terminal rounds
+advances nothing. Suite green via the standing launch recipe.
