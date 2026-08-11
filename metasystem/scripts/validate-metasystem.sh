@@ -3058,6 +3058,9 @@ PY
   # orphan report in the same append as the cycle line, and the NEXT prompt's
   # This Turn carries the projected line. The orphan is deliberately not
   # closeable, so the runner's end-of-mission chain close never touches it.
+  # The prior mission's runner anchors its exit AFTER its status flips;
+  # committing while it still holds the git index races its lock.
+  wait_lease_released runner-cycle 'patience fixture entry'
   # Reset the candidate below the gate threshold BEFORE sealing: the sealed
   # baseline must be failing, or the first measurement completes the mission
   # and no drought can ever accrue. Restored after the fixture.
@@ -3089,6 +3092,7 @@ EOF
     --file "$runner_repo/artifacts/agents/missions/runner-patience/turns/2/prompt.md" \
     --turn "$runner_repo/artifacts/agents/missions/runner-patience/turns/2"
   rm -f "$runner_repo/artifacts/agents/jobs/pat-lost.json"
+  wait_lease_released runner-patience 'patience fixture exit'
   printf '1\n' >"$runner_repo/candidate-score.txt"
   runner_git add candidate-score.txt
   runner_git commit --allow-empty -qm 'restore candidate after the patience fixture'
