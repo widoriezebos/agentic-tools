@@ -1,8 +1,9 @@
 # Patience satellite 2: mission reap and bounded drain
 
-Owner: main session (claude). Status: DESIGN — round 1 adjudicated
-(11/11 accepted, `plans/patience-mission-reap-drain-dispositions-r1.md`),
-awaiting round 2.
+Owner: main session (claude). Status: DESIGN — rounds 1 and 2
+adjudicated (11/11 and 8/8 accepted; dispositions r1/r2), awaiting
+round 3 (final convergence check — round 2 found two genuine safety
+defects in round 1's amendments, so the loop has not earned its stop).
 Program: `plans/stop-loss-satellites.md` satellite 2; concepts in
 `docs/patience.md`; ground truth in `docs/design/mission-cycle-sequence.md`
 (especially the drain narrative and false-stall surfaces). Routed
@@ -70,10 +71,14 @@ gate — the runner is not a standing reaper and does not borrow its
 custody; it exercises R1's narrower authority with the same proof bar.
 Terminal verdict mapping, fixed (the standing reaper's precedent):
 budget expiry on a running record is judged FIRST and books
-`timeout/budget-cap`; a never-launched husk past its grace books
-`failed/abandoned-setup`; a proven-dead custodian (including an expired
-handshake with a dead or never-recorded process) books
-`failed/process-lost`. No other verdicts exist on this path.
+`timeout/budget-cap`; a pending-setup husk past its grace (never left
+setup, so provably no process was ever recorded to exist) books
+`failed/abandoned-setup`; a proven-dead custodian books
+`failed/process-lost`. An expired handshake whose record carries NO
+process identity is NOT reapable by the runner — the process may exist
+unrecorded, no proof means no verdict (invariant 5) — it survives to
+the drain deadline and the park ask names it as "handshake expired, no
+recorded process to prove". No other verdicts exist on this path.
 Grace ownership, fixed: the handshake grace is the dispatch backstop's
 existing constant; the abandoned-setup grace is the standing reaper's
 existing ten-minute constant. This design introduces NO new grace and
@@ -82,14 +87,19 @@ names which existing one applies where.
 ## R3. The drain is finite
 
 `drainJobs` gains a deadline computed from the mission's active set:
-the latest surviving `capDeadline` plus the standing grace; a record
-without a parseable capDeadline contributes `createdAt` plus the
-mission's job cap plus grace; a record with neither parseable is
-already due. The deadline is therefore always finite. Each drain pass
+the latest surviving `capDeadline` plus the handshake grace; a record
+without a parseable capDeadline contributes its own clock — `startedAt`
+plus the record's immutable `capMin` plus grace for a launched record,
+`createdAt` plus the setup grace for a pending-setup husk; a record
+with nothing parseable is already due. The deadline is therefore always finite. Each drain pass
 first applies R1/R2 reaps (clearing what is provably dead), then waits;
 when the deadline passes with non-terminal, unprovable records
 remaining, the runner parks: reason `drain-stalled`, one ask naming
-each surviving record (id, status, age, and what proof is missing).
+the survivors as snapshotted in the claim (id, status, age, missing
+proof). The snapshot is best-known-at-park: a reservation racing the
+final pass may be absent from the ask, and that is acceptable because
+drain-resume re-proves against the LIVE set — the ask advises the
+human; the resume trusts only the current reservations.
 The deadline RECOMPUTES each pass over the CURRENT active set: a
 follow-up reserved mid-drain lawfully extends it (new real work), a
 record gaining a capDeadline moves from the fallback to the real one,
@@ -106,14 +116,18 @@ fence counter is ahead of the ledger, which is exactly the state the
 reserve/append heal (task #17) treats as a crashed turn. The two must
 not fight, and the resume must be EXECUTABLE against the shipped
 sequence:
-- THE CLAIM records everything its continuation needs:
-  `drainStalled: {cycle, turnId, concludePath, faultDetail?}` — written
-  in the same park state write. `concludePath` names which conclusion
-  the cycle owes: `accepted` (the adjudicated verdict and return
-  artifacts are on disk under the turn id) or `faulted` (satellite 1's
-  empty-verdict conclusion, with the fault detail preserved). Faulted
-  turns enter the drain too, and their resumption re-runs
-  ConcludeFaultedTurn, not the accepted path.
+- THE CLAIM records the continuation POINTER, not a copy:
+  `drainStalled: {cycle, turnId, concludePath, survivors}` — written in
+  the park state write. `concludePath` names which conclusion the cycle
+  owes: `accepted` (the adjudicated verdict and return artifacts are on
+  disk under the turn id) or `faulted` (satellite 1's path). The fault
+  facts themselves are NOT duplicated into the claim: satellite 1 made
+  turn.json carry the outcome, detail, and breaker facts, and turn.json
+  is the single source the resumed ConcludeFaultedTurn reads.
+  `survivors` records the ids that stalled the drain — the durable
+  source for the park ask and for the eventual `- Drain: stalled:<n>`
+  annotation, which a successful resume would otherwise have no way to
+  count.
 - ENTRY, not surgery on resumeState: the run-loop gains an explicit
   entry mode — normal | heal | drain-resume(claim) — decided once at
   startup from the loaded state. A drain-stalled park resumes into
@@ -124,11 +138,15 @@ sequence:
   deadline, and on empty calls the recorded continuation for the SAME
   cycle number with the on-disk turn artifacts. The heal fires only in
   entry mode heal — i.e., fences ahead of ledger with NO claim.
-- LEDGER EXACTLY ONCE: the park itself writes NO cycle line — the
-  claim and park state carry the story, and the cycle's block is
-  written once, at its eventual conclusion, including the
-  `- Drain: stalled:<n>` annotation recording that the cycle waited.
-  An unresumed park leaves an unconcluded cycle behind a parked
+- LEDGER EXACTLY ONCE, over the SHIPPED two-write reality: booking is
+  the ledger append followed by the state conclude, two writes under
+  two locks, and the claim strip lives in the second. A crash between
+  them leaves a booked cycle with a live claim; entry detects exactly
+  this (the claim's cycle already has its ledger block), strips the
+  claim, and defers to the existing ledger-ahead reconciliation that
+  already adopts a state lagging its ledger. No new recovery machinery
+  — the window lands in a recovery path that shipped before this
+  design. An unresumed park leaves an unconcluded cycle behind a parked
   mission, which is exactly what a park means.
 - CLAIM LIFECYCLE: created by the park's state write; carried through
   the resumed drain; STRIPPED by the same conclude state write that
@@ -137,11 +155,23 @@ sequence:
   but claimed). A claim can therefore never outlive its cycle, and a
   claim for an already-concluded cycle (impossible by the above, but
   checked) is refused loudly at entry rather than obeyed.
-- ANSWERS DURING THE PARK are safe by construction: no turn is in
-  flight, and the resumed conclusion reads asks fresh exactly as any
-  conclusion does. (The separate mid-TURN answer race is the map's
-  surprise 6 and stays routed to its own fix; this design neither
-  worsens nor fixes it.)
+- ANSWERS DURING THE PARK: the round-1 premise was wrong for an
+  accepted turn whose conclusion is still owed — its verdict was
+  adjudicated against turn-start streams, and an answer mutating those
+  streams mid-park recreates the mid-turn race. Policy: during a
+  drain-stalled park, the ONLY immediately-acting answer is the
+  drain-stalled ask's own `resume:`; answers to other asks are recorded
+  (answeredAt, answer) but their stream effects apply at the next
+  turn's boundary, exactly where answers already take effect relative
+  to turns. The resumed conclusion re-validates its stream transitions
+  against live state and a now-illegal transition books the conclusion
+  as faulted rather than corrupting state (the lawful-transition check
+  is already the state writer's refusal).
+- THE PARK ASK is raised idempotently by BOTH the park and the
+  drain-resume entry (keyed ask id): a crash between the park's state
+  write and its ask write is healed by the next resume's entry
+  re-raising the missing ask — the recovery has an entry path, not a
+  hope.
 - Recovery authority: the human clears the named records through the
   existing surfaces (`dispatch.sh cancel --job`, or out-of-band
   terminalization) and answers the drain-stalled ask with the `resume:`
