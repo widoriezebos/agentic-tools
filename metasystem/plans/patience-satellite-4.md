@@ -4,8 +4,9 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1 and 2, amended in place after
-rounds 3 and 4 (plans/dispositions/patience-satellite-4-r{1,2,3,4}.md;
-36/36 accepted; convergence 15 → 13 → 4 → 4). Parent ruling,
+rounds 3-5 (plans/dispositions/patience-satellite-4-r{1..5}.md;
+40/40 accepted; convergence 15 → 13 → 4 → 4 → 4, severity falling).
+Parent ruling,
 inherited and not re-litigated: stop-loss is a last defense, never a
 pacing target, recursively. Vocabulary per docs/patience.md and
 docs/glossary.md: progress is mechanically proven value; patience is
@@ -78,9 +79,12 @@ or the chain closes: their spend never landed witnessed value.
 
 **Evidence damage (r1/P4-009, r2/P4-020, r2/P4-021, r4/P4-035).**
 The input set is the mission's own jobs (missionJobs ownership
-authority) that carry a valid-grammar jobId. Everything else —
-fully unreadable records, unattributable records, and attributable
-records WITHOUT a usable jobId — is outside patience and belongs to
+authority) whose recorded jobId is valid under the job-id grammar
+AND equals the record's filename stem — the on-disk identity that
+certification resolution and dispatch close actually address
+(r5/P4-039). Everything else — fully unreadable records,
+unattributable records, and attributable records without that usable
+identity — is outside patience and belongs to
 the janitor and usage jurisdictions (satellite 3): patience's only
 remedies are certify-by-jobId and close-by-chain, and neither can
 touch an identity-less record, so counting one would be a nag with no
@@ -124,9 +128,11 @@ floor is matched on (role, runtime, canonical model). The fallback
 rows exist for MISSING OR NON-CANONICALIZABLE model evidence only; a
 model that canonicalizes cleanly but matches no entry is
 configured-nothing for that pair. **Job order is total
-(r4/P4-034):** jobs sort by (endedAt, startedAt, jobId) descending,
-missing timestamps sorting oldest, jobId the final lexicographic
-tiebreak — so "newest" is deterministic across sibling branches. The
+(r4/P4-034, r5/P4-038):** jobs sort by (endedAt, startedAt, jobId)
+descending; timestamps parse as RFC3339 and a missing OR unparseable
+value sorts oldest (one bucket), ties falling through to the next
+key, jobId the final lexicographic tiebreak — so "newest" is
+deterministic across sibling branches and damaged records alike. The
 resolution table, rows tried in order, first applicable row wins
 (r4/P4-033):
 
@@ -169,17 +175,21 @@ strand a stale line anywhere that matters: a completed mission needs
 no nag and a parked mission's ask is the vocal surface. No retry loop
 is added around the flocked append.
 
-**Grammar — write AND read (r1/P4-013, r2/P4-027, r2/P4-028).** Two
-new annotation forms in BOTH annotationWriteRe and the read-side
-annotation grammar, with a parse round-trip test:
+**Grammar — write AND read (r1/P4-013, r2/P4-027, r2/P4-028,
+r5/P4-037).** Three new annotation forms in BOTH annotationWriteRe
+and the read-side annotation grammar, with a parse round-trip test —
+the chain KIND lives in the durable bytes so the prompt projection
+needs no second source:
 
     - Patience: chain=<root> rounds=<n> floor=<m>
+    - Patience: orphan=<id> rounds=<n> floor=<m>
     - Patience overflow: chains=<count>
 
 Bound copied exactly from the landed-returns implementation
 (F Q3.31): at most 20 lines total per booking — 20 detail lines, or
-19 detail plus 1 overflow when breaches exceed 20 — most-breached
-first, chain root ascending on ties. Annotations remain audit trail,
+19 detail plus 1 overflow when breaches exceed 20. Ranking
+(r5/P4-040): breach distance (count − floor) descending, tiebreak
+count descending, then root ascending. Annotations remain audit trail,
 never fuse input; the replay invariant (F Q1.4, F Q4.18) is
 untouched.
 
