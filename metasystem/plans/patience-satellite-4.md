@@ -4,9 +4,9 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1 and 2, amended in place after
-rounds 3-5 (plans/dispositions/patience-satellite-4-r{1..5}.md;
-40/40 accepted; convergence 15 → 13 → 4 → 4 → 4, severity falling).
-Parent ruling,
+rounds 3-6 (plans/dispositions/patience-satellite-4-r{1..6}.md;
+46/46 accepted; convergence 15 → 13 → 4 → 4 → 4 → 6, of which
+round 6 held three fold-consistency defects). Parent ruling,
 inherited and not re-litigated: stop-loss is a last defense, never a
 pacing target, recursively. Vocabulary per docs/patience.md and
 docs/glossary.md: progress is mechanically proven value; patience is
@@ -61,14 +61,19 @@ not this one.
 the chain's job set** — the set of records reachable from the root by
 the parentJob walk, which tolerates branches: sibling follow-ups
 simply belong to the set, and one annotation per root stays
-well-defined (r3/P4-029). A round is terminal when its status is in
+well-defined (r3/P4-029). The status rule is three-way (r3/P4-031 as
+narrowed by r6/P4-043): a status in
 missionrunner.TerminalJobStatuses — completed, failed, timeout, AND
-cancelled (r2/P4-022) — so cancellation cannot launder a spent round;
-an attributable record whose status is missing or outside that
-vocabulary ALSO counts, deliberately diverging from the fence
-direction (r3/P4-031): fence projection acts on money, so losing
-sight must never finish a job; patience only speaks, so losing sight
-must never hide a drought. Certifications join by jobId; round
+cancelled (r2/P4-022) — counts when uncertified, so cancellation
+cannot launder a spent round; a status in the KNOWN lawful
+nonterminal vocabulary (the dispatch lifecycle statuses:
+pending-setup, pending, running) does NOT count — that job is in
+flight, and counting it would nag over work still being paid for
+legitimately; only a status missing or outside BOTH vocabularies is
+damaged and counts, deliberately diverging from the fence direction:
+fence projection acts on money, so losing sight must never finish a
+job; patience only speaks, so losing sight must never hide a
+drought. Certifications join by jobId; round
 numbers play no part (r2/P4-023). A certified job leaves the count
 wherever it sits — healing is inherent — and faults cannot launder
 rounds (r1/P4-008): a round run under a rejected-envelope turn still
@@ -123,11 +128,17 @@ strip the entries. Non-mission chains have no runner evaluating them;
 the human at the keyboard is their patience. Benchmark numbers ride
 kits and contracts by construction (the 2026-08-11 boundary ruling).
 
-**Floor selection (r2/P4-018, r2/P4-019, r3/P4-030).** A chain's
-floor is matched on (role, runtime, canonical model). The fallback
-rows exist for MISSING OR NON-CANONICALIZABLE model evidence only; a
-model that canonicalizes cleanly but matches no entry is
-configured-nothing for that pair. **Job order is total
+**Floor selection (r2/P4-014, r2/P4-018, r2/P4-019, r3/P4-030,
+r6/P4-041, r6/P4-042).** A chain's floor is matched on (role,
+runtime, canonical model) — effective-model evidence, never the
+requested model alone (r2/P4-014: patience is doctrine about who
+actually worked). MODEL EVIDENCE means a value that canonicalizes to
+a canonical model key FOR THE RECORD'S RUNTIME — the cap-key
+validation test (F Q2.8); shipped sentinels such as `unobserved` and
+`multi-model:<names>` canonicalize nonempty but are NOT model
+evidence and fall through (r6/P4-041). The fallback rows exist for
+missing or non-evidence model values only; a real model with no
+entry is configured-nothing for that pair. **Job order is total
 (r4/P4-034, r5/P4-038):** jobs sort by (endedAt, startedAt, jobId)
 descending; timestamps parse as RFC3339 and a missing OR unparseable
 value sorts oldest (one bucket), ties falling through to the next
@@ -142,8 +153,10 @@ resolution table, rows tried in order, first applicable row wins
 | 2 | same model evidence as row 1; no entry for that triple | infinite — configured-nothing |
 | 3 | no terminal job canonicalizes; the chain root's requestedModel canonicalizes; an exact entry exists | that entry |
 | 4 | same as row 3; no entry for that triple | infinite — configured-nothing |
-| 5 | no canonicalizable model evidence anywhere; any (role, runtime, *) entries exist | the SMALLEST such floor — damage must never widen patience |
-| 6 | no canonicalizable model evidence anywhere; no (role, runtime, *) entries | infinite |
+| 5 | no model evidence anywhere; the record set yields a usable runtime; any (role, runtime, *) entries exist | the SMALLEST such floor — damage must never widen patience |
+| 6 | no model evidence anywhere; a usable runtime; no (role, runtime, *) entries | infinite |
+| 7 | no usable runtime either (a reservation husk: pending-setup lawfully failed with no runtime, requested or effective model — r6/P4-042); any entries for the ROLE across all runtimes exist | the SMALLEST such floor |
+| 8 | no usable runtime; no entries for the role at all | infinite |
 
 **Threshold (r1/P4-011).** A floor of F tolerates exactly F barren
 rounds silently; the breach books when the count strictly exceeds F.
@@ -226,7 +239,8 @@ acting is a future human ruling taken with trial evidence.
 - No new validated prompt section; no Ledger Tail grammar change.
 - No change to fuse semantics or ledgerSemantics versions (F Q1.7),
   the breaker (F Q5.2), drain (F Q5.19, F Q5.20), adapters, or hosts.
-- No critique-closure machinery; no return revalidation.
+- No critique-closure machinery; no return revalidation (r2/P4-010
+  dissolved with r1/P4-001: no schema is ever consulted).
 - No certification-hygiene adjudication (r2/P4-024) — recorded as a
   candidate future satellite.
 - Deferred unless trial evidence demands: loop-advanced credits; an
@@ -235,32 +249,38 @@ acting is a future human ruling taken with trial evidence.
 
 ## Implementation sketch
 
-internal/mission/ledger.go: the two Patience forms in
-annotationWriteRe AND the read-side grammar (r2/P4-028).
-internal/mission/contract.go: `patience.` allow-list prefix; entry
-validation (identifier grammar, canonical model key, positive
-integer); sealing in expectedSeal AND the ordered emitter with the
-round-trip test (r1/P4-015). New internal/missionrunner/patience.go:
-the pure count function (mission job set → chain sets via the
-branch-tolerant parent walk vs jobId-joined accepted certifications;
-terminal set = TerminalJobStatuses plus damaged-status records;
-selection table; valid-jobId input boundary) →
-(bounded annotations); called from the shared cycle-booking path.
+internal/mission/ledger.go: all THREE Patience forms (chain, orphan,
+overflow — r5/P4-037, r6/P4-044) in annotationWriteRe AND the
+read-side grammar. internal/mission/contract.go: `patience.`
+allow-list prefix; entry validation (identifier grammar, canonical
+model key, positive integer); sealing in expectedSeal AND the ordered
+emitter with the round-trip test (r1/P4-015). New
+internal/missionrunner/patience.go: the pure count function (mission
+job set → chain sets via the branch-tolerant parent walk vs
+jobId-joined accepted certifications; the three-way status rule of
+r6/P4-043; the eight-row selection table; input boundary = valid
+jobId EQUAL to the filename stem, r5/P4-039, r6/P4-045) → (bounded
+annotations); called from the shared cycle-booking path.
 internal/mission/prompt.go: This Turn assembly projects the final
 cycle's Patience annotations into breach lines. No dispatch, adapter,
 or host changes.
 
 ## Verification
 
-Race-detector unit tests: chain-set counting (branches; late certification
-heals; rejected ignored; cancelled counts; duplicate round numbers
-harmless; foreign-jobId certifications ignored; damaged records
-barren; orphans isolate; identity-less records excluded; sibling
-ordering deterministic; threshold
-strictly-exceeds; 19+1 overflow; selection fallback chain including
-the null-effectiveModel and smallest-floor branches); contract
-validation and the seal round-trip; ledger write→parse round-trip of
-both forms; prompt projection from a ledger fixture. Mission
+Race-detector unit tests: chain-set counting (branches; late
+certification heals; rejected ignored; cancelled counts; lawful
+nonterminal statuses do NOT count while damaged statuses do
+(r6/P4-043); duplicate round numbers harmless; foreign-jobId
+certifications ignored; records whose jobId differs from the
+filename stem excluded (r6/P4-045); orphans isolate; sibling
+ordering deterministic over damaged timestamps; threshold
+strictly-exceeds; 19+1 overflow; ranking by breach distance with
+UNEQUAL floors, proving a count-descending comparator fails
+(r6/P4-046); the eight-row selection table including sentinel
+models, the reservation-husk rows, and the smallest-floor branches
+(r6/P4-041, r6/P4-042)); contract validation and the seal
+round-trip; ledger write→parse round-trip of all THREE forms
+(r6/P4-044); prompt projection from a ledger fixture. Mission
 fixtures: a breached chain books the annotation and the NEXT prompt
 carries the line; an unconfigured mission's turn artifacts are
 byte-identical to today's; a heal booking with no new terminal rounds
