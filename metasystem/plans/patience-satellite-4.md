@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11-20
-(plans/dispositions/patience-satellite-4-r{1..20}.md; 95/95
+after rounds 3-8 and 11-21
+(plans/dispositions/patience-satellite-4-r{1..21}.md; 97/97
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -376,8 +376,10 @@ Race-detector unit tests, each named case a distinct test:
   model, proving the vocabulary omission right (r18/P4-085).
 - Spend rule: an all-null usage object proves nothing (r15/P4-081);
   an all-ZERO usage object (zero tokens, null cost, null units)
-  proves nothing — positive means strictly greater than zero
-  (r20/P4-092);
+  proves nothing, and so do the shipped nested zero shapes — cost
+  {amount: 0} and provider unit {value: 0} — positive means the
+  nested numeric strictly greater than zero, never object presence
+  (r20/P4-092, r21/P4-097);
   a tokens-unavailable Devin record with positive provider units
   counts (r16/P4-082); spend-proving usage trumps every vocabulary
   entry — a post-run session-mismatch record with positive usage
@@ -412,8 +414,9 @@ Race-detector unit tests, each named case a distinct test:
 - Booking integration: a certification in the CURRENT conclusion
   suppresses the breach in the SAME booking (r20/P4-091); a faulted
   booking evaluates patience; a heal booking whose drain ran jobs to
-  terminal books their breach — evaluation provably runs on every
-  cycle-booking path (r20/P4-091); a closed breached chain books
+  terminal books their breach; a plain FAILED-turn booking
+  (recordFailedTurn) evaluates patience — all four cycle-booking
+  paths provably run the evaluation (r20/P4-091, r21/P4-096); a closed breached chain books
   nothing new at derivation time, independent of prompt filtering
   (r20/P4-093); certifying a job in chain B resets B and leaves
   chain A's breach intact — no mission-global witness cutoff
