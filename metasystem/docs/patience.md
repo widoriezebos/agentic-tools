@@ -65,14 +65,24 @@ progress with per-capability patience punishes only stall.
    source of truth; the verdict is a pure replay of it against the sealed
    contract (no cached counters — the stop-loss core established this
    architecture and it carries over unchanged).
-3. **Patience floors.** Configuration lives where capability lives: the
-   roster keys in `metasystem.conf`, per role and runtime:model pair,
-   with mission contracts able to seal overrides. Defaults are generous.
-   The shipped core is the degenerate case: floor = "any above-noise new
-   best", window = `ledger.no-gain-budget` cycles.
-4. **Stall handling.** Exhausted patience parks with the stop-loss ask;
-   the reset is a human answer recorded in the ledger before the unpark;
-   the hard fences remain the absolute stopgap above everything.
+3. **Patience floors.** Sealed mission-contract entries ONLY
+   (`patience.rounds.<role>.<runtime>.<model>`), counted in
+   value-barren rounds, never minutes. The earlier placeholder placed
+   floors in `metasystem.conf` roster keys; satellite 4's critique
+   round killed that layer with evidence (dispositions r1, P4-006/
+   P4-007): the local/env resolution path is bypassable, an unsealed
+   conf fallback would let a repository edit change a signed mission's
+   behavior, and non-mission chains have no runner evaluating them —
+   the human at the keyboard is their patience. Unconfigured means
+   infinite patience; the shipped core is the degenerate case: floor =
+   "any above-noise new best", window = `ledger.no-gain-budget` cycles.
+4. **Stall handling.** A breached floor is vocal only — a bounded
+   ledger annotation and a prompt line; it never parks, kills, or
+   feeds the breaker. Parking stays with the fuses; the reset is a
+   human answer recorded in the ledger before the unpark; the hard
+   fences remain the absolute stopgap above everything. Escalation
+   from vocal to acting is a future human ruling taken with trial
+   evidence.
 
 ## The recursion caution
 
