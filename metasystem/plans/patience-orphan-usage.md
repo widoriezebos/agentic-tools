@@ -36,8 +36,11 @@ writer per artifact, surviving every kill signal and every park.
   stays the only ledger and state writer.
 - No new delegate-side protocol: only artifacts the harness already
   produces are read.
-- No recorded surfacing state and no new ledger line kinds: the landed
-  list derives from the tree and from records the host already authors.
+- No recorded surfacing state: the landed list derives from the tree
+  and from records the host already authors. (One new cycle-block
+  ANNOTATION kind exists — `- Landed unconsumed:` at completion, per
+  POU-R4-001/R5-002 — an audit line, never a fuse input; no
+  classification or structural line kinds are added.)
 
 # Design
 
@@ -252,8 +255,10 @@ existing usage.json into state (F Q2.11, Q4.4). The fix:
 
 # Migration
 
-No state fields, no ledger line kinds, no return-schema changes, no
-change to `state.fences.usage`. One new prompt records section
+No state fields, no return-schema changes, no change to
+`state.fences.usage`. One new cycle-block annotation kind
+(`- Landed unconsumed:`, completion only — parsers and the pinned
+annotation suite extend together). One new prompt records section
 (assembler four→five, validator six→seven, fixtures moved together;
 the orchestrator preamble documents the section and the retire-by-
 certification rule), aggregation calls added at the named runner
