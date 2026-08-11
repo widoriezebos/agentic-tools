@@ -1,5 +1,15 @@
 # The mission runner's actual cycle sequence
 
+> SUPERSEDED SECTIONS (kept for history; the map is pinned to its
+> commit): the drain narrative and false-stall surfaces (j) and the S13
+> drain step predate patience satellites 1 and 2 — the drain is now
+> finite with mission-scoped reaping and a drain-stalled park
+> (plans/patience-mission-reap-drain.md), and turn identity, faulted
+> measurement, and the capped outcome changed per
+> plans/patience-turn-identity.md. A satellite designing against this
+> map must cross-check those two shipped designs first.
+
+
 Status: MAP, not design. This document records what the runner does today,
 step by step, with file:line anchors into the code as of the commit it was
 written against. It exists because `plans/stop-loss-satellites.md` names it
