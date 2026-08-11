@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11-17
-(plans/dispositions/patience-satellite-4-r{1..17}.md; 84/84
+after rounds 3-8 and 11-18
+(plans/dispositions/patience-satellite-4-r{1..18}.md; 86/86
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -104,11 +104,19 @@ names both a pre-running rejection and a post-run session mismatch
 after usage capture) — or,
 lacking usage, a non-empty effectiveModel AND an error outside the
 NEVER-STARTED vocabulary, named exactly from the shipped writers
-(r17/P4-084): `abandoned-setup`, `handshake_timeout`,
-`launch_failed`, `resume_collision`, `handshake_missing_session_id`,
-and the prefix family `permissions_mismatch:*`
+(r17/P4-084, r18/P4-085): `abandoned-setup`, `handshake_timeout`,
+`launch_failed`, `handshake_missing_session_id`, and the prefix
+family `permissions_mismatch:*`
 (internal/dispatch/handshake.go:122-124,
-scripts/agents/adapters/runtime-common.sh:97,106,247). HandshakeEval
+scripts/agents/adapters/runtime-common.sh:97,247).
+`resume_collision` is deliberately absent (r18/P4-085): a pre-start
+collision carries no effectiveModel, so the model requirement
+already excludes it, while a post-running collision is real lost
+work that must count. Residual, stated honestly: a
+handshake_missing_session_id record whose usage is all-null
+classifies never-started — the conservative direction (a round is
+excluded, nothing over-nags), and unprovable spend remains the usage
+jurisdiction (satellite 3). HandshakeEval
 patches effectiveModel before deciding failure, so the model field
 alone cannot prove work (r12/P4-073, r13/P4-076);
 sessionEstablishedSignal plays no part; spend-proving usage trumps
@@ -349,32 +357,58 @@ r10/P4-068). No dispatch, adapter, or host changes.
 
 ## Verification
 
-Race-detector unit tests: participation boundary (damaged statuses,
-identity mismatches, and unreadable records EXCLUDED — jurisdiction,
-not tolerance, r10; husks and pending-cancelled never count,
-r10/P4-066); streak counting (certification resets — alternating
-witness/barren never breaches, r9/P4-057; no witness counts all
-counted jobs; rejected and empty-evidence certifications ignored with
-evidence as a STRING, r10/P4-063; cancelled started-rounds count;
-foreign-jobId certifications ignored; orphans isolate and emit
-despite positive floors in configured missions only, r8/P4-052,
-r9/P4-059; ordering deterministic; threshold strictly-exceeds); the
-five-row selection table (sentinel models excluded; invalid-role/
-runtime records not qualifying, r9/P4-060; streak-scoped
-quantification — pre-witness history selects nothing, r10/P4-065);
-bound and ranking (19+1 overflow counting breaches AND orphans,
-r8/P4-051; mixed ranking at the cutoff, r8/P4-052; breach-distance
-ranking with unequal floors defeating a count-descending comparator,
-r6/P4-046); contract validation and the seal round-trip; ledger
-write→parse round-trip of all FOUR forms; prompt projection from a
-ledger fixture including the chain-closed detail filter and the
-exempt overflow (r9/P4-061, r10/P4-068). Mission fixtures: a breached
-chain books the annotation and the NEXT prompt carries the line; an
-UNCONFIGURED mission's turn artifacts are byte-identical to today's
-including in the presence of orphans (r9/P4-059); a mission-owned
-readable record with an identity mismatch books the excluded line
-while an unreadable foreign record books nothing (r12/P4-075); a
-pending-cancelled Codex job with sessionEstablishedSignal true never
-counts and its certification never resets a drought (r12/P4-073); a
-heal booking with no new counted jobs advances nothing. Suite green via the standing
-launch recipe.
+Race-detector unit tests, each named case a distinct test:
+
+- Participation boundary: damaged statuses, identity mismatches
+  (jobId differing from the filename stem), and unreadable records
+  EXCLUDED — jurisdiction, not tolerance (r10, r5/P4-039,
+  r6/P4-045); setup husks and pending-cancelled records never count
+  (r10/P4-066); a pending-cancelled Codex record with
+  sessionEstablishedSignal true never counts (r12/P4-073).
+- Started predicate: completed/timeout structural; a
+  failed-handshake record with a patched effectiveModel never counts
+  (r13/P4-076); the never-started vocabulary enumerated against its
+  writer sites — abandoned-setup, handshake_timeout, launch_failed,
+  handshake_missing_session_id, permissions_mismatch:* — so writer
+  drift fails the test (r17/P4-084); a post-running resume_collision
+  record counts while a pre-start one is excluded by the missing
+  model, proving the vocabulary omission right (r18/P4-085).
+- Spend rule: an all-null usage object proves nothing (r15/P4-081);
+  a tokens-unavailable Devin record with positive provider units
+  counts (r16/P4-082); spend-proving usage trumps every vocabulary
+  entry — a post-run session-mismatch record with positive usage
+  counts (r14/P4-078).
+- Streak counting: certification resets — alternating witness/barren
+  never breaches (r9/P4-057); no witness counts all counted jobs;
+  rejected and empty-evidence certifications ignored, evidence as a
+  STRING (r10/P4-063); certifications of husks or never-started jobs
+  ignored (r11/P4-071); foreign-jobId certifications ignored
+  (r2/P4-024); orphans isolate and emit despite positive floors in
+  configured missions only (r7/P4-049, r8/P4-052, r9/P4-059);
+  ordering deterministic over damaged timestamps (r5/P4-038);
+  threshold strictly-exceeds (r1/P4-011).
+- Selection: the five-row table with sentinel models excluded
+  (r6/P4-041); invalid-role/runtime records not qualifying and the
+  next-newest qualifying record used (r8/P4-054, r9/P4-060); row 3
+  gated on the absence rule (r12/P4-074); streak-scoped
+  quantification — pre-witness history selects nothing (r10/P4-065,
+  r11/P4-070).
+- Bound and ranking: 19+1 overflow counting breaches AND orphans
+  (r8/P4-051); mixed breach-plus-orphan ranking at the cutoff
+  (r8/P4-052); breach-distance ranking with unequal floors defeating
+  a count-descending comparator (r6/P4-046).
+- Contract: patience.rounds.* validation; sealing in BOTH enumeration
+  surfaces with the seal-then-preflight round-trip (r1/P4-015);
+  pre-feature contracts verifying unchanged.
+- Ledger and prompt: write→parse round-trip of all FOUR forms
+  (r6/P4-044, r11/P4-069); prompt projection from a ledger fixture
+  including the chain-closed detail filter and the exempt overflow
+  and excluded lines (r9/P4-061, r10/P4-068, r12/P4-075).
+
+Mission fixtures: a breached chain books the annotation and the NEXT
+prompt carries the line; an UNCONFIGURED mission's turn artifacts are
+byte-identical to today's, including in the presence of orphans and
+excluded records (r9/P4-059); a mission-owned readable record with an
+identity mismatch books the excluded line while an unreadable foreign
+record books nothing (r12/P4-075); a heal booking with no new counted
+jobs advances nothing. Suite green via the standing launch recipe.
