@@ -110,12 +110,19 @@ first post-resume assembly carries the list.
   terminal while its group lingers (satellite 2's reap applies verdicts
   by CAS without wind-down — POU-R3-003), so terminality alone does not
   silence the writer. Derivation runs only when the record is terminal
-  AND its recorded custodians/pgid are provably dead by the shared
-  kernel custodian proof (internal/identity/custodian.go — the one
-  owner both reapers already use). Then `events.jsonl` (F Q3.1) has no
-  writer, the two-reads race (F Q3.10) cannot occur, and the shipped
-  tolerant JSONL parse (F Q3.6) plus the `CodexUsage` last-usage-block
-  rule (F Q3.7) derive the usage in memory. Never written back.
+  AND the WHOLE GROUP is provably gone (POU-R4-002 — named custodians
+  do not cover every group member): the recorded `pgid` probes ESRCH
+  (the shipped group probe; a permission denial proves existence and
+  BLOCKS derivation) AND every recorded custodian is dead by the
+  shared kernel custodian proof (internal/identity/custodian.go — the
+  one owner both reapers already use). Vintage rule: a record with no
+  recorded pgid derives only when its custodians are recorded and all
+  provably dead; a record with neither recorded aggregates
+  `unavailable` — honesty over optimism. Then `events.jsonl` (F Q3.1)
+  has no writer, the two-reads race (F Q3.10) cannot occur, and the
+  shipped tolerant JSONL parse (F Q3.6) plus the `CodexUsage`
+  last-usage-block rule (F Q3.7) derive the usage in memory. Never
+  written back.
 - A terminal record whose group is not yet provably dead aggregates
   `pending-death-proof` this pass and derives on a later pass —
   aggregation recomputes at every call site, so the value arrives as
@@ -127,9 +134,11 @@ first post-resume assembly carries the list.
   additive top-level `rounds` array — the one location with zero
   consumers to change (F Q4.19; `ProjectFences` reads only `units`,
   F Q4.4) — sorted by (jobId, round), each entry exactly
-  `{jobId, round, provenance, source}`, provenance one of `reported`,
-  `derived`, `pending-death-proof`, `unavailable`; `source` names the
-  event file for derived, else null. Nothing enters
+  `{jobId, round, provenance, source, detail}` (POU-R4-006), provenance
+  one of `reported`, `derived`, `pending-death-proof`, `unavailable`;
+  `source` names the event file for derived, else null; `detail`
+  carries the parse or proof failure text for unavailable and
+  pending-death-proof entries, else null. Nothing enters
   `state.fences.usage` (exact-key strict, F Q4.2-3,20).
 
 ## O4. Every terminal round reaches the fence ledger
