@@ -39,6 +39,19 @@ not paths.
   — same epoch, in-flight work preserved. A claim from a *different*
   lineage over a dead holder is a **takeover**: epoch bump, stale jobs
   swept. A live holder is never displaced by anyone.
+- **Progress** — value produced and proven mechanically: a joined
+  critique round, a gate metric beating its best, a requirement newly
+  passing. Never an assertion. Per-activity definitions live in
+  `docs/patience.md`.
+- **Patience** — how much observation without progress is tolerated
+  before a verdict, set per role and (runtime, model) pair: slower
+  progress is still progress. A last defense, never a pacing target
+  (`docs/patience.md`; the shipped degenerate case is the stop-loss
+  core's no-gain budget).
+- **Stall** — the verdict when patience is exhausted with nothing else to
+  blame: the mission parks vocally, a human resets via a ledger-recorded
+  answer or amends the sealed allowances (`docs/patience.md`,
+  `plans/stop-loss-core.md`).
 - **Sweep** — the takeover's cleanup: every non-terminal job stamped with
   an older epoch is failed with `stale-claim-epoch`, so an abandoned
   session's children cannot keep mutating a checkout that changed hands.
