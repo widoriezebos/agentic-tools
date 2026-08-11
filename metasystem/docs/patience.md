@@ -67,15 +67,17 @@ progress with per-capability patience punishes only stall.
    (the orphan/usage satellite — which also completes the cost ledger,
    the denominator if patience is ever spend-denominated).
 2. **Observables.** ONE observable, settled by satellite 4's loop
-   (plans/patience-satellite-4.md): a chain round has produced value
+   (plans/patience-satellite-4.md): a chain round is WITNESSED
    exactly when a concluded turn's durable log certifies its job with
-   verdict accepted. Per-activity proxies — schema-valid returns,
-   critique closures, verifier confirmations — were rejected with
-   evidence: they are the narrative a drought hides behind. The
-   ledger is the one source of truth; the verdict is a pure replay of
-   it against the sealed contract (no cached counters — the stop-loss
-   core established this architecture and it carries over unchanged;
-   patience annotations are audit trail, never fuse input).
+   verdict accepted and non-empty evidence. Per-activity proxies —
+   schema-valid returns, critique closures, verifier confirmations —
+   were rejected with evidence: they are the narrative a drought
+   hides behind. Two mechanisms, kept distinct (r9/P4-062): the FUSE
+   verdict is a pure replay of the ledger against the sealed contract
+   (no cached counters — the stop-loss core's architecture,
+   unchanged); the patience OBSERVATION derives from job records and
+   the durable turn log, and writes annotations the fuse never
+   reads.
 3. **Patience floors.** Sealed mission-contract entries ONLY
    (`patience.rounds.<role>.<runtime>.<model>`), counted in
    value-barren rounds, never minutes. The earlier placeholder placed
