@@ -1,7 +1,13 @@
 # Stop-loss core: the fuse alone
 
-Owner: main session (claude). Status: DESIGN — round 1 adjudicated (9/9
-accepted, `plans/stop-loss-core-dispositions-r1.md`), awaiting round 2.
+Owner: main session (claude). Status: ACCEPTED FOR IMPLEMENTATION —
+rounds 1 and 2 adjudicated (9/9 and 7/7 accepted; dispositions r1/r2
+committed). Round 2 challenged no structure — every finding was a
+specification seam of round 1's own edits — which is the documented
+diminishing-returns stop signal (skills/design-critique/SKILL.md): the
+loop is stopped by judgment, rounds retained verbatim, and implementation
+is the next source of truth. Not claimed perfect; claimed that further
+critique stopped being worth its cost.
 Parent: `plans/stop-loss-last-defense.md` (critique-exhausted; split
 approved by the human 2026-08-11). This core inherits its ruling — the
 stop-loss is a last defense with high, human-set, mission-level caps and a
@@ -49,12 +55,18 @@ coherent and no crash window between "recorded" and "counted".
 - NEW BEST (the only automatic reset): the candidate tuple — (count of
   declared thresholds met, then each metric's raw directed value in
   declaration order) — qualifies against the stored-best tuple when it is
-  lexicographically greater AND its first differing component exceeds
-  that metric's sealed noise floor. Qualification is only ever evaluated
+  lexicographically greater AND its first differing component clears its
+  gate: the thresholds-met count is an integer and needs no noise gate (a
+  strict increase qualifies outright); a metric-value component must
+  exceed the best by more than that metric's sealed noise floor. Qualification is only ever evaluated
   candidate-versus-current-best, so the fold is monotone and
   deterministic; no total order over arbitrary pairs is needed. The
   measurement line records `best=yes|no` so replay never re-derives
-  qualification from arithmetic alone.
+  qualification from arithmetic alone; when a marker exists it WINS over
+  re-derivation (older binaries replay marker-less lines by derivation).
+  Grammar: ledger measurement lines are the existing `key=value;` token
+  form; `best` is one more token, and the turn-prompt Ledger Tail
+  validator accepts records with and without it (named migration).
 - STAGNATION: `stagnant` = the count of cycles since the last `best=yes`
   line or `Stop-loss reset:` line, counting every `no-progress` and
   `unresolved` cycle. There is NO decay rule: round 1 showed any recovery
@@ -63,7 +75,17 @@ coherent and no crash window between "recorded" and "counted".
 - The fuse fires when `stagnant` reaches `ledger.no-gain-budget`, parking
   with the stop-loss ask, exactly as today. The runner also enforces
   `ledger.cycle-budget` in the same derived verdict — relocation carries
-  BOTH duties the shell check performed for missions, not one.
+  BOTH duties the shell check performed for missions. The two parks are
+  distinct: a cycle-budget park is an exhausted sealed allowance and its
+  ask accepts ONLY the amendment path (`reset:` is refused for it, with
+  the refusal naming why); the vocal reset applies to stagnation parks
+  alone.
+- Semantics versioning: mission state records `ledgerSemantics: 2` at
+  init by a binary that carries this design. A state without the field
+  replays under the legacy rules (trailing-without-improvement plus the
+  lifetime no-progress pair) — the runner implements both, keyed by the
+  field, so a mission sealed and started under the old meaning finishes
+  under it. The sealed budget's meaning never changes mid-mission.
 
 ## C2. Ownership and scope
 
@@ -86,18 +108,22 @@ coherent and no crash window between "recorded" and "counted".
   sealed budget line is untouched — the human spends more of the
   still-sealed wall-clock and exposure fences, not a new allowance. Any
   other answer keeps today's guidance (amend, price, reseal, sign).
-- Transaction: append the ledger line (`- Stop-loss reset: by human
-  answer <askId>: <reason> at <time>`) under the ledger lock FIRST, then
-  the unpark state write. Idempotence is structural, not keyed: the
-  counter is derived by replay, and a reset line zeroes it at its
-  position in the ledger — appending is the whole reset, duplicate
-  answers merely append lines that each (harmlessly, vocally) zero an
-  already-low counter, and a crash between append and unpark leaves a
-  parked mission whose derived counter is already zero; the next resume
-  applies the unpark. The ledger-anchor reconciliation treats a trailing
-  reset line without its unpark as exactly that replayable state, not as
-  divergence — this tolerance is part of the design, specified against
-  `mission-state reconcile`'s existing park-on-disagreement rule.
+- Transaction, in binding order: (1) append the reset line under the
+  ledger lock; (2) mark the ask answered; (3) apply the unpark state
+  write. A crash after (1) leaves the ask open — a re-answer appends a
+  second line, which is lawful, vocal, and harmless (the counter is
+  already zero); a crash after (2) leaves a parked mission whose derived
+  counter is zero and an answered ask — the next resume applies the
+  unpark. The reason is sanitized before (1): newlines are refused (not
+  mangled), length-capped, so a line can never be split or structurally
+  injected; the append itself is a single atomic write as today.
+- Reconciliation tolerance, as a precise predicate: reconcile forgives
+  exactly the state where (a) mission state is parked with the
+  stagnation park reason, and (b) the ledger's unanchored suffix consists
+  solely of `Stop-loss reset:` lines each naming an ask that exists on
+  disk as a stop-loss ask. Any other divergence parks on disagreement
+  exactly as today — the corruption guarantee is narrowed by one named,
+  checkable exception, not weakened.
 - No other reset path exists — no flag, no environment variable, no code
   path without a human answer. The flight-recorder event and ask record
   remain best-effort echoes of the authoritative ledger line.
@@ -137,10 +163,18 @@ coherent and no crash window between "recorded" and "counted".
   dominance; declaration-order comparison; first-differing-component
   noise gate; single-metric missions behave exactly as a scalar ratchet;
   best=yes|no recorded and honored by replay over re-derivation.
-- Reset: `reset:` answer appends-then-unparks; append failure blocks
-  unpark; duplicate answers are harmless and vocal; crash between append
-  and unpark leaves a resumable parked mission and reconcile does not
-  park on the trailing line; non-reset answer keeps amendment guidance.
+- Reset: `reset:` answer appends, marks answered, unparks — in that
+  order; append failure blocks everything after it; duplicate answers are
+  harmless and vocal; crash at each boundary replays correctly; reconcile
+  forgives exactly the predicate suffix and still parks on any other
+  divergence; a newline-bearing reason is refused; `reset:` on a
+  cycle-budget park is refused with the amendment guidance; non-reset
+  answers keep amendment guidance everywhere.
+- Semantics: legacy missions (no ledgerSemantics field) verdict under old
+  rules; new missions under the replay; the same ledger yields its
+  mission's pinned verdict on both binaries.
+- Grammar: Ledger Tail validator accepts measurement records with and
+  without the best token; marker wins over re-derivation when present.
 - Non-mission: assert-stop-loss.sh fixtures untouched and green.
 - Legacy replay: marker-less ledgers derive conservatively; unparseable
   observed values fold as baseline; derivation is read-only.
