@@ -1,6 +1,8 @@
 # Patience satellite 2: mission reap and bounded drain
 
-Owner: main session (claude). Status: DESIGN — awaiting critique round 1.
+Owner: main session (claude). Status: DESIGN — round 1 adjudicated
+(11/11 accepted, `plans/patience-mission-reap-drain-dispositions-r1.md`),
+awaiting round 2.
 Program: `plans/stop-loss-satellites.md` satellite 2; concepts in
 `docs/patience.md`; ground truth in `docs/design/mission-cycle-sequence.md`
 (especially the drain narrative and false-stall surfaces). Routed
@@ -49,9 +51,13 @@ the verdict.
 
 A reservation may be failed by the runner only on the conjunction the
 standing reaper already uses:
-- Record-side facts from `dispatch reap-facts` — abandoned setup (a
-  pending-setup record past its grace), handshake expiry, budget expiry.
-  reap-facts carries NO liveness fact and is never treated as one.
+- Record-side facts from `dispatch reap-facts` AS SHIPPED — abandoned
+  setup, budget expiry, and `handshakeWaiting` (which is a state, not an
+  expiry: the runner computes handshake expiry itself from the record's
+  handshake deadline plus the handshake grace, exactly as the dispatch
+  backstop does; a false `handshakeWaiting` is never read as proof of
+  anything). reap-facts carries NO liveness fact and is never treated as
+  one.
 - Process-side death by the kernel custodian discipline: the recorded
   pid alive at its recorded start AND still bearing the job tag, or it
   is dead-to-us; `Unknown` (unreadable) is not death. A record with no
@@ -62,6 +68,16 @@ The verdict is applied through the existing record CAS under the record
 lock (lawful transitions only), NOT through dispatch.sh's standing-reap
 gate — the runner is not a standing reaper and does not borrow its
 custody; it exercises R1's narrower authority with the same proof bar.
+Terminal verdict mapping, fixed (the standing reaper's precedent):
+budget expiry on a running record is judged FIRST and books
+`timeout/budget-cap`; a never-launched husk past its grace books
+`failed/abandoned-setup`; a proven-dead custodian (including an expired
+handshake with a dead or never-recorded process) books
+`failed/process-lost`. No other verdicts exist on this path.
+Grace ownership, fixed: the handshake grace is the dispatch backstop's
+existing constant; the abandoned-setup grace is the standing reaper's
+existing ten-minute constant. This design introduces NO new grace and
+names which existing one applies where.
 
 ## R3. The drain is finite
 
@@ -74,43 +90,76 @@ first applies R1/R2 reaps (clearing what is provably dead), then waits;
 when the deadline passes with non-terminal, unprovable records
 remaining, the runner parks: reason `drain-stalled`, one ask naming
 each surviving record (id, status, age, and what proof is missing).
+The deadline RECOMPUTES each pass over the CURRENT active set: a
+follow-up reserved mid-drain lawfully extends it (new real work), a
+record gaining a capDeadline moves from the fallback to the real one,
+and the park condition is evaluated against the deadline computed in
+the same pass. Each pass also beats the runner's own heartbeat — a
+lawful drain that waits until the last job cap must read as a live
+runner to supervision, not as a death (no new artifact; the existing
+runner heartbeat is written per pass).
 
 ## R4. Drain-stalled park, cycle-consistent resume — and the heal
 
 The park happens INSIDE a reserved cycle whose turn already ran: the
 fence counter is ahead of the ledger, which is exactly the state the
 reserve/append heal (task #17) treats as a crashed turn. The two must
-not fight:
-- The drain-stalled park RECORDS ITS CLAIM: the park state carries the
-  reserved cycle number and the turn id whose artifacts are complete
-  (`drainStalled: {cycle, turnId}`), written in the same park state
-  write.
-- `resumeState` checks the park reason BEFORE healing: a
-  `drain-stalled` park resumes INTO THE DRAIN of its recorded cycle —
-  re-running R1/R2 reaps first (the human has usually just cleared
-  records), then, if the drain now empties, proceeding to measurement,
-  ledger append, and conclusion of the SAME cycle number with the
-  already-complete turn artifacts. The heal fires only when NO
-  drain-stalled claim covers the reserved cycle — i.e., a genuine
-  crashed turn.
+not fight, and the resume must be EXECUTABLE against the shipped
+sequence:
+- THE CLAIM records everything its continuation needs:
+  `drainStalled: {cycle, turnId, concludePath, faultDetail?}` — written
+  in the same park state write. `concludePath` names which conclusion
+  the cycle owes: `accepted` (the adjudicated verdict and return
+  artifacts are on disk under the turn id) or `faulted` (satellite 1's
+  empty-verdict conclusion, with the fault detail preserved). Faulted
+  turns enter the drain too, and their resumption re-runs
+  ConcludeFaultedTurn, not the accepted path.
+- ENTRY, not surgery on resumeState: the run-loop gains an explicit
+  entry mode — normal | heal | drain-resume(claim) — decided once at
+  startup from the loaded state. A drain-stalled park resumes into
+  drain-resume: NO host launch, NO start-gate handshake (the start
+  signal reports the runner started in drain-resume mode; the
+  launch-handshake contract applies only to turns that launch hosts).
+  The mode re-runs R1/R2 reaps, re-drains under a freshly computed R3
+  deadline, and on empty calls the recorded continuation for the SAME
+  cycle number with the on-disk turn artifacts. The heal fires only in
+  entry mode heal — i.e., fences ahead of ledger with NO claim.
+- LEDGER EXACTLY ONCE: the park itself writes NO cycle line — the
+  claim and park state carry the story, and the cycle's block is
+  written once, at its eventual conclusion, including the
+  `- Drain: stalled:<n>` annotation recording that the cycle waited.
+  An unresumed park leaves an unconcluded cycle behind a parked
+  mission, which is exactly what a park means.
+- CLAIM LIFECYCLE: created by the park's state write; carried through
+  the resumed drain; STRIPPED by the same conclude state write that
+  books the cycle (both conclusion proposal builders remove
+  `drainStalled` — one write, no window where the cycle is concluded
+  but claimed). A claim can therefore never outlive its cycle, and a
+  claim for an already-concluded cycle (impossible by the above, but
+  checked) is refused loudly at entry rather than obeyed.
+- ANSWERS DURING THE PARK are safe by construction: no turn is in
+  flight, and the resumed conclusion reads asks fresh exactly as any
+  conclusion does. (The separate mid-TURN answer race is the map's
+  surprise 6 and stays routed to its own fix; this design neither
+  worsens nor fixes it.)
 - Recovery authority: the human clears the named records through the
   existing surfaces (`dispatch.sh cancel --job`, or out-of-band
   terminalization) and answers the drain-stalled ask with the `resume:`
-  prefix; a `reset:`-style quiet path does not exist here either. If
-  the drain stalls again after a resume, it parks again with a fresh
-  ask — bounded each round, never wedged.
+  prefix; a quiet path does not exist here either. If the drain stalls
+  again after a resume, it parks again with a fresh ask — bounded each
+  round, never wedged.
 
 ## R5. Starvation is never booked as stall
 
-A cycle that ends in a drain-stalled park books `no-progress,
-unmeasurable:drain-stalled` ONLY if measurement genuinely could not run;
-when the drain later empties on resume and the cycle concludes, it
-books whatever its measurement earned, exactly once, for its own cycle
-number (R4). The annotation line `- Drain: stalled:<n-records>` records
-the event in the cycle block (annotation grammar from satellite 1 —
-audit trail, never fuse input). Whether drain-stalled cycles should be
-excluded from patience counting entirely is satellite 4's decision;
-this satellite only guarantees the facts are recorded distinguishably.
+A drain-stalled cycle books NOTHING at park time (R4's exactly-once
+rule) and, at its eventual conclusion, books whatever its measurement
+earned — with the `- Drain: stalled:<n-records>` annotation in the same
+block (annotation grammar from satellite 1 — audit trail, never fuse
+input). Measurement runs at conclusion time on the resumed path like
+any conclusion; only a genuinely unmeasurable tree books
+`unmeasurable`. Whether drain-stalled cycles should be excluded from
+patience counting entirely is satellite 4's decision; this satellite
+guarantees the facts are recorded distinguishably and exactly once.
 
 # Invariants
 
