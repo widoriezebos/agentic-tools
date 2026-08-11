@@ -56,8 +56,11 @@ watchers, cleanup traps).
 1. Every decision, transformation, gate, and report lives in a Go verb
    with unit tests under the coverage floor.
 2. A shell file may contain only: argument relay, environment guards,
-   a consult of one or more Go verbs, and the final `exec` of an
-   external CLI. Guard-clause `if`s on a consult's exit code are fine;
+   a consult of one or more Go verbs, and one of two terminal shapes
+   (r3/KS-R3-004): the final `exec` of an external CLI (the default),
+   or launch-wait-consult custody where a protocol requires regaining
+   control after a child exits (the hosts) — zero decisions either
+   way. Guard-clause `if`s on a consult's exit code are fine;
    business branching is not.
 3. No python3 anywhere in the repo — production or fixture.
 4. Scripts that exist only because internal callers name their path are
@@ -65,9 +68,10 @@ watchers, cleanup traps).
    contracts (skills, docs, hooks, adopted targets) stay as shims —
    on-disk contracts are preserved (the port rule).
 5. A mechanical fence keeps it this way: the suite gains a shell
-   complexity budget (per-file line cap, no-python check, function
-   count bound) that refuses regressions, the same way the word-budget
-   audit fences prompt growth.
+   complexity budget that refuses regressions, the same way the
+   word-budget audit fences prompt growth. Its checks are enumerated
+   once, in Phase A, and include the no-python check and the
+   per-file function-count bound (r3/KS-R3-010).
 
 ## Dead code dies first (human ruling, same day)
 
@@ -79,10 +83,16 @@ Phase 0 and as a standing rule inside every later phase:
   function within the big scripts; run the Go dead-code analyzer
   (golang.org/x/tools/cmd/deadcode) over cmd + internal. The sweep's
   product is a per-script DISPOSITION REGISTRY — port+shim,
-  port+delete, keep — because adopted targets receive scripts/
-  wholesale (F Q1.16-Q1.19, r1/KS-R1-001): every deletion pairs with
-  an adopt.sh payload change in the same commit, and the registry is
-  what the fence checks, not raw reachability.
+  port+delete, keep — checked in at
+  scripts/agents/shell-dispositions.json beside the budget
+  (r3/KS-R3-008): `keep` is lawful only for scripts already
+  satisfying the thin-shim contract or carrying a dated port entry
+  the fence treats as debt with a deadline. Adopted targets receive
+  scripts/ wholesale through a tracked-file allowlist
+  (F Q1.16-Q1.19, r1/KS-R1-001), so a deletion propagates to the
+  payload automatically (r3/KS-R3-011); what a deletion REQUIRES is
+  its registry verdict plus an adopted-target migration note. The
+  registry is what the fence checks, not raw reachability.
 - Standing rule: porting a file starts by proving which of its parts
   are alive. Dead logic is deleted, never ported — porting it would
   launder it into tested-looking Go.
@@ -98,10 +108,14 @@ validate family (whole-artifact validators, F Q5.8); frontier.sh →
 report; receipt.sh → a receipt family (it owns durable state and
 several commands); audit-metasystem.sh → an audit family whose first
 verb it becomes. Plus a residue audit of every existing assert-*.sh
-shim. The complexity fence lands here as `audit shell-budget`
+shim. Prerequisite (r3/KS-R3-002): the coverage ratchet of
+plans/go-production-grade.md Phase 0c lands BEFORE Phase A — the
+first production ports are exactly what it protects. The complexity
+fence lands here as `audit shell-budget`
 (r1/KS-R1-008): a Go verb over a checked-in budget file that only
 ratchets down — total tracked shell lines, per-file caps, per-file
-control-flow construct counts, a RATCHET over here-docs whose sink
+control-flow construct counts, the no-python check, the per-file
+function-count bound (r3/KS-R3-010), a RATCHET over here-docs whose sink
 is a shell interpreter (a syntactic pattern: piped to bash/sh or
 written to a path later executed; prompt and payload here-docs are
 untouched — r2/KS-R2-003), and the disposition-registry check —
@@ -123,11 +137,14 @@ standing-vs-explicit reaper contention rule (a standing reaper skips
 a busy lifecycle lock while an explicit reap waits and fails on
 timeout), cap-authority acquisition timeout AND lock disappearance,
 and the wind-down refusal ramps (r2/KS-R2-001) — behavior-preserving
-is only meaningful against pinned behavior. Prerequisite pulled
-forward (r1/KS-R1-009): the coverage ratchet of
-plans/go-production-grade.md Phase 0c (mechanical, measured-value
-ratchet) lands before Phase B begins, so 'unit-tested under the
-floor' is enforced, not asserted. End state: dispatch.sh parses flags
+is only meaningful against pinned behavior. SHARED-LOCK REGISTRY
+(r3/KS-R3-005): locks touched by more than one phase — the
+cap-authority lock is coordinated by both dispatch and
+arm-supervision — carry an interoperability contract: the Go
+choreography keeps the on-disk protocol bit-compatible until the
+last shell participant ports, with a fixture proving mixed-era
+contention. (The coverage-ratchet prerequisite of r1/KS-R1-009 moved
+to Phase A per r3/KS-R3-002.) End state: dispatch.sh parses flags
 and consults.
 
 Phase C — adapters and hosts: runtime-common.sh and the four adapters
@@ -140,7 +157,11 @@ a table mapping every driver operation to (caller classification,
 authority mode, exact job scope), proven equal to the shell router's
 current mapping by a test that walks the table against
 internal/authority's matrix — any dimension differing fails the
-gate. The host boundary is launch-wait-
+gate — plus the FOURTH dimension, classification provenance
+(r3/KS-R3-006): the driver's caller classification must derive from
+the same live lease and process inspection the shell router
+performs, never from caller-supplied claims; the matrix trusts its
+input, so the derivation is the security boundary. The host boundary is launch-wait-
 parse-write, NOT final exec (r1/KS-R1-006): hosts must regain control
 after the runtime exits, so the shim keeps process custody while the
 post-exit DECISIONS — outcome classification, session and usage
@@ -148,22 +169,34 @@ parsing, atomic result writing — become Go verbs the shim calls. The
 fake adapter becomes a Go test double behind the same driver
 interface.
 
-Phase D — supervision arming and watchdog: arm-supervision.sh into the
-supervise family; watch-background-jobs.sh classification into census;
-supervision-hook.sh stays a hook entry point but every sentence it
-prints comes from a report verb.
+Phase D — supervision arming and watchdog: arm-supervision.sh into
+the supervise family; watch-background-jobs.sh splits along the
+glossary's own boundary (r3/KS-R3-009) — its JOB-FILE classification
+(done, stale, capped, never-started, vanished) goes to the report
+family while process-side checks stay with supervise/census;
+supervision-hook.sh stays a hook entry point but its POLICY is the
+port surface (r3/KS-R3-003): suppression windows, once-per-session
+stop blocking, protocol advancement, lease renewal, evidence
+collection, and receipts become report/supervise verbs, the file
+keeping only the harness entry contract.
 
 Phase E — adoption's decisions become `metasystem adopt run`, while
 adopt.sh stays a thin BOOTSTRAP shim by necessity, exactly like
 go-gate (r2/KS-R2-004): it builds or locates the binary on a fresh
 checkout, then execs the verb — zero decisions in shell, and the
-README's fresh-checkout path stays valid. go-gate.sh itself is
-already near-minimal.
+README's fresh-checkout path stays valid. The bootstrap must prove
+binary FRESHNESS (r3/KS-R3-007): build stamp equals the checkout's
+HEAD, or rebuild before executing — a stale gitignored binary can no
+longer carry an old adoption transform. go-gate.sh itself is already
+near-minimal.
 
 Phase F — fixtures, DECIDED by evidence (r1/KS-R1-007): bash stays
 the end-to-end driver — arrange via verbs, act by calling the CLI
 exactly as a user would, assert via Go assert verbs; every python
-heredoc dies. The Go-integration-test alternative is recorded as
+heredoc dies. Fixture DECISIONS move too (r3/KS-R3-001): budget
+computation, cap scaling, watcher verdicts, and cleanup selection
+become Go verbs, bash keeping only section sequencing — the end
+state's logic-of-consequence claim carries no fixture exemption. The Go-integration-test alternative is recorded as
 INVALID for the adopted contract, not merely unchosen: adopted
 targets run validate-metasystem.sh without a Go module by design
 (F Q6.1-Q6.8, go-gate's no-go.mod skip), so fixtures that only exist
