@@ -56,11 +56,13 @@ watchers, cleanup traps).
 1. Every decision, transformation, gate, and report lives in a Go verb
    with unit tests under the coverage floor.
 2. A shell file may contain only: argument relay, environment guards,
-   a consult of one or more Go verbs, and one of two terminal shapes
-   (r3/KS-R3-004): the final `exec` of an external CLI (the default),
-   or launch-wait-consult custody where a protocol requires regaining
-   control after a child exits (the hosts) — zero decisions either
-   way. Guard-clause `if`s on a consult's exit code are fine;
+   a consult of one or more Go verbs, and one of three legal shapes
+   (r3/KS-R3-004, r4/KS-R4-002): the final `exec` of an external CLI
+   (the default); launch-wait-consult custody where a protocol
+   requires regaining control after a child exits (the hosts); or
+   the SEQUENCER — a fixture driver running arrange-act-assert
+   sections in order with every decision in verbs — zero decisions
+   in all three. Guard-clause `if`s on a consult's exit code are fine;
    business branching is not.
 3. No python3 anywhere in the repo — production or fixture.
 4. Scripts that exist only because internal callers name their path are
@@ -71,7 +73,15 @@ watchers, cleanup traps).
    complexity budget that refuses regressions, the same way the
    word-budget audit fences prompt growth. Its checks are enumerated
    once, in Phase A, and include the no-python check and the
-   per-file function-count bound (r3/KS-R3-010).
+   per-file function-count bound (r3/KS-R3-010). Honesty about
+   limits (r4/KS-R4-004): the fence mechanically enforces ratchets
+   and structural counts; the zero-decisions invariant itself is
+   enforced by the registry's per-script thin-shim verdict under
+   review discipline — syntax counts do not prove semantics, and the
+   plan does not pretend they do. Scope (r4/KS-R4-003): the budget
+   covers METASYSTEM-OWNED shell only — the shipped payload
+   allowlist plus template scripts — never an adopted project's own
+   files.
 
 ## Dead code dies first (human ruling, same day)
 
@@ -91,11 +101,21 @@ Phase 0 and as a standing rule inside every later phase:
   scripts/ wholesale through a tracked-file allowlist
   (F Q1.16-Q1.19, r1/KS-R1-001), so a deletion propagates to the
   payload automatically (r3/KS-R3-011); what a deletion REQUIRES is
-  its registry verdict plus an adopted-target migration note. The
-  registry is what the fence checks, not raw reachability.
+  its registry verdict plus an entry in docs/migrations.md — shipped
+  in the payload, one entry per deleted script naming path,
+  replacement verb, and date; the fence refuses a deletion whose
+  entry is missing (r4/KS-R4-010). The registry is what the fence
+  checks, not raw reachability. Keep-deadline expiry is
+  TEMPLATE-ONLY enforcement; adopted targets get warnings — time
+  passing never fails an installed target (r4/KS-R4-007).
 - Standing rule: porting a file starts by proving which of its parts
   are alive. Dead logic is deleted, never ported — porting it would
-  launder it into tested-looking Go.
+  launder it into tested-looking Go. The Go sweep uses the same
+  disposition mechanism as shell (r4/KS-R4-009): staged work carries
+  a registry entry naming its governing plan (internal/janitor names
+  plans/supervision-lifecycle.md) and is exempt; deletion requires
+  no-caller AND no-governing-plan, so dead-code-dies-first cannot
+  eat parked-by-design work.
 - The complexity fence (below) also counts scripts: a script nothing
   references fails the budget.
 
@@ -114,8 +134,12 @@ first production ports are exactly what it protects. The complexity
 fence lands here as `audit shell-budget`
 (r1/KS-R1-008): a Go verb over a checked-in budget file that only
 ratchets down — total tracked shell lines, per-file caps, per-file
-control-flow construct counts, the no-python check, the per-file
-function-count bound (r3/KS-R3-010), a RATCHET over here-docs whose sink
+control-flow construct counts, the no-python check STAGED like the
+here-doc rule (r4/KS-R4-001: zero for production scripts at Phase A,
+a measured ratchet for fixture scripts reaching zero at Phase F — a
+fence that reds the suite on landing day would be a different
+contract), the per-file function-count bound (r3/KS-R3-010), a
+RATCHET over here-docs whose sink
 is a shell interpreter (a syntactic pattern: piped to bash/sh or
 written to a path later executed; prompt and payload here-docs are
 untouched — r2/KS-R2-003), and the disposition-registry check —
@@ -126,10 +150,14 @@ would refuse can be ported.
 
 Phase B — dispatch.sh lifecycle layer (the riskiest seam, its own
 design round inside the loop). Scope corrected by r1/KS-R1-002: the
-lock PRIMITIVE already lives in Go (internal/dispatch/ownerlock.go);
-what ports is the remaining choreography — when each lock is taken,
-held, and released; liveness sequencing; wind-down ramps; CAS
-choreography; cap resolution. The phase STARTS with characterization
+lock PRIMITIVE for chain and lifecycle locks already lives in Go
+(internal/dispatch/ownerlock.go) — but the cap-authority lock is
+still shell mkdir/rmdir polling in BOTH dispatch and arm-supervision
+(r4/KS-R4-005, correcting round 1's overcorrection): Phase B ports
+that primitive to the Go owner-lock discipline under the shared-lock
+interoperability contract. What else ports is the remaining
+choreography — when each lock is taken, held, and released; liveness
+sequencing; wind-down ramps; CAS choreography; cap resolution. The phase STARTS with characterization
 fixtures pinning the branches no test reaches today (r1/KS-R1-003):
 rename-born lock publication, the six holder classifications,
 non-owner release, lifecycle-lock timeout scaling, the
@@ -176,9 +204,12 @@ glossary's own boundary (r3/KS-R3-009) — its JOB-FILE classification
 family while process-side checks stay with supervise/census;
 supervision-hook.sh stays a hook entry point but its POLICY is the
 port surface (r3/KS-R3-003): suppression windows, once-per-session
-stop blocking, protocol advancement, lease renewal, evidence
-collection, and receipts become report/supervise verbs, the file
-keeping only the harness entry contract.
+stop blocking, protocol advancement, lease renewal, and evidence
+collection become report/supervise verbs, the file keeping only the
+harness entry contract. Receipts are NOT on this list
+(r4/KS-R4-006): the hook performs no receipt operation today, and
+inventing one would be new behavior — receipt state stays with
+Phase A's receipt family alone.
 
 Phase E — adoption's decisions become `metasystem adopt run`, while
 adopt.sh stays a thin BOOTSTRAP shim by necessity, exactly like
@@ -193,9 +224,13 @@ near-minimal.
 Phase F — fixtures, DECIDED by evidence (r1/KS-R1-007): bash stays
 the end-to-end driver — arrange via verbs, act by calling the CLI
 exactly as a user would, assert via Go assert verbs; every python
-heredoc dies. Fixture DECISIONS move too (r3/KS-R3-001): budget
-computation, cap scaling, watcher verdicts, and cleanup selection
-become Go verbs, bash keeping only section sequencing — the end
+heredoc dies, replaced by ONE owner (r4/KS-R4-008): a fixture-only
+family (construct, mutate, corrupt, assert, poll, probe verbs)
+shipped like any other family, with domain validators used where
+they already exist. Fixture DECISIONS move too (r3/KS-R3-001):
+budget computation, cap scaling, watcher verdicts, and cleanup
+selection become Go verbs, bash keeping only section sequencing —
+the drivers are lawful as SEQUENCERS (r4/KS-R4-002) and the end
 state's logic-of-consequence claim carries no fixture exemption. The Go-integration-test alternative is recorded as
 INVALID for the adopted contract, not merely unchosen: adopted
 targets run validate-metasystem.sh without a Go module by design
