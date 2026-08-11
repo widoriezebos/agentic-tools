@@ -1,6 +1,8 @@
 # Patience satellite 1: turn identity
 
-Owner: main session (claude). Status: DESIGN — awaiting critique round 1.
+Owner: main session (claude). Status: DESIGN — round 1 adjudicated (7/7
+accepted, `plans/patience-turn-identity-dispositions-r1.md`), awaiting
+round 2.
 Program: `plans/stop-loss-satellites.md` satellite 1; concepts in
 `docs/patience.md`; ground truth in `docs/design/mission-cycle-sequence.md`
 (built for this purpose — cite it, not assumptions). Inherited findings:
@@ -41,9 +43,12 @@ debits patience for work that happened.
   turn and CAN be stale after the map's ledger/state crash window — the
   design treats it accordingly.
 - `observedSession`: stamped harness-side from the earliest trusted
-  source — the launch handshake's session-established signal, else the
-  adapter's terminal result envelope (`sessionId`); absent only when
-  neither names a session. Both sources are the harness's own artifacts.
+  source THE RUNTIME ACTUALLY PRODUCES, per its capability snapshot: the
+  session-established signal where `sessionEstablishedSignal` is declared
+  (today: the claude delegate adapter), else the adapter's terminal
+  result envelope (`sessionId`) — the universal source for host turns,
+  which emit no launch signal. Absent only when neither names a session.
+  Both sources are the harness's own artifacts.
 The legacy `hostSession` field keeps its value (equal to
 `announcedSession`) until the fixtures migrate.
 
@@ -62,12 +67,15 @@ witness. The return schema and the turn prompt document the echo rule.
 
 ## T3. The adapter stops sentencing; the runner judges
 
-The adapter's session-rotation hard-fail (the exit-6 path the map names)
-is retired: the adapter REPORTS the session it observed in its result
-envelope — it is a witness, not a judge. The runner's adjudication (T2)
-is the single place a session verdict is reached. The adapter still fails
-on its genuine faults (no session established at all remains the
-handshake timeout it is today).
+Exit code 6 today conflates two duties. They separate:
+- ROTATION (the envelope names a session different from the resumed
+  one): the hard-fail is retired — the adapter reports what it observed
+  in its result envelope; it is a witness, not a judge, and the runner's
+  adjudication (T2) is the single place a session verdict is reached.
+- MISSING SESSION (the envelope carries no session at all): unchanged —
+  that remains the adapter's genuine fault signal exactly as today, and
+  on the runner side it simply yields an absent `observedSession`
+  feeding T2's no-witness branch. The branch is defined, not dropped.
 
 ## T4. Rejected turns still drain and still measure
 
@@ -75,14 +83,31 @@ A turn rejected for identity (or any return-validity fault) no longer
 bypasses the cycle's remaining duties. The failed-turn path keeps the
 map's binding order: drain jobs FIRST (parent r3[9] — measurement must
 never race live delegates), then run measurement over the committed tree,
-then conclude with BOTH facts in the ledger entry: the classification the
-measurement earned and the fault that rejected the return
-(`; return=rejected:<reason>`). A turn whose work moved the gate
-classifies as the movement it earned — a rejected envelope is not
-unmeasurable work. When draining stalls, the drain-deadline rules
-(satellite 2) own the outcome; until satellite 2 ships, the existing
-drain behavior applies unchanged on this path exactly as on the success
-path.
+then conclude with BOTH facts: the classification the measurement earned
+and the fault that rejected the return. Grammar (the critical round-1
+finding): the classification line is NOT touched — the fault and the cap
+are separate annotation lines inside the cycle block (`- Return:
+rejected:<reason>`, `- Outcome: capped`), which every parser tolerates
+today (the strict one-classification-per-block rule counts only
+Classification lines; proven by the reset-line regression test). The
+turn's state-log entry carries the same measurement outcome and fault,
+so ledger and turn log tell one story. Precedence when the measured gate
+PASSES on a rejected-return cycle: the measurement is runner-run truth —
+the cycle classifies as its movement, gatePassed stands, and the mission
+completes on the measured product with the envelope fault recorded; a
+broken envelope does not un-build the product. A turn whose work moved
+the gate classifies as the movement it earned. When draining stalls, the
+drain-deadline rules (satellite 2) own the outcome; until then the
+existing drain behavior applies unchanged on this path exactly as on the
+success path.
+
+## T4b. Observed identity propagates forward
+
+The next turn's `Host-Session` announcement derives from the last
+concluded turn's `observedSession` when one exists (whatever that turn's
+return's fate), else its announced value as today. A rejected turn with
+a trusted witness still corrects the future — the stale-announcement
+window closes instead of compounding.
 
 ## T5. The capped outcome survives
 
