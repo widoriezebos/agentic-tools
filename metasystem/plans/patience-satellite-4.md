@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11-13
-(plans/dispositions/patience-satellite-4-r{1..13}.md; 77/77
+after rounds 3-8 and 11-14
+(plans/dispositions/patience-satellite-4-r{1..14}.md; 79/79
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -92,16 +92,19 @@ and provably STARTED (r9/P4-058, r10/P4-066, r11/P4-072).** Started
 is defined over shipped record fields only: status `completed` or
 `timeout` proves it structurally — the lifecycle CAS map reaches
 those statuses only through `running` (F Q3.3) — and a `cancelled` or
-`failed` record is started exactly when it carries recorded usage or
-a non-empty effectiveModel AND its error is not in the NEVER-STARTED
-vocabulary — abandoned-setup, handshake_timeout, launch_failed, and
-the handshake-mismatch error — because HandshakeEval patches
-effectiveModel before deciding failure, so the model field alone
-cannot prove work (r12/P4-073, r13/P4-076; sessionEstablishedSignal
-is a pre-launch capability promise and plays no part). The
-never-started vocabulary is one table in patience.go, documented
-against dispatch's error writers and enumerated by a verification
-test, so writer drift fails loudly. A pending-cancelled husk
+`failed` record is started exactly when it carries RECORDED USAGE —
+money provably spent is work, whatever the error is called
+(r14/P4-078: the same handshake error names both a pre-running
+rejection and a post-run session mismatch after usage capture) — or,
+lacking usage, a non-empty effectiveModel AND an error outside the
+NEVER-STARTED vocabulary: abandoned-setup, handshake_timeout,
+launch_failed, and the handshake-mismatch error (HandshakeEval
+patches effectiveModel before deciding failure, so the model field
+alone cannot prove work — r12/P4-073, r13/P4-076;
+sessionEstablishedSignal plays no part). The never-started vocabulary
+is one table in patience.go, documented against dispatch's error
+writers and enumerated by a verification test, so writer drift fails
+loudly. A pending-cancelled husk
 and launch/handshake failures (abandoned-setup, handshake_timeout,
 launch_failed) satisfy none of these and never count: nobody worked,
 so no one's patience is debited. Lawful-nonterminal jobs never
@@ -217,14 +220,15 @@ audit surface: a crash between AppendCycle and the state write can
 leave one cycle's vocal line stale against the healed log; a reaper
 transition landing mid-write books one evaluation late; and the
 overflow line's count can go stale against chains closed after
-booking. A final booking cannot strand a stale line anywhere that
-matters — a completed mission needs no nag, and a parked mission's
-ask is the vocal surface, which the design makes true where it was
-not: in a patience-configured mission the all-streams-inactive park
-guarantees at least one open ask (creating the standard park ask if
-none exists, r13/P4-077); unconfigured missions keep today's park
-behavior byte-identically. No retry loop around the flocked
-append.
+booking. A final booking cannot strand a stale line anywhere that goes
+UNSEEN — a completed mission needs no nag; a host-failure or
+stop-loss park carries its ask; and the all-streams-inactive park,
+which shipped code parks WITHOUT an ask, is itself visible through
+the standing open-work reporting surface, which is where its
+Patience lines wait for the human too (r14/P4-079, superseding
+r13/P4-077's invented park ask — no park-path change of any kind,
+which also keeps that path byte-identical). No retry loop around the
+flocked append.
 
 **Grammar — write AND read (r1/P4-013, r2/P4-028, r5/P4-037,
 r7/P4-049).** Four annotation forms in BOTH annotationWriteRe and
