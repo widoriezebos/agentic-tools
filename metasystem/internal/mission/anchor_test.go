@@ -108,6 +108,135 @@ func TestReconcileEqualCyclesReturnsZero(t *testing.T) {
 	}
 }
 
+// stagnationParkedMission extends anchoredMission: the mission is parked for
+// stop-loss with a stagnation ask on disk, and that park is anchored — the
+// exact position a crash during the reset transaction leaves behind.
+func stagnationParkedMission(t *testing.T) (repo, state, ledger, asksDir string) {
+	t.Helper()
+	repo, state, ledger = anchoredMission(t)
+	_, hash, _ := VerifyStateShape(state)
+	doc, _ := readStateDoc(state)
+	doc["status"] = "parked"
+	doc["parkReason"] = "stop-loss"
+	doc["waitingList"] = []any{"stop-loss"}
+	src := state + ".src"
+	if err := atomicWriteJSON(src, doc); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteState(state, src, hash); err != nil {
+		t.Fatal(err)
+	}
+	if err := Anchor(state, repo, ledger); err != nil {
+		t.Fatal(err)
+	}
+	asksDir = filepath.Join(filepath.Dir(state), "asks")
+	writeAsk(t, asksDir, "stop-loss", StopLossKindStagnation)
+	return repo, state, ledger, asksDir
+}
+
+func writeAsk(t *testing.T, asksDir, askID, kind string) {
+	t.Helper()
+	ask := map[string]any{
+		"askId": askID, "streamId": "alpha", "reasonClass": "stop-loss",
+		"question": "q", "createdAt": "2026-08-11T00:00:00Z", "answeredAt": nil, "answer": nil,
+	}
+	if kind != "" {
+		ask["stopLossKind"] = kind
+	}
+	if err := atomicWriteJSON(filepath.Join(asksDir, askID+".json"), ask); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReconcileForgivesExactlyTheResetSuffix(t *testing.T) {
+	repo, state, ledger, _ := stagnationParkedMission(t)
+	if err := AppendReset(ledger, "stop-loss", "human funded the tail"); err != nil {
+		t.Fatal(err)
+	}
+	code, err := Reconcile(state, repo, ledger)
+	if err != nil || code != 0 {
+		t.Fatalf("a trailing reset suffix must be forgiven: code=%d err=%v", code, err)
+	}
+	doc, _ := readStateDoc(state)
+	if doc["status"] != "parked" || doc["parkReason"] != "stop-loss" {
+		t.Fatalf("forgiving must not rewrite the state: %v %v", doc["status"], doc["parkReason"])
+	}
+	// A duplicate reset line from a re-answered crash is equally lawful.
+	if err := AppendReset(ledger, "stop-loss", "answered again after a crash"); err != nil {
+		t.Fatal(err)
+	}
+	if code, err := Reconcile(state, repo, ledger); err != nil || code != 0 {
+		t.Fatalf("a double reset suffix must be forgiven: code=%d err=%v", code, err)
+	}
+}
+
+func TestReconcileStillParksOnAnyOtherDivergence(t *testing.T) {
+	cases := []struct {
+		name    string
+		distort func(t *testing.T, repo, state, ledger, asksDir string)
+	}{
+		{"non-reset junk in the suffix", func(t *testing.T, repo, state, ledger, asksDir string) {
+			if err := AppendReset(ledger, "stop-loss", "fine"); err != nil {
+				t.Fatal(err)
+			}
+			data, _ := os.ReadFile(ledger)
+			writeText(t, ledger, string(data)+"tampered\n")
+		}},
+		{"reset naming an ask that is not on disk", func(t *testing.T, repo, state, ledger, asksDir string) {
+			if err := AppendReset(ledger, "ghost-ask", "fine"); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"reset naming a cycle-budget ask", func(t *testing.T, repo, state, ledger, asksDir string) {
+			writeAsk(t, asksDir, "spent", StopLossKindCycleBudget)
+			if err := AppendReset(ledger, "spent", "fine"); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"reset naming an ask without a stop-loss kind", func(t *testing.T, repo, state, ledger, asksDir string) {
+			writeAsk(t, asksDir, "plain", "")
+			if err := AppendReset(ledger, "plain", "fine"); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, state, ledger, asksDir := stagnationParkedMission(t)
+			tc.distort(t, repo, state, ledger, asksDir)
+			code, err := Reconcile(state, repo, ledger)
+			if err != nil {
+				t.Fatalf("reconcile errored: %v", err)
+			}
+			if code != 3 {
+				t.Fatalf("divergence outside the predicate must park (3), got %d", code)
+			}
+			doc, _ := readStateDoc(state)
+			if r, _ := doc["parkReason"].(string); r != "state-integrity" {
+				t.Fatalf("expected a state-integrity park, got %q", r)
+			}
+		})
+	}
+}
+
+func TestReconcileResetSuffixNeedsTheStagnationPark(t *testing.T) {
+	// The same reset suffix on a mission that is NOT stagnation-parked is
+	// divergence, not replayable state.
+	repo, state, ledger := anchoredMission(t)
+	asksDir := filepath.Join(filepath.Dir(state), "asks")
+	writeAsk(t, asksDir, "stop-loss", StopLossKindStagnation)
+	if err := AppendReset(ledger, "stop-loss", "fine"); err != nil {
+		t.Fatal(err)
+	}
+	code, err := Reconcile(state, repo, ledger)
+	if err != nil {
+		t.Fatalf("reconcile errored: %v", err)
+	}
+	if code != 3 {
+		t.Fatalf("a running state with a reset suffix must park (3), got %d", code)
+	}
+}
+
 func TestReconcileParksOnLedgerBehindState(t *testing.T) {
 	repo, state, ledger := anchoredMission(t)
 	// Truncate the ledger so its cycle count (0) is behind the state (1).

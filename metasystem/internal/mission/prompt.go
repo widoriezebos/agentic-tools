@@ -20,9 +20,10 @@ import (
 // sections are joined in a fixed order. This file owns that assembly.
 
 // promptClassificationRe matches a ledger cycle's single classification line,
-// capturing the verdict, the candidate sha, and the observed measurement.
+// capturing the verdict, the candidate sha, the observed measurement, and the
+// optional new-best marker (absent on lines older binaries wrote).
 var promptClassificationRe = regexp.MustCompile(
-	`(?m)^- Classification:[ \t]*([a-z-]+); candidate-sha=([^;\n]+); observed=([^\n]+)$`)
+	`(?m)^- Classification:[ \t]*([a-z-]+); candidate-sha=([^;\n]+); observed=(.*?)(?:; best=(yes|no))?$`)
 
 // promptDataMarkers frames every data block. When a field's own text contains
 // a frame marker it is defanged so the framing stays unambiguous.
@@ -87,7 +88,8 @@ func promptAuthoredValues(contractText string) (map[string]string, error) {
 }
 
 // promptLedgerRecords returns the last maximum adjudicated cycles as
-// [cycle, classification, candidate-sha, observed] rows.
+// [cycle, classification, candidate-sha, observed] rows, with the new-best
+// marker as a fifth field on lines that carry it.
 func promptLedgerRecords(ledgerPath string, maximum int) ([][]string, error) {
 	data, err := os.ReadFile(ledgerPath)
 	if err != nil {
@@ -108,12 +110,16 @@ func promptLedgerRecords(ledgerPath string, maximum int) ([][]string, error) {
 			return nil, fmt.Errorf("mission ledger cycle %s lacks one parseable classification", number)
 		}
 		m := matches[0]
-		records = append(records, []string{
+		record := []string{
 			number,
 			m[1],
 			promptOneLine(strings.TrimSpace(m[2])),
 			promptOneLine(strings.TrimSpace(m[3])),
-		})
+		}
+		if m[4] != "" {
+			record = append(record, m[4])
+		}
+		records = append(records, record)
 	}
 	if maximum < len(records) {
 		records = records[len(records)-maximum:]

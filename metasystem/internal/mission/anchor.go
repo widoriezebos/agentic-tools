@@ -287,46 +287,56 @@ func verifyAnchor(repo string, state map[string]any, ledgerPath string) error {
 // verifyStateAnchor checks that the current ledger extends the anchored ledger
 // truth (used when reconciling a ledger that has grown since the anchor).
 func verifyStateAnchor(repo string, state map[string]any, ledgerPath string) error {
+	_, _, err := anchoredLedgerPrefix(repo, state, ledgerPath)
+	return err
+}
+
+// anchoredLedgerPrefix verifies every anchor claim except that the ledger is
+// byte-identical: the anchor's state hash, cycle, path, and branch ancestry
+// hold, and the current ledger extends the anchored bytes. It returns the
+// anchored prefix and the current ledger bytes so a caller can judge the
+// unanchored suffix.
+func anchoredLedgerPrefix(repo string, state map[string]any, ledgerPath string) (anchored, current string, err error) {
 	missionID, _ := state["missionId"].(string)
 	anchor, err := latestAnchor(repo, missionID)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	integrity, _ := state["integrity"].(map[string]any)
 	stateHashValue, _ := integrity["hash"].(string)
 	if anchor["Mission-State-Hash"] != stateHashValue {
-		return stateErr("mission anchor disagrees at Mission-State-Hash")
+		return "", "", stateErr("mission anchor disagrees at Mission-State-Hash")
 	}
 	ledger, _ := state["ledger"].(map[string]any)
 	stateCycles, _ := intValue(ledger["cycles"])
 	if anchor["Mission-Cycle"] != strconv.FormatInt(stateCycles, 10) {
-		return stateErr("mission anchor disagrees at Mission-Cycle")
+		return "", "", stateErr("mission anchor disagrees at Mission-Cycle")
 	}
 	ledgerRel, err := relUnderRepo(ledgerPath, repo)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	if anchor["Mission-Ledger-Path"] != ledgerRel {
-		return stateErr("mission anchor disagrees at Mission-Ledger-Path")
+		return "", "", stateErr("mission anchor disagrees at Mission-Ledger-Path")
 	}
 	anchored, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
 	if code != 0 {
-		return stateErr("mission anchor commit does not contain the prior ledger")
+		return "", "", stateErr("mission anchor commit does not contain the prior ledger")
 	}
 	if sha256Hex(anchored) != anchor["Mission-Ledger-SHA256"] {
-		return stateErr("mission anchor prior ledger hash is invalid")
+		return "", "", stateErr("mission anchor prior ledger hash is invalid")
 	}
-	current, err := os.ReadFile(ledgerPath)
+	data, err := os.ReadFile(ledgerPath)
 	if err != nil {
-		return stateErr("cannot read mission ledger: %v", err)
+		return "", "", stateErr("cannot read mission ledger: %v", err)
 	}
-	if !strings.HasPrefix(string(current), anchored) {
-		return stateErr("mission ledger does not extend the anchored ledger truth")
+	if !strings.HasPrefix(string(data), anchored) {
+		return "", "", stateErr("mission ledger does not extend the anchored ledger truth")
 	}
 	if _, code := gitTry(repo, "merge-base", "--is-ancestor", anchor["commit"], mustBranch(state)); code != 0 {
-		return stateErr("mission anchor commit is not on the mission branch")
+		return "", "", stateErr("mission anchor commit is not on the mission branch")
 	}
-	return nil
+	return anchored, string(data), nil
 }
 
 func mustBranch(state map[string]any) string {
@@ -397,10 +407,58 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 		return 0, atomicWriteJSON(statePath, finalized)
 	default:
 		if err := verifyAnchor(repo, raw, ledgerPath); err != nil {
+			// One named, checkable exception (plans/stop-loss-core.md): a
+			// stagnation-parked mission whose unanchored ledger suffix is
+			// solely vocal stop-loss reset lines is replayable state — a
+			// crash between the reset append and its anchor — not divergence.
+			if stopLossResetForgivable(statePath, repo, raw, ledgerPath) {
+				return 0, nil
+			}
 			return 3, parkIntegrity(statePath, raw, nil)
 		}
 	}
 	return 0, nil
+}
+
+// stopLossResetForgivable is the exact reconciliation tolerance: (a) the
+// mission state is parked with the stagnation stop-loss reason, and (b) the
+// ledger's unanchored suffix consists solely of `Stop-loss reset:` lines each
+// naming an ask that exists on disk as a stagnation stop-loss ask. Anything
+// else parks on disagreement as today.
+func stopLossResetForgivable(statePath, repo string, state map[string]any, ledgerPath string) bool {
+	if state["status"] != "parked" || state["parkReason"] != "stop-loss" {
+		return false
+	}
+	anchored, current, err := anchoredLedgerPrefix(repo, state, ledgerPath)
+	if err != nil {
+		return false
+	}
+	suffix := current[len(anchored):]
+	asksDir := filepath.Join(filepath.Dir(statePath), "asks")
+	sawReset := false
+	for _, line := range strings.Split(suffix, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		m := resetLineRe.FindStringSubmatch(line)
+		if m == nil || !isStagnationStopLossAsk(filepath.Join(asksDir, m[1]+".json"), m[1]) {
+			return false
+		}
+		sawReset = true
+	}
+	return sawReset
+}
+
+// isStagnationStopLossAsk reports whether the file holds the named ask and
+// that ask is a stagnation stop-loss ask — the only kind whose answer may
+// have written a reset line.
+func isStagnationStopLossAsk(path, askID string) bool {
+	ask, err := readJSONObjectFile(path)
+	if err != nil {
+		return false
+	}
+	return ask["askId"] == askID && ask["reasonClass"] == "stop-loss" &&
+		ask["stopLossKind"] == StopLossKindStagnation
 }
 
 // reconcileCorruptState preserves the corrupt bytes as evidence and starts a

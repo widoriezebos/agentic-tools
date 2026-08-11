@@ -29,7 +29,7 @@ guard.audit.floor=1
 guard.audit.noise=0
 guard.cadence=1
 ledger.cycle-budget=8
-ledger.no-gain-budget=3
+ledger.no-gain-budget=8
 fence.wall-clock-hours=8
 fence.cycles=8
 fence.jobs=20
@@ -43,6 +43,8 @@ stream.documentation=Keep mission operation replayable from shipped documentatio
 envelope.dependencies=jq
 exposure=EUR:25
 ```
+
+Size `ledger.no-gain-budget` in the order of `fence.cycles`: the stop-loss is a last defense sized above any healthy runway, not a pace-setter, and the contract validator warns — never refuses — below half the cycle fence (`plans/stop-loss-core.md`).
 
 After sealing, the script appends a generated `mission-seal` block. The human then adds exactly one line in this form, using the hash printed by `--seal`:
 

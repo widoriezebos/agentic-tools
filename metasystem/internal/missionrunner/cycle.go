@@ -176,24 +176,47 @@ type ParkOutcome struct {
 // answer is a mission that can never resume. The waiting list reflects the
 // asks once the caller has written them.
 func ParkProposal(root, mission string, state map[string]any, reason, nowISO string) (*ParkOutcome, error) {
+	question := ""
+	switch reason {
+	case "host-failure":
+		question = "Acknowledge the host failure before resuming the mission."
+	case "stop-loss":
+		question = "Amend, price, reseal, and sign the mission budget before requesting stop-loss unpark."
+	}
+	return parkOutcome(root, mission, state, reason, question, "", nowISO)
+}
+
+// StopLossParkProposal proposes the stop-loss park for a derived verdict:
+// the ask's wording matches the trip kind, and a replay-semantics ask records
+// that kind so the answer path and the reconciliation tolerance can tell a
+// resettable stagnation park from an amendment-only cycle-budget park.
+func StopLossParkProposal(root, mission string, state map[string]any, kind, question, nowISO string) (*ParkOutcome, error) {
+	askKind := ""
+	if kind == StopLossStagnation || kind == StopLossCycleBudget {
+		askKind = kind
+	}
+	return parkOutcome(root, mission, state, "stop-loss", question, askKind, nowISO)
+}
+
+// parkOutcome builds a park proposal: the parked state, and — when the
+// reason carries a question — the open ask that makes the park answerable.
+func parkOutcome(root, mission string, state map[string]any, reason, question, stopLossKind, nowISO string) (*ParkOutcome, error) {
 	proposed := deepCopyDoc(state)
 	asksDir := asksDirPath(root, mission)
 	outcome := &ParkOutcome{Asks: []map[string]any{}}
 	newAskIDs := []string{}
-	if reason == "host-failure" || reason == "stop-loss" {
-		if !hasOpenAskWithReason(asksDir, reason) {
-			streams, ok := proposed["streams"].(map[string]any)
-			if !ok || len(streams) == 0 {
-				return nil, fmt.Errorf("mission state has no streams")
-			}
-			question := "Acknowledge the host failure before resuming the mission."
-			if reason == "stop-loss" {
-				question = "Amend, price, reseal, and sign the mission budget before requesting stop-loss unpark."
-			}
-			askID := nextAskID(asksDir, reason, map[string]bool{})
-			outcome.Asks = append(outcome.Asks, askRecord(askID, fallbackStream(streams), reason, question, nowISO))
-			newAskIDs = append(newAskIDs, askID)
+	if question != "" && !hasOpenAskWithReason(asksDir, reason) {
+		streams, ok := proposed["streams"].(map[string]any)
+		if !ok || len(streams) == 0 {
+			return nil, fmt.Errorf("mission state has no streams")
 		}
+		askID := nextAskID(asksDir, reason, map[string]bool{})
+		ask := askRecord(askID, fallbackStream(streams), reason, question, nowISO)
+		if stopLossKind != "" {
+			ask["stopLossKind"] = stopLossKind
+		}
+		outcome.Asks = append(outcome.Asks, ask)
+		newAskIDs = append(newAskIDs, askID)
 	}
 	proposed["status"] = "parked"
 	proposed["parkReason"] = reason

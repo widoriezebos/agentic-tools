@@ -121,6 +121,61 @@ func TestWriteRefusesDecreasingCounter(t *testing.T) {
 	}
 }
 
+func TestLedgerSemanticsPinnedAtInit(t *testing.T) {
+	_, state, _ := initMission(t)
+	doc, _ := readStateDoc(state)
+	if v, _ := intValue(doc["ledgerSemantics"]); v != 2 {
+		t.Fatalf("init must pin ledgerSemantics 2, got %v", doc["ledgerSemantics"])
+	}
+
+	// The pin is immutable: a proposal that changes it is refused.
+	_, hash, _ := VerifyStateShape(state)
+	doc["ledgerSemantics"] = 3
+	source := state + ".src"
+	_ = atomicWriteJSON(source, doc)
+	if err := WriteState(state, source, hash); err == nil ||
+		!strings.Contains(err.Error(), "immutable identity") {
+		t.Fatalf("changing ledgerSemantics must be refused, got %v", err)
+	}
+}
+
+func TestLegacyStateWithoutLedgerSemanticsStillValidates(t *testing.T) {
+	_, state, _ := initMission(t)
+	// Rebuild the same state without the field, as a pre-replay binary wrote
+	// it, and re-chain it so only the missing field is under test.
+	doc, _ := readStateDoc(state)
+	delete(doc, "ledgerSemantics")
+	delete(doc, "integrity")
+	finalized, err := finalizeNext(doc, nil, nil)
+	if err != nil {
+		t.Fatalf("a state without ledgerSemantics must stay valid: %v", err)
+	}
+	legacy := filepath.Join(t.TempDir(), "legacy-state.json")
+	if err := atomicWriteJSON(legacy, finalized); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := VerifyStateShape(legacy); err != nil {
+		t.Fatalf("legacy state rejected: %v", err)
+	}
+
+	// A non-integer pin is a shape error, and a legacy state cannot gain the
+	// field mid-mission.
+	bad, _ := readStateDoc(legacy)
+	bad["ledgerSemantics"] = "two"
+	if err := validateShape(bad); err == nil {
+		t.Fatal("a non-integer ledgerSemantics must be rejected")
+	}
+	_, legacyHash, _ := VerifyStateShape(legacy)
+	upgraded, _ := readStateDoc(legacy)
+	upgraded["ledgerSemantics"] = 2
+	source := legacy + ".src"
+	_ = atomicWriteJSON(source, upgraded)
+	if err := WriteState(legacy, source, legacyHash); err == nil ||
+		!strings.Contains(err.Error(), "immutable identity") {
+		t.Fatalf("adding ledgerSemantics mid-mission must be refused, got %v", err)
+	}
+}
+
 func TestVerifyRejectsMalformedState(t *testing.T) {
 	root := t.TempDir()
 	bad := filepath.Join(root, "bad.json")

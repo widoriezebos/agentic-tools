@@ -114,6 +114,43 @@ func TestTurnPromptRejects(t *testing.T) {
 	}
 }
 
+func TestTurnPromptLedgerTailBestMarker(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	// Records with and without the best token are both legal (the named
+	// grammar migration); a fifth field outside yes/no is not.
+	root, promptPath, turnDir := promptFixture(t)
+	mixed := strings.Replace(validPrompt(),
+		"2\tno-progress\t"+sha+"\tno gain",
+		"2\tno-progress\t"+sha+"\tno gain\tno\n3\tcontract-improved\t"+sha+"\tnew high\tyes", 1)
+	if err := os.WriteFile(promptPath, []byte(mixed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if violation := TurnPrompt(root, promptPath, turnDir); violation != nil {
+		t.Fatalf("mixed-vintage ledger tail rejected: [%s] %s", violation.Check, violation.Message)
+	}
+
+	bad := strings.Replace(validPrompt(),
+		"2\tno-progress\t"+sha+"\tno gain",
+		"2\tno-progress\t"+sha+"\tno gain\tmaybe", 1)
+	if err := os.WriteFile(promptPath, []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	violation := TurnPrompt(root, promptPath, turnDir)
+	if violation == nil || violation.Check != "records" || !strings.Contains(violation.Message, "best marker") {
+		t.Fatalf("an invalid best marker must be refused: %v", violation)
+	}
+
+	oversize := strings.Replace(validPrompt(),
+		"2\tno-progress\t"+sha+"\tno gain",
+		"2\tno-progress\t"+sha+"\tno gain\tyes\textra", 1)
+	if err := os.WriteFile(promptPath, []byte(oversize), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if violation := TurnPrompt(root, promptPath, turnDir); violation == nil || violation.Check != "records" {
+		t.Fatalf("a six-field ledger record must be refused: %v", violation)
+	}
+}
+
 func TestTurnPromptRejectsRecordMismatch(t *testing.T) {
 	root, promptPath, turnDir := promptFixture(t)
 	writeFile(t, filepath.Join(turnDir, "turn.json"), `{"missionId":"m-1","turnId":""}`)

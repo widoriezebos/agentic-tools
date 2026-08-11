@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,13 +109,32 @@ type contractSealField struct {
 }
 
 // ContractValidate parses and type-checks a mission contract, returning the
-// resolved path so a caller can report exactly which file it accepted.
-func ContractValidate(path string) (string, error) {
+// resolved path so a caller can report exactly which file it accepted, plus
+// calibration warnings that never refuse the contract.
+func ContractValidate(path string) (string, []string, error) {
 	doc, _, _, err := contractLoad(path)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return doc.path, nil
+	return doc.path, doc.calibrationWarnings(), nil
+}
+
+// calibrationWarnings flags budget sizings the stop-loss design advises
+// against without refusing them: an unattended mission's no-gain budget is a
+// last defense sized in the order of the cycle fence, so a budget below half
+// the fence warns, naming plans/stop-loss-core.md.
+func (d *contractDoc) calibrationWarnings() []string {
+	noGain, errNoGain := strconv.Atoi(d.values["ledger.no-gain-budget"])
+	cycles, errCycles := strconv.Atoi(d.values["fence.cycles"])
+	if errNoGain != nil || errCycles != nil {
+		return nil
+	}
+	if 2*noGain < cycles {
+		return []string{fmt.Sprintf(
+			"ledger.no-gain-budget=%d is below half of fence.cycles=%d; the stop-loss is a last defense sized in the order of the cycle fence (plans/stop-loss-core.md)",
+			noGain, cycles)}
+	}
+	return nil
 }
 
 // ContractSeal measures the reproducible baseline and writes the generated
@@ -744,6 +764,18 @@ func contractManifestHash(repo, ref string, paths []string) (string, error) {
 // contractThresholdPasses reports whether a measured value satisfies a
 // comparison expression such as ">=1".
 func contractThresholdPasses(expression, value string) (bool, error) {
+	measured, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return false, stateErr("gate metric is not numeric: %s", value)
+	}
+	return ThresholdPasses(expression, measured)
+}
+
+// ThresholdPasses reports whether a measured value satisfies a sealed gate
+// threshold expression such as ">=1". The stop-loss replay counts thresholds
+// met with exactly this comparison, so the fuse and the gate can never
+// disagree about what "met" means.
+func ThresholdPasses(expression string, measured float64) (bool, error) {
 	m := contractThresholdRe.FindStringSubmatch(expression)
 	if m == nil {
 		return false, stateErr("gate threshold expression is invalid: %s", expression)
@@ -751,10 +783,6 @@ func contractThresholdPasses(expression, value string) (bool, error) {
 	target, err := strconv.ParseFloat(m[2], 64)
 	if err != nil {
 		return false, stateErr("gate threshold target is invalid: %s", expression)
-	}
-	measured, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return false, stateErr("gate metric is not numeric: %s", value)
 	}
 	switch m[1] {
 	case ">=":

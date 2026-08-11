@@ -170,6 +170,27 @@ func exactKeys(m map[string]any, keys ...string) bool {
 	return true
 }
 
+// stateTopLevelKeys checks the top-level state shape: every required field
+// present, nothing unknown, and ledgerSemantics as the one optional field —
+// absent on missions initialized before the replay semantics existed.
+func stateTopLevelKeys(state map[string]any) bool {
+	required := []string{"schemaVersion", "missionId", "branch", "status", "parkReason",
+		"gatePassed", "streams", "fences", "turnLog", "waitingList", "runnerLease", "ledger", "integrity"}
+	allowed := map[string]bool{"ledgerSemantics": true}
+	for _, key := range required {
+		if _, ok := state[key]; !ok {
+			return false
+		}
+		allowed[key] = true
+	}
+	for key := range state {
+		if !allowed[key] {
+			return false
+		}
+	}
+	return true
+}
+
 func nonEmptyString(v any) (string, bool) {
 	s, ok := v.(string)
 	return s, ok && s != ""
@@ -178,9 +199,15 @@ func nonEmptyString(v any) (string, bool) {
 // --- validation ---
 
 func validateShape(state map[string]any) error {
-	if !exactKeys(state, "schemaVersion", "missionId", "branch", "status", "parkReason",
-		"gatePassed", "streams", "fences", "turnLog", "waitingList", "runnerLease", "ledger", "integrity") {
+	if !stateTopLevelKeys(state) {
 		return stateErr("mission state has missing or unexpected top-level fields")
+	}
+	if raw, present := state["ledgerSemantics"]; present {
+		// Pinned at mission init by the binary that sealed the ledger's
+		// meaning (plans/stop-loss-core.md); absent on legacy missions.
+		if v, ok := intValue(raw); !ok || v < 1 {
+			return stateErr("mission state ledgerSemantics must be a positive integer")
+		}
 	}
 	if v, _ := intValue(state["schemaVersion"]); v != 1 {
 		return stateErr("mission state schema version or mission id is invalid")
@@ -594,7 +621,11 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 		"waitingList":   []any{},
 		"runnerLease":   runnerLease,
 		"ledger":        map[string]any{"path": ledgerPath, "cycles": 0},
-		"integrity":     map[string]any{},
+		// The ledger semantics under which this mission's stop-loss verdict
+		// replays, pinned for the mission's whole life: a sealed budget's
+		// meaning never changes mid-mission (plans/stop-loss-core.md).
+		"ledgerSemantics": 2,
+		"integrity":       map[string]any{},
 	}
 	lock, err := lockFile(statePath)
 	if err != nil {
@@ -612,7 +643,7 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 }
 
 func validateTransition(previous, next map[string]any) error {
-	for _, key := range []string{"schemaVersion", "missionId", "branch"} {
+	for _, key := range []string{"schemaVersion", "missionId", "branch", "ledgerSemantics"} {
 		if !jsonEqual(previous[key], next[key]) {
 			return stateErr("mission state update changes immutable identity")
 		}

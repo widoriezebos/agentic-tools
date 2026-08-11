@@ -330,7 +330,7 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 	if err := mission.InitState(statePath, e.approvedContractPath(), ledger, leasePath, ""); err != nil {
 		return "", "", nil, failf(3, "mission state initialization refused: %v", err)
 	}
-	if err := e.anchorState(statePath, ledger, e.Mission); err != nil {
+	if err := e.anchor(statePath, ledger, e.Mission); err != nil {
 		return "", "", nil, err
 	}
 	state, err = e.verifyState(statePath, true)
@@ -341,7 +341,10 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 }
 
 // resumeState reconciles an existing mission's state against its ledger and
-// anchor and refuses to drive anything but a running mission.
+// anchor and refuses to drive anything but a running mission. A stop-loss
+// park whose reset ask was answered but whose unpark never landed (a crash
+// after the ask was marked answered) is applied here: the ledger's reset
+// line is the authoritative fact, and resume applies its state effect.
 func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, err error) {
 	dir := e.missionDir()
 	statePath = filepath.Join(dir, "state.json")
@@ -357,14 +360,73 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 		}
 		return "", "", nil, failf(3, "mission state reconciliation parked the mission: %s", detail)
 	}
-	state, err = e.verifyState(statePath, true)
+	state, err = e.verifyState(statePath, false)
 	if err != nil {
 		return "", "", nil, err
+	}
+	if state["status"] == "parked" && state["parkReason"] == "stop-loss" {
+		applied, err := e.applyPendingReset(statePath, ledger, state)
+		if err != nil {
+			return "", "", nil, err
+		}
+		if applied {
+			state, err = e.verifyState(statePath, false)
+			if err != nil {
+				return "", "", nil, err
+			}
+		}
 	}
 	if state["status"] != "running" {
 		return "", "", nil, failf(3, "mission is %s; answer or amend its park reason before resume", valueString(state["status"]))
 	}
+	state, err = e.verifyState(statePath, true)
+	if err != nil {
+		return "", "", nil, err
+	}
 	return statePath, ledger, state, nil
+}
+
+// applyPendingReset applies the unpark a recorded stop-loss reset still owes:
+// the ledger's last event is a reset line whose named ask was answered with
+// reset: on a stagnation park, yet the mission is still parked. It reports
+// whether it unparked; a reset line whose ask is still open is left for the
+// human to answer.
+func (e *Engine) applyPendingReset(statePath, ledger string, state map[string]any) (bool, error) {
+	_, _, events, err := mission.ParseLedgerEvents(ledger)
+	if err != nil {
+		return false, failf(3, "mission stop-loss replay refused: %v", err)
+	}
+	if len(events) == 0 {
+		return false, nil
+	}
+	last := events[len(events)-1]
+	if !last.Reset {
+		return false, nil
+	}
+	ask, err := readJSONDoc(filepath.Join(asksDirPath(e.Root, e.Mission), last.AskID+".json"))
+	if err != nil {
+		return false, nil
+	}
+	answer, _ := ask["answer"].(string)
+	if ask["askId"] != last.AskID || ask["answeredAt"] == nil ||
+		!strings.HasPrefix(answer, "reset:") || ask["stopLossKind"] != StopLossStagnation {
+		return false, nil
+	}
+	proposed := deepCopyDoc(state)
+	proposed["status"] = "running"
+	proposed["parkReason"] = nil
+	proposed["gatePassed"] = false
+	proposed["waitingList"] = openAskIDs(asksDirPath(e.Root, e.Mission))
+	if _, err := e.writeState(statePath, proposed); err != nil {
+		return false, err
+	}
+	if err := e.anchor(statePath, ledger, e.Mission); err != nil {
+		return false, err
+	}
+	e.emit("stop-loss-reset-applied", clipSummary("resume applied the recorded reset"), map[string]string{
+		"missionId": e.Mission, "askId": last.AskID,
+	})
+	return true, nil
 }
 
 // allocateTurn mints this cycle's turn id and its directory. The directory
@@ -412,6 +474,31 @@ func (e *Engine) parkState(statePath, ledger, reason, identityName string) (map[
 	if err != nil {
 		return nil, err
 	}
+	return e.applyPark(statePath, ledger, identityName, outcome)
+}
+
+// parkStopLoss parks the mission on a tripped stop-loss verdict, with the
+// ask worded for the trip kind: a stagnation park names the vocal reset:
+// answer, a cycle-budget park is amendment-only, and a legacy-semantics park
+// keeps the wording those missions started with.
+func (e *Engine) parkStopLoss(statePath, ledger, identityName string, verdict *StopLossVerdict) (map[string]any, error) {
+	e.emit("mission-parked", clipSummary("stop-loss: "+verdict.Detail), map[string]string{
+		"missionId": e.Mission, "parkReason": "stop-loss", "stopLossKind": verdict.Kind,
+	})
+	state, err := readDocLabeled(statePath, "mission state", 3)
+	if err != nil {
+		return nil, err
+	}
+	outcome, err := StopLossParkProposal(e.Root, e.Mission, state, verdict.Kind, verdict.askQuestion(), nowISO())
+	if err != nil {
+		return nil, err
+	}
+	return e.applyPark(statePath, ledger, identityName, outcome)
+}
+
+// applyPark applies a park proposal: asks first so the state never names an
+// unanswerable ask, then the state write, then its anchor.
+func (e *Engine) applyPark(statePath, ledger, identityName string, outcome *ParkOutcome) (map[string]any, error) {
 	if err := e.writeProposedAsks(outcome.Asks); err != nil {
 		return nil, err
 	}
@@ -419,7 +506,7 @@ func (e *Engine) parkState(statePath, ledger, reason, identityName string) (map[
 	if err != nil {
 		return nil, err
 	}
-	if err := e.anchorState(statePath, ledger, identityName); err != nil {
+	if err := e.anchor(statePath, ledger, identityName); err != nil {
 		return nil, err
 	}
 	return updated, nil
@@ -434,20 +521,36 @@ func (e *Engine) gitRevParse(ref string) (string, error) {
 	return strings.TrimSpace(stdout), nil
 }
 
-// appendLedger records one cycle's verdict in the stop-loss ledger.
-func (e *Engine) appendLedger(ledger string, cycle int64, classification, candidateSHA, observed string) error {
-	if err := mission.AppendCycle(ledger, int(cycle), classification, candidateSHA, observed); err != nil {
+// appendLedger records one cycle's verdict in the stop-loss ledger, stamping
+// the new-best marker on missions pinned to the replay semantics; a
+// legacy-semantics mission keeps marker-less lines so it finishes under the
+// rules it started with.
+func (e *Engine) appendLedger(state map[string]any, ledger string, cycle int64, classification, candidateSHA, observed string) error {
+	best, err := e.bestMarker(state, ledger, observed)
+	if err != nil {
+		return err
+	}
+	if err := mission.AppendCycle(ledger, int(cycle), classification, candidateSHA, observed, best); err != nil {
 		return failf(3, "mission ledger append refused: %v", err)
 	}
 	return nil
 }
 
-// stopLossTripped runs the shipped stop-loss check; only its explicit trip
-// verdict parks the mission.
-func (e *Engine) stopLossTripped(ledger string) bool {
-	_, _, code := runCaptured(e.Root, nil,
-		filepath.Join(e.Root, "scripts", "assert-stop-loss.sh"), "--file", ledger)
-	return code == 1
+// continueOrParkStopLoss derives the stop-loss verdict for a still-running
+// mission and parks it when the fuse fired; the verdict is a pure replay of
+// (sealed contract, ledger), never a cached counter.
+func (e *Engine) continueOrParkStopLoss(statePath, ledger, identityName string, updated map[string]any) (map[string]any, error) {
+	if updated["status"] != "running" {
+		return updated, nil
+	}
+	verdict, err := e.stopLossVerdict(updated, ledger)
+	if err != nil {
+		return nil, err
+	}
+	if !verdict.Tripped {
+		return updated, nil
+	}
+	return e.parkStopLoss(statePath, ledger, identityName, verdict)
 }
 
 // recordFailedTurn spends the failed turn's cycle in the ledger, applies the
@@ -472,7 +575,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 		return nil, failf(3, "turn record cycle is invalid")
 	}
 	observed := "unmeasurable:" + strings.ReplaceAll(detail, "\n", " ")
-	if err := e.appendLedger(ledger, cycle, "no-progress", candidateSHA, observed); err != nil {
+	if err := e.appendLedger(state, ledger, cycle, "no-progress", candidateSHA, observed); err != nil {
 		return nil, err
 	}
 	diskState, err := readDocLabeled(statePath, "mission state", 3)
@@ -487,16 +590,13 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	if err != nil {
 		return nil, err
 	}
-	if err := e.anchorState(statePath, ledger, turn.TurnID); err != nil {
+	if err := e.anchor(statePath, ledger, turn.TurnID); err != nil {
 		return nil, err
 	}
 	if updated["status"] == "parked" && updated["parkReason"] == "host-failure" {
 		return e.parkState(statePath, ledger, "host-failure", turn.TurnID)
 	}
-	if updated["status"] == "running" && e.stopLossTripped(ledger) {
-		return e.parkState(statePath, ledger, "stop-loss", turn.TurnID)
-	}
-	return updated, nil
+	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, updated)
 }
 
 // drainJobs reaps the mission's jobs until none is active. Which jobs still
@@ -722,7 +822,7 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 			return nil, err
 		}
 	}
-	if err := e.appendLedger(ledger, cycle, classification, candidateSHA, observed); err != nil {
+	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed); err != nil {
 		return nil, err
 	}
 	measurementPath := filepath.Join(turnDir, "measurement.json")
@@ -751,13 +851,10 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 	}); err != nil {
 		return nil, err
 	}
-	if err := e.anchorState(statePath, ledger, turnID); err != nil {
+	if err := e.anchor(statePath, ledger, turnID); err != nil {
 		return nil, err
 	}
-	if updated["status"] == "running" && e.stopLossTripped(ledger) {
-		return e.parkState(statePath, ledger, "stop-loss", turnID)
-	}
-	return updated, nil
+	return e.continueOrParkStopLoss(statePath, ledger, turnID, updated)
 }
 
 // failTurnBeforeLaunch records a turn that never reached its host: the

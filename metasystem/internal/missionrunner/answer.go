@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
 // Answer applies a human's answer to an open ask: it validates the ask
@@ -33,8 +36,11 @@ func (e *Engine) Answer(askID, answer string) int {
 		return 3
 	}
 	reason, _ := ask["reasonClass"].(string)
-	if reason == "stop-loss" || state["parkReason"] == "stop-loss" {
-		fmt.Fprintln(os.Stderr, "answer refused: stop-loss requires a contract amendment before this minimal runner can unpark")
+	if reason == "stop-loss" {
+		return e.answerStopLoss(statePath, state, ask, askPath, askID, answer)
+	}
+	if state["parkReason"] == "stop-loss" {
+		fmt.Fprintln(os.Stderr, "answer refused: a stop-loss park is answered through its stop-loss ask")
 		return 3
 	}
 	if !KnownAskReasons[reason] && reason != "fence" {
@@ -109,13 +115,84 @@ func (e *Engine) Answer(askID, answer string) int {
 	}
 	updated, err := e.writeState(statePath, proposed)
 	if err == nil {
-		err = e.anchorState(statePath, filepath.Join(e.missionDir(), "ledger.md"), e.Mission)
+		err = e.anchor(statePath, filepath.Join(e.missionDir(), "ledger.md"), e.Mission)
 	}
 	if err != nil {
 		// The ask record and the state advance together or not at all: an
 		// answered ask against an unmoved state would strand the mission.
 		_ = atomicWriteJSON(askPath, originalAsk)
 		fmt.Fprintf(os.Stderr, "answer refused: %s\n", err)
+		return 3
+	}
+	fmt.Printf("mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))
+	return 0
+}
+
+// answerStopLoss applies a human's answer to a stop-loss ask. The vocal
+// reset (plans/stop-loss-core.md) applies to a stagnation park alone and in
+// binding order: (1) append the reset ledger line under the ledger lock,
+// (2) mark the ask answered, (3) apply the unpark state write. A crash after
+// (1) leaves the ask open — re-answering appends a second line, lawful and
+// harmless; a crash after (2) leaves an answered ask on a parked mission —
+// the next resume applies the unpark. Nothing is rolled back: the ledger
+// line is the authoritative reset, and every later step can be replayed
+// from it. Any other answer keeps the amendment guidance.
+func (e *Engine) answerStopLoss(statePath string, state, ask map[string]any, askPath, askID, answer string) int {
+	kind, _ := ask["stopLossKind"].(string)
+	if !strings.HasPrefix(answer, "reset:") {
+		fmt.Fprintln(os.Stderr, "answer refused: amend, price, reseal, and sign the mission budget before stop-loss unpark")
+		return 3
+	}
+	switch kind {
+	case mission.StopLossKindStagnation:
+		// The one park the vocal reset applies to.
+	case mission.StopLossKindCycleBudget:
+		fmt.Fprintln(os.Stderr, "answer refused: reset: applies to a stagnation park only; this park is an exhausted sealed cycle budget — amend, price, reseal, and sign the mission budget")
+		return 3
+	default:
+		fmt.Fprintln(os.Stderr, "answer refused: reset: applies to a stagnation park only; amend, price, reseal, and sign the mission budget")
+		return 3
+	}
+	if state["status"] != "parked" || state["parkReason"] != "stop-loss" {
+		fmt.Fprintln(os.Stderr, "answer refused: stop-loss reset applies to a mission parked for stop-loss")
+		return 3
+	}
+	reason := strings.TrimSpace(strings.TrimPrefix(answer, "reset:"))
+	ledgerPath := filepath.Join(e.missionDir(), "ledger.md")
+	if err := mission.AppendReset(ledgerPath, askID, reason); err != nil {
+		// Nothing after the ledger line may happen without it: the mission
+		// stays parked, loudly.
+		fmt.Fprintf(os.Stderr, "answer refused: stop-loss reset was not recorded: %v\n", err)
+		return 3
+	}
+	e.emit("stop-loss-reset", clipSummary(reason), map[string]string{
+		"missionId": e.Mission, "askId": askID,
+	})
+	answered := deepCopyDoc(ask)
+	answered["answeredAt"] = nowISO()
+	answered["answer"] = answer
+	if err := atomicWriteJSON(askPath, answered); err != nil {
+		fmt.Fprintf(os.Stderr, "stop-loss reset is recorded but the ask could not be marked answered: %v; answer it again — a second reset line is lawful and harmless\n", err)
+		return 3
+	}
+	proposed := deepCopyDoc(state)
+	proposed["status"] = "running"
+	proposed["parkReason"] = nil
+	proposed["gatePassed"] = false
+	waiting, _ := proposed["waitingList"].([]any)
+	remaining := []any{}
+	for _, item := range waiting {
+		if item != askID {
+			remaining = append(remaining, item)
+		}
+	}
+	proposed["waitingList"] = remaining
+	updated, err := e.writeState(statePath, proposed)
+	if err == nil {
+		err = e.anchor(statePath, ledgerPath, e.Mission)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "stop-loss reset is recorded and the ask is answered, but the unpark did not apply: %v; the next resume applies it\n", err)
 		return 3
 	}
 	fmt.Printf("mission=%s ask=%s applied=yes status=%s\n", e.Mission, askID, valueString(updated["status"]))

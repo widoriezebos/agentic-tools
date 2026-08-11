@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -208,7 +209,10 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 		sections[position.heading] = body
 	}
 
-	ledger, violation := turnDataRecords(sections, "## Ledger Tail", 4)
+	// Ledger Tail records carry four fields, or five when the measurement
+	// line recorded its new-best marker — both vintages are legal during the
+	// best-token migration (plans/stop-loss-core.md).
+	ledger, violation := turnDataRecordsRange(sections, "## Ledger Tail", 4, 5)
 	if violation != nil {
 		return violation
 	}
@@ -226,6 +230,9 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 		}
 		if observed == "(none)" {
 			return &Violation{"records", fmt.Sprintf("Ledger Tail record %d uses (none) instead of literal none", number+1)}
+		}
+		if len(record) == 5 && record[4] != "yes" && record[4] != "no" {
+			return &Violation{"records", fmt.Sprintf("Ledger Tail record %d best marker must be yes or no", number+1)}
 		}
 		cycles = append(cycles, cycle)
 	}
@@ -312,6 +319,12 @@ func isTurnHeading(line string) bool {
 // the body must be exactly one <<<DATA>>>...<<<END>>> fence holding
 // either the literal (none) or records of fieldCount non-empty fields.
 func turnDataRecords(sections map[string][]string, heading string, fieldCount int) ([][]string, *Violation) {
+	return turnDataRecordsRange(sections, heading, fieldCount, fieldCount)
+}
+
+// turnDataRecordsRange is turnDataRecords for a section whose records may
+// carry a bounded range of field counts (a named grammar migration).
+func turnDataRecordsRange(sections map[string][]string, heading string, minFields, maxFields int) ([][]string, *Violation) {
 	body := sections[heading]
 	if len(body) < 3 || body[0] != "<<<DATA>>>" || body[len(body)-1] != "<<<END>>>" {
 		return nil, &Violation{"fencing", fmt.Sprintf("%s is not fenced with the fixed data markers", heading)}
@@ -331,15 +344,19 @@ func turnDataRecords(sections map[string][]string, heading string, fieldCount in
 	var records [][]string
 	for number, line := range content {
 		fields := strings.Split(line, "\t")
-		valid := len(fields) == fieldCount
+		valid := len(fields) >= minFields && len(fields) <= maxFields
 		for _, field := range fields {
 			if field == "" {
 				valid = false
 			}
 		}
 		if !valid {
+			want := strconv.Itoa(minFields)
+			if maxFields != minFields {
+				want = fmt.Sprintf("%d to %d", minFields, maxFields)
+			}
 			return nil, &Violation{"records", fmt.Sprintf(
-				"%s record %d must contain %d non-empty tab-separated fields", heading, number+1, fieldCount)}
+				"%s record %d must contain %s non-empty tab-separated fields", heading, number+1, want)}
 		}
 		records = append(records, fields)
 	}

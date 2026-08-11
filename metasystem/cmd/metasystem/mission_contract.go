@@ -22,10 +22,15 @@ func runMissionContractValidate(args []string) int {
 		fmt.Fprintln(os.Stderr, "--file is required")
 		return 2
 	}
-	resolved, err := mission.ContractValidate(*file)
+	resolved, warnings, err := mission.ContractValidate(*file)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	// Calibration warnings never refuse a contract; they name what the
+	// stop-loss design advises against so the human sizing the budget sees it.
+	for _, warning := range warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
 	fmt.Printf("mission contract valid: %s\n", resolved)
 	return 0

@@ -48,6 +48,18 @@ type Engine struct {
 	Root    string
 	Mission string
 	emitter events.Emitter
+	// anchorFn overrides how a state advance is anchored. Production always
+	// anchors through the binary (anchorState); tests inject it because the
+	// anchor is an external git effect a unit test cannot shell out for.
+	anchorFn func(statePath, ledgerPath, identityName string) error
+}
+
+// anchor writes the state's anchor commit through the configured anchorer.
+func (e *Engine) anchor(statePath, ledgerPath, identityName string) error {
+	if e.anchorFn != nil {
+		return e.anchorFn(statePath, ledgerPath, identityName)
+	}
+	return e.anchorState(statePath, ledgerPath, identityName)
 }
 
 // NewEngine builds the engine for one mission. The emitter's process identity

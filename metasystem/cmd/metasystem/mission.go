@@ -38,10 +38,11 @@ func runMissionLedgerAppend(args []string) int {
 	classification := flags.String("classification", "", "cycle classification")
 	sha := flags.String("candidate-sha", "", "resolved candidate git sha")
 	observed := flags.String("observed", "", "observed measurement")
+	best := flags.String("best", "", "new-best marker (yes|no; omit for a marker-less line)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if err := mission.AppendCycle(*file, *cycle, *classification, *sha, *observed); err != nil {
+	if err := mission.AppendCycle(*file, *cycle, *classification, *sha, *observed, *best); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

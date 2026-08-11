@@ -85,6 +85,7 @@
       "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
     },
     "runnerLease": {"type": ["string", "null"]},
+    "ledgerSemantics": {"type": "integer", "minimum": 1},
     "ledger": {
       "type": "object",
       "additionalProperties": false,

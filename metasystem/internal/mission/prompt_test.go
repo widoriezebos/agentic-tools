@@ -169,6 +169,37 @@ func TestAssemblePromptOrdersAndFramesData(t *testing.T) {
 	}
 }
 
+func TestPromptLedgerRecordsCarryTheBestMarker(t *testing.T) {
+	dir := t.TempDir()
+	ledger := filepath.Join(dir, "ledger.md")
+	text := "# Mission Ledger\n\n- Cycle budget: 5\n- No-gain budget: 3\n\n" +
+		"### Cycle 1\n- Classification: contract-improved; candidate-sha=abc123; observed=score=0.5\n\n" +
+		"### Cycle 2\n- Classification: no-progress; candidate-sha=def456; observed=score=0.4; best=no\n\n" +
+		"Stop-loss reset: ask=stop-loss; reason=keep going\n\n" +
+		"### Cycle 3\n- Classification: contract-improved; candidate-sha=def456; observed=score=0.9; best=yes\n"
+	if err := os.WriteFile(ledger, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	records, err := promptLedgerRecords(ledger, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("records: %v", records)
+	}
+	// A marker-less line stays a four-field record; a marked line gains the
+	// marker as a fifth field with the observed value intact.
+	if len(records[0]) != 4 || records[0][3] != "score=0.5" {
+		t.Fatalf("marker-less record changed shape: %v", records[0])
+	}
+	if len(records[1]) != 5 || records[1][3] != "score=0.4" || records[1][4] != "no" {
+		t.Fatalf("best=no record: %v", records[1])
+	}
+	if len(records[2]) != 5 || records[2][4] != "yes" {
+		t.Fatalf("best=yes record: %v", records[2])
+	}
+}
+
 func TestAssemblePromptReconciliationSurfacesPriorTurn(t *testing.T) {
 	repo := promptSandbox(t)
 	// Rewrite the turn to require reconciliation.

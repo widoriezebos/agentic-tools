@@ -109,12 +109,35 @@ func newContractRepo(t *testing.T) (repo, contractPath string) {
 
 func TestContractValidateAcceptsBase(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	resolved, err := ContractValidate(contractPath)
+	resolved, warnings, err := ContractValidate(contractPath)
 	if err != nil {
 		t.Fatalf("valid contract rejected: %v", err)
 	}
 	if !strings.HasSuffix(resolved, "mission-alpha.contract.md") {
 		t.Fatalf("unexpected resolved path: %s", resolved)
+	}
+	// no-gain 2 against fence.cycles 3 is not below half the fence.
+	if len(warnings) != 0 {
+		t.Fatalf("base contract should carry no calibration warning: %v", warnings)
+	}
+}
+
+func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
+	_, contractPath := newContractRepo(t)
+	undersized := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=6", 1)
+	writeFileMode(t, contractPath, undersized, 0o644)
+	_, warnings, err := ContractValidate(contractPath)
+	if err != nil {
+		t.Fatalf("an undersized no-gain budget warns, never refuses: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "plans/stop-loss-core.md") {
+		t.Fatalf("expected one warning naming the design, got %v", warnings)
+	}
+	// Exactly half the fence is not below half: no warning.
+	atHalf := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=4", 1)
+	writeFileMode(t, contractPath, atHalf, 0o644)
+	if _, warnings, err = ContractValidate(contractPath); err != nil || len(warnings) != 0 {
+		t.Fatalf("a budget at half the fence must not warn: %v %v", warnings, err)
 	}
 }
 
@@ -152,7 +175,7 @@ func TestContractValidateRejects(t *testing.T) {
 			_ = repo
 			_, contractPath := newContractRepo(t)
 			writeFileMode(t, contractPath, tc.mutate(baseContract()), 0o644)
-			_, err := ContractValidate(contractPath)
+			_, _, err := ContractValidate(contractPath)
 			if err == nil {
 				t.Fatalf("expected rejection for %s", tc.name)
 			}
