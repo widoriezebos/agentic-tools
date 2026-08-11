@@ -294,3 +294,62 @@ func TestPromptConfigValueResolutionOrder(t *testing.T) {
 		t.Fatal("a duplicated configuration key must be an error")
 	}
 }
+
+// Patience prompt projection (plans/patience-satellite-4.md r2/P4-017,
+// r9/P4-061, r10/P4-068): lines derive from the final cycle block's
+// annotations; detail lines filter against current chain-closed flags;
+// overflow and excluded lines are exempt.
+func TestPatiencePromptLines(t *testing.T) {
+	dir := t.TempDir()
+	ledger := filepath.Join(dir, "ledger.md")
+	if err := InitLedger(ledger, 5, 3); err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.Repeat("a", 40)
+	if err := AppendCycle(ledger, 1, "no-progress", sha, "score=0", "",
+		PatienceChainAnnotation("chain-open", 4, 2),
+		PatienceChainAnnotation("chain-shut", 5, 2),
+		PatienceOrphanAnnotation("orphan-x", 1),
+		PatienceExcludedAnnotation(2),
+		PatienceOverflowAnnotation(3)); err != nil {
+		t.Fatal(err)
+	}
+	jobs := filepath.Join(dir, "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON := func(name string, doc string) {
+		if err := os.WriteFile(filepath.Join(jobs, name), []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeJSON("chain-open.json", `{"jobId":"chain-open","chainClosed":false}`)
+	writeJSON("chain-shut.json", `{"jobId":"chain-shut","chainClosed":true}`)
+
+	lines := patiencePromptLines(ledger, jobs)
+	want := []string{
+		"Patience: chain chain-open has 4 unwitnessed rounds (floor 2) — certify landed value or close the chain.",
+		"Patience: orphan job orphan-x has unwitnessed spend — certify landed value or flag it to the human.",
+		"Patience: 2 record(s) excluded from patience — flag it to the human.",
+		"Patience: 3 more chains need attention (see ledger).",
+	}
+	if len(lines) != len(want) {
+		t.Fatalf("projection wrong: %v", lines)
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Fatalf("line %d: got %q want %q", i, lines[i], want[i])
+		}
+	}
+	// Only the FINAL cycle projects; an unannotated later cycle silences all.
+	if err := AppendCycle(ledger, 2, "contract-improved", sha, "score=1", "yes"); err != nil {
+		t.Fatal(err)
+	}
+	if lines := patiencePromptLines(ledger, jobs); len(lines) != 0 {
+		t.Fatalf("stale cycle projected: %v", lines)
+	}
+	// A missing ledger projects nothing and never fails assembly.
+	if lines := patiencePromptLines(filepath.Join(dir, "absent.md"), jobs); lines != nil {
+		t.Fatalf("missing ledger projected: %v", lines)
+	}
+}

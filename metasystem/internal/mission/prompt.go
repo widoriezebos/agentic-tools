@@ -505,6 +505,17 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 		"<yes | no>", reconYesNo,
 	).Replace(string(instructionData))
 	thisTurn = strings.TrimRight(thisTurn, "\n")
+	// Patience breaches project into This Turn from the ledger's final cycle
+	// block (plans/patience-satellite-4.md): the prompt is a pure function of
+	// the ledger plus current chain-closed flags — restart-deterministic, no
+	// runner memory. Detail lines whose chain root is now closed are dropped;
+	// the overflow and excluded lines name no chains and are exempt.
+	patienceLines := patiencePromptLines(
+		filepath.Join(dir, "ledger.md"),
+		filepath.Join(repo, "artifacts", "agents", "jobs"))
+	if len(patienceLines) > 0 {
+		thisTurn += "\n\n" + strings.Join(patienceLines, "\n")
+	}
 
 	blocks := []struct {
 		name    string

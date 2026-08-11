@@ -465,7 +465,7 @@ func (e *Engine) healReservedCycle(statePath, ledger string, state map[string]an
 			drainStalled = true
 		}
 	}
-	if err := e.appendLedger(state, ledger, spent, "no-progress", candidateSHA, observed, annotations...); err != nil {
+	if err := e.appendLedger(state, ledger, spent, "no-progress", candidateSHA, observed, nil, annotations...); err != nil {
 		return false, err
 	}
 	proposed := deepCopyDoc(state)
@@ -638,15 +638,38 @@ func (e *Engine) gitRevParse(ref string) (string, error) {
 // legacy-semantics mission keeps marker-less lines so it finishes under the
 // rules it started with. Annotations land in the same atomic append, as
 // separate lines beside the classification line.
-func (e *Engine) appendLedger(state map[string]any, ledger string, cycle int64, classification, candidateSHA, observed string, annotations ...string) error {
+func (e *Engine) appendLedger(state map[string]any, ledger string, cycle int64, classification, candidateSHA, observed string, inflightCertified any, annotations ...string) error {
 	best, err := e.bestMarker(state, ledger, observed)
 	if err != nil {
 		return err
 	}
+	// Patience rides the SAME atomic append as the cycle line, on every
+	// booking path (plans/patience-satellite-4.md): the shared function is
+	// what makes ordinary, faulted, failed, and heal bookings all evaluate.
+	annotations = append(append([]string(nil), annotations...),
+		e.patienceBookingAnnotations(state, inflightCertified)...)
 	if err := mission.AppendCycle(ledger, int(cycle), classification, candidateSHA, observed, best, annotations...); err != nil {
 		return failf(3, "mission ledger append refused: %v", err)
 	}
 	return nil
+}
+
+// patienceBookingAnnotations derives this booking's Patience lines from the
+// sealed floors, the mission's job records, the durable turn log, and the
+// in-flight conclusion's certified entries (accepted returns only — a
+// rejected return's certifications witness nothing). Unconfigured missions
+// return nothing and stay byte-identical.
+func (e *Engine) patienceBookingAnnotations(state map[string]any, inflightCertified any) []string {
+	_, authored, _, err := e.parseContract(true)
+	if err != nil {
+		return nil
+	}
+	floors := parsePatienceFloors(authored)
+	if len(floors) == 0 {
+		return nil
+	}
+	turnLog, _ := state["turnLog"].([]any)
+	return patienceEvaluate(floors, missionJobs(e.Root, e.Mission), turnLog, inflightCertified)
 }
 
 // continueOrParkStopLoss derives the stop-loss verdict for a still-running
@@ -688,7 +711,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 		return nil, failf(3, "turn record cycle is invalid")
 	}
 	observed := "unmeasurable:" + strings.ReplaceAll(detail, "\n", " ")
-	if err := e.appendLedger(state, ledger, cycle, "no-progress", candidateSHA, observed); err != nil {
+	if err := e.appendLedger(state, ledger, cycle, "no-progress", candidateSHA, observed, nil); err != nil {
 		return nil, err
 	}
 	diskState, err := readDocLabeled(statePath, "mission state", 3)
@@ -844,7 +867,7 @@ func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]
 			return nil, err
 		}
 	}
-	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed, fault.Annotations...); err != nil {
+	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed, nil, fault.Annotations...); err != nil {
 		return nil, err
 	}
 	var measurementValue any
@@ -1087,7 +1110,14 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 			return nil, err
 		}
 	}
-	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed); err != nil {
+	// The accepted return's certified entries participate in this booking's
+	// patience evaluation before anything is written (r2/P4-016): a job
+	// certified by THIS turn is not booked barren in the same breath.
+	var inflightCertified any
+	if returnDoc, err := readJSONDoc(filepath.Join(turnDir, "return.json")); err == nil {
+		inflightCertified = returnDoc["certified"]
+	}
+	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed, inflightCertified); err != nil {
 		return nil, err
 	}
 	measurementPath := filepath.Join(turnDir, "measurement.json")

@@ -631,7 +631,7 @@ func TestDrainStallEndToEnd(t *testing.T) {
 		t.Fatalf("the next cycle must measure the committed tree: %s %s gate=%v", classification, observed, gatePassed)
 	}
 	candidateSHA, _ := measurement["candidateSha"].(string)
-	if err := engine.appendLedger(state, ledgerPath, 2, classification, candidateSHA, observed); err != nil {
+	if err := engine.appendLedger(state, ledgerPath, 2, classification, candidateSHA, observed, nil); err != nil {
 		t.Fatal(err)
 	}
 	ledger, _ = os.ReadFile(ledgerPath)
