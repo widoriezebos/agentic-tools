@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1 and 2, amended in place after
-rounds 3-7 (plans/dispositions/patience-satellite-4-r{1..7}.md;
-50/50 accepted; convergence 15 → 13 → 4 → 4 → 4 → 6 → 4). Parent
+rounds 3-8 (plans/dispositions/patience-satellite-4-r{1..8}.md;
+55/55 accepted; convergence 15 → 13 → 4 → 4 → 4 → 6 → 4 → 5). Parent
 ruling,
 inherited and not re-litigated: stop-loss is a last defense, never a
 pacing target, recursively. Vocabulary per docs/patience.md and
@@ -156,8 +156,15 @@ Floor selection applies to well-formed chains only — orphans bypass
 floors entirely (r7/P4-049). The table quantifies over COUNTED
 jobs — exactly the jobs in the patience count: terminal-uncertified
 plus damaged-status records (r7/P4-050) — so a chain whose only
-counting evidence is damaged still selects deterministically. Rows
-tried in order, first applicable row wins:
+counting evidence is damaged still selects deterministically.
+**Every row names its EVIDENCE RECORD and the whole (role, runtime,
+model) triple is drawn from that one record (r8/P4-054):** rows 1-2
+from the newest counted job with model evidence; rows 3-4 from the
+chain root; rows 5-8 from the newest counted job whose relevant
+fields are valid, root first for role. An evidence record whose role
+or runtime field is invalid is treated as absent for that row and
+selection falls through — one record, one triple, no cross-record
+chimeras. Rows tried in order, first applicable row wins:
 
 | row | condition | floor |
 | --- | --- | --- |
@@ -214,15 +221,13 @@ The orphan form carries no floor field — orphans are
 floor-independent damage reports (r7/P4-049).
 
 Bound copied exactly from the landed-returns implementation
-(F Q3.31): at most 20 lines total per booking — 20 detail lines, or
-19 detail plus 1 overflow when breaches exceed 20. Ranking
+(F Q3.31), covering ALL Patience lines — floor breaches and orphan
+reports alike (r8/P4-051): at most 20 lines total per booking — 20
+detail lines, or 19 detail plus 1 overflow when the combined set
+exceeds 20, the overflow count including both kinds. Ranking
 (r5/P4-040, r7/P4-049): breach distance (count − floor) descending,
 tiebreak count descending, then root ascending; orphans rank after
-all floor breaches (distance treated as zero), root ascending, and
-the orphan annotation carries no floor field:
-
-    - Patience: orphan=<id> rounds=<n>
- Annotations remain audit trail,
+all floor breaches (distance treated as zero), root ascending. Annotations remain audit trail,
 never fuse input; the replay invariant (F Q1.4, F Q4.18) is
 untouched.
 
@@ -240,8 +245,10 @@ it to the human.` — the close offer is omitted because dispatch close
 cannot resolve a broken lineage and this design refuses dispatch
 changes; the persistent nag over an uncertifiable orphan is vocal
 noise pointing at real damage, which is the system working. An
-overflow annotation projects as `Patience: <count> more chains are
-past their floors (see ledger).` after the detail lines (r3/P4-032).
+overflow annotation projects as `Patience: <count> more chains need
+attention (see ledger).` after the detail lines (r3/P4-032,
+r8/P4-051 — the count includes orphan reports, which are not floor
+breaches).
 Restart-deterministic: the prompt derives from the ledger, not from
 runner memory. The
 ask-candidate route stays dropped; candidates belong to the host's
@@ -294,13 +301,19 @@ nonterminal statuses do NOT count while damaged statuses do
 certifications ignored; records whose jobId differs from the
 filename stem excluded (r6/P4-045); orphans isolate; sibling
 ordering deterministic over damaged timestamps; threshold
-strictly-exceeds; 19+1 overflow; ranking by breach distance with
-UNEQUAL floors, proving a count-descending comparator fails
-(r6/P4-046); the eight-row selection table including sentinel
-models, the reservation-husk rows, and the smallest-floor branches
-(r6/P4-041, r6/P4-042)); contract validation and the seal
-round-trip; ledger write→parse round-trip of all THREE forms
-(r6/P4-044); prompt projection from a ledger fixture. Mission
+strictly-exceeds; 19+1 overflow counting breaches AND orphans
+together (r8/P4-051); a singleton terminal orphan emits despite
+count one and a positive configured floor (r8/P4-052); mixed
+breach-plus-orphan ranking at the nineteen-detail cutoff
+(r8/P4-052); ranking by breach distance with UNEQUAL floors, proving
+a count-descending comparator fails (r6/P4-046); the eight-row
+selection table including sentinel models, the reservation-husk
+rows, the smallest-floor branches, damaged-status jobs supplying the
+model evidence that drives rows one and two (r8/P4-053), and
+evidence records with invalid role or runtime fields falling through
+(r8/P4-054)); contract validation and the seal round-trip; ledger
+write→parse round-trip of all THREE forms (r6/P4-044); prompt
+projection from a ledger fixture. Mission
 fixtures: a breached chain books the annotation and the NEXT prompt
 carries the line; an unconfigured mission's turn artifacts are
 byte-identical to today's; a heal booking with no new terminal rounds

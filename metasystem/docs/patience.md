@@ -11,16 +11,18 @@ vocabulary: anything built around this mechanism uses these names.
 
 ## The three concepts
 
-**Progress** is value produced, proven mechanically. A checkable artifact
-— a joined critique round, a gate metric that beat its best, a requirement
-newly passing — never an agent's assertion that things are going well.
-What counts as progress depends on the activity: design progresses when a
-critique round reaches mechanical closure; implementation progresses when
-the measured gate improves; verification progresses when confirmations
-land against the completion gate. Some activities need no progress
-definition at all, because they are single-shot or already governed by an
-inner loop with its own stop criterion and budget — bounded by
-construction.
+**Progress** is value produced, proven mechanically — a checkable
+artifact, never an agent's assertion that things are going well. At the
+mission level the gate metric that beat its best is progress (the
+shipped core). At the chain level, satellite 4's loop settled ONE
+observable after rejecting per-activity proxies with evidence: a chain
+round has produced value exactly when a concluded turn's durable log
+certifies its job with verdict accepted. Proxies — schema-valid
+returns, critique closures, verifier confirmations — are exactly the
+narrative a drought hides behind (plans/patience-satellite-4.md,
+r1/P4-001 through r2/P4-024). Some activities need no progress
+definition at all: single-shot, or governed by an inner loop with its
+own stop criterion — bounded by construction.
 
 **Patience** is how much observation without progress the system tolerates
 before it concludes anything, and it is a property of WHO is working: a
@@ -32,10 +34,14 @@ genuine stall exhausts it, it is human-sealed at the mission level, and
 the hard fences (wall clock, exposure, cycles) cap the total regardless.
 
 **Stall** is the verdict when patience is exhausted: observed progress
-stayed below the configured floor for the whole window, with nothing else
-to blame. Stall parks the mission with a vocal ask; a human can reset it
-(the reset is a ledger line — it cannot happen quietly), or amend the
-sealed allowances. Stall is a last defense against the unexpected endless
+stayed below the configured floor for the whole window, with nothing
+else to blame. At the mission level (the shipped fuse) stall parks the
+mission with a vocal ask; a human resets it with a ledger-recorded
+answer — it cannot happen quietly. At the chain level (satellite 4) a
+breached floor is VOCAL ONLY — a bounded ledger annotation and a
+prompt line; it never parks, kills, or feeds the breaker, and
+escalation from vocal to acting is a future human ruling taken with
+trial evidence. Stall is a last defense against the unexpected endless
 loop, not a scheduler.
 
 ## Why cycle counting was wrong

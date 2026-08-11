@@ -46,19 +46,21 @@ not paths.
   parent's ruling without re-litigation, converging through its own
   critique loop, ordered by dependency on truth. A process mechanism; the
   full definition lives in `skills/design-critique/SKILL.md`.
-- **Progress** — value produced and proven mechanically: a joined
-  critique round, a gate metric beating its best, a requirement newly
-  passing. Never an assertion. Per-activity definitions live in
-  `docs/patience.md`.
+- **Progress** — value produced and proven mechanically, never an
+  assertion. Mission level: the gate metric beating its best. Chain
+  level: an accepted certification in the durable turn log — the one
+  observable satellite 4 settled after rejecting per-activity proxies
+  (`docs/patience.md`, `plans/patience-satellite-4.md`).
 - **Patience** — how much observation without progress is tolerated
   before a verdict, set per role and (runtime, model) pair: slower
   progress is still progress. A last defense, never a pacing target
   (`docs/patience.md`; the shipped degenerate case is the stop-loss
   core's no-gain budget).
-- **Stall** — the verdict when patience is exhausted with nothing else to
-  blame: the mission parks vocally, a human resets via a ledger-recorded
-  answer or amends the sealed allowances (`docs/patience.md`,
-  `plans/stop-loss-core.md`).
+- **Stall** — the verdict when patience is exhausted with nothing else
+  to blame. Mission level: the fuse parks vocally and a human resets
+  via a ledger-recorded answer. Chain level: vocal only — annotation
+  and prompt line, never a park (`docs/patience.md`,
+  `plans/patience-satellite-4.md`, `plans/stop-loss-core.md`).
 - **Sweep** — the takeover's cleanup: every non-terminal job stamped with
   an older epoch is failed with `stale-claim-epoch`, so an abandoned
   session's children cannot keep mutating a checkout that changed hands.
