@@ -3058,7 +3058,14 @@ PY
   # orphan report in the same append as the cycle line, and the NEXT prompt's
   # This Turn carries the projected line. The orphan is deliberately not
   # closeable, so the runner's end-of-mission chain close never touches it.
-  make_runner_contract runner-patience return-ok 4 '' fake fake-model \
+  # Reset the candidate below the gate threshold BEFORE sealing: the sealed
+  # baseline must be failing, or the first measurement completes the mission
+  # and no drought can ever accrue. Restored after the fixture.
+  printf '0\n' >"$runner_repo/candidate-score.txt"
+  runner_git add candidate-score.txt
+  runner_git commit --allow-empty -qm 'reset candidate for the patience fixture'
+  runner_git push -qu origin "$runner_branch"
+  make_runner_contract runner-patience return-ok 6 '' fake fake-model \
     'patience.rounds.design-critic.fake.fake-model=1'
   mkdir -p "$runner_repo/artifacts/agents/jobs"
   cat >"$runner_repo/artifacts/agents/jobs/pat-lost.json" <<EOF
@@ -3082,6 +3089,10 @@ EOF
     --file "$runner_repo/artifacts/agents/missions/runner-patience/turns/2/prompt.md" \
     --turn "$runner_repo/artifacts/agents/missions/runner-patience/turns/2"
   rm -f "$runner_repo/artifacts/agents/jobs/pat-lost.json"
+  printf '1\n' >"$runner_repo/candidate-score.txt"
+  runner_git add candidate-score.txt
+  runner_git commit --allow-empty -qm 'restore candidate after the patience fixture'
+  runner_git push -qu origin "$runner_branch"
   echo "patience floor fixtures passed"
 
   # Exercise the real mission runner through the Codex host with only the paid
