@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11-19
-(plans/dispositions/patience-satellite-4-r{1..19}.md; 90/90
+after rounds 3-8 and 11-20
+(plans/dispositions/patience-satellite-4-r{1..20}.md; 95/95
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -340,7 +340,8 @@ round-trip test (r1/P4-015). New internal/missionrunner/patience.go:
 the pure derivation — configured gate (r9/P4-059); participation
 boundary (clean records only: readable, mission-owned, jobId equal to
 filename stem, known status vocabulary — r10); chain sets via the
-branch-tolerant parent walk; counted set (unwitnessed, terminal,
+branch-tolerant parent walk, chains whose root is chainClosed gated
+OUT of evaluation at derivation time (r20/P4-093); counted set (unwitnessed, terminal,
 provably started over shipped fields — structural for
 completed/timeout; for cancelled/failed, spend-proving usage first
 (positive tokens, cost, or provider units, availability ignored —
@@ -374,6 +375,9 @@ Race-detector unit tests, each named case a distinct test:
   record counts while a pre-start one is excluded by the missing
   model, proving the vocabulary omission right (r18/P4-085).
 - Spend rule: an all-null usage object proves nothing (r15/P4-081);
+  an all-ZERO usage object (zero tokens, null cost, null units)
+  proves nothing — positive means strictly greater than zero
+  (r20/P4-092);
   a tokens-unavailable Devin record with positive provider units
   counts (r16/P4-082); spend-proving usage trumps every vocabulary
   entry — a post-run session-mismatch record with positive usage
@@ -405,6 +409,15 @@ Race-detector unit tests, each named case a distinct test:
   (r8/P4-051); mixed breach-plus-orphan ranking at the cutoff
   (r8/P4-052); breach-distance ranking with unequal floors defeating
   a count-descending comparator (r6/P4-046).
+- Booking integration: a certification in the CURRENT conclusion
+  suppresses the breach in the SAME booking (r20/P4-091); a faulted
+  booking evaluates patience; a heal booking whose drain ran jobs to
+  terminal books their breach — evaluation provably runs on every
+  cycle-booking path (r20/P4-091); a closed breached chain books
+  nothing new at derivation time, independent of prompt filtering
+  (r20/P4-093); certifying a job in chain B resets B and leaves
+  chain A's breach intact — no mission-global witness cutoff
+  (r20/P4-094).
 - Contract: patience.rounds.* validation; sealing in BOTH enumeration
   surfaces with the seal-then-preflight round-trip (r1/P4-015);
   pre-feature contracts verifying unchanged.

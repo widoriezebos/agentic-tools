@@ -69,7 +69,10 @@ progress with per-capability patience punishes only stall.
 2. **Observables.** ONE observable, settled by satellite 4's loop
    (plans/patience-satellite-4.md): a chain round is WITNESSED
    exactly when a concluded turn's durable log certifies its job with
-   verdict accepted and non-empty evidence. Per-activity proxies —
+   verdict accepted and non-empty evidence — witnessed consumption,
+   the orchestrator's accountable decision to consume the round;
+   whether the work was truly valuable stays unjudged here
+   (r20/P4-095). Per-activity proxies —
    schema-valid returns, critique closures, verifier confirmations —
    were rejected with evidence: they are the narrative a drought
    hides behind. Two mechanisms, kept distinct (r9/P4-062): the FUSE
