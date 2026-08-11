@@ -2880,8 +2880,8 @@ GATE
   git -C "$runner_origin" symbolic-ref HEAD "refs/heads/$runner_branch"
   runner_git remote set-head origin -a >/dev/null
 
-  make_runner_contract() { # mission, behavior, cycle fence, optional heading, runtime, model
-    local mission=$1 behavior=$2 cycles=$3 bad_heading=${4:-} runtime=${5:-fake} model=${6:-fake-model}
+  make_runner_contract() { # mission, behavior, cycle fence, optional heading, runtime, model, extra mission keys
+    local mission=$1 behavior=$2 cycles=$3 bad_heading=${4:-} runtime=${5:-fake} model=${6:-fake-model} extra_keys=${7:-}
     local contract="$runner_repo/plans/mission-$1.contract.md" contract_sha
     mkdir -p "$runner_repo/plans"
     cat >"$contract" <<EOF
@@ -2923,7 +2923,8 @@ host.model=$model
 host.turn-cap-min=$fixture_minimum_cap_min
 stream.primary=FAKEHOST:$behavior advance the candidate.
 envelope.dependencies=jq
-exposure=EUR:1
+exposure=EUR:1${extra_keys:+
+$extra_keys}
 \`\`\`
 EOF
     contract_sha=$("$runner_repo/scripts/assert-mission.sh" --seal --file "$contract")
@@ -3045,6 +3046,43 @@ PY
   grep -Fq -- '- Classification: contract-improved;' \
     "$runner_repo/artifacts/agents/missions/runner-cycle/ledger.md" \
     || { echo "full mission cycle did not record runner-measured contract improvement" >&2; exit 1; }
+  # The degenerate case, live (plans/patience-satellite-4.md): a mission
+  # whose contract carries no patience entries books no Patience line.
+  if grep -q 'Patience' "$runner_repo/artifacts/agents/missions/runner-cycle/ledger.md"; then
+    echo "an unconfigured mission booked a Patience line" >&2; exit 1
+  fi
+
+  # Patience floors, live (plans/patience-satellite-4.md): a sealed floor
+  # plus a seeded orphan chain — one mission-stamped, terminal, started,
+  # unwitnessed record whose parent walk breaks — books the floor-independent
+  # orphan report in the same append as the cycle line, and the NEXT prompt's
+  # This Turn carries the projected line. The orphan is deliberately not
+  # closeable, so the runner's end-of-mission chain close never touches it.
+  make_runner_contract runner-patience return-ok 4 '' fake fake-model \
+    'patience.rounds.design-critic.fake.fake-model=1'
+  mkdir -p "$runner_repo/artifacts/agents/jobs"
+  cat >"$runner_repo/artifacts/agents/jobs/pat-lost.json" <<EOF
+{"jobId": "pat-lost", "mission": "runner-patience", "parentJob": "pat-gone",
+ "status": "completed", "role": "design-critic", "runtime": "fake",
+ "effectiveModel": "fake-model", "requestedModel": "fake-model",
+ "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "endedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+  run_runner_expect runner-patience-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-patience
+  wait_runner_status runner-patience 11
+  patience_ledger="$runner_repo/artifacts/agents/missions/runner-patience/ledger.md"
+  grep -Fq -- '- Patience: orphan=pat-lost rounds=1' "$patience_ledger" \
+    || { echo "patience orphan report missing from the ledger" >&2; cat "$patience_ledger" >&2; exit 1; }
+  if grep -q 'Patience' "$runner_repo/artifacts/agents/missions/runner-patience/turns/1/prompt.md"; then
+    echo "the first prompt carried a Patience line before any booking" >&2; exit 1
+  fi
+  grep -Fq 'Patience: orphan job pat-lost has unwitnessed spend' \
+    "$runner_repo/artifacts/agents/missions/runner-patience/turns/2/prompt.md" \
+    || { echo "the second prompt did not project the patience line" >&2; exit 1; }
+  "$runner_repo/scripts/assert-turn-prompt.sh" \
+    --file "$runner_repo/artifacts/agents/missions/runner-patience/turns/2/prompt.md" \
+    --turn "$runner_repo/artifacts/agents/missions/runner-patience/turns/2"
+  rm -f "$runner_repo/artifacts/agents/jobs/pat-lost.json"
+  echo "patience floor fixtures passed"
 
   # Exercise the real mission runner through the Codex host with only the paid
   # model call replaced. Two turns prove first-turn and resumed identity,
