@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11-16
-(plans/dispositions/patience-satellite-4-r{1..16}.md; 82/82
+after rounds 3-8 and 11-17
+(plans/dispositions/patience-satellite-4-r{1..17}.md; 84/84
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -103,14 +103,18 @@ whatever the error is called (r14/P4-078: the same handshake error
 names both a pre-running rejection and a post-run session mismatch
 after usage capture) — or,
 lacking usage, a non-empty effectiveModel AND an error outside the
-NEVER-STARTED vocabulary: abandoned-setup, handshake_timeout,
-launch_failed, and the handshake-mismatch error (HandshakeEval
+NEVER-STARTED vocabulary, named exactly from the shipped writers
+(r17/P4-084): `abandoned-setup`, `handshake_timeout`,
+`launch_failed`, `resume_collision`, `handshake_missing_session_id`,
+and the prefix family `permissions_mismatch:*`
+(internal/dispatch/handshake.go:122-124,
+scripts/agents/adapters/runtime-common.sh:97,106,247). HandshakeEval
 patches effectiveModel before deciding failure, so the model field
-alone cannot prove work — r12/P4-073, r13/P4-076;
-sessionEstablishedSignal plays no part). The never-started vocabulary
-is one table in patience.go, documented against dispatch's error
-writers and enumerated by a verification test, so writer drift fails
-loudly. A pending-cancelled husk
+alone cannot prove work (r12/P4-073, r13/P4-076);
+sessionEstablishedSignal plays no part; spend-proving usage trumps
+every entry (r14/P4-078). The vocabulary is one table in
+patience.go, enumerated by a verification test against those writer
+sites, so writer drift fails loudly. A pending-cancelled husk
 and launch/handshake failures (abandoned-setup, handshake_timeout,
 launch_failed) satisfy none of these and never count: nobody worked,
 so no one's patience is debited. Lawful-nonterminal jobs never
@@ -330,8 +334,11 @@ boundary (clean records only: readable, mission-owned, jobId equal to
 filename stem, known status vocabulary — r10); chain sets via the
 branch-tolerant parent walk; counted set (unwitnessed, terminal,
 provably started over shipped fields — structural for
-completed/timeout, witnessed fields for cancelled/failed,
-r11/P4-072); streak count
+completed/timeout; for cancelled/failed, spend-proving usage first
+(positive tokens, cost, or provider units, availability ignored —
+r15/P4-081, r16/P4-082), else effectiveModel outside the
+never-started vocabulary, r13/P4-076 through r17/P4-084); streak
+count
 against the newest witnessed job (r9/P4-057); streak-scoped
 qualifying-evidence selection over the five-row table (r10/P4-065,
 r10/P4-067); bounded ranked annotations — called from the shared
