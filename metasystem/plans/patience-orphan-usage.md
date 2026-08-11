@@ -1,6 +1,13 @@
 # Patience satellite 3: orphan and usage capture
 
-Owner: main session (claude). Status: DESIGN — awaiting critique round 1.
+Owner: main session (claude). Status: DESIGN — round 1 adjudicated
+(10/10 accepted, `plans/patience-orphan-usage-dispositions-r1.md`),
+awaiting round 2. Round 1 killed the design's spine — implicit
+surfacing over-marked, and the ledger tail never carries annotations to
+a prompt — so the amendment applies the sever pattern proactively: the
+recorded-state machinery (surfacedRounds, orphan ledger lines, scan
+points) is REPLACED by derivation at prompt time. Six of the ten
+findings are resolved by that removal.
 Program: `plans/stop-loss-satellites.md` satellite 3; concepts in
 `docs/patience.md`; ground truth in `docs/design/mission-cycle-sequence.md`
 (NOTE its superseded-sections header — cross-check the shipped satellite 1
@@ -32,46 +39,44 @@ writer per artifact, surviving every kill signal the runtime can receive.
 
 # Design
 
-## O1. Orphanhood is mechanical: the surfaced-rounds set
+## O1. Landed rounds are DERIVED at prompt assembly, never recorded
 
-Mission state gains `surfacedRounds`: a set of (chain root, round) pairs
-whose landing the mission's story has accounted for. A pair enters the
-set exactly two ways:
-- IMPLICITLY: its return.json landed before a turn's prompt assembly —
-  that turn's host had the artifact available (reading it is the host's
-  duty and the prompt names the chain); the conclusion of that turn (any
-  outcome) marks it surfaced.
-- EXPLICITLY: the orphan scan (O2) wrote its ledger line.
-A landed return.json whose pair is not in the set is ORPHANED — a set
-membership test, no prose judgment, idempotent by construction (the set
-makes every scan exactly-once). Rounds are chain-local; the scalar
-high-water marks the parent design once proposed are wrong and are not
-used (parent r2[10]).
+There is no surfaced-rounds state, no orphan ledger line, and no scan.
+At every prompt assembly the runner derives, from the artifacts alone,
+the list of landed delegate rounds belonging to the mission's chains
+whose chain is not closed — (chain root, round, return path), read from
+the shipped round-directory layout — and the prompt gains one section:
+`## Landed Returns`, listing them. The host adjudicates what it has not
+yet adjudicated (its own dispositions are on disk and it knows them);
+a listed round the host already consumed is harmless noise, bounded by
+the chain-close lifecycle (closed chains leave the list). Nothing can
+be permanently mis-marked because nothing is marked: the list is a pure
+function of the tree at assembly time, recomputed every turn, and a
+return that lands one second after assembly appears in the next
+prompt's list. The prompt is archived per turn (prompt.md), so the
+surfacing is durable evidence without a new ledger line kind. The
+turn-prompt validator accepts the new section (a named, fenced records
+section like the others; the strict parsers gain it explicitly).
 
-## O2. One scan, at every exit of a cycle
+## O2. Parks need nothing special
 
-A single scan function runs at every point a cycle's story is written:
-turn conclusion (accepted and faulted — satellite 1's path included) and
-every park (stop-loss, drain-stalled, host-failure, all-streams-parked).
-For each orphaned pair it appends one ledger line —
-`- Orphaned return: chain=<root> round=<n> path=<return.json path>` —
-inside the concluding cycle's block when one is being written, or as a
-standalone annotation before the park otherwise (grammar per the shipped
-annotation rules: never a classification line, tolerated by every
-parser, pinned by the annotation suite). The pair enters `surfacedRounds`
-in the same state write that carries the scan's cycle. The next turn's
-prior context already carries the ledger tail, so the resurrection or
-successor turn starts from the orphan lines without new prompt
-machinery. The drain-stalled park (satellite 2) is one of the park
-scan points: a stalled turn's landed returns are surfaced before the
-mission sleeps.
+A park orphans nothing anymore: whatever landed is derived into the
+next assembled prompt whenever the mission resumes — including after
+a drain-stalled park (satellite 2), whose stalled turn's landed
+returns appear in the first post-resume prompt. There is no scan, no
+crash window, no exactly-once bookkeeping, and no migration: an old
+mission's landed rounds simply appear in its next prompt's list, which
+is correct behavior, not spam — the list states what exists, not what
+was missed.
 
 ## O3. Usage: one writer, and a derivation path that survives SIGKILL
 
-- The adapter owns its round directory's usage.json, written atomically;
-  on a graceful termination (TERM from a cap or reap) its existing
-  cleanup writes what the runtime reported before death. Reapers never
-  write usage. Unchanged, restated as the invariant it is.
+- The adapter owns its round directory's usage.json, written
+  atomically, and reapers never write usage. NO graceful-termination
+  cleanup is assumed: a cap or reap TERMs the whole process group,
+  adapter included, and today's adapters write nothing on that path —
+  so derivation (below) is the PRIMARY recovery for every kill, not a
+  SIGKILL corner case.
 - Under an uncatchable kill the adapter writes nothing — recovery is
   DERIVATION, not a second writer: where the runtime leaves an on-disk
   event stream in the round directory (the codex JSONL event file
@@ -87,61 +92,60 @@ mission sleeps.
 
 Fence usage aggregation runs over ALL of a mission's round directories
 — every job, every round, terminal or not — at every point it runs
-today PLUS at every O2 scan point, so a round that lands late (the
-bm-2s second critic round) is aggregated by the cycle that surfaces it
-rather than never. Aggregation stays read-only over round artifacts;
-its output stays the single mission-state usage projection it is today.
+today PLUS once in each park path, under the same mission-fence lock
+and ordering the conclude-time aggregation already uses (one added
+call site per park proposal application, not a new locking regime). A
+round that lands after the final aggregation of a parked mission is
+aggregated by the first aggregation after resume. Aggregation stays
+read-only over round artifacts; its output stays the single
+mission-state usage projection it is today.
 
 # Invariants
 
-1. Every landed return.json is eventually either implicitly surfaced or
-   carries exactly one orphan ledger line; no third fate exists.
-2. `surfacedRounds` only grows, and each pair's ledger line is written
-   at most once (set membership guards the append).
-3. usage.json has exactly one writer (the adapter); derived usage is
-   never written back; provenance always distinguishes reported,
-   derived, and unavailable.
-4. Fence aggregation is a pure read over round artifacts; running it
-   twice at any point yields the same projection.
-5. Orphan lines and usage derivation never change a stop-loss verdict
-   (annotations and aggregation are not fuse inputs — the shipped
-   replay invariant extends over the new line kind).
+1. Every landed return of an unclosed chain appears in every
+   subsequently assembled prompt's Landed Returns section until its
+   chain closes; the list is a pure function of the tree at assembly.
+2. usage.json has exactly one writer (the adapter); derived usage is
+   never written back; the aggregation provenance always distinguishes
+   reported, derived, and unavailable per round.
+3. The mission-state usage projection's shape and consumers are
+   unchanged; aggregation is a pure read, idempotent at every call
+   site.
+4. Neither the Landed Returns section nor aggregation timing ever
+   changes a stop-loss verdict.
 
 # Failure behavior
 
-- Scan crash after the ledger append, before the state write: the pair
-  is not yet in the set; the next scan re-tests and — finding the line
-  already present for that pair (the append is guarded by a read of the
-  cycle block, not blind) — adds the pair to the set without a second
-  line. Stated as the one crash window and pinned by a test.
+- Derivation of the landed list fails for one chain (unreadable dir):
+  the section names the chain as unreadable rather than omitting it —
+  losing it silently is the failure mode this satellite closes.
 - Event-stream derivation fails (unparseable, truncated): that round
-  aggregates as unavailable with the parse failure recorded in the
-  aggregation provenance; never a hard failure of the cycle.
-- A return.json that is unreadable JSON is still a LANDED artifact: it
-  is surfaced with its orphan line noting unreadability — losing it
-  silently is the failure mode this satellite exists to close.
+  aggregates as unavailable with the failure in the aggregation
+  provenance; never a hard failure of the cycle.
+- An unreadable return.json still lists (it landed); the host decides
+  what to do with a corrupt artifact.
 
 # Tests
 
-- O1: implicit surfacing at each turn outcome; explicit surfacing at
-  each park kind including drain-stalled; chain-local rounds (two
-  chains, same round numbers) never collide; set-guarded exactly-once
-  lines across repeated scans and the crash window.
-- O2: the orphan line parses everywhere (extend the pinned annotation
-  suite); the ledger-tail prompt carries it to the next turn.
-- O3: adapter-written usage wins when present; codex event-stream
-  derivation matches the adapter's own parse of the same file;
-  provenance marks derived and unavailable; SIGKILL fixture (kill -9
-  a stub runtime, derive from its stream).
-- O4: a late-landing round aggregates at the surfacing scan; running
-  aggregation twice is identical; state usage covers every round of
-  the bm-2s-shaped two-round fixture.
-- Invariant 5: replay verdicts unchanged by orphan lines and by
-  aggregation timing (extend the stop-loss annotation test).
+- O1: the derived list across turn outcomes, chain closure, follow-up
+  chains, two chains with equal round numbers, and a return landing
+  between two assemblies; the prompt section parses (extend the
+  turn-prompt validator tests); an old mission's first post-upgrade
+  prompt lists its landed rounds.
+- O2: post-drain-stalled resume lists the stalled turn's returns.
+- O3: adapter-written usage wins; codex event-stream derivation matches
+  the adapter's own parse; TERM'd-group fixture (no usage.json) derives;
+  no-stream runtime aggregates unavailable; provenance detail complete.
+- O4: park-path aggregation under the fence lock; double aggregation
+  identical; the bm-2s-shaped two-round fixture reaches the projection.
+- Invariant 4: replay verdicts unchanged (extend the stop-loss
+  annotation test to the new section and aggregation timing).
 
 # Migration
 
-One state field (`surfacedRounds`, optional in the shape validator until
-fixtures migrate; absent means empty), one annotation line kind, one
-provenance field on the aggregated usage projection. No schema changes
-to returns, no adapter protocol changes, no new writers.
+No state fields, no ledger line kinds, no return-schema changes. One
+prompt section (validator extended; hosts see a new named section,
+documented in the orchestrator preamble), one aggregation call site per
+park path, one provenance detail in the aggregation output. Old
+missions need nothing: their landed rounds derive into their next
+prompt like anyone else's.
