@@ -3,6 +3,8 @@
 The metasystem's working vocabulary. Each term names a mechanism, not a
 metaphor: the definition here is what the code enforces, and the named
 scripts are where to look when a definition and reality seem to disagree.
+How these concepts compose into one system — the philosophy and the
+working model — is `docs/concepts.md`.
 
 NAMESPACING RULE (2026-08-09): the metasystem builds OTHER systems, and a
 project may legitimately own the same generic nouns — a task runner has
