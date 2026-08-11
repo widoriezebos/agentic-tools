@@ -3,19 +3,20 @@
 Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
-Regenerated whole after rounds 1, 2, and 9; amended in place after
-rounds 3-8 (plans/dispositions/patience-satellite-4-r{1..9}.md; 62/62
-accepted; convergence 15 → 13 → 4 → 4 → 4 → 6 → 4 → 5 → 7). Parent
-ruling, inherited and not re-litigated: stop-loss is a last defense,
-never a pacing target, recursively. Vocabulary per docs/patience.md
-and docs/glossary.md: progress is mechanically proven value; patience
-is tolerated observation without progress; slower progress is still
-progress.
+Regenerated whole after rounds 1, 2, 9, and 10; amended in place
+after rounds 3-8 (plans/dispositions/patience-satellite-4-r{1..10}.md;
+68/68 accepted). Round 10 named the loop's generating cause — the
+damage-tolerance rule surface — and superseded it: patience evaluates
+clean evidence only; damaged records belong to the jurisdictions that
+already voice them. Parent ruling, inherited and not re-litigated:
+stop-loss is a last defense, never a pacing target, recursively.
+Vocabulary per docs/patience.md and docs/glossary.md.
 
 Facts: plans/patience-satellite-4-facts.md (cited as F Qn.m). Sheet
 corrections on the record: local config is NOT cap-only (r1/P4-006);
 the dispatch transition map is not the terminal-status authority
-(r2/P4-022).
+(r2/P4-022); certification evidence is a string, not an array
+(r10/P4-063).
 
 ## The gap this satellite closes
 
@@ -32,14 +33,14 @@ patience floors measure.
 
 **A chain round is WITNESSED exactly when a concluded turn's durable
 log certifies that round's job, by jobId, with verdict `accepted` and
-a NON-EMPTY evidence array (F Q3.22, F Q3.13, r9/P4-056).** The
-design claims no more than this is: the orchestrator's durable,
-accountable decision to consume the round. Patience bounds
-UNWITNESSED SPEND — rounds paid for that no concluded turn has stood
-behind. Whether certified work was truly valuable is the grader's and
-a future certification-hygiene satellite's business (r2/P4-024);
-patience never adjudicates certification content, only its existence,
-verdict, evidence non-emptiness, and join.
+a non-empty trimmed evidence STRING (F Q3.22, F Q3.13, r9/P4-056,
+r10/P4-063).** The design claims no more than this is: the
+orchestrator's durable, accountable decision to consume the round.
+Patience bounds UNWITNESSED SPEND — rounds paid for that no concluded
+turn has stood behind. Whether certified work was truly valuable is
+the grader's and a future certification-hygiene satellite's business
+(r2/P4-024); patience never adjudicates certification content, only
+its existence, verdict, evidence non-emptiness, and join.
 
 Nothing else counts:
 
@@ -59,65 +60,58 @@ Nothing else counts:
 only when its jobId resolves inside the mission's own job set (the
 missionJobs ownership authority: mission stamp plus fence
 reservation), the job is a member of the chain under evaluation, the
-verdict is `accepted`, and the evidence array is non-empty. Foreign
-or nonexistent jobIds are ignored.
+verdict is `accepted`, and the evidence string is non-empty after
+trimming. Foreign or nonexistent jobIds are ignored.
 
-## The count — the current drought, not lifetime debt
+## Clean evidence only (r10, superseding the damage surface)
 
-**Patience count = the number of counted jobs strictly newer, in the
-total job order, than the chain's newest witnessed job; when no job
-is witnessed, all counted jobs (r9/P4-057).** Every certification
-resets the streak, so steady alternating progress never breaches —
-slower progress is still progress, enforced by arithmetic. Older
+Patience double-covered damage for seven rounds and the loop kept
+finding the seams. Superseded (r10 dispositions, with reasons):
+patience now evaluates ONLY clean records. A record PARTICIPATES when
+it is readable, mission-owned (missionJobs authority), identity-sound
+(jobId valid under the job-id grammar AND equal to the filename stem,
+r5/P4-039), and its status is in a KNOWN vocabulary — terminal
+(missionrunner.TerminalJobStatuses, cancelled included, r2/P4-022) or
+lawful-nonterminal (pending-setup, pending, running). Everything else
+— unreadable bytes, unknown or missing statuses, identity mismatches,
+unattributable records — is OUTSIDE patience, owned by the janitor,
+watchdog, and usage jurisdictions whose vocal channels already report
+damage. Patience's remedies (certify-by-jobId, close-by-chain) cannot
+act on damaged records anyway; a nag without a possible act is noise.
+
+**A COUNTED job is a participating job that is unwitnessed, terminal,
+and provably STARTED (r9/P4-058, r10/P4-066):** its record carries a
+post-setup transition — handshake success or a running phase — for
+EVERY terminal status, cancelled included: a pending-cancelled husk
+never counts, and launch/handshake failures (abandoned-setup,
+handshake_timeout, launch_failed) never count. Nobody worked, so no
+one's patience is debited. Lawful-nonterminal jobs never count — that
+work is in flight.
+
+**The chain set and order.** Records reachable from the root by the
+parentJob walk, branch-tolerant (r3/P4-029); a participating record
+whose parent walk cannot join a chain forms a single-round ORPHAN
+chain keyed by its own jobId. **Total order (r4/P4-034, r5/P4-038):**
+(endedAt, startedAt, jobId) descending; RFC3339 parsing, missing and
+unparseable timestamps sort oldest in one bucket, ties fall through,
+jobId final tiebreak. (With only clean records participating, damaged
+timestamps are rare; the rule remains for totality.)
+
+**The count = the current drought (r9/P4-057).** The number of
+counted jobs strictly newer, in the total order, than the chain's
+newest witnessed job; with no witnessed job, all counted jobs. Every
+certification resets the streak — steady alternating progress never
+breaches; slower progress is still progress, by arithmetic. Older
 unwitnessed spend behind the newest witness stops counting toward
-patience; it remains the Landed Returns section's nagging
-jurisdiction.
+patience and remains the Landed Returns section's nagging
+jurisdiction. Faults cannot launder rounds (r1/P4-008): a round run
+under a rejected-envelope turn still counts until witnessed; round
+numbers play no part (r2/P4-023).
 
-**The chain set.** Records reachable from the root by the parentJob
-walk, branch-tolerant: sibling follow-ups belong to the set and one
-annotation per root stays well-defined (r3/P4-029). **The total job
-order (r4/P4-034, r5/P4-038):** (endedAt, startedAt, jobId)
-descending; timestamps parse as RFC3339, missing and unparseable
-values sort oldest in one bucket, ties fall through to the next key,
-jobId the final lexicographic tiebreak.
-
-**A COUNTED job must have been real work (r9/P4-058).** Patience is
-doctrine about who actually worked, and nobody worked in a setup
-husk. A job counts when it is unwitnessed AND its record shows the
-delegate started: terminal status completed, timeout, or cancelled
-(missionrunner.TerminalJobStatuses, which includes cancelled —
-r2/P4-022 — so cancellation cannot launder a STARTED round), or
-failed with a recorded post-setup transition (handshake success or a
-running phase). Pending-setup husks and launch/handshake failures
-(abandoned-setup, handshake_timeout, launch_failed) are
-dispatch-infrastructure noise with their own vocal channels — job
-records, the watchdog — and leave the patience count entirely; this
-supersedes the round-6 husk rows. The status rule stays three-way
-(r3/P4-031, r6/P4-043): lawful nonterminal statuses (pending-setup,
-pending, running) never count — that work is in flight; a status
-missing or outside both vocabularies is damaged and counts IF the
-record shows started work, fail-toward-vocal (fences act on money, so
-losing sight must never finish a job; patience only speaks, so losing
-sight must never hide a drought). Faults cannot launder rounds
-(r1/P4-008): a round run under a rejected-envelope turn still counts
-until witnessed; certifications join by jobId and round numbers play
-no part (r2/P4-023).
-
-**Evidence damage (r1/P4-009, r2/P4-020, r2/P4-021, r4/P4-035,
-r5/P4-039).** The input set is the mission's own jobs whose recorded
-jobId is valid under the job-id grammar AND equals the record's
-filename stem — the on-disk identity certification resolution and
-dispatch close actually address. Everything else (unreadable,
-unattributable, identity-less, identity-mismatched) is outside
-patience, in the janitor and usage jurisdictions: patience's remedies
-are certify-by-jobId and close-by-chain, and neither can touch an
-identity-less record. Within the input set, a record whose parent
-walk cannot join a chain forms a single-round ORPHAN chain keyed by
-its own jobId. **Orphans are floor-independent damage reports
-(r7/P4-049):** a one-job chain can never exceed a positive floor, so
-an unwitnessed STARTED orphan books its vocal line at every booking —
-its broken lineage is itself the anomaly worth hearing about. Every
-counted identifier is grammar-safe by construction.
+**Orphans are floor-independent damage reports (r7/P4-049):** their
+records are clean, only their ancestry is broken. A one-job chain can
+never exceed a positive floor, so an unwitnessed started orphan books
+its vocal line at every booking in a patience-configured mission.
 
 ## Floors: sealed mission-contract entries, nowhere else
 
@@ -138,45 +132,44 @@ seal-then-preflight round-trip test (r1/P4-015, F Q2.22).
 
 **Patience runs only where it is configured (r9/P4-059).** The whole
 evaluation — floor breaches AND orphan reports — runs only when the
-sealed contract carries at least one patience entry. An unconfigured
-mission's turn artifacts are byte-identical to today's structurally,
-not by promise. Pre-feature contracts verify unchanged under a new
-binary (no entries, none expected); the reverse direction is
-unsupported by declaration (r2/P4-026): a pre-feature binary refuses
-a patience-bearing contract through the existing unknown-key
-preflight rule — loud refusal, never silent misbehavior. No conf
-keys, no local keys, no environment override, no per-dispatch flag.
-Non-mission chains have no runner evaluating them; the human at the
-keyboard is their patience. Benchmark numbers ride kits and contracts
-by construction (the 2026-08-11 boundary ruling).
+sealed contract carries at least one patience entry; the unconfigured
+case is byte-identical structurally. Pre-feature contracts verify
+unchanged under a new binary; the reverse direction is unsupported by
+declaration (r2/P4-026): a pre-feature binary refuses a
+patience-bearing contract through the existing unknown-key preflight
+rule — loud refusal, never silent misbehavior. No conf keys, no local
+keys, no environment override, no per-dispatch flag. Non-mission
+chains have no runner evaluating them; the human at the keyboard is
+their patience. Benchmark numbers ride kits and contracts by
+construction (the 2026-08-11 boundary ruling).
 
 **Floor selection (r2/P4-014, r2/P4-018, r2/P4-019, r3/P4-030,
-r6/P4-041, r8/P4-054, r9/P4-060).** Matched on (role, runtime,
-canonical model) — effective-model evidence, never the requested
-model alone: patience is doctrine about who actually worked. MODEL
-EVIDENCE means a value canonicalizing to a canonical model key FOR
-THE RECORD'S RUNTIME (the cap-key test, F Q2.8); shipped sentinels
-(`unobserved`, `multi-model:<names>`) are NOT model evidence, in
-the table's own conditions, not only prose (r6/P4-041, r7/P4-048). **A QUALIFYING evidence record carries model evidence
-AND a valid role AND a valid runtime, all on that one record
-(r8/P4-054, r9/P4-060)** — the whole triple comes from one record,
-no cross-record chimeras, and the newest qualifying record is used
-before any fall-through. Floor selection applies to well-formed
-chains only; orphans bypass floors (r7/P4-049). The table quantifies
-over COUNTED jobs (r7/P4-050). Rows in order, first applicable wins (r4/P4-033):
+r6/P4-041, r8/P4-054, r9/P4-060, r10/P4-065, r10/P4-067).** Matched
+on (role, runtime, canonical model) — effective-model evidence, never
+the requested model alone: patience is doctrine about who actually
+worked. MODEL EVIDENCE means a value canonicalizing to a canonical
+model key FOR THE RECORD'S RUNTIME (the cap-key test, F Q2.8);
+shipped sentinels (`unobserved`, `multi-model:<names>`) are NOT model
+evidence (r6/P4-041, r7/P4-048). **A QUALIFYING evidence record
+carries model evidence AND a valid role AND a valid runtime, all on
+that one record** — one record, one triple, no cross-record chimeras
+(r8/P4-054); the newest qualifying record wins (r9/P4-060). Selection
+quantifies over the STREAK set only — the counted jobs newer than the
+newest witness — never pre-witness history (r10/P4-065). Orphans
+bypass floors (r7/P4-049). Rows in order, first applicable wins
+(r4/P4-033):
 
 | row | condition | floor |
 | --- | --- | --- |
-| 1 | some counted job qualifies as an evidence record: take the NEWEST; an exact (role, runtime, model) entry exists | that entry |
+| 1 | some streak job qualifies as an evidence record: take the NEWEST | the exact (role, runtime, model) entry, if present |
 | 2 | same evidence; no entry for that triple | infinite — configured-nothing |
-| 3 | no counted job qualifies; the chain root has valid role and runtime and its requestedModel IS model evidence; an exact entry exists | that entry |
+| 3 | no streak job qualifies; the chain root has valid role and runtime and its requestedModel IS model evidence | the exact entry, if present |
 | 4 | same as row 3; no entry for that triple | infinite — configured-nothing |
-| 5 | neither source qualifies; the newest counted job with a valid runtime yields one, the root (else that job) a valid role; any (role, runtime, *) entries exist | the SMALLEST such floor — damage must never widen patience |
-| 6 | same as row 5; no (role, runtime, *) entries | infinite |
+| 5 | neither source qualifies | infinite — with clean-evidence participation this means the streak carries no model identity at all, and configured-nothing is the honest verdict; the spend is still visible through Landed Returns and the usage ledger |
 
-Setup husks no longer reach selection at all (r9/P4-058 superseding
-the round-6 husk rows of r6/P4-042): a chain whose only records are husks has no
-counted jobs and no patience count.
+The round-6 husk rows and the round-8 damage-fallback rows are
+deleted with the damage surface (r10 dispositions): a chain whose
+only records are husks has no counted jobs and no patience count.
 
 **Threshold (r1/P4-011).** A floor of F tolerates exactly F
 unwitnessed counted jobs silently; the breach books when the count
@@ -198,15 +191,16 @@ certifications reset streaks before anything is written), and its
 annotations ride the SAME AppendCycle call as the cycle line
 (F Q1.16, the faulted-path pattern F Q4.10).
 
-**The crash and race contract (r2/P4-016, r2/P4-025).** The
-pre-append read is the linearization point: booked counts are
-counts-as-read. Two accepted windows, both one-booking lag in a
-non-acting audit surface: a crash between AppendCycle and the state
-write can leave one cycle's vocal line stale against the healed log,
-and a reaper transition landing mid-write books one evaluation late.
-A final booking cannot strand a stale line anywhere that matters — a
-completed mission needs no nag; a parked mission's ask is the vocal
-surface. No retry loop around the flocked append.
+**The crash and race contract (r2/P4-016, r2/P4-025, r10/P4-068).**
+The pre-append read is the linearization point: booked counts are
+counts-as-read. Accepted one-booking-lag windows in a non-acting
+audit surface: a crash between AppendCycle and the state write can
+leave one cycle's vocal line stale against the healed log; a reaper
+transition landing mid-write books one evaluation late; and the
+overflow line's count can go stale against chains closed after
+booking. A final booking cannot strand a stale line anywhere that
+matters — a completed mission needs no nag; a parked mission's ask is
+the vocal surface. No retry loop around the flocked append.
 
 **Grammar — write AND read (r1/P4-013, r2/P4-028, r5/P4-037,
 r7/P4-049).** Three annotation forms in BOTH annotationWriteRe and
@@ -227,24 +221,25 @@ breaches (distance zero), root ascending. Annotations remain audit
 trail, never fuse input; the replay invariant (F Q1.4, F Q4.18) is
 untouched.
 
-**Vocal to whom (r1/P4-005, r2/P4-017, r9/P4-061).** Two surfaces,
-one durable source. The ledger annotation is the human audit trail.
-The orchestrator sees breaches in its NEXT prompt: at assembly time
-the runner projects the final cycle block's Patience annotations
-(readable because the read grammar round-trips) into `## This Turn`
-lines — runner-authored free text, validator-neutral — FILTERED
-against current chain-closed flags: a line whose chain root is now
-closed is dropped from projection (park-then-close cannot strand a
-stale warning; the ledger keeps its history; the prompt stays a pure
-function of ledger plus chain-closed flags). Wording per kind
-(r4/P4-036): `Patience: chain <root> has <n> unwitnessed rounds
-(floor <m>) — certify landed value or close the chain.`; `Patience:
-orphan job <id> has unwitnessed spend — certify landed value or flag
-it to the human.` (no close offer: dispatch close cannot resolve a
-broken lineage and this design refuses dispatch changes); overflow:
-`Patience: <count> more chains need attention (see ledger).`
-(r3/P4-032, r8/P4-051). The ask-candidate route stays dropped
-(F Q3.13).
+**Vocal to whom (r1/P4-005, r2/P4-017, r9/P4-061, r10/P4-068).** Two
+surfaces, one durable source. The ledger annotation is the human
+audit trail. The orchestrator sees breaches in its NEXT prompt: at
+assembly time the runner projects the final cycle block's Patience
+annotations (readable because the read grammar round-trips) into
+`## This Turn` lines — runner-authored free text, validator-neutral —
+FILTERED against current chain-closed flags for DETAIL lines (their
+identities are in the durable bytes; a closed chain's line is dropped
+from projection, so park-then-close cannot strand a stale warning).
+The overflow line is exempt from the filter by design: it names no
+chains, only a count pointing at the ledger, and its staleness joins
+the crash-contract lags. Wording per kind (r4/P4-036): `Patience:
+chain <root> has <n> unwitnessed rounds (floor <m>) — certify landed
+value or close the chain.`; `Patience: orphan job <id> has
+unwitnessed spend — certify landed value or flag it to the human.`
+(no close offer: dispatch close cannot resolve a broken lineage and
+this design refuses dispatch changes); `Patience: <count> more chains
+need attention (see ledger).` (r3/P4-032, r8/P4-051). The
+ask-candidate route stays dropped (F Q3.13).
 
 **What expiry does not do.** Floors never kill, never park, never
 feed the breaker (F Q5.2), never write fuse-visible lines. The fuses
@@ -259,59 +254,60 @@ acting is a future human ruling taken with trial evidence.
 - No change to fuse semantics or ledgerSemantics versions (F Q1.7),
   the breaker (F Q5.2), drain (F Q5.19, F Q5.20), adapters, hosts, or
   dispatch.
+- No damage coverage: damaged records belong to the janitor,
+  watchdog, and usage jurisdictions (r10, superseding r3/P4-031's
+  fail-toward-vocal rule with reasons on the r10 record).
 - No critique-closure machinery; no return revalidation (r2/P4-010
-  dissolved with r1/P4-001: no schema is ever consulted).
+  dissolved with r1/P4-001).
 - No certification-content adjudication (r2/P4-024, r9/P4-056):
-  patience checks existence, verdict, non-empty evidence, and join —
-  never whether the evidence is good. Certification hygiene is a
-  candidate future satellite.
-- Deferred unless trial evidence demands: loop-advanced credits; a
-  witnessed certification of a closed critique round already lands
-  through the one observable.
+  existence, verdict, non-empty evidence, join — never quality.
+  Certification hygiene is a candidate future satellite.
+- Deferred unless trial evidence demands: loop-advanced credits.
 
 ## Implementation sketch
 
-internal/mission/ledger.go: all THREE Patience forms (chain, orphan,
-overflow) in annotationWriteRe AND the read-side grammar (r6/P4-044).
+internal/mission/ledger.go: all THREE Patience forms in
+annotationWriteRe AND the read-side grammar (r6/P4-044).
 internal/mission/contract.go: `patience.` allow-list prefix; entry
-validation (identifier grammar, canonical model key, positive
-integer); sealing in expectedSeal AND the ordered emitter with the
+validation; sealing in expectedSeal AND the ordered emitter with the
 round-trip test (r1/P4-015). New internal/missionrunner/patience.go:
-the pure derivation — configured gate (r9/P4-059); mission job set
-bounded to valid jobId EQUAL to filename stem (r5/P4-039, r6/P4-045);
-chain sets via the branch-tolerant parent walk; started-work counted
-set (r9/P4-058); streak count against the newest witnessed job
-(r9/P4-057); qualifying-evidence-record selection over the six-row
-table (r9/P4-060); bounded ranked annotations — called from the
-shared cycle-booking path so ordinary, faulted, and heal conclusions
-all pass through it. internal/mission/prompt.go: This Turn assembly
-projects the final cycle's Patience annotations filtered by
-chain-closed flags (r9/P4-061). No dispatch, adapter, or host
-changes.
+the pure derivation — configured gate (r9/P4-059); participation
+boundary (clean records only: readable, mission-owned, jobId equal to
+filename stem, known status vocabulary — r10); chain sets via the
+branch-tolerant parent walk; counted set (unwitnessed, terminal,
+provably started — uniform for cancelled, r10/P4-066); streak count
+against the newest witnessed job (r9/P4-057); streak-scoped
+qualifying-evidence selection over the five-row table (r10/P4-065,
+r10/P4-067); bounded ranked annotations — called from the shared
+cycle-booking path. internal/mission/prompt.go: This Turn assembly
+projects the final cycle's Patience annotations, detail lines
+filtered by chain-closed flags, overflow exempt (r9/P4-061,
+r10/P4-068). No dispatch, adapter, or host changes.
 
 ## Verification
 
-Race-detector unit tests: streak counting (certification resets the
-streak — alternating witness/barren never breaches, r9/P4-057; no
-witness counts all counted jobs; late certification of the newest
-spend heals; rejected and EMPTY-EVIDENCE certifications ignored,
-r9/P4-056; cancelled started-rounds count while setup husks and
-handshake failures do not, r9/P4-058; lawful nonterminal statuses
-never count while damaged-status started records do; duplicate round
-numbers harmless; foreign-jobId certifications ignored; jobId-vs-
-filename mismatches excluded; orphans isolate and emit despite
-positive floors in configured missions only, r8/P4-052, r9/P4-059;
-sibling ordering deterministic over damaged timestamps; threshold
-strictly-exceeds; 19+1 overflow counting breaches AND orphans,
+Race-detector unit tests: participation boundary (damaged statuses,
+identity mismatches, and unreadable records EXCLUDED — jurisdiction,
+not tolerance, r10; husks and pending-cancelled never count,
+r10/P4-066); streak counting (certification resets — alternating
+witness/barren never breaches, r9/P4-057; no witness counts all
+counted jobs; rejected and empty-evidence certifications ignored with
+evidence as a STRING, r10/P4-063; cancelled started-rounds count;
+foreign-jobId certifications ignored; orphans isolate and emit
+despite positive floors in configured missions only, r8/P4-052,
+r9/P4-059; ordering deterministic; threshold strictly-exceeds); the
+five-row selection table (sentinel models excluded; invalid-role/
+runtime records not qualifying, r9/P4-060; streak-scoped
+quantification — pre-witness history selects nothing, r10/P4-065);
+bound and ranking (19+1 overflow counting breaches AND orphans,
 r8/P4-051; mixed ranking at the cutoff, r8/P4-052; breach-distance
 ranking with unequal floors defeating a count-descending comparator,
-r6/P4-046; the six-row table with sentinel models, damaged-status
-jobs driving rows one and two, r8/P4-053, and invalid-role/runtime
-records not qualifying, r9/P4-060); contract validation and the seal
-round-trip; ledger write→parse round-trip of all THREE forms; prompt
-projection from a ledger fixture including the chain-closed filter
-(r9/P4-061). Mission fixtures: a breached chain books the annotation
-and the NEXT prompt carries the line; an UNCONFIGURED mission's turn
-artifacts are byte-identical to today's including in the presence of
-orphans (r9/P4-059); a heal booking with no new counted jobs advances
-nothing. Suite green via the standing launch recipe.
+r6/P4-046); contract validation and the seal round-trip; ledger
+write→parse round-trip of all THREE forms; prompt projection from a
+ledger fixture including the chain-closed detail filter and the
+exempt overflow (r9/P4-061, r10/P4-068). Mission fixtures: a breached
+chain books the annotation and the NEXT prompt carries the line; an
+UNCONFIGURED mission's turn artifacts are byte-identical to today's
+including in the presence of orphans (r9/P4-059); a heal booking with
+no new counted jobs advances nothing. Suite green via the standing
+launch recipe.
