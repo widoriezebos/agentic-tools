@@ -1,8 +1,12 @@
 # Patience satellite 3: orphan and usage capture
 
-Owner: main session (claude). Status: DESIGN — rounds 1-3 adjudicated
-(10, 5, 7, 6 material, all accepted; dispositions r1-r4 beside this
-plan), awaiting round 5 (final convergence check). Grounded on the verified fact sheet
+Owner: main session (claude). Status: ACCEPTED FOR IMPLEMENTATION —
+rounds 1-5 adjudicated (10, 5, 7, 6, 4 material, all accepted;
+dispositions r1-r5 beside this plan). round 5's four findings were exact
+wiring corrections (no ledger annotation on the unsafe failure ramp; the
+unconsumed line is a named new annotation kind; a missing pgid can never
+prove the writer dead; the row limit stated once) — the
+diminishing-returns stop. Grounded on the verified fact sheet
 (`plans/patience-orphan-usage-facts.md`, cited F Qn.m) per the
 facts-before-design rule; this revision was regenerated whole after two
 piecemeal edits drifted (the skill's generating-cause rule applied to
@@ -63,23 +67,36 @@ certified keeps its row until the host certifies or supersedes it.
 Gaming is self-harm only: a false certification filters the host's own
 reminder list and never touches a fuse.
 
-Row bound and order (POU-R4-003): rows sort by (chain root, then
-round), both ascending — deterministic under any tree. At most one row
-per chain (the latest qualifying round). The section carries at most
-20 rows total: when more than 20 chains qualify, rows 1-19 are the
-first nineteen in sort order and row 20 is the overflow summary
-(`overflow  <count-of-remaining>  none`).
+Row bound and order (POU-R4-003, POU-R5-004): rows sort by (chain root,
+then round), both ascending — deterministic under any tree. At most one
+row per chain (the latest qualifying round). The limit is stated once,
+unambiguously: when 20 or fewer chains qualify, every qualifying row is
+emitted; when MORE than 20 qualify, exactly 19 data rows (the first 19
+in sort order) plus one final `overflow  <count-of-remaining>  none`
+row are emitted, 20 lines total. There is no other reading.
 
-TERMINAL DELIVERY (POU-R4-001): completion and runner-failure
-finalization produce no next prompt, so the landed list's "next
-assembly carries it" premise fails exactly there. At the completion
-conclude and on the failure ramp, the same derived list (same cap and
-order) is appended as annotation lines in the final cycle's ledger
-block — `- Landed unconsumed: chain=<root> round=<n> path=<...>` —
-using the shipped annotation grammar (audit trail, never fuse input).
-The final ledger is what a human or grader reads after a terminal
-mission; the unconsumed value is named there instead of vanishing with
-the last prompt.
+TERMINAL DELIVERY (POU-R4-001, POU-R5-001, POU-R5-002): a mission that
+completes or that the runner FAILS after initialization produces no
+next prompt, so the list must land where a terminal mission is read —
+the ledger. Delivery is therefore gated on the ledger being SAFELY
+WRITABLE, which is exactly and only true after a cycle has concluded:
+at the COMPLETION conclude (a ledger block for the final cycle exists),
+the derived list is appended to that block as `- Landed unconsumed:`
+lines. On the FAILURE ramp there is NO safe total position — the ramp
+fires for lease-acquisition failure (no mission owned), pre-cycle
+init/resume errors (no cycle block, possibly a foreign or half-written
+ledger), and mid-run errors alike — so terminal delivery does NOT run
+there; the failure ramp does only what round 4 correctly required of
+it (the O4 usage aggregation, which is idempotent and needs no ledger
+block) and nothing more. An interrupted mission's landed returns are
+recovered on RESUME (its next assembled prompt lists them) or, if never
+resumed, remain in the tree for a human — not lost, merely not
+annotated into a ledger the runner cannot safely touch. Grammar
+(POU-R5-002): `- Landed unconsumed:` is a NEW cycle-block annotation
+line kind added alongside the shipped `- Drain: stalled:` and
+`- Return:`/`- Outcome:` annotations (satellites 1-2) — the annotation
+suite and every cycle-block parser gain it explicitly in the same
+change; it is never a classification line and never a fuse input.
 
 ## O2. Delivery is a validated seventh prompt section
 
@@ -115,10 +132,15 @@ first post-resume assembly carries the list.
   (the shipped group probe; a permission denial proves existence and
   BLOCKS derivation) AND every recorded custodian is dead by the
   shared kernel custodian proof (internal/identity/custodian.go — the
-  one owner both reapers already use). Vintage rule: a record with no
-  recorded pgid derives only when its custodians are recorded and all
-  provably dead; a record with neither recorded aggregates
-  `unavailable` — honesty over optimism. Then `events.jsonl` (F Q3.1)
+  one owner both reapers already use). Vintage rule, corrected
+  (POU-R5-003): a missing pgid does NOT license derivation from
+  custodian death alone — the custodian set may not include the process
+  that writes events.jsonl, so proving those custodians dead does not
+  prove the writer dead. Derivation requires a recorded pgid that
+  probes ESRCH; a record with NO recorded pgid can never satisfy the
+  whole-group gate and always aggregates `unavailable` (its usage is
+  unrecoverable by proof — honesty over optimism). Then `events.jsonl`
+  (F Q3.1)
   has no writer, the two-reads race (F Q3.10) cannot occur, and the
   shipped tolerant JSONL parse (F Q3.6) plus the `CodexUsage`
   last-usage-block rule (F Q3.7) derive the usage in memory. Never
@@ -199,15 +221,20 @@ existing usage.json into state (F Q2.11, Q4.4). The fix:
   aggregation provenance; never a hard failure.
 - Aggregation failure at any added call → flight-recorder event, older
   projection stands, next successful call catches up.
-- Group death unprovable → `pending-death-proof`, retried every pass.
+- Group death unprovable but a pgid IS recorded (still alive/EPERM) →
+  `pending-death-proof`, retried every pass; NO recorded pgid →
+  `unavailable` permanently (unprovable by design).
 
 # Tests
 
 - O1: qualification matrix (validates / invalid / unreadable; certified
   vs uncertified; successor dispatched vs none; runner-closed chain
   with uncertified round KEEPS its row); two chains with equal round
-  numbers; the 20-row cap and overflow row; the list across parks and
-  resumes including drain-stalled.
+  numbers; the 19-data-plus-overflow boundary at exactly 21 qualifying
+  chains; the list across parks and resumes including drain-stalled;
+  terminal delivery: at COMPLETION the `- Landed unconsumed:` lines
+  land in the final block; on a runner-FAILURE exit NO ledger write is
+  attempted and resume re-lists.
 - O2: seven-heading assembler and validator (fixtures moved); `(none)`
   empty case; the three-field rows and all three markers pass strict
   validation.
