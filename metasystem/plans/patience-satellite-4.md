@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11-14
-(plans/dispositions/patience-satellite-4-r{1..14}.md; 79/79
+after rounds 3-8 and 11-15
+(plans/dispositions/patience-satellite-4-r{1..15}.md; 81/81
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -93,9 +93,13 @@ is defined over shipped record fields only: status `completed` or
 `timeout` proves it structurally — the lifecycle CAS map reaches
 those statuses only through `running` (F Q3.3) — and a `cancelled` or
 `failed` record is started exactly when it carries RECORDED USAGE —
-money provably spent is work, whatever the error is called
-(r14/P4-078: the same handshake error names both a pre-running
-rejection and a post-run session mismatch after usage capture) — or,
+a usage object that PROVES spend: availability not "unavailable" and
+at least one concrete non-null spend field (tokens, cost, or
+provider units), because adapters write a native usage object even
+when no block exists (r15/P4-081) — money provably spent is work,
+whatever the error is called (r14/P4-078: the same handshake error
+names both a pre-running rejection and a post-run session mismatch
+after usage capture) — or,
 lacking usage, a non-empty effectiveModel AND an error outside the
 NEVER-STARTED vocabulary: abandoned-setup, handshake_timeout,
 launch_failed, and the handshake-mismatch error (HandshakeEval
@@ -220,15 +224,18 @@ audit surface: a crash between AppendCycle and the state write can
 leave one cycle's vocal line stale against the healed log; a reaper
 transition landing mid-write books one evaluation late; and the
 overflow line's count can go stale against chains closed after
-booking. A final booking cannot strand a stale line anywhere that goes
-UNSEEN — a completed mission needs no nag; a host-failure or
-stop-loss park carries its ask; and the all-streams-inactive park,
-which shipped code parks WITHOUT an ask, is itself visible through
-the standing open-work reporting surface, which is where its
-Patience lines wait for the human too (r14/P4-079, superseding
-r13/P4-077's invented park ask — no park-path change of any kind,
-which also keeps that path byte-identical). No retry loop around the
-flocked append.
+booking. Final-booking visibility, stated without overclaiming (r13/P4-077
+invented an ask; r14/P4-079 claimed open-work; both superseded, the
+history on the disposition record): a completed mission needs no
+nag; a host-failure or stop-loss park carries its ask; and at the
+all-streams-inactive park — which shipped code parks WITHOUT an
+ask — the Patience lines simply wait, durable in the ledger, for the
+next human inspection. That silence is accepted and BOUNDED: a
+parked mission dispatches nothing, so the drought cannot grow while
+quiet (r15/P4-080). No park path changes in any way. (Teaching
+open-work to report parked missions is recorded as a worthwhile
+separate improvement this design does not depend on.) No retry loop
+around the flocked append.
 
 **Grammar — write AND read (r1/P4-013, r2/P4-028, r5/P4-037,
 r7/P4-049).** Four annotation forms in BOTH annotationWriteRe and
