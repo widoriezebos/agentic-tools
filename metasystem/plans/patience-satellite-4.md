@@ -4,9 +4,9 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1 and 2, amended in place after
-rounds 3-6 (plans/dispositions/patience-satellite-4-r{1..6}.md;
-46/46 accepted; convergence 15 → 13 → 4 → 4 → 4 → 6, of which
-round 6 held three fold-consistency defects). Parent ruling,
+rounds 3-7 (plans/dispositions/patience-satellite-4-r{1..7}.md;
+50/50 accepted; convergence 15 → 13 → 4 → 4 → 4 → 6 → 4). Parent
+ruling,
 inherited and not re-litigated: stop-loss is a last defense, never a
 pacing target, recursively. Vocabulary per docs/patience.md and
 docs/glossary.md: progress is mechanically proven value; patience is
@@ -95,9 +95,14 @@ remedies are certify-by-jobId and close-by-chain, and neither can
 touch an identity-less record, so counting one would be a nag with no
 possible act. Within the input set: a damaged record counts (see the
 status rule above); a record whose parent walk cannot join a chain
-forms a single-round ORPHAN chain keyed by its own jobId. Every
-counted identifier is grammar-safe by construction, so annotations
-and prompt lines interpolate only job-id-grammar tokens.
+forms a single-round ORPHAN chain keyed by its own jobId. **Orphans
+leave the floor regime entirely (r7/P4-049):** a one-job chain can
+never exceed a positive floor, so an orphan is booked as a
+floor-independent damage report — its vocal line appears at every
+booking while its spend is uncertified, because its broken lineage
+is itself the anomaly worth hearing about. Every counted identifier
+is grammar-safe by construction, so annotations and prompt lines
+interpolate only job-id-grammar tokens.
 
 ## Floors: sealed mission-contract entries, nowhere else
 
@@ -147,11 +152,18 @@ deterministic across sibling branches and damaged records alike. The
 resolution table, rows tried in order, first applicable row wins
 (r4/P4-033):
 
+Floor selection applies to well-formed chains only — orphans bypass
+floors entirely (r7/P4-049). The table quantifies over COUNTED
+jobs — exactly the jobs in the patience count: terminal-uncertified
+plus damaged-status records (r7/P4-050) — so a chain whose only
+counting evidence is damaged still selects deterministically. Rows
+tried in order, first applicable row wins:
+
 | row | condition | floor |
 | --- | --- | --- |
-| 1 | some terminal job in the chain set has a canonicalizable effectiveModel: take the NEWEST such job's model; an exact (role, runtime, model) entry exists | that entry |
+| 1 | some counted job in the chain set has MODEL EVIDENCE (r6/P4-041, r7/P4-048): take the NEWEST such job's model; an exact (role, runtime, model) entry exists | that entry |
 | 2 | same model evidence as row 1; no entry for that triple | infinite — configured-nothing |
-| 3 | no terminal job canonicalizes; the chain root's requestedModel canonicalizes; an exact entry exists | that entry |
+| 3 | no counted job has model evidence; the chain root's requestedModel IS model evidence; an exact entry exists | that entry |
 | 4 | same as row 3; no entry for that triple | infinite — configured-nothing |
 | 5 | no model evidence anywhere; the record set yields a usable runtime; any (role, runtime, *) entries exist | the SMALLEST such floor — damage must never widen patience |
 | 6 | no model evidence anywhere; a usable runtime; no (role, runtime, *) entries | infinite |
@@ -195,14 +207,22 @@ the chain KIND lives in the durable bytes so the prompt projection
 needs no second source:
 
     - Patience: chain=<root> rounds=<n> floor=<m>
-    - Patience: orphan=<id> rounds=<n> floor=<m>
+    - Patience: orphan=<id> rounds=<n>
     - Patience overflow: chains=<count>
+
+The orphan form carries no floor field — orphans are
+floor-independent damage reports (r7/P4-049).
 
 Bound copied exactly from the landed-returns implementation
 (F Q3.31): at most 20 lines total per booking — 20 detail lines, or
 19 detail plus 1 overflow when breaches exceed 20. Ranking
-(r5/P4-040): breach distance (count − floor) descending, tiebreak
-count descending, then root ascending. Annotations remain audit trail,
+(r5/P4-040, r7/P4-049): breach distance (count − floor) descending,
+tiebreak count descending, then root ascending; orphans rank after
+all floor breaches (distance treated as zero), root ascending, and
+the orphan annotation carries no floor field:
+
+    - Patience: orphan=<id> rounds=<n>
+ Annotations remain audit trail,
 never fuse input; the replay invariant (F Q1.4, F Q4.18) is
 untouched.
 

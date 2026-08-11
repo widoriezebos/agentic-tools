@@ -29,15 +29,22 @@ an assumed sequence.
    runtime's surviving event stream). Banks all produced value and
    completes the cost denominator. Routed: parent r1[11][12],
    r2[10][11][13], r3[12][13].
-4. PATIENCE (replaces the deferred loop-advanced credits): per-activity
-   MECHANICAL progress observables recorded as ledger lines (design =
-   critique-round closure; implementation = gate-metric improvement;
-   verification = confirmations; bounded activities declare none), and
-   per-(role, runtime:model) patience floors in the roster keys of
-   metasystem.conf with contract-sealed overrides. The verdict stays a
-   pure ledger replay; the shipped core is the degenerate case (floor =
-   any above-noise new best). Two bound cautions from the critique
-   record: observables are checkable artifacts only, never assertions;
-   and patience is itself a fuse, so the last-defense calibration rule
-   applies to it recursively. Routed: parent r1[0][1], r2[2][3][4][5],
-   r3[4][5][6].
+4. PATIENCE (replaces the deferred loop-advanced credits). SETTLED by
+   its own design loop — plans/patience-satellite-4.md is the
+   authority; this routing entry records the original intent and the
+   deltas the loop imposed (its r7/P4-047 disposition). As routed
+   here, this satellite was to carry per-activity observables
+   (critique closure, gate metrics, verifier confirmations) and
+   conf-roster patience floors. The loop replaced both with evidence:
+   ONE observable — a turn-log certification with verdict accepted —
+   because per-activity proxies (schema-valid returns, closures,
+   confirmations) are exactly the narrative the drought hides behind;
+   and floors as SEALED CONTRACT ENTRIES ONLY, counted in value-barren
+   rounds, because the conf/local/env layer is bypassable and an
+   unsealed fallback would change signed missions. Breaches are vocal
+   only. What survives unchanged: observables are checkable artifacts
+   only, never assertions; the verdict stays a pure ledger replay
+   (patience annotations are never fuse input); the shipped core is
+   the degenerate case; and patience is itself a fuse, so the
+   last-defense calibration rule applies to it recursively. Routed:
+   parent r1[0][1], r2[2][3][4][5], r3[4][5][6].
