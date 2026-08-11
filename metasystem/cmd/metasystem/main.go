@@ -174,6 +174,7 @@ func families() []family {
 			verbs: []verb{
 				{"register", "record that this process is a running gate", runGateRegister},
 				{"check", "print 1 when a gate is running in this checkout, else 0", runGateCheck},
+				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
 			},
 		},
 		{

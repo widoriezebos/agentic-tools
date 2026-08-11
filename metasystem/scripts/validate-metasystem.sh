@@ -34,6 +34,22 @@ cd "$root"
 # inherited the template's cwd and believed itself the template.
 metasystem_here=$(pwd -P)
 
+# Two concurrent suite runs trample each other's shared fixtures, so the
+# suite refuses to start over a live gate run. The decision is the engine's
+# (gate fence prunes dead markers and exempts this process's own chain);
+# this is only the consult. On a first build there is no binary to ask.
+# Only a REAL block (exit 1) refuses; a binary too old to know the verb
+# (exit 2) must not brick the run that would rebuild it. The gate fence
+# fixture below keeps that leniency honest: a usage bug fails there loudly.
+if [[ "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x bin/metasystem ]]; then
+  gate_fence_rc=0
+  bin/metasystem gate fence --root "$root" --self-pid $$ || gate_fence_rc=$?
+  if [[ "$gate_fence_rc" == 1 ]]; then
+    echo "a gate run is already live in this checkout; refusing a concurrent suite (METASYSTEM_ALLOW_CONCURRENT_GATE=1 overrides)" >&2
+    exit 1
+  fi
+fi
+
 # A gate run is work in flight that no job record describes, so it says so
 # itself rather than being guessed at from process command lines. The marker
 # names this process by pid and start time; the turn-end report believes it
@@ -60,6 +76,28 @@ if (( ! delegate_scope )) && [[ -f go.mod ]]; then
   # packages carry their own unit coverage under the go gate above.
   # Owner-alone Go supervision fixtures drive the running binary.
   bash scripts/agents/supervision-go-fixtures.sh
+
+  # The gate fence, live: this suite's own marker never blocks (this shell
+  # is the registered run's chain), a foreign live run blocks both the
+  # fence and a standalone go-gate rebuild, and a dead run stops blocking.
+  bin/metasystem gate fence --root "$root" --self-pid $$ \
+    || { echo "the suite's own gate marker blocked its fence" >&2; exit 1; }
+  sleep 60 & gate_fence_foreign=$!
+  bin/metasystem gate register --root "$root" --gate fence-fixture --pid "$gate_fence_foreign" >/dev/null
+  if bin/metasystem gate fence --root "$root" --self-pid $$ 2>/dev/null; then
+    echo "a foreign live gate run did not block the fence" >&2; exit 1
+  fi
+  gate_fence_err=$(mktemp)
+  if bash scripts/agents/go-gate.sh 2>"$gate_fence_err"; then
+    echo "go-gate rebuilt over a foreign live gate run" >&2; exit 1
+  fi
+  grep -q "swap its binary mid-run" "$gate_fence_err" \
+    || { echo "go-gate refusal did not come from the rebuild fence" >&2; exit 1; }
+  rm -f "$gate_fence_err"
+  kill "$gate_fence_foreign" 2>/dev/null; wait "$gate_fence_foreign" 2>/dev/null || true
+  bin/metasystem gate fence --root "$root" --self-pid $$ \
+    || { echo "a dead foreign gate run kept blocking the fence" >&2; exit 1; }
+  echo "gate fence fixtures passed"
 fi
 
 source scripts/agents/fixture-budget.sh

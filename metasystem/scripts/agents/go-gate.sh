@@ -24,6 +24,21 @@ if ! command -v go >/dev/null 2>&1; then
   exit 1
 fi
 
+# Rebuilding bin/metasystem while a FOREIGN gate run is live would swap the
+# binary under that run mid-flight. The suite that sourced or spawned this
+# gate is its own run — the fence exempts this process's chain — so only a
+# standalone rebuild against someone else's live run is refused here.
+# Only a REAL block (exit 1) refuses; a binary too old to know the verb
+# (exit 2) must not stop the rebuild that would teach it.
+if [[ "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x "$root/bin/metasystem" ]]; then
+  gate_fence_rc=0
+  "$root/bin/metasystem" gate fence --root "$root" --self-pid $$ || gate_fence_rc=$?
+  if [[ "$gate_fence_rc" == 1 ]]; then
+    echo "go gate: a live gate run owns this checkout; rebuilding now would swap its binary mid-run (METASYSTEM_ALLOW_CONCURRENT_GATE=1 overrides)" >&2
+    exit 1
+  fi
+fi
+
 # gofmt is a hard gate: unformatted code is a review-noise source and the
 # engineering standard requires it.
 unformatted=$(gofmt -l internal cmd 2>/dev/null || true)
