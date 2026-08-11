@@ -1,7 +1,8 @@
 # Stop-loss as last defense
 
-Owner: main session (claude). Status: DESIGN — round 1 adjudicated (13/13
-accepted, see `plans/stop-loss-dispositions-r1.md`), awaiting round 2.
+Owner: main session (claude). Status: DESIGN — rounds 1 and 2 adjudicated
+(13/13 and 14/14 accepted; `plans/stop-loss-dispositions-r{1,2}.md`),
+awaiting round 3.
 Ruling: human, 2026-08-11 — "the mechanism that killed the loop should be a
 last-defense kind of thing … really high caps set at the mission level …
 resetting should never be quiet." Evidence: the bm-2s trial cohorts
@@ -53,20 +54,32 @@ closure credit during conclude. Orchestrator assertions never qualify.
   `ledger.loop-credit-budget` (default: 2× the critique skill's per-chain
   round budget). Beyond the cap, closures still happen but no longer
   classify cycles as `loop-advanced` — the fuse resumes counting.
-- Counter algorithm (the single, binding rule — freeze semantics): one
-  counter, `stagnant`, incremented by every cycle classified `no-progress`
-  or `unresolved` without a credit; UNCHANGED by a `loop-advanced` cycle;
-  RESET to zero only by `contract-improved`. The fuse fires when
-  `stagnant` reaches `ledger.no-gain-budget`.
+- Counter algorithm (the single, binding rule — freeze semantics with a
+  ratchet): one counter, `stagnant`, incremented by every cycle classified
+  `no-progress` or `unresolved` without a credit; UNCHANGED by a
+  `loop-advanced` cycle; RESET to zero only by a NEW BEST — a measurement
+  that beats the best value recorded so far by more than the sealed noise
+  floor. Merely recovering ground lost to a regression is not a reset, so
+  oscillation cannot farm resets. The fuse fires when `stagnant` reaches
+  `ledger.no-gain-budget`.
+- Precedence: a cycle that both improves (new best) and closes a round
+  classifies `contract-improved`; its credits are still minted, recorded,
+  and budget-consumed. A cycle that closes several rounds mints every
+  credit (each consuming budget) and classifies once.
+- Stream identity for the credit budget is the runner's own: the stream a
+  chain belongs to is recorded in mission state when the runner dispatches
+  the chain root, never taken from a return's assertion.
 
 ## D2. One fuse, sized as a last defense
 
-- The lifetime "two no-progress classifications ever" rule in
-  `assert-stop-loss.sh` is RETIRED. The no-gain counter above becomes the
-  only stop-loss trigger; `no-progress` cycles feed it like any stagnant
-  cycle instead of a separate lifetime tripwire. (The 2-consecutive
-  host-failure park is NOT touched: that is a host-health breaker, a
-  different jurisdiction, and it keeps its own ask.)
+- The lifetime "two no-progress classifications ever" rule is RETIRED
+  FOR MISSION LEDGERS ONLY. `assert-stop-loss.sh` serves non-mission
+  workflows too (investigate/improve); those keep today's behavior
+  unchanged — the script gains an explicit mission scope switch rather
+  than a silent behavioral change for every caller. Within missions the
+  ratcheted no-gain counter is the only stop-loss trigger. (The
+  2-consecutive host-failure park is NOT touched: host-health breaker,
+  different jurisdiction, own ask.)
 - Calibration guidance inverts: `ledger.no-gain-budget` is sized ABOVE any
   healthy runway — unattended missions in the order of `fence.cycles`,
   never below the mission's mandated pre-build stages plus margin. It
@@ -88,7 +101,11 @@ closure credit during conclude. Orchestrator assertions never qualify.
   lock; the unpark state write happens only after it lands. The
   flight-recorder event and the ask/answer file are best-effort echoes and
   the docs say so. A reset that leaves no ledger line is impossible
-  because the unpark never happens without it.
+  because the unpark never happens without it. Crash consistency: the
+  ledger line carries the askId; on startup the runner reconciles — a
+  reset line whose unpark never applied is replayed forward, and a second
+  line for the same askId is never written. The transaction is
+  append-then-apply with idempotent recovery, not two-phase.
 - No other reset path: no flag, no environment variable, no quiet code
   path. Attended operation is expressed by the human actually answering.
 
@@ -99,8 +116,11 @@ real session only mid-launch. Two identities, both recorded in turn.json:
 
 - `announcedSession`: what the prompt's `Host-Session` header said (null
   when it said `none`). Written at assembly, never changed.
-- `observedSession`: stamped from the launch handshake's
-  session-established signal when one arrives; absent otherwise.
+- `observedSession`: stamped harness-side from the earliest trusted
+  source that names the session — the launch handshake's
+  session-established signal or, failing that, the adapter's terminal
+  result envelope. Both are the harness's own artifacts; absent only when
+  neither carries a session.
 - Adjudication accepts a return whose `identity.sessionId` equals EITHER —
   the conservative echo of the header and the honest report of the real
   session are both correct. When neither matches, that is a host protocol
@@ -125,26 +145,39 @@ real session only mid-launch. Two identities, both recorded in turn.json:
   not death). The existing record CAS applies the verdict.
 - Bounded drain: drainJobs gains a deadline — the latest surviving
   `capDeadline` among the mission's active records plus the standing
-  grace. When the deadline passes and non-terminal, unprovable records
-  remain, the runner parks with reason `drain-stalled` and an ask naming
-  each stuck record. The conservative posture (never reap the unprovable)
-  is kept, but it can no longer wedge the runner inside one cycle forever.
+  grace; a record without a parseable capDeadline contributes
+  `createdAt + the mission's job cap + grace`, and one with neither
+  parseable is treated as already past deadline. The deadline is
+  therefore always finite. When it passes with non-terminal, unprovable
+  records remaining, the runner parks with reason `drain-stalled` and an
+  ask naming each stuck record. Recovery is defined: the human clears the
+  named records through the existing surfaces (`dispatch cancel`, or
+  out-of-band terminalization) and answers the ask with the `resume:`
+  prefix; the runner re-drains from the top on resume. The conservative
+  posture (never reap the unprovable) is kept; neither the wait nor the
+  park is unbounded ownership.
 
 ## D6. Nothing paid is silently discarded
 
-- Applied rounds are recorded per stream in mission state; a landed
-  return.json for any round beyond its stream's applied mark is orphaned
-  by definition — no prose judgment involved.
-- At park, the runner writes one ledger line per orphan naming the
-  artifact paths (`- Orphaned return: job=<id> round=<n> path=<...>`).
-  The next turn's prior-context already carries the ledger tail, so the
-  resurrection reads its inheritance without new prompt machinery.
+- Applied rounds are recorded in mission state as a SET of
+  (chain root, round) pairs per stream — rounds are chain-local, so a
+  scalar high-water mark proves nothing across chains. A landed
+  return.json for a pair outside the set is orphaned by definition.
+- The orphan scan runs at every turn conclusion AND at park — not only at
+  park, or a return landing during a failed-turn park path would still be
+  silently lost. Each orphan gets one ledger line naming the artifact
+  paths (`- Orphaned return: chain=<root> round=<n> path=<...>`), written
+  once per pair (the applied/orphaned sets make the scan idempotent). The
+  next turn's prior-context already carries the ledger tail.
 - Usage single-writer rule: the adapter owns its round directory's
-  usage.json (written atomically; on a capped job, best effort from the
-  events already streamed before termination). Reapers never write usage.
-  The fence aggregator reads round directories independently of record
-  status, so late usage is picked up by the next aggregation regardless of
-  who terminalized the record.
+  usage.json (written atomically). Reapers never write usage. Under an
+  uncatchable kill the adapter writes nothing — recovery then comes from
+  the runtime's own on-disk event stream where one exists (the codex
+  JSONL event file survives the process): the next aggregation derives
+  usage from it and records the derivation source. Runtimes with no
+  surviving stream record `availability: unavailable`, stated honestly,
+  as today. The fence aggregator reads round directories independently of
+  record status.
 
 # Invariants
 
@@ -202,9 +235,25 @@ real session only mid-launch. Two identities, both recorded in turn.json:
 Additive ledger line kinds (`Loop credit`, `Stop-loss reset`, `Orphaned
 return`) and one classification string; existing ledgers parse unchanged.
 turn.json gains `announcedSession`/`observedSession` (hostSession retained,
-equal to announcedSession, until the fixtures migrate). One new sealed key
-`ledger.loop-credit-budget` with a default — absent keys behave as today
-plus the default, so existing sealed contracts stay valid. The retired
-lifetime rule changes `assert-stop-loss.sh` behavior; its fixtures are
-updated in the same change. bm-2s fence values change separately in the
-kit under the human's fence-approval rule.
+equal to announcedSession, until the fixtures migrate).
+
+Mission STATE gains three fields — the stagnant counter with its best-value
+ratchet, the per-stream credit accounting, and the applied-(chain,round)
+sets. All are derivable by replaying the existing ledger and job records,
+and the runner performs exactly that derivation once when it loads a state
+document that lacks them; the state writer's shape validation admits the
+new fields as optional until the fixtures migrate. Hash-chain integrity is
+preserved because the derivation happens inside a normal state write (a new
+generation), never by mutating history.
+
+Sealed-contract compatibility: a contract sealed WITHOUT
+`ledger.loop-credit-budget` grants NO credit budget by default — the fuse
+behaves exactly as the signers saw it. The default (2× the per-chain round
+budget) applies only to contracts sealed after the key exists in the
+template. A seal means what was signed; the design never derives a new
+allowance under an old signature.
+
+The mission-scoped retirement changes `assert-stop-loss.sh` only behind
+its new mission switch; non-mission callers and their fixtures are
+untouched. bm-2s fence values change separately in the kit under the
+human's fence-approval rule.
