@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11-15
-(plans/dispositions/patience-satellite-4-r{1..15}.md; 81/81
+after rounds 3-8 and 11-16
+(plans/dispositions/patience-satellite-4-r{1..16}.md; 82/82
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -93,9 +93,11 @@ is defined over shipped record fields only: status `completed` or
 `timeout` proves it structurally — the lifecycle CAS map reaches
 those statuses only through `running` (F Q3.3) — and a `cancelled` or
 `failed` record is started exactly when it carries RECORDED USAGE —
-a usage object that PROVES spend: availability not "unavailable" and
-at least one concrete non-null spend field (tokens, cost, or
-provider units), because adapters write a native usage object even
+a usage object that PROVES spend: at least one concrete spend field
+non-null and positive — tokens, cost, or provider units — with the
+availability marker playing no part, because Devin's tokenless
+accounts write availability "unavailable" beside real provider-unit
+spend (r16/P4-082), and adapters write a native usage object even
 when no block exists (r15/P4-081) — money provably spent is work,
 whatever the error is called (r14/P4-078: the same handshake error
 names both a pre-running rejection and a post-run session mismatch
