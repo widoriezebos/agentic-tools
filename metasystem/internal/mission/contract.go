@@ -331,6 +331,10 @@ func (d *contractDoc) validate(projectRoot string) error {
 			if err := contractValidatePairCap(key, value); err != nil {
 				return err
 			}
+		case strings.HasPrefix(key, "patience."):
+			if err := contractValidatePatience(key, value); err != nil {
+				return err
+			}
 		case contractGateThresholdRe.MatchString(key):
 			thresholds[contractGateThresholdRe.FindStringSubmatch(key)[1]] = value
 		case contractGateNoiseRe.MatchString(key):
@@ -413,6 +417,28 @@ func contractValidatePairCap(key, value string) error {
 	expected := "cap.min." + parts[2] + "." + canonical
 	if canonical == "" || key != expected {
 		return stateErr("mission contract pair-cap key %s is not canonical; use %s", key, expected)
+	}
+	if !positiveIntRe.MatchString(value) {
+		return stateErr("%s must be a positive integer", key)
+	}
+	return nil
+}
+
+// contractValidatePatience checks a patience-floor entry
+// (plans/patience-satellite-4.md): patience.rounds.<role>.<runtime>.<model>,
+// role and runtime in the identifier grammar, the model a canonical key in
+// the cap-key encoding, the floor a positive integer counted in value-barren
+// rounds. Floors exist only here — no conf, local, environment, or
+// per-dispatch surface.
+func contractValidatePatience(key, value string) error {
+	parts := strings.SplitN(key, ".", 5)
+	if len(parts) != 5 || parts[1] != "rounds" || !idRe.MatchString(parts[2]) || !idRe.MatchString(parts[3]) {
+		return stateErr("mission contract has an invalid patience key: %s (use patience.rounds.<role>.<runtime>.<model>)", key)
+	}
+	canonical := config.CanonicalModel(parts[4])
+	expected := "patience.rounds." + parts[2] + "." + parts[3] + "." + canonical
+	if canonical == "" || key != expected {
+		return stateErr("mission contract patience key %s is not canonical; use %s", key, expected)
 	}
 	if !positiveIntRe.MatchString(value) {
 		return stateErr("%s must be a positive integer", key)
@@ -1004,6 +1030,7 @@ func (d *contractDoc) expectedSeal(repo, projectRoot string, runBaseline bool) (
 
 	exposureKeys := append([]string(nil), requiredFenceKeys...)
 	exposureKeys = append(exposureKeys, contractCapKeys(values)...)
+	exposureKeys = append(exposureKeys, contractPatienceKeys(values)...)
 	var echo []string
 	for _, key := range exposureKeys {
 		fields = append(fields, contractSealField{"sealed.exposure." + key, values[key]})
@@ -1042,6 +1069,21 @@ func contractCapKeys(values map[string]string) []string {
 	}
 	sort.Strings(caps)
 	return caps
+}
+
+// contractPatienceKeys returns the sorted patience-floor keys
+// (plans/patience-satellite-4.md). They seal beside the cap entries through
+// the same expectedSeal enumeration preflight recomputes, so a signed
+// mission's patience behavior is frozen with its signature.
+func contractPatienceKeys(values map[string]string) []string {
+	var keys []string
+	for key := range values {
+		if strings.HasPrefix(key, "patience.") {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // seal measures the baseline and appends the generated seal block, returning
@@ -1085,6 +1127,9 @@ func (d *contractDoc) seal(repo, projectRoot string) (string, error) {
 		ordered = append(ordered, "sealed.exposure."+key)
 	}
 	for _, key := range contractCapKeys(d.values) {
+		ordered = append(ordered, "sealed.exposure."+key)
+	}
+	for _, key := range contractPatienceKeys(d.values) {
 		ordered = append(ordered, "sealed.exposure."+key)
 	}
 	ordered = append(ordered, "sealed.exposure.statement")

@@ -328,3 +328,72 @@ func removeLine(text, line string) string {
 	}
 	return strings.Join(kept, "\n")
 }
+
+// Patience-floor entries (plans/patience-satellite-4.md): validated in the
+// canonical five-part shape, sealed beside the cap entries through the same
+// expectedSeal enumeration preflight recomputes, so a freshly sealed
+// patience-bearing contract passes its own preflight (r1/P4-015) and a
+// pre-feature contract's seal is unchanged by the feature's existence.
+func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
+	_, contractPath := newContractRepo(t)
+	withPatience := strings.Replace(baseContract(), "exposure=EUR:10",
+		"exposure=EUR:10\npatience.rounds.implementer.codex.gpt-5-6-sol=4", 1)
+	writeFileMode(t, contractPath, withPatience, 0o644)
+	if _, _, err := ContractValidate(contractPath); err != nil {
+		t.Fatalf("patience-bearing contract rejected: %v", err)
+	}
+	digest, err := ContractSeal(contractPath)
+	if err != nil {
+		t.Fatalf("seal failed: %v", err)
+	}
+	if !hashRe.MatchString(digest) {
+		t.Fatalf("seal digest is not a sha256: %q", digest)
+	}
+	data, err := os.ReadFile(contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "sealed.exposure.patience.rounds.implementer.codex.gpt-5-6-sol=4") {
+		t.Fatalf("patience entry not sealed:\n%s", data)
+	}
+	// The sealed entry rides the exposure statement echo too.
+	if !strings.Contains(string(data), "patience.rounds.implementer.codex.gpt-5-6-sol=4") {
+		t.Fatalf("patience entry missing from the echo:\n%s", data)
+	}
+	// The seal→preflight round-trip (r1/P4-015): approving exactly the seal's
+	// digest must let the freshly sealed patience-bearing contract recompute
+	// its own seal — field count included — without a stale refusal. A
+	// missing ordered-emitter entry fails exactly here.
+	signed := string(data) + "\nApproval: name=Human; date=2026-08-12; contract-sha256=" + digest + "\n"
+	writeFileMode(t, contractPath, signed, 0o644)
+	if _, _, err := ContractPreflight(contractPath, ""); err != nil &&
+		(strings.Contains(err.Error(), "seal") || strings.Contains(err.Error(), "stale")) {
+		t.Fatalf("patience-bearing seal failed its own preflight recomputation: %v", err)
+	}
+}
+
+func TestContractPatienceEntriesRejected(t *testing.T) {
+	cases := []struct {
+		key      string
+		contains string
+	}{
+		{"patience.rounds.implementer.codex=4", "invalid patience key"},
+		{"patience.minutes.implementer.codex.gpt-5-6-sol=4", "invalid patience key"},
+		{"patience.rounds.implementer.codex.gpt-5.6-sol=4", "not canonical"},
+		{"patience.rounds.Implementer.codex.gpt-5-6-sol=4", "invalid patience key"},
+		{"patience.rounds.implementer.codex.gpt-5-6-sol=0", "positive integer"},
+		{"patience.rounds.implementer.codex.gpt-5-6-sol=four", "positive integer"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			_, contractPath := newContractRepo(t)
+			mutated := strings.Replace(baseContract(), "exposure=EUR:10",
+				"exposure=EUR:10\n"+tc.key, 1)
+			writeFileMode(t, contractPath, mutated, 0o644)
+			_, _, err := ContractValidate(contractPath)
+			if err == nil || !strings.Contains(err.Error(), tc.contains) {
+				t.Fatalf("expected %q refusal, got %v", tc.contains, err)
+			}
+		})
+	}
+}

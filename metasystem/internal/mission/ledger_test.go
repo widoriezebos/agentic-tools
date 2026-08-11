@@ -358,3 +358,53 @@ func TestParseLedgerEventsMarkerlessAndBareLines(t *testing.T) {
 		t.Fatalf("bare line: %+v", events[1])
 	}
 }
+
+// The four Patience annotation forms round-trip through write and parse
+// (plans/patience-satellite-4.md r6/P4-044, r11/P4-069): the chain kind
+// lives in the durable bytes, so the prompt projection needs no second
+// source.
+func TestPatienceAnnotationsRoundTrip(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.md")
+	if err := InitLedger(file, 5, 3); err != nil {
+		t.Fatal(err)
+	}
+	forms := []string{
+		PatienceChainAnnotation("chain-a", 4, 2),
+		PatienceOrphanAnnotation("orphan-b", 1),
+		PatienceExcludedAnnotation(3),
+		PatienceOverflowAnnotation(7),
+	}
+	if err := AppendCycle(file, 1, "no-progress", goodSHA, "score=0", "", forms...); err != nil {
+		t.Fatalf("patience annotations refused by the write grammar: %v", err)
+	}
+	_, _, cycles, err := ParseLedger(file)
+	if err != nil || len(cycles) != 1 {
+		t.Fatalf("patience-annotated ledger must parse: %v", err)
+	}
+	if len(cycles[0].Annotations) != len(forms) {
+		t.Fatalf("patience annotations lost in parse: %v", cycles[0].Annotations)
+	}
+	for i, want := range forms {
+		if cycles[0].Annotations[i] != want {
+			t.Fatalf("annotation %d: got %q want %q", i, cycles[0].Annotations[i], want)
+		}
+	}
+	// The fuse replay never reads them: the replay must still see one plain
+	// no-progress cycle and nothing else.
+	if err := AppendCycle(file, 2, "contract-improved", goodSHA, "score=1", "yes"); err != nil {
+		t.Fatalf("append after patience annotations: %v", err)
+	}
+	// Malformed patience lines are refused: zero rounds, orphan with a floor,
+	// invalid identifiers.
+	for _, bad := range []string{
+		"Patience: chain=chain-a rounds=0 floor=2",
+		"Patience: orphan=orphan-b rounds=1 floor=2",
+		"Patience: chain=Bad_Chain rounds=1 floor=2",
+		"Patience: excluded=0",
+		"Patience overflow: chains=0",
+	} {
+		if err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", bad); err == nil {
+			t.Fatalf("malformed patience annotation accepted: %q", bad)
+		}
+	}
+}

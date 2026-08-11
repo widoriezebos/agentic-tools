@@ -55,7 +55,7 @@ var (
 	// facts recorded beside — never inside — the classification line. They are
 	// audit trail: parsers tolerate and expose them, the prompt's ledger tail
 	// ignores them, and the stop-loss replay never reads them as fuse input.
-	annotationLineRe = regexp.MustCompile(`(?m)^- ((?:Return|Outcome|Drain|Landed unconsumed): [^\n]+?)[ \t]*$`)
+	annotationLineRe = regexp.MustCompile(`(?m)^- ((?:Return|Outcome|Drain|Landed unconsumed|Patience|Patience overflow): [^\n]+?)[ \t]*$`)
 	// annotationWriteRe is the strict grammar for the annotation kinds the
 	// runner writes: the fault that rejected a turn's return, a fired cap,
 	// the survivor count of a drain-stalled cycle healed on resume, and the
@@ -64,7 +64,11 @@ var (
 	// invalid/unreadable marker (the overflow row carries the remaining
 	// count), and a whitespace-free return path or the literal none.
 	annotationWriteRe = regexp.MustCompile(`^(Return: rejected:.+|Outcome: capped|Drain: stalled:(?:0|[1-9][0-9]*)` +
-		`|Landed unconsumed: chain=[a-z0-9][a-z0-9-]* round=(?:[1-9][0-9]*|invalid|unreadable) path=[^ \t]+)$`)
+		`|Landed unconsumed: chain=[a-z0-9][a-z0-9-]* round=(?:[1-9][0-9]*|invalid|unreadable) path=[^ \t]+` +
+		`|Patience: chain=[a-z0-9][a-z0-9-]* rounds=[1-9][0-9]* floor=[1-9][0-9]*` +
+		`|Patience: orphan=[a-z0-9][a-z0-9-]* rounds=[1-9][0-9]*` +
+		`|Patience: excluded=[1-9][0-9]*` +
+		`|Patience overflow: chains=[1-9][0-9]*)$`)
 )
 
 // Stop-loss park kinds an ask record carries in its stopLossKind field. Only
@@ -106,6 +110,34 @@ func DrainStalledAnnotation(survivors int) string {
 // input.
 func LandedUnconsumedAnnotation(chainRoot, round, path string) string {
 	return fmt.Sprintf("Landed unconsumed: chain=%s round=%s path=%s", chainRoot, round, path)
+}
+
+// PatienceChainAnnotation composes the vocal floor-breach annotation for one
+// well-formed chain (plans/patience-satellite-4.md): audit trail beside the
+// classification line, never fuse input.
+func PatienceChainAnnotation(root string, rounds, floor int) string {
+	return fmt.Sprintf("Patience: chain=%s rounds=%d floor=%d", root, rounds, floor)
+}
+
+// PatienceOrphanAnnotation composes the floor-independent damage report for a
+// single-round orphan chain: its records are clean, only its ancestry is
+// broken, so no floor field rides the line.
+func PatienceOrphanAnnotation(id string, rounds int) string {
+	return fmt.Sprintf("Patience: orphan=%s rounds=%d", id, rounds)
+}
+
+// PatienceExcludedAnnotation composes the aggregate voice for mission-owned
+// readable records the participation boundary rejected — a count and a human
+// handoff, no identities, no floors, no taxonomy.
+func PatienceExcludedAnnotation(count int) string {
+	return fmt.Sprintf("Patience: excluded=%d", count)
+}
+
+// PatienceOverflowAnnotation composes the single overflow line when breaches
+// and orphan reports together exceed the detail bound; the count includes
+// both kinds.
+func PatienceOverflowAnnotation(count int) string {
+	return fmt.Sprintf("Patience overflow: chains=%d", count)
 }
 
 // rejectedReasonMaxLen bounds the reason inside a Return: rejected annotation.
