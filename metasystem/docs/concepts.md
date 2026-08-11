@@ -69,6 +69,17 @@ narrate success instead of proving it.
   leak. What must never happen is the mission working ON the metasystem
   itself without a signed grant. The methodology travels; the object of
   work does not.
+- **Benchmark specifics stay in the kit** (human ruling, 2026-08-11).
+  The reverse direction of the same boundary: nothing specific to one
+  benchmark — its requirements, metrics, thresholds, gate semantics,
+  role caps, seeded content — may live in the engine, its
+  configuration, or its prompts. There will be many benchmarks and
+  they will look quite different; each parameterizes the engine's
+  generic mechanisms (fences, measurement, gain accounting, caps)
+  through its own kit and the sealed cohort contract, never by
+  teaching the engine its shape. Historical provenance in comments
+  ("the loop that cost bm-2 two delegates") is fine; semantics are
+  not.
 
 ## Identity and proof
 

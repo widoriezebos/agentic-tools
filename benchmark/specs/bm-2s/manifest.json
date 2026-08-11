@@ -24,17 +24,17 @@
     "maven": "Builds still run with -o against a pre-populated repository, because the build must be deterministic and must work whether or not the network is up. That is a spec requirement, not a sandbox constraint."
   },
   "fences": {
-    "approved": "2026-08-05, under the human's blanket approval; still an experiment per the promotion rule",
+    "approved": "hostTurnCapMin/jobCapMin revised 2026-08-11 by the human's role-caps ruling (implementers 25-30 minutes, host turn ~30 minutes, critics keep their configured cap-min), given via the in-session question component; the 2026-08-05 blanket approval covers the untouched fences; still an experiment per the promotion rule",
     "concurrency": 2,
     "cycles": 8,
-    "hostTurnCapMin": 20,
-    "jobCapMin": 15,
+    "hostTurnCapMin": 30,
+    "jobCapMin": 30,
     "jobs": 12,
     "ledgerCycleBudget": 8,
     "ledgerNoGainBudget": 3,
     "wallClockHours": 3
   },
-  "fencesNote": "Provisional and unapproved. These are an experiment, not a belief: trial runs record what they consume and each fence becomes ceil(observed_max * 1.5), excluding trials that parked at that fence. A human must approve them before any run spends money.",
+  "fencesNote": "Role-specific caps per the human's 2026-08-11 ruling: implementer dispatches carry --cap-min 25 to 30, critic dispatches keep their configured default; jobCapMin 30 is the circuit breaker bounding ANY job, sized to the largest ruled role cap rather than to Devin's inference profile (bm-2 v0.2 chose 180/240/12 for swe-1-7; sol jobs are minutes, not hours). wallClockHours stays 3: the v0.1 flat-floor cohorts died of a prompt-poisoning park, not the wall clock, and 30-minute jobs at concurrency 2 fit several full cycles. Caps protect against stuck loops; they do not define the experiment (the bm-2 v0.2 principle).",
   "grader": {
     "calibration": {
       "probeVectors": {
@@ -241,7 +241,8 @@
       "paths": "gate.sh,guard-deps.sh",
       "refKind": "tag",
       "refKindNote": "A tag, never a branch: sealing against a branch cannot survive its own signing commit, which the first real preflight found.",
-      "threshold": ">=1"
+      "threshold": ">=26",
+      "thresholdNote": "v0.2 count gate (human ruling, 2026-08-11): the self-assessment metric is the number of validly mapped requirements while the scaffolding proofs (package, jar, tests, pinned test-command line) are green, 0 while any proof is red. Each landed requirement raises the score, so the runner books contract-improved per requirement instead of all-or-nothing; the design phase is covered by the engine's jurisdiction-aware gain (a closed critique round classifies as gain), the pairing the v0.1 forensics showed the count metric needs. Completion at >=26 is v0.1's all-checks-pass in substance: a full valid map plus green scaffolding."
     },
     "guard": {
       "cadence": 1,
@@ -302,11 +303,11 @@
     "decisionFile": "DECISIONS.md",
     "declaredRuleKey": "order-rule",
     "entryGrammar": "requirement <n>: <key>: <value>",
-    "note": "Published in spec.md in full: the entry grammar, the key, and the three permitted values with their exact semantics. A builder cannot satisfy a machine-checked declaration whose format is withheld (BA-1-1), and a rule without executable semantics leaves the grader holding a hidden right answer (BA-2-1).",
+    "note": "Published in spec.md in full: the entry grammar, the key, and the three permitted values with their exact semantics. A builder cannot satisfy a machine-checked declaration whose format is withheld (BA-1-1), and a rule without executable semantics leaves the grader holding a hidden right answer (BA-2-1). v0.2 ruling (human, 2026-08-11): this spec ships CLEAN — no seeded defect. Requirement 5's accidental self-contradiction stays fixed (b584fc5); this published decision point is spec content a builder can satisfy, not a trap. Spec-contradiction discovery, with grading that rewards finding it, is a separate future experiment.",
     "requirement": 10
   },
   "title": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster (sol delegate roster)",
-  "version": "0.1",
+  "version": "0.2",
   "watches": {
     "grammar": "watch=<name>=<value> lines on standard output beside the metric lines: seed_wrapper_intact 0 or 1, seed_release_level the integer pom.xml declares, seed_files_replaced a count",
     "note": "Observations, never gates and never targets. A scored seed_respected metric for a build-from-scratch case can only encode hidden preferences about legitimate build edits (BA-3-3); grading what a builder does with inherited code is BM-2's business, where the seed is a working system and inheritance is the point. The human's intent to grade seed handling is honoured there, and observed here.",
