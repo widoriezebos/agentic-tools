@@ -2,6 +2,10 @@
 
 Working Mode: design
 
+STATUS: ACCEPTED 2026-08-12 — round 22 returned zero material
+findings (plans/dispositions/patience-satellite-4-r22.md). This
+document is the implementation authority.
+
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
 after rounds 3-8 and 11-21
