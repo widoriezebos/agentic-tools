@@ -103,7 +103,10 @@ func (e *Engine) fencesPath() string {
 // PriorContext reads the turn log's tail into the next turn's launch context:
 // the host session to resume (nil after an unresumable turn), whether the
 // turn is a reconciliation (the last turn did not complete), and how many
-// consecutive turns have failed, not counting unresumable ones.
+// consecutive turns have failed. Unresumable turns never count, and neither
+// does a turn recorded as feeding no host-failure blame (feedsBreaker false —
+// a no-witness session mismatch convicts nobody): both are skipped without
+// resetting the count.
 func PriorContext(turnLog []any) (hostSession any, reconciliation bool, failures int) {
 	if len(turnLog) == 0 {
 		return nil, false, 0
@@ -116,6 +119,9 @@ func PriorContext(turnLog []any) (hostSession any, reconciliation bool, failures
 	reconciliation = outcome != "completed" && outcome != "return-ok"
 	for index := len(turnLog) - 1; index >= 0; index-- {
 		entry, _ := turnLog[index].(map[string]any)
+		if entry["feedsBreaker"] == false {
+			continue
+		}
 		switch entry["outcome"] {
 		case "completed", "return-ok":
 			return sessionAfter(outcome, hostSession), reconciliation, failures

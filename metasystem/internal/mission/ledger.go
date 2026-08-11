@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/sys/unix"
 )
@@ -28,10 +29,12 @@ var Classifications = map[string]bool{
 	"invalid-run":        true,
 }
 
-// Cycle is one adjudicated cycle: its number and the full classification line.
+// Cycle is one adjudicated cycle: its number, the full classification line,
+// and the annotation lines the block carries beside it.
 type Cycle struct {
-	Number int
-	Line   string
+	Number      int
+	Line        string
+	Annotations []string
 }
 
 var (
@@ -48,6 +51,14 @@ var (
 	// (plans/stop-loss-core.md): the only automatic stagnation reset besides a
 	// new best, and it always names the human-answered ask it echoes.
 	resetLineRe = regexp.MustCompile(`^Stop-loss reset: ask=([a-z0-9][a-z0-9-]*); reason=([^\n]*)$`)
+	// Annotation lines inside a cycle block (plans/patience-turn-identity.md):
+	// facts recorded beside — never inside — the classification line. They are
+	// audit trail: parsers tolerate and expose them, the prompt's ledger tail
+	// ignores them, and the stop-loss replay never reads them as fuse input.
+	annotationLineRe = regexp.MustCompile(`(?m)^- ((?:Return|Outcome): [^\n]+?)[ \t]*$`)
+	// annotationWriteRe is the strict grammar for the two annotation kinds the
+	// runner writes: the fault that rejected a turn's return, and a fired cap.
+	annotationWriteRe = regexp.MustCompile(`^(Return: rejected:.+|Outcome: capped)$`)
 )
 
 // Stop-loss park kinds an ask record carries in its stopLossKind field. Only
@@ -61,6 +72,33 @@ const (
 // resetReasonMaxLen caps a reset reason so the ledger line stays one bounded
 // line; an over-long reason is refused, never truncated.
 const resetReasonMaxLen = 500
+
+// CappedAnnotation is the annotation naming a fired turn cap in the cycle
+// block, separate from the classification line so every parser keeps reading.
+const CappedAnnotation = "Outcome: capped"
+
+// rejectedReasonMaxLen bounds the reason inside a Return: rejected annotation.
+// Unlike a human-authored reset reason, this reason is runner-composed from a
+// refusal message, so truncation is the right failure mode: the ledger line
+// stays bounded and the full detail lives in the turn record.
+const rejectedReasonMaxLen = 200
+
+// ReturnRejectedAnnotation composes the annotation naming the fault that
+// rejected a turn's return, flattened and bounded to one ledger-safe line.
+func ReturnRejectedAnnotation(reason string) string {
+	flat := strings.TrimSpace(strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(reason))
+	if flat == "" {
+		flat = "unspecified"
+	}
+	if len(flat) > rejectedReasonMaxLen {
+		cut := rejectedReasonMaxLen
+		for cut > 0 && !utf8.RuneStart(flat[cut]) {
+			cut--
+		}
+		flat = flat[:cut]
+	}
+	return "Return: rejected:" + flat
+}
 
 // ParseLedger validates a mission ledger and returns its budgets and cycles.
 // It enforces exactly one positive Cycle budget and No-gain budget, cycle
@@ -96,7 +134,11 @@ func ParseLedger(file string) (cycleBudget, noGainBudget int, cycles []Cycle, er
 		if prefix == nil || !Classifications[prefix[1]] {
 			return 0, 0, nil, fmt.Errorf("Cycle %d has an unknown classification", number)
 		}
-		cycles = append(cycles, Cycle{Number: number, Line: matches[0][1]})
+		var annotations []string
+		for _, annotation := range annotationLineRe.FindAllStringSubmatch(block, -1) {
+			annotations = append(annotations, annotation[1])
+		}
+		cycles = append(cycles, Cycle{Number: number, Line: matches[0][1], Annotations: annotations})
 	}
 	cycleBudget, _ = strconv.Atoi(cb[0][1])
 	noGainBudget, _ = strconv.Atoi(ngb[0][1])
@@ -125,8 +167,10 @@ func InitLedger(file string, cycleBudget, noGainBudget int) error {
 // the last recorded cycle, the classification must be known, and the candidate
 // sha must be a resolved git sha. best is the new-best marker replay honors
 // over re-derivation (plans/stop-loss-core.md): "yes" or "no" appends the
-// token, "" writes a marker-less legacy line.
-func AppendCycle(file string, cycle int, classification, candidateSHA, observed, best string) error {
+// token, "" writes a marker-less legacy line. Annotations land as their own
+// lines under the classification line, one atomic append with it, so a cycle
+// block always carries both facts or neither.
+func AppendCycle(file string, cycle int, classification, candidateSHA, observed, best string, annotations ...string) error {
 	lock, err := lockFile(file)
 	if err != nil {
 		return err
@@ -156,6 +200,11 @@ func AppendCycle(file string, cycle int, classification, candidateSHA, observed,
 	if best != "" && best != "yes" && best != "no" {
 		return fmt.Errorf("new-best marker must be yes, no, or absent")
 	}
+	for _, annotation := range annotations {
+		if !annotationWriteRe.MatchString(annotation) {
+			return fmt.Errorf("unknown mission ledger annotation kind: %q", annotation)
+		}
+	}
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("cannot read mission ledger: %w", err)
@@ -167,6 +216,9 @@ func AppendCycle(file string, cycle int, classification, candidateSHA, observed,
 	}
 	entry := fmt.Sprintf("\n\n### Cycle %d\n- Classification: %s; candidate-sha=%s; observed=%s%s\n",
 		cycle, classification, sha, observedLine, marker)
+	for _, annotation := range annotations {
+		entry += "- " + annotation + "\n"
+	}
 	return atomicWriteText(file, existing+entry)
 }
 
@@ -211,7 +263,8 @@ type LedgerEvent struct {
 	Cycle          int
 	Classification string
 	Observed       string
-	Best           string // "yes"/"no" when the line carries the marker, "" otherwise
+	Best           string   // "yes"/"no" when the line carries the marker, "" otherwise
+	Annotations    []string // annotation lines beside the classification; audit trail, never fuse input
 	// Reset events.
 	Reset  bool
 	AskID  string
@@ -242,7 +295,7 @@ func ParseLedgerEvents(file string) (cycleBudget, noGainBudget int, events []Led
 	}
 	var ordered []positioned
 	for i, cycle := range cycles {
-		event := LedgerEvent{Cycle: cycle.Number}
+		event := LedgerEvent{Cycle: cycle.Number, Annotations: cycle.Annotations}
 		if m := measurementLineRe.FindStringSubmatch(cycle.Line); m != nil {
 			event.Classification = m[1]
 			event.Observed = strings.TrimSpace(m[3])

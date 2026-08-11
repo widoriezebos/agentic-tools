@@ -92,7 +92,10 @@ if (( cli_status != 0 )); then
   atomic_result "$result" "$session" failed "$usage_path" "$raw" ""
   exit 3
 fi
-if [[ -z "$session" || ( -n "$resume_session" && "$session" != "$resume_session" ) ]]; then
+# The adapter is a witness, not a judge: a rotated session is reported in the
+# result envelope and judged once, at the runner's adjudication. Only a
+# MISSING session stays this adapter's own fault signal (exit 6).
+if [[ -z "$session" ]]; then
   atomic_result "$result" "$session" unresumable "$usage_path" "$raw" "${return_path:-}"
   exit 6
 fi

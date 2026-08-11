@@ -598,4 +598,75 @@ assert record["mirror"] and (Path(record["mirror"]["path"])/"manifest.json").is_
 assert any(item["kind"]=="dispatched" and item["value"]["jobId"]==record["jobId"] for item in state["turnLog"][-1]["accepted"]), state["turnLog"][-1]
 PY
 
+# The host adapter is a witness, not a judge (plans/patience-turn-identity.md
+# T3): a rotated session is reported in the result envelope with outcome
+# completed for the runner's adjudication; only a MISSING session keeps the
+# adapter's own exit-6 fault; and a start gate that never releases still
+# fails the launch. Driven against the real claude host adapter with only the
+# paid CLI call replaced.
+host_fixture=$fixture_root/host-adapter
+host_bin=$host_fixture/bin
+host_turn=$host_fixture/turns/host-session-t1-aaaa
+mkdir -p "$host_bin" "$host_turn"
+cat >"$host_bin/claude" <<'CLAUDE'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+if [[ ${FAKE_CLAUDE_SESSION:-} == none ]]; then
+  printf '{"result":"{}","usage":{"input_tokens":1,"output_tokens":1}}\n'
+else
+  printf '{"session_id":"%s","result":"{}","usage":{"input_tokens":1,"output_tokens":1}}\n' \
+    "${FAKE_CLAUDE_SESSION:?}"
+fi
+CLAUDE
+chmod +x "$host_bin/claude"
+printf '{"missionId":"host-session","turnId":"host-session-t1-aaaa","cycle":1,"model":"fixture-model","hostSession":"announced-session"}\n' \
+  >"$host_turn/turn.json"
+printf 'host adapter session fixture prompt\n' >"$host_turn/prompt.md"
+
+FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
+  "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
+  --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
+  --result "$host_turn/result.json" --instance-tag fixture-host-session-tag \
+  --resume-session announced-session
+python3 - "$host_turn/result.json" <<'PY'
+import json, sys
+value = json.load(open(sys.argv[1]))
+assert value["outcome"] == "completed", value
+assert value["sessionId"] == "rotated-session", value
+PY
+
+set +e
+FAKE_CLAUDE_SESSION=none PATH="$host_bin:$PATH" \
+  "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
+  --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
+  --result "$host_turn/result-missing.json" --instance-tag fixture-host-session-tag \
+  --resume-session announced-session >"$fixture_root/host-missing-session.out" 2>&1
+missing_status=$?
+set -e
+[[ $missing_status -eq 6 ]] \
+  || { echo "missing host session did not keep exit 6 (got $missing_status)" >&2; exit 1; }
+python3 - "$host_turn/result-missing.json" <<'PY'
+import json, sys
+value = json.load(open(sys.argv[1]))
+assert value["outcome"] == "unresumable" and value["sessionId"] is None, value
+PY
+
+set +e
+FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
+  METASYSTEM_HOST_START_GATE="$host_fixture/never-released" \
+  METASYSTEM_HOST_START_GATE_TIMEOUT_SEC=1 \
+  "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
+  --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
+  --result "$host_turn/result-gate.json" --instance-tag fixture-host-session-tag \
+  >"$fixture_root/host-gate-timeout.out" 2>&1
+gate_status=$?
+set -e
+[[ $gate_status -eq 3 ]] \
+  || { echo "unreleased start gate did not fail the launch (got $gate_status)" >&2; exit 1; }
+grep -Fq 'start gate was not released' "$fixture_root/host-gate-timeout.out" \
+  || { echo "start-gate timeout did not name its refusal" >&2; exit 1; }
+[[ ! -e "$host_turn/result-gate.json" ]] \
+  || { echo "a launch that never passed the gate must not write a result envelope" >&2; exit 1; }
+
 echo "mission contract, state, and runner end-state fixtures passed"

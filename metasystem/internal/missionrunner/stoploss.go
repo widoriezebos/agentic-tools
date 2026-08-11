@@ -9,6 +9,11 @@ package missionrunner
 // (no ledgerSemantics state field) verdict under the legacy rules the shipped
 // shell check enforced, so a sealed budget's meaning never changes
 // mid-mission. Non-mission callers keep scripts/assert-stop-loss.sh untouched.
+//
+// Replay invariant: the replay reads ONLY classification, best, and reset
+// lines. Cycle-block annotations (`- Return: rejected:<reason>`,
+// `- Outcome: capped`) are audit trail, never fuse input — a ledger with and
+// without them yields the identical verdict.
 
 import (
 	"fmt"

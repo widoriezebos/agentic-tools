@@ -13,13 +13,14 @@ func TestPriorContext(t *testing.T) {
 	entry := func(outcome string, session any) map[string]any {
 		return map[string]any{"outcome": outcome, "sessionId": session}
 	}
-	cases := []struct {
+	type priorCase struct {
 		name          string
 		log           []any
 		wantSession   any
 		wantReconcile bool
 		wantFailures  int
-	}{
+	}
+	cases := []priorCase{
 		{"empty log", nil, nil, false, 0},
 		{"completed turn resumes its session",
 			[]any{entry("completed", "s1")}, "s1", false, 0},
@@ -36,6 +37,26 @@ func TestPriorContext(t *testing.T) {
 		{"non-string session reads as none",
 			[]any{entry("failed", 7)}, nil, true, 1},
 	}
+	// The breaker decoupling: an entry recorded as feeding no host-failure
+	// blame (a no-witness session mismatch) increments nothing and resets
+	// nothing, while witnessed rejections and capped turns count as failures
+	// and an accepted return resets the count.
+	unwitnessed := func(session any) map[string]any {
+		return map[string]any{"outcome": "failed", "sessionId": session, "feedsBreaker": false}
+	}
+	witnessed := func(session any) map[string]any {
+		return map[string]any{"outcome": "failed", "sessionId": session, "feedsBreaker": true}
+	}
+	cases = append(cases,
+		priorCase{"no-witness rejection increments nothing",
+			[]any{entry("completed", "s1"), unwitnessed("s1")}, "s1", true, 0},
+		priorCase{"no-witness rejection between failures is skipped, not reset",
+			[]any{entry("failed", "a"), unwitnessed("b"), entry("failed", "c")}, "c", true, 2},
+		priorCase{"witnessed rejection counts as a failure",
+			[]any{entry("completed", "s1"), witnessed("s2")}, "s2", true, 1},
+		priorCase{"capped turn counts as a failure",
+			[]any{entry("completed", "s1"), entry("capped", "s2")}, "s2", true, 1},
+	)
 	for _, tc := range cases {
 		session, reconcile, failures := PriorContext(tc.log)
 		if session != tc.wantSession || reconcile != tc.wantReconcile || failures != tc.wantFailures {

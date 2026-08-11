@@ -111,12 +111,12 @@ func TestValidateReturnIdentity(t *testing.T) {
 			doc["identity"].(map[string]any)["model"] = "other"
 		}, "runtime/model identity mismatch"},
 		{
-			// The orchestrator attests what the prompt told it — null on a
-			// first turn — never the session id the adapter discovered,
-			// which the model cannot know.
-			"discovered session",
+			// With no announced and no observed session, a claimed session
+			// matches neither: the return is not accepted, and the fault
+			// names the absent witness.
+			"claimed session with no witness",
 			func(doc map[string]any) { doc["identity"].(map[string]any)["sessionId"] = "sess-1" },
-			"session identity mismatch",
+			"neither the announced session nor any harness-observed session",
 		},
 	}
 	for _, tc := range cases {
@@ -130,6 +130,112 @@ func TestValidateReturnIdentity(t *testing.T) {
 				t.Fatalf("want %q, got %v", tc.message, err)
 			}
 		})
+	}
+}
+
+// TestSessionAdjudicationMatrix pins the honesty-proof session rule: a
+// return is accepted when its session equals the announced OR the observed
+// session, so neither echoing a stale prompt nor telling the truth can fail
+// an honest host. Neither matching is a SessionFault, witnessed only when
+// the harness observed a session itself.
+func TestSessionAdjudicationMatrix(t *testing.T) {
+	cases := []struct {
+		name          string
+		announced     any
+		observed      any
+		claimed       any
+		accepted      bool
+		wantWitnessed bool
+	}{
+		{"echo the announced session", "s-old", "s-new", "s-old", true, false},
+		{"report the observed session", "s-old", "s-new", "s-new", true, false},
+		{"first turn echoes null", nil, "s-new", nil, true, false},
+		// The stale-announcement crash path: the turn log dropped the last
+		// session, the announcement is stale, and the truthful host reports
+		// the session it actually has — accepted via the observed identity.
+		{"stale announcement, truthful return", "s-stale", "s-live", "s-live", true, false},
+		{"neither, with a witness", "s-old", "s-new", "s-else", false, true},
+		{"neither, no witness", "s-old", nil, "s-else", false, false},
+		{"claimed session on a first turn with no witness", nil, nil, "s-made-up", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			turn := testTurn()
+			turn.AnnouncedSession = tc.announced
+			turn.ObservedSession = tc.observed
+			err := sessionIdentityFault(tc.claimed, turn)
+			if tc.accepted {
+				if err != nil {
+					t.Fatalf("must be accepted, got %v", err)
+				}
+				return
+			}
+			fault, ok := err.(*SessionFault)
+			if !ok {
+				t.Fatalf("want a SessionFault, got %v", err)
+			}
+			if fault.Witnessed != tc.wantWitnessed {
+				t.Fatalf("witnessed=%v, want %v", fault.Witnessed, tc.wantWitnessed)
+			}
+		})
+	}
+}
+
+// TestValidateReturnAcceptsObservedSession proves the rule end to end: the
+// return reports the session the harness observed, not the stale
+// announcement, and validation accepts it.
+func TestValidateReturnAcceptsObservedSession(t *testing.T) {
+	turnDir := t.TempDir()
+	turn := testTurn()
+	turn.AnnouncedSession = "s-stale"
+	turn.ObservedSession = "s-live"
+	doc := testReturnDoc(turn)
+	doc["identity"].(map[string]any)["sessionId"] = "s-live"
+	writeJSONFile(t, filepath.Join(turnDir, "return.json"), doc)
+	if _, err := ValidateReturn(turn, validResult(turnDir), turnDir, passChecker); err != nil {
+		t.Fatalf("a truthful return must be accepted over a stale announcement: %v", err)
+	}
+}
+
+// TestTurnFromDocSessionVintages pins how turn.json vintages read: a legacy
+// record without the new fields adjudicates as before (announced = the old
+// hostSession, no observed witness), and a stamped record carries both.
+func TestTurnFromDocSessionVintages(t *testing.T) {
+	base := map[string]any{
+		"turnId": "demo-t3-ab12", "missionId": "demo", "cycle": 3,
+		"runtime": "fake", "model": "fixture",
+	}
+	legacy := map[string]any{"hostSession": "s-old"}
+	for key, value := range base {
+		legacy[key] = value
+	}
+	turn, err := TurnFromDoc(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn.AnnouncedSession != "s-old" || turn.ObservedSession != nil {
+		t.Fatalf("legacy vintage: %+v", turn)
+	}
+	if err := sessionIdentityFault("s-old", turn); err != nil {
+		t.Fatalf("legacy echo must stay accepted: %v", err)
+	}
+	fault, ok := sessionIdentityFault("s-other", turn).(*SessionFault)
+	if !ok || fault.Witnessed {
+		t.Fatalf("legacy mismatch has no witness: %v", fault)
+	}
+
+	stamped := map[string]any{
+		"hostSession": "s-old", "announcedSession": "s-old", "observedSession": "s-new",
+	}
+	for key, value := range base {
+		stamped[key] = value
+	}
+	turn, err = TurnFromDoc(stamped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn.AnnouncedSession != "s-old" || turn.ObservedSession != "s-new" || turn.HostSession != "s-old" {
+		t.Fatalf("stamped vintage: %+v", turn)
 	}
 }
 

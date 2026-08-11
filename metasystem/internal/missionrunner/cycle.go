@@ -131,6 +131,88 @@ func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclus
 	return proposed, nil
 }
 
+// ConclusionSession is the session a concluded turn records in its turn-log
+// entry, which the next turn's Host-Session announcement derives from: the
+// harness-observed session when one exists (whatever the return's fate, so a
+// trusted witness corrects a stale announcement instead of compounding it),
+// else the envelope session a legacy unstamped turn carried, else the
+// announced session the turn ran under.
+func ConclusionSession(turn Turn, envelopeSession any) any {
+	if turn.ObservedSession != nil {
+		return turn.ObservedSession
+	}
+	if envelopeSession != nil {
+		return envelopeSession
+	}
+	return turn.AnnouncedSession
+}
+
+// TurnFault names the fault a turn on the faulted-conclusion path carries
+// beside its measurement: the recorded outcome ("failed" for a rejected
+// return, "capped" for a fired cap), the one-line detail, whether the fault
+// counts toward the consecutive-host-failure breaker (witnessed protocol
+// violations and caps do; a no-witness session mismatch convicts nobody),
+// and the ledger annotation lines recording the fault in the cycle block.
+type TurnFault struct {
+	Outcome      string
+	Detail       string
+	FeedsBreaker bool
+	Annotations  []string
+}
+
+// ConcludeFaultedTurn is the one application rule, stated here once and
+// called from both faulted paths (rejected return, fired cap): a return's
+// state mutations — stream transitions, asks, waiting list — are applied
+// ONLY when the return is accepted, so this proposal carries an empty
+// verdict: no accepted entries, no asks, no stream transitions; streams keep
+// the states they had at turn start and open asks stay open. Measurement
+// effects always conclude from the measured tree, whatever the return's
+// fate: the turn-log entry carries the measurement beside the fault, and
+// completion on a measured gate pass is the runner's own transition, legal
+// from any stream configuration. There is no third case. The breaker is
+// decoupled from the classification: a breaker-fed fault parks host-failure
+// on the second consecutive failure exactly as a plain failed turn does,
+// unless the measured gate passed — runner-run measurement is truth, and a
+// broken envelope does not un-build the product.
+func ConcludeFaultedTurn(root, mission string, state map[string]any, turn Turn, fault TurnFault, measurement any, gatePassed bool, consecutiveFailures int) (map[string]any, error) {
+	proposed := deepCopyDoc(state)
+	entry := map[string]any{
+		"turnId":       turn.TurnID,
+		"cycle":        turn.Cycle,
+		"outcome":      fault.Outcome,
+		"detail":       fault.Detail,
+		"sessionId":    ConclusionSession(turn, nil),
+		"measurement":  measurement,
+		"annotations":  fault.Annotations,
+		"feedsBreaker": fault.FeedsBreaker,
+	}
+	if err := appendTurnLog(proposed, entry); err != nil {
+		return nil, err
+	}
+	if err := setLedgerCycles(proposed, turn.Cycle); err != nil {
+		return nil, err
+	}
+	proposed["waitingList"] = openAskIDs(asksDirPath(root, mission))
+	if err := ProjectFences(root, mission, proposed); err != nil {
+		return nil, err
+	}
+	switch {
+	case gatePassed:
+		proposed["status"] = "completed"
+		proposed["parkReason"] = nil
+		proposed["gatePassed"] = true
+	case fault.FeedsBreaker && consecutiveFailures >= 2:
+		proposed["status"] = "parked"
+		proposed["parkReason"] = "host-failure"
+		proposed["gatePassed"] = false
+	default:
+		proposed["status"] = "running"
+		proposed["parkReason"] = nil
+		proposed["gatePassed"] = false
+	}
+	return proposed, nil
+}
+
 // RecordFailureProposal proposes the state after a turn that produced no
 // usable return: a turn-log entry with no session and no measurement, the
 // ledger cycle advanced (a failed turn still spends its cycle), and — on the

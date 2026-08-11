@@ -144,6 +144,87 @@ func TestAppendResetGrammarAndSanitization(t *testing.T) {
 	}
 }
 
+func TestAppendCycleAnnotations(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.md")
+	if err := InitLedger(file, 5, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendCycle(file, 1, "contract-improved", goodSHA, "score=1", "yes",
+		"Return: rejected:orchestrator return session identity mismatch", CappedAnnotation); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The classification line is untouched; the annotations are their own
+	// lines inside the same cycle block.
+	want := "- Classification: contract-improved; candidate-sha=" + goodSHA + "; observed=score=1; best=yes\n" +
+		"- Return: rejected:orchestrator return session identity mismatch\n" +
+		"- Outcome: capped\n"
+	if !strings.Contains(string(data), want) {
+		t.Fatalf("annotation lines misshapen:\n%s", data)
+	}
+	// Every parser tolerates and exposes them.
+	_, _, cycles, err := ParseLedger(file)
+	if err != nil || len(cycles) != 1 {
+		t.Fatalf("annotated ledger must parse: %v (%d)", err, len(cycles))
+	}
+	wantAnnotations := []string{"Return: rejected:orchestrator return session identity mismatch", "Outcome: capped"}
+	if len(cycles[0].Annotations) != 2 || cycles[0].Annotations[0] != wantAnnotations[0] || cycles[0].Annotations[1] != wantAnnotations[1] {
+		t.Fatalf("annotations not exposed: %v", cycles[0].Annotations)
+	}
+	_, _, events, err := ParseLedgerEvents(file)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("annotated events must parse: %v", err)
+	}
+	if len(events[0].Annotations) != 2 || events[0].Classification != "contract-improved" || events[0].Best != "yes" {
+		t.Fatalf("event misread beside annotations: %+v", events[0])
+	}
+	// The next append stays contiguous: annotations never count as cycles.
+	if err := AppendCycle(file, 2, "unresolved", goodSHA, "score=1", "no"); err != nil {
+		t.Fatalf("append after annotations: %v", err)
+	}
+	// Only the two named annotation kinds may be written.
+	if err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", "Note: freeform"); err == nil {
+		t.Fatal("an unknown annotation kind must be refused")
+	}
+	if err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", "Return: rejected:a\nb"); err == nil {
+		t.Fatal("a multi-line annotation must be refused")
+	}
+}
+
+func TestReturnRejectedAnnotationBounds(t *testing.T) {
+	if got := ReturnRejectedAnnotation("line one\nline two"); got != "Return: rejected:line one line two" {
+		t.Fatalf("newlines must flatten: %q", got)
+	}
+	if got := ReturnRejectedAnnotation("  \n "); got != "Return: rejected:unspecified" {
+		t.Fatalf("an empty reason must not produce an empty annotation: %q", got)
+	}
+	long := ReturnRejectedAnnotation(strings.Repeat("x", 1000))
+	if len(long) > len("Return: rejected:")+rejectedReasonMaxLen {
+		t.Fatalf("over-long reasons must truncate: %d bytes", len(long))
+	}
+}
+
+func TestParseLedgerToleratesHandWrittenAnnotationLines(t *testing.T) {
+	// The tolerance is grammatical, not writer-specific: a block whose
+	// annotation lines arrived from an older or foreign writer still parses
+	// with exactly one classification per block.
+	file := filepath.Join(t.TempDir(), "ledger.md")
+	text := "# Mission Ledger\n\n- Cycle budget: 5\n- No-gain budget: 3\n\n" +
+		"### Cycle 1\n- Classification: no-progress; candidate-sha=" + goodSHA + "; observed=score=1; best=no\n" +
+		"- Return: rejected:host result has missing or unexpected fields\n" +
+		"- Outcome: capped\n"
+	if err := atomicWriteText(file, text); err != nil {
+		t.Fatal(err)
+	}
+	_, _, cycles, err := ParseLedger(file)
+	if err != nil || len(cycles) != 1 || len(cycles[0].Annotations) != 2 {
+		t.Fatalf("hand-written annotations: %v (%+v)", err, cycles)
+	}
+}
+
 func TestParseLedgerEventsOrderAndTokens(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "ledger.md")
 	if err := InitLedger(file, 5, 3); err != nil {

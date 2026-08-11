@@ -95,7 +95,7 @@ func ConcludeFiles(root, mission, statePath, turnPath, verdictPath, returnPath, 
 	state["streams"] = streams
 	gatePassed, _ := inputs["measurement"]["gatePassed"].(bool)
 	return ConcludeTurn(root, mission, state, turn, TurnConclusion{
-		SessionID:      inputs["host result"]["sessionId"],
+		SessionID:      ConclusionSession(turn, inputs["host result"]["sessionId"]),
 		Measurement:    inputs["measurement"]["measurement"],
 		GatePassed:     gatePassed,
 		Accepted:       verdict["accepted"],

@@ -325,6 +325,53 @@ func TestBestMarkerComputedAtAppend(t *testing.T) {
 	}
 }
 
+// TestAnnotationsNeverChangeAReplayVerdict pins the replay invariant: cycle
+// annotations are audit trail, never fuse input. Two ledgers with identical
+// classification, best, and reset lines — one annotated, one not — must
+// yield the identical verdict under both semantics.
+func TestAnnotationsNeverChangeAReplayVerdict(t *testing.T) {
+	engine, _ := stopLossEngine(t)
+	build := func(name string, annotated bool) string {
+		ledger := filepath.Join(t.TempDir(), name+".md")
+		if err := mission.InitLedger(ledger, 4, 2); err != nil {
+			t.Fatal(err)
+		}
+		annotations := func(values ...string) []string {
+			if annotated {
+				return values
+			}
+			return nil
+		}
+		if err := mission.AppendCycle(ledger, 1, "no-progress", testSHA, "score=5", "no",
+			annotations(mission.ReturnRejectedAnnotation("session identity"))...); err != nil {
+			t.Fatal(err)
+		}
+		if err := mission.AppendReset(ledger, "stop-loss", "keep going"); err != nil {
+			t.Fatal(err)
+		}
+		if err := mission.AppendCycle(ledger, 2, "unresolved", testSHA, "score=5", "no",
+			annotations(mission.CappedAnnotation)...); err != nil {
+			t.Fatal(err)
+		}
+		return ledger
+	}
+	plain := build("plain", false)
+	annotated := build("annotated", true)
+	for _, state := range []map[string]any{{}, {"ledgerSemantics": 2}} {
+		got, err := engine.stopLossVerdict(state, annotated)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := engine.stopLossVerdict(state, plain)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if *got != *want {
+			t.Fatalf("annotations changed the replay verdict: %+v vs %+v", *got, *want)
+		}
+	}
+}
+
 func TestThresholdDeclarationOrder(t *testing.T) {
 	text := "```mission\ngate.threshold.zeta=>=1\ngate.noise-floor.zeta=0\ngate.threshold.alpha=>=1\ngate.noise-floor.alpha=0\n```\n"
 	metrics, err := thresholdDeclarationOrder(text)

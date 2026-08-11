@@ -20,12 +20,29 @@ type Turn struct {
 	Cycle       any // JSON number, preserved as written
 	Runtime     string
 	Model       string
-	HostSession any // the session id the prompt announced; nil on a first or unresumable turn
+	HostSession any // legacy name for the announced session, retained until the fixtures migrate
+	// AnnouncedSession is what the prompt's Host-Session header said (nil when
+	// it said none). It derives from the previous concluded turn and can be
+	// stale — a hint, never an authority.
+	AnnouncedSession any
+	// ObservedSession is the session the harness itself observed for this
+	// turn, stamped from its own artifacts. Nil when no source named one; a
+	// legacy turn record without the field reads as nil and adjudicates as
+	// it did before the field existed.
+	ObservedSession any
 }
 
 // TurnFromDoc extracts the identity fields from a turn record document.
 func TurnFromDoc(doc map[string]any) (Turn, error) {
-	turn := Turn{HostSession: doc["hostSession"], Cycle: doc["cycle"]}
+	turn := Turn{
+		HostSession:      doc["hostSession"],
+		AnnouncedSession: doc["hostSession"],
+		ObservedSession:  doc["observedSession"],
+		Cycle:            doc["cycle"],
+	}
+	if announced, present := doc["announcedSession"]; present {
+		turn.AnnouncedSession = announced
+	}
 	for key, target := range map[string]*string{
 		"turnId":    &turn.TurnID,
 		"missionId": &turn.MissionID,
@@ -62,9 +79,10 @@ type ReturnValidation struct {
 // outcome, both result paths stay inside the turn directory, the return
 // passes the role's completeness check (checkReturn, supplied by the caller),
 // and the return's identity matches this turn exactly. The session identity
-// compares against what the prompt told the orchestrator (nil on a first or
-// unresumable turn), not the session id the adapter discovered at launch,
-// which the model cannot know.
+// is accepted when it equals the announced session (what the prompt said) OR
+// the observed session (what the harness itself saw): an honest host can
+// never lose by echoing the prompt or by telling the truth. A return matching
+// neither is a SessionFault, witnessed only when an observed session exists.
 func ValidateReturn(turn Turn, result map[string]any, turnDir string, checkReturn func(returnPath string) error) (*ReturnValidation, error) {
 	expected := map[string]bool{"sessionId": true, "outcome": true, "usage": true, "rawPath": true, "returnPath": true}
 	if len(result) != len(expected) {
@@ -112,10 +130,40 @@ func ValidateReturn(turn Turn, result map[string]any, turnDir string, checkRetur
 	if !numericEqual(identity["runtime"], turn.Runtime) || !numericEqual(identity["model"], turn.Model) {
 		return nil, fmt.Errorf("orchestrator return runtime/model identity mismatch")
 	}
-	if !numericEqual(identity["sessionId"], turn.HostSession) {
-		return nil, fmt.Errorf("orchestrator return session identity mismatch")
+	if err := sessionIdentityFault(identity["sessionId"], turn); err != nil {
+		return nil, err
 	}
 	return &ReturnValidation{Returned: returned, RawPath: rawPath, ReturnPath: returnPath}, nil
+}
+
+// SessionFault is the refusal for a return whose identity.sessionId matched
+// neither the announced nor the observed session. Witnessed reports whether
+// the harness holds its own observation of the session: with a witness this
+// is a host protocol violation that feeds the consecutive-failure breaker;
+// without one, no witness convicts either side and the breaker is not fed.
+// Either way the return is never applied (the one application rule).
+type SessionFault struct {
+	Witnessed bool
+}
+
+func (f *SessionFault) Error() string {
+	if f.Witnessed {
+		return "orchestrator return session identity matches neither the announced nor the observed session"
+	}
+	return "orchestrator return session identity matches neither the announced session nor any harness-observed session"
+}
+
+// sessionIdentityFault applies the honesty-proof session rule: echoing the
+// announced session and reporting the observed session are both correct, so
+// a stale announcement can never fail a truthful host.
+func sessionIdentityFault(claimed any, turn Turn) error {
+	if numericEqual(claimed, turn.AnnouncedSession) {
+		return nil
+	}
+	if turn.ObservedSession != nil && numericEqual(claimed, turn.ObservedSession) {
+		return nil
+	}
+	return &SessionFault{Witnessed: turn.ObservedSession != nil}
 }
 
 // containedPath resolves a result path and refuses one that escapes the turn

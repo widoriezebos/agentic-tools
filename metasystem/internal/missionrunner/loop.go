@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -593,13 +594,14 @@ func (e *Engine) gitRevParse(ref string) (string, error) {
 // appendLedger records one cycle's verdict in the stop-loss ledger, stamping
 // the new-best marker on missions pinned to the replay semantics; a
 // legacy-semantics mission keeps marker-less lines so it finishes under the
-// rules it started with.
-func (e *Engine) appendLedger(state map[string]any, ledger string, cycle int64, classification, candidateSHA, observed string) error {
+// rules it started with. Annotations land in the same atomic append, as
+// separate lines beside the classification line.
+func (e *Engine) appendLedger(state map[string]any, ledger string, cycle int64, classification, candidateSHA, observed string, annotations ...string) error {
 	best, err := e.bestMarker(state, ledger, observed)
 	if err != nil {
 		return err
 	}
-	if err := mission.AppendCycle(ledger, int(cycle), classification, candidateSHA, observed, best); err != nil {
+	if err := mission.AppendCycle(ledger, int(cycle), classification, candidateSHA, observed, best, annotations...); err != nil {
 		return failf(3, "mission ledger append refused: %v", err)
 	}
 	return nil
@@ -727,6 +729,101 @@ func (e *Engine) measure(state map[string]any) (classification, observed string,
 	return result.Classification, result.Observed, measurement, result.GatePassed
 }
 
+// stampObservedSession records the session identity the harness itself
+// observed for a turn, into the turn record, from the earliest source the
+// runtime produces: a session-established signal where the runtime's
+// capability snapshot declares one — no host adapter emits a launch signal
+// today (host session discovery is post-hoc) — else the adapter's terminal
+// result envelope, the universal source for host turns. The return's own
+// claim is never a source. It reports the stamped value; nil when no
+// harness artifact named a session.
+func (e *Engine) stampObservedSession(turnDir string, result map[string]any) (any, error) {
+	envelope := result
+	if envelope == nil {
+		// A capped or failed adapter may still have written its terminal
+		// envelope before the wind-down; what exists on disk is still the
+		// harness's own artifact.
+		if doc, err := readJSONDoc(filepath.Join(turnDir, "result.json")); err == nil {
+			envelope = doc
+		}
+	}
+	session, _ := envelope["sessionId"].(string)
+	if session == "" {
+		return nil, nil
+	}
+	if _, err := patchTurn(filepath.Join(turnDir, "turn.json"), map[string]any{"observedSession": session}); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// concludeFaultedTurn drives the cycle's remaining duties for a turn whose
+// return was not accepted (rejected or capped), in the binding order: drain
+// jobs FIRST so measurement never races live delegates, measure the
+// committed tree, append the ledger line with the fault annotations in the
+// same cycle block, then conclude with the empty verdict plus the
+// measurement (ConcludeFaultedTurn). A host-failure park and the stop-loss
+// check follow exactly as on the plain failed-turn path.
+func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]any, turnPath, turnDir string, fault TurnFault, consecutiveFailures int) (map[string]any, error) {
+	if err := e.drainJobs(); err != nil {
+		return nil, err
+	}
+	classification, observed, measurement, gatePassed := e.measure(state)
+	var candidateSHA string
+	if measurement != nil {
+		candidateSHA, _ = measurement["candidateSha"].(string)
+	} else {
+		branch, _ := state["branch"].(string)
+		var err error
+		if candidateSHA, err = e.gitRevParse(branch); err != nil {
+			return nil, err
+		}
+	}
+	turnDoc, err := readDocLabeled(turnPath, "turn record", 3)
+	if err != nil {
+		return nil, err
+	}
+	turn, err := TurnFromDoc(turnDoc)
+	if err != nil {
+		return nil, err
+	}
+	cycle, ok := jsonInt(turn.Cycle)
+	if !ok {
+		return nil, failf(3, "turn record cycle is invalid")
+	}
+	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed, fault.Annotations...); err != nil {
+		return nil, err
+	}
+	var measurementValue any
+	if measurement != nil {
+		measurementValue = measurement
+	}
+	if err := atomicWriteJSON(filepath.Join(turnDir, "measurement.json"), map[string]any{
+		"measurement": measurementValue, "gatePassed": gatePassed,
+	}); err != nil {
+		return nil, err
+	}
+	diskState, err := readDocLabeled(statePath, "mission state", 3)
+	if err != nil {
+		return nil, err
+	}
+	proposed, err := ConcludeFaultedTurn(e.Root, e.Mission, diskState, turn, fault, measurementValue, gatePassed, consecutiveFailures)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := e.writeState(statePath, proposed)
+	if err != nil {
+		return nil, err
+	}
+	if err := e.anchor(statePath, ledger, turn.TurnID); err != nil {
+		return nil, err
+	}
+	if updated["status"] == "parked" && updated["parkReason"] == "host-failure" {
+		return e.parkState(statePath, ledger, "host-failure", turn.TurnID)
+	}
+	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, updated)
+}
+
 // oneCycle drives one full mission cycle: reserve it, build and check the
 // turn, run the host, adjudicate and apply the return, measure, account, and
 // decide whether the mission continues. It returns the state the mission is
@@ -762,27 +859,34 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 	}
 	turnPath := filepath.Join(turnDir, "turn.json")
 	turn := map[string]any{
-		"missionId":      e.Mission,
-		"turnId":         turnID,
-		"cycle":          cycle,
-		"runtime":        values["host.runtime"],
-		"model":          values["host.model"],
-		"hostSession":    hostSession,
-		"reconciliation": reconciliation,
-		"startedAt":      nowISO(),
-		"turnCapMin":     turnCapMin,
-		"pid":            nil,
-		"pidStartedAt":   nil,
-		"pgid":           nil,
-		"instanceTag":    nil,
-		"status":         "pending",
-		"outcome":        nil,
-		"error":          nil,
-		"detail":         nil,
-		"resultPath":     filepath.Join(turnDir, "result.json"),
-		"returnPath":     filepath.Join(turnDir, "return.json"),
-		"rawPath":        filepath.Join(turnDir, "raw.out"),
-		"endedAt":        nil,
+		"missionId": e.Mission,
+		"turnId":    turnID,
+		"cycle":     cycle,
+		"runtime":   values["host.runtime"],
+		"model":     values["host.model"],
+		// The announced session is what the prompt's Host-Session header will
+		// say: a hint from the previous concluded turn, never an authority.
+		// hostSession keeps the same value under its legacy name until the
+		// fixtures migrate. The observed session is stamped after the host
+		// runs, from the harness's own artifacts.
+		"hostSession":      hostSession,
+		"announcedSession": hostSession,
+		"observedSession":  nil,
+		"reconciliation":   reconciliation,
+		"startedAt":        nowISO(),
+		"turnCapMin":       turnCapMin,
+		"pid":              nil,
+		"pidStartedAt":     nil,
+		"pgid":             nil,
+		"instanceTag":      nil,
+		"status":           "pending",
+		"outcome":          nil,
+		"error":            nil,
+		"detail":           nil,
+		"resultPath":       filepath.Join(turnDir, "result.json"),
+		"returnPath":       filepath.Join(turnDir, "return.json"),
+		"rawPath":          filepath.Join(turnDir, "raw.out"),
+		"endedAt":          nil,
 	}
 	if err := atomicWriteJSON(turnPath, turn); err != nil {
 		return nil, err
@@ -824,10 +928,16 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 	e.emit("turn-result", summary, map[string]string{
 		"missionId": e.Mission, "turnId": turnID, "outcome": outcomeField,
 	})
+	if _, err := e.stampObservedSession(turnDir, result); err != nil {
+		return nil, err
+	}
 	if launchDetail == "start-unverified" {
 		return e.recordFailedTurn(statePath, ledger, state, turnPath, launchDetail, "failed", 2)
 	}
 	if exitCode == 6 {
+		// The adapter's genuine fault signal: the envelope carries no session
+		// at all. Rotation no longer lands here — a rotated session is
+		// reported in the envelope and judged at adjudication.
 		if _, err := patchTurn(turnPath, map[string]any{
 			"status": "failed", "outcome": "unresumable", "error": "unresumable",
 			"detail": "host session is not resumable", "endedAt": nowISO(),
@@ -835,6 +945,17 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 			return nil, err
 		}
 		return e.recordFailedTurn(statePath, ledger, state, turnPath, "host session is not resumable", "unresumable", priorFailures)
+	}
+	if launchDetail == "capped" {
+		// The cap fired: the turn keeps outcome=capped, and the cycle still
+		// drains, measures, and concludes, so a cap that landed real work
+		// registers as the progress it made.
+		return e.concludeFaultedTurn(statePath, ledger, state, turnPath, turnDir, TurnFault{
+			Outcome:      "capped",
+			Detail:       "host turn reached host.turn-cap-min",
+			FeedsBreaker: true,
+			Annotations:  []string{mission.CappedAnnotation},
+		}, priorFailures+1)
 	}
 	if exitCode != 0 || result == nil {
 		detail := launchDetail
@@ -859,7 +980,20 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 		}); patchErr != nil {
 			return nil, patchErr
 		}
-		return e.recordFailedTurn(statePath, ledger, state, turnPath, detail, "failed", priorFailures+1)
+		// A rejected return is never applied, but the cycle keeps its duties:
+		// drain, measure, conclude with both facts. Only a mismatch nobody
+		// witnessed is kept off the breaker.
+		var sessionFault *SessionFault
+		feedsBreaker := true
+		if errors.As(err, &sessionFault) && !sessionFault.Witnessed {
+			feedsBreaker = false
+		}
+		return e.concludeFaultedTurn(statePath, ledger, state, turnPath, turnDir, TurnFault{
+			Outcome:      "failed",
+			Detail:       detail,
+			FeedsBreaker: feedsBreaker,
+			Annotations:  []string{mission.ReturnRejectedAnnotation(detail)},
+		}, priorFailures+1)
 	}
 
 	// The verdict is the audit record of what this turn's return claimed and

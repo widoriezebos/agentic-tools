@@ -59,7 +59,7 @@ These require explicit in-task approval even when technically easy. Default set,
 
 ## Return contract
 
-Return JSON conforming to `scripts/agents/schemas/orchestrator.schema.json`, with exactly `turnId`, `missionId`, `cycle`, `dispatched`, `certified`, `streamUpdatesRequested`, `askCandidates`, `factsForLedger`, `gaps`, and `identity`. State only work actually dispatched or certified and only changes you want the runner to apply.
+Return JSON conforming to `scripts/agents/schemas/orchestrator.schema.json`, with exactly `turnId`, `missionId`, `cycle`, `dispatched`, `certified`, `streamUpdatesRequested`, `askCandidates`, `factsForLedger`, `gaps`, and `identity`. State only work actually dispatched or certified and only changes you want the runner to apply. For `identity.sessionId`, echo the prompt's `Host-Session` header exactly (null when it says `none`), or report the session id your own runtime shows you — both are accepted; never invent one.
 
 ## Prohibitions
 

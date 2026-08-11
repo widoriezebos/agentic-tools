@@ -152,13 +152,16 @@ if [[ ! -s "$raw" ]]; then
   atomic_result "$result" "$session" failed "$usage_path" "$raw" ""
   exit 3
 fi
-if [[ -z "$session" || ( -n "$resume_session" && "$session" != "$resume_session" ) ]]; then
+# The adapter is a witness, not a judge: a rotated session is reported in the
+# result envelope and judged once, at the runner's adjudication. Only a
+# MISSING session stays this adapter's own fault signal (exit 6).
+if [[ -z "$session" ]]; then
   atomic_result "$result" "$session" unresumable "$usage_path" "$raw" "$return_path"
   exit 6
 fi
 # Publish this turn's cumulative totals into the per-session store so the next
-# turn of THIS session subtracts the right predecessor. Keyed by the confirmed
-# session, written only on a clean, resumable completion.
+# turn of THIS session subtracts the right predecessor. Keyed by the observed
+# session, written only on a completion that names one.
 if [[ -s "$cumulative" ]]; then
   completed_key=$("$ms" util slug "$session")
   cp "$cumulative" "$session_store/$completed_key.json" 2>/dev/null || true
