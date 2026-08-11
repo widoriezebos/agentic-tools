@@ -3082,15 +3082,18 @@ EOF
   patience_ledger="$runner_repo/artifacts/agents/missions/runner-patience/ledger.md"
   grep -Fq -- '- Patience: orphan=pat-lost rounds=1' "$patience_ledger" \
     || { echo "patience orphan report missing from the ledger" >&2; cat "$patience_ledger" >&2; exit 1; }
-  if grep -q 'Patience' "$runner_repo/artifacts/agents/missions/runner-patience/turns/1/prompt.md"; then
+  patience_turns=$(find "$runner_repo/artifacts/agents/missions/runner-patience/turns" \
+    -mindepth 1 -maxdepth 1 -type d | sort)
+  patience_turn_1=$(printf '%s\n' "$patience_turns" | sed -n 1p)
+  patience_turn_2=$(printf '%s\n' "$patience_turns" | sed -n 2p)
+  [[ -n "$patience_turn_2" ]] || { echo "the patience mission ran fewer than two turns" >&2; exit 1; }
+  if grep -q 'Patience' "$patience_turn_1/prompt.md"; then
     echo "the first prompt carried a Patience line before any booking" >&2; exit 1
   fi
-  grep -Fq 'Patience: orphan job pat-lost has unwitnessed spend' \
-    "$runner_repo/artifacts/agents/missions/runner-patience/turns/2/prompt.md" \
+  grep -Fq 'Patience: orphan job pat-lost has unwitnessed spend' "$patience_turn_2/prompt.md" \
     || { echo "the second prompt did not project the patience line" >&2; exit 1; }
   "$runner_repo/scripts/assert-turn-prompt.sh" \
-    --file "$runner_repo/artifacts/agents/missions/runner-patience/turns/2/prompt.md" \
-    --turn "$runner_repo/artifacts/agents/missions/runner-patience/turns/2"
+    --file "$patience_turn_2/prompt.md" --turn "$patience_turn_2"
   rm -f "$runner_repo/artifacts/agents/jobs/pat-lost.json"
   wait_lease_released runner-patience 'patience fixture exit'
   printf '1\n' >"$runner_repo/candidate-score.txt"
