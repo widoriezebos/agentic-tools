@@ -1,8 +1,8 @@
 # Patience satellite 3: orphan and usage capture
 
 Owner: main session (claude). Status: DESIGN — rounds 1-3 adjudicated
-(10, 5, 7 material, all accepted; dispositions r1/r2/r3 beside this
-plan), awaiting round 4. Grounded on the verified fact sheet
+(10, 5, 7, 6 material, all accepted; dispositions r1-r4 beside this
+plan), awaiting round 5 (final convergence check). Grounded on the verified fact sheet
 (`plans/patience-orphan-usage-facts.md`, cited F Qn.m) per the
 facts-before-design rule; this revision was regenerated whole after two
 piecemeal edits drifted (the skill's generating-cause rule applied to
@@ -63,10 +63,23 @@ certified keeps its row until the host certifies or supersedes it.
 Gaming is self-harm only: a false certification filters the host's own
 reminder list and never touches a fuse.
 
-Row bound: at most one row per chain (the latest qualifying round), at
-most the sealed job fence's worth of chains, and a hard cap of 20 rows
-— overflow collapses into one final summary row (`overflow  <n>  none`)
-so no fence value can bloat the prompt (POU-R3-006).
+Row bound and order (POU-R4-003): rows sort by (chain root, then
+round), both ascending — deterministic under any tree. At most one row
+per chain (the latest qualifying round). The section carries at most
+20 rows total: when more than 20 chains qualify, rows 1-19 are the
+first nineteen in sort order and row 20 is the overflow summary
+(`overflow  <count-of-remaining>  none`).
+
+TERMINAL DELIVERY (POU-R4-001): completion and runner-failure
+finalization produce no next prompt, so the landed list's "next
+assembly carries it" premise fails exactly there. At the completion
+conclude and on the failure ramp, the same derived list (same cap and
+order) is appended as annotation lines in the final cycle's ledger
+block — `- Landed unconsumed: chain=<root> round=<n> path=<...>` —
+using the shipped annotation grammar (audit trail, never fuse input).
+The final ledger is what a human or grader reads after a terminal
+mission; the unconsumed value is named there instead of vanishing with
+the last prompt.
 
 ## O2. Delivery is a validated seventh prompt section
 
@@ -136,12 +149,18 @@ existing usage.json into state (F Q2.11, Q4.4). The fix:
   conflict. The dispatch reap aggregation writes the same usage.json
   from the same inputs under the same lock: double execution is
   last-writer-identical, never double-counting.
-- Failure behavior (POU-R3-005): an aggregation error at any added
-  call logs a flight-recorder event and does NOT fail the park, the
-  conclusion, or the exit — the projection reads the older usage.json
-  until the next successful call catches up.
-- Idempotence means: same terminal records and same death proofs in,
-  byte-identical usage.json out.
+- Failure behavior (POU-R3-005, POU-R4-004): an aggregation error at
+  any added call emits the NEW registry event kind
+  `aggregation-failed` with fields {mission, site, error} — an
+  additive entry in the flight-recorder registry, named here because
+  no shipped kind fits — and does NOT fail the park, the conclusion,
+  or the exit; the projection reads the older usage.json until the
+  next successful call catches up.
+- Idempotence and `updatedAt` (POU-R4-005): the aggregate write is
+  SKIPPED when the computed content (units, unavailableJobs, rounds)
+  equals the existing file's content — `updatedAt` then keeps its old
+  value and the file is byte-identical. `updatedAt` changes exactly
+  when content changes.
 
 # Invariants
 
