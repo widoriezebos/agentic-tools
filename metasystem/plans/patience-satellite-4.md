@@ -4,8 +4,8 @@ Working Mode: design
 
 Satellite 4 of the patience program (plans/stop-loss-satellites.md).
 Regenerated whole after rounds 1, 2, 9, and 10; amended in place
-after rounds 3-8 and 11-18
-(plans/dispositions/patience-satellite-4-r{1..18}.md; 86/86
+after rounds 3-8 and 11-19
+(plans/dispositions/patience-satellite-4-r{1..19}.md; 90/90
 accepted). Round 10 named the loop's generating cause — the
 damage-tolerance rule surface — and superseded it: patience evaluates
 clean evidence only; round 11 closed the one silence that left (the
@@ -378,8 +378,16 @@ Race-detector unit tests, each named case a distinct test:
   counts (r16/P4-082); spend-proving usage trumps every vocabulary
   entry — a post-run session-mismatch record with positive usage
   counts (r14/P4-078).
-- Streak counting: certification resets — alternating witness/barren
-  never breaches (r9/P4-057); no witness counts all counted jobs;
+- Streak counting: a root with two unwitnessed started terminal
+  SIBLINGS counts two — set aggregation, not one lineage walk
+  (r3/P4-029, r19/P4-087); two started jobs both numbered round two
+  count as two — round numbers play no part (r2/P4-023,
+  r19/P4-088); a RUNNING job with an effective model never counts
+  while running and counts after an uncertified terminal transition
+  (r6/P4-043, r19/P4-089); a job that reached running and is then
+  cancelled counts (r10/P4-066, r19/P4-090); certification resets —
+  alternating witness/barren never breaches (r9/P4-057); no witness
+  counts all counted jobs;
   rejected and empty-evidence certifications ignored, evidence as a
   STRING (r10/P4-063); certifications of husks or never-started jobs
   ignored (r11/P4-071); foreign-jobId certifications ignored
