@@ -94,3 +94,20 @@ mechanisms that consume the signal, all standing on whatever shared
 ground-truth mapping the split named as a precondition. Reference case:
 the stop-loss split (`plans/stop-loss-satellites.md`), where the parent's
 41 accepted findings route to one shipped core and four satellites.
+
+## Ground the Facts Before the First Round
+
+Most rounds burned in this repository's loops were spent fact-checking
+the author, not judging the design: drafts carried claims about shipped
+mechanisms — call sites, grammars, lifecycles — that the code
+contradicted, and the critic did the correcting at critique prices
+(human ruling, 2026-08-11: find a way not to produce the flaggable
+claims at all). The discipline: before a design's first round, every
+claim about shipped behavior is verified with a file:line anchor —
+gathered by a code-grounded fact pass (the main's own investigation or
+a harness-side evidence agent; within a mission the investigator role
+is main-assigned and evidence gathering is never a design delegation).
+The design then cites the fact sheet, and a mechanism claim without an
+anchor is a defect in review. The critique loop exists to attack
+judgment — tradeoffs, invariants, failure behavior — and every fact it
+must correct is a round it cannot spend on judgment.
