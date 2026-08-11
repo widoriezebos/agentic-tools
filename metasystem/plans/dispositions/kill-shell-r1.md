@@ -1,0 +1,16 @@
+# Dispositions: kill-shell plan, round 1
+
+Job: design-critic-20260811t231142z-a3cd (codex gpt-5.6-sol, xhigh).
+9 findings, 9 material, all accepted. The plan is regenerated whole.
+
+| id | disposition |
+| --- | --- |
+| KS-R1-001 | accepted — Phase 0 produces a per-script DISPOSITION REGISTRY (port+shim, port+delete, keep), and every deletion pairs with an adopt.sh payload change in the same commit: adopted targets receive scripts/ wholesale, so the payload list is the deletion's contract surface. The unreferenced-script fence checks the registry, not raw reachability. |
+| KS-R1-002 | accepted — the fact sheet is stale on locks: dispatch already delegates the lock primitive to internal/dispatch/ownerlock.go. Phase B's scope corrects to the remaining CHOREOGRAPHY (when each lock is taken, held, and released; liveness and wind-down sequencing), and each phase re-runs its fact section before design, per the plan's own moving-target rule. |
+| KS-R1-003 | accepted — Phase B starts with CHARACTERIZATION fixtures for the named unpinned branches (rename-born publication, the six holder classifications, non-owner release, lifecycle-lock timeout scaling, cap-authority lock disappearance, wind-down refusal ramps) before any port; behavior-preserving is only meaningful against pinned behavior. |
+| KS-R1-004 | accepted — the plan carries the script-to-family table: assert-conformance → validate; assert-design-obligation-gate → validate; receipt.sh → a receipt family (it owns durable state and several commands); frontier.sh → report; audit-metasystem.sh → audit family (new, one verb). Naming is finalized at implementation but ownership is decided here. |
+| KS-R1-005 | accepted — a constraint is added: record authority and lifecycle serialization stay with dispatch. Adapter drivers get a narrow Go interface whose implementations route record mutations through the same authority matrix the shell router enforces today (the authority family), and the design gate for Phase C must show the classification-equivalence. |
+| KS-R1-006 | accepted — the host boundary is corrected: hosts keep launch-wait-parse-write custody; what moves to Go are the DECISIONS after exit (outcome classification, session and usage parsing, atomic result writing) as verbs the host shim calls. 'Final exec' leaves the plan; the shim retains process custody because the protocol requires regaining control. |
+| KS-R1-007 | accepted — Phase F is decided by the evidence: candidate 1 wins. Adopted targets run validate-metasystem.sh without a Go module by design, so fixtures stay bash end-to-end drivers with assertions moving to Go verbs; candidate 2 is recorded as invalid for the adopted contract, not merely unchosen. |
+| KS-R1-008 | accepted — the fence becomes a Go verb (audit family: shell-budget) driven by a checked-in budget file that only ratchets down: total tracked shell lines, per-file caps, per-file control-flow construct counts (if/while/case/for), here-doc-generated-script refusal, and the disposition registry check. Numbers are set from measured values when the fence lands in Phase A. |
+| KS-R1-009 | accepted — the coverage claim gains its mechanism: go-production-grade Phase 0c (the ratchet at measured values — mechanical, no pending human number needed) is pulled forward as a prerequisite of kill-shell Phase B onward, recorded in both plans. |

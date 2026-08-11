@@ -2,8 +2,11 @@
 
 Working Mode: design
 
-Owner: main session (claude). Status: PLANNED — runs after satellite 4
-of the patience program (plans/stop-loss-satellites.md). Human ruling
+Owner: main session (claude). Status: IN CRITIQUE — round 1 folded
+(plans/dispositions/kill-shell-r1.md, 9/9 accepted). Facts:
+plans/kill-shell-facts.md (cited as F Qn.m); each phase re-runs its
+fact section before design (the moving-target rule, and r1/KS-R1-002
+proved why: the sheet was already stale on lock ownership). Human ruling
 (Wido, 2026-08-11): this must happen, thoroughly and well. The repo
 should carry the very minimal amount of shell code — or even shell
 scripts. Everything of complexity lives in the Go application where it
@@ -74,8 +77,12 @@ Phase 0 and as a standing rule inside every later phase:
 - Phase 0 sweep: build the caller graph for every script (who invokes
   it: suite, hooks, skills, docs, adopted contracts, nobody) and every
   function within the big scripts; run the Go dead-code analyzer
-  (golang.org/x/tools/cmd/deadcode) over cmd + internal; delete what
-  nothing reaches, with the evidence in the commit message.
+  (golang.org/x/tools/cmd/deadcode) over cmd + internal. The sweep's
+  product is a per-script DISPOSITION REGISTRY — port+shim,
+  port+delete, keep — because adopted targets receive scripts/
+  wholesale (F Q1.16-Q1.19, r1/KS-R1-001): every deletion pairs with
+  an adopt.sh payload change in the same commit, and the registry is
+  what the fence checks, not raw reachability.
 - Standing rule: porting a file starts by proving which of its parts
   are alive. Dead logic is deleted, never ported — porting it would
   launder it into tested-looking Go.
@@ -85,20 +92,49 @@ Phase 0 and as a standing rule inside every later phase:
 ## Disposition by phase
 
 Phase A — production gates and reports (mechanical, kills production
-python): assert-conformance.sh, assert-design-obligation-gate.sh,
-receipt.sh, frontier.sh, audit-metasystem.sh, plus a residue audit of
-every existing assert-*.sh shim. Each becomes a verb in an existing
-family (report, schema, validate) or a small new one.
+python), with the family table decided (r1/KS-R1-004):
+assert-conformance.sh and assert-design-obligation-gate.sh → the
+validate family (whole-artifact validators, F Q5.8); frontier.sh →
+report; receipt.sh → a receipt family (it owns durable state and
+several commands); audit-metasystem.sh → an audit family whose first
+verb it becomes. Plus a residue audit of every existing assert-*.sh
+shim. The complexity fence lands here as `audit shell-budget`
+(r1/KS-R1-008): a Go verb over a checked-in budget file that only
+ratchets down — total tracked shell lines, per-file caps, per-file
+control-flow construct counts, refusal of here-doc-generated shell,
+and the disposition-registry check — numbers set from measured
+values at landing.
 
 Phase B — dispatch.sh lifecycle layer (the riskiest seam, its own
-design round inside the loop): locks, liveness, wind-down, CAS
-choreography, cap resolution move into the dispatch family. End state:
-dispatch.sh parses flags and consults.
+design round inside the loop). Scope corrected by r1/KS-R1-002: the
+lock PRIMITIVE already lives in Go (internal/dispatch/ownerlock.go);
+what ports is the remaining choreography — when each lock is taken,
+held, and released; liveness sequencing; wind-down ramps; CAS
+choreography; cap resolution. The phase STARTS with characterization
+fixtures pinning the branches no test reaches today (r1/KS-R1-003):
+rename-born lock publication, the six holder classifications,
+non-owner release, lifecycle-lock timeout scaling, cap-authority lock
+disappearance, and the wind-down refusal ramps — behavior-preserving
+is only meaningful against pinned behavior. Prerequisite pulled
+forward (r1/KS-R1-009): the coverage ratchet of
+plans/go-production-grade.md Phase 0c (mechanical, measured-value
+ratchet) lands before Phase B begins, so 'unit-tested under the
+floor' is enforced, not asserted. End state: dispatch.sh parses flags
+and consults.
 
 Phase C — adapters and hosts: runtime-common.sh and the four adapters
-move into internal/adapter drivers; hosts keep only prompt-file
-plumbing the engine already validates and the final exec. The fake
-adapter becomes a Go test double behind the same driver interface.
+move into internal/adapter drivers under an added constraint
+(r1/KS-R1-005): record authority and lifecycle serialization stay
+with dispatch — drivers get a narrow Go interface whose record
+mutations route through the same authority matrix the shell router
+enforces today, and this phase's design gate must show the
+classification equivalence. The host boundary is launch-wait-
+parse-write, NOT final exec (r1/KS-R1-006): hosts must regain control
+after the runtime exits, so the shim keeps process custody while the
+post-exit DECISIONS — outcome classification, session and usage
+parsing, atomic result writing — become Go verbs the shim calls. The
+fake adapter becomes a Go test double behind the same driver
+interface.
 
 Phase D — supervision arming and watchdog: arm-supervision.sh into the
 supervise family; watch-background-jobs.sh classification into census;
@@ -108,15 +144,17 @@ prints comes from a report verb.
 Phase E — adopt.sh becomes `metasystem adopt run`; go-gate.sh stays a
 script by necessity (it builds the binary) and is already near-minimal.
 
-Phase F — fixtures. Two candidate shapes, to be settled in critique:
-(1) bash stays the end-to-end driver — arrange via verbs, act by
-calling the CLI exactly as a user would, assert via new Go assert
-verbs; every python heredoc dies. (2) fixture sections become Go
-integration tests that exec the built binary, keeping the end-to-end
-property while gaining go-test tooling; validate-metasystem.sh shrinks
-to sequencing. Either way the suite keeps driving the real CLI — the
-heading-order bug on 2026-08-11 was caught only because fixtures drive
-the shipped surface, and that property is not negotiable.
+Phase F — fixtures, DECIDED by evidence (r1/KS-R1-007): bash stays
+the end-to-end driver — arrange via verbs, act by calling the CLI
+exactly as a user would, assert via Go assert verbs; every python
+heredoc dies. The Go-integration-test alternative is recorded as
+INVALID for the adopted contract, not merely unchosen: adopted
+targets run validate-metasystem.sh without a Go module by design
+(F Q6.1-Q6.8, go-gate's no-go.mod skip), so fixtures that only exist
+as Go tests would vanish from the very repos the suite protects. The
+suite keeps driving the real CLI — the heading-order bug on
+2026-08-11 was caught only because fixtures drive the shipped
+surface, and that property is not negotiable.
 
 ## Ordering
 
