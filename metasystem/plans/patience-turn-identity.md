@@ -60,10 +60,14 @@ reporting the true session are both correct — the host cannot lose by
 telling the truth, and cannot lose by trusting the prompt. When it
 matches neither AND an observed identity exists, that is a host protocol
 violation: the turn fails normally and feeds the breaker. When it matches
-neither and NO observed identity exists (no signal, no envelope session),
-the return is accepted with the mismatch recorded in the ledger entry —
-with nothing trusted to check against, refusal would punish the only
-witness. The return schema and the turn prompt document the echo rule.
+neither and NO observed identity exists (no signal, no envelope session):
+fail closed on APPLICATION, fail open on BLAME — the return's state
+mutations are NOT applied (an unwitnessed, mismatching return must not
+mutate mission state), the turn takes the T4 path (drain, measure,
+conclude on the measured truth), the mismatch-with-no-witness is recorded
+as its own annotation, and the turn does NOT feed the breaker (there is
+no witness to convict either side). The return schema and the turn prompt
+document the echo rule.
 
 ## T3. The adapter stops sentencing; the runner judges
 
@@ -146,7 +150,8 @@ is untouched.
 - Adjudication matrix: echo-announced accepted; report-observed accepted;
   stale announcement + truthful return accepted via observed; neither
   match with observed present → failed turn feeding the breaker; neither
-  match with no witness → accepted and recorded.
+  match with no witness → not applied, not blamed: T4 path runs, the
+  annotation lands, the breaker is not fed.
 - Adapter: rotation reports instead of failing (fixture: rotated session
   in the envelope; runner adjudicates); handshake timeout still fails.
 - T4: rejected-identity turn with committed work drains, measures, and
