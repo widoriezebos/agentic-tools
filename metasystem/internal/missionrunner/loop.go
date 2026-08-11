@@ -344,7 +344,10 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 // anchor and refuses to drive anything but a running mission. A stop-loss
 // park whose reset ask was answered but whose unpark never landed (a crash
 // after the ask was marked answered) is applied here: the ledger's reset
-// line is the authoritative fact, and resume applies its state effect.
+// line is the authoritative fact, and resume applies its state effect. A
+// cycle that was reserved in the fence counters but never reached its ledger
+// append — a runner death anywhere inside the turn — is healed here too,
+// recorded honestly as a lost turn (healReservedCycle).
 func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, err error) {
 	dir := e.missionDir()
 	statePath = filepath.Join(dir, "state.json")
@@ -379,11 +382,77 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 	if state["status"] != "running" {
 		return "", "", nil, failf(3, "mission is %s; answer or amend its park reason before resume", valueString(state["status"]))
 	}
+	if _, err := e.healReservedCycle(statePath, ledger, state); err != nil {
+		return "", "", nil, err
+	}
 	state, err = e.verifyState(statePath, true)
 	if err != nil {
 		return "", "", nil, err
 	}
 	return statePath, ledger, state, nil
+}
+
+// healReservedCycle repairs the reserve/append crash window on resume: a
+// cycle spends its number in the fence counters before anything else exists
+// and lands in the ledger only at conclusion, so a runner death in between
+// leaves the fences exactly one cycle ahead of the ledger. Every later
+// append would pass the fence-derived number, which the ledger's contiguity
+// check rightly refuses — without this heal the mission wedges at its first
+// append instead of parking. The heal supplies the missing truth rather than
+// weakening that check: it records the reserved cycle as a lost turn —
+// classification no-progress, observed unmeasurable:turn-lost, candidate sha
+// the repository HEAD at heal time — then advances the state and anchors,
+// the same binding order the failed-turn path uses. The append runs under
+// the ledger lock, and its contiguity check makes healing idempotent: once
+// the line exists the fences are no longer ahead, and a stale second heal is
+// refused rather than double-appended. It reports whether it healed.
+func (e *Engine) healReservedCycle(statePath, ledger string, state map[string]any) (bool, error) {
+	if !pathExists(e.fencesPath()) {
+		return false, nil
+	}
+	fences, err := readDocLabeled(e.fencesPath(), "mission fence counters", 3)
+	if err != nil {
+		return false, err
+	}
+	spent, ok := jsonInt(fences["cycles"])
+	if !ok {
+		return false, failf(3, "mission fence counters carry an invalid cycle count")
+	}
+	_, _, cycles, err := mission.ParseLedger(ledger)
+	if err != nil {
+		return false, failf(3, "mission resume cannot read the ledger: %v", err)
+	}
+	if spent != int64(len(cycles))+1 {
+		return false, nil
+	}
+	candidateSHA, err := e.gitRevParse("HEAD")
+	if err != nil {
+		return false, err
+	}
+	if err := e.appendLedger(state, ledger, spent, "no-progress", candidateSHA, "unmeasurable:turn-lost"); err != nil {
+		return false, err
+	}
+	proposed := deepCopyDoc(state)
+	ledgerRef, ok := proposed["ledger"].(map[string]any)
+	if !ok {
+		return false, failf(3, "mission state ledger reference is unreadable")
+	}
+	ledgerRef["cycles"] = spent
+	if fencesRef, ok := proposed["fences"].(map[string]any); ok {
+		if recorded, ok := jsonInt(fencesRef["cycles"]); !ok || recorded < spent {
+			fencesRef["cycles"] = spent
+		}
+	}
+	if _, err := e.writeState(statePath, proposed); err != nil {
+		return false, err
+	}
+	if err := e.anchor(statePath, ledger, e.Mission); err != nil {
+		return false, err
+	}
+	e.emit("reserved-cycle-healed", fmt.Sprintf("resume recorded reserved cycle %d as a lost turn", spent), map[string]string{
+		"missionId": e.Mission, "cycle": fmt.Sprintf("%d", spent),
+	})
+	return true, nil
 }
 
 // applyPendingReset applies the unpark a recorded stop-loss reset still owes:
