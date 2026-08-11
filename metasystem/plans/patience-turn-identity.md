@@ -1,0 +1,144 @@
+# Patience satellite 1: turn identity
+
+Owner: main session (claude). Status: DESIGN — awaiting critique round 1.
+Program: `plans/stop-loss-satellites.md` satellite 1; concepts in
+`docs/patience.md`; ground truth in `docs/design/mission-cycle-sequence.md`
+(built for this purpose — cite it, not assumptions). Inherited findings:
+parent r1[6][7][8], r3[9] (`plans/stop-loss-dispositions-r1.md`, the r3
+return); map surprises 5 (post-hoc, double-checked session identity with a
+stale-announcement crash path) and 2 (failed turns never measure; the
+capped outcome is overwritten).
+
+# Intent
+
+An honest host must never be booked as a valueless cycle. Today the
+session identity is announced before launch (from the PREVIOUS concluded
+turn's result envelope), discovered after the CLI exits, and checked twice
+— the adapter hard-fails the turn on rotation, and adjudication separately
+requires the return to echo the announcement. Both checks punish truth
+whenever the harness's announcement is wrong or stale, and a rejected turn
+is booked `no-progress, unmeasurable` without ever draining or measuring
+the tree it committed. Every one of those bookings is FALSE STALL: it
+debits patience for work that happened.
+
+# Non-goals
+
+- No change to what counts as progress or to patience floors (satellite 4).
+- No change to the consecutive-host-failure breaker's semantics — a real
+  protocol violation still feeds it.
+- No new session sources: only artifacts the harness already produces
+  (the session-established signal, the adapter's terminal result
+  envelope) — never the return's own claim — establish observed identity.
+
+# Design
+
+## T1. Two recorded identities; announced is a hint, never an authority
+
+`turn.json` records both:
+- `announcedSession`: what the prompt's `Host-Session` header said (null
+  when it said `none`). Written at assembly (map S-step where turn.json
+  is created), never changed. It derives from the previous concluded
+  turn and CAN be stale after the map's ledger/state crash window — the
+  design treats it accordingly.
+- `observedSession`: stamped harness-side from the earliest trusted
+  source — the launch handshake's session-established signal, else the
+  adapter's terminal result envelope (`sessionId`); absent only when
+  neither names a session. Both sources are the harness's own artifacts.
+The legacy `hostSession` field keeps its value (equal to
+`announcedSession`) until the fixtures migrate.
+
+## T2. One adjudication rule, honesty-proof
+
+A return's `identity.sessionId` is accepted when it equals
+`announcedSession` OR `observedSession`. Echoing a stale announcement and
+reporting the true session are both correct — the host cannot lose by
+telling the truth, and cannot lose by trusting the prompt. When it
+matches neither AND an observed identity exists, that is a host protocol
+violation: the turn fails normally and feeds the breaker. When it matches
+neither and NO observed identity exists (no signal, no envelope session),
+the return is accepted with the mismatch recorded in the ledger entry —
+with nothing trusted to check against, refusal would punish the only
+witness. The return schema and the turn prompt document the echo rule.
+
+## T3. The adapter stops sentencing; the runner judges
+
+The adapter's session-rotation hard-fail (the exit-6 path the map names)
+is retired: the adapter REPORTS the session it observed in its result
+envelope — it is a witness, not a judge. The runner's adjudication (T2)
+is the single place a session verdict is reached. The adapter still fails
+on its genuine faults (no session established at all remains the
+handshake timeout it is today).
+
+## T4. Rejected turns still drain and still measure
+
+A turn rejected for identity (or any return-validity fault) no longer
+bypasses the cycle's remaining duties. The failed-turn path keeps the
+map's binding order: drain jobs FIRST (parent r3[9] — measurement must
+never race live delegates), then run measurement over the committed tree,
+then conclude with BOTH facts in the ledger entry: the classification the
+measurement earned and the fault that rejected the return
+(`; return=rejected:<reason>`). A turn whose work moved the gate
+classifies as the movement it earned — a rejected envelope is not
+unmeasurable work. When draining stalls, the drain-deadline rules
+(satellite 2) own the outcome; until satellite 2 ships, the existing
+drain behavior applies unchanged on this path exactly as on the success
+path.
+
+## T5. The capped outcome survives
+
+`turn.json` keeps `outcome=capped` when the cap fired (today it is
+overwritten to `failed`); the ledger entry names it. Capped turns take
+the same T4 path — drain, measure, conclude — so a cap that landed real
+work registers as the progress it made. The turn-cap enforcement itself
+is untouched.
+
+# Invariants
+
+1. A host that reports the session it actually has is never failed for
+   identity, whatever the announcement said.
+2. A session verdict exists in exactly one place (adjudication); the
+   adapter never fails a turn over rotation.
+3. Every concluded cycle with a measurable tree was drained, then
+   measured — regardless of the return's fate.
+4. `outcome=capped` in turn.json means the cap fired; it is never
+   rewritten to `failed`.
+5. No identity source outside the harness's own artifacts is ever used
+   to establish `observedSession`.
+
+# Failure behavior
+
+- Handshake signal and envelope both absent → `observedSession` absent;
+  T2's no-witness acceptance applies and the ledger records the gap.
+- Measurement fails on the T4 path → the cycle books `no-progress,
+  unmeasurable:<detail>` exactly as today — T4 adds duties, never
+  invents measurements.
+- Crash inside T4 between drain and measure or measure and conclude →
+  the same windows as the success path; the #17 heal covers the
+  reserve/append gap; nothing new to recover.
+
+# Tests
+
+- Adjudication matrix: echo-announced accepted; report-observed accepted;
+  stale announcement + truthful return accepted via observed; neither
+  match with observed present → failed turn feeding the breaker; neither
+  match with no witness → accepted and recorded.
+- Adapter: rotation reports instead of failing (fixture: rotated session
+  in the envelope; runner adjudicates); handshake timeout still fails.
+- T4: rejected-identity turn with committed work drains, measures, and
+  classifies the movement; ledger line carries both facts; a genuinely
+  unmeasurable tree still books unmeasurable.
+- T5: capped turn keeps its outcome end to end and measures its work.
+- Stale-announcement crash path: reproduce the map's window (turn log
+  dropped), next announcement stale, truthful host passes.
+- Legacy: turn.json vintages without the new fields adjudicate as today.
+
+# Migration
+
+turn.json gains `announcedSession`/`observedSession` (additive;
+`hostSession` retained). The ledger entry grammar gains the optional
+`; return=rejected:<reason>` and capped annotations — both inside the
+existing classification line, which prompt assembly tolerates (proven
+pattern: the best token). Adapter result envelopes already carry
+`sessionId`; no envelope change. The adapter rotation change is
+behavioral in the host scripts and the schema/prompt documentation gains
+the echo rule.
