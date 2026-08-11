@@ -1,8 +1,21 @@
 # Stop-loss as last defense
 
-Owner: main session (claude). Status: DESIGN — rounds 1 and 2 adjudicated
-(13/13 and 14/14 accepted; `plans/stop-loss-dispositions-r{1,2}.md`),
-awaiting round 3.
+Owner: main session (claude). Status: CRITIQUE EXHAUSTED at round 3
+(13, 14, 14 material findings; all accepted; dispositions r1/r2 committed,
+r3 return at artifacts/agents/design-critic-20260811t071055z-4fa5). Not
+converged: round 3's findings show the runner-integration half of this
+design (credit minting inside the conclude sequence, chain-to-stream
+binding, orphan delivery, drain resume points) was specified against a
+runner that does not work the way the design assumed — the host, not the
+runner, dispatches critique roots; the ledger tail does not reach the
+prompt as claimed; conclude-time credit minting misses same-cycle
+classification. Per the loop's own rule, exhaustion is not agreement:
+escalated to the human with a proposed split — a small CORE design (the
+fuse: ratcheted counter with a debt-decay decision, multi-metric best
+definition, mission-scoped retirement, vocal reset) to converge and ship
+first, and separate satellite designs for turn identity, mission-scoped
+reaping/drain, and orphan/usage capture, each written against the runner's
+actual cycle sequence. AWAITING HUMAN DIRECTION.
 Ruling: human, 2026-08-11 — "the mechanism that killed the loop should be a
 last-defense kind of thing … really high caps set at the mission level …
 resetting should never be quiet." Evidence: the bm-2s trial cohorts
