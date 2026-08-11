@@ -1,11 +1,12 @@
 # Patience, progress, and stall
 
-Status: PLACEHOLDER — the concept home for a mechanism that is partly
-shipped and partly designed. The shipped part is the stop-loss core
-(`plans/stop-loss-core.md`, implemented in `internal/missionrunner/
-stoploss.go`); the designed-but-unbuilt parts are routed through
-`plans/stop-loss-satellites.md`. This document names the concepts and
-explains the whole mechanism so the pieces are built toward one picture.
+Status: SHIPPED — the whole mechanism is implemented. The stop-loss
+core (`plans/stop-loss-core.md`, `internal/missionrunner/stoploss.go`)
+and all four satellites of `plans/stop-loss-satellites.md` are built
+and suite-verified; satellite 4 (patience floors,
+`plans/patience-satellite-4.md`, accepted after a 22-round critique
+loop) landed 2026-08-12 in `internal/missionrunner/patience.go`. This
+document names the concepts and explains the whole mechanism.
 Ruled by the human, 2026-08-11. The three words below are the binding
 vocabulary: anything built around this mechanism uses these names.
 
