@@ -60,3 +60,19 @@ Real refutations land early: deleted mechanisms, collapsed abstractions, false p
 ## Record
 
 Keep the adjudication trail (finding, disposition, reasoning) with the design or in a companion ledger under `plans/`, so a later reader can distinguish "considered and refuted" from "never considered". When the design carries an obligation matrix, adjudications that amend the design update the matrix in the same pass (`docs/design/design-obligation-gate.md`).
+
+## Recorded Precedent: the Loop Protecting Its Own Redesign
+
+2026-08-11, the stop-loss redesign (`plans/stop-loss-last-defense.md`).
+Three rounds at xhigh produced 13, 14, and 14 material findings — 41
+accepted, zero refuted — including a hidden second fuse the author had
+missed, an oscillation hole in the author's own fix, and a whole half of
+the design specified against a runner sequence that did not exist. The
+loop did not converge, and the author did not force it: exhaustion was
+recorded in the plan, the design was parked, and the human ruled a split
+into a small core and satellites. This is the reference case for three
+rules above at once — exhausting rounds is not agreement; when findings
+keep landing in one region, the generating cause (here: a mis-founded
+half) is rewritten or severed rather than patched; and the loop's verdict
+outranks the author's confidence, including when the author is the main
+agent and the design is about the loop's own governing mechanism.
