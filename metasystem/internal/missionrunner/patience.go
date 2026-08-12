@@ -123,11 +123,20 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 	if len(floors) == 0 {
 		return nil // unconfigured: byte-identical to today, structurally (r9/P4-059)
 	}
+	participating, byID, excluded := patienceParticipants(records)
+	chains := patienceChains(participating, byID)
+	witnessed := patienceWitnesses(turnLog, inflightCertified, byID)
+	details := patienceDroughts(floors, chains, byID, witnessed)
+	return patienceAnnotations(details, excluded)
+}
 
-	// Participation boundary (r10, r12/P4-075): clean records only.
-	participating := []jobRecord{}
-	excluded := 0
-	byID := map[string]jobRecord{}
+// patienceParticipants applies the participation boundary (r10, r12/P4-075):
+// clean records only — a well-formed id matching its file stem, in a lawful
+// terminal or nonterminal status. Everything else counts toward the
+// excluded aggregate.
+func patienceParticipants(records []jobRecord) (participating []jobRecord, byID map[string]jobRecord, excluded int) {
+	participating = []jobRecord{}
+	byID = map[string]jobRecord{}
 	for _, record := range records {
 		id, _ := record.doc["jobId"].(string)
 		stem := strings.TrimSuffix(pathBase(record.path), ".json")
@@ -140,9 +149,14 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 		participating = append(participating, record)
 		byID[id] = record
 	}
+	return participating, byID, excluded
+}
 
-	// Chain sets via the branch-tolerant parent walk (r3/P4-029); a record
-	// whose walk breaks forms a single-round orphan chain (r4/P4-036).
+// patienceChains derives chain sets via the branch-tolerant parent walk
+// (r3/P4-029); a record whose walk breaks forms a single-round orphan chain
+// (r4/P4-036), and closed chains leave the evaluation set at derivation
+// time (r20/P4-093).
+func patienceChains(participating []jobRecord, byID map[string]jobRecord) map[string]*patienceChain {
 	chains := map[string]*patienceChain{}
 	for _, record := range participating {
 		id, _ := record.doc["jobId"].(string)
@@ -177,8 +191,6 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 		chain.orphan = chain.orphan || orphan
 		chain.jobs = append(chain.jobs, record)
 	}
-
-	// Closed chains leave the evaluation set at derivation time (r20/P4-093).
 	for _, chain := range chains {
 		if rootRecord, ok := byID[chain.root]; ok {
 			if closed, _ := rootRecord.doc["chainClosed"].(bool); closed {
@@ -186,11 +198,14 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 			}
 		}
 	}
+	return chains
+}
 
-	// Witness set (r2/P4-024, r9/P4-056, r11/P4-071): accepted certifications
-	// with non-empty trimmed string evidence, joined by jobId to a
-	// participating, STARTED job. Both the durable log and the in-flight
-	// conclusion contribute.
+// patienceWitnesses builds the witness set (r2/P4-024, r9/P4-056,
+// r11/P4-071): accepted certifications with non-empty trimmed string
+// evidence, joined by jobId to a participating, STARTED, terminal job. Both
+// the durable turn log and the in-flight conclusion contribute.
+func patienceWitnesses(turnLog []any, inflightCertified any, byID map[string]jobRecord) map[string]bool {
 	witnessed := map[string]bool{}
 	recordWitness := func(entry any) {
 		cert, ok := entry.(map[string]any)
@@ -229,17 +244,24 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 			recordWitness(cert)
 		}
 	}
+	return witnessed
+}
 
-	// Count each chain's current drought (r9/P4-057): counted jobs strictly
-	// newer, in the total order, than the chain's newest witnessed job.
-	type ranked struct {
-		annotation string
-		distance   int
-		count      int
-		root       string
-		orphan     bool
-	}
-	var details []ranked
+// patienceRanked is one chain's breach line before ranking.
+type patienceRanked struct {
+	annotation string
+	distance   int
+	count      int
+	root       string
+	orphan     bool
+}
+
+// patienceDroughts counts each open chain's current drought (r9/P4-057):
+// counted jobs strictly newer, in the total order, than the chain's newest
+// witnessed job; orphan chains always report, floored chains only on a
+// strict breach (r1/P4-011).
+func patienceDroughts(floors patienceFloors, chains map[string]*patienceChain, byID map[string]jobRecord, witnessed map[string]bool) []patienceRanked {
+	var details []patienceRanked
 	for _, key := range sortedKeys(chains) {
 		chain := chains[key]
 		if chain.closed {
@@ -271,7 +293,7 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 			continue
 		}
 		if chain.orphan {
-			details = append(details, ranked{
+			details = append(details, patienceRanked{
 				annotation: mission.PatienceOrphanAnnotation(chain.root, chain.count),
 				distance:   0, count: chain.count, root: chain.root, orphan: true,
 			})
@@ -282,14 +304,19 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 		if floor <= 0 || chain.count <= floor {
 			continue // infinite patience, or tolerated (strictly-exceeds, r1/P4-011)
 		}
-		details = append(details, ranked{
+		details = append(details, patienceRanked{
 			annotation: mission.PatienceChainAnnotation(chain.root, chain.count, floor),
 			distance:   chain.count - floor, count: chain.count, root: chain.root,
 		})
 	}
+	return details
+}
 
-	// Ranking (r5/P4-040, r7/P4-049): breach distance descending, count
-	// descending, root ascending; orphans after all breaches.
+// patienceAnnotations ranks the breach lines (r5/P4-040, r7/P4-049) —
+// breach distance descending, count descending, root ascending, orphans
+// after all breaches — bounds them, and appends the excluded aggregate
+// outside the bound (r11/P4-069, r12/P4-075).
+func patienceAnnotations(details []patienceRanked, excluded int) []string {
 	sort.SliceStable(details, func(i, j int) bool {
 		a, b := details[i], details[j]
 		if a.orphan != b.orphan {
@@ -303,7 +330,6 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 		}
 		return a.root < b.root
 	})
-
 	annotations := []string{}
 	if len(details) > patienceDetailBound {
 		for _, detail := range details[:patienceDetailBound-1] {
@@ -315,8 +341,6 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 			annotations = append(annotations, detail.annotation)
 		}
 	}
-	// The excluded aggregate sits outside the detail bound: at most one line
-	// per booking (r11/P4-069, r12/P4-075).
 	if excluded > 0 {
 		annotations = append(annotations, mission.PatienceExcludedAnnotation(excluded))
 	}
