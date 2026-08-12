@@ -984,6 +984,11 @@ dispatch_job() {
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$job" --role "$role" \
     --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
+  # INVARIANT (kept in shell by ruling, plans/go-surface-consolidation.md):
+  # the reservation is TWO-PHASE — this record-create must land before any
+  # of the setup below so a second dispatcher cannot prepare the same job
+  # id, and the observable pending-setup status feeds the cleanup trap. Do
+  # not merge the phases into one verb.
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$job" --source "$setup_json"
   rm -f "$setup_json"
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"

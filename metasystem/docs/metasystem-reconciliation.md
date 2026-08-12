@@ -136,3 +136,7 @@ moved to the family whose staleness it detects:
 | census run/alive/signature-check/find-ancestor | proc census/alive/signature-check/find-ancestor |
 | census fingerprint | supervise fingerprint |
 | census classify, census authentication-identity | deleted (no callers; c72f662) |
+
+The disposition registry (scripts/agents/shell-dispositions.json) is
+deleted: nothing executable read it, and adoption's allowlist in
+adopt.sh remains the single export contract.
