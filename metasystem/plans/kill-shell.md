@@ -133,7 +133,8 @@ Phase 0 and as a standing rule inside every later phase:
   and a collision on a sentinel path fails loudly rather than
   silently — so a broken
   module declaration can never validate green with zero Go checks
-  and an adopter's own file at that path never trips the gate
+  and a sentinel collision in an adopted tree fails LOUDLY rather
+  than silently (the round-20 rule, r22/KS-R22-004)
   (r12/KS-R12-001, r13/KS-R13-001, r13/KS-R13-002, r14/KS-R14-001, r15/KS-R15-001, r16/KS-R16-001, r17/KS-R17-001, r18/KS-R18-001, r18/KS-R18-002, r19/KS-R19-001): the named
   governing plan must exist, the package must exist, and an
   unreachable package without an entry fails (r7/KS-R7-002) —
@@ -153,9 +154,10 @@ Phase 0 and as a standing rule inside every later phase:
   (r3/KS-R3-008): `keep` is lawful only for scripts already
   satisfying the thin-shim contract or carrying a dated port entry
   the fence treats as debt with a deadline. Adopted targets receive
-  scripts/ wholesale through a tracked-file allowlist
-  (F Q1.16-Q1.19, r1/KS-R1-001), so a deletion propagates to the
-  payload automatically (r3/KS-R3-011); what a deletion REQUIRES is
+  exactly the registry's live scripts — the registry IS the export
+  manifest (r7/KS-R7-001, superseding the allowlist wording,
+  r22/KS-R22-003) — so a deletion propagates to the payload
+  automatically (r3/KS-R3-011); what a deletion REQUIRES is
   its registry verdict plus an entry in docs/migrations.md — shipped
   in the payload, one entry per deleted script naming path,
   replacement verb, and date; port+delete entries stay in the
@@ -174,8 +176,12 @@ Phase 0 and as a standing rule inside every later phase:
   plans/supervision-lifecycle.md) and is exempt; deletion requires
   no-caller AND no-governing-plan, so dead-code-dies-first cannot
   eat parked-by-design work.
-- The complexity fence (below) also counts scripts: a script nothing
-  references fails the budget.
+- The complexity fence (below) also counts scripts, with a NAMED
+  evidence source (r22/KS-R22-002): registry entries carry a CALLERS
+  manifest recorded by this sweep, the audit verb re-verifies each
+  recorded caller still exists and still references the script, and
+  an entry whose callers list is empty must be tombstoned or carried
+  as debt.
 
 ## Disposition by phase
 
@@ -321,12 +327,14 @@ is a latent defect where a pruner can observe partial JSON and eat a
 live registration — and the claiming process carries its generated
 publication tag in its own argv for the whole critical section, the
 owner-lock's ownership condition by construction. go-gate.sh's own POLICY
-joins this phase too, split against the native-only rule
-(r6/KS-R6-007 as corrected by r9/KS-R9-006): Go never launches the
-toolchain, so the gate SEQUENCE stays in the bootstrap's custody
-shape while the policy decisions — check ordering, skip rules,
-failure classification, the coverage ratchet — are Go verbs the
-bootstrap consults between steps. Near-minimal was a grade, not an
+joins this phase too, split against the native-only rule AND the
+pre-binary boundary (r6/KS-R6-007, r9/KS-R9-006, r22/KS-R22-001):
+Go never launches the toolchain, and no trustworthy binary exists
+when the run/skip/fail discriminator and the toolchain-presence
+check execute — those PRE-BINARY guards stay in the bootstrap's
+custody shape by necessity, while post-binary policy — check
+ordering, failure classification, the coverage ratchet — is Go
+verbs the bootstrap consults between steps. Near-minimal was a grade, not an
 exemption.
 
 Phase F — fixtures, DECIDED by evidence (r1/KS-R1-007): bash stays
