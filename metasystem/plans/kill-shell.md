@@ -122,8 +122,9 @@ Phase 0 and as a standing rule inside every later phase:
   as a damaged template — where "source" is collision-proof: the
   metasystem's internal module path inside an actual import
   statement or block of a cmd/metasystem Go file — the PRESENCE
-  of the engine's own source files (internal/missionrunner/
-  stoploss.go and internal/mission/ledger.go) — no lexing at all,
+  of ANY engine source sentinel (internal/missionrunner/stoploss.go
+  or internal/mission/ledger.go — any-of, so a merge deleting one
+  cannot dress damage as adoption, r20/KS-R20-001) — no lexing at all,
   ending the rounds 12-19 seam where an awk Go-lexer grew a new edge
   every round; adopted targets receive no Go source and a foreign
   collision needs both exact paths and still fails loudly — so a broken

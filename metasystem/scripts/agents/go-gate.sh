@@ -24,7 +24,7 @@ if ! grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root
   # targets receive no Go source, and a foreign project would need both
   # exact paths to collide, where the failure is a loud refusal, not
   # silent breakage.
-  if [[ -f "$root/internal/missionrunner/stoploss.go" && -f "$root/internal/mission/ledger.go" ]]; then
+  if [[ -f "$root/internal/missionrunner/stoploss.go" || -f "$root/internal/mission/ledger.go" ]]; then
     echo "go gate: metasystem Go source present but go.mod does not declare the metasystem module — damaged template, refusing to skip" >&2
     exit 1
   fi
