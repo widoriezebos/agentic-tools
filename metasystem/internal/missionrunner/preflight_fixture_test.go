@@ -119,6 +119,8 @@ func buildPreflightRootWithStream(t *testing.T, directive string) *Engine {
 		t.Skipf("project rules not readable from the test working directory: %v", err)
 	}
 	os.WriteFile(filepath.Join(root, "docs", "project-rules.md"), rules, 0o644)
+	os.WriteFile(filepath.Join(root, "metasystem.conf"),
+		[]byte("metasystem.runtimes=fake\nrole.default.runtime=fake\n"), 0o644)
 	// The stub armer: ARMED for arming, a fixed fingerprint for both seal
 	// and preflight — agreement by construction.
 	os.WriteFile(filepath.Join(root, "scripts", "agents", "arm-supervision.sh"), []byte(
@@ -262,6 +264,19 @@ func buildFullCycleRoot(t *testing.T, behavior string) *Engine {
 	os.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", "fake.sh"), adapter, 0o755)
 	os.WriteFile(filepath.Join(root, "scripts", "assert-turn-prompt.sh"),
 		[]byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
+	// The prompt authority artifacts, verbatim from the repository: without
+	// them AssemblePrompt refuses and the cycle parks before any host runs.
+	for _, artifact := range []string{
+		filepath.Join("scripts", "agents", "roles", "orchestrator.md"),
+		filepath.Join("scripts", "agents", "templates", "host-turn-instruction.md"),
+	} {
+		data, err := os.ReadFile(filepath.Join("..", "..", artifact))
+		if err != nil {
+			t.Skipf("prompt authority artifact not readable: %v", err)
+		}
+		os.MkdirAll(filepath.Dir(filepath.Join(root, artifact)), 0o755)
+		os.WriteFile(filepath.Join(root, artifact), data, 0o644)
+	}
 	if err := engine.armAndPreflight("start"); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
@@ -321,6 +336,11 @@ func TestInternalRunFullCycle(t *testing.T) {
 	if turnStatus == "pending" || turnStatus == "running" {
 		t.Fatalf("turn one never settled: %q", turnStatus)
 	}
+	// The host really ran: the launch stamped its identity onto the turn.
+	if tag, _ := firstTurn["instanceTag"].(string); !strings.HasPrefix(tag, "metasystem-host-") {
+		t.Fatalf("turn one never reached a host: instanceTag=%v error=%v detail=%v",
+			firstTurn["instanceTag"], firstTurn["error"], firstTurn["detail"])
+	}
 	ledger := filepath.Join(engine.missionDir(), "ledger.md")
 	if data, err := os.ReadFile(ledger); err != nil || !strings.Contains(string(data), "Cycle 1") {
 		t.Fatalf("the ledger booked nothing: %v", err)
@@ -356,5 +376,81 @@ func TestInternalRunHostFailureCycle(t *testing.T) {
 	first, _ := readJSONDoc(turns[0])
 	if outcome, _ := first["outcome"].(string); outcome != "failed" {
 		t.Fatalf("turn one's outcome: %q", outcome)
+	}
+}
+
+// A malformed return drives the adjudication rejection: the cycle keeps its
+// duties (drain, measure, conclude with both facts) and the turn records
+// the protocol error.
+func TestInternalRunMalformedReturnCycle(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:return-malformed")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatalf("no state (rc=%d): %v", code, err)
+	}
+	if status, _ := state["status"].(string); status == "" || status == "running" {
+		t.Fatalf("no terminal: %q", status)
+	}
+	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
+	if len(turns) == 0 {
+		t.Fatal("no turns")
+	}
+	first, _ := readJSONDoc(turns[0])
+	if errField, _ := first["error"].(string); errField != "protocol-error" {
+		t.Fatalf("turn one's error: %q detail=%v", errField, first["detail"])
+	}
+}
+
+// A host that never writes a return concludes as a host failure.
+func TestInternalRunNoReturnCycle(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:no-return")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatalf("no state (rc=%d): %v", code, err)
+	}
+	if status, _ := state["status"].(string); status == "" || status == "running" {
+		t.Fatalf("no terminal: %q", status)
+	}
+}
+
+// A park-request return drives the ask pipeline: the mission parks with a
+// reserved decision and the proposed ask lands on disk.
+func TestInternalRunParkRequestCycle(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatalf("no state (rc=%d): %v", code, err)
+	}
+	if status, _ := state["status"].(string); status != "parked" {
+		t.Fatalf("a park request did not park: %q rc=%d", status, code)
+	}
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "*.json"))
+	if len(asks) == 0 {
+		t.Fatal("no ask landed for the park")
+	}
+}
+
+// A close-stream return concludes the mission's only stream: the mission
+// reaches a terminal and the ledger books the cycle that did it.
+func TestInternalRunCloseStreamCycle(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatalf("no state (rc=%d): %v", code, err)
+	}
+	if status, _ := state["status"].(string); status == "" || status == "running" {
+		t.Fatalf("no terminal: %q rc=%d", status, code)
+	}
+	ledger, err := os.ReadFile(filepath.Join(engine.missionDir(), "ledger.md"))
+	if err != nil || !strings.Contains(string(ledger), "Cycle 1") {
+		t.Fatalf("the ledger booked nothing: %v", err)
 	}
 }

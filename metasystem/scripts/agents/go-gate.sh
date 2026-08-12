@@ -96,7 +96,17 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... \
 # the freshly built temporary binary below, because THIS invocation's
 # rebuild is what always-rebuild means.
 coverage_log=$(mktemp)
-go test -race -cover ./internal/... | tee "$coverage_log" || { rm -f "$coverage_log"; echo "go gate: unit tests failed" >&2; exit 1; }
+go test -race -cover ./internal/... | tee "$coverage_log" || {
+  # Evidence beats disk (the suite's own rule): a transient test failure
+  # with its log deleted is undiagnosable — tonight's nested-gate flake
+  # was exactly that. Keep the failing run's output where the suite keeps
+  # its evidence.
+  keep="artifacts/agents/gate-failures/$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
+  mkdir -p "$(dirname "$keep")"
+  mv "$coverage_log" "$keep" 2>/dev/null || true
+  echo "go gate: unit tests failed (output kept: $keep)" >&2
+  exit 1
+}
 
 # Build the binary the shell fixtures and wrappers exec, through the one
 # shared fenced build (go-production-grade Phase 0a): stamped with its
