@@ -65,6 +65,14 @@ fi
 
 go vet ./... || { echo "go gate: go vet failed" >&2; exit 1; }
 
+# staticcheck and govulncheck, pinned (go-production-grade Phase 0d, human
+# decision 2026-08-11). Versions are frozen here; a network-unreachable tool
+# run fails the gate loudly rather than skipping silently.
+go run honnef.co/go/tools/cmd/staticcheck@2025.1 ./... \
+  || { echo "go gate: staticcheck 2025.1 refused (or could not run)" >&2; exit 1; }
+go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... \
+  || { echo "go gate: govulncheck v1.1.4 refused (or could not run)" >&2; exit 1; }
+
 # The coverage floor is executable, not prose (plans/kill-shell.md, the
 # production-grade 0c ratchet pulled forward): the test output feeds the
 # audit verb, whose baseline only ever rises. The cmd package is exempt
