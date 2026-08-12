@@ -322,7 +322,15 @@ exempts the registrant's chain, REFUSES on foreign VALIDATION
 markers (a live suite must never have its binary swapped), and
 treats foreign PUBLICATION markers as contention; then claim
 internal/dispatch/ownerlock.go's publication lock, then REVALIDATE
-freshness under the lock — re-derive the tracked-source state and
+freshness under the lock. VALIDATION ADMISSION completes the family
+(r26/KS-R26-001): on a first build the suite's admission rides its
+child builder's publish-bootstrap marker; the moment a binary
+exists, the suite registers its own validation marker BEFORE any
+fixture runs; and suite-versus-suite contention after
+register-then-check resolves by the deterministic ELDER rule over
+kernel facts the markers already carry — oldest registered start
+time wins, lowest pid breaks ties, the loser exits with the standing
+refusal — re-derive the tracked-source state and
 abort unless it still equals the stamp (r11/KS-R11-002) — then
 staged atomic rename. Register-then-check makes admission and replacement one protocol;
 for two racing first-builds the LOCK alone adjudicates
