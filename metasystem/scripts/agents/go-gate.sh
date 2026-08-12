@@ -19,7 +19,7 @@ if ! grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root
   # Three states, not two: Go SOURCE present without the metasystem module
   # line is a damaged template, and skipping would validate green with zero
   # Go checks — fail loudly instead.
-  if grep -qs 'github.com/widoriezebos/agentic-tools/metasystem/internal' "$root/cmd/metasystem/main.go"; then
+  if grep -rqs 'github.com/widoriezebos/agentic-tools/metasystem/internal' "$root/cmd/metasystem/" 2>/dev/null; then
     echo "go gate: metasystem Go source present but go.mod does not declare the metasystem module — damaged template, refusing to skip" >&2
     exit 1
   fi
