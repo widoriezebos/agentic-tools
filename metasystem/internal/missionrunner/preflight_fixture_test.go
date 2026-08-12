@@ -97,6 +97,12 @@ func spawnTaggedHold(t *testing.T, tag string) (int, int64) {
 // buildPreflightRoot assembles the whole launch-gate world and returns the
 // engine pointed at it.
 func buildPreflightRoot(t *testing.T) *Engine {
+	return buildPreflightRootWithStream(t, "")
+}
+
+// buildPreflightRootWithStream appends a directive to the contract's
+// primary stream text, which the prompt carries and the fake host reads.
+func buildPreflightRootWithStream(t *testing.T, directive string) *Engine {
 	t.Helper()
 	root := t.TempDir()
 	remote := filepath.Join(t.TempDir(), "origin.git")
@@ -133,11 +139,20 @@ func buildPreflightRoot(t *testing.T) *Engine {
 	fixtureGit(t, root, "remote", "add", "origin", remote)
 	fixtureGit(t, root, "push", "-qu", "origin", "main")
 	fixtureGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	// Older git does not mint origin/HEAD on push; the origin verification
+	// resolves through it, and the shell fixture sets it explicitly too.
+	fixtureGit(t, root, "remote", "set-head", "origin", "-a")
 
 	// The contract: written, sealed, signed, committed, pushed.
 	engine := &Engine{Root: root, Mission: "alpha"}
 	contractPath := engine.contractPath()
-	os.WriteFile(contractPath, []byte(fixtureContract), 0o644)
+	document := fixtureContract
+	if directive != "" {
+		document = strings.Replace(document,
+			"stream.primary=Reach the acceptance score.",
+			"stream.primary=Reach the acceptance score. "+directive, 1)
+	}
+	os.WriteFile(contractPath, []byte(document), 0o644)
 	sha, err := contract.Seal(contractPath)
 	if err != nil {
 		t.Fatalf("seal: %v", err)
@@ -222,11 +237,15 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 // anchor. Launch's own subprocess spawn is untestable in-process
 // (os.Executable is the test binary), so the loop body is driven directly,
 // which is exactly what the spawned process runs.
-func TestInternalRunFullCycle(t *testing.T) {
-	engine := buildPreflightRoot(t)
+// buildFullCycleRoot extends the preflight root with the pieces a running
+// turn needs: the real engine binary, the real fake-host adapter, a
+// permissive prompt checker, the armed pin, and the anchor seam. The
+// behavior directive, when given, rides the contract's stream text into
+// the prompt, which is how the fake host selects its behavior.
+func buildFullCycleRoot(t *testing.T, behavior string) *Engine {
+	t.Helper()
+	engine := buildPreflightRootWithStream(t, behavior)
 	root := engine.Root
-
-	// The real engine binary, for the host adapter's verb relays.
 	binary, err := os.ReadFile(filepath.Join("..", "..", "bin", "metasystem"))
 	if err != nil {
 		t.Skipf("engine binary not built: %v", err)
@@ -235,27 +254,28 @@ func TestInternalRunFullCycle(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// The real fake-host adapter, verbatim.
 	adapter, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "hosts", "fake.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	os.MkdirAll(filepath.Join(root, "scripts", "agents", "hosts"), 0o755)
 	os.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", "fake.sh"), adapter, 0o755)
-	// The prompt checker, stubbed permissive: its own contract has fixtures
-	// elsewhere; this test is the cycle's plumbing.
 	os.WriteFile(filepath.Join(root, "scripts", "assert-turn-prompt.sh"),
 		[]byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
-
 	if err := engine.armAndPreflight("start"); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
-	// The anchor step normally shells to os.Executable for the state-anchor
-	// verb; under `go test` that is the TEST binary. The engine's anchorFn
-	// seam exists for exactly this: inject the same Go call the verb makes.
 	engine.anchorFn = func(statePath, ledgerPath, identityName string) error {
 		return mission.Anchor(statePath, engine.Root, ledgerPath)
 	}
+	return engine
+}
+
+func TestInternalRunFullCycle(t *testing.T) {
+	engine := buildFullCycleRoot(t, "")
+	root := engine.Root
+	_ = root
+
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	if code != 0 {
@@ -312,4 +332,29 @@ func tailOf(text string, n int) string {
 		return text
 	}
 	return text[len(text)-n:]
+}
+
+// The fault alternations, on the same fixture: a host that exits non-zero
+// drives the failed-turn conclusion; the mission still books the cycle and
+// reaches a terminal rather than hanging or losing the record.
+func TestInternalRunHostFailureCycle(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:exit-nonzero")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatalf("no state (rc=%d): %v", code, err)
+	}
+	status, _ := state["status"].(string)
+	if status == "" || status == "running" {
+		t.Fatalf("no terminal after host failures: %q rc=%d", status, code)
+	}
+	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
+	if len(turns) == 0 {
+		t.Fatal("no turns ran")
+	}
+	first, _ := readJSONDoc(turns[0])
+	if outcome, _ := first["outcome"].(string); outcome != "failed" {
+		t.Fatalf("turn one's outcome: %q", outcome)
+	}
 }
