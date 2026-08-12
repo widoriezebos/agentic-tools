@@ -347,14 +347,15 @@ admitted-flag write and the publisher's rename both happen only
 under the publication lock, each preceded by an under-lock recheck —
 a publisher finding an admitted validator aborts, a validator
 finding a fresh publish proceeds against the published binary, and
-no interleaving exists because there is exactly one door — re-derive the tracked-source state and
-abort unless it still equals the stamp (r11/KS-R11-002) — then
-staged atomic rename. Register-then-check makes admission and replacement one protocol;
+no interleaving exists because there is exactly one door — then
+staged atomic rename (the r11/KS-R11-002 stamp re-derivation is
+superseded by always-rebuild, r32/KS-R32-001). Register-then-check makes admission and replacement one protocol;
 for two racing first-builds the LOCK alone adjudicates
 (r23/KS-R23-002): both register markers for visibility, the lock
 picks one winner who publishes, and the loser waits bounded for the
-publish, re-derives freshness against the published stamp, and
-proceeds as a CONSUMER of the published binary. If the bounded wait
+publish and proceeds as a CONSUMER of the published binary — the
+winning invocation just built it, and every future bootstrap
+invocation rebuilds anyway (r32/KS-R32-001). If the bounded wait
 expires with no usable binary — the winner died or published
 nothing — the loser re-enters from registration and the owner-lock's
 dead-holder takeover makes it the new publisher; a contender still
