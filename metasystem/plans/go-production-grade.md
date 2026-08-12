@@ -236,8 +236,8 @@ With the ratchet in place, raise the weak packages toward the target the human s
 3. **B2** — approve the restricted-procfs rule: supervision refuses to arm under `hidepid` rather than risking false `Dead`.
 4. **B4–B8** — approve the hardening scope: new timeout bounds (with conf-key owners) on the named surfaces; the durable-writes outcome model (pre-publication failure vs committed-but-durability-unknown) across the full inventory including the append families (B6); the audit refusing unreadable policy files (B7); and the gate-integrity fixes (B8: ratchet go-list join, gofmt status capture).
 5. **B3/Phase 0a** — approve the adoption change: the Go toolchain becomes an adoption prerequisite (preflighted before mutation), replacing the copy-a-prebuilt-binary path.
-6. **T1/Phase 6** — the coverage floor target (proposal: floor files at measured values now, 75% domain target later).
-7. **Phase 5** — approve the typed-documents design before implementation; decide whether it gets its own critique round first.
+6. **T1/Phase 6** — ~~the coverage floor target~~ **Decided 2026-08-12: 75% for domain packages**, raised as each lands.
+7. **Phase 5** — ~~approve the typed-documents design before implementation~~ **Delegated 2026-08-12**: the human authorized signing in his name and making the remaining decisions, so the design is written, gated through `docs/design/design-obligation-gate.md`, and implemented under that authority. The gate itself is not waived — it runs, and a design that cannot pass it stops.
 8. **Phase 1 step 7** — which real Linux host/distribution runs the acceptance suite (it becomes the first verified Linux entry in the supported-platforms profile).
 9. **D2** — renaming the dispatch permissions document away from "envelope" (touches shell-facing vocabulary; glossary edit).
 
