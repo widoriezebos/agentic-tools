@@ -1,0 +1,12 @@
+{
+  "cycle": 1,
+  "detail": null,
+  "endedAt": null,
+  "error": null,
+  "missionId": "corpus-m",
+  "outcome": null,
+  "pid": null,
+  "status": "pending",
+  "turnCapMin": 30,
+  "turnId": "corpus-m-c1"
+}

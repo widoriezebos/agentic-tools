@@ -88,3 +88,17 @@ func (d *Doc) Render() ([]byte, error) {
 // keeps the canonical encoder as the single wire writer without forcing
 // those paths through a projection.
 func FromRaw(raw map[string]any) *Doc { return &Doc{raw: raw} }
+
+// RenderEscaped encodes like Render but with HTML escaping ON — the
+// MarshalIndent dialect. Two wire dialects exist on disk today: dispatch
+// records are unescaped (Render), missionrunner's turn and state documents
+// are escaped (this). Each family declares which dialect its corpus pins;
+// converting a family between dialects would change bytes and is out of
+// scope for the typed-documents phase (plans/typed-documents-design.md).
+func (d *Doc) RenderEscaped() ([]byte, error) {
+	data, err := json.MarshalIndent(d.raw, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}

@@ -10,12 +10,12 @@
 package missionrunner
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"math"
 	"os"
 	"path/filepath"
@@ -130,17 +130,19 @@ func readJSONDoc(path string) (map[string]any, error) {
 var errNotJSONObject = errors.New("not a JSON object")
 
 func decodeJSONDoc(data []byte) (map[string]any, error) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	var value any
-	if err := dec.Decode(&value); err != nil {
+	// Through the wire-document owner (Phase 5.2): one implementation of
+	// the frozen grammar. The not-an-object distinction survives — the
+	// owner returns its own wording for that case, so it is re-mapped to
+	// this package's named error, which readDocLabeled words differently
+	// from unreadable bytes (E1).
+	doc, err := wiredoc.Decode(data)
+	if err != nil {
+		if err.Error() == "not a JSON object" {
+			return nil, errNotJSONObject
+		}
 		return nil, err
 	}
-	doc, ok := value.(map[string]any)
-	if !ok {
-		return nil, errNotJSONObject
-	}
-	return doc, nil
+	return doc.Raw(), nil
 }
 
 // deepCopyDoc deep-copies a JSON document, preserving numbers as json.Number.

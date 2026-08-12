@@ -122,3 +122,26 @@ func TestFromRawSharesTheMap(t *testing.T) {
 		t.Fatal("Get does not see the wrapped map")
 	}
 }
+
+// RenderEscaped is the MarshalIndent dialect: HTML escaped, keys sorted,
+// trailing newline — missionrunner's wire form.
+func TestRenderEscapedDialect(t *testing.T) {
+	doc, _ := Decode([]byte(`{"z":1,"detail":"a<b && c>d"}`))
+	rendered, err := doc.RenderEscaped()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(rendered)
+	if !strings.Contains(text, `a\u003cb \u0026\u0026 c\u003ed`) {
+		t.Fatalf("HTML must be escaped in this dialect: %s", text)
+	}
+	if strings.Contains(text, `a<b`) {
+		t.Fatalf("raw HTML characters leaked into the escaped dialect: %s", text)
+	}
+	if !strings.HasSuffix(text, "}\n") {
+		t.Fatalf("missing trailing newline: %q", text)
+	}
+	if strings.Index(text, `"detail"`) > strings.Index(text, `"z"`) {
+		t.Fatalf("keys not sorted: %s", text)
+	}
+}

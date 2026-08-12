@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
 // The runner engine: one Engine drives one mission's lifecycle — launching
@@ -167,13 +168,24 @@ func atomicWriteBytes(path string, data []byte) error {
 	return err
 }
 
-// atomicWriteJSON writes indented, key-sorted JSON with a trailing newline.
+// atomicWriteJSON writes indented, key-sorted JSON with a trailing newline
+// in this family's wire dialect — HTML ESCAPED (MarshalIndent), unlike
+// dispatch's unescaped canon. Rendered by the wire-document owner; the
+// corpus equivalence test proves the bytes identical (Phase 5.2).
 func atomicWriteJSON(path string, value any) error {
-	data, err := json.MarshalIndent(value, "", "  ")
+	seed, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return atomicWriteBytes(path, append(data, '\n'))
+	doc, err := wiredoc.Decode(seed)
+	if err != nil {
+		return err
+	}
+	rendered, err := doc.RenderEscaped()
+	if err != nil {
+		return err
+	}
+	return atomicWriteBytes(path, rendered)
 }
 
 // atomicWriteText writes a small text artifact atomically.

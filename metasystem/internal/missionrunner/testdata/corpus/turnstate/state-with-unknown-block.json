@@ -1,0 +1,19 @@
+{
+  "integrity": {
+    "chain": [
+      "h1",
+      "h2"
+    ],
+    "hash": "abc"
+  },
+  "missionId": "corpus-m",
+  "status": "running",
+  "unknownFuture": {
+    "a": [
+      null,
+      0.5,
+      "x\u003cy"
+    ],
+    "z": 1
+  }
+}
