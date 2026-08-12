@@ -268,3 +268,80 @@ func runValidateReturnComplete(args []string) int {
 	}
 	return 0
 }
+
+// runValidateDesignObligations checks design-obligation matrices with the
+// calling convention of scripts/assert-design-obligation-gate.sh: repeated
+// --file arguments, an optional --runtime-required, and --root for
+// resolving a relative path unreadable from the working directory. Exit 0
+// passed; 1 failed; 2 usage.
+func runValidateDesignObligations(args []string) int {
+	usage := func() {
+		fmt.Fprint(os.Stderr, `Usage:
+  scripts/assert-design-obligation-gate.sh --file <plan.md> [--file <plan.md>...]
+  scripts/assert-design-obligation-gate.sh --runtime-required --file <plan.md>...
+
+Checks the structure and declared state of design-obligation matrices.
+
+Required table header:
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+
+By default, CRITICAL/HIGH obligations must be DONE or READY_FOR_RUNTIME.
+With --runtime-required, CRITICAL/HIGH obligations must be DONE.
+
+Proof cells on CRITICAL/HIGH rows must be concrete: a backticked token, a
+path-shaped token (a slash, or a filename with a letter-bearing stem and an
+extension of two or more characters, plus .c/.h/.m/.r), or "Not applicable"
+followed by a reason. Bare "Not applicable" fails, and so does keyword-only
+prose ("needs testing"): a status is only as trustworthy as the proof behind
+it. Owner cells on CRITICAL/HIGH rows need a backticked, dotted, slashed,
+double-colon, or CamelCase code token; plain prose fails.
+
+Matrix rows inside fenced code blocks are ignored, so documentation that shows
+the template does not satisfy the gate. Table cells must not contain literal
+pipe characters; the column parser cannot see an escaped pipe as content.
+`)
+	}
+	root := "."
+	files := []string{}
+	runtimeRequired := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--file":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "missing value for --file")
+				return 2
+			}
+			files = append(files, args[i+1])
+			i++
+		case "--root":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "missing value for --root")
+				return 2
+			}
+			root = args[i+1]
+			i++
+		case "--runtime-required":
+			runtimeRequired = true
+		case "-h", "--help":
+			usage()
+			return 0
+		default:
+			fmt.Fprintf(os.Stderr, "unknown argument: %s\n", args[i])
+			usage()
+			return 2
+		}
+	}
+	if len(files) == 0 {
+		fmt.Fprintln(os.Stderr, "at least one --file is required")
+		usage()
+		return 2
+	}
+	out, errs, code := validate.DesignObligations(root, files, runtimeRequired)
+	for _, line := range out {
+		fmt.Println(line)
+	}
+	for _, line := range errs {
+		fmt.Fprintln(os.Stderr, line)
+	}
+	return code
+}

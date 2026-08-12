@@ -2230,10 +2230,7 @@
           "site": "scripts/validate-metasystem.sh"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/assert-design-obligation-gate.sh"
@@ -2241,7 +2238,7 @@
       "path": "scripts/assert-design-obligation-gate.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [
