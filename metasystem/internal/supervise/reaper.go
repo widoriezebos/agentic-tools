@@ -12,17 +12,23 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// The reaper's per-interval job sweep. For each live job record it owns two
-// terminal transitions the watcher is not allowed to make:
+// The reaper's per-interval job sweep. This reaper holds NO kill authority
+// (human ruling, Wido, 2026-08-12): it never signals a process and never
+// records a death it has not proven. It owns terminal transitions only for
+// jobs whose recorded custodian is PROVABLY dead:
 //
-//   - process-lost: a job whose recorded custodian is PROVABLY gone. The job
-//     will never finish on its own, so it is failed with error process-lost.
-//   - budget-cap: a RUNNING job past its absolute capMin measured from
-//     startedAt. The budget is a fact of the record alone, so it is judged
-//     before liveness and the running job is transitioned to timeout.
+//   - budget-cap: a dead custodian whose RUNNING record is past its budget
+//     reads timeout — the budget verdict still outranks process-lost so this
+//     reaper and the dispatch-side ladder agree on one expired record.
+//   - process-lost: a dead custodian otherwise fails with process-lost.
+//   - abandoned-setup: a pending-setup husk old enough that its creating
+//     dispatcher is certainly gone; no process ever existed, so no death is
+//     claimed.
 //
-// Only a definitive death reaps: an unreadable or still-live custodian is left
-// alone, matching the census's three-way discipline (indeterminacy never acts).
+// A LIVE over-budget job keeps its running status: winding it down belongs
+// to the kill-capable dispatch path, and stamping timeout here would record
+// a death nobody proved. An unreadable custodian defers, matching the
+// census's three-way discipline (indeterminacy never acts).
 
 // ReaperConfig drives one reap pass. Custody liveness is supplied as a function
 // so the production path binds the kernel prober while tests bind a fake table.
@@ -36,6 +42,15 @@ type ReaperConfig struct {
 	// Dead when provably gone (or a stranger on a recycled pid), Unknown when
 	// unreadable. Only Dead reaps.
 	Custodian func(pid, start int64, tag string) identity.Liveness
+	// Apply lands one terminal verdict through the locked job-record
+	// compare-and-swap owner: the transition happens only if the record still
+	// carries the expected status, so a completion landing after this
+	// reaper's read can never be clobbered by a stale verdict. A refusal is
+	// not an error — it means the record moved on and the verdict is void.
+	// The production binding wires the dispatch record owner in at the
+	// command layer (the dispatch package imports this one, so the reverse
+	// import would cycle).
+	Apply func(job, expect, target string, patch map[string]any) (applied bool, err error)
 	// Emit receives one line per reaped job; the reaper log in production.
 	Emit func(string)
 }
@@ -79,7 +94,10 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	if status == "pending-setup" {
 		if created, ok := record["createdAt"].(string); ok {
 			if at, err := time.Parse(time.RFC3339, created); err == nil && now.Sub(at) > 10*time.Minute {
-				return cfg.transition(path, record, status, "failed", "abandoned-setup", now)
+				// No process ever existed for a reservation husk, so the
+				// patch claims no death.
+				return cfg.transition(path, record, status, "failed", "abandoned-setup",
+					map[string]any{"error": "abandoned-setup", "phase": "supervision"})
 			}
 		}
 		return nil
@@ -88,45 +106,44 @@ func (cfg ReaperConfig) reapOne(path string) error {
 		return nil // only a job still believed live can be reaped
 	}
 
-	// The budget is judged first: an expired capMin is a fact of the record,
-	// independent of whether the process happens to have exited already, so a
-	// running job over budget is always a timeout rather than a race with loss.
-	if status == "running" && CapExpired(record, now) {
-		return cfg.transition(path, record, status, "timeout", "budget-cap", now)
-	}
-
-	// Otherwise a job whose custodian is provably gone is process-lost. A
-	// missing or non-positive pid means no custodian to prove dead — those are
-	// deferred (a job still inside its launch handshake), not reaped here.
+	// No kill authority: this reaper acts only on a PROVABLY DEAD custodian.
+	// A missing or non-positive pid means no custodian to prove dead — those
+	// are deferred (a job still inside its launch handshake), and a live or
+	// unreadable custodian is left to the kill-capable dispatch path even
+	// when its budget has expired.
 	pid, hasPid := recordInt(record["pid"])
 	if !hasPid || pid < 1 {
 		return nil
 	}
 	start, _ := recordInt(record["pidStartedAt"])
 	tag, _ := record["instanceTag"].(string)
-	if cfg.Custodian(pid, start, tag) == identity.Dead {
-		return cfg.transition(path, record, status, "failed", "process-lost", now)
+	if cfg.Custodian(pid, start, tag) != identity.Dead {
+		return nil
 	}
-	return nil
+	patch := map[string]any{
+		"phase":              "supervision",
+		"groupDeathProvenAt": now.UTC().Format(isoSecond),
+	}
+	// Among dead-custodian records the budget still outranks loss, so this
+	// reaper and the dispatch ladder read the same verdict from one expired
+	// record.
+	if status == "running" && CapExpired(record, now) {
+		patch["error"] = "budget-cap"
+		return cfg.transition(path, record, status, "timeout", "budget-cap", patch)
+	}
+	patch["error"] = "process-lost"
+	return cfg.transition(path, record, status, "failed", "process-lost", patch)
 }
 
-// transition rewrites the record with its terminal verdict and republishes it
-// atomically. The custody wind-down and lawful-transition CAS the full reaper
-// performs are NOT done here (see the component's documented scope); this
-// records the verdict so the rest of the system stops waiting on the job.
-func (cfg ReaperConfig) transition(path string, record map[string]any, from, to, reason string, now time.Time) error {
-	record["status"] = to
-	record["error"] = reason
-	record["phase"] = "supervision"
-	record["groupDeathProvenAt"] = now.UTC().Format(isoSecond)
-	encoded, err := json.MarshalIndent(record, "", "  ")
+// transition lands the verdict through the injected compare-and-swap owner.
+// A refused swap means the record moved on (a completion landed after this
+// pass's read); the verdict is void and nothing is emitted.
+func (cfg ReaperConfig) transition(path string, record map[string]any, from, to, reason string, patch map[string]any) error {
+	applied, err := cfg.Apply(jobIDFor(record, path), from, to, patch)
 	if err != nil {
-		return fmt.Errorf("encode reaped record %s: %w", path, err)
+		return fmt.Errorf("apply reap verdict for %s: %w", path, err)
 	}
-	if err := atomicWrite(path, append(encoded, '\n')); err != nil {
-		return err
-	}
-	if cfg.Emit != nil {
+	if applied && cfg.Emit != nil {
 		cfg.Emit(fmt.Sprintf("%s job=%s status=%s->%s", strings.ToUpper(reason), jobIDFor(record, path), from, to))
 	}
 	return nil

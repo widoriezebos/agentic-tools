@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -200,12 +202,15 @@ func setupWatcher(repo, scope string, self identity.Ref, tag string, intervalSec
 }
 
 // setupReaper returns the per-interval job sweep, proving custody liveness
-// against the live kernel.
+// against the live kernel. Verdicts land through the locked job-record
+// compare-and-swap owner: a completion that arrives after the sweep's read
+// wins, and the stale verdict is void.
 func setupReaper(repo string) func() {
 	cfg := supervise.ReaperConfig{
 		JobsDir:   supervise.JobsDir(repo),
 		Now:       func() time.Time { return time.Now().UTC() },
 		Custodian: kernelCustodian,
+		Apply:     recordCASApplier(repo),
 		Emit:      func(line string) { fmt.Fprintln(os.Stderr, line) },
 	}
 	return func() {
@@ -221,4 +226,39 @@ func setupReaper(repo string) func() {
 // disagree about one record's custodian.
 func kernelCustodian(pid, start int64, tag string) identity.Liveness {
 	return identity.Custodian(pid, start, tag)
+}
+
+// recordCASApplier binds the dispatch record owner as the reaper's verdict
+// applier: the patch lands only if the record still carries the expected
+// status. A lost compare (the record moved on, e.g. a completion beat the
+// verdict) reports applied=false with no error — exactly the void-verdict
+// contract the reaper documents. The wiring lives here because dispatch
+// imports supervise, so supervise cannot import dispatch back.
+func recordCASApplier(repo string) func(job, expect, target string, patch map[string]any) (bool, error) {
+	return func(job, expect, target string, patch map[string]any) (bool, error) {
+		encoded, err := json.Marshal(patch)
+		if err != nil {
+			return false, err
+		}
+		patchFile, err := os.CreateTemp(supervise.JobsDir(repo), "reap-patch-*.json")
+		if err != nil {
+			return false, err
+		}
+		defer os.Remove(patchFile.Name())
+		if _, err := patchFile.Write(encoded); err != nil {
+			patchFile.Close()
+			return false, err
+		}
+		if err := patchFile.Close(); err != nil {
+			return false, err
+		}
+		observed, err := dispatchpkg.RecordCAS(repo, job, expect, target, patchFile.Name())
+		if observed != "" {
+			return false, nil // lost compare: the record moved on, verdict void
+		}
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 }
