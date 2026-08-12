@@ -318,3 +318,25 @@ and `LegalStreamTransitions` have no consumer outside missionrunner at all.
 | B-3 | HIGH | D3 | The prompt vocabulary still equals the orchestrator's raisable reasons plus the runner's own three, byte-for-byte | `internal/turn` | `internal/turn/askreason.go` | `internal/turn/askreason_test.go` | Not applicable: table equality asserted in test | DONE | None |
 | B-4 | MEDIUM | D3 | Tables with no consumer outside the engine stay in the engine, unexported — mutable exported state crossing a package boundary is the smell, not the table itself | `internal/missionrunner` | `internal/missionrunner/missionrunner.go` | `internal/missionrunner/cycle_test.go` | Not applicable: compiler enforces unexported | DONE | None |
 | B-5 | MEDIUM | S6 | `CapExpired` STAYS in `internal/supervise`: it is a job-record predicate, so dispatch is defensible as its owner, but moving it inverts the dispatch-to-supervise import edge and the cmd-layer reaper wiring that depends on that direction. The plan permits leaving it with the reasoning recorded, and an ownership call this close is not "equally clear" | `internal/supervise` | `internal/supervise/reaper.go` | `internal/supervise/reaper_test.go` | Not applicable: unchanged code | DONE | None |
+
+## Phase 3a — obligation matrix (the contract package extraction)
+
+The compiler-verified closure was taken in a scratch worktree (S1's
+requirement, not a hand list): moving contract.go, measure.go, and
+envelope.go into `internal/contract` leaves seven unresolved identifiers —
+`atomicWriteText`, `authoredBlockRe`, `sealBlockRe`, `sha256Hex`,
+`resolvePath`, `isValidUTF8`, `stateErr` — and every one is also used by the
+rest of `mission`. The coupling is BIDIRECTIONAL: `state.go`, `fence.go`,
+and `prompt.go` parse contract documents through `authoredBlockRe` and
+`contractValuesFromBytes`, so a naive move would need `contract` to import
+`mission`, which the design forbids.
+
+Each identifier's recorded decision:
+
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| C-1 | HIGH | S1 | The contract DOCUMENT grammar (authored and seal block regexes, the values reader) moves WITH the contract package — it is contract grammar that happened to live in state.go — and mission parses documents through that owner | `internal/contract` | `internal/contract/grammar.go` | `internal/contract/grammar_test.go` | Not applicable: parsing is pure over its input | READY_FOR_RUNTIME | Land C-5 |
+| C-2 | HIGH | S1 | `contract` carries its own error type; `mission.StateError` stays with mission. No consumer outside internal/mission reads StateError, so nothing observable changes | `internal/contract` | `internal/contract/contract.go` | `internal/contract/contract_test.go` | Not applicable: error text unchanged | READY_FOR_RUNTIME | Land C-5 |
+| C-3 | MEDIUM | S1 | The tiny pure helpers (sha256Hex, resolvePath, isValidUTF8) are duplicated rather than shared: three functions over stdlib with no state, where a package to hold them would BE the dumping ground the design standard forbids | `internal/contract` | `internal/contract/contract.go` | `internal/contract/contract_test.go` | Not applicable: pure functions | READY_FOR_RUNTIME | Land C-5 |
+| C-4 | HIGH | S1, B5 | `atomicWriteText` is NOT duplicated: it carries a durability contract Phase 4 must harden in one place, and two copies would be two divergent fixes. It gets a real owner, `internal/atomicfile`, which Phase 4 then migrates the remaining writers onto | `internal/atomicfile` | `internal/atomicfile/atomicfile.go` | `internal/atomicfile/atomicfile_test.go` | Not applicable: durability proof is Phase 4's fault-injection matrix | READY_FOR_RUNTIME | Land C-5 |
+| C-5 | CRITICAL | S1 | The extraction preserves behavior exactly: the four exported entry points keep their names and signatures at the command layer, the contract seal hashes file CONTENT and cannot shift with code layout, and the suite's mission fixtures pass unchanged | `internal/contract` | `cmd/metasystem/mission_contract.go` | `internal/contract/contract_test.go` | Not applicable until the suite runs: acceptance is the full gate | READY_FOR_RUNTIME | Run the gate and the mission fixtures |

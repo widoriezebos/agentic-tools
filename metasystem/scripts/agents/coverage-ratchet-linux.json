@@ -4,6 +4,7 @@
   },
   "floors": {
     "internal/adapter": 85.9,
+    "internal/atomicfile": 66.7,
     "internal/audit": 93.3,
     "internal/authority": 95.0,
     "internal/capability": 73.5,
