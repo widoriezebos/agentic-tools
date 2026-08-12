@@ -27,7 +27,14 @@ type Ref struct {
 type Exact struct {
 	Pid       int64
 	StartedAt time.Time // kernel-exact (microseconds on darwin)
-	Argv      []string  // may be empty when unreadable; see Liveness
+	Argv      []string  // valid only when ArgvKnown; see below
+	// ArgvKnown records whether the argv read SUCCEEDED. Argv is
+	// best-effort at probe time — a process whose argv cannot be read is
+	// still alive — but a consumer matching a tag against Argv must treat
+	// ArgvKnown=false as absence of evidence, never as a failed match:
+	// an unreadable argv proves nothing, and Unknown never authorizes
+	// anything (go-production-grade B1).
+	ArgvKnown bool
 }
 
 // Ref converts an exact identity to record resolution.

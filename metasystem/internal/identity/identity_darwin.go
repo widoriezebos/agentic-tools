@@ -53,9 +53,11 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 	// Argv is best-effort at probe time: a process we cannot read the
 	// argv of is still alive, and the KILL decision separately demands
 	// a readable, claim-consistent argv (REG-6) — absence there means
-	// no kill, not a guess.
+	// no kill, not a guess. ArgvKnown carries the distinction between
+	// "read and empty-of-tag" and "unreadable" to consumers (B1).
 	if argv, err := procArgs(pid); err == nil {
 		exact.Argv = argv
+		exact.ArgvKnown = true
 	}
 	return exact, Alive, nil
 }

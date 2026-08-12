@@ -51,8 +51,20 @@ func Custodian(pid, start int64, tag string) Liveness {
 	if exact.StartedAt.Unix() != start {
 		return Dead
 	}
-	if tag != "" && !strings.Contains(strings.Join(exact.Argv, " "), tag) {
-		return Dead
+	if tag != "" {
+		// The B1 verdict-table row 5 (go-production-grade, human-approved
+		// 2026-08-12): a tag is expected but the argv was UNREADABLE —
+		// that is absence of evidence, not evidence of a stranger, so
+		// the verdict is Unknown, which authorizes nothing. Before this
+		// correction the empty join failed the tag check and read Dead,
+		// authorizing process-lost on an unproven death — the exact
+		// verdict the standing reaper's contract forbids.
+		if !exact.ArgvKnown {
+			return Unknown
+		}
+		if !strings.Contains(strings.Join(exact.Argv, " "), tag) {
+			return Dead
+		}
 	}
 	return Alive
 }
