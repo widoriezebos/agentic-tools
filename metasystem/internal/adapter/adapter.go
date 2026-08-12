@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"os"
 	"path/filepath"
 	"time"
@@ -53,15 +54,19 @@ func decodeJSONBytes(data []byte) (any, error) {
 // encodeJSON renders a value the way every on-disk artifact in this system is
 // rendered: 2-space indent, map keys sorted, HTML left unescaped, and a
 // trailing newline. The encoder already appends the newline.
+// encodeJSON renders in the unescaped canon through the wire-document
+// owner (Phase 5.3); byte equivalence is pinned by the package's own
+// bytecheck test.
 func encodeJSON(value any) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(value); err != nil {
+	seed, err := json.Marshal(value)
+	if err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	doc, err := wiredoc.Decode(seed)
+	if err != nil {
+		return nil, err
+	}
+	return doc.Render()
 }
 
 // atomicWriteJSON writes value to path so a reader sees the old bytes or the

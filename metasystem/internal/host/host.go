@@ -9,23 +9,25 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"os"
 	"sort"
 	"strconv"
 )
 
-// canonicalJSON renders a value the way every on-disk artifact in this system
-// is rendered: two-space indent, map keys sorted, HTML left intact, and a
-// trailing newline (the encoder appends it).
+// canonicalJSON renders a value in this family's wire dialect — the
+// unescaped canon — through the wire-document owner (Phase 5.3); the corpus
+// equivalence test proves the bytes identical to the encoder this replaces.
 func canonicalJSON(value any) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(value); err != nil {
+	seed, err := json.Marshal(value)
+	if err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	doc, err := wiredoc.Decode(seed)
+	if err != nil {
+		return nil, err
+	}
+	return doc.Render()
 }
 
 // atomicWriteJSON writes value to path so a reader sees either the old bytes or
