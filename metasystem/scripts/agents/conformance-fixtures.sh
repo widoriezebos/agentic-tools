@@ -366,7 +366,7 @@ printf 'advanced target\n' >"$controller/upstream.txt"
 git -C "$controller" add upstream.txt
 git -C "$controller" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm upstream
 controller_branch=$(git -C "$controller" branch --show-current)
-git -C "$worktree" rebase -q "$controller_branch"
+git -C "$worktree" -c user.name=metasystem -c user.email=metasystem@example.invalid rebase -q "$controller_branch"
 "$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
 final_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}')
 artifact_sha=$(shasum -a 256 "$controller/artifacts/agents/impl/rounds/1/diff.patch" | awk '{print $1}')
