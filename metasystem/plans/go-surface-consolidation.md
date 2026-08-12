@@ -98,7 +98,8 @@ no ordering.
 
 ## Target tree (human-approved 2026-08-12; amended by rounds 1-2)
 
-Eighteen families: three real merges (job, mission, proc), the engine
+Nineteen families (r7/GSC-R1-043): three real merges (job, mission,
+proc), the engine
 families unchanged, and the small domains left alone — rounds 1 and 2
 withdrew every merge whose only product was renaming. The adapter+host
 merge is WITHDRAWN by r1/GSC-R1-003: the doubled names (devin-config,
@@ -146,13 +147,23 @@ the suite in the same change.
    slice landed (c72f662, minus 344 lines); the program's final
    surface is exactly the currently registered set minus that slice,
    renamed per the appendix. Further deletions happen only if a
-   regroup step or the deadcode analyzer surfaces a new zero-caller
-   verb, each recorded in that step's commit message under the same
-   rules — no open-ended hunting. The rules:
-   the corpus is every tracked file EXCLUDING cmd/metasystem (a verb's
-   own registration is not a caller); an invocation is the literal
-   "family verb" pair; a family invoked anywhere with a variable verb
-   (family "$var") keeps all its verbs pending manual proof; a
+   regroup step or the analyzer pass surfaces a new zero-caller verb,
+   each recorded in that step's commit message under the same rules —
+   no open-ended hunting. The analyzer is exactly
+   `go run golang.org/x/tools/cmd/deadcode@latest ./cmd/metasystem`
+   (r7/GSC-R1-042), and its verdicts apply ONLY to unregistered Go
+   functions: a router-registered handler is always reachable to it,
+   so verb-deletion authority comes from the caller census alone. The rules:
+   the corpus is every tracked file EXCLUDING cmd/metasystem's router
+   registration table (a verb's own registration is not a caller); an
+   invocation is the literal "family verb" pair OR, in Go files, the
+   family and verb appearing as separate adjacent string arguments to
+   a command execution (r7/GSC-R1-039: the mission engine launches
+   `mission-runner run-loop` and `mission-state anchor` through
+   exec.Command with split arguments, invisible to the pair grep —
+   every rename commit greps BOTH shapes); a family invoked anywhere
+   with a variable verb (family "$var") keeps all its verbs pending
+   manual proof; a
    zero-caller candidate additionally needs a loose per-verb grep
    (wrapper functions like mission_fence hide the family word), an
    implementation trace (does any Go path call the backing function),
@@ -188,9 +199,11 @@ the suite in the same change.
 Each step lands with the suite green from a pristine worktree and all
 call sites updated in the same commit.
 
-1. Already landed: the census slice (c72f662). Remaining step-1 work
-   is only the upgrade-notes table generated from the appendix
-   (r6/GSC-R1-034).
+1. Already landed: the census slice (c72f662). The upgrade-notes
+   table in docs/metasystem-reconciliation.md grows WITH the renames
+   (r7/GSC-R1-041): each of steps 2-4 appends its own rows in the
+   same commit, so the published table never names a command that
+   does not exist yet.
 2. mission-* merge per the appendix map, all in-repo callers updated
    in the same commit (mechanical; largest coherence gain per hour).
 3. job-family regrouping per the appendix — mechanical rename only
@@ -199,7 +212,12 @@ call sites updated in the same commit.
 4. proc regrouping and supervise fingerprint per the appendix; the
    two kept invariants get their call-site documentation.
 5. Registry deletion; a final sweep proving zero old-name callers
-   remain in-repo.
+   remain in-repo — INCLUDING cmd/metasystem itself outside the
+   registration table (r7/GSC-R1-040): flag-set labels, usage
+   strings, and error prefixes rename with their verbs, so the
+   surface never tells a user to invoke a command that no longer
+   exists. Each rename step already carries its own share of these;
+   step 5 is the proof pass.
 
 Estimated two working sessions. Steps are independently valuable;
 stopping after any of them leaves the system better than before it.
@@ -215,8 +233,8 @@ codes, hook entry points, adopted-repo script names) do not change.
 ## Appendix: the exhaustive verb maps (r2/GSC-R1-011)
 
 Every renamed verb, old to new. Anything not listed here keeps its
-name. The alias table in step 1 is generated from these tables and
-nothing else.
+name. The upgrade-notes rows are generated from these tables and
+nothing else (the alias layer did not survive round 6).
 
 ### mission (28 verbs from 7 families)
 
