@@ -22,10 +22,10 @@ import (
 // longer carries the recorded tag); a live or unreadable holder keeps the
 // lock.
 
-// OwnerLockBusy and OwnerLockNotOwner are the distinguished refusals.
+// ErrOwnerLockBusy and ErrOwnerLockNotOwner are the distinguished refusals.
 var (
-	OwnerLockBusy     = fmt.Errorf("owner lock is busy")
-	OwnerLockNotOwner = fmt.Errorf("owner lock is held by someone else")
+	ErrOwnerLockBusy     = fmt.Errorf("owner lock is busy")
+	ErrOwnerLockNotOwner = fmt.Errorf("owner lock is held by someone else")
 )
 
 type ownerIdentity struct {
@@ -70,7 +70,7 @@ func holderState(holder *ownerIdentity) string {
 }
 
 // OwnerLockClaim takes the lock for (pid, tag). It returns nil when claimed,
-// OwnerLockBusy when a live or unreadable holder keeps it.
+// ErrOwnerLockBusy when a live or unreadable holder keeps it.
 func OwnerLockClaim(directory string, pid int64, tag string) error {
 	parent := filepath.Dir(directory)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
@@ -99,11 +99,11 @@ func OwnerLockClaim(directory string, pid int64, tag string) error {
 		_ = os.RemoveAll(staging)
 		holder := readOwnerIdentity(filepath.Join(directory, "owner.json"))
 		if holder == nil {
-			return OwnerLockBusy
+			return ErrOwnerLockBusy
 		}
 		switch holderState(holder) {
 		case "live", "unknown":
-			return OwnerLockBusy
+			return ErrOwnerLockBusy
 		}
 		husk := filepath.Join(parent, fmt.Sprintf("%s.dead.%d.%d", filepath.Base(directory), pid, attempt))
 		if err := os.Rename(directory, husk); err != nil {
@@ -111,7 +111,7 @@ func OwnerLockClaim(directory string, pid int64, tag string) error {
 		}
 		_ = os.RemoveAll(husk)
 	}
-	return OwnerLockBusy
+	return ErrOwnerLockBusy
 }
 
 // OwnerLockRelease frees the lock only when (pid, tag) still owns it. An
@@ -122,7 +122,7 @@ func OwnerLockRelease(directory string, pid int64, tag string) error {
 		return nil
 	}
 	if holder.pid != pid || holder.tag != tag {
-		return OwnerLockNotOwner
+		return ErrOwnerLockNotOwner
 	}
 	retiring := filepath.Join(filepath.Dir(directory), fmt.Sprintf("%s.retiring.%d", filepath.Base(directory), pid))
 	if err := os.Rename(directory, retiring); err != nil {

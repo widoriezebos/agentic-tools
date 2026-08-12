@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,13 +143,13 @@ func exhaustions(record map[string]any) ([]map[string]any, error) {
 		return nil, fmt.Errorf("critiqueExhaustions is malformed; waiting on the human is the only remedy")
 	}
 	if len(list) > 1 {
-		return nil, fmt.Errorf(secondExhaustionRefused)
+		return nil, errors.New(secondExhaustionRefused)
 	}
 	var entries []map[string]any
 	for _, item := range list {
 		entry, ok := item.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf(secondExhaustionRefused)
+			return nil, errors.New(secondExhaustionRefused)
 		}
 		entries = append(entries, entry)
 	}
@@ -246,7 +247,7 @@ func CritiqueExhaustionAction(repoRoot, rootJob, role, latestPath, messagePath, 
 			if roundOf(previous[0]) == round && asString(previous[0]["successorJobId"]) == successor {
 				return "none", nil
 			}
-			return "", fmt.Errorf(secondExhaustionRefused)
+			return "", errors.New(secondExhaustionRefused)
 		}
 		if err := requireEnumeration(message, openIDs); err != nil {
 			return "", err
@@ -274,7 +275,7 @@ func CritiqueExhaustionAction(repoRoot, rootJob, role, latestPath, messagePath, 
 				"every open finding identifier before continuing the code-critic chain: %s", strings.Join(openIDs, ", "))
 		}
 		if roundOf(previous[0]) != round {
-			return "", fmt.Errorf(secondExhaustionRefused)
+			return "", errors.New(secondExhaustionRefused)
 		}
 
 	case "implementer":
@@ -312,7 +313,7 @@ func CritiqueExhaustionAction(repoRoot, rootJob, role, latestPath, messagePath, 
 				if roundOf(previous[0]) == round {
 					continue
 				}
-				return "", fmt.Errorf(secondExhaustionRefused)
+				return "", errors.New(secondExhaustionRefused)
 			}
 			if err := requireEnumeration(message, openIDs); err != nil {
 				return "", err

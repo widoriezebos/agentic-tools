@@ -515,7 +515,7 @@ func runDispatchOwnerLock(args []string) int {
 		switch err := dispatchcore.OwnerLockClaim(*directory, *pid, *tag); err {
 		case nil:
 			return 0
-		case dispatchcore.OwnerLockBusy:
+		case dispatchcore.ErrOwnerLockBusy:
 			return 3
 		default:
 			fmt.Fprintln(os.Stderr, err)
@@ -525,7 +525,7 @@ func runDispatchOwnerLock(args []string) int {
 		switch err := dispatchcore.OwnerLockRelease(*directory, *pid, *tag); err {
 		case nil:
 			return 0
-		case dispatchcore.OwnerLockNotOwner:
+		case dispatchcore.ErrOwnerLockNotOwner:
 			return 4
 		default:
 			fmt.Fprintln(os.Stderr, err)

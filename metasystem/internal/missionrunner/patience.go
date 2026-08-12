@@ -99,14 +99,17 @@ func parsePatienceFloors(values map[string]string) patienceFloors {
 // patienceChain is one chain under evaluation: its root id, its participating
 // records, and whether its lineage is broken (an orphan damage report).
 type patienceChain struct {
-	root    string
-	jobs    []jobRecord
-	orphan  bool
-	closed  bool
-	count   int
-	floor   int // 0 = infinite / not applicable
-	breach  bool
-	streak  []jobRecord
+	root   string
+	jobs   []jobRecord
+	orphan bool
+	closed bool
+	count  int
+	//lint:ignore U1000 staged by the patience stream (plans/patience-satellite-4.md); wired by its next satellite, not dead code
+	floor int // 0 = infinite / not applicable
+	//lint:ignore U1000 staged by the patience stream (plans/patience-satellite-4.md); wired by its next satellite, not dead code
+	breach bool
+	streak []jobRecord
+	//lint:ignore U1000 staged by the patience stream (plans/patience-satellite-4.md); wired by its next satellite, not dead code
 	witness bool
 }
 
@@ -274,6 +277,7 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 			})
 			continue
 		}
+		//lint:ignore U1000 staged by the patience stream (plans/patience-satellite-4.md); wired by its next satellite, not dead code
 		floor := selectPatienceFloor(floors, chain.streak)
 		if floor <= 0 || chain.count <= floor {
 			continue // infinite patience, or tolerated (strictly-exceeds, r1/P4-011)

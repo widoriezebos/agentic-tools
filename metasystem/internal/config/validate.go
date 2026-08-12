@@ -297,7 +297,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			}
 			model, present := resolved("role."+role+".model."+runtime, mode)
 			if !truthy(model, present) {
-				model, present = resolved("role.default.model."+runtime, mode)
+				_, present = resolved("role.default.model."+runtime, mode)
 			}
 			if !present {
 				add("%s resolves to %s but has no model.%s value", roleLabel(role, mode, false), runtime, runtime)

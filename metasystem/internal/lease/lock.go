@@ -46,7 +46,7 @@ func acquireBounded(path, what string) (*fileLock, error) {
 			f.Close()
 			return nil, fmt.Errorf("checkout lease lock is busy for %s after %gs; "+
 				"another lease-gated operation holds it. If this call is nested inside "+
-				"one, pass --lease-held; otherwise retry in a moment.", what, wait)
+				"one, pass --lease-held; otherwise retry in a moment", what, wait)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
