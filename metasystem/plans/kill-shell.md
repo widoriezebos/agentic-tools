@@ -311,9 +311,17 @@ pair from its adoption date, whatever the template does meanwhile.
 
 In the template: the bootstrap proves binary FRESHNESS causally
 (r3/KS-R3-007, r10/KS-R10-003) against the SOURCE DIGEST
-(r29/KS-R29-001): the SHA-256 over the sorted (path, content-hash)
-pairs of the tracked Go source set plus go.mod, computed from the
-WORKING TREE — never a commit id, which cannot see a dirty tree.
+(r29/KS-R29-001, r30/KS-R30-001): the SHA-256 over the sorted
+(path, content-hash) pairs of every .go file under cmd/ and
+internal/ in the WORKING TREE — tracked or not, because the
+compiler does not consult git — plus go.mod and go.sum; never a
+commit id, which cannot see a dirty tree. Stamping is truthful BY
+CONSTRUCTION (r30/KS-R30-002): compute the digest, build,
+recompute — publish only when equal, else discard and retry
+bounded, so a stamp can never name a tree the build did not read.
+The stamp itself is EMBEDDED in the binary (the ldflags pattern the
+build already uses) and read through a version verb — atomic with
+the binary, no sidecar to race (r30/KS-R30-003).
 The template never commits the binary, so no self-referential
 commit exists. Honesty about the final window (r29/KS-R29-002):
 sources cannot take the lock, so a change racing the rename can
