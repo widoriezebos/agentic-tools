@@ -31,38 +31,47 @@ The ruling this program executes: core decisions belong in Go,
 plumbing belongs in scripts. Scripts are not debt; script-shaped Go
 is.
 
-## What "script-shaped" means operationally (r1/GSC-R1-001)
+## What "script-shaped" means, and the round-4 severance
 
-The metric is NOT the verb count, and this program does not promise a
-small number for its own sake — fragments at a custody boundary are
-correct under the ruling. Script-shaped means: a bash file owns a CALL
-SEQUENCE whose ordering carries a correctness invariant that no Go
-function states. Step 0 therefore runs a SEQUENCE CENSUS beside the
-caller census: ANY fixed ordering of two or more verb invocations
-(r3/GSC-R1-014 — the reservation pair is itself a two-verb invariant
-sequence, and three was an arbitrary floor), same-family or
-cross-family (r2/GSC-R1-010), INCLUDING orderings hidden behind shell
-re-entry — a script invoking itself with internal __verbs is part of
-the corpus, and its router branches count as the call sites. The
-pre-commit guard's lease classify → wrapper-token ordering (human
-commits sovereign, identified agents need wrapper proof) is the
-cross-family type specimen.
+Script-shaped means: a bash file owns a CALL SEQUENCE whose ordering
+carries a correctness invariant that no Go function states. Rounds 1-4
+tried to build first a census methodology and then a unified reap
+verdict owner on top of that definition, and every round demanded more
+machinery: authority classes, must-defer action lists, a complete
+decision table, a durable deferred-action handoff, a two-phase
+post-action feedback contract, revision-aware compare-and-swap
+(r1/GSC-R1-004, r2/GSC-R1-008/009, r3/GSC-R1-017, r4/GSC-R1-019
+through 022). That escalation is the generating-cause signal: the
+three reap ladders differ because their CONTEXTS differ — lease-epoch
+visibility, kill authority, post-action facts like the group-death
+timestamp, side-effect ownership — and unifying them does not remove
+that complexity, it relocates it into a contract. Under the human's
+core-versus-plumbing ruling this program therefore SEVERS the
+unification (r4): the three reap paths stay where they are, each
+already consulting Go decision fragments; what remains from the
+analysis is one real DEFECT and two DOCUMENTED invariants.
 
-Each census hit records its named invariant and a decision made by
-RULE, not taste (r3/GSC-R1-015): COARSEN into one Go verb when the
-ordering is purely a decision ordering — no process launch, signal,
-wait, or file custody interleaves the calls, and no observable
-intermediate state another process consumes would disappear.
-KEEP-AND-DOCUMENT when custody interleaves or intermediate state is
-load-bearing. Worked through today's three known hits: the
-reservation pair KEEPS (observable pending-setup, custody between the
-phases); the reap ladder COARSENS (pure decisions between lock and
-CAS — the wind-down action is delegated by contract, below); the
-pre-commit guard's authority pair COARSENS (decision-only) into one
-validate verb in step 4. Sequences with no invariant are legitimate
-plumbing and stay.
-Regrouping (mission, proc) is coherence work and is claimed as such,
-not as de-shell-ification.
+- The defect (r2/GSC-R1-009, kept): the supervise reaper applies its
+  verdict by whole-record overwrite without the record lock or a
+  status comparison, so a completion landing after its read can be
+  clobbered by a stale failed or timeout copy. Fix: it applies through
+  the locked compare-and-swap owner with an expected status, with a
+  regression test for the completion-after-read race. Standalone,
+  small, the program's one behavior change.
+- The invariants (documented in place, not coarsened): the
+  reservation pair's two-phase ordering (record-create before
+  shell-owned setup; observable pending-setup feeds the cleanup trap)
+  and the reap ladder's budget-before-liveness priority. Each gets a
+  comment at its call site naming the invariant, nothing more. The
+  formal sequence-census methodology is WITHDRAWN with the
+  unification it existed to feed (r4/GSC-R1-023: it could not be made
+  executable over helper indirection without growing into a
+  call-graph analyzer — more machinery about the system instead of
+  the system).
+- The pre-commit guard's authority ordering stays in the guard with
+  its invariant documented (r4/GSC-R1-024 withdrew the step-4
+  coarsening: three lines of shell carrying a documented rule beat an
+  eleventh validate verb).
 
 ## Target tree (human-approved 2026-08-12; amended by rounds 1-2)
 
@@ -79,12 +88,12 @@ inversion (the reap verdict), not by relabeling.
 
 | target | absorbs | notes |
 | --- | --- | --- |
-| `job` | dispatch (24), capability (1), authority (1), schema (1) | The delegate-job domain. The reservation protocol stays TWO-PHASE (r1/GSC-R1-002: record-create must precede shell-owned setup so a second dispatcher cannot prepare the same id, and the cleanup trap depends on observable pending-setup); no `job reserve` merge. Coarsening candidates come only from the step-0 sequence census, under the rule that no observable intermediate state another process relies on may disappear. The reap verdict ladder becomes ONE decision owner with THREE consumers (r1/GSC-R1-004, r2/GSC-R1-008): an internal function called by the supervise component's reaper AND by the mission runner's reap path (whose reapReservedRecords/applyReapVerdict mapping is today a third independent ladder), and a `job reap-verdict` verb dispatch.sh consults. The consumers legitimately DIFFER in action authority (r3/GSC-R1-017: the supervise reaper times out over-budget records without kill authority, the mission runner acts only on a proven-dead custodian, dispatch winds down live groups and performs fence/usage/mirror/event side effects), so the owner's contract is: inputs are the record, the reap facts, and the caller's declared authority class (kill-capable, no-kill, record-only); output is the verdict PLUS the required-action list — wind-down-first, CAS target and patch, fence refusal, usage aggregation, mirror, events — split into actions this caller MUST perform and actions it must DEFER to a kill-capable consumer. The status-and-facts to verdict mapping (including budget-judged-before-liveness) is stated exactly once; no consumer can silently weaken enforcement because deferred actions are named in its output, and the fixtures assert each consumer class end-to-end. Verdict APPLICATION centralizes with the decision (r2/GSC-R1-009): every consumer lands its verdict through the locked compare-and-swap record owner with an expected status — the supervise reaper's current whole-record overwrite, which can clobber a completion that lands after its read, is a defect this step fixes with a regression test, recorded as the program's one deliberate behavior change. |
+| `job` | dispatch (24), capability (1), authority (1), schema (1) | The delegate-job domain, regrouped per the appendix. The reservation protocol stays TWO-PHASE (r1/GSC-R1-002); no verb coarsening — the reap-verdict unification was severed in round 4 (see above). The supervise reaper CAS defect fix (r2/GSC-R1-009) lands with this step. |
 | `mission` | mission-state, -fence, -contract, -prompt, -runner, -turn, -ledger (7 families, 28 verbs) | Regrouping with the EXHAUSTIVE collision-resolving verb map in the appendix (r1/GSC-R1-003, r2/GSC-R1-011) — all 28, no illustrative subsets. evidence stays its own family (r2/GSC-R1-012: the collector is repository-wide custody that merely protects mission state; `mission gc` would misname its scope). |
 | `adapter` | unchanged (34 minus census deletions) | Custody-boundary fragments per runtime; scripts keep launch/wait/signal custody. |
 | `host` | unchanged (8) | Same boundary, mission-host side. |
-| `proc` | identity (4), census (5) | Process identity and census are one domain — who is running, provably. supervise STAYS its own family (r2/GSC-R1-013's logic applied honestly: folding it in would just prefix every verb with its old family name, a cosmetic merge). Map in the appendix. |
-| `supervise` | unchanged (10) | Supervision lifecycle. |
+| `proc` | identity (4), census (4) | Process identity and census are one domain — who is running, provably. supervise STAYS its own family (r2/GSC-R1-013's logic applied honestly: folding it in would just prefix every verb with its old family name, a cosmetic merge). Map in the appendix. |
+| `supervise` | unchanged (10) + census fingerprint | Supervision lifecycle. census fingerprint hashes supervision code, signatures, and configuration to detect stale supervision — it is a supervision-staleness detector, not a process probe (r4/GSC-R1-026), so it becomes `supervise fingerprint`. |
 | `validate` | unchanged (10) | Whole-artifact validators. |
 | `audit` | unchanged (2) | metasystem + coverage-ratchet. |
 | `config` | unchanged (7) | |
@@ -136,12 +145,11 @@ retired.
    is the export contract and stays the single one. A ship-list that
    no code consumes would be decorative bookkeeping, and wiring one
    into adopt.sh would be new machinery this program exists to avoid.
-3. The usage texts embedded in Go verbs (design-obligations,
-   stop-loss, conformance) move back to their wrapper scripts, which
-   become ordinary scripts again — parsing their own arguments,
-   printing their own help, calling clean Go verbs with Go-native
-   flags. Byte-identical stderr stops being a goal; on-disk formats
-   and exit codes remain contracts.
+3. WITHDRAWN in round 4 (GSC-R1-025): the wrapper scripts keep
+   forwarding to the Go verbs that parse their historical arguments.
+   Restoring parsing to the wrappers would create a new
+   interface-boundary specification problem for purely cosmetic gain;
+   the current split works and is tested.
 4. RETIRED: the Phase F fixture-python elimination. Fixture sequencers
    are plumbing; their python3 heredocs are fine. (Kill-shell's
    "python dies at Phase F" goal is void; production python is already
@@ -152,30 +160,16 @@ retired.
 Each step lands with the suite green from a pristine worktree and all
 call sites updated in the same commit.
 
-1. Caller census (first slice landed: c72f662) + sequence census over
-   both shapes naming every ordering-carried invariant. Output: the
-   deletion record, the coarsening-candidate decisions, and the alias
-   table BUILT FROM THE APPENDIX MAPS (r2/GSC-R1-011: the complete
-   old-name to new-name mapping is this document's appendix, not a
-   later step's homework — step 1 needs it and sign-off covers it).
-2. mission-* merge per the appendix map (mechanical; largest
-   coherence gain per hour).
-3. job-family formation: dispatch verbs regrouped per the appendix;
-   the reap verdict ladder becomes one decision owner with ALL THREE
-   consumers wired in the SAME commit — the supervise component's
-   reaper and the mission runner's reap path call the function,
-   dispatch.sh consults the verb — so no other ladder survives
-   (r1/GSC-R1-004, r2/GSC-R1-008), and every consumer applies its
-   verdict through the locked compare-and-swap owner with expected
-   status (r2/GSC-R1-009; the supervise reaper's stale-overwrite
-   defect dies here, with a regression test for a completion landing
-   after the reaper's read). Reservation stays two-phase
-   (r1/GSC-R1-002). Further coarsening only from the step-1 census
-   decisions. dispatch.sh keeps launch, wind-down, and polling
-   custody.
-4. proc regrouping per the appendix; scripts restored to ordinary
-   scripts (usage texts return; shims that stay are one-liners by
-   choice, not doctrine).
+1. Caller census deletion slices as found (first landed: c72f662);
+   the alias mechanism plus the full inert table generated from the
+   appendix, tested row-for-row against it (r3/GSC-R1-016).
+2. mission-* merge per the appendix map; its aliases activate in the
+   same commit (mechanical; largest coherence gain per hour).
+3. job-family regrouping per the appendix; the supervise reaper CAS
+   defect fix with its completion-after-read regression test
+   (r2/GSC-R1-009). No reap unification (severed, round 4).
+4. proc regrouping and supervise fingerprint per the appendix; the
+   two kept invariants get their call-site documentation.
 5. Registry deletion; old-name sweep to zero by the census rules;
    alias table deletion last.
 
@@ -233,7 +227,7 @@ The runner verbs take the bare names: they are the family's front
 door for humans. state-init and ledger-init are the collision the
 prefixes resolve.
 
-### proc (9 verbs from 2 families)
+### proc (8 verbs from 2 families; fingerprint went to supervise, r4/GSC-R1-026)
 
 | today | target |
 | --- | --- |
@@ -241,7 +235,7 @@ prefixes resolve.
 | identity probe | proc probe |
 | identity exists | proc exists |
 | identity group-exists | proc group-exists |
-| census fingerprint | proc fingerprint |
+| census fingerprint | supervise fingerprint |
 | census run | proc census |
 | census alive | proc alive |
 | census signature-check | proc signature-check |
