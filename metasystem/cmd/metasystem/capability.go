@@ -11,7 +11,7 @@ import (
 // runCapabilitySelect selects and validates the capability snapshot for one
 // dispatch, writing the result to --output.
 func runCapabilitySelect(args []string) int {
-	flags := flag.NewFlagSet("capability select", flag.ContinueOnError)
+	flags := flag.NewFlagSet("job snapshot-select", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
 	runtime := flags.String("runtime", "", "runtime name")
 	role := flags.String("role", "", "role name")
@@ -23,7 +23,7 @@ func runCapabilitySelect(args []string) int {
 		return 2
 	}
 	if *root == "" || *runtime == "" || *role == "" || *identity == "" || *envelope == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem capability select --root R --runtime RT --role ROLE --identity JSON --max-age N --envelope E --output O")
+		fmt.Fprintln(os.Stderr, "usage: metasystem job snapshot-select --root R --runtime RT --role ROLE --identity JSON --max-age N --envelope E --output O")
 		return 2
 	}
 	if err := capability.Select(*root, *runtime, *role, *identity, *maxAge, *envelope, *output); err != nil {

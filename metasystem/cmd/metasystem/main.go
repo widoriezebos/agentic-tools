@@ -48,13 +48,6 @@ func families() []family {
 			},
 		},
 		{
-			name:    "capability",
-			summary: "select and validate a capability snapshot",
-			verbs: []verb{
-				{"select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
-			},
-		},
-		{
 			name:    "config",
 			summary: "configuration and identity helpers",
 			verbs: []verb{
@@ -84,8 +77,8 @@ func families() []family {
 			},
 		},
 		{
-			name:    "dispatch",
-			summary: "the job-record lifecycle: create, setup, protocol-error, compare-and-swap",
+			name:    "job",
+			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
 			verbs: []verb{
 				{"record-create", "reserve a job by writing its pending-setup record", runDispatchRecordCreate},
 				{"record-setup", "complete a reservation into the full pending record", runDispatchRecordSetup},
@@ -111,6 +104,8 @@ func families() []family {
 				{"cap-resolution", "write a cap-resolution record", runDispatchCapResolution},
 				{"brief-mode", "check a brief names a known mode", runDispatchBriefMode},
 				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
+				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
+				{"authority-check", "check a control-plane write against the authority matrix", runAuthorityCheck},
 			},
 		},
 		{
@@ -182,13 +177,6 @@ func families() []family {
 				{"register", "record that this process is a running gate", runGateRegister},
 				{"check", "print 1 when a gate is running in this checkout, else 0", runGateCheck},
 				{"fence", "exit 1 naming every live gate run foreign to --self-pid's chain", runGateFence},
-			},
-		},
-		{
-			name:    "authority",
-			summary: "control-plane authority matrix",
-			verbs: []verb{
-				{"check", "exit 0 if a classified caller may write in a mode, else refuse", runAuthorityCheck},
 			},
 		},
 		{

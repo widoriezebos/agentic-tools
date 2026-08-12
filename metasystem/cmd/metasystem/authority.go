@@ -12,7 +12,7 @@ import (
 // runAuthorityCheck exits 0 if the classified caller may perform the mode's
 // write, else exits 1 with the refusal.
 func runAuthorityCheck(args []string) int {
-	flags := flag.NewFlagSet("authority check", flag.ContinueOnError)
+	flags := flag.NewFlagSet("job authority-check", flag.ContinueOnError)
 	mode := flags.String("mode", "", "control-plane write mode")
 	classification := flags.String("classification", "", "caller classification JSON")
 	job := flags.String("job", "", "job named by a record-mutating call")

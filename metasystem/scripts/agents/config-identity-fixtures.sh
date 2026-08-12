@@ -5,7 +5,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "config identity fixtures: binary absent; run the go gate first" >&2; exit 1; }
 helper() { "$ms" config identity "$@"; }
-selector() { "$ms" capability select "$@"; }
+selector() { "$ms" job snapshot-select "$@"; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-config-identity.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 

@@ -103,7 +103,7 @@ report_plan_drift() {
 require_fresh_census() {
   local verdict="$agents/supervision/last-census.json" state="$agents/supervision/state.json" expected
   [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
-  "$ms" dispatch census-fresh --verdict "$verdict" --state "$state" \
+  "$ms" job census-fresh --verdict "$verdict" --state "$state" \
     --arm "$arm_supervision" --repo "$repo_scope" || exit $?
   expected=$("$arm_supervision" fingerprint --repo "$repo_scope" 2>&1) \
     || die 1 "dispatch refused: census fingerprint cannot be computed: $expected"
@@ -148,7 +148,7 @@ fail_setup_husk() { # job id
   [[ -n "$husk_job" && -f "$jobs/$husk_job.json" ]] || return 0
   husk_patch=$(mktemp "${TMPDIR:-/tmp}/metasystem-husk-fail.XXXXXX")
   printf '{"error":"dispatch-refused","phase":"setup"}\n' >"$husk_patch"
-  "$ms" dispatch record-cas --root "$root" --job "$husk_job" \
+  "$ms" job record-cas --root "$root" --job "$husk_job" \
     --expect pending-setup --status failed --patch "$husk_patch" >/dev/null 2>&1 || true
   rm -f "$husk_patch"
 }
@@ -182,10 +182,10 @@ internal_authority() { # holder-only|record-writer|adapter-writer|supervision-on
   result=$("$ms" lease classify --root "$root" --caller-pid "$entry_caller_pid") \
     || die 1 "control-plane write refused: caller classification failed"
   if [[ -n "$job" ]]; then
-    "$ms" authority check \
+    "$ms" job authority-check \
       --mode "$mode" --classification "$result" --job "$job"
   else
-    "$ms" authority check \
+    "$ms" job authority-check \
       --mode "$mode" --classification "$result"
   fi
 }
@@ -288,7 +288,7 @@ wind_down_group() { # record
 # husk healing) is one atomic unit around ps and kill probes; it moves to Go
 # whole or not at all.
 owner_lock() { # claim|release, directory, pid, tag -> 0 done, 3 busy, 4 not-owner
-  "$ms" dispatch owner-lock --command "$1" --dir "$2" --pid "$3" --tag "$4"
+  "$ms" job owner-lock --command "$1" --dir "$2" --pid "$3" --tag "$4"
 }
 
 
@@ -411,7 +411,7 @@ resolve_nonmission_cap() { # role, runtime, canonical model, explicit override, 
     fi
   fi
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
-  "$ms" dispatch cap-resolution --cap "$cap" --rule "$rule" --origin "$origin" --output "$output"
+  "$ms" job cap-resolution --cap "$cap" --rule "$rule" --origin "$origin" --output "$output"
 }
 
 refuse_unsigned_mission_cap_override() { # role, runtime, canonical model
@@ -425,7 +425,7 @@ refuse_unsigned_mission_cap_override() { # role, runtime, canonical model
 }
 
 attested_watcher_ceiling() {
-  "$ms" dispatch watcher-ceiling --state "$agents/supervision/state.json"
+  "$ms" job watcher-ceiling --state "$agents/supervision/state.json"
 }
 
 registered_runtime() { # runtime
@@ -440,7 +440,7 @@ registered_runtime() { # runtime
 }
 
 brief_mode() { # brief
-  "$ms" dispatch brief-mode --brief "$1"
+  "$ms" job brief-mode --brief "$1"
 }
 
 # Tiers are read through the configuration resolver, not by parsing the
@@ -517,7 +517,7 @@ confirm_escalation() { # roster pair, requested pair, displayed cost direction
 }
 
 validate_mission() { # mission id, lease path
-  "$ms" dispatch validate-mission --root "$root" --mission "$1" --lease "$2"
+  "$ms" job validate-mission --root "$root" --mission "$1" --lease "$2"
 }
 
 resolve_mission() { # explicit id; prints mission|lease|turn or ||
@@ -549,7 +549,7 @@ expand_permissions() { # requested value, workspace root, worktree flag, output
   # narrows: a repository cannot grant access a preset withholds.
   network_floor=$(config_get --key dispatch.permissions.network --default '')
   case "$network_floor" in ''|deny|allow) ;; *) die 1 "dispatch.permissions.network must be deny or allow" ;; esac
-  "$ms" dispatch expand-permissions --source "$source" --repo "$repo_scope" \
+  "$ms" job expand-permissions --source "$source" --repo "$repo_scope" \
     --workspace "$workspace" --worktree "$is_worktree" --preset "$preset" \
     --network-floor "$network_floor" --output "$output"
 }
@@ -560,7 +560,7 @@ select_snapshot() { # runtime, role, requested envelope, output json
   identity=$($adapter config-identity) || die 1 "could not read $runtime adapter configuration identity"
   max_age=$(config_get --key capability.snapshot-max-age-days --default 30)
   [[ "$max_age" =~ ^[0-9]+$ ]] || die 1 "capability.snapshot-max-age-days must be a non-negative integer"
-  "$ms" capability select \
+  "$ms" job snapshot-select \
     --root "$root" --runtime "$runtime" --role "$role" --identity "$identity" \
     --max-age "$max_age" --envelope "$envelope" --output "$output"
 }
@@ -570,7 +570,7 @@ root_job_id() { # job record
 }
 
 latest_chain_record() { # root job
-  "$ms" dispatch latest-chain-record --jobs "$jobs" --root "$1"
+  "$ms" job latest-chain-record --jobs "$jobs" --root "$1"
 }
 
 write_prompt() { # path job role runtime model round mission content
@@ -685,7 +685,7 @@ aggregate_chain_usage() { # root id
   case "$status" in completed|failed|timeout|cancelled) ;; *) return 0 ;; esac
   patch=$(mktemp "$record_locks/usage.XXXXXX")
   local aggregate_rc=0
-  "$ms" dispatch chain-usage --jobs "$jobs" --root "$chain" --output "$patch" || aggregate_rc=$?
+  "$ms" job chain-usage --jobs "$jobs" --root "$chain" --output "$patch" || aggregate_rc=$?
   if (( aggregate_rc == 7 )); then
     rm -f -- "$patch" 2>/dev/null || true
     return 0
@@ -715,7 +715,7 @@ mirror_record() { # job
   [[ "$evidence" == /* ]] || { mirror_fail "$job" "evidence.root must be absolute"; return 1; }
   root_id=$(root_job_id "$job") || return 1
   result=$(mktemp "$record_locks/mirror-result.XXXXXX")
-  if ! "$ms" dispatch mirror --repo "$root" --checkout "$repo_scope" --evidence "$evidence" \
+  if ! "$ms" job mirror --repo "$root" --checkout "$repo_scope" --evidence "$evidence" \
       --root-job "$root_id" --job "$job" --result "$result"; then
     mirror_fail "$job" "copy or verification failed (see stderr above)"
     return 1
@@ -727,7 +727,7 @@ mirror_record() { # job
   fi
   patch=$(mktemp "$record_locks/mirror-patch.XXXXXX")
   printf '{"mirror":%s}\n' "$(cat "$result")" >"$patch"
-  "$ms" dispatch chain-members --jobs "$jobs" --root "$root_id" --terminal-only \
+  "$ms" job chain-members --jobs "$jobs" --root "$root_id" --terminal-only \
     | while IFS='|' read -r chain_job chain_status; do
     # record_cas consumes its patch (one-shot); this loop applies the same
     # content to every job in the chain, so each call gets its own copy.
@@ -770,7 +770,7 @@ reap_one_locked() { # job
   # abandonment, the handshake window, and budget expiry. Budget expiry is the
   # SAME decision code the supervision reaper runs, so the two can never
   # disagree about one record.
-  facts=$("$ms" dispatch reap-facts --record "$record" --grace "$handshake_backstop_grace_sec") || return 1
+  facts=$("$ms" job reap-facts --record "$record" --grace "$handshake_backstop_grace_sec") || return 1
   if [[ "$status" == pending-setup ]]; then
     # No process has been launched for a pending-setup record, so reaping one
     # can orphan nothing. Its creating dispatcher finishes setup in seconds --
@@ -982,7 +982,7 @@ dispatch_job() {
   require_fresh_census
   report_plan_drift
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-pending-setup.XXXXXX")
-  "$ms" dispatch build-setup --output "$setup_json" --job "$job" --role "$role" \
+  "$ms" job build-setup --output "$setup_json" --job "$job" --role "$role" \
     --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$job" --source "$setup_json"
   rm -f "$setup_json"
@@ -1041,7 +1041,7 @@ dispatch_job() {
   write_prompt "$round_dir/prompt.md" "$job" "$role" "$runtime" "$model" 1 "${mission:-none}" "$brief"
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
-  "$ms" dispatch build-record --output "$record_json" --job "$job" --role "$role" \
+  "$ms" job build-record --output "$record_json" --job "$job" --role "$role" \
     --mission "$mission" --mission-turn "$mission_turn" --runtime "$runtime" \
     --workspace "$workspace" --cap-resolution "$cap_resolution" --model "$model" \
     --overridden "$overridden" --snapshot "$snapshot_path" \
@@ -1066,7 +1066,7 @@ dispatch_job() {
 }
 
 critique_exhaustion_action() { # root job, role, latest record, message, successor id, output manifest
-  "$ms" dispatch critique-exhaustion --repo "$root" --root-job "$1" --role "$2" \
+  "$ms" job critique-exhaustion --repo "$root" --root-job "$1" --role "$2" \
     --latest "$3" --message "$4" --successor "$5" --output "$6"
 }
 
@@ -1078,7 +1078,7 @@ record_critique_exhaustions() { # manifest
       --expect "$target_status" --status "$target_status" --patch "$patch" \
       || die 1 "could not record the critique exhaustion successor on code-critic chain $target"
     rm -f "$patch"
-  done < <("$ms" dispatch exhaustion-patches --manifest "$manifest" --dir "$record_locks")
+  done < <("$ms" job exhaustion-patches --manifest "$manifest" --dir "$record_locks")
 }
 
 follow_up() {
@@ -1124,7 +1124,7 @@ follow_up() {
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
   [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
-  "$ms" dispatch build-setup --output "$setup_json" --job "$child" --role "$role" \
+  "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
     --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
   lease_run_held "$current_claim_epoch" "$0" __record-create --job "$child" --source "$setup_json"
   rm -f "$setup_json"
@@ -1217,7 +1217,7 @@ follow_up() {
   input_hash=$(sha256_file "$delivery_content")
   write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
-  "$ms" dispatch build-follow-record --output "$record_json" --parent "$latest" \
+  "$ms" job build-follow-record --output "$record_json" --parent "$latest" \
     --job "$child" --round "$round" --parent-job "$(basename "${latest%.json}")" \
     --snapshot "$snapshot_path" --fallbacks "$fallbacks" --signal "$signal" \
     --handshake-budget "$handshake_budget" --resume-mode "$resume_mode" \
@@ -1285,7 +1285,7 @@ close_chain() {
   [[ "$root_id" == "$job" ]] || die 1 "close requires the root job id: $root_id"
   acquire_chain_lock "$root_id"; trap 'release_chain_lock "$root_id"' EXIT
   root_record="$jobs/$root_id.json"
-  "$ms" dispatch close-check --repo "$root" --root "$root_id"
+  "$ms" job close-check --repo "$root" --root "$root_id"
   status=$(json_field "$root_record" status)
   patch=$(mktemp "$record_locks/close.XXXXXX")
   if [[ "$runner_closed" == true ]]; then
@@ -1362,7 +1362,7 @@ internal_register_custody() {
   started=$("$ms" identity started-at --pid "$pid") || exit 1
   # The read-dedupe-append-write runs under the record lock in one verb, so a
   # custody registration can never race a status transition.
-  "$ms" dispatch custody-add --root "$root" --job "$job" --pid "$pid" --pid-started "$started"
+  "$ms" job custody-add --root "$root" --job "$job" --pid "$pid" --pid-started "$started"
 }
 
 internal_handshake() {
@@ -1376,7 +1376,7 @@ internal_handshake() {
   done
   valid_id "$job" && [[ -f "$effective" && -f "$jobs/$job.json" ]] || exit 2
   patch=$(mktemp "$record_locks/handshake-patch.XXXXXX")
-  "$ms" dispatch handshake-eval --record "$jobs/$job.json" --effective "$effective" \
+  "$ms" job handshake-eval --record "$jobs/$job.json" --effective "$effective" \
     --session "$session" --turn "$turn" --model "$model" --signal "$signal" \
     --output "$patch" || exit 1
   target=$(json_field "$patch" target)
@@ -1538,17 +1538,17 @@ case "$command" in
   cancel) cancel_job "$@" ;;
   close) close_chain "$@" ;;
   reap) reap_jobs "$@" ;;
-  __record-create) internal_authority holder-only; "$ms" dispatch record-create --root "$root" "$@" ;;
-  __record-setup) internal_authority holder-only; "$ms" dispatch record-setup --root "$root" "$@" ;;
+  __record-create) internal_authority holder-only; "$ms" job record-create --root "$root" "$@" ;;
+  __record-setup) internal_authority holder-only; "$ms" job record-setup --root "$root" "$@" ;;
   __record-cas)
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
     internal_authority record-writer "$2"
-    "$ms" dispatch record-cas --root "$root" "$@"
+    "$ms" job record-cas --root "$root" "$@"
     ;;
   __protocol-error)
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
     internal_authority adapter-writer "$2"
-    "$ms" dispatch record-protocol-error --root "$root" "$@"
+    "$ms" job record-protocol-error --root "$root" "$@"
     ;;
   __launch) internal_launch "$@" ;;
   __handshake-timeout) internal_handshake_timeout "$@" ;;

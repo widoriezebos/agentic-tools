@@ -2475,7 +2475,7 @@ PY
   ew_role_saved="$agent_fixture/ew-role-saved.json"
   cp "$ew_role" "$ew_role_saved"
   printf '%s\n' '{"required":[],"optional":{},"waivers":{}}' >"$ew_role"
-  if bin/metasystem capability select --root "$agent_repo" --runtime ghostrt \
+  if bin/metasystem job snapshot-select --root "$agent_repo" --runtime ghostrt \
       --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
       --output "$agent_fixture/ew-unwaived.out" 2>"$agent_fixture/ew-unwaived.err"; then
     cp "$ew_role_saved" "$ew_role"
@@ -2484,7 +2484,7 @@ PY
   grep -Fq 'writeRoots' "$agent_fixture/ew-unwaived.err" \
     || { cp "$ew_role_saved" "$ew_role"; echo "empty-writeRoots refusal did not name the field" >&2; cat "$agent_fixture/ew-unwaived.err" >&2; exit 1; }
   printf '%s\n' '{"required":[],"optional":{},"waivers":{"writeRoots":["ghostrt"]}}' >"$ew_role"
-  bin/metasystem capability select --root "$agent_repo" --runtime ghostrt \
+  bin/metasystem job snapshot-select --root "$agent_repo" --runtime ghostrt \
     --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
     --output "$agent_fixture/ew-waived.out" \
     || { cp "$ew_role_saved" "$ew_role"; echo "empty writeRoots was refused even with the writeRoots waiver on record" >&2; exit 1; }

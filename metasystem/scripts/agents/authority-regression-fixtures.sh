@@ -21,7 +21,7 @@ ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 # bypass a positive delegate classification.
 retired_marker="METASYSTEM""_LEASE_FENCE"
 set +e
-wc1_err=$(env "$retired_marker=fixture" "$ms" authority check \
+wc1_err=$(env "$retired_marker=fixture" "$ms" job authority-check \
   --mode record-writer \
   --classification '{"class":"DELEGATE","holder":false}' \
   --job foreign-job 2>&1)

@@ -118,3 +118,11 @@ verbs directly, the mission domain's seven families merged into one:
 | mission-turn adjudicate/conclude/record-failure/park | mission turn-adjudicate/turn-conclude/turn-record-failure/turn-park |
 | mission-ledger init/append | mission ledger-init/ledger-append |
 | mission-jobs drain/close-chains, mission-ledger verify/count | deleted (no callers; c72f662) |
+
+The delegate-job domain followed in the same consolidation:
+
+| before | after |
+| --- | --- |
+| dispatch <verb> (all 24) | job <verb>, same verb names |
+| capability select | job snapshot-select |
+| authority check | job authority-check |
