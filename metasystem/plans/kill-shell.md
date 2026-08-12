@@ -310,9 +310,17 @@ separately — so every adopted target holds a coherent shim-engine
 pair from its adoption date, whatever the template does meanwhile.
 
 In the template: the bootstrap proves binary FRESHNESS causally
-(r3/KS-R3-007, r10/KS-R10-003) — the stamp matches the tracked
-source tree at build time, and the template never commits the
-binary, so no self-referential commit exists. Every bootstrap build
+(r3/KS-R3-007, r10/KS-R10-003) against the SOURCE DIGEST
+(r29/KS-R29-001): the SHA-256 over the sorted (path, content-hash)
+pairs of the tracked Go source set plus go.mod, computed from the
+WORKING TREE — never a commit id, which cannot see a dirty tree.
+The template never commits the binary, so no self-referential
+commit exists. Honesty about the final window (r29/KS-R29-002):
+sources cannot take the lock, so a change racing the rename can
+publish a just-staled binary — the stamp still names exactly what
+was built, the next consult detects it, and the rebuild path
+repairs it; publication guarantees truthful stamping and eventual
+freshness, never filesystem atomicity. Every bootstrap build
 is NON-PUBLISHING (r7/KS-R7-003), compiling to a temporary path. The
 publication protocol is ORDERED and KIND-SCOPED (r8/KS-R8-002,
 r9/KS-R9-002, r10/KS-R10-004, r25/KS-R25-001): register the run's
