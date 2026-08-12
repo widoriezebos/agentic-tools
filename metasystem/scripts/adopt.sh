@@ -93,6 +93,8 @@ fi
 # fail halfway through with the payload already installed.
 command -v go >/dev/null 2>&1 \
   || die 1 "adoption requires the Go toolchain: the engine is always rebuilt from the template source; install Go and re-run"
+bash "$root/scripts/agents/preflight-commands.sh" \
+  || die 1 "adoption refused: install the named commands first"
 
 mkdir -p "$target"
 target=$(cd "$target" && pwd -P)

@@ -178,7 +178,7 @@ $protocol_message"
   blocked_state="$supervision_dir/stop-block-$session.state"
   open_only=$(printf '%s' "$message" | grep '^OPEN-WORK' || true)
   if [[ -n "$open_only" ]]; then
-    signature=$(printf '%s' "$open_only" | shasum | cut -d' ' -f1)
+    signature=$(printf '%s' "$open_only" | "$ms" util sha256)
     if [[ "$(cat "$blocked_state" 2>/dev/null || true)" != "$signature" ]]; then
       printf '%s' "$signature" >"$blocked_state" 2>/dev/null || true
       "$ms" report stop-block "$message"

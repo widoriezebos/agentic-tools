@@ -72,7 +72,7 @@ lease_reentry=0
 
 valid_id() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
-sha256_file() { shasum -a 256 "$1" | awk '{print $1}'; }
+sha256_file() { "$ms" util sha256 --file "$1"; }
 
 dispatch_fixture_wait_cap() { # base seconds; normal dispatch remains 1x
   local base=$1 scale_milli=${METASYSTEM_FIXTURE_CAP_SCALE_MILLI:-1000}

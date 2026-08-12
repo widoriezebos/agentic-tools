@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The production command inventory is a contract: name anything missing
+# before arming touches state (go-production-grade Phase 1).
+bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/preflight-commands.sh" || exit 1
+
 usage() {
   cat <<'USAGE' >&2
 Usage:
