@@ -55,10 +55,10 @@ watchers, cleanup traps).
 
 1. Every decision, transformation, gate, and report lives in a Go verb
    with unit tests under the coverage floor.
-2. A shell file may contain only: argument relay — parsing that only
-   maps CLI ergonomics onto verb argv; any flag whose value selects
-   POLICY is a decision and moves (r5/KS-R5-003) — environment
-   guards,
+2. A shell file may contain only: argument relay — flag-to-argv
+   mapping alone, with defaults and usage text coming from verbs;
+   any flag whose value selects POLICY is a decision and moves
+   (r5/KS-R5-003, r6/KS-R6-006) — environment guards,
    a consult of one or more Go verbs, and one of three legal shapes
    (r3/KS-R3-004, r4/KS-R4-002): the final `exec` of an external CLI
    (the default); launch-wait-consult custody where a protocol
@@ -99,11 +99,17 @@ Phase 0 and as a standing rule inside every later phase:
   (golang.org/x/tools/cmd/deadcode) over cmd + internal. The sweep's
   product is a DISPOSITION REGISTRY checked in at
   scripts/agents/shell-dispositions.json beside the budget, one file
-  with two schema'd sections (r5/KS-R5-006): scripts (path, verdict
-  of port+shim / port+delete / keep, debt deadline) and go-packages
-  (import path, governing plan file) — the audit verb validates
-  both: the named plan must exist, the package must exist, and an
-  unreachable package without an entry fails. For scripts
+  with three schema'd sections (r5/KS-R5-006, r6/KS-R6-003,
+  r6/KS-R6-004): scripts (path, verdict of port+shim / port+delete /
+  keep, SHAPE of exec/custody/sequencer, VERIFIED date, debt
+  deadline) for live files only; tombstones, where a deletion's
+  entry moves; and go-packages (import path, governing plan file).
+  The registry is a CLOSED WORLD (r6/KS-R6-002): every tracked shell
+  file in the payload globs must carry an entry, and an unregistered
+  tracked script fails the fence outright. The audit verb validates
+  all sections — go-packages TEMPLATE-ONLY, gated on go.mod exactly
+  like the go gate, because adopted targets carry neither Go source
+  nor workstream plans (r6/KS-R6-001). For scripts
   (r3/KS-R3-008): `keep` is lawful only for scripts already
   satisfying the thin-shim contract or carrying a dated port entry
   the fence treats as debt with a deadline. Adopted targets receive
@@ -144,7 +150,11 @@ shim. Prerequisite (r3/KS-R3-002): the coverage ratchet of
 plans/go-production-grade.md Phase 0c lands BEFORE Phase A — the
 first production ports are exactly what it protects — implemented as
 a Go verb (audit coverage-ratchet) consulted by one go-gate shim
-line, never as gate shell logic (r5/KS-R5-004). The complexity
+line, never as gate shell logic (r5/KS-R5-004). Recorded
+supersession (r6/KS-R6-005): go-production-grade Phase 0c's wording
+'add the check to go-gate.sh' is superseded on OWNERSHIP by this
+verb; flagged for the human rather than edited into his plan, which
+is under his own live critique. The complexity
 fence lands here as `audit shell-budget`
 (r1/KS-R1-008): a Go verb over a checked-in budget file that only
 ratchets down — total tracked shell lines, per-file caps, per-file
@@ -232,8 +242,11 @@ checkout, then execs the verb — zero decisions in shell, and the
 README's fresh-checkout path stays valid. The bootstrap must prove
 binary FRESHNESS (r3/KS-R3-007): build stamp equals the checkout's
 HEAD, or rebuild before executing — a stale gitignored binary can no
-longer carry an old adoption transform. go-gate.sh itself is already
-near-minimal.
+longer carry an old adoption transform. go-gate.sh's own POLICY
+joins this phase too (r6/KS-R6-007): the no-module skip, the
+foreign-gate refusal, check ordering, and failure ramps become an
+`audit gate` verb, the bootstrap keeping only compile-and-consult —
+near-minimal was a grade, not an exemption.
 
 Phase F — fixtures, DECIDED by evidence (r1/KS-R1-007): bash stays
 the end-to-end driver — arrange via verbs, act by calling the CLI
@@ -256,10 +269,12 @@ surface, and that property is not negotiable.
 
 ## Definition of done (r5/KS-R5-002)
 
-The program closes only when the registry carries zero debt entries
-and every registered script holds a verified verdict in one of the
-three legal shapes. Phases finishing is not the program finishing;
-`keep` debt outliving the last phase is the program still open.
+The program closes only when the registry's scripts section carries
+zero debt entries and every live entry holds a VERIFIED date with
+one of the three legal shapes (r6/KS-R6-004); tombstones are outside
+the quantifier (r6/KS-R6-003). Phases finishing is not the program
+finishing; `keep` debt outliving the last phase is the program still
+open.
 
 ## Ordering
 
