@@ -122,6 +122,8 @@ def read_schema(name: str) -> dict[str, Any]:
 
 
 def parse_time(raw: str) -> dt.datetime:
+    if not isinstance(raw, str):
+        raise TypeError("timestamp is not a string")
     if raw.endswith("Z"):
         raw = raw[:-1] + "+00:00"
     parsed = dt.datetime.fromisoformat(raw)
@@ -595,8 +597,17 @@ class Extractor:
         jobs_used = state_fences.get("jobs")
         start = None
         end = None
+        started_raw = state_fences.get("startedAt")
+        if not isinstance(started_raw, str) and self.mission_root is not None:
+            # The Go engine records startedAt in the mission's fences.json
+            # beside the state, not in the state's own fences echo.
+            sibling = self.mission_root / "fences.json"
+            try:
+                started_raw = json.loads(sibling.read_text()).get("startedAt")
+            except (OSError, ValueError):
+                started_raw = None
         try:
-            start = parse_time(state_fences.get("startedAt"))
+            start = parse_time(started_raw)
             end_values = []
             for item in self.turns + self.jobs:
                 if isinstance(item.get("endedAt"), str):

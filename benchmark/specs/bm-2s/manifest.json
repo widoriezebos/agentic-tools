@@ -24,17 +24,17 @@
     "maven": "Builds still run with -o against a pre-populated repository, because the build must be deterministic and must work whether or not the network is up. That is a spec requirement, not a sandbox constraint."
   },
   "fences": {
-    "approved": "hostTurnCapMin/jobCapMin revised 2026-08-11 by the human's role-caps ruling (implementers 25-30 minutes, host turn ~30 minutes, critics keep their configured cap-min), given via the in-session question component; the 2026-08-05 blanket approval covers the untouched fences; still an experiment per the promotion rule",
+    "approved": "hostTurnCapMin/jobCapMin revised 2026-08-11 by the human's role-caps ruling (implementers 25-30 minutes, host turn ~30 minutes, critics keep their configured cap-min), given via the in-session question component; the 2026-08-05 blanket approval covers the untouched fences; still an experiment per the promotion rule; ledgerNoGainBudget 8 set 2026-08-12 per the recorded last-defense sizing rule after cohort bm-2s-20260812t011219z-60201 repetition 1 parked at stop-loss on three honest scaffolding cycles",
     "concurrency": 2,
     "cycles": 8,
     "hostTurnCapMin": 30,
     "jobCapMin": 30,
     "jobs": 12,
     "ledgerCycleBudget": 8,
-    "ledgerNoGainBudget": 3,
+    "ledgerNoGainBudget": 8,
     "wallClockHours": 3
   },
-  "fencesNote": "Role-specific caps per the human's 2026-08-11 ruling: implementer dispatches carry --cap-min 25 to 30, critic dispatches keep their configured default; jobCapMin 30 is the circuit breaker bounding ANY job, sized to the largest ruled role cap rather than to Devin's inference profile (bm-2 v0.2 chose 180/240/12 for swe-1-7; sol jobs are minutes, not hours). wallClockHours stays 3: the v0.1 flat-floor cohorts died of a prompt-poisoning park, not the wall clock, and 30-minute jobs at concurrency 2 fit several full cycles. Caps protect against stuck loops; they do not define the experiment (the bm-2 v0.2 principle).",
+  "fencesNote": "Role-specific caps per the human's 2026-08-11 ruling: implementer dispatches carry --cap-min 25 to 30, critic dispatches keep their configured default; jobCapMin 30 is the circuit breaker bounding ANY job, sized to the largest ruled role cap rather than to Devin's inference profile (bm-2 v0.2 chose 180/240/12 for swe-1-7; sol jobs are minutes, not hours). wallClockHours stays 3: the v0.1 flat-floor cohorts died of a prompt-poisoning park, not the wall clock, and 30-minute jobs at concurrency 2 fit several full cycles. Caps protect against stuck loops; they do not define the experiment (the bm-2 v0.2 principle). ledgerNoGainBudget moved 3 to 8 (2026-08-12): repetition 1 of the first v0.2 cohort parked at stop-loss after exactly three unresolved cycles scoring self-assessment=0 \u2014 the count gate legitimately reads zero until package, tests, and the pinned test-command line all hold, so a budget of three measures the scaffolding phase, not the agent. The kit validator's own warning named this before launch. Eight equals the cycle fence: pure last defense, and ZERO marginal exposure because fence.cycles=8 already bounds total cycles \u2014 the resize cannot increase the approved spend ceiling.",
   "grader": {
     "calibration": {
       "probeVectors": {
@@ -303,7 +303,7 @@
     "decisionFile": "DECISIONS.md",
     "declaredRuleKey": "order-rule",
     "entryGrammar": "requirement <n>: <key>: <value>",
-    "note": "Published in spec.md in full: the entry grammar, the key, and the three permitted values with their exact semantics. A builder cannot satisfy a machine-checked declaration whose format is withheld (BA-1-1), and a rule without executable semantics leaves the grader holding a hidden right answer (BA-2-1). v0.2 ruling (human, 2026-08-11): this spec ships CLEAN — no seeded defect. Requirement 5's accidental self-contradiction stays fixed (b584fc5); this published decision point is spec content a builder can satisfy, not a trap. Spec-contradiction discovery, with grading that rewards finding it, is a separate future experiment.",
+    "note": "Published in spec.md in full: the entry grammar, the key, and the three permitted values with their exact semantics. A builder cannot satisfy a machine-checked declaration whose format is withheld (BA-1-1), and a rule without executable semantics leaves the grader holding a hidden right answer (BA-2-1). v0.2 ruling (human, 2026-08-11): this spec ships CLEAN \u2014 no seeded defect. Requirement 5's accidental self-contradiction stays fixed (b584fc5); this published decision point is spec content a builder can satisfy, not a trap. Spec-contradiction discovery, with grading that rewards finding it, is a separate future experiment.",
     "requirement": 10
   },
   "title": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster (sol delegate roster)",
