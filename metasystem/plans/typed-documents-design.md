@@ -94,9 +94,9 @@ remainder. There is no "close enough" byte.
 | TD-1 | CRITICAL | Phase 5 bullet 1 | Structs never marshal onto the wire: every write renders typed fields into a copy of the raw remainder and encodes the merged map with the canonical encoder | `internal/wiredoc` | `internal/wiredoc/wiredoc.go` | `internal/wiredoc/wiredoc_test.go` and the cross-writer byte equivalence in `internal/dispatch/wiredoc_equivalence_test.go` | Not applicable: byte equality is the proof | DONE | every family writer renders through the envelope in its own dialect, equivalence-tested |
 | TD-2 | CRITICAL | Phase 5 bullet 3 | The golden corpus is captured from the CURRENT writers before any conversion, per family, and every conversion checkpoint diffs bytes.Equal against it | family owner | `testdata/corpus/<family>/` | the capture test per family | Not applicable: the corpus is committed evidence | DONE | all three families captured: dispatch (7, unescaped), missionrunner (4, escaped), host (3, unescaped) |
 | TD-3 | CRITICAL | Phase 5 bullet 2 | The frozen grammar fixtures pin what current readers ACCEPT — duplicate keys, ill-typed known fields, null-vs-absent, trailing bytes — and new readers match verdict-for-verdict before writers convert | family owner | `testdata/grammar/<family>/` | the grammar test per family | Not applicable: fixture verdict equality | DONE | dispatch (10 verdicts) and missionrunner (5, incl. errNotJSONObject) frozen; host reads through the same owners |
-| TD-4 | HIGH | Phase 5 bullet 4 | RecordCAS keeps its permissive wire contract: nothing accepted today is refused, unknown patches land in the remainder, and the typed projection is a read lens, never a write filter | `internal/dispatch` | `internal/dispatch/record.go` | `internal/dispatch/record_test.go` | Not applicable: pinned by TD-2's CAS transitions | MISSING | Convert at 5.1 |
-| TD-5 | HIGH | Phase 5 staging | Leaves that no decision dereferences by field stay maps, dispositioned per family at its checkpoint in this file | family owner | this file, per checkpoint | Not applicable: a scope decision, not a behavior | Not applicable: same | MISSING | Disposition per family |
-| TD-6 | HIGH | E1 | No asserted error text changes anywhere in the conversion | family owner | grep before each checkpoint | the suite's fixture assertions | Not applicable: suite-enforced | MISSING | Grep per checkpoint |
+| TD-4 | HIGH | Phase 5 bullet 4 | RecordCAS keeps its permissive wire contract: nothing accepted today is refused, unknown patches land in the remainder, and the typed projection is a read lens, never a write filter | `internal/dispatch` | `internal/dispatch/record.go` | `internal/dispatch/record_test.go` | Not applicable: pinned by TD-2's CAS transitions | DONE | None |
+| TD-5 | HIGH | Phase 5 staging | Leaves that no decision dereferences by field stay maps, dispositioned per family at its checkpoint in this file | `plans/typed-documents-design.md` | the Leaf dispositions section below | Not applicable: a scope decision, not a behavior | Not applicable: same | DONE | None |
+| TD-6 | HIGH | E1 | No asserted error text changes anywhere in the conversion | `internal/missionrunner` (the one re-mapped text) | `internal/missionrunner/missionrunner.go` decodeJSONDoc preserves errNotJSONObject | `TestTurnStateGrammarFrozen` pins the distinction; the full suite's fixture assertions pass on the VM at f500f9c | Not applicable: suite-enforced | DONE | None |
 
 ## Default completion check (answered for the design itself)
 
@@ -113,3 +113,36 @@ remainder. There is no "close enough" byte.
    remainder; the wire never adjusts.
 5. Unverified and stated: nothing converts in this phase beyond the three
    staged families; the remainder families are dispositioned, not assumed.
+
+
+## Leaf dispositions (TD-5, recorded at the family checkpoints' close)
+
+Stays a map, with the reason:
+
+- **dispatch**: `permissions` envelopes (schema owned by the preset files
+  and expanded per-dispatch), `usage` aggregates (adapter-shaped
+  pass-through), `custodyProcesses` (census snapshots), `mirror` blobs
+  (hashed, never field-read past sha/path).
+- **missionrunner**: `turnLog` entries (append-only audit trail read
+  whole), `certified` lists (witness-checked per entry, no per-field
+  decisions beyond the three keys the witness reads), `measurement`
+  documents (produced and consumed by the contract's own Measure),
+  `reconciliation` context.
+- **host/adapter**: result `envelope` interiors (runtime-shaped), adapter
+  capability snapshots (schema owned by the snapshot files).
+
+Typed lenses exist where decisions dereference by field: JobRecord
+(dispatch), TurnRecord (missionrunner). Host results are consumed through
+readDocLabeled by the runner and never field-read inside internal/host
+itself — no lens is warranted there (the one-abstraction test).
+
+## Status at the 5.3 close
+
+TD-1 DONE (all three families render through the envelope in their own
+dialects, equivalence-tested). TD-2 DONE. TD-3 DONE. TD-4 DONE — CAS
+operates on the raw map inside the envelope via FromRaw, nothing accepted
+today is refused, pinned by the corpus's terminal-with-metadata case and
+the record_test suite. TD-5 DONE per the dispositions above. TD-6 DONE —
+no asserted error text changed in any family conversion (grep per
+checkpoint; the errNotJSONObject re-mapping preserved readDocLabeled's
+wording exactly).
