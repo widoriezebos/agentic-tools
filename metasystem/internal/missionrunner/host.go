@@ -200,7 +200,7 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 // assembleHostCommand resolves the adapter, builds its argument list and
 // environment, and opens the host log; nothing has started yet.
 func (e *Engine) assembleHostCommand(l *hostLaunch) error {
-	l.runtime, _ = l.turn["runtime"].(string)
+	l.runtime = TurnRecordOf(l.turn).Runtime()
 	adapter := filepath.Join(e.Root, "scripts", "agents", "hosts", l.runtime+".sh")
 	if info, err := os.Stat(adapter); err != nil || !info.Mode().IsRegular() || unix.Access(adapter, unix.X_OK) != nil {
 		return failf(3, "host adapter is not installed or executable: %s", adapter)
@@ -219,6 +219,11 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 		"--result", l.resultPath,
 		"--instance-tag", l.tag,
 	}
+	// The raw assertion, not the lens: the lens reads an empty-string
+	// session as absent, but the original contract passes --resume-session
+	// verbatim whenever the field is a string AT ALL — and a conversion
+	// commit may not narrow that, even where narrowing looks saner
+	// (typed-documents rule: the projection is a lens, never a filter).
 	if session, ok := l.turn["hostSession"].(string); ok {
 		args = append(args, "--resume-session", session)
 	}
