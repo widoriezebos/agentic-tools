@@ -314,9 +314,13 @@ In the template: the bootstrap proves binary FRESHNESS causally
 source tree at build time, and the template never commits the
 binary, so no self-referential commit exists. Every bootstrap build
 is NON-PUBLISHING (r7/KS-R7-003), compiling to a temporary path. The
-publication protocol is ORDERED (r8/KS-R8-002, r9/KS-R9-002,
-r10/KS-R10-004): register the run's own gate marker FIRST, then
-consult the fence (which exempts the registrant's chain), then claim
+publication protocol is ORDERED and KIND-SCOPED (r8/KS-R8-002,
+r9/KS-R9-002, r10/KS-R10-004, r25/KS-R25-001): register the run's
+own gate marker FIRST under the publish-bootstrap kind — the marker's
+gate-name field already carries kind — then consult the fence, which
+exempts the registrant's chain, REFUSES on foreign VALIDATION
+markers (a live suite must never have its binary swapped), and
+treats foreign PUBLICATION markers as contention; then claim
 internal/dispatch/ownerlock.go's publication lock, then REVALIDATE
 freshness under the lock — re-derive the tracked-source state and
 abort unless it still equals the stamp (r11/KS-R11-002) — then
