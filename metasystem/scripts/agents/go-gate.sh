@@ -22,11 +22,14 @@ if ! grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root
   # Import-BLOCK awareness, not text position: only a path inside an
   # import statement or block counts, so data lists, constants, and
   # comments in a foreign project never trip this.
-  if find "$root/cmd/metasystem" -name '*.go' -exec cat {} + 2>/dev/null | awk 'BEGIN{inblk=0;found=0}
+  if find "$root/cmd/metasystem" -name '*.go' -exec awk 'FNR==1{inblk=0;incmt=0}
+    incmt{if(/\*\//)incmt=0;next}
+    /^[[:space:]]*\/\//{next}
+    /^[[:space:]]*\/\*/{if(!/\*\//)incmt=1;next}
     /^[[:space:]]*import[[:space:]]*\(/{inblk=1;next}
     inblk && /^[[:space:]]*\)/{inblk=0;next}
     (inblk || /^[[:space:]]*import[[:space:]]/) && /"github\.com\/widoriezebos\/agentic-tools\/metasystem\/internal/{found=1;exit}
-    END{exit !found}'; then
+    END{exit !found}' {} + 2>/dev/null; then
     echo "go gate: metasystem Go source present but go.mod does not declare the metasystem module — damaged template, refusing to skip" >&2
     exit 1
   fi

@@ -121,12 +121,14 @@ Phase 0 and as a standing rule inside every later phase:
   absent source skips, source without the module line fails loudly
   as a damaged template — where "source" is collision-proof: the
   metasystem's internal module path inside an actual import
-  statement or block of a cmd/metasystem Go file — an import-block
-  scanner, not text position, so data lists, constants, and comments
-  never trip it (the rounds 14-17 four-branch execution proofs) — so a broken
+  statement or block of a cmd/metasystem Go file — a pipeless,
+  comment-stripping import-block scanner — awk over the files
+  themselves, so pipefail cannot invert the matched case, and
+  commented imports never count (the rounds 14-18 execution proofs,
+  run under the scripts' own shell options) — so a broken
   module declaration can never validate green with zero Go checks
   and an adopter's own file at that path never trips the gate
-  (r12/KS-R12-001, r13/KS-R13-001, r13/KS-R13-002, r14/KS-R14-001, r15/KS-R15-001, r16/KS-R16-001, r17/KS-R17-001): the named
+  (r12/KS-R12-001, r13/KS-R13-001, r13/KS-R13-002, r14/KS-R14-001, r15/KS-R15-001, r16/KS-R16-001, r17/KS-R17-001, r18/KS-R18-001, r18/KS-R18-002): the named
   governing plan must exist, the package must exist, and an
   unreachable package without an entry fails (r7/KS-R7-002) —
   package grain is the enforcement boundary, while function-grain
