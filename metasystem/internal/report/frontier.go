@@ -11,8 +11,7 @@ import (
 	"time"
 )
 
-// The measured-improvement frontier (ported whole from scripts/frontier.sh
-// under plans/kill-shell.md Phase A): record stores the best-known committed
+// The measured-improvement frontier: record stores the best-known committed
 // state for an improvement goal; challenge admits only candidates beating
 // the frontier by more than the persisted noise floor; status prints the
 // file with the effective direction. The noise floor, direction, and

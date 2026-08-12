@@ -77,30 +77,3 @@ func runAuditMetasystem(args []string) int {
 	fmt.Println("metasystem audit passed")
 	return 0
 }
-
-// runAuditShellBudget runs the shell complexity fence over the disposition
-// registry's scripts. Exit 0 within budget; 1 refused; 2 usage.
-func runAuditShellBudget(args []string) int {
-	flags := flag.NewFlagSet("audit shell-budget", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root holding the registry and scripts")
-	budget := flags.String("budget", "", "path to the shell budget file")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	budgetPath := *budget
-	if budgetPath == "" {
-		budgetPath = *root + "/scripts/agents/shell-budget.json"
-	}
-	violations, report := audit.AuditShellBudget(*root, budgetPath)
-	for _, line := range report {
-		fmt.Println(line)
-	}
-	for _, line := range violations {
-		fmt.Fprintln(os.Stderr, "shell budget violation: "+line)
-	}
-	if len(violations) > 0 {
-		fmt.Fprintln(os.Stderr, "shell budget refused: the fence only ratchets down (plans/kill-shell.md)")
-		return 1
-	}
-	return 0
-}

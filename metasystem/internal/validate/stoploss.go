@@ -7,9 +7,8 @@ import (
 	"strings"
 )
 
-// The investigation stop-loss check (ported whole from
-// scripts/assert-stop-loss.sh under plans/kill-shell.md Phase A): it blocks
-// further cycles when a machine-checkable trigger has fired — a dead end, two
+// The investigation stop-loss check: it blocks further cycles when a
+// machine-checkable trigger has fired — a dead end, two
 // no-progress cycles, an exhausted cycle budget, or as many trailing cycles
 // without a contract-improved as the declared no-gain budget. It enforces
 // only what the ledger already states; the judgment triggers stay with the

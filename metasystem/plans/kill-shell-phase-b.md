@@ -3,10 +3,15 @@
 Working Mode: design
 Mission Stream: kill-shell
 
-Status: DRAFT under critique. Parent authority: plans/kill-shell.md
-(ACCEPTED), whose Phase B paragraph fixes this phase's scope. This
-document turns that paragraph into an implementable design; where the
-two disagree, the parent plan wins and the disagreement is a finding.
+Status: SUPERSEDED (human ruling, Wido, 2026-08-12) before its first
+critique round completed; the round was cancelled. The ruling: core
+decisions belong in Go, plumbing stays in scripts — this document's
+plan to move the reaper whole (kill ramps, polling, signaling
+included) was the wrong direction. The replacement program is the
+consolidation redesign of the script-shaped CLI surface; see
+plans/kill-shell.md's status header. Kept for the record: the fixture
+inventory below still names the unpinned lifecycle branches, which
+remain useful to any future dispatch work.
 
 ## Scope
 

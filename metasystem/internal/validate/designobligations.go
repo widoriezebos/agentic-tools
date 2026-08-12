@@ -8,10 +8,8 @@ import (
 	"strings"
 )
 
-// The design-obligation gate (ported whole from
-// scripts/assert-design-obligation-gate.sh under plans/kill-shell.md Phase
-// A): a declared obligation status is only as trustworthy as the proof
-// behind it, so CRITICAL/HIGH rows demand code-shaped owners and concrete
+// The design-obligation gate: a declared obligation status is only as
+// trustworthy as the proof behind it, so CRITICAL/HIGH rows demand code-shaped owners and concrete
 // proof cells before DONE or READY_FOR_RUNTIME stands. Matrices inside
 // fenced code blocks are documentation, not declarations.
 

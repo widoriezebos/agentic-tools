@@ -14,9 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
-// The task-receipt ledger (ported whole from scripts/receipt.sh under
-// plans/kill-shell.md Phase A): add appends one receipt line at task
-// completion, correct appends a correction that references an existing line
+// The task-receipt ledger: add appends one receipt line at task completion, correct appends a correction that references an existing line
 // without editing it, check decides whether a metasystem retro is due,
 // stats prints the period numbers, and retro resets the cadence. The log is
 // one line per record, so every free-text field is flattened before it is

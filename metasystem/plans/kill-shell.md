@@ -2,10 +2,28 @@
 
 Working Mode: design
 
-Owner: main session (claude). Status: ACCEPTED 2026-08-12 — round
+Owner: main session (claude). Status: SUPERSEDED IN PART by human
+ruling (Wido, 2026-08-12), after Phase A completed: the boundary is
+core versus plumbing, not decisions versus shims. Core functionality
+belongs in Go; plumbing (process launching, polling, signaling,
+environment glue, fixture drivers) remains in scripts — that is what
+scripts are for. A Go programmer must never read the engine and find a
+shell script wearing Go syntax. Consequences: the shim-doctrine
+("shell scripts are shims, if they exist at all") is RETIRED; the
+`audit shell-budget` complexity fence is REMOVED (a shell lexer in Go
+is meta-machinery, and its closed-world check broke the adopted-copy
+fixture on landing day); Phases B–F below are superseded by a
+consolidation redesign of the script-shaped CLI surface (29 families,
+175 verbs at the time of the ruling) into a small set of domain
+commands that own whole decision flows, with remaining scripts
+restored to ordinary scripts. Phase A's five ports stand: they moved
+decision engines (audit, frontier, receipt, obligation/stop-loss
+gates, conformance) and killed production python.
+
+Original status: ACCEPTED 2026-08-12 — round
 35 returned zero material findings
 (plans/dispositions/kill-shell-r35.md); 110 findings over 35 rounds,
-all adjudicated. This document is the implementation authority. One
+all adjudicated. One
 decision remains the human's: adopted-engine delivery (the round-10
 severance). Facts:
 plans/kill-shell-facts.md (cited as F Qn.m); each phase re-runs its
@@ -15,7 +33,9 @@ proved why: the sheet was already stale on lock ownership). Human ruling
 should carry the very minimal amount of shell code — or even shell
 scripts. Everything of complexity lives in the Go application where it
 is unit-tested. Shell scripts are shims, if they exist at all. Plan
-first, critique the plan, then implement.
+first, critique the plan, then implement. (That 2026-08-11 wording is
+what the 2026-08-12 ruling refines: complexity meant decisions, not
+plumbing.)
 
 ## Why
 

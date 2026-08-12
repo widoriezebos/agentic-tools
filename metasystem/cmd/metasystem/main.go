@@ -176,7 +176,6 @@ func families() []family {
 			summary: "mechanical fences the gate bootstrap consults between steps",
 			verbs: []verb{
 				{"coverage-ratchet", "judge go test -cover output against the checked-in per-package floors", runAuditCoverageRatchet},
-				{"shell-budget", "refuse shell complexity regressions against the ratchet budget", runAuditShellBudget},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 			},
 		},

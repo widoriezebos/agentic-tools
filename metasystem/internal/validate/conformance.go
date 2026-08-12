@@ -14,19 +14,19 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
-// The conformance gate (ported whole from scripts/agents/assert-conformance.sh
-// under plans/kill-shell.md Phase A — the last production python). The review
-// stage computes the implementer worktree's exact review object from an
-// isolated index and checks changed paths against the cumulative union of
-// immutable per-round declarations. The merge stage leaves review artifacts
-// untouched and requires either a mechanically valid waiver or a closed,
-// independent code-critic chain over the branch's final committed tree.
+// The conformance gate. The review stage computes the implementer
+// worktree's exact review object from an isolated index and checks changed
+// paths against the cumulative union of immutable per-round declarations.
+// The merge stage leaves review artifacts untouched and requires either a
+// mechanically valid waiver or a closed, independent code-critic chain over
+// the branch's final committed tree.
 
 var conformanceJobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// pyRepr formats a decoded JSON value the way python's %r did in the shell
-// gate's embedded programs, so refusal messages stay byte-identical.
-func pyRepr(value any) string {
+// quoted formats a decoded JSON value for a refusal message: strings in
+// single quotes, null as None, numbers plainly. The quoting style is part of
+// the gate's message contract, which the conformance fixtures assert.
+func quoted(value any) string {
 	switch v := value.(type) {
 	case nil:
 		return "None"
@@ -47,7 +47,7 @@ func pyRepr(value any) string {
 	}
 }
 
-func pyListRepr(items []string) string {
+func quotedList(items []string) string {
 	if len(items) == 0 {
 		return "[]"
 	}
@@ -170,7 +170,7 @@ func (r *conformanceRun) resolveFacts() []string {
 			err = json.Unmarshal(parentData, &parentRecord)
 		}
 		if err != nil {
-			return []string{fmt.Sprintf("parent job record %s is unreadable: %v", pyRepr(name), err)}
+			return []string{fmt.Sprintf("parent job record %s is unreadable: %v", quoted(name), err)}
 		}
 		rootJob = name
 		parent = parentRecord["parentJob"]
@@ -189,14 +189,14 @@ func (r *conformanceRun) resolveFacts() []string {
 	}
 	r.workspace = workspace
 	r.baseSha = baseSha
-	r.roundText = pythonPrint(round)
+	r.roundText = scalarText(round)
 	r.rootJob = rootJob
 	return nil
 }
 
-// pythonPrint renders a decoded JSON scalar the way python's print did:
-// integers without a decimal point, everything else close to repr-less str.
-func pythonPrint(value any) string {
+// scalarText renders a decoded JSON scalar plainly: integers without a
+// decimal point, strings as themselves.
+func scalarText(value any) string {
 	switch v := value.(type) {
 	case float64:
 		if v == float64(int64(v)) {
@@ -317,7 +317,7 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 	if parsed, err := strconv.Atoi(r.roundText); err == nil {
 		currentRound = parsed
 	} else {
-		violations = append(violations, fmt.Sprintf("implementer round is not an integer: %s", pyRepr(r.roundText)))
+		violations = append(violations, fmt.Sprintf("implementer round is not an integer: %s", quoted(r.roundText)))
 	}
 	// The chain's true round is the MAX across its job records — the root
 	// record stays at round 1 while follow-ups live in -rN records.
@@ -403,7 +403,7 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 	if len(outside) > 0 {
 		violations = append(violations, fmt.Sprintf(
 			"changed paths fall outside the cumulative implementation boundary: %s; some implementation round must declare every changed path",
-			pyListRepr(outside)))
+			quotedList(outside)))
 	}
 	if len(violations) > 0 {
 		for _, violation := range violations {
@@ -517,7 +517,7 @@ func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string,
 	}
 	if waiverClass != "prose-under-30" {
 		violations = append(violations, fmt.Sprintf(
-			"unsupported critique waiver class %s; the only class is prose-under-30", pyRepr(waiverClass)))
+			"unsupported critique waiver class %s; the only class is prose-under-30", quoted(waiverClass)))
 	}
 	var nonMarkdown, instructionHits []string
 	for _, path := range paths {
@@ -529,11 +529,11 @@ func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string,
 		}
 	}
 	if len(nonMarkdown) > 0 {
-		violations = append(violations, fmt.Sprintf("prose-under-30 includes non-Markdown paths: %s", pyListRepr(nonMarkdown)))
+		violations = append(violations, fmt.Sprintf("prose-under-30 includes non-Markdown paths: %s", quotedList(nonMarkdown)))
 	}
 	if len(instructionHits) > 0 {
 		violations = append(violations, fmt.Sprintf(
-			"prose-under-30 touches instruction-bearing paths that are never waivable: %s", pyListRepr(instructionHits)))
+			"prose-under-30 touches instruction-bearing paths that are never waivable: %s", quotedList(instructionHits)))
 	}
 	changedLines := 0
 	binary := false
@@ -588,7 +588,7 @@ func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string,
 	}
 	r.out = append(r.out, fmt.Sprintf(
 		"critique waiver accepted and counted: class=prose-under-30 stream=%s count=%d changedLines=%d",
-		pyRepr(currentStream), count, changedLines))
+		quoted(currentStream), count, changedLines))
 	return r.out, r.errs, 0
 }
 
@@ -680,8 +680,8 @@ func chainRootIn(records map[string]map[string]any, jobID string) (string, bool)
 	}
 }
 
-// enumerates reports whether text names the finding id outside any longer
-// identifier, mimicking the shell gate's lookaround word boundary.
+// enumerates reports whether text names the finding id as a whole word,
+// never as a fragment of a longer identifier.
 func enumerates(text, findingID string) bool {
 	isWord := func(b byte) bool {
 		return b == '-' || b == '_' ||
@@ -725,7 +725,7 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 	if len(criticIDs) == 0 {
 		r.errs = append(r.errs, fmt.Sprintf(
 			"conformance failure: merge requires a code-critic chain whose reviews field names implementer job %s; dispatch that role with --reviews %s",
-			pyRepr(implementerJob), pythonPrint(implementerJob)))
+			quoted(implementerJob), scalarText(implementerJob)))
 		if configuredRuntime == "__missing__" {
 			r.errs = append(r.errs,
 				"conformance failure: the code-critic role is unconfigured; set the exact key role.code-critic.runtime")
@@ -786,10 +786,10 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 			failures = append(failures, "is not closed")
 		}
 		if final["status"] != "completed" {
-			failures = append(failures, fmt.Sprintf("final round status is %s, not completed", pyRepr(final["status"])))
+			failures = append(failures, fmt.Sprintf("final round status is %s, not completed", quoted(final["status"])))
 		}
 		returnPath := filepath.Join(r.root, "artifacts", "agents", criticID,
-			"rounds", pythonPrint(finalRound), "return.json")
+			"rounds", scalarText(finalRound), "return.json")
 		result := map[string]any{}
 		returnData, err := os.ReadFile(returnPath)
 		var parsedReturn any
@@ -797,11 +797,11 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 			err = json.Unmarshal(returnData, &parsedReturn)
 		}
 		if err != nil {
-			failures = append(failures, fmt.Sprintf("code-critic chain %s final return is unreadable: %v", pyRepr(criticID), err))
+			failures = append(failures, fmt.Sprintf("code-critic chain %s final return is unreadable: %v", quoted(criticID), err))
 		} else if object, ok := parsedReturn.(map[string]any); ok {
 			result = object
 		} else {
-			failures = append(failures, fmt.Sprintf("code-critic chain %s final return is not a JSON object", pyRepr(criticID)))
+			failures = append(failures, fmt.Sprintf("code-critic chain %s final return is not a JSON object", quoted(criticID)))
 		}
 
 		var materialIDs []string
@@ -824,7 +824,7 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 		verdict := result["verdictMaterialCount"]
 		verdictZero := verdict == float64(0)
 		if len(materialIDs) > 0 || !verdictZero {
-			detail := "reported count " + pyRepr(verdict)
+			detail := "reported count " + quoted(verdict)
 			if len(materialIDs) > 0 {
 				detail = strings.Join(materialIDs, ", ")
 			}
@@ -893,7 +893,7 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 			if !present || successorRecord["role"] != "implementer" || successorRecord["parentJob"] == nil ||
 				!successorRooted || successorRoot != r.rootJob {
 				failures = append(failures, fmt.Sprintf(
-					"successor job %s is not an implementer follow-up in the reviewed implementation chain", pyRepr(successor)))
+					"successor job %s is not an implementer follow-up in the reviewed implementation chain", quoted(successor)))
 				continue
 			}
 			text, textOK := successorText(successor)
@@ -905,14 +905,14 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 			}
 			if len(missing) > 0 {
 				failures = append(failures, fmt.Sprintf(
-					"successor job %s prompt does not enumerate open findings: %s", pyRepr(successor), strings.Join(missing, ", ")))
+					"successor job %s prompt does not enumerate open findings: %s", quoted(successor), strings.Join(missing, ", ")))
 			}
 			finalRoundNumber, finalRoundIsNumber := finalRound.(float64)
 			finalRoundValid := finalRoundIsNumber && finalRoundNumber == float64(int64(finalRoundNumber))
 			if !finalRoundValid || (roundValid && finalRoundNumber <= exhaustedRound) || len(materialIDs) > 0 || !verdictZero {
 				failures = append(failures, fmt.Sprintf(
 					"critique exhausted at round %s with open material findings: %s",
-					pythonPrint(exhaustion["round"]), strings.Join(openIDs, ", ")))
+					scalarText(exhaustion["round"]), strings.Join(openIDs, ", ")))
 			}
 		}
 
@@ -920,32 +920,32 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 		if reviewedTree != finalTree {
 			failures = append(failures, fmt.Sprintf(
 				"reviewed tree %s is stale; the implementer branch final committed tree is %s",
-				pyRepr(reviewedTree), pyRepr(finalTree)))
+				quoted(reviewedTree), quoted(finalTree)))
 		}
 
 		implementerModel, implementerModelOK := r.record["effectiveModel"].(string)
 		criticModel, _ := final["effectiveModel"].(string)
 		if !implementerModelOK || implementerModel == "" {
-			failures = append(failures, fmt.Sprintf("implementer job %s has no effective model", pyRepr(implementerJob)))
+			failures = append(failures, fmt.Sprintf("implementer job %s has no effective model", quoted(implementerJob)))
 		}
 		if criticFinalModel, ok := final["effectiveModel"].(string); !ok || criticFinalModel == "" {
-			failures = append(failures, fmt.Sprintf("code-critic chain %s final round has no effective model", pyRepr(criticID)))
+			failures = append(failures, fmt.Sprintf("code-critic chain %s final round has no effective model", quoted(criticID)))
 		}
 		if implementerModelOK && implementerModel != "" && implementerModel == criticModel && independence != "session-only" {
 			failures = append(failures, fmt.Sprintf(
 				"independence refused: implementer job %s uses effective model %s, and code-critic chain %s uses effective model %s; remedy one is to dispatch a critic on a different model; remedy two is to declare independence=session-only in configuration",
-				pyRepr(implementerJob), pyRepr(implementerModel), pyRepr(criticID), pyRepr(criticModel)))
+				quoted(implementerJob), quoted(implementerModel), quoted(criticID), quoted(criticModel)))
 		}
 
 		if len(failures) == 0 {
 			if implementerModel == criticModel && independence == "session-only" {
 				r.out = append(r.out, fmt.Sprintf(
 					"merge critique accepted with independence=session-only recorded in gate evidence: implementer job %s and code-critic chain %s both use effective model %s; their sessions alone are independent; both agree on tree %s",
-					pythonPrint(implementerJob), criticID, implementerModel, finalTree))
+					scalarText(implementerJob), criticID, implementerModel, finalTree))
 			} else {
 				r.out = append(r.out, fmt.Sprintf(
 					"merge critique accepted with model independence: implementer job %s uses effective model %s, code-critic chain %s uses effective model %s, and both agree on tree %s",
-					pythonPrint(implementerJob), implementerModel, criticID, criticModel, finalTree))
+					scalarText(implementerJob), implementerModel, criticID, criticModel, finalTree))
 			}
 			return r.out, r.errs, 0
 		}
