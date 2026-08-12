@@ -3,10 +3,16 @@
 Working Mode: design
 Mission Stream: kill-shell
 
-Status: DRAFT under critique; the TARGET TREE below additionally needs
-the human's sign-off before any implementation (his standing ruling of
-2026-08-12 created this program and he has corrected course twice —
-the shape is his call). This program replaces kill-shell Phases B–F.
+Status: ACCEPTED 2026-08-12 after seven critique rounds (44 findings,
+dispositions r1-r7 beside this file); the target tree carries the
+human's sign-off. The loop CLOSED under the sharpened stop criterion
+the human set after round 7: a critique round is justified only while
+its findings would change what gets BUILT — architecture, contracts,
+on-disk data, behavior. Round 7's findings were the last
+build-changing ones; round 8 was cancelled unread. Residual
+specification precision is owned by the implementation's verification
+net (suite green per step, both-shape greps, build). This program
+replaces kill-shell Phases B–F.
 
 ## Problem
 
