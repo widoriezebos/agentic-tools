@@ -285,8 +285,9 @@ Phase A's receipt family alone.
 
 Phase E — adoption's decisions become `metasystem adopt run`, while
 adopt.sh stays a thin BOOTSTRAP shim by necessity, exactly like
-go-gate (r2/KS-R2-004): it builds or locates the binary on a fresh
-checkout, then execs the verb — zero decisions in shell, and the
+go-gate (r2/KS-R2-004): it REBUILDS the binary unconditionally
+(always-rebuild, r31; the locate branch dies, r33/KS-R33-001), then
+execs the verb — zero decisions in shell, and the
 README's fresh-checkout path stays valid. Bootstraps ARE the
 custody shape (r9/KS-R9-003): they launch the toolchain, wait,
 consult verbs, and finish — their registry verdicts say custody, and
@@ -346,8 +347,11 @@ SERIALIZER closes the cross-kind race (r28/KS-R28-001): the
 admitted-flag write and the publisher's rename both happen only
 under the publication lock, each preceded by an under-lock recheck —
 a publisher finding an admitted validator aborts, a validator
-finding a fresh publish proceeds against the published binary, and
-no interleaving exists because there is exactly one door — then
+finding an EXISTING executable binary proceeds against it — the
+winner published it this window and every future invocation
+rebuilds anyway; existence, not freshness, is the criterion
+(r33/KS-R33-002) — and no interleaving exists because there is
+exactly one door — then
 staged atomic rename (the r11/KS-R11-002 stamp re-derivation is
 superseded by always-rebuild, r32/KS-R32-001). Register-then-check makes admission and replacement one protocol;
 for two racing first-builds the LOCK alone adjudicates
