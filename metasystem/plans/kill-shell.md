@@ -111,10 +111,18 @@ Phase 0 and as a standing rule inside every later phase:
   unregistered by construction — one list, no globs. Every tracked
   template shell file must carry an entry; an unregistered tracked
   script fails the fence outright. The audit verb validates all
-  sections — for go-packages, TEMPLATE-ONLY (gated on go.mod exactly
-  like the go gate, r6/KS-R6-001): the named governing plan must
-  exist, the package must exist, and an unreachable package without
-  an entry fails (r7/KS-R7-002). For scripts
+  sections — for go-packages, TEMPLATE-ONLY, gated on the
+  metasystem's OWN module path in go.mod, exact match, because
+  adopted targets may be ordinary Go repositories with modules of
+  their own (r6/KS-R6-001 as corrected by r8/KS-R8-001): the named
+  governing plan must exist, the package must exist, and an
+  unreachable package without an entry fails (r7/KS-R7-002) —
+  package grain is the enforcement boundary, while function-grain
+  sweep findings are recorded as registry debt with deadlines,
+  matching what the analyzer actually reports (r8/KS-R8-004).
+  Script entries carry an EXPORT CONDITION (always, or
+  with-skill:<name>) so optional-skill scripts are registered
+  without being unconditionally shipped (r8/KS-R8-003). For scripts
   (r3/KS-R3-008): `keep` is lawful only for scripts already
   satisfying the thin-shim contract or carrying a dated port entry
   the fence treats as debt with a deadline. Adopted targets receive
@@ -248,10 +256,13 @@ README's fresh-checkout path stays valid. The bootstrap must prove
 binary FRESHNESS (r3/KS-R3-007): build stamp equals the checkout's
 HEAD, or rebuild before executing — a stale gitignored binary can no
 longer carry an old adoption transform. Every bootstrap build is
-NON-PUBLISHING (r7/KS-R7-003): it compiles to a temporary path,
-consults the gate fence through that binary, and only a fence-clear
-run may replace bin/metasystem — the foreign-gate safety rule holds
-before any Go verb exists to enforce it. go-gate.sh's own POLICY
+NON-PUBLISHING (r7/KS-R7-003): it compiles to a temporary path and
+consults the gate fence through that binary. Fence-clear grants the
+right to CONTEND, not to publish (r8/KS-R8-002): replacement of
+bin/metasystem happens only under the Go owner-lock followed by an
+atomic rename, so two racing first-builds serialize — the
+foreign-gate safety rule holds before any Go verb exists to enforce
+it. go-gate.sh's own POLICY
 joins this phase too (r6/KS-R6-007): the no-module skip, the
 foreign-gate refusal, check ordering, and failure ramps become an
 `audit gate` verb, the bootstrap keeping only compile-and-consult —
