@@ -195,34 +195,6 @@ func runMissionTurnPark(args []string) int {
 	return 0
 }
 
-// runMissionJobsDrain prints the mission's not-yet-terminal jobs as
-// {"activeJobs":[...]}. The runner reaps each and calls again until the list
-// drains empty, keeping process reaping with the dispatch tooling.
-func runMissionJobsDrain(args []string) int {
-	return runMissionJobsList(args, "mission-jobs drain", "activeJobs", missionrunner.ActiveJobs)
-}
-
-// runMissionJobsCloseChains prints the root jobs of delegation chains that
-// are fully terminal and not yet closed, as {"chains":[...]}. The runner
-// reaps and closes each root through the dispatch tooling.
-func runMissionJobsCloseChains(args []string) int {
-	return runMissionJobsList(args, "mission-jobs close-chains", "chains", missionrunner.CloseableChains)
-}
-
-func runMissionJobsList(args []string, name, field string, list func(root, mission string) []string) int {
-	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
-	mission := flags.String("mission", "", "mission id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if !missionRunnerScope(name, *root, *mission) {
-		return 2
-	}
-	printJSON(map[string]any{field: list(*root, *mission)})
-	return 0
-}
-
 // The mission-runner family: the runner process itself. start and resume
 // launch the detached run loop and hold the caller until the first host turn
 // verifiably starts; run-loop is that detached child; status and answer are

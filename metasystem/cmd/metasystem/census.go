@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,52 +10,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 )
-
-// runCensusClassify classifies process argvs against runtime signatures: it
-// reads a JSON job on stdin —
-// {signatures: [{runtime, matches[], excludes[]}], argvs: [...]} — and prints
-// the classification as JSON {assignments: [{index, runtime}]}.
-func runCensusClassify(args []string) int {
-	flags := flag.NewFlagSet("census classify", flag.ContinueOnError)
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	var job struct {
-		Signatures []struct {
-			Runtime  string   `json:"runtime"`
-			Matches  []string `json:"matches"`
-			Excludes []string `json:"excludes"`
-		} `json:"signatures"`
-		Argvs []string `json:"argvs"`
-	}
-	decoder := json.NewDecoder(bufio.NewReader(os.Stdin))
-	if err := decoder.Decode(&job); err != nil {
-		fmt.Fprintln(os.Stderr, "census classify: unreadable job:", err)
-		return 2
-	}
-	var signatures []census.Signature
-	for _, raw := range job.Signatures {
-		sig, err := census.CompileSignature(raw.Runtime, raw.Matches, raw.Excludes)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "census classify:", err)
-			return 1
-		}
-		signatures = append(signatures, sig)
-	}
-	result := struct {
-		Assignments []census.Assignment `json:"assignments"`
-	}{Assignments: census.Classify(job.Argvs, signatures)}
-	if result.Assignments == nil {
-		result.Assignments = []census.Assignment{}
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "census classify:", err)
-		return 1
-	}
-	fmt.Println(string(encoded))
-	return 0
-}
 
 // runCensusFingerprint prints the supervision fingerprint for --repo, using
 // --root as the metasystem root (defaults to the binary's checkout).
@@ -145,22 +98,6 @@ func runCensusAlive(args []string) int {
 		return 0
 	}
 	return 1
-}
-
-func runCensusAuthIdentity(args []string) int {
-	flags := flag.NewFlagSet("census authentication-identity", flag.ContinueOnError)
-	pid := flags.Int64("pid", 0, "process id")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	id, err := census.AuthIdentity(*pid)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	encoded, _ := json.Marshal(id)
-	fmt.Println(string(encoded))
-	return 0
 }
 
 func runCensusSignatureCheck(args []string) int {

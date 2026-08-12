@@ -153,41 +153,6 @@ func runValidatePreambleQuotes(args []string) int {
 	return 0
 }
 
-// runValidateCodeCritiqueClaim verifies a receipt's code-critique
-// claim: the delegate triples (runtime:model:job-id, passed as
-// arguments after the flags) must include a top-level code-critic chain
-// whose reviews field names one of the implementer delegate jobs.
-// Exit 0 verified; 1 refused.
-func runValidateCodeCritiqueClaim(args []string) int {
-	flags := flag.NewFlagSet("validate code-critique-claim", flag.ContinueOnError)
-	root := flags.String("root", ".", "repository root holding artifacts/agents/jobs")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if validate.CodeCritiqueClaim(*root, flags.Args()) {
-		return 0
-	}
-	fmt.Fprintln(os.Stderr, "receipt refused: skills=code-critique requires delegate entries naming a "+
-		"code-critic chain id and the implementer job id in that chain's reviews field")
-	return 1
-}
-
-// runValidateWaiverFacts resolves an implementer delegate's
-// critique-waiver facts from the delegate triples passed after the
-// flags: it prints the waiver class and the mission stream on two
-// lines, or none/none when no delegate carries a waiver. Always exit 0.
-func runValidateWaiverFacts(args []string) int {
-	flags := flag.NewFlagSet("validate waiver-facts", flag.ContinueOnError)
-	root := flags.String("root", ".", "repository root holding artifacts/agents")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	class, stream := validate.WaiverFacts(*root, flags.Args())
-	fmt.Println(class)
-	fmt.Println(stream)
-	return 0
-}
-
 // runValidateWrapperToken proves the caller runs under the live commit
 // wrapper the token names: valid token fields, the wrapper pid in the
 // caller's native process ancestry, and the wrapper's kernel start time

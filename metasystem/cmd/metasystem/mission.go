@@ -49,34 +49,6 @@ func runMissionLedgerAppend(args []string) int {
 	return 0
 }
 
-func runMissionLedgerVerify(args []string) int {
-	file, ok := singleFileFlag("mission-ledger verify", args)
-	if !ok {
-		return 2
-	}
-	_, _, cycles, err := mission.ParseLedger(file)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Printf("mission ledger valid: %d cycles\n", len(cycles))
-	return 0
-}
-
-func runMissionLedgerCount(args []string) int {
-	file, ok := singleFileFlag("mission-ledger count", args)
-	if !ok {
-		return 2
-	}
-	_, _, cycles, err := mission.ParseLedger(file)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	fmt.Println(len(cycles))
-	return 0
-}
-
 // The mission-state family owns the atomic, hash-chained mission state.
 
 func runMissionStateInit(args []string) int {
@@ -295,13 +267,4 @@ func runMissionFenceRefuse(args []string) int {
 	}
 	fmt.Println(ask)
 	return 0
-}
-
-func singleFileFlag(name string, args []string) (string, bool) {
-	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	file := flags.String("file", "", "ledger path")
-	if flags.Parse(args) != nil || *file == "" {
-		return "", false
-	}
-	return *file, true
 }

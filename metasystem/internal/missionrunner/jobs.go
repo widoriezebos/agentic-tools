@@ -83,17 +83,6 @@ func jobRecordID(record jobRecord) string {
 	return strings.TrimSuffix(filepath.Base(record.path), ".json")
 }
 
-// ActiveJobs lists the mission's jobs that are not yet terminal — the set the
-// runner must keep reaping until it drains empty.
-func ActiveJobs(root, mission string) []string {
-	active := []string{}
-	for _, record := range activeJobRecords(root, mission) {
-		active = append(active, jobRecordID(record))
-	}
-	sort.Strings(active)
-	return active
-}
-
 // CloseableChains lists the root jobs of this mission's delegation chains
 // where every job in the chain is terminal and the root is not already
 // closed — the chains the runner must reap once more and then close. A job

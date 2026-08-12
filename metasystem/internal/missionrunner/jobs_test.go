@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -19,7 +20,11 @@ func TestActiveJobs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(jobs, "corrupt.json"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := ActiveJobs(root, mission)
+	got := []string{}
+	for _, record := range activeJobRecords(root, mission) {
+		got = append(got, jobRecordID(record))
+	}
+	sort.Strings(got)
 	// A record without a status is active; one without a jobId reports under
 	// its file stem; other missions' jobs and unreadable records are ignored.
 	want := []string{"anon", "busy", "limbo"}
@@ -71,7 +76,11 @@ func TestActiveJobsSeesUnstampedReservationHusks(t *testing.T) {
 		map[string]any{"jobId": "husk-1", "status": "pending-setup"})
 	writeJSONFile(t, filepath.Join(root, "artifacts", "agents", "missions", mission, "fences.json"),
 		map[string]any{"reservations": map[string]any{"husk-1": map[string]any{"capMin": 15}}})
-	got := ActiveJobs(root, mission)
+	got := []string{}
+	for _, record := range activeJobRecords(root, mission) {
+		got = append(got, jobRecordID(record))
+	}
+	sort.Strings(got)
 	want := []string{"husk-1"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("active jobs: got %v, want %v", got, want)

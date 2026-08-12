@@ -40,11 +40,9 @@ func families() []family {
 			name:    "census",
 			summary: "process census classification",
 			verbs: []verb{
-				{"classify", "classify argvs against runtime signatures", runCensusClassify},
 				{"fingerprint", "print a checkout's supervision fingerprint", runCensusFingerprint},
 				{"run", "compute a fixture-driven census verdict", runCensusRun},
 				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
-				{"authentication-identity", "print a pid's start time and command from one source", runCensusAuthIdentity},
 				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
 			},
@@ -77,8 +75,6 @@ func families() []family {
 				{"plan-consistency", "report retired terms still prescribed in plans", runValidatePlanConsistency},
 				{"critique-closed", "join a critic return's findings against the dispositions table", runValidateCritiqueClosed},
 				{"preamble-quotes", "verify role-preamble quote blocks are byte-exact substrings of their sources", runValidatePreambleQuotes},
-				{"code-critique-claim", "verify a receipt's code-critique delegate claim", runValidateCodeCritiqueClaim},
-				{"waiver-facts", "print an implementer delegate's critique-waiver class and mission stream", runValidateWaiverFacts},
 				{"wrapper-token", "prove the caller's ancestry contains the live commit wrapper", runValidateWrapperToken},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
@@ -269,7 +265,6 @@ func families() []family {
 				{"protocol-growth", "report new protocol errors since a main last advanced its cursor", runLeaseProtocolGrowth},
 				{"protocol-advance", "merge a main's protocol-error counts into its cursor", runLeaseProtocolAdvance},
 				{"commit-token", "atomically write the live commit wrapper token", runLeaseCommitToken},
-				{"reclaim", "delete a directory only if it is a provably dead checkout", runLeaseReclaim},
 			},
 		},
 		{
@@ -342,21 +337,11 @@ func families() []family {
 			},
 		},
 		{
-			name:    "mission-jobs",
-			summary: "the mission runner's job selection",
-			verbs: []verb{
-				{"drain", "list the mission's still-active jobs", runMissionJobsDrain},
-				{"close-chains", "list fully-terminal unclosed job chains", runMissionJobsCloseChains},
-			},
-		},
-		{
 			name:    "mission-ledger",
 			summary: "the mission stop-loss ledger",
 			verbs: []verb{
 				{"init", "create a ledger with cycle and no-gain budgets", runMissionLedgerInit},
 				{"append", "append the next cycle's verdict", runMissionLedgerAppend},
-				{"verify", "validate the ledger and print its cycle count", runMissionLedgerVerify},
-				{"count", "print the number of recorded cycles", runMissionLedgerCount},
 			},
 		},
 		{
