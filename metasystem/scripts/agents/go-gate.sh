@@ -55,8 +55,16 @@ if [[ "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x "$root/bin/metasystem"
 fi
 
 # gofmt is a hard gate: unformatted code is a review-noise source and the
-# engineering standard requires it.
-unformatted=$(gofmt -l internal cmd 2>/dev/null || true)
+# engineering standard requires it. Its exit status is captured — a missing
+# or crashing gofmt refuses the gate instead of passing silently
+# (go-production-grade B8).
+gofmt_rc=0
+unformatted=$(gofmt -l internal cmd 2>&1) || gofmt_rc=$?
+if [[ "$gofmt_rc" != 0 ]]; then
+  echo "go gate: gofmt itself failed (status $gofmt_rc):" >&2
+  printf '%s\n' "$unformatted" >&2
+  exit 1
+fi
 if [[ -n "$unformatted" ]]; then
   echo "go gate: gofmt would change these files:" >&2
   printf '  %s\n' $unformatted >&2
@@ -90,9 +98,30 @@ go build -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/
   -o bin/metasystem ./cmd/metasystem \
   || { rm -f "$coverage_log"; echo "go gate: build failed" >&2; exit 1; }
 
-# One shim line: the freshly built binary judges the coverage ratchet.
-bin/metasystem audit coverage-ratchet --baseline scripts/agents/coverage-ratchet.json --input "$coverage_log" \
-  || { rm -f "$coverage_log"; echo "go gate: coverage ratchet refused" >&2; exit 1; }
-rm -f "$coverage_log"
+# The freshly built binary judges the coverage ratchet, joined against an
+# independent package inventory so a testless package cannot hide — go test
+# prints no coverage line for a package with no test files (B8). Floors are
+# per platform: darwin floors are the committed measurements; a linux run
+# uses its own baseline file, seeded at Phase 1 of the production-grade
+# plan via METASYSTEM_COVERAGE_RATCHET_SEED=1 (every other check enforced,
+# the floor join skipped, coverage collected for seeding).
+pkg_list=$(mktemp)
+go list ./internal/... >"$pkg_list" \
+  || { rm -f "$coverage_log" "$pkg_list"; echo "go gate: go list failed; cannot join the coverage inventory" >&2; exit 1; }
+ratchet_baseline=scripts/agents/coverage-ratchet.json
+if [[ "$(uname -s)" == Linux ]]; then
+  ratchet_baseline=scripts/agents/coverage-ratchet-linux.json
+fi
+if [[ "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" == 1 ]]; then
+  echo "go gate: coverage ratchet in SEED mode; floors not enforced this run (bootstrap pass one)" >&2
+elif [[ ! -f "$ratchet_baseline" ]]; then
+  rm -f "$coverage_log" "$pkg_list"
+  echo "go gate: no coverage baseline for this platform ($ratchet_baseline); run the two-pass seed bootstrap first" >&2
+  exit 1
+else
+  bin/metasystem audit coverage-ratchet --baseline "$ratchet_baseline" --input "$coverage_log" --packages "$pkg_list" \
+    || { rm -f "$coverage_log" "$pkg_list"; echo "go gate: coverage ratchet refused" >&2; exit 1; }
+fi
+rm -f "$coverage_log" "$pkg_list"
 
 echo "go gate: PASSED (gofmt, vet, race tests, coverage ratchet, build @ $commit)"

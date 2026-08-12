@@ -67,10 +67,25 @@ func ParseCoverage(output, modulePrefix string) map[string]float64 {
 // CheckCoverage judges measured coverage against the ratchet. Every measured
 // package must be at or above its floor; every measured package must be
 // KNOWN (in floors or exempt) — a new package must register a floor, or the
-// ratchet would silently ignore it; and every floored package must have been
-// measured — losing sight of a package never counts as passing it.
-func CheckCoverage(baseline *CoverageBaseline, measured map[string]float64) []string {
+// ratchet would silently ignore it; every floored package must have been
+// measured — losing sight of a package never counts as passing it; and
+// every package in the independent inventory must be measured or exempt —
+// `go test` prints no coverage value for a package with no test files, so
+// without the inventory join a brand-new testless package is invisible
+// (go-production-grade B8). A nil inventory skips only that last join, for
+// callers that genuinely have no package list.
+func CheckCoverage(baseline *CoverageBaseline, measured map[string]float64, inventory []string) []string {
 	var violations []string
+	for _, pkg := range inventory {
+		if _, present := measured[pkg]; present {
+			continue
+		}
+		if _, exempt := baseline.Exempt[pkg]; exempt {
+			continue
+		}
+		violations = append(violations, fmt.Sprintf(
+			"package %s is in the module but produced no coverage (no test files?); add tests and a floor, or record an exemption", pkg))
+	}
 	for _, pkg := range sortedPackageKeys(measured) {
 		pct := measured[pkg]
 		floor, known := baseline.Floors[pkg]

@@ -125,6 +125,24 @@ fixture_watcher_firing_cap_min=$(harness_fixture_semantic_cap watcher-firing-min
 
 scripts/audit-metasystem.sh .
 
+# The gate's own integrity (go-production-grade B8): a gofmt that cannot run
+# must refuse the gate, not pass it silently. The shim exits before any
+# expensive stage, so this replay is cheap; the nested gate needs the
+# concurrency waiver because this suite's own run holds the fence.
+if [[ -f go.mod ]] && command -v go >/dev/null 2>&1; then
+  gofmt_shim_dir=$(mktemp -d)
+  printf '#!/usr/bin/env bash\necho "shim: gofmt is broken" >&2\nexit 7\n' >"$gofmt_shim_dir/gofmt"
+  chmod +x "$gofmt_shim_dir/gofmt"
+  if METASYSTEM_ALLOW_CONCURRENT_GATE=1 PATH="$gofmt_shim_dir:$PATH" \
+      bash scripts/agents/go-gate.sh >"$gofmt_shim_dir/out" 2>&1; then
+    echo "go gate passed with a broken gofmt; the fail-open hole is back" >&2
+    exit 1
+  fi
+  grep -q "gofmt itself failed" "$gofmt_shim_dir/out" \
+    || { echo "go gate refused a broken gofmt without naming it" >&2; cat "$gofmt_shim_dir/out" >&2; exit 1; }
+  rm -rf "$gofmt_shim_dir"
+fi
+
 # Validate every skill present, including project-added and moved optional
 # skills, so this script holds in adopted repositories as well as the template.
 # A skill directory without a SKILL.md is invisible to the find, so check for

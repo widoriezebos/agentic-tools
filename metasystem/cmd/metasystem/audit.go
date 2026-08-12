@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 )
@@ -17,6 +18,7 @@ func runAuditCoverageRatchet(args []string) int {
 	baselinePath := flags.String("baseline", "", "ratchet baseline JSON")
 	module := flags.String("module", "github.com/widoriezebos/agentic-tools/metasystem/", "module prefix to strip")
 	input := flags.String("input", "-", "go test -cover output file, - for stdin")
+	packages := flags.String("packages", "", "go list output file: the module's package inventory (optional)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -39,7 +41,24 @@ func runAuditCoverageRatchet(args []string) int {
 		fmt.Fprintf(os.Stderr, "coverage input unreadable: %v\n", err)
 		return 1
 	}
-	violations := audit.CheckCoverage(baseline, audit.ParseCoverage(string(data), *module))
+	var inventory []string
+	if *packages != "" {
+		listing, listErr := os.ReadFile(*packages)
+		if listErr != nil {
+			fmt.Fprintf(os.Stderr, "package inventory unreadable: %v\n", listErr)
+			return 1
+		}
+		for _, line := range strings.Split(string(listing), "\n") {
+			if pkg := strings.TrimSpace(line); pkg != "" {
+				inventory = append(inventory, strings.TrimPrefix(pkg, *module))
+			}
+		}
+		if len(inventory) == 0 {
+			fmt.Fprintln(os.Stderr, "package inventory is empty; refusing a joinless ratchet run")
+			return 1
+		}
+	}
+	violations := audit.CheckCoverage(baseline, audit.ParseCoverage(string(data), *module), inventory)
 	for _, violation := range violations {
 		fmt.Fprintln(os.Stderr, "coverage ratchet: "+violation)
 	}

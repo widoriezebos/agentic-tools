@@ -31,7 +31,7 @@ func TestParseCoverage(t *testing.T) {
 func TestCheckCoverageFailsOnDrop(t *testing.T) {
 	baseline := testBaseline(t, map[string]float64{"internal/adapter": 85.9, "internal/dispatch": 66.8})
 	measured := map[string]float64{"internal/adapter": 85.9, "internal/dispatch": 60.0}
-	violations := CheckCoverage(baseline, measured)
+	violations := CheckCoverage(baseline, measured, nil)
 	if len(violations) != 1 || !strings.Contains(violations[0], "internal/dispatch coverage 60.0% is below") {
 		t.Fatalf("drop not caught: %v", violations)
 	}
@@ -39,7 +39,7 @@ func TestCheckCoverageFailsOnDrop(t *testing.T) {
 
 func TestCheckCoveragePassesAtFloor(t *testing.T) {
 	baseline := testBaseline(t, map[string]float64{"internal/adapter": 85.9})
-	if violations := CheckCoverage(baseline, map[string]float64{"internal/adapter": 85.9}); len(violations) != 0 {
+	if violations := CheckCoverage(baseline, map[string]float64{"internal/adapter": 85.9}, nil); len(violations) != 0 {
 		t.Fatalf("floor equality must pass: %v", violations)
 	}
 }
@@ -51,13 +51,32 @@ func TestCheckCoverageClosedWorld(t *testing.T) {
 	baseline := testBaseline(t, map[string]float64{"internal/adapter": 85.9})
 	violations := CheckCoverage(baseline, map[string]float64{
 		"internal/adapter": 86.0, "internal/newpkg": 99.0, "cmd/metasystem": 3.5,
-	})
+	}, nil)
 	if len(violations) != 1 || !strings.Contains(violations[0], "internal/newpkg") {
 		t.Fatalf("unregistered package not caught: %v", violations)
 	}
-	violations = CheckCoverage(baseline, map[string]float64{})
+	violations = CheckCoverage(baseline, map[string]float64{}, nil)
 	if len(violations) != 1 || !strings.Contains(violations[0], "was not measured") {
 		t.Fatalf("vanished package not caught: %v", violations)
+	}
+}
+
+// The inventory join (go-production-grade B8): a package the module carries
+// that produced no coverage line — a testless package is invisible to
+// `go test -cover` output — refuses the ratchet unless exempt.
+func TestCheckCoverageInventoryJoin(t *testing.T) {
+	baseline := testBaseline(t, map[string]float64{"internal/adapter": 85.9})
+	measured := map[string]float64{"internal/adapter": 86.0, "cmd/metasystem": 3.5}
+	inventory := []string{"internal/adapter", "internal/testless", "cmd/metasystem"}
+	violations := CheckCoverage(baseline, measured, inventory)
+	if len(violations) != 1 || !strings.Contains(violations[0], "internal/testless") ||
+		!strings.Contains(violations[0], "no coverage") {
+		t.Fatalf("testless package not refused: %v", violations)
+	}
+	// Exemption clears it; a fully measured inventory is silent.
+	baseline.Exempt["internal/testless"] = "fixture-only package, exercised end to end by the suite"
+	if violations := CheckCoverage(baseline, measured, inventory); len(violations) != 0 {
+		t.Fatalf("exempt testless package still refused: %v", violations)
 	}
 }
 
