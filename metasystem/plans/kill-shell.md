@@ -67,7 +67,11 @@ watchers, cleanup traps).
    sections in order with every decision in verbs — zero decisions
    in all three. Guard-clause `if`s on a consult's exit code are fine;
    business branching is not.
-3. No python3 anywhere in the repo — production or fixture.
+3. No python3 anywhere in the METASYSTEM tree — production or
+   fixture. The benchmark kit's own tooling is measurement equipment
+   with its own contract, out of this program's jurisdiction by the
+   standing boundary ruling (docs/concepts.md), and recorded as a
+   separate candidate program for the human (r21/KS-R21-001).
 4. Scripts that exist only because internal callers name their path are
    deleted; callers call the binary. Scripts named by external
    contracts (skills, docs, hooks, adopted targets) stay as shims —
@@ -119,15 +123,15 @@ Phase 0 and as a standing rule inside every later phase:
   the lease-succession fixture, fixed in shipped code during rounds
   12-13; the discriminator is THREE-STATE — metasystem module runs,
   absent source skips, source without the module line fails loudly
-  as a damaged template — where "source" is collision-proof: the
-  metasystem's internal module path inside an actual import
-  statement or block of a cmd/metasystem Go file — the PRESENCE
-  of ANY engine source sentinel (internal/missionrunner/stoploss.go
-  or internal/mission/ledger.go — any-of, so a merge deleting one
-  cannot dress damage as adoption, r20/KS-R20-001) — no lexing at all,
-  ending the rounds 12-19 seam where an awk Go-lexer grew a new edge
-  every round; adopted targets receive no Go source and a foreign
-  collision needs both exact paths and still fails loudly — so a broken
+  as a damaged template — where "source" means the PRESENCE of ANY
+  engine sentinel (internal/missionrunner/stoploss.go or
+  internal/mission/ledger.go; any-of, so a merge deleting one cannot
+  dress damage as adoption, r20/KS-R20-001, superseding the
+  import-scanner wording of rounds 14-18, r21/KS-R21-002) — no
+  lexing at all, ending the rounds 12-19 seam where an awk Go-lexer
+  grew a new edge every round; adopted targets receive no Go source,
+  and a collision on a sentinel path fails loudly rather than
+  silently — so a broken
   module declaration can never validate green with zero Go checks
   and an adopter's own file at that path never trips the gate
   (r12/KS-R12-001, r13/KS-R13-001, r13/KS-R13-002, r14/KS-R14-001, r15/KS-R15-001, r16/KS-R16-001, r17/KS-R17-001, r18/KS-R18-001, r18/KS-R18-002, r19/KS-R19-001): the named
