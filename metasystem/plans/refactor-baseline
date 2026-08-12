@@ -1,0 +1,3 @@
+sha=569f30aaf068cf61f0f004cc84abb875f584d054
+recorded_epoch=1786533723
+gate=scripts/validate-metasystem.sh
