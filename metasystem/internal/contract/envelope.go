@@ -1,4 +1,4 @@
-package mission
+package contract
 
 import (
 	"fmt"

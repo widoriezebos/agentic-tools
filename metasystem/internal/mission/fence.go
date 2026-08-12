@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -84,7 +85,7 @@ func contractValuesFromBytes(data []byte, repo string) (map[string]string, error
 	if !isValidUTF8(data) {
 		return nil, fmt.Errorf("mission contract is not UTF-8")
 	}
-	blocks := authoredBlockRe.FindAllStringSubmatch(string(data), -1)
+	blocks := contract.AuthoredBlocks(string(data))
 	if len(blocks) != 1 {
 		return nil, fmt.Errorf("mission contract does not have exactly one authored block")
 	}

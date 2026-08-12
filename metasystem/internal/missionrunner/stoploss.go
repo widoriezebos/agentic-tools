@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -153,7 +154,7 @@ func (g *stopLossGate) tuple(values map[string]float64) []float64 {
 	tuple := make([]float64, 0, len(g.metrics)+1)
 	met := 0
 	for _, metric := range g.metrics {
-		if pass, err := mission.ThresholdPasses(g.thresholds[metric], values[metric]); err == nil && pass {
+		if pass, err := contract.ThresholdPasses(g.thresholds[metric], values[metric]); err == nil && pass {
 			met++
 		}
 	}

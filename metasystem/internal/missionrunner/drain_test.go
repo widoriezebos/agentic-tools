@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -551,7 +552,7 @@ func measurableDrainMission(t *testing.T) (engine *Engine, statePath, ledgerPath
 	engine.anchorFn = func(string, string, string) error { return nil }
 	seedRunnerRecord(t, engine)
 	write(filepath.Join("plans", "mission-demo.contract.md"), faultedContract(), 0o644)
-	if _, err := mission.ContractSeal(engine.contractPath()); err != nil {
+	if _, err := contract.Seal(engine.contractPath()); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	sealedBytes, err := os.ReadFile(engine.contractPath())

@@ -1,4 +1,4 @@
-package mission
+package contract
 
 import (
 	"bytes"
@@ -110,10 +110,10 @@ type contractSealField struct {
 	value string
 }
 
-// ContractValidate parses and type-checks a mission contract, returning the
+// Validate parses and type-checks a mission contract, returning the
 // resolved path so a caller can report exactly which file it accepted, plus
 // calibration warnings that never refuse the contract.
-func ContractValidate(path string) (string, []string, error) {
+func Validate(path string) (string, []string, error) {
 	doc, _, _, err := contractLoad(path)
 	if err != nil {
 		return "", nil, err
@@ -139,9 +139,9 @@ func (d *contractDoc) calibrationWarnings() []string {
 	return nil
 }
 
-// ContractSeal measures the reproducible baseline and writes the generated
+// Seal measures the reproducible baseline and writes the generated
 // mission-seal block, returning the digest a human signs.
-func ContractSeal(path string) (string, error) {
+func Seal(path string) (string, error) {
 	doc, repo, projectRoot, err := contractLoad(path)
 	if err != nil {
 		return "", err
@@ -149,10 +149,10 @@ func ContractSeal(path string) (string, error) {
 	return doc.seal(repo, projectRoot)
 }
 
-// ContractPreflight runs the full launch gate. On success it returns the
+// Preflight runs the full launch gate. On success it returns the
 // mission id and the sha256 of the approved raw bytes, and — when an output
 // path is given — atomically records those exact bytes there.
-func ContractPreflight(path, verifiedBytesOutput string) (missionID, rawSHA string, err error) {
+func Preflight(path, verifiedBytesOutput string) (missionID, rawSHA string, err error) {
 	doc, repo, projectRoot, err := contractLoad(path)
 	if err != nil {
 		return "", "", err

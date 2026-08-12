@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"math"
 	"os"
 	"path/filepath"
@@ -566,9 +567,6 @@ func isFinite(f float64) bool {
 	return !math.IsInf(f, 0) && !math.IsNaN(f)
 }
 
-var authoredBlockRe = regexp.MustCompile("(?ms)^```mission[ \t]*\n(.*?)^```[ \t]*$")
-var sealBlockRe = regexp.MustCompile("(?ms)^```mission-seal[ \t]*\n(.*?)^```[ \t]*$")
-
 // authoredContractValues extracts the single authored mission block's
 // key=value lines from a contract.
 func authoredContractValues(contractPath string) (map[string]string, error) {
@@ -576,7 +574,7 @@ func authoredContractValues(contractPath string) (map[string]string, error) {
 	if err != nil {
 		return nil, stateErr("cannot read mission contract: %v", err)
 	}
-	blocks := authoredBlockRe.FindAllStringSubmatch(string(data), -1)
+	blocks := contract.AuthoredBlocks(string(data))
 	if len(blocks) != 1 {
 		return nil, stateErr("mission contract does not have exactly one authored block")
 	}
@@ -623,7 +621,7 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 	}
 	if branch == "" {
 		data, _ := os.ReadFile(contractPath)
-		if seal := sealBlockRe.FindStringSubmatch(string(data)); seal != nil {
+		if seal := contract.SealBlock(string(data)); seal != nil {
 			for _, line := range strings.Split(seal[1], "\n") {
 				if strings.HasPrefix(line, "candidate.branch=") {
 					branch = strings.SplitN(line, "=", 2)[1]

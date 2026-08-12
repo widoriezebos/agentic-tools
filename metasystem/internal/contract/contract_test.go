@@ -1,4 +1,4 @@
-package mission
+package contract
 
 import (
 	"os"
@@ -109,7 +109,7 @@ func newContractRepo(t *testing.T) (repo, contractPath string) {
 
 func TestContractValidateAcceptsBase(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	resolved, warnings, err := ContractValidate(contractPath)
+	resolved, warnings, err := Validate(contractPath)
 	if err != nil {
 		t.Fatalf("valid contract rejected: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	_, contractPath := newContractRepo(t)
 	undersized := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=6", 1)
 	writeFileMode(t, contractPath, undersized, 0o644)
-	_, warnings, err := ContractValidate(contractPath)
+	_, warnings, err := Validate(contractPath)
 	if err != nil {
 		t.Fatalf("an undersized no-gain budget warns, never refuses: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	// Exactly half the fence is not below half: no warning.
 	atHalf := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=4", 1)
 	writeFileMode(t, contractPath, atHalf, 0o644)
-	if _, warnings, err = ContractValidate(contractPath); err != nil || len(warnings) != 0 {
+	if _, warnings, err = Validate(contractPath); err != nil || len(warnings) != 0 {
 		t.Fatalf("a budget at half the fence must not warn: %v %v", warnings, err)
 	}
 }
@@ -175,7 +175,7 @@ func TestContractValidateRejects(t *testing.T) {
 			_ = repo
 			_, contractPath := newContractRepo(t)
 			writeFileMode(t, contractPath, tc.mutate(baseContract()), 0o644)
-			_, _, err := ContractValidate(contractPath)
+			_, _, err := Validate(contractPath)
 			if err == nil {
 				t.Fatalf("expected rejection for %s", tc.name)
 			}
@@ -188,7 +188,7 @@ func TestContractValidateRejects(t *testing.T) {
 
 func TestContractSealWritesBlockAndDigest(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	digest, err := ContractSeal(contractPath)
+	digest, err := Seal(contractPath)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestContractSealWritesBlockAndDigest(t *testing.T) {
 	}
 
 	// A sealed contract may not be resealed.
-	if _, err := ContractSeal(contractPath); err == nil || !strings.Contains(err.Error(), "already sealed") {
+	if _, err := Seal(contractPath); err == nil || !strings.Contains(err.Error(), "already sealed") {
 		t.Fatalf("expected already-sealed refusal, got %v", err)
 	}
 }
@@ -224,14 +224,14 @@ func TestContractSealRefusesAfterApproval(t *testing.T) {
 	_, contractPath := newContractRepo(t)
 	writeFileMode(t, contractPath,
 		baseContract()+"\nApproval: name=Human; date=2026-08-04; contract-sha256="+strings.Repeat("0", 64)+"\n", 0o644)
-	if _, err := ContractSeal(contractPath); err == nil || !strings.Contains(err.Error(), "before approval") {
+	if _, err := Seal(contractPath); err == nil || !strings.Contains(err.Error(), "before approval") {
 		t.Fatalf("expected refusal to seal after approval, got %v", err)
 	}
 }
 
 func TestContractPreflightUnsealed(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	_, _, err := ContractPreflight(contractPath, "")
+	_, _, err := Preflight(contractPath, "")
 	if err == nil || !strings.Contains(err.Error(), "unsealed") {
 		t.Fatalf("expected unsealed refusal, got %v", err)
 	}
@@ -239,10 +239,10 @@ func TestContractPreflightUnsealed(t *testing.T) {
 
 func TestContractPreflightUnsigned(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	if _, err := ContractSeal(contractPath); err != nil {
+	if _, err := Seal(contractPath); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
-	_, _, err := ContractPreflight(contractPath, "")
+	_, _, err := Preflight(contractPath, "")
 	if err == nil || !strings.Contains(err.Error(), "unsigned") {
 		t.Fatalf("expected unsigned refusal, got %v", err)
 	}
@@ -250,13 +250,13 @@ func TestContractPreflightUnsigned(t *testing.T) {
 
 func TestContractPreflightApprovalHashMismatch(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	if _, err := ContractSeal(contractPath); err != nil {
+	if _, err := Seal(contractPath); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	data, _ := os.ReadFile(contractPath)
 	writeFileMode(t, contractPath,
 		string(data)+"\nApproval: name=Human; date=2026-08-04; contract-sha256="+strings.Repeat("0", 64)+"\n", 0o644)
-	_, _, err := ContractPreflight(contractPath, "")
+	_, _, err := Preflight(contractPath, "")
 	if err == nil || !strings.Contains(err.Error(), "approval hash") {
 		t.Fatalf("expected approval-hash refusal, got %v", err)
 	}
@@ -264,14 +264,14 @@ func TestContractPreflightApprovalHashMismatch(t *testing.T) {
 
 func TestContractPreflightStaleExposure(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	if _, err := ContractSeal(contractPath); err != nil {
+	if _, err := Seal(contractPath); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	data, _ := os.ReadFile(contractPath)
 	// Change an authored fence value after sealing; the sealed exposure now
 	// disagrees with the live contract.
 	writeFileMode(t, contractPath, strings.Replace(string(data), "fence.jobs=4", "fence.jobs=5", 1), 0o644)
-	_, _, err := ContractPreflight(contractPath, "")
+	_, _, err := Preflight(contractPath, "")
 	if err == nil || !strings.Contains(err.Error(), "exposure is stale") {
 		t.Fatalf("expected stale-exposure refusal, got %v", err)
 	}
@@ -282,7 +282,7 @@ func TestContractPreflightStaleExposure(t *testing.T) {
 // that approval leaves preflight's recomputed hash matching.
 func TestContractApprovalHashStable(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	digest, err := ContractSeal(contractPath)
+	digest, err := Seal(contractPath)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -339,10 +339,10 @@ func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
 	withPatience := strings.Replace(baseContract(), "exposure=EUR:10",
 		"exposure=EUR:10\npatience.rounds.implementer.codex.gpt-5-6-sol=4", 1)
 	writeFileMode(t, contractPath, withPatience, 0o644)
-	if _, _, err := ContractValidate(contractPath); err != nil {
+	if _, _, err := Validate(contractPath); err != nil {
 		t.Fatalf("patience-bearing contract rejected: %v", err)
 	}
-	digest, err := ContractSeal(contractPath)
+	digest, err := Seal(contractPath)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
 	// missing ordered-emitter entry fails exactly here.
 	signed := string(data) + "\nApproval: name=Human; date=2026-08-12; contract-sha256=" + digest + "\n"
 	writeFileMode(t, contractPath, signed, 0o644)
-	if _, _, err := ContractPreflight(contractPath, ""); err != nil &&
+	if _, _, err := Preflight(contractPath, ""); err != nil &&
 		(strings.Contains(err.Error(), "seal") || strings.Contains(err.Error(), "stale")) {
 		t.Fatalf("patience-bearing seal failed its own preflight recomputation: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestContractPatienceEntriesRejected(t *testing.T) {
 			mutated := strings.Replace(baseContract(), "exposure=EUR:10",
 				"exposure=EUR:10\n"+tc.key, 1)
 			writeFileMode(t, contractPath, mutated, 0o644)
-			_, _, err := ContractValidate(contractPath)
+			_, _, err := Validate(contractPath)
 			if err == nil || !strings.Contains(err.Error(), tc.contains) {
 				t.Fatalf("expected %q refusal, got %v", tc.contains, err)
 			}

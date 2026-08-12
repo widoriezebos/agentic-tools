@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -787,7 +788,7 @@ func (e *Engine) measure(state map[string]any) (classification, observed string,
 		return unmeasurable(err)
 	}
 	turnLog, _ := state["turnLog"].([]any)
-	result, err := mission.ContractMeasure(e.contractPath(), PreviousMetrics(turnLog, gateMetricNames(values)))
+	result, err := contract.Measure(e.contractPath(), PreviousMetrics(turnLog, gateMetricNames(values)))
 	if err != nil {
 		return unmeasurable(err)
 	}

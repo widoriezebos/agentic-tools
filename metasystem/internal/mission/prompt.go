@@ -3,6 +3,7 @@ package mission
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -67,7 +68,7 @@ func promptOneLine(value any) string {
 // promptAuthoredValues extracts the contract's single authored mission block as
 // key=value pairs.
 func promptAuthoredValues(contractText string) (map[string]string, error) {
-	blocks := authoredBlockRe.FindAllStringSubmatch(contractText, -1)
+	blocks := contract.AuthoredBlocks(contractText)
 	if len(blocks) != 1 {
 		return nil, fmt.Errorf("mission contract does not contain exactly one authored mission block")
 	}

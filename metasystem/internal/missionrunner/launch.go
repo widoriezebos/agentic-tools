@@ -16,8 +16,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
 // The launch side of the runner: what happens in the caller's process before
@@ -295,7 +295,7 @@ func (e *Engine) armAndPreflight(mode string) error {
 	verifiedPath := verified.Name()
 	verified.Close()
 	defer os.Remove(verifiedPath)
-	_, rawSHA, err := mission.ContractPreflight(e.contractPath(), verifiedPath)
+	_, rawSHA, err := contract.Preflight(e.contractPath(), verifiedPath)
 	if err != nil {
 		return failf(3, "mission start refused by preflight: %v", err)
 	}

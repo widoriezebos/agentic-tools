@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 )
 
 // The mission-contract family owns the authored mission contract: parsing and
@@ -22,7 +22,7 @@ func runMissionContractValidate(args []string) int {
 		fmt.Fprintln(os.Stderr, "--file is required")
 		return 2
 	}
-	resolved, warnings, err := mission.ContractValidate(*file)
+	resolved, warnings, err := contract.Validate(*file)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -46,7 +46,7 @@ func runMissionContractSeal(args []string) int {
 		fmt.Fprintln(os.Stderr, "--file is required")
 		return 2
 	}
-	hash, err := mission.ContractSeal(*file)
+	hash, err := contract.Seal(*file)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -66,7 +66,7 @@ func runMissionContractPreflight(args []string) int {
 		fmt.Fprintln(os.Stderr, "--file is required")
 		return 2
 	}
-	missionID, rawSHA, err := mission.ContractPreflight(*file, *verifiedBytes)
+	missionID, rawSHA, err := contract.Preflight(*file, *verifiedBytes)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

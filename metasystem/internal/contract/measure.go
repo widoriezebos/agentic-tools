@@ -1,4 +1,4 @@
-package mission
+package contract
 
 import (
 	"context"
@@ -29,13 +29,13 @@ type MeasureResult struct {
 	GatePassed     bool              `json:"gatePassed"`
 }
 
-// ContractMeasure runs a contract's gate and guards against the current
+// Measure runs a contract's gate and guards against the current
 // candidate and classifies the gate metrics against a prior measurement. The
 // previous map supplies the per-metric values a regression is judged against;
 // when it is nil the sealed baseline is used, so the first cycle measures
 // against the price the seal froze. The gate passes when it clears every
 // threshold and every guard clears its floor.
-func ContractMeasure(path string, previous map[string]string) (*MeasureResult, error) {
+func Measure(path string, previous map[string]string) (*MeasureResult, error) {
 	doc, repo, projectRoot, err := contractLoad(path)
 	if err != nil {
 		return nil, err

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 )
 
 // The mission contract-measure verb is the per-cycle reading the mission runner
@@ -31,7 +31,7 @@ func runMissionContractMeasure(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	result, err := mission.ContractMeasure(*file, prior)
+	result, err := contract.Measure(*file, prior)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -77,7 +77,7 @@ func runMissionContractEnvelopeAllows(args []string) int {
 		fmt.Fprintln(os.Stderr, "mission contract-envelope-allows: --root, --mission, and --pair are required")
 		return 2
 	}
-	if err := mission.DispatchEnvelopeAllows(*root, *missionID, *pair); err != nil {
+	if err := contract.DispatchEnvelopeAllows(*root, *missionID, *pair); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

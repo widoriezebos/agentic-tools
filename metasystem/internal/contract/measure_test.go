@@ -1,4 +1,4 @@
-package mission
+package contract
 
 import (
 	"os"
@@ -31,7 +31,7 @@ func newMeasureRepo(t *testing.T) (repo, contractPath string) {
 
 	contractPath = filepath.Join(repo, "plans", "mission-alpha.contract.md")
 	writeFileMode(t, contractPath, baseContract(), 0o644)
-	if _, err := ContractSeal(contractPath); err != nil {
+	if _, err := Seal(contractPath); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	return repo, contractPath
@@ -39,7 +39,7 @@ func newMeasureRepo(t *testing.T) (repo, contractPath string) {
 
 func TestContractMeasureBaseline(t *testing.T) {
 	_, contractPath := newMeasureRepo(t)
-	result, err := ContractMeasure(contractPath, nil)
+	result, err := Measure(contractPath, nil)
 	if err != nil {
 		t.Fatalf("measure failed: %v", err)
 	}
@@ -65,14 +65,14 @@ func TestContractMeasureBaseline(t *testing.T) {
 
 func TestContractMeasureClassifiesAgainstPrevious(t *testing.T) {
 	_, contractPath := newMeasureRepo(t)
-	improved, err := ContractMeasure(contractPath, map[string]string{"score": "0"})
+	improved, err := Measure(contractPath, map[string]string{"score": "0"})
 	if err != nil {
 		t.Fatalf("measure failed: %v", err)
 	}
 	if improved.Classification != "contract-improved" {
 		t.Fatalf("rising past the noise floor should improve, got %s", improved.Classification)
 	}
-	regressed, err := ContractMeasure(contractPath, map[string]string{"score": "2"})
+	regressed, err := Measure(contractPath, map[string]string{"score": "2"})
 	if err != nil {
 		t.Fatalf("measure failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestContractMeasureGuardFloor(t *testing.T) {
 	// Raise the audit floor above the value the guard emits; the gate must now
 	// fail even though the score metric still clears its threshold.
 	writeFileMode(t, contractPath, strings.Replace(string(data), "guard.audit.floor=1", "guard.audit.floor=5", 1), 0o644)
-	result, err := ContractMeasure(contractPath, nil)
+	result, err := Measure(contractPath, nil)
 	if err != nil {
 		t.Fatalf("measure failed: %v", err)
 	}

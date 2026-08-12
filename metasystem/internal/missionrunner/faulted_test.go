@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -115,7 +116,7 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 	seedRunnerRecord(t, engine)
 	contractPath := engine.contractPath()
 	write(filepath.Join("plans", "mission-demo.contract.md"), faultedContract(), 0o644)
-	if _, err := mission.ContractSeal(contractPath); err != nil {
+	if _, err := contract.Seal(contractPath); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	sealedBytes, err := os.ReadFile(contractPath)
