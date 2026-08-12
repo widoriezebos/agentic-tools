@@ -2832,10 +2832,7 @@
           "site": "wow.md"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/receipt.sh"
@@ -2843,7 +2840,7 @@
       "path": "scripts/receipt.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [

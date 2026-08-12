@@ -202,6 +202,17 @@ func families() []family {
 			},
 		},
 		{
+			name:    "receipt",
+			summary: "the task-receipt ledger and retro cadence",
+			verbs: []verb{
+				{"add", "append one task receipt at completion", func(args []string) int { return runReceipt(append([]string{"add"}, args...)) }},
+				{"correct", "append a correction referencing an existing receipt line", func(args []string) int { return runReceipt(append([]string{"correct"}, args...)) }},
+				{"check", "exit 1 when a metasystem retro is due", func(args []string) int { return runReceipt(append([]string{"check"}, args...)) }},
+				{"stats", "print the period numbers as key=value lines", func(args []string) int { return runReceipt(append([]string{"stats"}, args...)) }},
+				{"retro", "record that a retro ran and reset the cadence", func(args []string) int { return runReceipt(append([]string{"retro"}, args...)) }},
+			},
+		},
+		{
 			name:    "schema",
 			summary: "role-return schema materialization",
 			verbs: []verb{
