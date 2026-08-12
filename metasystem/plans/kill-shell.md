@@ -325,8 +325,12 @@ for two racing first-builds the LOCK alone adjudicates
 (r23/KS-R23-002): both register markers for visibility, the lock
 picks one winner who publishes, and the loser waits bounded for the
 publish, re-derives freshness against the published stamp, and
-proceeds as a CONSUMER of the published binary — never a second
-publisher, never mutual refusal. Two implementation
+proceeds as a CONSUMER of the published binary. If the bounded wait
+expires with no usable binary — the winner died or published
+nothing — the loser re-enters from registration and the owner-lock's
+dead-holder takeover makes it the new publisher; a contender still
+binary-less after one full re-entry aborts loudly (r24/KS-R24-001).
+Never two publishers at once, never mutual refusal. Two implementation
 requirements ride this protocol (r11/KS-R11-003, r11/KS-R11-004):
 gate markers move to temp-then-rename writes — today's direct write
 is a latent defect where a pruner can observe partial JSON and eat a
