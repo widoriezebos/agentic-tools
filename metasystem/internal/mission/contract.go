@@ -21,6 +21,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // A mission contract is a human-authored markdown file with three prose
@@ -1381,11 +1383,14 @@ func contractProcessHasTag(projectRoot string, pid, started int64, tag string) b
 			return false
 		}
 	}
-	out, err := exec.Command("ps", "-p", strconv.FormatInt(pid, 10), "-o", "command=").Output()
-	if err != nil {
+	// The identity owner reads argv natively (go-production-grade P6); an
+	// unreadable argv takes the fixture fallback exactly as a failed ps
+	// invocation did, never a tag mismatch on absent evidence (B1).
+	exact, state, err := (identity.KernelProber{}).Probe(pid)
+	if err != nil || state != identity.Alive || !exact.ArgvKnown {
 		return contractFixtureIdentityMatches(pid, started, tag)
 	}
-	return strings.Contains(string(out), tag)
+	return strings.Contains(strings.Join(exact.Argv, " "), tag)
 }
 
 // contractFixtureIdentityMatches consults the fixture identity file used when

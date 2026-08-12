@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // ValidateMission proves a mission has a live, matching lease before any job
@@ -76,13 +77,23 @@ func ValidateMission(root, mission, leasePath string) error {
 	return nil
 }
 
-// processCommand reads a pid's full command line from the process table.
+// processCommand reads a pid's full command line through the identity owner
+// — the same kernel read every other liveness decision in this module uses,
+// rather than a ps subprocess (go-production-grade P6). An UNREADABLE argv
+// is an error, not an empty string: the caller must fall back to its
+// fixture, never treat absent evidence as a tag mismatch (B1).
 func processCommand(pid int64) (string, error) {
-	out, err := exec.Command("ps", "-p", strconv.FormatInt(pid, 10), "-o", "command=").Output()
+	exact, state, err := (identity.KernelProber{}).Probe(pid)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(out)), nil
+	if state != identity.Alive {
+		return "", fmt.Errorf("dispatch: pid %d is not alive (%s)", pid, state)
+	}
+	if !exact.ArgvKnown {
+		return "", fmt.Errorf("dispatch: pid %d argv is unreadable", pid)
+	}
+	return strings.TrimSpace(strings.Join(exact.Argv, " ")), nil
 }
 
 // fixtureCommand resolves a pid's command line from the fake-runtime identity

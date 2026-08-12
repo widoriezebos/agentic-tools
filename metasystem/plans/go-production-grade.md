@@ -285,3 +285,20 @@ go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...
 - **Human ruling, 2026-08-12: the loop is CLOSED on the amended plan.** Rationale accepted: since round 4 the loop was refining one paragraph of Phase 4's design, which Phase 4's own obligation gate re-attacks before implementation; further critique stopped changing what an implementer would build. Per the design-critique skill, this claims not that the design is perfect but that further critique stopped being worth its cost; the final rounds are retained verbatim in the dispositions ledgers so the loop can resume if implementation proves the stop premature. The plan is ready for implementation, beginning at Phase 0.
 - Mid-loop the branch advanced under the session (the `patience-satellite-4` stream committed rounds 11–14, and the pre-loop version of this plan was committed as 157d5e7). The loop's amendments and dispositions sit uncommitted on top of that baseline; nothing conflicted.
 - A receipt for the pre-loop version of this plan was appended 2026-08-11 describing it as six-phase; the loop reshaped it to phases 0–7. The receipt stands as history; this note reconciles the count (R1-F17).
+
+## Phase 2½ Unit A — obligation matrix (routing both `ps` sites through the identity owner)
+
+Written before implementation per the acceptance discipline. The move is
+contract-preserving: both call sites keep their own fallback order, fixture
+env var, and refusal text; only the *reader* changes from a `ps` subprocess
+to the identity owner's native argv, which every other liveness decision in
+the module already uses.
+
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A-1 | HIGH | P6 | The dispatch side consults its fixture ONLY after the process read fails, and only in a sole-fake-runtime checkout | `internal/dispatch/mission.go` | `internal/dispatch/mission.go` | `internal/dispatch/mission_test.go` | Not applicable: covered by the suite's mission fixtures | DONE | None |
+| A-2 | HIGH | P6 | The dispatch side additionally requires PGID agreement between record and kernel | `internal/dispatch/mission.go` | `internal/dispatch/mission.go` | `internal/dispatch/mission_test.go` | Not applicable: same fixture path | DONE | None |
+| A-3 | HIGH | P6 | Contract preflight layers kill, census.Alive, then the process read, falling back to its OWN fixture var | `internal/mission/contract.go` | `internal/mission/contract.go` | `internal/mission/contract_identity_test.go` | Not applicable: exercised by mission fixtures | DONE | None |
+| A-4 | HIGH | P6 | The two fixture env vars stay distinct: METASYSTEM_FAKE_PROCESS_IDENTITY_FILE (dispatch) and METASYSTEM_MISSION_PROCESS_IDENTITY_FILE (mission) | `internal/dispatch/mission.go` | `internal/mission/contract.go` | `internal/mission/contract_identity_test.go` | Not applicable: the suite arms both independently | DONE | None |
+| A-5 | HIGH | P6 | Refusal texts are unchanged (fixture-asserted contract, E1) | `internal/dispatch/mission.go` | `internal/dispatch/mission.go` | `internal/dispatch/mission_test.go` | Not applicable: greped against scripts/ before the move | DONE | None |
+| A-6 | CRITICAL | P6, B1 | An UNREADABLE argv must not read as a tag mismatch: it takes the fixture fallback, never a refusal on absent evidence | `internal/identity` | `internal/identity/identity.go` | `internal/dispatch/mission_test.go` | Not applicable: pure derivation from ArgvKnown | DONE | None |
