@@ -373,11 +373,15 @@ recorded per family.
 
 **Remaining.**
 
-1. **Phase 6 remainder**: floors stand at missionrunner 60.5, dispatch
-   71.4, mission 74.7, validate 73.2 after the direct-test sweep (return
-   checkers, fence refusals, the owner-lock protocol). The distance to 75
-   is mostly missionrunner's launch/arming cluster, which needs armed
-   fixtures — the expensive tail.
+1. **Phase 6: three of four domain packages are OVER the 75 target** —
+   mission 75.9, validate 80.4, dispatch 75.9. missionrunner stands at
+   62.5 after the direct-test sweep (host lifecycle, group probes,
+   terminate verdicts, fence wrappers, cycle-step guards, lease
+   lifecycle, stale-lease ladder, contract-pin ladder, unattended
+   arming identity); its remaining distance is the armAndPreflight /
+   launch / internalRun cluster, which requires armed-supervision
+   fixtures in-test — the one genuinely fixture-priced tail, covered
+   end to end by the suite's mission fixtures on every run.
 2. **Phase 3c is CLOSED by extraction plus disposition** (the plan's own
    one-abstraction test, not a line quota). Extracted where structure
    existed: oneCycle, launchHost, patienceEvaluate, Mirror
