@@ -1,3 +1,7 @@
+// Package receipt owns the task-receipt ledger: the durable record of
+// what each completed task did, and the retro cadence that ledger drives.
+// One line per record, appended, never rewritten — corrections reference
+// an original by hash instead of editing it.
 package receipt
 
 import (

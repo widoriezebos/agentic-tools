@@ -9,7 +9,7 @@ import (
 func TestConfValue(t *testing.T) {
 	dir := t.TempDir()
 	conf := filepath.Join(dir, "metasystem.conf")
-	os.WriteFile(conf, []byte(strings_join([]string{
+	os.WriteFile(conf, []byte(joinStrings([]string{
 		"# a comment",
 		"",
 		"watch.interval-sec=60",
@@ -35,7 +35,7 @@ func TestConfValue(t *testing.T) {
 	}
 }
 
-func strings_join(lines []string) string {
+func joinStrings(lines []string) string {
 	out := ""
 	for i, l := range lines {
 		if i > 0 {
