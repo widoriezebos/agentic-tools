@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"golang.org/x/sys/unix"
 )
 
@@ -321,42 +322,23 @@ func writeRecord(recordPath string, record map[string]any) error {
 	if err := encoder.Encode(record); err != nil {
 		return err
 	}
-	return atomicWriteText(recordPath, buf.Bytes())
+	_, err := atomicWriteText(recordPath, buf.Bytes())
+	return err
 }
 
-// atomicWriteText writes bytes to a temp file in the target directory, fsyncs
-// it, renames it into place, and fsyncs the directory so the record survives a
-// crash exactly as written or not at all.
-func atomicWriteText(path string, data []byte) error {
-	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(directory, filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return err
-	}
-	if dir, err := os.Open(directory); err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-	return nil
+// atomicWriteText writes bytes through the durable-write owner
+// (go-production-grade B5), replacing this package's own copy of the
+// implementation so there is one place to harden.
+//
+// It passes NO durable anchor yet, which preserves this writer's previous
+// behavior exactly. Converting it to the two-outcome contract needs the
+// repository root threaded through writeRecord's callers, and those callers
+// are mixed: custody and the record compare-and-swap write durable job
+// STATE, while build and envelope write transient hand-off files. Splitting
+// them is the caller-migration step this comment marks — it is not done, and
+// until it is, no crash-durability may be claimed for job records.
+func atomicWriteText(path string, data []byte) (durable bool, err error) {
+	return atomicfile.WriteText(path, string(data), "")
 }
 
 // --- value helpers ---

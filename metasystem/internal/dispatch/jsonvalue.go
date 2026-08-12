@@ -3,6 +3,7 @@ package dispatch
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"os"
 	"reflect"
 	"strconv"
@@ -89,8 +90,16 @@ func jsonCompact(value any) string {
 
 // writeCompactJSON writes a value as one compact JSON line (plus newline),
 // atomically.
+//
+// These are TRANSIENT hand-off files — manifests, patches, resolved
+// envelopes — that the shell reads within the same operation and that no
+// later run depends on. They are not contractually durable state, so they
+// keep the error-only contract and pass no durable anchor
+// (go-production-grade B5's inventory is durable STATE mutations; this is
+// the recorded classification for this writer).
 func writeCompactJSON(path string, value any) error {
-	return atomicWriteText(path, []byte(jsonCompact(value)+"\n"))
+	_, err := atomicfile.WriteText(path, jsonCompact(value)+"\n", "")
+	return err
 }
 
 // decodeJSONValue parses a JSON document from bytes, keeping numbers in their
