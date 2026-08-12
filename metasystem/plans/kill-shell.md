@@ -126,9 +126,10 @@ Phase 0 and as a standing rule inside every later phase:
   Script entries carry an EXPORT CONDITION (always, or
   with-skill:<name>) so optional-skill scripts are registered
   without being unconditionally shipped (r8/KS-R8-003); conditions
-  project by RELATIVE PATH identity — installed at the same relative
-  path when the condition holds, judged only when present
-  (r9/KS-R9-005). For scripts
+  project through a SOURCE-TO-INSTALL PATH PAIR on the entry —
+  representing the optional-skill relocation — installed when the
+  condition holds, judged only when present (r9/KS-R9-005,
+  r10/KS-R10-005). For scripts
   (r3/KS-R3-008): `keep` is lawful only for scripts already
   satisfying the thin-shim contract or carrying a dated port entry
   the fence treats as debt with a deadline. Adopted targets receive
@@ -261,22 +262,33 @@ checkout, then execs the verb — zero decisions in shell, and the
 README's fresh-checkout path stays valid. Bootstraps ARE the
 custody shape (r9/KS-R9-003): they launch the toolchain, wait,
 consult verbs, and finish — their registry verdicts say custody, and
-no fourth shape exists. Engine delivery to adopted targets is the
-COMMITTED BINARY (r9/KS-R9-001, critical): targets receive no Go
-source and can never rebuild, so the payload commits the engine (as
-adoption already ships it) and a fresh CI clone carries it; the
-freshness rule below is TEMPLATE-ONLY and the adopted update path is
-re-adoption. In the template, the bootstrap must prove binary
-FRESHNESS (r3/KS-R3-007): build stamp equals the checkout's HEAD, or
-rebuild before executing. Every bootstrap build is NON-PUBLISHING
-(r7/KS-R7-003): it compiles to a temporary path and consults the
-gate fence through that binary. Fence-clear grants the right to
-CONTEND, not to publish (r8/KS-R8-002): replacement of bin/metasystem
-happens only under internal/dispatch/ownerlock.go's claim/release on
-a dedicated bin publication lock directory followed by a staged
-atomic rename (r9/KS-R9-002), so two racing first-builds serialize —
-the foreign-gate safety rule holds before any Go verb exists to
-enforce it. go-gate.sh's own POLICY
+no fourth shape exists.
+
+**SEVERED — engine delivery to adopted targets (r10, three
+criticals; a HUMAN decision under the reserved-decisions rule).**
+Rounds 8-10 proved every mechanical answer wrong: adoption copies
+the binary into gitignored space (nothing tracks it,
+r10/KS-R10-001); one binary cannot serve multi-platform hosts and CI
+(r10/KS-R10-002); and a binary cannot embed the HEAD that commits it
+(r10/KS-R10-003). The decision — Go source in the adopted payload,
+per-platform release artifacts, a rebuild allowance, or something
+else — changes the adoption contract, interacts with
+go-production-grade's Linux phase, and is Wido's to make; the
+options and constraints are recorded here and Phase E proceeds
+TEMPLATE-ONLY until ruled.
+
+In the template: the bootstrap proves binary FRESHNESS causally
+(r3/KS-R3-007, r10/KS-R10-003) — the stamp matches the tracked
+source tree at build time, and the template never commits the
+binary, so no self-referential commit exists. Every bootstrap build
+is NON-PUBLISHING (r7/KS-R7-003), compiling to a temporary path. The
+publication protocol is ORDERED (r8/KS-R8-002, r9/KS-R9-002,
+r10/KS-R10-004): register the run's own gate marker FIRST, then
+consult the fence (which exempts the registrant's chain), then claim
+internal/dispatch/ownerlock.go's publication lock, then staged
+atomic rename — register-then-check makes admission and replacement
+one protocol, so two racing first-builds both register, both see
+each other, and the fence adjudicates. go-gate.sh's own POLICY
 joins this phase too, split against the native-only rule
 (r6/KS-R6-007 as corrected by r9/KS-R9-006): Go never launches the
 toolchain, so the gate SEQUENCE stays in the bootstrap's custody
