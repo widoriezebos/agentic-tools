@@ -390,6 +390,12 @@ func Check(opts Options) Result {
 	return ok(fmt.Sprintf("retro not due: %d receipts, %d days since last retro", receipts, ageDays))
 }
 
+// appendLine appends one record line. Durability is claimed only after the
+// sync succeeds (go-production-grade B6): a sync failure returns a plain
+// error, because the append is NOT committed even if bytes reached the
+// file — the ledger's readers are line-oriented and a torn final line
+// simply fails to match a record shape, which is the reader-side contract
+// that makes the third outcome survivable.
 func appendLine(path, line string) error {
 	handle, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -399,8 +405,15 @@ func appendLine(path, line string) error {
 		handle.Close()
 		return err
 	}
+	if err := syncFile(handle); err != nil {
+		handle.Close()
+		return fmt.Errorf("receipt append: not durably written: %w", err)
+	}
 	return handle.Close()
 }
+
+// syncFile is the durability barrier, injectable so fault tests can fail it.
+var syncFile = func(handle *os.File) error { return handle.Sync() }
 
 // leadingInt reads the integer prefix of a value the way awk coerces a
 // string to a number, so a malformed field degrades instead of erroring.

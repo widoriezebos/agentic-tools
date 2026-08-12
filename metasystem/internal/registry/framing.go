@@ -84,8 +84,22 @@ func AppendFrame(path string, payload []byte) error {
 			return fmt.Errorf("registry append: %w", err)
 		}
 	}
+	// Durability is claimed only after the sync succeeds
+	// (go-production-grade B6). A failure here is the append families' third
+	// outcome — VISIBLE BUT UNCOMMITTED: bytes may already be in the file,
+	// but the append is not committed, so the caller returns a plain error
+	// and emits no success. The torn tail is the READER's contract, which
+	// this package already keeps: the next append inspects the tail and
+	// fences an invalid final line with a torn marker, and Reduce surfaces
+	// CorruptionError rather than trusting a fragment.
+	if err := syncFile(file); err != nil {
+		return fmt.Errorf("registry append: not durably written: %w", err)
+	}
 	return nil
 }
+
+// syncFile is the durability barrier, injectable so fault tests can fail it.
+var syncFile = func(file *os.File) error { return file.Sync() }
 
 // inspectTail reports whether the file ends with a newline byte and
 // returns the final line: the trailing partial line when unterminated,
