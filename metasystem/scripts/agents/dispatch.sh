@@ -40,6 +40,8 @@ worktrees="$agents/worktrees"
 process_instance_tag=
 standing_reaper=0
 cap_authority_lock_held=0
+exit_cleanup_job=
+exit_cleanup_chain=
 # Flight-recorder witness (plans/flight-recorder.md). emit_event never fails.
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
@@ -993,7 +995,9 @@ dispatch_job() {
   rm -f "$setup_json"
   mkdir -p "$jobs" "$record_locks" "$capabilities" "$worktrees"
   acquire_chain_lock "$job"
-  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$job"; release_cap_authority_lock; release_chain_lock "$job"' EXIT
+  exit_cleanup_job=$job
+  exit_cleanup_chain=$job
+  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   acquire_cap_authority_lock
   [[ ! -e "$agents/$job" ]] || die 1 "job payload collision: $job"
 
@@ -1102,7 +1106,13 @@ follow_up() {
   require_fresh_census
   report_plan_drift
   root_id=$(root_job_id "$job") || die 1 "cannot resolve the job chain"
-  acquire_chain_lock "$root_id"; trap 'release_chain_lock "$root_id"' EXIT
+  acquire_chain_lock "$root_id"
+  # The trap must reference a GLOBAL: when set -e unwinds the owning
+  # function, bash 5.x has already popped its locals when the EXIT trap
+  # runs, and under set -u the trap dies on the expansion before releasing
+  # anything (the Linux cap-authority leak, go-production-grade Phase 1).
+  exit_cleanup_chain=$root_id
+  trap 'release_chain_lock "$exit_cleanup_chain"' EXIT
   # A worktree chain reads its own branch, not main: a follow-up citing files
   # amended on main after the branch point describes files the delegate does
   # not have. This lesson (KI-9's complement) was violated three times as
@@ -1179,7 +1189,9 @@ follow_up() {
     mission_data=$(resolve_mission "$mission")
     IFS='|' read -r mission lease mission_turn <<<"$mission_data"
   fi
-  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$child"; release_cap_authority_lock; release_chain_lock "$root_id"' EXIT
+  exit_cleanup_job=$child
+  exit_cleanup_chain=$root_id
+  trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   acquire_cap_authority_lock
   cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
   model_key=$(canonical_model "$model")
@@ -1288,7 +1300,13 @@ close_chain() {
   valid_id "$job" && [[ -f "$jobs/$job.json" ]] || die 1 "unknown job: $job"
   root_id=$(root_job_id "$job") || die 1 "cannot resolve job chain"
   [[ "$root_id" == "$job" ]] || die 1 "close requires the root job id: $root_id"
-  acquire_chain_lock "$root_id"; trap 'release_chain_lock "$root_id"' EXIT
+  acquire_chain_lock "$root_id"
+  # The trap must reference a GLOBAL: when set -e unwinds the owning
+  # function, bash 5.x has already popped its locals when the EXIT trap
+  # runs, and under set -u the trap dies on the expansion before releasing
+  # anything (the Linux cap-authority leak, go-production-grade Phase 1).
+  exit_cleanup_chain=$root_id
+  trap 'release_chain_lock "$exit_cleanup_chain"' EXIT
   root_record="$jobs/$root_id.json"
   "$ms" job close-check --repo "$root" --root "$root_id"
   status=$(json_field "$root_record" status)
