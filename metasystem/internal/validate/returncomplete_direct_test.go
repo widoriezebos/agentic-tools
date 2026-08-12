@@ -79,3 +79,46 @@ func TestReturnCompleteJobChainWalk(t *testing.T) {
 		t.Fatalf("invalid parent id not caught: %v", violations)
 	}
 }
+
+// A lawful return drives the schema-validation core end to end — shape
+// walk, value walk, type matching, enums, and the material-count cross
+// check — the paths the refusal cases above never reach.
+func TestReturnCompleteRoleLawfulReturn(t *testing.T) {
+	root := returnRoot(t)
+	lawful := `{
+  "jobId": "rc-happy",
+  "round": 1,
+  "runtime": "fake",
+  "sessionId": null,
+  "model": {"requested": "fixture-model", "effective": "fixture-model"},
+  "evidence": [{"command": "go test ./...", "observed": "ok", "level": "ran"}],
+  "gaps": [],
+  "mode": "design",
+  "reviewedCommit": "abc1234",
+  "findings": [
+    {"id": "F1", "severity": "high", "material": true, "claim": "a claim", "evidence": "seen directly"},
+    {"id": "F2", "severity": "low", "material": false, "claim": "minor", "evidence": "read"}
+  ],
+  "verdictMaterialCount": 1
+}`
+	path := filepath.Join(root, "return.json")
+	os.WriteFile(path, []byte(lawful), 0o644)
+	violations := ReturnCompleteRole(root, "design-critic", path)
+	if len(violations) != 0 {
+		t.Fatalf("a lawful return was refused: %v", violations)
+	}
+	// One wrong enum and one wrong material count, to prove the deep walk
+	// actually judges.
+	broken := strings.Replace(lawful, `"level": "ran"`, `"level": "guessed"`, 1)
+	os.WriteFile(path, []byte(broken), 0o644)
+	violations = ReturnCompleteRole(root, "design-critic", path)
+	if len(violations) == 0 {
+		t.Fatal("a bad enum passed the value walk")
+	}
+	miscounted := strings.Replace(lawful, `"verdictMaterialCount": 1`, `"verdictMaterialCount": 3`, 1)
+	os.WriteFile(path, []byte(miscounted), 0o644)
+	violations = ReturnCompleteRole(root, "design-critic", path)
+	if len(violations) == 0 {
+		t.Fatal("a wrong material count passed")
+	}
+}
