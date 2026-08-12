@@ -1,0 +1,18 @@
+{
+  "jobId": "corpus-nested",
+  "status": "running",
+  "unknownBlock": {
+    "deep": {
+      "a-first": 2,
+      "z-last": 1
+    },
+    "list": [
+      "one",
+      2,
+      null,
+      {
+        "k": "v"
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "endedAt": "2026-08-12T00:00:00Z",
+  "jobId": "corpus-terminal",
+  "mirror": {
+    "path": "evidence/x",
+    "sha256": "abc123"
+  },
+  "status": "completed"
+}
