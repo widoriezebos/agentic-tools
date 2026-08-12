@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 // announceLiveChild spawns a child, announces it as a main (claiming the
@@ -17,9 +18,22 @@ func announceLiveChild(t *testing.T, root string) (pid, start int64) {
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	pid = int64(cmd.Process.Pid)
-	s, ok := StartedAt(pid)
+	// cmd.Start returns after fork, BEFORE the child completes execve; in
+	// that window the kernel reports an empty argv and the auth identity
+	// (pid, start, command) is rightly unreadable. Under load — nested
+	// gates inside full suites — the window stretches to test-visible
+	// width, which was tonight's wandering nested-gate flake. Wait it out,
+	// bounded.
+	var s int64
+	ok := false
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		if s, ok = StartedAt(pid); ok {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if !ok {
-		t.Fatalf("child start unreadable")
+		t.Fatalf("child start unreadable after the exec window")
 	}
 	if _, err := Announce(root, "child sess", pid, s, "tag", "fake", ""); err != nil {
 		t.Fatalf("announce child: %v", err)

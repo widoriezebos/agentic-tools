@@ -85,11 +85,19 @@ func spawnTaggedHold(t *testing.T, tag string) (int, int64) {
 	}
 	go cmd.Wait()
 	t.Cleanup(func() { _ = cmd.Process.Kill() })
-	exact, state, err := identity.KernelProber{}.Probe(int64(cmd.Process.Pid))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("hold not probeable: %v %v", state, err)
+	// Wait out the fork-to-exec window: immediately after Start the argv
+	// is empty and the probe under-reports (the nested-gate flake's root).
+	var exact identity.Exact
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		probed, state, err := identity.KernelProber{}.Probe(int64(cmd.Process.Pid))
+		if err == nil && state == identity.Alive && probed.ArgvKnown &&
+			strings.Contains(strings.Join(probed.Argv, " "), tag) {
+			exact = probed
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if !exact.ArgvKnown || !strings.Contains(strings.Join(exact.Argv, " "), tag) {
+	if exact.Pid == 0 {
 		t.Skipf("argv tagging not visible on this host")
 	}
 	return cmd.Process.Pid, exact.StartedAt.Unix()

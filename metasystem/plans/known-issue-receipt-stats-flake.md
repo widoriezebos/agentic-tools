@@ -1,4 +1,19 @@
-# Known intermittent: receipt-stats greps flake in Mac suite runs
+# Known intermittents in full-suite runs (one root-caused, one open)
+
+## ROOT-CAUSED 2026-08-12 late: the nested-gate test flake
+
+The wandering nested-validation failures ("copied-skills/pruned target
+failed validation") were `TestRunHeldRefusesNonHolder` (internal/lease)
+failing inside nested adopted-copy gates — named by the gate's new
+evidence-preservation on its first firing. Mechanism: `cmd.Start()`
+returns after fork but before the child's execve completes; in that window
+the kernel reports an empty argv and the auth identity (pid, start,
+command) is rightly unreadable. Load — a nested gate inside a full suite —
+stretches the window to test-visible width. Both child-probing test
+helpers now wait out the window, bounded. Production is not affected: real
+callers announce themselves post-exec.
+
+## STILL OPEN: receipt-stats greps flake in Mac suite runs
 
 Status: OPEN, instrumented, not blocking. Recorded 2026-08-12 after an
 extended investigation so the next session starts from evidence, not
