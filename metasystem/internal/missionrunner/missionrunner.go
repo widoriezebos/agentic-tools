@@ -24,48 +24,24 @@ import (
 	"time"
 )
 
-// KnownAskReasons are the reason classes an orchestrator may raise an ask
-// with. Anything else is rejected and surfaces as a host-failure ask instead.
-var KnownAskReasons = map[string]bool{
-	"reserved-decision": true,
-	"red-test":          true,
-	"merge-conflict":    true,
-	"host-failure":      true,
-}
-
-// PromptAskReasons are the reason classes an open ask may CARRY when it is
-// shown in a turn prompt: everything an orchestrator may raise plus the
-// runner's own reasons — "fence" (a batched fence refusal), "stop-loss"
-// (the budget park), and "drain-stalled" (the drain deadline park). The
-// turn-prompt validator must accept these, or the first runner-raised ask
-// poisons every later prompt into refusal — the deterministic park that
-// ended cohort bm-2s-20260810t195923z-80785.
-var PromptAskReasons = func() map[string]bool {
-	reasons := map[string]bool{"fence": true, "stop-loss": true, "drain-stalled": true}
-	for reason := range KnownAskReasons {
-		reasons[reason] = true
-	}
-	return reasons
-}()
-
-// TerminalJobStatuses are the job statuses that count as finished for fence
+// terminalJobStatuses are the job statuses that count as finished for fence
 // projection, job draining, and chain closing. A job whose record is missing
 // or unreadable is treated as still active: losing sight of a job must never
 // count as finishing it.
-var TerminalJobStatuses = map[string]bool{
+var terminalJobStatuses = map[string]bool{
 	"completed": true,
 	"failed":    true,
 	"timeout":   true,
 	"cancelled": true,
 }
 
-// LegalStreamTransitions are the stream transitions an ORCHESTRATOR may
+// legalStreamTransitions are the stream transitions an ORCHESTRATOR may
 // request in its turn return. This is deliberately narrower than the mission
 // state's own transition table: a parked stream returns to active only
 // through an answered ask applied by the runner, never by the orchestrator
 // declaring it so. Requesting a stream's current state is always legal (a
 // no-op refresh of its reason).
-var LegalStreamTransitions = map[string]map[string]bool{
+var legalStreamTransitions = map[string]map[string]bool{
 	"active":           {"active": true, "parked-reserved": true, "parked-stop-loss": true, "done": true},
 	"parked-reserved":  {"parked-reserved": true},
 	"parked-stop-loss": {"parked-stop-loss": true},

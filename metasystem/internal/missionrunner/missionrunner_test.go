@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"encoding/json"
+	turnvocab "github.com/widoriezebos/agentic-tools/metasystem/internal/turn"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,32 +85,35 @@ func TestAdjudicationTables(t *testing.T) {
 		"parked-stop-loss": {"parked-stop-loss"},
 		"done":             {"done"},
 	} {
-		if len(LegalStreamTransitions[state]) != len(targets) {
-			t.Fatalf("transitions from %s: got %v", state, LegalStreamTransitions[state])
+		if len(legalStreamTransitions[state]) != len(targets) {
+			t.Fatalf("transitions from %s: got %v", state, legalStreamTransitions[state])
 		}
 		for _, target := range targets {
-			if !LegalStreamTransitions[state][target] {
+			if !legalStreamTransitions[state][target] {
 				t.Fatalf("transition %s to %s must be legal", state, target)
 			}
 		}
 	}
-	if LegalStreamTransitions["parked-reserved"]["active"] || LegalStreamTransitions["done"]["active"] {
+	if legalStreamTransitions["parked-reserved"]["active"] || legalStreamTransitions["done"]["active"] {
 		t.Fatal("an orchestrator must not unpark or revive a stream")
 	}
+	// The ask-reason vocabulary moved to internal/turn (Phase 2.5 Unit B);
+	// the engine's contract is that it asks that owner, and the owner's own
+	// tests pin the set.
 	for _, reason := range []string{"reserved-decision", "red-test", "merge-conflict", "host-failure"} {
-		if !KnownAskReasons[reason] {
-			t.Fatalf("ask reason %s must be known", reason)
+		if !turnvocab.OrchestratorMayRaise(reason) {
+			t.Fatalf("ask reason %s must be orchestrator-raisable", reason)
 		}
 	}
-	if KnownAskReasons["fence"] || len(KnownAskReasons) != 4 {
-		t.Fatalf("unexpected ask reasons: %v", KnownAskReasons)
+	if turnvocab.OrchestratorMayRaise("fence") || len(turnvocab.OrchestratorAskReasons()) != 4 {
+		t.Fatalf("unexpected ask reasons: %v", turnvocab.OrchestratorAskReasons())
 	}
 	for _, status := range []string{"completed", "failed", "timeout", "cancelled"} {
-		if !TerminalJobStatuses[status] {
+		if !terminalJobStatuses[status] {
 			t.Fatalf("job status %s must be terminal", status)
 		}
 	}
-	if TerminalJobStatuses["running"] || TerminalJobStatuses[""] {
+	if terminalJobStatuses["running"] || terminalJobStatuses[""] {
 		t.Fatal("running and unknown statuses must not be terminal")
 	}
 }

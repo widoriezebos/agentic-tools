@@ -216,7 +216,7 @@ func fenceReachedAt(fences map[string]any, values map[string]string, jobStatus m
 	reservations, _ := fences["reservations"].(map[string]any)
 	active := 0
 	for job := range reservations {
-		if !TerminalJobStatuses[jobStatus[job]] {
+		if !terminalJobStatuses[jobStatus[job]] {
 			active++
 		}
 	}

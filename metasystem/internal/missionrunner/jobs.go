@@ -66,7 +66,7 @@ func activeJobRecords(root, mission string) []jobRecord {
 	records := []jobRecord{}
 	for _, record := range missionJobs(root, mission) {
 		status, _ := record.doc["status"].(string)
-		if TerminalJobStatuses[status] {
+		if terminalJobStatuses[status] {
 			continue
 		}
 		records = append(records, record)
@@ -121,7 +121,7 @@ func CloseableChains(root, mission string) []string {
 		allTerminal := true
 		for _, doc := range chains[rootID] {
 			status, _ := doc["status"].(string)
-			if !TerminalJobStatuses[status] {
+			if !terminalJobStatuses[status] {
 				allTerminal = false
 				break
 			}

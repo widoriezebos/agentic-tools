@@ -133,7 +133,7 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 		stem := strings.TrimSuffix(pathBase(record.path), ".json")
 		status, _ := record.doc["status"].(string)
 		if id == "" || !patienceIDRe.MatchString(id) || id != stem ||
-			(!TerminalJobStatuses[status] && !patienceLawfulNonterminal[status]) {
+			(!terminalJobStatuses[status] && !patienceLawfulNonterminal[status]) {
 			excluded++
 			continue
 		}
@@ -208,7 +208,7 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 			return
 		}
 		status, _ := record.doc["status"].(string)
-		if !TerminalJobStatuses[status] {
+		if !terminalJobStatuses[status] {
 			return
 		}
 		witnessed[jobID] = true
@@ -261,7 +261,7 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 		for _, record := range streak {
 			id, _ := record.doc["jobId"].(string)
 			status, _ := record.doc["status"].(string)
-			if witnessed[id] || !TerminalJobStatuses[status] || !patienceStarted(record) {
+			if witnessed[id] || !terminalJobStatuses[status] || !patienceStarted(record) {
 				continue
 			}
 			chain.count++

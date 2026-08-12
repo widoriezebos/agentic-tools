@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"fmt"
+	turnvocab "github.com/widoriezebos/agentic-tools/metasystem/internal/turn"
 	"os"
 	"path/filepath"
 	"strings"
@@ -294,7 +295,7 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		switch {
 		case stream == nil:
 			reason = "stream does not exist"
-		case !LegalStreamTransitions[currentState][requested]:
+		case !legalStreamTransitions[currentState][requested]:
 			reason = fmt.Sprintf("illegal stream transition %v to %v", stream["state"], entry["requestedState"])
 		case strings.HasPrefix(requested, "parked-") && entryReason == "":
 			reason = "parked stream request has no reason"
@@ -319,7 +320,7 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		reason := ""
 		if _, exists := streams[streamID]; !exists {
 			reason = "stream does not exist"
-		} else if !KnownAskReasons[reasonClass] {
+		} else if !turnvocab.OrchestratorMayRaise(reasonClass) {
 			reason = "reason class is unknown"
 		}
 		if reason == "" {

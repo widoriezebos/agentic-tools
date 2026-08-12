@@ -42,7 +42,7 @@ func ProjectFences(root, mission string, state map[string]any) error {
 			if err == nil {
 				status, _ = record["status"].(string)
 			}
-			if !TerminalJobStatuses[status] {
+			if !terminalJobStatuses[status] {
 				active++
 			}
 		}

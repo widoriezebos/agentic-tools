@@ -302,3 +302,19 @@ the module already uses.
 | A-4 | HIGH | P6 | The two fixture env vars stay distinct: METASYSTEM_FAKE_PROCESS_IDENTITY_FILE (dispatch) and METASYSTEM_MISSION_PROCESS_IDENTITY_FILE (mission) | `internal/dispatch/mission.go` | `internal/mission/contract.go` | `internal/mission/contract_identity_test.go` | Not applicable: the suite arms both independently | DONE | None |
 | A-5 | HIGH | P6 | Refusal texts are unchanged (fixture-asserted contract, E1) | `internal/dispatch/mission.go` | `internal/dispatch/mission.go` | `internal/dispatch/mission_test.go` | Not applicable: greped against scripts/ before the move | DONE | None |
 | A-6 | CRITICAL | P6, B1 | An UNREADABLE argv must not read as a tag mismatch: it takes the fixture fallback, never a refusal on absent evidence | `internal/identity` | `internal/identity/identity.go` | `internal/dispatch/mission_test.go` | Not applicable: pure derivation from ArgvKnown | DONE | None |
+
+## Phase 2½ Unit B — obligation matrix (the shared turn vocabulary)
+
+Consumers enumerated before the move (`git grep` over non-test code):
+`PromptAskReasons` has one consumer outside missionrunner
+(`internal/validate/turnprompt.go:49`) and is the whole reason validate
+imports the engine; `KnownAskReasons` is its base set; `TerminalJobStatuses`
+and `LegalStreamTransitions` have no consumer outside missionrunner at all.
+
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| B-1 | HIGH | S6, D3 | The ask-reason vocabulary has ONE owner both the engine and the turn-prompt validator read | `internal/turn` | `internal/turn/askreason.go` | `internal/turn/askreason_test.go` | Not applicable: pure vocabulary derivation | DONE | None |
+| B-2 | HIGH | S6 | `internal/validate` no longer imports `internal/missionrunner` | `internal/validate` | `internal/validate/turnprompt.go` | `internal/validate/turnprompt_test.go` | Not applicable: import-graph fact, compiler-verified | DONE | None |
+| B-3 | HIGH | D3 | The prompt vocabulary still equals the orchestrator's raisable reasons plus the runner's own three, byte-for-byte | `internal/turn` | `internal/turn/askreason.go` | `internal/turn/askreason_test.go` | Not applicable: table equality asserted in test | DONE | None |
+| B-4 | MEDIUM | D3 | Tables with no consumer outside the engine stay in the engine, unexported — mutable exported state crossing a package boundary is the smell, not the table itself | `internal/missionrunner` | `internal/missionrunner/missionrunner.go` | `internal/missionrunner/cycle_test.go` | Not applicable: compiler enforces unexported | DONE | None |
+| B-5 | MEDIUM | S6 | `CapExpired` STAYS in `internal/supervise`: it is a job-record predicate, so dispatch is defensible as its owner, but moving it inverts the dispatch-to-supervise import edge and the cmd-layer reaper wiring that depends on that direction. The plan permits leaving it with the reasoning recorded, and an ownership call this close is not "equally clear" | `internal/supervise` | `internal/supervise/reaper.go` | `internal/supervise/reaper_test.go` | Not applicable: unchanged code | DONE | None |

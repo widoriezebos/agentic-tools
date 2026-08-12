@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/turn"
 )
 
 // Violation is one named check failure: the check family the failure
@@ -42,11 +42,6 @@ var turnClassifications = map[string]bool{
 	"contract-improved": true, "falsified-continue": true, "falsified-dead-end": true,
 	"no-progress": true, "unresolved": true, "invalid-run": true,
 }
-
-// The legal reason set is owned by the runner: what an orchestrator may
-// raise plus the runner's own fence and stop-loss asks. One source of truth,
-// so the adjudicator and this validator can never disagree again.
-var turnReasonClasses = missionrunner.PromptAskReasons
 
 var turnStreamStates = map[string]bool{
 	"active": true, "parked-reserved": true, "parked-stop-loss": true, "done": true,
@@ -256,7 +251,7 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 		if streamID != "none" && !turnIDRe.MatchString(streamID) {
 			return &Violation{"records", fmt.Sprintf("Open Asks record %d streamId must be an id or none", number+1)}
 		}
-		if !turnReasonClasses[reasonClass] {
+		if !turn.PromptMayCarry(reasonClass) {
 			return &Violation{"records", fmt.Sprintf("Open Asks record %d reasonClass is unknown", number+1)}
 		}
 		if question == "(none)" {
