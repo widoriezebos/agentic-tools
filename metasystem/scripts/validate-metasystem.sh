@@ -3924,8 +3924,9 @@ copy_tree_without_artifacts() { # source root, destination
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
   perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=/m; s/^role\..*\n//mg; s/^mode\..*\.role\..*\n//mg' "$adopted/metasystem.conf"
   fill_harness_conf "$adopted/metasystem.conf" "$tmp/adopted-evidence"
-  bash "$adopted/scripts/validate-metasystem.sh" >/dev/null 2>&1 || {
+  bash "$adopted/scripts/validate-metasystem.sh" >"$tmp/nested-pruned.log" 2>&1 || {
     echo "adopted-mode validation failed for a copy with one skill pruned" >&2
+    tail -20 "$tmp/nested-pruned.log" >&2
     exit 1
   }
   mkdir "$adopted/skills/hollow"
@@ -4201,7 +4202,8 @@ PYEOF
   sed 's/<[^>]*>/filled/g' "$tmp/adopt-copy/docs/project-rules.md" >"$tmp/adopt-copy/docs/project-rules.md.new"
   mv "$tmp/adopt-copy/docs/project-rules.md.new" "$tmp/adopt-copy/docs/project-rules.md"
   fill_harness_conf "$tmp/adopt-copy/metasystem.conf" "$tmp/adopt-copy-evidence"
-  bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" >/dev/null 2>&1 || { echo "adopt: copied-skills target failed validation" >&2; exit 1; }
+  bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" >"$tmp/nested-copied-skills.log" 2>&1 \
+    || { echo "adopt: copied-skills target failed validation" >&2; tail -20 "$tmp/nested-copied-skills.log" >&2; exit 1; }
   echo drift >>"$tmp/adopt-copy/.claude/skills/verify/SKILL.md"
   if bash "$tmp/adopt-copy/scripts/validate-metasystem.sh" >/dev/null 2>&1; then
     echo "adopt: validation missed a drifted claude skill copy" >&2
