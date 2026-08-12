@@ -69,7 +69,7 @@ mkdir -p "$bootstrap_harness/bin"
 cat >"$bootstrap_harness/bin/metasystem" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "\${1:-} \${2:-}" == "identity started-at" ]]; then
+if [[ "\${1:-} \${2:-}" == "proc started-at" ]]; then
   printf '1786104000\n'
   exit 0
 fi
