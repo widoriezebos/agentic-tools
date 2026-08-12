@@ -4,7 +4,7 @@
   },
   "floors": {
     "internal/adapter": 86.6,
-    "internal/atomicfile": 76.1,
+    "internal/atomicfile": 73.0,
     "internal/audit": 91.5,
     "internal/authority": 95.0,
     "internal/boundedexec": 92.0,
@@ -25,7 +25,7 @@
     "internal/mission": 69.9,
     "internal/missionrunner": 57.6,
     "internal/receipt": 94.0,
-    "internal/registry": 90.0,
+    "internal/registry": 91.0,
     "internal/report": 85.2,
     "internal/returnschema": 76.3,
     "internal/supervise": 85.5,

@@ -37,6 +37,7 @@ package atomicfile
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,4 +132,50 @@ func chain(dir, anchor string) []string {
 		}
 		current = parent
 	}
+}
+
+// CopyFile publishes a copy of sourcePath at targetPath under the same
+// outcome model as WriteText: the copy lands through a synced temp file in
+// the target's directory, the chain through anchor is made durable before
+// publication, and a post-publication directory-sync failure is committed
+// with doubt — (false, nil) — never an error.
+func CopyFile(sourcePath, targetPath, anchor string) (durable bool, err error) {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return false, err
+	}
+	defer source.Close()
+	target := filepath.Dir(targetPath)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return false, err
+	}
+	for _, dir := range chain(target, anchor) {
+		if err := syncDir(dir); err != nil {
+			return false, fmt.Errorf("atomicfile: cannot make the directory chain durable at %s: %w", dir, err)
+		}
+	}
+	temp, err := os.CreateTemp(target, filepath.Base(targetPath)+".*.tmp")
+	if err != nil {
+		return false, err
+	}
+	tempName := temp.Name()
+	defer os.Remove(tempName)
+	if _, err := io.Copy(temp, source); err != nil {
+		temp.Close()
+		return false, err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return false, err
+	}
+	if err := temp.Close(); err != nil {
+		return false, err
+	}
+	if err := os.Rename(tempName, targetPath); err != nil {
+		return false, err
+	}
+	if err := syncDir(target); err != nil {
+		return false, nil
+	}
+	return true, nil
 }

@@ -705,6 +705,10 @@ func copyFilePreservingTime(sourcePath, targetPath string) error {
 	if err := temp.Close(); err != nil {
 		return err
 	}
+	// NOT delegated to the durable-write owner (B5, recorded
+	// classification): the mtime is set on the TEMP so the file publishes
+	// with its preserved time atomically — a crash can never leave a
+	// wrong-time file visible, which the GC's time-based reasoning needs.
 	os.Chtimes(tempName, info.ModTime(), info.ModTime())
 	return os.Rename(tempName, targetPath)
 }

@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"os"
 	"regexp"
 	"strings"
@@ -145,9 +146,9 @@ func TailorConf(confPath string, requested []string) error {
 		out = append(out, "role.default.runtime="+defaultRuntime)
 	}
 
-	temporary := confPath + ".new"
-	if err := os.WriteFile(temporary, []byte(strings.Join(out, "\n")+"\n"), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(temporary, confPath)
+	// Through the durable-write owner (go-production-grade B5): the old
+	// path here was WriteFile plus rename with no sync at all. Empty anchor
+	// until adoption's caller carries the two-outcome contract.
+	_, err = atomicfile.WriteText(confPath, strings.Join(out, "\n")+"\n", "")
+	return err
 }

@@ -173,3 +173,55 @@ func TestChainBounds(t *testing.T) {
 		t.Fatalf("unrelated anchor did not terminate sanely: %v", got)
 	}
 }
+
+func TestCopyFilePublishesIdenticalBytes(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.bin")
+	content := "line one\nline two\x00binary\n"
+	os.WriteFile(source, []byte(content), 0o644)
+	target := filepath.Join(root, "nested", "copy.bin")
+	durable, err := CopyFile(source, target, root)
+	if err != nil || !durable {
+		t.Fatalf("copy: durable=%v err=%v", durable, err)
+	}
+	data, _ := os.ReadFile(target)
+	if string(data) != content {
+		t.Fatalf("bytes differ: %q", data)
+	}
+}
+
+func TestCopyFileMissingSourceFailsCleanly(t *testing.T) {
+	root := t.TempDir()
+	durable, err := CopyFile(filepath.Join(root, "absent"), filepath.Join(root, "out"), root)
+	if err == nil || durable {
+		t.Fatalf("missing source: durable=%v err=%v", durable, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "out")); statErr == nil {
+		t.Fatal("a target appeared from a missing source")
+	}
+}
+
+func TestCopyFilePostPublicationDoubt(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "s.txt")
+	os.WriteFile(source, []byte("payload\n"), 0o644)
+	target := filepath.Join(root, "t.txt")
+	original := syncDir
+	syncDir = func(dir string) error {
+		if _, err := os.Stat(target); err == nil {
+			return errors.New("injected: post-publication sync failed")
+		}
+		return original(dir)
+	}
+	defer func() { syncDir = original }()
+	durable, err := CopyFile(source, target, root)
+	if err != nil {
+		t.Fatalf("a committed copy was reported as a failure: %v", err)
+	}
+	if durable {
+		t.Fatal("durability claimed over a failed sync")
+	}
+	if data, _ := os.ReadFile(target); string(data) != "payload\n" {
+		t.Fatalf("committed content missing: %q", data)
+	}
+}

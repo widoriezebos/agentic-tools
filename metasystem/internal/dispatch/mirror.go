@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -210,28 +210,14 @@ func semanticRecordHash(path string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// copyFileAtomic lands a copy via a temp file and rename, so a reader at the
-// destination never sees a half-copied file.
+// copyFileAtomic lands a copy through the durable-write owner
+// (go-production-grade B5): a reader at the destination never sees a
+// half-copied file. Empty anchor until this caller carries the two-outcome
+// contract; the owner also syncs the temp before publishing, which the old
+// copy here skipped.
 func copyFileAtomic(sourcePath, targetPath string) error {
-	in, err := os.Open(sourcePath)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	temp, err := os.CreateTemp(filepath.Dir(targetPath), filepath.Base(targetPath)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-	if _, err := io.Copy(temp, in); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tempName, targetPath)
+	_, err := atomicfile.CopyFile(sourcePath, targetPath, "")
+	return err
 }
 
 func fileExists(path string) bool {

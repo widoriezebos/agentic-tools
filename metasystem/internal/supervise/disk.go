@@ -205,6 +205,11 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 	if err != nil {
 		return fmt.Errorf("state encoding: %w", err)
 	}
+	// NOT delegated to the durable-write owner (go-production-grade B5,
+	// recorded classification): this is a FENCED publication — the lock
+	// currency is re-checked between the temp write and the rename
+	// (SLC-R4-001 below), and the owner has no seam for a fence. The sync
+	// discipline here matches the owner's pre-anchor path.
 	temporary, err := os.CreateTemp(c.supervisionDir(), ".state-*")
 	if err != nil {
 		return fmt.Errorf("state temp file: %w", err)

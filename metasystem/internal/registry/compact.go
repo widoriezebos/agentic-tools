@@ -2,8 +2,10 @@ package registry
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -123,26 +125,24 @@ func custodyRecordTime(frames []Frame, custodyID string) time.Time {
 // compaction holds it across read-reduce-replace, so a concurrent
 // append can never be discarded by the rewrite).
 func WriteCompacted(path string, kept []Frame) error {
-	temp, err := os.CreateTemp(filepath.Dir(path), ".compact-*")
-	if err != nil {
+	var content strings.Builder
+	for _, frame := range kept {
+		content.Write(frame.Raw)
+		content.WriteByte('\n')
+	}
+	// The registry's directory must already exist: compaction rewrites a
+	// ledger in place and must never invent its location — the owner's
+	// MkdirAll would mask a wrong path (contract pinned by an existing
+	// test, preserved across the B5 conversion).
+	if _, err := os.Stat(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("compaction temp file: %w", err)
 	}
-	defer os.Remove(temp.Name())
-	for _, frame := range kept {
-		if _, err := temp.Write(append(append([]byte(nil), frame.Raw...), '\n')); err != nil {
-			temp.Close()
-			return fmt.Errorf("compaction write: %w", err)
-		}
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return fmt.Errorf("compaction sync: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("compaction close: %w", err)
-	}
-	if err := os.Rename(temp.Name(), path); err != nil {
-		return fmt.Errorf("compaction rename: %w", err)
+	// Through the durable-write owner (go-production-grade B5). The registry
+	// is durable machine-wide state; its anchor conversion follows with the
+	// caller migration.
+	_, err := atomicfile.WriteText(path, content.String(), "")
+	if err != nil {
+		return fmt.Errorf("compaction write: %w", err)
 	}
 	return nil
 }
