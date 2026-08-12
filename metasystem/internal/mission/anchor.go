@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,7 +27,10 @@ func gitOutput(repo string, args ...string) (string, error) {
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	// Bounded like every other external call (B4): a git that never
+	// returns must not hang the caller.
+	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
+	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
 		return stdout.String(), stateErr("git %s failed: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil

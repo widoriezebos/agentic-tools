@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -1245,8 +1246,15 @@ func (d *contractDoc) verifyOrigin(repo string) error {
 	fetch := exec.Command("git", "-C", repo, "fetch", "--quiet", "origin")
 	var stderr strings.Builder
 	fetch.Stderr = &stderr
-	if err := fetch.Run(); err != nil {
-		return stateErr("preflight refused: origin fetch failed: %s", strings.TrimSpace(stderr.String()))
+	// Network work is bounded (B4): an unreachable remote must fail the
+	// preflight, never hang the mission that is waiting on it.
+	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Network)
+	if err := boundedexec.Run(fetch, limit, "preflight origin fetch"); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return stateErr("preflight refused: origin fetch failed: %s", detail)
 	}
 	remoteHead, err := contractGitTrim(repo, "symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
@@ -1425,7 +1433,9 @@ func contractRunFingerprint(projectRoot string) (string, int) {
 	command := exec.Command(script, "fingerprint", "--repo", projectRoot)
 	var out strings.Builder
 	command.Stdout = &out
-	if err := command.Run(); err != nil {
+	// A fingerprint script that hangs must not hang the preflight (B4).
+	limit := boundedexec.Timeout(filepath.Join(projectRoot, "metasystem.conf"), boundedexec.Local)
+	if err := boundedexec.Run(command, limit, "supervision fingerprint"); err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
 			return out.String(), exit.ExitCode()
 		}

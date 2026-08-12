@@ -7,6 +7,7 @@
     "internal/atomicfile": 66.7,
     "internal/audit": 91.5,
     "internal/authority": 95.0,
+    "internal/boundedexec": 92.0,
     "internal/capability": 73.5,
     "internal/census": 73.7,
     "internal/config": 82.3,

@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
@@ -42,7 +43,10 @@ func runCaptured(dir string, env []string, name string, args ...string) (stdout,
 	var outBuf, errBuf bytes.Buffer
 	command.Stdout = &outBuf
 	command.Stderr = &errBuf
-	err := command.Run()
+	// Every command this runner launches is bounded (B4): a hung child
+	// would otherwise stall the mission turn that is waiting for it.
+	limit := boundedexec.Timeout(filepath.Join(dir, "metasystem.conf"), boundedexec.Local)
+	err := boundedexec.Run(command, limit, "mission runner command "+name)
 	switch typed := err.(type) {
 	case nil:
 		code = 0

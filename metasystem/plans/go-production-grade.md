@@ -340,3 +340,33 @@ Each identifier's recorded decision:
 | C-3 | MEDIUM | S1 | The tiny pure helpers (sha256Hex, resolvePath, isValidUTF8) are duplicated rather than shared: three functions over stdlib with no state, where a package to hold them would BE the dumping ground the design standard forbids | `internal/contract` | `internal/contract/contract.go` | `internal/contract/contract_test.go` | Not applicable: pure functions | READY_FOR_RUNTIME | Land C-5 |
 | C-4 | HIGH | S1, B5 | `atomicWriteText` is NOT duplicated: it carries a durability contract Phase 4 must harden in one place, and two copies would be two divergent fixes. It gets a real owner, `internal/atomicfile`, which Phase 4 then migrates the remaining writers onto | `internal/atomicfile` | `internal/atomicfile/atomicfile.go` | `internal/atomicfile/atomicfile_test.go` | Not applicable: durability proof is Phase 4's fault-injection matrix | READY_FOR_RUNTIME | Land C-5 |
 | C-5 | CRITICAL | S1 | The extraction preserves behavior exactly: the four exported entry points keep their names and signatures at the command layer, the contract seal hashes file CONTENT and cannot shift with code layout, and the suite's mission fixtures pass unchanged | `internal/contract` | `cmd/metasystem/mission_contract.go` | `internal/contract/contract_test.go` | Not applicable until the suite runs: acceptance is the full gate | READY_FOR_RUNTIME | Run the gate and the mission fixtures |
+
+## Phase 4 B4 — the per-surface bound table (agreed before implementation)
+
+Two configuration keys, not one per site: the distinction that matters
+operationally is whether the work crosses the NETWORK (unbounded latency,
+short bound, an operator may raise it on a slow link) or is LOCAL (bounded
+by the machine, generous bound that exists to stop a hang, not to hurry
+work). Both are dependency failures in the standard's taxonomy — the
+metasystem could not complete because something it depends on did not
+answer — never a refusal of the caller's request. `gate.command` keeps its
+existing bound from `fence.job-cap-min`: a gate may legitimately run for the
+job's whole budget, and that bound is already the contract's own.
+
+| surface | kind | conf key | default | on expiry |
+| --- | --- | --- | --- | --- |
+| contract preflight's `git fetch origin` (`internal/contract`) | network | `exec.network-timeout-sec` | 120 | dependency failure naming the operation and the bound |
+| fingerprint script execution (`internal/contract`) | local | `exec.local-timeout-sec` | 300 | same |
+| the mission runner's generic command runner (`internal/missionrunner`) | local | `exec.local-timeout-sec` | 300 | same |
+| git plumbing reads (`internal/contract`, `internal/mission`, `internal/dispatch`) | local | `exec.local-timeout-sec` | 300 | same |
+
+Process-group semantics: a bounded command runs in its own process group and
+the bound kills the GROUP, so a script's children die with it rather than
+outliving the timeout holding pipes open; the wait is additionally bounded so
+a child ignoring the signal cannot hang the caller forever.
+
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| D4-1 | HIGH | B4 | Every named surface runs under a bound resolved from configuration with a stated default | `internal/boundedexec` | `internal/boundedexec/boundedexec.go` | `internal/boundedexec/boundedexec_test.go` | Not applicable: hang tests are the proof | DONE | None |
+| D4-2 | HIGH | B4 | A bound that expires kills the process GROUP and returns a named dependency failure, never a silent hang or an orphaned child | `internal/boundedexec` | `internal/boundedexec/boundedexec.go` | `internal/boundedexec/boundedexec_test.go` | Not applicable: asserted by a stub that never returns | DONE | None |
+| D4-3 | HIGH | B4, E1 | No existing asserted error text changes: the bound adds a new failure path where the old behavior was to hang forever | `internal/boundedexec` | `internal/contract/contract.go` | `internal/boundedexec/boundedexec_test.go` | Not applicable: greped against scripts/ | DONE | None |
