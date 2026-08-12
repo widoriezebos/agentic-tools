@@ -38,35 +38,46 @@ small number for its own sake — fragments at a custody boundary are
 correct under the ruling. Script-shaped means: a bash file owns a CALL
 SEQUENCE whose ordering carries a correctness invariant that no Go
 function states. Step 0 therefore runs a SEQUENCE CENSUS beside the
-caller census: for each script that calls three or more verbs of one
-family in a fixed order, name the invariant the ordering protects (or
-record that there is none). Sequences that carry an invariant are the
-coarsening list; everything else is legitimate plumbing and stays.
+caller census, over BOTH shapes (r2/GSC-R1-010): same-family runs
+(three or more verbs of one family in fixed order) AND cross-family
+sequences where the ordering encodes an authority or correctness rule
+no single verb states — the pre-commit guard's lease classify →
+wrapper-token ordering, which is what keeps human commits sovereign
+while agents need wrapper proof, is the type specimen. Each census hit
+records its named invariant and a per-candidate decision: coarsen into
+one verb, or keep with the invariant documented at the call site.
+Sequences with no invariant are legitimate plumbing and stay.
 Regrouping (mission, proc) is coherence work and is claimed as such,
 not as de-shell-ification.
 
-## Target tree (human-approved 2026-08-12; amended by round 1)
+## Target tree (human-approved 2026-08-12; amended by rounds 1-2)
 
-Eleven families. The adapter+host merge from the approved draft is
-WITHDRAWN by r1/GSC-R1-003: the doubled names (devin-config,
+Eighteen families: three real merges (job, mission, proc), the engine
+families unchanged, and the small domains left alone — rounds 1 and 2
+withdrew every merge whose only product was renaming. The adapter+host
+merge is WITHDRAWN by r1/GSC-R1-003: the doubled names (devin-config,
 devin-usage, fake-return) are behaviorally DIFFERENT operations — the
 adapter side consumes job records, the host side consumes mission
 roots — and both sides have live callers, so a merge would rename for
 cosmetics exactly where confusion costs most. They stay two families.
+The surface shrinks by deletion (census slices) and by ownership
+inversion (the reap verdict), not by relabeling.
 
 | target | absorbs | notes |
 | --- | --- | --- |
-| `job` | dispatch (23), capability (1), authority (1), schema (1) | The delegate-job domain. The reservation protocol stays TWO-PHASE (r1/GSC-R1-002: record-create must precede shell-owned setup so a second dispatcher cannot prepare the same id, and the cleanup trap depends on observable pending-setup); no `job reserve` merge. Coarsening candidates come only from the step-0 sequence census, under the rule that no observable intermediate state another process relies on may disappear. The reap verdict ladder becomes ONE decision owner with TWO consumers (r1/GSC-R1-004): an internal function the supervise component's reaper calls directly, and a `job reap-verdict` verb dispatch.sh consults; wind-down signaling stays in dispatch.sh. |
-| `mission` | mission-state, -fence, -contract, -prompt, -runner, -turn, -ledger, evidence (8 families, 29 verbs) | Regrouping with an EXHAUSTIVE collision-resolving verb map as the step-2 deliverable (r1/GSC-R1-003): two init verbs and two verify verbs exist today, so the map prefixes by sub-domain (state-init, ledger-init, ledger-verify, fence-refuse, gc) and covers all 29, no illustrative subsets. |
+| `job` | dispatch (23), capability (1), authority (1), schema (1) | The delegate-job domain. The reservation protocol stays TWO-PHASE (r1/GSC-R1-002: record-create must precede shell-owned setup so a second dispatcher cannot prepare the same id, and the cleanup trap depends on observable pending-setup); no `job reserve` merge. Coarsening candidates come only from the step-0 sequence census, under the rule that no observable intermediate state another process relies on may disappear. The reap verdict ladder becomes ONE decision owner with THREE consumers (r1/GSC-R1-004, r2/GSC-R1-008): an internal function called by the supervise component's reaper AND by the mission runner's reap path (whose reapReservedRecords/applyReapVerdict mapping is today a third independent ladder), and a `job reap-verdict` verb dispatch.sh consults; wind-down signaling stays in dispatch.sh. Verdict APPLICATION centralizes with the decision (r2/GSC-R1-009): every consumer lands its verdict through the locked compare-and-swap record owner with an expected status — the supervise reaper's current whole-record overwrite, which can clobber a completion that lands after its read, is a defect this step fixes with a regression test, recorded as the program's one deliberate behavior change. |
+| `mission` | mission-state, -fence, -contract, -prompt, -runner, -turn, -ledger (7 families, 28 verbs) | Regrouping with the EXHAUSTIVE collision-resolving verb map in the appendix (r1/GSC-R1-003, r2/GSC-R1-011) — all 28, no illustrative subsets. evidence stays its own family (r2/GSC-R1-012: the collector is repository-wide custody that merely protects mission state; `mission gc` would misname its scope). |
 | `adapter` | unchanged (34 minus census deletions) | Custody-boundary fragments per runtime; scripts keep launch/wait/signal custody. |
 | `host` | unchanged (8) | Same boundary, mission-host side. |
-| `proc` | identity (4), census (5), supervise (10) | Process identity, census, supervision — one domain: who is running, provably. Same exhaustive-map rule as mission. |
+| `proc` | identity (4), census (5) | Process identity and census are one domain — who is running, provably. supervise STAYS its own family (r2/GSC-R1-013's logic applied honestly: folding it in would just prefix every verb with its old family name, a cosmetic merge). Map in the appendix. |
+| `supervise` | unchanged (10) | Supervision lifecycle. |
 | `validate` | unchanged (10) | Whole-artifact validators. |
 | `audit` | unchanged (2) | metasystem + coverage-ratchet. |
 | `config` | unchanged (7) | |
 | `lease` | unchanged (9) | Worktree session custody. |
 | `receipt` | unchanged (5) | |
-| `util` | util (5), json (3), event (1), gate (3), hooks (1), report (3) | Merged with an exhaustive map like mission (gate check and hooks check collide today, r1/GSC-R1-003 — they become gate-check and hooks-check). |
+| `evidence` | unchanged (1) | Repository-wide durable-evidence custody (r2/GSC-R1-012). |
+| small domains | gate (3), report (3), hooks (1), event (1), json (3), util (5) | The util merge is WITHDRAWN (r2/GSC-R1-013): these are distinct responsibilities with distinct failure contracts, and the repository's own design standard names a catch-all util as the anti-pattern. They stay as they are; the earlier gate-check/hooks-check collision worry evaporates with the merge. |
 
 CLI compatibility during migration: the family router gains a
 one-table alias layer (old family/verb → new) so scripts migrate per
@@ -118,20 +129,30 @@ retired.
 Each step lands with the suite green from a pristine worktree and all
 call sites updated in the same commit.
 
-1. Caller census (first slice landed: c72f662) + sequence census
-   naming every ordering-carried invariant. Output: the deletion
-   record, the coarsening list, and the alias table.
-2. mission-* merge with its exhaustive verb map (mechanical; largest
+1. Caller census (first slice landed: c72f662) + sequence census over
+   both shapes naming every ordering-carried invariant. Output: the
+   deletion record, the coarsening-candidate decisions, and the alias
+   table BUILT FROM THE APPENDIX MAPS (r2/GSC-R1-011: the complete
+   old-name to new-name mapping is this document's appendix, not a
+   later step's homework — step 1 needs it and sign-off covers it).
+2. mission-* merge per the appendix map (mechanical; largest
    coherence gain per hour).
-3. job-family formation: dispatch verbs regrouped; the reap verdict
-   ladder becomes one decision owner with both consumers wired in the
-   SAME commit — the supervise component's reaper calls the function,
-   dispatch.sh consults the verb — so no second ladder survives
-   (r1/GSC-R1-004). Reservation stays two-phase (r1/GSC-R1-002).
-   Further coarsening only from the step-1 sequence census. dispatch.sh
-   keeps launch, wind-down, and polling custody.
-4. proc regrouping; scripts restored to ordinary scripts (usage texts
-   return; shims that stay are one-liners by choice, not doctrine).
+3. job-family formation: dispatch verbs regrouped per the appendix;
+   the reap verdict ladder becomes one decision owner with ALL THREE
+   consumers wired in the SAME commit — the supervise component's
+   reaper and the mission runner's reap path call the function,
+   dispatch.sh consults the verb — so no other ladder survives
+   (r1/GSC-R1-004, r2/GSC-R1-008), and every consumer applies its
+   verdict through the locked compare-and-swap owner with expected
+   status (r2/GSC-R1-009; the supervise reaper's stale-overwrite
+   defect dies here, with a regression test for a completion landing
+   after the reaper's read). Reservation stays two-phase
+   (r1/GSC-R1-002). Further coarsening only from the step-1 census
+   decisions. dispatch.sh keeps launch, wind-down, and polling
+   custody.
+4. proc regrouping per the appendix; scripts restored to ordinary
+   scripts (usage texts return; shims that stay are one-liners by
+   choice, not doctrine).
 5. Registry deletion; old-name sweep to zero by the census rules;
    alias table deletion last.
 
@@ -145,3 +166,97 @@ as they are). No new fences or meta-machinery. No byte-identical
 output conformance for renamed verbs — scripts calling them are
 updated in the same commit; external contracts (file formats, exit
 codes, hook entry points, adopted-repo script names) do not change.
+
+## Appendix: the exhaustive verb maps (r2/GSC-R1-011)
+
+Every renamed verb, old to new. Anything not listed here keeps its
+name. The alias table in step 1 is generated from these tables and
+nothing else.
+
+### mission (28 verbs from 7 families)
+
+| today | target |
+| --- | --- |
+| mission-state init | mission state-init |
+| mission-state write | mission state-write |
+| mission-state verify | mission state-verify |
+| mission-state anchor | mission state-anchor |
+| mission-state reconcile | mission state-reconcile |
+| mission-fence check-job | mission fence-check-job |
+| mission-fence reserve-job | mission fence-reserve-job |
+| mission-fence reserve-cycle | mission fence-reserve-cycle |
+| mission-fence authorize-cap | mission fence-authorize-cap |
+| mission-fence aggregate-usage | mission fence-aggregate-usage |
+| mission-fence refuse | mission fence-refuse |
+| mission-contract validate | mission contract-validate |
+| mission-contract seal | mission contract-seal |
+| mission-contract preflight | mission contract-preflight |
+| mission-contract measure | mission contract-measure |
+| mission-contract envelope-allows | mission contract-envelope-allows |
+| mission-prompt assemble | mission prompt-assemble |
+| mission-runner start | mission start |
+| mission-runner resume | mission resume |
+| mission-runner status | mission status |
+| mission-runner answer | mission answer |
+| mission-runner run-loop | mission run-loop |
+| mission-turn adjudicate | mission turn-adjudicate |
+| mission-turn conclude | mission turn-conclude |
+| mission-turn record-failure | mission turn-record-failure |
+| mission-turn park | mission turn-park |
+| mission-ledger init | mission ledger-init |
+| mission-ledger append | mission ledger-append |
+
+The runner verbs take the bare names: they are the family's front
+door for humans. state-init and ledger-init are the collision the
+prefixes resolve.
+
+### proc (9 verbs from 2 families)
+
+| today | target |
+| --- | --- |
+| identity started-at | proc started-at |
+| identity probe | proc probe |
+| identity exists | proc exists |
+| identity group-exists | proc group-exists |
+| census fingerprint | proc fingerprint |
+| census run | proc census |
+| census alive | proc alive |
+| census signature-check | proc signature-check |
+| census find-ancestor | proc find-ancestor |
+
+`census run` becomes `proc census` — "run" alone said nothing.
+
+### job (26 verbs from 4 families)
+
+| today | target |
+| --- | --- |
+| dispatch record-create | job record-create |
+| dispatch record-setup | job record-setup |
+| dispatch record-cas | job record-cas |
+| dispatch record-protocol-error | job record-protocol-error |
+| dispatch build-setup | job build-setup |
+| dispatch build-record | job build-record |
+| dispatch build-follow-record | job build-follow-record |
+| dispatch latest-chain-record | job latest-chain-record |
+| dispatch chain-members | job chain-members |
+| dispatch chain-usage | job chain-usage |
+| dispatch custody-add | job custody-add |
+| dispatch handshake-eval | job handshake-eval |
+| dispatch reap-facts | (absorbed into job reap-verdict, step 3) |
+| dispatch census-fresh | job census-fresh |
+| dispatch watcher-ceiling | job watcher-ceiling |
+| dispatch expand-permissions | job expand-permissions |
+| dispatch validate-mission | job validate-mission |
+| dispatch mirror | job mirror |
+| dispatch close-check | job close-check |
+| dispatch critique-exhaustion | job critique-exhaustion |
+| dispatch exhaustion-patches | job exhaustion-patches |
+| dispatch cap-resolution | job cap-resolution |
+| dispatch brief-mode | job brief-mode |
+| dispatch owner-lock | job owner-lock |
+| capability select | job snapshot-select |
+| authority check | job authority-check |
+| schema materialize | job schema-materialize |
+
+`job reap-verdict` is new (step 3); reap-facts retires into it once
+all three consumers are wired.
