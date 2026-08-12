@@ -275,7 +275,11 @@ per-platform release artifacts, a rebuild allowance, or something
 else — changes the adoption contract, interacts with
 go-production-grade's Linux phase, and is Wido's to make; the
 options and constraints are recorded here and Phase E proceeds
-TEMPLATE-ONLY until ruled.
+TEMPLATE-ONLY until ruled. Containment is COHERENCE BY PAIRING
+(r11/KS-R11-001): exported scripts and the engine travel only
+together, through an adoption run — the program never ships them
+separately — so every adopted target holds a coherent shim-engine
+pair from its adoption date, whatever the template does meanwhile.
 
 In the template: the bootstrap proves binary FRESHNESS causally
 (r3/KS-R3-007, r10/KS-R10-003) — the stamp matches the tracked
@@ -285,10 +289,18 @@ is NON-PUBLISHING (r7/KS-R7-003), compiling to a temporary path. The
 publication protocol is ORDERED (r8/KS-R8-002, r9/KS-R9-002,
 r10/KS-R10-004): register the run's own gate marker FIRST, then
 consult the fence (which exempts the registrant's chain), then claim
-internal/dispatch/ownerlock.go's publication lock, then staged
-atomic rename — register-then-check makes admission and replacement
-one protocol, so two racing first-builds both register, both see
-each other, and the fence adjudicates. go-gate.sh's own POLICY
+internal/dispatch/ownerlock.go's publication lock, then REVALIDATE
+freshness under the lock — re-derive the tracked-source state and
+abort unless it still equals the stamp (r11/KS-R11-002) — then
+staged atomic rename. Register-then-check makes admission and
+replacement one protocol, so two racing first-builds both register,
+both see each other, and the fence adjudicates. Two implementation
+requirements ride this protocol (r11/KS-R11-003, r11/KS-R11-004):
+gate markers move to temp-then-rename writes — today's direct write
+is a latent defect where a pruner can observe partial JSON and eat a
+live registration — and the claiming process carries its generated
+publication tag in its own argv for the whole critical section, the
+owner-lock's ownership condition by construction. go-gate.sh's own POLICY
 joins this phase too, split against the native-only rule
 (r6/KS-R6-007 as corrected by r9/KS-R9-006): Go never launches the
 toolchain, so the gate SEQUENCE stays in the bootstrap's custody
@@ -319,9 +331,12 @@ surface, and that property is not negotiable.
 ## Definition of done (r5/KS-R5-002)
 
 The program closes only when the registry's scripts section carries
-zero debt entries and every live entry holds a VERIFIED date with
-one of the three legal shapes (r6/KS-R6-004); tombstones are outside
-the quantifier (r6/KS-R6-003). Phases finishing is not the program
+zero debt entries, every live entry holds a VERIFIED date with one
+of the three legal shapes (r6/KS-R6-004), and the adopted-engine
+ruling is either MADE or the adopted payload explicitly remains the
+last coherent pair, recorded in the migration notes
+(r11/KS-R11-001); tombstones are outside the quantifier
+(r6/KS-R6-003). Phases finishing is not the program
 finishing; `keep` debt outliving the last phase is the program still
 open.
 
