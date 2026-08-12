@@ -83,3 +83,33 @@ Mission contracts may pre-authorize only the categories marked `yes` below, and 
 ## External State and Ownership
 
 Document who owns deployments, proxies, credentials, production data, migrations, and other actions agents must not mutate without explicit authorization.
+
+## Supported platforms
+
+Promoted from plans/go-production-grade.md at its Phase 7 close-out
+(2026-08-12); this table is the living record — a platform moves to the
+verified tier only when a full `scripts/validate-metasystem.sh` run passes
+on it.
+
+- **Verified**: macOS on arm64 (the development host), and **Debian 12
+  (bookworm) on arm64** — promoted 2026-08-12 by the two-pass bootstrap on
+  a Lima VM (seed run, then the fully enforcing suite with the Linux
+  coverage floors live). Provisioning: Go from the official tarball;
+  packages git, procps, perl, python3, curl, ca-certificates, tar,
+  findutils; standard /proc without hidepid; run from a native-filesystem
+  clone, never a case-insensitive host mount.
+- **Expected-compatible, unverified**: other mainstream Linux
+  distributions (Debian/Ubuntu/RHEL-family; Alpine with the same
+  packages) on arm64/amd64 with a standard /proc mount.
+- **The command inventory is a contract**: production scripts exec git
+  (git), ps and pgrep (procps), awk (mawk/gawk), sed, grep, tar, find
+  (findutils), and the coreutils set; `scripts/agents/preflight-commands.sh`
+  checks the inventory and names each missing command with its
+  Debian-family package — adoption runs it before any target mutation and
+  supervision arming runs it at entry. perl and python3 are suite-host
+  concerns only (fixture drivers), never production dependencies; hashing
+  runs through `metasystem util sha256`.
+- **Link versus operation**: CGO_ENABLED=0 makes the binary run anywhere
+  compatible, but the SYSTEM also execs git, bash, ps, and repository
+  scripts and reads standard procfs — a scratch or distroless container is
+  not a supported operational target.
