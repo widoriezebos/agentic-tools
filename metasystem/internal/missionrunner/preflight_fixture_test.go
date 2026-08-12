@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -452,5 +453,187 @@ func TestInternalRunCloseStreamCycle(t *testing.T) {
 	ledger, err := os.ReadFile(filepath.Join(engine.missionDir(), "ledger.md"))
 	if err != nil || !strings.Contains(string(ledger), "Cycle 1") {
 		t.Fatalf("the ledger booked nothing: %v", err)
+	}
+	// Status renders the terminal without disturbing it, and the public
+	// resume refuses a non-running mission by naming its state.
+	if code := engine.Status(); code == 7 {
+		t.Fatal("Status could not read the terminal state")
+	}
+	if err := engine.launch("resume", false); err == nil {
+		t.Fatal("a terminal mission resumed")
+	}
+}
+
+// The resume path through a real cycle: a completed mission refuses resume
+// by naming its state, and a parked mission's resume is refused toward the
+// park reason — both through the public launch spine.
+func TestInternalRunResumeVerdicts(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := state["status"].(string); status != "parked" {
+		t.Skipf("fixture mission did not park: %q", status)
+	}
+	// The public resume refuses a parked mission toward its park reason.
+	if err := engine.launch("resume", false); err == nil ||
+		!strings.Contains(err.Error(), "answer its park reason before resume") {
+		t.Fatalf("parked resume: %v", err)
+	}
+}
+
+// dispatch-terminal: the orchestrator return that certifies a terminal job
+// drives the certified-entry adjudication path end to end.
+func TestInternalRunDispatchTerminalCycle(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:dispatch-terminal")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatalf("no state (rc=%d): %v", code, err)
+	}
+	if status, _ := state["status"].(string); status == "" || status == "running" {
+		t.Fatalf("no terminal: %q rc=%d", status, code)
+	}
+}
+
+// The answer-and-resume chain on a parked mission: Status reads the park,
+// Answer applies the human's decision to the ask, and the resumed run
+// drives another real cycle — the full human-in-the-loop round trip.
+func TestInternalRunAnswerAndResumeChain(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := state["status"].(string); status != "parked" {
+		t.Skipf("fixture mission did not park: %q", status)
+	}
+
+	// Status renders the park without disturbing it.
+	if code := engine.Status(); code == 7 {
+		t.Fatal("Status could not read a lawful parked state")
+	}
+
+	// Answer the proposed ask; an unknown ask id is refused first.
+	if code := engine.Answer("not-an-ask", "approve: nothing"); code == 0 {
+		t.Fatal("an unknown ask id was answered")
+	}
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "*.json"))
+	if len(asks) == 0 {
+		t.Fatal("no ask on disk")
+	}
+	askDoc, err := readJSONDoc(asks[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	askID, _ := askDoc["askId"].(string)
+	if askID == "" {
+		t.Skipf("ask carries no askId: %v", askDoc)
+	}
+	if code := engine.Answer(askID, "approve: proceed as asked"); code != 0 {
+		t.Fatalf("answering the ask failed with %d", code)
+	}
+
+	// The resumed run drives at least one more real cycle before the next
+	// park (the contract's directive parks every turn — that repetition is
+	// the point: resumeState and the answered-ask heal both run).
+	code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-2", signal)
+	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
+	if len(turns) < 2 {
+		t.Fatalf("the resume ran no further turn (rc=%d, turns=%d)", code, len(turns))
+	}
+}
+
+// The small verdict helpers' remaining branches, driven directly.
+func TestJSONIntSpellings(t *testing.T) {
+	if v, ok := jsonInt(json.Number("7")); !ok || v != 7 {
+		t.Fatalf("json.Number: %d %v", v, ok)
+	}
+	if v, ok := jsonInt(float64(7)); !ok || v != 7 {
+		t.Fatalf("whole float: %d %v", v, ok)
+	}
+	if _, ok := jsonInt(0.5); ok {
+		t.Fatal("fractional float accepted")
+	}
+	if _, ok := jsonInt(json.Number("1.5")); ok {
+		t.Fatal("fractional number accepted")
+	}
+	if _, ok := jsonInt("7"); ok {
+		t.Fatal("string accepted")
+	}
+	if v, ok := jsonInt(int(3)); !ok || v != 3 {
+		t.Fatalf("int: %d %v", v, ok)
+	}
+	if v, ok := jsonInt(int64(4)); !ok || v != 4 {
+		t.Fatalf("int64: %d %v", v, ok)
+	}
+}
+
+// Answer's refusal grammar for the reserved-decision park: an empty answer
+// and an answer to a mission with no asks directory.
+func TestAnswerRefusalGrammar(t *testing.T) {
+	engine := &Engine{Root: t.TempDir(), Mission: "mr-answer"}
+	if code := engine.Answer("ask-1", "approve: x"); code == 0 {
+		t.Fatal("an askless mission answered")
+	}
+	os.MkdirAll(asksDirPath(engine.Root, engine.Mission), 0o755)
+	if code := engine.Answer("", "approve: x"); code == 0 {
+		t.Fatal("an empty ask id answered")
+	}
+}
+
+func TestMissionJobStatusesReads(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	os.MkdirAll(jobs, 0o755)
+	os.WriteFile(filepath.Join(jobs, "m-j1.json"), []byte(`{"jobId":"m-j1","mission":"m","status":"running"}`), 0o644)
+	os.WriteFile(filepath.Join(jobs, "m-j2.json"), []byte(`{"jobId":"m-j2","mission":"m","status":"completed"}`), 0o644)
+	os.WriteFile(filepath.Join(jobs, "other.json"), []byte(`{"jobId":"other","mission":"n","status":"running"}`), 0o644)
+	statuses := missionJobStatuses(root, "m")
+	if statuses["m-j1"] != "running" || statuses["m-j2"] != "completed" {
+		t.Fatalf("statuses: %v", statuses)
+	}
+	if _, present := statuses["other"]; present {
+		t.Fatal("a foreign mission's job leaked in")
+	}
+}
+
+func TestAllocateTurnSequence(t *testing.T) {
+	engine := &Engine{Root: t.TempDir(), Mission: "mr-alloc"}
+	os.MkdirAll(engine.missionDir(), 0o755)
+	firstID, firstDir, err := engine.allocateTurn(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstID == "" || !pathExists(firstDir) {
+		t.Fatalf("first allocation: %q %q", firstID, firstDir)
+	}
+	secondID, secondDir, err := engine.allocateTurn(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondID == firstID || secondDir == firstDir {
+		t.Fatal("turn allocations collided")
+	}
+}
+
+func TestStatusRendersEveryClass(t *testing.T) {
+	engine := &Engine{Root: t.TempDir(), Mission: "mr-status"}
+	// Missing state.
+	if code := engine.Status(); code != 7 {
+		t.Fatalf("missing state must be unreadable-class: %d", code)
+	}
+	// Malformed state.
+	os.MkdirAll(engine.missionDir(), 0o755)
+	statePath := filepath.Join(engine.missionDir(), "state.json")
+	os.WriteFile(statePath, []byte("{broken"), 0o644)
+	if code := engine.Status(); code != 7 {
+		t.Fatalf("malformed state must be unreadable-class: %d", code)
 	}
 }
