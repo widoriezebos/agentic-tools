@@ -11,12 +11,21 @@ import (
 	"sort"
 )
 
+// mirrorSource is one file the mirror carries: its path and its relative
+// slot under the destination.
+type mirrorSource struct {
+	path     string
+	relative string
+}
+
 // Mirror copies a terminal job's durable evidence — record, log, brief,
 // round artifacts, capability snapshot — into the evidence root outside the
 // repository, maintaining a per-chain manifest of content digests. Every copy
 // is verified by digest after landing. A mirror whose manifest already covers
 // every source byte-for-byte does nothing and reports unchanged, so repeated
-// reaps of a settled chain cost only reads.
+// reaps of a settled chain cost only reads. Four named steps (Phase 3c):
+// gather the sources, judge unchanged against the manifest, land and verify
+// the copies, report.
 func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error {
 	evidenceResolved := resolvePath(evidence)
 	checkoutResolved := resolvePath(checkout)
@@ -28,10 +37,6 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	record, err := readObject(recordPath)
 	if err != nil {
 		return fmt.Errorf("cannot read the job record: %v", err)
-	}
-	round, ok := numString(record["round"])
-	if !ok {
-		return fmt.Errorf("job record has no numeric round")
 	}
 	payload := filepath.Join(agents, rootJob)
 
@@ -54,17 +59,55 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	}
 	manifestPath := filepath.Join(destination, "manifest.json")
 
-	type source struct {
-		path     string
-		relative string
+	sources, err := mirrorSources(agents, payload, repoRoot, recordPath, job, record)
+	if err != nil {
+		return err
 	}
-	sources := []source{{recordPath, filepath.Join("jobs", job+".json")}}
+	old := map[string]any{}
+	manifestExisted := fileExists(manifestPath)
+	if manifestExisted {
+		if manifest, err := readObject(manifestPath); err == nil {
+			if files, ok := manifest["files"].(map[string]any); ok {
+				old = files
+			}
+		}
+	}
+	unchanged := mirrorUnchanged(sources, old, destination, recordPath)
+
+	var manifestHash string
+	if unchanged && manifestExisted {
+		if manifestHash, err = sha256File(manifestPath); err != nil {
+			return err
+		}
+	} else {
+		if manifestHash, err = mirrorLand(sources, old, destination, recordPath, manifestPath, rootJob); err != nil {
+			return err
+		}
+	}
+
+	return writeCompactJSON(resultPath, map[string]any{
+		"path":       destination,
+		"manifest":   manifestHash,
+		"unchanged":  unchanged && manifestExisted,
+		"mirroredAt": nowISO(),
+	})
+}
+
+// mirrorSources gathers what this job's mirror carries: the record, its
+// log, the chain brief on round one, the round's artifacts in sorted
+// order, and the capability snapshot when present.
+func mirrorSources(agents, payload, repoRoot, recordPath, job string, record map[string]any) ([]mirrorSource, error) {
+	round, ok := numString(record["round"])
+	if !ok {
+		return nil, fmt.Errorf("job record has no numeric round")
+	}
+	sources := []mirrorSource{{recordPath, filepath.Join("jobs", job+".json")}}
 	log := filepath.Join(agents, "jobs", job+".log")
 	if fileExists(log) {
-		sources = append(sources, source{log, filepath.Join("jobs", job+".log")})
+		sources = append(sources, mirrorSource{log, filepath.Join("jobs", job+".log")})
 	}
 	if roundValue, ok := numFloat(record["round"]); ok && roundValue == 1 && fileExists(filepath.Join(payload, "brief.md")) {
-		sources = append(sources, source{filepath.Join(payload, "brief.md"), "brief.md"})
+		sources = append(sources, mirrorSource{filepath.Join(payload, "brief.md"), "brief.md"})
 	}
 	roundDir := filepath.Join(payload, "rounds", round)
 	var roundFiles []string
@@ -80,122 +123,99 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 		if err != nil {
 			continue
 		}
-		sources = append(sources, source{path, filepath.Join("rounds", round, relative)})
+		sources = append(sources, mirrorSource{path, filepath.Join("rounds", round, relative)})
 	}
 	snapshotField, ok := record["capabilitySnapshot"].(string)
 	if !ok {
-		return fmt.Errorf("job record has no capability snapshot path")
+		return nil, fmt.Errorf("job record has no capability snapshot path")
 	}
 	snapshot := filepath.Join(repoRoot, snapshotField)
 	if fileExists(snapshot) {
-		sources = append(sources, source{snapshot, filepath.Join("capabilities", filepath.Base(snapshot))})
+		sources = append(sources, mirrorSource{snapshot, filepath.Join("capabilities", filepath.Base(snapshot))})
 	}
+	return sources, nil
+}
 
-	old := map[string]any{}
-	manifestExisted := fileExists(manifestPath)
-	if manifestExisted {
-		if manifest, err := readObject(manifestPath); err == nil {
-			if files, ok := manifest["files"].(map[string]any); ok {
-				old = files
-			}
-		}
-	}
-
-	// Unchanged means every source is already mirrored byte-for-byte AND the
-	// manifest's digests still match what sits at the destination. The record
-	// compares by its semantic hash — the record content with its own mirror
-	// field blanked — because mirroring stamps the record afterwards and that
-	// stamp must not read as drift.
-	unchanged := true
+// mirrorUnchanged reports whether every source is already mirrored
+// byte-for-byte AND the manifest's digests still match the destination.
+// The record compares by its semantic hash — the record content with its
+// own mirror field blanked — because mirroring stamps the record
+// afterwards and that stamp must not read as drift.
+func mirrorUnchanged(sources []mirrorSource, old map[string]any, destination, recordPath string) bool {
 	for _, item := range sources {
 		entry, ok := old[item.relative].(map[string]any)
 		target := filepath.Join(destination, item.relative)
 		if !ok || !fileExists(target) {
-			unchanged = false
-			break
+			return false
 		}
 		targetDigest, err := sha256File(target)
 		if err != nil || targetDigest != asString(entry["sha256"]) {
-			unchanged = false
-			break
+			return false
 		}
 		if item.path == recordPath {
 			semantic, err := semanticRecordHash(item.path)
 			if err != nil || asString(entry["sourceStateHash"]) != semantic {
-				unchanged = false
-				break
+				return false
 			}
 		} else {
 			sourceDigest, err := sha256File(item.path)
 			if err != nil || sourceDigest != asString(entry["sha256"]) {
-				unchanged = false
-				break
+				return false
 			}
 		}
 	}
+	return true
+}
 
-	var manifestHash string
-	if unchanged && manifestExisted {
-		if manifestHash, err = sha256File(manifestPath); err != nil {
-			return err
-		}
-	} else {
-		files := map[string]any{}
-		for name, entry := range old {
-			files[name] = entry
-		}
-		for _, item := range sources {
-			target := filepath.Join(destination, item.relative)
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			if err := copyFileAtomic(item.path, target); err != nil {
-				return err
-			}
-			sourceDigest, err := sha256File(item.path)
-			if err != nil {
-				return err
-			}
-			targetDigest, err := sha256File(target)
-			if err != nil {
-				return err
-			}
-			if sourceDigest != targetDigest {
-				return fmt.Errorf("mirror verification failed for %s", item.relative)
-			}
-			info, err := os.Stat(target)
-			if err != nil {
-				return err
-			}
-			entry := map[string]any{"sha256": targetDigest, "bytes": info.Size()}
-			if item.path == recordPath {
-				semantic, err := semanticRecordHash(item.path)
-				if err != nil {
-					return err
-				}
-				entry["sourceStateHash"] = semantic
-			}
-			files[item.relative] = entry
-		}
-		manifest := map[string]any{
-			"rootJob":   rootJob,
-			"files":     files,
-			"updatedAt": nowISO(),
-		}
-		if err := writeRecord(manifestPath, manifest); err != nil {
-			return err
-		}
-		if manifestHash, err = sha256File(manifestPath); err != nil {
-			return err
-		}
+// mirrorLand copies every source into place, verifies each landing by
+// digest, and writes the refreshed manifest, returning the manifest hash.
+func mirrorLand(sources []mirrorSource, old map[string]any, destination, recordPath, manifestPath, rootJob string) (string, error) {
+	files := map[string]any{}
+	for name, entry := range old {
+		files[name] = entry
 	}
-
-	return writeCompactJSON(resultPath, map[string]any{
-		"path":       destination,
-		"manifest":   manifestHash,
-		"unchanged":  unchanged && manifestExisted,
-		"mirroredAt": nowISO(),
-	})
+	for _, item := range sources {
+		target := filepath.Join(destination, item.relative)
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return "", err
+		}
+		if err := copyFileAtomic(item.path, target); err != nil {
+			return "", err
+		}
+		sourceDigest, err := sha256File(item.path)
+		if err != nil {
+			return "", err
+		}
+		targetDigest, err := sha256File(target)
+		if err != nil {
+			return "", err
+		}
+		if sourceDigest != targetDigest {
+			return "", fmt.Errorf("mirror verification failed for %s", item.relative)
+		}
+		info, err := os.Stat(target)
+		if err != nil {
+			return "", err
+		}
+		entry := map[string]any{"sha256": targetDigest, "bytes": info.Size()}
+		if item.path == recordPath {
+			semantic, err := semanticRecordHash(item.path)
+			if err != nil {
+				return "", err
+			}
+			entry["sourceStateHash"] = semantic
+		}
+		files[item.relative] = entry
+	}
+	manifest := map[string]any{
+		"rootJob":   rootJob,
+		"files":     files,
+		"updatedAt": nowISO(),
+	}
+	if err := writeRecord(manifestPath, manifest); err != nil {
+		return "", err
+	}
+	return sha256File(manifestPath)
 }
 
 // semanticRecordHash digests a job record with its mirror field blanked: the
