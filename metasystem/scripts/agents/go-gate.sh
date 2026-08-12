@@ -90,12 +90,13 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... \
 coverage_log=$(mktemp)
 go test -race -cover ./internal/... | tee "$coverage_log" || { rm -f "$coverage_log"; echo "go gate: unit tests failed" >&2; exit 1; }
 
-# Build the binary the shell fixtures and wrappers exec, stamped with its
-# source commit so its artifacts self-attest (GO-MIG-R4-009).
+# Build the binary the shell fixtures and wrappers exec, through the one
+# shared fenced build (go-production-grade Phase 0a): stamped with its
+# source commit so its artifacts self-attest (GO-MIG-R4-009), CGO pinned
+# off. This gate run already holds the fence; the build's own consult is
+# exempt inside this process chain.
 commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)
-mkdir -p bin
-go build -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=$commit" \
-  -o bin/metasystem ./cmd/metasystem \
+bash scripts/agents/go-build.sh \
   || { rm -f "$coverage_log"; echo "go gate: build failed" >&2; exit 1; }
 
 # The freshly built binary judges the coverage ratchet, joined against an

@@ -87,6 +87,13 @@ if [[ "$runtimes" != none ]]; then
     || die 2 "--runtimes contains a duplicate runtime"
 fi
 
+# The Go toolchain is an adoption prerequisite (go-production-grade Phase
+# 0a): the engine is always rebuilt from source, never copied on trust, so
+# a Go-less machine must refuse HERE — before any target mutation — not
+# fail halfway through with the payload already installed.
+command -v go >/dev/null 2>&1 \
+  || die 1 "adoption requires the Go toolchain: the engine is always rebuilt from the template source; install Go and re-run"
+
 mkdir -p "$target"
 target=$(cd "$target" && pwd -P)
 
@@ -232,14 +239,12 @@ done
 
 # Adoption ships the engine: the harness scripts decide nothing without the
 # metasystem binary, so a target without it would be armed but inert. The
-# binary is built in the template (it has the module root) and copied in;
-# bin/ stays gitignored in the target through the merged ignore rules.
-if [[ ! -x "$root/bin/metasystem" ]]; then
-  command -v go >/dev/null 2>&1 \
-    || die 1 "the metasystem engine is not built and go is unavailable; run scripts/agents/go-gate.sh in the template first"
-  (cd "$root" && go build -o bin/metasystem ./cmd/metasystem) \
-    || die 1 "could not build the metasystem engine for adoption"
-fi
+# engine is ALWAYS rebuilt from the template source through the shared
+# fenced build (go-production-grade Phase 0a) — a pre-existing bin/ may be
+# stale, foreign, or unstamped, and no verb can prove freshness against a
+# dirty tree, so nothing that already exists is ever copied on trust.
+bash "$root/scripts/agents/go-build.sh" \
+  || die 1 "could not build the metasystem engine for adoption"
 mkdir -p "$target/bin"
 cp "$root/bin/metasystem" "$target/bin/metasystem"
 chmod +x "$target/bin/metasystem"
