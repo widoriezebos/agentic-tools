@@ -17,8 +17,6 @@ the design wanted them. Consequences, concretely:
 
 - The mission domain is split across EIGHT families (mission-state,
   -fence, -contract, -prompt, -runner, -turn, -jobs, -ledger).
-- dispatch.sh sequences ~24 micro-verbs; the job lifecycle's
-  invariants live in bash call ordering, in neither language.
 - adapter (34 verbs) and host (8) carry near-duplicates
   (devin-config, devin-usage, fake-return appear in both).
 - Scripts were demoted to shims carrying no logic, while their usage
@@ -51,13 +49,20 @@ unification (r4): the three reap paths stay where they are, each
 already consulting Go decision fragments; what remains from the
 analysis is one real DEFECT and two DOCUMENTED invariants.
 
-- The defect (r2/GSC-R1-009, kept): the supervise reaper applies its
-  verdict by whole-record overwrite without the record lock or a
-  status comparison, so a completion landing after its read can be
-  clobbered by a stale failed or timeout copy. Fix: it applies through
-  the locked compare-and-swap owner with an expected status, with a
-  regression test for the completion-after-read race. Standalone,
-  small, the program's one behavior change.
+- KNOWN DEFECTS, recorded and handed to the human rather than fixed
+  here (r5 severance): round 2 found the supervise reaper applies
+  verdicts by whole-record overwrite without the record lock, so a
+  completion landing after its read can be clobbered (GSC-R1-009);
+  round 5 found the deeper sibling — the same no-kill reaper stamps
+  timeout AND a group-death timestamp on a LIVE over-budget process
+  it neither stopped nor proved dead, and its unit test asserts
+  exactly that (GSC-R1-027). Rounds 4-5 proved a repair is not small:
+  routing it through the record CAS owner changes endedAt semantics
+  downstream (GSC-R1-031), crosses an import boundary
+  (GSC-R1-030), and the real question — does the standing reaper get
+  kill authority, or must it stop stamping death it cannot prove — is
+  a supervision-lifecycle design decision that belongs to the human.
+  This program makes ZERO behavior changes.
 - The invariants (documented in place, not coarsened): the
   reservation pair's two-phase ordering (record-create before
   shell-owned setup; observable pending-setup feeds the cleanup trap)
@@ -72,6 +77,15 @@ analysis is one real DEFECT and two DOCUMENTED invariants.
   its invariant documented (r4/GSC-R1-024 withdrew the step-4
   coarsening: three lines of shell carrying a documented rule beat an
   eleventh validate verb).
+
+Consequence, stated plainly so the program cannot fail its own
+definition (r5/GSC-R1-028): after the severances, the surviving
+shell-owned orderings are ACCEPTED plumbing under the human's ruling —
+custody interleaves them, so shell is where they belong. This
+program's goals are deletion and coherence, and it claims nothing
+else. "Unimporting the shell's architecture" means the CLI stops
+mirroring historical shell decomposition; it does not mean shell owns
+no ordering.
 
 ## Target tree (human-approved 2026-08-12; amended by rounds 1-2)
 
@@ -88,7 +102,7 @@ inversion (the reap verdict), not by relabeling.
 
 | target | absorbs | notes |
 | --- | --- | --- |
-| `job` | dispatch (24), capability (1), authority (1), schema (1) | The delegate-job domain, regrouped per the appendix. The reservation protocol stays TWO-PHASE (r1/GSC-R1-002); no verb coarsening — the reap-verdict unification was severed in round 4 (see above). The supervise reaper CAS defect fix (r2/GSC-R1-009) lands with this step. |
+| `job` | dispatch (24), capability (1), authority (1), schema (1) | The delegate-job domain, regrouped per the appendix — a purely mechanical rename step (r5/GSC-R1-033: one reviewable intent per commit; no behavior change rides along). The reservation protocol stays TWO-PHASE (r1/GSC-R1-002). |
 | `mission` | mission-state, -fence, -contract, -prompt, -runner, -turn, -ledger (7 families, 28 verbs) | Regrouping with the EXHAUSTIVE collision-resolving verb map in the appendix (r1/GSC-R1-003, r2/GSC-R1-011) — all 28, no illustrative subsets. evidence stays its own family (r2/GSC-R1-012: the collector is repository-wide custody that merely protects mission state; `mission gc` would misname its scope). |
 | `adapter` | unchanged (34 minus census deletions) | Custody-boundary fragments per runtime; scripts keep launch/wait/signal custody. |
 | `host` | unchanged (8) | Same boundary, mission-host side. |
@@ -111,9 +125,9 @@ family registers — an alias whose target is unregistered is a router
 error if exercised, and a step-1 test asserts the table matches the
 appendix row-for-row. Step 2 activates the mission entries in the
 commit that registers the mission family, step 3 the job entries,
-step 4 the proc entries. reap-facts aliases to job reap-facts when
-the job family lands and retires only when reap-verdict replaces its
-callers within step 3. Alias deletion has a mechanical completion
+step 4 the proc entries. reap-facts renames to job reap-facts like
+every other row — no special case survives the round-4 severance
+(r5/GSC-R1-029). Alias deletion has a mechanical completion
 condition (r1/GSC-R1-005): step 5 sweeps the tree for remaining
 old-name invocations, updates them (bounded, this repository only —
 adopted repositories call scripts by path, never verbs, so no
@@ -132,8 +146,12 @@ retired.
    zero-caller candidate additionally needs a loose per-verb grep
    (wrapper functions like mission_fence hide the family word), an
    implementation trace (does any Go path call the backing function),
-   and a docs check for human entry points. Tests never keep a verb
-   alive; tests of deleted code are adapted to the surviving internal
+   and a docs check for human entry points. Go unit tests never keep a verb
+   alive, but FIXTURE SEQUENCERS DO (r5/GSC-R1-032): the *-fixtures.sh
+   drivers and validate-metasystem.sh are the production validation
+   suite, so census run and signature-check — called only from
+   fixtures — are live and map into proc like everything else. Tests
+   of genuinely deleted code are adapted to the surviving internal
    path or deleted with it. The deadcode analyzer runs after each
    deletion slice and its verdicts get the same manual verification.
    First-slice results: census classify and authentication-identity,
@@ -165,9 +183,9 @@ call sites updated in the same commit.
    appendix, tested row-for-row against it (r3/GSC-R1-016).
 2. mission-* merge per the appendix map; its aliases activate in the
    same commit (mechanical; largest coherence gain per hour).
-3. job-family regrouping per the appendix; the supervise reaper CAS
-   defect fix with its completion-after-read regression test
-   (r2/GSC-R1-009). No reap unification (severed, round 4).
+3. job-family regrouping per the appendix — mechanical rename only
+   (r5/GSC-R1-033). No reap unification (severed, round 4); the
+   recorded defect pair stays with the human (r5/GSC-R1-027).
 4. proc regrouping and supervise fingerprint per the appendix; the
    two kept invariants get their call-site documentation.
 5. Registry deletion; old-name sweep to zero by the census rules;
@@ -259,7 +277,7 @@ prefixes resolve.
 | dispatch chain-usage | job chain-usage |
 | dispatch custody-add | job custody-add |
 | dispatch handshake-eval | job handshake-eval |
-| dispatch reap-facts | job reap-facts (retires into job reap-verdict within step 3) |
+| dispatch reap-facts | job reap-facts |
 | dispatch census-fresh | job census-fresh |
 | dispatch watcher-ceiling | job watcher-ceiling |
 | dispatch expand-permissions | job expand-permissions |
@@ -275,5 +293,6 @@ prefixes resolve.
 | authority check | job authority-check |
 | schema materialize | job schema-materialize |
 
-`job reap-verdict` is new (step 3); reap-facts keeps an executable
-alias until reap-verdict replaces its callers inside step 3.
+No new verbs anywhere in this map: every row is a rename
+(r5/GSC-R1-029; the reap-verdict remnant rows died with the round-4
+severance).
