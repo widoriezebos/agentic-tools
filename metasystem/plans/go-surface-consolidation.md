@@ -3,7 +3,7 @@
 Working Mode: design
 Mission Stream: kill-shell
 
-Status: ACCEPTED 2026-08-12 after seven critique rounds (44 findings,
+Status: COMPLETE 2026-08-12 — all five steps landed and the suite is green at 50962ab (census slice c72f662, mission merge 75d7397, job family 40e70c1, proc family e6f4910, registry deletion 01868b4, alias-straggler and stub fixes 40211c7/50962ab). Originally ACCEPTED the same day after seven critique rounds (44 findings,
 dispositions r1-r7 beside this file); the target tree carries the
 human's sign-off. The loop CLOSED under the sharpened stop criterion
 the human set after round 7: a critique round is justified only while
