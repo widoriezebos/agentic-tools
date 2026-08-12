@@ -249,13 +249,27 @@ func TestAuditEdgeBranches(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "skills", ".git"), 0o755)
 	os.WriteFile(filepath.Join(root, "skills", ".git", "config"), []byte("/Users/x\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "skills", "ok.md"), []byte("fine\n"), 0o644)
+	// An absent scan root is legitimate and stays skippable; .git content
+	// is pruned. Both must scan clean.
+	hits, err := auditScanFiles(root, []string{"skills", "absent-root"}, auditOutsideRe)
+	if err != nil || len(hits) != 0 {
+		t.Fatalf(".git content or an absent root disturbed the scan: %v %v", hits, err)
+	}
+	// B7: a policy file that EXISTS but cannot be read must REFUSE the
+	// audit. Reporting clean over a file it could not open is the fail-open
+	// hole this replaces — the forbidden reference inside it would pass.
 	unreadable := filepath.Join(root, "skills", "sealed.md")
 	os.WriteFile(unreadable, []byte("/Users/secret\n"), 0o644)
 	os.Chmod(unreadable, 0o000)
 	defer os.Chmod(unreadable, 0o644)
-	hits, err := auditScanFiles(root, []string{"skills", "absent-root"}, auditOutsideRe)
-	if err != nil || len(hits) != 0 {
-		t.Fatalf(".git or unreadable files leaked into the scan: %v %v", hits, err)
+	if os.Geteuid() != 0 {
+		hits, err = auditScanFiles(root, []string{"skills"}, auditOutsideRe)
+		if err == nil {
+			t.Fatalf("an unreadable policy file scanned clean (fail-open): hits=%v", hits)
+		}
+		if !strings.Contains(err.Error(), "cannot read") {
+			t.Fatalf("refusal does not name the cause: %v", err)
+		}
 	}
 	found, err := auditFindNamed(root, []string{"skills", "gone"}, map[string]bool{"ok.md": true}, false)
 	if err != nil || len(found) != 1 {

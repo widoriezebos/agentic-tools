@@ -184,13 +184,28 @@ func auditScanFiles(root string, paths []string, pattern *regexp.Regexp) ([]stri
 		full := filepath.Join(root, rel)
 		info, err := os.Stat(full)
 		if err != nil {
-			continue
+			// An absent scan root is legitimate — not every repository
+			// carries every optional tree. Anything else (a permission
+			// denial, an I/O error) means the audit cannot see a file it
+			// is supposed to police, and an audit that cannot read its
+			// subject must refuse rather than report clean
+			// (go-production-grade B7).
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("audit cannot stat scan root %s: %w", rel, err)
 		}
 		var files []string
 		if info.IsDir() {
 			err := filepath.WalkDir(full, func(path string, entry fs.DirEntry, err error) error {
 				if err != nil {
-					return nil // a vanished lock directory must not kill the walk
+					// A runtime path that vanished mid-walk (a lock
+					// directory, a temp file) is not a policy failure; any
+					// other walk error is (B7).
+					if os.IsNotExist(err) {
+						return nil
+					}
+					return fmt.Errorf("audit cannot walk %s: %w", path, err)
 				}
 				if entry.IsDir() {
 					if entry.Name() == ".git" {
@@ -209,7 +224,14 @@ func auditScanFiles(root string, paths []string, pattern *regexp.Regexp) ([]stri
 		}
 		for _, file := range files {
 			data, err := os.ReadFile(file)
-			if err != nil || !isTextLike(data) {
+			if err != nil {
+				// Same rule as the walk: gone is fine, unreadable is not.
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, fmt.Errorf("audit cannot read %s: %w", file, err)
+			}
+			if !isTextLike(data) {
 				continue
 			}
 			relFile, _ := filepath.Rel(root, file)
