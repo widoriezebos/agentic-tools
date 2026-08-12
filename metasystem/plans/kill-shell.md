@@ -2,8 +2,12 @@
 
 Working Mode: design
 
-Owner: main session (claude). Status: IN CRITIQUE — round 1 folded
-(plans/dispositions/kill-shell-r1.md, 9/9 accepted). Facts:
+Owner: main session (claude). Status: ACCEPTED 2026-08-12 — round
+35 returned zero material findings
+(plans/dispositions/kill-shell-r35.md); 110 findings over 35 rounds,
+all adjudicated. This document is the implementation authority. One
+decision remains the human's: adopted-engine delivery (the round-10
+severance). Facts:
 plans/kill-shell-facts.md (cited as F Qn.m); each phase re-runs its
 fact section before design (the moving-target rule, and r1/KS-R1-002
 proved why: the sheet was already stale on lock ownership). Human ruling
