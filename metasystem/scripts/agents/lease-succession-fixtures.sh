@@ -115,7 +115,7 @@ PY
 # turns go back to taking the lease from each other and this whole fix is
 # inert. The launcher lives in the engine now; pin it at its Go source when
 # that is present (adopted repositories carry only the built binary).
-if [[ -f "$root/go.mod" ]]; then
+if grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root/go.mod"; then
   grep -Fq '"METASYSTEM_OWNER_LINEAGE="+MissionLineage(e.Mission)' \
     "$root/internal/missionrunner/host.go" || {
     echo "lease succession fixture failed: the host launcher no longer exports the mission lineage" >&2

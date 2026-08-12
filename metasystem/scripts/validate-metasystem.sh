@@ -70,6 +70,10 @@ gate_run_marker=$(bin/metasystem gate register --root "$root" \
 # delegate scope.
 metasystem_go_source=0
 grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod && metasystem_go_source=1
+if (( ! metasystem_go_source )) && [[ -f cmd/metasystem/main.go ]]; then
+  echo "metasystem Go source present but go.mod does not declare the metasystem module — damaged template" >&2
+  exit 1
+fi
 if (( ! delegate_scope )) && (( metasystem_go_source )); then
   bash scripts/agents/go-gate.sh
   # The engine-seam tripwire and the Go-vs-python census conformance

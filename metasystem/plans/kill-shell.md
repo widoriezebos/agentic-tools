@@ -115,8 +115,13 @@ Phase 0 and as a standing rule inside every later phase:
   metasystem's OWN module path in go.mod, exact match, because
   adopted targets may be ordinary Go repositories with modules of
   their own (r6/KS-R6-001 as corrected by r8/KS-R8-001) — the same
-  identity rule now governs go-gate.sh and the suite's Go sections,
-  fixed in shipped code during round 12 (r12/KS-R12-001): the named
+  identity rule now governs go-gate.sh, the suite's Go sections, and
+  the lease-succession fixture, fixed in shipped code during rounds
+  12-13; the discriminator is THREE-STATE — metasystem module runs,
+  absent source skips, source without the module line fails loudly
+  as a damaged template, so a broken module declaration can never
+  validate green with zero Go checks (r12/KS-R12-001,
+  r13/KS-R13-001, r13/KS-R13-002): the named
   governing plan must exist, the package must exist, and an
   unreachable package without an entry fails (r7/KS-R7-002) —
   package grain is the enforcement boundary, while function-grain

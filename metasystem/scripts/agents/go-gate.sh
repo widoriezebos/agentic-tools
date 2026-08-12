@@ -16,6 +16,13 @@ cd "$root"
 # repository with a module of its own, and running the template's Go
 # checks against a foreign module would fail its required validation.
 if ! grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root/go.mod"; then
+  # Three states, not two: Go SOURCE present without the metasystem module
+  # line is a damaged template, and skipping would validate green with zero
+  # Go checks — fail loudly instead.
+  if [[ -f "$root/cmd/metasystem/main.go" ]]; then
+    echo "go gate: metasystem Go source present but go.mod does not declare the metasystem module — damaged template, refusing to skip" >&2
+    exit 1
+  fi
   echo "go gate: not the metasystem source tree (adopted checkouts carry only the engine binary); skipped" >&2
   exit 0
 fi
