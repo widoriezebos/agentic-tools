@@ -1,0 +1,32 @@
+{
+  "exempt": {
+    "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures"
+  },
+  "floors": {
+    "internal/adapter": 85.9,
+    "internal/audit": 93.3,
+    "internal/authority": 95.0,
+    "internal/capability": 73.5,
+    "internal/census": 73.7,
+    "internal/config": 82.3,
+    "internal/dispatch": 66.8,
+    "internal/events": 80.2,
+    "internal/evidence": 80.5,
+    "internal/gaterun": 89.6,
+    "internal/hooks": 86.4,
+    "internal/host": 79.4,
+    "internal/identity": 89.3,
+    "internal/janitor": 93.8,
+    "internal/lease": 78.0,
+    "internal/lock": 85.8,
+    "internal/mission": 69.9,
+    "internal/missionrunner": 57.6,
+    "internal/receipt": 93.9,
+    "internal/registry": 89.9,
+    "internal/report": 85.2,
+    "internal/returnschema": 76.3,
+    "internal/supervise": 85.5,
+    "internal/validate": 69.4
+  },
+  "note": "Per-package coverage floors measured on LINUX (Debian 12 arm64, the verified host), seeded 2026-08-12 by the go-production-grade Phase 0c two-pass bootstrap: pass one ran the full gate with METASYSTEM_COVERAGE_RATCHET_SEED=1 (every check enforced except this join) and these values come from that green run; pass two re-runs the enforcing gate as the acceptance run. Floors only rise between re-seeds; a package split, rename, or composition change re-seeds the affected entries at their measured post-change values in the same commit with the rationale in that commit's message. Darwin floors live in coverage-ratchet.json \u2014 identity differs most (89.3 linux vs 68.1 darwin: each platform's prober file is dead code to the other)."
+}
