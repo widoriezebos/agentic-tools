@@ -161,37 +161,74 @@ func (e *Engine) notifyStarted(startSignal, turnID string, notified *bool) error
 	return nil
 }
 
+// A host turn in three named steps (Phase 3b): assemble the adapter
+// command, spawn and verify the start handshake, then supervise to exit
+// under the turn cap and record what came back. hostLaunch is the shared
+// context; launchHost is only the sequence.
+type hostLaunch struct {
+	turnID, turnDir string
+	turn            map[string]any
+	leasePath       string
+	startSignal     string
+	notified        *bool
+
+	runtime, tag         string
+	resultPath, turnPath string
+	hostGate             string
+	fakeRuntime          bool
+	grace                int
+	command              *exec.Cmd
+	process              *hostProcess
+	pid                  int
+}
+
 // launchHost runs one host turn end to end and reports the adapter's exit
 // code, the parsed host result (nil when unusable), and a launch detail for
 // the turn log. A returned error is a runner defect, not a failed turn.
 func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePath, startSignal string, notified *bool) (int, map[string]any, string, error) {
-	runtime, _ := turn["runtime"].(string)
-	adapter := filepath.Join(e.Root, "scripts", "agents", "hosts", runtime+".sh")
-	if info, err := os.Stat(adapter); err != nil || !info.Mode().IsRegular() || unix.Access(adapter, unix.X_OK) != nil {
-		return 0, nil, "", failf(3, "host adapter is not installed or executable: %s", adapter)
+	l := &hostLaunch{turnID: turnID, turnDir: turnDir, turn: turn,
+		leasePath: leasePath, startSignal: startSignal, notified: notified}
+	if err := e.assembleHostCommand(l); err != nil {
+		return 0, nil, "", err
 	}
-	prompt := filepath.Join(turnDir, "prompt.md")
-	resultPath := filepath.Join(turnDir, "result.json")
-	hostGate := filepath.Join(turnDir, "host.start")
-	tag := "metasystem-host-" + turnID
+	if code, detail, done, err := e.spawnAndVerifyHost(l); err != nil || done {
+		return code, nil, detail, err
+	}
+	return e.superviseHostToExit(l)
+}
+
+// assembleHostCommand resolves the adapter, builds its argument list and
+// environment, and opens the host log; nothing has started yet.
+func (e *Engine) assembleHostCommand(l *hostLaunch) error {
+	l.runtime, _ = l.turn["runtime"].(string)
+	adapter := filepath.Join(e.Root, "scripts", "agents", "hosts", l.runtime+".sh")
+	if info, err := os.Stat(adapter); err != nil || !info.Mode().IsRegular() || unix.Access(adapter, unix.X_OK) != nil {
+		return failf(3, "host adapter is not installed or executable: %s", adapter)
+	}
+	prompt := filepath.Join(l.turnDir, "prompt.md")
+	l.resultPath = filepath.Join(l.turnDir, "result.json")
+	l.turnPath = filepath.Join(l.turnDir, "turn.json")
+	l.hostGate = filepath.Join(l.turnDir, "host.start")
+	l.tag = "metasystem-host-" + l.turnID
+	l.fakeRuntime = l.runtime == "fake"
 	args := []string{
 		"start-turn",
 		"--mission", e.Mission,
-		"--turn-id", turnID,
+		"--turn-id", l.turnID,
 		"--prompt", prompt,
-		"--result", resultPath,
-		"--instance-tag", tag,
+		"--result", l.resultPath,
+		"--instance-tag", l.tag,
 	}
-	if session, ok := turn["hostSession"].(string); ok {
+	if session, ok := l.turn["hostSession"].(string); ok {
 		args = append(args, "--resume-session", session)
 	}
 	gateTimeout, err := ScaledSeconds(10)
 	if err != nil {
-		return 0, nil, "", err
+		return err
 	}
 	command := exec.Command(adapter, args...)
 	command.Dir = e.Root
-	command.Env = append(gitAuthorEnvironment(turnID),
+	command.Env = append(gitAuthorEnvironment(l.turnID),
 		"METASYSTEM_MISSION_ID="+e.Mission,
 		// Every TURN launches a fresh host process, which arms in the target
 		// and becomes the lease holder under its own per-process mainId.
@@ -201,35 +238,50 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 		// The host's arming inherits this, so every turn of one mission is
 		// the same logical writer and succession renews instead.
 		"METASYSTEM_OWNER_LINEAGE="+MissionLineage(e.Mission),
-		"METASYSTEM_MISSION_LEASE="+leasePath,
-		"METASYSTEM_MISSION_TURN="+turnID,
-		"METASYSTEM_HOST_START_GATE="+hostGate,
+		"METASYSTEM_MISSION_LEASE="+l.leasePath,
+		"METASYSTEM_MISSION_TURN="+l.turnID,
+		"METASYSTEM_HOST_START_GATE="+l.hostGate,
 		"METASYSTEM_HOST_START_GATE_TIMEOUT_SEC="+strconv.Itoa(gateTimeout),
 	)
-	hostLog, err := os.OpenFile(filepath.Join(turnDir, "host.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	hostLog, err := os.OpenFile(filepath.Join(l.turnDir, "host.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
-		return 0, nil, "", err
+		return err
 	}
-	defer hostLog.Close()
 	command.Stdout = hostLog
 	command.Stderr = hostLog
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	process, err := startProcess(command)
-	if err != nil {
-		return 0, nil, "", err
-	}
-	pid := command.Process.Pid
+	l.command = command
+	return nil
+}
 
+// spawnAndVerifyHost starts the adapter and holds it to the start
+// handshake: the host must lead its own group and carry the minted tag
+// within the grace window, or the start is wound down as unverified. On a
+// verified start the turn record goes running, the start gate opens, and
+// the start signal fires. done=true means the turn already settled
+// (start-unverified) and carries its exit code and detail.
+func (e *Engine) spawnAndVerifyHost(l *hostLaunch) (code int, detail string, done bool, err error) {
+	defer func() {
+		if closer, ok := l.command.Stdout.(*os.File); ok && (done || err != nil) {
+			closer.Close()
+		}
+	}()
 	grace, err := ScaledSeconds(5)
 	if err != nil {
-		return 0, nil, "", err
+		return 0, "", false, err
 	}
+	l.grace = grace
 	handshakePoll, err := Interval("METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS", 20)
 	if err != nil {
-		return 0, nil, "", err
+		return 0, "", false, err
 	}
-	fakeRuntime := runtime == "fake"
-	forceUnverified := fakeRuntime && os.Getenv("METASYSTEM_FAKE_HOST_START_UNVERIFIED") == "1"
+	process, err := startProcess(l.command)
+	if err != nil {
+		return 0, "", false, err
+	}
+	l.process = process
+	l.pid = l.command.Process.Pid
+	forceUnverified := l.fakeRuntime && os.Getenv("METASYSTEM_FAKE_HOST_START_UNVERIFIED") == "1"
 	deadline := time.Now().Add(time.Duration(grace) * time.Second)
 	var started int64
 	haveStarted := false
@@ -238,57 +290,66 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 		if process.exited() {
 			break
 		}
-		if at, err := processStartedAt(pid); err == nil {
+		if at, err := processStartedAt(l.pid); err == nil {
 			started, haveStarted = at, true
 			published := true
-			if fakeRuntime && publishFakeIdentity(pid, at, pid, tag) != nil {
+			if l.fakeRuntime && publishFakeIdentity(l.pid, at, l.pid, l.tag) != nil {
 				published = false
 			}
 			if published {
-				pgid, pgErr := unix.Getpgid(pid)
-				verified = pgErr == nil && hostStartVerified(pid, pgid, processCommand(pid, fakeRuntime), tag, forceUnverified)
+				pgid, pgErr := unix.Getpgid(l.pid)
+				verified = pgErr == nil && hostStartVerified(l.pid, pgid, processCommand(l.pid, l.fakeRuntime), l.tag, forceUnverified)
 			}
 		}
 		if verified {
 			break
 		}
-		if err := e.heartbeat(turnID); err != nil {
-			return 0, nil, "", err
+		if err := e.heartbeat(l.turnID); err != nil {
+			return 0, "", false, err
 		}
 		time.Sleep(handshakePoll)
 	}
-	turnPath := filepath.Join(turnDir, "turn.json")
 	if !verified || !haveStarted {
 		if !process.exited() {
-			if err := e.terminateGroup(pid, tag, fakeRuntime); err != nil {
-				return 0, nil, "", err
+			if err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
+				return 0, "", false, err
 			}
 		}
 		if !process.waitFor(scaledDuration(grace)) {
-			return 0, nil, "", failf(3, "host process %d did not exit during start wind-down", pid)
+			return 0, "", false, failf(3, "host process %d did not exit during start wind-down", l.pid)
 		}
-		if _, err := patchTurn(turnPath, map[string]any{
+		if _, err := patchTurn(l.turnPath, map[string]any{
 			"status": "failed", "outcome": "failed",
 			"error": "start-unverified", "detail": "start-unverified", "endedAt": nowISO(),
 		}); err != nil {
-			return 0, nil, "", err
+			return 0, "", false, err
 		}
-		return 3, nil, "start-unverified", nil
+		return 3, "start-unverified", true, nil
 	}
-	if _, err := patchTurn(turnPath, map[string]any{
-		"pid": pid, "pidStartedAt": started, "pgid": pid, "instanceTag": tag,
+	if _, err := patchTurn(l.turnPath, map[string]any{
+		"pid": l.pid, "pidStartedAt": started, "pgid": l.pid, "instanceTag": l.tag,
 		"status": "running", "outcome": "running",
 	}); err != nil {
-		return 0, nil, "", err
+		return 0, "", false, err
 	}
-	if err := atomicWriteText(hostGate, "started\n"); err != nil {
-		return 0, nil, "", err
+	if err := atomicWriteText(l.hostGate, "started\n"); err != nil {
+		return 0, "", false, err
 	}
-	if err := e.notifyStarted(startSignal, turnID, notified); err != nil {
-		return 0, nil, "", err
+	if err := e.notifyStarted(l.startSignal, l.turnID, l.notified); err != nil {
+		return 0, "", false, err
 	}
+	return 0, "", false, nil
+}
 
-	capDuration, err := turnCapFromDoc(turn)
+// superviseHostToExit heartbeats the running host under the turn cap,
+// winds the group down when the cap fires, and reads back the result.
+func (e *Engine) superviseHostToExit(l *hostLaunch) (int, map[string]any, string, error) {
+	defer func() {
+		if closer, ok := l.command.Stdout.(*os.File); ok {
+			closer.Close()
+		}
+	}()
+	capDuration, err := turnCapFromDoc(l.turn)
 	if err != nil {
 		return 0, nil, "", err
 	}
@@ -298,29 +359,29 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 	}
 	capped := false
 	capDeadline := time.Now().Add(capDuration)
-	for !process.exited() {
-		if err := e.heartbeat(turnID); err != nil {
+	for !l.process.exited() {
+		if err := e.heartbeat(l.turnID); err != nil {
 			return 0, nil, "", err
 		}
 		if !time.Now().Before(capDeadline) {
-			if err := e.terminateGroup(pid, tag, fakeRuntime); err != nil {
+			if err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
 				return 0, nil, "", err
 			}
 			capped = true
 			break
 		}
-		process.waitFor(heartbeatInterval)
+		l.process.waitFor(heartbeatInterval)
 	}
-	if !process.waitFor(scaledDuration(grace)) {
-		if err := e.terminateGroup(pid, tag, fakeRuntime); err != nil {
+	if !l.process.waitFor(scaledDuration(l.grace)) {
+		if err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
 			return 0, nil, "", err
 		}
-		if !process.waitFor(scaledDuration(grace)) {
-			return 0, nil, "", failf(3, "host process %d did not exit during wind-down", pid)
+		if !l.process.waitFor(scaledDuration(l.grace)) {
+			return 0, nil, "", failf(3, "host process %d did not exit during wind-down", l.pid)
 		}
 	}
 	if capped {
-		if _, err := patchTurn(turnPath, map[string]any{
+		if _, err := patchTurn(l.turnPath, map[string]any{
 			"status": "failed", "outcome": "capped",
 			"error": "turn-cap", "detail": "host turn reached host.turn-cap-min", "endedAt": nowISO(),
 		}); err != nil {
@@ -329,8 +390,8 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 		return 3, nil, "capped", nil
 	}
 	var result map[string]any
-	if _, err := os.Stat(resultPath); err == nil {
-		if doc, err := readDocLabeled(resultPath, "host result", 3); err == nil {
+	if _, err := os.Stat(l.resultPath); err == nil {
+		if doc, err := readDocLabeled(l.resultPath, "host result", 3); err == nil {
 			result = doc
 		}
 	}
@@ -338,7 +399,7 @@ func (e *Engine) launchHost(turnID, turnDir string, turn map[string]any, leasePa
 	if result == nil {
 		detail = "host exited without a usable result"
 	}
-	return process.exitCode(), result, detail, nil
+	return l.process.exitCode(), result, detail, nil
 }
 
 // scaledDuration renders a scaled-seconds allowance as a duration.

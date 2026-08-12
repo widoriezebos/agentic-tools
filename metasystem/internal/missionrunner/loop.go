@@ -904,41 +904,93 @@ func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]
 	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, updated)
 }
 
+// A mission cycle in five named steps (Phase 3b): reserve and build the
+// turn, gate its prompt, run the host and classify the outcome, adjudicate
+// the return, then drain, measure, and conclude. Each step either advances
+// the shared cycle context or ends the cycle with the mission's resulting
+// state; oneCycle is only the sequence.
+type cycleContext struct {
+	statePath, ledger string
+	state             map[string]any
+	leasePath         string
+	startSignal       string
+	notified          *bool
+
+	cycle         int64
+	turnID        string
+	turnDir       string
+	turnPath      string
+	values        map[string]string
+	priorFailures int
+	turn          map[string]any
+
+	exitCode     int
+	result       map[string]any
+	launchDetail string
+	verdict      *Verdict
+	verdictPath  string
+}
+
 // oneCycle drives one full mission cycle: reserve it, build and check the
 // turn, run the host, adjudicate and apply the return, measure, account, and
 // decide whether the mission continues. It returns the state the mission is
 // left in; an error is a runner defect that fails the mission.
 func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leasePath, startSignal string, notified *bool) (map[string]any, error) {
+	c := &cycleContext{statePath: statePath, ledger: ledger, state: state,
+		leasePath: leasePath, startSignal: startSignal, notified: notified}
+	for _, step := range []func(*cycleContext) (map[string]any, bool, error){
+		e.cycleReserveAndBuildTurn,
+		e.cycleGatePrompt,
+		e.cycleRunHost,
+		e.cycleAdjudicate,
+		e.cycleConclude,
+	} {
+		final, done, err := step(c)
+		if err != nil || done {
+			return final, err
+		}
+	}
+	return nil, failf(3, "cycle steps exhausted without a conclusion")
+}
+
+// cycleReserveAndBuildTurn reserves the cycle against the fences, reads the
+// contract, allocates the turn, and publishes the pending turn record.
+func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool, error) {
 	if err := mission.ReserveCycle(e.Root, e.Mission); err != nil {
-		return e.parkState(statePath, ledger, "fence", e.Mission)
+		final, ferr := e.parkState(c.statePath, c.ledger, "fence", e.Mission)
+		return final, true, ferr
 	}
 	fences, err := readDocLabeled(e.fencesPath(), "mission fence counters", 3)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	cycle, ok := jsonInt(fences["cycles"])
 	if !ok || cycle < 1 {
-		return nil, failf(3, "reserved mission cycle number is invalid")
+		return nil, true, failf(3, "reserved mission cycle number is invalid")
 	}
-	turnLog, ok := state["turnLog"].([]any)
+	c.cycle = cycle
+	turnLog, ok := c.state["turnLog"].([]any)
 	if !ok {
-		return nil, failf(3, "mission state turn log is unreadable")
+		return nil, true, failf(3, "mission state turn log is unreadable")
 	}
 	hostSession, reconciliation, priorFailures := PriorContext(turnLog)
+	c.priorFailures = priorFailures
 	_, values, _, err := e.parseContract(true)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
+	c.values = values
 	turnCapMin, err := intFromString(values["host.turn-cap-min"])
 	if err != nil {
-		return nil, failf(3, "mission contract host.turn-cap-min is invalid: %v", err)
+		return nil, true, failf(3, "mission contract host.turn-cap-min is invalid: %v", err)
 	}
 	turnID, turnDir, err := e.allocateTurn(cycle)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	turnPath := filepath.Join(turnDir, "turn.json")
-	turn := map[string]any{
+	c.turnID, c.turnDir = turnID, turnDir
+	c.turnPath = filepath.Join(turnDir, "turn.json")
+	c.turn = map[string]any{
 		"missionId": e.Mission,
 		"turnId":    turnID,
 		"cycle":     cycle,
@@ -968,34 +1020,49 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 		"rawPath":          filepath.Join(turnDir, "raw.out"),
 		"endedAt":          nil,
 	}
-	if err := atomicWriteJSON(turnPath, turn); err != nil {
-		return nil, err
+	if err := atomicWriteJSON(c.turnPath, c.turn); err != nil {
+		return nil, true, err
 	}
-	if err := mission.AssemblePrompt(e.Root, e.Mission, turnID, filepath.Join(turnDir, "prompt.md")); err != nil {
+	return nil, false, nil
+}
+
+// cycleGatePrompt assembles the turn prompt and holds it to the prompt
+// checker; a refusal parks the mission rather than burning a second cycle.
+func (e *Engine) cycleGatePrompt(c *cycleContext) (map[string]any, bool, error) {
+	if err := mission.AssemblePrompt(e.Root, e.Mission, c.turnID, filepath.Join(c.turnDir, "prompt.md")); err != nil {
 		detail := strings.TrimSpace(err.Error())
 		if detail == "" {
 			detail = "prompt assembly refused"
 		}
-		return e.failTurnBeforeLaunch(statePath, ledger, state, turnPath, detail)
+		final, ferr := e.failTurnBeforeLaunch(c.statePath, c.ledger, c.state, c.turnPath, detail)
+		return final, true, ferr
 	}
 	stdout, stderr, code := runCaptured(e.Root, nil,
 		filepath.Join(e.Root, "scripts", "assert-turn-prompt.sh"),
-		"--file", filepath.Join(turnDir, "prompt.md"), "--turn", turnDir)
+		"--file", filepath.Join(c.turnDir, "prompt.md"), "--turn", c.turnDir)
 	if code != 0 {
 		detail := firstDetail(stderr, stdout)
 		if detail == "" {
 			detail = "turn prompt checker refused launch"
 		}
-		return e.failTurnBeforeLaunch(statePath, ledger, state, turnPath, detail)
+		final, ferr := e.failTurnBeforeLaunch(c.statePath, c.ledger, c.state, c.turnPath, detail)
+		return final, true, ferr
 	}
+	return nil, false, nil
+}
 
-	e.emit("turn-launched", fmt.Sprintf("cycle %d", cycle), map[string]string{
-		"missionId": e.Mission, "turnId": turnID,
+// cycleRunHost launches the host, stamps the observed session, and settles
+// the launch-level outcomes: unverified start, unresumable session, the
+// cap, and a plain non-zero exit.
+func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
+	e.emit("turn-launched", fmt.Sprintf("cycle %d", c.cycle), map[string]string{
+		"missionId": e.Mission, "turnId": c.turnID,
 	})
-	exitCode, result, launchDetail, err := e.launchHost(turnID, turnDir, turn, leasePath, startSignal, notified)
+	exitCode, result, launchDetail, err := e.launchHost(c.turnID, c.turnDir, c.turn, c.leasePath, c.startSignal, c.notified)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
+	c.exitCode, c.result, c.launchDetail = exitCode, result, launchDetail
 	summary := fmt.Sprintf("exit %d", exitCode)
 	outcomeField := launchDetail
 	if launchDetail != "" {
@@ -1006,59 +1073,69 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 		outcomeField = fmt.Sprintf("exit-%d", exitCode)
 	}
 	e.emit("turn-result", summary, map[string]string{
-		"missionId": e.Mission, "turnId": turnID, "outcome": outcomeField,
+		"missionId": e.Mission, "turnId": c.turnID, "outcome": outcomeField,
 	})
-	if _, err := e.stampObservedSession(turnDir, result); err != nil {
-		return nil, err
+	if _, err := e.stampObservedSession(c.turnDir, result); err != nil {
+		return nil, true, err
 	}
 	if launchDetail == "start-unverified" {
-		return e.recordFailedTurn(statePath, ledger, state, turnPath, launchDetail, "failed", 2)
+		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, launchDetail, "failed", 2)
+		return final, true, ferr
 	}
 	if exitCode == 6 {
 		// The adapter's genuine fault signal: the envelope carries no session
 		// at all. Rotation no longer lands here — a rotated session is
 		// reported in the envelope and judged at adjudication.
-		if _, err := patchTurn(turnPath, map[string]any{
+		if _, err := patchTurn(c.turnPath, map[string]any{
 			"status": "failed", "outcome": "unresumable", "error": "unresumable",
 			"detail": "host session is not resumable", "endedAt": nowISO(),
 		}); err != nil {
-			return nil, err
+			return nil, true, err
 		}
-		return e.recordFailedTurn(statePath, ledger, state, turnPath, "host session is not resumable", "unresumable", priorFailures)
+		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, "host session is not resumable", "unresumable", c.priorFailures)
+		return final, true, ferr
 	}
 	if launchDetail == "capped" {
 		// The cap fired: the turn keeps outcome=capped, and the cycle still
 		// drains, measures, and concludes, so a cap that landed real work
 		// registers as the progress it made.
-		return e.concludeFaultedTurn(statePath, ledger, state, turnPath, turnDir, TurnFault{
+		final, ferr := e.concludeFaultedTurn(c.statePath, c.ledger, c.state, c.turnPath, c.turnDir, TurnFault{
 			Outcome:      "capped",
 			Detail:       "host turn reached host.turn-cap-min",
 			FeedsBreaker: true,
 			Annotations:  []string{mission.CappedAnnotation},
-		}, priorFailures+1)
+		}, c.priorFailures+1)
+		return final, true, ferr
 	}
 	if exitCode != 0 || result == nil {
 		detail := launchDetail
 		if result != nil {
 			detail = fmt.Sprintf("host exited non-zero (%d)", exitCode)
 		}
-		if _, err := patchTurn(turnPath, map[string]any{
+		if _, err := patchTurn(c.turnPath, map[string]any{
 			"status": "failed", "outcome": "failed", "error": "host-failure",
 			"detail": detail, "endedAt": nowISO(),
 		}); err != nil {
-			return nil, err
+			return nil, true, err
 		}
-		return e.recordFailedTurn(statePath, ledger, state, turnPath, detail, "failed", priorFailures+1)
+		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, detail, "failed", c.priorFailures+1)
+		return final, true, ferr
 	}
+	return nil, false, nil
+}
 
-	verdict, err := AdjudicateFiles(e.Root, e.Mission, statePath, turnPath, filepath.Join(turnDir, "result.json"), turnDir, nowISO())
+// cycleAdjudicate judges the host's return, records the verdict, and
+// publishes the proposed asks; a rejected return concludes as a faulted
+// turn that still drains and measures.
+func (e *Engine) cycleAdjudicate(c *cycleContext) (map[string]any, bool, error) {
+	verdict, err := AdjudicateFiles(e.Root, e.Mission, c.statePath, c.turnPath, filepath.Join(c.turnDir, "result.json"), c.turnDir, nowISO())
 	if err != nil {
 		detail := err.Error()
-		if _, patchErr := patchTurn(turnPath, map[string]any{
+		if _, patchErr := patchTurn(c.turnPath, map[string]any{
 			"status": "failed", "outcome": "failed", "error": "protocol-error",
-			"detail": detail, "endedAt": nowISO(), "result": result,
+			"detail": detail, "endedAt": nowISO(), "result": c.result,
 		}); patchErr != nil {
-			return nil, patchErr
+			return nil, true, patchErr
 		}
 		// A rejected return is never applied, but the cycle keeps its duties:
 		// drain, measure, conclude with both facts. Only a mismatch nobody
@@ -1068,60 +1145,68 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 		if errors.As(err, &sessionFault) && !sessionFault.Witnessed {
 			feedsBreaker = false
 		}
-		return e.concludeFaultedTurn(statePath, ledger, state, turnPath, turnDir, TurnFault{
+		final, ferr := e.concludeFaultedTurn(c.statePath, c.ledger, c.state, c.turnPath, c.turnDir, TurnFault{
 			Outcome:      "failed",
 			Detail:       detail,
 			FeedsBreaker: feedsBreaker,
 			Annotations:  []string{mission.ReturnRejectedAnnotation(detail)},
-		}, priorFailures+1)
+		}, c.priorFailures+1)
+		return final, true, ferr
 	}
+	c.verdict = verdict
 
 	// The verdict is the audit record of what this turn's return claimed and
 	// what the runner made of it; the conclusion reads it back below.
 	verdictDoc, err := docFromValue(verdict)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	verdictPath := filepath.Join(turnDir, "adjudication.json")
-	if err := atomicWriteJSON(verdictPath, verdictDoc); err != nil {
-		return nil, err
+	c.verdictPath = filepath.Join(c.turnDir, "adjudication.json")
+	if err := atomicWriteJSON(c.verdictPath, verdictDoc); err != nil {
+		return nil, true, err
 	}
 	if err := os.MkdirAll(asksDirPath(e.Root, e.Mission), 0o755); err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	if err := e.writeProposedAsks(verdict.Asks); err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	parked, err := e.drainJobs(statePath, ledger, turnID, cycle)
+	return nil, false, nil
+}
+
+// cycleConclude drains the jobs, measures, books the ledger, concludes the
+// state, patches the turn terminal, anchors, and applies the stop-loss.
+func (e *Engine) cycleConclude(c *cycleContext) (map[string]any, bool, error) {
+	parked, err := e.drainJobs(c.statePath, c.ledger, c.turnID, c.cycle)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	if parked != nil {
 		// The drain stalled: the reserved cycle never concludes here — the
 		// resume heal books it once the human answers the park.
-		return parked, nil
+		return parked, true, nil
 	}
-	classification, observed, measurement, gatePassed := e.measure(state)
+	classification, observed, measurement, gatePassed := e.measure(c.state)
 	var candidateSHA string
 	if measurement != nil {
 		candidateSHA, _ = measurement["candidateSha"].(string)
 	} else {
-		branch, _ := state["branch"].(string)
+		branch, _ := c.state["branch"].(string)
 		if candidateSHA, err = e.gitRevParse(branch); err != nil {
-			return nil, err
+			return nil, true, err
 		}
 	}
 	// The accepted return's certified entries participate in this booking's
 	// patience evaluation before anything is written (r2/P4-016): a job
 	// certified by THIS turn is not booked barren in the same breath.
 	var inflightCertified any
-	if returnDoc, err := readJSONDoc(filepath.Join(turnDir, "return.json")); err == nil {
+	if returnDoc, err := readJSONDoc(filepath.Join(c.turnDir, "return.json")); err == nil {
 		inflightCertified = returnDoc["certified"]
 	}
-	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed, inflightCertified); err != nil {
-		return nil, err
+	if err := e.appendLedger(c.state, c.ledger, c.cycle, classification, candidateSHA, observed, inflightCertified); err != nil {
+		return nil, true, err
 	}
-	measurementPath := filepath.Join(turnDir, "measurement.json")
+	measurementPath := filepath.Join(c.turnDir, "measurement.json")
 	var measurementValue any
 	if measurement != nil {
 		measurementValue = measurement
@@ -1129,31 +1214,32 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 	if err := atomicWriteJSON(measurementPath, map[string]any{
 		"measurement": measurementValue, "gatePassed": gatePassed,
 	}); err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	proposed, err := ConcludeFiles(e.Root, e.Mission, statePath, turnPath,
-		verdictPath, verdict.ReturnPath, filepath.Join(turnDir, "result.json"), measurementPath)
+	proposed, err := ConcludeFiles(e.Root, e.Mission, c.statePath, c.turnPath,
+		c.verdictPath, c.verdict.ReturnPath, filepath.Join(c.turnDir, "result.json"), measurementPath)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	if proposed["status"] == "completed" {
-		e.deliverLandedUnconsumed(ledger, cycle, proposed)
+		e.deliverLandedUnconsumed(c.ledger, c.cycle, proposed)
 	}
-	updated, err := e.writeState(statePath, proposed)
+	updated, err := e.writeState(c.statePath, proposed)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	if _, err := patchTurn(turnPath, map[string]any{
+	if _, err := patchTurn(c.turnPath, map[string]any{
 		"status": "completed", "outcome": "completed", "error": nil,
-		"detail": "host return accepted", "result": result, "endedAt": nowISO(),
-		"rawPath": verdict.RawPath, "returnPath": verdict.ReturnPath,
+		"detail": "host return accepted", "result": c.result, "endedAt": nowISO(),
+		"rawPath": c.verdict.RawPath, "returnPath": c.verdict.ReturnPath,
 	}); err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	if err := e.anchor(statePath, ledger, turnID); err != nil {
-		return nil, err
+	if err := e.anchor(c.statePath, c.ledger, c.turnID); err != nil {
+		return nil, true, err
 	}
-	return e.continueOrParkStopLoss(statePath, ledger, turnID, updated)
+	final, ferr := e.continueOrParkStopLoss(c.statePath, c.ledger, c.turnID, updated)
+	return final, true, ferr
 }
 
 // failTurnBeforeLaunch records a turn that never reached its host: the
