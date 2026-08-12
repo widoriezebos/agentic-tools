@@ -211,7 +211,14 @@ func Anchor(statePath, repo, ledgerPath string) error {
 	if fileExists(guard) && fileExists(wrapper) {
 		commitCommand = []string{wrapper, "--allow-empty", "-m", subject, "-m", body}
 	} else {
-		commitCommand = []string{"git", "-C", repo, "commit", "--allow-empty", "-m", subject, "-m", body}
+		// The anchor is a machine bookkeeping commit: it carries its own
+		// identity, exactly like the fixture repositories' commits, instead
+		// of borrowing whatever ambient git config the host happens to have
+		// — a pristine host has none, and the first Linux acceptance run
+		// proved this path failed there (go-production-grade Phase 1).
+		commitCommand = []string{"git", "-C", repo,
+			"-c", "user.name=metasystem", "-c", "user.email=metasystem@example.invalid",
+			"commit", "--allow-empty", "-m", subject, "-m", body}
 	}
 	for attempt := 0; attempt < 6; attempt++ {
 		cmd := exec.Command(commitCommand[0], commitCommand[1:]...)
