@@ -61,8 +61,17 @@ analysis is one real DEFECT and two DOCUMENTED invariants.
   downstream (GSC-R1-031), crosses an import boundary
   (GSC-R1-030), and the real question — does the standing reaper get
   kill authority, or must it stop stamping death it cannot prove — is
-  a supervision-lifecycle design decision that belongs to the human.
-  This program makes ZERO behavior changes.
+  a supervision-lifecycle design decision that belonged to the human.
+  HUMAN RULING (Wido, 2026-08-12): the standing reaper never gets kill
+  authority — it stops stamping death it cannot prove. It may
+  terminalize only provably-dead custodians, through the locked
+  compare-and-swap owner with an expected status; a live over-budget
+  job keeps its running status until the kill-capable dispatch path
+  winds it down. The fix is its own program outside this one (one
+  reviewable intent), with regression tests for the
+  completion-after-read race, the live-over-budget-not-terminalized
+  rule, and the dead-over-budget timeout. This consolidation program
+  itself still makes ZERO behavior changes.
 - The invariants (documented in place, not coarsened): the
   reservation pair's two-phase ordering (record-create before
   shell-owned setup; observable pending-setup feeds the cleanup trap)
@@ -97,14 +106,14 @@ devin-usage, fake-return) are behaviorally DIFFERENT operations — the
 adapter side consumes job records, the host side consumes mission
 roots — and both sides have live callers, so a merge would rename for
 cosmetics exactly where confusion costs most. They stay two families.
-The surface shrinks by deletion (census slices) and by ownership
-inversion (the reap verdict), not by relabeling.
+The surface shrinks by deletion; the regroupings are coherence work
+(the reap ownership inversion did not survive round 4).
 
 | target | absorbs | notes |
 | --- | --- | --- |
-| `job` | dispatch (24), capability (1), authority (1), schema (1) | The delegate-job domain, regrouped per the appendix — a purely mechanical rename step (r5/GSC-R1-033: one reviewable intent per commit; no behavior change rides along). The reservation protocol stays TWO-PHASE (r1/GSC-R1-002). |
+| `job` | dispatch (24), capability (1), authority (1) | The delegate-job domain, regrouped per the appendix — a purely mechanical rename step (r5/GSC-R1-033: one reviewable intent per commit; no behavior change rides along). The reservation protocol stays TWO-PHASE (r1/GSC-R1-002). |
 | `mission` | mission-state, -fence, -contract, -prompt, -runner, -turn, -ledger (7 families, 28 verbs) | Regrouping with the EXHAUSTIVE collision-resolving verb map in the appendix (r1/GSC-R1-003, r2/GSC-R1-011) — all 28, no illustrative subsets. evidence stays its own family (r2/GSC-R1-012: the collector is repository-wide custody that merely protects mission state; `mission gc` would misname its scope). |
-| `adapter` | unchanged (34 minus census deletions) | Custody-boundary fragments per runtime; scripts keep launch/wait/signal custody. |
+| `adapter` | unchanged (34) | Custody-boundary fragments per runtime; scripts keep launch/wait/signal custody. The census found no dead adapter verbs (r6/GSC-R1-036). |
 | `host` | unchanged (8) | Same boundary, mission-host side. |
 | `proc` | identity (4), census (4) | Process identity and census are one domain — who is running, provably. supervise STAYS its own family (r2/GSC-R1-013's logic applied honestly: folding it in would just prefix every verb with its old family name, a cosmetic merge). Map in the appendix. |
 | `supervise` | unchanged (10) + census fingerprint | Supervision lifecycle. census fingerprint hashes supervision code, signatures, and configuration to detect stale supervision — it is a supervision-staleness detector, not a process probe (r4/GSC-R1-026), so it becomes `supervise fingerprint`. |
@@ -114,31 +123,32 @@ inversion (the reap verdict), not by relabeling.
 | `lease` | unchanged (9) | Worktree session custody. |
 | `receipt` | unchanged (5) | |
 | `evidence` | unchanged (1) | Repository-wide durable-evidence custody (r2/GSC-R1-012). |
+| `schema` | unchanged (1) | Role-return schema materialization: takes a role and version, never a job — moving it under job would misname its boundary exactly as mission gc would have (r6/GSC-R1-037). |
 | small domains | gate (3), report (3), hooks (1), event (1), json (3), util (5) | The util merge is WITHDRAWN (r2/GSC-R1-013): these are distinct responsibilities with distinct failure contracts, and the repository's own design standard names a catch-all util as the anti-pattern. They stay as they are; the earlier gate-check/hooks-check collision worry evaporates with the merge. |
 
-CLI compatibility during migration: the family router gains a
-one-table alias layer (old family/verb → new) so scripts migrate per
-commit, not big-bang. Aliases activate WITH their targets
-(r3/GSC-R1-016): step 1 lands the mechanism plus the full table
-generated from the appendix, with every entry inert until its target
-family registers — an alias whose target is unregistered is a router
-error if exercised, and a step-1 test asserts the table matches the
-appendix row-for-row. Step 2 activates the mission entries in the
-commit that registers the mission family, step 3 the job entries,
-step 4 the proc entries. reap-facts renames to job reap-facts like
-every other row — no special case survives the round-4 severance
-(r5/GSC-R1-029). Alias deletion has a mechanical completion
-condition (r1/GSC-R1-005): step 5 sweeps the tree for remaining
-old-name invocations, updates them (bounded, this repository only —
-adopted repositories call scripts by path, never verbs, so no
-external contract names a verb), proves zero old-name callers by the
-same census rules, and only then deletes the table. "Organically" is
-retired.
+Compatibility (r6/GSC-R1-034: the alias layer is WITHDRAWN — more
+machinery guarding a boundary that does not exist). In this
+repository every caller moves in the same commit as its rename, so
+nothing here ever needs an alias. For adopted repositories the
+contract is stated instead of shimmed: binary verb names are INTERNAL
+and may change between versions — the shipped scripts are the stable
+interface — and the upgrade documentation carries the old-to-new
+table from the appendix for any project that called verbs directly
+anyway. This also dissolves the alias activation-ordering questions
+(r6/GSC-R1-035): census fingerprint simply becomes supervise
+fingerprint in step 4's commit, which updates arm-supervision.sh and
+the suite in the same change.
 
 ## What gets deleted
 
-1. Step 0 is a caller census with EXECUTABLE rules (r1/GSC-R1-007),
-   already run once (first slice landed as c72f662, minus 344 lines):
+1. Step 0 is a caller census with EXECUTABLE rules (r1/GSC-R1-007)
+   and a FINITE scope (r6/GSC-R1-036): the census ran once and its
+   slice landed (c72f662, minus 344 lines); the program's final
+   surface is exactly the currently registered set minus that slice,
+   renamed per the appendix. Further deletions happen only if a
+   regroup step or the deadcode analyzer surfaces a new zero-caller
+   verb, each recorded in that step's commit message under the same
+   rules — no open-ended hunting. The rules:
    the corpus is every tracked file EXCLUDING cmd/metasystem (a verb's
    own registration is not a caller); an invocation is the literal
    "family verb" pair; a family invoked anywhere with a variable verb
@@ -178,18 +188,18 @@ retired.
 Each step lands with the suite green from a pristine worktree and all
 call sites updated in the same commit.
 
-1. Caller census deletion slices as found (first landed: c72f662);
-   the alias mechanism plus the full inert table generated from the
-   appendix, tested row-for-row against it (r3/GSC-R1-016).
-2. mission-* merge per the appendix map; its aliases activate in the
-   same commit (mechanical; largest coherence gain per hour).
+1. Already landed: the census slice (c72f662). Remaining step-1 work
+   is only the upgrade-notes table generated from the appendix
+   (r6/GSC-R1-034).
+2. mission-* merge per the appendix map, all in-repo callers updated
+   in the same commit (mechanical; largest coherence gain per hour).
 3. job-family regrouping per the appendix — mechanical rename only
    (r5/GSC-R1-033). No reap unification (severed, round 4); the
    recorded defect pair stays with the human (r5/GSC-R1-027).
 4. proc regrouping and supervise fingerprint per the appendix; the
    two kept invariants get their call-site documentation.
-5. Registry deletion; old-name sweep to zero by the census rules;
-   alias table deletion last.
+5. Registry deletion; a final sweep proving zero old-name callers
+   remain in-repo.
 
 Estimated two working sessions. Steps are independently valuable;
 stopping after any of them leaves the system better than before it.
@@ -261,7 +271,7 @@ prefixes resolve.
 
 `census run` becomes `proc census` — "run" alone said nothing.
 
-### job (27 rows from 4 families: 24 dispatch verbs plus three single-verb families; count corrected by r3/GSC-R1-018)
+### job (26 rows from 3 families: 24 dispatch verbs plus capability and authority; schema stays its own family, r6/GSC-R1-037)
 
 | today | target |
 | --- | --- |
@@ -291,7 +301,6 @@ prefixes resolve.
 | dispatch owner-lock | job owner-lock |
 | capability select | job snapshot-select |
 | authority check | job authority-check |
-| schema materialize | job schema-materialize |
 
 No new verbs anywhere in this map: every row is a rename
 (r5/GSC-R1-029; the reap-verdict remnant rows died with the round-4
