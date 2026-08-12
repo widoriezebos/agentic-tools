@@ -118,11 +118,17 @@ Phase 0 and as a standing rule inside every later phase:
   governing plan must exist, the package must exist, and an
   unreachable package without an entry fails (r7/KS-R7-002) —
   package grain is the enforcement boundary, while function-grain
-  sweep findings are recorded as registry debt with deadlines,
-  matching what the analyzer actually reports (r8/KS-R8-004).
+  sweep findings are recorded as registry debt — go-packages entries
+  carry an optional symbols list, each symbol with its own deadline,
+  and the definition of done includes zero expired Go debt,
+  template-only like all Go-section enforcement (r8/KS-R8-004,
+  r9/KS-R9-004).
   Script entries carry an EXPORT CONDITION (always, or
   with-skill:<name>) so optional-skill scripts are registered
-  without being unconditionally shipped (r8/KS-R8-003). For scripts
+  without being unconditionally shipped (r8/KS-R8-003); conditions
+  project by RELATIVE PATH identity — installed at the same relative
+  path when the condition holds, judged only when present
+  (r9/KS-R9-005). For scripts
   (r3/KS-R3-008): `keep` is lawful only for scripts already
   satisfying the thin-shim contract or carrying a dated port entry
   the fence treats as debt with a deadline. Adopted targets receive
@@ -252,21 +258,32 @@ Phase E — adoption's decisions become `metasystem adopt run`, while
 adopt.sh stays a thin BOOTSTRAP shim by necessity, exactly like
 go-gate (r2/KS-R2-004): it builds or locates the binary on a fresh
 checkout, then execs the verb — zero decisions in shell, and the
-README's fresh-checkout path stays valid. The bootstrap must prove
-binary FRESHNESS (r3/KS-R3-007): build stamp equals the checkout's
-HEAD, or rebuild before executing — a stale gitignored binary can no
-longer carry an old adoption transform. Every bootstrap build is
-NON-PUBLISHING (r7/KS-R7-003): it compiles to a temporary path and
-consults the gate fence through that binary. Fence-clear grants the
-right to CONTEND, not to publish (r8/KS-R8-002): replacement of
-bin/metasystem happens only under the Go owner-lock followed by an
-atomic rename, so two racing first-builds serialize — the
-foreign-gate safety rule holds before any Go verb exists to enforce
-it. go-gate.sh's own POLICY
-joins this phase too (r6/KS-R6-007): the no-module skip, the
-foreign-gate refusal, check ordering, and failure ramps become an
-`audit gate` verb, the bootstrap keeping only compile-and-consult —
-near-minimal was a grade, not an exemption.
+README's fresh-checkout path stays valid. Bootstraps ARE the
+custody shape (r9/KS-R9-003): they launch the toolchain, wait,
+consult verbs, and finish — their registry verdicts say custody, and
+no fourth shape exists. Engine delivery to adopted targets is the
+COMMITTED BINARY (r9/KS-R9-001, critical): targets receive no Go
+source and can never rebuild, so the payload commits the engine (as
+adoption already ships it) and a fresh CI clone carries it; the
+freshness rule below is TEMPLATE-ONLY and the adopted update path is
+re-adoption. In the template, the bootstrap must prove binary
+FRESHNESS (r3/KS-R3-007): build stamp equals the checkout's HEAD, or
+rebuild before executing. Every bootstrap build is NON-PUBLISHING
+(r7/KS-R7-003): it compiles to a temporary path and consults the
+gate fence through that binary. Fence-clear grants the right to
+CONTEND, not to publish (r8/KS-R8-002): replacement of bin/metasystem
+happens only under internal/dispatch/ownerlock.go's claim/release on
+a dedicated bin publication lock directory followed by a staged
+atomic rename (r9/KS-R9-002), so two racing first-builds serialize —
+the foreign-gate safety rule holds before any Go verb exists to
+enforce it. go-gate.sh's own POLICY
+joins this phase too, split against the native-only rule
+(r6/KS-R6-007 as corrected by r9/KS-R9-006): Go never launches the
+toolchain, so the gate SEQUENCE stays in the bootstrap's custody
+shape while the policy decisions — check ordering, skip rules,
+failure classification, the coverage ratchet — are Go verbs the
+bootstrap consults between steps. Near-minimal was a grade, not an
+exemption.
 
 Phase F — fixtures, DECIDED by evidence (r1/KS-R1-007): bash stays
 the end-to-end driver — arrange via verbs, act by calling the CLI
