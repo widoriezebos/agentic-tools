@@ -65,10 +65,14 @@ fi
 
 go vet ./... || { echo "go gate: go vet failed" >&2; exit 1; }
 
-# The domain packages carry a coverage floor (the engineering standard);
-# the cmd package is thin wiring the fixtures exercise, so it is built and
-# vetted but not floored here.
-go test -race -cover ./internal/... || { echo "go gate: unit tests failed" >&2; exit 1; }
+# The coverage floor is executable, not prose (plans/kill-shell.md, the
+# production-grade 0c ratchet pulled forward): the test output feeds the
+# audit verb, whose baseline only ever rises. The cmd package is exempt
+# with its reason recorded in the baseline file. The consult runs through
+# the freshly built temporary binary below, because THIS invocation's
+# rebuild is what always-rebuild means.
+coverage_log=$(mktemp)
+go test -race -cover ./internal/... | tee "$coverage_log" || { rm -f "$coverage_log"; echo "go gate: unit tests failed" >&2; exit 1; }
 
 # Build the binary the shell fixtures and wrappers exec, stamped with its
 # source commit so its artifacts self-attest (GO-MIG-R4-009).
@@ -76,6 +80,11 @@ commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)
 mkdir -p bin
 go build -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=$commit" \
   -o bin/metasystem ./cmd/metasystem \
-  || { echo "go gate: build failed" >&2; exit 1; }
+  || { rm -f "$coverage_log"; echo "go gate: build failed" >&2; exit 1; }
 
-echo "go gate: PASSED (gofmt, vet, race tests, build @ $commit)"
+# One shim line: the freshly built binary judges the coverage ratchet.
+bin/metasystem audit coverage-ratchet --baseline scripts/agents/coverage-ratchet.json --input "$coverage_log" \
+  || { rm -f "$coverage_log"; echo "go gate: coverage ratchet refused" >&2; exit 1; }
+rm -f "$coverage_log"
+
+echo "go gate: PASSED (gofmt, vet, race tests, coverage ratchet, build @ $commit)"

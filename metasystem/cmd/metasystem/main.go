@@ -169,6 +169,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "audit",
+			summary: "mechanical fences the gate bootstrap consults between steps",
+			verbs: []verb{
+				{"coverage-ratchet", "judge go test -cover output against the checked-in per-package floors", runAuditCoverageRatchet},
+			},
+		},
+		{
 			name:    "gate",
 			summary: "gate-run markers: know when a gate is in flight",
 			verbs: []verb{
