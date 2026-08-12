@@ -104,12 +104,17 @@ Phase 0 and as a standing rule inside every later phase:
   keep, SHAPE of exec/custody/sequencer, VERIFIED date, debt
   deadline) for live files only; tombstones, where a deletion's
   entry moves; and go-packages (import path, governing plan file).
-  The registry is a CLOSED WORLD (r6/KS-R6-002): every tracked shell
-  file in the payload globs must carry an entry, and an unregistered
-  tracked script fails the fence outright. The audit verb validates
-  all sections — go-packages TEMPLATE-ONLY, gated on go.mod exactly
-  like the go gate, because adopted targets carry neither Go source
-  nor workstream plans (r6/KS-R6-001). For scripts
+  The registry is a CLOSED WORLD and the EXPORT MANIFEST in one
+  (r6/KS-R6-002, r7/KS-R7-001): adoption ships exactly the
+  registry's live scripts, adopted repos validate exactly the
+  registered files, and anything an adopted project adds is
+  unregistered by construction — one list, no globs. Every tracked
+  template shell file must carry an entry; an unregistered tracked
+  script fails the fence outright. The audit verb validates all
+  sections — for go-packages, TEMPLATE-ONLY (gated on go.mod exactly
+  like the go gate, r6/KS-R6-001): the named governing plan must
+  exist, the package must exist, and an unreachable package without
+  an entry fails (r7/KS-R7-002). For scripts
   (r3/KS-R3-008): `keep` is lawful only for scripts already
   satisfying the thin-shim contract or carrying a dated port entry
   the fence treats as debt with a deadline. Adopted targets receive
@@ -242,7 +247,11 @@ checkout, then execs the verb — zero decisions in shell, and the
 README's fresh-checkout path stays valid. The bootstrap must prove
 binary FRESHNESS (r3/KS-R3-007): build stamp equals the checkout's
 HEAD, or rebuild before executing — a stale gitignored binary can no
-longer carry an old adoption transform. go-gate.sh's own POLICY
+longer carry an old adoption transform. Every bootstrap build is
+NON-PUBLISHING (r7/KS-R7-003): it compiles to a temporary path,
+consults the gate fence through that binary, and only a fence-clear
+run may replace bin/metasystem — the foreign-gate safety rule holds
+before any Go verb exists to enforce it. go-gate.sh's own POLICY
 joins this phase too (r6/KS-R6-007): the no-module skip, the
 foreign-gate refusal, check ordering, and failure ramps become an
 `audit gate` verb, the bootstrap keeping only compile-and-consult —
