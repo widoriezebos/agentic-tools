@@ -303,7 +303,7 @@ func (e *Engine) anchorState(statePath, ledgerPath, identityName string) error {
 		return err
 	}
 	stdout, stderr, code := runCaptured(e.Root, gitAuthorEnvironment(identityName), self,
-		"mission-state", "anchor", "--state", statePath, "--repo", e.Root, "--ledger", ledgerPath)
+		"mission", "state-anchor", "--state", statePath, "--repo", e.Root, "--ledger", ledgerPath)
 	if code != 0 {
 		return failf(3, "mission anchor refused: %s", firstDetail(stderr, stdout))
 	}

@@ -54,7 +54,7 @@ func runnerDoc(path, label string) (map[string]any, error) {
 // is checked by the shipped role checker so return-schema authority stays in
 // one place.
 func runMissionTurnAdjudicate(args []string) int {
-	flags := flag.NewFlagSet("mission-turn adjudicate", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission turn-adjudicate", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	statePath := flags.String("state", "", "mission state path")
@@ -64,11 +64,11 @@ func runMissionTurnAdjudicate(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if !missionRunnerScope("mission-turn adjudicate", *root, *mission) {
+	if !missionRunnerScope("mission turn-adjudicate", *root, *mission) {
 		return 2
 	}
 	if *statePath == "" || *turnPath == "" || *resultPath == "" || *turnDir == "" {
-		fmt.Fprintln(os.Stderr, "mission-turn adjudicate: --state, --turn, --result, and --turn-dir are required")
+		fmt.Fprintln(os.Stderr, "mission turn-adjudicate: --state, --turn, --result, and --turn-dir are required")
 		return 2
 	}
 	verdict, err := missionrunner.AdjudicateFiles(*root, *mission, *statePath, *turnPath, *resultPath, *turnDir, runnerNowISO())
@@ -86,7 +86,7 @@ func runMissionTurnAdjudicate(args []string) int {
 // complete decision. The runner applies the proposal through the state's
 // compare-and-write.
 func runMissionTurnConclude(args []string) int {
-	flags := flag.NewFlagSet("mission-turn conclude", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission turn-conclude", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	statePath := flags.String("state", "", "mission state path")
@@ -98,11 +98,11 @@ func runMissionTurnConclude(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if !missionRunnerScope("mission-turn conclude", *root, *mission) {
+	if !missionRunnerScope("mission turn-conclude", *root, *mission) {
 		return 2
 	}
 	if *statePath == "" || *turnPath == "" || *verdictPath == "" || *returnPath == "" || *resultPath == "" || *measurementPath == "" {
-		fmt.Fprintln(os.Stderr, "mission-turn conclude: --state, --turn, --verdict, --return, --result, and --measurement are required")
+		fmt.Fprintln(os.Stderr, "mission turn-conclude: --state, --turn, --verdict, --return, --result, and --measurement are required")
 		return 2
 	}
 	proposed, err := missionrunner.ConcludeFiles(*root, *mission, *statePath, *turnPath, *verdictPath, *returnPath, *resultPath, *measurementPath)
@@ -118,7 +118,7 @@ func runMissionTurnConclude(args []string) int {
 // no usable return: the failure lands in the turn log, the cycle is spent,
 // and a second consecutive failure parks the mission for a human.
 func runMissionTurnRecordFailure(args []string) int {
-	flags := flag.NewFlagSet("mission-turn record-failure", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission turn-record-failure", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	statePath := flags.String("state", "", "mission state path")
@@ -129,13 +129,13 @@ func runMissionTurnRecordFailure(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if !missionRunnerScope("mission-turn record-failure", *root, *mission) {
+	if !missionRunnerScope("mission turn-record-failure", *root, *mission) {
 		return 2
 	}
 	// An empty --detail is tolerated: the failure is still worth recording
 	// even when the failing step produced no message.
 	if *statePath == "" || *turnPath == "" || *outcome == "" {
-		fmt.Fprintln(os.Stderr, "mission-turn record-failure: --state, --turn, and --outcome are required")
+		fmt.Fprintln(os.Stderr, "mission turn-record-failure: --state, --turn, and --outcome are required")
 		return 2
 	}
 	state, err := runnerDoc(*statePath, "mission state")
@@ -166,7 +166,7 @@ func runMissionTurnRecordFailure(args []string) int {
 // ask a host-failure or stop-loss park must leave open so a human can answer
 // it. Prints {"state":..., "asks":[...]}.
 func runMissionTurnPark(args []string) int {
-	flags := flag.NewFlagSet("mission-turn park", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission turn-park", flag.ContinueOnError)
 	root := flags.String("root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	statePath := flags.String("state", "", "mission state path")
@@ -174,11 +174,11 @@ func runMissionTurnPark(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if !missionRunnerScope("mission-turn park", *root, *mission) {
+	if !missionRunnerScope("mission turn-park", *root, *mission) {
 		return 2
 	}
 	if *statePath == "" || *reason == "" {
-		fmt.Fprintln(os.Stderr, "mission-turn park: --state and --reason are required")
+		fmt.Fprintln(os.Stderr, "mission turn-park: --state and --reason are required")
 		return 2
 	}
 	state, err := runnerDoc(*statePath, "mission state")

@@ -13,7 +13,7 @@ import (
 // live control-plane data.
 
 func runMissionPromptAssemble(args []string) int {
-	flags := flag.NewFlagSet("mission-prompt assemble", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission prompt-assemble", flag.ContinueOnError)
 	repo := flags.String("repo", "", "repository root")
 	missionID := flags.String("mission", "", "mission id")
 	turn := flags.String("turn", "", "turn id")
@@ -23,7 +23,7 @@ func runMissionPromptAssemble(args []string) int {
 	}
 	if *repo == "" || *missionID == "" || *turn == "" || *output == "" {
 		fmt.Fprintln(os.Stderr,
-			"usage: metasystem mission-prompt assemble --repo <dir> --mission <id> --turn <turn-id> --output <file>")
+			"usage: metasystem mission prompt-assemble --repo <dir> --mission <id> --turn <turn-id> --output <file>")
 		return 2
 	}
 	if err := mission.AssemblePrompt(*repo, *missionID, *turn, *output); err != nil {

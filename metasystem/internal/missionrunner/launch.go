@@ -366,7 +366,7 @@ func (e *Engine) launch(mode string, foreground bool) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command(self, "mission-runner", "run-loop",
+	command := exec.Command(self, "mission", "run-loop",
 		"--root", e.Root,
 		"--mission", e.Mission,
 		"--mode", mode,

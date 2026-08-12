@@ -51,10 +51,10 @@ caps_install() { # mission, contract bytes on stdin
 authorize_cli() { # mission, job, [requested]
   local mission=$1 job=$2 requested=${3:-}
   if [[ -n "$requested" ]]; then
-    "$ms" mission-fence authorize-cap --repo "$authority_repo" --mission "$mission" \
+    "$ms" mission fence-authorize-cap --repo "$authority_repo" --mission "$mission" \
       --job "$job" --runtime devin --model swe-1-7 --requested "$requested"
   else
-    "$ms" mission-fence authorize-cap --repo "$authority_repo" --mission "$mission" \
+    "$ms" mission fence-authorize-cap --repo "$authority_repo" --mission "$mission" \
       --job "$job" --runtime devin --model swe-1-7
   fi
 }

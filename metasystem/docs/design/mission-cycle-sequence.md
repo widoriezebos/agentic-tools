@@ -87,7 +87,7 @@ Launcher process, in order (launch.go:321-434):
    `missions/<id>/mission-<id>.contract.md` with its raw sha256 recorded in
    `fences.json.approvedContractSha256`, under the fence lock
    (launch.go:218-264).
-4. Spawns `metasystem mission-runner run-loop` detached (`setsid` unless
+4. Spawns `metasystem mission run-loop` detached (`setsid` unless
    foreground), then polls up to 15s (scaled) for the start-signal file the
    runner writes on its first verified host start; on timeout it kills the
    runner group (launch.go:344-433).
@@ -460,7 +460,7 @@ the per-turn host adapter (S9) and `dispatch.sh reap`/`close` invocations
   recorded instance tag on its command line** — i.e. a delegate can only
   join a mission whose runner process is alive at dispatch time.
 - Fence reservation: mission dispatches are cap-authorized by
-  `mission-fence authorize-cap` under the fence lock (dispatch.sh:1000-1006,
+  `mission fence-authorize-cap` under the fence lock (dispatch.sh:1000-1006,
   fence.go:434-514): the (runtime, model) pair cap from the signed contract
   (`cap.min.<runtime>.<model>`) or `fence.job-cap-min`, deadline truncated by
   mission wall clock, and **the reservation is recorded in

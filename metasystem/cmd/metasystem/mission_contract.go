@@ -13,7 +13,7 @@ import (
 // it, and running the preflight a mission must pass before it may launch.
 
 func runMissionContractValidate(args []string) int {
-	flags := flag.NewFlagSet("mission-contract validate", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission contract-validate", flag.ContinueOnError)
 	file := flags.String("file", "", "mission contract path")
 	if flags.Parse(args) != nil {
 		return 2
@@ -37,7 +37,7 @@ func runMissionContractValidate(args []string) int {
 }
 
 func runMissionContractSeal(args []string) int {
-	flags := flag.NewFlagSet("mission-contract seal", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission contract-seal", flag.ContinueOnError)
 	file := flags.String("file", "", "mission contract path")
 	if flags.Parse(args) != nil {
 		return 2
@@ -56,7 +56,7 @@ func runMissionContractSeal(args []string) int {
 }
 
 func runMissionContractPreflight(args []string) int {
-	flags := flag.NewFlagSet("mission-contract preflight", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission contract-preflight", flag.ContinueOnError)
 	file := flags.String("file", "", "mission contract path")
 	verifiedBytes := flags.String("verified-bytes-output", "", "on success, write the approved contract bytes here")
 	if flags.Parse(args) != nil {

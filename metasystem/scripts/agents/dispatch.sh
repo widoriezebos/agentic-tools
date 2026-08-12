@@ -63,7 +63,7 @@ reap_verdict_events() { # job, verdict, reason, cas_rc, cas_out
 # unfinished-handshake job process-lost. See the handshake branch in reap_one_locked.
 handshake_backstop_grace_sec=2
 arm_supervision="$root/scripts/agents/arm-supervision.sh"
-mission_fence() { "$ms" mission-fence "$@"; }
+mission_fence() { local fence_verb=$1; shift; "$ms" mission "fence-$fence_verb" "$@"; }
 entry_caller_pid=$$
 current_claim_epoch=
 current_main_id=
@@ -496,7 +496,7 @@ assert_tiers_contiguous() {
 }
 
 signed_dispatch_envelope_allows() { # mission id, exact runtime:model pair
-  "$ms" mission-contract envelope-allows --root "$root" --mission "$1" --pair "$2"
+  "$ms" mission contract-envelope-allows --root "$root" --mission "$1" --pair "$2"
 }
 
 confirm_escalation() { # roster pair, requested pair, displayed cost direction

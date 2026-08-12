@@ -101,3 +101,20 @@ Clean cutover, per the design principles: the same change that installs a metasy
 4. Report with the ledger first: dispositions by bucket, deletions with reasons, conflicts escalated, deltas kept, and upstream proposals for the template. Append a receipt (`scripts/receipt.sh add`) and recommend the first retro after a handful of tasks rather than at the default cadence.
 
 Reconciliation is complete when the human has accepted or vetoed every ledger row. Moving the files is not what finishes the job.
+
+## Command renames (Go surface consolidation, 2026-08-12)
+
+Binary verb names are internal and may change between versions; the
+shipped scripts are the stable interface. For projects that called
+verbs directly, the mission domain's seven families merged into one:
+
+| before | after |
+| --- | --- |
+| mission-state init/write/verify/anchor/reconcile | mission state-init/state-write/state-verify/state-anchor/state-reconcile |
+| mission-fence check-job/reserve-job/reserve-cycle/authorize-cap/aggregate-usage/refuse | mission fence-check-job/fence-reserve-job/fence-reserve-cycle/fence-authorize-cap/fence-aggregate-usage/fence-refuse |
+| mission-contract validate/seal/preflight/measure/envelope-allows | mission contract-validate/contract-seal/contract-preflight/contract-measure/contract-envelope-allows |
+| mission-prompt assemble | mission prompt-assemble |
+| mission-runner start/resume/status/answer/run-loop | mission start/resume/status/answer/run-loop |
+| mission-turn adjudicate/conclude/record-failure/park | mission turn-adjudicate/turn-conclude/turn-record-failure/turn-park |
+| mission-ledger init/append | mission ledger-init/ledger-append |
+| mission-jobs drain/close-chains, mission-ledger verify/count | deleted (no callers; c72f662) |

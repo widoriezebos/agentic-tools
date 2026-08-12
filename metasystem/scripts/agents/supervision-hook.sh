@@ -77,7 +77,7 @@ count_running_work() { # sets: running, running_details, elsewhere
   while IFS= read -r other; do
     [[ -n "$other" ]] || continue
     elsewhere="$elsewhere $other"
-  done < <(pgrep -f 'mission-runner run-loop' 2>/dev/null \
+  done < <(pgrep -f 'mission(-runner)? run-loop' 2>/dev/null \
     | while read -r pid; do
         ps -p "$pid" -o command= 2>/dev/null \
           | sed -n 's|.*--root [^ ]*/\([^/ ]*\) .*|\1|p; s|.*--root [^ ]*/\([^/ ]*\)$|\1|p' | head -1

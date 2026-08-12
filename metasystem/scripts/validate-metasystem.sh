@@ -2769,7 +2769,7 @@ import json,sys
 from pathlib import Path
 Path(sys.argv[1]).write_text(json.dumps({"jobId":"other-provider","mission":"mission-alpha","runtime":"other","status":"completed","usage":{"availability":"native","inputTokens":3,"cachedInputTokens":None,"outputTokens":None,"reasoningTokens":None,"cost":None,"providerUnits":{"name":"fake-unit","value":5}}})+"\n")
 PY
-  "$agent_repo/bin/metasystem" mission-fence aggregate-usage --repo "$agent_repo" --mission mission-alpha
+  "$agent_repo/bin/metasystem" mission fence-aggregate-usage --repo "$agent_repo" --mission mission-alpha
   python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/usage.json" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1])); units={(item["provider"],item["unit"]):item["value"] for item in value["units"]}
@@ -3285,13 +3285,13 @@ assert second_return["identity"]["sessionId"] == second_turn["hostSession"]
 PY
   runner_git push -qu origin "$runner_branch"
 
-  run_runner_expect prompt-missing-turn 1 "$runner_repo/bin/metasystem" mission-prompt assemble \
+  run_runner_expect prompt-missing-turn 1 "$runner_repo/bin/metasystem" mission prompt-assemble \
     --repo "$runner_repo" \
     --mission runner-cycle --turn runner-cycle-t99-missing --output "$agent_fixture/missing-prompt.md"
   grep -Fq 'missing turn record' "$agent_fixture/prompt-missing-turn.out" \
     || { echo "prompt assembler did not name its missing turn record refusal" >&2; exit 1; }
   run_runner_expect prompt-oversized 1 env METASYSTEM_MISSION_MAX_PROMPT_KB=1 \
-    "$runner_repo/bin/metasystem" mission-prompt assemble --repo "$runner_repo" --mission runner-cycle \
+    "$runner_repo/bin/metasystem" mission prompt-assemble --repo "$runner_repo" --mission runner-cycle \
     --turn "$(basename "$cycle_turn")" --output "$agent_fixture/oversized-prompt.md"
   grep -Fq 'oversized block' "$agent_fixture/prompt-oversized.out" \
     || { echo "prompt assembler did not name the oversized block" >&2; exit 1; }

@@ -17,7 +17,7 @@ var missionIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // (init, append, verify, count).
 
 func runMissionLedgerInit(args []string) int {
-	flags := flag.NewFlagSet("mission-ledger init", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission ledger-init", flag.ContinueOnError)
 	file := flags.String("file", "", "ledger path")
 	cycleBudget := flags.Int("cycle-budget", 0, "cycle budget")
 	noGainBudget := flags.Int("no-gain-budget", 0, "no-gain budget")
@@ -32,7 +32,7 @@ func runMissionLedgerInit(args []string) int {
 }
 
 func runMissionLedgerAppend(args []string) int {
-	flags := flag.NewFlagSet("mission-ledger append", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission ledger-append", flag.ContinueOnError)
 	file := flags.String("file", "", "ledger path")
 	cycle := flags.Int("cycle", 0, "cycle number (must be next)")
 	classification := flags.String("classification", "", "cycle classification")
@@ -52,7 +52,7 @@ func runMissionLedgerAppend(args []string) int {
 // The mission-state family owns the atomic, hash-chained mission state.
 
 func runMissionStateInit(args []string) int {
-	flags := flag.NewFlagSet("mission-state init", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission state-init", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
 	contract := flags.String("contract", "", "contract path")
 	ledger := flags.String("ledger", "", "ledger path")
@@ -69,7 +69,7 @@ func runMissionStateInit(args []string) int {
 }
 
 func runMissionStateWrite(args []string) int {
-	flags := flag.NewFlagSet("mission-state write", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission state-write", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
 	source := flags.String("source", "", "proposed next state path")
 	expect := flags.String("expect", "", "expected current state hash")
@@ -84,7 +84,7 @@ func runMissionStateWrite(args []string) int {
 }
 
 func runMissionStateVerify(args []string) int {
-	flags := flag.NewFlagSet("mission-state verify", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission state-verify", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
 	repo := flags.String("repo", "", "repository (with --ledger, verifies the anchor)")
 	ledger := flags.String("ledger", "", "ledger path (with --repo, verifies the anchor)")
@@ -114,7 +114,7 @@ func runMissionStateVerify(args []string) int {
 }
 
 func runMissionStateAnchor(args []string) int {
-	flags := flag.NewFlagSet("mission-state anchor", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission state-anchor", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
 	repo := flags.String("repo", "", "repository")
 	ledger := flags.String("ledger", "", "ledger path")
@@ -129,7 +129,7 @@ func runMissionStateAnchor(args []string) int {
 }
 
 func runMissionStateReconcile(args []string) int {
-	flags := flag.NewFlagSet("mission-state reconcile", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission state-reconcile", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
 	repo := flags.String("repo", "", "repository")
 	ledger := flags.String("ledger", "", "ledger path")
@@ -150,7 +150,7 @@ func runMissionStateReconcile(args []string) int {
 
 func runMissionFenceReserve(name string, reserve bool) func([]string) int {
 	return func(args []string) int {
-		flags := flag.NewFlagSet("mission-fence "+name, flag.ContinueOnError)
+		flags := flag.NewFlagSet("mission "+name, flag.ContinueOnError)
 		repo := flags.String("repo", "", "repository")
 		missionID := flags.String("mission", "", "mission id")
 		job := flags.String("job", "", "job id")
@@ -175,7 +175,7 @@ func runMissionFenceReserve(name string, reserve bool) func([]string) int {
 }
 
 func runMissionFenceReserveCycle(args []string) int {
-	flags := flag.NewFlagSet("mission-fence reserve-cycle", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission fence-reserve-cycle", flag.ContinueOnError)
 	repo := flags.String("repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	if flags.Parse(args) != nil {
@@ -193,7 +193,7 @@ func runMissionFenceReserveCycle(args []string) int {
 }
 
 func runMissionFenceAuthorizeCap(args []string) int {
-	flags := flag.NewFlagSet("mission-fence authorize-cap", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission fence-authorize-cap", flag.ContinueOnError)
 	repo := flags.String("repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	job := flags.String("job", "", "job id")
@@ -231,7 +231,7 @@ func runMissionFenceAuthorizeCap(args []string) int {
 }
 
 func runMissionFenceAggregateUsage(args []string) int {
-	flags := flag.NewFlagSet("mission-fence aggregate-usage", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission fence-aggregate-usage", flag.ContinueOnError)
 	repo := flags.String("repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	if flags.Parse(args) != nil {
@@ -249,7 +249,7 @@ func runMissionFenceAggregateUsage(args []string) int {
 }
 
 func runMissionFenceRefuse(args []string) int {
-	flags := flag.NewFlagSet("mission-fence refuse", flag.ContinueOnError)
+	flags := flag.NewFlagSet("mission fence-refuse", flag.ContinueOnError)
 	repo := flags.String("repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	reason := flags.String("reason", "", "fence refusal reason")

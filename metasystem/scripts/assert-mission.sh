@@ -32,4 +32,4 @@ while (($#)); do
 done
 
 [[ -n "$file" && -f "$file" ]] || { echo "missing --file mission contract" >&2; exit 2; }
-exec "$ms" mission-contract "$mode" --file "$file"
+exec "$ms" mission "contract-$mode" --file "$file"

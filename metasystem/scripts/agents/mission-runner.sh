@@ -21,4 +21,4 @@ esac
 
 verb=$1
 shift
-exec "$ms" mission-runner "$verb" --root "$root" "$@"
+exec "$ms" mission "$verb" --root "$root" "$@"
