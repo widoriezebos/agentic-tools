@@ -3,6 +3,7 @@ package lease
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -139,39 +140,16 @@ func leaseLineage(lease *Lease) string {
 // atomicJSON writes value as indented JSON via a temp file and rename, with
 // the parent directory fsynced so the record survives a crash intact.
 func atomicJSON(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(value, "", "  ")
+	encoded, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return err
-	}
-	if dir, err := os.Open(filepath.Dir(path)); err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-	return nil
+	encoded = append(encoded, '\n')
+	// Through the durable-write owner (go-production-grade B5); the
+	// empty anchor preserves this writer's previous behavior exactly
+	// until its caller is converted to the two-outcome contract.
+	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
+	return writeErr
 }
 
 // readObject reads a JSON object file into a map; absent is (nil, nil).

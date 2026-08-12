@@ -2,11 +2,10 @@ package supervise
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -58,29 +57,11 @@ func WriteHeartbeat(path, component string, self identity.Ref, tag string, inter
 // plus a rename, so a concurrent reader sees either the old file or the new one
 // and never a partial write. The parent directory is created if missing.
 func atomicWrite(path string, content []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("prepare %s: %w", dir, err)
-	}
-	temporary, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return fmt.Errorf("stage %s: %w", path, err)
-	}
-	name := temporary.Name()
-	if _, err := temporary.Write(content); err != nil {
-		temporary.Close()
-		os.Remove(name)
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := temporary.Close(); err != nil {
-		os.Remove(name)
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := os.Rename(name, path); err != nil {
-		os.Remove(name)
-		return fmt.Errorf("publish %s: %w", path, err)
-	}
-	return nil
+	// Through the durable-write owner (go-production-grade B5); the
+	// empty anchor preserves this writer's previous behavior exactly
+	// until its caller is converted to the two-outcome contract.
+	_, err := atomicfile.WriteText(path, string(content), "")
+	return err
 }
 
 // parseISOSecond parses a whole-second UTC timestamp, accepting the trailing-Z

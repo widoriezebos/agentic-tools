@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -131,39 +132,16 @@ func runSuperviseWriteOwnerIdentity(args []string) int {
 // writeIdentityJSON writes indented, key-sorted JSON atomically: temp in the
 // target directory, fsync, rename, directory fsync.
 func writeIdentityJSON(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(value, "", "  ")
+	encoded, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	temp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return err
-	}
-	if dir, err := os.Open(filepath.Dir(path)); err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-	return nil
+	encoded = append(encoded, '\n')
+	// Through the durable-write owner (go-production-grade B5); the
+	// empty anchor preserves this writer's previous behavior exactly
+	// until its caller is converted to the two-outcome contract.
+	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
+	return writeErr
 }
 
 // runSuperviseComponentIdentity prints "pid start tag" for one recorded

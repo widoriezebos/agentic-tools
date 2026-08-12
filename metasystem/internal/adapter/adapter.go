@@ -10,6 +10,7 @@ package adapter
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"os"
 	"path/filepath"
 	"time"
@@ -67,36 +68,15 @@ func encodeJSON(value any) ([]byte, error) {
 // new bytes and never a half-written file: render, write a temp file in the
 // target directory, fsync it, rename it into place, then fsync the directory.
 func atomicWriteJSON(path string, value any) error {
-	data, err := encodeJSON(value)
+	encoded, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
-	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(directory, filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return err
-	}
-	syncDir(directory)
-	return nil
+	// Through the durable-write owner (go-production-grade B5); the
+	// empty anchor preserves this writer's previous behavior exactly
+	// until its caller is converted to the two-outcome contract.
+	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
+	return writeErr
 }
 
 func syncDir(directory string) {

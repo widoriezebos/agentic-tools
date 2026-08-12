@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -159,34 +160,11 @@ func readDocLabeled(path, label string, code int) (map[string]any, error) {
 // atomicWriteBytes writes a file atomically and durably: temp file in the
 // target directory, fsync, rename, directory fsync.
 func atomicWriteBytes(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return err
-	}
-	if dir, err := os.Open(filepath.Dir(path)); err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
-	}
-	return nil
+	// Through the durable-write owner (go-production-grade B5); the
+	// empty anchor preserves this writer's previous behavior exactly
+	// until its caller is converted to the two-outcome contract.
+	_, err := atomicfile.WriteText(path, string(data), "")
+	return err
 }
 
 // atomicWriteJSON writes indented, key-sorted JSON with a trailing newline.
