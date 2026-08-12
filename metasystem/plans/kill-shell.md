@@ -333,7 +333,13 @@ always refuses the newcomer regardless of rank, and among
 not-yet-admitted contenders the elder rule orders marker-CREATION
 facts (the atomic rename's timestamp, pid tiebreak), a total order
 both compute identically, so exactly one marks itself admitted at
-grace end and the loser exits with the standing refusal — re-derive the tracked-source state and
+grace end and the loser exits with the standing refusal. ONE
+SERIALIZER closes the cross-kind race (r28/KS-R28-001): the
+admitted-flag write and the publisher's rename both happen only
+under the publication lock, each preceded by an under-lock recheck —
+a publisher finding an admitted validator aborts, a validator
+finding a fresh publish proceeds against the published binary, and
+no interleaving exists because there is exactly one door — re-derive the tracked-source state and
 abort unless it still equals the stamp (r11/KS-R11-002) — then
 staged atomic rename. Register-then-check makes admission and replacement one protocol;
 for two racing first-builds the LOCK alone adjudicates
