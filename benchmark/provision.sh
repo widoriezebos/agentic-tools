@@ -321,7 +321,7 @@ fi
 # D-P1.2 (plans/provisioning-identity.md): the provisioner is the target's
 # first main. Announce AFTER adoption (the helpers now exist), then VERIFY
 # holdership — announce alone does not fail against a live holder.
-provisioner_start=$("$ms" identity started-at --pid $$) \
+provisioner_start=$("$ms" proc started-at --pid $$) \
   || die 1 "provision refused: cannot read the provisioner's own start time"
 "$ms" lease announce --root "$target" \
   --session "provision-$mission_id" --pid $$ --start "$provisioner_start" \
@@ -496,7 +496,7 @@ git -C "$target" remote set-head origin main
 # the arming below establishes its own identity on an unheld checkout.
 rm -f "$target/artifacts/agents/mains/worktree-lease.json"
 
-provision_started=$("$ms" identity started-at --pid "$$")
+provision_started=$("$ms" proc started-at --pid "$$")
 if ! METASYSTEM_AGENT_RUNTIME="$host_runtime" \
   "$target/scripts/agents/arm-supervision.sh" --repo "$target" \
     --session "benchmark-provision-$mission_id-$$" --pid "$$" \

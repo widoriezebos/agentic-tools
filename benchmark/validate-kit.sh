@@ -289,7 +289,7 @@ PY
   # deterministic in every outer invocation shape — the target's guard must
   # REFUSE a raw commit and CARRY a wrapped one. The provisioner retired, so
   # the gate announces itself for the control, then retires.
-  control_start=$("$provision_target/bin/metasystem" identity started-at --pid $$)
+  control_start=$("$provision_target/bin/metasystem" proc started-at --pid $$)
   "$provision_target/bin/metasystem" lease announce --root "$provision_target" \
     --session kit-gate-control --pid $$ --start "$control_start" \
     --tag metasystem-kit-gate-control --runtime fake >/dev/null
