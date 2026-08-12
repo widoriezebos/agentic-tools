@@ -378,11 +378,18 @@ recorded per family.
    checkers, fence refusals, the owner-lock protocol). The distance to 75
    is mostly missionrunner's launch/arming cluster, which needs armed
    fixtures — the expensive tail.
-2. **Phase 3c remainder**: config.Validate (323), TurnPrompt (255),
-   mergeCritique (255), AssemblePrompt (183), Mirror (180),
-   runSuperviseOwnerLoop (signal-path constraint — read the plan's 3c note
-   before touching it). The cmd families table (285) legitimately stays: a
-   flat registry is one abstraction.
+2. **Phase 3c is CLOSED by extraction plus disposition** (the plan's own
+   one-abstraction test, not a line quota). Extracted where structure
+   existed: oneCycle, launchHost, patienceEvaluate, Mirror
+   (gather-judge-land-report). Dispositioned as flat-is-the-structure,
+   each a single sequential abstraction whose extraction would trade
+   readability for line counts: config.Validate (a rule list),
+   TurnPrompt (a section-walking validator), mergeCritique (a merge over
+   one document pair), AssemblePrompt (a prompt builder assembling
+   sections in order), and the cmd families registry.
+   runSuperviseOwnerLoop stays untouched deliberately per the plan's
+   signal-path note: its Sleep closure exits the process, and extraction
+   without an explicit cancellation redesign risks the TERM/INT contract.
 3. **Phase 7 close-out**: promote durable lessons into docs/, then delete
    this plan and its ledgers per the close-out rule. The final-suite
    milestone is continuously satisfied — every checkpoint of this run was
