@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"golang.org/x/sys/unix"
 )
 
@@ -298,32 +299,40 @@ func readJSON(path string) (any, error) {
 	return value, nil
 }
 
-// readObject parses a JSON object, failing when the document is not an object.
-func readObject(path string) (map[string]any, error) {
-	value, err := readJSON(path)
+// readEnvelope reads a record through the wire-document owner: the same
+// frozen grammar as readJSON, carried by the package whose tests pin it
+// (Phase 5.1). readObject delegates here so the grammar has ONE owner.
+func readEnvelope(path string) (*wiredoc.Doc, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	object, ok := value.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("not a JSON object")
+	return wiredoc.Decode(data)
+}
+
+// readObject parses a JSON object, failing when the document is not an object.
+func readObject(path string) (map[string]any, error) {
+	doc, err := readEnvelope(path)
+	if err != nil {
+		return nil, err
 	}
-	return object, nil
+	return doc.Raw(), nil
 }
 
 // writeRecord serializes a record and replaces its file atomically, matching
 // the on-disk format every reader expects: two-space indent, sorted keys, one
 // trailing newline, and no HTML escaping.
 func writeRecord(recordPath string, record map[string]any) error {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(record); err != nil {
+	// Rendered by the wire-document owner (Phase 5.1): the corpus
+	// equivalence test proves these bytes identical to the encoder this
+	// replaces, and the capture test re-diffs the golden corpus on every
+	// run, so a drift in either writer fails before it ships.
+	rendered, err := wiredoc.FromRaw(record).Render()
+	if err != nil {
 		return err
 	}
-	_, err := atomicWriteText(recordPath, buf.Bytes())
-	return err
+	_, writeErr := atomicWriteText(recordPath, rendered)
+	return writeErr
 }
 
 // atomicWriteText writes bytes through the durable-write owner

@@ -104,3 +104,21 @@ func TestRenderCanonicalForm(t *testing.T) {
 		t.Fatalf("nested keys not sorted: %s", text)
 	}
 }
+
+// FromRaw wraps a live map: mutations through the map (the CAS path's
+// pattern) are visible to the render, and the render is canonical.
+func TestFromRawSharesTheMap(t *testing.T) {
+	raw := map[string]any{"status": "running", "z": 1}
+	doc := FromRaw(raw)
+	raw["patched"] = "by-cas"
+	rendered, err := doc.Render()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rendered), `"patched": "by-cas"`) {
+		t.Fatalf("a raw-map mutation was invisible to the render: %s", rendered)
+	}
+	if value, present := doc.Get("status"); !present || value != "running" {
+		t.Fatal("Get does not see the wrapped map")
+	}
+}

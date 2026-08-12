@@ -31,7 +31,7 @@
     "internal/supervise": 85.5,
     "internal/turn": 100.0,
     "internal/validate": 69.4,
-    "internal/wiredoc": 90.5
+    "internal/wiredoc": 90.9
   },
   "note": "Per-package coverage floors measured on LINUX (Debian 12 arm64, the verified host), seeded 2026-08-12 by the go-production-grade Phase 0c two-pass bootstrap: pass one ran the full gate with METASYSTEM_COVERAGE_RATCHET_SEED=1 (every check enforced except this join) and these values come from that green run; pass two re-runs the enforcing gate as the acceptance run. Floors only rise between re-seeds; a package split, rename, or composition change re-seeds the affected entries at their measured post-change values in the same commit with the rationale in that commit's message. Darwin floors live in coverage-ratchet.json \u2014 identity differs most (89.3 linux vs 68.1 darwin: each platform's prober file is dead code to the other)."
 }

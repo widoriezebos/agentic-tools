@@ -82,3 +82,9 @@ func (d *Doc) Render() ([]byte, error) {
 	}
 	return buf.Bytes(), nil
 }
+
+// FromRaw wraps an already-decoded document. The CAS and patch paths mutate
+// raw maps under their own permissive rules; wrapping them for the render
+// keeps the canonical encoder as the single wire writer without forcing
+// those paths through a projection.
+func FromRaw(raw map[string]any) *Doc { return &Doc{raw: raw} }
