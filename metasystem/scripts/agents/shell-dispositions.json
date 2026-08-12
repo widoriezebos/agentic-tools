@@ -2643,10 +2643,7 @@
           "site": "skills/take-a-step-back/SKILL.md"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/frontier.sh"
@@ -2654,7 +2651,7 @@
       "path": "scripts/frontier.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [

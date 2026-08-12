@@ -198,6 +198,7 @@ func families() []family {
 			verbs: []verb{
 				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
+				{"frontier", "record, challenge, or show the measured-improvement frontier", runReportFrontier},
 			},
 		},
 		{
