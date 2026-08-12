@@ -201,6 +201,11 @@ process_matches() { # pid, tag
 }
 
 process_exists() { # pid; permission denied still proves the pid exists
+  # An empty or null pid (a record mid-handshake) is simply not an existing
+  # process; without this guard the flag parser prints a usage dump to
+  # stderr on every such probe (noise, not a defect — the verdict was
+  # already correct).
+  [[ "$1" =~ ^[1-9][0-9]*$ ]] || return 1
   "$ms" proc exists --pid "$1"
 }
 
