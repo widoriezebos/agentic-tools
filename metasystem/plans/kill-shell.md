@@ -178,10 +178,12 @@ Phase 0 and as a standing rule inside every later phase:
   eat parked-by-design work.
 - The complexity fence (below) also counts scripts, with a NAMED
   evidence source (r22/KS-R22-002): registry entries carry a CALLERS
-  manifest recorded by this sweep, the audit verb re-verifies each
-  recorded caller still exists and still references the script, and
-  an entry whose callers list is empty must be tombstoned or carried
-  as debt.
+  manifest recorded by this sweep — EVIDENCE, never a closed graph
+  (r23/KS-R23-001): reference sites with their kind (exec, source,
+  hook, skill, doc), each re-verified for existence by the audit,
+  informing human-reviewed dispositions; the fence checks recorded
+  callers only and claims no closure. An entry whose callers list is
+  empty must be tombstoned or carried as debt.
 
 ## Disposition by phase
 
@@ -318,9 +320,13 @@ consult the fence (which exempts the registrant's chain), then claim
 internal/dispatch/ownerlock.go's publication lock, then REVALIDATE
 freshness under the lock — re-derive the tracked-source state and
 abort unless it still equals the stamp (r11/KS-R11-002) — then
-staged atomic rename. Register-then-check makes admission and
-replacement one protocol, so two racing first-builds both register,
-both see each other, and the fence adjudicates. Two implementation
+staged atomic rename. Register-then-check makes admission and replacement one protocol;
+for two racing first-builds the LOCK alone adjudicates
+(r23/KS-R23-002): both register markers for visibility, the lock
+picks one winner who publishes, and the loser waits bounded for the
+publish, re-derives freshness against the published stamp, and
+proceeds as a CONSUMER of the published binary — never a second
+publisher, never mutual refusal. Two implementation
 requirements ride this protocol (r11/KS-R11-003, r11/KS-R11-004):
 gate markers move to temp-then-rename writes — today's direct write
 is a latent defect where a pruner can observe partial JSON and eat a
@@ -349,8 +355,9 @@ selection become Go verbs, bash keeping only section sequencing —
 the drivers are lawful as SEQUENCERS (r4/KS-R4-002) and the end
 state's logic-of-consequence claim carries no fixture exemption. The Go-integration-test alternative is recorded as
 INVALID for the adopted contract, not merely unchosen: adopted
-targets run validate-metasystem.sh without a Go module by design
-(F Q6.1-Q6.8, go-gate's no-go.mod skip), so fixtures that only exist
+targets run validate-metasystem.sh without the METASYSTEM module by
+design (F Q6.1-Q6.8; the module-identity rule of rounds 12-20,
+r23/KS-R23-003), so fixtures that only exist
 as Go tests would vanish from the very repos the suite protects. The
 suite keeps driving the real CLI — the heading-order bug on
 2026-08-11 was caught only because fixtures drive the shipped
