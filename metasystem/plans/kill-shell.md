@@ -119,9 +119,12 @@ Phase 0 and as a standing rule inside every later phase:
   the lease-succession fixture, fixed in shipped code during rounds
   12-13; the discriminator is THREE-STATE — metasystem module runs,
   absent source skips, source without the module line fails loudly
-  as a damaged template, so a broken module declaration can never
-  validate green with zero Go checks (r12/KS-R12-001,
-  r13/KS-R13-001, r13/KS-R13-002): the named
+  as a damaged template — where "source" is collision-proof: a
+  cmd/metasystem/main.go importing the metasystem's own module path,
+  which no foreign project can legitimately contain — so a broken
+  module declaration can never validate green with zero Go checks
+  and an adopter's own file at that path never trips the gate
+  (r12/KS-R12-001, r13/KS-R13-001, r13/KS-R13-002, r14/KS-R14-001): the named
   governing plan must exist, the package must exist, and an
   unreachable package without an entry fails (r7/KS-R7-002) —
   package grain is the enforcement boundary, while function-grain
