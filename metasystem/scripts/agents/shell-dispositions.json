@@ -2183,10 +2183,7 @@
           "site": "skills/design-critique/SKILL.md"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/assert-critique-closed.sh"
@@ -2194,7 +2191,7 @@
       "path": "scripts/assert-critique-closed.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [
@@ -2276,10 +2273,7 @@
           "site": "scripts/validate-metasystem.sh"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/assert-mission.sh"
@@ -2287,7 +2281,7 @@
       "path": "scripts/assert-mission.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [
@@ -2304,10 +2298,7 @@
           "site": "scripts/validate-metasystem.sh"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/assert-plan-consistency.sh"
@@ -2315,7 +2306,7 @@
       "path": "scripts/assert-plan-consistency.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [
@@ -2376,10 +2367,7 @@
           "site": "scripts/validate-metasystem.sh"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/assert-return-complete.sh"
@@ -2387,7 +2375,7 @@
       "path": "scripts/assert-return-complete.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [
@@ -2472,10 +2460,7 @@
           "site": "skills/take-a-step-back/references/investigation-ledger.md"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/assert-stop-loss.sh"
@@ -2483,7 +2468,7 @@
       "path": "scripts/assert-stop-loss.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [
@@ -2516,10 +2501,7 @@
           "site": "scripts/validate-metasystem.sh"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/assert-turn-prompt.sh"
@@ -2527,7 +2509,7 @@
       "path": "scripts/assert-turn-prompt.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [

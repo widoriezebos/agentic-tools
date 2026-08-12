@@ -418,3 +418,64 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 	}
 	return code
 }
+
+// runValidateStopLoss relays scripts/assert-stop-loss.sh's calling
+// convention: --file names the investigation ledger. Exit 0 more cycles
+// allowed; 1 stop-loss triggered; 2 usage error.
+func runValidateStopLoss(args []string) int {
+	usage := func() {
+		fmt.Fprint(os.Stderr, `Usage:
+  scripts/assert-stop-loss.sh --file <investigation-ledger.md>
+
+Reads the cycle classifications from an investigation ledger and blocks
+further cycles when a machine-checkable stop-loss trigger has fired:
+
+  - any cycle classified falsified-dead-end
+  - two or more cycles classified no-progress
+  - as many cycles as the declared "Cycle budget:" line (when present)
+  - as many trailing cycles without a contract-improved as the declared
+    "No-gain budget:" line (when present; improve mode sets 3)
+
+unresolved (a valid measurement inside a declared noise floor) never counts
+toward the no-progress trigger; only a declared no-gain budget bounds it.
+
+The judgment triggers (repeating one mechanism family, an expensive run
+that taught nothing, no novel fact) stay with the agent and the human.
+This check only enforces what the ledger already states, so a ledger
+that stops recording classifications also stops being protected.
+
+Run it before contracting a new cycle.
+Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
+`)
+	}
+	file := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--file":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "missing --file ledger")
+				return 2
+			}
+			file = args[i+1]
+			i++
+		case "-h", "--help":
+			usage()
+			return 0
+		default:
+			usage()
+			return 2
+		}
+	}
+	if file == "" {
+		fmt.Fprintln(os.Stderr, "missing --file ledger")
+		return 2
+	}
+	out, errs, code := validate.StopLoss(file)
+	for _, line := range out {
+		fmt.Println(line)
+	}
+	for _, line := range errs {
+		fmt.Fprintln(os.Stderr, line)
+	}
+	return code
+}

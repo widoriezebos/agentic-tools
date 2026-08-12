@@ -4,7 +4,7 @@
   },
   "floors": {
     "internal/adapter": 85.9,
-    "internal/audit": 93.1,
+    "internal/audit": 95.4,
     "internal/authority": 95.0,
     "internal/capability": 73.5,
     "internal/census": 74.2,
@@ -23,10 +23,10 @@
     "internal/missionrunner": 57.7,
     "internal/receipt": 93.9,
     "internal/registry": 89.9,
-    "internal/report": 83.2,
+    "internal/report": 85.2,
     "internal/returnschema": 76.3,
     "internal/supervise": 85.4,
-    "internal/validate": 60.1
+    "internal/validate": 69.4
   },
   "note": "Coverage ratchet floors (plans/kill-shell.md, production-grade Phase 0c pulled forward): measured values at landing, rounded down to one decimal. Floors only ever RISE, by deliberate commit; a package below its floor fails the gate; a package absent from this table fails the gate until registered. cmd is exempt with the recorded reason: thin verb wiring exercised end to end by the shell fixtures. Floors for packages with timing-dependent race branches (internal/lock) sit at the observed minimum across repeated fresh runs. RE-BASELINE RULE: a floor may move down ONLY in the same commit that changes the package's composition (a new source unit landing), at the new measured value with the reason in the commit message \u2014 any floor decrease outside a composition change is a naked lowering the review must refuse."
 }

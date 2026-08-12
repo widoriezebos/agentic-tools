@@ -125,6 +125,10 @@ fixture_watcher_firing_cap_min=$(harness_fixture_semantic_cap watcher-firing-min
 
 scripts/audit-metasystem.sh .
 
+# The shell complexity fence (plans/kill-shell.md Phase A): registered
+# scripts only, numbers only ratchet down.
+"${METASYSTEM_BIN:-$PWD/bin/metasystem}" audit shell-budget --root .
+
 # Validate every skill present, including project-added and moved optional
 # skills, so this script holds in adopted repositories as well as the template.
 # A skill directory without a SKILL.md is invisible to the find, so check for

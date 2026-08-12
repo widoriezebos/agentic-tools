@@ -84,6 +84,7 @@ func families() []family {
 				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
 				{"conformance", "review or merge conformance for an implementer job", runValidateConformance},
+				{"stop-loss", "block further investigation cycles when a ledger trigger fired", runValidateStopLoss},
 			},
 		},
 		{
@@ -175,6 +176,7 @@ func families() []family {
 			summary: "mechanical fences the gate bootstrap consults between steps",
 			verbs: []verb{
 				{"coverage-ratchet", "judge go test -cover output against the checked-in per-package floors", runAuditCoverageRatchet},
+				{"shell-budget", "refuse shell complexity regressions against the ratchet budget", runAuditShellBudget},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 			},
 		},
