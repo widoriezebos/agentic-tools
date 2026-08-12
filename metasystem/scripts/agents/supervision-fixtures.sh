@@ -1010,7 +1010,9 @@ foreign=$tmp/foreign-owner
 mkdir -p "$foreign/repo"
 (cd "$foreign/repo" && git init -q .)
 mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
-cp "$source_root/scripts/agents/arm-supervision.sh" "$foreign/repo/metasystem/scripts/agents/"
+cp "$source_root/scripts/agents/arm-supervision.sh" \
+  "$source_root/scripts/agents/preflight-commands.sh" \
+  "$foreign/repo/metasystem/scripts/agents/"
 # Shutting supervision down is a control-plane write, so the sandbox needs the
 # engine (census identity, lease classification); without it this sandbox
 # refuses for the wrong reason and the foreign-owner rule below is never
