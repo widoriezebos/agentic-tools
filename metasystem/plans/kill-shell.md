@@ -309,26 +309,18 @@ together, through an adoption run — the program never ships them
 separately — so every adopted target holds a coherent shim-engine
 pair from its adoption date, whatever the template does meanwhile.
 
-In the template: the bootstrap proves binary FRESHNESS causally
-(r3/KS-R3-007, r10/KS-R10-003) against the SOURCE DIGEST
-(r29/KS-R29-001, r30/KS-R30-001): the SHA-256 over the sorted
-(path, content-hash) pairs of every .go file under cmd/ and
-internal/ in the WORKING TREE — tracked or not, because the
-compiler does not consult git — plus go.mod and go.sum; never a
-commit id, which cannot see a dirty tree. Stamping is truthful BY
-CONSTRUCTION (r30/KS-R30-002): compute the digest, build,
-recompute — publish only when equal, else discard and retry
-bounded, so a stamp can never name a tree the build did not read.
-The stamp itself is EMBEDDED in the binary (the ldflags pattern the
-build already uses) and read through a version verb — atomic with
-the binary, no sidecar to race (r30/KS-R30-003).
-The template never commits the binary, so no self-referential
-commit exists. Honesty about the final window (r29/KS-R29-002):
-sources cannot take the lock, so a change racing the rename can
-publish a just-staled binary — the stamp still names exactly what
-was built, the next consult detects it, and the rebuild path
-repairs it; publication guarantees truthful stamping and eventual
-freshness, never filesystem atomicity. Every bootstrap build
+In the template, binary freshness is guaranteed
+by ALWAYS-REBUILD (r31, superseding the digest family of rounds
+29-30 and the prove-freshness wording of r3/KS-R3-007 and
+r10/KS-R10-003 by generating-cause resolution, like the
+discriminator in round 19): the bootstrap rebuilds unconditionally
+before executing the verb — Go's incremental cache makes it
+seconds, the compiler is the only truthful authority on its own
+inputs, and go-gate.sh already works exactly this way today. The
+embedded stamp remains informational provenance, never a freshness
+oracle; nothing computes digests, so nothing needs a pre-binary
+digest owner (r31/KS-R31-001 through KS-R31-003). The template
+never commits the binary, so no self-referential commit exists. Every bootstrap build
 is NON-PUBLISHING (r7/KS-R7-003), compiling to a temporary path. The
 publication protocol is ORDERED and KIND-SCOPED (r8/KS-R8-002,
 r9/KS-R9-002, r10/KS-R10-004, r25/KS-R25-001): register the run's
@@ -337,8 +329,8 @@ gate-name field already carries kind — then consult the fence, which
 exempts the registrant's chain, REFUSES on foreign VALIDATION
 markers (a live suite must never have its binary swapped), and
 treats foreign PUBLICATION markers as contention; then claim
-internal/dispatch/ownerlock.go's publication lock, then REVALIDATE
-freshness under the lock. VALIDATION ADMISSION completes the family
+internal/dispatch/ownerlock.go's publication lock — the rebuild
+already happened this invocation (r31/KS-R31-004) — then rename. VALIDATION ADMISSION completes the family
 (r26/KS-R26-001): on a first build the suite's admission rides its
 child builder's publish-bootstrap marker; the moment a binary
 exists, the suite registers its own validation marker BEFORE any
