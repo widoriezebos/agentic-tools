@@ -12,8 +12,11 @@ cd "$root"
 # ships it as a Phase 4 port, plans/go-migration.md). It runs pure
 # shell/python, so the Go gate is a no-op there — SKIP, never fail. This is
 # what keeps an adopted target's own suite green before the engine arrives.
-if [[ ! -f "$root/go.mod" ]]; then
-  echo "go gate: no go.mod (this checkout has not adopted the Go engine); skipped" >&2
+# Identity, not existence: an adopted target may be an ordinary Go
+# repository with a module of its own, and running the template's Go
+# checks against a foreign module would fail its required validation.
+if ! grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root/go.mod"; then
+  echo "go gate: not the metasystem source tree (adopted checkouts carry only the engine binary); skipped" >&2
   exit 0
 fi
 

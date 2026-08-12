@@ -68,7 +68,9 @@ gate_run_marker=$(bin/metasystem gate register --root "$root" \
 # a no-op there — the go gate, the seam tripwire, and the owner-alone
 # fixtures alike. It also needs process visibility, so it is out of
 # delegate scope.
-if (( ! delegate_scope )) && [[ -f go.mod ]]; then
+metasystem_go_source=0
+grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod && metasystem_go_source=1
+if (( ! delegate_scope )) && (( metasystem_go_source )); then
   bash scripts/agents/go-gate.sh
   # The engine-seam tripwire and the Go-vs-python census conformance
   # harnesses (signature, fingerprint, run) retired with the migration:
@@ -357,7 +359,7 @@ done
 # engine with the python port; pin it at its Go source when that is present
 # (template mode). Adopted repositories carry only the binary, whose
 # selection fixtures above exercise the same names end to end.
-if [[ -f go.mod ]]; then
+if (( metasystem_go_source )); then
   grep -Fq 'prefix := fmt.Sprintf("%s-%s-%s-%s-", runtime, version, configHash, date)' \
     internal/adapter/snapshot.go \
     && grep -Fq 'name := fmt.Sprintf("%s%03d.json", prefix, sequence)' \
