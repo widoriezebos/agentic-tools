@@ -220,7 +220,7 @@ if [[ -n "${METASYSTEM_SUPERVISION_OPERATOR_FIXTURE_FAKE:-}" ]] \
   operator_env=(env METASYSTEM_CENSUS_PROCESS_FILE="$operator_process_fixture"
     METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$operator_identity_fixture")
 fi
-operator_start=$("${operator_env[@]}" "$operator_engine" identity started-at --pid "$$")
+operator_start=$("${operator_env[@]}" "$operator_engine" proc started-at --pid "$$")
 (
   cd "$operator_harness"
   "${operator_env[@]}" \
@@ -228,7 +228,7 @@ operator_start=$("${operator_env[@]}" "$operator_engine" identity started-at --p
       --start-time "$operator_start" --tag operator-path
 ) >"$tmp/operator-arm.out" 2>&1 &
 operator_driver=$!
-operator_driver_start=$("${operator_env[@]}" "$operator_engine" identity started-at --pid "$operator_driver")
+operator_driver_start=$("${operator_env[@]}" "$operator_engine" proc started-at --pid "$operator_driver")
 owned_pids+=("$operator_driver:$operator_driver_start")
 wait_for_child_exit "nested ordinary operator arming" "$operator_driver"
 grep -Eq "(^|[[:space:]])ARMED repo=$operator_scope([[:space:]]|$)" "$tmp/operator-arm.out" \
@@ -312,7 +312,7 @@ rows.append({"pid": 61002, "ppid": 1, "pgid": 61002, "pidStartedAt": 100,
 json.dump(rows, open(output, "w"))
 PY
 METASYSTEM_CENSUS_PROCESS_FILE="$tmp/enumerate-filter-resolve-procs.json" \
-  "$census_engine" census run --root "$repo" --repo "$repo" \
+  "$census_engine" proc census --root "$repo" --repo "$repo" \
   --fingerprint ordering-fixture --interval 60 \
   --output "$tmp/enumerate-filter-resolve.json" >/dev/null
 python3 - "$tmp/enumerate-filter-resolve.json" <<'PY'
@@ -347,7 +347,7 @@ for runtime in claude codex devin fake; do
   # its processes carry the fixture name, and a bare-word positive was exactly
   # the looseness that let commit-message prose in a tool shell match (KI-14).
   [[ "$runtime" == fake ]] && positive=metasystem-fake-agent
-  "$census_engine" census signature-check --adapter "$adapter" --positive "$positive" \
+  "$census_engine" proc signature-check --adapter "$adapter" --positive "$positive" \
     --lookalike "metasystem-${runtime}-lookalike" >/dev/null
 done
 for failure in malformed invalid-ere adapter-failed exclude-tie; do
@@ -359,7 +359,7 @@ for failure in malformed invalid-ere adapter-failed exclude-tie; do
     exclude-tie) printf '#!/usr/bin/env bash\nprintf "match ^tie$\\nexclude ^tie$\\n"\n' >"$bad_adapter" ;;
   esac
   chmod +x "$bad_adapter"
-  if "$census_engine" census signature-check --adapter "$bad_adapter" --positive tie \
+  if "$census_engine" proc signature-check --adapter "$bad_adapter" --positive tie \
       --lookalike lookalike >/dev/null 2>&1; then
     echo "S4-7: $failure signature adapter did not fail closed" >&2
     exit 1

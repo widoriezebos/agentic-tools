@@ -77,7 +77,7 @@ harness_fixture_budget_init() { # metasystem root
     ms_bin="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
     probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fixture-probe.XXXXXX") || return 1
     probe_started=$("$ms_bin" util now-ns)
-    "$ms_bin" census run --repo "$harness_root" --root "$harness_root" \
+    "$ms_bin" proc census --repo "$harness_root" --root "$harness_root" \
       --fingerprint fixture-budget-probe --interval 60 \
       --output "$probe_dir/census.json" >/dev/null 2>&1 &
     probe_pid=$!

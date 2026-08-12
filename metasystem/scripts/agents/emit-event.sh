@@ -26,7 +26,7 @@ emit_event() {
   [[ -n "$_metasystem_event_root" ]] || return 0
   [[ -x "$_metasystem_event_bin" ]] || return 0
   if [[ -z "$_metasystem_event_started" ]]; then
-    _metasystem_event_started=$("$_metasystem_event_bin" identity started-at --pid $$ 2>/dev/null) || true
+    _metasystem_event_started=$("$_metasystem_event_bin" proc started-at --pid $$ 2>/dev/null) || true
     [[ "$_metasystem_event_started" =~ ^[0-9]+$ ]] || _metasystem_event_started=0
   fi
   _metasystem_event_seq=$(( _metasystem_event_seq + 1 ))

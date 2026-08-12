@@ -33,7 +33,7 @@ arm() { # repo, tag, registry, interval
   "$bin" supervise owner --repo "$repo" --tag "$tag" --interval "$interval" \
     --registry "$registry" --gate "$gate" >"$repo/owner.out" 2>&1 &
   pid=$!
-  start=$("$bin" identity started-at --pid "$pid") || fail "cannot read owner start time"
+  start=$("$bin" proc started-at --pid "$pid") || fail "cannot read owner start time"
   printf '{"pid":%s,"pidStartedAt":%s,"instanceTag":"%s"}\n' "$pid" "$start" "$tag" \
     > "$repo/artifacts/agents/supervision/lock.d/owner.json"
   touch "$gate"
