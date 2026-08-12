@@ -7,9 +7,11 @@
 //
 // The committed shell helpers read start times to whole seconds, which
 // is why REG-6's kill proof needs argv as a third factor. This package
-// reads exact kernel start times (microseconds on darwin), shrinking
-// that residual for live comparisons while still speaking seconds to
-// records for compatibility with every artifact the system already has.
+// reads exact kernel start times — microseconds on darwin, 10ms
+// clock-tick resolution on linux, both far finer than the whole-second
+// resolution every decision actually compares at — while still speaking
+// seconds to records for compatibility with every artifact the system
+// already has.
 //
 // SAME-USER SCOPE INVARIANT (B2): every consumer that acts on Dead —
 // the reapers, lock takeover, the lease sweep — judges processes this
@@ -33,7 +35,7 @@ type Ref struct {
 // Exact is a live identity as the kernel reports it.
 type Exact struct {
 	Pid       int64
-	StartedAt time.Time // kernel-exact (microseconds on darwin)
+	StartedAt time.Time // kernel-exact (microseconds on darwin, 10ms ticks on linux)
 	Argv      []string  // valid only when ArgvKnown; see below
 	// ArgvKnown records whether the argv read SUCCEEDED. Argv is
 	// best-effort at probe time — a process whose argv cannot be read is

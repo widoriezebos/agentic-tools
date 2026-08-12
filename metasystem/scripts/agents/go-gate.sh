@@ -73,6 +73,14 @@ fi
 
 go vet ./... || { echo "go gate: go vet failed" >&2; exit 1; }
 
+# The standing Linux signal (go-production-grade Phase 1, P3): a darwin-only
+# regression is invisible until someone tries, so both Linux architectures
+# cross-compile in every gate run. Seconds of cost, no runner needed (KI-10).
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./... \
+  || { echo "go gate: linux/amd64 cross-build failed" >&2; exit 1; }
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./... \
+  || { echo "go gate: linux/arm64 cross-build failed" >&2; exit 1; }
+
 # staticcheck and govulncheck, pinned (go-production-grade Phase 0d, human
 # decision 2026-08-11). Versions are frozen here; a network-unreachable tool
 # run fails the gate loudly rather than skipping silently.

@@ -14,9 +14,10 @@ import (
 )
 
 // KernelProber reads process identity from the darwin kernel:
-// start time from kern.proc.pid (microsecond resolution, the exactness
-// the Go ruling exists for) and argv from kern.procargs2 for REG-6's
-// claim-consistency factor.
+// start time from kern.proc.pid (microsecond resolution; linux reads
+// 10ms ticks — both are finer than the whole seconds every decision
+// compares) and argv from kern.procargs2 for REG-6's claim-consistency
+// factor.
 type KernelProber struct{}
 
 // kinfoProc's layout: extern_proc begins the struct, and its first
