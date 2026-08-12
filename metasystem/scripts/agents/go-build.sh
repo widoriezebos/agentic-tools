@@ -24,8 +24,15 @@ fi
 
 commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)
 mkdir -p bin
+# Build beside the target and rename over it: go build refuses to overwrite
+# a non-object file (exactly the stale/foreign case this script exists to
+# replace), and the atomic rename never leaves a half-written binary where
+# a live process might exec it.
+staging="bin/.metasystem.build.$$"
+trap 'rm -f "$staging"' EXIT
 CGO_ENABLED=0 go build \
   -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=$commit" \
-  -o bin/metasystem ./cmd/metasystem \
+  -o "$staging" ./cmd/metasystem \
   || { echo "go-build: build failed" >&2; exit 1; }
+mv -f "$staging" bin/metasystem
 echo "go-build: bin/metasystem @ $commit (CGO_ENABLED=0)"
