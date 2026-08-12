@@ -64,7 +64,7 @@ mkdir -p "$repo/scripts/agents" "$repo/scripts" "$repo/truth" "$repo/plans" "$re
 # The copied assert scripts resolve their engine as <repo>/bin/metasystem.
 cp "$root/bin/metasystem" "$repo/bin/metasystem"
 git init -q -b main "$repo"
-git init -q --bare "$remote"
+git init -q -b main --bare "$remote"
 git -C "$repo" config user.name metasystem
 git -C "$repo" config user.email metasystem@example.invalid
 

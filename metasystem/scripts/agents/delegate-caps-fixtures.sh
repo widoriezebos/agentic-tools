@@ -163,7 +163,7 @@ fence.job-cap-min=120
 cap.min.fake.fake-model=900
 ```
 EOF
-git -C "$harness" init -q
+git -C "$harness" init -q -b main
 git -C "$harness" add .
 git -C "$harness" -c user.name=fixture -c user.email=fixture.invalid commit -qm fixture
 armed_repo=$harness

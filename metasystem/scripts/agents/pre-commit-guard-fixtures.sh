@@ -19,7 +19,7 @@ exit 1
 SH
 chmod +x "$fixture_root/bin/metasystem"
 
-git -C "$repository" init -q
+git -C "$repository" init -q -b main
 printf 'tracked\n' >"$repository/tracked.txt"
 git -C "$repository" add tracked.txt
 git -C "$repository" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm seed

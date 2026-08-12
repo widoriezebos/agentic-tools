@@ -1484,7 +1484,7 @@ if delegate_process_section "dispatcher, adapter selftest, and mission-runner pr
   printf '\nmodel.tier.1=fake:fake-model\nmodel.tier.2=fake:fake-premium\n' >>"$agent_repo/metasystem.conf"
   grep -q '^watch\.interval-sec=' "$agent_repo/metasystem.conf" || printf 'watch.interval-sec=5\n' >>"$agent_repo/metasystem.conf"
   grep -q '^census\.log-max-bytes=' "$agent_repo/metasystem.conf" || printf 'census.log-max-bytes=4096\n' >>"$agent_repo/metasystem.conf"
-  git -C "$agent_repo" init -q
+  git -C "$agent_repo" init -q -b main
   git -C "$agent_repo" add .
   git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
   # Production resolves its engine as <repo>/bin/metasystem — an untracked
@@ -2622,7 +2622,7 @@ PY_STAMP
   }
   stamp_fixture_contract mission-alpha
   dispatch_origin="$agent_fixture/dispatch-origin.git"
-  git init -q --bare "$dispatch_origin"
+  git init -q -b main --bare "$dispatch_origin"
   git -C "$agent_repo" remote add origin "$dispatch_origin"
   git -C "$agent_repo" add metasystem.conf plans/mission-mission-alpha.contract.md
   git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'sign dispatch envelope fixture'
@@ -2897,7 +2897,7 @@ GATE
   runner_git add scripts/gate.sh candidate-score.txt truth/reference.txt
   runner_git commit -qm 'add mission runner instruments'
   runner_git tag runner-instruments
-  git init -q --bare "$runner_origin"
+  git init -q -b main --bare "$runner_origin"
   runner_branch=$(runner_git branch --show-current)
   runner_git remote add origin "$runner_origin"
   runner_git push -qu -u origin "$runner_branch"
@@ -3559,7 +3559,7 @@ scripts/assert-design-obligation-gate.sh --runtime-required --file docs/examples
 scripts/assert-design-obligation-gate.sh --file docs/examples/design-obligation-matrix.md >/dev/null
 
 repo="$tmp/baseline-repo"
-git init -q "$repo"
+git init -q -b main "$repo"
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit --allow-empty -qm base
 (cd "$repo" && "$root/scripts/refactor-baseline.sh" record --gate "declared acceptance gate" >/dev/null)
 (cd "$repo" && "$root/scripts/refactor-baseline.sh" check >/dev/null) || {
@@ -3754,7 +3754,7 @@ cp bin/metasystem "$refactor_knob/bin/metasystem"
 # artifact there exactly as in production.
 printf 'bin/\n' >"$refactor_knob/.gitignore"
 printf 'refactor.max-age-minutes=1440\nrefactor.max-commits=0\n' >"$refactor_knob/metasystem.conf"
-git init -q "$refactor_knob"
+git init -q -b main "$refactor_knob"
 printf 'fixture\n' >"$refactor_knob/source.txt"
 git -C "$refactor_knob" add source.txt metasystem.conf scripts .gitignore
 git -C "$refactor_knob" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm initial
@@ -3959,12 +3959,12 @@ if (( template_mode )); then
   nested_src="$tmp/adopt-nested"
   mkdir -p "$nested_src/vendored"
   copy_tree_without_artifacts "$root" "$nested_src/vendored"
-  git -C "$nested_src" init -q
+  git -C "$nested_src" init -q -b main
   git -C "$nested_src" add .
   git -C "$nested_src" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm nested
   nested_tgt="$tmp/adopt-nested-target"
   mkdir -p "$nested_tgt"
-  git -C "$nested_tgt" init -q
+  git -C "$nested_tgt" init -q -b main
   "$nested_src/vendored/scripts/adopt.sh" "$nested_tgt" --runtimes claude >"$tmp/adopt-nested.out" 2>&1 \
     || { echo "nested-prefix adoption failed" >&2; cat "$tmp/adopt-nested.out" >&2; exit 1; }
   [[ -f "$nested_tgt/metasystem.conf" && -d "$nested_tgt/scripts/agents" ]] \
@@ -4004,7 +4004,7 @@ if (( template_mode )); then
   chmod +x "$guard_stub_root/bin/metasystem"
   guard_under_test="$guard_stub_root/scripts/agents/pre-commit-guard.sh"
   mkdir -p "$guard_repo/plans"
-  git -C "$guard_repo" init -q
+  git -C "$guard_repo" init -q -b main
   echo old >"$guard_repo/plans/existing.md"
   git -C "$guard_repo" add plans/existing.md
   git -C "$guard_repo" -c user.name=m -c user.email=m@example.invalid commit -qm seed
@@ -4017,7 +4017,7 @@ if (( template_mode )); then
     || { echo "guard refused an acknowledged new plan" >&2; exit 1; }
   unborn_repo="$tmp/guard-unborn"
   mkdir -p "$unborn_repo/plans"
-  git -C "$unborn_repo" init -q
+  git -C "$unborn_repo" init -q -b main
   echo first >"$unborn_repo/plans/new.md"
   git -C "$unborn_repo" add plans/new.md
   (cd "$unborn_repo" && "$guard_under_test") \
@@ -4057,7 +4057,7 @@ PYEOF
     || { echo "a closed chain still suppressed the stale report" >&2; exit 1; }
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
   echo junk >"$srcrepo/ignored-fixture.txt"
-  git init -q "$srcrepo"
+  git init -q -b main "$srcrepo"
   git -C "$srcrepo" add -A
   git -C "$srcrepo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm snapshot
   adopt="$srcrepo/scripts/adopt.sh"

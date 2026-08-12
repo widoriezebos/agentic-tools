@@ -30,7 +30,7 @@ trap 'rm -rf "$tmp"' EXIT
 # transition, and a conflicting one is refused rather than silently preferred.
 checkout="$tmp/announce"
 mkdir -p "$checkout"
-git -C "$checkout" init -q .
+git -C "$checkout" init -q -b main .
 start=$("$ms" proc started-at --pid $$)
 
 announce() { "$ms" lease announce --root "$checkout" --session mission-runner-bm-2 \
@@ -79,7 +79,7 @@ grep -Fq "refusing to replace it" "$tmp/conflict.err" || {
 # rather than a call this code makes.
 turns="$tmp/turns"
 mkdir -p "$turns"
-git -C "$turns" init -q .
+git -C "$turns" init -q -b main .
 mkdir -p "$turns/artifacts/agents/jobs"
 cat >"$tmp/turn.sh" <<EOS
 start=\$("$ms" proc started-at --pid \$\$)

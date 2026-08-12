@@ -89,7 +89,7 @@ chmod +x "$bootstrap_harness/scripts/agents/second-session.sh" \
   "$bootstrap_harness/scripts/agents/adapters/fake.sh" \
   "$bootstrap_harness/bin/metasystem" \
   "$bootstrap_harness/scripts/agents/arm-supervision.sh"
-git -C "$bootstrap_source" init -q
+git -C "$bootstrap_source" init -q -b main
 git -C "$bootstrap_source" add metasystem
 git -C "$bootstrap_source" -c user.name=fixture \
   -c user.email=fixture@example.invalid commit -qm seed

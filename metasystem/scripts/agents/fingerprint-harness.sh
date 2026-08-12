@@ -124,7 +124,7 @@ cp "$source_root/docs/project-rules.md" "$repo/docs/"
 cp "$source_root/metasystem.conf" "$repo/"
 perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$tmp/evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=1/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/^role\.code-critic\.runtime=.*$/role.code-critic.runtime=fake/m; s/^role\.code-critic\.model\.<runtime>=.*$/role.code-critic.model.fake=fake-model/m; s/^role\.investigator\.runtime=main$/role.investigator.runtime=fake/m; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$repo/metasystem.conf"
 printf '\nmodel.tier.1=fake:fake-model\n' >>"$repo/metasystem.conf"
-git -C "$repo" init -q
+git -C "$repo" init -q -b main
 git -C "$repo" add .
 git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
 # Production resolves its engine as <repo>/bin/metasystem — an untracked

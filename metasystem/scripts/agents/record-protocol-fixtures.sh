@@ -8,7 +8,7 @@ repository="$tmp/repository"
 fixture_root="$repository/metasystem"
 mkdir -p "$fixture_root/scripts/agents" "$fixture_root/artifacts/agents/jobs" \
   "$fixture_root/artifacts/agents/record-locks"
-git -C "$repository" init -q
+git -C "$repository" init -q -b main
 cp "$source_root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/dispatch.sh"
 # The copied dispatcher resolves its engine as <fixture>/bin/metasystem; the
 # lease, identity, and authority helpers it used to need as .py files live

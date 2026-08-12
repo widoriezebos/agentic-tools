@@ -443,7 +443,7 @@ run_full_contract_selftest() { # native|unavailable, optional devin flag
   selftest_id="$runtime-selftest-$(date -u +%Y%m%dt%H%M%Sz)-$$"
   scratch_repo="$selftest_dir/repo"
   mkdir -p "$scratch_repo"
-  git -C "$scratch_repo" init -q
+  git -C "$scratch_repo" init -q -b main
   nonce="$runtime-$RANDOM-$$"
   printf 'PERMITTED_READ:%s\n' "$nonce" >"$scratch_repo/permitted.txt"
   printf '# Scratch repository\n' >"$scratch_repo/README.md"

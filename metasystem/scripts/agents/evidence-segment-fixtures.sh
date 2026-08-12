@@ -11,7 +11,7 @@ mirror_checkout() { # checkout directory
   local checkout=$1 fixture_root=$1/metasystem
   mkdir -p "$fixture_root/scripts/agents" "$fixture_root/scripts" \
     "$fixture_root/artifacts/agents/jobs" "$fixture_root/artifacts/agents/segment-chain/rounds/1"
-  git -C "$checkout" init -q
+  git -C "$checkout" init -q -b main
   cp "$source_root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/dispatch.sh"
   # The copied dispatcher resolves its engine as <fixture>/bin/metasystem;
   # the retired .py helpers live inside that one binary now.

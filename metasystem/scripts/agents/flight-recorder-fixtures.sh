@@ -130,7 +130,7 @@ PY
 #    a scratch checkout still succeeds and emits nothing.
 lease_repo="$tmp/lease-repo"
 mkdir -p "$lease_repo/artifacts/agents/mains" "$lease_repo/artifacts/agents/jobs"
-git -C "$lease_repo" init -q .
+git -C "$lease_repo" init -q -b main .
 mkdir -p "$lease_repo/artifacts/agents"
 touch "$lease_repo/artifacts/agents/events.jsonl"
 chmod 000 "$lease_repo/artifacts/agents/events.jsonl"
@@ -148,7 +148,7 @@ assert v['claimEpoch'] == 1
 # 7. The lease emits its witness events when the stream IS writable.
 lease_repo2="$tmp/lease-repo2"
 mkdir -p "$lease_repo2/artifacts/agents/jobs"
-git -C "$lease_repo2" init -q .
+git -C "$lease_repo2" init -q -b main .
 "$root/bin/metasystem" lease announce --root "$lease_repo2" \
   --session fr-fixture2 --pid $$ --start "$start" --tag metasystem-main-fr2 --runtime fake >/dev/null
 grep -q '"event":"lease-claimed"' "$lease_repo2/artifacts/agents/events.jsonl" \

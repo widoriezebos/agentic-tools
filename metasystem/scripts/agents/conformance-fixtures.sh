@@ -31,7 +31,7 @@ role.default.runtime=fake
 role.default.model.fake=fixture-default
 evidence.root=/tmp/metasystem-conformance-fixture-evidence
 CONF
-  git -C "$controller" init -q
+  git -C "$controller" init -q -b main
   git -C "$controller" add .
   git -C "$controller" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
   git -C "$controller" worktree add -q -b "fixture-$name" "$worktree" HEAD
@@ -434,7 +434,7 @@ mkdir -p "$exhaustion_root/scripts/agents" "$exhaustion_root/artifacts/agents/jo
 cp "$source_root/scripts/agents/dispatch.sh" "$exhaustion_root/scripts/agents/"
 mkdir -p "$exhaustion_root/bin"
 cp "$source_root/bin/metasystem" "$exhaustion_root/bin/metasystem"
-git -C "$exhaustion_root" init -q
+git -C "$exhaustion_root" init -q -b main
 printf 'fixture\n' >"$exhaustion_root/source.txt"
 git -C "$exhaustion_root" add .
 git -C "$exhaustion_root" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base

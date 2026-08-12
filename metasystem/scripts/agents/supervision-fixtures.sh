@@ -110,7 +110,7 @@ make_repo() { # destination
   perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=1/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=350/m; s/^model\.tier\.1=.*$/model.tier.1=fake:fake-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$repo/metasystem.conf"
   grep -q '^watch\.interval-sec=' "$repo/metasystem.conf" || printf 'watch.interval-sec=1\n' >>"$repo/metasystem.conf"
   grep -q '^census\.log-max-bytes=' "$repo/metasystem.conf" || printf 'census.log-max-bytes=350\n' >>"$repo/metasystem.conf"
-  git -C "$repo" init -q
+  git -C "$repo" init -q -b main
   git -C "$repo" add .
   git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
   # Stage the engine the way production ships it: an untracked build artifact
@@ -176,7 +176,7 @@ mkdir -p "$operator_harness"
 done)
 operator_scope=$(cd "$operator_scope" && pwd -P)
 operator_harness=$(cd "$operator_harness" && pwd -P)
-git -C "$operator_scope" init -q
+git -C "$operator_scope" init -q -b main
 git -C "$operator_scope" add metasystem
 git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
 fixture_harness_roots+=("$operator_harness")
@@ -852,7 +852,7 @@ cp "$source_root/metasystem.conf" "$idle_repo/"
 cp "$ms" "$idle_repo/bin/metasystem"
 # The hook refuses outside a git repository, correctly: it reports on a
 # repository's work. The sandbox must be one.
-git -C "$idle_repo" init -q
+git -C "$idle_repo" init -q -b main
 printf '{"session_id":"idle","cwd":"%s","hook_event_name":"Stop"}\n' "$idle_repo" \
   | "$idle_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/idle.out" 2>/dev/null || true
 [[ -s "$tmp/idle.out" ]] \
@@ -1008,7 +1008,7 @@ PY
 
 foreign=$tmp/foreign-owner
 mkdir -p "$foreign/repo"
-(cd "$foreign/repo" && git init -q .)
+(cd "$foreign/repo" && git init -q -b main .)
 mkdir -p "$foreign/repo/metasystem/scripts/agents" "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d"
 cp "$source_root/scripts/agents/arm-supervision.sh" \
   "$source_root/scripts/agents/preflight-commands.sh" \
@@ -1064,7 +1064,7 @@ cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - Waiting on the human: nothing blocking
 - Next step: dispatch the runner
 FIXTURE
-git -C "$stop_root" init -q
+git -C "$stop_root" init -q -b main
 stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
 first=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
 printf '%s' "$first" | grep -q '"decision":"block"' \
