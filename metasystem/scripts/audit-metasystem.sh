@@ -1,110 +1,11 @@
 #!/usr/bin/env bash
+# Shim (plans/kill-shell.md Phase A): the audit's decisions live in the
+# engine; this file relays the historical calling convention and env knobs.
 set -euo pipefail
-
 root=${1:-.}
-cd "$root"
-# Captured AFTER the cd: the sentinel describes the audited root, never the
-# caller's working directory.
-metasystem_here=$(pwd -P)
-
-search_lines() { # POSIX ERE followed by files/directories
-  local pattern=$1
-  shift
-  if command -v rg >/dev/null 2>&1; then
-    rg -n "$pattern" "$@"
-  else
-    # grep -R is the portable IL-3 path. The scan roots are already explicit,
-    # so excluding .git preserves the same metasystem-owned boundary as rg.
-    grep -EnR --exclude-dir=.git -- "$pattern" "$@" 2>/dev/null
-  fi
-}
-
-required=(AGENTS.md wow.md metasystem.conf docs/project-rules.md docs/orchestration.md docs/collaboration.md docs/design/design-principles.md docs/design/design-obligation-gate.md)
-for file in "${required[@]}"; do
-  [[ -f "$file" ]] || { echo "missing required file: $file" >&2; exit 1; }
-done
-
-# Scope the outside-reference check to metasystem-owned files ONLY, by explicit
-# list rather than by directory: in adopted repositories docs/ and scripts/
-# also hold project-owned files that legitimately contain dot-dot path
-# segments (script root resolution) or absolute paths (project registers,
-# frozen histories). docs/project-rules.md is project-owned and deliberately
-# excluded, and so are this script and scripts/adopt.sh: explicit file
-# arguments bypass rg glob filters, and both legitimately contain dot-dot
-# segments (root resolution, relative symlink targets), so neither may
-# appear in the scan list at all.
-# The path pattern anchors on a non-word, non-slash character before the
-# leading slash so prose like "rule/home/owner" does not false-positive.
-outside_pattern='(^|[^[:alnum:]/])/(Users|home|root|tmp|var|opt|etc|private|workspace)/|\.\.'"/"
-scan=()
-for p in AGENTS.md CLAUDE.md wow.md \
-  docs/orchestration.md docs/collaboration.md docs/working-modes.md \
-  docs/working-with-agents.md docs/project-adaptation.md docs/metasystem-reconciliation.md \
-  docs/design/design-principles.md docs/design/design-obligation-gate.md docs/examples \
-  skills optional-skills meta \
-  scripts/validate-metasystem.sh scripts/validate-skill.sh \
-  scripts/assert-design-obligation-gate.sh scripts/refactor-baseline.sh scripts/frontier.sh \
-  scripts/receipt.sh scripts/assert-stop-loss.sh scripts/enforcement \
-  plans/README.md plans/instruction-ledger.md plans/known-issues.md; do
-  [[ -e "$p" ]] && scan+=("$p")
-done
-if search_lines "$outside_pattern" "${scan[@]}"; then
-  echo "references outside the metasystem are forbidden in metasystem-owned files" >&2
-  exit 1
-fi
-
-echo "Always-loaded words"
-wc -w AGENTS.md wow.md
-echo "Skill inventory"
-skill_dirs=(skills)
-[[ -d optional-skills ]] && skill_dirs+=(optional-skills)
-find "${skill_dirs[@]}" -name SKILL.md -print | sort
-echo "Instruction inventory"
-# artifacts/ is runtime state: no instruction asset lives there, and a live
-# job's lock directories vanish mid-traversal, which kills a bare find.
-find . -path ./artifacts -prune -o -type f \( -name 'AGENTS.md' -o -name 'CLAUDE.md' -o -name 'wow.md' -o -name 'SKILL.md' -o -name 'AGENT.md' \) -print | sort
-
-if search_lines 'TODO|TBD|<one paragraph>|<command>|<paths' AGENTS.md wow.md "${skill_dirs[@]}"; then
-  echo "unresolved placeholders in active instructions" >&2
-  exit 1
-fi
-
-# Template detection uses a positive marker, not the mere absence of a
-# directory: only the template checkout is a folder literally named metasystem
-# with the development docs beside it, and the name test short-circuits so an
-# adopted repository never touches a parent path. Everywhere else,
-# project-rules.md must be filled in.
-if ! [[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]]; then
-  # Look for the template's own literal placeholders, exactly as the check on
-  # AGENTS.md and the skills does above. A generic any-angle-bracket pattern
-  # false-positives on legitimately parameterized commands in a filled file
-  # (<port>, <pid>, <prompt> and the like), which a real project-rules is full of.
-  # METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS tolerates them for the structural check
-  # scripts/adopt.sh runs right after copying, before the facts are filled in;
-  # the closing validate-metasystem run enforces them again.
-  if [[ -z "${METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS:-}" ]]; then
-    placeholder_pattern='<one paragraph>|<command>|<paths|<policy>|<list them here>|<sources and handling>|<forbidden list>|<location>|<path outside the repository>|<amount and period>|<warning threshold>|<who approves>|<usage source>|<template sha>|<durable evidence root, outside the repository>|<cheapest model class>|<middle model class>|<costliest model class>|<model>'
-    if search_lines "$placeholder_pattern" docs/project-rules.md metasystem.conf; then
-      echo "adopted repository has unreplaced placeholders in docs/project-rules.md or metasystem.conf" >&2
-      exit 1
-    fi
-  fi
-fi
-
-max_words=${METASYSTEM_MAX_ALWAYS_LOADED_WORDS:-1400}
-words=$(cat AGENTS.md wow.md | wc -w | tr -d ' ')
-(( words <= max_words )) || { echo "always-loaded instructions exceed $max_words words" >&2; exit 1; }
-
-# Report only, uncapped: the effective per-task footprint. Project rules,
-# collaboration, and the completion gate load on nearly every repo-changing
-# task, and design principles on most; stating the real number keeps the
-# capped always-loaded metric honest.
-bundle=(AGENTS.md wow.md docs/project-rules.md docs/collaboration.md docs/design/design-obligation-gate.md docs/design/design-principles.md)
-present=()
-for f in "${bundle[@]}"; do
-  [[ -f "$f" ]] && present+=("$f")
-done
-bundle_words=$(cat "${present[@]}" | wc -w | tr -d ' ')
-echo "Effective common-path bundle: $bundle_words words (report only)"
-
-echo "metasystem audit passed"
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+ms="${METASYSTEM_BIN:-$here/bin/metasystem}"
+args=(--root "$root")
+[[ -n "${METASYSTEM_MAX_ALWAYS_LOADED_WORDS:-}" ]] && args+=(--max-always-loaded-words "$METASYSTEM_MAX_ALWAYS_LOADED_WORDS")
+[[ -n "${METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS:-}" ]] && args+=(--allow-placeholders)
+exec "$ms" audit metasystem "${args[@]}"

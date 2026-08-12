@@ -84,3 +84,183 @@ func TestReadCoverageBaseline(t *testing.T) {
 		}
 	}
 }
+
+// The metasystem audit's refusal paths, each a distinct fixture tree.
+func TestAuditMetasystemRefusals(t *testing.T) {
+	build := func(t *testing.T) string {
+		root := t.TempDir()
+		for _, dir := range []string{"docs/design", "skills", "scripts/enforcement"} {
+			if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, file := range []string{"AGENTS.md", "wow.md", "metasystem.conf",
+			"docs/project-rules.md", "docs/orchestration.md", "docs/collaboration.md",
+			"docs/design/design-principles.md", "docs/design/design-obligation-gate.md"} {
+			if err := os.WriteFile(filepath.Join(root, file), []byte("clean instruction text\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return root
+	}
+	t.Run("clean passes", func(t *testing.T) {
+		result, err := AuditMetasystem(build(t), AuditOptions{})
+		if err != nil || len(result.Violations) != 0 {
+			t.Fatalf("clean tree refused: %v %v", err, result.Violations)
+		}
+	})
+	t.Run("missing required file", func(t *testing.T) {
+		root := build(t)
+		os.Remove(filepath.Join(root, "wow.md"))
+		result, _ := AuditMetasystem(root, AuditOptions{})
+		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "missing required file: wow.md") {
+			t.Fatalf("missing file not caught: %v", result.Violations)
+		}
+	})
+	t.Run("outside reference", func(t *testing.T) {
+		root := build(t)
+		os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("see /Users/someone/notes\n"), 0o644)
+		result, _ := AuditMetasystem(root, AuditOptions{})
+		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "outside the metasystem") {
+			t.Fatalf("outside reference not caught: %v", result.Violations)
+		}
+	})
+	t.Run("active placeholder", func(t *testing.T) {
+		root := build(t)
+		os.WriteFile(filepath.Join(root, "wow.md"), []byte("TODO fill this\n"), 0o644)
+		result, _ := AuditMetasystem(root, AuditOptions{})
+		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "unresolved placeholders") {
+			t.Fatalf("active placeholder not caught: %v", result.Violations)
+		}
+	})
+	t.Run("adopted placeholder refused unless allowed", func(t *testing.T) {
+		root := build(t)
+		os.WriteFile(filepath.Join(root, "docs/project-rules.md"), []byte("budget: <amount and period>\n"), 0o644)
+		result, _ := AuditMetasystem(root, AuditOptions{})
+		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "unreplaced placeholders") {
+			t.Fatalf("adopted placeholder not caught: %v", result.Violations)
+		}
+		result, _ = AuditMetasystem(root, AuditOptions{AllowPlaceholders: true})
+		if len(result.Violations) != 0 {
+			t.Fatalf("allow-placeholders did not tolerate: %v", result.Violations)
+		}
+	})
+	t.Run("word budget", func(t *testing.T) {
+		root := build(t)
+		result, _ := AuditMetasystem(root, AuditOptions{MaxAlwaysLoadedWords: 3})
+		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "exceed 3 words") {
+			t.Fatalf("budget breach not caught: %v", result.Violations)
+		}
+	})
+}
+
+// The report paths: inventories, budgets, the bundle line, template
+// detection, and the binary-file skip.
+func TestAuditMetasystemReport(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "metasystem")
+	for _, dir := range []string{"docs/design", "skills/demo", "optional-skills/x", "meta", "artifacts/agents"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The template marker beside the checkout: placeholders tolerated.
+	if err := os.MkdirAll(filepath.Join(parent, "development"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(parent, "development", "metasystem-design.md"), []byte("design\n"), 0o644)
+	for _, file := range []string{"AGENTS.md", "wow.md", "metasystem.conf",
+		"docs/project-rules.md", "docs/orchestration.md", "docs/collaboration.md",
+		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md"} {
+		os.WriteFile(filepath.Join(root, file), []byte("two words\n"), 0o644)
+	}
+	// Template placeholders in project-rules: tolerated because the marker
+	// identifies the template.
+	os.WriteFile(filepath.Join(root, "docs/project-rules.md"), []byte("budget: <amount and period>\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "skills/demo/SKILL.md"), []byte("a skill\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "optional-skills/x/SKILL.md"), []byte("optional\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "artifacts/agents/AGENTS.md"), []byte("runtime state, pruned\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "meta/binary.bin"), append([]byte("bin"), 0), 0o644)
+
+	result, err := AuditMetasystem(root, AuditOptions{})
+	if err != nil || len(result.Violations) != 0 {
+		t.Fatalf("template tree refused: %v %v", err, result.Violations)
+	}
+	joined := strings.Join(result.Report, "\n")
+	for _, want := range []string{
+		"Always-loaded words", "Skill inventory", "skills/demo/SKILL.md",
+		"optional-skills/x/SKILL.md", "Instruction inventory", "./AGENTS.md",
+		"Effective common-path bundle:",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("report missing %q:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "artifacts/agents/AGENTS.md") {
+		t.Fatalf("artifacts/ was not pruned:\n%s", joined)
+	}
+}
+
+func TestAuditMetasystemWordCountErrors(t *testing.T) {
+	if _, _, err := auditWordCounts(t.TempDir(), []string{"absent.md"}); err == nil {
+		t.Fatal("unreadable word-count input accepted")
+	}
+	if _, err := AuditMetasystem(filepath.Join(t.TempDir(), "nowhere"), AuditOptions{}); err != nil {
+		t.Fatal("missing root should refuse via violations, not error:", err)
+	}
+}
+
+// Remaining branch coverage: symlinked scan roots, unreadable scan files,
+// baseline edge shapes, and parse tolerance for malformed percentages.
+func TestAuditEdgeBranches(t *testing.T) {
+	if got := ParseCoverage("ok pkg coverage: notanumber% of statements\n", ""); len(got) != 0 {
+		t.Fatalf("malformed percentage parsed: %v", got)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "r.json")
+	os.WriteFile(path, []byte(`{"floors":{"internal/x":-1}}`), 0o644)
+	if _, err := ReadCoverageBaseline(path); err == nil {
+		t.Fatal("negative floor accepted")
+	}
+	if _, err := ReadCoverageBaseline(filepath.Join(dir, "absent.json")); err == nil {
+		t.Fatal("absent baseline accepted")
+	}
+
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "skills", ".git"), 0o755)
+	os.WriteFile(filepath.Join(root, "skills", ".git", "config"), []byte("/Users/x\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "skills", "ok.md"), []byte("fine\n"), 0o644)
+	unreadable := filepath.Join(root, "skills", "sealed.md")
+	os.WriteFile(unreadable, []byte("/Users/secret\n"), 0o644)
+	os.Chmod(unreadable, 0o000)
+	defer os.Chmod(unreadable, 0o644)
+	hits, err := auditScanFiles(root, []string{"skills", "absent-root"}, auditOutsideRe)
+	if err != nil || len(hits) != 0 {
+		t.Fatalf(".git or unreadable files leaked into the scan: %v %v", hits, err)
+	}
+	found, err := auditFindNamed(root, []string{"skills", "gone"}, map[string]bool{"ok.md": true}, false)
+	if err != nil || len(found) != 1 {
+		t.Fatalf("find misbehaved: %v %v", found, err)
+	}
+}
+
+// Error propagation through the audit's own steps: a bundle file readable at
+// stat time but not at read time, and always-loaded files vanishing between
+// the required check and the count.
+func TestAuditMetasystemErrorPropagation(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"docs/design", "skills"} {
+		os.MkdirAll(filepath.Join(root, dir), 0o755)
+	}
+	for _, file := range []string{"AGENTS.md", "wow.md", "metasystem.conf",
+		"docs/project-rules.md", "docs/orchestration.md", "docs/collaboration.md",
+		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md"} {
+		os.WriteFile(filepath.Join(root, file), []byte("clean text\n"), 0o644)
+	}
+	sealed := filepath.Join(root, "AGENTS.md")
+	os.Chmod(sealed, 0o000)
+	defer os.Chmod(sealed, 0o644)
+	if _, err := AuditMetasystem(root, AuditOptions{}); err == nil {
+		t.Fatal("unreadable always-loaded file must error")
+	}
+}
