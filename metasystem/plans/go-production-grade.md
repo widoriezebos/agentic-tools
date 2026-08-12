@@ -341,6 +341,49 @@ Each identifier's recorded decision:
 | C-4 | HIGH | S1, B5 | `atomicWriteText` is NOT duplicated: it carries a durability contract Phase 4 must harden in one place, and two copies would be two divergent fixes. It gets a real owner, `internal/atomicfile`, which Phase 4 then migrates the remaining writers onto | `internal/atomicfile` | `internal/atomicfile/atomicfile.go` | `internal/atomicfile/atomicfile_test.go` | Not applicable: durability proof is Phase 4's fault-injection matrix | READY_FOR_RUNTIME | Land C-5 |
 | C-5 | CRITICAL | S1 | The extraction preserves behavior exactly: the four exported entry points keep their names and signatures at the command layer, the contract seal hashes file CONTENT and cannot shift with code layout, and the suite's mission fixtures pass unchanged | `internal/contract` | `cmd/metasystem/mission_contract.go` | `internal/contract/contract_test.go` | Not applicable until the suite runs: acceptance is the full gate | READY_FOR_RUNTIME | Run the gate and the mission fixtures |
 
+## Implementation status, 2026-08-12 (session close)
+
+Recorded so the next session starts from fact, not from this document's
+original future tense. Every commit below is gate-green and suite-validated
+from a pristine worktree.
+
+**Complete and accepted.** Phase 0 (a-d): adoption always rebuilds through
+one fenced, CGO-pinned, stamped build with the Go toolchain preflighted
+before any mutation; the nine staticcheck findings fixed and the patience
+three coordinated; staticcheck and govulncheck pinned into the gate; the
+gate's two fail-open holes closed with an inventory-joined ratchet and a
+standing broken-gofmt replay. Phase 1: the engine builds AND runs on Linux —
+**Debian 12 arm64 is in the verified tier**, promoted by the enforcing
+two-pass run, with B1's argv-unreadable verdict and B2's restricted-procfs
+refusal landed and five host-configuration dependencies fixed along the way.
+Phase 2: the rename cluster. Phase 2.5: both `ps` sites through the identity
+owner, and `internal/turn` owning the ask vocabulary. Phase 3a: the contract
+is its own package, imported by mission and never importing back.
+
+**All eight B-findings are closed**: B1, B2 (Phase 1), B3, B8 (Phase 0), B4
+bounded execution with process-group kill, B5 the durable-write outcome
+model in `internal/atomicfile` with fault injection, B6 the append families'
+third outcome, B7 the audit refusing what it cannot read.
+
+**Remaining, in the order a next session should take it.**
+
+1. **Phase 4 caller migration.** The model and its owner exist; what remains
+   is per-writer conversion to `(durable bool, err error)` plus the caller
+   reporting rules (CLI verbs print the doubt and exit success; background
+   components narrate). Each writer needs classifying first — durable STATE
+   versus transient hand-off file — and `internal/dispatch/record.go`'s
+   `atomicWriteText` carries an in-code comment naming exactly what its own
+   conversion needs. Roughly fourteen rename-based writers remain on the
+   pre-conversion path, all behavior-preserving today.
+2. **Phase 3b and 3c**, deferred deliberately: extracting `oneCycle` (247
+   lines) against missionrunner's 57.6% coverage is what the plan's own
+   tests-before-restructuring rule warns against, so its coverage hardening
+   (Phase 6 work) comes first. The S2 list was re-derived at Phase 3 start
+   and is in this document's history.
+3. **Phase 5**, untouched and design-gated: capture the golden byte corpus
+   from the CURRENT writers before any typed-document conversion.
+4. **Phase 6** coverage raising, then **Phase 7** close-out.
+
 ## Phase 4 B4 — the per-surface bound table (agreed before implementation)
 
 Two configuration keys, not one per site: the distinction that matters
