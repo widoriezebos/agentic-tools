@@ -70,7 +70,11 @@ gate_run_marker=$(bin/metasystem gate register --root "$root" \
 # delegate scope.
 metasystem_go_source=0
 grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod && metasystem_go_source=1
-if (( ! metasystem_go_source )) && grep -rqsE --include='*.go' '^[[:space:]]*([_[:alnum:]]+[[:space:]]+)?"github\.com/widoriezebos/agentic-tools/metasystem/internal' cmd/metasystem/ 2>/dev/null; then
+if (( ! metasystem_go_source )) && find cmd/metasystem -name '*.go' -exec cat {} + 2>/dev/null | awk 'BEGIN{inblk=0;found=0}
+    /^[[:space:]]*import[[:space:]]*\(/{inblk=1;next}
+    inblk && /^[[:space:]]*\)/{inblk=0;next}
+    (inblk || /^[[:space:]]*import[[:space:]]/) && /"github\.com\/widoriezebos\/agentic-tools\/metasystem\/internal/{found=1;exit}
+    END{exit !found}'; then
   echo "metasystem Go source present but go.mod does not declare the metasystem module — damaged template" >&2
   exit 1
 fi
