@@ -38,15 +38,29 @@ small number for its own sake — fragments at a custody boundary are
 correct under the ruling. Script-shaped means: a bash file owns a CALL
 SEQUENCE whose ordering carries a correctness invariant that no Go
 function states. Step 0 therefore runs a SEQUENCE CENSUS beside the
-caller census, over BOTH shapes (r2/GSC-R1-010): same-family runs
-(three or more verbs of one family in fixed order) AND cross-family
-sequences where the ordering encodes an authority or correctness rule
-no single verb states — the pre-commit guard's lease classify →
-wrapper-token ordering, which is what keeps human commits sovereign
-while agents need wrapper proof, is the type specimen. Each census hit
-records its named invariant and a per-candidate decision: coarsen into
-one verb, or keep with the invariant documented at the call site.
-Sequences with no invariant are legitimate plumbing and stay.
+caller census: ANY fixed ordering of two or more verb invocations
+(r3/GSC-R1-014 — the reservation pair is itself a two-verb invariant
+sequence, and three was an arbitrary floor), same-family or
+cross-family (r2/GSC-R1-010), INCLUDING orderings hidden behind shell
+re-entry — a script invoking itself with internal __verbs is part of
+the corpus, and its router branches count as the call sites. The
+pre-commit guard's lease classify → wrapper-token ordering (human
+commits sovereign, identified agents need wrapper proof) is the
+cross-family type specimen.
+
+Each census hit records its named invariant and a decision made by
+RULE, not taste (r3/GSC-R1-015): COARSEN into one Go verb when the
+ordering is purely a decision ordering — no process launch, signal,
+wait, or file custody interleaves the calls, and no observable
+intermediate state another process consumes would disappear.
+KEEP-AND-DOCUMENT when custody interleaves or intermediate state is
+load-bearing. Worked through today's three known hits: the
+reservation pair KEEPS (observable pending-setup, custody between the
+phases); the reap ladder COARSENS (pure decisions between lock and
+CAS — the wind-down action is delegated by contract, below); the
+pre-commit guard's authority pair COARSENS (decision-only) into one
+validate verb in step 4. Sequences with no invariant are legitimate
+plumbing and stay.
 Regrouping (mission, proc) is coherence work and is claimed as such,
 not as de-shell-ification.
 
@@ -65,7 +79,7 @@ inversion (the reap verdict), not by relabeling.
 
 | target | absorbs | notes |
 | --- | --- | --- |
-| `job` | dispatch (23), capability (1), authority (1), schema (1) | The delegate-job domain. The reservation protocol stays TWO-PHASE (r1/GSC-R1-002: record-create must precede shell-owned setup so a second dispatcher cannot prepare the same id, and the cleanup trap depends on observable pending-setup); no `job reserve` merge. Coarsening candidates come only from the step-0 sequence census, under the rule that no observable intermediate state another process relies on may disappear. The reap verdict ladder becomes ONE decision owner with THREE consumers (r1/GSC-R1-004, r2/GSC-R1-008): an internal function called by the supervise component's reaper AND by the mission runner's reap path (whose reapReservedRecords/applyReapVerdict mapping is today a third independent ladder), and a `job reap-verdict` verb dispatch.sh consults; wind-down signaling stays in dispatch.sh. Verdict APPLICATION centralizes with the decision (r2/GSC-R1-009): every consumer lands its verdict through the locked compare-and-swap record owner with an expected status — the supervise reaper's current whole-record overwrite, which can clobber a completion that lands after its read, is a defect this step fixes with a regression test, recorded as the program's one deliberate behavior change. |
+| `job` | dispatch (24), capability (1), authority (1), schema (1) | The delegate-job domain. The reservation protocol stays TWO-PHASE (r1/GSC-R1-002: record-create must precede shell-owned setup so a second dispatcher cannot prepare the same id, and the cleanup trap depends on observable pending-setup); no `job reserve` merge. Coarsening candidates come only from the step-0 sequence census, under the rule that no observable intermediate state another process relies on may disappear. The reap verdict ladder becomes ONE decision owner with THREE consumers (r1/GSC-R1-004, r2/GSC-R1-008): an internal function called by the supervise component's reaper AND by the mission runner's reap path (whose reapReservedRecords/applyReapVerdict mapping is today a third independent ladder), and a `job reap-verdict` verb dispatch.sh consults. The consumers legitimately DIFFER in action authority (r3/GSC-R1-017: the supervise reaper times out over-budget records without kill authority, the mission runner acts only on a proven-dead custodian, dispatch winds down live groups and performs fence/usage/mirror/event side effects), so the owner's contract is: inputs are the record, the reap facts, and the caller's declared authority class (kill-capable, no-kill, record-only); output is the verdict PLUS the required-action list — wind-down-first, CAS target and patch, fence refusal, usage aggregation, mirror, events — split into actions this caller MUST perform and actions it must DEFER to a kill-capable consumer. The status-and-facts to verdict mapping (including budget-judged-before-liveness) is stated exactly once; no consumer can silently weaken enforcement because deferred actions are named in its output, and the fixtures assert each consumer class end-to-end. Verdict APPLICATION centralizes with the decision (r2/GSC-R1-009): every consumer lands its verdict through the locked compare-and-swap record owner with an expected status — the supervise reaper's current whole-record overwrite, which can clobber a completion that lands after its read, is a defect this step fixes with a regression test, recorded as the program's one deliberate behavior change. |
 | `mission` | mission-state, -fence, -contract, -prompt, -runner, -turn, -ledger (7 families, 28 verbs) | Regrouping with the EXHAUSTIVE collision-resolving verb map in the appendix (r1/GSC-R1-003, r2/GSC-R1-011) — all 28, no illustrative subsets. evidence stays its own family (r2/GSC-R1-012: the collector is repository-wide custody that merely protects mission state; `mission gc` would misname its scope). |
 | `adapter` | unchanged (34 minus census deletions) | Custody-boundary fragments per runtime; scripts keep launch/wait/signal custody. |
 | `host` | unchanged (8) | Same boundary, mission-host side. |
@@ -81,7 +95,16 @@ inversion (the reap verdict), not by relabeling.
 
 CLI compatibility during migration: the family router gains a
 one-table alias layer (old family/verb → new) so scripts migrate per
-commit, not big-bang. Alias deletion has a mechanical completion
+commit, not big-bang. Aliases activate WITH their targets
+(r3/GSC-R1-016): step 1 lands the mechanism plus the full table
+generated from the appendix, with every entry inert until its target
+family registers — an alias whose target is unregistered is a router
+error if exercised, and a step-1 test asserts the table matches the
+appendix row-for-row. Step 2 activates the mission entries in the
+commit that registers the mission family, step 3 the job entries,
+step 4 the proc entries. reap-facts aliases to job reap-facts when
+the job family lands and retires only when reap-verdict replaces its
+callers within step 3. Alias deletion has a mechanical completion
 condition (r1/GSC-R1-005): step 5 sweeps the tree for remaining
 old-name invocations, updates them (bounded, this repository only —
 adopted repositories call scripts by path, never verbs, so no
@@ -226,7 +249,7 @@ prefixes resolve.
 
 `census run` becomes `proc census` — "run" alone said nothing.
 
-### job (26 verbs from 4 families)
+### job (27 rows from 4 families: 24 dispatch verbs plus three single-verb families; count corrected by r3/GSC-R1-018)
 
 | today | target |
 | --- | --- |
@@ -242,7 +265,7 @@ prefixes resolve.
 | dispatch chain-usage | job chain-usage |
 | dispatch custody-add | job custody-add |
 | dispatch handshake-eval | job handshake-eval |
-| dispatch reap-facts | (absorbed into job reap-verdict, step 3) |
+| dispatch reap-facts | job reap-facts (retires into job reap-verdict within step 3) |
 | dispatch census-fresh | job census-fresh |
 | dispatch watcher-ceiling | job watcher-ceiling |
 | dispatch expand-permissions | job expand-permissions |
@@ -258,5 +281,5 @@ prefixes resolve.
 | authority check | job authority-check |
 | schema materialize | job schema-materialize |
 
-`job reap-verdict` is new (step 3); reap-facts retires into it once
-all three consumers are wired.
+`job reap-verdict` is new (step 3); reap-facts keeps an executable
+alias until reap-verdict replaces its callers inside step 3.
