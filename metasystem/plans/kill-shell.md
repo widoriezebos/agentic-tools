@@ -331,7 +331,12 @@ exempts the registrant's chain, REFUSES on foreign VALIDATION
 markers (a live suite must never have its binary swapped), and
 treats foreign PUBLICATION markers as contention; then claim
 internal/dispatch/ownerlock.go's publication lock — the rebuild
-already happened this invocation (r31/KS-R31-004) — then rename. VALIDATION ADMISSION completes the family
+already happened this invocation (r31/KS-R31-004) — then rename. The human override keeps its shipped contract with a defined scope
+(r34/KS-R34-001): METASYSTEM_ALLOW_CONCURRENT_GATE waives the
+admission REFUSAL only, never the serialization — an overriding run
+still registers its marker and still takes the single publication
+lock for any binary write, so a knowing overlap is visible and the
+one door holds. VALIDATION ADMISSION completes the family
 (r26/KS-R26-001): on a first build the suite's admission rides its
 child builder's publish-bootstrap marker; the moment a binary
 exists, the suite registers its own validation marker BEFORE any
