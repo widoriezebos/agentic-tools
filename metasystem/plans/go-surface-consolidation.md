@@ -31,38 +31,77 @@ The ruling this program executes: core decisions belong in Go,
 plumbing belongs in scripts. Scripts are not debt; script-shaped Go
 is.
 
-## Target tree (needs human sign-off)
+## What "script-shaped" means operationally (r1/GSC-R1-001)
 
-Ten families. Verb counts are ceilings, not quotas; the deletion
-census (step 0) sets the real numbers.
+The metric is NOT the verb count, and this program does not promise a
+small number for its own sake — fragments at a custody boundary are
+correct under the ruling. Script-shaped means: a bash file owns a CALL
+SEQUENCE whose ordering carries a correctness invariant that no Go
+function states. Step 0 therefore runs a SEQUENCE CENSUS beside the
+caller census: for each script that calls three or more verbs of one
+family in a fixed order, name the invariant the ordering protects (or
+record that there is none). Sequences that carry an invariant are the
+coarsening list; everything else is legitimate plumbing and stays.
+Regrouping (mission, proc) is coherence work and is claimed as such,
+not as de-shell-ification.
+
+## Target tree (human-approved 2026-08-12; amended by round 1)
+
+Eleven families. The adapter+host merge from the approved draft is
+WITHDRAWN by r1/GSC-R1-003: the doubled names (devin-config,
+devin-usage, fake-return) are behaviorally DIFFERENT operations — the
+adapter side consumes job records, the host side consumes mission
+roots — and both sides have live callers, so a merge would rename for
+cosmetics exactly where confusion costs most. They stay two families.
 
 | target | absorbs | notes |
 | --- | --- | --- |
-| `job` | dispatch (24), capability (1), authority (1), schema (1) | The delegate-job domain. Record lifecycle verbs coarsen where bash ordering currently carries an invariant: record-create+record-setup become one `job reserve` with the husk rule inside; the reap verdict LADDER becomes one `job reap-verdict` (decisions only — wind-down signaling stays in dispatch.sh, which executes the verdict). owner-lock, chain queries, cap-resolution keep their grain: they are single decisions. |
-| `mission` | mission-state, -fence, -contract, -prompt, -runner, -turn, -jobs, -ledger, evidence (9 families, 33 verbs) | Pure regrouping under one family (`mission seal`, `mission fence-refuse`, `mission ledger-append`, `mission gc`). No behavior change. |
-| `runtime` | adapter (34), host (8) | The fragments the adapter/host scripts call at the custody boundary. Deduplicate the doubled verbs, delete unused ones; the scripts KEEP custody (launch, wait, signal) per the ruling — no driver interface in Go. |
-| `proc` | identity (4), census (7), supervise (10) | Process identity, census, supervision — one domain: who is running, provably. |
-| `validate` | unchanged (12) | Whole-artifact validators. |
+| `job` | dispatch (23), capability (1), authority (1), schema (1) | The delegate-job domain. The reservation protocol stays TWO-PHASE (r1/GSC-R1-002: record-create must precede shell-owned setup so a second dispatcher cannot prepare the same id, and the cleanup trap depends on observable pending-setup); no `job reserve` merge. Coarsening candidates come only from the step-0 sequence census, under the rule that no observable intermediate state another process relies on may disappear. The reap verdict ladder becomes ONE decision owner with TWO consumers (r1/GSC-R1-004): an internal function the supervise component's reaper calls directly, and a `job reap-verdict` verb dispatch.sh consults; wind-down signaling stays in dispatch.sh. |
+| `mission` | mission-state, -fence, -contract, -prompt, -runner, -turn, -ledger, evidence (8 families, 29 verbs) | Regrouping with an EXHAUSTIVE collision-resolving verb map as the step-2 deliverable (r1/GSC-R1-003): two init verbs and two verify verbs exist today, so the map prefixes by sub-domain (state-init, ledger-init, ledger-verify, fence-refuse, gc) and covers all 29, no illustrative subsets. |
+| `adapter` | unchanged (34 minus census deletions) | Custody-boundary fragments per runtime; scripts keep launch/wait/signal custody. |
+| `host` | unchanged (8) | Same boundary, mission-host side. |
+| `proc` | identity (4), census (5), supervise (10) | Process identity, census, supervision — one domain: who is running, provably. Same exhaustive-map rule as mission. |
+| `validate` | unchanged (10) | Whole-artifact validators. |
 | `audit` | unchanged (2) | metasystem + coverage-ratchet. |
 | `config` | unchanged (7) | |
-| `lease` | unchanged (10) | Worktree session custody. |
+| `lease` | unchanged (9) | Worktree session custody. |
 | `receipt` | unchanged (5) | |
-| `util` | util (5), json (3), event (1), gate (3), hooks (1), report (3) | Grab-bag survivors; regrouping these renames hundreds of call sites for cosmetics, so they merge under `util` ONLY where a call-site sweep is already touching the file — otherwise they keep working under their old names via the alias table until organically gone. |
+| `util` | util (5), json (3), event (1), gate (3), hooks (1), report (3) | Merged with an exhaustive map like mission (gate check and hooks check collide today, r1/GSC-R1-003 — they become gate-check and hooks-check). |
 
 CLI compatibility during migration: the family router gains a
 one-table alias layer (old family/verb → new) so scripts migrate per
-commit, not big-bang; the alias table is deleted at the end.
+commit, not big-bang. Alias deletion has a mechanical completion
+condition (r1/GSC-R1-005): step 5 sweeps the tree for remaining
+old-name invocations, updates them (bounded, this repository only —
+adopted repositories call scripts by path, never verbs, so no
+external contract names a verb), proves zero old-name callers by the
+same census rules, and only then deletes the table. "Organically" is
+retired.
 
 ## What gets deleted
 
-1. Step 0 is a caller census: every verb greps against scripts/,
-   internal/, cmd/, skills/, hooks. A verb with zero callers dies in
-   the same commit that records the census. Known suspects: the
-   adapter/host duplicates, exhaustion-patches, selftest fragments.
-2. The disposition registry shrinks to a plain ship-list (what
-   adoption exports). Shapes, verdicts, debts, and verified dates were
-   bookkeeping for the retired shim program; the reviewed-verdict
-   discipline lives in review, not in JSON.
+1. Step 0 is a caller census with EXECUTABLE rules (r1/GSC-R1-007),
+   already run once (first slice landed as c72f662, minus 344 lines):
+   the corpus is every tracked file EXCLUDING cmd/metasystem (a verb's
+   own registration is not a caller); an invocation is the literal
+   "family verb" pair; a family invoked anywhere with a variable verb
+   (family "$var") keeps all its verbs pending manual proof; a
+   zero-caller candidate additionally needs a loose per-verb grep
+   (wrapper functions like mission_fence hide the family word), an
+   implementation trace (does any Go path call the backing function),
+   and a docs check for human entry points. Tests never keep a verb
+   alive; tests of deleted code are adapted to the surviving internal
+   path or deleted with it. The deadcode analyzer runs after each
+   deletion slice and its verdicts get the same manual verification.
+   First-slice results: census classify and authentication-identity,
+   validate code-critique-claim and waiver-facts, the mission-jobs
+   family, mission-ledger verify and count, lease reclaim, and three
+   orphaned functions.
+2. The disposition registry is DELETED, not shrunk (r1/GSC-R1-006):
+   nothing executable reads it — adoption's own allowlist in adopt.sh
+   is the export contract and stays the single one. A ship-list that
+   no code consumes would be decorative bookkeeping, and wiring one
+   into adopt.sh would be new machinery this program exists to avoid.
 3. The usage texts embedded in Go verbs (design-obligations,
    stop-loss, conformance) move back to their wrapper scripts, which
    become ordinary scripts again — parsing their own arguments,
@@ -79,18 +118,22 @@ commit, not big-bang; the alias table is deleted at the end.
 Each step lands with the suite green from a pristine worktree and all
 call sites updated in the same commit.
 
-1. Caller census + dead-verb deletion + adapter/host dedupe. Output:
-   the real verb count and the alias table.
-2. mission-* merge (mechanical; largest coherence gain per hour).
-3. job-family formation: dispatch verbs regrouped, reserve and
-   reap-verdict coarsened, dispatch.sh updated to consume them —
-   the lifecycle invariants move from bash ordering into two Go
-   functions with unit tests. dispatch.sh keeps launch, wind-down,
-   and polling custody.
-4. runtime/proc regrouping; scripts restored to ordinary scripts
-   (usage texts return; shims that stay are one-liners by choice, not
-   doctrine).
-5. Registry shrink to ship-list; alias table deletion.
+1. Caller census (first slice landed: c72f662) + sequence census
+   naming every ordering-carried invariant. Output: the deletion
+   record, the coarsening list, and the alias table.
+2. mission-* merge with its exhaustive verb map (mechanical; largest
+   coherence gain per hour).
+3. job-family formation: dispatch verbs regrouped; the reap verdict
+   ladder becomes one decision owner with both consumers wired in the
+   SAME commit — the supervise component's reaper calls the function,
+   dispatch.sh consults the verb — so no second ladder survives
+   (r1/GSC-R1-004). Reservation stays two-phase (r1/GSC-R1-002).
+   Further coarsening only from the step-1 sequence census. dispatch.sh
+   keeps launch, wind-down, and polling custody.
+4. proc regrouping; scripts restored to ordinary scripts (usage texts
+   return; shims that stay are one-liners by choice, not doctrine).
+5. Registry deletion; old-name sweep to zero by the census rules;
+   alias table deletion last.
 
 Estimated two working sessions. Steps are independently valuable;
 stopping after any of them leaves the system better than before it.
