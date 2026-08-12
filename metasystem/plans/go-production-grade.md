@@ -366,22 +366,28 @@ tests; the JobRecord read lens exists for dispatch. Phase 3b: oneCycle
 assemble-spawn-record). Phase 3c: patienceEvaluate into its five concept
 functions.
 
+**Phase 5 is CLOSED**: its design's obligation matrix is DONE on all six
+rows and passes the gate; the TurnRecord lens landed with the one
+deliberately-kept raw assertion documented in place; leaf dispositions are
+recorded per family.
+
 **Remaining.**
 
-1. **Phase 5 tail**: typed projections for the missionrunner and host
-   families (the JobRecord pattern), per-family leaf dispositions recorded
-   in the design doc, TD-4's CAS wiring note, TD-5/TD-6 closure.
-2. **Phase 6**: domain floors toward 75 (missionrunner 60.5, dispatch
-   ~67, mission ~70, validate ~69 are the distance); mostly test-writing.
-3. **Phase 3c remainder**: config.Validate (323), TurnPrompt (255),
+1. **Phase 6 remainder**: floors stand at missionrunner 60.5, dispatch
+   71.4, mission 74.7, validate 73.2 after the direct-test sweep (return
+   checkers, fence refusals, the owner-lock protocol). The distance to 75
+   is mostly missionrunner's launch/arming cluster, which needs armed
+   fixtures — the expensive tail.
+2. **Phase 3c remainder**: config.Validate (323), TurnPrompt (255),
    mergeCritique (255), AssemblePrompt (183), Mirror (180),
    runSuperviseOwnerLoop (signal-path constraint — read the plan's 3c note
    before touching it). The cmd families table (285) legitimately stays: a
    flat registry is one abstraction.
-4. **Phase 7 close-out**: final full suite on the VM after the last
-   behavior-changing change, promote durable lessons into docs/, then
-   delete this plan and its ledgers per the close-out rule.
-5. **Open**: the receipt-stats intermittent (instrumented, probe armed in
+3. **Phase 7 close-out**: promote durable lessons into docs/, then delete
+   this plan and its ledgers per the close-out rule. The final-suite
+   milestone is continuously satisfied — every checkpoint of this run was
+   validated on the verified Linux host, including the full body at HEAD.
+4. **Open**: the receipt-stats intermittent (instrumented, probe armed in
    the wt-flakefix worktree); the adopted-engine delivery ruling parked
    with the human.
 
