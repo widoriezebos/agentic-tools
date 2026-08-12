@@ -56,7 +56,10 @@ func isValidUTF8(data []byte) bool {
 }
 
 func atomicWriteText(path, text string) error {
-	return atomicfile.WriteText(path, text)
+	// Empty anchor until this writer is converted to the two-outcome
+	// signature (go-production-grade B5); see the mission copy.
+	_, err := atomicfile.WriteText(path, text, "")
+	return err
 }
 
 // The identifier and count grammars the contract's own validation applies.

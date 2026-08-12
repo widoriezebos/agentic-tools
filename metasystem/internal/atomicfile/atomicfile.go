@@ -1,55 +1,134 @@
-// Package atomicfile owns atomic file replacement: writing a file's new
-// content so a reader sees either the old bytes or the new ones, never a
-// half-written file, and never a truncated original if the write fails.
+// Package atomicfile owns atomic, durable file replacement.
 //
-// It exists as one owner rather than a copy per package because the
-// guarantee it makes is a DURABILITY contract — go-production-grade's B5
-// and B6 harden exactly this operation, and two copies would be two fixes
-// that can silently diverge. The current guarantee is stated honestly here:
-// the temp file is synced before the rename, and the directory sync that
-// makes the rename itself durable is attempted but its error is discarded.
-// Phase 4 of that plan replaces the discard with the decided outcome model;
-// until it lands, callers may not claim crash-durability of the rename.
+// It exists as one owner rather than a copy per package because what it
+// promises is a DURABILITY contract: the guarantee has to be implemented
+// once, or two copies become two fixes that silently diverge
+// (go-production-grade B5).
+//
+// # The outcome model
+//
+// A write has exactly two outcomes, and the signature carries them:
+//
+//   - PRE-PUBLICATION FAILURE — the directory chain, the temp file, its
+//     sync, or the rename failed. No new bytes are at the target and the
+//     prior content is untouched. Returns (false, err); the caller fails.
+//   - COMMITTED, DURABILITY UNKNOWN — the rename succeeded, so the new
+//     content IS the file, but the directory sync that makes that rename
+//     survive a crash failed. Returns (false, nil): committed, with doubt
+//     attached. A committed transition is never reported as a failure —
+//     that divergence is what this model exists to prevent — and there is
+//     no retry, because after a failed fsync the kernel may clear the error
+//     state and a later success would prove nothing.
+//
+// Success is (true, nil): committed and durable.
+//
+// # Why the directory chain is synced first
+//
+// A new directory's own entry lives in its PARENT, so syncing only the
+// target directory says nothing about whether the directory itself survives
+// a crash. The chain is therefore synced unconditionally from the target's
+// directory up to and INCLUDING a caller-named anchor that is guaranteed to
+// pre-exist, before the temp file is written. Unconditional because
+// conditioning on "did this call create something" has a retry hole: a
+// failed chain sync leaves the directories visible, so a retry sees them
+// pre-existing, skips the chain, and could report durable over an unproven
+// chain.
 package atomicfile
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-// WriteText replaces path's content with text. The write lands through a
-// temporary file in the same directory (so the rename is atomic on one
-// filesystem) which is synced before the rename; a failure before the
-// rename leaves the original untouched.
-func WriteText(path, text string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+// syncDir syncs one directory. It is a variable so fault-injection tests can
+// fail a chosen sync without touching the filesystem's real behavior.
+var syncDir = func(path string) error {
+	dir, err := os.Open(path)
 	if err != nil {
 		return err
+	}
+	if err := dir.Sync(); err != nil {
+		dir.Close()
+		return err
+	}
+	return dir.Close()
+}
+
+// WriteText replaces path's content with text.
+//
+// anchor names a directory guaranteed to pre-exist — the repository checkout
+// for in-repo writers, or the parent of a directory the writer may itself
+// create. Every directory from path's own up to and including anchor is made
+// durable before publication. When anchor is empty, only the target's own
+// directory is synced (the pre-B5 behavior, for callers not yet converted).
+//
+// See the package doc for the outcome model behind (durable, err).
+func WriteText(path, text, anchor string) (durable bool, err error) {
+	target := filepath.Dir(path)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return false, err
+	}
+	// Pre-publication: make the directory chain durable. A failure here is
+	// a plain error — nothing has been published.
+	for _, dir := range chain(target, anchor) {
+		if err := syncDir(dir); err != nil {
+			return false, fmt.Errorf("atomicfile: cannot make the directory chain durable at %s: %w", dir, err)
+		}
+	}
+	tmp, err := os.CreateTemp(target, filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return false, err
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 	if _, err := tmp.WriteString(text); err != nil {
 		tmp.Close()
-		return err
+		return false, err
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return err
+		return false, err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return false, err
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return err
+		return false, err
 	}
-	// The directory sync is what makes the RENAME durable; its error is
-	// currently discarded (go-production-grade B5, fixed in Phase 4).
-	if dir, err := os.Open(filepath.Dir(path)); err == nil {
-		_ = dir.Sync()
-		_ = dir.Close()
+	// PUBLISHED. From here the transition is committed; only its durability
+	// is in question, and no error may be returned for it.
+	if err := syncDir(target); err != nil {
+		return false, nil
 	}
-	return nil
+	return true, nil
+}
+
+// chain lists the directories to sync, from dir upward through anchor
+// inclusive. An empty or unrelated anchor yields just dir, and the walk is
+// bounded by the filesystem root so a bad anchor can never loop.
+func chain(dir, anchor string) []string {
+	if anchor == "" {
+		return []string{dir}
+	}
+	anchorResolved := filepath.Clean(anchor)
+	current := filepath.Clean(dir)
+	var dirs []string
+	for {
+		dirs = append(dirs, current)
+		if current == anchorResolved {
+			return dirs
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached the root without meeting the anchor: the anchor is
+			// not an ancestor, so sync only what we walked below it.
+			if !strings.HasPrefix(anchorResolved, string(filepath.Separator)) {
+				return dirs
+			}
+			return dirs
+		}
+		current = parent
+	}
 }

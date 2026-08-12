@@ -467,5 +467,11 @@ func (l *fileLock) release() {
 }
 
 func atomicWriteText(path, text string) error {
-	return atomicfile.WriteText(path, text)
+	// The durable-anchor argument is empty until this writer is converted to
+	// the two-outcome signature (go-production-grade B5): with no anchor the
+	// owner syncs the target directory only, which is exactly the behavior
+	// this caller had before. Converting it is the caller-migration step,
+	// and until then no crash-durability may be claimed here.
+	_, err := atomicfile.WriteText(path, text, "")
+	return err
 }
