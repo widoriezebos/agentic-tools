@@ -102,7 +102,7 @@ watcher_pass_complete() { # heartbeat, census
 
 prove_process_ownership() { # pid, start, tag
   local pid=$1 start=$2 tag=$3 command
-  "$ms" census alive --pid "$pid" --start-time "$start" >/dev/null || return 1
+  "$ms" proc alive --pid "$pid" --start-time "$start" >/dev/null || return 1
   command=$(ps -p "$pid" -o command= 2>/dev/null || true)
   [[ "$command" == *"$tag"* || "$command" == *"$repo"* ]]
 }
@@ -146,7 +146,7 @@ last=$repo/artifacts/agents/supervision/last-census.json
 brief=$tmp/brief.md
 sed 's/^Working Mode:.*/Working Mode: design/' "$repo/scripts/agents/templates/brief.md" >"$brief"
 "$repo/scripts/agents/adapters/fake.sh" probe >/dev/null
-main_start=$("$ms" identity started-at --pid "$$")
+main_start=$("$ms" proc started-at --pid "$$")
 
 refusals=0
 last_published_generation=0

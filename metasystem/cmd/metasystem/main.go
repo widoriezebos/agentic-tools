@@ -27,21 +27,14 @@ type family struct {
 func families() []family {
 	return []family{
 		{
-			name:    "identity",
-			summary: "kernel process identity: exact start times, argv, three-way liveness",
+			name:    "proc",
+			summary: "process identity and census: who is running, provably",
 			verbs: []verb{
 				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
 				{"probe", "print a pid's exact identity as JSON", runIdentityProbe},
 				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
 				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
-			},
-		},
-		{
-			name:    "census",
-			summary: "process census classification",
-			verbs: []verb{
-				{"fingerprint", "print a checkout's supervision fingerprint", runCensusFingerprint},
-				{"run", "compute a fixture-driven census verdict", runCensusRun},
+				{"census", "compute a fixture-driven census verdict", runCensusRun},
 				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
 				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
@@ -300,6 +293,7 @@ func families() []family {
 			name:    "supervise",
 			summary: "the supervision lifecycle (plans/supervision-lifecycle.md)",
 			verbs: []verb{
+				{"fingerprint", "print a checkout's supervision fingerprint (code, signatures, configuration)", runCensusFingerprint},
 				{"owner", "run the owner loop for a checkout (internal; launched by arm)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
 				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},

@@ -109,7 +109,7 @@ printf '#!/usr/bin/env bash\ncase "$1" in signature) echo "match metasystem-fake
 chmod +x "$census_checkout/scripts/agents/adapters/fake.sh"
 printf '[]\n' >"$census_checkout/processes.json"
 METASYSTEM_CENSUS_PROCESS_FILE="$census_checkout/processes.json" \
-  "$root/bin/metasystem" census run --root "$census_checkout" --repo "$census_checkout" \
+  "$root/bin/metasystem" proc census --root "$census_checkout" --repo "$census_checkout" \
   --fingerprint fixture-fingerprint --interval 10 --output "$tmp/failure-census.json"
 python3 - "$tmp/failure-census.json" <<'PY'
 import json, sys

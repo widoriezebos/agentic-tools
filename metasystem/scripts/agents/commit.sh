@@ -28,7 +28,7 @@ else
   "$ms" lease require-holder --root "$root" --caller-pid "$$" >/dev/null
 fi
 
-started=$("$ms" identity started-at --pid $$) || {
+started=$("$ms" proc started-at --pid $$) || {
   echo "agent commit wrapper refused: wrapper process start time is unreadable" >&2
   exit 1
 }

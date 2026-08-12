@@ -126,3 +126,13 @@ The delegate-job domain followed in the same consolidation:
 | dispatch <verb> (all 24) | job <verb>, same verb names |
 | capability select | job snapshot-select |
 | authority check | job authority-check |
+
+Process identity and census merged, and the supervision fingerprint
+moved to the family whose staleness it detects:
+
+| before | after |
+| --- | --- |
+| identity started-at/probe/exists/group-exists | proc started-at/probe/exists/group-exists |
+| census run/alive/signature-check/find-ancestor | proc census/alive/signature-check/find-ancestor |
+| census fingerprint | supervise fingerprint |
+| census classify, census authentication-identity | deleted (no callers; c72f662) |

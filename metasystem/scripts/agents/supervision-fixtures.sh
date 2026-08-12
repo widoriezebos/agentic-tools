@@ -17,11 +17,11 @@ ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
 
 process_started_at() {
-  "$ms" identity started-at --pid "$1"
+  "$ms" proc started-at --pid "$1"
 }
 
 process_identity_alive() { # pid, start
-  "$ms" census alive --pid "$1" --start-time "$2" >/dev/null 2>&1
+  "$ms" proc alive --pid "$1" --start-time "$2" >/dev/null 2>&1
 }
 
 wait_until() { # name, shell predicate...

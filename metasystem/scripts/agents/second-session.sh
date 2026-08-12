@@ -36,7 +36,7 @@ new_harness=$("$ms" validate session-isolation \
   --manifest "$paths" --harness-root "$harness_root")
 # started-at is an OS-level start-time query independent of which checkout runs
 # it, so the current harness binary is equivalent to the new harness's helper.
-bootstrap_start=$("$ms" identity started-at --pid "$$")
+bootstrap_start=$("$ms" proc started-at --pid "$$")
 "$new_harness/scripts/agents/arm-supervision.sh" --repo "$destination" \
   --session "second-session-bootstrap-$name-$$" --pid "$$" \
   --start-time "$bootstrap_start" --tag "metasystem-main-bootstrap-$name-$$" >/dev/null

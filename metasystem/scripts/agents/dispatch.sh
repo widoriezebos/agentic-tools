@@ -199,7 +199,7 @@ process_matches() { # pid, tag
 }
 
 process_exists() { # pid; permission denied still proves the pid exists
-  "$ms" identity exists --pid "$1"
+  "$ms" proc exists --pid "$1"
 }
 
 lock_owner_state() { # pid, tag -> live, dead, stale, or unknown
@@ -231,7 +231,7 @@ job_supervisor_matches() { # record
 group_alive() { # pgid
   local pgid=$1
   [[ "$pgid" =~ ^[1-9][0-9]*$ ]] || return 1
-  "$ms" identity group-exists --pgid "$pgid"
+  "$ms" proc group-exists --pgid "$pgid"
 }
 
 group_owned() { # record
@@ -596,7 +596,7 @@ launch_adapter() { # runtime verb job tag
   cap=$(dispatch_fixture_wait_cap 5)
   started=$SECONDS
   deadline=$((SECONDS + cap))
-  until pid_started=$("$ms" identity started-at --pid "$pid" 2>/dev/null); do
+  until pid_started=$("$ms" proc started-at --pid "$pid" 2>/dev/null); do
     if (( SECONDS >= deadline )); then
       elapsed=$((SECONDS - started))
       echo "adapter start identity ceiling reached for $job (elapsed: ${elapsed}s; scaled cap: ${cap}s)" >&2
@@ -1359,7 +1359,7 @@ internal_register_custody() {
     case "$1" in --job) job=$2; shift 2 ;; --pid) pid=$2; shift 2 ;; *) exit 2 ;; esac
   done
   valid_id "$job" && [[ "$pid" =~ ^[1-9][0-9]*$ && -f "$jobs/$job.json" ]] || exit 2
-  started=$("$ms" identity started-at --pid "$pid") || exit 1
+  started=$("$ms" proc started-at --pid "$pid") || exit 1
   # The read-dedupe-append-write runs under the record lock in one verb, so a
   # custody registration can never race a status transition.
   "$ms" job custody-add --root "$root" --job "$job" --pid "$pid" --pid-started "$started"

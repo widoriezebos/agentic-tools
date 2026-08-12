@@ -32,7 +32,7 @@ session=$(read_payload session_id)
 # cannot become a false signature match.
 search_pid=$(ps -p "$PPID" -o ppid= 2>/dev/null | tr -d ' ' || true)
 [[ "$search_pid" =~ ^[1-9][0-9]*$ ]] || search_pid=$PPID
-identity=$("$ms" census find-ancestor --repo "$repo" --pid "$search_pid" --runtime "$runtime" 2>/dev/null || true)
+identity=$("$ms" proc find-ancestor --repo "$repo" --pid "$search_pid" --runtime "$runtime" 2>/dev/null || true)
 main_id=
 main_class=
 main_holder=false

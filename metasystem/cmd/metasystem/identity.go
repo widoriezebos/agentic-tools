@@ -12,7 +12,7 @@ import (
 // runIdentityStartedAt prints a pid's start time in epoch seconds on
 // stdout, exiting 1 with no output when the pid cannot be read.
 func runIdentityStartedAt(args []string) int {
-	flags := flag.NewFlagSet("identity started-at", flag.ContinueOnError)
+	flags := flag.NewFlagSet("proc started-at", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -28,7 +28,7 @@ func runIdentityStartedAt(args []string) int {
 // runIdentityProbe prints the full exact identity as JSON, used by
 // fixtures and diagnostics.
 func runIdentityProbe(args []string) int {
-	flags := flag.NewFlagSet("identity probe", flag.ContinueOnError)
+	flags := flag.NewFlagSet("proc probe", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -46,7 +46,7 @@ func runIdentityProbe(args []string) int {
 	}
 	encoded, marshalErr := json.Marshal(result)
 	if marshalErr != nil {
-		fmt.Fprintln(os.Stderr, "identity probe:", marshalErr)
+		fmt.Fprintln(os.Stderr, "proc probe:", marshalErr)
 		return 1
 	}
 	fmt.Println(string(encoded))

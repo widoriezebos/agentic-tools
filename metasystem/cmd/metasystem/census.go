@@ -14,14 +14,14 @@ import (
 // runCensusFingerprint prints the supervision fingerprint for --repo, using
 // --root as the metasystem root (defaults to the binary's checkout).
 func runCensusFingerprint(args []string) int {
-	flags := flag.NewFlagSet("census fingerprint", flag.ContinueOnError)
+	flags := flag.NewFlagSet("supervise fingerprint", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root to fingerprint")
 	root := flags.String("root", "", "metasystem root (defaults to this checkout)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "census fingerprint: --repo is required")
+		fmt.Fprintln(os.Stderr, "supervise fingerprint: --repo is required")
 		return 2
 	}
 	metasystemRoot := *root
@@ -32,7 +32,7 @@ func runCensusFingerprint(args []string) int {
 	}
 	fp, err := census.Fingerprint(metasystemRoot, *repo)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "census fingerprint:", err)
+		fmt.Fprintln(os.Stderr, "supervise fingerprint:", err)
 		return 1
 	}
 	fmt.Println(fp)
@@ -42,7 +42,7 @@ func runCensusFingerprint(args []string) int {
 // runCensusRun computes a fixture-driven census verdict and writes it to
 // --output, printing the inventory and diagnostic lines for the run.
 func runCensusRun(args []string) int {
-	flags := flag.NewFlagSet("census run", flag.ContinueOnError)
+	flags := flag.NewFlagSet("proc census", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
 	root := flags.String("root", "", "metasystem root (defaults to --repo)")
 	fp := flags.String("fingerprint", "", "fingerprint to stamp")
@@ -52,7 +52,7 @@ func runCensusRun(args []string) int {
 		return 2
 	}
 	if *repo == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "census run: --repo and --output are required")
+		fmt.Fprintln(os.Stderr, "proc census: --repo and --output are required")
 		return 2
 	}
 	metasystemRoot := *root
@@ -72,23 +72,23 @@ func runCensusRun(args []string) int {
 		verdict, err = census.RunProductionCensus(metasystemRoot, *repo, *fp, *interval, time.Now().UTC())
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "census run:", err)
+		fmt.Fprintln(os.Stderr, "proc census:", err)
 		return 1
 	}
 	encoded, err := json.MarshalIndent(verdict, "", "  ")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "census run:", err)
+		fmt.Fprintln(os.Stderr, "proc census:", err)
 		return 1
 	}
 	if err := os.WriteFile(*output, append(encoded, '\n'), 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "census run:", err)
+		fmt.Fprintln(os.Stderr, "proc census:", err)
 		return 1
 	}
 	return 0
 }
 
 func runCensusAlive(args []string) int {
-	flags := flag.NewFlagSet("census alive", flag.ContinueOnError)
+	flags := flag.NewFlagSet("proc alive", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
 	start := flags.Int64("start-time", 0, "expected start epoch seconds")
 	if flags.Parse(args) != nil {
@@ -101,7 +101,7 @@ func runCensusAlive(args []string) int {
 }
 
 func runCensusSignatureCheck(args []string) int {
-	flags := flag.NewFlagSet("census signature-check", flag.ContinueOnError)
+	flags := flag.NewFlagSet("proc signature-check", flag.ContinueOnError)
 	adapter := flags.String("adapter", "", "adapter path")
 	positive := flags.String("positive", "", "argv that must classify")
 	lookalike := flags.String("lookalike", "", "argv that must NOT classify")
@@ -118,7 +118,7 @@ func runCensusSignatureCheck(args []string) int {
 // runCensusFindAncestor walks the live process tree from --pid and prints the
 // first signature-matched agent ancestor as compact JSON.
 func runCensusFindAncestor(args []string) int {
-	flags := flag.NewFlagSet("census find-ancestor", flag.ContinueOnError)
+	flags := flag.NewFlagSet("proc find-ancestor", flag.ContinueOnError)
 	repo := flags.String("repo", "", "metasystem root")
 	pid := flags.Int64("pid", 0, "process id to walk up from")
 	runtime := flags.String("runtime", "", "restrict to one runtime (optional)")
@@ -126,7 +126,7 @@ func runCensusFindAncestor(args []string) int {
 		return 2
 	}
 	if *repo == "" || *pid == 0 {
-		fmt.Fprintln(os.Stderr, "census find-ancestor: --repo and --pid are required")
+		fmt.Fprintln(os.Stderr, "proc find-ancestor: --repo and --pid are required")
 		return 2
 	}
 	ancestor, err := census.FindAncestorProduction(*repo, *pid, *runtime)

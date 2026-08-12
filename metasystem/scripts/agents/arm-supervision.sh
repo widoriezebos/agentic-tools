@@ -126,7 +126,7 @@ json_field() { # file, dotted field
 
 identity_alive() { # pid, start, optional tag
   local pid=$1 start=$2 tag=${3:-} command
-  "$ms" census alive --pid "$pid" --start-time "$start" >/dev/null 2>&1 || return 1
+  "$ms" proc alive --pid "$pid" --start-time "$start" >/dev/null 2>&1 || return 1
   [[ -z "$tag" ]] && return 0
   command=$(ps -p "$pid" -o command= 2>/dev/null || true)
   # Exact pid/start proves the recorded process is still live. If argv is not
@@ -211,7 +211,7 @@ wait_for_start_identity() { # name, pid
   started=$SECONDS
   deadline=$((SECONDS + cap))
   while (( SECONDS < deadline )); do
-    if value=$("$ms" identity started-at --pid "$pid" 2>/dev/null); then printf '%s\n' "$value"; return 0; fi
+    if value=$("$ms" proc started-at --pid "$pid" 2>/dev/null); then printf '%s\n' "$value"; return 0; fi
     sleep 0.02
   done
   elapsed=$((SECONDS - started))
@@ -366,14 +366,14 @@ arm_repository() {
     exit 0
   fi
   if [[ -z "$pid" ]]; then
-    if ! ancestor=$("$ms" census find-ancestor --repo "$repo" --pid "$PPID" ${runtime:+--runtime "$runtime"} 2>&1); then
+    if ! ancestor=$("$ms" proc find-ancestor --repo "$repo" --pid "$PPID" ${runtime:+--runtime "$runtime"} 2>&1); then
       die 1 "cannot infer arming identity: no agent-signature ancestor was proven. Pass --pid <agent-pid> and --start-time <epoch-seconds>, or run from a session whose ancestor matches a configured runtime signature. Detail: $ancestor"
     fi
     pid=$("$ms" json get --value "$ancestor" --field pid)
     [[ -n "$runtime" ]] || runtime=$("$ms" json get --value "$ancestor" --field runtime)
   fi
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || die 2 "--pid must be a positive integer"
-  start=${start:-$("$ms" identity started-at --pid "$pid")} || die 1 "cannot read pid start time"
+  start=${start:-$("$ms" proc started-at --pid "$pid")} || die 1 "cannot read pid start time"
   [[ "$start" =~ ^[1-9][0-9]*$ ]] || die 2 "--start-time must be epoch seconds"
   identity_alive "$pid" "$start" || die 1 "announcement pid identity is not live"
   session=${session:-${METASYSTEM_SESSION_ID:-session-$pid}}
@@ -389,7 +389,7 @@ arm_repository() {
   # they must travel to the owner rather than defaulting inside it.
   watch_interval=$("$config" get --key watch.interval-sec --default 60)
   [[ "$watch_interval" =~ ^[1-9][0-9]*$ ]] || die 1 "watch.interval-sec must be a positive integer"
-  armed_fingerprint=$("$ms" census fingerprint --root "$harness_root" --repo "$repo") \
+  armed_fingerprint=$("$ms" supervise fingerprint --root "$harness_root" --repo "$repo") \
     || die 1 "could not compute the supervision fingerprint"
 
   # Fixed arming step 1: registry write precedes lock acquisition and census.
@@ -494,7 +494,7 @@ case ${1:-} in
     shift
     [[ ${1:-} == --repo && $# -eq 2 ]] || { usage; exit 2; }
     repo=$(resolve_repo "$2")
-    "$ms" census fingerprint --root "$harness_root" --repo "$repo"
+    "$ms" supervise fingerprint --root "$harness_root" --repo "$repo"
     ;;
   *) arm_repository "$@" ;;
 esac

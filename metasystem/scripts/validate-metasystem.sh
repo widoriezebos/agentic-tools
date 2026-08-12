@@ -1887,7 +1887,7 @@ PY
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
   agent_supervision_repo=$agent_repo
   track_armed_supervision "$agent_repo"
-  agent_main_start=$("$agent_repo/bin/metasystem" identity started-at --pid "$$")
+  agent_main_start=$("$agent_repo/bin/metasystem" proc started-at --pid "$$")
   METASYSTEM_AGENT_RUNTIME=fake "$agent_repo/scripts/agents/arm-supervision.sh" \
     --repo "$agent_repo" --session validator --pid "$$" \
     --start-time "$agent_main_start" --tag metasystem-main-fake-validator \
@@ -2855,7 +2855,7 @@ fi
 ARM
   chmod +x "$runner_repo/scripts/agents/arm-supervision.sh"
   runner_main_start=$("${runner_process_env[@]}" \
-    "$runner_repo/bin/metasystem" identity started-at --pid "$$")
+    "$runner_repo/bin/metasystem" proc started-at --pid "$$")
   agent_supervision_repo=$runner_repo
   track_armed_supervision "$runner_repo"
   "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
@@ -3383,7 +3383,7 @@ PY
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_selftest_identity_fixture"
   agent_supervision_repo=$agent_selftest_repo
   track_armed_supervision "$agent_selftest_repo"
-  agent_selftest_main_start=$("$agent_selftest_repo/bin/metasystem" identity started-at --pid "$$")
+  agent_selftest_main_start=$("$agent_selftest_repo/bin/metasystem" proc started-at --pid "$$")
   METASYSTEM_AGENT_RUNTIME=fake "$agent_selftest_repo/scripts/agents/arm-supervision.sh" \
     --repo "$agent_selftest_repo" --session selftest-validator --pid "$$" \
     --start-time "$agent_selftest_main_start" --tag metasystem-main-fake-selftest-validator \

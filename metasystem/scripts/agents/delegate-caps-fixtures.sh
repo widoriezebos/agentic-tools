@@ -201,7 +201,7 @@ else:
 PY
 chmod +x "$fake_bin/ps"
 export PATH="$fake_bin:$PATH"
-process_start=$("$harness/bin/metasystem" identity started-at --pid $$)
+process_start=$("$harness/bin/metasystem" proc started-at --pid $$)
 python3 - "$identity_fixture" "$$" "$process_start" <<'PY'
 import json, sys
 from pathlib import Path

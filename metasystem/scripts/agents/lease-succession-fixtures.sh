@@ -31,7 +31,7 @@ trap 'rm -rf "$tmp"' EXIT
 checkout="$tmp/announce"
 mkdir -p "$checkout"
 git -C "$checkout" init -q .
-start=$("$ms" identity started-at --pid $$)
+start=$("$ms" proc started-at --pid $$)
 
 announce() { "$ms" lease announce --root "$checkout" --session mission-runner-bm-2 \
   --pid $$ --start "$start" --tag mission-runner.sh --runtime fake "$@"; }
@@ -82,7 +82,7 @@ mkdir -p "$turns"
 git -C "$turns" init -q .
 mkdir -p "$turns/artifacts/agents/jobs"
 cat >"$tmp/turn.sh" <<EOS
-start=\$("$ms" identity started-at --pid \$\$)
+start=\$("$ms" proc started-at --pid \$\$)
 "$ms" lease announce --root "$turns" --session "host-\$\$" --pid \$\$ \
   --start "\$start" --tag metasystem-host-turn --runtime claude \
   \${METASYSTEM_OWNER_LINEAGE:+--owner-lineage "\$METASYSTEM_OWNER_LINEAGE"} >/dev/null

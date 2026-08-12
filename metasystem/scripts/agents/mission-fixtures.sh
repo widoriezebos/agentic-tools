@@ -261,8 +261,8 @@ git -C "$repo" push -qu origin main
 "$root/bin/metasystem" util hold --tag mission-reaper-tag & reaper_pid=$!
 # The engine ships in this fixture repo, so preflight demands EXACT-START
 # liveness: record the holders' real start times, not synthetic ones.
-watcher_start=$("$root/bin/metasystem" identity started-at --pid "$watcher_pid")
-reaper_start=$("$root/bin/metasystem" identity started-at --pid "$reaper_pid")
+watcher_start=$("$root/bin/metasystem" proc started-at --pid "$watcher_pid")
+reaper_start=$("$root/bin/metasystem" proc started-at --pid "$reaper_pid")
 identity_file=$fixture_root/mission-process-identities.json
 printf '{"%s":{"pidStartedAt":%s,"command":"fixture mission-watcher-tag"},"%s":{"pidStartedAt":%s,"command":"fixture mission-reaper-tag"}}\n' \
   "$watcher_pid" "$watcher_start" "$reaper_pid" "$reaper_start" >"$identity_file"
@@ -494,7 +494,7 @@ PY
 # whichever agent happens to be running the suite.
 "$root/bin/metasystem" lease announce --root "$repo" \
   --session mission-fixtures --pid $$ \
-  --start "$("$root/bin/metasystem" identity started-at --pid $$)" \
+  --start "$("$root/bin/metasystem" proc started-at --pid $$)" \
   --tag fixture-mission-main --runtime fake >/dev/null
 
 make_end_state_contract() { # mission, fake-host behavior

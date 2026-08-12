@@ -134,7 +134,7 @@ git -C "$lease_repo" init -q .
 mkdir -p "$lease_repo/artifacts/agents"
 touch "$lease_repo/artifacts/agents/events.jsonl"
 chmod 000 "$lease_repo/artifacts/agents/events.jsonl"
-start=$("$root/bin/metasystem" identity started-at --pid $$)
+start=$("$root/bin/metasystem" proc started-at --pid $$)
 "$root/bin/metasystem" lease announce --root "$lease_repo" \
   --session fr-fixture --pid $$ --start "$start" --tag metasystem-main-fr --runtime fake >/dev/null \
   || fail "a lease claim failed because the witness stream was unwritable"
