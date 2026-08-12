@@ -326,11 +326,14 @@ freshness under the lock. VALIDATION ADMISSION completes the family
 (r26/KS-R26-001): on a first build the suite's admission rides its
 child builder's publish-bootstrap marker; the moment a binary
 exists, the suite registers its own validation marker BEFORE any
-fixture runs; and suite-versus-suite contention after
-register-then-check resolves by the deterministic ELDER rule over
-kernel facts the markers already carry — oldest registered start
-time wins, lowest pid breaks ties, the loser exits with the standing
-refusal — re-derive the tracked-source state and
+fixture runs; and suite-versus-suite contention resolves by TWO-PHASE
+admission (r27/KS-R27-001): register, wait one settle grace covering
+registration skew, then check — a foreign ADMITTED validation marker
+always refuses the newcomer regardless of rank, and among
+not-yet-admitted contenders the elder rule orders marker-CREATION
+facts (the atomic rename's timestamp, pid tiebreak), a total order
+both compute identically, so exactly one marks itself admitted at
+grace end and the loser exits with the standing refusal — re-derive the tracked-source state and
 abort unless it still equals the stamp (r11/KS-R11-002) — then
 staged atomic rename. Register-then-check makes admission and replacement one protocol;
 for two racing first-builds the LOCK alone adjudicates
