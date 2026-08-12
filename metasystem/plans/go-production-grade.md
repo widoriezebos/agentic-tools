@@ -378,10 +378,23 @@ recorded per family.
    62.5 after the direct-test sweep (host lifecycle, group probes,
    terminate verdicts, fence wrappers, cycle-step guards, lease
    lifecycle, stale-lease ladder, contract-pin ladder, unattended
-   arming identity); its remaining distance is the armAndPreflight /
-   launch / internalRun cluster, which requires armed-supervision
-   fixtures in-test — the one genuinely fixture-priced tail, covered
-   end to end by the suite's mission fixtures on every run.
+   arming identity, launch guards, arming refusals under a stub
+   neighbor, the internalRun fail ramp); the remaining distance is the
+   post-lease cycle body, covered end to end by the suite's mission
+   fixtures on every run. **The fixture that finishes it, designed so
+   the next session builds instead of derives**: (1) a temp root with a
+   stub arm-supervision.sh answering ARMED and a FIXED fingerprint line
+   for both `--repo` arming and the `fingerprint` subcommand — seal and
+   preflight then agree by construction; (2) a real contract sealed
+   in-test through contract.Seal against that stub, committed to a
+   `git init -b main` bare origin so Preflight's origin verification
+   passes; (3) a stub assert-turn-prompt.sh (exit 0) and a stub host
+   adapter modeled on scripts/agents/adapters/fake.sh's result/return
+   shapes — the lawful return documents live in mission-fixtures.sh and
+   fake.sh and must be ported field-for-field, which is the actual work;
+   (4) drive Launch in FOREGROUND mode so internalRun -> oneCycle ->
+   launchHost runs in-process under coverage. Steps 1-2 alone close
+   armAndPreflight's tail; step 3-4 close the cycle body.
 2. **Phase 3c is CLOSED by extraction plus disposition** (the plan's own
    one-abstraction test, not a line quota). Extracted where structure
    existed: oneCycle, launchHost, patienceEvaluate, Mirror
