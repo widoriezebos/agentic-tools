@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -337,6 +338,78 @@ pipe characters; the column parser cannot see an escaped pipe as content.
 		return 2
 	}
 	out, errs, code := validate.DesignObligations(root, files, runtimeRequired)
+	for _, line := range out {
+		fmt.Println(line)
+	}
+	for _, line := range errs {
+		fmt.Fprintln(os.Stderr, line)
+	}
+	return code
+}
+
+// runValidateConformance relays scripts/agents/assert-conformance.sh's
+// calling convention: --stage review|merge and --job, with --root naming
+// the merge-target checkout. Exit 0 conforming; 1 conformance failure; 2
+// usage.
+func runValidateConformance(args []string) int {
+	usage := func() {
+		fmt.Fprint(os.Stderr, `Usage: scripts/agents/assert-conformance.sh --stage review|merge --job <job-id>
+
+The review stage computes the implementer worktree's exact review object. A
+temporary index contains every tracked file plus every untracked, unignored
+file; ignored files are excluded. It writes diff.patch and review.json without
+changing the worktree's real index. Changed paths are measured from the
+branch's merge-base with the current target and checked against the cumulative
+union of immutable per-round declarations. The merge stage leaves review
+artifacts untouched and requires either a mechanically valid waiver or a
+closed, independent code-critic chain over the branch's final committed tree.
+
+Exit codes: 0 conforming; 1 conformance failure; 2 usage.
+`)
+	}
+	root := "."
+	stage := ""
+	job := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--stage":
+			if i+1 >= len(args) || stage != "" {
+				usage()
+				return 2
+			}
+			stage = args[i+1]
+			i++
+		case "--job":
+			if i+1 >= len(args) || job != "" {
+				usage()
+				return 2
+			}
+			job = args[i+1]
+			i++
+		case "--root":
+			if i+1 >= len(args) {
+				usage()
+				return 2
+			}
+			root = args[i+1]
+			i++
+		case "-h", "--help":
+			usage()
+			return 0
+		default:
+			usage()
+			return 2
+		}
+	}
+	if stage != "review" && stage != "merge" {
+		usage()
+		return 2
+	}
+	if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`).MatchString(job) {
+		usage()
+		return 2
+	}
+	out, errs, code := validate.Conformance(root, stage, job)
 	for _, line := range out {
 		fmt.Println(line)
 	}

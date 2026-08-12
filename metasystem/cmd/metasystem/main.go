@@ -83,6 +83,7 @@ func families() []family {
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
 				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
+				{"conformance", "review or merge conformance for an implementer job", runValidateConformance},
 			},
 		},
 		{

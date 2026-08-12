@@ -822,10 +822,7 @@
           "site": "skills/code-critique/SKILL.md"
         }
       ],
-      "debt": {
-        "phase": "A",
-        "recorded": "2026-08-12"
-      },
+      "debt": null,
       "export": {
         "condition": "always",
         "install": "scripts/agents/assert-conformance.sh"
@@ -833,7 +830,7 @@
       "path": "scripts/agents/assert-conformance.sh",
       "shape": "exec",
       "verdict": "port+shim",
-      "verified": null
+      "verified": "2026-08-12"
     },
     {
       "callers": [
