@@ -39,6 +39,12 @@ on the same critic chain. If material findings exhaust that second budget,
 stop outright with the design waiting on the human. A human decision recorded
 in the stream plan is the only remedy.
 
+The budget lives on the critic CHAIN, so rounds must run as follow-ups on
+one chain. Dispatching a fresh critic job per round silently evades the
+budget — no exhaustion can ever fire — which is how a seven-round loop ran
+unbudgeted on this repository's own consolidation design (2026-08-12)
+before the human called it.
+
 ## Close a Round by Join, Not by Count
 
 A round is closed only when every material finding carries a disposition — and that is a claim to be checked, not asserted. Parse the critique into a structured worklist (stable identifier, severity, proposal) and join it against the dispositions; the round closes when the two sets are equal. Working from prose invites the failure this prevents: "N corrections applied" reads like closure while unaddressed findings sit in the body, and the next round spends itself rediscovering them instead of finding anything new. If the critique carries no stable identifier per finding, ask for one — an unjoinable critique can be estimated, not closed.
