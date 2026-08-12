@@ -16,6 +16,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
+// procfsMounts is the mount table the B2 arming refusal reads; a test
+// points it at a fixture to prove the refusal wiring end to end.
+var procfsMounts = "/proc/self/mounts"
+
 // runSuperviseOwner runs the Go owner loop for one checkout: it
 // assembles the disk, process, ledger, and intent adapters behind the
 // tested owner and drives it. Launched by arm-supervision.sh under the
@@ -41,6 +45,14 @@ func runSuperviseOwnerLoop(args []string) int {
 	if *repo == "" || *tag == "" {
 		fmt.Fprintln(os.Stderr, "supervise owner: --repo and --tag are required")
 		return 2
+	}
+	// Restricted procfs breaks the three-way liveness guarantee (a live
+	// foreign process reads as ENOENT-dead), so supervision refuses to arm
+	// under it (go-production-grade B2). Configuration-based, never
+	// privilege-based: root's hidepid exemption does not relax this.
+	if value, restricted := identity.RestrictedProcfsAt(procfsMounts); restricted {
+		fmt.Fprintf(os.Stderr, "supervise owner: refusing to arm: /proc is mounted hidepid=%s, which makes another user's live process indistinguishable from a dead one and breaks identity's three-way liveness guarantee\n", value)
+		return 1
 	}
 	if *scope == "" {
 		*scope = *repo

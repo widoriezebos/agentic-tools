@@ -10,6 +10,13 @@
 // reads exact kernel start times (microseconds on darwin), shrinking
 // that residual for live comparisons while still speaking seconds to
 // records for compatibility with every artifact the system already has.
+//
+// SAME-USER SCOPE INVARIANT (B2): every consumer that acts on Dead —
+// the reapers, lock takeover, the lease sweep — judges processes this
+// engine's own user spawned. The platform probers must never misread
+// another user's LIVE process as dead (permission denial is Unknown or
+// existence, never death), and supervision refuses to arm where the
+// platform cannot keep that promise (restricted procfs; see procfs.go).
 package identity
 
 import (
