@@ -68,7 +68,7 @@ func encodeJSON(value any) ([]byte, error) {
 // new bytes and never a half-written file: render, write a temp file in the
 // target directory, fsync it, rename it into place, then fsync the directory.
 func atomicWriteJSON(path string, value any) error {
-	encoded, err := json.MarshalIndent(value, "", "  ")
+	encoded, err := encodeJSON(value)
 	if err != nil {
 		return err
 	}

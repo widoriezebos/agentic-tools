@@ -3,7 +3,7 @@
     "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures"
   },
   "floors": {
-    "internal/adapter": 85.9,
+    "internal/adapter": 86.6,
     "internal/atomicfile": 76.1,
     "internal/audit": 91.5,
     "internal/authority": 95.0,
@@ -17,7 +17,7 @@
     "internal/evidence": 80.5,
     "internal/gaterun": 89.6,
     "internal/hooks": 86.4,
-    "internal/host": 79.4,
+    "internal/host": 81.0,
     "internal/identity": 89.3,
     "internal/janitor": 93.8,
     "internal/lease": 78.0,
