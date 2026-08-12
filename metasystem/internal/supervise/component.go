@@ -57,11 +57,12 @@ func WriteHeartbeat(path, component string, self identity.Ref, tag string, inter
 // plus a rename, so a concurrent reader sees either the old file or the new one
 // and never a partial write. The parent directory is created if missing.
 func atomicWrite(path string, content []byte) error {
-	// Through the durable-write owner (go-production-grade B5); the
-	// empty anchor preserves this writer's previous behavior exactly
-	// until its caller is converted to the two-outcome contract.
-	_, err := atomicfile.WriteText(path, string(content), "")
-	return err
+	// Heartbeats are EPHEMERAL liveness signals: rewritten every interval,
+	// valueless after a crash. The volatile write is atomic visibility
+	// without the durability barriers — the original writer here never
+	// synced, and adding barriers taxed the hottest write path in the
+	// system for durability nobody reads (B5's recorded classification).
+	return atomicfile.WriteVolatile(path, string(content))
 }
 
 // parseISOSecond parses a whole-second UTC timestamp, accepting the trailing-Z

@@ -225,3 +225,22 @@ func TestCopyFilePostPublicationDoubt(t *testing.T) {
 		t.Fatalf("committed content missing: %q", data)
 	}
 }
+
+func TestWriteVolatileReplacesAtomically(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "beat.json")
+	if err := WriteVolatile(path, "beat-1\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteVolatile(path, "beat-2\n"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "beat-2\n" {
+		t.Fatalf("got %q", data)
+	}
+	// No temp residue in the directory.
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if len(entries) != 1 {
+		t.Fatalf("residue: %v", entries)
+	}
+}

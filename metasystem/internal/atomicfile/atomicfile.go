@@ -179,3 +179,33 @@ func CopyFile(sourcePath, targetPath, anchor string) (durable bool, err error) {
 	}
 	return true, nil
 }
+
+// WriteVolatile replaces path's content atomically WITHOUT any durability
+// barrier: readers see old bytes or new bytes, never a torn file, and
+// nothing is fsynced. This is for EPHEMERAL liveness signals — heartbeats,
+// freshness stamps — that are rewritten every interval and carry no value
+// across a crash: a rebooted machine re-arms and re-stamps. Routing those
+// through WriteText's barriers taxes the hottest write path with
+// full-flushes (F_FULLFSYNC on darwin) for durability nobody reads, which
+// destabilized the suite's timing-scaled fixtures when it was tried
+// (go-production-grade B5, the recorded classification).
+func WriteVolatile(path, text string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.WriteString(text); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
