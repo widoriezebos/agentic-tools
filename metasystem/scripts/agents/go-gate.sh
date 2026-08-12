@@ -19,17 +19,12 @@ if ! grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root
   # Three states, not two: Go SOURCE present without the metasystem module
   # line is a damaged template, and skipping would validate green with zero
   # Go checks — fail loudly instead.
-  # Import-BLOCK awareness, not text position: only a path inside an
-  # import statement or block counts, so data lists, constants, and
-  # comments in a foreign project never trip this.
-  if find "$root/cmd/metasystem" -name '*.go' -exec awk 'FNR==1{inblk=0;incmt=0}
-    incmt{if(/\*\//)incmt=0;next}
-    /^[[:space:]]*\/\//{next}
-    /^[[:space:]]*\/\*/{if(!/\*\//)incmt=1;next}
-    /^[[:space:]]*import[[:space:]]*\(/{inblk=1;next}
-    inblk && /^[[:space:]]*\)/{inblk=0;next}
-    (inblk || /^[[:space:]]*import[[:space:]]/) && /"github\.com\/widoriezebos\/agentic-tools\/metasystem\/internal/{found=1;exit}
-    END{exit !found}' {} + 2>/dev/null; then
+  # No lexing: the discriminator is the presence of the engine's own
+  # source files, which only the metasystem template carries — adopted
+  # targets receive no Go source, and a foreign project would need both
+  # exact paths to collide, where the failure is a loud refusal, not
+  # silent breakage.
+  if [[ -f "$root/internal/missionrunner/stoploss.go" && -f "$root/internal/mission/ledger.go" ]]; then
     echo "go gate: metasystem Go source present but go.mod does not declare the metasystem module — damaged template, refusing to skip" >&2
     exit 1
   fi
