@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
 // The pass runs against a frozen clock so grace windows and archive ages are
@@ -151,18 +153,28 @@ func TestKeepsChainsTheMirrorCannotVouchFor(t *testing.T) {
 	}
 }
 
+// recordEntry renders a manifest files-entry whose sourceStateHash matches the
+// record's CURRENT state — the proof pruneMirroredRecords requires (codex-1).
+func recordEntry(t *testing.T, jobs, name string) string {
+	t.Helper()
+	hash, err := dispatch.SemanticRecordHash(filepath.Join(jobs, name))
+	if err != nil {
+		t.Fatalf("hash %s: %v", name, err)
+	}
+	return fmt.Sprintf("{\"sha256\": \"irrelevant\", \"sourceStateHash\": %q}", hash)
+}
+
 func TestPrunesMirroredRecordsPastTheGraceWindow(t *testing.T) {
 	freezeClock(t)
 	root, evidenceRoot, _, jobs := checkout(t)
 
-	// Collected long ago: mirrored well past the grace window.
+	// Collected long ago: mirrored well past the grace window, and the
+	// manifest's sourceStateHash matches the record as it stands.
 	writeFile(t, filepath.Join(jobs, "old.json"), `{"jobId": "old", "status": "completed"}`)
 	writeFile(t, filepath.Join(jobs, "old-r2.json"), `{"jobId": "old-r2", "status": "completed"}`)
 	writeFile(t, filepath.Join(evidenceRoot, "agents", "old", "manifest.json"),
-		manifestJSON("2026-08-10T08:00:00Z", map[string]string{
-			"jobs/old.json":    "irrelevant",
-			"jobs/old-r2.json": "irrelevant",
-		}))
+		fmt.Sprintf(`{"updatedAt": "2026-08-10T08:00:00Z", "files": {"jobs/old.json": %s, "jobs/old-r2.json": %s}}`,
+			recordEntry(t, jobs, "old.json"), recordEntry(t, jobs, "old-r2.json")))
 	// Mirrored only recently: records stay for the staleness and census reads.
 	writeFile(t, filepath.Join(jobs, "recent.json"), `{"jobId": "recent", "status": "completed"}`)
 	writeFile(t, filepath.Join(evidenceRoot, "agents", "recent", "manifest.json"),
@@ -171,6 +183,19 @@ func TestPrunesMirroredRecordsPastTheGraceWindow(t *testing.T) {
 	writeFile(t, filepath.Join(jobs, "old-r3.json"), `{"jobId": "old-r3", "status": "completed"}`)
 	// Not terminal: never pruned.
 	writeFile(t, filepath.Join(jobs, "busy.json"), `{"jobId": "busy", "status": "running"}`)
+	// codex-1: the chain was CLOSED after the mirror pass and the re-mirror
+	// failed — the manifest's hash predates chainClosed. The record is the
+	// only copy of the closure state; GC must retain it.
+	writeFile(t, filepath.Join(jobs, "closed.json"), `{"jobId": "closed", "status": "completed"}`)
+	staleEntry := recordEntry(t, jobs, "closed.json")
+	writeFile(t, filepath.Join(jobs, "closed.json"), `{"jobId": "closed", "status": "completed", "chainClosed": true, "runnerClosed": true}`)
+	writeFile(t, filepath.Join(evidenceRoot, "agents", "closed", "manifest.json"),
+		fmt.Sprintf(`{"updatedAt": "2026-08-10T08:00:00Z", "files": {"jobs/closed.json": %s}}`, staleEntry))
+	// codex-1: a manifest from before the hash contract cannot prove
+	// currency, so the record stays.
+	writeFile(t, filepath.Join(jobs, "legacy.json"), `{"jobId": "legacy", "status": "completed"}`)
+	writeFile(t, filepath.Join(evidenceRoot, "agents", "legacy", "manifest.json"),
+		manifestJSON("2026-08-10T08:00:00Z", map[string]string{"jobs/legacy.json": "irrelevant"}))
 
 	runGC(t, root, evidenceRoot)
 
@@ -180,6 +205,8 @@ func TestPrunesMirroredRecordsPastTheGraceWindow(t *testing.T) {
 		"old-r3.json": false,
 		"recent.json": false,
 		"busy.json":   false,
+		"closed.json": false,
+		"legacy.json": false,
 	} {
 		_, err := os.Stat(filepath.Join(jobs, record))
 		if gone := os.IsNotExist(err); gone != wantGone {
@@ -320,5 +347,22 @@ func TestAgesEventArchivesOnlyAfterAVerifiedDurableCopy(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(archiveDir, youngName)); err != nil {
 		t.Fatal("a young archive stays local even once durable")
+	}
+}
+
+func TestPruneRefusesMalformedManifestEntry(t *testing.T) {
+	freezeClock(t)
+	root, evidenceRoot, _, jobs := checkout(t)
+	writeFile(t, filepath.Join(jobs, "warped.json"), `{"jobId": "warped", "status": "completed"}`)
+	writeFile(t, filepath.Join(evidenceRoot, "agents", "warped", "manifest.json"),
+		`{"updatedAt": "2026-08-10T08:00:00Z", "files": {"jobs/warped.json": "not-an-object"}}`)
+
+	var out strings.Builder
+	err := GC(root, evidenceRoot, 5400, &out)
+	if err == nil || !strings.Contains(err.Error(), "is not an object") {
+		t.Fatalf("a malformed manifest entry must refuse the prune: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(jobs, "warped.json")); statErr != nil {
+		t.Fatal("the record must survive a refused prune")
 	}
 }

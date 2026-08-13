@@ -153,7 +153,7 @@ func mirrorUnchanged(sources []mirrorSource, old map[string]any, destination, re
 			return false
 		}
 		if item.path == recordPath {
-			semantic, err := semanticRecordHash(item.path)
+			semantic, err := SemanticRecordHash(item.path)
 			if err != nil || asString(entry["sourceStateHash"]) != semantic {
 				return false
 			}
@@ -199,7 +199,7 @@ func mirrorLand(sources []mirrorSource, old map[string]any, destination, recordP
 		}
 		entry := map[string]any{"sha256": targetDigest, "bytes": info.Size()}
 		if item.path == recordPath {
-			semantic, err := semanticRecordHash(item.path)
+			semantic, err := SemanticRecordHash(item.path)
 			if err != nil {
 				return "", err
 			}
@@ -218,9 +218,12 @@ func mirrorLand(sources []mirrorSource, old map[string]any, destination, recordP
 	return sha256File(manifestPath)
 }
 
-// semanticRecordHash digests a job record with its mirror field blanked: the
+// SemanticRecordHash digests a job record with its mirror field blanked: the
 // hash of what the record says, independent of when it was last mirrored.
-func semanticRecordHash(path string) (string, error) {
+// Exported because evidence GC must compare the manifest's mirror-time hash
+// against the record's current state before pruning (review codex-1); the
+// two sides must never drift apart in how they compute it.
+func SemanticRecordHash(path string) (string, error) {
 	record, err := readObject(path)
 	if err != nil {
 		return "", err

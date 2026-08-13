@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
 // now is the wall clock, overridable in tests so grace windows and archive
@@ -390,8 +392,34 @@ func pruneMirroredRecords(agents, jobsDir, evidenceRoot string, graceSeconds flo
 		if !ok {
 			return fmt.Errorf("mirror manifest %s has no files map", manifestPath)
 		}
-		if entry, listed := files["jobs/"+filepath.Base(recordPath)]; !listed || entry == nil {
+		entry, listed := files["jobs/"+filepath.Base(recordPath)]
+		if !listed || entry == nil {
 			continue
+		}
+		// The mirror is only history once it carries the record's CURRENT
+		// state (review codex-1). chainClosed/runnerClosed are CAS-patched
+		// into the root record AFTER the mirror-on-terminal pass, and a
+		// post-close re-mirror can fail, leaving a stale manifest; pruning
+		// on presence and age alone would then delete the only copy of the
+		// closure state. Equality of the semantic hash is the mandatory
+		// proof; anything less retains the record.
+		entryMap, ok := entry.(map[string]any)
+		if !ok {
+			return fmt.Errorf("mirror manifest %s entry for %s is not an object", manifestPath, filepath.Base(recordPath))
+		}
+		mirroredHash, _ := entryMap["sourceStateHash"].(string)
+		if mirroredHash == "" {
+			continue // manifest predates the hash contract: currency unprovable, record stays
+		}
+		currentHash, err := dispatch.SemanticRecordHash(recordPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // record vanished under us; nothing left to prune
+			}
+			return fmt.Errorf("cannot hash job record %s: %w", recordPath, err)
+		}
+		if currentHash != mirroredHash {
+			continue // mirror is stale relative to the record; deleting would lose state
 		}
 		updatedAt, _ := manifest["updatedAt"].(string)
 		mirroredAt, err := time.Parse(manifestTimeLayout, updatedAt)
