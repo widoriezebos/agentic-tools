@@ -17,7 +17,7 @@
     "internal/evidence": 80.5,
     "internal/gaterun": 89.6,
     "internal/hooks": 86.4,
-    "internal/host": 80.6,
+    "internal/host": 79.3,
     "internal/identity": 89.3,
     "internal/janitor": 93.8,
     "internal/lease": 78.0,
@@ -30,6 +30,7 @@
     "internal/returnschema": 76.3,
     "internal/supervise": 85.5,
     "internal/turn": 100.0,
+    "internal/usage": 65.1,
     "internal/validate": 80.4,
     "internal/wiredoc": 88.5
   },

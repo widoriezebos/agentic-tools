@@ -15,10 +15,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // A mission's lifecycle fences bound how much work it may do — wall-clock
@@ -787,7 +787,7 @@ func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]a
 			return usagePendingProof, nil, fmt.Sprintf("recorded custodian pid %d cannot be proven dead", pid)
 		}
 	}
-	rootID, err := adapter.RootJobID(jobsDir, jobID)
+	rootID, err := usage.RootJobID(jobsDir, jobID)
 	if err != nil {
 		return usageUnavailable, nil, fmt.Sprintf("chain root is unresolvable: %v", err)
 	}
@@ -800,7 +800,7 @@ func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]a
 	if _, err := os.Stat(eventsPath); err != nil {
 		return usageUnavailable, nil, fmt.Sprintf("event stream is unreadable: %s", rel)
 	}
-	derived := adapter.CodexUsageValue(eventsPath)
+	derived := usage.CodexUsageValue(eventsPath)
 	measured := false
 	for _, field := range usageTokenFields {
 		if v, ok := nonNegNumber(derived[field]); ok {

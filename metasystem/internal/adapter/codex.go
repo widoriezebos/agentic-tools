@@ -3,6 +3,8 @@ package adapter
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // CodexEventField extracts a session or turn identifier from Codex's JSONL
@@ -33,34 +35,10 @@ func CodexEventField(eventsPath, field string) (string, bool) {
 	return "", false
 }
 
-// CodexUsageValue derives the typed usage for a Codex turn in memory, from
-// the last usage block its event stream reports. Codex spells the same
-// counter more than one way across builds, so each field takes the first
-// present spelling. Codex reports no cost or provider units, so both stay
-// null. Callers that must never write — the mission aggregator recovering a
-// killed round's spend from its dead event stream — read this value directly.
-func CodexUsageValue(eventsPath string) map[string]any {
-	var last map[string]any
-	for _, event := range jsonlObjects(eventsPath) {
-		if usage, ok := event["usage"].(map[string]any); ok {
-			last = usage
-		}
-	}
-	return map[string]any{
-		"availability":      "native",
-		"inputTokens":       firstPresent(last, "input_tokens", "inputTokens"),
-		"cachedInputTokens": firstPresent(last, "cached_input_tokens", "cachedInputTokens"),
-		"outputTokens":      firstPresent(last, "output_tokens", "outputTokens"),
-		"reasoningTokens":   firstPresent(last, "reasoning_output_tokens", "reasoning_tokens", "reasoningTokens"),
-		"cost":              nil,
-		"providerUnits":     nil,
-	}
-}
-
 // CodexUsage writes the typed usage for a Codex turn to its round artifact —
 // the adapter's own capture, the one writer of usage.json.
 func CodexUsage(eventsPath, outputPath string) error {
-	if err := atomicWriteJSON(outputPath, CodexUsageValue(eventsPath)); err != nil {
+	if err := atomicWriteJSON(outputPath, usage.CodexUsageValue(eventsPath)); err != nil {
 		return fmt.Errorf("write codex usage: %w", err)
 	}
 	return nil

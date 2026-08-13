@@ -2391,12 +2391,20 @@ PY
   implement_brief="$agent_fixture/implement.md"
   make_agent_brief "$implement_brief" implement
   run_agent_fixture conformance conformance "$agent_dispatch" dispatch --role implementer --brief "$implement_brief" --job-id conformance --worktree --wait
-  agent_fails close-before-diff 'diff.patch is not mirrored' "$agent_dispatch" close --job conformance
+  # D8: an unreviewed completed implementer does NOT wedge the close — the
+  # diff exists only once the host's conformance review runs, and the
+  # workflow gap is the delegation floor's verdict, not the close's.
+  run_agent_fixture close-before-diff conformance "$agent_dispatch" close --job conformance
   (cd "$agent_repo" && scripts/agents/assert-conformance.sh --stage review --job conformance)
   [[ -f "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" ]] \
     || { echo "conformance did not persist diff.patch" >&2; exit 1; }
   run_agent_fixture conformance-reap conformance "$agent_dispatch" reap --job conformance
   run_agent_fixture conformance-close conformance "$agent_dispatch" close --job conformance
+  # ...but a diff the MANIFEST knows and the disk lost is evidence loss:
+  # a re-close over the vanished file refuses by name (D8's kept tooth).
+  mv "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" "$agent_fixture/diff.patch.save"
+  agent_fails diff-vanished 'vanished after mirroring' "$agent_dispatch" close --job conformance
+  mv "$agent_fixture/diff.patch.save" "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch"
   conformance_workspace=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workspaceRoot"])' "$agent_repo/artifacts/agents/jobs/conformance.json")
   case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
   printf 'untracked change\n' >"$conformance_workspace/source.txt"

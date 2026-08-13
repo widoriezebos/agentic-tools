@@ -34,35 +34,6 @@ func readJSONFile(t *testing.T, path string) map[string]any {
 
 // --- root job walk ---
 
-func TestRootJobIDChain(t *testing.T) {
-	jobs := t.TempDir()
-	writeFile(t, filepath.Join(jobs, "a.json"), `{"parentJob": null}`)
-	writeFile(t, filepath.Join(jobs, "b.json"), `{"parentJob": "a"}`)
-	writeFile(t, filepath.Join(jobs, "c.json"), `{"parentJob": "b"}`)
-	// A record with no parentJob key at all is its own root.
-	writeFile(t, filepath.Join(jobs, "lone.json"), `{"round": 1}`)
-
-	for job, want := range map[string]string{"c": "a", "b": "a", "a": "a", "lone": "lone"} {
-		got, err := RootJobID(jobs, job)
-		if err != nil {
-			t.Fatalf("RootJobID(%q): %v", job, err)
-		}
-		if got != want {
-			t.Fatalf("RootJobID(%q) = %q, want %q", job, got, want)
-		}
-	}
-}
-
-func TestRootJobIDCycle(t *testing.T) {
-	jobs := t.TempDir()
-	writeFile(t, filepath.Join(jobs, "x.json"), `{"parentJob": "y"}`)
-	writeFile(t, filepath.Join(jobs, "y.json"), `{"parentJob": "x"}`)
-
-	if _, err := RootJobID(jobs, "x"); err == nil || !strings.Contains(err.Error(), "cyclic") {
-		t.Fatalf("expected a cyclic-chain error, got %v", err)
-	}
-}
-
 // --- effective permissions handshake ---
 
 const requestedRecord = `{

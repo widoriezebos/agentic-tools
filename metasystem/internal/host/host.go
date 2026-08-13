@@ -12,7 +12,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"os"
 	"sort"
-	"strconv"
 )
 
 // canonicalJSON renders a value in this family's wire dialect — the
@@ -102,30 +101,6 @@ func sortedKeys(object map[string]any) []string {
 	return keys
 }
 
-// asInt reports a value that is a whole-number JSON integer, rejecting floats
-// and non-numbers alike.
-func asInt(value any) (int64, bool) {
-	switch typed := value.(type) {
-	case json.Number:
-		i, err := strconv.ParseInt(typed.String(), 10, 64)
-		return i, err == nil
-	default:
-		return 0, false
-	}
-}
-
-// asFloat reports a value that is any JSON number, integer or fractional.
-func asFloat(value any) (float64, bool) {
-	switch typed := value.(type) {
-	case json.Number:
-		f, err := typed.Float64()
-		return f, err == nil
-	default:
-		return 0, false
-	}
-}
-
-// isNumber reports whether a value is any JSON number.
 func isNumber(value any) bool {
 	_, ok := value.(json.Number)
 	return ok

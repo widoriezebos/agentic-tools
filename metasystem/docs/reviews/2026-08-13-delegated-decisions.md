@@ -136,3 +136,31 @@ costs ~$10 while measuring a known-dishonest headroom display.
 **Also noted for later:** an orphaned job's cap enforcement degrades to
 standing-reaper granularity when its waiting dispatcher dies (f29a overran
 its capDeadline by 75s); not fixed in this pass.
+
+## D8 — Close attests evidence, not host workflow (amends D6); usage owns extraction
+
+**Decision (CloseCheck):** rep 1 of cohort bm-1-20260813t155700z — the first
+run with all D7 fixes — failed everyChainClosed on a NEW shape: the host
+dispatched at the signed cap (the D7 prompt/policy worked), the implementer
+COMPLETED, but the host parked on stop-loss without ever running the
+conformance review — and diff.patch is CREATED by that review, never by the
+reap. D6's completed-without-diff refusal therefore wedged the close of
+every unreviewed chain at mission end. Amendment: an absent diff never
+blocks the close (the unreviewed-implementer workflow gap is already
+delegationFloorMet's verdict); a diff the MANIFEST knows but the disk lost
+is still evidence loss and refuses ("vanished after mirroring"); an
+existing diff must still be mirrored at current content.
+
+**Decision (architecture-1):** internal/usage is the single owner of typed
+usage extraction — DevinUsage (the host and adapter copies deleted),
+CodexUsageValue, and RootJobID (usage attribution is per chain; W2's
+walker consolidation may re-home it). mission/fence.go is off its adapter
+import. The two former writers (host canonicalJSON, adapter encodeJSON)
+were byte-identical wiredoc bodies, so the consolidation changes no
+on-disk bytes; usage's writer carries the same body. host re-floors at
+79.3 (well-covered code moved out, shifting the remaining ratio — the
+deterministic-minimum rule, lock=84.0 precedent).
+
+**Cohort consequence:** bm-1-20260813t155700z abandoned after rep 1 (one
+SHA per cohort; rep 1 invalid on the now-amended close rule plus an honest
+delegationFloorMet). Rep 2 unspent. Fresh cohort at the next validated pin.

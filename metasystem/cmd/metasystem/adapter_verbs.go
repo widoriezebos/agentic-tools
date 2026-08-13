@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+
+	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // The adapter family is the shared lifecycle plumbing (internal/adapter) every
@@ -25,7 +27,7 @@ func runAdapterRootJob(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter root-job --jobs DIR --job ID")
 		return 2
 	}
-	root, err := adapter.RootJobID(*jobs, *job)
+	root, err := usagepkg.RootJobID(*jobs, *job)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

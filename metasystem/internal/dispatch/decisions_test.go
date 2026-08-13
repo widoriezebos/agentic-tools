@@ -678,15 +678,26 @@ func TestCloseCheckToleratesUndeliveredImplementerRounds(t *testing.T) {
 		t.Fatalf("a timed-out round without a diff must not block the close: %v", err)
 	}
 
-	// The same round marked completed IS a violation.
+	// A COMPLETED round without a diff closes too: the diff exists only
+	// once the host's conformance review runs, so an unreviewed round has
+	// none by construction — the delegation floor, not the close, owns
+	// that workflow verdict.
 	r2 := readJSONFile(t, filepath.Join(jobs, job+"-r2.json"))
 	r2["status"] = "completed"
 	writeRecord(filepath.Join(jobs, job+"-r2.json"), r2)
 	if err := Mirror(repo, repo, evidence, job, job+"-r2", result); err != nil {
 		t.Fatalf("Mirror r2: %v", err)
 	}
+	if err := CloseCheck(repo, job); err != nil {
+		t.Fatalf("an unreviewed completed round must not wedge the close: %v", err)
+	}
+
+	// But a diff the MANIFEST knows and the disk lost is evidence loss.
+	if err := os.Remove(filepath.Join(repo, "artifacts", "agents", job, "rounds", "1", "diff.patch")); err != nil {
+		t.Fatal(err)
+	}
 	if err := CloseCheck(repo, job); err == nil ||
-		!strings.Contains(err.Error(), "diff.patch is not mirrored") {
-		t.Fatalf("a completed round without its deliverable must refuse: %v", err)
+		!strings.Contains(err.Error(), "vanished after mirroring") {
+		t.Fatalf("a mirrored-then-lost diff must refuse: %v", err)
 	}
 }

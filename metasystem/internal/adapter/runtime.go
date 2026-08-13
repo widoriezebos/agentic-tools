@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -111,18 +110,6 @@ func firstString(object map[string]any, keys ...string) string {
 	return ""
 }
 
-// firstPresent returns the value of the first key that is present and non-null.
-func firstPresent(object map[string]any, keys ...string) any {
-	for _, key := range keys {
-		if value, ok := object[key]; ok && value != nil {
-			return value
-		}
-	}
-	return nil
-}
-
-// sortedStringKeys returns an object's keys in ascending order for deterministic
-// iteration.
 func sortedStringKeys(object map[string]any) []string {
 	keys := make([]string, 0, len(object))
 	for key := range object {
@@ -154,26 +141,6 @@ func stringSlice(items []string) []any {
 	return result
 }
 
-// asInt reports a value that is a whole-number JSON integer, rejecting floats
-// and non-numbers alike.
-func asInt(value any) (int64, bool) {
-	if number, ok := value.(json.Number); ok {
-		i, err := strconv.ParseInt(number.String(), 10, 64)
-		return i, err == nil
-	}
-	return 0, false
-}
-
-// asFloat reports a value that is any JSON number, integer or fractional.
-func asFloat(value any) (float64, bool) {
-	if number, ok := value.(json.Number); ok {
-		f, err := number.Float64()
-		return f, err == nil
-	}
-	return 0, false
-}
-
-// isNumber reports whether a value is any JSON number.
 func isNumber(value any) bool {
 	_, ok := value.(json.Number)
 	return ok

@@ -53,13 +53,18 @@ func CloseCheck(repoRoot, root string) error {
 		source := filepath.Join(repoRoot, "artifacts", "agents", root, "rounds", round, "diff.patch")
 		entry, entryOK := files[relative].(map[string]any)
 		if !fileExists(source) {
-			// A round that never delivered — timeout, failure, cancel —
-			// has no diff to attest, and demanding one made every
-			// timed-out implementer chain permanently uncloseable
-			// (rep 1 of cohort bm-1-20260813t113617z). A COMPLETED
-			// round without its deliverable is still a violation.
-			if asString(member.record["status"]) == "completed" {
-				return fmt.Errorf("implementer diff.patch is not mirrored for %s", job)
+			// The diff exists only once the HOST runs the conformance
+			// review; the reap never writes it. A completed round the
+			// host did not review has no diff BY CONSTRUCTION, and
+			// demanding one wedged the close of every unreviewed chain
+			// at mission end (rep 1 of cohort bm-1-20260813t155700z).
+			// Closing attests that evidence ON DISK is durable — the
+			// workflow gap of an unreviewed implementer is already the
+			// delegation floor's verdict, not the close's. A diff the
+			// MANIFEST knows but the disk lost is still evidence loss
+			// and still refuses.
+			if entryOK {
+				return fmt.Errorf("implementer diff.patch vanished after mirroring for %s", job)
 			}
 			continue
 		}
