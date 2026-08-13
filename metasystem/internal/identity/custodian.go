@@ -20,7 +20,10 @@ import (
 // (METASYSTEM_FAKE_PROCESS_IDENTITY_FILE) supplies the start time and command
 // when it carries an entry for the pid — the same one-source override the
 // census uses — but kernel death always vetoes it. Unknown (unreadable) never
-// authorizes anything.
+// authorizes anything. The fixture is fenced at ARMING: supervise
+// blocking-reserved-cap refuses to arm a fleet when the env var is set in a
+// checkout whose metasystem.runtimes is not fake (review lease-census-7), so
+// a leaked fixture cannot ride an armed component into production verdicts.
 func Custodian(pid, start int64, tag string) Liveness {
 	exact, state, err := (KernelProber{}).Probe(pid)
 	if err == nil && state == Dead {

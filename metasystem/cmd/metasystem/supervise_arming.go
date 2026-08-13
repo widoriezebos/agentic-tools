@@ -15,6 +15,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // The arming-side supervision verbs: the reserved-cap ceiling check, the
@@ -38,6 +40,20 @@ func runSuperviseBlockingReservedCap(args []string) int {
 	if *agents == "" || *ceiling < 1 {
 		fmt.Fprintln(os.Stderr, "supervise blocking-reserved-cap: --agents and --ceiling are required")
 		return 2
+	}
+	// The identity fixture must never ride into an armed fleet of a real
+	// checkout (review lease-census-7): pid-reuse detection is the
+	// load-bearing proof in every reap/sweep/takeover decision, and a
+	// leaked fixture entry would keep a dead custodian reading Alive with
+	// no refusal anywhere. This verb runs at every arming gate (re-arm,
+	// establishment, takeover), so it is the one choke point; the census
+	// process-table fixture already has the equivalent fence at read time.
+	if os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE") != "" {
+		root := filepath.Dir(filepath.Dir(*agents))
+		if config.ConfValue(filepath.Join(root, "metasystem.conf"), "metasystem.runtimes", "") != "fake" {
+			fmt.Fprintln(os.Stderr, "supervise blocking-reserved-cap: refusing to arm: METASYSTEM_FAKE_PROCESS_IDENTITY_FILE is set but metasystem.runtimes is not fake")
+			return 1
+		}
 	}
 	reserved := map[string]int64{}
 	jobsDir := filepath.Join(*agents, "jobs")

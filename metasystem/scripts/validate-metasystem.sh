@@ -2318,7 +2318,7 @@ PY
   [[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \
     || { echo "follow-up did not preserve round 1 and create round 2" >&2; exit 1; }
   python3 - "$agent_repo" <<'PY'
-import json, sys
+import hashlib, json, sys
 from pathlib import Path
 root = Path(sys.argv[1]); parent = json.loads((root / "artifacts/agents/jobs/happy.json").read_text()); child = json.loads((root / "artifacts/agents/jobs/happy-r2.json").read_text())
 assert child["parentJob"] == "happy" and child["round"] == 2 and child["sessionId"] == parent["sessionId"]
@@ -2326,7 +2326,14 @@ assert child["startedAt"] >= parent["startedAt"] and child["capMin"] == parent["
 snapshot = json.loads((root / child["capabilitySnapshot"]).read_text())
 assert child["sessionEstablishedTimeoutSec"] == snapshot["capabilities"]["sessionEstablishedTimeoutSec"]
 assert parent["chainUsage"]["providerUnits"]["fake"]["fake-unit"] == 2
-assert parent["mirror"]["manifest"] == child["mirror"]["manifest"]
+# One chain, one mirror home; each stamp records ITS OWN mirror moment
+# (chain-wide stamp equality was the lie KI-6 round 3 removed). The
+# durable proof is the shared manifest covering BOTH records.
+assert parent["mirror"]["path"] == child["mirror"]["path"]
+manifest_path = Path(child["mirror"]["path"]) / "manifest.json"
+assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == child["mirror"]["manifest"]
+covered = json.loads(manifest_path.read_text())["files"]
+assert "jobs/happy.json" in covered and "jobs/happy-r2.json" in covered
 PY
   run_agent_fixture malformed-return-follow-up malformed-return-r2 "$agent_dispatch" follow-up --job malformed-return --message "$follow_message" --wait
   [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
@@ -2817,8 +2824,14 @@ PY
   malformed_record_status=$?
   set -e
   [[ $malformed_record_status -eq 7 ]] || { echo "malformed status record mapped to $malformed_record_status instead of 7" >&2; exit 1; }
+  # The corrupt probe record must not outlive its check: classification is
+  # fail-closed on corrupt job records (review lease-census-1/2), so a
+  # leftover poisons every later lease entry — the shutdown below refused
+  # on it, silently, when this line was missing.
+  rm -f "$agent_repo/artifacts/agents/jobs/malformed-status.json"
 
-  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1
+  "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown >/dev/null 2>&1 \
+    || { echo "dispatcher fixture shutdown failed" >&2; exit 1; }
   agent_supervision_repo=
 
   # The minimal mission runner is exercised only through its fake host. The
@@ -3792,9 +3805,33 @@ scripts/receipt.sh check --max-age-days 0 --file "$tmp/receipts-aged.log" >/dev/
   exit 1
 }
 scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "$rfile" >/dev/null
-scripts/receipt.sh stats --file "$rfile" | grep -q '^receipts=1$' || { echo "receipt stats miscounted the post-retro period" >&2; exit 1; }
-scripts/receipt.sh stats --file "$rfile" | grep -q '^type_improve=1$' || { echo "receipt stats missed the improve type" >&2; exit 1; }
-scripts/receipt.sh stats --all --file "$rfile" | grep -q '^receipts=3$' || { echo "receipt stats --all miscounted" >&2; exit 1; }
+# The receipt-stats intermittent (plans/known-issue-receipt-stats-flake.md):
+# the ledger is byte-perfect in every preserved failure yet a grep misses
+# roughly every other Mac suite run. This probe captures the failing
+# invocation itself — output, exit code, ledger bytes, environment — the
+# evidence the dossier's leading suspicion (a transient shim/exec failure
+# converted into a grep miss) needs. The if-guard keeps errexit from
+# killing the run before the capture lands.
+receipt_probe_dir="${TMPDIR:-/tmp}/receipt-evidence"; mkdir -p "$receipt_probe_dir"
+receipt_stats_probe() { # label, expected pattern, extra stats args...
+  local label=$1 expected=$2 out rc=0
+  shift 2
+  if out=$(scripts/receipt.sh stats "$@" --file "$rfile"); then rc=0; else rc=$?; fi
+  if printf '%s\n' "$out" | grep -q "$expected"; then return 0; fi
+  {
+    echo "FAILURE $label rc=$rc at $(date -u +%Y%m%dT%H%M%SZ)"
+    echo "--- stats output:"; printf '%s\n' "$out"
+    echo "--- ledger bytes:"; cat "$rfile"
+    echo "--- ledger stat:"; ls -la "$rfile"
+    echo "--- env:"; env | grep -i METASYSTEM || true
+    echo "--- binary:"; ls -la bin/metasystem 2>/dev/null || true; shasum bin/metasystem 2>/dev/null || true
+  } >"$receipt_probe_dir/fail-$(date +%s)-$label.txt"
+  echo "receipt stats probe captured $label into $receipt_probe_dir" >&2
+  return 1
+}
+receipt_stats_probe receipts-1 '^receipts=1$' || { echo "receipt stats miscounted the post-retro period" >&2; exit 1; }
+receipt_stats_probe type-improve '^type_improve=1$' || { echo "receipt stats missed the improve type" >&2; exit 1; }
+receipt_stats_probe all-receipts-3 '^receipts=3$' --all || { echo "receipt stats --all miscounted" >&2; exit 1; }
 
 receipt_relation="$tmp/receipt-relation"
 mkdir -p "$receipt_relation/scripts" "$receipt_relation/artifacts/agents/jobs" "$receipt_relation/bin"
