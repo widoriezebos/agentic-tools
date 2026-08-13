@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestActiveJobs(t *testing.T) {
@@ -149,5 +150,63 @@ exit 0
 	}
 	if got := string(logBytes); got != "aa\nbb\n" {
 		t.Fatalf("the sweep must continue past the failure, attempts: %q", got)
+	}
+}
+
+// missionrunner-5: the drain's reap cadence is decoupled from the
+// millisecond heartbeat — reaps run on their own coarser interval, so a
+// cap-length drain no longer spawns dispatch.sh at heartbeat speed.
+func TestDrainReapCadenceIsDecoupled(t *testing.T) {
+	root := t.TempDir()
+	mission := "demo"
+	jobs := jobsDirPath(root)
+	// One active job whose deadline is far away, so the drain loops.
+	writeJSONFile(t, filepath.Join(jobs, "busy.json"), map[string]any{
+		"jobId": "busy", "mission": mission, "status": "running",
+		"startedAt": time.Now().UTC().Format(time.RFC3339), "capMin": 30,
+	})
+	// The runner record the heartbeat reads.
+	writeJSONFile(t, filepath.Join(root, "artifacts", "agents", "missions", "runners", mission+".json"),
+		map[string]any{"pid": 1, "pidStartedAt": 1, "instanceTag": "t", "status": "running"})
+	// A dispatch stub that counts reap invocations, then completes the job
+	// on the second reap so the drain ends.
+	scripts := filepath.Join(root, "scripts", "agents")
+	if err := os.MkdirAll(scripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stub := `#!/bin/sh
+count_file="$(dirname "$0")/reaps"
+echo x >> "$count_file"
+if [ "$(wc -l < "$count_file")" -ge 2 ]; then
+  record="$(dirname "$0")/../../artifacts/agents/jobs/busy.json"
+  python3 - "$record" <<'PY'
+import json, sys
+v = json.load(open(sys.argv[1])); v["status"] = "completed"
+open(sys.argv[1], "w").write(json.dumps(v))
+PY
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(scripts, "dispatch.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("METASYSTEM_HEARTBEAT_INTERVAL_MS", "10")
+	t.Setenv("METASYSTEM_DRAIN_REAP_INTERVAL_MS", "300")
+	e := &Engine{Root: root, Mission: mission}
+	started := time.Now()
+	state, err := e.drainJobs(filepath.Join(root, "state.json"), filepath.Join(root, "ledger.md"), "t1", 1)
+	if err != nil || state != nil {
+		t.Fatalf("drain: state=%v err=%v", state, err)
+	}
+	// Two reap passes 300ms apart means the drain ran at least ~300ms while
+	// heartbeating every 10ms; at heartbeat-coupled cadence the stub would
+	// have been called dozens of times before its second line landed.
+	if elapsed := time.Since(started); elapsed < 250*time.Millisecond {
+		t.Fatalf("drain finished before a second decoupled reap could run: %v", elapsed)
+	}
+	data, _ := os.ReadFile(filepath.Join(scripts, "reaps"))
+	if reaps := strings.Count(string(data), "x"); reaps > 4 {
+		t.Fatalf("reap ran at heartbeat speed: %d invocations", reaps)
 	}
 }

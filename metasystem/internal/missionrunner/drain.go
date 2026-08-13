@@ -53,7 +53,20 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 	if err != nil {
 		return nil, err
 	}
+	// The reap cadence is DECOUPLED from the heartbeat (missionrunner-5):
+	// the heartbeat must beat in milliseconds so a lawful cap-length drain
+	// reads as a live runner, but a job cannot become provably dead more
+	// often than the reap facts change — and each reap pass re-scans the
+	// jobs directory and spawns dispatch.sh per active job. At the old
+	// 100ms coupling, one 30-minute drain was ~18,000 subprocess spawns
+	// manufacturing exactly the machine load the timing fixtures flake
+	// under. Fixtures override the seconds-scale default through the env.
+	reapEvery, err := Interval("METASYSTEM_DRAIN_REAP_INTERVAL_MS", 5000)
+	if err != nil {
+		return nil, err
+	}
 	dispatchScript := filepath.Join(e.Root, "scripts", "agents", "dispatch.sh")
+	var lastReap time.Time
 	for {
 		if err := e.heartbeat(turnID); err != nil {
 			return nil, err
@@ -62,13 +75,17 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 		if len(active) == 0 {
 			return nil, nil
 		}
-		// Reaps come before waits: the runner's R1/R2 reap clears what is
-		// provably dead, then the dispatch-owned reap runs per job exactly
-		// as the drain always ran it (budget wind-downs stay with the code
-		// that owns process lifecycles — the runner has no kill authority).
-		e.reapReservedRecords(time.Now())
-		for _, record := range active {
-			runCaptured(e.Root, nil, dispatchScript, "reap", "--job", jobRecordID(record))
+		if time.Since(lastReap) >= reapEvery {
+			lastReap = time.Now()
+			// Reaps come before waits: the runner's R1/R2 reap clears what
+			// is provably dead, then the dispatch-owned reap runs per job
+			// exactly as the drain always ran it (budget wind-downs stay
+			// with the code that owns process lifecycles — the runner has
+			// no kill authority).
+			e.reapReservedRecords(time.Now())
+			for _, record := range active {
+				runCaptured(e.Root, nil, dispatchScript, "reap", "--job", jobRecordID(record))
+			}
 		}
 		live := activeJobRecords(e.Root, e.Mission)
 		if len(live) == 0 {
