@@ -1473,7 +1473,13 @@ func contractMetasystemRoot() string {
 	if err != nil {
 		return ""
 	}
-	root := resolvePath(filepath.Dir(filepath.Dir(filepath.Dir(exe))))
+	// The binary ships at <root>/bin/metasystem — TWO components deep, so
+	// the checkout is Dir^2 of the executable. The shell originals derived
+	// three levels from scripts/agents/<script>; the port kept three Dir
+	// calls on a binary only two deep, landing on the checkout's PARENT and
+	// making the confirmation below fail everywhere (review
+	// mission-contract-1).
+	root := resolvePath(filepath.Dir(filepath.Dir(exe)))
 	if fileExists(filepath.Join(root, "metasystem.conf")) || contractDirExists(filepath.Join(root, "scripts", "agents")) {
 		return root
 	}

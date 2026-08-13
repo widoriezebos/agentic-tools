@@ -27,7 +27,9 @@ func runCensusFingerprint(args []string) int {
 	metasystemRoot := *root
 	if metasystemRoot == "" {
 		if exe, err := os.Executable(); err == nil {
-			metasystemRoot = filepath.Dir(filepath.Dir(filepath.Dir(exe)))
+			// <root>/bin/metasystem is two deep: Dir^2, not Dir^3 (cli-4;
+			// the third Dir pointed the default at the checkout's parent).
+			metasystemRoot = filepath.Dir(filepath.Dir(exe))
 		}
 	}
 	fp, err := census.Fingerprint(metasystemRoot, *repo)
