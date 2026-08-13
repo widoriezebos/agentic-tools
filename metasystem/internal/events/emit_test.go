@@ -145,3 +145,31 @@ func TestEmitSequenceIncrements(t *testing.T) {
 		t.Fatalf("seq should be 1 then 2: %v", lines)
 	}
 }
+
+// lease-census-6: a payload field named like an envelope field must not
+// clobber the emitter's kernel-fact identity.
+func TestEmitProtectsTheEnvelopeFromPayloadClobber(t *testing.T) {
+	dir := t.TempDir()
+	e := &Emitter{Component: "test", Pid: 42, PidStartedAt: 7}
+	e.Emit(dir, "clobber-probe", "probing", map[string]string{
+		"pid": "evil", "seq": "evil", "ts": "evil", "schemaVersion": "evil",
+		"pidStartedAt": "evil", "component": "evil", "event": "evil", "honest": "kept",
+	})
+	lines := readLines(t, dir)
+	if len(lines) == 0 {
+		t.Fatal("no event emitted")
+	}
+	record := lines[len(lines)-1]
+	if pid, _ := record["pid"].(float64); int64(pid) != 42 {
+		t.Fatalf("pid was clobbered: %v", record["pid"])
+	}
+	if start, _ := record["pidStartedAt"].(float64); int64(start) != 7 {
+		t.Fatalf("pidStartedAt was clobbered: %v", record["pidStartedAt"])
+	}
+	if record["component"] != "test" || record["ts"] == "evil" || record["schemaVersion"] == "evil" {
+		t.Fatalf("envelope fields were clobbered: %v", record)
+	}
+	if record["payload.pid"] != "evil" || record["honest"] != "kept" {
+		t.Fatalf("payload fields must survive under their prefixed names: %v", record)
+	}
+}

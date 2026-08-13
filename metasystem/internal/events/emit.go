@@ -96,6 +96,15 @@ func (e *Emitter) emitWithSeq(root, event, summary string, seq int64, fields map
 		delete(args, "ref")
 	}
 	for name, value := range args {
+		// The envelope carries KERNEL facts (pid, start, seq, ts...): a
+		// payload key that collides with it must not replace the
+		// emitter's identity with a caller string — the stream is only a
+		// trustworthy witness while the envelope is inviolable, exactly
+		// as shrink() already treats these keys (review lease-census-6).
+		if requiredEnvelope[name] {
+			record["payload."+name] = clip(value, caps["payload"])
+			continue
+		}
 		record[name] = clip(value, caps["payload"])
 	}
 	record["summary"] = summary
