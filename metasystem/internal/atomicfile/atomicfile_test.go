@@ -244,3 +244,17 @@ func TestWriteVolatileReplacesAtomically(t *testing.T) {
 		t.Fatalf("residue: %v", entries)
 	}
 }
+
+// foundations-2: a non-ancestor anchor yields just dir, exactly as the doc
+// promises — never a walk to "/" paying fsyncs on the whole path.
+func TestChainNonAncestorAnchor(t *testing.T) {
+	for _, anchor := range []string{"/elsewhere", "relative/anchor", "/a/b/c/deeper"} {
+		if got := chain("/a/b/c", anchor); len(got) != 1 || got[0] != "/a/b/c" {
+			t.Fatalf("anchor %q: got %v, want just the dir", anchor, got)
+		}
+	}
+	// dir == anchor is the degenerate inclusive case.
+	if got := chain("/a/b", "/a/b"); len(got) != 1 || got[0] != "/a/b" {
+		t.Fatalf("self anchor: %v", got)
+	}
+}

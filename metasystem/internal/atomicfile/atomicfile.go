@@ -110,27 +110,26 @@ func WriteText(path, text, anchor string) (durable bool, err error) {
 // inclusive. An empty or unrelated anchor yields just dir, and the walk is
 // bounded by the filesystem root so a bad anchor can never loop.
 func chain(dir, anchor string) []string {
-	if anchor == "" {
-		return []string{dir}
-	}
-	anchorResolved := filepath.Clean(anchor)
 	current := filepath.Clean(dir)
+	if anchor == "" {
+		return []string{current}
+	}
+	// A non-ancestor anchor yields just dir, as documented (review
+	// foundations-2): the old walk appended every ancestor up to "/", so a
+	// wrong or relative anchor silently paid fsyncs on the whole path and
+	// a permission-restricted ancestor failed a perfectly writable target.
+	anchorResolved := filepath.Clean(anchor)
+	if anchorResolved != current &&
+		!strings.HasPrefix(current, anchorResolved+string(filepath.Separator)) {
+		return []string{current}
+	}
 	var dirs []string
 	for {
 		dirs = append(dirs, current)
 		if current == anchorResolved {
 			return dirs
 		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			// Reached the root without meeting the anchor: the anchor is
-			// not an ancestor, so sync only what we walked below it.
-			if !strings.HasPrefix(anchorResolved, string(filepath.Separator)) {
-				return dirs
-			}
-			return dirs
-		}
-		current = parent
+		current = filepath.Dir(current)
 	}
 }
 
