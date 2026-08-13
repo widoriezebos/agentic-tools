@@ -274,6 +274,18 @@ func atoiOr(s string) int64 {
 	return n
 }
 
+// fenceRefusal words one fence refusal. The batched ask is the DESIGNED
+// recovery channel for a tripped fence, so a failed ask write must ride
+// the refusal loudly: a mission parked on a fence whose ask never landed
+// is otherwise indistinguishable from one waiting on a human, and waits
+// forever (review mission-contract-6).
+func fenceRefusal(what string, found []string, ask string, askErr error) error {
+	if askErr != nil {
+		return fmt.Errorf("mission fence refused %s (%s); FAILED to write batched ask: %v", what, strings.Join(found, ", "), askErr)
+	}
+	return fmt.Errorf("mission fence refused %s (%s); batched ask written: %s", what, strings.Join(found, ", "), ask)
+}
+
 // writeBatchedAsk raises (or extends) the single open fence ask, combining its
 // reasons, and returns the ask path.
 func writeBatchedAsk(repo, mission string, reasons []string) (string, error) {
@@ -391,8 +403,8 @@ func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
 		return err
 	}
 	if found := violations(repo, values, fences, &capMin, "job"); len(found) > 0 {
-		ask, _ := writeBatchedAsk(repo, mission, found)
-		return fmt.Errorf("mission fence refused job (%s); batched ask written: %s", strings.Join(found, ", "), ask)
+		ask, askErr := writeBatchedAsk(repo, mission, found)
+		return fenceRefusal("job", found, ask, askErr)
 	}
 	if reserve {
 		reservations := reservationsMap(fences)
@@ -425,8 +437,8 @@ func ReserveCycle(repo, mission string) error {
 		return err
 	}
 	if found := violations(repo, values, fences, nil, "cycle"); len(found) > 0 {
-		ask, _ := writeBatchedAsk(repo, mission, found)
-		return fmt.Errorf("mission fence refused cycle (%s); batched ask written: %s", strings.Join(found, ", "), ask)
+		ask, askErr := writeBatchedAsk(repo, mission, found)
+		return fenceRefusal("cycle", found, ask, askErr)
 	}
 	cycles, _ := intValue(fences["cycles"])
 	fences["cycles"] = cycles + 1
@@ -475,8 +487,8 @@ func AuthorizeCap(repo, mission, job, runtime, model string, requested *int) (ma
 		capMin = int64(*requested)
 	}
 	if found := violations(repo, values, fences, nil, "authorized-job"); len(found) > 0 {
-		ask, _ := writeBatchedAsk(repo, mission, found)
-		return nil, fmt.Errorf("mission fence refused job (%s); batched ask written: %s", strings.Join(found, ", "), ask)
+		ask, askErr := writeBatchedAsk(repo, mission, found)
+		return nil, fenceRefusal("job", found, ask, askErr)
 	}
 	launch := nowUTC().Truncate(time.Second)
 	started, _ := parseTimestamp(fences["startedAt"].(string))

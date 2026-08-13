@@ -414,3 +414,25 @@ func TestAggregateUsageContentEqualWriteSkipped(t *testing.T) {
 		t.Fatalf("updatedAt must advance when content changes:\n%s", changed)
 	}
 }
+
+// mission-contract-6: the batched ask is the fence's designed recovery
+// channel — when its write fails, the refusal must SAY so, not report
+// "batched ask written: " with nothing after the colon.
+func TestFenceRefusalNamesAFailedAskWrite(t *testing.T) {
+	repo, mission := fenceEnv(t)
+	if err := ReserveCycle(repo, mission); err != nil {
+		t.Fatalf("the first cycle should be allowed: %v", err)
+	}
+	// Make the asks directory impossible to create: a FILE in its place.
+	asksPath := filepath.Join(missionDir(repo, mission), "asks")
+	if err := os.WriteFile(asksPath, []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := ReserveCycle(repo, mission)
+	if err == nil || !strings.Contains(err.Error(), "FAILED to write batched ask") {
+		t.Fatalf("the refusal must carry the ask-write failure, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cycles") {
+		t.Fatalf("the refusal must still name the tripped fence: %v", err)
+	}
+}
