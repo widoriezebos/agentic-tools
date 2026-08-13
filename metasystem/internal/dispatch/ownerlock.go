@@ -2,25 +2,25 @@ package dispatch
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
-// The dispatch owner lock is a rename-born directory lock: a claim stages a
-// directory containing owner.json and renames it into place, so the lock is
-// born owning and no window exists between taking it and naming its holder.
-// A release renames the directory aside before removing it, so a racing
-// claimant never sees a half-deleted lock. Takeover is legal only when the
-// recorded holder is provably dead or provably stale (its pid lives but no
-// longer carries the recorded tag); a live or unreadable holder keeps the
-// lock.
+// The dispatch owner lock is a THIN BINDING over internal/lock, the one
+// home of the rename-born directory-lock protocol (review
+// dispatch-supervise-4): this file contributes only the owner-file schema
+// and the holder classification. Takeover is legal only when the recorded
+// holder is provably dead or provably stale — a live pid whose READ argv
+// no longer carries the recorded tag is a stranger, which the probe
+// reports as Dead (the custodian rule); a live or unreadable holder keeps
+// the lock (the B1 rule; review codex-2).
 
 // ErrOwnerLockBusy and ErrOwnerLockNotOwner are the distinguished refusals.
 var (
@@ -28,113 +28,89 @@ var (
 	ErrOwnerLockNotOwner = fmt.Errorf("owner lock is held by someone else")
 )
 
-type ownerIdentity struct {
-	pid int64
-	tag string
+// ownerLockCodec keeps this lock's historical owner.json bytes:
+// {"acquiredAt":...,"instanceTag":...,"pid":...}.
+type ownerLockCodec struct{}
+
+func (ownerLockCodec) Encode(self lock.Identity) ([]byte, error) {
+	payload, err := json.Marshal(map[string]any{
+		"pid": self.Pid, "instanceTag": self.Tag,
+		"acquiredAt": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return append(payload, '\n'), nil
 }
 
-func readOwnerIdentity(ownerPath string) *ownerIdentity {
-	data, err := os.ReadFile(ownerPath)
-	if err != nil {
-		return nil
-	}
+func (ownerLockCodec) Decode(data []byte) (lock.Identity, error) {
 	var value struct {
 		Pid         *int64 `json:"pid"`
 		InstanceTag string `json:"instanceTag"`
 	}
-	if json.Unmarshal(data, &value) != nil || value.Pid == nil {
-		return nil
+	if err := json.Unmarshal(data, &value); err != nil {
+		return lock.Identity{}, err
 	}
-	return &ownerIdentity{pid: *value.Pid, tag: value.InstanceTag}
+	if value.Pid == nil {
+		return lock.Identity{}, fmt.Errorf("owner file names no pid")
+	}
+	return lock.Identity{Pid: *value.Pid, Tag: value.InstanceTag}, nil
 }
 
-// holderState classifies the recorded holder: dead (pid gone), live (running
-// and carrying the tag, or unreadable-but-present), stale (running without
-// the tag), or unknown (existence provable but identity unreadable).
-func holderState(holder *ownerIdentity) string {
-	switch unix.Kill(int(holder.pid), 0) {
+// ownerHolderProbe classifies the recorded holder three-way. Dead covers
+// both a vanished pid and a STALE one — a successfully read argv without
+// the recorded tag proves the recorded holder is gone and a stranger
+// recycled its pid. An unreadable argv on a live pid is absence of
+// evidence, never evidence of a stranger: the holder keeps its lock.
+func ownerHolderProbe(holder lock.Identity) lock.Liveness {
+	switch unix.Kill(int(holder.Pid), 0) {
 	case unix.ESRCH:
-		return "dead"
+		return lock.Dead
 	case unix.EPERM:
-		return "live"
+		return lock.Alive
 	}
-	exact, state, err := identity.KernelProber{}.Probe(holder.pid)
+	exact, state, err := identity.KernelProber{}.Probe(holder.Pid)
 	if err != nil || state != identity.Alive {
-		return "unknown"
+		return lock.Unknown
 	}
-	// An UNREADABLE argv is absence of evidence, never evidence of a
-	// stranger (the B1 rule; review finding codex-2): a live holder whose
-	// command line cannot be read keeps its lock. Only a READ argv that
-	// lacks the recorded tag proves staleness.
 	if !exact.ArgvKnown {
-		return "live"
+		return lock.Alive
 	}
 	command := strings.Join(exact.Argv, " ")
-	if holder.tag != "" && strings.Contains(command, holder.tag) {
-		return "live"
+	if holder.Tag != "" && strings.Contains(command, holder.Tag) {
+		return lock.Alive
 	}
-	return "stale"
+	return lock.Dead
 }
 
 // OwnerLockClaim takes the lock for (pid, tag). It returns nil when claimed,
 // ErrOwnerLockBusy when a live or unreadable holder keeps it.
 func OwnerLockClaim(directory string, pid int64, tag string) error {
-	parent := filepath.Dir(directory)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return err
-	}
-	payload, err := json.Marshal(map[string]any{
-		"pid": pid, "instanceTag": tag,
-		"acquiredAt": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+	self := lock.Identity{Pid: pid, Tag: tag}
+	_, err := lock.Acquire(directory, self, lock.Options{
+		Probe: ownerHolderProbe,
+		Codec: ownerLockCodec{},
 	})
-	if err != nil {
-		return err
+	if err == nil {
+		return nil
 	}
-	payload = append(payload, '\n')
-	for attempt := 0; attempt < 3; attempt++ {
-		staging, err := os.MkdirTemp(parent, filepath.Base(directory)+".claim.")
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(staging, "owner.json"), payload, 0o644); err != nil {
-			_ = os.RemoveAll(staging)
-			return err
-		}
-		if err := os.Rename(staging, directory); err == nil {
-			return nil
-		}
-		_ = os.RemoveAll(staging)
-		holder := readOwnerIdentity(filepath.Join(directory, "owner.json"))
-		if holder == nil {
-			return ErrOwnerLockBusy
-		}
-		switch holderState(holder) {
-		case "live", "unknown":
-			return ErrOwnerLockBusy
-		}
-		husk := filepath.Join(parent, fmt.Sprintf("%s.dead.%d.%d", filepath.Base(directory), pid, attempt))
-		if err := os.Rename(directory, husk); err != nil {
-			continue // lost the takeover race; try again
-		}
-		_ = os.RemoveAll(husk)
+	var holder *lock.HolderError
+	if errors.As(err, &holder) {
+		return ErrOwnerLockBusy
 	}
-	return ErrOwnerLockBusy
+	return err
 }
 
 // OwnerLockRelease frees the lock only when (pid, tag) still owns it. An
 // absent lock releases cleanly; someone else's lock is refused.
 func OwnerLockRelease(directory string, pid int64, tag string) error {
-	holder := readOwnerIdentity(filepath.Join(directory, "owner.json"))
-	if holder == nil {
+	err := lock.ReleaseNamed(directory, lock.Identity{Pid: pid, Tag: tag}, ownerLockCodec{})
+	if err == nil {
 		return nil
 	}
-	if holder.pid != pid || holder.tag != tag {
+	if strings.Contains(err.Error(), "no longer names this holder") {
 		return ErrOwnerLockNotOwner
 	}
-	retiring := filepath.Join(filepath.Dir(directory), fmt.Sprintf("%s.retiring.%d", filepath.Base(directory), pid))
-	if err := os.Rename(directory, retiring); err != nil {
-		return nil // already gone or replaced; nothing of ours remains
-	}
-	_ = os.RemoveAll(retiring)
+	// Absent or already replaced-and-gone: nothing of ours remains.
 	return nil
 }

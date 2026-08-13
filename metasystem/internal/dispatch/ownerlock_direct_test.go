@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 // Direct tests for the owner-lock protocol (Phase 6): claim, re-claim
@@ -80,36 +82,29 @@ func TestOwnerLockKeepsALiveHolder(t *testing.T) {
 	}
 }
 
-func TestReadOwnerIdentityDegrades(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "owner.json")
-	if got := readOwnerIdentity(path); got != nil {
-		t.Fatal("absent identity must read nil")
+func TestOwnerCodecDegrades(t *testing.T) {
+	codec := ownerLockCodec{}
+	if _, err := codec.Decode([]byte("{broken")); err == nil {
+		t.Fatal("malformed identity must refuse to decode")
 	}
-	os.WriteFile(path, []byte("{broken"), 0o644)
-	if got := readOwnerIdentity(path); got != nil {
-		t.Fatal("malformed identity must read nil")
+	if _, err := codec.Decode([]byte(`{"instanceTag":"t"}`)); err == nil {
+		t.Fatal("identity without a pid must refuse to decode")
 	}
-	os.WriteFile(path, []byte(`{"instanceTag":"t"}`), 0o644)
-	if got := readOwnerIdentity(path); got != nil {
-		t.Fatal("identity without a pid must read nil")
+	holder, err := codec.Decode([]byte(`{"pid":42,"instanceTag":"t","acquiredAt":"x"}`))
+	if err != nil || holder.Pid != 42 || holder.Tag != "t" {
+		t.Fatalf("round trip lost fields: %+v %v", holder, err)
 	}
 }
 
 // codex-2 (the review's owner-lock finding): a live holder whose argv is
 // unreadable is BUSY, never stale — absence of evidence must not permit
-// takeover. Driven through holderState directly with a synthetic holder
-// whose pid is alive (our own) but whose recorded tag can never be
-// verified because the identity carries no readable argv on hosts where
-// that occurs; on hosts where our own argv IS readable, the unreadable
-// case is constructed via the state table instead.
-func TestHolderStateUnreadableArgvIsLive(t *testing.T) {
-	// pid 1 is alive and, for a non-root test process, its argv read fails
-	// on macOS (EPERM at the kernel probe) — the probe path returns either
-	// live (EPERM at kill) or unknown/live via ArgvKnown=false. Whatever
-	// branch this host takes, the verdict must never be "stale".
-	holder := &ownerIdentity{pid: 1, tag: "tag-no-init-carries"}
-	if state := holderState(holder); state == "stale" {
-		t.Fatalf("a holder with unverifiable argv was ruled stale (takeover permitted): %s", state)
+// takeover. With the binding over internal/lock, "stale" is the probe
+// answering Dead for a live pid; whatever branch this host takes for
+// pid 1 (EPERM at kill, or Alive with unreadable argv), the probe must
+// never answer Dead.
+func TestHolderProbeUnreadableArgvIsNeverDead(t *testing.T) {
+	holder := lock.Identity{Pid: 1, Tag: "tag-no-init-carries"}
+	if state := ownerHolderProbe(holder); state == lock.Dead {
+		t.Fatal("a holder with unverifiable argv was ruled dead (takeover permitted)")
 	}
 }

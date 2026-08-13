@@ -28,6 +28,29 @@ func lockOwnerPath(dir string) string {
 	return filepath.Join(dir, "census-writer.d", "owner.json")
 }
 
+// censusOwner mirrors the on-disk owner schema for the fixtures — the
+// production side now speaks lock.Identity through censusOwnerCodec.
+type censusOwner struct {
+	Function        string `json:"function"`
+	Pid             int64  `json:"pid"`
+	PidStartedAt    int64  `json:"pidStartedAt"`
+	InstanceTag     string `json:"instanceTag"`
+	ObservedAtEpoch int64  `json:"observedAtEpoch"`
+}
+
+func readLockOwner(t *testing.T, dir string) censusOwner {
+	t.Helper()
+	data, err := os.ReadFile(lockOwnerPath(dir))
+	if err != nil {
+		t.Fatalf("owner unreadable: %v", err)
+	}
+	var owner censusOwner
+	if err := json.Unmarshal(data, &owner); err != nil {
+		t.Fatal(err)
+	}
+	return owner
+}
+
 func seedLockOwner(t *testing.T, dir string, pid, start int64, tag string) {
 	t.Helper()
 	lockDir := filepath.Join(dir, "census-writer.d")
@@ -54,11 +77,8 @@ func TestCensusLockClaimAndRelease(t *testing.T) {
 	if err := lock.Claim(); err != nil {
 		t.Fatalf("claim on empty dir: %v", err)
 	}
-	owner, err := lock.readOwner()
-	if err != nil {
-		t.Fatalf("owner unreadable after claim: %v", err)
-	}
-	if owner.Pid != 100 || owner.InstanceTag != "watcher-a" {
+	owner := readLockOwner(t, dir)
+	if owner.Pid != 100 || owner.InstanceTag != "watcher-a" || owner.Function != "census-writer" {
 		t.Fatalf("wrong owner after claim: %+v", owner)
 	}
 	lock.Release()
@@ -82,8 +102,8 @@ func TestCensusLockRefusesLiveOwner(t *testing.T) {
 		t.Fatal("claim must be refused while a live writer owns the lock")
 	}
 	// The incumbent's ownership is untouched.
-	if owner, err := contender.readOwner(); err != nil || owner.Pid != 200 {
-		t.Fatalf("refused claim must leave the incumbent owner in place: %+v %v", owner, err)
+	if owner := readLockOwner(t, dir); owner.Pid != 200 {
+		t.Fatalf("refused claim must leave the incumbent owner in place: %+v", owner)
 	}
 }
 
@@ -100,8 +120,8 @@ func TestCensusLockTakesOverDeadOwner(t *testing.T) {
 	if err := successor.Claim(); err != nil {
 		t.Fatalf("claim must take over a dead owner's husk: %v", err)
 	}
-	if owner, err := successor.readOwner(); err != nil || owner.Pid != 500 {
-		t.Fatalf("takeover must publish the successor as owner: %+v %v", owner, err)
+	if owner := readLockOwner(t, dir); owner.Pid != 500 {
+		t.Fatalf("takeover must publish the successor as owner: %+v", owner)
 	}
 }
 

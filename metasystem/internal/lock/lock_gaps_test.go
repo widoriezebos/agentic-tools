@@ -72,7 +72,7 @@ func TestRemoveIfHolderLeavesSuccessorsAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The caller proved pid 4 dead — but the lock names pid 5 now.
-	if err := removeIfHolder(path, Identity{Pid: 4, PidStartedAt: 4}, dead); err != nil {
+	if err := removeIfHolderWith(path, Identity{Pid: 4, PidStartedAt: 4}, dead, identityJSON{}); err != nil {
 		t.Fatal(err)
 	}
 	if holder, err := Holder(path); err != nil || holder.Pid != 5 {
@@ -81,7 +81,7 @@ func TestRemoveIfHolderLeavesSuccessorsAlone(t *testing.T) {
 }
 
 func TestRemoveIfHolderVanishedLockIsFine(t *testing.T) {
-	if err := removeIfHolder(lockPath(t), Identity{Pid: 4, PidStartedAt: 4}, dead); err != nil {
+	if err := removeIfHolderWith(lockPath(t), Identity{Pid: 4, PidStartedAt: 4}, dead, identityJSON{}); err != nil {
 		t.Fatalf("a vanished lock is an already-done takeover: %v", err)
 	}
 }

@@ -164,3 +164,54 @@ deterministic-minimum rule, lock=84.0 precedent).
 **Cohort consequence:** bm-1-20260813t155700z abandoned after rep 1 (one
 SHA per cohort; rep 1 invalid on the now-amended close rule plus an honest
 delegationFloorMet). Rep 2 unspent. Fresh cohort at the next validated pin.
+
+## D9 — One directory-lock protocol; bindings keep their bytes (W2.2)
+
+**Decision:** internal/lock is the single home of the rename-born
+directory-lock protocol. It gained exactly two things: an OwnerCodec
+option, so each binding's on-disk owner.json schema stays byte-compatible
+(dispatch: {pid,instanceTag,acquiredAt}; census:
+{function,pid,pidStartedAt,instanceTag,observedAtEpoch}); and a Cause on
+HolderError so bindings can name a malformed owner file. NO staleness
+extension: dispatch's tag-based stale-holder rule is its PROBE answering
+Dead for a live pid whose successfully READ argv lacks the recorded tag —
+the custodian stranger rule, which death-only takeover already expresses.
+codex-2's row (Alive with unreadable argv keeps the lock) and
+dispatch-supervise-3's row (Unknown refuses takeover) live in the
+bindings' probes and are still pinned by their verdict tests, now driven
+through the one implementation. ownerlock.go and censuslock.go are thin
+bindings (~120 lines each of schema, probe, and refusal wording).
+
+**Semantic change accepted:** dispatch's owner lock previously returned
+Busy for an OWNERLESS husk; via lock.Acquire it now heals one — the
+canonical package's documented garbage-by-construction rule, which the
+review names as exactly what the copies lacked.
+
+**Alternative not taken:** a fourth Liveness state for staleness.
+Rejected: it would weaken the death-only takeover invariant every
+consumer reasons about, when Dead already means "a successful read proved
+the RECORDED identity absent".
+
+## D10 — Rep 2 proceeds; the delegation floor's strictness is flagged for Wido
+
+**Decision:** rep 1 of cohort bm-1-20260813t171239z (engine 2ef72cf, all
+D7+D8 fixes) passed six of seven validity gates — everyChainClosed passes
+with an unreviewed completed implementer, closing the whole close-protocol
+arc. The one failure is delegationFloorMet, and its cause is now purely
+the measured system: TWO implementers completed at the signed cap 15, the
+host certified only design-critic rounds, and stop-loss parked the mission
+before any implementer certification. Rep 2 runs as-is (~$10, within the
+pre-approved envelope): the measurement is clean, so a second sample is
+fair — the first cohort's rep 2 DID meet the floor once, so this is
+mission-dynamics variance, not determinism.
+
+**Flagged for Wido (kit measurement design, not decided under
+delegation):** the floor requires a completed AND CERTIFIED implementer
+per stream. Real delegation demonstrably happened (two healthy completed
+implementer jobs); what failed is the host's adjudication step before a
+stop-loss park. Whether that belongs in runValidity (as now) or in
+productMetrics is a benchmark-design judgment that shapes the whole
+series — if the strict floor stands and baseline reps keep failing it,
+the Devin arms compare against no valid baseline. Not amended: re-scoping
+a validity gate mid-series is referee tampering unless it is clearly a
+kit defect, and this one is arguably intent.

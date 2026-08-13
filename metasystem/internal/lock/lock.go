@@ -47,8 +47,43 @@ const (
 
 // Probe answers liveness for a recorded identity. Consumers supply it
 // (accept interfaces, return structs): the real one reads the kernel,
-// tests inject schedules.
+// tests inject schedules. A binding whose holders can go STALE — a live
+// pid whose read command no longer carries the recorded tag — encodes
+// that as Dead: a successful read proving the recorded identity absent
+// is exactly what death-only takeover requires (the custodian's
+// stranger rule), so staleness needs no fourth state here.
 type Probe func(Identity) Liveness
+
+// OwnerCodec renders and parses the owner file, so a binding keeps its
+// own on-disk owner.json schema byte-compatible while the PROTOCOL —
+// staged rename, fenced removal, bounded windows — has one home
+// (review dispatch-supervise-4). Decode returns the holder as this
+// package's Identity; fields the schema does not carry stay zero and
+// simply do not participate in identity equality.
+type OwnerCodec interface {
+	Encode(self Identity) ([]byte, error)
+	Decode(data []byte) (Identity, error)
+}
+
+// identityJSON is the default codec: the Identity struct's own JSON,
+// exactly the bytes this package always wrote.
+type identityJSON struct{}
+
+func (identityJSON) Encode(self Identity) ([]byte, error) {
+	owner, err := json.Marshal(self)
+	if err != nil {
+		return nil, err
+	}
+	return append(owner, '\n'), nil
+}
+
+func (identityJSON) Decode(data []byte) (Identity, error) {
+	var holder Identity
+	if err := json.Unmarshal(data, &holder); err != nil {
+		return Identity{}, fmt.Errorf("owner file unparseable: %w", err)
+	}
+	return holder, nil
+}
 
 // Options bound an acquisition attempt.
 type Options struct {
@@ -59,6 +94,9 @@ type Options struct {
 	Poll time.Duration
 	// Probe proves holder liveness. Required.
 	Probe Probe
+	// Codec renders and parses the owner file; nil means the default
+	// Identity JSON.
+	Codec OwnerCodec
 }
 
 // Lock is a held lock. Release it exactly once.
@@ -68,10 +106,13 @@ type Lock struct {
 }
 
 // HolderError reports the live (or unproven) holder that kept the lock.
+// Cause carries the read or decode failure when the holder could not be
+// inspected at all, so bindings can name the malformation.
 type HolderError struct {
 	Path   string
 	Holder Identity
 	State  Liveness
+	Cause  error
 }
 
 func (e *HolderError) Error() string {
@@ -98,7 +139,10 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 	if opts.Poll <= 0 {
 		opts.Poll = 25 * time.Millisecond
 	}
-	private, err := populatePrivate(path, self)
+	if opts.Codec == nil {
+		opts.Codec = identityJSON{}
+	}
+	private, err := populatePrivate(path, self, opts.Codec)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +157,7 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 			return nil, fmt.Errorf("lock: rename acquisition: %w", err)
 		}
 
-		holder, readErr := readOwner(path)
+		holder, readErr := readOwnerWith(path, opts.Codec)
 		switch {
 		case readErr == nil:
 			sawOwnerlessAt = time.Time{}
@@ -126,7 +170,7 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 				// (the two-winners race the unit test replays). The
 				// kernel releases the fence if a remover dies holding
 				// it.
-				if err := removeIfHolder(path, holder, opts.Probe); err != nil {
+				if err := removeIfHolderWith(path, holder, opts.Probe, opts.Codec); err != nil {
 					return nil, fmt.Errorf("lock: takeover removal: %w", err)
 				}
 				continue
@@ -161,7 +205,7 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 			// Unreadable owner file: uninspectable is alive.
 			sawOwnerlessAt = time.Time{}
 			if time.Now().After(deadline) {
-				return nil, &HolderError{Path: path, Holder: Identity{}, State: Unknown}
+				return nil, &HolderError{Path: path, Holder: Identity{}, State: Unknown, Cause: readErr}
 			}
 		}
 		time.Sleep(opts.Poll)
@@ -178,17 +222,28 @@ func Holder(path string) (Identity, error) { return readOwner(path) }
 // removing a successor's lock would be exactly the trap-kill shape
 // SLC-F-001 forbids.
 func (l *Lock) Release() error {
-	holder, err := readOwner(l.path)
+	return ReleaseNamed(l.path, l.self, nil)
+}
+
+// ReleaseNamed frees the lock at path when its owner file still decodes
+// to self — the release form for holders that span processes and hold
+// no *Lock handle (the dispatch and census bindings). A nil codec means
+// the default Identity JSON.
+func ReleaseNamed(path string, self Identity, codec OwnerCodec) error {
+	if codec == nil {
+		codec = identityJSON{}
+	}
+	holder, err := readOwnerWith(path, codec)
 	if err != nil {
 		return fmt.Errorf("lock: release verification: %w", err)
 	}
-	if holder != l.self {
-		return fmt.Errorf("lock %s no longer names this holder (found pid %d started %d)", l.path, holder.Pid, holder.PidStartedAt)
+	if holder != self {
+		return fmt.Errorf("lock %s no longer names this holder (found pid %d started %d)", path, holder.Pid, holder.PidStartedAt)
 	}
-	return removeLock(l.path)
+	return removeLock(path)
 }
 
-func populatePrivate(path string, self Identity) (string, error) {
+func populatePrivate(path string, self Identity, codec OwnerCodec) (string, error) {
 	suffix := make([]byte, 4)
 	if _, err := rand.Read(suffix); err != nil {
 		return "", fmt.Errorf("lock: random suffix: %w", err)
@@ -200,12 +255,12 @@ func populatePrivate(path string, self Identity) (string, error) {
 	if err := os.Mkdir(private, 0o755); err != nil {
 		return "", fmt.Errorf("lock: private directory: %w", err)
 	}
-	owner, err := json.Marshal(self)
+	owner, err := codec.Encode(self)
 	if err != nil {
 		os.RemoveAll(private)
 		return "", fmt.Errorf("lock: owner encoding: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(private, ownerFile), append(owner, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(private, ownerFile), owner, 0o644); err != nil {
 		os.RemoveAll(private)
 		return "", fmt.Errorf("lock: owner publication: %w", err)
 	}
@@ -213,15 +268,15 @@ func populatePrivate(path string, self Identity) (string, error) {
 }
 
 func readOwner(path string) (Identity, error) {
+	return readOwnerWith(path, identityJSON{})
+}
+
+func readOwnerWith(path string, codec OwnerCodec) (Identity, error) {
 	content, err := os.ReadFile(filepath.Join(path, ownerFile))
 	if err != nil {
 		return Identity{}, err
 	}
-	var holder Identity
-	if err := json.Unmarshal(content, &holder); err != nil {
-		return Identity{}, fmt.Errorf("owner file unparseable: %w", err)
-	}
-	return holder, nil
+	return codec.Decode(content)
 }
 
 func lockDirExists(path string) bool {
@@ -249,9 +304,9 @@ func withMutationFence(path string, action func() error) error {
 // removeIfHolder removes the lock only if, inside the mutation fence,
 // it still names the identity proven dead. A lock that vanished or
 // changed hands is left alone — the caller loops and reassesses.
-func removeIfHolder(path string, deadHolder Identity, probe Probe) error {
+func removeIfHolderWith(path string, deadHolder Identity, probe Probe, codec OwnerCodec) error {
 	return withMutationFence(path, func() error {
-		current, err := readOwner(path)
+		current, err := readOwnerWith(path, codec)
 		if os.IsNotExist(err) {
 			return nil // already removed or replaced-in-flight
 		}
