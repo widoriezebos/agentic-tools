@@ -17,6 +17,12 @@
         "null"
       ]
     },
+    "hostEndedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "missionId": {
       "type": "string"
     },

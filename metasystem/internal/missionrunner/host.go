@@ -388,11 +388,20 @@ func (e *Engine) superviseHostToExit(l *hostLaunch) (int, map[string]any, string
 	if capped {
 		if _, err := patchTurn(l.turnPath, map[string]any{
 			"status": "failed", "outcome": "capped",
-			"error": "turn-cap", "detail": "host turn reached host.turn-cap-min", "endedAt": nowISO(),
+			"error": "turn-cap", "detail": "host turn reached host.turn-cap-min",
+			"endedAt": nowISO(), "hostEndedAt": nowISO(),
 		}); err != nil {
 			return 0, nil, "", err
 		}
 		return 3, nil, "capped", nil
+	}
+	// The host PROCESS boundary is here, and it is the honest end of the
+	// host's wall clock (decision D13): the turn's endedAt lands only
+	// after adjudication, drain, ledger, and state — bookkeeping and
+	// legitimately slow drains that twice tripped the benchmark's cap
+	// gate on turns whose hosts finished inside their cap.
+	if _, err := patchTurn(l.turnPath, map[string]any{"hostEndedAt": nowISO()}); err != nil {
+		return 0, nil, "", err
 	}
 	var result map[string]any
 	if _, err := os.Stat(l.resultPath); err == nil {

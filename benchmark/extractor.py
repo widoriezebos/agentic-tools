@@ -668,7 +668,13 @@ class Extractor:
         host_turn_wall_clock = []
         for turn in self.turns:
             try:
-                seconds = (parse_time(turn["endedAt"]) - parse_time(turn["startedAt"])).total_seconds()
+                # The host's own boundary when the engine stamps it (D13):
+                # endedAt lands after adjudication, drain, ledger, and
+                # state, so it twice failed hosts that finished inside
+                # their cap. The bookkeeping allowance applies only to the
+                # legacy reading.
+                end_field = "hostEndedAt" if turn.get("hostEndedAt") else "endedAt"
+                seconds = (parse_time(turn[end_field]) - parse_time(turn["startedAt"])).total_seconds()
             except (KeyError, TypeError, ValueError):
                 host_cap_ok = False
                 continue
@@ -687,7 +693,7 @@ class Extractor:
             # below covers only that bookkeeping tail, never a real breach
             # (rep 1 of bm-1-20260813t055303z: 1203s against 1200s,
             # outcome completed).
-            bookkeeping_allowance = 30
+            bookkeeping_allowance = 30 if end_field == "endedAt" else 5
             if (
                 not isinstance(cap, (int, float))
                 or not isinstance(contract_cap, (int, float))

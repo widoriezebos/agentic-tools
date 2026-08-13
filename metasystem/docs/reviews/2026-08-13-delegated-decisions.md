@@ -270,3 +270,20 @@ durability program built and tested, to save threading a parameter.
 
 **Execution note:** L-effort; runs as its own pass with a full suite +
 VM cycle, after the in-flight clean-measurement baseline cohort.
+
+## D13 — The host's wall clock ends at the host's own boundary
+
+**Decision:** the D3 allowance was structurally wrong and bit twice: a
+turn's endedAt lands after adjudication, drain, ledger delivery, and the
+state write, so the cap gate failed turns whose hosts finished INSIDE
+their cap — first 3s of bookkeeping, then 40s of legitimate drain wait in
+the first fully-completed mission of the series. The engine now stamps
+hostEndedAt on the turn record at the host PROCESS boundary (both the
+completed and capped paths), the kit's cap gate reads it when present
+with a 5s allowance, and the 30s bookkeeping allowance survives only for
+legacy turns without the stamp. Kit turn schema admits the field.
+
+**Cohort consequence:** bm-1-20260813t191528z abandoned after rep 1 (one
+SHA per cohort; rep 1 invalid on exactly this gate — while being the
+series' FIRST COMPLETED mission: no park, three clean turns, cycles 3/8).
+Fresh cohort at the next validated pin. Series spend ~$70 of EUR 240.
