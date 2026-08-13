@@ -113,17 +113,15 @@ func ConfLookup(path, key string) (value string, found bool, err error) {
 	if readErr != nil {
 		return "", false, fmt.Errorf("cannot read metasystem configuration: %s: %w", path, readErr)
 	}
+	// Strict HERE, deliberately: resolution verbs refuse an ambiguous
+	// conf instead of silently picking a winner (ConfValue's hot-path
+	// readers keep last-wins).
 	var matches []string
-	for _, raw := range strings.Split(string(content), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
-			continue
+	parseSettings(string(content), func(_ int, name, val string, ok bool) {
+		if ok && name == key {
+			matches = append(matches, val)
 		}
-		name, val, _ := strings.Cut(line, "=")
-		if strings.TrimSpace(name) == key {
-			matches = append(matches, strings.TrimSpace(val))
-		}
-	}
+	})
 	if len(matches) > 1 {
 		return "", false, fmt.Errorf("duplicate metasystem configuration key: %s", key)
 	}
@@ -154,16 +152,11 @@ func Keys(confPath, prefix string, environ []string) []string {
 		if err != nil {
 			continue
 		}
-		for _, raw := range strings.Split(string(content), "\n") {
-			line := strings.TrimSpace(raw)
-			if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
-				continue
-			}
-			key := strings.TrimSpace(strings.SplitN(line, "=", 2)[0])
-			if strings.HasPrefix(key, prefix) {
+		parseSettings(string(content), func(_ int, key, _ string, ok bool) {
+			if ok && strings.HasPrefix(key, prefix) {
 				add(key)
 			}
-		}
+		})
 	}
 
 	// A key present only in the environment is still a real key. The family

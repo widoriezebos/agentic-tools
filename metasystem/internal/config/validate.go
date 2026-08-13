@@ -38,33 +38,27 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		value  string
 	}
 	var capKeys []capKey
-	for number, raw := range strings.Split(string(content), "\n") {
-		lineNo := number + 1
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if !strings.Contains(line, "=") {
+	// Duplicates are a PROBLEM here, deliberately: validation names what
+	// the hot-path readers tolerate by last-wins.
+	parseSettings(string(content), func(lineNo int, key, value string, ok bool) {
+		if !ok {
 			add("%s:%d: expected key=value", confPath, lineNo)
-			continue
+			return
 		}
-		name, val, _ := strings.Cut(line, "=")
-		key := strings.TrimSpace(name)
-		value := strings.TrimSpace(val)
 		if !confKeyPattern.MatchString(key) {
 			add("%s:%d: invalid key %s", confPath, lineNo, pyRepr(key))
-			continue
+			return
 		}
 		if _, exists := values[key]; exists {
 			add("%s:%d: duplicate key %s", confPath, lineNo, key)
-			continue
+			return
 		}
 		values[key] = value
 		order = append(order, key)
 		if strings.HasPrefix(key, "cap.min.") {
 			capKeys = append(capKeys, capKey{confPath, lineNo, key, value})
 		}
-	}
+	})
 
 	// The .local override contributes only capability floors to validation; its
 	// other keys are the developer's own and not template invariants.
