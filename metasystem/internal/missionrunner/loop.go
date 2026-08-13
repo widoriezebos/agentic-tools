@@ -766,12 +766,19 @@ func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[s
 // at mission end, so no chain outlives the mission unclosed.
 func (e *Engine) closeTerminalChains() error {
 	dispatch := filepath.Join(e.Root, "scripts", "agents", "dispatch.sh")
+	var failures []string
 	for _, rootJob := range CloseableChains(e.Root, e.Mission) {
 		runCaptured(e.Root, nil, dispatch, "reap", "--job", rootJob)
 		stdout, stderr, code := runCaptured(e.Root, nil, dispatch, "close", "--job", rootJob, "--runner-closed")
 		if code != 0 {
-			return failf(3, "runner could not close terminal job chain %s: %s", rootJob, firstDetail(stderr, stdout))
+			// One refusing chain must not strand the chains behind it:
+			// finish the sweep, then report every failure by name.
+			failures = append(failures, rootJob+": "+firstDetail(stderr, stdout))
 		}
+	}
+	if len(failures) > 0 {
+		return failf(3, "runner could not close %d terminal job chain(s): %s",
+			len(failures), strings.Join(failures, "; "))
 	}
 	return nil
 }

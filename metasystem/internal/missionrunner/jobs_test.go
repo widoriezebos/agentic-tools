@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -84,5 +85,69 @@ func TestActiveJobsSeesUnstampedReservationHusks(t *testing.T) {
 	want := []string{"husk-1"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("active jobs: got %v, want %v", got, want)
+	}
+}
+
+func TestCloseableChainsSkipsDispatchRefusedHusks(t *testing.T) {
+	// A dispatch-refused husk (setup phase, no mirror, held only by the
+	// fence reservation) has no evidence to attest: it must not list, or
+	// its refusing close strands every chain sorted behind it. A chain
+	// that RAN but never mirrored still lists — that failure stays loud.
+	root := t.TempDir()
+	mission := "demo"
+	jobs := jobsDirPath(root)
+	writeJSONFile(t, filepath.Join(jobs, "aa-husk.json"),
+		map[string]any{"jobId": "aa-husk", "status": "failed", "phase": "setup", "error": "dispatch-refused"})
+	writeJSONFile(t, filepath.Join(root, "artifacts", "agents", "missions", mission, "fences.json"),
+		map[string]any{"reservations": map[string]any{"aa-husk": map[string]any{"capMin": 15}}})
+	writeJSONFile(t, filepath.Join(jobs, "ran.json"),
+		map[string]any{"jobId": "ran", "mission": mission, "status": "completed", "phase": "reaped"})
+
+	if got := CloseableChains(root, mission); !reflect.DeepEqual(got, []string{"ran"}) {
+		t.Fatalf("closeable chains: got %v, want [ran]", got)
+	}
+}
+
+func TestCloseTerminalChainsFinishesTheSweepPastAFailure(t *testing.T) {
+	// The first chain's close refuses; the second must still be attempted,
+	// and the error must carry the failing chain by name.
+	root := t.TempDir()
+	mission := "demo"
+	jobs := jobsDirPath(root)
+	writeJSONFile(t, filepath.Join(jobs, "aa.json"),
+		map[string]any{"jobId": "aa", "mission": mission, "status": "failed", "phase": "reaped"})
+	writeJSONFile(t, filepath.Join(jobs, "bb.json"),
+		map[string]any{"jobId": "bb", "mission": mission, "status": "completed", "phase": "reaped"})
+	stub := `#!/bin/sh
+verb=$1; shift
+job=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--job" ]; then job=$2; shift; fi
+  shift
+done
+[ "$verb" = "reap" ] && exit 0
+echo "$job" >> "$(dirname "$0")/closes.log"
+if [ "$job" = "aa" ]; then echo "cannot close an unmirrored chain" >&2; exit 1; fi
+exit 0
+`
+	scripts := filepath.Join(root, "scripts", "agents")
+	if err := os.MkdirAll(scripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scripts, "dispatch.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	e := &Engine{Root: root, Mission: mission}
+	err := e.closeTerminalChains()
+	if err == nil || !strings.Contains(err.Error(), "aa: cannot close an unmirrored chain") {
+		t.Fatalf("the failure must name the refusing chain: %v", err)
+	}
+	logBytes, readErr := os.ReadFile(filepath.Join(scripts, "closes.log"))
+	if readErr != nil {
+		t.Fatalf("no close attempts recorded: %v", readErr)
+	}
+	if got := string(logBytes); got != "aa\nbb\n" {
+		t.Fatalf("the sweep must continue past the failure, attempts: %q", got)
 	}
 }
