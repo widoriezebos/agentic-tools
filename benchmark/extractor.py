@@ -350,7 +350,15 @@ class Extractor:
         else:
             for turn_dir in sorted(path for path in turns_dir.iterdir() if path.is_dir()):
                 turn = self.load_json(turn_dir / "turn.json", f"turns.{turn_dir.name}.turn", "turn.schema.json")
-                returned = self.load_json(turn_dir / "return.json", f"turns.{turn_dir.name}.return", "orchestrator.schema.json")
+                # A capped or failed turn produced no host answer: the turn
+                # record itself is the evidence, and demanding a return
+                # failed every run containing one capped turn. A return
+                # that EXISTS is always validated, whatever the outcome.
+                outcome = (turn or {}).get("outcome")
+                if (turn_dir / "return.json").is_file() or outcome not in ("capped", "failed"):
+                    returned = self.load_json(turn_dir / "return.json", f"turns.{turn_dir.name}.return", "orchestrator.schema.json")
+                else:
+                    returned = None
                 if not (turn_dir / "prompt.md").is_file():
                     self.evidence_error(f"turns.{turn_dir.name}.prompt", "prompt.md is missing")
                 if turn is not None:
@@ -962,7 +970,7 @@ class Extractor:
         grouped: dict[tuple[str, str], dict[str, Any]] = {}
         sources: list[tuple[str, str, Any]] = []
         for turn in self.turns:
-            usage = turn.get("result", {}).get("usage")
+            usage = (turn.get("result") or {}).get("usage")
             if isinstance(usage, dict):
                 sources.append((str(turn.get("runtime")), "orchestrator", usage))
         for job in self.jobs:

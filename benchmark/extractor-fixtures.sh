@@ -154,6 +154,26 @@ write_json(turn_dir / "turn.json", {
     "turnCapMin": 15,
     "turnId": "fixture-t1",
 })
+# A capped turn has no host answer: turn.json is its whole evidence, and
+# the evidence gate must tolerate the absent return (rep 1 of cohort
+# bm-1-20260813t113617z failed evidenceSetComplete to exactly this).
+capped_dir = mission / "turns" / "fixture-t0"
+write_json(capped_dir / "turn.json", {
+    "cycle": 1,
+    "endedAt": "2026-08-05T00:00:12Z",
+    "error": "turn-cap",
+    "missionId": "fixture",
+    "model": "host-test",
+    "outcome": "capped",
+    "result": None,
+    "runtime": "fake",
+    "startedAt": "2026-08-04T23:45:10Z",
+    "status": "completed",
+    "turnCapMin": 15,
+    "turnId": "fixture-t0",
+})
+(capped_dir / "prompt.md").write_text("capped turn prompt\n", encoding="utf-8")
+
 write_json(turn_dir / "return.json", {
     "turnId": "fixture-t1",
     "missionId": "fixture",
