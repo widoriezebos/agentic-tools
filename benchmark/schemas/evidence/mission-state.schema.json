@@ -85,6 +85,19 @@
       "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
     },
     "runnerLease": {"type": ["string", "null"]},
+    "ledgerSemantics": {"type": "integer", "minimum": 1},
+    "lastDrainStall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycle", "survivors"],
+      "properties": {
+        "cycle": {"type": "integer", "minimum": 1},
+        "survivors": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+        }
+      }
+    },
     "ledger": {
       "type": "object",
       "additionalProperties": false,

@@ -70,6 +70,44 @@ PY
   export PATH METASYSTEM_RESTRICTED_PS_ROOT
 fi
 
+# Kit-vs-engine drift guard: the kit scores evidence the CURRENT engine
+# writes. Schemas shared with the engine must match its shipped copies
+# byte-for-byte, and every engine-owned evidence filename the extractor
+# requires must still appear in the engine's sources. Both halves have
+# bitten: the 'proc started-at' verb rename was hand-fixed with no guard,
+# and cohort bm-1-20260813t055303z lost three validity gates to a stale
+# mission-state schema plus a check for the retired watcher.log.
+# Delegate-role returns are STORED in the engine's derived v2 envelope
+# (schemaVersion + claimed), so the kit pins the v2 form the engine's own
+# materializer emits; everything else shared with the engine is a direct
+# byte copy of the shipped schema.
+derived_roles=" code-critic design-critic implementer investigator verifier "
+for schema in "$kit"/schemas/evidence/*.schema.json; do
+  name=$(basename "$schema")
+  role=${name%.schema.json}
+  if [[ "$derived_roles" == *" $role "* ]]; then
+    "$top/metasystem/bin/metasystem" schema materialize --root "$top/metasystem"       --role "$role" --version 2 --output "$tmp/derived-$name"
+    cmp -s "$schema" "$tmp/derived-$name" || {
+      echo "kit drift: schemas/evidence/$name differs from the engine's materialized v2 schema; regenerate it with 'metasystem schema materialize --version 2'" >&2
+      exit 1
+    }
+    continue
+  fi
+  engine_schema=$top/metasystem/scripts/agents/schemas/$name
+  [[ -f "$engine_schema" ]] || continue
+  cmp -s "$schema" "$engine_schema" || {
+    echo "kit drift: schemas/evidence/$name differs from the engine's shipped copy; sync it from scripts/agents/schemas/" >&2
+    exit 1
+  }
+done
+for evidence_name in owner.ndjson last-census.json state.json ledger.md; do
+  grep -rqF "$evidence_name" "$top/metasystem/internal" "$top/metasystem/scripts" || {
+    echo "kit drift: the extractor requires $evidence_name but the engine's sources never mention it" >&2
+    exit 1
+  }
+done
+echo "kit: engine drift guard passed"
+
 # KI-13's lesson, inherited with the provisioning block: every repository this
 # gate arms gets shut down again, because killing components is futile while
 # the owner self-heals, and a leaked owner outlives the run by days.

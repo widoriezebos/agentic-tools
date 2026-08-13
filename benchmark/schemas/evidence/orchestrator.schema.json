@@ -70,7 +70,10 @@
       "properties": {
         "runtime": {"type": "string"},
         "model": {"type": "string"},
-        "sessionId": {"type": ["string", "null"]}
+        "sessionId": {
+          "type": ["string", "null"],
+          "description": "Echo the prompt's Host-Session header exactly (null when it says none), or report the session id your own runtime shows you — both are accepted. Never invent a session id."
+        }
       }
     }
   }

@@ -1,11 +1,8 @@
 {
-  "$comment": "metasystem.version=1",
+  "$comment": "metasystem.version=2",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "properties": {
-    "chainClosed": {
-      "type": "boolean"
-    },
     "claimed": {
       "additionalProperties": false,
       "properties": {
@@ -26,10 +23,7 @@
         "sessionId",
         "model"
       ],
-      "type": [
-        "object",
-        "null"
-      ]
+      "type": "object"
     },
     "classifications": {
       "items": {
@@ -83,10 +77,7 @@
       "additionalProperties": false,
       "properties": {
         "effective": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         },
         "requested": {
           "type": "string"
@@ -98,12 +89,6 @@
       ],
       "type": "object"
     },
-    "reviewedCommit": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "round": {
       "type": "integer"
     },
@@ -112,16 +97,12 @@
     },
     "schemaVersion": {
       "enum": [
-        1,
         2
       ],
       "type": "integer"
     },
     "sessionId": {
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": "string"
     },
     "stopLoss": {
       "additionalProperties": false,
@@ -167,6 +148,8 @@
     }
   },
   "required": [
+    "schemaVersion",
+    "claimed",
     "jobId",
     "round",
     "runtime",
@@ -180,6 +163,6 @@
     "classifications",
     "stopLoss"
   ],
-  "title": "Investigator return",
+  "title": "Investigator return version 2",
   "type": "object"
 }

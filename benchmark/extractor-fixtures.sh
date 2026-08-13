@@ -198,6 +198,8 @@ job = {
 write_json(agents / "jobs" / "implementer-fixture.json", job)
 round_dir = agents / "implementer-fixture" / "rounds" / "1"
 write_json(round_dir / "return.json", {
+    "schemaVersion": 2,
+    "claimed": {"sessionId": None, "model": None},
     "jobId": "implementer-fixture",
     "round": 1,
     "runtime": "fake",
@@ -216,7 +218,7 @@ write_json(round_dir / "return.json", {
 supervision = agents / "supervision"
 supervision.mkdir(parents=True, exist_ok=True)
 (supervision / "census.log").write_text("CUSTODY pid=1 start=1 runtime=fake registry=fixture argv=fake\n", encoding="utf-8")
-(supervision / "watcher.log").write_text("ARMED watcher fixture\n", encoding="utf-8")
+(supervision / "owner.ndjson").write_text('{"event": "armed", "component": "owner"}\n', encoding="utf-8")
 write_json(supervision / "last-census.json", {
     "schemaVersion": 1,
     "writer": "watch-background-jobs.sh",

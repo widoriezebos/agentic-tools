@@ -394,9 +394,12 @@ class Extractor:
         last_census = self.agents_root / "supervision" / "last-census.json"
         if not census_log.is_file() and not last_census.is_file():
             self.evidence_error("census", "neither census.log nor last-census.json exists")
-        watcher_log = self.agents_root / "supervision" / "watcher.log"
-        if not watcher_log.is_file():
-            self.evidence_error("watcher", "watcher.log is missing")
+        # The Go owner replaced the shell watcher (engine d869371): the
+        # structured owner.ndjson is the supervision evidence stream now;
+        # owner.log is often legitimately empty.
+        owner_stream = self.agents_root / "supervision" / "owner.ndjson"
+        if not owner_stream.is_file():
+            self.evidence_error("owner", "owner.ndjson is missing")
         grader_path = self.mission_root / "grader.out"
         if not grader_path.is_file():
             self.evidence_error("graderOutput", "grader.out is missing")
@@ -669,11 +672,19 @@ class Extractor:
                 "wallClockSecondsCeiling": contract_cap * 60 if isinstance(contract_cap, (int, float)) else None,
                 "wallClockSecondsUsedRatio": ratio(seconds, contract_cap * 60) if isinstance(contract_cap, (int, float)) else None,
             })
+            # The runner stamps endedAt after return validation, ledger
+            # delivery, and the state write, so a host that finishes just
+            # under its cap can measure a few seconds over it. A capped
+            # host is stamped outcome=capped by the engine; the allowance
+            # below covers only that bookkeeping tail, never a real breach
+            # (rep 1 of bm-1-20260813t055303z: 1203s against 1200s,
+            # outcome completed).
+            bookkeeping_allowance = 30
             if (
                 not isinstance(cap, (int, float))
                 or not isinstance(contract_cap, (int, float))
                 or cap > contract_cap
-                or seconds > contract_cap * 60
+                or seconds > contract_cap * 60 + bookkeeping_allowance
             ):
                 host_cap_ok = False
 

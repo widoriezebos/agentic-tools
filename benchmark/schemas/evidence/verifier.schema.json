@@ -1,11 +1,8 @@
 {
-  "$comment": "metasystem.version=1",
+  "$comment": "metasystem.version=2",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "properties": {
-    "chainClosed": {
-      "type": "boolean"
-    },
     "claimed": {
       "additionalProperties": false,
       "properties": {
@@ -26,10 +23,7 @@
         "sessionId",
         "model"
       ],
-      "type": [
-        "object",
-        "null"
-      ]
+      "type": "object"
     },
     "evidence": {
       "items": {
@@ -74,10 +68,7 @@
       "additionalProperties": false,
       "properties": {
         "effective": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         },
         "requested": {
           "type": "string"
@@ -88,12 +79,6 @@
         "effective"
       ],
       "type": "object"
-    },
-    "reviewedCommit": {
-      "type": [
-        "string",
-        "null"
-      ]
     },
     "riskiestPart": {
       "type": "string"
@@ -106,22 +91,20 @@
     },
     "schemaVersion": {
       "enum": [
-        1,
         2
       ],
       "type": "integer"
     },
     "sessionId": {
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": "string"
     },
     "whatWasDone": {
       "type": "string"
     }
   },
   "required": [
+    "schemaVersion",
+    "claimed",
     "jobId",
     "round",
     "runtime",
@@ -133,6 +116,6 @@
     "riskiestPart",
     "whatWasDone"
   ],
-  "title": "Verifier return",
+  "title": "Verifier return version 2",
   "type": "object"
 }

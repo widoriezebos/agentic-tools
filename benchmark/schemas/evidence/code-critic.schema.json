@@ -1,11 +1,8 @@
 {
-  "$comment": "metasystem.version=1",
+  "$comment": "metasystem.version=2",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "properties": {
-    "chainClosed": {
-      "type": "boolean"
-    },
     "claimed": {
       "additionalProperties": false,
       "properties": {
@@ -26,10 +23,7 @@
         "sessionId",
         "model"
       ],
-      "type": [
-        "object",
-        "null"
-      ]
+      "type": "object"
     },
     "evidence": {
       "items": {
@@ -110,10 +104,7 @@
       "additionalProperties": false,
       "properties": {
         "effective": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         },
         "requested": {
           "type": "string"
@@ -125,11 +116,8 @@
       ],
       "type": "object"
     },
-    "reviewedCommit": {
-      "type": [
-        "string",
-        "null"
-      ]
+    "reviewedTree": {
+      "type": "string"
     },
     "round": {
       "type": "integer"
@@ -139,22 +127,20 @@
     },
     "schemaVersion": {
       "enum": [
-        1,
         2
       ],
       "type": "integer"
     },
     "sessionId": {
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": "string"
     },
     "verdictMaterialCount": {
       "type": "integer"
     }
   },
   "required": [
+    "schemaVersion",
+    "claimed",
     "jobId",
     "round",
     "runtime",
@@ -163,9 +149,10 @@
     "evidence",
     "gaps",
     "mode",
+    "reviewedTree",
     "findings",
     "verdictMaterialCount"
   ],
-  "title": "Code critic return",
+  "title": "Code critic return version 2",
   "type": "object"
 }
