@@ -62,6 +62,13 @@ func holderState(holder *ownerIdentity) string {
 	if err != nil || state != identity.Alive {
 		return "unknown"
 	}
+	// An UNREADABLE argv is absence of evidence, never evidence of a
+	// stranger (the B1 rule; review finding codex-2): a live holder whose
+	// command line cannot be read keeps its lock. Only a READ argv that
+	// lacks the recorded tag proves staleness.
+	if !exact.ArgvKnown {
+		return "live"
+	}
 	command := strings.Join(exact.Argv, " ")
 	if holder.tag != "" && strings.Contains(command, holder.tag) {
 		return "live"

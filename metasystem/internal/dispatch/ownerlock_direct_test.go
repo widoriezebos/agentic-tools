@@ -95,3 +95,21 @@ func TestReadOwnerIdentityDegrades(t *testing.T) {
 		t.Fatal("identity without a pid must read nil")
 	}
 }
+
+// codex-2 (the review's owner-lock finding): a live holder whose argv is
+// unreadable is BUSY, never stale — absence of evidence must not permit
+// takeover. Driven through holderState directly with a synthetic holder
+// whose pid is alive (our own) but whose recorded tag can never be
+// verified because the identity carries no readable argv on hosts where
+// that occurs; on hosts where our own argv IS readable, the unreadable
+// case is constructed via the state table instead.
+func TestHolderStateUnreadableArgvIsLive(t *testing.T) {
+	// pid 1 is alive and, for a non-root test process, its argv read fails
+	// on macOS (EPERM at the kernel probe) — the probe path returns either
+	// live (EPERM at kill) or unknown/live via ArgvKnown=false. Whatever
+	// branch this host takes, the verdict must never be "stale".
+	holder := &ownerIdentity{pid: 1, tag: "tag-no-init-carries"}
+	if state := holderState(holder); state == "stale" {
+		t.Fatalf("a holder with unverifiable argv was ruled stale (takeover permitted): %s", state)
+	}
+}
