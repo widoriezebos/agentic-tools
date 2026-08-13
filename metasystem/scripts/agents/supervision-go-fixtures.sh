@@ -14,9 +14,13 @@ bin="$root/bin/metasystem"
 [[ -x "$bin" ]] || { echo "go supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-go-supervision.XXXXXX")
+# The tag prefix is unique per run (script-fixtures-016): a bare
+# pkill -f "gofix-" reached ANY process on the machine whose command
+# mentioned the string — another checkout's fixture run included.
+fixture_tag="gofix-$$"
 cleanup() {
-  # Kill any owners/components this fixture launched; they are tagged.
-  pkill -f "gofix-" 2>/dev/null || true
+  # Kill only what THIS run launched; the tag carries our pid.
+  pkill -f "$fixture_tag-" 2>/dev/null || true
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -54,7 +58,7 @@ registry="$tmp/registry.jsonl"
 # --- ESTABLISH + PUBLISH: the owner arms, publishes engine-stamped state
 #     with its components at one generation, and stays stable (no churn).
 repo1="$tmp/establish"; mkdir -p "$repo1"
-owner1=$(arm "$repo1" "gofix-establish" "$registry" 1)
+owner1=$(arm "$repo1" "$fixture_tag-establish" "$registry" 1)
 wait_until 8 "state published with components" bash -c '
   python3 - "$1" <<PY 2>/dev/null || exit 1
 import json,sys
@@ -72,33 +76,33 @@ echo "go supervision: establish + stable publication PASSED" >&2
 #     with teardownComplete true and an honest terminal (the KI-32 defect
 #     designed away, observed in the running binary).
 repo2="$tmp/purpose"; mkdir -p "$repo2"
-owner2=$(arm "$repo2" "gofix-purpose" "$registry" 1)
+owner2=$(arm "$repo2" "$fixture_tag-purpose" "$registry" 1)
 wait_until 8 "purpose owner established" bash -c '[[ -f "$1/artifacts/agents/supervision/state.json" ]]' _ "$repo2"
 mv "$repo2" "$repo2.gone"   # atomic: root definitively absent, no writer race
 wait_until 8 "owner exits on purpose-gone" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner2"
-python3 - "$registry" <<'PY' || fail "no purpose-gone terminal with complete teardown"
+python3 - "$registry" "$fixture_tag-purpose" <<'PY' || fail "no purpose-gone terminal with complete teardown"
 import json, sys
 exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
-mine = [e for e in exits if e.get("ownerTag") == "gofix-purpose"]
+mine = [e for e in exits if e.get("ownerTag") == sys.argv[2]]
 ok = mine and mine[-1]["reason"] == "purpose-gone" and mine[-1]["teardownComplete"] is True
 raise SystemExit(0 if ok else 1)
 PY
 # No component of this owner survives its teardown.
-! pgrep -f "gofix-purpose" >/dev/null 2>&1 || fail "a component survived purpose-gone teardown"
+! pgrep -f "$fixture_tag-purpose" >/dev/null 2>&1 || fail "a component survived purpose-gone teardown"
 echo "go supervision: purpose-gone exit + none-survive teardown PASSED" >&2
 
 # --- SUPERSEDED: another identity takes the lock while the checkout persists;
 #     the owner leaves voluntarily (SLC-R3-003) with complete teardown.
 repo3="$tmp/superseded"; mkdir -p "$repo3"
-owner3=$(arm "$repo3" "gofix-super" "$registry" 1)
+owner3=$(arm "$repo3" "$fixture_tag-super" "$registry" 1)
 wait_until 8 "superseded owner established" bash -c '[[ -f "$1/artifacts/agents/supervision/state.json" ]]' _ "$repo3"
 printf '{"pid":999999,"pidStartedAt":1,"instanceTag":"a-successor"}\n' \
   > "$repo3/artifacts/agents/supervision/lock.d/owner.json"
 wait_until 8 "owner exits on supersession" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner3"
-python3 - "$registry" <<'PY' || fail "no superseded terminal"
+python3 - "$registry" "$fixture_tag-super" <<'PY' || fail "no superseded terminal"
 import json, sys
 exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
-mine = [e for e in exits if e.get("ownerTag") == "gofix-super"]
+mine = [e for e in exits if e.get("ownerTag") == sys.argv[2]]
 raise SystemExit(0 if mine and mine[-1]["reason"] == "superseded" else 1)
 PY
 echo "go supervision: superseded voluntary exit PASSED" >&2
@@ -122,18 +126,18 @@ echo "go supervision: cycle-trace observability PASSED" >&2
 #     complete teardown and an honest terminal — the OTHER half of the
 #     KI-32 fix (a self-heal that cannot bound itself is the incident).
 repo4="$tmp/breaker"; mkdir -p "$repo4"
-owner4=$(METASYSTEM_GO_COMPONENT_CRASH_ON_START=1 arm "$repo4" "gofix-breaker" "$registry" 1)
+owner4=$(METASYSTEM_GO_COMPONENT_CRASH_ON_START=1 arm "$repo4" "$fixture_tag-breaker" "$registry" 1)
 # At interval 1s and N=5, giving-up lands within ~10s even with backoff
 # (backoff gates relaunches, never observations — SLC-R3-005).
 wait_until 30 "owner gives up on the crash loop" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner4"
-python3 - "$registry" <<'PY' || fail "no giving-up terminal with complete teardown"
+python3 - "$registry" "$fixture_tag-breaker" <<'PY' || fail "no giving-up terminal with complete teardown"
 import json, sys
 exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
-mine = [e for e in exits if e.get("ownerTag") == "gofix-breaker"]
+mine = [e for e in exits if e.get("ownerTag") == sys.argv[2]]
 ok = mine and mine[-1]["reason"] == "giving-up" and mine[-1]["teardownComplete"] is True
 raise SystemExit(0 if ok else 1)
 PY
-! pgrep -f "gofix-breaker" >/dev/null 2>&1 || fail "a component survived giving-up teardown"
+! pgrep -f "$fixture_tag-breaker" >/dev/null 2>&1 || fail "a component survived giving-up teardown"
 echo "go supervision: crash-loop breaker giving-up PASSED" >&2
 
 # DEFERRED Proof rows, named so the acceptance set is closed

@@ -1419,7 +1419,15 @@ reap_jobs() {
   while true; do
     if [[ -n "$job" ]]; then reap_one "$job"; else
       mkdir -p "$jobs"
-      for record in "$jobs"/*.json; do [[ -f "$record" ]] && reap_one "$(basename "${record%.json}")"; done
+      # One failing reap must not starve the jobs after it in sort order
+      # (script-orchestration-07): visit every record, then report the
+      # sweep's verdict — the contract the Go reaper already documents.
+      sweep_failed=0
+      for record in "$jobs"/*.json; do
+        [[ -f "$record" ]] || continue
+        reap_one "$(basename "${record%.json}")" || sweep_failed=1
+      done
+      (( sweep_failed == 0 )) || { echo "reap sweep finished with failures (see above)" >&2; exit 1; }
     fi
     if [[ -n "$supervision_heartbeat" ]]; then
       "$ms" supervise heartbeat --path "$supervision_heartbeat" --function reaper \

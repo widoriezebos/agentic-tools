@@ -176,7 +176,9 @@ if (( census_enabled )); then
 fi
 
 if [ -z "$state_file" ]; then
-  key=$(printf '%s\n' "${dirs[@]}" "scope=$scope" | cksum | tr -d ' \t')
+  # cksum prints "sum size"; joined WITHOUT a separator, ("12","345") and
+  # ("123","45") collide into one state file (script-misc-10).
+  key=$(printf '%s\n' "${dirs[@]}" "scope=$scope" | cksum | awk '{print $1 "-" $2}')
   state_file="${TMPDIR:-/tmp}/watch-background-jobs.${key}.state"
 fi
 mkdir -p "$(dirname "$state_file")"
@@ -262,6 +264,13 @@ job_status() {
   "$ms" json get --file "$1" --field status 2>/dev/null || true
 }
 
+record_parses_json() {
+  # Distinguishes "JSON without a status field" from "not JSON at all":
+  # the header promises non-JSON records mtime-only STALE/CAPPED, never a
+  # status-based verdict (script-misc-4).
+  "$ms" json get --file "$1" --field status --default "" >/dev/null 2>&1
+}
+
 is_terminal() {
   case "$1" in
     completed|complete|success|succeeded|failed|failure|error|errored|cancelled|canceled|killed|timeout|timed_out) return 0 ;;
@@ -345,7 +354,7 @@ scan_once() {
         [ "$baseline" -eq 1 ] && { mark "$id"; continue; }
         report CAPPED "$id" "${status:-running}" "$age_min" "$path"; mark "$id"; forget_running "$id"
       elif [ "$start_verify_min" -gt 0 ] && [ "$age_min" -ge "$start_verify_min" ] && \
-           { [ -z "$status" ] || case "$status" in queued|pending|starting|created) true ;; *) false ;; esac; }; then
+           { { [ -z "$status" ] && record_parses_json "$path"; } || case "$status" in queued|pending|starting|created) true ;; *) false ;; esac; }; then
         # A dispatch that never left the queue is a silent failure long before
         # STALE would fire — observed 2026-08-03: a resume queued, died, and
         # cost 2.3 idle hours. Report it early and by its real name.

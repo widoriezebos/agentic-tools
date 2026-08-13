@@ -100,7 +100,7 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
   grep -q "swap its binary mid-run" "$gate_fence_err" \
     || { echo "go-gate refusal did not come from the rebuild fence" >&2; exit 1; }
   rm -f "$gate_fence_err"
-  kill "$gate_fence_foreign" 2>/dev/null; wait "$gate_fence_foreign" 2>/dev/null || true
+  kill "$gate_fence_foreign" 2>/dev/null || true; wait "$gate_fence_foreign" 2>/dev/null || true
   bin/metasystem gate fence --root "$root" --self-pid $$ \
     || { echo "a dead foreign gate run kept blocking the fence" >&2; exit 1; }
   echo "gate fence fixtures passed"
@@ -4384,6 +4384,30 @@ grep -q "^CAPPED live" "$wbj/o3" && {
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s3" --stale-min 5 --cap-min "$fixture_watcher_firing_cap_min" --once >"$wbj/o4" 2>&1
 grep -q "^CAPPED live" "$wbj/o4" || {
   echo "watch-background-jobs: hard cap not reported" >&2; exit 1; }
+# A non-JSON record keeps the header's mtime-only contract (script-misc-4):
+# never NEVER-STARTED from its empty status — a plain-text record aged past
+# start-verify but inside the stale window reports NOTHING, and past the
+# stale window it reports STALE, so the id is not marked seen prematurely.
+mkdir -p "$wbj/plain/jobs"
+printf 'plain text progress notes\n' >"$wbj/plain/jobs/notes.json"
+python3 - "$wbj/plain/jobs/notes.json" <<'AGE'
+import os, sys, time
+t = time.time() - 360
+os.utime(sys.argv[1], (t, t))
+AGE
+touch "$wbj/s9" "$wbj/s10"
+scripts/watch-background-jobs.sh --dir "$wbj/plain/jobs" --state "$wbj/s9" --start-verify-min 5 --stale-min 20 --once >"$wbj/o9" 2>&1
+grep -q "NEVER-STARTED" "$wbj/o9" && {
+  echo "watch-background-jobs: non-JSON record got a status-based NEVER-STARTED" >&2; exit 1; }
+python3 - "$wbj/plain/jobs/notes.json" <<'AGE'
+import os, sys, time
+t = time.time() - 1500
+os.utime(sys.argv[1], (t, t))
+AGE
+scripts/watch-background-jobs.sh --dir "$wbj/plain/jobs" --state "$wbj/s10" --start-verify-min 5 --stale-min 20 --once >"$wbj/o10" 2>&1
+grep -q "^STALE notes" "$wbj/o10" || {
+  echo "watch-background-jobs: quiet non-JSON record did not report STALE" >&2; exit 1; }
+
 # A job whose RECORD is old but whose sibling log is fresh is WORKING, not stale.
 # Runners write the record once at dispatch and stream progress to the log, so a
 # record-only liveness check cries wolf on every long phase.

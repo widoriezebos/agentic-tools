@@ -261,8 +261,13 @@ stop_recorded_components() {
   local state=$1/artifacts/agents/supervision/state.json component pid start tag
   [[ -f "$state" ]] || return 0
   for component in watcher reaper; do
-    read -r pid start tag < <(read_component_identity "$state" "$component" 2>/dev/null || true)
+    # The read itself must be guarded (script-orchestration-11): on a
+    # corrupt or partial state the substitution yields nothing, read
+    # returns 1 on EOF, and errexit killed the whole takeover with zero
+    # diagnostics — exactly where recovery matters most.
+    read -r pid start tag < <(read_component_identity "$state" "$component" 2>/dev/null || true) || true
     [[ -n "${pid:-}" ]] && stop_identity "$component" "$pid" "$start" "$tag" || true
+    pid=; start=; tag=
   done
 }
 
@@ -278,7 +283,7 @@ verify_armed() { # repo, owner pid/start/tag
     if identity_alive "$owner_pid" "$owner_start" "$owner_tag" && [[ -f "$state" && -f "$last" ]]; then
       functions_live=1
       for component in watcher reaper; do
-        read -r pid start tag < <(read_component_identity "$state" "$component" 2>/dev/null || true)
+        read -r pid start tag < <(read_component_identity "$state" "$component" 2>/dev/null || true) || true
         if [[ -z "${pid:-}" ]] || ! identity_alive "$pid" "$start" "$tag"; then functions_live=0; break; fi
         heartbeat=$(json_field "$state" "components.$component.heartbeat" 2>/dev/null || true)
         observed=$(json_field "$heartbeat" observedAtEpoch 2>/dev/null || echo 0)

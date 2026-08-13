@@ -47,7 +47,14 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   parse_supervisor_args "$@" || return 2
   record="$jobs/$job.json"
   gate_poll=$(adapter_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}") || return 2
-  while [[ ! -e "$gate" ]]; do sleep "$gate_poll"; done
+  # Capped like every host's wait (script-adapters-11): a dispatcher that
+  # dies before opening the gate must not leave an immortal supervisor
+  # sleeping forever with no heartbeat and no handshake deadline.
+  gate_deadline=$(( $(date +%s) + ${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} ))
+  while [[ ! -e "$gate" ]]; do
+    (( $(date +%s) <= gate_deadline )) || { echo "start gate never opened: $gate" >&2; return 1; }
+    sleep "$gate_poll"
+  done
   round=$(field "$record" round)
   root_job=$(root_job_id "$job")
   round_dir="$agents/$root_job/rounds/$round"

@@ -128,7 +128,11 @@ supervise() { # verb and remaining args
   record="$jobs/$job.json"
   gate_poll=$(fixture_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}")
   heartbeat_sleep=$(fixture_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-200}")
-  while [[ ! -e "$gate" ]]; do sleep "$gate_poll"; done
+  gate_deadline=$(( $(date +%s) + ${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} ))
+  while [[ ! -e "$gate" ]]; do
+    (( $(date +%s) <= gate_deadline )) || { echo "start gate never opened: $gate" >&2; exit 1; }
+    sleep "$gate_poll"
+  done
   round=$(field "$record" round)
   root_job=$("$ms" adapter root-job --jobs "$jobs" --job "$job")
   round_dir="$agents/$root_job/rounds/$round"
