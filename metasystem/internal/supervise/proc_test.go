@@ -189,3 +189,45 @@ func TestRegistryLedgerRecords(t *testing.T) {
 	// Exited is best-effort: a failed append is swallowed.
 	ledger.AppendExited("giving-up", "diag", false) // must not panic or block
 }
+
+// dispatch-supervise-6: the group count is real and its error paths are
+// verdicts, not silence.
+func TestProcessGroupMembersErrorPaths(t *testing.T) {
+	savedPids, savedPgid := groupAllPids, groupGetpgid
+	defer func() { groupAllPids, groupGetpgid = savedPids, savedPgid }()
+
+	// Real members are counted by pgid.
+	groupAllPids = func() ([]int64, error) { return []int64{10, 11, 12}, nil }
+	groupGetpgid = func(pid int64) (int64, error) {
+		if pid == 12 {
+			return 99, nil
+		}
+		return 42, nil
+	}
+	if n, err := processGroupMembers(42); err != nil || n != 2 {
+		t.Fatalf("count = %d, %v; want 2 members", n, err)
+	}
+
+	// ESRCH is genuine absence, not an error.
+	groupGetpgid = func(pid int64) (int64, error) {
+		if pid == 11 {
+			return 0, syscall.ESRCH
+		}
+		return 42, nil
+	}
+	if n, err := processGroupMembers(42); err != nil || n != 2 {
+		t.Fatalf("ESRCH member: count = %d, %v; want 2", n, err)
+	}
+
+	// Any other Getpgid failure is indeterminable.
+	groupGetpgid = func(pid int64) (int64, error) { return 0, syscall.EPERM }
+	if _, err := processGroupMembers(42); err == nil {
+		t.Fatal("a denied probe must be indeterminable, not an undercount")
+	}
+
+	// An unreadable process table is indeterminable.
+	groupAllPids = func() ([]int64, error) { return nil, syscall.EIO }
+	if _, err := processGroupMembers(42); err == nil {
+		t.Fatal("an unreadable table must be indeterminable")
+	}
+}

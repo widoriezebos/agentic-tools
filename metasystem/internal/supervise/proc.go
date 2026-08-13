@@ -220,14 +220,39 @@ func (p *ProcComponents) signalGroup(pid int64, sig syscall.Signal) {
 	_ = syscall.Kill(int(-pid), sig)
 }
 
-// processGroupMembers counts live processes in the group led by pgid.
-func processGroupMembers(pgid int64) (int, error) {
-	// getpgid on each candidate would need a full scan; census
-	// enumeration owns that. Until then GroupCount is used
-	// only for the ceiling, and the owner-alone fixtures inject it.
-	// Here we count the leader if alive as a conservative floor.
-	if err := syscall.Kill(int(pgid), 0); err == nil {
-		return 1, nil
+// Group enumeration goes through seams so the ceiling's error paths are
+// testable without a process-table fixture (dispatch-supervise-6).
+var (
+	groupAllPids = identity.AllPids
+	groupGetpgid = func(pid int64) (int64, error) {
+		pg, err := syscall.Getpgid(int(pid))
+		return int64(pg), err
 	}
-	return 0, nil
+)
+
+// processGroupMembers counts live processes in the group led by pgid — the
+// REAL enumeration the ceiling verdict needs (review dispatch-supervise-6:
+// the old leader-only floor could never exceed len(held), so the SLC-R4-010
+// duration property was vacuous outside test injection). Only ESRCH counts
+// as an absent member; any other failure makes the count indeterminable —
+// a process-table denial must not undercount while the breaker resets.
+func processGroupMembers(pgid int64) (int, error) {
+	pids, err := groupAllPids()
+	if err != nil {
+		return 0, fmt.Errorf("group ceiling count is indeterminable: %w", err)
+	}
+	count := 0
+	for _, pid := range pids {
+		pg, err := groupGetpgid(pid)
+		if err != nil {
+			if err == syscall.ESRCH {
+				continue // genuinely gone between enumeration and probe
+			}
+			return 0, fmt.Errorf("group ceiling count is indeterminable: getpgid %d: %w", pid, err)
+		}
+		if pg == pgid {
+			count++
+		}
+	}
+	return count, nil
 }

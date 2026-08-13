@@ -23,6 +23,7 @@ type fakeWorld struct {
 	launched       []Held
 	observation    Observation
 	groupCount     int
+	groupCountErr  error
 	stopProven     bool
 	stopped        []Held
 	relaunchedErr  error
@@ -73,7 +74,7 @@ func (w *fakeWorld) Launch(component Component, tag string) (identity.Ref, error
 	return ref, nil
 }
 func (w *fakeWorld) Observe(Held) Observation       { return w.observation }
-func (w *fakeWorld) GroupCount([]Held) (int, error) { return w.groupCount, nil }
+func (w *fakeWorld) GroupCount([]Held) (int, error) { return w.groupCount, w.groupCountErr }
 func (w *fakeWorld) Stop(held Held) bool {
 	w.stopped = append(w.stopped, held)
 	return w.stopProven
@@ -363,5 +364,24 @@ func TestTagsCarryGeneration(t *testing.T) {
 		if held.Tag != want {
 			t.Fatalf("tag %q, want %q", held.Tag, want)
 		}
+	}
+}
+
+// dispatch-supervise-6: an uncountable group is not a healthy one — the
+// count error maps to Indeterminable, which HOLDS the breaker where it is
+// (no reset, no increment: unknown never authorizes anything) instead of
+// being silently ignored and read as Healthy, which would reset the
+// breaker while a forking set outgrows its ceiling unseen.
+func TestCeilingCountErrorIsIndeterminable(t *testing.T) {
+	world := newWorld()
+	owner := newOwner(world)
+	establish(t, owner, world)
+	owner.Breaker.Consecutive = 2
+	world.groupCountErr = errors.New("process table denied")
+	if exit := owner.Cycle(time.Now()); exit != nil {
+		t.Fatalf("early exit: %+v", exit)
+	}
+	if owner.Breaker.Consecutive != 2 {
+		t.Fatalf("an indeterminable count must hold the breaker, not reset or advance it: %d", owner.Breaker.Consecutive)
 	}
 }

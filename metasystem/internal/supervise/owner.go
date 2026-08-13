@@ -269,7 +269,15 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 	// an incrementing observation and the set stops NOW.
 	members, err := o.Components.GroupCount(o.held)
 	observation := o.observeComponents()
-	if err == nil {
+	if err != nil {
+		// An uncountable group is NOT a healthy group: a process-table
+		// denial must not let a forking set grow past its ceiling while
+		// the breaker resets (review dispatch-supervise-6).
+		trace.Actions = append(trace.Actions, "ceiling-indeterminable")
+		if observation == Healthy {
+			observation = Indeterminable
+		}
+	} else {
 		trace.GroupCount = members
 		if stop, _ := CeilingVerdict(members, o.Ceiling); stop {
 			// Stop the set NOW: overshoot survives at most one
