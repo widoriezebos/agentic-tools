@@ -312,3 +312,36 @@ other record in the tree uses; the legacy "started" key is retired from
 both shell fixture writers, and the shared reader still accepts it during
 the transition so any straggler fixture keeps working. The dual-read drops
 once a full suite cycle proves no writer emits it.
+
+## Series position for Wido (2026-08-14, after the first valid rep)
+
+**The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
+engine e5cbe66, replayed at the corrected kit (d079b74): rep 2 passes ALL
+SEVEN validity gates — the series' first fully valid rep — and rep 1
+fails only the honest delegation floor. Every defect found across five
+cohorts is fixed and suite-proven: fence reservation leaks, three
+close-protocol teeth, park-over-live-delegate grading, the drain's owed
+reap, and both enforcement-stamp allowances. Note: the stored scorecards
+for this cohort were written by the pinned (pre-allowance) kit; the
+authoritative verdicts above are reproducible by replaying the frozen
+targets with the current kit.
+
+**The product story is the next question.** The valid rep scored
+acceptance 0.019; an earlier, differently-invalid rep scored 0.962 on the
+same contract. Baseline product variance is enormous (stop-loss parks
+roughly every other run under no-gain-budget 3), so a meaningful baseline
+needs more reps — at ~$9/rep — and a decision on how many valid reps the
+series design wants per arm.
+
+**Devin arm facts (from the kit, not improvised):** bm-2 is the Devin arm
+— devin swe-1-7, FREE in beta (bm-1's luna cost ruling explicitly does
+not transfer), but Devin runs UNCONTAINED: --sandbox is refused by org
+policy and a shell command demonstrably writes outside the workspace.
+Starting bm-2 means uncontained delegates on this machine — that is a
+human call, not a delegated one, regardless of budget. bm-2s is a codex
+sol arm ruled 2026-08-09. Spend so far ~$90 of EUR 240.
+
+**Recommended defaults awaiting your word:** (1) run 2-3 more baseline
+reps to characterize the variance (~$27); (2) decide the D10 floor
+question (rep 2 proves the floor is passable, so the strict reading now
+looks right); (3) bm-2's uncontained-Devin start is yours to green-light.
