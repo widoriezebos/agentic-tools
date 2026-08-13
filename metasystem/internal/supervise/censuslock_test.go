@@ -2,8 +2,10 @@ package supervise
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,5 +130,54 @@ func TestCensusLockReleaseLeavesSuccessorAlone(t *testing.T) {
 	}
 	if owner.Pid != 700 {
 		t.Fatalf("release freed the successor's lock: %+v", owner)
+	}
+}
+
+// unknownProber wraps the liveness table with pids whose liveness is
+// UNPROVABLE — Probe errors, yielding identity.Unknown at the caller.
+type unknownProber struct {
+	base    livenessProber
+	unknown map[int64]bool
+}
+
+func (p unknownProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	if p.unknown[pid] {
+		return identity.Exact{}, identity.Unknown, errors.New("liveness unprovable")
+	}
+	return p.base.Probe(pid)
+}
+
+// dispatch-supervise-3 (the review): Unknown liveness never authorizes a
+// census-lock takeover — indeterminacy keeps the lock exactly as life does.
+func TestCensusClaimRefusesUnknownOwner(t *testing.T) {
+	dir := t.TempDir()
+	first := &CensusWriterLock{
+		Dir:    dir,
+		Self:   identity.Ref{Pid: 300, StartedAtSec: 8},
+		Tag:    "watcher-first",
+		Prober: livenessProber{alive: map[int64]int64{300: 8}},
+	}
+	if err := first.Claim(); err != nil {
+		t.Fatalf("seed claim: %v", err)
+	}
+	claimant := &CensusWriterLock{
+		Dir:  dir,
+		Self: identity.Ref{Pid: 400, StartedAtSec: 9},
+		Tag:  "watcher-second",
+		Prober: unknownProber{
+			base:    livenessProber{alive: map[int64]int64{400: 9}},
+			unknown: map[int64]bool{300: true},
+		},
+	}
+	err := claimant.Claim()
+	if err == nil {
+		t.Fatal("a claim over an unprovable owner succeeded (takeover on Unknown)")
+	}
+	if !strings.Contains(err.Error(), "unprovable") {
+		t.Fatalf("the refusal does not name indeterminacy: %v", err)
+	}
+	// The original owner's lock is intact.
+	if _, err := os.Stat(lockOwnerPath(dir)); err != nil {
+		t.Fatalf("the refused takeover disturbed the lock: %v", err)
 	}
 }

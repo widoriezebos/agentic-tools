@@ -83,8 +83,15 @@ func (l *CensusWriterLock) Claim() error {
 		if err != nil {
 			return fmt.Errorf("census writer lock has malformed owner identity: %w", err)
 		}
-		if identity.AliveRef(l.Prober, identity.Ref{Pid: owner.Pid, StartedAtSec: owner.PidStartedAt}) == identity.Alive {
+		switch identity.AliveRef(l.Prober, identity.Ref{Pid: owner.Pid, StartedAtSec: owner.PidStartedAt}) {
+		case identity.Alive:
 			return fmt.Errorf("live census writer already owns %s", l.Dir)
+		case identity.Unknown:
+			// UNKNOWN NEVER AUTHORIZES (the three-way rule; review finding
+			// dispatch-supervise-3): a prior owner whose liveness cannot be
+			// proven keeps its lock exactly as a live one does. Taking over
+			// on indeterminacy could destroy a live writer's lock.
+			return fmt.Errorf("census writer liveness is unprovable; refusing takeover in %s", l.Dir)
 		}
 		// The owner is provably dead: move its husk aside so the next attempt
 		// can claim an empty lock. Losing that rename means another writer
