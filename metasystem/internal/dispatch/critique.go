@@ -42,26 +42,13 @@ func loadCritiqueState(repoRoot string) critiqueState {
 	return state
 }
 
-// chainRoot resolves a job's lineage root within the loaded table, or ""
-// when the walk leaves the table, cycles, or hits a malformed parent.
+// chainRoot resolves a job's lineage root within the loaded table via the
+// ONE lineage walker (review dispatch-supervise-7).
 func (s critiqueState) chainRoot(job string) string {
-	seen := map[string]bool{}
-	for {
-		record, present := s.records[job]
-		if !present || seen[job] {
-			return ""
-		}
-		seen[job] = true
-		parent, hasParent := record["parentJob"]
-		if !hasParent || parent == nil {
-			return job
-		}
-		next, ok := parent.(string)
-		if !ok {
-			return ""
-		}
-		job = next
-	}
+	return lineageRoot(func(id string) (map[string]any, bool) {
+		record, present := s.records[id]
+		return record, present
+	}, job)
 }
 
 // latestMember returns the chain's highest-round record among members with an

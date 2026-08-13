@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -699,5 +700,35 @@ func TestCloseCheckToleratesUndeliveredImplementerRounds(t *testing.T) {
 	if err := CloseCheck(repo, job); err == nil ||
 		!strings.Contains(err.Error(), "vanished after mirroring") {
 		t.Fatalf("a mirrored-then-lost diff must refuse: %v", err)
+	}
+}
+
+// dispatch-supervise-7: corrupt lineage has ONE verdict — a member of a
+// cyclic or broken chain belongs to NO chain, in both walkers.
+func TestLineageRootOneVerdict(t *testing.T) {
+	jobs := filepath.Join(t.TempDir(), "jobs")
+	os.MkdirAll(jobs, 0o755)
+	writeJSONFile(t, jobs, "root.json", map[string]any{"jobId": "root", "status": "completed"})
+	writeJSONFile(t, jobs, "kid.json", map[string]any{"jobId": "kid", "parentJob": "root", "status": "completed"})
+	// A cycle pair: the OLD disk walker attributed whichever record its
+	// broken walk stopped on; the one verdict is NO chain.
+	writeJSONFile(t, jobs, "cyc-a.json", map[string]any{"jobId": "cyc-a", "parentJob": "cyc-b", "status": "completed"})
+	writeJSONFile(t, jobs, "cyc-b.json", map[string]any{"jobId": "cyc-b", "parentJob": "cyc-a", "status": "completed"})
+	// A non-string parent: no chain.
+	writeJSONFile(t, jobs, "warp.json", map[string]any{"jobId": "warp", "parentJob": 7, "status": "completed"})
+	// A parent outside the table: no chain.
+	writeJSONFile(t, jobs, "orphan.json", map[string]any{"jobId": "orphan", "parentJob": "gone", "status": "completed"})
+
+	members, err := chainMembers(jobs, "root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, member := range members {
+		ids = append(ids, asString(member.record["jobId"]))
+	}
+	sort.Strings(ids)
+	if len(ids) != 2 || ids[0] != "kid" || ids[1] != "root" {
+		t.Fatalf("chain members = %v, want [kid root]", ids)
 	}
 }

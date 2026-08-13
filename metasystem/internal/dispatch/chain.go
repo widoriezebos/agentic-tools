@@ -18,41 +18,71 @@ type chainMember struct {
 	record map[string]any
 }
 
+// lineageRoot resolves a job's root through lookup: THE one verdict for
+// corrupt lineage (review dispatch-supervise-7). A walk that leaves the
+// table, cycles, or hits a non-string parent roots NOWHERE ("") — a
+// member of a corrupt chain is attributed to no chain, never to whatever
+// record a broken walk happened to stop on (the old disk walker's
+// verdict, which could disagree with the critique walker about the same
+// corrupt chain).
+func lineageRoot(lookup func(string) (map[string]any, bool), job string) string {
+	seen := map[string]bool{}
+	for {
+		record, present := lookup(job)
+		if !present || seen[job] {
+			return ""
+		}
+		seen[job] = true
+		parent, hasParent := record["parentJob"]
+		if !hasParent || parent == nil {
+			return job
+		}
+		next, ok := parent.(string)
+		if !ok {
+			return ""
+		}
+		job = next
+	}
+}
+
 // chainMembers returns every readable job record whose ancestry resolves to
-// root. A record whose parent walk breaks (missing ancestor, cycle,
-// non-string parent) belongs to no chain and is skipped.
+// root, walking ONE loaded table instead of re-reading parents from disk
+// per member. A record whose parent walk breaks (missing ancestor, cycle,
+// non-string parent) belongs to no chain and is skipped; a record that
+// cannot name itself cannot join a chain.
 func chainMembers(jobsDir, root string) ([]chainMember, error) {
 	paths, err := filepath.Glob(filepath.Join(jobsDir, "*.json"))
 	if err != nil {
 		return nil, err
 	}
 	sort.Strings(paths)
-	var members []chainMember
+	table := map[string]chainMember{}
+	var order []string
 	for _, path := range paths {
 		record, err := readObject(path)
 		if err != nil {
 			continue
 		}
-		current := record
-		seen := map[string]bool{}
-		for {
-			parent, present := current["parentJob"]
-			if !present || parent == nil {
-				break
-			}
-			name, ok := parent.(string)
-			if !ok || seen[name] {
-				break
-			}
-			seen[name] = true
-			next, err := readObject(filepath.Join(jobsDir, name+".json"))
-			if err != nil {
-				break
-			}
-			current = next
+		id := asString(record["jobId"])
+		if id == "" {
+			continue
 		}
-		if asString(current["jobId"]) == root {
-			members = append(members, chainMember{path: path, record: record})
+		if _, exists := table[id]; !exists {
+			order = append(order, id)
+		}
+		table[id] = chainMember{path: path, record: record}
+	}
+	lookup := func(id string) (map[string]any, bool) {
+		entry, ok := table[id]
+		if !ok {
+			return nil, false
+		}
+		return entry.record, true
+	}
+	var members []chainMember
+	for _, id := range order {
+		if lineageRoot(lookup, id) == root {
+			members = append(members, table[id])
 		}
 	}
 	return members, nil
