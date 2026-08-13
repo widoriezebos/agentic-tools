@@ -37,3 +37,17 @@ func TestWithRecordLockIsBounded(t *testing.T) {
 		t.Fatalf("the bound did not release the caller: %v", elapsed)
 	}
 }
+
+// D12: the job-record writer derives its durable anchor from the path —
+// the checkout root above artifacts/ — and transient paths anchor nowhere.
+func TestArtifactsAnchorDerivation(t *testing.T) {
+	if got := artifactsAnchor("/repo/x/artifacts/agents/jobs/j.json"); got != "/repo/x" {
+		t.Fatalf("anchor = %q, want /repo/x", got)
+	}
+	if got := artifactsAnchor("/tmp/staging/file.json"); got != "" {
+		t.Fatalf("non-artifacts path must not anchor: %q", got)
+	}
+	if got := artifactsAnchor("/a/artifacts/agents/x/artifacts/agents/jobs/j.json"); got != "/a/artifacts/agents/x" {
+		t.Fatalf("nested artifacts anchors at the DEEPEST checkout: %q", got)
+	}
+}

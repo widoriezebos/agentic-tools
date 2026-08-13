@@ -33,6 +33,14 @@
 // failed chain sync leaves the directories visible, so a retry sees them
 // pre-existing, skips the chain, and could report durable over an unproven
 // chain.
+// Adopted callers of the two-outcome (durable, err) contract, per the
+// staged migration D12 records: dispatch's job-record writes (anchor
+// derived as the checkout root above artifacts/), the lease's state
+// writes (same derivation), and the registry's compaction write (anchor
+// one level above the registry directory) — each witnesses a doubted
+// publication instead of discarding it. Every other caller still passes
+// anchor "" (the pre-B5 behavior) until its package is touched; no
+// crash-durability is claimed for those paths.
 package atomicfile
 
 import (

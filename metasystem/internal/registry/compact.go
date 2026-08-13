@@ -137,12 +137,16 @@ func WriteCompacted(path string, kept []Frame) error {
 	if _, err := os.Stat(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("compaction temp file: %w", err)
 	}
-	// Through the durable-write owner (go-production-grade B5). The registry
-	// is durable machine-wide state; its anchor conversion follows with the
-	// caller migration.
-	_, err := atomicfile.WriteText(path, content.String(), "")
+	// Through the durable-write owner (go-production-grade B5), two-outcome
+	// contract adopted (D12): the registry is durable machine-wide state,
+	// anchored one level above its own directory, and a doubted
+	// publication is witnessed on stderr.
+	durable, err := atomicfile.WriteText(path, content.String(), filepath.Dir(filepath.Dir(path)))
 	if err != nil {
 		return fmt.Errorf("compaction write: %w", err)
+	}
+	if !durable {
+		fmt.Fprintf(os.Stderr, "durability doubt: %s published without directory sync\n", path)
 	}
 	return nil
 }
