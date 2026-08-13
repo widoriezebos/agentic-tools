@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // mirrorSource is one file the mirror carries: its path and its relative
@@ -41,12 +42,19 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 	payload := filepath.Join(agents, rootJob)
 
 	// Test hook: a chain marked .mirror-fail-once fails exactly one mirror
-	// attempt, so recovery from an interrupted mirror stays provable.
-	failOnce := filepath.Join(payload, ".mirror-fail-once")
-	if _, err := os.Stat(failOnce); err == nil {
-		os.Remove(failOnce)
-		os.WriteFile(filepath.Join(payload, ".mirror-failed"), []byte("scripted interruption\n"), 0o644)
-		return fmt.Errorf("scripted mirror interruption")
+	// attempt, so recovery from an interrupted mirror stays provable. The
+	// hook is honored ONLY in a fake-runtime checkout (the guard pattern
+	// fixtureCommand established): the payload directory is
+	// delegate-writable territory, and a stray or malicious marker must
+	// not fail evidence mirroring in a real checkout (review
+	// dispatch-supervise-5).
+	if runtimesConfigured(repoRoot) == "fake" {
+		failOnce := filepath.Join(payload, ".mirror-fail-once")
+		if _, err := os.Stat(failOnce); err == nil {
+			os.Remove(failOnce)
+			os.WriteFile(filepath.Join(payload, ".mirror-failed"), []byte("scripted interruption\n"), 0o644)
+			return fmt.Errorf("scripted mirror interruption")
+		}
 	}
 
 	destination := filepath.Join(evidenceResolved, "agents", CheckoutSegment(checkoutResolved), rootJob)
@@ -212,6 +220,22 @@ func mirrorLand(sources []mirrorSource, old map[string]any, destination, recordP
 		return "", err
 	}
 	return sha256File(manifestPath)
+}
+
+// runtimesConfigured reads the checkout's configured runtime list, empty
+// when the conf is missing or silent. Fault-injection hooks key off it:
+// only a checkout whose SOLE runtime is fake may honor scripted failures.
+func runtimesConfigured(repoRoot string) string {
+	conf, err := os.ReadFile(filepath.Join(repoRoot, "metasystem.conf"))
+	if err != nil {
+		return ""
+	}
+	for _, raw := range strings.Split(string(conf), "\n") {
+		if strings.HasPrefix(raw, "metasystem.runtimes=") {
+			return strings.TrimSpace(strings.SplitN(raw, "=", 2)[1])
+		}
+	}
+	return ""
 }
 
 // CheckoutSegment names the per-checkout directory a checkout's evidence
