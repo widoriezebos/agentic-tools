@@ -251,3 +251,22 @@ adoption and a kill-capable supervision sweep, which touches the
 no-kill-authority rule and deserves its own pass. F5 — the standing
 reaper logs nothing when it declines to act; emit the
 running∧CapExpired∧custodian-alive state once per pass.
+
+## D12 — The durability contract gets FINISHED, not retired (W2.6 decision)
+
+**Decision:** finish the B5 two-outcome migration for the writers of
+durable state, in the scope the finding names: dispatch's custody/record
+writes, the lease's state writes, and the registry's snapshot writes
+thread the repository root as anchor and ACT on durable=false by
+witnessing doubt (an event where an emitter exists, stderr otherwise).
+Remaining call sites keep anchor "" until their packages are otherwise
+touched — an explicitly staged migration, not an unclaimed guarantee:
+the package doc will say which callers have adopted the contract.
+
+**Why not retire:** the contract is go-production-grade B5's deliberate
+product; dispatch/record.go marks the adoption as pending work, not as a
+rejected idea. Retiring would delete crash-safety machinery the
+durability program built and tested, to save threading a parameter.
+
+**Execution note:** L-effort; runs as its own pass with a full suite +
+VM cycle, after the in-flight clean-measurement baseline cohort.
