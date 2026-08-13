@@ -224,3 +224,18 @@ func TestRepairThenAppendConverges(t *testing.T) {
 		}
 	}
 }
+
+// adapter-host-registry-4: the writer's guard must match the reader's
+// acceptance — ReadFrames admits only objects, so the door refuses
+// everything else before it can poison the registry.
+func TestAppendFrameRefusesNonObjectPayloads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "registry.ndjson")
+	for _, payload := range []string{`[1,2]`, `"x"`, `123`, `null`, `true`, `{broken`} {
+		if err := AppendFrame(path, []byte(payload)); err == nil {
+			t.Fatalf("non-object payload %q was admitted", payload)
+		}
+	}
+	if err := AppendFrame(path, []byte(`{"ok": true}`)); err != nil {
+		t.Fatalf("an object payload must still append: %v", err)
+	}
+}

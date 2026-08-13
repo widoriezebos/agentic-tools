@@ -38,8 +38,15 @@ const TornEvent = "torn"
 // already recovers (SLC-R6-009: the repair is itself crash-recoverable,
 // and a re-run of it is idempotent — at worst one more marker).
 func AppendFrame(path string, payload []byte) error {
-	if !json.Valid(payload) {
-		return fmt.Errorf("registry append refused: payload is not valid JSON")
+	// The writer's guard matches the reader's acceptance: ReadFrames only
+	// admits JSON OBJECTS, so a valid non-object payload ([1,2], "x", 123)
+	// would append fine and then read as a tolerated fragment that trips
+	// CorruptionError on the next record — one buggy caller turning the
+	// machine-wide registry permanently fail-closed (REG-5) when the
+	// append could have refused at the door (review adapter-host-registry-4).
+	var object map[string]any
+	if json.Unmarshal(payload, &object) != nil || object == nil {
+		return fmt.Errorf("registry append refused: payload is not a JSON object")
 	}
 	if bytes.ContainsRune(payload, '\n') {
 		return fmt.Errorf("registry append refused: payload spans multiple lines")
