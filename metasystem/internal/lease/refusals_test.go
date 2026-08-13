@@ -3,6 +3,7 @@ package lease
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -121,5 +122,59 @@ func TestExpectedEpochMismatchRefused(t *testing.T) {
 	right := int64(1)
 	if _, err := RequireHolder(root, pid, &right); err != nil {
 		t.Fatalf("gating on the correct epoch should pass, got %v", err)
+	}
+}
+
+// lease-census-1 (the review): classification fails CLOSED. An unreadable
+// state file or job record — anything short of genuine absence — refuses
+// classification instead of silently yielding empty custody, which
+// Classify would have escalated to HUMAN and RequireHolder would have
+// passed through the write gate ungated.
+func TestCustodyIdentitiesFailClosed(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits cannot bite as root")
+	}
+	root := t.TempDir()
+	supervision := filepath.Join(root, "artifacts", "agents", "supervision")
+	os.MkdirAll(supervision, 0o755)
+
+	// Absent state: supervision unarmed, classification proceeds.
+	if _, _, err := custodyIdentities(root); err != nil {
+		t.Fatalf("absent state must not refuse: %v", err)
+	}
+	// Unreadable state: refuses by name.
+	statePath := filepath.Join(supervision, "state.json")
+	os.WriteFile(statePath, []byte(`{"owner":null,"components":{}}`), 0o644)
+	os.Chmod(statePath, 0o000)
+	_, _, err := custodyIdentities(root)
+	os.Chmod(statePath, 0o644)
+	if err == nil || !strings.Contains(err.Error(), "supervision state is unreadable") {
+		t.Fatalf("unreadable state did not refuse: %v", err)
+	}
+
+	// Corrupt job record: refuses like corrupt state.
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	os.MkdirAll(jobs, 0o755)
+	os.WriteFile(filepath.Join(jobs, "j1.json"), []byte("{broken"), 0o644)
+	if _, _, err := custodyIdentities(root); err == nil ||
+		!strings.Contains(err.Error(), "corrupt or unidentified") {
+		t.Fatalf("corrupt record did not refuse: %v", err)
+	}
+	os.Remove(filepath.Join(jobs, "j1.json"))
+
+	// A record without a jobId is unidentified custody: refuses.
+	os.WriteFile(filepath.Join(jobs, "j2.json"), []byte(`{"pid":1}`), 0o644)
+	if _, _, err := custodyIdentities(root); err == nil {
+		t.Fatal("an unidentified record did not refuse")
+	}
+	os.Remove(filepath.Join(jobs, "j2.json"))
+
+	// An unreadable job record refuses by name.
+	os.WriteFile(filepath.Join(jobs, "j3.json"), []byte(`{"jobId":"j3"}`), 0o644)
+	os.Chmod(filepath.Join(jobs, "j3.json"), 0o000)
+	_, _, err = custodyIdentities(root)
+	os.Chmod(filepath.Join(jobs, "j3.json"), 0o644)
+	if err == nil || !strings.Contains(err.Error(), "job record unreadable") {
+		t.Fatalf("unreadable record did not refuse: %v", err)
 	}
 }

@@ -200,7 +200,17 @@ func custodyIdentities(root string) (supervision map[procKey]bool, adapters map[
 	adapters = map[procKey]string{}
 
 	statePath := filepath.Join(root, "artifacts/agents/supervision/state.json")
-	if data, readErr := os.ReadFile(statePath); readErr == nil {
+	data, readErr := os.ReadFile(statePath)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		// FAIL CLOSED (review lease-census-1): a state file that EXISTS but
+		// cannot be read is not the same as supervision being unarmed. The
+		// old code silently skipped here, custody came back empty, Classify
+		// fell through to HUMAN — and RequireHolder passes HUMAN through
+		// the write gate ungated. A permissions mishap must refuse, exactly
+		// as the neighbouring parse failure always has.
+		return nil, nil, fmt.Errorf("caller classification refused: supervision state is unreadable: %v", readErr)
+	}
+	if readErr == nil {
 		var state struct {
 			Owner      *supervisedProc            `json:"owner"`
 			Components map[string]*supervisedProc `json:"components"`
@@ -223,7 +233,13 @@ func custodyIdentities(root string) (supervision map[procKey]bool, adapters map[
 	for _, path := range jobs {
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
-			continue
+			// A record that vanished between glob and read is a race, not a
+			// failure; anything else refuses — a record this pass cannot
+			// read may carry the very custody that gates this caller.
+			if os.IsNotExist(readErr) {
+				continue
+			}
+			return nil, nil, fmt.Errorf("caller classification refused: job record unreadable: %s: %v", filepath.Base(path), readErr)
 		}
 		var job struct {
 			JobId            string           `json:"jobId"`
@@ -232,7 +248,9 @@ func custodyIdentities(root string) (supervision map[procKey]bool, adapters map[
 			CustodyProcesses []supervisedProc `json:"custodyProcesses"`
 		}
 		if json.Unmarshal(data, &job) != nil || job.JobId == "" {
-			continue
+			// Corrupt records refuse like corrupt state: silently dropping
+			// custody is the same fail-open with a different spelling.
+			return nil, nil, fmt.Errorf("caller classification refused: job record corrupt or unidentified: %s", filepath.Base(path))
 		}
 		if job.Pid != nil && job.PidStartedAt != nil {
 			adapters[procKey{*job.Pid, *job.PidStartedAt}] = job.JobId
