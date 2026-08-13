@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -837,81 +836,31 @@ func (d *contractDoc) thresholdNames() []string {
 	return names
 }
 
-// runGate measures the candidate against the frozen instruments in a throwaway
-// worktree: the candidate commit checked out, the gate and truth paths restored
-// to their gate-ref bytes, and the gate command run under the named per-job
-// ceiling. It returns the candidate sha, the reported metrics, and how many
-// thresholds it missed.
-func (d *contractDoc) runGate(repo, projectRoot string) (string, map[string]string, int, error) {
+// runGate measures the pinned candidate against the frozen instruments in
+// its own throwaway worktree — materialized and executed through the same
+// two recipes every measurement uses (materializeCandidate, measureCommand)
+// so the worktree and execution behavior have exactly one home each. It
+// returns the reported metrics and how many thresholds they missed.
+func (d *contractDoc) runGate(repo, projectRoot, candidateSHA, gateRef string) (map[string]string, int, error) {
 	values := d.values
-	gateRef, err := contractGitTrim(repo, "rev-parse", values["gate.ref"]+"^{commit}")
+	commandRoot, cleanup, err := d.materializeCandidate(repo, projectRoot, candidateSHA, gateRef)
 	if err != nil {
-		return "", nil, 0, err
+		return nil, 0, err
 	}
-	branch, err := d.candidateBranch(repo)
-	if err != nil {
-		return "", nil, 0, err
-	}
-	candidateSHA, err := contractGitTrim(repo, "rev-parse", branch+"^{commit}")
-	if err != nil {
-		return "", nil, 0, err
-	}
-	restored, err := d.restoredPaths(repo, projectRoot, gateRef)
-	if err != nil {
-		return "", nil, 0, err
-	}
-
-	scratch, err := os.MkdirTemp("", "mission-gate.")
-	if err != nil {
-		return "", nil, 0, err
-	}
-	defer os.RemoveAll(scratch)
-	worktree := filepath.Join(scratch, "candidate")
-	defer gitTry(repo, "worktree", "remove", "--force", worktree)
-
-	if _, err := gitOutput(repo, "worktree", "add", "--detach", "--quiet", worktree, candidateSHA); err != nil {
-		return "", nil, 0, err
-	}
-	if _, err := gitOutput(worktree, append([]string{"checkout", "--quiet", gateRef, "--"}, restored...)...); err != nil {
-		return "", nil, 0, err
-	}
-	rel, err := filepath.Rel(resolvePath(repo), resolvePath(projectRoot))
-	if err != nil {
-		return "", nil, 0, stateErr("metasystem project root is outside its git repository")
-	}
-	commandRoot := worktree
-	if rel != "." {
-		commandRoot = filepath.Join(worktree, rel)
-	}
+	defer cleanup()
 
 	capMin, _ := strconv.Atoi(values["fence.job-cap-min"])
-	command := exec.Command("bash", "-lc", values["gate.command"])
-	command.Dir = commandRoot
-	var output strings.Builder
-	command.Stdout = &output
-	command.Stderr = &output
-	// Bounded with group-kill (B4): a context deadline kills only bash,
-	// and grandchildren holding the output pipe would block past the
-	// ceiling — with the deferred worktree cleanup waiting behind them.
-	runErr := boundedexec.Run(command, time.Duration(capMin)*time.Minute, "contract gate command")
-	if errors.Is(runErr, boundedexec.ErrTimedOut) {
-		return "", nil, 0, stateErr("gate measurement exceeded named fence.job-cap-min ceiling (%sm)", values["fence.job-cap-min"])
+	metrics, code, timedOut, err := measureCommand(commandRoot, values["gate.command"], capMin)
+	if err != nil {
+		return nil, 0, err
 	}
-	if runErr != nil {
-		code := 1
-		var exit *exec.ExitError
-		if errors.As(runErr, &exit) {
-			code = exit.ExitCode()
-		}
-		return "", nil, 0, stateErr("gate measurement failed with exit %d", code)
+	if timedOut {
+		return nil, 0, stateErr("gate measurement exceeded named fence.job-cap-min ceiling (%sm)", values["fence.job-cap-min"])
+	}
+	if code != 0 {
+		return nil, 0, stateErr("gate measurement failed with exit %d", code)
 	}
 
-	metrics := map[string]string{}
-	for _, line := range strings.Split(output.String(), "\n") {
-		if m := contractMetricRe.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
-			metrics[m[1]] = m[2]
-		}
-	}
 	names := d.thresholdNames()
 	var missingMetrics []string
 	for _, name := range names {
@@ -920,7 +869,7 @@ func (d *contractDoc) runGate(repo, projectRoot string) (string, map[string]stri
 		}
 	}
 	if len(missingMetrics) > 0 {
-		return "", nil, 0, stateErr("gate output omitted declared metric(s): %s", strings.Join(missingMetrics, ", "))
+		return nil, 0, stateErr("gate output omitted declared metric(s): %s", strings.Join(missingMetrics, ", "))
 	}
 	failures := 0
 	reported := map[string]string{}
@@ -928,13 +877,13 @@ func (d *contractDoc) runGate(repo, projectRoot string) (string, map[string]stri
 		reported[name] = metrics[name]
 		pass, err := contractThresholdPasses(values["gate.threshold."+name], metrics[name])
 		if err != nil {
-			return "", nil, 0, err
+			return nil, 0, err
 		}
 		if !pass {
 			failures++
 		}
 	}
-	return candidateSHA, reported, failures, nil
+	return reported, failures, nil
 }
 
 // candidateBranch names the branch the candidate lives on — the sealed branch
@@ -1044,7 +993,11 @@ func (d *contractDoc) expectedSeal(repo, projectRoot string, runBaseline bool) (
 	fields = append(fields, contractSealField{"sealed.exposure.statement", values["exposure"] + "|" + strings.Join(echo, ",")})
 
 	if runBaseline {
-		candidateSHA, metrics, failures, err := d.runGate(repo, projectRoot)
+		candidateSHA, gateRef, err := d.resolvePins(repo)
+		if err != nil {
+			return nil, err
+		}
+		metrics, failures, err := d.runGate(repo, projectRoot, candidateSHA, gateRef)
 		if err != nil {
 			return nil, err
 		}
@@ -1165,7 +1118,11 @@ func (d *contractDoc) preflight(repo, projectRoot string) error {
 	if err := d.verifyOrigin(repo); err != nil {
 		return err
 	}
-	if _, _, _, err := d.runGate(repo, projectRoot); err != nil {
+	preflightSHA, preflightGateRef, err := d.resolvePins(repo)
+	if err != nil {
+		return err
+	}
+	if _, _, err := d.runGate(repo, projectRoot, preflightSHA, preflightGateRef); err != nil {
 		return err
 	}
 	if err := contractVerifySupervision(projectRoot); err != nil {

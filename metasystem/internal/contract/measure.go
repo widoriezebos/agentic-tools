@@ -46,7 +46,16 @@ func Measure(path string, previous map[string]string) (*MeasureResult, error) {
 }
 
 func (d *contractDoc) measure(repo, projectRoot string, previous map[string]string) (*MeasureResult, error) {
-	candidateSHA, metrics, failures, err := d.runGate(repo, projectRoot)
+	// The pins are resolved exactly ONCE per measurement: with concurrent
+	// jobs allowed to land commits on the mission branch mid-cycle, a
+	// second resolve could hand the guards a different commit than the
+	// gate measured, and the ledger would record one CandidateSHA over
+	// mixed readings — evidence that never existed on any single commit.
+	candidateSHA, gateRef, err := d.resolvePins(repo)
+	if err != nil {
+		return nil, err
+	}
+	metrics, failures, err := d.runGate(repo, projectRoot, candidateSHA, gateRef)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +68,7 @@ func (d *contractDoc) measure(repo, projectRoot string, previous map[string]stri
 	if err != nil {
 		return nil, err
 	}
-	guards, guardsPassed, err := d.runGuards(repo, projectRoot)
+	guards, guardsPassed, err := d.runGuards(repo, projectRoot, candidateSHA, gateRef)
 	if err != nil {
 		return nil, err
 	}
@@ -140,13 +149,18 @@ func (d *contractDoc) classify(metrics map[string]string, prior map[string]float
 // gate saw and reports whether every guard cleared its floor. A guard whose
 // command fails, times out, or omits its own metric is a measurement error, not
 // a soft failure.
-func (d *contractDoc) runGuards(repo, projectRoot string) (map[string]string, bool, error) {
+func (d *contractDoc) runGuards(repo, projectRoot, candidateSHA, gateRef string) (map[string]string, bool, error) {
 	names := d.guardNames()
 	guards := make(map[string]string, len(names))
 	if len(names) == 0 {
 		return guards, true, nil
 	}
-	_, commandRoot, cleanup, err := d.candidateWorktree(repo, projectRoot)
+	// The guards get their OWN clean worktree at the same pinned SHAs the
+	// gate measured. A shared live worktree is not equivalent: gate and
+	// guard commands are arbitrary bash with cwd inside the worktree, so
+	// the gate could mutate what the guards read and defeat the
+	// frozen-instruments restore.
+	commandRoot, cleanup, err := d.materializeCandidate(repo, projectRoot, candidateSHA, gateRef)
 	if err != nil {
 		return nil, false, err
 	}
@@ -197,30 +211,37 @@ func (d *contractDoc) guardNames() []string {
 	return names
 }
 
-// candidateWorktree materializes the candidate in a throwaway worktree with the
-// gate and truth paths restored to their gate-ref bytes — the same reproducible
-// state the gate measures — and returns the directory a measurement command runs
-// in together with a cleanup to remove the worktree.
-func (d *contractDoc) candidateWorktree(repo, projectRoot string) (string, string, func(), error) {
-	gateRef, err := contractGitTrim(repo, "rev-parse", d.values["gate.ref"]+"^{commit}")
+// resolvePins reads the two commits one measurement is pinned to: the
+// candidate at the tip of the sealed branch, and the frozen-instruments
+// gate ref. Every worktree of the measurement materializes at these pins.
+func (d *contractDoc) resolvePins(repo string) (candidateSHA, gateRef string, err error) {
+	gateRef, err = contractGitTrim(repo, "rev-parse", d.values["gate.ref"]+"^{commit}")
 	if err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
 	branch, err := d.candidateBranch(repo)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
-	candidateSHA, err := contractGitTrim(repo, "rev-parse", branch+"^{commit}")
+	candidateSHA, err = contractGitTrim(repo, "rev-parse", branch+"^{commit}")
 	if err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
+	return candidateSHA, gateRef, nil
+}
+
+// materializeCandidate builds a throwaway worktree at the pinned candidate
+// with the gate and truth paths restored to their pinned gate-ref bytes —
+// the reproducible state every measurement command runs in — and returns
+// the directory to run in together with a cleanup to remove the worktree.
+func (d *contractDoc) materializeCandidate(repo, projectRoot, candidateSHA, gateRef string) (string, func(), error) {
 	restored, err := d.restoredPaths(repo, projectRoot, gateRef)
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
-	scratch, err := os.MkdirTemp("", "mission-guard.")
+	scratch, err := os.MkdirTemp("", "mission-candidate.")
 	if err != nil {
-		return "", "", nil, err
+		return "", nil, err
 	}
 	worktree := filepath.Join(scratch, "candidate")
 	cleanup := func() {
@@ -229,22 +250,22 @@ func (d *contractDoc) candidateWorktree(repo, projectRoot string) (string, strin
 	}
 	if _, err := gitOutput(repo, "worktree", "add", "--detach", "--quiet", worktree, candidateSHA); err != nil {
 		cleanup()
-		return "", "", nil, err
+		return "", nil, err
 	}
 	if _, err := gitOutput(worktree, append([]string{"checkout", "--quiet", gateRef, "--"}, restored...)...); err != nil {
 		cleanup()
-		return "", "", nil, err
+		return "", nil, err
 	}
 	rel, err := filepath.Rel(resolvePath(repo), resolvePath(projectRoot))
 	if err != nil {
 		cleanup()
-		return "", "", nil, stateErr("metasystem project root is outside its git repository")
+		return "", nil, stateErr("metasystem project root is outside its git repository")
 	}
 	commandRoot := worktree
 	if rel != "." {
 		commandRoot = filepath.Join(worktree, rel)
 	}
-	return candidateSHA, commandRoot, cleanup, nil
+	return commandRoot, cleanup, nil
 }
 
 // measureCommand runs one measurement command under the named per-job ceiling
