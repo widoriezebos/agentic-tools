@@ -190,26 +190,26 @@ func gateMetricNames(values map[string]string) []string {
 // jobStatus maps a reserved job id to its recorded status; a reservation with
 // no readable record counts as active, because losing sight of a job must
 // never relax a fence.
-func fenceReachedAt(fences map[string]any, values map[string]string, jobStatus map[string]string, now time.Time) (bool, error) {
+func fenceReachedAt(fences map[string]any, values map[string]string, jobStatus map[string]string, now time.Time) (bool, []string, error) {
 	startedAt, _ := fences["startedAt"].(string)
 	started, err := time.Parse(time.RFC3339, startedAt)
 	if err != nil {
-		return false, failf(3, "mission fence counters carry an invalid startedAt: %v", err)
+		return false, nil, failf(3, "mission fence counters carry an invalid startedAt: %v", err)
 	}
 	elapsedHours := now.Sub(started).Seconds() / 3600
 	wallClock, err := strconv.ParseFloat(values["fence.wall-clock-hours"], 64)
 	if err != nil {
-		return false, failf(3, "mission contract fence.wall-clock-hours is not numeric")
+		return false, nil, failf(3, "mission contract fence.wall-clock-hours is not numeric")
 	}
 	cycles, ok := jsonInt(fences["cycles"])
 	if !ok {
-		return false, failf(3, "mission fence counters carry an invalid cycle count")
+		return false, nil, failf(3, "mission fence counters carry an invalid cycle count")
 	}
 	limits := map[string]int{}
 	for _, name := range []string{"fence.cycles", "fence.jobs", "fence.concurrency"} {
 		limit, err := intFromString(values[name])
 		if err != nil {
-			return false, failf(3, "mission contract %s is not an integer", name)
+			return false, nil, failf(3, "mission contract %s is not an integer", name)
 		}
 		limits[name] = limit
 	}
@@ -220,11 +220,20 @@ func fenceReachedAt(fences map[string]any, values map[string]string, jobStatus m
 			active++
 		}
 	}
-	reached := elapsedHours >= wallClock ||
-		cycles >= int64(limits["fence.cycles"]) ||
-		len(reservations) >= limits["fence.jobs"] ||
-		active >= limits["fence.concurrency"]
-	return reached, nil
+	var names []string
+	if elapsedHours >= wallClock {
+		names = append(names, "fence.wall-clock-hours")
+	}
+	if cycles >= int64(limits["fence.cycles"]) {
+		names = append(names, "fence.cycles")
+	}
+	if len(reservations) >= limits["fence.jobs"] {
+		names = append(names, "fence.jobs")
+	}
+	if active >= limits["fence.concurrency"] {
+		names = append(names, "fence.concurrency")
+	}
+	return len(names) > 0, names, nil
 }
 
 // missionJobStatuses maps each of the mission's job records (by file stem) to

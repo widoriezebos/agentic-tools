@@ -93,14 +93,23 @@ func (e *Engine) Answer(askID, answer string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return exitFor(err)
 		}
-		reached, err := e.fenceReached(values)
+		reached, names, err := e.fenceReached(values)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return exitFor(err)
 		}
-		if !reached {
-			unpark()
+		if reached {
+			// The amendment passed preflight but did not clear what
+			// tripped (e.g. the human raised fence.cycles while the
+			// wall clock kept growing). Consuming the only fence ask
+			// here would park the mission beyond the documented
+			// surface's reach (review missionrunner-4): refuse, leave
+			// the ask open, and NAME the fence still reached so the
+			// human amends the right limit and answers again.
+			fmt.Fprintf(os.Stderr, "answer refused: fence(s) still reached after the amendment: %s; raise those limits and answer again\n", strings.Join(names, ", "))
+			return 3
 		}
+		unpark()
 	}
 	waiting, _ := proposed["waitingList"].([]any)
 	remaining := []any{}
@@ -288,25 +297,25 @@ func (e *Engine) answerDrainStalled(statePath string, state, ask map[string]any,
 // TODO(go-wiring): this repeats the threshold math that lives in the
 // mission-fence family; it needs a mission-fence verb that reports whether a
 // contract's fences are reached, then the answer path can call that instead.
-func (e *Engine) fenceReached(values map[string]string) (bool, error) {
-	reached, err := e.fenceReachedInner(values)
+func (e *Engine) fenceReached(values map[string]string) (bool, []string, error) {
+	reached, names, err := e.fenceReachedInner(values)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	e.emit("fence-check", fmt.Sprintf("reached=%v", reached), map[string]string{
 		"missionId": e.Mission, "fence": "mission-fences",
 	})
-	return reached, nil
+	return reached, names, nil
 }
 
-func (e *Engine) fenceReachedInner(values map[string]string) (bool, error) {
+func (e *Engine) fenceReachedInner(values map[string]string) (bool, []string, error) {
 	path := e.fencesPath()
 	if !pathExists(path) {
-		return false, nil
+		return false, nil, nil
 	}
 	fences, err := readDocLabeled(path, "mission fence counters", 3)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	return fenceReachedAt(fences, values, missionJobStatuses(e.Root, e.Mission), time.Now().UTC())
 }

@@ -20,9 +20,9 @@ func TestFenceReachedThroughTheEngine(t *testing.T) {
 		"fence.concurrency":      "3",
 	}
 	// Absent counters: not reached, and no error.
-	reached, err := engine.fenceReached(values)
-	if err != nil || reached {
-		t.Fatalf("absent counters: reached=%v err=%v", reached, err)
+	reached, names, err := engine.fenceReached(values)
+	if err != nil || reached || len(names) != 0 {
+		t.Fatalf("absent counters: reached=%v names=%v err=%v", reached, names, err)
 	}
 	// Counters at the cycle limit: reached.
 	dir := filepath.Dir(engine.fencesPath())
@@ -32,16 +32,19 @@ func TestFenceReachedThroughTheEngine(t *testing.T) {
 	if err := os.WriteFile(engine.fencesPath(), []byte(counters), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	reached, err = engine.fenceReached(values)
+	reached, names, err = engine.fenceReached(values)
 	if err != nil {
 		t.Fatalf("counters at limit: %v", err)
 	}
 	if !reached {
 		t.Fatal("the cycle fence was reached and not reported")
 	}
+	if len(names) != 1 || names[0] != "fence.cycles" {
+		t.Fatalf("the reached fence must be NAMED for the answer refusal: %v", names)
+	}
 	// Malformed counters surface as an error, never a silent false.
 	os.WriteFile(engine.fencesPath(), []byte("{broken\n"), 0o644)
-	if _, err := engine.fenceReached(values); err == nil {
+	if _, _, err := engine.fenceReached(values); err == nil {
 		t.Fatal("malformed counters read as a clean verdict")
 	}
 }

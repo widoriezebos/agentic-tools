@@ -129,27 +129,27 @@ func TestFenceReachedAt(t *testing.T) {
 	}
 	base := fences(now.Add(-time.Hour).Format(time.RFC3339), 0)
 	base["cycles"] = json.Number("1")
-	reached, err := fenceReachedAt(base, values, nil, now)
+	reached, _, err := fenceReachedAt(base, values, nil, now)
 	if err != nil || reached {
 		t.Fatalf("under every fence: got %v, %v", reached, err)
 	}
 
 	old := fences(now.Add(-3*time.Hour).Format(time.RFC3339), 0)
 	old["cycles"] = json.Number("0")
-	if reached, err = fenceReachedAt(old, values, nil, now); err != nil || !reached {
+	if reached, _, err = fenceReachedAt(old, values, nil, now); err != nil || !reached {
 		t.Fatalf("wall clock fence: got %v, %v", reached, err)
 	}
 
 	spent := fences(now.Format(time.RFC3339), 0)
 	spent["cycles"] = json.Number("3")
-	if reached, err = fenceReachedAt(spent, values, nil, now); err != nil || !reached {
+	if reached, _, err = fenceReachedAt(spent, values, nil, now); err != nil || !reached {
 		t.Fatalf("cycle fence: got %v, %v", reached, err)
 	}
 
 	jobs := fences(now.Format(time.RFC3339), 0, "j1", "j2")
 	jobs["cycles"] = json.Number("0")
 	status := map[string]string{"j1": "completed", "j2": "failed"}
-	if reached, err = fenceReachedAt(jobs, values, status, now); err != nil || !reached {
+	if reached, _, err = fenceReachedAt(jobs, values, status, now); err != nil || !reached {
 		t.Fatalf("job-count fence: got %v, %v", reached, err)
 	}
 
@@ -161,16 +161,16 @@ func TestFenceReachedAt(t *testing.T) {
 		"fence.wall-clock-hours": "2", "fence.cycles": "3",
 		"fence.jobs": "5", "fence.concurrency": "1",
 	}
-	if reached, err = fenceReachedAt(lost, looseValues, map[string]string{}, now); err != nil || !reached {
+	if reached, _, err = fenceReachedAt(lost, looseValues, map[string]string{}, now); err != nil || !reached {
 		t.Fatalf("lost-record concurrency fence: got %v, %v", reached, err)
 	}
 	settled := map[string]string{"ghost": "completed"}
-	if reached, err = fenceReachedAt(lost, looseValues, settled, now); err != nil || reached {
+	if reached, _, err = fenceReachedAt(lost, looseValues, settled, now); err != nil || reached {
 		t.Fatalf("terminal job clears concurrency: got %v, %v", reached, err)
 	}
 
 	bad := fences("not-a-time", 0)
-	if _, err := fenceReachedAt(bad, values, nil, now); err == nil {
+	if _, _, err := fenceReachedAt(bad, values, nil, now); err == nil {
 		t.Fatal("invalid startedAt: want error")
 	}
 }
