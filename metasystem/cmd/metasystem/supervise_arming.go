@@ -46,13 +46,26 @@ func runSuperviseBlockingReservedCap(args []string) int {
 	for _, path := range jobPaths {
 		record, err := readJSONObject(path)
 		if err != nil {
-			continue
+			// FAIL CLOSED (review codex-4): a job record this scan cannot
+			// read might carry the very reservation that blocks this
+			// ceiling — skipping it arms a watcher that may kill a live
+			// job. Only a record that vanished between glob and read is
+			// tolerable; every other failure refuses arming by name.
+			if os.IsNotExist(err) {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "supervise blocking-reserved-cap: refusing to arm: job record unreadable: %s: %v\n", path, err)
+			return 1
 		}
 		cap, capOK := jsonIntField(record["capMin"])
 		status, _ := record["status"].(string)
 		job, _ := record["jobId"].(string)
 		if job == "" {
 			job = strings.TrimSuffix(filepath.Base(path), ".json")
+		}
+		if !capOK && record["capMin"] != nil {
+			fmt.Fprintf(os.Stderr, "supervise blocking-reserved-cap: refusing to arm: job record capMin is malformed: %s\n", path)
+			return 1
 		}
 		if capOK && cap >= *ceiling && !armTerminalStatuses[status] {
 			reserved[job] = cap
@@ -63,21 +76,34 @@ func runSuperviseBlockingReservedCap(args []string) int {
 	for _, path := range fencePaths {
 		fences, err := readJSONObject(path)
 		if err != nil {
-			continue
+			// Same fail-closed rule for mission fence counters.
+			if os.IsNotExist(err) {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "supervise blocking-reserved-cap: refusing to arm: fence counters unreadable: %s: %v\n", path, err)
+			return 1
 		}
 		reservations, _ := fences["reservations"].(map[string]any)
 		for job, raw := range reservations {
 			reservation, ok := raw.(map[string]any)
 			if !ok {
-				continue
+				fmt.Fprintf(os.Stderr, "supervise blocking-reserved-cap: refusing to arm: reservation %s is malformed in %s\n", job, path)
+				return 1
 			}
 			cap, capOK := jsonIntField(reservation["capMin"])
-			if !capOK || cap < *ceiling {
+			if !capOK {
+				fmt.Fprintf(os.Stderr, "supervise blocking-reserved-cap: refusing to arm: reservation %s capMin is malformed in %s\n", job, path)
+				return 1
+			}
+			if cap < *ceiling {
 				continue
 			}
 			status := ""
 			if record, err := readJSONObject(filepath.Join(jobsDir, job+".json")); err == nil {
 				status, _ = record["status"].(string)
+			} else if !os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "supervise blocking-reserved-cap: refusing to arm: reserved job record unreadable: %s: %v\n", job, err)
+				return 1
 			}
 			if !armTerminalStatuses[status] {
 				if cap > reserved[job] {
