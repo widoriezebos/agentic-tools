@@ -320,7 +320,7 @@ func TestAgesEventArchivesOnlyAfterAVerifiedDurableCopy(t *testing.T) {
 	freezeClock(t)
 	root, evidenceRoot, agents, _ := checkout(t)
 	archiveDir := filepath.Join(agents, "events-archive")
-	durableDir := filepath.Join(evidenceRoot, "events", filepath.Base(root))
+	durableDir := filepath.Join(evidenceRoot, "events", dispatch.CheckoutSegment(root))
 
 	oldName := "events-20260701T000000Z-abc.jsonl" // 40 days old by stamp
 	youngName := "events-20260809T000000Z-def.jsonl"
@@ -396,5 +396,28 @@ func TestGCIgnoresOtherCheckoutsSegments(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(jobs, "shared-name.json")); err != nil {
 		t.Fatal("the record must survive a foreign manifest")
+	}
+}
+
+// codex-6: durable events segment by checkout hash, exactly like mirrors —
+// two same-basename checkouts must not share one durable directory.
+func TestEventArchivesSegmentByCheckoutHash(t *testing.T) {
+	freezeClock(t)
+	root, evidenceRoot, _, _ := checkout(t)
+	archiveDir := filepath.Join(root, "artifacts", "agents", "events-archive")
+	writeFile(t, filepath.Join(archiveDir, "events-20260701T000000Z-42.jsonl"), "{\"e\":1}\n")
+
+	var out strings.Builder
+	if err := GC(root, evidenceRoot, 5400, &out); err != nil {
+		t.Fatal(err)
+	}
+	segment := dispatch.CheckoutSegment(root)
+	durable := filepath.Join(evidenceRoot, "events", segment, "events-20260701T000000Z-42.jsonl")
+	if _, err := os.Stat(durable); err != nil {
+		t.Fatalf("durable copy must land under the checkout segment: %v", err)
+	}
+	legacy := filepath.Join(evidenceRoot, "events", filepath.Base(root))
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("the legacy basename directory must not be created anew")
 	}
 }

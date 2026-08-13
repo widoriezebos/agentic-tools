@@ -667,7 +667,13 @@ func collectEventArchives(checkoutRoot, evidenceRoot string, out io.Writer) erro
 	if info, err := os.Stat(archiveDir); err != nil || !info.IsDir() {
 		return nil
 	}
-	eventsRoot := filepath.Join(evidenceRoot, "events", filepath.Base(filepath.Clean(checkoutRoot)))
+	// Durable events segment by the SAME checkout hash mirrors use
+	// (review codex-6): a basename key let two same-name checkouts share
+	// one durable directory. Legacy-ownership rule: basename directories
+	// from before this change are plain history — never written again,
+	// never deleted; a still-local archive whose only durable copy lives
+	// in a legacy dir is simply copied once more into the segment.
+	eventsRoot := filepath.Join(evidenceRoot, "events", dispatch.CheckoutSegment(checkoutRoot))
 	matches, _ := filepath.Glob(filepath.Join(archiveDir, "events-*.jsonl"))
 	for _, archive := range matches {
 		name := filepath.Base(archive)

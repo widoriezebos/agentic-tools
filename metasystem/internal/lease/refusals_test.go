@@ -303,3 +303,63 @@ func TestRecordLockAcquisitionIsBounded(t *testing.T) {
 		t.Fatalf("the bound did not release the caller: %v", elapsed)
 	}
 }
+
+// lease-census-10: the sweep's kill-adjacent refusals, driven end to end
+// through cleanupStaleJobs — the fuse between a takeover sweep and
+// SIGTERM-ing a recycled process group.
+func TestSweepStopVerdictRows(t *testing.T) {
+	savedPids, savedPgid, savedCmd, savedKill := sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill
+	defer func() {
+		sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill = savedPids, savedPgid, savedCmd, savedKill
+	}()
+
+	staleJob := func(t *testing.T, root string) string {
+		t.Helper()
+		jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+		os.MkdirAll(jobs, 0o755)
+		path := filepath.Join(jobs, "stale.json")
+		os.WriteFile(path, []byte(`{"jobId":"stale","status":"running","claimEpoch":1,"pgid":424242,"instanceTag":"stale-tag"}`), 0o644)
+		return path
+	}
+
+	// Unprovable ownership: the sweep refuses BEFORE any stamp.
+	sweepAllPids = func() ([]int64, error) { return nil, errors.New("table down") }
+	root := t.TempDir()
+	recordPath := staleJob(t, root)
+	err := newClaimer(root).cleanupStaleJobs(5)
+	if err == nil || !strings.Contains(err.Error(), "cannot prove ownership of stale job stale") {
+		t.Fatalf("unprovable ownership must refuse the sweep: %v", err)
+	}
+	record, _ := os.ReadFile(recordPath)
+	if !strings.Contains(string(record), `"status":"running"`) {
+		t.Fatalf("a refused sweep must leave the record untouched: %s", record)
+	}
+
+	// Owned and provable, but the kill is DENIED (EPERM): loud refusal.
+	sweepAllPids = func() ([]int64, error) { return []int64{7}, nil }
+	sweepGetpgid = func(pid int64) (int64, error) { return 424242, nil }
+	sweepProcessCommand = func(pid int64) (string, bool) { return "runner stale-tag", true }
+	sweepKill = func(pgid int64, sig unix.Signal) error { return unix.EPERM }
+	root = t.TempDir()
+	staleJob(t, root)
+	err = newClaimer(root).cleanupStaleJobs(5)
+	if err == nil || !strings.Contains(err.Error(), "cannot stop stale job stale") {
+		t.Fatalf("a denied kill must refuse: %v", err)
+	}
+
+	// Owned, provable, kill lands: the record is stamped failed.
+	var killed []int64
+	sweepKill = func(pgid int64, sig unix.Signal) error { killed = append(killed, pgid); return nil }
+	root = t.TempDir()
+	recordPath = staleJob(t, root)
+	if err := newClaimer(root).cleanupStaleJobs(5); err != nil {
+		t.Fatalf("a provable stale group must sweep cleanly: %v", err)
+	}
+	if len(killed) != 1 || killed[0] != 424242 {
+		t.Fatalf("the owned group was not signalled: %v", killed)
+	}
+	record, _ = os.ReadFile(recordPath)
+	if !strings.Contains(string(record), `"stale-claim-epoch"`) {
+		t.Fatalf("the swept record was not stamped: %s", record)
+	}
+}

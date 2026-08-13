@@ -134,7 +134,7 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 	if !owned {
 		return nil
 	}
-	switch err := unix.Kill(int(-pgid), unix.SIGTERM); err {
+	switch err := sweepKill(pgid, unix.SIGTERM); err {
 	case nil, unix.ESRCH:
 		return nil
 	case unix.EPERM:
@@ -158,6 +158,9 @@ var (
 		return int64(pg), err
 	}
 	sweepProcessCommand = ProcessCommand
+	sweepKill           = func(pgid int64, sig unix.Signal) error {
+		return unix.Kill(int(-pgid), sig)
+	}
 )
 
 func groupOwnsTag(pgid int64, tag string) (owned, provable bool) {
