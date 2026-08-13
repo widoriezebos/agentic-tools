@@ -182,3 +182,42 @@ func TestFrontierUsageErrors(t *testing.T) {
 		t.Fatalf("env values not persisted:\n%s", data)
 	}
 }
+
+// validate-report-3: an unreadable frontier is not an ABSENT one — treating
+// it as absent skips every guard and overwrites the record without --force.
+func TestFrontierUnreadableFileRefuses(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits cannot bite as root")
+	}
+	repo := frontierRepo(t)
+	// The frontier lives OUTSIDE the worktree here, so the unreadable file
+	// hits the read path rather than the dirty-worktree guard (git cannot
+	// hash a chmod-000 file and reports the tree dirty first).
+	file := filepath.Join(t.TempDir(), "frontier")
+	opts := FrontierOptions{File: file, Repo: repo, Env: noEnv,
+		Score: "80", MinDelta: "1", Eval: "declared eval"}
+	if _, ferr := FrontierRecord(opts); ferr != nil {
+		t.Fatalf("baseline record failed: %v", ferr)
+	}
+	if err := os.Chmod(file, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(file, 0o644)
+
+	worse := FrontierOptions{File: file, Repo: repo, Env: noEnv,
+		Score: "10", MinDelta: "1", Eval: "declared eval"}
+	ferr := func() *FrontierError { _, e := FrontierRecord(worse); return e }()
+	if ferr == nil || ferr.Code != 2 || !strings.Contains(ferr.Message, "unreadable") {
+		t.Fatalf("record over an unreadable frontier must refuse with the cause: %v", ferr)
+	}
+	if _, cerr := FrontierChallenge(FrontierOptions{File: file, Env: noEnv, Score: "99"}); cerr == nil ||
+		cerr.Code != 2 || !strings.Contains(cerr.Message, "unreadable") {
+		t.Fatalf("challenge must name unreadable, not claim no frontier: %v", cerr)
+	}
+	os.Chmod(file, 0o644)
+	// The guarded state survived: the recorded score is still the baseline.
+	fields, err := frontierReadFields(file)
+	if err != nil || fields["score"] != "80" {
+		t.Fatalf("the frontier was clobbered: %v %v", fields, err)
+	}
+}

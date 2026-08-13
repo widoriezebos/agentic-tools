@@ -1,7 +1,9 @@
 package validate
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -38,5 +40,24 @@ func TestPlanConsistencyRejectsPrescribedRetiredTerm(t *testing.T) {
 func TestPlanConsistencyMissingDirectoryErrors(t *testing.T) {
 	if _, _, err := PlanConsistency(filepath.Join(t.TempDir(), "absent")); err == nil {
 		t.Fatal("a missing plans directory must error")
+	}
+}
+
+// validate-report-5: gone is fine, unreadable is not — a skipped plan may
+// hold the very declaration or violation this gate exists to catch.
+func TestPlanConsistencyRefusesUnreadablePlan(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits cannot bite as root")
+	}
+	plans := t.TempDir()
+	writeFile(t, filepath.Join(plans, "a.md"), "RETIRED: frobnicate -- gone\n")
+	writeFile(t, filepath.Join(plans, "b.md"), "clean\n")
+	if err := os.Chmod(filepath.Join(plans, "b.md"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(filepath.Join(plans, "b.md"), 0o644)
+	_, _, err := PlanConsistency(plans)
+	if err == nil || !strings.Contains(err.Error(), "plan file unreadable") {
+		t.Fatalf("an unreadable plan must refuse the gate: %v", err)
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
 
 // The measured-improvement frontier: record stores the best-known committed
@@ -182,11 +184,21 @@ func FrontierRecord(opts FrontierOptions) ([]string, *FrontierError) {
 	var storedDelta, storedWindow, storedDirection string
 	fields := map[string]string{}
 	fileExists := false
-	if read, readErr := frontierReadFields(opts.File); readErr == nil {
+	read, readErr := frontierReadFields(opts.File)
+	switch {
+	case readErr == nil:
 		fields, fileExists = read, true
 		storedDelta = fields["min_delta"]
 		storedWindow = fields["max_age_minutes"]
 		storedDirection = fields["direction"]
+	case os.IsNotExist(readErr):
+		// First record: no frontier yet, nothing to guard against.
+	default:
+		// An unreadable frontier is NOT an absent one (validate-report-3,
+		// the B7 rule): treating it as absent skips the direction, expiry,
+		// and regression guards and overwrites the recorded frontier
+		// without --force — the one guard README sells this verb for.
+		return nil, frontierFail(2, "frontier file is unreadable: %v", readErr)
 	}
 	minDelta, ferr := opts.resolveMinDelta(storedDelta)
 	if ferr != nil {
@@ -236,7 +248,10 @@ func FrontierRecord(opts FrontierOptions) ([]string, *FrontierError) {
 	}
 	content := fmt.Sprintf("sha=%s\nrecorded_epoch=%d\nscore=%s\nmin_delta=%s\ndirection=%s\nmax_age_minutes=%s\neval=%s\nartifact=%s\n",
 		sha, opts.now().UTC().Unix(), opts.Score, formatFloat(minDelta), direction, window, opts.Eval, opts.Artifact)
-	if err := os.WriteFile(opts.File, []byte(content), 0o644); err != nil {
+	// The frontier is the single durable record improvement mode compares
+	// against: it lands through the durable-write owner (B5), never a bare
+	// WriteFile a crash can truncate (validate-report-4).
+	if _, err := atomicfile.WriteText(opts.File, content, ""); err != nil {
 		return nil, frontierFail(2, "cannot write frontier file: %v", err)
 	}
 	return []string{
@@ -254,8 +269,11 @@ func FrontierChallenge(opts FrontierOptions) ([]string, *FrontierError) {
 		return nil, frontierFail(2, "challenge uses only the persisted direction; change it with record --force, never at comparison time")
 	}
 	fields, err := frontierReadFields(opts.File)
-	if err != nil {
+	if os.IsNotExist(err) {
 		return nil, frontierFail(1, "no frontier recorded at %s; record the baseline first", opts.File)
+	}
+	if err != nil {
+		return nil, frontierFail(2, "frontier file is unreadable: %v", err)
 	}
 	old := fields["score"]
 	if !frontierNumericRe.MatchString(old) {
