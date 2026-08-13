@@ -2,8 +2,6 @@ package dispatch
 
 import (
 	"time"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 // The record-only facts one reap decision needs. Everything here is a function
@@ -81,6 +79,26 @@ func ComputeReapFacts(recordPath string, graceSec int64, now time.Time) (ReapFac
 		}
 	}
 
-	facts.BudgetExpired = supervise.CapExpired(record, now)
+	facts.BudgetExpired = CapExpired(record, now)
 	return facts, nil
+}
+
+// CapExpired reports whether a job is past its absolute budget: the explicit
+// capDeadline when the record carries one, else startedAt plus capMin minutes.
+// Exported because it is THE budget verdict: the dispatch-side reap and the
+// supervision reaper must reach the same conclusion from the same record.
+func CapExpired(record map[string]any, now time.Time) bool {
+	if deadline, ok := record["capDeadline"].(string); ok && deadline != "" {
+		if t, err := time.Parse("2006-01-02T15:04:05Z", deadline); err == nil {
+			return !now.Before(t)
+		}
+	}
+	capMin, ok := numInt(record["capMin"])
+	started, hasStarted := record["startedAt"].(string)
+	if ok && capMin >= 1 && hasStarted {
+		if t, err := time.Parse("2006-01-02T15:04:05Z", started); err == nil {
+			return now.Sub(t) >= time.Duration(capMin)*time.Minute
+		}
+	}
+	return false
 }

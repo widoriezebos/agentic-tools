@@ -64,12 +64,3 @@ func atomicWrite(path string, content []byte) error {
 	// system for durability nobody reads (B5's recorded classification).
 	return atomicfile.WriteVolatile(path, string(content))
 }
-
-// parseISOSecond parses a whole-second UTC timestamp, accepting the trailing-Z
-// form the supervision surface writes as well as any offset RFC 3339 form.
-func parseISOSecond(value string) (time.Time, error) {
-	if t, err := time.Parse(isoSecond, value); err == nil {
-		return t, nil
-	}
-	return time.Parse(time.RFC3339, value)
-}

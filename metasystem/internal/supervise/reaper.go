@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
 // The reaper's per-interval job sweep. This reaper holds NO kill authority
@@ -93,7 +95,7 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	// concurrency slot. This reaper is the layer that must clear it.
 	if status == "pending-setup" {
 		if created, ok := record["createdAt"].(string); ok {
-			if at, err := time.Parse(time.RFC3339, created); err == nil && now.Sub(at) > 10*time.Minute {
+			if at, err := time.Parse(time.RFC3339, created); err == nil && now.Sub(at) > dispatch.AbandonedSetupGrace {
 				// No process ever existed for a reservation husk, so the
 				// patch claims no death.
 				return cfg.transition(path, record, status, "failed", "abandoned-setup",
@@ -127,7 +129,7 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	// Among dead-custodian records the budget still outranks loss, so this
 	// reaper and the dispatch ladder read the same verdict from one expired
 	// record.
-	if status == "running" && CapExpired(record, now) {
+	if status == "running" && dispatch.CapExpired(record, now) {
 		patch["error"] = "budget-cap"
 		return cfg.transition(path, record, status, "timeout", "budget-cap", patch)
 	}
@@ -147,26 +149,6 @@ func (cfg ReaperConfig) transition(path string, record map[string]any, from, to,
 		cfg.Emit(fmt.Sprintf("%s job=%s status=%s->%s", strings.ToUpper(reason), jobIDFor(record, path), from, to))
 	}
 	return nil
-}
-
-// CapExpired reports whether a job is past its absolute budget: the explicit
-// capDeadline when the record carries one, else startedAt plus capMin minutes.
-// Exported because it is THE budget verdict: the dispatch-side reap and the
-// supervision reaper must reach the same conclusion from the same record.
-func CapExpired(record map[string]any, now time.Time) bool {
-	if deadline, ok := record["capDeadline"].(string); ok && deadline != "" {
-		if t, err := parseISOSecond(deadline); err == nil {
-			return !now.Before(t)
-		}
-	}
-	capMin, ok := recordInt(record["capMin"])
-	started, hasStarted := record["startedAt"].(string)
-	if ok && capMin >= 1 && hasStarted {
-		if t, err := parseISOSecond(started); err == nil {
-			return now.Sub(t) >= time.Duration(capMin)*time.Minute
-		}
-	}
-	return false
 }
 
 func jobIDFor(record map[string]any, path string) string {
