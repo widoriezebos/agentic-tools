@@ -63,15 +63,28 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, nil // vanished under us; nothing to sweep
+		// Only a record that VANISHED between glob and read is "nothing to
+		// sweep" (review lease-census-2). Any other failure is a job this
+		// sweep cannot prove cleared — and the function's own contract
+		// forbids certifying a generation it did not actually clear.
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("claim sweep cannot read job record %s: %w", stem, err)
 	}
 	var job map[string]any
 	if json.Unmarshal(data, &job) != nil {
-		return false, nil
+		return false, fmt.Errorf("claim sweep cannot parse job record %s", stem)
 	}
 	recordEpoch, ok := jsonInt(job["claimEpoch"])
+	if !ok {
+		return false, fmt.Errorf("claim sweep refused: job record %s has a missing or noninteger claimEpoch", stem)
+	}
 	status, _ := job["status"].(string)
-	if !ok || recordEpoch >= epoch || terminalStatuses[status] || !sweepableStatuses[status] {
+	if !terminalStatuses[status] && !sweepableStatuses[status] {
+		return false, fmt.Errorf("claim sweep refused: job record %s has an unknown status %q", stem, status)
+	}
+	if recordEpoch >= epoch || terminalStatuses[status] {
 		return false, nil
 	}
 	if err := c.stopStaleGroup(job, stem); err != nil {
@@ -123,17 +136,45 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 // carries tag in its command line. provable is false only when the process
 // table cannot be read at all, which the sweep treats as inability to prove
 // ownership.
+// The sweep's process-table reads go through seams so the refusal rows —
+// the branches standing between a takeover sweep and SIGTERM-ing a
+// recycled group — are testable (review lease-census-10).
+var (
+	sweepAllPids = identity.AllPids
+	sweepGetpgid = func(pid int64) (int64, error) {
+		pg, err := unix.Getpgid(int(pid))
+		return int64(pg), err
+	}
+	sweepProcessCommand = ProcessCommand
+)
+
 func groupOwnsTag(pgid int64, tag string) (owned, provable bool) {
-	pids, err := identity.AllPids()
+	pids, err := sweepAllPids()
 	if err != nil {
 		return false, false
 	}
 	for _, pid := range pids {
-		pg, err := unix.Getpgid(int(pid))
-		if err != nil || int64(pg) != pgid {
+		pg, err := sweepGetpgid(pid)
+		if err != nil {
+			// Only ESRCH proves the member is gone (review
+			// lease-census-2); any other inspection failure means this
+			// group's ownership cannot be PROVEN either way, and an
+			// unproven group must never be ruled "provably not owned".
+			if err == unix.ESRCH {
+				continue
+			}
+			return false, false
+		}
+		if pg != pgid {
 			continue
 		}
-		if command, ok := ProcessCommand(pid); ok && strings.Contains(command, tag) {
+		command, ok := sweepProcessCommand(pid)
+		if !ok {
+			// A live member whose identity cannot be read: ownership is
+			// unprovable, not disproven.
+			return false, false
+		}
+		if strings.Contains(command, tag) {
 			return true, true
 		}
 	}

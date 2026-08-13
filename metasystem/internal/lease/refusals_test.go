@@ -1,12 +1,15 @@
 package lease
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // announceLiveChild spawns a child, announces it as a main (claiming the
@@ -176,5 +179,89 @@ func TestCustodyIdentitiesFailClosed(t *testing.T) {
 	os.Chmod(filepath.Join(jobs, "j3.json"), 0o644)
 	if err == nil || !strings.Contains(err.Error(), "job record unreadable") {
 		t.Fatalf("unreadable record did not refuse: %v", err)
+	}
+}
+
+// lease-census-2 (the review): the sweep never certifies a generation it
+// did not clear, and unprovable group ownership is never "provably not
+// owned". Driven through the process-table seams.
+func TestSweepFailsClosed(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	os.MkdirAll(jobs, 0o755)
+	c := newClaimer(root)
+
+	// Unparseable record: hard error, no stamp.
+	os.WriteFile(filepath.Join(jobs, "bad.json"), []byte("{broken"), 0o644)
+	if err := c.cleanupStaleJobs(5); err == nil ||
+		!strings.Contains(err.Error(), "cannot parse job record") {
+		t.Fatalf("corrupt record did not abort the sweep: %v", err)
+	}
+	os.Remove(filepath.Join(jobs, "bad.json"))
+
+	// Missing claimEpoch: hard error.
+	os.WriteFile(filepath.Join(jobs, "noepoch.json"), []byte(`{"jobId":"noepoch","status":"running"}`), 0o644)
+	if err := c.cleanupStaleJobs(5); err == nil ||
+		!strings.Contains(err.Error(), "missing or noninteger claimEpoch") {
+		t.Fatalf("missing epoch did not abort: %v", err)
+	}
+	os.Remove(filepath.Join(jobs, "noepoch.json"))
+
+	// Unknown status vocabulary: hard error.
+	os.WriteFile(filepath.Join(jobs, "odd.json"), []byte(`{"jobId":"odd","claimEpoch":1,"status":"weird"}`), 0o644)
+	if err := c.cleanupStaleJobs(5); err == nil ||
+		!strings.Contains(err.Error(), "unknown status") {
+		t.Fatalf("unknown status did not abort: %v", err)
+	}
+	os.Remove(filepath.Join(jobs, "odd.json"))
+
+	// Unreadable record: hard error (permission bits; root disarms them).
+	if os.Geteuid() != 0 {
+		locked := filepath.Join(jobs, "locked.json")
+		os.WriteFile(locked, []byte(`{"jobId":"locked","claimEpoch":1,"status":"running"}`), 0o644)
+		os.Chmod(locked, 0o000)
+		err := c.cleanupStaleJobs(5)
+		os.Chmod(locked, 0o644)
+		if err == nil || !strings.Contains(err.Error(), "cannot read job record") {
+			t.Fatalf("unreadable record did not abort: %v", err)
+		}
+		os.Remove(locked)
+	}
+}
+
+func TestGroupOwnsTagUnprovableRows(t *testing.T) {
+	savedPids, savedPgid, savedCmd := sweepAllPids, sweepGetpgid, sweepProcessCommand
+	defer func() { sweepAllPids, sweepGetpgid, sweepProcessCommand = savedPids, savedPgid, savedCmd }()
+
+	// Process table unreadable: unprovable.
+	sweepAllPids = func() ([]int64, error) { return nil, errors.New("table down") }
+	if _, provable := groupOwnsTag(42, "t"); provable {
+		t.Fatal("an unreadable table was ruled provable")
+	}
+
+	// A member whose pgid read fails with anything but ESRCH: unprovable.
+	sweepAllPids = func() ([]int64, error) { return []int64{7}, nil }
+	sweepGetpgid = func(pid int64) (int64, error) { return 0, errors.New("EIO") }
+	if _, provable := groupOwnsTag(42, "t"); provable {
+		t.Fatal("a failed pgid read was ruled provable")
+	}
+
+	// ESRCH is genuine absence: provable, not owned.
+	sweepGetpgid = func(pid int64) (int64, error) { return 0, unix.ESRCH }
+	if owned, provable := groupOwnsTag(42, "t"); !provable || owned {
+		t.Fatalf("ESRCH must be provable absence: owned=%v provable=%v", owned, provable)
+	}
+
+	// A live member with unreadable identity: unprovable, never disproven.
+	sweepGetpgid = func(pid int64) (int64, error) { return 42, nil }
+	sweepProcessCommand = func(pid int64) (string, bool) { return "", false }
+	if _, provable := groupOwnsTag(42, "t"); provable {
+		t.Fatal("an unreadable member identity was ruled provable")
+	}
+
+	// A live tagged member: owned and provable.
+	sweepProcessCommand = func(pid int64) (string, bool) { return "runner --tag t", true }
+	if owned, provable := groupOwnsTag(42, "t"); !owned || !provable {
+		t.Fatalf("a tagged member must prove ownership: owned=%v provable=%v", owned, provable)
 	}
 }
