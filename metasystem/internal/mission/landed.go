@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
 // The Landed Returns derivation (plans/patience-orphan-usage.md O1): the
@@ -146,7 +148,11 @@ func LandedReturns(repo, missionID string, turnLog []any) [][]string {
 func landedRoundValid(repo, jobID string) bool {
 	cmd := exec.Command(filepath.Join(repo, "scripts", "assert-return-complete.sh"), "--job", jobID)
 	cmd.Dir = repo
-	return cmd.Run() == nil
+	// Bounded (B4): a wedged checker must not freeze prompt assembly; a
+	// checker that ran out of its bound proved nothing, so the return
+	// lists as invalid.
+	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
+	return boundedexec.Run(cmd, limit, "return checker for job "+jobID) == nil
 }
 
 // readLandedJobRecords reads every readable job record by its id. Unreadable

@@ -1,6 +1,7 @@
 package boundedexec
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -85,5 +86,18 @@ func TestRunKillsTheWholeProcessGroup(t *testing.T) {
 	time.Sleep(4 * time.Second)
 	if _, statErr := os.Stat(marker); statErr == nil {
 		t.Fatal("a grandchild outlived the bound: the group was not killed")
+	}
+}
+
+// Callers for whom a timeout is an ANSWER (a ceiling verdict, not a failure
+// to run) rely on the sentinel surviving the wrap.
+func TestRunTimeoutMatchesTheSentinel(t *testing.T) {
+	err := Run(exec.Command("sleep", "60"), 300*time.Millisecond, "the sleeping command")
+	if !errors.Is(err, ErrTimedOut) {
+		t.Fatalf("expiry must match ErrTimedOut: %v", err)
+	}
+	exit := exec.Command("false")
+	if failure := Run(exit, time.Minute, "false"); errors.Is(failure, ErrTimedOut) {
+		t.Fatalf("a plain failure must not match ErrTimedOut: %v", failure)
 	}
 }

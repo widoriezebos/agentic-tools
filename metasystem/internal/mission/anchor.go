@@ -3,6 +3,7 @@ package mission
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"os"
@@ -42,11 +43,15 @@ func gitTry(repo string, args ...string) (string, int) {
 	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
-	err := cmd.Run()
+	// Bounded like every other external call (B4); a timeout is a failure
+	// answer, not an exit code.
+	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
+	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
 	if err == nil {
 		return stdout.String(), 0
 	}
-	if exit, ok := err.(*exec.ExitError); ok {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
 		return stdout.String(), exit.ExitCode()
 	}
 	return stdout.String(), 1
@@ -224,12 +229,15 @@ func Anchor(statePath, repo, ledgerPath string) error {
 			"-c", "user.name=metasystem", "-c", "user.email=metasystem@example.invalid",
 			"commit", "--allow-empty", "-m", subject, "-m", body}
 	}
+	commitLimit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	for attempt := 0; attempt < 6; attempt++ {
 		cmd := exec.Command(commitCommand[0], commitCommand[1:]...)
 		var stdout, stderr strings.Builder
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
-		if cmd.Run() == nil {
+		// Bounded (B4): a wedged commit wrapper must not freeze the anchor
+		// step forever; the timeout lands in the non-index.lock branch below.
+		if boundedexec.Run(cmd, commitLimit, "anchor commit") == nil {
 			break
 		}
 		if !strings.Contains(stderr.String(), "index.lock") || attempt == 5 {

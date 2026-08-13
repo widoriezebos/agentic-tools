@@ -1,7 +1,7 @@
 package contract
 
 import (
-	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
 // Measuring a candidate is the per-cycle reading the mission runner records: run
@@ -250,21 +252,23 @@ func (d *contractDoc) candidateWorktree(repo, projectRoot string) (string, strin
 // the ceiling. Only a failure to run the command at all is returned as an error;
 // a nonzero exit or a timeout is reported for the caller to interpret.
 func measureCommand(commandRoot, command string, capMinutes int) (map[string]string, int, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(capMinutes)*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
+	cmd := exec.Command("bash", "-lc", command)
 	cmd.Dir = commandRoot
 	var output strings.Builder
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	runErr := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
+	// Bounded with group-kill (B4), for the same reason as the contract
+	// gate command: a context deadline alone leaves grandchildren holding
+	// the output pipe past the ceiling.
+	runErr := boundedexec.Run(cmd, time.Duration(capMinutes)*time.Minute, "measurement command")
+	if errors.Is(runErr, boundedexec.ErrTimedOut) {
 		return nil, 0, true, nil
 	}
 	code := 0
 	if runErr != nil {
 		code = 1
-		if exit, ok := runErr.(*exec.ExitError); ok {
+		var exit *exec.ExitError
+		if errors.As(runErr, &exit) {
 			code = exit.ExitCode()
 		}
 	}

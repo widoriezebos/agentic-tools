@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -95,11 +96,15 @@ func gitTry(repo string, args ...string) (string, int) {
 	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
-	err := cmd.Run()
+	// Bounded like every other external call (B4); a timeout is a failure
+	// answer, not an exit code.
+	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
+	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
 	if err == nil {
 		return stdout.String(), 0
 	}
-	if exit, ok := err.(*exec.ExitError); ok {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
 		return stdout.String(), exit.ExitCode()
 	}
 	return stdout.String(), -1

@@ -9,6 +9,7 @@
 package boundedexec
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -36,6 +37,10 @@ const (
 	networkDefault  = 120
 	killGraceWindow = 5 * time.Second
 )
+
+// ErrTimedOut marks bound expiry, so the callers for whom a timeout is an
+// ANSWER (a named ceiling was exceeded) can tell it from a failure to run.
+var ErrTimedOut = errors.New("timed out")
 
 // Timeout resolves a kind's bound from the checkout's metasystem.conf,
 // falling back to the stated default when the key is absent or unusable —
@@ -88,8 +93,8 @@ func Run(cmd *exec.Cmd, limit time.Duration, what string) error {
 	case <-done:
 	case <-time.After(killGraceWindow):
 	}
-	return fmt.Errorf("%s timed out after %s (raise it with %s in metasystem.conf)",
-		what, limit, boundKeyFor(limit))
+	return fmt.Errorf("%s %w after %s (raise it with %s in metasystem.conf)",
+		what, ErrTimedOut, limit, boundKeyFor(limit))
 }
 
 // boundKeyFor names the key an operator would raise. The bound itself does

@@ -2,10 +2,10 @@ package contract
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -885,20 +885,22 @@ func (d *contractDoc) runGate(repo, projectRoot string) (string, map[string]stri
 	}
 
 	capMin, _ := strconv.Atoi(values["fence.job-cap-min"])
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(capMin)*time.Minute)
-	defer cancel()
-	command := exec.CommandContext(ctx, "bash", "-lc", values["gate.command"])
+	command := exec.Command("bash", "-lc", values["gate.command"])
 	command.Dir = commandRoot
 	var output strings.Builder
 	command.Stdout = &output
 	command.Stderr = &output
-	runErr := command.Run()
-	if ctx.Err() == context.DeadlineExceeded {
+	// Bounded with group-kill (B4): a context deadline kills only bash,
+	// and grandchildren holding the output pipe would block past the
+	// ceiling — with the deferred worktree cleanup waiting behind them.
+	runErr := boundedexec.Run(command, time.Duration(capMin)*time.Minute, "contract gate command")
+	if errors.Is(runErr, boundedexec.ErrTimedOut) {
 		return "", nil, 0, stateErr("gate measurement exceeded named fence.job-cap-min ceiling (%sm)", values["fence.job-cap-min"])
 	}
 	if runErr != nil {
 		code := 1
-		if exit, ok := runErr.(*exec.ExitError); ok {
+		var exit *exec.ExitError
+		if errors.As(runErr, &exit) {
 			code = exit.ExitCode()
 		}
 		return "", nil, 0, stateErr("gate measurement failed with exit %d", code)

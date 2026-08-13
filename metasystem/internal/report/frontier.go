@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
 // The measured-improvement frontier: record stores the best-known committed
@@ -153,8 +155,12 @@ func frontierBeats(candidate, incumbent, delta float64, direction string) bool {
 func frontierGit(repo string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = repo
-	out, err := cmd.Output()
-	return strings.TrimSpace(string(out)), err
+	var stdout strings.Builder
+	cmd.Stdout = &stdout
+	// Bounded like every other external call (B4).
+	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
+	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
+	return strings.TrimSpace(stdout.String()), err
 }
 
 // FrontierRecord implements `frontier record`. Returned lines print to

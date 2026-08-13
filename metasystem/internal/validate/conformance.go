@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
 // The conformance gate. The review stage computes the implementer
@@ -75,12 +78,8 @@ type conformanceRun struct {
 }
 
 func (r *conformanceRun) git(dir string, env []string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	if env != nil {
-		cmd.Env = append(os.Environ(), env...)
-	}
-	stdout, err := cmd.Output()
-	return strings.TrimSpace(string(stdout)), err
+	out, err := r.gitBytes(dir, env, args...)
+	return strings.TrimSpace(string(out)), err
 }
 
 func (r *conformanceRun) gitBytes(dir string, env []string, args ...string) ([]byte, error) {
@@ -88,7 +87,12 @@ func (r *conformanceRun) gitBytes(dir string, env []string, args ...string) ([]b
 	if env != nil {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	return cmd.Output()
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	// Bounded like every other external call (B4).
+	limit := boundedexec.Timeout(filepath.Join(dir, "metasystem.conf"), boundedexec.Local)
+	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
+	return stdout.Bytes(), err
 }
 
 func (r *conformanceRun) fail(lines ...string) ([]string, []string, int) {

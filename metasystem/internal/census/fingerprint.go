@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
 // The fingerprint is the supervision code staleness detector. It hashes the
@@ -44,12 +46,21 @@ var fingerprintConfig = map[string]string{
 // `match`/`exclude` lines joined by newlines with a trailing newline. This is
 // the value hashed per runtime.
 func SignatureText(adapterPath string) (string, error) {
-	out, err := exec.Command(adapterPath, "signature").Output()
-	if err != nil {
+	cmd := exec.Command(adapterPath, "signature")
+	var out strings.Builder
+	cmd.Stdout = &out
+	// Bounded (B4): a hung adapter would otherwise hang watcher passes and
+	// lease classification. Adapters live at
+	// <root>/scripts/agents/adapters/<runtime>.sh, so the checkout's conf is
+	// four steps up; anywhere else the stated default applies — a missing
+	// conf must not disable bounding.
+	conf := filepath.Join(adapterPath, "..", "..", "..", "..", "metasystem.conf")
+	limit := boundedexec.Timeout(conf, boundedexec.Local)
+	if err := boundedexec.Run(cmd, limit, "signature adapter "+filepath.Base(adapterPath)); err != nil {
 		return "", fmt.Errorf("signature adapter failed: %s: %w", filepath.Base(adapterPath), err)
 	}
 	var normalized []string
-	for _, raw := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+	for _, raw := range strings.Split(strings.TrimRight(out.String(), "\n"), "\n") {
 		if raw == "" || raw != strings.TrimSpace(raw) {
 			return "", fmt.Errorf("malformed signature declaration from %s", filepath.Base(adapterPath))
 		}
