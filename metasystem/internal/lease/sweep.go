@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -194,16 +195,29 @@ func groupOwnsTag(pgid int64, tag string) (owned, provable bool) {
 
 // acquireRecordLock takes a blocking exclusive lock on a job's record lock,
 // serialising the sweep's rewrite against dispatch's own record writes.
+// acquireRecordLock is BOUNDED like the lease lock one layer up, and for
+// the documented reason there (review lease-census-9): the sweep holds the
+// lease lock while taking record locks, so a wedged-alive record-lock
+// holder — the stale-job class this sweep exists to handle — would turn
+// every claim, renew, and succession into an unexplained hang. Bounded
+// acquisition turns it into a loud refusal naming the record.
 func acquireRecordLock(path string) (*fileLock, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, err
 	}
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
+	wait := lockWaitSeconds()
+	deadline := time.Now().Add(time.Duration(wait * float64(time.Second)))
+	for {
+		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			return &fileLock{f: f}, nil
+		}
+		if time.Now().After(deadline) {
+			f.Close()
+			return nil, fmt.Errorf("claim sweep cannot lock job record %s after %gs; a wedged holder keeps it", filepath.Base(path), wait)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	return &fileLock{f: f}, nil
 }
 
 // protocolCounts totals the distinct protocol-error keys per root job chain —

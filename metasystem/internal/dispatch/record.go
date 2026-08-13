@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -106,11 +107,36 @@ func withRecordLock(root, job string, fn func(recordPath string) error) error {
 		return fmt.Errorf("cannot open record lock for %s: %w", job, err)
 	}
 	defer handle.Close()
-	if err := unix.Flock(int(handle.Fd()), unix.LOCK_EX); err != nil {
-		return fmt.Errorf("cannot lock record for %s: %w", job, err)
+	// Bounded like the lease lock (review codex-5): production record
+	// operations run through lease run-held, which holds the GLOBAL lease
+	// lock across this acquire — a record-lock holder wedged mid-hold
+	// (SIGSTOP, fsync stall, an inherited flock fd) would otherwise block
+	// here forever and every subsequent claim, renew, and succession
+	// would refuse at its own bound for as long as the wedge lasts.
+	deadline := time.Now().Add(recordLockWait())
+	for {
+		err := unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("record lock for %s is busy after %s; a wedged holder keeps it", job, recordLockWait())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
 	return fn(recordPath)
+}
+
+// recordLockWait bounds record-lock acquisition, honoring the same env
+// override the lease lock's bound honors so fixtures tune one knob.
+func recordLockWait() time.Duration {
+	if v := os.Getenv("METASYSTEM_LEASE_LOCK_WAIT_SEC"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+			return time.Duration(f * float64(time.Second))
+		}
+	}
+	return 10 * time.Second
 }
 
 // RecordCreate reserves a job by writing its initial pending-setup record.

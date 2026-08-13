@@ -280,3 +280,26 @@ func TestGroupOwnsTagUnprovableRows(t *testing.T) {
 		t.Fatalf("a tagged member must prove ownership: owned=%v provable=%v", owned, provable)
 	}
 }
+
+// lease-census-9: a wedged record-lock holder yields a LOUD bounded refusal
+// naming the record, never an indefinite hang under the lease lock.
+func TestRecordLockAcquisitionIsBounded(t *testing.T) {
+	t.Setenv("METASYSTEM_LEASE_LOCK_WAIT_SEC", "0.2")
+	path := filepath.Join(t.TempDir(), "wedged.lock")
+	holder, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	if err := unix.Flock(int(holder.Fd()), unix.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	_, err = acquireRecordLock(path)
+	if err == nil || !strings.Contains(err.Error(), "wedged.lock") {
+		t.Fatalf("a held record lock must refuse by name: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("the bound did not release the caller: %v", elapsed)
+	}
+}
