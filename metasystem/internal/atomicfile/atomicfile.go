@@ -67,6 +67,18 @@ var syncDir = func(path string) error {
 //
 // See the package doc for the outcome model behind (durable, err).
 func WriteText(path, text, anchor string) (durable bool, err error) {
+	return publish(path, anchor, func(tmp *os.File) error {
+		_, err := tmp.WriteString(text)
+		return err
+	})
+}
+
+// publish is the ONE publication sequence (review foundations-4): make the
+// directory chain durable, fill a synced temp file in the target's own
+// directory, rename it into place, then sync the directory — with the
+// (false, nil) rule after the rename: PUBLISHED is committed, and only its
+// durability may be in doubt. Every durability hardening lands here once.
+func publish(path, anchor string, fill func(*os.File) error) (durable bool, err error) {
 	target := filepath.Dir(path)
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return false, err
@@ -78,24 +90,12 @@ func WriteText(path, text, anchor string) (durable bool, err error) {
 			return false, fmt.Errorf("atomicfile: cannot make the directory chain durable at %s: %w", dir, err)
 		}
 	}
-	tmp, err := os.CreateTemp(target, filepath.Base(path)+".*.tmp")
+	tmp, err := writeTemp(target, filepath.Base(path), fill, true)
 	if err != nil {
 		return false, err
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.WriteString(text); err != nil {
-		tmp.Close()
-		return false, err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return false, err
-	}
-	if err := tmp.Close(); err != nil {
-		return false, err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
+	defer os.Remove(tmp)
+	if err := os.Rename(tmp, path); err != nil {
 		return false, err
 	}
 	// PUBLISHED. From here the transition is committed; only its durability
@@ -104,6 +104,33 @@ func WriteText(path, text, anchor string) (durable bool, err error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// writeTemp creates, fills, optionally syncs, and closes a temp file beside
+// the target, returning its name. The caller owns removal.
+func writeTemp(dir, base string, fill func(*os.File) error, durable bool) (string, error) {
+	tmp, err := os.CreateTemp(dir, base+".*.tmp")
+	if err != nil {
+		return "", err
+	}
+	name := tmp.Name()
+	if err := fill(tmp); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return "", err
+	}
+	if durable {
+		if err := tmp.Sync(); err != nil {
+			tmp.Close()
+			os.Remove(name)
+			return "", err
+		}
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	return name, nil
 }
 
 // chain lists the directories to sync, from dir upward through anchor
@@ -144,39 +171,10 @@ func CopyFile(sourcePath, targetPath, anchor string) (durable bool, err error) {
 		return false, err
 	}
 	defer source.Close()
-	target := filepath.Dir(targetPath)
-	if err := os.MkdirAll(target, 0o755); err != nil {
-		return false, err
-	}
-	for _, dir := range chain(target, anchor) {
-		if err := syncDir(dir); err != nil {
-			return false, fmt.Errorf("atomicfile: cannot make the directory chain durable at %s: %w", dir, err)
-		}
-	}
-	temp, err := os.CreateTemp(target, filepath.Base(targetPath)+".*.tmp")
-	if err != nil {
-		return false, err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-	if _, err := io.Copy(temp, source); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return false, err
-	}
-	if err := temp.Close(); err != nil {
-		return false, err
-	}
-	if err := os.Rename(tempName, targetPath); err != nil {
-		return false, err
-	}
-	if err := syncDir(target); err != nil {
-		return false, nil
-	}
-	return true, nil
+	return publish(targetPath, anchor, func(tmp *os.File) error {
+		_, err := io.Copy(tmp, source)
+		return err
+	})
 }
 
 // WriteVolatile replaces path's content atomically WITHOUT any durability
@@ -193,18 +191,16 @@ func WriteVolatile(path, text string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
+	// Shares the temp-write plumbing with publish, with the no-fsync
+	// semantics explicit: durable=false skips the temp sync, and no
+	// directory in the chain is synced at all.
+	tmp, err := writeTemp(dir, filepath.Base(path), func(f *os.File) error {
+		_, err := f.WriteString(text)
+		return err
+	}, false)
 	if err != nil {
 		return err
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.WriteString(text); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
+	defer os.Remove(tmp)
+	return os.Rename(tmp, path)
 }
