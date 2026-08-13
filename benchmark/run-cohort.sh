@@ -310,6 +310,35 @@ fi
 
 if [[ "$phase" == grading ]]; then
   mission_root=$target/artifacts/agents/missions/$mission_id
+  # A drain-stalled park is NOT a terminal outcome (F3 of the drain-stall
+  # diagnosis): the runner exits 0 over a parked state whose survivor may
+  # still be WRITING CODE — rep 2 of bm-1-20260813t171239z was graded five
+  # seconds after its park while the delegate ran for another minute, so
+  # the score measured a bare checkout. Wait out the park's own survivors
+  # (their caps bound them) up to ten minutes; a park that persists is the
+  # rep's honest outcome and grades as parked only once no mission job is
+  # still running.
+  drain_wait_deadline=$(( $(date +%s) + 600 ))
+  while :; do
+    park_reason=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("parkReason") or "")' "$mission_root/state.json" 2>/dev/null || echo "")
+    [[ "$park_reason" == drain-stalled ]] || break
+    running=$(python3 - "$target/artifacts/agents/jobs" <<'PY'
+import json, sys, glob, os
+live = 0
+for p in glob.glob(os.path.join(sys.argv[1], "*.json")):
+    try:
+        s = json.load(open(p)).get("status")
+    except Exception:
+        continue
+    if s in ("pending", "pending-setup", "running"):
+        live += 1
+print(live)
+PY
+)
+    if [[ "$running" == 0 ]]; then break; fi
+    (( $(date +%s) < drain_wait_deadline ))       || die 1 "cohort grading refused: drain-stalled park still has $running live job(s) after the wait; resolve the survivors ask first"
+    sleep 10
+  done
   grader_rel=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["grader"]["path"])' "$manifest")
   grader=$spec/$grader_rel/grade.sh
   [[ -x "$grader" ]] || die 1 "cohort grading refused: held-out grader is not executable: $grader"

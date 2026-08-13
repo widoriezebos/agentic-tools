@@ -1422,12 +1422,19 @@ reap_jobs() {
       # One failing reap must not starve the jobs after it in sort order
       # (script-orchestration-07): visit every record, then report the
       # sweep's verdict — the contract the Go reaper already documents.
+      # In STANDING mode (--interval) the verdict is reported without
+      # exiting: one persistently failing record must not terminate the
+      # whole reaper before its heartbeat (F6 of the drain-stall
+      # diagnosis — strictly worse than the starvation this replaced).
       sweep_failed=0
       for record in "$jobs"/*.json; do
         [[ -f "$record" ]] || continue
         reap_one "$(basename "${record%.json}")" || sweep_failed=1
       done
-      (( sweep_failed == 0 )) || { echo "reap sweep finished with failures (see above)" >&2; exit 1; }
+      if (( sweep_failed != 0 )); then
+        echo "reap sweep finished with failures (see above)" >&2
+        [[ -n "$interval" ]] || exit 1
+      fi
     fi
     if [[ -n "$supervision_heartbeat" ]]; then
       "$ms" supervise heartbeat --path "$supervision_heartbeat" --function reaper \

@@ -84,7 +84,7 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 			// no kill authority).
 			e.reapReservedRecords(time.Now())
 			for _, record := range active {
-				runCaptured(e.Root, nil, dispatchScript, "reap", "--job", jobRecordID(record))
+				e.dispatchReap(dispatchScript, jobRecordID(record))
 			}
 		}
 		live := activeJobRecords(e.Root, e.Mission)
@@ -97,9 +97,41 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 		// judged against this same pass's deadline.
 		now := time.Now()
 		if deadline := drainDeadline(live, now); !deadline.After(now) {
+			// A kill-capable reap is still OWED before any park: the reap
+			// cadence is coarser than the slack the deadline leaves (rep 2
+			// of bm-1-20260813t171239z parked 2.0s past a capDeadline the
+			// 5s cadence had a ~40% chance of never serving inside the
+			// window). Run the dispatch reap for every live record NOW,
+			// re-read, and only park what a fresh reap could not resolve.
+			for _, record := range live {
+				e.dispatchReap(dispatchScript, jobRecordID(record))
+			}
+			lastReap = time.Now()
+			live = activeJobRecords(e.Root, e.Mission)
+			if len(live) == 0 {
+				return nil, nil
+			}
+			now = time.Now()
+			if deadline := drainDeadline(live, now); deadline.After(now) {
+				continue // the owed reap extended or resolved the deadline
+			}
 			return e.parkDrainStalled(statePath, ledger, turnID, cycle, e.drainSurvivors(live, now))
 		}
 		time.Sleep(poll)
+	}
+}
+
+// dispatchReap runs the kill-capable dispatch reap for one job and
+// WITNESSES its answer: this incident was undiagnosable by artifact
+// because runCaptured's stdout, stderr, and exit code were all dropped
+// and the runner log stayed empty (F2 of the drain-stall diagnosis).
+func (e *Engine) dispatchReap(dispatchScript, jobID string) {
+	stdout, stderr, code := runCaptured(e.Root, nil, dispatchScript, "reap", "--job", jobID)
+	if code != 0 {
+		fmt.Fprintf(os.Stderr, "drain reap %s exited %d: %s\n", jobID, code, firstDetail(stderr, stdout))
+		e.emit("job-refused", "drain reap failed for "+jobID, map[string]string{
+			"jobId": jobID, "missionId": e.Mission, "reasonClass": "drain-reap",
+		})
 	}
 }
 

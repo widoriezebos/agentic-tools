@@ -205,7 +205,8 @@
     "job-refused": {
       "emitters": [
         "dispatch",
-        "reaper"
+        "reaper",
+        "runner"
       ],
       "ids": {
         "jobId": "required",

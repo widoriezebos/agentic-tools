@@ -215,3 +215,39 @@ series — if the strict floor stands and baseline reps keep failing it,
 the Devin arms compare against no valid baseline. Not amended: re-scoping
 a validity gate mid-series is referee tampering unless it is clearly a
 kit defect, and this one is arguably intent.
+
+## D11 — The drain-stall incident: my cadence change caused it; four fixes land
+
+**What happened (rep 2 of bm-1-20260813t171239z, agent-diagnosed):** the
+mission parked drain-stalled exactly 2.0s past a delegate's capDeadline,
+because the drain's park window is capDeadline + 2s handshake grace while
+my own 5f5db7f moved the kill-capable dispatch reap to a 5s cadence — a
+~40% chance per expiry of parking without ever serving a reap inside the
+window. The runner then exited 0 over the parked state and the cohort
+graded FIVE SECONDS later while the delegate was still writing code (it
+self-finished 60s past its cap; the score measured a bare checkout). My
+earlier premise ("20+ minutes uncapped") was a timezone misread, and D7's
+note that an orphan's cap "degrades to reaper granularity" was WRONG: the
+Go standing reaper has no kill authority by design, so an orphaned job's
+cap degrades to UNBOUNDED once its waiter and runner are gone.
+
+**Landed:** F1 — the drain never parks while a kill-capable reap is owed:
+at the deadline it runs the dispatch reap for every live record, re-reads,
+and only parks what a fresh reap could not resolve. F2 — the drain
+witnesses every reap's exit and stderr (this incident was undiagnosable by
+artifact; the runner log was empty) and emits a job-refused event on
+failure. F6 — the standing-mode shell reap sweep reports failures without
+exiting (my accumulate change would have terminated a shell standing
+reaper before its heartbeat — strictly worse than the starvation it
+replaced; unbitten only because the standing reaper is the Go component).
+F3 (kit) — grading a drain-stalled park waits out still-running survivors
+(their caps bound them, ten-minute ceiling) and refuses rather than
+scoring a bare checkout.
+
+**Deferred, flagged for the review backlog:** F4 — the orphan window
+itself (a job whose waiter and runner both exit has NO kill-capable
+enforcer until mission end); needs a design decision between waiter
+adoption and a kill-capable supervision sweep, which touches the
+no-kill-authority rule and deserves its own pass. F5 — the standing
+reaper logs nothing when it declines to act; emit the
+running∧CapExpired∧custodian-alive state once per pass.
