@@ -648,11 +648,17 @@ class Extractor:
                 "wallClockSecondsCeiling": contract_cap * 60 if isinstance(contract_cap, (int, float)) else None,
                 "wallClockSecondsUsedRatio": ratio(seconds, contract_cap * 60) if isinstance(contract_cap, (int, float)) else None,
             })
+            # The terminal stamp lands AFTER the wind-down, so a job the
+            # engine correctly killed at its cap measures a second or two
+            # past it (rep 1 of bm-1-20260813t203657z: budget-cap at 900s,
+            # stamped 901). Five seconds cannot hide a real unenforced
+            # overrun — those run minutes over.
+            enforcement_allowance = 5
             if (
                 not isinstance(cap, (int, float))
                 or not isinstance(contract_cap, (int, float))
                 or cap > contract_cap
-                or seconds > contract_cap * 60
+                or seconds > contract_cap * 60 + enforcement_allowance
             ):
                 job_cap_ok = False
         events: list[tuple[dt.datetime, int]] = []

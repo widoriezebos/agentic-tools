@@ -287,3 +287,17 @@ legacy turns without the stamp. Kit turn schema admits the field.
 SHA per cohort; rep 1 invalid on exactly this gate — while being the
 series' FIRST COMPLETED mission: no park, three clean turns, cycles 3/8).
 Fresh cohort at the next validated pin. Series spend ~$70 of EUR 240.
+
+## D13 addendum — the enforcement stamp, one layer down
+
+Rep 1 at the D13 pin: every host interval measured clean via hostEndedAt,
+but the job-cap gate then failed on a job the engine CORRECTLY killed at
+its 900s cap and stamped 901s after wind-down. The kit's job-cap check
+now carries the same 5-second enforcement allowance as the host check;
+a real unenforced overrun runs minutes over, not seconds. Free replay of
+rep 1 post-fix: only delegationFloorMet remains — the fourth consecutive
+cohort where, with every measurement defect closed, the delegation floor
+is the single blocker. That is now cleanly the D10 question for Wido:
+the host under this contract (no-gain-budget 3) repeatedly parks on
+stop-loss before certifying an implementer, and whether that reads as
+run-INVALID or as the product verdict shapes the whole series.
