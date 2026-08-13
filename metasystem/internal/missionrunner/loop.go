@@ -835,27 +835,32 @@ func (e *Engine) stampObservedSession(turnDir string, result map[string]any) (an
 	return session, nil
 }
 
-// concludeFaultedTurn drives the cycle's remaining duties for a turn whose
-// return was not accepted (rejected or capped), in the binding order: drain
-// jobs FIRST so measurement never races live delegates, measure the
-// committed tree, append the ledger line with the fault annotations in the
-// same cycle block, then conclude with the empty verdict plus the
-// measurement (ConcludeFaultedTurn). A host-failure park and the stop-loss
-// check follow exactly as on the plain failed-turn path.
-func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]any, turnPath, turnDir string, fault TurnFault, consecutiveFailures int) (map[string]any, error) {
-	turnDoc, err := readDocLabeled(turnPath, "turn record", 3)
-	if err != nil {
-		return nil, err
-	}
-	turn, err := TurnFromDoc(turnDoc)
-	if err != nil {
-		return nil, err
-	}
-	cycle, ok := jsonInt(turn.Cycle)
-	if !ok {
-		return nil, failf(3, "turn record cycle is invalid")
-	}
-	parked, err := e.drainJobs(statePath, ledger, turn.TurnID, cycle)
+// concludeSpec parameterizes the ONE cycle-conclusion sequence with the
+// only lines on which the accepted and faulted paths genuinely differ.
+type concludeSpec struct {
+	turnID            string
+	cycle             int64
+	turnDir           string
+	annotations       []string
+	inflightCertified any
+	// propose builds the state proposal from the measurement.
+	propose func(measurementValue any, gatePassed bool) (map[string]any, error)
+	// afterWrite runs between the state write and the anchor (the
+	// accepted path patches its turn terminal here). Optional.
+	afterWrite func(updated map[string]any) error
+	// parkHostFailure: the faulted path parks when the proposal came
+	// back parked host-failure. Optional.
+	parkHostFailure bool
+}
+
+// concludeCycle is the single home of the cycle-conclusion binding order —
+// the package's central correctness argument: drain jobs FIRST so
+// measurement never races live delegates, measure the committed tree,
+// append the ledger line in the same cycle block, write the measurement,
+// build and write the state proposal, then anchor AFTER the state so a
+// crash between the two is heal-forward, and finally judge the stop-loss.
+func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, spec concludeSpec) (map[string]any, error) {
+	parked, err := e.drainJobs(statePath, ledger, spec.turnID, spec.cycle)
 	if err != nil {
 		return nil, err
 	}
@@ -870,45 +875,78 @@ func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]
 		candidateSHA, _ = measurement["candidateSha"].(string)
 	} else {
 		branch, _ := state["branch"].(string)
-		var err error
 		if candidateSHA, err = e.gitRevParse(branch); err != nil {
 			return nil, err
 		}
 	}
-	if err := e.appendLedger(state, ledger, cycle, classification, candidateSHA, observed, nil, fault.Annotations...); err != nil {
+	if err := e.appendLedger(state, ledger, spec.cycle, classification, candidateSHA, observed, spec.inflightCertified, spec.annotations...); err != nil {
 		return nil, err
 	}
 	var measurementValue any
 	if measurement != nil {
 		measurementValue = measurement
 	}
-	if err := atomicWriteJSON(filepath.Join(turnDir, "measurement.json"), map[string]any{
+	if err := atomicWriteJSON(filepath.Join(spec.turnDir, "measurement.json"), map[string]any{
 		"measurement": measurementValue, "gatePassed": gatePassed,
 	}); err != nil {
 		return nil, err
 	}
-	diskState, err := readDocLabeled(statePath, "mission state", 3)
-	if err != nil {
-		return nil, err
-	}
-	proposed, err := ConcludeFaultedTurn(e.Root, e.Mission, diskState, turn, fault, measurementValue, gatePassed, consecutiveFailures)
+	proposed, err := spec.propose(measurementValue, gatePassed)
 	if err != nil {
 		return nil, err
 	}
 	if proposed["status"] == "completed" {
-		e.deliverLandedUnconsumed(ledger, cycle, proposed)
+		e.deliverLandedUnconsumed(ledger, spec.cycle, proposed)
 	}
 	updated, err := e.writeState(statePath, proposed)
 	if err != nil {
 		return nil, err
 	}
-	if err := e.anchor(statePath, ledger, turn.TurnID); err != nil {
+	if spec.afterWrite != nil {
+		if err := spec.afterWrite(updated); err != nil {
+			return nil, err
+		}
+	}
+	if err := e.anchor(statePath, ledger, spec.turnID); err != nil {
 		return nil, err
 	}
-	if updated["status"] == "parked" && updated["parkReason"] == "host-failure" {
-		return e.parkState(statePath, ledger, "host-failure", turn.TurnID)
+	if spec.parkHostFailure && updated["status"] == "parked" && updated["parkReason"] == "host-failure" {
+		return e.parkState(statePath, ledger, "host-failure", spec.turnID)
 	}
-	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, updated)
+	return e.continueOrParkStopLoss(statePath, ledger, spec.turnID, updated)
+}
+
+// concludeFaultedTurn drives the cycle's remaining duties for a turn whose
+// return was not accepted (rejected or capped): the shared conclusion
+// sequence with the fault annotations, the ConcludeFaultedTurn proposal,
+// and the host-failure park.
+func (e *Engine) concludeFaultedTurn(statePath, ledger string, state map[string]any, turnPath, turnDir string, fault TurnFault, consecutiveFailures int) (map[string]any, error) {
+	turnDoc, err := readDocLabeled(turnPath, "turn record", 3)
+	if err != nil {
+		return nil, err
+	}
+	turn, err := TurnFromDoc(turnDoc)
+	if err != nil {
+		return nil, err
+	}
+	cycle, ok := jsonInt(turn.Cycle)
+	if !ok {
+		return nil, failf(3, "turn record cycle is invalid")
+	}
+	return e.concludeCycle(statePath, ledger, state, concludeSpec{
+		turnID:      turn.TurnID,
+		cycle:       cycle,
+		turnDir:     turnDir,
+		annotations: fault.Annotations,
+		propose: func(measurementValue any, gatePassed bool) (map[string]any, error) {
+			diskState, err := readDocLabeled(statePath, "mission state", 3)
+			if err != nil {
+				return nil, err
+			}
+			return ConcludeFaultedTurn(e.Root, e.Mission, diskState, turn, fault, measurementValue, gatePassed, consecutiveFailures)
+		},
+		parkHostFailure: true,
+	})
 }
 
 // A mission cycle in five named steps (Phase 3b): reserve and build the
@@ -1184,25 +1222,6 @@ func (e *Engine) cycleAdjudicate(c *cycleContext) (map[string]any, bool, error) 
 // cycleConclude drains the jobs, measures, books the ledger, concludes the
 // state, patches the turn terminal, anchors, and applies the stop-loss.
 func (e *Engine) cycleConclude(c *cycleContext) (map[string]any, bool, error) {
-	parked, err := e.drainJobs(c.statePath, c.ledger, c.turnID, c.cycle)
-	if err != nil {
-		return nil, true, err
-	}
-	if parked != nil {
-		// The drain stalled: the reserved cycle never concludes here — the
-		// resume heal books it once the human answers the park.
-		return parked, true, nil
-	}
-	classification, observed, measurement, gatePassed := e.measure(c.state)
-	var candidateSHA string
-	if measurement != nil {
-		candidateSHA, _ = measurement["candidateSha"].(string)
-	} else {
-		branch, _ := c.state["branch"].(string)
-		if candidateSHA, err = e.gitRevParse(branch); err != nil {
-			return nil, true, err
-		}
-	}
 	// The accepted return's certified entries participate in this booking's
 	// patience evaluation before anything is written (r2/P4-016): a job
 	// certified by THIS turn is not booked barren in the same breath.
@@ -1210,43 +1229,26 @@ func (e *Engine) cycleConclude(c *cycleContext) (map[string]any, bool, error) {
 	if returnDoc, err := readJSONDoc(filepath.Join(c.turnDir, "return.json")); err == nil {
 		inflightCertified = returnDoc["certified"]
 	}
-	if err := e.appendLedger(c.state, c.ledger, c.cycle, classification, candidateSHA, observed, inflightCertified); err != nil {
-		return nil, true, err
-	}
-	measurementPath := filepath.Join(c.turnDir, "measurement.json")
-	var measurementValue any
-	if measurement != nil {
-		measurementValue = measurement
-	}
-	if err := atomicWriteJSON(measurementPath, map[string]any{
-		"measurement": measurementValue, "gatePassed": gatePassed,
-	}); err != nil {
-		return nil, true, err
-	}
-	proposed, err := ConcludeFiles(e.Root, e.Mission, c.statePath, c.turnPath,
-		c.verdictPath, c.verdict.ReturnPath, filepath.Join(c.turnDir, "result.json"), measurementPath)
-	if err != nil {
-		return nil, true, err
-	}
-	if proposed["status"] == "completed" {
-		e.deliverLandedUnconsumed(c.ledger, c.cycle, proposed)
-	}
-	updated, err := e.writeState(c.statePath, proposed)
-	if err != nil {
-		return nil, true, err
-	}
-	if _, err := patchTurn(c.turnPath, map[string]any{
-		"status": "completed", "outcome": "completed", "error": nil,
-		"detail": "host return accepted", "result": c.result, "endedAt": nowISO(),
-		"rawPath": c.verdict.RawPath, "returnPath": c.verdict.ReturnPath,
-	}); err != nil {
-		return nil, true, err
-	}
-	if err := e.anchor(c.statePath, c.ledger, c.turnID); err != nil {
-		return nil, true, err
-	}
-	final, ferr := e.continueOrParkStopLoss(c.statePath, c.ledger, c.turnID, updated)
-	return final, true, ferr
+	final, err := e.concludeCycle(c.statePath, c.ledger, c.state, concludeSpec{
+		turnID:            c.turnID,
+		cycle:             c.cycle,
+		turnDir:           c.turnDir,
+		inflightCertified: inflightCertified,
+		propose: func(measurementValue any, gatePassed bool) (map[string]any, error) {
+			return ConcludeFiles(e.Root, e.Mission, c.statePath, c.turnPath,
+				c.verdictPath, c.verdict.ReturnPath, filepath.Join(c.turnDir, "result.json"),
+				filepath.Join(c.turnDir, "measurement.json"))
+		},
+		afterWrite: func(map[string]any) error {
+			_, err := patchTurn(c.turnPath, map[string]any{
+				"status": "completed", "outcome": "completed", "error": nil,
+				"detail": "host return accepted", "result": c.result, "endedAt": nowISO(),
+				"rawPath": c.verdict.RawPath, "returnPath": c.verdict.ReturnPath,
+			})
+			return err
+		},
+	})
+	return final, true, err
 }
 
 // failTurnBeforeLaunch records a turn that never reached its host: the
