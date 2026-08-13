@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -36,17 +35,11 @@ type announcementFile struct {
 }
 
 var (
-	mainIDPattern      = regexp.MustCompile(`^main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}$`)
-	commandHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	// The identity grammars and the announcement/protocol-file split have
+	// ONE home in census (review lease-census-4).
+	mainIDPattern      = census.MainIDRe
+	commandHashPattern = census.CommandHashRe
 )
-
-// nonAnnouncementFiles are the mains-directory files that are not main
-// announcements and must never be classified as one.
-var nonAnnouncementFiles = map[string]bool{
-	"worktree-lease.json":        true,
-	"worktree-commit-token.json": true,
-	"reaped-after-claim.json":    true,
-}
 
 // Class values a caller can resolve to.
 const (
@@ -83,7 +76,7 @@ func readAnnouncements(root string, strict bool) ([]announcementFile, error) {
 	var out []announcementFile
 	for _, path := range entries {
 		name := filepath.Base(path)
-		if strings.HasSuffix(name, ".protocol-cursor.json") || nonAnnouncementFiles[name] {
+		if !census.IsAnnouncementFile(name) {
 			continue
 		}
 		var raw map[string]json.RawMessage
@@ -93,9 +86,13 @@ func readAnnouncements(root string, strict bool) ([]announcementFile, error) {
 			}
 			continue
 		}
-		if !hasAll(raw, "sessionId", "pid", "pidStartedAt", "pgid", "runtime", "instanceTag", "announcedAt") {
+		if err := census.ValidateAnnouncementKeys(func(visit func(string) bool) {
+			for key := range raw {
+				visit(key)
+			}
+		}); err != nil {
 			if strict {
-				return nil, fmt.Errorf("caller classification refused: invalid announcement schema %s", name)
+				return nil, fmt.Errorf("caller classification refused: invalid announcement schema %s: %v", name, err)
 			}
 			continue
 		}
@@ -126,15 +123,6 @@ func readAnnouncements(root string, strict bool) ([]announcementFile, error) {
 		out = append(out, announcementFile{Path: path, Ann: ann})
 	}
 	return out, nil
-}
-
-func hasAll(raw map[string]json.RawMessage, keys ...string) bool {
-	for _, k := range keys {
-		if _, ok := raw[k]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 // authenticatedAnnouncement returns the announcement a live pid authenticates

@@ -73,8 +73,13 @@ var liveStatuses = map[string]bool{
 	"pending-setup": true, "pending": true, "running": true,
 }
 
-var mainIDRe = regexp.MustCompile(`^main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}$`)
-var sha256Re = regexp.MustCompile(`^[0-9a-f]{64}$`)
+// MainIDRe and CommandHashRe are the identity grammars of the mains
+// directory, shared with lease (review lease-census-4).
+var MainIDRe = regexp.MustCompile(`^main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}$`)
+var CommandHashRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+var mainIDRe = MainIDRe
+var sha256Re = CommandHashRe
 
 // RunFixtureCensus computes the verdict from a recorded bundle rooted at
 // metasystemRoot: the process fixture at processFile, plus state.json,
@@ -433,19 +438,10 @@ func announcementsList(metasystemRoot string, processes []Process, errors *[]str
 	os.MkdirAll(directory, 0o755)
 	paths, _ := filepath.Glob(filepath.Join(directory, "*.json"))
 	sort.Strings(paths)
-	skip := map[string]bool{
-		"worktree-lease.json": true, "worktree-commit-token.json": true, "reaped-after-claim.json": true,
-	}
-	expected := map[string]bool{
-		"sessionId": true, "pid": true, "pidStartedAt": true, "pgid": true,
-		"runtime": true, "instanceTag": true, "announcedAt": true,
-	}
-	optional := map[string]bool{"mainId": true, "commandHash": true, "ownerLineage": true}
 	var live []identityRecord
 	for _, path := range paths {
 		name := filepath.Base(path)
-		if skip[name] || len(name) > len(".protocol-cursor.json") &&
-			name[len(name)-len(".protocol-cursor.json"):] == ".protocol-cursor.json" {
+		if !IsAnnouncementFile(name) {
 			continue
 		}
 		data, err := os.ReadFile(path)
@@ -458,18 +454,11 @@ func announcementsList(metasystemRoot string, processes []Process, errors *[]str
 			*errors = append(*errors, "announcement-schema:"+name)
 			continue
 		}
-		ok := true
-		for key := range expected {
-			if _, present := value[key]; !present {
-				ok = false
+		if err := ValidateAnnouncementKeys(func(visit func(string) bool) {
+			for key := range value {
+				visit(key)
 			}
-		}
-		for key := range value {
-			if !expected[key] && !optional[key] {
-				ok = false
-			}
-		}
-		if !ok {
+		}); err != nil {
 			*errors = append(*errors, "announcement-schema:"+name)
 			continue
 		}
