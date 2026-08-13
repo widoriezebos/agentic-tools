@@ -195,3 +195,30 @@ func TestValidateUnreadable(t *testing.T) {
 		t.Fatal("expected a hard error for an unreadable configuration")
 	}
 }
+
+// foundations-9: numeric knobs are soft-defaulted at read time, so their
+// typos must surface HERE — including the units suffix an operator most
+// plausibly types.
+func TestValidateNumericKnobs(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		line   string
+		expect string
+	}{
+		{"unit suffix", "exec.local-timeout-sec=300s\n", "exec.local-timeout-sec must be a positive integer"},
+		{"zero bound", "exec.network-timeout-sec=0\n", "exec.network-timeout-sec must be a positive integer"},
+		{"negative interval", "watch.interval-sec=-5\n", "watch.interval-sec must be a positive integer"},
+		{"nonsense stale", "watch.stale-min=soon\n", "watch.stale-min must be a positive integer"},
+		{"share over 100", "census.max-interval-share-percent=150\n", "census.max-interval-share-percent must be an integer between 1 and 100"},
+	} {
+		problems := validateRepo(t, validConf+tc.line)
+		if !hasProblem(problems, tc.expect) {
+			t.Fatalf("%s: expected %q in %v", tc.name, tc.expect, problems)
+		}
+	}
+	// Valid knobs raise nothing.
+	good := validConf + "exec.local-timeout-sec=120\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\n"
+	if problems := validateRepo(t, good); len(problems) != 0 {
+		t.Fatalf("valid knobs rejected: %v", problems)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -302,6 +303,28 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			if !present {
 				add("%s resolves to %s but has no model.%s value", roleLabel(role, mode, false), runtime, runtime)
 			}
+		}
+	}
+
+	// Numeric operational knobs are soft-defaulted at READ time (a malformed
+	// bound must not disable bounding), which is only safe because the typo
+	// surfaces HERE (review foundations-9): without this check an operator
+	// who fat-fingers exec.local-timeout-sec=300s silently runs on defaults
+	// and discovers it from the exact hang class the bound exists to prevent.
+	for _, knob := range []string{
+		"exec.local-timeout-sec", "exec.network-timeout-sec",
+		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
+		"census.log-max-bytes",
+	} {
+		if raw, present := values[knob]; present {
+			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
+				add("%s must be a positive integer, got %s", knob, pyRepr(raw))
+			}
+		}
+	}
+	if raw, present := values["census.max-interval-share-percent"]; present {
+		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 || parsed > 100 {
+			add("census.max-interval-share-percent must be an integer between 1 and 100, got %s", pyRepr(raw))
 		}
 	}
 

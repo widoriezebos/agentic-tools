@@ -281,7 +281,9 @@ func measureCommand(commandRoot, command string, capMinutes int) (map[string]str
 	// Bounded with group-kill (B4), for the same reason as the contract
 	// gate command: a context deadline alone leaves grandchildren holding
 	// the output pipe past the ceiling.
-	runErr := boundedexec.Run(cmd, time.Duration(capMinutes)*time.Minute, "measurement command")
+	runErr := boundedexec.Run(cmd,
+		boundedexec.FixedBound(time.Duration(capMinutes)*time.Minute, "fence.job-cap-min"),
+		"measurement command")
 	if errors.Is(runErr, boundedexec.ErrTimedOut) {
 		return nil, 0, true, nil
 	}

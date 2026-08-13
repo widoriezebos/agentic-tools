@@ -42,10 +42,25 @@ const (
 // ANSWER (a named ceiling was exceeded) can tell it from a failure to run.
 var ErrTimedOut = errors.New("timed out")
 
+// Bound is a time limit that KNOWS which knob produced it, so expiry can
+// name the key an operator would actually raise (review foundations-5: the
+// old magnitude-based guess misdirected exactly when a bound was tuned).
+type Bound struct {
+	Limit time.Duration
+	Key   string
+}
+
+// FixedBound wraps an ad-hoc limit — a fence-derived ceiling, a test value —
+// with the name of whatever authored it.
+func FixedBound(limit time.Duration, key string) Bound {
+	return Bound{Limit: limit, Key: key}
+}
+
 // Timeout resolves a kind's bound from the checkout's metasystem.conf,
 // falling back to the stated default when the key is absent or unusable —
-// a malformed bound must not disable bounding.
-func Timeout(confPath string, kind Kind) time.Duration {
+// a malformed bound must not disable bounding (config validate names the
+// malformation; the read stays soft).
+func Timeout(confPath string, kind Kind) Bound {
 	key, fallback := localKey, localDefault
 	if kind == Network {
 		key, fallback = networkKey, networkDefault
@@ -56,7 +71,7 @@ func Timeout(confPath string, kind Kind) time.Duration {
 			seconds = parsed
 		}
 	}
-	return time.Duration(seconds) * time.Second
+	return Bound{Limit: time.Duration(seconds) * time.Second, Key: key}
 }
 
 // Run executes cmd under limit. what names the operation in the failure
@@ -66,7 +81,7 @@ func Timeout(confPath string, kind Kind) time.Duration {
 //
 // The returned error on expiry is a dependency failure: the metasystem
 // could not finish because something it depends on did not answer.
-func Run(cmd *exec.Cmd, limit time.Duration, what string) error {
+func Run(cmd *exec.Cmd, bound Bound, what string) error {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
@@ -79,7 +94,7 @@ func Run(cmd *exec.Cmd, limit time.Duration, what string) error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(limit):
+	case <-time.After(bound.Limit):
 	}
 	// The bound expired: signal the GROUP so the command's children die with
 	// it rather than outliving the bound holding pipes open. A negative pid
@@ -93,15 +108,9 @@ func Run(cmd *exec.Cmd, limit time.Duration, what string) error {
 	case <-done:
 	case <-time.After(killGraceWindow):
 	}
-	return fmt.Errorf("%s %w after %s (raise it with %s in metasystem.conf)",
-		what, ErrTimedOut, limit, boundKeyFor(limit))
-}
-
-// boundKeyFor names the key an operator would raise. The bound itself does
-// not carry its kind, so the shorter default identifies the network one.
-func boundKeyFor(limit time.Duration) string {
-	if limit <= time.Duration(networkDefault)*time.Second {
-		return networkKey
+	if bound.Key == "" {
+		return fmt.Errorf("%s %w after %s", what, ErrTimedOut, bound.Limit)
 	}
-	return localKey
+	return fmt.Errorf("%s %w after %s (raise it with %s)",
+		what, ErrTimedOut, bound.Limit, bound.Key)
 }
