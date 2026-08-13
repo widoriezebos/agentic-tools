@@ -245,19 +245,10 @@ func firstPresent(object map[string]any, keys ...string) any {
 	return nil
 }
 
-// atomicWriteJSON renders through the SAME wiredoc canon both former
-// copies used (host's canonicalJSON and adapter's encodeJSON were
-// byte-identical bodies), so the consolidation changes no on-disk bytes.
+// atomicWriteJSON renders through wiredoc.RenderValue — the one home of
+// the canon detour (adapter-host-registry-2) — so bytes cannot drift.
 func atomicWriteJSON(path string, value any) error {
-	seed, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	doc, err := wiredoc.Decode(seed)
-	if err != nil {
-		return err
-	}
-	rendered, err := doc.Render()
+	rendered, err := wiredoc.RenderValue(value)
 	if err != nil {
 		return err
 	}

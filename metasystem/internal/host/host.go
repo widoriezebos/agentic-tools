@@ -18,15 +18,7 @@ import (
 // unescaped canon — through the wire-document owner (Phase 5.3); the corpus
 // equivalence test proves the bytes identical to the encoder this replaces.
 func canonicalJSON(value any) ([]byte, error) {
-	seed, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := wiredoc.Decode(seed)
-	if err != nil {
-		return nil, err
-	}
-	return doc.Render()
+	return wiredoc.RenderValue(value)
 }
 
 // atomicWriteJSON writes value to path so a reader sees either the old bytes or

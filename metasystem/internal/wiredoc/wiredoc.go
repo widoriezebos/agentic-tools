@@ -31,6 +31,23 @@ type Doc struct {
 	raw map[string]any
 }
 
+// RenderValue renders any Go value as canonical wire bytes: marshal as the
+// seed, decode into a Doc, render. This detour existed as byte-identical
+// private copies in host (canonicalJSON) and adapter (encodeJSON) and a
+// third in usage (review adapter-host-registry-2); the package that owns
+// the canon now owns the detour, corpus-pinned once.
+func RenderValue(value any) ([]byte, error) {
+	seed, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := Decode(seed)
+	if err != nil {
+		return nil, err
+	}
+	return doc.Render()
+}
+
 // Decode parses a document with the frozen grammar the current readers
 // define: UseNumber (literal number spellings preserved), duplicate keys
 // last-wins, and trailing bytes after the top-level value tolerated — a

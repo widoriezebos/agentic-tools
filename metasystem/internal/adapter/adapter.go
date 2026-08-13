@@ -58,15 +58,7 @@ func decodeJSONBytes(data []byte) (any, error) {
 // owner (Phase 5.3); byte equivalence is pinned by the package's own
 // bytecheck test.
 func encodeJSON(value any) ([]byte, error) {
-	seed, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := wiredoc.Decode(seed)
-	if err != nil {
-		return nil, err
-	}
-	return doc.Render()
+	return wiredoc.RenderValue(value)
 }
 
 // atomicWriteJSON writes value to path so a reader sees the old bytes or the

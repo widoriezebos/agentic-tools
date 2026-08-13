@@ -145,3 +145,36 @@ func TestRenderEscapedDialect(t *testing.T) {
 		t.Fatalf("keys not sorted: %s", text)
 	}
 }
+
+// RenderValue is the ONE canon detour (adapter-host-registry-2): HTML
+// intact, two-space indent, sorted keys, one trailing newline — pinned
+// here directly, and transitively by every converted writer's bytecheck.
+func TestRenderValueCanon(t *testing.T) {
+	rendered, err := RenderValue(map[string]any{"z": 1, "html": "a<b>&c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(rendered)
+	// The trap this repo has hit three times: assert the ESCAPE SEQUENCES
+	// are absent — the raw characters are exactly what unescaped canon keeps.
+	for _, escape := range []string{`\u003c`, `\u003e`, `\u0026`} {
+		if strings.Contains(text, escape) {
+			t.Fatalf("HTML was escaped: %s", text)
+		}
+	}
+	if !strings.Contains(text, "a<b>&c") {
+		t.Fatalf("value not rendered verbatim: %s", text)
+	}
+	if !strings.HasSuffix(text, "}\n") {
+		t.Fatalf("missing trailing newline: %q", text)
+	}
+	if strings.Index(text, `"html"`) > strings.Index(text, `"z"`) {
+		t.Fatalf("keys not sorted: %s", text)
+	}
+}
+
+func TestRenderValueRefusesUnmarshalable(t *testing.T) {
+	if _, err := RenderValue(func() {}); err == nil {
+		t.Fatal("an unmarshalable value must refuse")
+	}
+}
