@@ -1,9 +1,6 @@
 package identity
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
 	"strings"
 )
 
@@ -29,24 +26,14 @@ func Custodian(pid, start int64, tag string) Liveness {
 	if err == nil && state == Dead {
 		return Dead
 	}
-	if fixture := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"); fixture != "" {
-		if data, readErr := os.ReadFile(fixture); readErr == nil {
-			var table map[string]struct {
-				Started int64  `json:"pidStartedAt"`
-				Command string `json:"command"`
-			}
-			if json.Unmarshal(data, &table) == nil {
-				if entry, ok := table[fmt.Sprint(pid)]; ok {
-					if entry.Started != start {
-						return Dead
-					}
-					if tag != "" && !strings.Contains(entry.Command, tag) {
-						return Dead
-					}
-					return Alive
-				}
-			}
+	if entry, ok := FixtureEntryFor(pid); ok {
+		if entry.StartedAt != start {
+			return Dead
 		}
+		if tag != "" && !strings.Contains(entry.Command, tag) {
+			return Dead
+		}
+		return Alive
 	}
 	if err != nil || state == Unknown {
 		return Unknown

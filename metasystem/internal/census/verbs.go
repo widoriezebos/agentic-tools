@@ -1,9 +1,7 @@
 package census
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -23,18 +21,8 @@ func Alive(pid, expectedStart int64) bool {
 // the process table (start time + command). This one-source rule is why a main
 // can recognize its own announcement.
 func AuthIdentity(pid int64) (map[string]any, error) {
-	if fixture := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"); fixture != "" {
-		if data, err := os.ReadFile(fixture); err == nil {
-			var table map[string]struct {
-				Started *int64  `json:"started"`
-				Command *string `json:"command"`
-			}
-			if json.Unmarshal(data, &table) == nil {
-				if entry, ok := table[fmt.Sprint(pid)]; ok && entry.Started != nil && entry.Command != nil && *entry.Command != "" {
-					return map[string]any{"pid": pid, "pidStartedAt": *entry.Started, "command": *entry.Command}, nil
-				}
-			}
-		}
+	if entry, ok := identity.FixtureEntryFor(pid); ok && entry.HasStartedAt && entry.HasCommand && entry.Command != "" {
+		return map[string]any{"pid": pid, "pidStartedAt": entry.StartedAt, "command": entry.Command}, nil
 	}
 	return psIdentity(pid)
 }

@@ -35,10 +35,8 @@ func processCommand(pid int, allowFake bool) string {
 		return strings.Join(exact.Argv, " ")
 	}
 	if allowFake {
-		if entry := fakeIdentity(pid); entry != nil {
-			if command, ok := entry["command"].(string); ok {
-				return command
-			}
+		if entry, ok := identity.FixtureEntryFor(int64(pid)); ok && entry.HasCommand {
+			return entry.Command
 		}
 	}
 	return ""
@@ -92,29 +90,13 @@ func groupOwned(pgid int, tag string, allowFake bool) bool {
 		}
 	}
 	if allowFake {
-		entry := fakeIdentity(pgid)
-		if entry == nil {
+		entry, ok := identity.FixtureEntryFor(int64(pgid))
+		if !ok {
 			return false
 		}
-		recorded, ok := jsonInt(entry["pgid"])
-		return ok && recorded == int64(pgid) && strings.Contains(valueString(entry["command"]), tag)
+		return entry.HasPgid && entry.Pgid == int64(pgid) && strings.Contains(entry.Command, tag)
 	}
 	return false
-}
-
-// fakeIdentity reads one pid's entry from the fixture identity file, when the
-// harness provides one. Any read problem means no identity.
-func fakeIdentity(pid int) map[string]any {
-	path := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
-	if path == "" {
-		return nil
-	}
-	doc, err := readJSONDoc(path)
-	if err != nil {
-		return nil
-	}
-	entry, _ := doc[strconv.Itoa(pid)].(map[string]any)
-	return entry
 }
 
 // publishFakeIdentity records a launched fake host's identity in the fixture

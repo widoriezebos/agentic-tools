@@ -1,11 +1,9 @@
 package dispatch
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -114,20 +112,12 @@ func fixtureCommand(root string, pid, actualPgid int64) (string, error) {
 	if configured != "fake" || fixturePath == "" {
 		return "", fmt.Errorf("mission process command line could not be verified")
 	}
-	data, err := os.ReadFile(fixturePath)
-	if err != nil {
-		return "", fmt.Errorf("fake mission process identity fixture is invalid")
-	}
-	var fixture map[string]map[string]any
-	if json.Unmarshal(data, &fixture) != nil {
-		return "", fmt.Errorf("fake mission process identity fixture is invalid")
-	}
-	identity, present := fixture[strconv.FormatInt(pid, 10)]
+	entry, present := identity.FixtureEntryFor(pid)
 	if !present {
 		return "", fmt.Errorf("fake mission process identity fixture is invalid")
 	}
-	command, commandOK := identity["command"].(string)
-	fixturePgid, pgidOK := numInt(identity["pgid"])
+	command, commandOK := entry.Command, entry.HasCommand
+	fixturePgid, pgidOK := entry.Pgid, entry.HasPgid
 	if !commandOK || !pgidOK || fixturePgid != actualPgid {
 		return "", fmt.Errorf("fake mission process identity fixture is invalid")
 	}

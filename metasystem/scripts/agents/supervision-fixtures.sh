@@ -543,7 +543,7 @@ import json, sys
 from pathlib import Path
 path, pid, started = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
 value = json.loads(path.read_text())
-value[pid] = {"started": started, "pidStartedAt": started,
+value[pid] = {"pidStartedAt": started,
               "command": "fixture-supervisor metasystem-job-owned"}
 path.write_text(json.dumps(value) + "\n")
 PY

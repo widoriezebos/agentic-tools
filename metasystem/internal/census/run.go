@@ -350,17 +350,8 @@ func identityAlive(pid, expectedStart int64) bool {
 	if _, state, err := kernelProbe(pid); err == nil && state == probeDead {
 		return false
 	}
-	if fixture := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"); fixture != "" {
-		if data, err := os.ReadFile(fixture); err == nil {
-			var table map[string]struct {
-				Started int64 `json:"pidStartedAt"`
-			}
-			if json.Unmarshal(data, &table) == nil {
-				if entry, ok := table[fmt.Sprint(pid)]; ok {
-					return entry.Started == expectedStart
-				}
-			}
-		}
+	if entry, ok := identity.FixtureEntryFor(pid); ok {
+		return entry.StartedAt == expectedStart
 	}
 	exact, state, err := kernelProbe(pid)
 	if err != nil || state != probeAlive {

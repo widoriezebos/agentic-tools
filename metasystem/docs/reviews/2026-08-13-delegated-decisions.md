@@ -301,3 +301,14 @@ is the single blocker. That is now cleanly the D10 question for Wido:
 the host under this contract (no-gain-budget 3) repeatedly parks on
 stop-loss before certifying an implementer, and whether that reads as
 run-INVALID or as the product verdict shapes the whole series.
+
+## D14 — pidStartedAt is the fixture table's one spelling (W2.11 sign-off)
+
+**Decision:** identity.FixtureEntryFor is the ONE reader of the
+fake-identity fixture table (five packages parsed it privately, with two
+start-time spellings, and the shell fixtures wrote both keys into every
+entry to satisfy them all). pidStartedAt is canonical — the spelling every
+other record in the tree uses; the legacy "started" key is retired from
+both shell fixture writers, and the shared reader still accepts it during
+the transition so any straggler fixture keeps working. The dual-read drops
+once a full suite cycle proves no writer emits it.

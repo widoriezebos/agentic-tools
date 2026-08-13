@@ -210,7 +210,7 @@ value = json.loads(path.read_text())
 # The engine reads start times natively and no longer registers callers in
 # the fixture file the way the python helper's restricted-CI fallback did,
 # so create the entry rather than updating one.
-value.setdefault(pid, {}).update({"started": started, "pidStartedAt": started, "pgid": int(pid), "command": "caps-fixture"})
+value.setdefault(pid, {}).update({"pidStartedAt": started, "pgid": int(pid), "command": "caps-fixture"})
 path.write_text(json.dumps(value) + "\n")
 PY
 ( while true; do
@@ -231,7 +231,7 @@ with lock_path.open("a+") as lock:
         pid, started, tag = item.get("pid"), item.get("pidStartedAt"), item.get("instanceTag")
         if type(pid) is int and type(started) is int and isinstance(tag, str):
             values[str(pid)] = {
-                "started": started, "pidStartedAt": started,
+                "pidStartedAt": started,
                 "pgid": pid, "command": f"fixture {tag}",
             }
     identities.write_text(json.dumps(values) + "\n")
