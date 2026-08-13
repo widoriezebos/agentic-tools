@@ -7,13 +7,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -160,39 +156,7 @@ func setupWatcher(repo, scope string, self identity.Ref, tag string, intervalSec
 		return nil, nil, false
 	}
 
-	intervalMS := intervalSec * 1000
-	if override := os.Getenv("METASYSTEM_CENSUS_INTERVAL_MS"); override != "" {
-		if parsed, err := strconv.Atoi(override); err == nil && parsed > 0 {
-			intervalMS = parsed
-		}
-	}
-	budgetPercent := 50
-	if parsed, err := strconv.Atoi(config.ConfValue(filepath.Join(repo, "metasystem.conf"),
-		"census.max-interval-share-percent", "50")); err == nil && parsed >= 1 && parsed <= 100 {
-		budgetPercent = parsed
-	}
-
-	cfg := supervise.WatcherConfig{
-		SupervisionDir: supervisionDir,
-		Interval:       intervalSec,
-		IntervalMS:     intervalMS,
-		BudgetPercent:  budgetPercent,
-		// The metasystem root (where scripts, config, and the engine live) and
-		// the repository scope (the git toplevel the census bounds to) differ
-		// in a nested checkout; both travel from the armer.
-		Fingerprint: func() (string, error) { return census.Fingerprint(repo, scope) },
-		Census: func(fingerprint string, now time.Time) (census.Verdict, error) {
-			// The fixture enumeration override mirrors watcher-pass: a fake-
-			// runtime fixture feeds the process table through a file (and the
-			// enumerator itself refuses it outside metasystem.runtimes=fake).
-			if processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE"); processFile != "" {
-				return census.RunFixtureCensus(repo, scope, processFile, fingerprint, intervalSec, now)
-			}
-			return census.RunProductionCensus(repo, scope, fingerprint, intervalSec, now)
-		},
-		Now:  func() time.Time { return time.Now().UTC() },
-		Warn: func(message string) { fmt.Fprintln(os.Stderr, message) },
-	}
+	cfg := watcherConfig(repo, scope, supervisionDir, intervalSec)
 	pass = func() {
 		if err := cfg.WatcherPass(); err != nil {
 			fmt.Fprintln(os.Stderr, "supervise component watcher:", err)

@@ -2490,10 +2490,10 @@ PY
   saved_requirements="$agent_fixture/design-critic.requirements.json"
   cp "$requirements" "$saved_requirements"
   # The unverified-network snapshot must be the ONLY candidate: selection
-  # is filename-ordered today (registry-3), so leftover verified snapshots
-  # from earlier sections can shadow the doctored one depending on how many
-  # probes ran before this point — which the snapshot self-heal rows
-  # legitimately vary.
+  # is newest-by-capturedAt (registry-3 fixed the filename-order rule), and
+  # same-second probes from earlier sections could still tie with the
+  # doctored snapshot — isolation keeps this row independent of how many
+  # probes ran before it.
   mkdir -p "$agent_fixture/pre-unverified"
   mv "$snapshot_dir"/*.json "$agent_fixture/pre-unverified/" 2>/dev/null || true
   "$fake_adapter" probe --profile unverified-network >/dev/null

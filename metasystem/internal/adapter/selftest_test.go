@@ -201,3 +201,22 @@ func TestSelftestListenerTimesOutQuietlyWithoutARequest(t *testing.T) {
 		t.Fatal("request log must not exist without a request")
 	}
 }
+
+// adapter-host-registry-3: newest means capturedAt, never filename order —
+// after a CLI upgrade the old version's snapshots sort lexically LAST.
+func TestSelftestEnvelopeDeclarationPicksByCapturedAt(t *testing.T) {
+	dir := t.TempDir()
+	// Lexically LAST but chronologically OLD (version 1.9 sorts after 1.10).
+	writeFile(t, filepath.Join(dir, "codex-1.9-aaaa-20260101-001.json"),
+		`{"runtime":"codex","capturedAt":"2026-01-01T00:00:00Z","envelopeEnforcement":{"network":"notEnforced"}}`)
+	// Lexically FIRST but the actual newest.
+	writeFile(t, filepath.Join(dir, "codex-1.10-zzzz-20260813-001.json"),
+		`{"runtime":"codex","capturedAt":"2026-08-13T00:00:00Z","envelopeEnforcement":{"network":"mapped"}}`)
+	// A different runtime extending the prefix must not shadow.
+	writeFile(t, filepath.Join(dir, "codex-next-9.9-ffff-20270101-001.json"),
+		`{"runtime":"codex-next","capturedAt":"2027-01-01T00:00:00Z","envelopeEnforcement":{"network":"notEnforced"}}`)
+
+	if got := SelftestEnvelopeDeclaration(dir, "codex", "network"); got != "mapped" {
+		t.Fatalf("declaration = %q; the stale or foreign snapshot won", got)
+	}
+}

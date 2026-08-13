@@ -4,11 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
-	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -55,37 +51,7 @@ func runSuperviseWatcherPass(args []string) int {
 
 	_ = supervise.WriteHeartbeat(*heartbeat, "watcher", self, *tag, *interval, *capMin)
 
-	intervalMS := *interval * 1000
-	if override := os.Getenv("METASYSTEM_CENSUS_INTERVAL_MS"); override != "" {
-		if n, err := strconv.Atoi(override); err == nil && n > 0 {
-			intervalMS = n
-		}
-	}
-	budgetPercent := 50
-	if value, code, err := config.Get(config.GetParams{
-		ConfPath: *root + "/metasystem.conf", Key: "census.max-interval-share-percent",
-		Default: "50", DefaultSet: true,
-	}); err == nil && code == 0 {
-		if n, err := strconv.Atoi(value); err == nil && n >= 1 && n <= 100 {
-			budgetPercent = n
-		}
-	}
-
-	cfg := supervise.WatcherConfig{
-		SupervisionDir: *supervisionDir,
-		Interval:       *interval,
-		IntervalMS:     intervalMS,
-		BudgetPercent:  budgetPercent,
-		Fingerprint:    func() (string, error) { return census.Fingerprint(*root, censusScope) },
-		Census: func(fingerprint string, now time.Time) (census.Verdict, error) {
-			if processFile := os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE"); processFile != "" {
-				return census.RunFixtureCensus(*root, censusScope, processFile, fingerprint, *interval, now)
-			}
-			return census.RunProductionCensus(*root, censusScope, fingerprint, *interval, now)
-		},
-		Now:  func() time.Time { return time.Now().UTC() },
-		Warn: func(message string) { fmt.Fprintln(os.Stderr, message) },
-	}
+	cfg := watcherConfig(*root, censusScope, *supervisionDir, *interval)
 	if err := cfg.WatcherPass(); err != nil {
 		fmt.Fprintln(os.Stderr, "supervise watcher-pass:", err)
 		return 1
