@@ -287,13 +287,20 @@ func runSuperviseWatchdogReport(args []string) int {
 		fmt.Fprintln(os.Stderr, "supervise watchdog-report: --repo is required")
 		return 2
 	}
-	const armCmd = "scripts/agents/arm-supervision.sh --repo ."
 	supervision := filepath.Join(*repo, "artifacts", "agents", "supervision")
-	var lines []string
+
+	// The report is for a human at the end of a session: at most one
+	// supervision line (every symptom shares the one remedy), at most one
+	// untracked line (grouped pids, no argv walls — `proc census` has the
+	// detail), and silence when everything is healthy. The page of
+	// repeated WATCHDOG lines this replaces was ignored by its audience,
+	// which is the one failure a report cannot survive (human, 2026-08-13).
+	var problems []string
+	var untracked []string
 
 	last, lastErr := readJSONObject(filepath.Join(supervision, "last-census.json"))
 	if lastErr != nil {
-		lines = append(lines, "WATCHDOG: it has not reported at all yet. Re-arm it with "+armCmd+" if this persists.")
+		problems = append(problems, "never reported")
 	} else {
 		completed, _ := jsonIntField(last["completedAtEpoch"])
 		interval, _ := jsonIntField(last["intervalSec"])
@@ -305,11 +312,13 @@ func runSuperviseWatchdogReport(args []string) int {
 				window = 180
 			}
 		}
-		verdict, _ := last["verdict"].(string)
-		if verdict != "SUCCESS" || interval < 1 || age >= window {
-			lines = append(lines, fmt.Sprintf("WATCHDOG: its last report is %ds old or unsuccessful, so it may not be watching. Re-arm it with %s.", age, armCmd))
+		if verdict, _ := last["verdict"].(string); verdict != "SUCCESS" {
+			problems = append(problems, "last census failed")
+		} else if interval < 1 || age >= window {
+			problems = append(problems, "last census "+humanAge(age)+" old")
 		}
 		if inventory, ok := last["inventory"].([]any); ok {
+			byRuntime := map[string][]string{}
 			for _, raw := range inventory {
 				item, _ := raw.(map[string]any)
 				if item == nil {
@@ -318,9 +327,19 @@ func runSuperviseWatchdogReport(args []string) int {
 				if class, _ := item["class"].(string); class == "UNTRACKED" {
 					pid, _ := jsonIntField(item["pid"])
 					runtime, _ := item["runtime"].(string)
-					argv, _ := item["argv"].(string)
-					lines = append(lines, fmt.Sprintf("UNTRACKED pid=%d runtime=%s argv=%s", pid, runtime, argv))
+					if runtime == "" {
+						runtime = "unknown"
+					}
+					byRuntime[runtime] = append(byRuntime[runtime], fmt.Sprint(pid))
 				}
+			}
+			runtimes := make([]string, 0, len(byRuntime))
+			for runtime := range byRuntime {
+				runtimes = append(runtimes, runtime)
+			}
+			sort.Strings(runtimes)
+			for _, runtime := range runtimes {
+				untracked = append(untracked, runtime+" "+strings.Join(byRuntime[runtime], ","))
 			}
 		}
 	}
@@ -329,13 +348,13 @@ func runSuperviseWatchdogReport(args []string) int {
 	owner, ownerOK := stateOwner(state)
 	components, componentsOK := stateComponents(state)
 	if stateErr != nil || !ownerOK || !componentsOK {
-		lines = append(lines, "WATCHDOG: its record of what it is watching is missing or unreadable. Re-arm it with "+armCmd+".")
+		problems = append(problems, "state unreadable")
 		state = nil
 	} else if lastErr == nil {
 		stateFP, _ := state["fingerprint"].(string)
 		lastFP, _ := last["fingerprint"].(string)
 		if stateFP != lastFP {
-			lines = append(lines, "WATCHDOG: it was started against an older version of this code and is now watching something that has changed. Re-arm it with "+armCmd+".")
+			problems = append(problems, "code changed since arming")
 		}
 	}
 
@@ -353,20 +372,49 @@ func runSuperviseWatchdogReport(args []string) int {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	var dead []string
 	for _, name := range names {
 		item := identities[name]
 		pid, pidOK := jsonIntField(item["pid"])
 		start, startOK := jsonIntField(item["pidStartedAt"])
 		if !pidOK || !startOK || !census.Alive(pid, start) {
-			lines = append(lines, fmt.Sprintf("WATCHDOG: its %s part is not running. Re-arm it with %s.", name, armCmd))
+			dead = append(dead, name)
 		}
 	}
-
-	if len(lines) > 20 {
-		lines = lines[:20]
+	if len(dead) > 0 {
+		problems = append(problems, strings.Join(dead, "+")+" not running")
 	}
-	fmt.Println(strings.Join(lines, "\n"))
+
+	var lines []string
+	if len(problems) > 0 {
+		lines = append(lines, "SUPERVISION DOWN ("+strings.Join(problems, "; ")+") — re-arm: scripts/agents/arm-supervision.sh --repo .")
+	}
+	if len(untracked) > 0 {
+		lines = append(lines, "UNTRACKED agents (not this checkout's work; detail: bin/metasystem proc census): "+strings.Join(untracked, "; "))
+	}
+	if len(lines) > 0 {
+		fmt.Println(strings.Join(lines, "\n"))
+	}
 	return 0
+}
+
+// humanAge renders seconds the way a person reads them: 90s, 14m, 6h2m, 3d.
+func humanAge(seconds int64) string {
+	if seconds < 120 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	if seconds < 3600 {
+		return fmt.Sprintf("%dm", seconds/60)
+	}
+	if seconds < 48*3600 {
+		hours := seconds / 3600
+		minutes := (seconds % 3600) / 60
+		if minutes == 0 {
+			return fmt.Sprintf("%dh", hours)
+		}
+		return fmt.Sprintf("%dh%dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dd", seconds/86400)
 }
 
 func stateOwner(state map[string]any) (map[string]any, bool) {

@@ -101,7 +101,7 @@ work_sentence() {
     # Never assert an idle the open-work checker just contradicted.
     printf 'NO AGENTS RUNNING — but a plan still names open work, listed below.'
   else
-    printf 'NOTHING LEFT TO WORK ON that the metasystem tracks: no delegate jobs, no missions, no gate runs, and no plan names open work. (Work outside the metasystem — e.g. an agent harness'\''s own background tasks — is not visible here.)'
+    printf 'NOTHING LEFT TO WORK ON in this checkout: no jobs, missions, gate runs, or open plan work.'
   fi
 }
 

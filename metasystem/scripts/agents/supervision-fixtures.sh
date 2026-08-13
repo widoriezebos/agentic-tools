@@ -768,9 +768,9 @@ PY
 printf '{"session_id":"stale-surface","cwd":"%s","hook_event_name":"Stop"}\n' "$gate_repo" \
   | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
     "$gate_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/stale-surface.out"
-grep -Fq 'started against an older version of this code' "$tmp/stale-surface.out" \
+grep -Fq 'code changed since arming' "$tmp/stale-surface.out" \
   || { echo "S4-3/S4-4: end-turn hook hid fingerprint drift" >&2; exit 1; }
-grep -Fq 'its owner part is not running' "$tmp/stale-surface.out" \
+grep -Fq 'owner' "$tmp/stale-surface.out" && grep -Fq 'not running' "$tmp/stale-surface.out" \
   || { echo "S4-4: end-turn hook hid a dead supervision owner" >&2; exit 1; }
 
 # Continuous supervision has one owner and one cadence. Killing either
