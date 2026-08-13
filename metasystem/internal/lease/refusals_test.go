@@ -199,13 +199,28 @@ func TestSweepFailsClosed(t *testing.T) {
 	}
 	os.Remove(filepath.Join(jobs, "bad.json"))
 
-	// Missing claimEpoch: hard error.
+	// Missing or null claimEpoch: the job belongs to no lease generation
+	// (dispatch writes null for human-dispatched jobs) — out of the
+	// sweep's scope, skipped without a verdict, never refused.
 	os.WriteFile(filepath.Join(jobs, "noepoch.json"), []byte(`{"jobId":"noepoch","status":"running"}`), 0o644)
-	if err := c.cleanupStaleJobs(5); err == nil ||
-		!strings.Contains(err.Error(), "missing or noninteger claimEpoch") {
-		t.Fatalf("missing epoch did not abort: %v", err)
+	os.WriteFile(filepath.Join(jobs, "nullepoch.json"), []byte(`{"jobId":"nullepoch","status":"running","claimEpoch":null}`), 0o644)
+	if err := c.cleanupStaleJobs(5); err != nil {
+		t.Fatalf("a generationless record must be skipped, not refused: %v", err)
 	}
-	os.Remove(filepath.Join(jobs, "noepoch.json"))
+	for _, name := range []string{"noepoch.json", "nullepoch.json"} {
+		if _, err := os.Stat(filepath.Join(jobs, name)); err != nil {
+			t.Fatalf("%s must survive the sweep untouched: %v", name, err)
+		}
+		os.Remove(filepath.Join(jobs, name))
+	}
+
+	// A present but wrong-typed claimEpoch is schema corruption: hard error.
+	os.WriteFile(filepath.Join(jobs, "badepoch.json"), []byte(`{"jobId":"badepoch","status":"running","claimEpoch":"abc"}`), 0o644)
+	if err := c.cleanupStaleJobs(5); err == nil ||
+		!strings.Contains(err.Error(), "noninteger claimEpoch") {
+		t.Fatalf("a wrong-typed epoch did not abort: %v", err)
+	}
+	os.Remove(filepath.Join(jobs, "badepoch.json"))
 
 	// Unknown status vocabulary: hard error.
 	os.WriteFile(filepath.Join(jobs, "odd.json"), []byte(`{"jobId":"odd","claimEpoch":1,"status":"weird"}`), 0o644)

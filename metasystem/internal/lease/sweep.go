@@ -76,13 +76,24 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 	if json.Unmarshal(data, &job) != nil {
 		return false, fmt.Errorf("claim sweep cannot parse job record %s", stem)
 	}
-	recordEpoch, ok := jsonInt(job["claimEpoch"])
-	if !ok {
-		return false, fmt.Errorf("claim sweep refused: job record %s has a missing or noninteger claimEpoch", stem)
-	}
 	status, _ := job["status"].(string)
 	if !terminalStatuses[status] && !sweepableStatuses[status] {
 		return false, fmt.Errorf("claim sweep refused: job record %s has an unknown status %q", stem, status)
+	}
+	// claimEpoch is NULLABLE by the writer's contract (dispatch's
+	// nullableEpoch: a human-dispatched job carries null): a null or
+	// absent epoch means the job belongs to NO lease generation, so an
+	// epoch sweep has no claim over it and skipping is truthful. Only a
+	// present, wrong-typed value is schema corruption the sweep must
+	// refuse rather than certify past (the supervision canary caught the
+	// stricter first cut of this refusing legitimate null-epoch records).
+	rawEpoch, present := job["claimEpoch"]
+	if !present || rawEpoch == nil {
+		return false, nil
+	}
+	recordEpoch, ok := jsonInt(rawEpoch)
+	if !ok {
+		return false, fmt.Errorf("claim sweep refused: job record %s has a noninteger claimEpoch", stem)
 	}
 	if recordEpoch >= epoch || terminalStatuses[status] {
 		return false, nil
