@@ -91,11 +91,11 @@ func GC(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer) 
 	agents := filepath.Join(checkoutRoot, "artifacts", "agents")
 	jobsDir := filepath.Join(agents, "jobs")
 
-	collected, kept, err := collectChains(agents, jobsDir, evidenceRoot)
+	collected, kept, err := collectChains(checkoutRoot, agents, jobsDir, evidenceRoot)
 	if err != nil {
 		return err
 	}
-	if err := pruneMirroredRecords(agents, jobsDir, evidenceRoot, graceSeconds); err != nil {
+	if err := pruneMirroredRecords(checkoutRoot, jobsDir, evidenceRoot, graceSeconds); err != nil {
 		return err
 	}
 	residue, err := sweepResidue(agents, jobsDir)
@@ -121,7 +121,7 @@ func GC(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer) 
 // collectChains removes every chain payload whose history is already durable,
 // and reports why each remaining chain stays. Job records (jobs/*.json)
 // always stay here: they are the registry.
-func collectChains(agents, jobsDir, evidenceRoot string) ([]string, []keptChain, error) {
+func collectChains(checkoutRoot, agents, jobsDir, evidenceRoot string) ([]string, []keptChain, error) {
 	entries, err := os.ReadDir(agents)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -158,7 +158,7 @@ func collectChains(agents, jobsDir, evidenceRoot string) ([]string, []keptChain,
 			kept = append(kept, keptChain{chain, "chain not closed; working state"})
 			continue
 		}
-		manifestPath := chainManifestPath(evidenceRoot, chain, mirroredPath(root))
+		manifestPath := chainManifestPath(evidenceRoot, checkoutRoot, chain, mirroredPath(root))
 		if !fileExists(manifestPath) {
 			kept = append(kept, keptChain{chain, "no mirror manifest"})
 			continue
@@ -244,8 +244,8 @@ func mirroredPath(record map[string]any) string {
 // mirror stamp wins when it names one of the known layouts; otherwise the
 // first existing candidate is used, and when none exists the primary
 // candidate stands in so the caller reports a missing manifest.
-func chainManifestPath(evidenceRoot, chain, mirrored string) string {
-	candidates := manifestCandidates(evidenceRoot, chain)
+func chainManifestPath(evidenceRoot, checkoutRoot, chain, mirrored string) string {
+	candidates := manifestCandidates(evidenceRoot, checkoutRoot, chain)
 	if mirrored != "" {
 		for _, candidate := range candidates {
 			if filepath.Clean(filepath.Dir(candidate)) == filepath.Clean(mirrored) {
@@ -261,12 +261,19 @@ func chainManifestPath(evidenceRoot, chain, mirrored string) string {
 	return candidates[0]
 }
 
-// manifestCandidates lists where a chain's manifest can live: directly under
-// the evidence agents root, or under a per-checkout segment.
-func manifestCandidates(evidenceRoot, chain string) []string {
-	candidates := []string{filepath.Join(evidenceRoot, "agents", chain, "manifest.json")}
-	matches, _ := filepath.Glob(filepath.Join(evidenceRoot, "agents", "*", chain, "manifest.json"))
-	return append(candidates, matches...)
+// manifestCandidates lists where THIS checkout's chain manifest can live:
+// under the checkout's own segment (the layout mirror.go writes), or
+// directly under the evidence agents root (the legacy unsegmented layout).
+// Never another checkout's segment: mirror.go segments precisely because
+// two checkouts' chains may collide under a shared evidence root, and a
+// glob across segments let checkout B's GC read checkout A's manifest and
+// delete B's only records (review foundations-1).
+func manifestCandidates(evidenceRoot, checkoutRoot, chain string) []string {
+	segment := dispatch.CheckoutSegment(checkoutRoot)
+	return []string{
+		filepath.Join(evidenceRoot, "agents", segment, chain, "manifest.json"),
+		filepath.Join(evidenceRoot, "agents", chain, "manifest.json"),
+	}
 }
 
 // manifestFiles reads the manifest's files map: relative path to entry.
@@ -364,7 +371,8 @@ func removeMirroredLogs(jobsDir, chain string, files map[string]any) error {
 // reads them for its chain window and the census joins custody through them.
 // Past that window, a terminal chain's records serve only history, and
 // history is the mirror, which already holds every record file.
-func pruneMirroredRecords(agents, jobsDir, evidenceRoot string, graceSeconds float64) error {
+func pruneMirroredRecords(checkoutRoot, jobsDir, evidenceRoot string, graceSeconds float64) error {
+	agents := filepath.Join(checkoutRoot, "artifacts", "agents")
 	matches, _ := filepath.Glob(filepath.Join(jobsDir, "*.json"))
 	for _, recordPath := range matches {
 		record, err := readJSONObject(recordPath)
@@ -380,17 +388,15 @@ func pruneMirroredRecords(agents, jobsDir, evidenceRoot string, graceSeconds flo
 		if _, err := os.Stat(filepath.Join(agents, rootChain)); err == nil {
 			continue // chain payload not collected yet; records stay with it
 		}
-		manifestPath := chainManifestPath(evidenceRoot, rootChain, "")
+		// The record's own mirror stamp is honored here exactly as
+		// collectChains honors it (review foundations-1).
+		manifestPath := chainManifestPath(evidenceRoot, checkoutRoot, rootChain, mirroredPath(record))
 		if !fileExists(manifestPath) {
 			continue
 		}
-		manifest, err := readJSONObject(manifestPath)
+		files, err := manifestFiles(manifestPath)
 		if err != nil {
-			return fmt.Errorf("cannot read mirror manifest %s: %w", manifestPath, err)
-		}
-		files, ok := manifest["files"].(map[string]any)
-		if !ok {
-			return fmt.Errorf("mirror manifest %s has no files map", manifestPath)
+			return err
 		}
 		entry, listed := files["jobs/"+filepath.Base(recordPath)]
 		if !listed || entry == nil {
@@ -420,6 +426,10 @@ func pruneMirroredRecords(agents, jobsDir, evidenceRoot string, graceSeconds flo
 		}
 		if currentHash != mirroredHash {
 			continue // mirror is stale relative to the record; deleting would lose state
+		}
+		manifest, err := readJSONObject(manifestPath)
+		if err != nil {
+			return fmt.Errorf("cannot read mirror manifest %s: %w", manifestPath, err)
 		}
 		updatedAt, _ := manifest["updatedAt"].(string)
 		mirroredAt, err := time.Parse(manifestTimeLayout, updatedAt)

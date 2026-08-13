@@ -88,7 +88,7 @@ func TestCollectsClosedFullyMirroredChain(t *testing.T) {
 	writeFile(t, filepath.Join(jobs, "chain-a.log"), logContent)
 	// A sibling chain that merely shares the prefix must not gate collection.
 	writeFile(t, filepath.Join(jobs, "chain-a-extra.json"), `{"jobId": "chain-a-extra", "status": "running"}`)
-	writeFile(t, filepath.Join(evidenceRoot, "agents", "seg1", "chain-a", "manifest.json"),
+	writeFile(t, filepath.Join(evidenceRoot, "agents", dispatch.CheckoutSegment(root), "chain-a", "manifest.json"),
 		manifestJSON("2026-08-10T10:00:00Z", map[string]string{
 			"rounds/1/return.json": digestOf(payload),
 			"jobs/chain-a.log":     digestOf(logContent),
@@ -364,5 +364,37 @@ func TestPruneRefusesMalformedManifestEntry(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(jobs, "warped.json")); statErr != nil {
 		t.Fatal("the record must survive a refused prune")
+	}
+}
+
+// foundations-1: checkout B holds an unmirrored terminal chain sharing a
+// name with checkout A's mirrored chain under the same evidence root. A's
+// manifest must neither collect B's payload nor prune B's records — B's
+// segment is the only segment B's GC may trust.
+func TestGCIgnoresOtherCheckoutsSegments(t *testing.T) {
+	freezeClock(t)
+	root, evidenceRoot, agents, jobs := checkout(t)
+
+	// This checkout's chain: closed, terminal, NEVER mirrored.
+	writeFile(t, filepath.Join(agents, "shared-name", "rounds", "1", "x"), "our only copy")
+	writeFile(t, filepath.Join(jobs, "shared-name.json"), `{"jobId": "shared-name", "status": "completed", "chainClosed": true}`)
+
+	// Another checkout's fully mirrored chain of the SAME NAME, in its own
+	// segment, long past any grace window — with our record listed by name
+	// and by hash, the strongest possible foreign claim.
+	foreign := recordEntry(t, jobs, "shared-name.json")
+	writeFile(t, filepath.Join(evidenceRoot, "agents", "aaaaaaaaaaaa", "shared-name", "manifest.json"),
+		fmt.Sprintf(`{"updatedAt": "2026-08-10T08:00:00Z", "files": {"rounds/1/x": {"sha256": "other"}, "jobs/shared-name.json": %s}}`, foreign))
+
+	out := runGC(t, root, evidenceRoot)
+
+	if !strings.Contains(out, "kept      shared-name: no mirror manifest") {
+		t.Fatalf("the chain must be kept as unmirrored, got: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(agents, "shared-name", "rounds", "1", "x")); err != nil {
+		t.Fatal("the payload must survive a foreign manifest")
+	}
+	if _, err := os.Stat(filepath.Join(jobs, "shared-name.json")); err != nil {
+		t.Fatal("the record must survive a foreign manifest")
 	}
 }

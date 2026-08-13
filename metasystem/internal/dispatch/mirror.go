@@ -49,11 +49,7 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 		return fmt.Errorf("scripted mirror interruption")
 	}
 
-	// Evidence for different checkouts of the same repository must not
-	// collide: each checkout mirrors under a segment derived from its path.
-	segmentSum := sha256.Sum256([]byte(checkoutResolved))
-	segment := hex.EncodeToString(segmentSum[:])[:12]
-	destination := filepath.Join(evidenceResolved, "agents", segment, rootJob)
+	destination := filepath.Join(evidenceResolved, "agents", CheckoutSegment(checkoutResolved), rootJob)
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		return err
 	}
@@ -216,6 +212,18 @@ func mirrorLand(sources []mirrorSource, old map[string]any, destination, recordP
 		return "", err
 	}
 	return sha256File(manifestPath)
+}
+
+// CheckoutSegment names the per-checkout directory a checkout's evidence
+// mirrors under: evidence for different checkouts of the same repository
+// must not collide, so each checkout gets a segment derived from its
+// resolved path (resolution happens here, so every caller derives from
+// the same form). Exported because evidence GC must look only in its own
+// checkout's segment (review foundations-1) — a shared derivation is the
+// only way the two sides cannot drift.
+func CheckoutSegment(checkoutRoot string) string {
+	sum := sha256.Sum256([]byte(resolvePath(checkoutRoot)))
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 // SemanticRecordHash digests a job record with its mirror field blanked: the
