@@ -578,19 +578,9 @@ func authoredContractValues(contractPath string) (map[string]string, error) {
 	if len(blocks) != 1 {
 		return nil, stateErr("mission contract does not have exactly one authored block")
 	}
-	values := map[string]string{}
-	for _, line := range strings.Split(blocks[0][1], "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			return nil, stateErr("mission contract key/value grammar is invalid")
-		}
-		if _, exists := values[key]; exists {
-			return nil, stateErr("mission contract key/value grammar is invalid")
-		}
-		values[key] = value
+	values, err := contract.ParseAuthoredValues(blocks[0][1], "mission contract")
+	if err != nil {
+		return nil, stateErr("mission contract key/value grammar is invalid: %v", err)
 	}
 	return values, nil
 }

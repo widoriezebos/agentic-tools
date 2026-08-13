@@ -410,6 +410,15 @@ func (d *contractDoc) validate(projectRoot string) error {
 
 // contractValidatePairCap checks that a per-pair cap key is canonical for its
 // runtime and model and carries a positive integer.
+// ValidatePairCap is THE cap-key canonicality rule: exported because the
+// runtime fence check re-implemented it with independently worded errors
+// (review mission-contract-5) — and the seal-time check and the runtime
+// check are precisely the two that must never disagree about what a
+// signed cap means.
+func ValidatePairCap(key, value string) error {
+	return contractValidatePairCap(key, value)
+}
+
 func contractValidatePairCap(key, value string) error {
 	parts := strings.SplitN(key, ".", 4)
 	if len(parts) != 4 || !idRe.MatchString(parts[2]) {

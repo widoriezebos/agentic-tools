@@ -15,7 +15,6 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -81,7 +80,7 @@ func parseTimestamp(s string) (time.Time, error) {
 // contractValuesFromBytes parses and validates a mission contract's authored
 // block: the universal fence keys must be present and well formed, and each
 // per-pair cap key must be canonical for its runtime and model.
-func contractValuesFromBytes(data []byte, repo string) (map[string]string, error) {
+func contractValuesFromBytes(data []byte) (map[string]string, error) {
 	if !isValidUTF8(data) {
 		return nil, fmt.Errorf("mission contract is not UTF-8")
 	}
@@ -89,19 +88,9 @@ func contractValuesFromBytes(data []byte, repo string) (map[string]string, error
 	if len(blocks) != 1 {
 		return nil, fmt.Errorf("mission contract does not have exactly one authored block")
 	}
-	values := map[string]string{}
-	for _, line := range strings.Split(blocks[0][1], "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			return nil, fmt.Errorf("mission contract key/value grammar is invalid")
-		}
-		if _, exists := values[key]; exists {
-			return nil, fmt.Errorf("mission contract key/value grammar is invalid")
-		}
-		values[key] = value
+	values, err := contract.ParseAuthoredValues(blocks[0][1], "mission contract")
+	if err != nil {
+		return nil, fmt.Errorf("mission contract key/value grammar is invalid: %v", err)
 	}
 	for _, key := range requiredFenceKeys {
 		if _, ok := values[key]; !ok {
@@ -124,17 +113,11 @@ func contractValuesFromBytes(data []byte, repo string) (map[string]string, error
 		if !strings.HasPrefix(key, "cap.min.") {
 			continue
 		}
-		parts := strings.SplitN(key, ".", 4)
-		if len(parts) != 4 || !idRe.MatchString(parts[2]) {
-			return nil, fmt.Errorf("mission pair-cap key is invalid: %s", key)
-		}
-		encoded := config.CanonicalModel(parts[3])
-		expected := fmt.Sprintf("cap.min.%s.%s", parts[2], encoded)
-		if encoded == "" || key != expected {
-			return nil, fmt.Errorf("mission pair-cap key is not canonical: %s; use %s", key, expected)
-		}
-		if !positiveIntRe.MatchString(value) {
-			return nil, fmt.Errorf("mission %s is invalid", key)
+		// Signed-exposure policy has ONE home (review mission-contract-5):
+		// the seal-time check and this runtime fence check can no longer
+		// disagree about what a canonical cap key is.
+		if err := contract.ValidatePairCap(key, value); err != nil {
+			return nil, err
 		}
 	}
 	return values, nil
@@ -155,7 +138,7 @@ func verifiedContractValues(repo, mission string, fences map[string]any) (map[st
 	if sha256Hex(string(snapshot)) != approved {
 		return nil, fmt.Errorf("mission fence refused: live contract raw-file sha256 does not match approvedContractSha256")
 	}
-	return contractValuesFromBytes(snapshot, repo)
+	return contractValuesFromBytes(snapshot)
 }
 
 // loadFences reads the mission's fence counters, seeding them from the lease

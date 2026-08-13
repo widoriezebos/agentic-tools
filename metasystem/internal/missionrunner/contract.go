@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 )
 
 // Contract reading and the pure per-turn context decisions: which prior
@@ -39,22 +41,12 @@ func parseContractText(text string) (authored, seal map[string]string, err error
 	return authored, seal, nil
 }
 
-// contractKeyValues parses one fenced block's key=value lines, refusing a
-// line without a separator or a repeated key.
+// contractKeyValues parses one fenced block's key=value lines under the
+// contract owner's ONE grammar (review mission-contract-4).
 func contractKeyValues(block string) (map[string]string, error) {
-	values := map[string]string{}
-	for _, raw := range strings.Split(block, "\n") {
-		if strings.TrimSpace(raw) == "" {
-			continue
-		}
-		key, value, found := strings.Cut(raw, "=")
-		if !found {
-			return nil, failf(3, "mission contract key/value grammar is invalid")
-		}
-		if _, duplicate := values[key]; duplicate {
-			return nil, failf(3, "mission contract key/value grammar is invalid")
-		}
-		values[key] = value
+	values, err := contract.ParseAuthoredValues(block, "mission contract")
+	if err != nil {
+		return nil, failf(3, "mission contract key/value grammar is invalid: %v", err)
 	}
 	return values, nil
 }

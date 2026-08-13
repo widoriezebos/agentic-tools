@@ -14,6 +14,17 @@ var sealBlockRe = regexp.MustCompile("(?ms)^```mission-seal[ \t]*\n(.*?)^```[ \t
 // document, each as a submatch slice whose element 1 is the block body.
 // Callers decide what "not exactly one" means to them and keep their own
 // refusal text (error text is contract, E1).
+// ParseAuthoredValues parses one authored block's key=value lines under
+// THE contract grammar — strict: every line key=value, no empty or
+// whitespace-padded keys or values, no duplicates. Exported because the
+// mission-side consumers had grown three lax copies that accepted padded
+// keys the seal-time parser refuses (review mission-contract-4); any
+// signed contract already satisfies the strict grammar, so consolidation
+// tightens nothing a valid mission can carry.
+func ParseAuthoredValues(block, label string) (map[string]string, error) {
+	return contractParseKeyValues(block, label)
+}
+
 func AuthoredBlocks(text string) [][]string {
 	return authoredBlockRe.FindAllStringSubmatch(text, -1)
 }

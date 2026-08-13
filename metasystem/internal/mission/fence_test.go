@@ -68,16 +68,15 @@ func fenceEnv(t *testing.T) (repo, mission string) {
 }
 
 func TestContractValidationRejectsNonCanonicalCap(t *testing.T) {
-	repo := t.TempDir()
 	// A cap key whose model segment is not canonical.
 	bad := "```mission\nfence.wall-clock-hours=12\nfence.cycles=1\nfence.jobs=5\nfence.concurrency=2\nfence.job-cap-min=240\ncap.min.codex.GPT_5=180\n```\n"
-	if _, err := contractValuesFromBytes([]byte(bad), repo); err == nil ||
+	if _, err := contractValuesFromBytes([]byte(bad)); err == nil ||
 		!strings.Contains(err.Error(), "not canonical") {
 		t.Fatalf("a non-canonical cap key must be rejected, got %v", err)
 	}
 	// A contract missing a universal fence.
 	missing := "```mission\nfence.cycles=1\nfence.jobs=5\nfence.concurrency=2\nfence.job-cap-min=240\n```\n"
-	if _, err := contractValuesFromBytes([]byte(missing), repo); err == nil ||
+	if _, err := contractValuesFromBytes([]byte(missing)); err == nil ||
 		!strings.Contains(err.Error(), "universal lifecycle fence") {
 		t.Fatalf("a missing fence must be rejected, got %v", err)
 	}
