@@ -264,6 +264,7 @@ func families() []family {
 				{"fence-authorize-cap", "authorize a per-job cap for a runtime/model pair", runMissionFenceAuthorizeCap},
 				{"fence-aggregate-usage", "aggregate typed usage across the mission's finished jobs", runMissionFenceAggregateUsage},
 				{"fence-refuse", "raise a batched fence ask for a reason", runMissionFenceRefuse},
+				{"fence-release-job", "release a husked dispatch's fence reservation", runMissionFenceReleaseJob},
 				{"contract-validate", "validate a mission contract's authored block", runMissionContractValidate},
 				{"contract-seal", "seal a validated contract and print its digest", runMissionContractSeal},
 				{"contract-preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},

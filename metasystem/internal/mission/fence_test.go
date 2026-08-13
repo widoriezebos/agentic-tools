@@ -436,3 +436,27 @@ func TestFenceRefusalNamesAFailedAskWrite(t *testing.T) {
 		t.Fatalf("the refusal must still name the tripped fence: %v", err)
 	}
 }
+
+// The fence-refusal diagnosis (D7): a husked dispatch's reservation must
+// not keep counting against fence.jobs or hold a concurrency slot.
+func TestReleaseJobFreesAHuskedReservation(t *testing.T) {
+	repo, mission := fenceEnv(t)
+	if _, err := AuthorizeCap(repo, mission, "husk-1", "codex", "gpt-5-6-sol", nil); err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+	fences, _ := readJSONObjectFile(filepath.Join(missionDir(repo, mission), "fences.json"))
+	if _, ok := reservationsMap(fences)["husk-1"]; !ok {
+		t.Fatal("reservation missing after authorize")
+	}
+	if err := ReleaseJob(repo, mission, "husk-1"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	fences, _ = readJSONObjectFile(filepath.Join(missionDir(repo, mission), "fences.json"))
+	if _, ok := reservationsMap(fences)["husk-1"]; ok {
+		t.Fatal("a released reservation still counts")
+	}
+	// Releasing a job that never reserved is a clean no-op.
+	if err := ReleaseJob(repo, mission, "never-reserved"); err != nil {
+		t.Fatalf("no-op release errored: %v", err)
+	}
+}

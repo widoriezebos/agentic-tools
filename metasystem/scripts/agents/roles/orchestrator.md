@@ -57,6 +57,19 @@ These require explicit in-task approval even when technically easy. Default set,
 - Spending past a stated budget, and moving work to a more expensive resource tier (model class, hardware, paid service). "Use a stronger X" in an approved plan means the cheapest untested increment, never a silent jump to a higher price class.
 <!-- /quote -->
 
+## Dispatching under the signed caps
+
+Dispatch delegates at the signed `fence.job-cap-min` unless you have a
+specific, stated reason to grant less: a `--cap-min` below the signed
+ceiling is the single most expensive mistake an unattended mission makes,
+because the delegate is killed mid-flight with its work complete but
+uncommitted and unreported. A brief's stated wall-clock budget and the
+`--cap-min` you dispatch with must agree — never write a nine-minute brief
+and dispatch it under seven. Before planning parallel dispatches, read the
+prompt's `Fence headroom` line: `concurrency` shows the free slots and the
+live-delegate roster names what already runs, including orphans from a
+crashed earlier turn that still lawfully hold their slot.
+
 ## Inheriting landed returns
 
 The prompt's `Landed Returns` section lists delegate work that already landed on disk but that none of your concluded turns has acted on — paid results waiting to be inherited, not new instructions. Each row is `chain-root  round-or-marker  return-path-or-none`: a round number with its return path means the return validated and is ready to consume; `invalid` means a return exists at that path but fails its role check; `unreadable` means the chain's artifacts could not be read; a final `overflow` row carries the count of further qualifying chains beyond the 20-row bound. A row retires only through your own recorded action — certify the round's job in your return's `certified` entries, or dispatch a successor round of its chain. A landed return you neither certify nor supersede keeps appearing, by design.

@@ -269,15 +269,22 @@ func promptMax0(x int) int {
 	return x
 }
 
-// promptFenceHeadroom reports how many cycles and jobs the mission may still
-// spend against its signed cycle and job fences.
-func promptFenceHeadroom(values map[string]string, dir string) (string, error) {
+// promptFenceHeadroom reports how many cycles and jobs the mission may
+// still spend against its signed fences, the concurrency headroom, and the
+// LIVE delegate roster. The concurrency line and roster exist because a
+// host without them is structurally blind to the one fence a parallel
+// dispatch can trip: rep 1 of bm-1-20260813t132947z hit exactly that,
+// then wrote a false ledger fact about it (fence-refusal diagnosis,
+// docs/reviews/2026-08-13-delegated-decisions.md D7).
+func promptFenceHeadroom(repo string, values map[string]string, dir string) (string, error) {
 	cycleLimit, ok1 := promptContractInt(values, "fence.cycles")
 	jobLimit, ok2 := promptContractInt(values, "fence.jobs")
-	if !ok1 || !ok2 {
+	concurrencyLimit, ok3 := promptContractInt(values, "fence.concurrency")
+	if !ok1 || !ok2 || !ok3 {
 		return "", fmt.Errorf("mission contract fence limits are unreadable")
 	}
 	cycles, jobs := 0, 0
+	var running []string
 	fencesPath := filepath.Join(dir, "fences.json")
 	if _, err := os.Stat(fencesPath); err == nil {
 		fences, err := readJSONObjectFile(fencesPath)
@@ -300,9 +307,21 @@ func promptFenceHeadroom(values map[string]string, dir string) (string, error) {
 				return "", fmt.Errorf("mission fence counters have an invalid shape")
 			}
 			jobs = len(reservations)
+			for job := range reservations {
+				if !terminalJobStatus[jobStatus(repo, job)] {
+					running = append(running, job)
+				}
+			}
+			sort.Strings(running)
 		}
 	}
-	return fmt.Sprintf("cycles=%d,jobs=%d", promptMax0(cycleLimit-cycles), promptMax0(jobLimit-jobs)), nil
+	line := fmt.Sprintf("cycles=%d,jobs=%d,concurrency=%d/%d",
+		promptMax0(cycleLimit-cycles), promptMax0(jobLimit-jobs),
+		promptMax0(concurrencyLimit-len(running)), concurrencyLimit)
+	if len(running) > 0 {
+		line += "; live delegates: " + strings.Join(running, ", ")
+	}
+	return line, nil
 }
 
 // promptConfLookup finds key in a metasystem configuration file, reporting a
@@ -460,7 +479,7 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 		return fmt.Errorf("mission.max-prompt-kb must be a positive integer")
 	}
 
-	headroom, err := promptFenceHeadroom(values, dir)
+	headroom, err := promptFenceHeadroom(repo, values, dir)
 	if err != nil {
 		return err
 	}

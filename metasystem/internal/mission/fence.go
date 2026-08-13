@@ -417,6 +417,36 @@ func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
 	return nil
 }
 
+// ReleaseJob deletes a job's fence reservation, for dispatches that died
+// during setup without ever starting a process. A husk's reservation
+// otherwise counts against fence.jobs forever — rep 1 of cohort
+// bm-1-20260813t132947z held 8 reservations for 4 jobs that ever ran, so
+// half the signed job budget was consumed by refusals and the prompt's
+// headroom lied to the host every turn. Releasing under the fence lock
+// also closes the reserve-before-setup window in which a doomed dispatch
+// holds a concurrency slot it will never use.
+func ReleaseJob(repo, mission, job string) error {
+	dir, path, lockPath := fencePaths(repo, mission)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	lock, err := lockFileAt(lockPath)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+	fences, err := loadFences(repo, mission)
+	if err != nil {
+		return err
+	}
+	reservations := reservationsMap(fences)
+	if _, exists := reservations[job]; !exists {
+		return nil // never reserved, or already released: nothing to undo
+	}
+	delete(reservations, job)
+	return atomicWriteJSON(path, fences)
+}
+
 // ReserveCycle checks the cycle fences and records a cycle.
 func ReserveCycle(repo, mission string) error {
 	dir, path, lockPath := fencePaths(repo, mission)

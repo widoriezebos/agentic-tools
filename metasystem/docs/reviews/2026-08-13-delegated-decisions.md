@@ -92,3 +92,47 @@ status.
 **Alternative not taken:** waiving the diff requirement for the whole
 chain when any round is non-completed — too weak, would skip attestation
 of diffs that do exist.
+
+## D7 — Rep 2 no-go; four engine fixes land first (fence-refusal diagnosis)
+
+**Decision:** rep 2 of cohort bm-1-20260813t132947z stays unspent until four
+fixes land, because rep 1 was not a fair measurement: half its signed job
+budget was consumed by reservations of dispatches that never started a
+process, and the headroom line lied to the host every turn.
+
+The diagnosis (agent-verified, evidence in the cohort target's record-locks
+mktemp residue): of the four "dispatch-refused" husks, only ONE was the
+mission fence — and that refusal was CORRECT (two genuinely live delegates
+at concurrency 2, one an orphan of the crashed round-1 host). Two died on
+writable-without-worktree (host error, correct refusal), one on a
+capability-snapshot miss after the codex CLI rewrote its own config
+mid-run (KI-19's class). The capMin 7 and 12 the implementers timed out
+under were the HOST's own `--cap-min` requests against a signed ceiling of
+15 — the engine's arithmetic is exonerated. The host then wrote a false
+ledger fact ("fence refused ... even though the contract states
+fence.concurrency=2") because the prompt never showed concurrency headroom
+or the live roster.
+
+**Fixes landed:** (1) `mission fence-release-job` + `fail_setup_husk`
+releases a husk's reservation — fence.jobs headroom becomes honest and the
+reserve-before-setup concurrency race closes. (2) The turn prompt's fence
+headroom now carries `concurrency=free/limit` plus the live-delegate
+roster. (3) Every husked dispatch emits a `job-refused` event with a
+reason class (fence/envelope/capability/worktree/setup) and stamps the
+class into the record — rep 1's diagnosis needed mktemp file sizes as its
+primary instrument. (4) A capability-snapshot miss self-heals with ONE
+adapter probe and re-select; an unhealable miss still refuses, now naming
+the failed probe. Plus the policy line in roles/orchestrator.md: dispatch
+at the signed fence.job-cap-min unless there is a stated reason, and a
+brief's budget must agree with --cap-min — the run's actual proximate
+cause, which no engine fix touches.
+
+**Alternative not taken:** rerunning as-is and averaging over host
+variance. Rejected: the dominant failure mode (host-chosen 7-minute cap
+for a 9-minute brief) is unconstrained by anything in the engine or
+prompt, so it varies randomly rather than reproducing, and each sample
+costs ~$10 while measuring a known-dishonest headroom display.
+
+**Also noted for later:** an orphaned job's cap enforcement degrades to
+standing-reaper granularity when its waiting dispatcher dies (f29a overran
+its capDeadline by 75s); not fixed in this pass.

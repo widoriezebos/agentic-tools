@@ -229,6 +229,8 @@ supervise() { # verb and remaining args
 }
 
 probe() {
+  # Fault hook for the snapshot self-heal fixtures: an unhealable probe.
+  [[ -z "${METASYSTEM_FAKE_PROBE_FAIL:-}" ]] || { echo "scripted probe failure" >&2; return 1; }
   local profile=current age_days=0
   while (($#)); do
     case "$1" in

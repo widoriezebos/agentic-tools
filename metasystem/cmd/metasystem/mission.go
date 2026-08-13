@@ -248,6 +248,25 @@ func runMissionFenceAggregateUsage(args []string) int {
 	return 0
 }
 
+func runMissionFenceReleaseJob(args []string) int {
+	flags := flag.NewFlagSet("mission fence-release-job", flag.ContinueOnError)
+	repo := flags.String("repo", "", "repository")
+	missionID := flags.String("mission", "", "mission id")
+	job := flags.String("job", "", "job id whose reservation to release")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if !missionIDRe.MatchString(*missionID) || *job == "" {
+		fmt.Fprintln(os.Stderr, "fence-release-job requires --repo, --mission and --job")
+		return 1
+	}
+	if err := mission.ReleaseJob(*repo, *missionID, *job); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
 func runMissionFenceRefuse(args []string) int {
 	flags := flag.NewFlagSet("mission fence-refuse", flag.ContinueOnError)
 	repo := flags.String("repo", "", "repository")

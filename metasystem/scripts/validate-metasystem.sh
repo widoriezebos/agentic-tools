@@ -2424,15 +2424,30 @@ PY
   printf 'tamper\n' >"$conformance_workspace/artifacts/agents/tamper"
   agent_fails control-plane-change 'agent control plane contains delegate-created files' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
 
-  # Snapshot refusal, fallbacks, permission waivers, and raw/event degradations.
+  # Snapshot self-heal, fallbacks, permission waivers, and raw/event
+  # degradations. A snapshot miss costs ONE adapter probe, not a husked
+  # dispatch: a CLI that rewrites its own config mid-run (KI-19's class)
+  # moved the identity hash and stranded two dispatches in rep 1 of
+  # bm-1-20260813t132947z. The refusal still stands when the probe itself
+  # cannot heal the miss.
   snapshot_dir="$agent_repo/artifacts/agents/capabilities"
   snapshot_save="$agent_fixture/snapshots"
   mkdir -p "$snapshot_save"
   mv "$snapshot_dir"/*.json "$snapshot_save/"
-  agent_fails no-snapshot 'no capability snapshot matches' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id no-snapshot
+  run_agent_fixture no-snapshot-selfheal no-snapshot "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id no-snapshot --wait
+  [[ -n "$(ls "$snapshot_dir"/*.json 2>/dev/null)" ]] \
+    || { echo "snapshot self-heal did not re-probe" >&2; exit 1; }
+  rm -f "$snapshot_dir"/*.json
   "$fake_adapter" probe --age-days 31 >/dev/null
-  agent_fails stale-snapshot 'capability snapshot is stale' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-snapshot
-  mv "$snapshot_dir"/*.json "$agent_fixture/"
+  run_agent_fixture stale-snapshot-selfheal stale-snapshot "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-snapshot --wait
+  # An unhealable miss refuses: break the adapter's probe verb via its
+  # fault hook, then dispatch with no matching snapshot.
+  rm -f "$snapshot_dir"/*.json
+  METASYSTEM_FAKE_PROBE_FAIL=1 "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id unhealable-snapshot >"$agent_fixture/unhealable-snapshot.out" 2>&1 \
+    && { echo "an unhealable snapshot miss must refuse the dispatch" >&2; exit 1; }
+  grep -q 'adapter probe failed' "$agent_fixture/unhealable-snapshot.out" \
+    || { echo "the unhealable refusal did not name the failed probe" >&2; cat "$agent_fixture/unhealable-snapshot.out" >&2; exit 1; }
+  mv "$snapshot_dir"/*.json "$agent_fixture/" 2>/dev/null || true
   mv "$snapshot_save"/*.json "$snapshot_dir/"
 
   old_save="$agent_fixture/current-snapshots"
@@ -2466,6 +2481,13 @@ PY
   requirements="$agent_repo/scripts/agents/roles/design-critic.requirements.json"
   saved_requirements="$agent_fixture/design-critic.requirements.json"
   cp "$requirements" "$saved_requirements"
+  # The unverified-network snapshot must be the ONLY candidate: selection
+  # is filename-ordered today (registry-3), so leftover verified snapshots
+  # from earlier sections can shadow the doctored one depending on how many
+  # probes ran before this point — which the snapshot self-heal rows
+  # legitimately vary.
+  mkdir -p "$agent_fixture/pre-unverified"
+  mv "$snapshot_dir"/*.json "$agent_fixture/pre-unverified/" 2>/dev/null || true
   "$fake_adapter" probe --profile unverified-network >/dev/null
   # This refusal is about a runtime that cannot verify a field the envelope
   # restricts, so the envelope has to restrict it. Since the presets now grant
@@ -2483,6 +2505,7 @@ p.write_text(json.dumps(v, indent=2) + "\n")
 PY
   run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id waived-deny --wait
   cp "$saved_requirements" "$requirements"
+  mv "$agent_fixture/pre-unverified"/*.json "$snapshot_dir/" 2>/dev/null || true
   "$fake_adapter" probe >/dev/null
 
   # An EMPTY write scope is still restrictive on a runtime whose write boundary

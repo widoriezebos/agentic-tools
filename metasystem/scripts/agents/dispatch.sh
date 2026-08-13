@@ -22,7 +22,7 @@ Exit codes: 0 success/completed; 2 usage; 3 failed; 4 timeout;
 USAGE
 }
 
-die() { echo "$2" >&2; exit "$1"; }
+die() { last_die_message=$2; echo "$2" >&2; exit "$1"; }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 repo_scope=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) \
@@ -149,10 +149,29 @@ fail_setup_husk() { # job id
   local husk_job=$1 husk_patch
   [[ -n "$husk_job" && -f "$jobs/$husk_job.json" ]] || return 0
   husk_patch=$(mktemp "${TMPDIR:-/tmp}/metasystem-husk-fail.XXXXXX")
-  printf '{"error":"dispatch-refused","phase":"setup"}\n' >"$husk_patch"
+  # Classify the refusal for the flight recorder: rep 1 of
+  # bm-1-20260813t132947z needed mktemp file sizes as its primary
+  # diagnostic instrument because refused dispatches emitted nothing.
+  local refusal_class=setup
+  case "${last_die_message:-}" in
+    *"mission fence"*) refusal_class=fence ;;
+    *worktree*) refusal_class=worktree ;;
+    *permission*) refusal_class=envelope ;;
+    *snapshot*|*capabilit*) refusal_class=capability ;;
+  esac
+  emit_event "$(emit_component)" job-refused "jobId=$husk_job" "missionId=${mission:-}" \
+    "reasonClass=$refusal_class" "summary=dispatch refused ($refusal_class): ${last_die_message:-unknown}" || true
+  printf '{"error":"dispatch-refused","phase":"setup","refusalClass":"%s"}\n' "$refusal_class" >"$husk_patch"
   "$ms" job record-cas --root "$root" --job "$husk_job" \
     --expect pending-setup --status failed --patch "$husk_patch" >/dev/null 2>&1 || true
   rm -f "$husk_patch"
+  # A dispatch that died in setup never started a process: its fence
+  # reservation must not keep counting against fence.jobs and holding a
+  # concurrency slot (rep 1 of bm-1-20260813t132947z lost half its signed
+  # job budget to exactly this).
+  if [[ -n "${mission:-}" ]]; then
+    mission_fence release-job --repo "$root" --mission "$mission" --job "$husk_job" >/dev/null 2>&1 || true
+  fi
 }
 
 record_setup() { # job, complete source json
@@ -567,6 +586,28 @@ select_snapshot() { # runtime, role, requested envelope, output json
   identity=$($adapter config-identity) || die 1 "could not read $runtime adapter configuration identity"
   max_age=$(config_get --key capability.snapshot-max-age-days --default 30)
   [[ "$max_age" =~ ^[0-9]+$ ]] || die 1 "capability.snapshot-max-age-days must be a non-negative integer"
+  local select_err
+  select_err=$(mktemp "${TMPDIR:-/tmp}/metasystem-select-err.XXXXXX")
+  if "$ms" job snapshot-select \
+      --root "$root" --runtime "$runtime" --role "$role" --identity "$identity" \
+      --max-age "$max_age" --envelope "$envelope" --output "$output" 2>"$select_err"; then
+    cat "$select_err" >&2; rm -f "$select_err"
+    return 0
+  fi
+  # Self-heal ONLY a genuine snapshot MISS — absent or stale. A CLI that
+  # rewrites its own config mid-run (KI-19's class) moves the identity
+  # hash and strands every snapshot; that must cost one probe, not a
+  # husked dispatch that burned a fence slot (rep 1 of
+  # bm-1-20260813t132947z lost two dispatches to it). A select that FOUND
+  # a snapshot and refused on policy — an unenforceable envelope field —
+  # must stand: a fresh probe would launder the unverified state away.
+  if ! grep -qE 'no capability snapshot matches|capability snapshot is stale' "$select_err"; then
+    cat "$select_err" >&2; rm -f "$select_err"
+    return 1
+  fi
+  cat "$select_err" >&2; rm -f "$select_err"
+  "$adapter" probe >/dev/null || die 1 "capability snapshot missed and the $runtime adapter probe failed"
+  identity=$($adapter config-identity) || die 1 "could not read $runtime adapter configuration identity"
   "$ms" job snapshot-select \
     --root "$root" --runtime "$runtime" --role "$role" --identity "$identity" \
     --max-age "$max_age" --envelope "$envelope" --output "$output"

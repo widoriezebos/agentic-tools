@@ -31,7 +31,7 @@ func promptSandbox(t *testing.T) string {
 	write("scripts/agents/templates/host-turn-instruction.md",
 		"Cycle: <cycle-number>\nFence headroom: <fence-headroom>\nReconciliation: <yes | no>\n\nAdvance active streams.\n")
 	write("plans/mission-m1.contract.md",
-		"# Mission m1\n\n```mission\nfence.cycles=10\nfence.jobs=4\nstream.s1=Do the thing\n```\n")
+		"# Mission m1\n\n```mission\nfence.cycles=10\nfence.jobs=4\nfence.concurrency=2\nstream.s1=Do the thing\n```\n")
 
 	base := "artifacts/agents/missions/m1"
 	write(base+"/ledger.md",
@@ -104,7 +104,7 @@ func TestAssemblePromptByteStable(t *testing.T) {
 		}
 	}
 	// Fence headroom interpolates into This Turn: 10-3 cycles, 4-2 jobs.
-	if !strings.Contains(got, "Fence headroom: cycles=7,jobs=2") {
+	if !strings.Contains(got, "Fence headroom: cycles=7,jobs=2,concurrency=") {
 		t.Fatalf("fence headroom was not interpolated:\n%s", got)
 	}
 	// A trailing newline terminates the prompt; the placeholder never leaks.
@@ -247,7 +247,7 @@ func TestAssemblePromptEnforcesSizeCeiling(t *testing.T) {
 	t.Setenv("METASYSTEM_MISSION_MAX_PROMPT_KB", "1")
 	out := filepath.Join(t.TempDir(), "prompt.txt")
 	// Make the contract dominate so the oversized block is named.
-	big := "# Mission m1\n\n```mission\nfence.cycles=10\nfence.jobs=4\n```\n" + strings.Repeat("x", 2048)
+	big := "# Mission m1\n\n```mission\nfence.cycles=10\nfence.jobs=4\nfence.concurrency=2\n```\n" + strings.Repeat("x", 2048)
 	if err := os.WriteFile(filepath.Join(repo, "plans/mission-m1.contract.md"), []byte(big), 0o644); err != nil {
 		t.Fatal(err)
 	}
