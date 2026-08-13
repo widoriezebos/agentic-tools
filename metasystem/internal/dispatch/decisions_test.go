@@ -636,3 +636,57 @@ func TestValidateMissionRefusals(t *testing.T) {
 		t.Fatalf("bad shape = %v", err)
 	}
 }
+
+// A timed-out (or failed, or cancelled) implementer round never delivered a
+// diff: CloseCheck must not demand one, or the chain is permanently
+// uncloseable and the runner dies at mission end (rep 1 of cohort
+// bm-1-20260813t113617z). A COMPLETED round without its deliverable is
+// still a violation, and undelivered rounds' OTHER evidence must still be
+// mirrored.
+func TestCloseCheckToleratesUndeliveredImplementerRounds(t *testing.T) {
+	repo, evidence, job := mirrorFixture(t)
+	agents := filepath.Join(repo, "artifacts", "agents")
+
+	// A follow-up round that timed out: record + round dir, no diff.patch.
+	writeJSONFile(t, filepath.Join(agents, "jobs"), job+"-r2.json", map[string]any{
+		"jobId": job + "-r2", "round": 2, "parentJob": job, "status": "timeout",
+		"role": "implementer", "mirror": nil,
+		"capabilitySnapshot": "artifacts/agents/capabilities/snap.json",
+	})
+	payload := filepath.Join(agents, job)
+	os.MkdirAll(filepath.Join(payload, "rounds", "2"), 0o755)
+	os.WriteFile(filepath.Join(payload, "rounds", "2", "raw.out"), []byte("killed at cap\n"), 0o644)
+
+	// Mirror both members, stamp the root, mirror once more so the manifest
+	// carries the stamped record's current state.
+	result := filepath.Join(t.TempDir(), "result.json")
+	for _, member := range []string{job, job + "-r2"} {
+		if err := Mirror(repo, repo, evidence, job, member, result); err != nil {
+			t.Fatalf("Mirror %s: %v", member, err)
+		}
+	}
+	jobs := filepath.Join(agents, "jobs")
+	first := readJSONFile(t, result)
+	record := readJSONFile(t, filepath.Join(jobs, job+".json"))
+	record["mirror"] = map[string]any{"path": asString(first["path"]), "manifest": first["manifest"]}
+	writeRecord(filepath.Join(jobs, job+".json"), record)
+	if err := Mirror(repo, repo, evidence, job, job, result); err != nil {
+		t.Fatalf("Mirror after stamp: %v", err)
+	}
+
+	if err := CloseCheck(repo, job); err != nil {
+		t.Fatalf("a timed-out round without a diff must not block the close: %v", err)
+	}
+
+	// The same round marked completed IS a violation.
+	r2 := readJSONFile(t, filepath.Join(jobs, job+"-r2.json"))
+	r2["status"] = "completed"
+	writeRecord(filepath.Join(jobs, job+"-r2.json"), r2)
+	if err := Mirror(repo, repo, evidence, job, job+"-r2", result); err != nil {
+		t.Fatalf("Mirror r2: %v", err)
+	}
+	if err := CloseCheck(repo, job); err == nil ||
+		!strings.Contains(err.Error(), "diff.patch is not mirrored") {
+		t.Fatalf("a completed round without its deliverable must refuse: %v", err)
+	}
+}

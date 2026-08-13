@@ -734,15 +734,14 @@ mirror_record() { # job
   fi
   patch=$(mktemp "$record_locks/mirror-patch.XXXXXX")
   printf '{"mirror":%s}\n' "$(cat "$result")" >"$patch"
-  "$ms" job chain-members --jobs "$jobs" --root "$root_id" --terminal-only \
-    | while IFS='|' read -r chain_job chain_status; do
-    # record_cas consumes its patch (one-shot); this loop applies the same
-    # content to every job in the chain, so each call gets its own copy.
-    patch_copy=$(mktemp "$record_locks/mirror-patch.XXXXXX")
-    cp "$patch" "$patch_copy"
-    record_cas "$chain_job" "$chain_status" "$chain_status" "$patch_copy" || return 1
-  done
-  rm -f -- "$result" "$patch" 2>/dev/null || true
+  # The stamp lands ONLY on the job that was actually mirrored. Stamping
+  # the whole chain from one job's mirror wrote durability claims for
+  # evidence that never landed: a follow-up round carried the root's
+  # stamp while its own artifacts were absent from the manifest, and the
+  # close then refused a chain every record of which CLAIMED to be
+  # mirrored (rep 1 of cohort bm-1-20260813t113617z, KI-6 round 3).
+  record_cas "$job" "$status" "$status" "$patch" || return 1
+  rm -f -- "$result" 2>/dev/null || true
 }
 
 reap_one_locked() { # job
@@ -1313,6 +1312,15 @@ close_chain() {
   exit_cleanup_chain=$root_id
   trap 'release_chain_lock "$exit_cleanup_chain"' EXIT
   root_record="$jobs/$root_id.json"
+  # Closing asserts the chain's evidence is durable, so make it durable
+  # first for EVERY terminal member: a reap mirrors only its own job's
+  # round, and follow-up rounds otherwise reach this point unmirrored.
+  # Best-effort per member; close-check below remains the authority and
+  # refuses precisely when a mirror could not land.
+  "$ms" job chain-members --jobs "$jobs" --root "$root_id" --terminal-only \
+    | while IFS='|' read -r chain_job chain_status; do
+      mirror_record "$chain_job" || true
+    done
   "$ms" job close-check --repo "$root" --root "$root_id"
   status=$(json_field "$root_record" status)
   patch=$(mktemp "$record_locks/close.XXXXXX")

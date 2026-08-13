@@ -52,7 +52,18 @@ func CloseCheck(repoRoot, root string) error {
 		relative := "rounds/" + round + "/diff.patch"
 		source := filepath.Join(repoRoot, "artifacts", "agents", root, "rounds", round, "diff.patch")
 		entry, entryOK := files[relative].(map[string]any)
-		if !entryOK || !fileExists(source) {
+		if !fileExists(source) {
+			// A round that never delivered — timeout, failure, cancel —
+			// has no diff to attest, and demanding one made every
+			// timed-out implementer chain permanently uncloseable
+			// (rep 1 of cohort bm-1-20260813t113617z). A COMPLETED
+			// round without its deliverable is still a violation.
+			if asString(member.record["status"]) == "completed" {
+				return fmt.Errorf("implementer diff.patch is not mirrored for %s", job)
+			}
+			continue
+		}
+		if !entryOK {
 			return fmt.Errorf("implementer diff.patch is not mirrored for %s", job)
 		}
 		digest, err := sha256File(source)
