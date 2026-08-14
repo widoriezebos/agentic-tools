@@ -824,9 +824,9 @@ reap_one() { # job
 dispatch_job() {
   local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override=
   local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
-  local overridden=false mission_data mission lease mission_turn cap watch_cap canonical model_key cap_result cap_resolution tiers_present=false roster_tier requested_tier escalation_required=0
-  local cost_direction= approval_name= approved_at=
-  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget input_bytes input_hash max_kb payload round_dir record_json setup_json
+  local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
+  local cost_direction= approval_name= approved_at= roster_json=
+  local permission_name permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json setup_json
   while (($#)); do
     case "$1" in
       --role) [[ $# -ge 2 ]] || { usage; exit 2; }; role=$2; shift 2 ;;
@@ -932,22 +932,7 @@ dispatch_job() {
   cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
   model_key=$(canonical_model "$model")
   [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
-  if [[ -n "$mission" ]]; then
-    refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key"
-    cap_args=(authorize-cap --repo "$root" --mission "$mission" --job "$job" --runtime "$runtime" --model "$model_key")
-    [[ -z "$cap_override" ]] || cap_args+=(--requested "$cap_override")
-    if ! cap_result=$(mission_fence "${cap_args[@]}" 2>&1); then
-      die 1 "mission dispatch refused by the mission fence: $cap_result"
-    fi
-    printf '%s\n' "$cap_result" >"$cap_resolution"
-  else
-    resolve_nonmission_cap "$role" "$runtime" "$model_key" "$cap_override" "$cap_resolution"
-  fi
-  cap=$(json_field "$cap_resolution" capMin)
-  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap authority returned an invalid capMin"
-  watch_cap=$(attested_watcher_ceiling)
-  (( cap < watch_cap )) \
-    || die 1 "dispatch cap ${cap}m must stay below the live watcher's attested ${watch_cap}m ceiling; re-arm supervision with --rearm --max-cap $cap"
+  authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$mission" "$cap_override" dispatch "$cap_resolution"
 
   if (( use_worktree )); then
     workspace="$worktrees/$job"
@@ -962,15 +947,9 @@ dispatch_job() {
   expand_permissions "$permission_name" "$workspace" "$use_worktree" "$permission_json"
   snapshot_json=$(mktemp "$record_locks/snapshot.XXXXXX")
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
-  snapshot_path=$(json_field "$snapshot_json" path)
-  fallbacks=$(json_field "$snapshot_json" fallbacks)
-  signal=$(json_field "$snapshot_json" sessionEstablishedSignal)
-  handshake_budget=$(json_field "$snapshot_json" sessionEstablishedTimeoutSec)
+  read_snapshot_fields "$snapshot_json"
 
-  input_bytes=$(wc -c <"$brief" | tr -d ' ')
-  max_kb=$(config_get --key dispatch.max-inline-input-kb --default 64)
-  [[ "$max_kb" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch.max-inline-input-kb must be a positive integer"
-  (( input_bytes <= max_kb * 1024 )) || die 1 "inline input exceeds dispatch.max-inline-input-kb; pass a file reference in the brief"
+  input_bytes=$(enforce_inline_input_limit "$brief" brief)
   input_hash=$(sha256_file "$brief")
   payload="$agents/$job"; round_dir="$payload/rounds/1"
   mkdir -p "$round_dir"
@@ -989,16 +968,64 @@ dispatch_job() {
     --requested-pair "$requested_pair" --cost-direction "$cost_direction" \
     --reviews "$reviews" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
   rm -f "$cap_resolution"
+  finalize_and_launch "$job" "$job" "$record_json" "$runtime" dispatch "$handshake_budget" "$wait"
+}
+
+# The authorize-and-launch tail, shared by dispatch_job and follow_up
+# (script-orchestration-13): the two ~70-line copies had already drifted —
+# follow_up fed dispatch.max-inline-input-kb straight into arithmetic, so a
+# malformed value died as a bash arithmetic error instead of the intended
+# refusal. One copy now; the drift resolved toward the validating side.
+
+authorize_job_cap() { # job id, role, runtime, model key, mission, explicit override, refusal noun, output json
+  local job=$1 role=$2 runtime=$3 model_key=$4 mission=$5 override=$6 noun=$7 output=$8 cap watch_cap cap_result cap_args
+  if [[ -n "$mission" ]]; then
+    refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key"
+    cap_args=(authorize-cap --repo "$root" --mission "$mission" --job "$job" --runtime "$runtime" --model "$model_key")
+    [[ -z "$override" ]] || cap_args+=(--requested "$override")
+    if ! cap_result=$(mission_fence "${cap_args[@]}" 2>&1); then
+      die 1 "mission $noun refused by the mission fence: $cap_result"
+    fi
+    printf '%s\n' "$cap_result" >"$output"
+  else
+    resolve_nonmission_cap "$role" "$runtime" "$model_key" "$override" "$output"
+  fi
+  cap=$(json_field "$output" capMin)
+  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap authority returned an invalid capMin"
+  watch_cap=$(attested_watcher_ceiling)
+  (( cap < watch_cap )) \
+    || die 1 "dispatch cap ${cap}m must stay below the live watcher's attested ${watch_cap}m ceiling; re-arm supervision with --rearm --max-cap $cap"
+}
+
+enforce_inline_input_limit() { # content file, refusal hint (brief|message); prints the byte count
+  local content=$1 hint=$2 max_kb bytes
+  max_kb=$(config_get --key dispatch.max-inline-input-kb --default 64)
+  [[ "$max_kb" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch.max-inline-input-kb must be a positive integer"
+  bytes=$(wc -c <"$content" | tr -d ' ')
+  (( bytes <= max_kb * 1024 )) || die 1 "inline input exceeds dispatch.max-inline-input-kb; pass a file reference in the $hint"
+  printf '%s\n' "$bytes"
+}
+
+read_snapshot_fields() { # snapshot json — sets snapshot_path, fallbacks, signal, handshake_budget, resume_cap
+  snapshot_path=$(json_field "$1" path)
+  fallbacks=$(json_field "$1" fallbacks)
+  signal=$(json_field "$1" sessionEstablishedSignal)
+  handshake_budget=$(json_field "$1" sessionEstablishedTimeoutSec)
+  resume_cap=$(json_field "$1" resume 2>/dev/null || true)
+}
+
+finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, handshake budget, wait flag
+  local job=$1 chain=$2 record_json=$3 runtime=$4 adapter_verb=$5 budget=$6 wait_flag=$7 patch
   lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$job" --source "$record_json"
   release_cap_authority_lock
-  release_chain_lock "$job"; trap - EXIT
-  lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb dispatch \
+  release_chain_lock "$chain"; trap - EXIT
+  lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
     --job "$job" --tag "metasystem-job-$job" || {
     patch=$(mktemp "$record_locks/launch-failed.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"
     lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
     rm -f "$patch"; return 3; }
-  await_handshake "$job" "$handshake_budget" "$current_claim_epoch" || return 3
-  if (( wait )); then wait_for_job "$job"; return $?; fi
+  await_handshake "$job" "$budget" "$current_claim_epoch" || return 3
+  if (( wait_flag )); then wait_for_job "$job"; return $?; fi
   printf '%s\n' "$job"
 }
 
@@ -1019,7 +1046,7 @@ record_critique_exhaustions() { # manifest
 }
 
 follow_up() {
-  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap watch_cap cap_result cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
+  local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round setup_json
   while (($#)); do
     case "$1" in
@@ -1124,26 +1151,12 @@ follow_up() {
   cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
   model_key=$(canonical_model "$model")
   [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
-  if [[ -n "$mission" ]]; then
-    refuse_unsigned_mission_cap_override "$role" "$runtime" "$model_key"
-    if ! cap_result=$(mission_fence authorize-cap --repo "$root" --mission "$mission" \
-        --job "$child" --runtime "$runtime" --model "$model_key" 2>&1); then
-      die 1 "mission follow-up refused by the mission fence: $cap_result"
-    fi
-    printf '%s\n' "$cap_result" >"$cap_resolution"
-  else
-    resolve_nonmission_cap "$role" "$runtime" "$model_key" "" "$cap_resolution"
-  fi
-  cap=$(json_field "$cap_resolution" capMin)
-  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap authority returned an invalid capMin"
-  watch_cap=$(attested_watcher_ceiling)
-  (( cap < watch_cap )) \
-    || die 1 "dispatch cap ${cap}m must stay below the live watcher's attested ${watch_cap}m ceiling; re-arm supervision with --rearm --max-cap $cap"
+  authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$mission" "" follow-up "$cap_resolution"
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
   snapshot_json=$(mktemp "$record_locks/follow-snapshot.XXXXXX")
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
-  snapshot_path=$(json_field "$snapshot_json" path); fallbacks=$(json_field "$snapshot_json" fallbacks); signal=$(json_field "$snapshot_json" sessionEstablishedSignal); handshake_budget=$(json_field "$snapshot_json" sessionEstablishedTimeoutSec); resume_cap=$(json_field "$snapshot_json" resume)
+  read_snapshot_fields "$snapshot_json"
   payload="$agents/$root_id"; round_dir="$payload/rounds/$round"; mkdir -p "$round_dir"
   delivery_content=$message
   if [[ "$resume_cap" != true ]]; then
@@ -1157,8 +1170,7 @@ follow_up() {
       printf '\n\n# Correction\n\n'; cat "$message"
     } >"$delivery_content"
   fi
-  max_kb=$(config_get --key dispatch.max-inline-input-kb --default 64); input_bytes=$(wc -c <"$delivery_content" | tr -d ' ')
-  (( input_bytes <= max_kb * 1024 )) || die 1 "inline input exceeds dispatch.max-inline-input-kb; pass a file reference in the message"
+  input_bytes=$(enforce_inline_input_limit "$delivery_content" message)
   input_hash=$(sha256_file "$delivery_content")
   write_prompt "$round_dir/prompt.md" "$child" "$role" "$runtime" "$model" "$round" "${mission:-none}" "$delivery_content"
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
@@ -1170,17 +1182,7 @@ follow_up() {
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
     --claim-epoch "$current_claim_epoch" --cap-resolution "$cap_resolution"
   rm -f "$cap_resolution"
-  lease_run_held "$current_claim_epoch" "$0" __record-setup --job "$child" --source "$record_json"
-  release_cap_authority_lock
-  release_chain_lock "$root_id"; trap - EXIT
-  lease_run_held "$current_claim_epoch" "$0" __launch --runtime "$runtime" --verb "$adapter_verb" \
-    --job "$child" --tag "metasystem-job-$child" || {
-    patch=$(mktemp "$record_locks/follow-launch.XXXXXX"); printf '{"error":"launch_failed"}\n' >"$patch"
-    lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$child" --expect pending --status failed --patch "$patch" || true
-    rm -f "$patch"; return 3; }
-  await_handshake "$child" "$handshake_budget" "$current_claim_epoch" || return 3
-  if (( wait )); then wait_for_job "$child"; return $?; fi
-  printf '%s\n' "$child"
+  finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait"
 }
 
 status_job() {
