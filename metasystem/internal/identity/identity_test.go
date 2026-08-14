@@ -112,11 +112,25 @@ func TestProbeLiveChildArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() }()
-	exact, state, err := KernelProber{}.Probe(int64(command.Process.Pid))
-	if err != nil || state != Alive {
-		t.Fatalf("live child not alive: %v %v", state, err)
+	// The child's argv is rightly empty inside its fork-to-execve window
+	// (the flake dossier's family, seventh instance — this test calls the
+	// prober directly, so the earlier helper sweep missed it). The
+	// property is steady-state; wait it out, bounded.
+	var exact Exact
+	var state Liveness
+	var err error
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		exact, state, err = KernelProber{}.Probe(int64(command.Process.Pid))
+		if err == nil && state == Alive && len(exact.Argv) == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("child argv misread: %v (state %v err %v)", exact.Argv, state, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	if len(exact.Argv) != 3 || exact.Argv[1] != "-c" {
+	if exact.Argv[1] != "-c" {
 		t.Fatalf("child argv misread: %v", exact.Argv)
 	}
 	if got := AliveRef(KernelProber{}, exact.Ref()); got != Alive {

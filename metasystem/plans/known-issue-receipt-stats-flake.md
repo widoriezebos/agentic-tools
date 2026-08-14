@@ -37,6 +37,12 @@ compile load widened the window on Linux too; the helper now waits
 bounded, covering every test that spawns through it. A sweep found no
 further child-probing one-shots (remaining sites are self-reads,
 post-exec by definition, or fixture-table reads).
+Seventh instance 2026-08-14 evening:
+TestProbeLiveChildArgv (internal/identity) called the prober DIRECTLY
+on a fresh child — the helper-name sweep missed direct Probe() calls —
+and a nested gate surfaced it; now bounded, and the completed sweep
+(direct probes included) shows only self-reads, pid-1, and absent-pid
+calls remaining, none of which can hit the window.
 Production is not affected: real
 callers announce themselves post-exec.
 

@@ -61,7 +61,13 @@
   scaled cap, always green solo — reproduced green at load 4.4).
   CANDIDATE for the W5 tail's D36: S4-2's cap scaling may be too
   tight for a shared machine; either widen its scale factor or accept
-  and stop sampling the Mac during active use. W5 COMPLETE (10/10; D36 closed the tail: -12 fixed, -11 resolved-as-found, -10 guarded+triaged, -5/-7/shellcheck declined with reopen conditions, S4-2 cap ruling). Next: W6 (9 retirements, each its own D-entry, parity first), then W7 (7 docs). Superseded: W5 batch 1
+  and stop sampling the Mac during active use. W5 COMPLETE (10/10; D36 closed the tail: -12 fixed, -11 resolved-as-found, -10 guarded+triaged, -5/-7/shellcheck declined with reopen conditions, S4-2 cap ruling). W6 at 3 of 9 items (D37 schema linter; D38+D39+D40 the mission
+  cluster; D41 config-identity; D42 cap-authority with drift tests
+  ported; D43 record-protocol with the -race reader; D44 exhaustion
+  with three cases ported). Item-3 boundary in flight. Remaining: -008
+  (port five open-work cases first), -001 (G-5 scope decision), -007
+  (fixture seam), -013 (real record-cas), -020 (tailor sign-off),
+  hygiene batch; then W7 (7 docs) closes the program. Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in
