@@ -459,3 +459,37 @@ func TestReleaseJobFreesAHuskedReservation(t *testing.T) {
 		t.Fatalf("no-op release errored: %v", err)
 	}
 }
+
+// The pinned-bytes drift refusals, ported from AUTH-R2-002/003
+// (script-fixtures-006/D42): the fence's cap authority reads the raw
+// contract bytes pinned in fences.json, so ANY drift — a real edit or a
+// whitespace-only one — must refuse against approvedContractSha256.
+func TestAuthorizeCapRefusesPinnedContractDrift(t *testing.T) {
+	repo, mission := fenceEnv(t)
+	contractPath := filepath.Join(repo, "plans", "mission-demo.contract.md")
+	data, err := os.ReadFile(contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeText(t, contractPath, strings.Replace(string(data), "fence.cycles=", "fence.cycles=9", 1))
+	if _, err := AuthorizeCap(repo, mission, "job-drift", "codex", "gpt-5-6-sol", nil); err == nil ||
+		!strings.Contains(err.Error(), "approvedContractSha256") {
+		t.Fatalf("a drifted pinned contract must refuse naming the pin, got %v", err)
+	}
+}
+
+func TestAuthorizeCapRefusesWhitespaceOnlyDrift(t *testing.T) {
+	repo, mission := fenceEnv(t)
+	contractPath := filepath.Join(repo, "plans", "mission-demo.contract.md")
+	data, err := os.ReadFile(contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Raw-file hashing deliberately sees what the canonical approval digest
+	// ignores: a trailing-whitespace-only edit still drifts the pin.
+	writeText(t, contractPath, string(data)+"  \n")
+	if _, err := AuthorizeCap(repo, mission, "job-ws", "codex", "gpt-5-6-sol", nil); err == nil ||
+		!strings.Contains(err.Error(), "approvedContractSha256") {
+		t.Fatalf("a whitespace-only drift must refuse naming the pin, got %v", err)
+	}
+}

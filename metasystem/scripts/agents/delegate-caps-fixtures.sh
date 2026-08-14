@@ -30,88 +30,17 @@ pass_fixture() {
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "delegate caps fixtures: binary absent; run the go gate first" >&2; exit 1; }
 
-authority_repo=$tmp/authority
-mkdir -p "$authority_repo/scripts/agents" "$authority_repo/plans" "$authority_repo/artifacts/agents/missions"
-
-# Install a signed-enough contract: the fence's cap authority reads the raw
-# bytes pinned in fences.json (approvedContractSha256), so the fixture pins
-# exactly what it writes.
-caps_contract() { # pair cap, fallback cap, wall hours
-  printf '```mission\nfence.wall-clock-hours=%s\nfence.cycles=20\nfence.jobs=50\nfence.concurrency=50\nfence.job-cap-min=%s\ncap.min.devin.swe-1-7=%s\n```\nApproval: name=Fixture; date=2026-08-09; contract-sha256=%s\n' \
-    "$3" "$2" "$1" "$(printf '0%.0s' {1..64})"
-}
-caps_install() { # mission, contract bytes on stdin
-  local mission=$1 contract="$authority_repo/plans/mission-$1.contract.md"
-  cat >"$contract"
-  mkdir -p "$authority_repo/artifacts/agents/missions/$mission"
-  printf '{"schemaVersion":1,"missionId":"%s","startedAt":"%s","cycles":0,"reservations":{},"approvedContractSha256":"%s"}\n' \
-    "$mission" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(shasum -a 256 "$contract" | awk '{print $1}')" \
-    >"$authority_repo/artifacts/agents/missions/$mission/fences.json"
-}
-authorize_cli() { # mission, job, [requested]
-  local mission=$1 job=$2 requested=${3:-}
-  if [[ -n "$requested" ]]; then
-    "$ms" mission fence-authorize-cap --repo "$authority_repo" --mission "$mission" \
-      --job "$job" --runtime devin --model swe-1-7 --requested "$requested"
-  else
-    "$ms" mission fence-authorize-cap --repo "$authority_repo" --mission "$mission" \
-      --job "$job" --runtime devin --model swe-1-7
-  fi
-}
-
-# AUTH-R2-001: omitted selects the signed pair cap, a lower argument narrows,
-# and the adversarial request above the signed cap is refused.
-caps_install interface < <(caps_contract 150 120 10)
-selected=$(authorize_cli interface selected)
-python3 - "$selected" <<'PY'
-import json, sys
-value = json.loads(sys.argv[1])
-assert set(value) == {"capMin", "capDeadline", "source"}, value
-assert value["capMin"] == 150 and value["source"]["rule"] == "contract-pair", value
-PY
-if raised_err=$(authorize_cli interface raised 200 2>&1); then
-  echo "AUTH-R2-001: requested-above-signed bypass was accepted" >&2; exit 1
-fi
-grep -Fq 'mission fence refused requested cap 200m above signed' <<<"$raised_err" \
-  || { echo "AUTH-R2-001: refusal did not name the signed bound: $raised_err" >&2; exit 1; }
-narrowed=$(authorize_cli interface narrowed 90)
-python3 - "$narrowed" <<'PY'
-import json, sys
-value = json.loads(sys.argv[1])
-assert set(value) == {"capMin", "capDeadline", "source"}, value
-assert value["capMin"] == 90 and value["source"]["rule"] == "argument", value
-PY
-pass_fixture AUTH-R2-001
-
-# AUTH-R2-002: the pinned bytes are the authority. After one successful
-# authorization, swapping the live contract for a higher-cap variant must be
-# refused on the next call. (The in-transaction single-buffer-read atomicity
-# the python leg injected into via after_buffer_read is an engine internal
-# now — internal/mission/fence.go reads the contract once into a buffer —
-# and cannot be reached from outside the process; the observable drift
-# refusal is what this leg keeps.)
-caps_install transaction < <(caps_contract 150 120 10)
-buffered=$(authorize_cli transaction buffer-wins)
-[[ $("$ms" json get --value "$buffered" --field capMin) == 150 ]] \
-  || { echo "AUTH-R2-002: pinned contract did not authorize its signed cap" >&2; exit 1; }
-caps_contract 999 120 10 >"$authority_repo/plans/mission-transaction.contract.md"
-if drift_err=$(authorize_cli transaction drift-refused 2>&1); then
-  echo "AUTH-R2-002: changed pinned bytes were accepted on the next call" >&2; exit 1
-fi
-grep -Fq 'does not match approvedContractSha256' <<<"$drift_err" \
-  || { echo "AUTH-R2-002: drift refusal did not name the pin: $drift_err" >&2; exit 1; }
-pass_fixture AUTH-R2-002
-
-# AUTH-R2-003: raw-file hashing detects bytes the canonical approval digest
-# deliberately ignores, including a trailing-whitespace-only edit.
-caps_install raw-hash < <(caps_contract 150 120 10)
-printf '  \n' >>"$authority_repo/plans/mission-raw-hash.contract.md"
-if ws_err=$(authorize_cli raw-hash whitespace 2>&1); then
-  echo "AUTH-R2-003: trailing-whitespace drift was accepted" >&2; exit 1
-fi
-grep -Fq 'does not match approvedContractSha256' <<<"$ws_err" \
-  || { echo "AUTH-R2-003: whitespace refusal did not name the pin: $ws_err" >&2; exit 1; }
-pass_fixture AUTH-R2-003
+# AUTH-R2-001..003 RETIRED to internal/mission/fence_test.go
+# (script-fixtures-006/D42): the pair-cap selection, narrowing, and
+# above-signed refusal are TestAuthorizeCapUsesPairCap and
+# TestAuthorizeCapRefusesAboveSigned; the pinned-bytes and
+# whitespace-only drift refusals are TestAuthorizeCapRefusesPinned-
+# ContractDrift and TestAuthorizeCapRefusesWhitespaceOnlyDrift, ported
+# green before this retirement. Pure file-in/refusal-out logic needs no
+# processes; the supervision legs below are what this file is for.
+for retired in AUTH-R2-001 AUTH-R2-002 AUTH-R2-003; do
+  echo "$retired retired: cap authority proven in internal/mission fence tests" >&2
+done
 
 # AUTH-R2-004 RETIRED with the python runner: it executed the python embedded
 # in mission-runner.sh and monkeypatched mission-contract.py's preflight to
@@ -122,7 +51,7 @@ pass_fixture AUTH-R2-003
 # amendment preflight), the runner's start/park/resume lifecycle is proven end
 # to end by the mission-runner process fixtures in validate-metasystem.sh, and
 # the pin's enforcement (drift refusal against approvedContractSha256) is
-# proven at the CLI by AUTH-R2-002/003 above.
+# proven by the fence tests named in the retirement note above.
 echo "AUTH-R2-004 retired: preflight-to-pin handoff moved into the engine; see comment" >&2
 
 # AUTH-R2-005..007 run through a real isolated supervision set. The config has
@@ -429,9 +358,9 @@ pass_fixture AUTH-R2-008
 
 # AUTH-R2-009 attacks proof completeness itself: removing one named fixture
 # must fail the registry check, while the actually executed registry is exact.
-if python3 - AUTH-R2-001 AUTH-R2-002 AUTH-R2-003 AUTH-R2-005 AUTH-R2-006 <<'PY'
+if python3 - AUTH-R2-005 AUTH-R2-006 <<'PY'
 import sys
-expected = {f"AUTH-R2-{index:03d}" for index in (1, 2, 3, 5, 6, 7, 8)}
+expected = {f"AUTH-R2-{index:03d}" for index in (5, 6, 7, 8)}
 actual = set(sys.argv[1:])
 raise SystemExit(0 if actual == expected else 1)
 PY
@@ -442,7 +371,7 @@ fi
 python3 - "${passed[@]}" <<'PY'
 import sys
 # AUTH-R2-004 retired to the engine (see its comment above).
-expected = {f"AUTH-R2-{index:03d}" for index in (1, 2, 3, 5, 6, 7, 8)}
+expected = {f"AUTH-R2-{index:03d}" for index in (5, 6, 7, 8)}
 actual = set(sys.argv[1:])
 assert actual == expected, (sorted(actual), sorted(expected))
 PY

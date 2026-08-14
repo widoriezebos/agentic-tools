@@ -1023,6 +1023,28 @@ mirror manifests, and turn-log acceptance. This closes W6 item 2: the
 mission fixture file survives with its irreducible process-level
 duties, roughly a third its former weight across D38+D39+D40.
 
+## D41 — Config-identity legs shrink to the smoke and the appendix pin (script-fixtures-014 sign-off)
+
+**Decision**: the five behavior legs retire against their verified
+one-to-one equivalents (the four TestConfigIdentity* tests in
+internal/config and TestSelectNoMatchNamesChangedKeys in
+internal/capability). The file keeps one determinism smoke through the
+real `config identity` CLI — flag forwarding is the script-side
+property — and the executable-appendix pin over the SHIPPED filter
+files, which is data worth pinning, not behavior. 168 lines → 58.
+
+## D42 — The cap-authority legs move beside the fence (script-fixtures-006 sign-off)
+
+**Decision**: AUTH-R2-001..003 retire from delegate-caps-fixtures.sh.
+001 was already double-covered (TestAuthorizeCapUsesPairCap,
+TestAuthorizeCapRefusesAboveSigned); 002/003 had NO Go equivalent, so
+TestAuthorizeCapRefusesPinnedContractDrift and
+TestAuthorizeCapRefusesWhitespaceOnlyDrift were ported GREEN first —
+pure file-in/refusal-out logic that needed no processes. The orphaned
+cap helpers went with them, the AUTH-R2-009 registry check now guards
+the remaining supervision roster (005-008), and the file is what its
+name promises: the supervision-set harness.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
