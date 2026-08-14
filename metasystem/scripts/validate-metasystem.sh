@@ -110,9 +110,13 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
   # force, or any refusal fall back to the plain worktree gate, no
   # witness, exactly as before.
   witness_state=
-  if (( ! delivery_contract )) \
-    && [[ "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" != 1 && "${METASYSTEM_GATE_FORCE:-0}" != 1 ]] \
-    && [[ -z "$(git status --porcelain -- cmd internal go.mod go.sum scripts/agents 2>/dev/null)" ]]; then
+  witness_roots_status=$(git status --porcelain -- cmd internal go.mod go.sum scripts/agents 2>/dev/null) \
+    && witness_roots_clean=1 || witness_roots_clean=0
+  # A failed git status must read as INELIGIBLE, never as clean: an empty
+  # answer from a non-repository is silence, not cleanliness.
+  [[ -n "$witness_roots_status" ]] && witness_roots_clean=0
+  if (( ! delivery_contract && witness_roots_clean )) \
+    && [[ "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" != 1 && "${METASYSTEM_GATE_FORCE:-0}" != 1 ]]; then
     witness_state=$(mktemp -d)
     chmod 700 "$witness_state"
     witness_snap=$(mktemp -d)
