@@ -975,6 +975,25 @@ linter leg — so the shipped surface keeps its name and its remaining
 duties). Proven green against the shipped schemas before the shell leg
 was cut, per the tier's never-delete-first rule.
 
+## D38 — The contract grammar matrix moved beside its parser (script-fixtures-003 sign-off)
+
+**Decision**: TestContractValidateRejectsPerKeyMatrix (internal/contract)
+carries the shell mutation table's exact semantics — every key of the
+base contract rejected when missing AND when malformed with the table's
+exact bad values, fifty in-process cases replacing ~52 assert-mission
+subprocesses per suite run. The verifier's parity warning held: Go had
+7 rows; the bulk was PORT, not delete, and the port ran green before
+any shell was cut. The four preflight rejection legs (unsealed,
+unsigned, mismatched hash, stale exposure) were verifier-confirmed 1:1
+duplicates of TestContractPreflight* and retired outright. What stays
+shell: the seal-sign-preflight smokes and the dispatch-allow
+seal-survival check — they prove the SCRIPT forwards, which no Go test
+can. One residue: the shell base carried stream.secondary (its
+missing-variant enforced), Go's base grammar treats it as optional —
+the matrix covers the 25 shared keys; if secondary is meant to be
+required-when-primary-exists, that is a grammar question for
+internal/contract, not a fixture question, noted here.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

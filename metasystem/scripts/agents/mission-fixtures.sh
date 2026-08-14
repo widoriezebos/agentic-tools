@@ -143,67 +143,12 @@ perl -0pi -e 's/FIXTURE_JOB_CAP_MIN/'"$mission_job_cap_min"'/g; s/FIXTURE_TURN_C
 # Every concrete key in the authored grammar is independently required and
 # independently type-checked. These fixture commands are synchronous; the
 # gate path itself carries fence.job-cap-min as its named execution ceiling.
-contract_keys=()
-while IFS= read -r key; do contract_keys+=("$key"); done \
-  < <(sed -n '/^```mission$/,/^```$/ { /^```/d; s/=.*//p; }' "$base")
-for key in "${contract_keys[@]}"; do
-  missing="$cases/missing-${key//./-}.md"
-  malformed="$cases/malformed-${key//./-}.md"
-  python3 - "$base" "$missing" "$malformed" "$key" <<'PY'
-import sys
-from pathlib import Path
-source, missing, malformed, wanted = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4]
-lines = source.read_text().splitlines()
-missing.write_text("\n".join(line for line in lines if not line.startswith(wanted + "=")) + "\n")
-bad = {
-    "gate.command": " value ",
-    "gate.ref": "bad ref",
-    "gate.paths": "../outside",
-    "truth.paths": "/absolute",
-    "truth.certification": "goldish",
-    "gate.direction": "up",
-    "gate.threshold.score": "=1",
-    "gate.noise-floor.score": "-1",
-    "guard.audit.command": " value ",
-    "guard.audit.floor": "one",
-    "guard.audit.noise": "-1",
-    "guard.cadence": "0",
-    "ledger.cycle-budget": "0",
-    "ledger.no-gain-budget": "none",
-    "fence.wall-clock-hours": "0",
-    "fence.cycles": "0",
-    "fence.jobs": "all",
-    "fence.concurrency": "0",
-    "fence.job-cap-min": "1.5",
-    "host.runtime": "bad runtime",
-    "host.model": "bad model",
-    "host.turn-cap-min": "0",
-    "stream.primary": " value ",
-    "stream.secondary": " value ",
-    "envelope.dependencies": "whatever seems safe",
-    "exposure": "10-ish",
-}[wanted]
-malformed.write_text("\n".join(f"{wanted}={bad}" if line.startswith(wanted + "=") else line for line in lines) + "\n")
-PY
-  expect_failure "missing-${key//./-}" "" "$root/scripts/assert-mission.sh" --file "$missing"
-  expect_failure "malformed-${key//./-}" "" "$root/scripts/assert-mission.sh" --file "$malformed"
-done
-
-unbounded=$cases/unbounded.md
-sed 's/envelope.dependencies=jq/envelope.dependencies=whatever seems safe/' "$base" >"$unbounded"
-expect_failure unbounded-envelope "unbounded or non-literal" "$root/scripts/assert-mission.sh" --file "$unbounded"
-unbounded_literal=$cases/unbounded-literal.md
-sed 's/envelope.dependencies=jq/envelope.dependencies=all/' "$base" >"$unbounded_literal"
-expect_failure unbounded-literal-envelope "unbounded or non-literal" "$root/scripts/assert-mission.sh" --file "$unbounded_literal"
-forbidden=$cases/forbidden.md
-sed 's/envelope.dependencies=jq/envelope.production-data=fixture/' "$base" >"$forbidden"
-expect_failure forbidden-envelope "not marked pre-authorizable" "$root/scripts/assert-mission.sh" --file "$forbidden"
-tier_move=$cases/tier-move.md
-sed 's/envelope.dependencies=jq/envelope.tier-move=3/' "$base" >"$tier_move"
-expect_failure tier-move-retired "use envelope.dispatch-allow" "$root/scripts/assert-mission.sh" --file "$tier_move"
-malformed_dispatch_allow=$cases/malformed-dispatch-allow.md
-sed 's/envelope.dependencies=jq/envelope.dispatch-allow=fake-model/' "$base" >"$malformed_dispatch_allow"
-expect_failure malformed-dispatch-allow "exact runtime:model pairs" "$root/scripts/assert-mission.sh" --file "$malformed_dispatch_allow"
+# The per-key grammar matrix (52 subprocess legs) and the envelope
+# rejection variants moved in-process: TestContractValidateRejects and
+# TestContractValidateRejectsPerKeyMatrix (internal/contract, under the
+# go gate) carry the exact missing/malformed table this loop drove
+# through assert-mission.sh (script-fixtures-003/D38). The seal-sign-
+# preflight smokes below stay: they prove the SCRIPT forwards.
 
 dispatch_allow=$repo/plans/mission-dispatch-allow.contract.md
 sed 's/envelope.dependencies=jq/envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol/' "$base" >"$dispatch_allow"
@@ -216,31 +161,10 @@ sed 's/envelope.dependencies=jq/envelope.dispatch-allow=fake:fake-model,codex:gp
 grep -Fq 'envelope.dispatch-allow=fake:fake-model,codex:gpt-5.6-sol' "$dispatch_allow" \
   || { echo "sealing altered the dispatch-allow envelope line" >&2; exit 1; }
 
-unsealed=$repo/plans/mission-unsealed.contract.md
-cp "$base" "$unsealed"
-printf '\nApproval: name=Human; date=2026-08-04; contract-sha256=%064d\n' 0 >>"$unsealed"
-expect_failure unsealed-preflight "unsealed" "$root/scripts/assert-mission.sh" --preflight --file "$unsealed"
-
-unsigned=$repo/plans/mission-unsigned.contract.md
-cp "$base" "$unsigned"
-"$root/scripts/assert-mission.sh" --seal --file "$unsigned" >/dev/null
-expect_failure unsigned-preflight "unsigned" "$root/scripts/assert-mission.sh" --preflight --file "$unsigned"
-
-mismatched=$repo/plans/mission-mismatched.contract.md
-cp "$base" "$mismatched"
-"$root/scripts/assert-mission.sh" --seal --file "$mismatched" >/dev/null
-printf '\nApproval: name=Human; date=2026-08-04; contract-sha256=%064d\n' 0 >>"$mismatched"
-expect_failure mismatched-preflight "approval hash" "$root/scripts/assert-mission.sh" --preflight --file "$mismatched"
-
-stale=$repo/plans/mission-stale.contract.md
-cp "$base" "$stale"
-"$root/scripts/assert-mission.sh" --seal --file "$stale" >/dev/null
-python3 - "$stale" <<'PY'
-import sys
-from pathlib import Path
-path=Path(sys.argv[1]); text=path.read_text(); path.write_text(text.replace("fence.jobs=4", "fence.jobs=5", 1))
-PY
-expect_failure stale-exposure "exposure is stale" "$root/scripts/assert-mission.sh" --preflight --file "$stale"
+# The unsealed/unsigned/mismatched-hash/stale-exposure preflight
+# rejections are TestContractPreflightUnsealed/Unsigned/
+# ApprovalHashMismatch/StaleExposure in internal/contract — verified 1:1
+# by the review's verifier before this retirement (D38).
 
 contract=$repo/plans/mission-alpha.contract.md
 cp "$base" "$contract"

@@ -409,3 +409,63 @@ func TestCanonicalContractHash(t *testing.T) {
 		t.Fatalf("canonical hash drifted: got %s want %s", got, expected)
 	}
 }
+
+// The per-key grammar matrix, ported from mission-fixtures.sh's mutation
+// table (script-fixtures-003/D38): every key of the base contract must
+// reject when MISSING and when MALFORMED with the shell table's exact bad
+// values. The shell drove ~52 assert-mission subprocesses per suite run to
+// prove what this table proves in-process under the gate.
+func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
+	badValues := map[string]string{
+		"gate.command":           " value ",
+		"gate.ref":               "bad ref",
+		"gate.paths":             "../outside",
+		"truth.paths":            "/absolute",
+		"truth.certification":    "goldish",
+		"gate.direction":         "up",
+		"gate.threshold.score":   "=1",
+		"gate.noise-floor.score": "-1",
+		"guard.audit.command":    " value ",
+		"guard.audit.floor":      "one",
+		"guard.audit.noise":      "-1",
+		"guard.cadence":          "0",
+		"ledger.cycle-budget":    "0",
+		"ledger.no-gain-budget":  "none",
+		"fence.wall-clock-hours": "0",
+		"fence.cycles":           "0",
+		"fence.jobs":             "all",
+		"fence.concurrency":      "0",
+		"fence.job-cap-min":      "1.5",
+		"host.runtime":           "bad runtime",
+		"host.model":             "bad model",
+		"host.turn-cap-min":      "0",
+		"stream.primary":         " value ",
+		"envelope.dependencies":  "whatever seems safe",
+		"exposure":               "10-ish",
+	}
+	base := baseContract()
+	for _, line := range strings.Split(base, "\n") {
+		key, _, found := strings.Cut(line, "=")
+		if !found || strings.HasPrefix(line, "```") || strings.Contains(key, " ") {
+			continue
+		}
+		bad, mapped := badValues[key]
+		t.Run("missing "+key, func(t *testing.T) {
+			_, contractPath := newContractRepo(t)
+			writeFileMode(t, contractPath, removeLine(base, line), 0o644)
+			if _, _, err := Validate(contractPath); err == nil {
+				t.Fatalf("a contract missing %s validated", key)
+			}
+		})
+		if !mapped {
+			t.Fatalf("no malformed value mapped for key %s — extend the table", key)
+		}
+		t.Run("malformed "+key, func(t *testing.T) {
+			_, contractPath := newContractRepo(t)
+			writeFileMode(t, contractPath, strings.Replace(base, line, key+"="+bad, 1), 0o644)
+			if _, _, err := Validate(contractPath); err == nil {
+				t.Fatalf("a contract with %s=%q validated", key, bad)
+			}
+		})
+	}
+}
