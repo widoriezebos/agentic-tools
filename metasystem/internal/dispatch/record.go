@@ -39,6 +39,11 @@ var terminalStatuses = map[string]bool{
 	"completed": true, "failed": true, "cancelled": true, "timeout": true,
 }
 
+// TerminalStatus reports whether a job status is one a record cannot leave.
+// This predicate is the vocabulary's one exported home (review cli-1);
+// consumers outside dispatch must not re-declare the set.
+func TerminalStatus(status string) bool { return terminalStatuses[status] }
+
 // Identity fields a running record fixes for its whole life; a patch that
 // names any of them is refused.
 var immutableFields = map[string]bool{
