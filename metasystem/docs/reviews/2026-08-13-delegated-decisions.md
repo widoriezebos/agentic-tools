@@ -1275,6 +1275,215 @@ restructures; the remainder stay ambient idiom notes, not review
 debt. Proof: audit green after every docs pass, contract package
 green in full, build green.
 
+## Closing tally — the review program is complete
+
+**The final program boundary is GREEN**: the full suite passed on the
+VM (the validation authority) at 2c92dfe in 532 seconds, with the Mac
+sampling run following per the D33 platform claim. The boundary earned
+its keep on the way: its first firing, at 230e600, was the coverage
+ratchet refusing internal/authority at 82.6% against its 95% floor —
+D51's ValidMode swap had added uncovered branches — and the fix
+(TestValidMode, 95.7%) is the program's last commit. Every W6 and W7
+change sits under a both-hosts-green boundary (W6 at 7c96452: VM 561s,
+Mac 1270s).
+
+### The program in one paragraph
+
+The 2026-08-12 full-system review produced an execution backlog of 101
+distinct findings across seven tiers (the tier lists carry 102 slots;
+script-validate-11 appears in both W1.24 and W5.10 and counts once). Under
+the 2026-08-13 AFK delegation, all of it was executed autonomously:
+decisions D1 through D52 record every sign-off call, every decline with its
+reopen condition, and every residue, with one entry per decision and the
+alternative not taken named in each. Wido's review surface is this
+document; the standing instruction is revert on disagreement.
+
+### Per-tier accounting
+
+**W1 — correctness (26 items): 26 landed, 0 declined.** The fail-closed and
+proof-discipline fixes all went in as specified, several with expanded
+scope from the critique rounds (the classification abort, the sweep's
+only-ESRCH rule, the bounded record locks).
+
+**W2 — consolidations (17 items): 17 landed, 0 declined.** The notable
+judgment calls are D9 (one lock protocol, bindings keep their bytes, no
+fourth liveness state) and D12 (the durability contract is FINISHED for
+the writers of durable state and explicitly staged for the rest, not
+retired and not left as an unclaimed guarantee).
+
+**W3 — CLI uniformity (8 items): 8 landed, 0 declined.** D15 (usage errors
+exit 2 everywhere) and D16 (string booleans keep their wire spellings but
+refuse typos) are the two sign-offs; staticcheck joined the gate.
+
+**W4 — script boundary (25 items): 23 landed, 2 declined, 1 landed
+minimally.** The big one is D17: the adopted payload ships the engine
+source and CI rebuilds it — decided under the later, more specific
+delegation over the r10 human-severance, flagged as the revert point.
+Declined: script-misc-5 (adoption-plan verb) and script-misc-7
+(skill-validation verb), both verifier-downgraded as not carrying their
+weight; reopen if an adopter actually asks for a machine-readable adoption
+plan or a skill linter with teeth (D30). Landed minimally:
+script-adapters-12 — the fake adapter's failure patch now rides `adapter
+result-patch`, but the finding's wholesale sourcing of runtime-common by
+fake.sh is declined on the verifier's own analysis (the fixture injects
+failures outside the library's hook coverage; restructuring would invert
+the risk); reopen if those injection points ever move inside the library's
+hooks (D28).
+
+**W5 — suite decomposition (10 items): 6 landed, 3 declined, 1 triaged
+with the wholesale half declined.** Landed: the five smalls (D34) and the
+decomposition itself (D35, 4,676 lines to 2,201). Declined with reopen
+conditions (all D36): script-validate-5 (the protocol-shape heredoc IS the
+drift pin; a pin needs an independent copy — reopen when
+internal/returnschema next changes), script-validate-7 (most of the perl
+fabricates deliberately invalid confs, where a grammar-aware verb is the
+wrong tool — reopen if a third valid-conf builder appears; D49 later added
+`config tailor --set` for the valid-conf tailoring class specifically),
+and shellcheck (absent on both validation hosts and the shipped CI image —
+reopen when someone provisions it everywhere). Triaged:
+script-validate-10 — python3 is now a DECLARED fixture-harness dependency
+refused up front by all three suite entry points; wholesale heredoc
+conversion is declined, per-read conversions continue as files get
+touched.
+
+**W6 — fixture retirement (9 items): 9 landed, 0 declined.** Every
+retirement obeyed the port-first rule, and the verifier's parity warnings
+held every single time: D38 ported the 25-key contract matrix before
+cutting, D42 ported two drift tests that had no Go equivalent, D44 ported
+three exhaustion cases, D45 ported the four open-work cases the 1:1 claim
+missed, D48 verified the derivation rows, D50 ported the lease-refused
+witness and the lineage-export assertion. Two findings resolved as found
+(-016 was already fixed by W1.24; script-orchestration-14's ps
+shadow-classification was already gone). D47 found a production defect on
+the way (the armer's raw-ps identity read) and D49 killed the three
+divergent perl conf rewrites behind `config tailor --runtimes fake
+--set`.
+
+**W7 — documentation (7 items): 6 landed, the rename half of one
+declined, item 7 dispositioned as scoped.** The glossary points at the
+engine (D51), wow.md's dead route is fixed (D51), eleven package docs
+match their code (D51), and the three documents exist: the engine map
+(docs/architecture.md), the dispatch-sequence ground truth
+(docs/design/dispatch-sequence.md), and the four promoted contracts in
+docs/design (D52). Declined: architecture-6's rename of internal/contract
+— every import ripples for a naming-taste win; the doc-comment half
+landed; reopen if contract-the-word confusion actually bites (D51). W7
+item 7 (the ~35 idiom lows) is dispositioned exactly as the review scoped
+it: "as encountered" — missionrunner-8 landed in D51, several fell out of
+the W1–W6 restructures, and the remainder are ambient idiom notes, not
+review debt.
+
+### Residues and open items the program leaves behind
+
+Each is recorded where stated; nothing here blocks the program's close.
+
+1. **The receipt-stats flake stays OPEN, probe armed.** The next Mac-suite
+   firing names its dying line and leaves evidence
+   (plans/known-issue-receipt-stats-flake.md). VM-green remains the
+   validation authority while it stays open.
+2. **FixtureEntryFor corrupt-vs-absent hardening** — a fail-closed
+   follow-up candidate that goes solo because the signature ripples
+   across the auth path (same plan file, D14's neighborhood).
+3. **The "started" key dual-read** (D14) — the shared reader still
+   accepts the legacy spelling; it drops once a full suite cycle proves
+   no writer emits it. That cycle has long since happened; the drop is a
+   one-line cleanup nobody has claimed yet.
+4. **The tty-loop residue** (D34) — one suite retry loop still reads the
+   structured censusGeneration= token instead of exit 9 because the tty
+   wrapper's exit-code propagation is unverified. Revisit if that wrapper
+   ever proves transparent.
+5. **The S4-2 cap ruling** (D36) — Mac sampling runs are EXPECTED to
+   flake at S4-2's 36s scaled cap under active machine use; solo
+   reproduction is the answer; the scale factor deliberately stays.
+6. **The D33 platform claim** — intermediate boundaries claim Linux
+   validity; Darwin full suites are required before benchmark cohorts,
+   releases, and VM-red reproductions, and are otherwise sampling with
+   the between-sample risk accepted in writing.
+7. **The durability contract's staged tail** (D12) — call sites outside
+   the durable-state writers keep anchor "" until their packages are
+   otherwise touched; the package doc names the adopters.
+8. **fencesEnforced's 30-second legacy allowance** (D3, D13) — survives
+   only for turns without the hostEndedAt stamp; engine-side
+   host-interval measurement stays the cleaner unbuilt option.
+9. **F4's accepted residuals** (D32) — a custodian that dies leaving
+   grandchildren (the existing reaper-plus-census case) and an
+   inert-but-alive custodian (no hard bound without a fenced heartbeat
+   lease, which would be its own design).
+10. **selftest-listener** (D27) — verb kept as a removal candidate; the
+    W6 sweep did not remove it.
+11. **stream.secondary** (D38) — the shell matrix enforced its
+    missing-variant, Go's grammar reads it as optional; whether it is
+    required-when-primary-exists is an internal/contract grammar
+    question, recorded there.
+12. **The D46 gate-scope note** — nested delivery-contract runs skip
+    gate tests behind digest equality and AGENTS.md is not in the
+    gate-input closure, so a nested target's doc drift is caught by that
+    repo's own CI, not the outer template run. True of every gate test;
+    now written down.
+13. **Supervision re-arm in this checkout** stays blocked on subdirectory
+    conf resolution (plans/review-execution.md); the review work never
+    needed dispatch, so it proceeded unarmed.
+14. **Parked for Wido, untouched by the program**: the adopted-engine
+    delivery ruling review (D17 is the revert point), the 119 accumulated
+    agent worktrees plus the --help worktree, and the untracked codex
+    pids that may be his own sessions.
+
+### The decision index, D1–D52
+
+- D1 — the identity fixture env var is fenced at the arming gate, not threaded through every custodian signature.
+- D2 — cohort bm-1-…83558 abandoned after rep 1; the close-protocol fixes land before more spend.
+- D3 — the benchmark kit tolerates a 30-second bookkeeping overshoot on turn wall-clock (later replaced by D13).
+- D4 — kit role schemas are pinned as the engine-materialized v2 bytes; the referee does not let the candidate define scoring.
+- D5 — mirror stamps are per-job; a record's mirror field is a claim about its own evidence only.
+- D6 — close tolerates an undelivered non-completed implementer round (later amended by D8).
+- D7 — rep 2 waits for four fence/headroom fixes; husked dispatches release reservations and emit reason classes.
+- D8 — close attests evidence, not host workflow; internal/usage becomes the one owner of typed usage extraction.
+- D9 — internal/lock is the one directory-lock protocol; bindings keep their on-disk bytes; no fourth liveness state.
+- D10 — rep 2 proceeds; the delegation floor's strictness is flagged for Wido rather than amended mid-series.
+- D11 — the drain-stall incident is owned as my own cadence change; the drain never parks while a kill-capable reap is owed.
+- D12 — the durability contract gets finished for durable-state writers and explicitly staged for the rest.
+- D13 — hostEndedAt stamps the host process boundary; the cap gates read it; the enforcement stamp gets the same allowance one layer down.
+- D14 — pidStartedAt is the fixture identity table's one spelling; one shared reader.
+- D15 — usage errors exit 2 everywhere; ambiguous devin correlation gets its own code.
+- D16 — string booleans keep their wire spellings and refuse everything else.
+- D17 — the adopted payload ships the engine source and CI rebuilds it; decided under the delegation, flagged as the revert point (addendum: landed as W4.22).
+- D18 — cap-authority rides the owner-lock verb; SIGKILLed holders' husks heal instead of bricking dispatch.
+- D19 — the shell standing reaper is deleted; the fixture now proves it stays deleted.
+- D20 — `supervise derive-ceiling` owns the watcher-ceiling derivation.
+- D21 — `supervise verify-armed` owns the arming success criterion, one attempt, pure over the clock.
+- D22 — `report running-work` owns the turn-end inventory and its human-facing clause.
+- D23 — the watcher's classification engine is `report scan-jobs` (and the port fixed the empty stale-min silent failure).
+- D24 — `adapter adjudicate-turn` is pure decision; the CAS deliberately stays on the shell's lease-held path.
+- D25 — one command builder per runtime; the canary batching doctrine is written generically.
+- D26 — `host finish` and `adapter devin-settle` join the engine.
+- D27 — `adapter selftest-run` orchestrates the full-contract sequence, with its first automated proof.
+- D28 — the W4.20 smalls; script-adapters-12's wholesale restructuring declined on the verifier's own analysis.
+- D29 — the refactor gate is `validate refactor-baseline`.
+- D30 — settings.json is derived structurally; the dead emit-event wiring dies; two speculative verbs declined.
+- D31 — the standing reaper says its no-kill decline out loud, once per pass.
+- D32 — F4: the detached adapter supervisor enforces its record's own deadlines (addendum: implemented; the fixture caught the zombie-reap and prober-in-domain defects).
+- D33 — the boundary-scoped gate witness and --delivery-contract; measured 2.2x on the VM suite.
+- D34 — five suite-boundary repairs, including `mission contract-hash` and the exit-9 arming-window code.
+- D35 — the suite is an orchestrator again; adopt and dispatch sub-suites extracted (4,676 → 2,201 lines).
+- D36 — the W5 tail: python3 declared, three declines with reopen conditions, and the S4-2 cap ruling.
+- HUMAN APPROVAL — "Approved, and yes to all": baseline reps, the strict floor, uncontained bm-2, and backlog items 14+15.
+- D37 — the schema linter lives beside the generator, under the gate.
+- D38 — the 25-key contract grammar matrix lives beside its parser; ported before the shell was cut.
+- D39 — the mission state legs retire against verified Go equivalents.
+- D40 — the mission end-state assertions retire; the process-level runner legs stay.
+- D41 — config-identity shrinks to one CLI smoke and the executable-appendix pin.
+- D42 — the cap-authority legs move beside the fence; the two missing drift tests ported first.
+- D43 — the record-protocol legs retire; the -race goroutine reader is stronger than the poller it replaces.
+- D44 — the exhaustion legs retire; three uncovered cases ported first.
+- D45 — the open-work legs retire; the verifier's four missing cases ported first.
+- D46 — the G-5 instruction-owners lint moves to Go; D17 dissolved the adopted-repo scope objection.
+- D47 — the armer reads identity through `proc classify` (a production fix); the ps shim and mirror daemon retire.
+- D48 — the telemetry wiring test drives the real `__record-cas`; derivation stays Go-owned.
+- D49 — `config tailor` learns the fake runtime and `--set`; the three divergent perl conf rewrites die.
+- D50 — the W6 hygiene batch, one disposition per finding; closes W6.
+- D51 — the W7 smalls: the glossary tells the truth, the routing index routes, eleven package docs match their code; the contract rename declined.
+- D52 — the W7 documents: the engine map, the dispatch-sequence ground truth, and the four promoted contracts; closes W7's numbered items.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

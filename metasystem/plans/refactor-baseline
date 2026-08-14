@@ -1,3 +1,3 @@
-sha=a1877a889d4f819fafe8dae85f65114ea27db242
-recorded_epoch=1786731941
-gate=bash scripts/validate-metasystem.sh (VM GREEN at a1877a8 in 528s — W6 item-8 boundary; Mac sampling in flight)
+sha=2c92dfee70d47eacc77a43c88a8900c6c070cdf4
+recorded_epoch=1786734867
+gate=bash scripts/validate-metasystem.sh (VM GREEN at 2c92dfe in 532s — FINAL PROGRAM BOUNDARY; Mac sampling in flight)

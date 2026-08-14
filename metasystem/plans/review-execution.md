@@ -90,10 +90,21 @@
   (26-step delegate-job ground truth, anchors spot-verified), four
   standing contracts promoted to docs/design with all citations
   repointed, item-7 idiom lows dispositioned as-encountered per the
-  review's own scoping. Remaining: FINAL PROGRAM BOUNDARY at the D52
-  commit (both hosts, Monitors — Mac waits for the W6 sampling run
-  to drain first), then closeout (program summary here, memory
-  rewrite, decisions-doc tally, plain-English message to Wido). Superseded: W5 batch 1
+  review's own scoping. PROGRAM COMPLETE: the final boundary's first
+  firing (230e600) was the coverage ratchet catching D51's ValidMode
+  swap (authority 82.6% vs the 95% floor; TestValidMode restores
+  95.7% at 2c92dfe), and the relaunched FINAL PROGRAM BOUNDARY is
+  GREEN on the VM at 2c92dfe in 532s (validation authority; Mac
+  sampling recorded when it lands). Baseline re-recorded at 2c92dfe.
+  The closing tally — per-tier accounting, eight declines with
+  reopen conditions, fourteen residues, the D1-D52 index — is folded
+  into docs/reviews/2026-08-13-delegated-decisions.md. All 101
+  findings are dispositioned; Wido reviews after the fact, revert on
+  disagreement. NEXT PHASE (Wido-approved): the benchmark series —
+  2-3 baseline reps, strict D10 floor, bm-2's uncontained-Devin
+  start — with the machine dedicated once the final Mac sampling
+  drains; then backlog items 14 (goal system) and 15 (monitor
+  facility). Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in
