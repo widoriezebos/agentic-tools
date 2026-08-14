@@ -4,9 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // These verbs back the adapter return delivery and the full-contract
@@ -122,6 +124,47 @@ func runAdapterSelftestListener(args []string) int {
 	}
 	timeout := time.Duration(*timeoutSeconds * float64(time.Second))
 	if err := adapter.SelftestListener(*portFile, *requestLog, timeout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+// runAdapterSelftestRun drives the full-contract self-test
+// (script-adapters-05/D27): Go orchestrates the sequence by exec'ing
+// dispatch.sh and the adapter script, and owns the decisions — the
+// model-placeholder refusal, the denial taxonomy, session equality, and the
+// evidence assertions as parsed reads of return.json. The per-runtime knobs
+// (turn ceiling, denial-ends-turn) arrive as flags from the adapter.
+func runAdapterSelftestRun(args []string) int {
+	flags := flag.NewFlagSet("adapter selftest-run", flag.ContinueOnError)
+	var p adapter.SelftestParams
+	flags.StringVar(&p.Root, "root", "", "checkout root")
+	flags.StringVar(&p.Runtime, "runtime", "", "runtime name")
+	flags.StringVar(&p.AdapterPath, "adapter", "", "adapter script, exec'd for identity and probe")
+	flags.StringVar(&p.Usage, "usage", "", "native, unavailable, or metered")
+	flags.BoolVar(&p.DevinChecks, "devin-checks", false, "run the Devin-only skill-discovery leg")
+	flags.IntVar(&p.TurnCeilingSec, "turn-ceiling-sec", 240, "how long one self-test turn may take")
+	flags.BoolVar(&p.DenialEndsTurn, "denial-ends-turn", false, "the runtime ends a turn on a denied tool")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if p.Root == "" || p.Runtime == "" || p.AdapterPath == "" ||
+		(p.Usage != "native" && p.Usage != "unavailable" && p.Usage != "metered") {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-run --root DIR --runtime NAME --adapter SCRIPT --usage native|unavailable|metered [--devin-checks] [--turn-ceiling-sec N] [--denial-ends-turn]")
+		return 2
+	}
+	model, _, err := config.Get(config.GetParams{
+		Key:        "role.default.model." + p.Runtime,
+		Default:    "",
+		DefaultSet: true,
+		ConfPath:   filepath.Join(p.Root, "metasystem.conf"),
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := adapter.SelftestRun(p, model, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

@@ -588,6 +588,37 @@ disagreement artifacts are byte-identical; the observed model records
 even when certification fails (the record must reflect what the
 transcript named); record writes stay with the shell caller per D24.
 
+## D27 — The full-contract self-test is one Go orchestration (script-adapters-05 sign-off)
+
+**Decision**: `adapter selftest-run` (internal/adapter/selftestrun.go) now
+runs the entire full-contract sequence the three real adapters drove
+through ~260 lines of runtime-common.sh: dispatch, return completeness,
+typed usage, session-identity resume, cancellation, the permission legs
+against the snapshot's own envelope declaration, and the pass record.
+The orchestration EXECS dispatch.sh, the adapter script, and
+assert-return-complete.sh — composition rides the same authority paths
+every real job rides, nothing is reimplemented. The decisions moved into
+Go and are unit-proven: the model-placeholder refusal, the denial
+taxonomy (empty_reply / protocol_error / runtime_error and nothing
+else), session equality, and the evidence assertions as PARSED reads of
+return.json — a marker in key position or in an unparseable file no
+longer satisfies an evidence claim, which the old `grep -Fq` would have
+accepted. Per-runtime knobs stay declarations in the adapters
+(selftest_turn_ceiling_sec, selftest_denial_ends_turn) and travel as
+flags; the tripwire listener now runs in-process (the selftest-listener
+verb remains for now and is a removal candidate once W6 sweeps unused
+verbs). run_full_contract_selftest is a six-line wrapper.
+
+**Why**: the sequence was the last adapter-side block where assertions
+lived in grep and taxonomy in a case statement. The suite deliberately
+never runs it (real selftests spend model calls), so the port ALSO adds
+the first automated proof of this path: stub-dispatch fixtures drive the
+full orchestration end to end, plus refusal tests for every verdict.
+
+**Numbering note**: an earlier projection earmarked D27 for the W4.21
+refactor gate; that work takes D28's slot when it lands. D-numbers are
+assigned in landing order.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

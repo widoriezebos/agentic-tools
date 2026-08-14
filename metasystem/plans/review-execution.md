@@ -22,9 +22,8 @@
   conf gaining runtimes or arming taught subdirectory conf resolution;
   the review work itself does not dispatch jobs, so it proceeds unarmed.
 - Dead ends (do not retry without new evidence): none in this stream.
-- Next step: W4.18 selftest-run (L, solo cluster — port
-  run_full_contract_selftest and helpers to internal/adapter/selftest.go;
-  Go orchestrates by exec'ing dispatch.sh); then W4.20 smalls, W4.21
+- Next step: W4.18 selftest-run LANDED (D27; suites pending at the
+  cluster boundary); then W4.20 smalls, W4.21
   refactor gate, W4.22 = D17 implementation pass (solo), W4.23-25; then
   W5 (10, suite decomposition), W6 (9, fixture retirement — each
   whole-file retirement its own decisions-doc entry), W7 (7, docs);

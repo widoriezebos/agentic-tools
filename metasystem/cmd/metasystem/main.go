@@ -147,6 +147,7 @@ func families() []family {
 				{"selftest-envelope", "print the newest snapshot's envelope declaration for a field", runAdapterSelftestEnvelope},
 				{"selftest-record", "write the selftest pass record", runAdapterSelftestRecord},
 				{"selftest-listener", "one-shot loopback listener for the denied-fetch probe", runAdapterSelftestListener},
+				{"selftest-run", "run the full-contract adapter self-test", runAdapterSelftestRun},
 			},
 		},
 		{
