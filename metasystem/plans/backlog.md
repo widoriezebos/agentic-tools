@@ -294,3 +294,24 @@
     doctrine. Design → critique → implement; queue with items 14-15
     (the monitor facility already carries the same runtime-neutral
     requirement).
+
+17. **Runtime code lives in its runtime's file — find and fix the
+    strays (human-raised 2026-08-15).** The human's observation:
+    `DevinPermissionMode` is declared in internal/adapter/codex.go —
+    "I would not expect anything dev inside a file called Codex —
+    this makes me think there's a bit of a mess up here. The question
+    arises: is that happening in other places too?" Confirmed at
+    d029177: codex.go:132 exports DevinPermissionMode; a first scan
+    finds no second obvious stray in internal/adapter (remaining
+    non-matching names are file-local helpers). Mandate: dig in and
+    figure out what's going on — why the function landed there
+    (shared origin? copy-drift?), whether subtler cross-runtime
+    leakage exists in internal/adapter, the per-runtime cmd verb
+    files (main.go's header claims one file per verb family), and
+    scripts/agents/adapters/*.sh; move each stray to its runtime's
+    home; and decide whether the one-runtime-per-file convention
+    deserves a mechanical check so it cannot drift again. Overlaps
+    backlog item 16 (agent agnosticism): 16 rules on runtime names
+    outside the adapter seam, this one rules on placement WITHIN the
+    seam — one audit pass can serve both. Not scheduled now, per the
+    human.
