@@ -40,6 +40,33 @@ func runHostResultWrite(args []string) int {
 	return 0
 }
 
+// runHostFinish relays `host finish`: the one turn-outcome adjudication
+// (script-adapters-10/D26). Its exit code IS the host taxonomy the mission
+// runner interprets — 0 completed, 3 failed, 6 missing session — and the
+// host scripts just propagate it.
+func runHostFinish(args []string) int {
+	flags := flag.NewFlagSet("host finish", flag.ContinueOnError)
+	result := flags.String("result", "", "result envelope file to write")
+	session := flags.String("session", "", "confirmed session id (empty means unresumable)")
+	usageFile := flags.String("usage-file", "", "typed usage JSON file")
+	raw := flags.String("raw", "", "raw output path")
+	returnPath := flags.String("return-path", "", "return path for a surviving turn")
+	cliStatus := flags.Int64("cli-status", 0, "host CLI exit status")
+	requireReply := flags.Bool("require-reply", false, "exit 0 with an empty reply is a failure (Devin's shape)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *result == "" || *raw == "" {
+		fmt.Fprintln(os.Stderr, "host finish: --result and --raw are required")
+		return 2
+	}
+	code, err := host.FinishTurn(*result, *session, *usageFile, *raw, *returnPath, *cliStatus, *requireReply)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	return code
+}
+
 // runHostJSONCompact prints the JSON in a file on a single line, preserving key
 // order and number tokens.
 func runHostJSONCompact(args []string) int {

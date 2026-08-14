@@ -372,6 +372,37 @@ func runAdapterAdjudicateTurn(args []string) int {
 	return 0
 }
 
+// runAdapterDevinSettle relays `adapter devin-settle`
+// (script-adapters-07/D26): the transcript-vs-correlated-session
+// certification and the effective-model fallback. Prints the derived model
+// (nothing when a required transcript is absent); exit 0 certified, 1 not.
+func runAdapterDevinSettle(args []string) int {
+	flags := flag.NewFlagSet("adapter devin-settle", flag.ContinueOnError)
+	transcript := flags.String("transcript", "", "exported ATIF transcript")
+	session := flags.String("session", "", "correlated session id (empty when none)")
+	roundDir := flags.String("round-dir", "", "round directory for the disagreement artifact")
+	requireTranscript := flags.Bool("require-transcript", false, "an absent transcript is unconfirmable (the repair shape)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *transcript == "" || *roundDir == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-settle --transcript F --round-dir D [--session SID] [--require-transcript]")
+		return 2
+	}
+	model, certified, err := adapter.DevinSettle(*transcript, *session, *roundDir, *requireTranscript)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if model != "" {
+		fmt.Println(model)
+	}
+	if certified {
+		return 0
+	}
+	return 1
+}
+
 // runAdapterDevinSession correlates this turn's Devin session against the
 // pre-launch baseline. It prints the id and exits 0, exits 1 when none is
 // found yet, and exits 3 (naming the candidates) when the correlation is

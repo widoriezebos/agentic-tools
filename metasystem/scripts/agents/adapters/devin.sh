@@ -150,52 +150,13 @@ previous_round_artifact() { # file name -> path of the previous round's copy, if
   return 0
 }
 
-devin_record_effective_model() { # transcript
-  # The transcript names the model that actually answered, as a DISPLAY name:
-  # "SWE-1.7" for a requested `swe-1-7`. Benchmark validity requires the
-  # requested and effective identifiers to be equal, so the raw display name
-  # would invalidate every Devin benchmark run. Canonicalise the same way an
-  # identifier is written -- lowercase, non-alphanumeric runs become one hyphen
-  # -- and record whatever that yields, including a genuine disagreement.
-  local observed observed_display
-  # A lenient read: a present-null or absent model_name prints empty (via the
-  # default), never the string "null" that canonicalising would take for a
-  # model. An empty result canonicalises away to the `unobserved` fallback.
-  observed_display=$("$ms" json get --file "$1" --field agent.model_name --default "" 2>/dev/null || true)
-  observed=$(
-    "$ms" config canonical-model "$observed_display"
-  ) || observed=""
-  # An unreadable or absent model name is recorded as `unobserved`, NOT left as
-  # the requested value the handshake seeded: a job record must never present a
-  # model as effective that the transcript did not confirm.
-  record_result_effective_model "${observed:-unobserved}" || true
-}
 
-devin_settle_session_identity() { # transcript
-  # When the turn ends the exported session_id is authoritative. A disagreement
-  # with the session this adapter correlated (or resumed) is a protocol error,
-  # not a preference: the record must not certify a session the provider's own
-  # transcript contradicts.
-  local exported
-  # A lenient read: a present-null or absent session_id prints empty (via the
-  # default), which the caller reads as "the transcript names no session".
-  exported=$("$ms" json get --file "$1" --field session_id --default "" 2>/dev/null || true)
-  # Nothing was correlated (no handshake) -- nothing to settle.
-  [[ -n "${session_id:-}" ]] || return 0
-  # The transcript is authoritative. If we correlated a session but the
-  # transcript names none, we cannot confirm the record's session against the
-  # provider's own account, so the turn is not certified.
-  if [[ -z "$exported" ]]; then
-    printf 'correlated session %s but the transcript names no session\n' \
-      "$session_id" >"$round_dir/session-disagreement.txt"
-    return 1
-  fi
-  if [[ "$exported" != "$session_id" ]]; then
-    printf 'transcript session %s disagrees with correlated session %s\n' \
-      "$exported" "$session_id" >"$round_dir/session-disagreement.txt"
-    return 1
-  fi
-  return 0
+# Session certification and the effective-model fallback are the engine's
+# (`adapter devin-settle`, script-adapters-07/D26): it prints the derived
+# model and its exit is the certification verdict; record writes stay here.
+devin_settle() { # transcript, extra verb flags -> prints model; rc 1 = not certified
+  "$ms" adapter devin-settle --transcript "$1" --session "${session_id:-}" \
+    --round-dir "$round_dir" "${@:2}"
 }
 
 # Recompute this round's usage from the REPAIR transcript when a repair
@@ -222,17 +183,12 @@ runtime_usage_after_repair() { # usage file
 # concluded; only the shape is being asked for again. Same model, same envelope,
 # same config -- a repair that changed any of those would not be a repair.
 runtime_settle_after_repair() { # -> nonzero when the repair cannot be confirmed
-  local repair_transcript="$round_dir/transcript.repair-1.atif.json"
-  # No transcript means the repair's session and model are unconfirmable. A
-  # turn cannot be certified on an unconfirmable final turn, so this fails
-  # rather than accepting the pre-repair identity.
-  if [[ ! -s "$repair_transcript" ]]; then
-    printf 'repair produced no transcript; session and model are unconfirmable\n' \
-      >"$round_dir/session-disagreement.txt"
-    return 1
-  fi
-  devin_record_effective_model "$repair_transcript"
-  devin_settle_session_identity "$repair_transcript"
+  local repair_transcript="$round_dir/transcript.repair-1.atif.json" observed settle_rc=0
+  observed=$(devin_settle "$repair_transcript" --require-transcript) || settle_rc=$?
+  # The observed model records even when certification fails: the record
+  # must reflect what the transcript actually named.
+  [[ -z "$observed" ]] || record_result_effective_model "$observed" || true
+  return "$settle_rc"
 }
 
 runtime_repair_turn() { # prompt file, output file
@@ -379,15 +335,16 @@ supervise() { # dispatch|follow-up and supervisor args
   # user-run selftest records them, zero means candidate success and every
   # nonzero value is preserved as the adapter's generic runtime_error path.
   printf 'devin cli exit status=%s\n' "$cli_status" >>"$log"
-  local cumulative="$round_dir/session-usage.json" previous= expect_previous=0
+  local cumulative="$round_dir/session-usage.json" previous= expect_previous=0 settle_observed= settle_failed=0
   if [[ "$verb" == follow-up ]]; then
     previous=$(previous_round_artifact session-usage.json)
     expect_previous=1
   fi
   devin_usage "$usage_file" "$transcript" "$cumulative" "$previous" "$expect_previous"
-  devin_record_effective_model "$transcript"
+  settle_observed=$(devin_settle "$transcript") || settle_failed=1
+  [[ -z "$settle_observed" ]] || record_result_effective_model "$settle_observed" || true
   # The transcript is authoritative for session identity once the turn ends.
-  if (( handshake_done )) && ! devin_settle_session_identity "$transcript"; then
+  if (( handshake_done )) && (( ${settle_failed:-0} )); then
     finish_running failed session_identity_disagreement delivery "$usage_file"
     return 1
   fi

@@ -1,6 +1,9 @@
 package host
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 // ResultWrite writes the turn's result envelope, the one artifact the mission
 // runner reads back: exactly sessionId, outcome, usage, rawPath, and
@@ -62,4 +65,40 @@ func fakeUsage(input, cached, output int) map[string]any {
 		"cost":              nil,
 		"providerUnits":     map[string]any{"name": "fake-host-turn", "value": 1},
 	}
+}
+
+// FinishTurn is the host turn's one outcome adjudication (review
+// script-adapters-10, replacing three shell copies): it decides the
+// outcome from the observed facts, writes the envelope, and returns the
+// exit code of the host's taxonomy — 3 a failed turn, 6 a missing session
+// (the adapter's own fault signal; a ROTATED session is reported in the
+// envelope and judged once, at the runner's adjudication), 0 completed.
+// requireReply is the runtime shape where exit 0 with no reply means
+// "could not do it" (Devin): treating it as success would hand the runner
+// an empty return and blame the wrong thing.
+func FinishTurn(resultPath, session, usagePath, rawPath, returnPath string, cliStatus int64, requireReply bool) (int, error) {
+	if cliStatus != 0 {
+		if err := ResultWrite(resultPath, session, "failed", usagePath, rawPath, ""); err != nil {
+			return 1, err
+		}
+		return 3, nil
+	}
+	if requireReply {
+		if info, err := os.Stat(rawPath); err != nil || info.Size() == 0 {
+			if err := ResultWrite(resultPath, session, "failed", usagePath, rawPath, ""); err != nil {
+				return 1, err
+			}
+			return 3, nil
+		}
+	}
+	if session == "" {
+		if err := ResultWrite(resultPath, session, "unresumable", usagePath, rawPath, returnPath); err != nil {
+			return 1, err
+		}
+		return 6, nil
+	}
+	if err := ResultWrite(resultPath, session, "completed", usagePath, rawPath, returnPath); err != nil {
+		return 1, err
+	}
+	return 0, nil
 }

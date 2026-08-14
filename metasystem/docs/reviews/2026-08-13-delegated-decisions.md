@@ -561,6 +561,25 @@ of 3-5 low-risk commits or immediately after a high-risk one — with no
 mention of hosts, VMs, or worktrees: those are this checkout's
 development mechanics, and the canary is metasystem behavior that ships.
 
+## D26 — Host finish and Devin settle join the engine (script-adapters-10/-07 sign-offs)
+
+**Decision (host finish):** the turn-outcome adjudication triplicated
+across hosts/claude.sh, hosts/codex.sh, and hosts/devin.sh — failed vs
+unresumable vs completed, and the 3/6 exit taxonomy the mission runner
+interprets — is host.FinishTurn behind `host finish`; the hosts propagate
+its exit. Devin's exit-0-with-no-reply shape is the --require-reply flag;
+its per-session cumulative-store copy stays shell, gated on the verb's
+completed verdict. The three atomic_result wrappers die with their last
+callers.
+
+**Decision (devin settle):** the transcript-vs-correlated-session
+certification and the effective-model canonicalization with the
+`unobserved` fallback are adapter.DevinSettle behind `adapter
+devin-settle` — the same package that owns the correlation half. The
+disagreement artifacts are byte-identical; the observed model records
+even when certification fails (the record must reflect what the
+transcript named); record writes stay with the shell caller per D24.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

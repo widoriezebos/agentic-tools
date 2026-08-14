@@ -12,10 +12,6 @@ USAGE
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 
-atomic_result() { # result path, session, outcome, usage JSON path, raw, return or empty
-  "$ms" host result-write --result "$1" --session "$2" --outcome "$3" \
-    --usage-file "$4" --raw "$5" --return-path "${6:-}"
-}
 
 wait_for_start_gate() {
   local gate=${METASYSTEM_HOST_START_GATE:-} cap=${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} started=$SECONDS
@@ -85,15 +81,8 @@ cp "$provider_result" "$raw" 2>/dev/null || : >"$raw"
 
 "$ms" host claude-result --provider "$provider_result" --return "$return_path" --usage "$usage_path"
 session=$("$ms" json get --file "$provider_result" --field session_id --default "" 2>/dev/null || true)
-if (( cli_status != 0 )); then
-  atomic_result "$result" "$session" failed "$usage_path" "$raw" ""
-  exit 3
-fi
-# The adapter is a witness, not a judge: a rotated session is reported in the
-# result envelope and judged once, at the runner's adjudication. Only a
-# MISSING session stays this adapter's own fault signal (exit 6).
-if [[ -z "$session" ]]; then
-  atomic_result "$result" "$session" unresumable "$usage_path" "$raw" "${return_path:-}"
-  exit 6
-fi
-atomic_result "$result" "$session" completed "$usage_path" "$raw" "$return_path"
+# The turn outcome is the engine's one adjudication (`host finish`,
+# script-adapters-10/D26); this script propagates its exit taxonomy.
+"$ms" host finish --result "$result" --session "$session" --usage-file "$usage_path" \
+  --raw "$raw" --return-path "${return_path:-}" --cli-status "$cli_status"
+exit $?

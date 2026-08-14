@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
 // BuildDevinConfig writes a Devin delegate's job config and its provenance. The
@@ -200,4 +202,52 @@ func WriteUnavailableUsage(outputPath string) error {
 		return fmt.Errorf("write unavailable usage: %w", err)
 	}
 	return nil
+}
+
+// DevinSettle adjudicates the exported transcript against the correlated
+// session and derives the effective model (review script-adapters-07,
+// replacing three shell judgments). The transcript is authoritative: a
+// correlated session it contradicts — or fails to name — is not certified,
+// and the disagreement artifact says why. The model is the transcript's
+// display name canonicalised; absent or unreadable records "unobserved",
+// never the requested value the handshake seeded. requireTranscript is the
+// repair shape: no transcript at all means session and model are
+// unconfirmable, and no model is derived. Record writes stay with the
+// caller (D24).
+func DevinSettle(transcriptPath, correlatedSession, roundDir string, requireTranscript bool) (model string, certified bool, err error) {
+	disagreement := filepath.Join(roundDir, "session-disagreement.txt")
+	if requireTranscript {
+		info, statErr := os.Stat(transcriptPath)
+		if statErr != nil || info.Size() == 0 {
+			err := os.WriteFile(disagreement,
+				[]byte("repair produced no transcript; session and model are unconfirmable\n"), 0o644)
+			return "", false, err
+		}
+	}
+	transcript, readErr := readObject(transcriptPath)
+	if readErr != nil {
+		transcript = map[string]any{}
+	}
+	agent, _ := transcript["agent"].(map[string]any)
+	display, _ := agent["model_name"].(string)
+	model = config.CanonicalModel(display)
+	if model == "" {
+		model = "unobserved"
+	}
+	if correlatedSession == "" {
+		// Nothing was correlated (no handshake) — nothing to settle.
+		return model, true, nil
+	}
+	exported, _ := transcript["session_id"].(string)
+	if exported == "" {
+		err := os.WriteFile(disagreement,
+			fmt.Appendf(nil, "correlated session %s but the transcript names no session\n", correlatedSession), 0o644)
+		return model, false, err
+	}
+	if exported != correlatedSession {
+		err := os.WriteFile(disagreement,
+			fmt.Appendf(nil, "transcript session %s disagrees with correlated session %s\n", exported, correlatedSession), 0o644)
+		return model, false, err
+	}
+	return model, true, nil
 }

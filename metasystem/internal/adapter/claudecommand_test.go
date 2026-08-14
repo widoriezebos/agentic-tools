@@ -136,3 +136,51 @@ func TestDevinPermissionMode(t *testing.T) {
 		t.Fatalf("write mode = (%s,%v)", mode, err)
 	}
 }
+
+func TestDevinSettle(t *testing.T) {
+	dir := t.TempDir()
+	transcript := filepath.Join(dir, "t.json")
+	write := func(body string) {
+		if err := os.WriteFile(transcript, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	disagreement := filepath.Join(dir, "session-disagreement.txt")
+
+	write(`{"session_id":"sess-1","agent":{"model_name":"SWE-1.7"}}`)
+	model, certified, err := DevinSettle(transcript, "sess-1", dir, false)
+	if err != nil || !certified || model != "swe-1-7" {
+		t.Fatalf("agreeing settle = (%s,%v,%v)", model, certified, err)
+	}
+	model, certified, err = DevinSettle(transcript, "sess-OTHER", dir, false)
+	if err != nil || certified {
+		t.Fatalf("disagreement = (%s,%v,%v)", model, certified, err)
+	}
+	body, _ := os.ReadFile(disagreement)
+	if string(body) != "transcript session sess-1 disagrees with correlated session sess-OTHER\n" {
+		t.Fatalf("artifact = %q", body)
+	}
+	write(`{"agent":{"model_name":null}}`)
+	model, certified, err = DevinSettle(transcript, "sess-1", dir, false)
+	if err != nil || certified || model != "unobserved" {
+		t.Fatalf("nameless transcript = (%s,%v,%v)", model, certified, err)
+	}
+	body, _ = os.ReadFile(disagreement)
+	if string(body) != "correlated session sess-1 but the transcript names no session\n" {
+		t.Fatalf("artifact = %q", body)
+	}
+	if model, certified, err = DevinSettle(transcript, "", dir, false); err != nil || !certified {
+		t.Fatalf("nothing correlated settles = (%s,%v,%v)", model, certified, err)
+	}
+	if err := os.Remove(transcript); err != nil {
+		t.Fatal(err)
+	}
+	model, certified, err = DevinSettle(transcript, "sess-1", dir, true)
+	if err != nil || certified || model != "" {
+		t.Fatalf("repair without transcript = (%s,%v,%v)", model, certified, err)
+	}
+	body, _ = os.ReadFile(disagreement)
+	if string(body) != "repair produced no transcript; session and model are unconfirmable\n" {
+		t.Fatalf("artifact = %q", body)
+	}
+}

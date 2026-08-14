@@ -132,6 +132,7 @@ func families() []family {
 				{"devin-config", "build the Devin job config from the user config", runAdapterDevinConfig},
 				{"adjudicate-turn", "decide a turn's terminal outcome, repair, or settle stage", runAdapterAdjudicateTurn},
 				{"devin-session", "correlate the new Devin session against the baseline", runAdapterDevinSession},
+				{"devin-settle", "certify the transcript session and derive the effective model", runAdapterDevinSettle},
 				{"devin-usage", "compute the Devin per-round usage delta", runAdapterDevinUsage},
 				{"usage-unavailable", "write the unavailable-usage record", runAdapterUsageUnavailable},
 				{"fake-return", "write the fake runtime's canned role return", runAdapterFakeReturn},
@@ -153,6 +154,7 @@ func families() []family {
 			summary: "host-loop plumbing: result envelopes, usage, and return extraction",
 			verbs: []verb{
 				{"result-write", "write a host turn's result envelope", runHostResultWrite},
+				{"finish", "adjudicate a host turn outcome and write its envelope", runHostFinish},
 				{"json-compact", "print a JSON file as one line", runHostJSONCompact},
 				{"claude-result", "extract the Claude return and usage", runHostClaudeResult},
 				{"devin-config", "assemble the Devin job config", runHostDevinConfig},
