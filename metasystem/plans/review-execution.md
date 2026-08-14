@@ -21,6 +21,18 @@
   "cannot infer arming identity", 2026-08-14. Needs either the toplevel
   conf gaining runtimes or arming taught subdirectory conf resolution;
   the review work itself does not dispatch jobs, so it proceeds unarmed.
+- W5 PLAN (started 2026-08-14 midday): batch 1 = the five smalls
+  (script-validate-1 awk contract-hash shadow, -2 census freshness via
+  dispatch census-fresh, -3 typed arming-window exit code collapsing
+  three retry loops, -8 metasystem.runtimes through the config engine,
+  -9 Go-source grep pin becomes a Go unit test), canaries + gate per
+  commit, boundary at batch edge; then W5.1 script-validate-4 (extract
+  the two giant blocks into sub-suite scripts) SOLO — it restructures
+  the suite itself; then -10 python-heredoc triage (sign-off),
+  -5/-7 (sign-off, verifier-downgraded, likely documented declines),
+  shellcheck toolchain question (new dependency — decide with care:
+  hosts and CI must have it or the check must be conditional), and the
+  -11/-12 smalls.
 - Dead ends (do not retry without new evidence): none in this stream.
 - In flight right now: nothing in this checkout — last detached Mac
   suite finished GREEN. (Historical: suites run DETACHED from the pinned worktree (nohup, log at the session
