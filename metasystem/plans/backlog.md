@@ -264,3 +264,33 @@
     Claude-specific convenience. Design → critique → implement; queue
     behind item 14 or fold the two designs into one pass if 14's
     critique reaches for run-watching anyway.
+
+16. **Runtime-agnosticism audit: the core must never name an agent
+    (human-raised 2026-08-15).** The human's observation, verbatim
+    intent: seeing `if !strings.Contains(command,
+    "$CLAUDE_PROJECT_DIR/metasystem")` — "we are building something
+    that is tied to Claude. HOWEVER the meta system must be agent
+    agnostic (it should work with Codex and Devin and any other
+    future agent too)." The evidence sites as of be3f195:
+    internal/hooks/hooks.go hardcodes Claude Code's hook config
+    grammar and the $CLAUDE_PROJECT_DIR env var in a CORE package —
+    the `hooks` self-check ("does this repo run under its own
+    metasystem") is therefore DEFINED as a Claude-only concept, and a
+    codex or devin session gets no equivalent check at all;
+    internal/audit/metasystem.go requires the Claude-specific
+    CLAUDE.md by name in the instruction-asset audit (softer, but the
+    same pattern: core code naming one runtime's file). The sanctioned
+    home for runtime knowledge is the adapter seam
+    (internal/adapter/{claude,codex,devin}.go, the per-runtime verbs,
+    scripts/agents/adapters/*.sh) — the design goal is that every
+    runtime-integration surface (hook shape, config pointer file,
+    session env names) is DECLARED by its adapter and the core
+    consumes declarations, so adding a future runtime touches only
+    its adapter. Shape: one audit pass enumerating every runtime
+    name outside the adapter seam (rg claude|codex|devin over
+    cmd/ internal/ minus the seam), a ruling per site (move behind
+    the seam, generalize, or document why it stays), and the
+    agnosticism rule stated in docs/architecture.md as standing
+    doctrine. Design → critique → implement; queue with items 14-15
+    (the monitor facility already carries the same runtime-neutral
+    requirement).
