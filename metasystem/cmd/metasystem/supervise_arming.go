@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -86,6 +83,26 @@ func writeIdentityJSON(path string, value any) error {
 	// until its caller is converted to the two-outcome contract.
 	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
 	return writeErr
+}
+
+func readJSONObject(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+func jsonIntField(v any) (int64, bool) {
+	f, ok := v.(float64)
+	if !ok || f != float64(int64(f)) {
+		return 0, false
+	}
+	return int64(f), true
 }
 
 // runSuperviseComponentIdentity prints "pid start tag" for one recorded
@@ -171,30 +188,9 @@ func runSuperviseLaunchDetached(args []string) int {
 	return 0
 }
 
-func readJSONObject(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	return doc, nil
-}
-
-func jsonIntField(v any) (int64, bool) {
-	f, ok := v.(float64)
-	if !ok || f != float64(int64(f)) {
-		return 0, false
-	}
-	return int64(f), true
-}
-
-// runSuperviseWatchdogReport reads the last census and the supervision state
-// and reports what a session should know at turn end: a stale or unsuccessful
-// census, untracked agent processes, a fingerprint older than the code, and
-// any recorded identity that is no longer running — each with re-arm advice.
+// runSuperviseWatchdogReport relays `supervise watchdog-report`: the health
+// judgment lives in supervise.WatchdogReport (review cli-2), and this verb
+// prints its lines — nothing when everything is healthy.
 func runSuperviseWatchdogReport(args []string) int {
 	flags := flag.NewFlagSet("supervise watchdog-report", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")
@@ -205,150 +201,10 @@ func runSuperviseWatchdogReport(args []string) int {
 		fmt.Fprintln(os.Stderr, "supervise watchdog-report: --repo is required")
 		return 2
 	}
-	supervision := filepath.Join(*repo, "artifacts", "agents", "supervision")
-
-	// The report is for a human at the end of a session: at most one
-	// supervision line (every symptom shares the one remedy), at most one
-	// untracked line (grouped pids, no argv walls — `proc census` has the
-	// detail), and silence when everything is healthy. The page of
-	// repeated WATCHDOG lines this replaces was ignored by its audience,
-	// which is the one failure a report cannot survive (human, 2026-08-13).
-	var problems []string
-	var untracked []string
-
-	last, lastErr := readJSONObject(filepath.Join(supervision, "last-census.json"))
-	if lastErr != nil {
-		problems = append(problems, "never reported")
-	} else {
-		completed, _ := jsonIntField(last["completedAtEpoch"])
-		interval, _ := jsonIntField(last["intervalSec"])
-		age := time.Now().Unix() - completed
-		window := int64(0)
-		if interval >= 1 {
-			window = 2 * interval
-			if window > 180 {
-				window = 180
-			}
-		}
-		if verdict, _ := last["verdict"].(string); verdict != "SUCCESS" {
-			problems = append(problems, "last census failed")
-		} else if interval < 1 || age >= window {
-			problems = append(problems, "last census "+humanAge(age)+" old")
-		}
-		if inventory, ok := last["inventory"].([]any); ok {
-			byRuntime := map[string][]string{}
-			for _, raw := range inventory {
-				item, _ := raw.(map[string]any)
-				if item == nil {
-					continue
-				}
-				if class, _ := item["class"].(string); class == "UNTRACKED" {
-					pid, _ := jsonIntField(item["pid"])
-					runtime, _ := item["runtime"].(string)
-					if runtime == "" {
-						runtime = "unknown"
-					}
-					byRuntime[runtime] = append(byRuntime[runtime], fmt.Sprint(pid))
-				}
-			}
-			runtimes := make([]string, 0, len(byRuntime))
-			for runtime := range byRuntime {
-				runtimes = append(runtimes, runtime)
-			}
-			sort.Strings(runtimes)
-			for _, runtime := range runtimes {
-				untracked = append(untracked, runtime+" "+strings.Join(byRuntime[runtime], ","))
-			}
-		}
-	}
-
-	state, stateErr := readJSONObject(filepath.Join(supervision, "state.json"))
-	owner, ownerOK := stateOwner(state)
-	components, componentsOK := stateComponents(state)
-	if stateErr != nil || !ownerOK || !componentsOK {
-		problems = append(problems, "state unreadable")
-		state = nil
-	} else if lastErr == nil {
-		stateFP, _ := state["fingerprint"].(string)
-		lastFP, _ := last["fingerprint"].(string)
-		if stateFP != lastFP {
-			problems = append(problems, "code changed since arming")
-		}
-	}
-
-	identities := map[string]map[string]any{}
-	if owner != nil {
-		identities["owner"] = owner
-	}
-	for name, raw := range components {
-		if item, ok := raw.(map[string]any); ok {
-			identities[name] = item
-		}
-	}
-	names := make([]string, 0, len(identities))
-	for name := range identities {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	var dead []string
-	for _, name := range names {
-		item := identities[name]
-		pid, pidOK := jsonIntField(item["pid"])
-		start, startOK := jsonIntField(item["pidStartedAt"])
-		if !pidOK || !startOK || !census.Alive(pid, start) {
-			dead = append(dead, name)
-		}
-	}
-	if len(dead) > 0 {
-		problems = append(problems, strings.Join(dead, "+")+" not running")
-	}
-
-	var lines []string
-	if len(problems) > 0 {
-		lines = append(lines, "SUPERVISION DOWN ("+strings.Join(problems, "; ")+") — re-arm: scripts/agents/arm-supervision.sh --repo .")
-	}
-	if len(untracked) > 0 {
-		lines = append(lines, "UNTRACKED agents (not this checkout's work; detail: bin/metasystem proc census): "+strings.Join(untracked, "; "))
-	}
-	if len(lines) > 0 {
+	if lines := supervise.WatchdogReport(*repo, time.Now()); len(lines) > 0 {
 		fmt.Println(strings.Join(lines, "\n"))
 	}
 	return 0
-}
-
-// humanAge renders seconds the way a person reads them: 90s, 14m, 6h2m, 3d.
-func humanAge(seconds int64) string {
-	if seconds < 120 {
-		return fmt.Sprintf("%ds", seconds)
-	}
-	if seconds < 3600 {
-		return fmt.Sprintf("%dm", seconds/60)
-	}
-	if seconds < 48*3600 {
-		hours := seconds / 3600
-		minutes := (seconds % 3600) / 60
-		if minutes == 0 {
-			return fmt.Sprintf("%dh", hours)
-		}
-		return fmt.Sprintf("%dh%dm", hours, minutes)
-	}
-	return fmt.Sprintf("%dd", seconds/86400)
-}
-
-func stateOwner(state map[string]any) (map[string]any, bool) {
-	if state == nil {
-		return nil, false
-	}
-	owner, ok := state["owner"].(map[string]any)
-	return owner, ok
-}
-
-func stateComponents(state map[string]any) (map[string]any, bool) {
-	if state == nil {
-		return nil, false
-	}
-	components, ok := state["components"].(map[string]any)
-	return components, ok
 }
 
 // runSuperviseHeartbeat writes a component heartbeat: the process identity
