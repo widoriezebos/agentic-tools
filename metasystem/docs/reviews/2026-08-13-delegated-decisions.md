@@ -994,6 +994,19 @@ the matrix covers the 25 shared keys; if secondary is meant to be
 required-when-primary-exists, that is a grammar question for
 internal/contract, not a fixture question, noted here.
 
+## D39 — The mission state legs retire against their Go equivalents (script-fixtures-004 sign-off)
+
+**Decision**: the ledger-grammar, state-chain, fork-detection,
+reconcile-park, and anchor round-trip legs of mission-fixtures.sh
+retire. Equivalents verified present BEFORE the cut: ledger_test,
+state_test (TestChainDetectsTamper, TestWriteRefusesIllegalTransition),
+and anchor_test's five TestReconcile* rows — including
+TestReconcileStillParksOnAnyOtherDivergence and the anchored stop-loss
+park, which are the reconcile-fork and self-park conditions the
+finding required. The reaper/fence and runner legs stay; CLI
+arg-forwarding remains proven by them. mission-fixtures.sh keeps its
+name and its remaining duties (no whole-file retirement).
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

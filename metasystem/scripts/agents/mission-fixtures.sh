@@ -225,99 +225,16 @@ git -C "$repo" commit -qm 'make candidate unmeasurable'
 git -C "$repo" push -qu origin main
 expect_failure unrunnable-gate "gate measurement failed" "$root/scripts/assert-mission.sh" --preflight --file "$contract"
 
-# Mission ledger grammar is consumed by assert-stop-loss.sh without any
-# adapter or conversion layer.
-ledger=$repo/artifacts/agents/missions/alpha/ledger.md
-"$root/bin/metasystem" mission ledger-init --file "$ledger" --cycle-budget 2 --no-gain-budget 2
+# The ledger grammar, state chain, fork detection, reconcile parks, and
+# anchor round-trips are internal/mission's unit tests under the go gate
+# (ledger_test, state_test — TestChainDetectsTamper,
+# TestWriteRefusesIllegalTransition — and anchor_test's five
+# TestReconcile* rows including divergence and stop-loss parks); the
+# review's verifier and this retirement confirmed the equivalents before
+# the shell copies were cut (script-fixtures-004/D39). CLI arg-forwarding
+# stays proven by the runner legs below.
+
 current_sha=$(git -C "$repo" rev-parse HEAD)
-"$root/bin/metasystem" mission ledger-append --file "$ledger" --cycle 1 --classification no-progress --candidate-sha "$current_sha" --observed score=1
-"$root/bin/metasystem" mission ledger-append --file "$ledger" --cycle 2 --classification unresolved --candidate-sha "$current_sha" --observed score=1
-expect_failure mission-stop-loss "stop-loss triggered" "$root/scripts/assert-stop-loss.sh" --file "$ledger"
-
-# State updates prove one reserved stream can park while another remains
-# active, and that parked-stop-loss cannot be self-assigned or self-unparked.
-state_ledger=$repo/artifacts/agents/missions/alpha/state-ledger.md
-"$root/bin/metasystem" mission ledger-init --file "$state_ledger" --cycle-budget 3 --no-gain-budget 2
-state=$repo/artifacts/agents/missions/alpha/state.json
-"$root/bin/metasystem" mission state-init --state "$state" --contract "$contract" --ledger "$state_ledger" --branch main
-state_hash=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["integrity"]["hash"])' "$state")
-proposal=$fixture_root/state-proposal.json
-python3 - "$state" "$proposal" <<'PY'
-import json, sys
-from pathlib import Path
-value=json.loads(Path(sys.argv[1]).read_text()); value.pop("integrity")
-value["streams"]["primary"].update({"state":"parked-reserved","reason":"reserved-decision","answeredAsk":None})
-Path(sys.argv[2]).write_text(json.dumps(value) + "\n")
-PY
-"$root/bin/metasystem" mission state-write --state "$state" --source "$proposal" --expect "$state_hash"
-"$root/bin/metasystem" mission state-verify --state "$state" >/dev/null
-python3 - "$state" <<'PY'
-import json,sys
-value=json.load(open(sys.argv[1]))
-assert value["status"] == "running"
-assert value["streams"]["primary"]["state"] == "parked-reserved"
-assert value["streams"]["secondary"]["state"] == "active"
-PY
-
-stoploss_proposal=$fixture_root/state-stoploss-proposal.json
-python3 - "$state" "$stoploss_proposal" <<'PY'
-import json, sys
-from pathlib import Path
-value=json.loads(Path(sys.argv[1]).read_text()); value.pop("integrity")
-value["streams"]["secondary"].update({"state":"parked-stop-loss","reason":"stop-loss","answeredAsk":None})
-Path(sys.argv[2]).write_text(json.dumps(value) + "\n")
-PY
-state_hash=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["integrity"]["hash"])' "$state")
-expect_failure self-park-stop-loss "reserved for a human answer" "$root/bin/metasystem" mission state-write --state "$state" --source "$stoploss_proposal" --expect "$state_hash"
-
-forked=$fixture_root/forked-state.json
-cp "$state" "$forked"
-python3 - "$forked" <<'PY'
-import json,sys
-from pathlib import Path
-path=Path(sys.argv[1]); value=json.loads(path.read_text())
-value["integrity"]["history"][-1]["previousHash"]="f"*64
-path.write_text(json.dumps(value) + "\n")
-PY
-expect_failure state-chain-fork "fork" "$root/bin/metasystem" mission state-verify --state "$forked"
-set +e
-"$root/bin/metasystem" mission state-reconcile --state "$forked" --repo "$repo" --ledger "$state_ledger"
-fork_reconcile_status=$?
-set -e
-[[ $fork_reconcile_status -eq 3 ]] || { echo "forked state reconciliation did not park with exit 3" >&2; exit 1; }
-python3 - "$forked" <<'PY'
-import json,sys
-from pathlib import Path
-path=Path(sys.argv[1]); value=json.loads(path.read_text())
-assert value["status"] == "parked" and value["parkReason"] == "state-integrity"
-assert value["integrity"]["recoveryOf"] and list(path.parent.glob("state.corrupt.*.json"))
-PY
-"$root/bin/metasystem" mission state-verify --state "$forked" >/dev/null
-
-anchor_state=$repo/artifacts/agents/missions/alpha/anchor-state.json
-anchor_ledger=$repo/artifacts/agents/missions/alpha/anchor-ledger.md
-"$root/bin/metasystem" mission ledger-init --file "$anchor_ledger" --cycle-budget 3 --no-gain-budget 2
-"$root/bin/metasystem" mission state-init --state "$anchor_state" --contract "$contract" --ledger "$anchor_ledger" --branch main
-"$root/bin/metasystem" mission state-anchor --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
-"$root/bin/metasystem" mission state-verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
-"$root/bin/metasystem" mission ledger-append --file "$anchor_ledger" --cycle 1 --classification unresolved --candidate-sha "$current_sha" --observed score=1
-"$root/bin/metasystem" mission state-reconcile --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger"
-python3 - "$anchor_state" <<'PY'
-import json,sys
-value=json.load(open(sys.argv[1])); assert value["ledger"]["cycles"] == 1 and value["fences"]["cycles"] == 1
-PY
-"$root/bin/metasystem" mission state-anchor --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
-"$root/bin/metasystem" mission state-verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger" >/dev/null
-anchor_hash=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["integrity"]["hash"])' "$anchor_state")
-python3 - "$anchor_state" "$proposal" <<'PY'
-import json,sys
-from pathlib import Path
-value=json.loads(Path(sys.argv[1]).read_text()); value.pop("integrity")
-value["streams"]["primary"].update({"state":"parked-reserved","reason":"reserved-decision","answeredAsk":None})
-Path(sys.argv[2]).write_text(json.dumps(value) + "\n")
-PY
-"$root/bin/metasystem" mission state-write --state "$anchor_state" --source "$proposal" --expect "$anchor_hash"
-expect_failure rewritten-anchor "anchor disagrees" "$root/bin/metasystem" mission state-verify --state "$anchor_state" --repo "$repo" --ledger "$anchor_ledger"
 
 # The reaper uses this same locked refusal operation when a mission-stamped
 # job reaches its cap; prove the resulting ask as a world-state fact.
