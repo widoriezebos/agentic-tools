@@ -1,4 +1,4 @@
-# Known intermittents in full-suite runs (one root-caused, one open)
+# Known intermittents in full-suite runs (two root-caused, one open)
 
 ## ROOT-CAUSED 2026-08-12 late: the nested-gate test flake
 
@@ -16,6 +16,34 @@ adopted-copy nested gate (owned=false provable=false — the group scan's
 argv reads hit the window); its assertion now waits bounded like the
 other two. Production is not affected: real
 callers announce themselves post-exec.
+
+## ROOT-CAUSED 2026-08-14: the fixture identity-table tear
+
+AUTH-R2-005 failed once inside an adopted-copy nested validation: dispatch
+refused at its entry authority gate with "control-plane write requires the
+authenticated lease holder" instead of reaching the attested-ceiling
+refusal the fixture expects. Mechanism, each step verified: the
+delegate-caps identity-updater loop rewrote the fake identity table every
+20ms with a truncate-in-place `write_text`; a reader between truncate and
+write sees an EMPTY table (~0.8% of reads in a direct two-process repro);
+`FixtureEntryFor` treats an unparseable table as "no entry", so
+`AuthIdentity` fell back to the kernel; the fixture shell's kernel argv no
+longer hashes to its announced "caps-fixture" command, its announcement
+failed authentication, and the ancestry walk escaped past it into the
+REAL process tree — where this Mac's `claude` CLI ancestor (argv[0]
+`claude`, matched by claude.sh's signature) classified the caller
+DELEGATE, which holder-only writes refuse with exactly that message. Fix:
+the updater (and the registration write) now write to a temp file and
+rename — readers only ever see a complete table. Mac-only by
+construction: the VM's suite has no runtime-CLI ancestor, so the same
+tear degraded to HUMAN and passed silently. The sibling harnesses
+(supervision-fixtures, mission-fixtures) edit identity tables with single
+sequential `write_text` calls while daemons read; same hazard class at
+far lower odds — worth the same rename treatment if one ever fires.
+Follow-up candidate recorded: `FixtureEntryFor` could distinguish a
+corrupt table (refuse loudly) from an absent one (fall back), the same
+fail-closed doctrine custodyIdentities already follows; signature change
+ripples across the auth path, so it goes solo, not in this batch.
 
 ## STILL OPEN: receipt-stats greps flake in Mac suite runs
 

@@ -211,7 +211,15 @@ value = json.loads(path.read_text())
 # the fixture file the way the python helper's restricted-CI fallback did,
 # so create the entry rather than updating one.
 value.setdefault(pid, {}).update({"pidStartedAt": started, "pgid": int(pid), "command": "caps-fixture"})
-path.write_text(json.dumps(value) + "\n")
+# Replace, never truncate-in-place: readers take no lock, and a reader that
+# catches write_text between truncate and write sees an empty table. The
+# engine treats an unparseable table as "no entry" and falls back to the
+# kernel — which un-authenticates this shell's announcement mid-classify
+# and lets the ancestry walk escape into the real process tree (where a
+# claude/codex CLI ancestor classifies the caller DELEGATE).
+tmp = path.with_suffix(path.suffix + ".tmp")
+tmp.write_text(json.dumps(value) + "\n")
+tmp.replace(path)
 PY
 ( while true; do
     python3 - "$identity_fixture" "$harness/artifacts/agents/supervision/state.json" <<'PY' || true
@@ -234,7 +242,9 @@ with lock_path.open("a+") as lock:
                 "pidStartedAt": started,
                 "pgid": pid, "command": f"fixture {tag}",
             }
-    identities.write_text(json.dumps(values) + "\n")
+    tmp = identities.with_suffix(identities.suffix + ".tmp")
+    tmp.write_text(json.dumps(values) + "\n")
+    tmp.replace(identities)
 PY
     sleep 0.02
   done ) &
