@@ -21,7 +21,15 @@
   "cannot infer arming identity", 2026-08-14. Needs either the toplevel
   conf gaining runtimes or arming taught subdirectory conf resolution;
   the review work itself does not dispatch jobs, so it proceeds unarmed.
-- W5 PLAN (started 2026-08-14 midday): batch 1 = the five smalls
+- PRIORITY (Wido, 2026-08-14 afternoon): the suite-time reduction
+  (plans/suite-time-reduction-design.md r5, D33, critique-converged
+  10-4-3-1-AGREE) implements BEFORE W5. Checkpoints: (a) go-gate.sh
+  witness write/accept + snapshot-gated mode; (b) validate
+  --delivery-contract + adopt-fixture handoff + drift leg retained;
+  (c) engine-delivery key required + adopt stamping + -buildvcs=false
+  digest stamp + smoke; (d) verification legs; boundary measures
+  before/after (~45 min today) for the D33 entry.
+- W5 PLAN (started 2026-08-14 midday, now queued behind D33): batch 1 = the five smalls
   (script-validate-1 awk contract-hash shadow, -2 census freshness via
   dispatch census-fresh, -3 typed arming-window exit code collapsing
   three retry loops, -8 metasystem.runtimes through the config engine,

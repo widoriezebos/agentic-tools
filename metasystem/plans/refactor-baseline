@@ -1,3 +1,3 @@
-sha=015f949ff36dbf6274b17837085168621b579e86
-recorded_epoch=1786700780
-gate=bash scripts/validate-metasystem.sh (VM acceptance host at 015f949, HEAD in-log at launch; incl. the D17 adopt fixtures)
+sha=646ac4500c4972075a70e30a52ac4d1e6fd496a7
+recorded_epoch=1786710697
+gate=bash scripts/validate-metasystem.sh (GREEN ON BOTH HOSTS at 724a136; VM HEAD in-log; Mac detached sampling green)

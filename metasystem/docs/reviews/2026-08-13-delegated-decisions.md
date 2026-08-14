@@ -782,6 +782,44 @@ reaper's existing dead-custodian case, proven in reaper_test.go. One
 transient supervision-canary RED occurred during checkpoint 2 (timing
 fixture under machine load, green on immediate solo re-run).
 
+## D33 — Suite-time reduction: the boundary-scoped gate witness and the delivery contract (Wido-commissioned, critique-converged)
+
+**Commissioned by Wido 2026-08-14 with priority over the remaining
+review queue.** Design at plans/suite-time-reduction-design.md,
+revision 5; five critique rounds (codex gpt-5.6-sol, xhigh, CLI
+fallback), findings 10 → 4 → 3 → 1 → AGREE.
+
+**What lands**: (1) the boundary-scoped gate witness — one full
+go-gate per validation run, executed INSIDE an extraction of the same
+`git archive HEAD` snapshot adoption stages (witness if and only if
+snapshot-gated); nested adopted validations accept it only after
+digest equality over the gate-input closure, with a
+cannot-be-mistaken verdict wording, hardened handoff (0700 run-state
+dir, 0600 witness, lstat checks, controller-sourced run identity),
+seed-mode and FORCE fencing, and NO cross-boundary reuse — a fresh
+boundary always pays a fresh gate. (2) `--delivery-contract`: a
+separately named nested-validation entry point proving payload
+completeness, wiring, self-gating, the binary-identity smoke
+(-buildvcs=false, engine-digest stamp), and the session legs; the
+profile-drift negative leg keeps the canonical full validator; the
+engine-behavior families are skipped only behind the outer
+controller's runtime digest-equality check. (3)
+metasystem.engine-delivery becomes a REQUIRED key (closes the D17
+fail-open the critique found: a deleted go.mod no longer reads as "no
+engine expected"). (4) The platform claim stated honestly:
+intermediate boundaries claim Linux validity; Darwin full suites are
+required before benchmark cohorts, releases, and VM-red reproductions,
+and are otherwise every-third-batch sampling with the between-sample
+risk accepted in writing.
+
+**Notable rejections along the way**: the draft's persistent
+machine-level cache (not a trust boundary, not equivalent to a fresh
+gate — the critique's strongest point), and cross-boundary witness
+reuse (govulncheck data and race schedules are time-varying).
+
+**Measurement obligation**: the first boundary after implementation
+records before/after wall times here.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
