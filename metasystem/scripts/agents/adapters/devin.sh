@@ -291,7 +291,7 @@ supervise() { # dispatch|follow-up and supervisor args
   fail_if_effective_wider_before_launch || return 1
   : >"$events"
   : >"$raw"
-  build_devin_config "$config_file" "$round_dir/devin-config-provenance.json"
+  permission_mode=$(build_devin_config "$config_file" "$round_dir/devin-config-provenance.json")
   # A baseline that failed to list is a refusal, not an empty baseline: with no
   # baseline every pre-existing session looks new, which is how a peer's session
   # becomes this job's recorded identity.
@@ -311,8 +311,6 @@ supervise() { # dispatch|follow-up and supervisor args
   # them failed before it began. The modes are auto, accept-edits, smart, and
   # dangerous; a role with no write roots gets `auto` with edit and exec denied,
   # a write-capable role gets `accept-edits`, and `dangerous` is never used.
-  permission_mode=auto
-  [[ "$(field "$record" permissions.requested.writeRoots)" == '[]' ]] || permission_mode=accept-edits
   command=(
     devin -p
     --prompt-file "$devin_prompt"

@@ -91,3 +91,51 @@ func quoteTOML(value string) string {
 	encoded, _ := json.Marshal(value)
 	return string(encoded)
 }
+
+// CodexPermissionSettings derives the sandbox/network pair from a
+// permission envelope (review script-adapters-06): an empty writeRoots
+// means read-only, anything else workspace-write; network "allow" means
+// true. recordPath reads the record's requested envelope; otherwise
+// permissionsPath is the envelope JSON itself. The envelope-to-flag
+// mapping is the security-relevant half of command construction (KI-12),
+// so it is decided here, not pre-chewed in shell.
+func CodexPermissionSettings(permissionsPath, recordPath string) (sandbox, network string, err error) {
+	var envelope map[string]any
+	if recordPath != "" {
+		record, err := readObject(recordPath)
+		if err != nil {
+			return "", "", err
+		}
+		permissions, _ := record["permissions"].(map[string]any)
+		envelope, _ = permissions["requested"].(map[string]any)
+	} else {
+		value, err := readObject(permissionsPath)
+		if err != nil {
+			return "", "", err
+		}
+		envelope = value
+	}
+	sandbox = "workspace-write"
+	if len(stringList(envelope["writeRoots"])) == 0 {
+		sandbox = "read-only"
+	}
+	network = "false"
+	if networkValue, _ := envelope["network"].(string); networkValue == "allow" {
+		network = "true"
+	}
+	return sandbox, network, nil
+}
+
+// DevinPermissionMode is the analogous decision for the Devin CLI: a role
+// with no write roots runs `auto` (edit and exec denied by config);
+// a write-capable role runs `accept-edits`. `dangerous` is never used.
+func DevinPermissionMode(recordPath string) (string, error) {
+	requested, err := requestedPermissions(recordPath)
+	if err != nil {
+		return "", err
+	}
+	if len(stringList(requested["writeRoots"])) == 0 {
+		return "auto", nil
+	}
+	return "accept-edits", nil
+}

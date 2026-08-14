@@ -87,26 +87,12 @@ codex_usage() { # events JSONL, output
   "$ms" adapter codex-usage --events "$1" --output "$2"
 }
 
-codex_permission_settings() { # permissions JSON, optional dotted prefix
-  local permissions=$1 prefix=${2:-} write_roots network
-  [[ -z "$prefix" ]] || prefix="$prefix."
-  write_roots=$(field "$permissions" "${prefix}writeRoots")
-  network=$(field "$permissions" "${prefix}network")
-  if [[ "$write_roots" == '[]' ]]; then
-    codex_sandbox_mode=read-only
-  else
-    codex_sandbox_mode=workspace-write
-  fi
-  if [[ "$network" == allow ]]; then
-    codex_network_access=true
-  else
-    codex_network_access=false
-  fi
-}
-
-build_codex_command() { # dispatch|follow-up, model, workspace, schema, output, sandbox, network, session
+# The envelope-to-sandbox/network mapping is the engine's now
+# (script-adapters-06/D25, the KI-12 lesson): codex-command derives it from
+# --record or --permissions instead of receiving it pre-chewed.
+build_codex_command() { # dispatch|follow-up, model, workspace, schema, output, envelope flag, envelope value, session
   local verb=$1 command_model=$2 command_workspace=$3 command_schema=$4 command_output=$5
-  local command_sandbox=$6 command_network=$7 command_session=${8:-} token
+  local envelope_flag=$6 envelope_value=$7 command_session=${8:-} token
   # `codex exec resume` has no --sandbox or -C flags: a resumed thread inherits
   # its cwd/config and takes supported per-turn overrides through -c only. The
   # argv (including the TOML-quoted model on the resume path) is assembled once
@@ -121,8 +107,7 @@ build_codex_command() { # dispatch|follow-up, model, workspace, schema, output, 
       --workspace "$command_workspace" \
       --schema "$command_schema" \
       --output "$command_output" \
-      --sandbox "$command_sandbox" \
-      --network "$command_network" \
+      "$envelope_flag" "$envelope_value" \
       --session "$command_session"
   )
   (( ${#codex_cli_command[@]} > 0 )) || return 2
@@ -133,21 +118,18 @@ supervise() { # dispatch|follow-up and supervisor args
   shift
   prepare_supervision "$verb" "$@" || { usage; return 2; }
   local usage_file="$round_dir/usage.json"
-  local sandbox_mode network_access cli_pid event_session event_turn
+  local cli_pid event_session event_turn
   local -a command
 
   record_actual_workspace_write_scope
   fail_if_effective_wider_before_launch || return 1
   : >"$events"
   : >"$raw"
-  codex_permission_settings "$record" permissions.requested
-  sandbox_mode=$codex_sandbox_mode
-  network_access=$codex_network_access
-  # The envelope decides network access. It used to be hard-coded off, which
-  # made the recorded field decorative: a job could be recorded as networked and
-  # still be cut off (KI-12).
+  # The envelope decides sandbox and network — in the engine, from the
+  # record itself (KI-12: a hard-coded value made the recorded field
+  # decorative).
   build_codex_command "$verb" "$requested_model" "$workspace" "$schema" "$raw" \
-    "$sandbox_mode" "$network_access" "$requested_session"
+    --record "$record" "$requested_session"
   command=("${codex_cli_command[@]}")
 
   # The write boundary is the CLI's cwd. `codex exec` takes -C, but

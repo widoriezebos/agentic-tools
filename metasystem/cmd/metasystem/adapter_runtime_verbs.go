@@ -85,14 +85,24 @@ func runAdapterCodexCommand(args []string) int {
 	workspace := flags.String("workspace", "", "workspace directory (dispatch)")
 	schema := flags.String("schema", "", "output schema file")
 	output := flags.String("output", "", "structured output file")
-	sandbox := flags.String("sandbox", "", "sandbox mode")
-	network := flags.String("network", "", "network access boolean (true|false)")
+	sandbox := flags.String("sandbox", "", "sandbox mode (or derive via --record/--permissions)")
+	network := flags.String("network", "", "network access boolean (or derive via --record/--permissions)")
 	session := flags.String("session", "", "session to resume (follow-up)")
+	record := flags.String("record", "", "job record: derive sandbox/network from its requested envelope")
+	permissions := flags.String("permissions", "", "permission envelope file: derive sandbox/network from it")
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if *record != "" || *permissions != "" {
+		derivedSandbox, derivedNetwork, err := adapter.CodexPermissionSettings(*permissions, *record)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		*sandbox, *network = derivedSandbox, derivedNetwork
+	}
 	if *verb == "" || *model == "" || *schema == "" || *output == "" || *sandbox == "" || *network == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-command --verb V --model M --schema F --output F --sandbox M --network B [--workspace DIR] [--session SID]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-command --verb V --model M --schema F --output F (--record F | --permissions F | --sandbox M --network B) [--workspace DIR] [--session SID]")
 		return 2
 	}
 	command, err := adapter.BuildCodexCommand(*verb, *model, *workspace, *schema, *output, *sandbox, *network, *session)
@@ -308,6 +318,15 @@ func runAdapterDevinConfig(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	// The permission mode rides on stdout beside the config
+	// (script-adapters-06/D25): the launch argv consumes the same envelope
+	// decision the config was built from.
+	mode, err := adapter.DevinPermissionMode(*record)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(mode)
 	return 0
 }
 

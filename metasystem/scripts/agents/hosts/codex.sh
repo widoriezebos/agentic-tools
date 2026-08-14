@@ -66,14 +66,13 @@ log="$turn_dir/host.log"
 schema="$root/scripts/agents/schemas/orchestrator.schema.json"
 permissions="$root/scripts/agents/permissions/workspace.json"
 model=$(field "$turn_record" model)
-codex_permission_settings "$permissions"
 if [[ -z "$resume_session" ]]; then
   adapter_verb=dispatch
 else
   adapter_verb=follow-up
 fi
 build_codex_command "$adapter_verb" "$model" "$root" "$schema" "$raw" \
-  "$codex_sandbox_mode" "$codex_network_access" "$resume_session"
+  --permissions "$permissions" "$resume_session"
 
 set +e
 (

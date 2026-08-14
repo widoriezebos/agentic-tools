@@ -107,3 +107,32 @@ func TestBuildClaudeCommandArgv(t *testing.T) {
 		}
 	})
 }
+
+func TestCodexPermissionSettings(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "job.json")
+	os.WriteFile(record, []byte(`{"permissions":{"requested":{"writeRoots":[],"network":"allow"}}}`), 0o644)
+	sandbox, network, err := CodexPermissionSettings("", record)
+	if err != nil || sandbox != "read-only" || network != "true" {
+		t.Fatalf("record derivation = (%s,%s,%v)", sandbox, network, err)
+	}
+	envelope := filepath.Join(dir, "perm.json")
+	os.WriteFile(envelope, []byte(`{"writeRoots":["/ws"],"network":"deny"}`), 0o644)
+	sandbox, network, err = CodexPermissionSettings(envelope, "")
+	if err != nil || sandbox != "workspace-write" || network != "false" {
+		t.Fatalf("envelope derivation = (%s,%s,%v)", sandbox, network, err)
+	}
+}
+
+func TestDevinPermissionMode(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "job.json")
+	os.WriteFile(record, []byte(`{"permissions":{"requested":{"writeRoots":[]}}}`), 0o644)
+	if mode, err := DevinPermissionMode(record); err != nil || mode != "auto" {
+		t.Fatalf("read-only mode = (%s,%v)", mode, err)
+	}
+	os.WriteFile(record, []byte(`{"permissions":{"requested":{"writeRoots":["/ws"]}}}`), 0o644)
+	if mode, err := DevinPermissionMode(record); err != nil || mode != "accept-edits" {
+		t.Fatalf("write mode = (%s,%v)", mode, err)
+	}
+}

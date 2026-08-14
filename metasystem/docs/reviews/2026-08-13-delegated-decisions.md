@@ -540,6 +540,27 @@ genuinely-valid return paths need the full role-schema fixture and are
 proven by the suite's fake-adapter turns end to end; every refusal and
 decision branch is unit-pinned.
 
+## D25 — Command construction has one home per runtime (script-adapters-02/-06 sign-offs)
+
+**Decision:** `adapter claude-command` joins codex-command as the one
+builder of the Claude argv — permission-mode/tool mapping from the
+envelope, native budget policy from the environment (distinct refusals: 3
+budget, 4 turn limit), NUL-separated tokens both adapters/claude.sh and
+hosts/claude.sh read back. The host's previously forked copy (hardcoded
+acceptEdits) is now the RECORDLESS MODE of the one builder — same policy,
+one spelling. For script-adapters-06, codex-command grows
+--permissions/--record to derive sandbox/network in Go (writeRoots empty
+means read-only, network allow means true), and devin-config emits the
+permission mode beside the config it assembles — the envelope-to-flag
+mapping is the security-relevant half of command construction (KI-12 was
+exactly this going wrong) and no longer arrives pre-chewed from shell.
+
+**Also under this entry (Wido, mid-session):** the canary doctrine's new
+batching rule is written GENERICALLY in canary.sh — full suite per batch
+of 3-5 low-risk commits or immediately after a high-risk one — with no
+mention of hosts, VMs, or worktrees: those are this checkout's
+development mechanics, and the canary is metasystem behavior that ships.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
