@@ -59,7 +59,7 @@ gate_input_digest() {
         if [[ -L "$entry" ]]; then
           printf '%s L - %s\n' "$entry" "$(readlink "$entry")"
         else
-          mode=$(stat -f '%Lp' "$entry" 2>/dev/null || stat -c '%a' "$entry")
+          mode=$(stat -c '%a' "$entry" 2>/dev/null || stat -f '%Lp' "$entry")
           printf '%s F %s %s\n' "$entry" "$mode" "$(git hash-object "$entry")"
         fi
       done
@@ -100,8 +100,8 @@ witness_acceptable() {
   canonical_witness="$(cd "$(dirname "$witness")" 2>/dev/null && pwd -P)/$(basename "$witness")"
   [[ "$canonical_witness" == "$canonical_root"/* ]] || { echo "witness lies outside the controller state root" >&2; return 3; }
   local dir_mode file_mode
-  dir_mode=$(stat -f '%Lp' "$canonical_root" 2>/dev/null || stat -c '%a' "$canonical_root")
-  file_mode=$(stat -f '%Lp' "$canonical_witness" 2>/dev/null || stat -c '%a' "$canonical_witness")
+  dir_mode=$(stat -c '%a' "$canonical_root" 2>/dev/null || stat -f '%Lp' "$canonical_root")
+  file_mode=$(stat -c '%a' "$canonical_witness" 2>/dev/null || stat -f '%Lp' "$canonical_witness")
   [[ "$dir_mode" == 700 && "$file_mode" == 600 ]] || { echo "witness permissions are not 0700/0600" >&2; return 3; }
   local recorded_run recorded_digest
   recorded_run=$(sed -n 's/.*"runId":"\([^"]*\)".*/\1/p' "$canonical_witness")
