@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -66,7 +67,21 @@ func runProcGroupMembers(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem proc group-members --pgid P [--except PID]")
 		return 2
 	}
-	members, err := supervise.GroupMemberPids(*pgid, *except)
+	// The enumeration must not count its own invocation chain: this
+	// process and the shell substitutions that spawned it live inside the
+	// caller's group while enumerating, and a domain that contains its
+	// own prober can never be proven empty. Walk self's ancestry up to
+	// the excluded caller and exclude the whole chain.
+	exclusions := []int64{*except}
+	for pid := int64(os.Getpid()); pid > 1 && pid != *except; {
+		exclusions = append(exclusions, pid)
+		parent, ok := identity.ParentPid(pid)
+		if !ok {
+			break
+		}
+		pid = parent
+	}
+	members, err := supervise.GroupMemberPids(*pgid, exclusions...)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

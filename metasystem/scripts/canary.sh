@@ -50,7 +50,10 @@ gate() {
 for class in "$@"; do
   case "$class" in
     go) gate ;;
-    supervision) gate; run supervision bash scripts/agents/supervision-fixtures.sh ;;
+    supervision)
+      gate
+      run supervision bash scripts/agents/supervision-fixtures.sh
+      run adapter-deadline bash scripts/agents/adapter-deadline-fixtures.sh ;;
     dispatch)
       gate
       run conformance bash scripts/agents/conformance-fixtures.sh

@@ -235,11 +235,16 @@ sweep_kill_domain() {
 # the check is single-writer and deterministic); sweep; land the terminal
 # verdict only behind the death proof. An unproven domain leaves the
 # record nonterminal — emitted, retried next tick, census-visible.
-enforce_expired_deadline() { # handshake|cap
-  local kind=$1
+enforce_expired_deadline() { # handshake|cap, cli child pid
+  local kind=$1 cli_child=$2
   if [[ "$kind" == handshake ]] && (( handshake_done )); then
     return 1 # the wait was won; nothing to enforce, nothing signaled
   fi
+  # The direct child FIRST, through the path that also REAPS it: a
+  # non-interactive shell reaps a background child only at an explicit
+  # wait, and an unreaped zombie keeps its group membership — the sweep
+  # could never prove a domain that still holds our own zombie.
+  terminate_cli_child "$cli_child"
   if ! sweep_kill_domain; then
     printf '%s %s-deadline sweep left the kill domain unproven; record stays nonterminal\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$kind" >>"$log" 2>/dev/null || true
@@ -256,16 +261,16 @@ enforce_expired_deadline() { # handshake|cap
   exit 0
 }
 
-check_record_deadlines() { # one tick's deadline verdicts; may not return
-  local now_epoch now_iso
+check_record_deadlines() { # cli child pid; one tick's verdicts; may not return
+  local cli_child=$1 now_epoch now_iso
   cache_record_deadlines
   if [[ -n "${handshake_deadline_epoch:-}" ]] && (( ! handshake_done )); then
     now_epoch=$(date +%s)
-    (( now_epoch <= handshake_deadline_epoch )) || enforce_expired_deadline handshake || true
+    (( now_epoch <= handshake_deadline_epoch )) || enforce_expired_deadline handshake "$cli_child" || true
   fi
   if [[ -n "${cap_deadline_iso:-}" ]] && (( handshake_done )); then
     now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    [[ ! "$now_iso" > "$cap_deadline_iso" ]] || enforce_expired_deadline cap || true
+    [[ ! "$now_iso" > "$cap_deadline_iso" ]] || enforce_expired_deadline cap "$cli_child" || true
   fi
 }
 
@@ -274,7 +279,7 @@ wait_for_cli() { # child pid; sets cli_status and keeps liveness sidecars fresh
   heartbeat_sleep=$(adapter_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-100}") || return 2
   while kill -0 "$child" 2>/dev/null; do
     touch "$heartbeat"
-    check_record_deadlines
+    check_record_deadlines "$child"
     tick=$((tick + 1))
     (( tick % 10 != 0 )) || touch "$log"
     sleep "$heartbeat_sleep"

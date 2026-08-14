@@ -262,14 +262,18 @@ func processGroupMembers(pgid int64) (int, error) {
 // same indeterminability rule as the ceiling count: only ESRCH is an absent
 // member; any other probe failure refuses, because a sweep that silently
 // undercounts would prove a death that was not proven.
-func GroupMemberPids(pgid, except int64) ([]int64, error) {
+func GroupMemberPids(pgid int64, except ...int64) ([]int64, error) {
+	excluded := map[int64]bool{}
+	for _, pid := range except {
+		excluded[pid] = true
+	}
 	pids, err := groupAllPids()
 	if err != nil {
 		return nil, fmt.Errorf("group membership is indeterminable: %w", err)
 	}
 	var members []int64
 	for _, pid := range pids {
-		if pid == except {
+		if excluded[pid] {
 			continue
 		}
 		pg, err := groupGetpgid(pid)

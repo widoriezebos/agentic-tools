@@ -755,6 +755,33 @@ my Option A lean with this simpler shape the draft had missed; rounds
 Critique transcripts in the session scratchpad (f4-critique-r*.out).
 Implementation is SOLO (supervision core) with boundary suites after.
 
+## D32 addendum — F4 implemented; the fixture caught two real defects
+
+The implementation landed in three checkpoints: f9e554e (proc
+group-members, the kill domain), 510d205 (the enforcement core in the
+adapters' shared wait loop), and this one (the committed five-leg
+fixture, adapter-deadline-fixtures.sh, wired into the suite and the
+supervision canary). The fixture stages the PRODUCTION topology (the
+driver is a process-group leader, as launch-detached makes the real
+custodian) and immediately caught two defects the scratchpad harness's
+wrong topology had masked: (1) a non-interactive shell reaps a killed
+background child only at an explicit wait, so the dead CLI stayed a
+zombie — and a zombie keeps its group membership — through the whole
+sweep; the enforcement now terminates AND REAPS the direct child first
+(terminate_cli_child), then sweeps the remainder, which holds no
+children of ours. (2) The enumerating verb counted its own invocation
+chain (the metasystem process and its command-substitution subshell
+live inside the caller's group while probing), so the domain could
+never read empty; proc group-members now walks its own ancestry up to
+the excluded caller and excludes the whole chain. Five legs prove cap
+expiry (one running→timeout budget-cap CAS), handshake expiry
+(pending→failed handshake_timeout), the zero-signal stand-down, the
+lost-CAS race settling with exactly one attempt, and the unproven
+domain staying nonterminal. The supervisor-crash leg is the standing
+reaper's existing dead-custodian case, proven in reaper_test.go. One
+transient supervision-canary RED occurred during checkpoint 2 (timing
+fixture under machine load, green on immediate solo re-run).
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

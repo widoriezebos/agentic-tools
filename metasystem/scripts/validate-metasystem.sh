@@ -236,6 +236,7 @@ for link in \
   scripts/agents/flight-recorder-fixtures.sh \
   scripts/agents/mission-fixtures.sh \
   scripts/agents/delegate-caps-fixtures.sh \
+  scripts/agents/adapter-deadline-fixtures.sh \
   scripts/agents/mission-runner.sh \
   scripts/agents/hosts/host-common.sh \
   scripts/agents/hosts/claude.sh \
@@ -292,6 +293,7 @@ bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
+bash -n scripts/agents/adapter-deadline-fixtures.sh
 bash -n scripts/agents/mission-runner.sh
 bash -n scripts/agents/conformance-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
@@ -322,6 +324,7 @@ bash scripts/agents/second-session-fixtures.sh
 bash scripts/agents/lease-succession-fixtures.sh
 bash scripts/agents/flight-recorder-fixtures.sh
 bash scripts/agents/delegate-caps-fixtures.sh
+bash scripts/agents/adapter-deadline-fixtures.sh
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \

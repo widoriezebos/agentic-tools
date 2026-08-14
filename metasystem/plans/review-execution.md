@@ -40,7 +40,16 @@
   record's own handshakeDeadline and capDeadline over its CLI child;
   waiter and reaper unchanged; custodian-dies-leaving-grandchildren
   accepted as the stated residual. Critique CONVERGED at round 5
-  (10-4-3-1-AGREE; D32). Next: SOLO implementation per the design's
+  (10-4-3-1-AGREE; D32). IMPLEMENTATION LANDED THROUGH CHECKPOINT 2:
+  f9e554e (proc group-members = the kill domain) and 510d205 (the
+  enforcement core in runtime-common's wait loop; three-leg direct
+  harness proved cap-expiry, handshake-expiry, and zero-signal
+  stand-down against the real code; harness lives at the session
+  scratchpad's f4-harness/). F4 COMPLETE with the next commit (fixture landed, suite+canary wired; two real defects found and fixed by the fixture — see D32 addendum). Superseded notes: promote the harness
+  into a committed suite fixture plus the design's other legs
+  (waiter+supervisor race to one verdict; supervisor crash → reaper
+  finalizes; survivor after KILL → nonterminal), D32 addendum,
+  boundary suites, baseline. Original sketch: SOLO implementation per the design's
   'What changes where' — runtime-common wait-loop deadline
   enforcement (cached fail-closed deadlines, gate-wait coverage,
   before-any-signal stand-down, own-group-minus-self kill sweeps with
