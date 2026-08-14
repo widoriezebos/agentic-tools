@@ -946,6 +946,22 @@ runs are expected to flake at S4-2 under active use and the solo
 reproduction stays the answer; widening the scale factor is declined
 because it would slow the quiet-machine (VM) case the cap protects.
 
+## HUMAN APPROVAL 2026-08-14 evening — "Approved, and yes to all"
+
+Wido, in the session, in reply to the program summary whose pending
+list was: (1) 2-3 more baseline reps (~$9 each, ~$27) to characterize
+variance; (2) the D10 floor question, recommended strict; (3) bm-2's
+UNCONTAINED-Devin start — explicitly flagged as a human call because
+org policy refuses --sandbox and a shell demonstrably writes outside
+the workspace; (4) proceeding with backlog items 14 (goal system) and
+15 (monitor facility) after the review. All four are approved. The
+benchmark series is UNPARKED with that scope; the D10 floor takes the
+strict reading; bm-2 may start uncontained. SEQUENCING (mine, not
+his): the review's W6+W7 finish first — benchmark cohorts run codex
+delegates, which the standing rule keeps apart from suite runs on one
+machine — so the series resumes tonight after the final review
+boundary, machine dedicated.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
