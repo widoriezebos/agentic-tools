@@ -1781,7 +1781,9 @@ LOCK
       else
         captured_result=$?
       fi
-      grep -Fq 'censusGeneration=' "$output" 2>/dev/null || return "$captured_result"
+      # Exit 9 is the typed arming-window transient (script-validate-3/D34)
+      # — a contract, not a grep of the diagnostic's wording.
+      [[ "$captured_result" -eq 9 ]] || return "$captured_result"
       # Retry is only safe while the refusal preceded job creation. Once a
       # record exists the dispatch got past the census check, the failure is
       # the real answer, and a re-dispatch would overwrite the record it is
@@ -1838,6 +1840,9 @@ LOCK
       tty_result=$?
       set -e
       [[ $tty_result -eq 0 ]] && return 0
+      # The tty wrapper's exit-code propagation is unverified, so this one
+      # site still reads the typed refusal's structured token from the
+      # captured output (script-validate-3/D34 records the residue).
       grep -Fq 'censusGeneration=' "$agent_fixture/$name.out" 2>/dev/null || break
       sleep 1
     done
@@ -2892,7 +2897,8 @@ PY
       driver_status=$?
       printf '%s\n' "$output"
       [[ $driver_status -eq 0 ]] && break
-      printf '%s' "$output" | grep -Fq 'censusGeneration=' || break
+      # Exit 9 = the typed arming-window transient (script-validate-3/D34).
+      [[ $driver_status -eq 9 ]] || break
       # Same record boundary as the shared runner: once the job exists, the
       # nonzero status is the fixture's answer (here: the reaped job's exit 4).
       # Re-dispatching a reaped job id spawned a zombie adapter that raced

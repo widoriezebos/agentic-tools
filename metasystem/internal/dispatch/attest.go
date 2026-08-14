@@ -83,9 +83,13 @@ func CensusFresh(verdictPath, statePath, armHint, repoHint, expectedFingerprint 
 		return fmt.Errorf("dispatch refused: arming record generation is invalid")
 	}
 	if generation != armedGeneration {
-		return fmt.Errorf(
+		// The arming-window transient (script-validate-3/D34): the one
+		// refusal that is safe to retry before a job record exists gets a
+		// TYPE, so callers branch on a contract instead of grepping the
+		// diagnostic's wording. The message bytes are unchanged.
+		return ArmingWindowError{msg: fmt.Sprintf(
 			"dispatch refused: census verdict is stale (age=%ds window=%ds censusGeneration=%d armedGeneration=%d); retry in a moment; re-arm with %s --repo %s if supervision is dead",
-			age, window, generation, armedGeneration, armHint, repoHint)
+			age, window, generation, armedGeneration, armHint, repoHint)}
 	}
 	armedDigest := sha256.Sum256(armedBytes)
 	if hex.EncodeToString(armedDigest[:]) != digest {
@@ -144,3 +148,10 @@ func WatcherCeiling(statePath string, now time.Time) (int64, error) {
 	}
 	return ceiling, nil
 }
+
+// ArmingWindowError marks the between-arming-publication-and-census
+// transient: the only census refusal that is safe to retry before a job
+// record exists. The census-fresh verb surfaces it as exit code 9.
+type ArmingWindowError struct{ msg string }
+
+func (e ArmingWindowError) Error() string { return e.msg }

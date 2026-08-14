@@ -369,7 +369,15 @@ func runDispatchCensusFresh(args []string) int {
 		}
 		expected = fp
 	}
-	return recordExit(dispatchcore.CensusFresh(*verdict, *state, *arm, *repo, expected, time.Now()))
+	if err := dispatchcore.CensusFresh(*verdict, *state, *arm, *repo, expected, time.Now()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		var armingWindow dispatchcore.ArmingWindowError
+		if errors.As(err, &armingWindow) {
+			return 9 // the retry-safe arming-window transient (D34)
+		}
+		return 1
+	}
+	return 0
 }
 
 func runDispatchWatcherCeiling(args []string) int {
