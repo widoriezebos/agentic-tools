@@ -390,6 +390,30 @@ go-gate (the red-on-day-one defect becomes the tested path); template SHA
 recording unchanged. Until that pass lands, nothing changed on disk — this
 entry is the ruling, not the landing.
 
+## D18 — Cap-authority joins the owner-lock family (script-orchestration-01 sign-off)
+
+**Decision:** both cap-authority spinlocks (dispatch.sh and
+arm-supervision.sh, verbatim duplicates) route through `job owner-lock` on
+the same on-disk directory — claim with pid+tag identity, spin to the same
+scaled deadline, release refusing another owner's lock. dispatch's tag is
+its existing per-invocation __lock-owner re-exec tag; arm-supervision uses
+its own script name (present in its argv, which is what the custodian rule
+probes), accepting that a pid recycled by ANOTHER armer reads alive and
+waits out the deadline instead of healing — fail-closed in a rare
+collision, never a wrong takeover. A SIGKILLed holder's husk now heals
+instead of bricking all dispatch and arming until a human runs rmdir.
+
+**Found during landing:** the AUTH-R2-006 fixtures simulated "lock held"
+with a bare mkdir — under the owner-lock protocol an ownerless directory
+is garbage by construction and heals immediately, so the fixtures now hold
+with a real live identity (their own pid and script name) and release
+through the verb. The bare-dir trick dying is the point of the change: an
+ownerless lock no longer blocks anyone.
+
+**Alternative not taken:** a dedicated `job cap-authority-lock` wrapper
+verb. The generic verb already carries the protocol; a second spelling of
+the same claim would be one more surface to keep honest.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

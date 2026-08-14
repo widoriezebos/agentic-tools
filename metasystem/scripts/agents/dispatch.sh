@@ -363,12 +363,17 @@ release_lifecycle_lock() { # job id
 }
 
 acquire_cap_authority_lock() {
+  # Identity-bearing owner lock (script-orchestration-01/D18): the old bare
+  # mkdir spinlock had no owner and no healer, so a SIGKILLed holder bricked
+  # every dispatch AND arming until a human ran rmdir. The owner-lock verb
+  # heals a provably dead holder's husk and keeps an unprovable one (B1) —
+  # the same protocol the lifecycle and chain locks above already use.
   local directory="$agents/supervision/cap-authority.lock.d" maximum started deadline elapsed
   mkdir -p "${directory%/*}"
   maximum=$(dispatch_fixture_wait_cap 10)
   started=$SECONDS
   deadline=$((SECONDS + maximum))
-  while ! mkdir "$directory" 2>/dev/null; do
+  while ! owner_lock claim "$directory" "$$" "$process_instance_tag"; do
     if (( SECONDS >= deadline )); then
       elapsed=$((SECONDS - started))
       die 1 "timed out acquiring repository cap-authority lock (elapsed: ${elapsed}s; scaled cap: ${maximum}s)"
@@ -380,8 +385,9 @@ acquire_cap_authority_lock() {
 
 release_cap_authority_lock() {
   (( cap_authority_lock_held )) || return 0
-  rmdir "$agents/supervision/cap-authority.lock.d" 2>/dev/null \
-    || die 1 "repository cap-authority lock disappeared or is not empty"
+  local status=0
+  owner_lock release "$agents/supervision/cap-authority.lock.d" "$$" "$process_instance_tag" || status=$?
+  (( status == 4 )) && die 1 "refusing to release another owner's cap-authority lock"
   cap_authority_lock_held=0
 }
 

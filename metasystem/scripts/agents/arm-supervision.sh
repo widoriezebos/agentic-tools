@@ -83,13 +83,26 @@ supervision_wait_cap() { # base seconds; fixture validation may export a scale
   printf '%s\n' "$(( (base * scale_milli + 999) / 1000 ))"
 }
 
+# owner_lock relays the identity-bearing lock verb: 0 done, 3 busy, 4
+# not-owner (the dispatch.sh convention). The tag is this script's own name
+# — it appears in the armer's argv, which is what the custodian rule probes
+# on a live pid. A constant tag means a pid recycled by ANOTHER armer reads
+# alive and the lock waits out its deadline instead of healing: fail-closed
+# in the rare collision, never a wrong takeover.
+owner_lock() { # claim|release, directory, pid, tag
+  "$ms" job owner-lock --command "$1" --dir "$2" --pid "$3" --tag "$4"
+}
+
 acquire_cap_authority_lock() {
+  # Identity-bearing owner lock (script-orchestration-01/D18): the old bare
+  # mkdir spinlock had no owner and no healer, so a SIGKILLed armer bricked
+  # every dispatch AND arming until a human ran rmdir.
   local directory="$agents/supervision/cap-authority.lock.d" maximum started deadline elapsed
   mkdir -p "${directory%/*}"
   maximum=$(supervision_wait_cap 10)
   started=$SECONDS
   deadline=$((SECONDS + maximum))
-  while ! mkdir "$directory" 2>/dev/null; do
+  while ! owner_lock claim "$directory" "$$" "arm-supervision.sh"; do
     if (( SECONDS >= deadline )); then
       elapsed=$((SECONDS - started))
       die 1 "timed out acquiring repository cap-authority lock (elapsed: ${elapsed}s; scaled cap: ${maximum}s)"
@@ -101,8 +114,9 @@ acquire_cap_authority_lock() {
 
 release_cap_authority_lock() {
   (( cap_authority_lock_held )) || return 0
-  rmdir "$agents/supervision/cap-authority.lock.d" 2>/dev/null \
-    || die 1 "repository cap-authority lock disappeared or is not empty"
+  local status=0
+  owner_lock release "$agents/supervision/cap-authority.lock.d" "$$" "arm-supervision.sh" || status=$?
+  (( status == 4 )) && die 1 "refusing to release another owner's cap-authority lock"
   cap_authority_lock_held=0
 }
 

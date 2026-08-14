@@ -266,7 +266,14 @@ assert heartbeat["loadedCapMin"] == 330, heartbeat
 PY
 pass_fixture AUTH-R2-007
 
-mkdir -p "$harness/artifacts/agents/jobs" "$harness/artifacts/agents/supervision/cap-authority.lock.d"
+# Hold the cap-authority transaction with a REAL live identity: under the
+# owner-lock protocol (script-orchestration-01/D18) a bare ownerless
+# directory is garbage by construction and the armer would heal it
+# immediately instead of waiting. This fixture process is alive and its
+# script name is in its argv, so the armer classifies the holder Alive.
+mkdir -p "$harness/artifacts/agents/jobs" "$harness/artifacts/agents/supervision"
+"$ms" job owner-lock --command claim --dir "$harness/artifacts/agents/supervision/cap-authority.lock.d" \
+  --pid $$ --tag delegate-caps-fixtures.sh
 (
   set +e
   $arm --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" \
@@ -280,7 +287,8 @@ kill -0 "$rearm_race_pid" 2>/dev/null \
 cat >"$harness/artifacts/agents/jobs/blocking-job.json" <<'EOF'
 {"jobId":"blocking-job","status":"running","capMin":400}
 EOF
-rmdir "$harness/artifacts/agents/supervision/cap-authority.lock.d"
+"$ms" job owner-lock --command release --dir "$harness/artifacts/agents/supervision/cap-authority.lock.d" \
+  --pid $$ --tag delegate-caps-fixtures.sh
 deadline=$((SECONDS + 10))
 while kill -0 "$rearm_race_pid" 2>/dev/null; do
   (( SECONDS < deadline )) || { echo "AUTH-R2-006: serialized re-arm did not finish" >&2; exit 1; }
@@ -364,7 +372,9 @@ pass_fixture AUTH-R2-005
 # reservation into its lock wait after the prior watcher is stopped; it must
 # refuse the lower config-derived ceiling instead of silently taking over.
 $arm --repo "$harness" --shutdown >/dev/null
-mkdir "$harness/artifacts/agents/supervision/cap-authority.lock.d"
+# Same live-identity hold as the re-arm leg above (D18).
+"$ms" job owner-lock --command claim --dir "$harness/artifacts/agents/supervision/cap-authority.lock.d" \
+  --pid $$ --tag delegate-caps-fixtures.sh
 (
   set +e
   $arm --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" \
@@ -378,7 +388,8 @@ kill -0 "$rearm_race_pid" 2>/dev/null \
 cat >"$harness/artifacts/agents/jobs/ordinary-blocking-job.json" <<'EOF'
 {"jobId":"ordinary-blocking-job","status":"running","capMin":400}
 EOF
-rmdir "$harness/artifacts/agents/supervision/cap-authority.lock.d"
+"$ms" job owner-lock --command release --dir "$harness/artifacts/agents/supervision/cap-authority.lock.d" \
+  --pid $$ --tag delegate-caps-fixtures.sh
 deadline=$((SECONDS + 10))
 while kill -0 "$rearm_race_pid" 2>/dev/null; do
   (( SECONDS < deadline )) || { echo "AUTH-R2-006: serialized ordinary establishment did not finish" >&2; exit 1; }
