@@ -1504,6 +1504,38 @@ delegation, as in every prior cohort. D33's Darwin-suite precondition
 is satisfied by the final boundary's Mac run at 2c92dfe (1,241s,
 green).
 
+## D54 — The fresh baseline cohort is banked (one valid rep, the bimodal story confirmed); bm-2 starts tonight
+
+**The cohort result (bm-1-20260814t192803z-44271, three reps at
+engine 387c961, $28.32 total, ~33/33/54 minutes)**: reps 1 and 2 are
+INVALID on exactly one gate — the stop-loss parked both at three
+cycles before the build stream had a certified implementer job, with
+byte-identical acceptance 0.018868. Rep 3 is VALID on all seven gates:
+acceptance 0.962, requirement coverage 0.923, determinism at its
+floor, $10.52. All three runs ended in a stop-loss park at three
+cycles; the difference is whether real delegated work landed inside
+those cycles. **The reading**: the old cohort's 0.02-vs-0.96
+bimodality persists at the current engine and is now cleanly
+attributable — when the early cycles produce certified implementer
+work, the product is good; when they stagnate, the fuse ends the run
+cheaply and the D10 strict floor correctly invalidates it. Rep 3
+proves three cycles CAN suffice, which weakens the
+"no-gain-budget=3 starves the build stream" reading, but two empty
+parks out of three at ~$9 each is the arm's real cost shape. Both
+readings stay recorded; no contract amendment without Wido. Series
+spend ~$118 of EUR 240.
+
+**The bm-2 call**: Wido's approval of the uncontained-Devin start was
+unqualified ("Approved, and yes to all", with the uncontained facts in
+front of him), so the start executes tonight rather than waiting for a
+watched window — deferral would recreate the parked state the approval
+explicitly ended. Stated plainly: swe-1-7 runs uncontained, its writes
+outside the workspace are exactly what no fence catches, and the
+monitoring story is the driver Monitor plus half-hour heartbeats — the
+residual between heartbeats is accepted as part of the approval. One
+repetition first; the arm's continuation is decided on its data.
+A push notification tells Wido bm-2 is live the moment it starts.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
