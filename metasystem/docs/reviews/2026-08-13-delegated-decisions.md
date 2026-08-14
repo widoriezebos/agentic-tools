@@ -1045,6 +1045,18 @@ cap helpers went with them, the AUTH-R2-009 registry check now guards
 the remaining supervision roster (005-008), and the file is what its
 name promises: the supervision-set harness.
 
+## D43 — The record-protocol legs retire; the concurrency property got stronger (script-fixtures-012 sign-off)
+
+**Decision**: record-protocol-fixtures.sh shrinks from 119 lines to a
+40-line __record-create forwarding smoke. The four behavioral legs had
+verified one-to-one equivalents in internal/dispatch/record_test.go;
+the ONE novel property — no reader ever observes status=failed without
+its protocolError object — was PORTED as a live goroutine reader
+hammering the record under -race across fifty applications, with the
+.tmp-residue sweep folded in. The in-process version is strictly
+stronger than the python poller it replaces: the race detector watches
+the same window the poller sampled.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

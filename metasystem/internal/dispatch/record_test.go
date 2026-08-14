@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -312,4 +313,68 @@ func TestRecordCASRejectsInvalidJobID(t *testing.T) {
 	patch := writeJSON(t, filepath.Join(t.TempDir(), "p.json"), map[string]any{"note": "x"})
 	_, err := RecordCAS(root, "Bad_Id", "pending", "running", patch)
 	wantCode(t, err, 2)
+}
+
+// The reader-visibility property, ported from record-protocol-fixtures.sh's
+// concurrent python reader (script-fixtures-012/D43): while a protocol
+// error is applied, no reader may ever observe status=failed WITHOUT its
+// protocolError object — atomicfile's rename is what guarantees the two
+// land together — and no .tmp residue may survive in the jobs directory.
+func TestRecordProtocolErrorNeverExposesFailedWithoutViolation(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-vis")
+	setupPending(t, root, "job-vis")
+	recordPath := filepath.Join(root, "artifacts", "agents", "jobs", "job-vis.json")
+
+	stop := make(chan struct{})
+	torn := make(chan string, 1)
+	var waiter sync.WaitGroup
+	waiter.Add(1)
+	go func() {
+		defer waiter.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			data, err := os.ReadFile(recordPath)
+			if err != nil {
+				continue // mid-rename absence is not a torn state
+			}
+			var record map[string]any
+			if json.Unmarshal(data, &record) != nil {
+				select {
+				case torn <- "reader saw unparseable record bytes":
+				default:
+				}
+				return
+			}
+			if record["status"] == "failed" {
+				if _, ok := record["protocolError"].(map[string]any); !ok {
+					select {
+					case torn <- "reader saw failed without protocolError":
+					default:
+					}
+					return
+				}
+			}
+		}
+	}()
+	for attempt := 0; attempt < 50; attempt++ {
+		if err := RecordProtocolError(root, "job-vis", "pending", "missing return.json", ""); err != nil {
+			t.Fatalf("protocol error stamp: %v", err)
+		}
+	}
+	close(stop)
+	waiter.Wait()
+	select {
+	case seen := <-torn:
+		t.Fatal(seen)
+	default:
+	}
+	residue, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.tmp*"))
+	if len(residue) != 0 {
+		t.Fatalf(".tmp residue survived: %v", residue)
+	}
 }
