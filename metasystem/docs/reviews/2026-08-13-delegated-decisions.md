@@ -1594,6 +1594,29 @@ durable protections are the raised budgets (HUMAN RULING 3) and the
 leading-indicator design in flight (RULING 5/6), not this tripwire
 alone.
 
+## D56 — The leading-indicator fuse design is WITHDRAWN at critique round 1 (middle-path ruling, part 2)
+
+**Decision**: the design does not implement tonight — not because the
+loop ran out of night, but because round 1 refuted its premise. The
+critic's finding 1 is arithmetic: under budget 3, three critic-only
+cycles reach the budget and park BEFORE a cycle 4 exists, so a
+work-landed marker could never have rescued the observed empty parks.
+Finding 14 names what the evidence actually shows: a host-scheduling
+defect (rep 3 dispatched its first implementer 27 seconds in,
+parallel; reps 1-2 never dispatched one at all), for which a fuse
+grammar change is the wrong remedy. Findings 2-5 (sealed
+ledgerSemantics frozen by contract, the conclusion-as-transaction
+invariant, replay purity over the ledger, trivial-job farming) would
+have sunk the mechanism regardless. The full critique is preserved at
+plans/fuse-leading-indicator-critique-r1.md beside the withdrawn
+design. **What stands instead**: budget 5 (HUMAN RULING 3) covers the
+cadence arithmetic; D55's seal warning names the trap; the budget-5
+test rep still runs as the hypothesis test (RULING 5's go/no-go for
+the overnight series); and the host-serialization question is now a
+named input to the item-14 design pass. This is the critique loop
+doing precisely what Wido pays it for: it cost one codex round and
+prevented a sealed-semantics break at one in the morning.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
