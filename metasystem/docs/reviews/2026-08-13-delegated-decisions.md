@@ -1228,8 +1228,12 @@ architecture-10 (report owns frontier honestly), validate-report-16
 three-depth span), foundations-15 (doc claims a refusal error, not a
 typed one; exported mutable Modes map replaced by ValidMode()),
 missionrunner-8 (cycleContext.values, hostProcess.err, and the stray
-pragma on a used local deleted), script-orchestration-14 (both stale
-TODO(go-wiring) comments resolved to the shipped truth;
+pragma on a used local deleted; addendum: the final boundary's first
+firing was the coverage ratchet refusing authority at 82.6% against
+its 95% floor — the ValidMode swap added uncovered branches the map
+lookup never had; TestValidMode restores 95.7%, and the ratchet doing
+exactly its job is worth recording), script-orchestration-14 (both
+stale TODO(go-wiring) comments resolved to the shipped truth;
 lock_owner_state's ps shadow-classification was ALREADY gone —
 resolved-as-found). **Declined: architecture-6's rename half** —
 renaming internal/contract ripples every import for a naming-taste

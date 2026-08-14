@@ -37,3 +37,16 @@ func TestAuthorize(t *testing.T) {
 		}
 	}
 }
+
+func TestValidMode(t *testing.T) {
+	for _, mode := range []string{"holder-only", "record-writer", "adapter-writer", "supervision-only"} {
+		if !ValidMode(mode) {
+			t.Errorf("%s must be a valid control-plane mode", mode)
+		}
+	}
+	for _, mode := range []string{"", "holder", "HOLDER-ONLY", "everything"} {
+		if ValidMode(mode) {
+			t.Errorf("%q must not be a valid control-plane mode", mode)
+		}
+	}
+}
