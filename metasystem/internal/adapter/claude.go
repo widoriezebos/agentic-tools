@@ -3,6 +3,7 @@ package adapter
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 )
 
@@ -199,4 +200,83 @@ func ClaudeSessionSignal(r io.Reader, signalPath, eventsPath string) (string, er
 		return "", fmt.Errorf("append session-init event: %w", err)
 	}
 	return sessionID, nil
+}
+
+// The Claude argv, permission-mode/tool-list mapping, and native budget
+// policy (review script-adapters-02, relocated from adapters/claude.sh and
+// hosts/claude.sh — the second copy had already forked). The codex pattern:
+// one builder, NUL-separated tokens on the wire, both shells read it back.
+
+// claudeFullTools is the read-write tool list; the read-only list is the
+// envelope's narrowing of it.
+const claudeFullTools = "Bash,Edit,Write,Read,Glob,Grep,NotebookEdit"
+const claudeReadOnlyTools = "Read,Glob,Grep"
+
+// ClaudeBudget validates the native budget policy from the environment:
+// METASYSTEM_CLAUDE_MAX_BUDGET_USD (default 5.00, a positive decimal) and
+// METASYSTEM_CLAUDE_MAX_TURNS (default 50, a positive integer). The two
+// refusals are distinct so the adapter maps them to its two protocol
+// errors (invalid_native_budget, invalid_native_turn_limit).
+func ClaudeBudget(lookupEnv func(string) (string, bool)) (budget, turns string, err error) {
+	budget = "5.00"
+	if value, ok := lookupEnv("METASYSTEM_CLAUDE_MAX_BUDGET_USD"); ok {
+		budget = value
+	}
+	turns = "50"
+	if value, ok := lookupEnv("METASYSTEM_CLAUDE_MAX_TURNS"); ok {
+		turns = value
+	}
+	if !regexp.MustCompile(`^[0-9]+([.][0-9]+)?$`).MatchString(budget) || budget == "0" || budget == "0.0" {
+		return "", "", fmt.Errorf("invalid_native_budget")
+	}
+	if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(turns) {
+		return "", "", fmt.Errorf("invalid_native_turn_limit")
+	}
+	return budget, turns, nil
+}
+
+// BuildClaudeCommand assembles the claude -p argv. Adapter mode (recordPath
+// non-empty) derives the permission envelope: an empty requested writeRoots
+// means dontAsk with the read-only tools plus --add-dir for every extra
+// read root; anything else means acceptEdits with the full tools. Host mode
+// (recordPath empty) is the orchestrator's own turn: acceptEdits with the
+// full tools, no settings file, no add-dirs.
+func BuildClaudeCommand(recordPath, model, schemaJSON, settings, session, budget, turns string) ([]string, error) {
+	permissionMode := "acceptEdits"
+	tools := claudeFullTools
+	var addDirs []string
+	if recordPath != "" {
+		record, err := readObject(recordPath)
+		if err != nil {
+			return nil, err
+		}
+		permissions, _ := record["permissions"].(map[string]any)
+		requested, _ := permissions["requested"].(map[string]any)
+		writeRoots := stringList(requested["writeRoots"])
+		if len(writeRoots) == 0 {
+			permissionMode = "dontAsk"
+			tools = claudeReadOnlyTools
+			if addDirs, err = ClaudeReadRoots(recordPath); err != nil {
+				return nil, err
+			}
+		}
+	}
+	command := []string{
+		"claude", "-p", "--output-format", "json", "--model", model,
+		"--json-schema", schemaJSON,
+		"--permission-mode", permissionMode,
+		"--tools", tools,
+		"--allowedTools", tools,
+	}
+	if settings != "" {
+		command = append(command, "--settings", settings)
+	}
+	command = append(command, "--max-budget-usd", budget, "--max-turns", turns)
+	for _, dir := range addDirs {
+		command = append(command, "--add-dir", dir)
+	}
+	if session != "" {
+		command = append(command, "--resume", session)
+	}
+	return command, nil
 }

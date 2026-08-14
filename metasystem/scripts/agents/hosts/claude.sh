@@ -61,22 +61,19 @@ usage_path="$turn_dir/usage.json"
 log="$turn_dir/host.log"
 schema="$root/scripts/agents/schemas/orchestrator.schema.json"
 model=$("$ms" json get --file "$turn_record" --field model)
-schema_json=$("$ms" host json-compact --file "$schema")
-max_budget=${METASYSTEM_CLAUDE_MAX_BUDGET_USD:-5.00}
-max_turns=${METASYSTEM_CLAUDE_MAX_TURNS:-50}
-[[ "$max_budget" =~ ^[0-9]+([.][0-9]+)?$ && "$max_turns" =~ ^[1-9][0-9]*$ ]] || {
+# One home for the argv and budget policy (`adapter claude-command`,
+# script-adapters-02/D25): host mode is the record-less call — acceptEdits
+# with the full tools, exactly the policy this file used to hardcode.
+claude_command_args=(--model "$model" --schema "$schema")
+[[ -z "$resume_session" ]] || claude_command_args+=(--session "$resume_session")
+command_file="$turn_dir/claude-command.nul"
+if ! "$ms" adapter claude-command "${claude_command_args[@]}" >"$command_file" 2>>"$log"; then
   echo "claude host native budget configuration is invalid" >&2
   exit 3
-}
-
-claude_command=(
-  claude -p --output-format json --model "$model" --json-schema "$schema_json"
-  --permission-mode acceptEdits
-  --tools Bash,Edit,Write,Read,Glob,Grep,NotebookEdit
-  --allowedTools Bash,Edit,Write,Read,Glob,Grep,NotebookEdit
-  --max-budget-usd "$max_budget" --max-turns "$max_turns"
-)
-[[ -z "$resume_session" ]] || claude_command+=(--resume "$resume_session")
+fi
+claude_command=()
+while IFS= read -r -d '' token; do claude_command+=("$token"); done <"$command_file"
+(( ${#claude_command[@]} > 0 )) || { echo "claude host argv assembly failed" >&2; exit 3; }
 set +e
 (
   cd "$root"

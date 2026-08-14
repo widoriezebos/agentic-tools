@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -94,6 +96,56 @@ func runAdapterCodexCommand(args []string) int {
 		return 2
 	}
 	command, err := adapter.BuildCodexCommand(*verb, *model, *workspace, *schema, *output, *sandbox, *network, *session)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	for _, token := range command {
+		fmt.Print(token)
+		os.Stdout.Write([]byte{0})
+	}
+	return 0
+}
+
+// runAdapterClaudeCommand relays `adapter claude-command`
+// (script-adapters-02/D25): one home for the Claude argv, the permission
+// envelope's mode/tool mapping, and the native budget policy, emitted
+// NUL-separated exactly like codex-command. Exit 3 is an invalid budget,
+// exit 4 an invalid turn limit — the adapter maps them to its two protocol
+// errors; the host keeps its one message.
+func runAdapterClaudeCommand(args []string) int {
+	flags := flag.NewFlagSet("adapter claude-command", flag.ContinueOnError)
+	record := flags.String("record", "", "job record (empty for a host turn)")
+	model := flags.String("model", "", "model to launch")
+	schema := flags.String("schema", "", "return schema file (compacted into the argv)")
+	settings := flags.String("settings", "", "settings file (adapter turns)")
+	session := flags.String("session", "", "session to resume (optional)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *model == "" || *schema == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-command --model M --schema F [--record F] [--settings F] [--session SID]")
+		return 2
+	}
+	budget, turns, err := adapter.ClaudeBudget(os.LookupEnv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		if err.Error() == "invalid_native_turn_limit" {
+			return 4
+		}
+		return 3
+	}
+	schemaBytes, err := os.ReadFile(*schema)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	var compacted bytes.Buffer
+	if err := json.Compact(&compacted, schemaBytes); err != nil {
+		fmt.Fprintf(os.Stderr, "schema is not valid JSON: %v\n", err)
+		return 1
+	}
+	command, err := adapter.BuildClaudeCommand(*record, *model, compacted.String(), *settings, *session, budget, turns)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

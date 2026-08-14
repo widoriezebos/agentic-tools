@@ -7,6 +7,15 @@
 # require the gate, and acceptance still requires the full suite; a green
 # canary only says the expensive run is worth starting.
 #
+# BATCHING (2026-08-14): the full suite runs per BATCH, not per commit.
+# Each commit gets its canary class and the gate; the full suite (on
+# every host the project validates on, if more than one) closes a batch
+# of 3-5 low-risk commits, or immediately after any high-risk one (kill
+# paths, lock protocol, adapter turn machinery). A batch failure bisects
+# with the per-commit history — every commit in it was canary- and
+# gate-green, so replaying the suite at an intermediate commit isolates
+# the culprit in one extra run.
+#
 # Usage: scripts/canary.sh <change-class> [more classes...]
 # Classes:
 #   go            the Go gate alone (unit+race tests, ratchet, cross-builds)

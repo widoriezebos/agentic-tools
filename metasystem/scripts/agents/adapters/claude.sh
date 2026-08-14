@@ -102,49 +102,33 @@ supervise() { # dispatch|follow-up and supervisor args
   local signal_file="$round_dir/claude-session-signal.json"
   local result_file="$round_dir/claude-result.json"
   local usage_file="$round_dir/usage.json"
-  local permission_mode tools allowed_tools schema_json max_budget max_turns cli_pid
+  local cli_pid command_status
   local signalled_session signalled_model result_session result_model
-  local -a command read_roots
-  read_roots=()
+  local -a command
 
   record_actual_workspace_write_scope
   fail_if_effective_wider_before_launch || return 1
   : >"$events"
   build_claude_settings "$settings_file"
-  schema_json=$("$ms" host json-compact --file "$schema")
-  if [[ $(field "$record" permissions.requested.writeRoots) == '[]' ]]; then
-    permission_mode=dontAsk
-    tools=Read,Glob,Grep
-    allowed_tools=Read,Glob,Grep
-  else
-    permission_mode=acceptEdits
-    tools=Bash,Edit,Write,Read,Glob,Grep,NotebookEdit
-    allowed_tools=Bash,Edit,Write,Read,Glob,Grep,NotebookEdit
-  fi
-  max_budget=${METASYSTEM_CLAUDE_MAX_BUDGET_USD:-5.00}
-  max_turns=${METASYSTEM_CLAUDE_MAX_TURNS:-50}
-  [[ "$max_budget" =~ ^[0-9]+([.][0-9]+)?$ && "$max_budget" != 0 && "$max_budget" != 0.0 ]] \
-    || { fail_pending invalid_native_budget handshake; return 1; }
-  [[ "$max_turns" =~ ^[1-9][0-9]*$ ]] \
-    || { fail_pending invalid_native_turn_limit handshake; return 1; }
-
-  command=(
-    claude -p --output-format json --model "$requested_model"
-    --json-schema "$schema_json"
-    --permission-mode "$permission_mode"
-    --tools "$tools"
-    --allowedTools "$allowed_tools"
-    --settings "$settings_file"
-    --max-budget-usd "$max_budget"
-    --max-turns "$max_turns"
-  )
-  if [[ $(field "$record" permissions.requested.writeRoots) == '[]' ]]; then
-    while IFS= read -r read_root; do
-      read_roots+=("$read_root")
-    done < <("$ms" adapter claude-read-roots --record "$record")
-  fi
-  for read_root in "${read_roots[@]}"; do command+=(--add-dir "$read_root"); done
-  [[ "$verb" == dispatch ]] || command+=(--resume "$requested_session")
+  # The argv, the envelope's mode/tool mapping, and the budget policy are
+  # the engine's (`adapter claude-command`, script-adapters-02/D25); this
+  # adapter reads the tokens back NUL by NUL like codex.sh does. Exit 3 is
+  # an invalid budget, 4 an invalid turn limit.
+  local -a claude_args
+  local command_file="$round_dir/claude-command.nul"
+  claude_args=(--record "$record" --model "$requested_model" --schema "$schema" --settings "$settings_file")
+  [[ "$verb" == dispatch ]] || claude_args+=(--session "$requested_session")
+  command_status=0
+  "$ms" adapter claude-command "${claude_args[@]}" >"$command_file" 2>>"$log" || command_status=$?
+  case "$command_status" in
+    0) ;;
+    3) fail_pending invalid_native_budget handshake; return 1 ;;
+    4) fail_pending invalid_native_turn_limit handshake; return 1 ;;
+    *) fail_pending runtime_error handshake; return 1 ;;
+  esac
+  command=()
+  while IFS= read -r -d '' token; do command+=("$token"); done <"$command_file"
+  (( ${#command[@]} > 0 )) || { fail_pending runtime_error handshake; return 1; }
 
   (
     cd "$workspace"
