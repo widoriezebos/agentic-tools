@@ -835,6 +835,44 @@ exist under the contract. Five failed VM rounds found them at 205,
 217, 302, 324, and 173 seconds each — the fast-fail loop the witness
 design itself made cheap.
 
+## D34 — W5 batch 1: five suite-boundary repairs (script-validate-1/-2/-3/-8/-9 sign-offs)
+
+**-1 (verb sign-off)**: `mission contract-hash` prints the canonical
+signed-bytes digest through contractCanonicalSignedBytes — hash-only,
+no grammar gate, exactly the verifier's endorsed shape (the seal path
+cannot accept the envelope-only fixture contract without reshaping it
+around instruments it does not need). The suite's awk shadow is
+deleted; byte-equivalence between verb and awk was proven on a
+trailing-whitespace-plus-approval shape before the deletion, and the
+exported surface carries a unit pin.
+
+**-2 (delegated sign-off)**: the fixture's freshness wait polls the
+EXISTING `job census-fresh` verb — the same ruling every dispatch
+gates on — so the interval-halving heuristic and the generation join
+live in exactly one place. No --wait convenience form was added (the
+poll loop already existed shell-side; a blocking form would be new
+surface without a second caller). The ARM shim's wait is
+newer-than-my-call, not freshness; its python parse became `json get`.
+
+**-3 (exit-code choice)**: the generation-mismatch refusal is
+ArmingWindowError in internal/dispatch, surfaced by `job census-fresh`
+as EXIT 9 — chosen as unused across dispatch.sh's spoken codes (0, 1,
+2, 3 CAS-settled, 4, 6 unresumable, 7 unchanged-usage, 77 refused
+permission) — with the message bytes unchanged. Two of the three suite
+retry loops now branch on the code; the tty fixture's loop still reads
+the structured censusGeneration= token because the tty wrapper's
+exit-code propagation is unverified — recorded residue, revisit if
+that wrapper ever proves transparent.
+
+**-8**: the adopted-mode registration checks read metasystem.runtimes
+through the config engine, honoring the flag/env/local/conf precedence
+the suite itself enforces three hundred lines later.
+
+**-9**: the capability-snapshot naming contract is pinned by
+TestSnapshotNameGrammar under the go gate (generated names against the
+grammar, sequence advance included); the source-text grep that failed
+on any reflow is gone.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
