@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
@@ -351,6 +352,7 @@ func runDispatchCensusFresh(args []string) int {
 	state := flags.String("state", "", "supervision arming record file")
 	arm := flags.String("arm", "", "re-arm command named in refusal messages")
 	repo := flags.String("repo", "", "repository path named in refusal messages")
+	root := flags.String("root", "", "metasystem root; when set, the verdict's fingerprint must match the armed code")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -358,7 +360,16 @@ func runDispatchCensusFresh(args []string) int {
 		fmt.Fprintln(os.Stderr, "job census-fresh: --verdict and --state are required")
 		return 2
 	}
-	return recordExit(dispatchcore.CensusFresh(*verdict, *state, *arm, *repo, time.Now()))
+	expected := ""
+	if *root != "" {
+		fp, err := census.Fingerprint(*root, *repo)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "dispatch refused: census fingerprint cannot be computed: %v\n", err)
+			return 1
+		}
+		expected = fp
+	}
+	return recordExit(dispatchcore.CensusFresh(*verdict, *state, *arm, *repo, expected, time.Now()))
 }
 
 func runDispatchWatcherCeiling(args []string) int {

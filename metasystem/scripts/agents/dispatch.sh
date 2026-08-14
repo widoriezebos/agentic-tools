@@ -103,14 +103,12 @@ report_plan_drift() {
 }
 
 require_fresh_census() {
-  local verdict="$agents/supervision/last-census.json" state="$agents/supervision/state.json" expected
+  # One verb, one verdict (script-orchestration-12): freshness AND the
+  # fingerprint match are both the engine's judgment now.
+  local verdict="$agents/supervision/last-census.json" state="$agents/supervision/state.json"
   [[ -f "$verdict" ]] || die 1 "dispatch refused: census verdict is absent; run $arm_supervision --repo $repo_scope"
   "$ms" job census-fresh --verdict "$verdict" --state "$state" \
-    --arm "$arm_supervision" --repo "$repo_scope" || exit $?
-  expected=$("$arm_supervision" fingerprint --repo "$repo_scope" 2>&1) \
-    || die 1 "dispatch refused: census fingerprint cannot be computed: $expected"
-  [[ "$(json_field "$verdict" fingerprint 2>/dev/null || true)" == "$expected" ]] \
-    || die 1 "dispatch refused: census fingerprint does not match the armed code, signatures, and configuration"
+    --arm "$arm_supervision" --repo "$repo_scope" --root "$root" || exit $?
 }
 
 json_field() { # file, dotted field

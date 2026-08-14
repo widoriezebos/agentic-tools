@@ -18,9 +18,12 @@ var hexDigest64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // CensusFresh verifies the last census verdict is trustworthy for a dispatch:
 // well-formed, successful, generation-matched to the current arming record,
-// attesting that record's exact bytes, and young enough. armHint and repoHint
-// only name the re-arm command in refusal messages.
-func CensusFresh(verdictPath, statePath, armHint, repoHint string, now time.Time) error {
+// attesting that record's exact bytes, young enough, and — when
+// expectedFingerprint is non-empty — carrying the fingerprint of the armed
+// code, signatures, and configuration (script-orchestration-12: the whole
+// gate renders ONE verdict; the fingerprint half used to be shell string
+// equality). armHint and repoHint only name the re-arm command in refusals.
+func CensusFresh(verdictPath, statePath, armHint, repoHint, expectedFingerprint string, now time.Time) error {
 	verdictBytes, err := os.ReadFile(verdictPath)
 	if err != nil {
 		return fmt.Errorf("dispatch refused: census verdict is unreadable: %v", err)
@@ -92,6 +95,9 @@ func CensusFresh(verdictPath, statePath, armHint, repoHint string, now time.Time
 		return fmt.Errorf(
 			"dispatch refused: census verdict is stale (age=%ds window=%ds); retry in a moment; re-arm with %s --repo %s if supervision is dead",
 			age, window, armHint, repoHint)
+	}
+	if expectedFingerprint != "" && asString(value["fingerprint"]) != expectedFingerprint {
+		return fmt.Errorf("dispatch refused: census fingerprint does not match the armed code, signatures, and configuration")
 	}
 	return nil
 }

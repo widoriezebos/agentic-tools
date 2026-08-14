@@ -406,8 +406,17 @@ func TestCensusFreshVerdicts(t *testing.T) {
 		"generation": 3, "stateDigest": hex.EncodeToString(digest[:]),
 	}
 	verdict := writeJSONFile(t, dir, "census.json", base)
-	if err := CensusFresh(verdict, statePath, "arm.sh", "/repo", now); err != nil {
+	if err := CensusFresh(verdict, statePath, "arm.sh", "/repo", "", now); err != nil {
 		t.Fatalf("fresh census refused: %v", err)
+	}
+	// The fingerprint half of the gate (script-orchestration-12): matching
+	// expectation passes, anything else refuses with the one verdict text.
+	if err := CensusFresh(verdict, statePath, "arm.sh", "/repo", "f", now); err != nil {
+		t.Fatalf("matching fingerprint refused: %v", err)
+	}
+	if err := CensusFresh(verdict, statePath, "arm.sh", "/repo", "other", now); err == nil ||
+		!strings.Contains(err.Error(), "census fingerprint does not match the armed code") {
+		t.Fatalf("fingerprint mismatch = %v", err)
 	}
 
 	stale := map[string]any{}
@@ -416,7 +425,7 @@ func TestCensusFreshVerdicts(t *testing.T) {
 	}
 	stale["completedAtEpoch"] = now.Unix() - 500
 	verdict = writeJSONFile(t, dir, "census-stale.json", stale)
-	err := CensusFresh(verdict, statePath, "arm.sh", "/repo", now)
+	err := CensusFresh(verdict, statePath, "arm.sh", "/repo", "", now)
 	if err == nil || !strings.Contains(err.Error(), "census verdict is stale") {
 		t.Fatalf("stale census = %v", err)
 	}
@@ -427,7 +436,7 @@ func TestCensusFreshVerdicts(t *testing.T) {
 	}
 	mismatch["generation"] = 2
 	verdict = writeJSONFile(t, dir, "census-gen.json", mismatch)
-	err = CensusFresh(verdict, statePath, "arm.sh", "/repo", now)
+	err = CensusFresh(verdict, statePath, "arm.sh", "/repo", "", now)
 	if err == nil || !strings.Contains(err.Error(), "censusGeneration=2 armedGeneration=3") {
 		t.Fatalf("generation mismatch = %v", err)
 	}
