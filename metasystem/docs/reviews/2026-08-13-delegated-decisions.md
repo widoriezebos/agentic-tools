@@ -1617,6 +1617,29 @@ named input to the item-14 design pass. This is the critique loop
 doing precisely what Wido pays it for: it cost one codex round and
 prevented a sealed-semantics break at one in the morning.
 
+## D57 — bm-2's first data point: the Devin arm cannot currently deliver; further bm-2 reps HELD
+
+**The rep (bm-2-20260814t213312z-37844/1, engine 275f533, sealed at
+budget 3, $4.57, 41 min)**: INVALID, stop-loss park, acceptance 0 —
+but the roster tells a different story than the baseline parks. This
+host dispatched THREE implementers and two extra critics; every one
+of them failed: three `empty_reply` at the delivery phase (the
+swe-1-7 session returned nothing usable) and two `dispatch-refused`
+at setup. The host scheduled correctly; the delegates could not
+deliver. Census stayed clean throughout — the uncontained arm did
+nothing anomalous, it just produced nothing.
+
+**Decision**: further bm-2 reps are HELD until the empty_reply
+integration failure is diagnosed — burning ~$5 of host tokens per rep
+against delegates that reply empty measures the defect, not the arm.
+The diagnosis runs tonight from the frozen target's adapter evidence
+(free); if it is a small adapter defect, the fix lands under the
+usual gates and bm-2 resumes; if it is Devin-side (beta service
+flaking), the arm waits for Wido with the evidence written up.
+Spend: $32.89 tonight, ~$122 of EUR 240 total. The budget-5 bm-1
+test rep (RULING 5's go/no-go) launches now on the freed machine —
+it was always first in line.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
