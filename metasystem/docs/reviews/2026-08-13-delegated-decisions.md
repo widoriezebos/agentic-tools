@@ -817,8 +817,23 @@ machine-level cache (not a trust boundary, not equivalent to a fresh
 gate — the critique's strongest point), and cross-boundary witness
 reuse (govulncheck data and race schedules are time-varying).
 
-**Measurement obligation**: the first boundary after implementation
-records before/after wall times here.
+**Measurement obligation, met (2026-08-14 late afternoon)**: the VM
+full suite at e8538af ran GREEN in 545 seconds (9.1 minutes) against
+~20 minutes at 724a136 pre-D33 — a 2.2x speedup, better than the
+design's 10-12 minute estimate. The witness armed once, both
+delivery-contract nested runs accepted it (asserted by the outer
+fixtures), and the profile-drift leg still ran the full validator.
+The implementation shook out six real defects on the way in, each its
+own commit: the fresh-tree 65.7% coverage trap (binary-driven
+fixtures skip without bin/metasystem — also the true cause of the
+morning's misattributed cold-cache flake), flake-family instances
+five and six (absent-tag scan, liveChild one-shot), a fail-open
+clean-roots test (a failed git status read as clean), GNU stat's
+stdout pollution under -f, a contract-env export ordered after the
+gate that needed it, and the gofmt tripwire whose subject does not
+exist under the contract. Five failed VM rounds found them at 205,
+217, 302, 324, and 173 seconds each — the fast-fail loop the witness
+design itself made cheap.
 
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
