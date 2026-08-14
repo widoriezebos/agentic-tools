@@ -55,7 +55,7 @@
   S4-2's 36s scaled cap under load ~5 (Wido active), GREEN SOLO on
   immediate reproduction — the morning's exact signature; VM-green
   authority holds per the dossier. Baseline recorded at bcc96b7,
-  memory updated. W5 BATCH 1 CLOSED (5/10; D34): -8/-9 a5bc087, -2 b3e3557, -1 aa7eae8, -3 de9e88d. Next after the batch boundary: W5.1 script-validate-4 SOLO (extract the two giant blocks into sub-suite scripts), then the W5 tail, W6, W7. Superseded: W5 batch 1
+  memory updated. W5 batch-1 boundary GREEN ON BOTH HOSTS at 975b0a9 (VM 491s; Mac sampling 1155s under active use — D33 paths Darwin-validated). W5 BATCH 1 CLOSED (5/10; D34): -8/-9 a5bc087, -2 b3e3557, -1 aa7eae8, -3 de9e88d. Next after the batch boundary: W5.1 script-validate-4 SOLO (extract the two giant blocks into sub-suite scripts), then the W5 tail, W6, W7. Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in
