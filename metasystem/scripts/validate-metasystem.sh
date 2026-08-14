@@ -16,7 +16,15 @@ case ${1:-} in
   # staged content is digest-identical to the tree its own full gate
   # proved. Its verdict line is its own — it can never be read as the
   # canonical suite's.
-  --delivery-contract) [[ $# -eq 1 ]] || { usage; exit 2; }; delivery_contract=1 ;;
+  --delivery-contract)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    delivery_contract=1
+    # Exported HERE, before anything runs: the gate hook executes long
+    # before the later scope blocks, and a witness is honored only when
+    # the gate can see it arrived under the contract.
+    export METASYSTEM_DELIVERY_CONTRACT=1
+    export METASYSTEM_SKIP_AGENT_FIXTURES=1
+    ;;
   -h|--help) usage; exit 0 ;;
   *) usage; exit 2 ;;
 esac
@@ -259,13 +267,10 @@ done
 template_mode=0
 [[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]] && template_mode=1
 if (( delivery_contract )); then
-  # The gate honors a handed witness only in delivery-contract runs, and
-  # the agent-fixture region is the orchestrating run's to prove. A
-  # delivery run is never the orchestrating template either — wherever it
+  # A delivery run is never the orchestrating template — wherever it
   # runs, adoption fixtures and the other template-only blocks belong to
-  # the FULL suite that spawned it.
-  export METASYSTEM_DELIVERY_CONTRACT=1
-  export METASYSTEM_SKIP_AGENT_FIXTURES=1
+  # the FULL suite that spawned it. (The contract env exports happen at
+  # flag parse, ahead of the gate hook.)
   template_mode=0
 fi
 if (( ! template_mode )); then
