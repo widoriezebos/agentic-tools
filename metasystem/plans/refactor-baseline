@@ -1,3 +1,3 @@
-sha=0795bf7c33b75eca53fb537094607357cd2123b7
-recorded_epoch=1786722673
-gate=bash scripts/validate-metasystem.sh (VM GREEN at 0795bf7 in 495s — W5.1 both halves proven; Mac sampling in flight)
+sha=8f6f1ebb6247679a386bb6db6e8977e530fff945
+recorded_epoch=1786725281
+gate=bash scripts/validate-metasystem.sh (VM GREEN at a969ce7 in 477s — W5 complete; docs-only approval commit since)
