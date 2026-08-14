@@ -3,10 +3,13 @@ package missionrunner
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // The host process lifecycle, driven with real processes (Phase 3b's
@@ -140,9 +143,39 @@ func TestTerminateGroup(t *testing.T) {
 	// which is the test harness's artifact, not the wind-down's failure.
 	go owned.Wait()
 	ownedPgid, _ := syscall.Getpgid(owned.Process.Pid)
-	if !groupOwned(ownedPgid, tag, false) {
-		owned.Process.Kill()
-		t.Skip("argv tagging not visible on this host; the owned path needs it")
+	// The child execs twice (bash, then the tagged sleep). Ownership is
+	// briefly provable through bash's transitional argv — which still
+	// carries the tag — and terminateGroup's own re-check can then land in
+	// the inner execve window (the flake dossier's mechanism) and rightly
+	// skip the signal. Wait for the proof in its final, stable form: a
+	// member whose argv[0] IS the tagged name, after which no exec
+	// transition remains.
+	stablyOwned := func() bool {
+		pids, err := identity.AllPids()
+		if err != nil {
+			return false
+		}
+		for _, pid := range pids {
+			if memberGroup, err := syscall.Getpgid(int(pid)); err != nil || memberGroup != ownedPgid {
+				continue
+			}
+			exact, state, err := identity.KernelProber{}.Probe(pid)
+			if err != nil || state != identity.Alive || len(exact.Argv) == 0 {
+				continue
+			}
+			if filepath.Base(exact.Argv[0]) == "sleep-"+tag {
+				return true
+			}
+		}
+		return false
+	}
+	stableBy := time.Now().Add(2 * time.Second)
+	for !stablyOwned() {
+		if time.Now().After(stableBy) {
+			owned.Process.Kill()
+			t.Skip("argv tagging not visible on this host; the owned path needs it")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	if err := engine.terminateGroup(ownedPgid, tag, false); err != nil {
 		t.Fatalf("terminating an owned group errored: %v", err)

@@ -14,7 +14,17 @@ helpers now wait out the window, bounded. Third instance 2026-08-14:
 TestGroupOwnsTag (internal/lease) failed the same way inside an
 adopted-copy nested gate (owned=false provable=false — the group scan's
 argv reads hit the window); its assertion now waits bounded like the
-other two. Production is not affected: real
+other two. Fourth instance 2026-08-14: TestTerminateGroup
+(internal/missionrunner), with a twist — its owned child execs TWICE
+(`bash -c 'exec -a sleep-TAG sleep 30'`), the one-shot ownership
+precondition passed on bash's transitional argv (which also carries the
+tag), and terminateGroup's own re-check then landed in the inner execve
+window and rightly skipped the signal ("no longer provably ours"),
+leaving the sleep alive for the assertion. The production skip is
+correct by design; the test now polls, bounded, for the proof in its
+final stable form (a member whose argv[0] IS the tagged name) before
+exercising the wind-down, after which no exec transition remains.
+Production is not affected: real
 callers announce themselves post-exec.
 
 ## ROOT-CAUSED 2026-08-14: the fixture identity-table tear
