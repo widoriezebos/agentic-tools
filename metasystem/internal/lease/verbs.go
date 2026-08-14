@@ -445,13 +445,21 @@ func initializeCursor(root, mainID string) error {
 
 var sessionUnsafe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-func safeSession(session string) string {
-	safe := strings.ToLower(strings.Trim(sessionUnsafe.ReplaceAllString(session, "-"), "-."))
+// Slug is the one home of the tag/filename sanitize rule (review
+// architecture-2): runs outside [A-Za-z0-9._-] collapse to a single dash,
+// leading and trailing dashes and dots trim, the result lowercases, and an
+// empty result becomes "session". Announcement filenames and the arming and
+// hook paths' instance tags must agree on these bytes, so they all call
+// this.
+func Slug(value string) string {
+	safe := strings.ToLower(strings.Trim(sessionUnsafe.ReplaceAllString(value, "-"), "-."))
 	if safe == "" {
 		return "session"
 	}
 	return safe
 }
+
+func safeSession(session string) string { return Slug(session) }
 
 func tokenHex(n int) (string, error) {
 	buf := make([]byte, n)

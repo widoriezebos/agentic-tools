@@ -1,14 +1,17 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit"
 )
+
+// The json family relays: the shell-facing rendering and edit decisions
+// live in internal/jsonedit (review architecture-2); these verbs parse
+// flags, read files, and print.
 
 // runJSONSet reads a JSON object file, sets the given top-level fields, and
 // writes it back atomically (indented, key-sorted). --int fields parse as
@@ -37,31 +40,14 @@ func runJSONSet(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	var object map[string]any
-	if err := json.Unmarshal(data, &object); err != nil {
+	object, err := jsonedit.SetFields(data, stringFields, intFields)
+	if err != nil {
+		if errors.Is(err, jsonedit.ErrUsage) {
+			fmt.Fprintf(os.Stderr, "json set: %v\n", err)
+			return 2
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1
-	}
-	for _, pair := range stringFields {
-		key, value, ok := strings.Cut(pair, "=")
-		if !ok {
-			fmt.Fprintf(os.Stderr, "json set: --field %q is not KEY=VALUE\n", pair)
-			return 2
-		}
-		object[key] = value
-	}
-	for _, pair := range intFields {
-		key, raw, ok := strings.Cut(pair, "=")
-		if !ok {
-			fmt.Fprintf(os.Stderr, "json set: --int %q is not KEY=VALUE\n", pair)
-			return 2
-		}
-		value, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "json set: --int %q is not an integer\n", pair)
-			return 2
-		}
-		object[key] = value
 	}
 	if err := writeIdentityJSON(*file, object); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -74,20 +60,12 @@ func runJSONSet(args []string) int {
 // values, split on the first '='), printed without HTML escaping. For shell
 // callers that need to construct a small JSON object from strings.
 func runJSONObject(args []string) int {
-	object := map[string]any{}
-	for _, arg := range args {
-		if i := strings.IndexByte(arg, '='); i >= 0 {
-			object[arg[:i]] = arg[i+1:]
-		}
-	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(object); err != nil {
+	line, err := jsonedit.Object(args)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Println(strings.TrimRight(buf.String(), "\n"))
+	fmt.Println(line)
 	return 0
 }
 
@@ -104,10 +82,10 @@ func runJSONGet(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	defaultSet := false
+	var defValue *string
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "default" {
-			defaultSet = true
+			defValue = def
 		}
 	})
 	if *field == "" || (*file == "") == (*value == "") {
@@ -122,55 +100,10 @@ func runJSONGet(args []string) int {
 		}
 		content = read
 	}
-	var current any
-	if err := json.Unmarshal(content, &current); err != nil {
+	out, ok := jsonedit.Get(content, *field, defValue)
+	if !ok {
 		return 1
 	}
-	for _, key := range strings.Split(*field, ".") {
-		object, ok := current.(map[string]any)
-		if !ok {
-			if defaultSet {
-				fmt.Println(*def)
-				return 0
-			}
-			return 1
-		}
-		current, ok = object[key]
-		if !ok {
-			// A missing field prints the default when one was given, matching
-			// the lenient readers that treat absent and null the same.
-			if defaultSet {
-				fmt.Println(*def)
-				return 0
-			}
-			return 1
-		}
-	}
-	switch typed := current.(type) {
-	case string:
-		fmt.Println(typed)
-	case float64:
-		// Integers print without a decimal point, so whole numbers
-		// are emitted without a trailing ".0".
-		if typed == float64(int64(typed)) {
-			fmt.Println(int64(typed))
-		} else {
-			fmt.Println(typed)
-		}
-	case bool:
-		fmt.Println(typed)
-	case nil:
-		if defaultSet {
-			fmt.Println(*def)
-			return 0
-		}
-		fmt.Println("null")
-	default:
-		encoded, err := json.Marshal(typed)
-		if err != nil {
-			return 1
-		}
-		fmt.Println(string(encoded))
-	}
+	fmt.Println(out)
 	return 0
 }

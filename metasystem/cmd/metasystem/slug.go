@@ -9,28 +9,20 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
-	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
-var nonSlugChar = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
-
-// runUtilSlug prints a stable slug of its positional argument: runs of
-// characters outside [A-Za-z0-9._-] collapse to a single dash, leading and
-// trailing dashes and dots are trimmed, the result is lowercased, and an empty
-// result becomes "session". Used to derive instance tags that must match
-// across the arming and hook paths.
+// runUtilSlug prints a stable slug of its positional argument. The sanitize
+// rule's one home is lease.Slug: instance tags derived here must match the
+// announcement filenames the lease writes (review architecture-2).
 func runUtilSlug(args []string) int {
 	input := ""
 	if len(args) > 0 {
 		input = args[0]
 	}
-	slug := strings.ToLower(strings.Trim(nonSlugChar.ReplaceAllString(input, "-"), "-."))
-	if slug == "" {
-		slug = "session"
-	}
-	fmt.Println(slug)
+	fmt.Println(lease.Slug(input))
 	return 0
 }
 
