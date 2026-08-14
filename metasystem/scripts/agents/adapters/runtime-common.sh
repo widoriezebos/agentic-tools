@@ -188,6 +188,15 @@ terminate_cli_child() { # exact child pid owned by this adapter
   wait "$child" 2>/dev/null || true
 }
 
+# normalize_return is plumbing the fixtures also consume directly; the
+# adjudication verb runs the same normalization internally.
+normalize_return() { # candidate file, optional transcript file
+  local candidate=$1 transcript=${2:-}
+  "$ms" adapter normalize-return --candidate "$candidate" --transcript "$transcript" \
+    --record "$record" --output "$round_dir/return.json" \
+    --markdown "$round_dir/return.md" --session "$session_id"
+}
+
 # The terminal-outcome state machine lives in `adapter adjudicate-turn`
 # (script-adapters-01/D24): the engine validates the candidate, chooses
 # every error code and phase name, and decides whether the one bounded
