@@ -866,101 +866,18 @@ grep -Fq 'NOTHING LEFT TO WORK ON' "$idle_repo/scripts/agents/supervision-hook.s
   && grep -Fq 'STILL WORKING' "$idle_repo/scripts/agents/supervision-hook.sh" \
   || { echo "turn-end hook lost one of its two plain-words states" >&2; exit 1; }
 
-# S4-12: a turn that ends while a plan still names an unblocked next step and
-# nothing is in flight must say so. Continuation is the one part of the loop no
-# prompt can guarantee, so it is checked rather than requested in prose.
-# The reporter also treats a running gate as work in flight. That is a fact
-# about the whole machine -- and this suite IS a gate run -- so the fixture
-# states it rather than racing it, and asserts the plan-reading it is about.
-export METASYSTEM_GATES_RUNNING=0
-open_work_root=$tmp/open-work
-mkdir -p "$open_work_root/plans" "$open_work_root/artifacts/agents/jobs"
-cat >"$open_work_root/plans/stream.md" <<'EOF'
-- Waiting on the human: nothing blocking
-- Next step: dispatch the runner
-EOF
-[[ "$("$ms" report open-work --repo "$open_work_root")" == "OPEN-WORK plans/stream.md: dispatch the runner" ]] \
-  || { echo "open work with nothing in flight was not reported" >&2; exit 1; }
-printf '{"status":"running"}\n' >"$open_work_root/artifacts/agents/jobs/live.json"
-[[ -z "$("$ms" report open-work --repo "$open_work_root")" ]] \
-  || { echo "open work was reported while a job was in flight" >&2; exit 1; }
-rm -f "$open_work_root/artifacts/agents/jobs/live.json"
-cat >"$open_work_root/plans/stream.md" <<'EOF'
-- Waiting on the human: D-9, which model tier to use
-- Next step: dispatch the runner
-EOF
-[[ -z "$("$ms" report open-work --repo "$open_work_root")" ]] \
-  || { echo "a stream waiting on the human was reported as open work" >&2; exit 1; }
-cat >"$open_work_root/plans/stream.md" <<'EOF'
-- Waiting on the human: nothing blocking
-- Next step: none
-EOF
-[[ -z "$("$ms" report open-work --repo "$open_work_root")" ]] \
-  || { echo "a settled next step was reported as open work" >&2; exit 1; }
+# The open-work, stale-plan, and gate-marker legs retired to Go
+# (script-fixtures-008/D45): the five basic cases were already
+# internal/report's openwork tests; the four shell-only cases —
+# chain-root round matching, per-stream staleness isolation, the
+# plans/README exclusion, and the reporter-to-gate-marker integration
+# with live-marker silencing and dead-marker pruning — were PORTED
+# green first (TestNoStaleWhenClaimNamesTheChainRootOfALiveRound,
+# TestStalenessIsPerStream, TestPlansReadmeIsNotAStream,
+# TestOpenWorkGateMarkerIntegration). The supervision-hook legs below
+# (S4-14, S4-15) keep exercising the shell hook itself, which has no
+# Go home.
 
-# A gate run is work in flight, and the reporter believes a gate marker only
-# while the process it names is alive. Asking the process table for anything
-# that MENTIONS the gate script reported "STILL WORKING: the test gates" with
-# no gate running anywhere -- and since a running gate counts as work in
-# flight, that false yes silenced this whole report.
-gate_probe_root=$tmp/gate-probe
-mkdir -p "$gate_probe_root/plans" "$gate_probe_root/artifacts/agents/jobs"
-cat >"$gate_probe_root/plans/stream.md" <<'EOF'
-- Waiting on the human: nothing blocking
-- Next step: dispatch the runner
-EOF
-gate_probe_markers=$gate_probe_root/artifacts/agents/supervision/gate-runs
-(
-  unset METASYSTEM_GATES_RUNNING
-  [[ -n "$("$ms" report open-work --repo "$gate_probe_root")" ]] \
-    || { echo "open work went unreported with no gate marker at all" >&2; exit 1; }
-  "$ms" gate register --root "$gate_probe_root" \
-    --gate fixture-gate.sh --pid $$ >/dev/null
-  [[ -z "$("$ms" report open-work --repo "$gate_probe_root")" ]] \
-    || { echo "a live gate run was not counted as work in flight" >&2; exit 1; }
-  python3 - "$gate_probe_markers" <<'PY'
-import json, sys
-from pathlib import Path
-directory = Path(sys.argv[1])
-for path in directory.glob("*.json"):
-    value = json.loads(path.read_text())
-    value.update({"pid": 999999, "pidStartedAt": 1})
-    (directory / "999999.json").write_text(json.dumps(value) + "\n")
-    path.unlink()
-PY
-  [[ -n "$("$ms" report open-work --repo "$gate_probe_root")" ]] \
-    || { echo "a gate marker whose process is dead still hid open work" >&2; exit 1; }
-  [[ -z "$(ls -A "$gate_probe_markers")" ]] \
-    || { echo "a gate marker whose process is dead was not pruned" >&2; exit 1; }
-)
-
-# S4-13: a plan whose own account of itself contradicts the job records. A check
-# that reads a stale plan reports the wrong work as confidently as the right
-# work, which is how this session lost a turn.
-cat >"$open_work_root/plans/stream.md" <<'EOF'
-- In flight right now: job design-critic-20260101t000000z-aaaa
-- Waiting on the human: nothing blocking
-- Next step: none
-EOF
-"$ms" report open-work --repo "$open_work_root" \
-  | grep -q 'STALE-PLAN plans/stream.md: claims work in flight while no job is running' \
-  || { echo "a plan claiming absent work was not reported stale" >&2; exit 1; }
-printf '{"jobId":"design-critic-20260101t000000z-aaaa-r3","status":"running"}\n' \
-  >"$open_work_root/artifacts/agents/jobs/live.json"
-[[ -z "$("$ms" report open-work --repo "$open_work_root" | grep STALE-PLAN)" ]] \
-  || { echo "a plan naming the chain root of a live round was called stale" >&2; exit 1; }
-cat >"$open_work_root/plans/other.md" <<'EOF'
-- In flight right now: nothing
-- Waiting on the human: nothing blocking
-- Next step: none
-EOF
-[[ -z "$("$ms" report open-work --repo "$open_work_root" | grep 'STALE-PLAN plans/other.md')" ]] \
-  || { echo "an idle stream was called stale because another stream had a job" >&2; exit 1; }
-rm -f "$open_work_root/plans/other.md" "$open_work_root/artifacts/agents/jobs/live.json"
-cp "$source_root/plans/README.md" "$open_work_root/plans/README.md"
-rm -f "$open_work_root/plans/stream.md"
-[[ -z "$("$ms" report open-work --repo "$open_work_root")" ]] \
-  || { echo "the plans README was mistaken for a stream" >&2; exit 1; }
 # The armed engine watcher publishes verdicts, not a census.log; the
 # transcript log and its byte-capped rotation belong to the shell job
 # watcher's --census mode, so rotation is proven there, in its own sandbox

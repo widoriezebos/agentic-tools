@@ -1071,6 +1071,18 @@ human-remedy greps proved to be two substrings of ONE refusal string,
 already asserted. The stage-level assert-conformance E2E remains the
 file's job. This closes W6 item 3 (D41-D44).
 
+## D45 — Open-work legs retire; the verifier's four missing cases ported first (script-fixtures-008 sign-off)
+
+**Decision**: the verifier was right that the 1:1 parity claim was
+false — the five basic cases were covered, but chain-root round
+matching, per-stream staleness isolation, the plans/README exclusion,
+and the reporter-to-gate-marker integration (live marker silences
+open work; dead marker ignored AND pruned by the reporting pass) lived
+only in shell. All four ported green into internal/report's openwork
+tests before the ninety-line section retired. The supervision-hook
+legs (S4-14, S4-15, the idle wording) stay: they exercise the shell
+hook itself, which has no Go home.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

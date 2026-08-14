@@ -1,6 +1,9 @@
 package report
 
 import (
+	"strconv"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,4 +93,91 @@ func TestNoStaleWhenClaimNamesRunningJob(t *testing.T) {
 	if lines := OpenWork(root); hasLine(lines, "STALE-PLAN") {
 		t.Fatalf("a claim naming a running job is accurate, not stale: %v", lines)
 	}
+}
+
+// The four shell-only cases, ported before retirement
+// (script-fixtures-008/D45).
+
+func TestNoStaleWhenClaimNamesTheChainRootOfALiveRound(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "a.md",
+		"- Next step: none\n- In flight right now: job design-critic-20260101t000000z-aaaa\n")
+	writeJob(t, root, "live.json",
+		`{"jobId":"design-critic-20260101t000000z-aaaa-r3","status":"running"}`)
+	if lines := OpenWork(root); hasLine(lines, "STALE-PLAN") {
+		t.Fatalf("a claim naming the chain root of a live round is accurate: %v", lines)
+	}
+}
+
+func TestStalenessIsPerStream(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "busy.md",
+		"- Next step: none\n- In flight right now: job design-critic-20260101t000000z-aaaa\n")
+	writePlan(t, root, "other.md",
+		"- In flight right now: nothing\n- Waiting on the human: nothing blocking\n- Next step: none\n")
+	writeJob(t, root, "live.json",
+		`{"jobId":"design-critic-20260101t000000z-aaaa","status":"running"}`)
+	if lines := OpenWork(root); hasLine(lines, "STALE-PLAN plans/other.md") {
+		t.Fatalf("an idle stream was called stale because another stream had a job: %v", lines)
+	}
+}
+
+func TestPlansReadmeIsNotAStream(t *testing.T) {
+	root := newPlanRoot(t)
+	writePlan(t, root, "README.md",
+		"Standing conventions for plans in this directory.\n")
+	if lines := OpenWork(root); len(lines) != 0 {
+		t.Fatalf("the plans README was mistaken for a stream: %v", lines)
+	}
+}
+
+// The reporter-to-gate-marker integration the package tests never drove:
+// a LIVE gate marker counts as work in flight (open work silenced); a
+// marker whose process is dead is ignored AND pruned by the reporting
+// pass itself.
+func TestOpenWorkGateMarkerIntegration(t *testing.T) {
+	root := t.TempDir() // no METASYSTEM_GATES_RUNNING override here
+	for _, dir := range []string{"plans", "artifacts/agents/jobs"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writePlan(t, root, "a.md", "- Next step: Finish the port\n- In flight right now: none\n")
+	markers := filepath.Join(root, "artifacts", "agents", "supervision", "gate-runs")
+	if err := os.MkdirAll(markers, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	self := os.Getpid()
+	live := `{"gate":"fixture-gate.sh","pid":` + itoa(self) + `,"pidStartedAt":` + itoa(int(mustSelfStart(t))) + `}`
+	if err := os.WriteFile(filepath.Join(markers, itoa(self)+".json"), []byte(live), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if lines := OpenWork(root); hasLine(lines, "OPEN-WORK") {
+		t.Fatalf("a live gate run was not counted as work in flight: %v", lines)
+	}
+	if err := os.Remove(filepath.Join(markers, itoa(self)+".json")); err != nil {
+		t.Fatal(err)
+	}
+	dead := `{"gate":"fixture-gate.sh","pid":999999,"pidStartedAt":1}`
+	if err := os.WriteFile(filepath.Join(markers, "999999.json"), []byte(dead), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if lines := OpenWork(root); !hasLine(lines, "OPEN-WORK") {
+		t.Fatalf("a gate marker whose process is dead still hid open work: %v", lines)
+	}
+	left, _ := os.ReadDir(markers)
+	if len(left) != 0 {
+		t.Fatalf("a dead gate marker was not pruned: %v", left)
+	}
+}
+
+func itoa(v int) string { return strconv.Itoa(v) }
+
+func mustSelfStart(t *testing.T) int64 {
+	t.Helper()
+	exact, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("cannot read own start: %v %v", state, err)
+	}
+	return exact.StartedAt.Unix()
 }
