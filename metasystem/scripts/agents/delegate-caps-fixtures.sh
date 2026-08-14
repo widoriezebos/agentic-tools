@@ -103,33 +103,9 @@ printf '[]\n' >"$process_fixture"
 printf '{}\n' >"$identity_fixture"
 export METASYSTEM_CENSUS_PROCESS_FILE="$process_fixture"
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$identity_fixture"
-fake_bin=$harness/fixture-bin
-mkdir -p "$fake_bin"
-cat >"$fake_bin/ps" <<'PY'
-#!/usr/bin/env python3
-import datetime, json, os, sys
-from pathlib import Path
-args = sys.argv[1:]
-try:
-    pid = args[args.index("-p") + 1]
-    value = json.loads(Path(os.environ["METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"]).read_text())[pid]
-except (ValueError, KeyError, OSError, json.JSONDecodeError):
-    raise SystemExit(1)
-command = value.get("command", "fake-process-identity")
-started = int(value.get("pidStartedAt", value.get("started", 1)))
-lstart = datetime.datetime.fromtimestamp(started).strftime("%a %b %d %H:%M:%S %Y")
-format_arg = args[args.index("-o") + 1] if "-o" in args else ""
-if "lstart=" in format_arg and "command=" in format_arg:
-    print(f"{lstart} {command}")
-elif "lstart=" in format_arg:
-    print(lstart)
-elif "ppid=" in format_arg:
-    print(f"1 {pid} {command}")
-else:
-    print(command)
-PY
-chmod +x "$fake_bin/ps"
-export PATH="$fake_bin:$PATH"
+# The fake ps shim retired (script-fixtures-007/D47): every identity
+# reader — including the armer since this same change — goes through the
+# engine, which honors METASYSTEM_FAKE_PROCESS_IDENTITY_FILE directly.
 process_start=$("$harness/bin/metasystem" proc started-at --pid $$)
 python3 - "$identity_fixture" "$$" "$process_start" <<'PY'
 import json, sys
@@ -150,8 +126,12 @@ tmp = path.with_suffix(path.suffix + ".tmp")
 tmp.write_text(json.dumps(value) + "\n")
 tmp.replace(path)
 PY
-( while true; do
-    python3 - "$identity_fixture" "$harness/artifacts/agents/supervision/state.json" <<'PY' || true
+# The 20ms mirror daemon retired (D47): supervision pids change only at
+# arm/re-arm, so each arming is followed by ONE explicit registration of
+# the published identities — same atomic rename discipline as the tear
+# fix, no standing writer racing every read.
+register_supervision_identities() {
+  python3 - "$identity_fixture" "$harness/artifacts/agents/supervision/state.json" <<'PY' || true
 import fcntl, json, sys
 from pathlib import Path
 identities, state_path = map(Path, sys.argv[1:])
@@ -175,14 +155,13 @@ with lock_path.open("a+") as lock:
     tmp.write_text(json.dumps(values) + "\n")
     tmp.replace(identities)
 PY
-    sleep 0.02
-  done ) &
-identity_updater=$!
+}
 "$harness/bin/metasystem" lease announce --root "$harness" \
   --session caps-fixture --pid $$ --start "$process_start" --tag caps-fixture --runtime fake >/dev/null
 
 arm=$harness/scripts/agents/arm-supervision.sh
 $arm --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" --tag caps-fixture >/dev/null
+register_supervision_identities
 
 state=$harness/artifacts/agents/supervision/state.json
 heartbeat=$harness/artifacts/agents/supervision/watcher.heartbeat.json
@@ -311,6 +290,7 @@ pass_fixture AUTH-R2-005
 # reservation into its lock wait after the prior watcher is stopped; it must
 # refuse the lower config-derived ceiling instead of silently taking over.
 $arm --repo "$harness" --shutdown >/dev/null
+register_supervision_identities
 # Same live-identity hold as the re-arm leg above (D18).
 "$ms" job owner-lock --command claim --dir "$harness/artifacts/agents/supervision/cap-authority.lock.d" \
   --pid $$ --tag delegate-caps-fixtures.sh

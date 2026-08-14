@@ -126,12 +126,14 @@ identity_alive() { # pid, start, optional tag
   local pid=$1 start=$2 tag=${3:-} command
   "$ms" proc alive --pid "$pid" --start-time "$start" >/dev/null 2>&1 || return 1
   [[ -z "$tag" ]] && return 0
-  command=$(ps -p "$pid" -o command= 2>/dev/null || true)
-  # Exact pid/start proves the recorded process is still live. If argv is not
-  # observable, conservatively treat the owner as live: inability to inspect
-  # a tag is never proof that permits takeover or signalling.
-  if [[ -z "$command" ]]; then return 0; fi
-  [[ "$command" == *"$tag"* ]]
+  # Through the engine's one identity source (script-fixtures-007/D47):
+  # the raw ps read here bypassed the fixture table every other reader
+  # honors. live = tag proven on the argv; unknown = argv not observable,
+  # conservatively live — inability to inspect a tag is never proof that
+  # permits takeover or signalling; stale or dead = not this identity.
+  local verdict
+  verdict=$("$ms" proc classify --pid "$pid" --tag "$tag" 2>/dev/null || echo unknown)
+  case "$verdict" in live|unknown) return 0 ;; *) return 1 ;; esac
 }
 
 atomic_json_identity() { # path, pid, start, tag, acquired-at

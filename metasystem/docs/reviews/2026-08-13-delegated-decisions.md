@@ -1100,6 +1100,23 @@ AGENTS.md is not in the gate-input closure — a nested target's doc
 drift is caught by that repo's own CI, not by the outer template run;
 same as every gate test, now written down.
 
+## D47 — The armer reads identity through the engine; the ps shim and mirror daemon retire (script-fixtures-007 sign-off)
+
+**Decision, in two halves. The production half**: arm-supervision.sh's
+identity_alive read the holder's argv through raw `ps`, bypassing the
+one-source identity rule every other reader honors — the exact class
+the review's identity work existed to close, found empirically when
+removing the fixture's ps shim broke arming. It now reads `proc
+classify` (fixture-aware, four-way), keeping the conservative rule
+that an unobservable argv never permits takeover. **The fixture half**:
+with the armer fixed, the python ps shim is dead weight and is gone;
+the 20ms identity-mirror daemon — the same standing writer whose torn
+writes caused the morning's classification escape — is replaced by ONE
+explicit registration after each arming, with the atomic-rename
+discipline from the tear fix. Supervision pids change only at arm
+time, so a loop was never the right shape. AUTH-R2-005..009 green end
+to end without either.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
