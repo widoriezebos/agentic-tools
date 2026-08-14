@@ -1659,22 +1659,16 @@ LOCK
   wait_for_agent_census_fresh() { # fixture name
     local name=$1 started=$SECONDS deadline=$((SECONDS + agent_fixture_cap_sec)) expected elapsed
     [[ -n "${agent_supervision_repo:-}" ]] || return 0
+    # The engine's OWN freshness ruling (script-validate-2/D34): the same
+    # verb every dispatch gates on, so the fixture can never drift from
+    # the policy internal/dispatch enforces.
     while (( SECONDS < deadline )); do
-      expected=$("$agent_supervision_repo/scripts/agents/arm-supervision.sh" \
-        fingerprint --repo "$agent_supervision_repo" 2>/dev/null || true)
-      if [[ -n "$expected" ]] && python3 - \
-          "$agent_supervision_repo/artifacts/agents/supervision/last-census.json" \
-          "$agent_supervision_repo/artifacts/agents/supervision/state.json" \
-          "$expected" <<'PY'
-import json,sys,time
-try: value=json.load(open(sys.argv[1])); state=json.load(open(sys.argv[2]))
-except (OSError,ValueError): raise SystemExit(1)
-age=int(time.time())-int(value.get("completedAtEpoch",0)); interval=int(value.get("intervalSec",0) or 0)
-raise SystemExit(0 if value.get("verdict")=="SUCCESS" and value.get("fingerprint")==sys.argv[3]
-                 and value.get("generation")==state.get("generation")
-                 and 0 <= age <= max(1,interval//2) else 1)
-PY
-      then return 0; fi
+      if "$agent_supervision_repo/bin/metasystem" job census-fresh \
+          --root "$agent_supervision_repo" --repo "$agent_supervision_repo" --arm rearm \
+          --verdict "$agent_supervision_repo/artifacts/agents/supervision/last-census.json" \
+          --state "$agent_supervision_repo/artifacts/agents/supervision/state.json" >/dev/null 2>&1; then
+        return 0
+      fi
       sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
     done
     elapsed=$((SECONDS - started))
@@ -3002,12 +2996,11 @@ called_at=$(date +%s)
 for argument in "$@"; do [[ "$argument" == --shutdown ]] && exit 0; done
 deadline=$((called_at + ${METASYSTEM_FIXTURE_AGENT_STATUS_CAP_SEC:?}))
 while (( $(date +%s) <= deadline )); do
-  completed=$(python3 - "$fixture_root/artifacts/agents/supervision/last-census.json" <<'PY' 2>/dev/null || true
-import json,sys
-try: print(json.load(open(sys.argv[1]))["completedAtEpoch"])
-except (OSError,ValueError,KeyError,TypeError): pass
-PY
-  )
+  # A plain field read through the engine's JSON reader — the wait here is
+  # newer-than-my-call, not the freshness policy (script-validate-2/D34).
+  completed=$("$fixture_root/bin/metasystem" json get \
+    --file "$fixture_root/artifacts/agents/supervision/last-census.json" \
+    --field completedAtEpoch --default 0 2>/dev/null || true)
   [[ ${completed:-0} -ge $called_at ]] && break
   sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:?}"
 done
