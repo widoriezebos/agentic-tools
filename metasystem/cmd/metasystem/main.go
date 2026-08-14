@@ -1,7 +1,9 @@
 // Command metasystem is the metasystem's one binary: each family
 // groups the decisions the shell wrappers invoke, exposed as git-style
 // verbs. Wrappers keep their historical names and exec into these
-// verbs.
+// verbs. File naming: one file per verb family (a verb lives in the file
+// of the family it REGISTERS under); cross-family helpers live in
+// helpers.go and nowhere else.
 package main
 
 import (

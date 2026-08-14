@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -13,15 +12,6 @@ import (
 // The lease family is the checkout write-authority surface (internal/lease):
 // announce/retire a main, classify a caller, gate a writer on holdership,
 // renew the lease, run a command held, and track protocol-error cursors.
-
-func printJSON(value any) {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return
-	}
-	fmt.Println(string(encoded))
-}
 
 // optionalEpoch returns a pointer to the --expected-epoch value only when it
 // was actually passed, so "absent" and "0" stay distinct.

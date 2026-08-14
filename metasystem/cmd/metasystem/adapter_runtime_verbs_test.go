@@ -69,14 +69,15 @@ func TestRunAdapterCodexUsageAndDevinSession(t *testing.T) {
 		t.Fatalf("codex-usage wrote no file: %v", err)
 	}
 
-	// Two new sessions in the same workspace is the ambiguous exit-2 case.
+	// Two new sessions in the same workspace is the ambiguous case: its own
+	// exit 3, distinct from the package-wide 2 for usage (D15/cli-6).
 	before := filepath.Join(dir, "before.json")
 	current := filepath.Join(dir, "current.json")
 	os.WriteFile(before, []byte(`[]`), 0o644)
 	os.WriteFile(current, []byte(`[{"id":"a","working_directory":"`+dir+`"},{"id":"b","working_directory":"`+dir+`"}]`), 0o644)
 	code := runAdapterDevinSession([]string{"--before", before, "--current", current, "--signal", "/none", "--workspace", dir})
-	if code != 2 {
-		t.Fatalf("ambiguous correlation should exit 2, got %d", code)
+	if code != 3 {
+		t.Fatalf("ambiguous correlation should exit 3, got %d", code)
 	}
 }
 

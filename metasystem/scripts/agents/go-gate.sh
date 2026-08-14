@@ -108,6 +108,15 @@ go test -race -cover ./internal/... | tee "$coverage_log" || {
   exit 1
 }
 
+# cmd's own tests run too. The package is coverage-ratchet-exempt as thin
+# wiring, but exempt-from-floors never meant exempt-from-running: a broken
+# cmd test rode through this gate unseen on 2026-08-14 because the race run
+# above scopes to ./internal/... (cli-10 follow-up).
+go test -race ./cmd/... >/dev/null || {
+  echo "go gate: cmd tests failed" >&2
+  exit 1
+}
+
 # Build the binary the shell fixtures and wrappers exec, through the one
 # shared fenced build (go-production-grade Phase 0a): stamped with its
 # source commit so its artifacts self-attest (GO-MIG-R4-009), CGO pinned

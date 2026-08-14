@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -68,41 +66,6 @@ func runSuperviseWriteOwnerIdentity(args []string) int {
 		return 1
 	}
 	return 0
-}
-
-// writeIdentityJSON writes indented, key-sorted JSON atomically: temp in the
-// target directory, fsync, rename, directory fsync.
-func writeIdentityJSON(path string, value any) error {
-	encoded, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	encoded = append(encoded, '\n')
-	// Through the durable-write owner (go-production-grade B5); the
-	// empty anchor preserves this writer's previous behavior exactly
-	// until its caller is converted to the two-outcome contract.
-	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
-	return writeErr
-}
-
-func readJSONObject(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	return doc, nil
-}
-
-func jsonIntField(v any) (int64, bool) {
-	f, ok := v.(float64)
-	if !ok || f != float64(int64(f)) {
-		return 0, false
-	}
-	return int64(f), true
 }
 
 // runSuperviseComponentIdentity prints "pid start tag" for one recorded

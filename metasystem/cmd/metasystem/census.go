@@ -5,41 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 )
-
-// runCensusFingerprint prints the supervision fingerprint for --repo, using
-// --root as the metasystem root (defaults to the binary's checkout).
-func runCensusFingerprint(args []string) int {
-	flags := flag.NewFlagSet("supervise fingerprint", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root to fingerprint")
-	root := flags.String("root", "", "metasystem root (defaults to this checkout)")
-	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *repo == "" {
-		fmt.Fprintln(os.Stderr, "supervise fingerprint: --repo is required")
-		return 2
-	}
-	metasystemRoot := *root
-	if metasystemRoot == "" {
-		if exe, err := os.Executable(); err == nil {
-			// <root>/bin/metasystem is two deep: Dir^2, not Dir^3 (cli-4;
-			// the third Dir pointed the default at the checkout's parent).
-			metasystemRoot = filepath.Dir(filepath.Dir(exe))
-		}
-	}
-	fp, err := census.Fingerprint(metasystemRoot, *repo)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "supervise fingerprint:", err)
-		return 1
-	}
-	fmt.Println(fp)
-	return 0
-}
 
 // runCensusRun computes a fixture-driven census verdict and writes it to
 // --output, printing the inventory and diagnostic lines for the run.

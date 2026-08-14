@@ -4,9 +4,53 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
+
+// runConfigTailor rewrites a metasystem.conf in place for the selected
+// runtime set: the runtime list becomes durable state, unselected
+// runtimes lose their role and mode bindings, per-runtime model keys,
+// and model-tier members, and the default runtime is set. Exit 2 marks
+// bad flags; exit 1 a failed rewrite.
+func runConfigTailor(args []string) int {
+	flags := flag.NewFlagSet("config tailor", flag.ContinueOnError)
+	conf := flags.String("conf", "", "path to the metasystem.conf to rewrite")
+	runtimes := flags.String("runtimes", "", "comma-separated selected runtimes, or none")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *conf == "" || *runtimes == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem config tailor --conf F --runtimes claude,devin,codex|none")
+		return 2
+	}
+	selected := strings.Split(*runtimes, ",")
+	seen := map[string]bool{}
+	for _, runtime := range selected {
+		switch runtime {
+		case "claude", "devin", "codex", "none":
+		default:
+			fmt.Fprintf(os.Stderr, "unknown runtime: %s (claude, devin, codex, or none)\n", runtime)
+			return 2
+		}
+		if seen[runtime] {
+			fmt.Fprintln(os.Stderr, "--runtimes contains a duplicate runtime")
+			return 2
+		}
+		seen[runtime] = true
+	}
+	if seen["none"] && len(selected) > 1 {
+		fmt.Fprintln(os.Stderr, "--runtimes none cannot be combined with other runtimes")
+		return 2
+	}
+	if err := validate.TailorConf(*conf, selected); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
 
 // runConfigGet resolves one configuration key through the full precedence order
 // (explicit flag, environment, .local override, mode-scoped key, committed key,
