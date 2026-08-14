@@ -238,3 +238,29 @@
    this one guards the thread of intent between turns; the design should
    say whether they are one mechanism or two. Path per the human: design,
    critique, implement — queued deliberately, not scheduled now.
+
+15. **Tracked long-running work with terminal-state watching — the
+    monitor facility as METASYSTEM behavior (human-raised 2026-08-14).**
+    The human's observation, verbatim intent: the launch-detached +
+    monitor + resume pattern proven during the D33 work "is generic
+    behavior that should end up in the meta system." Today it exists
+    only in the orchestrating agent's own harness (a Claude Code
+    Monitor watching a log condition) plus hand-written continuation
+    prompts — the metasystem cannot see a detached suite run at all
+    (the census would flag it UNTRACKED), and no other runtime gets
+    the pattern for free. Motivating evidence, same day: the harness's
+    10-minute cap killed tracked suite runs, forcing detached runs; a
+    monitor then caught a 205-second suite failure immediately, where
+    the fallback timer would have slept 15 minutes on it. The shape:
+    the metasystem registers a long-running RUN (suite, benchmark
+    cohort, any detached process) as a record with pid/start/log/
+    expected-verdict; a watcher pass (the existing
+    watch-background-jobs machinery is the natural host) emits its
+    terminal state as an event; the continuation — WHAT to do on
+    green, on red, on hang — rides the record, which is where this
+    composes with backlog item 14's goal system: 14 carries "what
+    next", this carries "when". Runtime-neutral like 14: the same
+    facility for every agent operating inside the metasystem, not a
+    Claude-specific convenience. Design → critique → implement; queue
+    behind item 14 or fold the two designs into one pass if 14's
+    critique reaches for run-watching anyway.
