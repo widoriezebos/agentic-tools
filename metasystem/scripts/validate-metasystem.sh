@@ -226,7 +226,11 @@ scripts/audit-metasystem.sh .
 # must refuse the gate, not pass it silently. The shim exits before any
 # expensive stage, so this replay is cheap; the nested gate needs the
 # concurrency waiver because this suite's own run holds the fence.
-if [[ -f go.mod ]] && command -v go >/dev/null 2>&1; then
+# Under the delivery contract the gate is a digest check plus rebuild —
+# it never runs gofmt, so this tripwire's subject does not exist there;
+# the outer run's full gate keeps it (D33).
+if [[ -f go.mod ]] && command -v go >/dev/null 2>&1 \
+  && ! delivery_contract_skip gate-fail-open-tripwire; then
   gofmt_shim_dir=$(mktemp -d)
   printf '#!/usr/bin/env bash\necho "shim: gofmt is broken" >&2\nexit 7\n' >"$gofmt_shim_dir/gofmt"
   chmod +x "$gofmt_shim_dir/gofmt"
