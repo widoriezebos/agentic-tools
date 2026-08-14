@@ -10,7 +10,11 @@ returns after fork but before the child's execve completes; in that window
 the kernel reports an empty argv and the auth identity (pid, start,
 command) is rightly unreadable. Load — a nested gate inside a full suite —
 stretches the window to test-visible width. Both child-probing test
-helpers now wait out the window, bounded. Production is not affected: real
+helpers now wait out the window, bounded. Third instance 2026-08-14:
+TestGroupOwnsTag (internal/lease) failed the same way inside an
+adopted-copy nested gate (owned=false provable=false — the group scan's
+argv reads hit the window); its assertion now waits bounded like the
+other two. Production is not affected: real
 callers announce themselves post-exec.
 
 ## STILL OPEN: receipt-stats greps flake in Mac suite runs

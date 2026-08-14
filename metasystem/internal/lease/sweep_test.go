@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -50,9 +51,21 @@ func TestGroupOwnsTag(t *testing.T) {
 	if !ok {
 		t.Skip("cannot read our own command")
 	}
-	// Our own group carries our own command, so it is proven owned.
-	if owned, provable := groupOwnsTag(int64(pgid), command); !owned || !provable {
-		t.Fatalf("our group should own our command tag: owned=%v provable=%v", owned, provable)
+	// Our own group carries our own command, so it is proven owned. The
+	// group scan can transiently fail to read argvs under nested-gate load
+	// (the execve/report window the flake dossier root-caused for the
+	// other child-probing tests); the property is steady-state, so the
+	// assertion waits it out, bounded.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		owned, provable := groupOwnsTag(int64(pgid), command)
+		if owned && provable {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("our group should own our command tag: owned=%v provable=%v", owned, provable)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	// A tag no process carries is not owned (but still provable).
 	if owned, provable := groupOwnsTag(int64(pgid), "no-process-carries-this-xyzzy"); owned || !provable {
