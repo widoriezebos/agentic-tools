@@ -1277,9 +1277,10 @@ green in full, build green.
 
 ## Closing tally — the review program is complete
 
-**The final program boundary is GREEN**: the full suite passed on the
-VM (the validation authority) at 2c92dfe in 532 seconds, with the Mac
-sampling run following per the D33 platform claim. The boundary earned
+**The final program boundary is GREEN ON BOTH HOSTS**: the full suite
+passed on the VM (the validation authority) at 2c92dfe in 532 seconds
+and on the Mac in 1,241 seconds — the Darwin full suite the D33
+platform claim requires before benchmark cohorts. The boundary earned
 its keep on the way: its first firing, at 230e600, was the coverage
 ratchet refusing internal/authority at 82.6% against its 95% floor —
 D51's ValidMode swap had added uncovered branches — and the fix

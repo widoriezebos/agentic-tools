@@ -94,8 +94,8 @@
   firing (230e600) was the coverage ratchet catching D51's ValidMode
   swap (authority 82.6% vs the 95% floor; TestValidMode restores
   95.7% at 2c92dfe), and the relaunched FINAL PROGRAM BOUNDARY is
-  GREEN on the VM at 2c92dfe in 532s (validation authority; Mac
-  sampling recorded when it lands). Baseline re-recorded at 2c92dfe.
+  GREEN ON BOTH HOSTS at 2c92dfe (VM 532s — validation authority;
+  Mac 1241s — the Darwin suite D33 requires before cohorts). Baseline re-recorded at 2c92dfe.
   The closing tally — per-tier accounting, eight declines with
   reopen conditions, fourteen residues, the D1-D52 index — is folded
   into docs/reviews/2026-08-13-delegated-decisions.md. All 101
