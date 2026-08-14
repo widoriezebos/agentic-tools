@@ -182,11 +182,99 @@ finish_protocol_error() { # violation file
   [[ $status -eq 0 || $status -eq 3 ]]
 }
 
+# F4 (D32): the custodian enforces the record's OWN deadlines from inside.
+# The deadlines are immutable once stamped, so they are read ONCE, bounded;
+# a record that cannot be read within the bound fails closed (sweep + die)
+# rather than waiting unbounded on an unreadable record. handshakeDeadline
+# is epoch seconds; capDeadline is a UTC ISO second, compared lexically
+# against a same-format now — sound for one fixed format.
+cache_record_deadlines() {
+  [[ -z "${deadlines_cached:-}" ]] || return 0
+  local attempt
+  for attempt in 1 2 3; do
+    if handshake_deadline_epoch=$("$ms" json get --file "$record" --field handshakeDeadline --default '' 2>/dev/null); then
+      cap_deadline_iso=$("$ms" json get --file "$record" --field capDeadline --default '' 2>/dev/null) || cap_deadline_iso=
+      deadlines_cached=1
+      [[ "$handshake_deadline_epoch" =~ ^[1-9][0-9]*$ ]] || handshake_deadline_epoch=
+      return 0
+    fi
+    sleep 0.2
+  done
+  printf '%s deadline cache failed: record unreadable; failing closed\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$log" 2>/dev/null || true
+  sweep_kill_domain || true
+  exit 1
+}
+
+# The kill domain is this supervisor's own process group minus itself
+# (membership survives reparenting, so orphaned grandchildren stay
+# enumerable). Per-pid sweeps; the return value is the DEATH PROOF: 0 only
+# when no member but this process remains. An indeterminable enumeration
+# refuses — a sweep must never act on an undercount.
+sweep_kill_domain() {
+  local signal members pid deadline
+  for signal in TERM KILL; do
+    members=$("$ms" proc group-members --pgid $$ --except $$) || return 1
+    [[ -n "$members" ]] || return 0
+    while IFS= read -r pid; do
+      [[ -n "$pid" ]] && kill -"$signal" "$pid" 2>/dev/null || true
+    done <<<"$members"
+    deadline=$(( $(date +%s) + 2 ))
+    while (( $(date +%s) < deadline )); do
+      members=$("$ms" proc group-members --pgid $$ --except $$) || return 1
+      [[ -n "$members" ]] || return 0
+      sleep 0.05
+    done
+  done
+  members=$("$ms" proc group-members --pgid $$ --except $$) || return 1
+  [[ -z "$members" ]]
+}
+
+# One expired deadline's enforcement: stand down BEFORE ANY SIGNAL on the
+# in-process handshake state (sessionId is published by THIS process, so
+# the check is single-writer and deterministic); sweep; land the terminal
+# verdict only behind the death proof. An unproven domain leaves the
+# record nonterminal — emitted, retried next tick, census-visible.
+enforce_expired_deadline() { # handshake|cap
+  local kind=$1
+  if [[ "$kind" == handshake ]] && (( handshake_done )); then
+    return 1 # the wait was won; nothing to enforce, nothing signaled
+  fi
+  if ! sweep_kill_domain; then
+    printf '%s %s-deadline sweep left the kill domain unproven; record stays nonterminal\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$kind" >>"$log" 2>/dev/null || true
+    return 1
+  fi
+  if [[ "$kind" == handshake ]]; then
+    fail_pending handshake_timeout handshake || true
+  else
+    # The reaper's and waiter's spelling: one record reads one way.
+    finish_running timeout budget-cap supervision "" || true
+  fi
+  printf '%s %s deadline enforced by the custodian (D32)\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$kind" >>"$log" 2>/dev/null || true
+  exit 0
+}
+
+check_record_deadlines() { # one tick's deadline verdicts; may not return
+  local now_epoch now_iso
+  cache_record_deadlines
+  if [[ -n "${handshake_deadline_epoch:-}" ]] && (( ! handshake_done )); then
+    now_epoch=$(date +%s)
+    (( now_epoch <= handshake_deadline_epoch )) || enforce_expired_deadline handshake || true
+  fi
+  if [[ -n "${cap_deadline_iso:-}" ]] && (( handshake_done )); then
+    now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    [[ ! "$now_iso" > "$cap_deadline_iso" ]] || enforce_expired_deadline cap || true
+  fi
+}
+
 wait_for_cli() { # child pid; sets cli_status and keeps liveness sidecars fresh
   local child=$1 tick=0 heartbeat_sleep
   heartbeat_sleep=$(adapter_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-100}") || return 2
   while kill -0 "$child" 2>/dev/null; do
     touch "$heartbeat"
+    check_record_deadlines
     tick=$((tick + 1))
     (( tick % 10 != 0 )) || touch "$log"
     sleep "$heartbeat_sleep"
