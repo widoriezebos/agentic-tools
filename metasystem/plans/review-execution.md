@@ -51,8 +51,11 @@
   baseline is re-recorded there.
 - D33 MEASURED AND GREEN: VM 545s (9.1 min) at e8538af vs ~20 min
   pre-D33 — 2.2x; six real defects shaken out en route (each its own
-  commit; see the D33 entry). Mac sampling in flight. Next: baseline
-  re-record on Mac verdict, memory update, then W5 batch 1
+  commit; see the D33 entry). Mac sampling at e8538af flaked at
+  S4-2's 36s scaled cap under load ~5 (Wido active), GREEN SOLO on
+  immediate reproduction — the morning's exact signature; VM-green
+  authority holds per the dossier. Baseline recorded at bcc96b7,
+  memory updated. Next: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in

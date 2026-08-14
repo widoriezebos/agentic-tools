@@ -488,18 +488,11 @@ for runtime in claude codex fake; do
   grep -Fq 'start-turn' <<<"$($host --help 2>&1)" \
     || { echo "$runtime host adapter does not advertise start-turn" >&2; exit 1; }
 done
-# The capability snapshot naming contract
-# (<runtime>-<version>-<configHash>-<date>-<seq %03d>.json) moved into the
-# engine with the python port; pin it at its Go source when that is present
-# (template mode). Adopted repositories carry only the binary, whose
-# selection fixtures above exercise the same names end to end.
-if (( metasystem_go_source )); then
-  grep -Fq 'prefix := fmt.Sprintf("%s-%s-%s-%s-", runtime, version, configHash, date)' \
-    internal/adapter/snapshot.go \
-    && grep -Fq 'name := fmt.Sprintf("%s%03d.json", prefix, sequence)' \
-      internal/adapter/snapshot.go \
-    || { echo "real adapter capability snapshot naming contract drifted" >&2; exit 1; }
-fi
+# The capability snapshot naming contract is pinned BEHAVIORALLY:
+# TestSnapshotNameGrammar (internal/adapter) under the go gate, plus the
+# fake-probe sequence fixture below — never by grepping Go source text
+# (script-validate-9/D34: a reflow with zero behavior change failed the
+# whole suite while a real regression was already caught behaviorally).
 for role in design-critic implementer code-critic verifier investigator behavior-judge; do
   for suffix in md requirements.json; do
     [[ -f "scripts/agents/roles/$role.$suffix" ]] \
@@ -568,7 +561,9 @@ done
 # remaining skill must be discoverable by each selected runtime, and copied
 # launcher profiles must remain byte-identical to their canonical source.
 if (( ! template_mode )); then
-  configured_runtimes=$(sed -n 's/^metasystem\.runtimes=//p' metasystem.conf)
+  # Through the config engine, honoring the same flag/env/local/conf
+  # precedence the suite itself enforces (script-validate-8/D34).
+  configured_runtimes=$(scripts/metasystem-config.sh get --key metasystem.runtimes)
   runtime_selected() { [[ ",$configured_runtimes," == *",$1,"* ]]; }
   for skill_dir in skills/*/; do
     [[ -d "$skill_dir" ]] || continue
