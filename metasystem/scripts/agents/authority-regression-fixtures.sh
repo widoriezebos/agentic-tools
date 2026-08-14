@@ -54,14 +54,18 @@ if grep -Fq 'reap_one "$job"' <<<"$wait_body"; then
   exit 1
 fi
 
-# WC-9: interval reaping authenticates supervision before it enters its
-# destructive loop, while the start gate lets arming publish custody first.
+# WC-9 (inverted by D19/script-orchestration-08): the standing reaper mode
+# is DEAD, and must stay dead — a shell daemon with kill authority is what
+# the standing-reaper ruling forbids, and Go owns the standing sweep. The
+# old leg proved the loop authenticated supervision; the new leg proves the
+# loop does not exist.
 reap_body=$(awk '/^reap_jobs\(\)/{flag=1} /^internal_register_custody\(\)/{flag=0} flag' "$dispatch")
-grep -Fq 'start_gate' <<<"$reap_body" \
-  || { echo "authority regression: reap_jobs lost its start gate" >&2; exit 1; }
-authority_line=$(grep -Fn 'internal_authority supervision-only' <<<"$reap_body" | head -1 | cut -d: -f1)
-loop_line=$(grep -Fn 'while true' <<<"$reap_body" | head -1 | cut -d: -f1)
-[[ -n "$authority_line" && -n "$loop_line" && "$authority_line" -lt "$loop_line" ]] \
-  || { echo "authority regression: reap_jobs enters its loop before authenticating supervision" >&2; exit 1; }
+[[ -n "$reap_body" ]] || { echo "authority regression: reap_jobs not found" >&2; exit 1; }
+if grep -Eq -- '--interval|while true|standing_reaper' <<<"$reap_body"; then
+  echo "authority regression: a standing reap loop reappeared in dispatch.sh (D19 forbids shell kill daemons)" >&2
+  exit 1
+fi
+grep -Fq '__reap-held' <<<"$reap_body" \
+  || { echo "authority regression: reap_jobs lost its lease-held re-entry" >&2; exit 1; }
 
 echo "authority regression fixtures: PASSED"

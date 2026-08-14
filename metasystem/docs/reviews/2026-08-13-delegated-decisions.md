@@ -414,6 +414,32 @@ ownerless lock no longer blocks anyone.
 verb. The generic verb already carries the protocol; a second spelling of
 the same claim would be one more surface to keep honest.
 
+## D19 — The shell standing reaper dies (script-orchestration-08 sign-off)
+
+**Decision:** dispatch.sh's standing-reaper mode is deleted — the
+--interval/--heartbeat/--instance-tag/--start-gate flags, the custody start
+gate, the supervision-only authentication, the tick loop, and every
+standing-gated verdict branch (stale-claim-epoch, abandoned-setup, the
+terminal-status skip, the busy-lock comeback). Nothing in production ever
+launched it: the supervise owner launches the GO reaper component, and the
+shadow verdicts' live owners are internal/lease/sweep.go,
+internal/supervise/reaper.go, and the mission drain. What remains is the
+lease-held single-shot reap that wait_for_job and the drain actually call.
+The F6 report-without-exit carve-out (a standing sweep must not die before
+its heartbeat) dies with the mode; the single-shot sweep keeps the
+no-starvation visit-all-then-report contract with exit 1.
+
+**Fixture transform:** the WC-9 authority leg proved the standing loop
+authenticated supervision before entering it; with no loop, the leg now
+proves the loop STAYS deleted (refusing --interval / while-true /
+standing_reaper in reap_jobs) and that the lease-held re-entry survives —
+the guard the deletion actually needs, since a re-activated shell daemon
+would carry kill authority the standing-reaper ruling explicitly denies.
+
+**Alternative not taken:** keeping the mode behind a refusal ("standing
+mode retired; use supervise component reaper"). Rejected: 80 lines of
+kill-capable code kept compiling toward divergence, guarded only by prose.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

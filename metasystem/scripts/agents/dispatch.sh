@@ -15,7 +15,7 @@ Usage:
   scripts/agents/dispatch.sh status --job <job-id>
   scripts/agents/dispatch.sh cancel --job <job-id>
   scripts/agents/dispatch.sh close --job <root-id> [--runner-closed]
-  scripts/agents/dispatch.sh reap [--job <job-id>] [--interval <sec>]
+  scripts/agents/dispatch.sh reap [--job <job-id>]
 
 Exit codes: 0 success/completed; 2 usage; 3 failed; 4 timeout;
 5 vanished; 6 unknown status job; 7 malformed status record; 8 cancelled.
@@ -38,7 +38,6 @@ record_locks="$agents/record-locks"
 capabilities="$agents/capabilities"
 worktrees="$agents/worktrees"
 process_instance_tag=
-standing_reaper=0
 cap_authority_lock_held=0
 exit_cleanup_job=
 exit_cleanup_chain=
@@ -48,8 +47,8 @@ if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
 else
   emit_event() { :; }
 fi
-emit_component() { # reaper when standing, dispatch otherwise (D-3a attribution)
-  (( standing_reaper )) && printf reaper || printf dispatch
+emit_component() { # D-3a attribution: the only shell reaper left is dispatch-held
+  printf dispatch
 }
 reap_verdict_events() { # job, verdict, reason, cas_rc, cas_out
   local job=$1 verdict=$2 reason=$3 cas_rc=$4 observed=$5 job_mission
@@ -694,7 +693,6 @@ reap_one_locked() { # job
   status=$(json_field "$record" status 2>/dev/null || true)
   case "$status" in
     completed|failed|timeout|cancelled)
-      (( standing_reaper == 0 )) || return 0
       root_id=$(root_job_id "$job" 2>/dev/null || true)
       [[ -n "$root_id" ]] && aggregate_chain_usage "$root_id"
       aggregate_mission_usage "$record" || true
@@ -704,35 +702,15 @@ reap_one_locked() { # job
     pending-setup|pending|running) ;;
     *) return ;;
   esac
-  record_epoch=$(json_field "$record" claimEpoch 2>/dev/null || true)
-  lease_epoch=$(json_field "$agents/mains/worktree-lease.json" claimEpoch 2>/dev/null || true)
-  if (( standing_reaper )) && [[ "$record_epoch" =~ ^[0-9]+$ && "$lease_epoch" =~ ^[1-9][0-9]*$ ]] \
-      && (( record_epoch < lease_epoch )); then
-    if [[ "$status" != pending-setup ]]; then
-      wind_down_group "$record" || return 1
-    fi
-    patch=$(mktemp "$record_locks/stale-epoch.XXXXXX")
-    printf '{"error":"stale-claim-epoch","phase":"claim-sweep","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
-    record_cas "$job" "$status" failed "$patch" || true
-    return 0
-  fi
   # One verb call yields every record-only reap fact: pending-setup
   # abandonment, the handshake window, and budget expiry. Budget expiry is the
   # SAME decision code the supervision reaper runs, so the two can never
   # disagree about one record.
   facts=$("$ms" job reap-facts --record "$record" --grace "$handshake_backstop_grace_sec") || return 1
   if [[ "$status" == pending-setup ]]; then
-    # No process has been launched for a pending-setup record, so reaping one
-    # can orphan nothing. Its creating dispatcher finishes setup in seconds --
-    # a record still abandoned after the generous setup age belongs to a
-    # dispatcher that died between create and setup, and skipping it
-    # unconditionally left such debris pending forever (one sat untouched for
-    # seven hours in a live mission).
-    if (( standing_reaper )) && [[ "$("$ms" json get --value "$facts" --field setupAbandoned)" == true ]]; then
-      patch=$(mktemp "$record_locks/abandoned-setup.XXXXXX")
-      printf '{"error":"abandoned-setup","phase":"claim-sweep"}\n' >"$patch"
-      record_cas "$job" pending-setup failed "$patch" || true
-    fi
+    # Abandoned pending-setup debris belongs to the Go reapers now
+    # (internal/supervise/reaper.go and missionrunner drain, D19): the
+    # dispatch-held single-shot reap launches nothing and leaves it.
     return 0
   fi
   pid=$(json_field "$record" pid 2>/dev/null || true)
@@ -804,15 +782,10 @@ reap_one_locked() { # job
 
 reap_one() { # job
   local job=$1 result
-  # A standing reaper that finds the lock busy simply comes back on its next
-  # tick. An explicit `reap --job` has no next tick: skipping silently returns
-  # success to a caller whose job was never looked at, which is how a reap that
-  # raced the standing reaper reported nothing and changed nothing.
-  if (( standing_reaper )); then
-    acquire_lifecycle_lock "$job" || return 0
-  else
-    acquire_lifecycle_lock_until "$job" 5 || return 1
-  fi
+  # An explicit reap has no next tick: skipping a busy lock silently would
+  # return success to a caller whose job was never looked at, so the wait is
+  # bounded and a timeout is a real failure.
+  acquire_lifecycle_lock_until "$job" 5 || return 1
   set +e
   reap_one_locked "$job"
   result=$?
@@ -1261,22 +1234,23 @@ close_chain() {
   release_chain_lock "$root_id"; trap - EXIT
 }
 
+# The STANDING reaper mode died here (script-orchestration-08/D19): nothing
+# in production ever launched `reap --interval`, Go owns the standing sweep
+# (supervise component reaper), and its shadow verdicts — stale-claim-epoch,
+# abandoned-setup — live in internal/lease/sweep.go and the Go reapers. What
+# remains is the lease-held single-shot reap that wait_for_job and the
+# mission drain actually use. A kill-capable shell daemon mode must not come
+# back: the standing-reaper ruling denies shell reapers kill authority.
 reap_jobs() {
-  local job= interval= supervision_heartbeat= supervision_tag= start_gate= interval_ms interval_sleep gate_cap gate_started
+  local job=
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
-      --interval) [[ $# -ge 2 ]] || { usage; exit 2; }; interval=$2; shift 2 ;;
-      --heartbeat) [[ $# -ge 2 ]] || { usage; exit 2; }; supervision_heartbeat=$2; shift 2 ;;
-      --instance-tag) [[ $# -ge 2 ]] || { usage; exit 2; }; supervision_tag=$2; shift 2 ;;
-      --start-gate) [[ $# -ge 2 ]] || { usage; exit 2; }; start_gate=$2; shift 2 ;;
       *) usage; exit 2 ;;
     esac
   done
   [[ -z "$job" ]] || valid_id "$job" || { usage; exit 2; }
-  [[ -z "$interval" || "$interval" =~ ^[1-9][0-9]*$ ]] || { usage; exit 2; }
-  [[ -z "$supervision_heartbeat" || ( -n "$interval" && -n "$supervision_tag" ) ]] || { usage; exit 2; }
-  if [[ -z "$interval" && $lease_reentry -eq 0 ]]; then
+  if [[ $lease_reentry -eq 0 ]]; then
     lease_entry_check
     if [[ -n "$job" ]]; then
       lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job"
@@ -1285,49 +1259,21 @@ reap_jobs() {
     fi
     return
   fi
-  if [[ -n "$interval" ]]; then
-    if [[ -n "$start_gate" ]]; then
-      gate_cap=$(dispatch_fixture_wait_cap 10)
-      gate_started=$SECONDS
-      while [[ ! -e "$start_gate" ]]; do
-        (( SECONDS - gate_started < gate_cap )) \
-          || die 1 "standing reap start gate timed out before supervision custody was published"
-        sleep 0.02
-      done
-      rm -f "$start_gate"
+  if [[ -n "$job" ]]; then reap_one "$job"; else
+    mkdir -p "$jobs"
+    # One failing reap must not starve the jobs after it in sort order
+    # (script-orchestration-07): visit every record, then report the
+    # sweep's verdict — the contract the Go reaper already documents.
+    sweep_failed=0
+    for record in "$jobs"/*.json; do
+      [[ -f "$record" ]] || continue
+      reap_one "$(basename "${record%.json}")" || sweep_failed=1
+    done
+    if (( sweep_failed != 0 )); then
+      echo "reap sweep finished with failures (see above)" >&2
+      exit 1
     fi
-    internal_authority supervision-only
-    standing_reaper=1
-    interval_ms=${METASYSTEM_CENSUS_INTERVAL_MS:-$((interval * 1000))}
-    interval_sleep=$(milliseconds_to_sleep "$interval_ms")
   fi
-  while true; do
-    if [[ -n "$job" ]]; then reap_one "$job"; else
-      mkdir -p "$jobs"
-      # One failing reap must not starve the jobs after it in sort order
-      # (script-orchestration-07): visit every record, then report the
-      # sweep's verdict — the contract the Go reaper already documents.
-      # In STANDING mode (--interval) the verdict is reported without
-      # exiting: one persistently failing record must not terminate the
-      # whole reaper before its heartbeat (F6 of the drain-stall
-      # diagnosis — strictly worse than the starvation this replaced).
-      sweep_failed=0
-      for record in "$jobs"/*.json; do
-        [[ -f "$record" ]] || continue
-        reap_one "$(basename "${record%.json}")" || sweep_failed=1
-      done
-      if (( sweep_failed != 0 )); then
-        echo "reap sweep finished with failures (see above)" >&2
-        [[ -n "$interval" ]] || exit 1
-      fi
-    fi
-    if [[ -n "$supervision_heartbeat" ]]; then
-      "$ms" supervise heartbeat --path "$supervision_heartbeat" --function reaper \
-        --pid "$$" --tag "$supervision_tag" || true
-    fi
-    [[ -n "$interval" ]] || break
-    sleep "$interval_sleep"
-  done
 }
 
 internal_register_custody() {
