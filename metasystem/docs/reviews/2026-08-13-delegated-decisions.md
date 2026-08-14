@@ -1485,6 +1485,25 @@ Each is recorded where stated; nothing here blocks the program's close.
 - D51 — the W7 smalls: the glossary tells the truth, the routing index routes, eleven package docs match their code; the contract rename declined.
 - D52 — the W7 documents: the engine map, the dispatch-sequence ground truth, and the four promoted contracts; closes W7's numbered items.
 
+## D53 — The approved baseline reps run as a FRESH cohort at the current engine
+
+**Decision**: the 2-3 approved baseline repetitions run as a new
+cohort at the just-validated engine (2c92dfe line), not as additions
+to bm-1-20260813t203657z at e5cbe66. Reasoning: the review program
+substantially changed the engine since e5cbe66 (a production identity
+fix, the drain and fence work, the suite's own witnesses), the series'
+next comparison is baseline-vs-bm-2 and bm-2 will run at the current
+engine, and the old cohort contributes one valid rep of history that
+mixing engines inside one arm would muddy rather than strengthen.
+Three repetitions (the approval's upper count) for variance
+characterization, ~$27 against the EUR 240 ceiling with ~$90 spent.
+The alternative not taken: pinning new reps to e5cbe66 for
+within-cohort purity — that would measure an engine nobody ships
+anymore. Sealing and signing ride the standing "sign in my name"
+delegation, as in every prior cohort. D33's Darwin-suite precondition
+is satisfied by the final boundary's Mac run at 2c92dfe (1,241s,
+green).
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
