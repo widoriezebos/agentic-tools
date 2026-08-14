@@ -31,7 +31,7 @@
     "jobCapMin": 180,
     "jobs": 12,
     "ledgerCycleBudget": 8,
-    "ledgerNoGainBudget": 3,
+    "ledgerNoGainBudget": 5,
     "wallClockHours": 12
   },
   "fencesNote": "Revised 2026-08-10 by the human's ruling, made while reviewing five repetitions across two delegate models that all scored acceptance 0.018868 under jobCapMin=15: caps exist to protect against a stuck loop burning money, NOT to define the experiment \u2014 an agent must get the chance to COMPLETE its mission, because completion (and its time and cost) is itself a reported result and a capped run measures the fence rather than the agent. Evidence for the sizes: a 15-minute timeout killed an implementer worktree holding 1,322 compiling lines (the 2026-08-09 post-mortem), and Devin single inference calls measure ~5 minutes, so substantive jobs get a 180-minute circuit breaker, host turns 240 minutes (a turn waits on its longest job), and the mission 12 wall-clock hours. Previous fences (jobCapMin 15, hostTurnCapMin 20, wallClockHours 3) produced the flat-floor cohorts recorded under version 0.1. The other fences stay: cycles, jobs, concurrency, and the ledger budgets are loop protection, not time pressure. Cost exposure rises with the wall-clock ceiling; the fences still stop a runaway long before the exposure does.",

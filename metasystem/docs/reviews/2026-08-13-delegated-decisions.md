@@ -1536,6 +1536,33 @@ residual between heartbeats is accepted as part of the approval. One
 repetition first; the arm's continuation is decided on its data.
 A push notification tells Wido bm-2 is live the moment it starts.
 
+## HUMAN RULINGS — Wido, 2026-08-14 night, before a 10-hour absence
+
+Asked four questions; the answers below are standing rulings for the
+unattended stretch, given in writing:
+
+1. **Series plan**: "Drive to 2 valid reps/arm" — baseline, bm-2, and
+   bm-2s each run until they hold two VALID repetitions; empty parks
+   do not count. Roughly $40-90 of remaining headroom at ~$10 a run,
+   inside the EUR 240 ceiling.
+2. **Devin overnight**: "Yes, same monitoring" — if bm-2 rep 1 is
+   clean, further uncontained swe-1-7 reps run unattended under the
+   15-minute heartbeat and driver Monitor.
+3. **Fuse setting**: "Raise to 5 overnight" — Wido's contract
+   amendment. ledgerNoGainBudget goes 3 → 5 in the bm-1 and bm-2
+   manifests for cohorts provisioned from now on. Delegate's note:
+   bm-2s already carried 8, its own deliberate setting, so it is NOT
+   lowered to 5 — the ruling was a raise from 3, not a flattening;
+   flagged here for review. The bm-2 rep already in flight was sealed
+   at 3 and stays 3. Comparability note: overnight cohorts at budget 5
+   are a variant against tonight's budget-3 cohort; the spec is
+   pre-1.0 and comparison-ineligible anyway, and every scorecard
+   pins its manifest.
+4. **After benchmarks**: "Item 14 then 15" — the goal-system design
+   pass, then the monitor facility, critique-looped, DESIGNS ONLY:
+   the option allowing same-night implementation was offered and not
+   taken, so nothing implements while he is away.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

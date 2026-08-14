@@ -149,7 +149,7 @@
     "wallClockHours": 3,
     "hostTurnCapMin": 20,
     "ledgerCycleBudget": 8,
-    "ledgerNoGainBudget": 3,
+    "ledgerNoGainBudget": 5,
     "approved": "2026-08-05, under the human's blanket approval; still an experiment per the promotion rule"
   },
   "fencesNote": "Provisional and unapproved. These are an experiment, not a belief: trial runs record what they consume and each fence becomes ceil(observed_max * 1.5), excluding trials that parked at that fence. A human must approve them before any run spends money.",
