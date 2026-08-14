@@ -82,6 +82,20 @@ gate_run_marker=$(bin/metasystem gate register --root "$root" \
 # a no-op there — the go gate, the seam tripwire, and the owner-alone
 # fixtures alike. It also needs process visibility, so it is out of
 # delegate scope.
+# The delivery mode is declared, never inferred (D33 closing the D17
+# fail-open): wherever a metasystem.conf exists the key must too, and
+# source delivery without the module is a damaged payload — a deleted
+# go.mod must not read as "no engine expected".
+if [[ -f metasystem.conf ]]; then
+  engine_delivery=$(sed -n 's/^metasystem\.engine-delivery=//p' metasystem.conf | head -1)
+  [[ -n "$engine_delivery" ]] \
+    || { echo "metasystem.engine-delivery is required in metasystem.conf; a missing key reads as damage, not as a mode" >&2; exit 1; }
+  if [[ "$engine_delivery" == source && ! -f go.mod ]]; then
+    echo "metasystem.engine-delivery=source but go.mod is absent — the engine source did not ship" >&2
+    exit 1
+  fi
+fi
+
 metasystem_go_source=0
 grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod && metasystem_go_source=1
 if (( ! metasystem_go_source )) && [[ -f internal/missionrunner/stoploss.go || -f internal/mission/ledger.go ]]; then
@@ -89,7 +103,47 @@ if (( ! metasystem_go_source )) && [[ -f internal/missionrunner/stoploss.go || -
   exit 1
 fi
 if (( ! delegate_scope )) && (( metasystem_go_source )); then
-  bash scripts/agents/go-gate.sh
+  # The witness-producing gate (D33): when the gate-input roots are clean
+  # against HEAD, the full gate runs inside an extracted HEAD snapshot —
+  # the exact bytes adoption stages — and its witness is handed to the
+  # nested delivery-contract runs this suite spawns. Dirty roots, seed,
+  # force, or any refusal fall back to the plain worktree gate, no
+  # witness, exactly as before.
+  witness_state=
+  if (( ! delivery_contract )) \
+    && [[ "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" != 1 && "${METASYSTEM_GATE_FORCE:-0}" != 1 ]] \
+    && [[ -z "$(git status --porcelain -- cmd internal go.mod go.sum scripts/agents 2>/dev/null)" ]]; then
+    witness_state=$(mktemp -d)
+    chmod 700 "$witness_state"
+    witness_snap=$(mktemp -d)
+    chmod 700 "$witness_snap"
+    witness_run="run-$$-$RANDOM"
+    witness_toplevel=$(git rev-parse --show-toplevel)
+    witness_prefix=${root#"$witness_toplevel"}; witness_prefix=${witness_prefix#/}
+    if [[ -n "$witness_prefix" ]]; then
+      git -C "$witness_toplevel" archive "HEAD:$witness_prefix" | tar -x -C "$witness_snap"
+    else
+      git -C "$witness_toplevel" archive HEAD | tar -x -C "$witness_snap"
+    fi
+    if ( cd "$witness_snap" \
+        && METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
+           METASYSTEM_GATE_WITNESS_RUN="$witness_run" bash scripts/agents/go-gate.sh ) \
+      && [[ -f "$witness_state/witness.json" ]]; then
+      # Clean roots mean the snapshot's binary IS this tree's binary.
+      mkdir -p bin && cp "$witness_snap/bin/metasystem" bin/metasystem
+      export METASYSTEM_GATE_WITNESS="$witness_state/witness.json"
+      export METASYSTEM_GATE_WITNESS_ROOT="$witness_state"
+      export METASYSTEM_GATE_WITNESS_RUN="$witness_run"
+      echo "gate witness armed for this run's nested validations"
+    else
+      echo "witness gate did not complete; falling back to the plain gate" >&2
+      rm -rf "$witness_state"; witness_state=
+      bash scripts/agents/go-gate.sh
+    fi
+    rm -rf "$witness_snap"
+  else
+    bash scripts/agents/go-gate.sh
+  fi
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a
     # decision verb, and when the outer run's witness matches this tree
@@ -4048,11 +4102,13 @@ copy_tree_without_artifacts() { # source root, destination
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
   perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=/m; s/^role\..*\n//mg; s/^mode\..*\.role\..*\n//mg' "$adopted/metasystem.conf"
   fill_harness_conf "$adopted/metasystem.conf" "$tmp/adopted-evidence"
-  bash "$adopted/scripts/validate-metasystem.sh" >"$tmp/nested-pruned.log" 2>&1 || {
+  bash "$adopted/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/nested-pruned.log" 2>&1 || {
     echo "adopted-mode validation failed for a copy with one skill pruned" >&2
     tail -20 "$tmp/nested-pruned.log" >&2
     exit 1
   }
+  grep -Fq 'metasystem delivery contract validated' "$tmp/nested-pruned.log" \
+    || { echo "nested-pruned run did not end on the contract verdict" >&2; exit 1; }
   mkdir "$adopted/skills/hollow"
   if bash "$adopted/scripts/validate-metasystem.sh" >/dev/null 2>&1; then
     echo "adopted-mode validation accepted a skill directory without SKILL.md" >&2
@@ -4264,13 +4320,26 @@ PYEOF
   fill_harness_conf "$tgt/metasystem.conf" "$tmp/adopt-default-evidence"
   # Capture, never discard: the receipt-stats flake's nested firings kept
   # dying invisibly behind this redirect (2026-08-14, evidence 51987/94210).
-  bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/adopt-filled.out" 2>&1 || {
+  # Digest equality before the nested run: the staged payload must be the
+  # exact content the outer witness gate proved (D33) — when a witness is
+  # armed, the check-only probe IS that comparison.
+  if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
+    ( cd "$tgt" && METASYSTEM_DELIVERY_CONTRACT=1 bash scripts/agents/go-gate.sh --witness-check-only >/dev/null ) \
+      || { echo "adopt: staged payload digest does not match the witness-gated tree" >&2; exit 1; }
+  fi
+  bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/adopt-filled.out" 2>&1 || {
     echo "adopt: filled target failed validation" >&2
     tail -20 "$tmp/adopt-filled.out" >&2
     exit 1
   }
   # D17's whole point, asserted: with the source shipped, the adopted
   # target's own validation rebuilds and gates the engine.
+  grep -Fq 'metasystem delivery contract validated' "$tmp/adopt-filled.out" \
+    || { echo "adopt: filled target did not end on the contract verdict" >&2; exit 1; }
+  if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
+    grep -Fq 'outer witness' "$tmp/adopt-filled.out" \
+      || { echo "adopt: filled target did not accept the outer witness" >&2; exit 1; }
+  fi
   grep -Fq 'go gate: PASSED' "$tmp/adopt-filled.out" \
     || { echo "adopt: filled target did not run the go gate" >&2; exit 1; }
 
@@ -4282,6 +4351,17 @@ PYEOF
   grep -q 'profile drifted' "$tmp/profile-drift.out" \
     || { echo "adopt: profile-drift failure did not name the profile" >&2; exit 1; }
   cp "$tgt/skills/verify/agents/claude-profile.md" "$tgt/.claude/agents/verify.md"
+
+  # The D17 fail-open, closed and asserted (D33): a source-delivery target
+  # whose go.mod vanished must FAIL — never read as "no engine expected".
+  mv "$tgt/go.mod" "$tgt/go.mod.hidden"
+  if bash "$tgt/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/gomod-gone.out" 2>&1; then
+    echo "adopt: a source-delivery target without go.mod validated green" >&2
+    exit 1
+  fi
+  grep -Fq 'engine source did not ship' "$tmp/gomod-gone.out" \
+    || { echo "adopt: the missing-go.mod refusal did not name the delivery" >&2; tail -5 "$tmp/gomod-gone.out" >&2; exit 1; }
+  mv "$tgt/go.mod.hidden" "$tgt/go.mod"
 
   mv "$tgt/.claude/skills" "$tgt/.claude/skills.missing"
   if "$tgt/scripts/metasystem-config.sh" validate >"$tmp/missing-registration.out" 2>&1; then
