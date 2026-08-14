@@ -1632,10 +1632,27 @@ nothing anomalous, it just produced nothing.
 **Decision**: further bm-2 reps are HELD until the empty_reply
 integration failure is diagnosed — burning ~$5 of host tokens per rep
 against delegates that reply empty measures the defect, not the arm.
-The diagnosis runs tonight from the frozen target's adapter evidence
-(free); if it is a small adapter defect, the fix lands under the
-usual gates and bm-2 resumes; if it is Devin-side (beta service
-flaking), the arm waits for Wido with the evidence written up.
+
+**Diagnosis (same night, from the frozen evidence)**: the delegates
+were not idle and the service did not flake. The ATIF transcript of
+implementer-...-912c shows 37 steps of real work over ~9 minutes —
+code written into the worktree, compiles run, tests reasoned through
+— and then no final message at all. The job log holds the mechanism:
+`warning: rejected a tool call that requires confirmation. Running in
+non-interactive mode. Use --permission-mode dangerous to auto-approve
+all tools.` followed by a clean exit. The envelope (approvals=deny,
+writes scoped to the worktree) correctly refused a call outside the
+allow-list, but the Devin CLI's non-interactive handling turns that
+refusal into a session that ends without delivering, so the settle
+step finds nothing and the record says empty_reply. The fix is a
+DESIGN decision, not a patch: the CLI's own suggestion
+(--permission-mode dangerous) is auto-approve-everything and is
+exactly wrong for an uncontained runtime; the right shape is either a
+deny-and-continue mode (if the CLI supports one) so the session can
+adapt and still deliver, or an envelope adjustment if the denied call
+turns out to be the delivery mechanism itself. That decision — how
+denials should behave for an uncontained delegate — belongs to Wido
+with this evidence, so bm-2 STAYS HELD; the write-up is this entry.
 Spend: $32.89 tonight, ~$122 of EUR 240 total. The budget-5 bm-1
 test rep (RULING 5's go/no-go) launches now on the freed machine —
 it was always first in line.
