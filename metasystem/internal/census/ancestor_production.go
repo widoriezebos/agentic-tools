@@ -35,31 +35,43 @@ func (nativeProcTree) Info(pid int64) (ProcInfo, bool) {
 	return ProcInfo{PPID: ppid, PGID: int64(pgid), Command: command}, true
 }
 
+// AgentAncestor is the signature-matched agent session found above a
+// process. Field order is the wire order: `proc find-ancestor` marshals this
+// struct directly, and the keys must keep the sorted order the historical
+// map form produced.
+type AgentAncestor struct {
+	Argv         string `json:"argv"`
+	Pgid         int64  `json:"pgid"`
+	Pid          int64  `json:"pid"`
+	PidStartedAt int64  `json:"pidStartedAt"`
+	Runtime      string `json:"runtime"`
+}
+
 // FindAncestorProduction walks the live process tree from pid and returns the
 // first ancestor whose argv matches a runtime signature — the agent session a
 // delegate or wrapper runs under. A fake-agent ancestor may be pinned by
 // environment for the fake runtime.
-func FindAncestorProduction(metasystemRoot string, pid int64, runtime string) (map[string]any, error) {
+func FindAncestorProduction(metasystemRoot string, pid int64, runtime string) (AgentAncestor, error) {
 	if fake := os.Getenv("METASYSTEM_FAKE_AGENT_ANCESTOR_PID"); fake != "" && runtime == "fake" {
 		if candidate, err := strconv.ParseInt(fake, 10, 64); err == nil {
 			pgid, _ := unix.Getpgid(int(candidate))
-			return map[string]any{
-				"pid": candidate, "pidStartedAt": startedSeconds(candidate),
-				"pgid": int64(pgid), "runtime": "fake", "argv": "metasystem-fake-agent",
+			return AgentAncestor{
+				Pid: candidate, PidStartedAt: startedSeconds(candidate),
+				Pgid: int64(pgid), Runtime: "fake", Argv: "metasystem-fake-agent",
 			}, nil
 		}
 	}
 	signatures, err := signaturesFor(metasystemRoot, runtime)
 	if err != nil {
-		return nil, err
+		return AgentAncestor{}, err
 	}
 	ancestor, err := FindAncestor(nativeProcTree{}, pid, signatures)
 	if err != nil {
-		return nil, err
+		return AgentAncestor{}, err
 	}
-	return map[string]any{
-		"pid": ancestor.Pid, "pidStartedAt": startedSeconds(ancestor.Pid),
-		"pgid": ancestor.PGID, "runtime": ancestor.Runtime, "argv": ancestor.Argv,
+	return AgentAncestor{
+		Pid: ancestor.Pid, PidStartedAt: startedSeconds(ancestor.Pid),
+		Pgid: ancestor.PGID, Runtime: ancestor.Runtime, Argv: ancestor.Argv,
 	}, nil
 }
 

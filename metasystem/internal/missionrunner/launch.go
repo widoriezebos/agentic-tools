@@ -192,13 +192,12 @@ type armingIdentity struct {
 func (e *Engine) resolveArmingIdentity() (armingIdentity, error) {
 	pid := os.Getpid()
 	if view, err := lease.ClassifyVerb(e.Root, int64(pid)); err == nil {
-		holder, _ := view["holder"].(bool)
-		if announcement, ok := view["announcement"].(*lease.Announcement); holder && ok && announcement != nil {
+		if view.Holder && view.Announcement != nil {
 			return armingIdentity{
-				session: announcement.SessionId,
-				pid:     int(announcement.Pid),
-				started: announcement.PidStartedAt,
-				tag:     announcement.InstanceTag,
+				session: view.Announcement.SessionId,
+				pid:     int(view.Announcement.Pid),
+				started: view.Announcement.PidStartedAt,
+				tag:     view.Announcement.InstanceTag,
 			}, nil
 		}
 	}

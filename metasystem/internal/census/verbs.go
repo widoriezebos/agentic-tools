@@ -16,28 +16,37 @@ func Alive(pid, expectedStart int64) bool {
 	return identityAlive(pid, expectedStart)
 }
 
+// ProcIdentity is a live process's identity from the one authoritative
+// source: its start second and command line. Command is never empty on
+// success, so a caller's error check is its only absence check.
+type ProcIdentity struct {
+	Command      string `json:"command"`
+	Pid          int64  `json:"pid"`
+	PidStartedAt int64  `json:"pidStartedAt"`
+}
+
 // AuthIdentity returns a process's start time and command from ONE source —
 // the fixture identity file when installed (its `started` and `command`), else
 // the process table (start time + command). This one-source rule is why a main
 // can recognize its own announcement.
-func AuthIdentity(pid int64) (map[string]any, error) {
+func AuthIdentity(pid int64) (ProcIdentity, error) {
 	if entry, ok := identity.FixtureEntryFor(pid); ok && entry.HasStartedAt && entry.HasCommand && entry.Command != "" {
-		return map[string]any{"pid": pid, "pidStartedAt": entry.StartedAt, "command": entry.Command}, nil
+		return ProcIdentity{Pid: pid, PidStartedAt: entry.StartedAt, Command: entry.Command}, nil
 	}
 	return psIdentity(pid)
 }
 
-func psIdentity(pid int64) (map[string]any, error) {
+func psIdentity(pid int64) (ProcIdentity, error) {
 	// Native: the kernel prober gives the start time (whole seconds) and argv.
 	exact, state, err := identity.KernelProber{}.Probe(pid)
 	if err != nil || state != identity.Alive {
-		return nil, fmt.Errorf("no such process: %d", pid)
+		return ProcIdentity{}, fmt.Errorf("no such process: %d", pid)
 	}
 	command := strings.Join(exact.Argv, " ")
 	if command == "" {
-		return nil, fmt.Errorf("unreadable command for pid %d", pid)
+		return ProcIdentity{}, fmt.Errorf("unreadable command for pid %d", pid)
 	}
-	return map[string]any{"pid": pid, "pidStartedAt": exact.StartedAt.Unix(), "command": command}, nil
+	return ProcIdentity{Pid: pid, PidStartedAt: exact.StartedAt.Unix(), Command: command}, nil
 }
 
 // SignatureCheck is the `signature-check` verb: the positive argv must

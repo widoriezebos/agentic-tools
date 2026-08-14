@@ -1,6 +1,7 @@
 package lease
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,11 +19,58 @@ func announceSelf(t *testing.T, root string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := got["mainId"].(string)
-	if id == "" {
-		t.Fatalf("announced main has no mainId: %v", got)
+	if got.MainId == "" {
+		t.Fatalf("announced main has no mainId: %+v", got)
 	}
-	return id
+	return got.MainId
+}
+
+// TestVerbResultWireShapes pins the CLI JSON bytes of the typed verb
+// results to what the map[string]any form produced: sorted keys, absent
+// keys stay absent, and require-holder's ungated paths keep their explicit
+// nulls. Shell gates parse these shapes; a struct field reorder or an
+// omitempty change would silently break them.
+func TestVerbResultWireShapes(t *testing.T) {
+	epoch, revision := int64(1), int64(3)
+	mainID := "main-x"
+	cases := []struct {
+		value any
+		want  string
+	}{
+		{
+			ClassifyResult{Class: ClassDelegate, Pid: 7, ClaimEpoch: &epoch, Revision: &revision},
+			`{"claimEpoch":1,"class":"DELEGATE","holder":false,"pid":7,"revision":3}`,
+		},
+		{
+			ClassifyResult{Class: ClassAdapterSupervisor, Pid: 7, JobId: "job-1"},
+			`{"class":"ADAPTER-SUPERVISOR","holder":false,"jobId":"job-1","pid":7}`,
+		},
+		{
+			HolderView{Class: ClassHuman, Holder: true},
+			`{"claimEpoch":null,"class":"HUMAN","holder":true,"mainId":null}`,
+		},
+		{
+			HolderView{Class: "HOLDER", Holder: true, ClaimEpoch: &epoch, Revision: &revision, MainId: &mainID},
+			`{"claimEpoch":1,"class":"HOLDER","holder":true,"mainId":"main-x","revision":3}`,
+		},
+		{
+			RenewResult{ClaimEpoch: 1, Revision: 2},
+			`{"claimEpoch":1,"revision":2}`,
+		},
+		{
+			GrowthReport{Counts: map[string]int{"b": 2, "a": 1}},
+			`{"counts":{"a":1,"b":2},"message":""}`,
+		},
+	}
+	for _, c := range cases {
+		got, err := json.Marshal(c.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != c.want {
+			t.Fatalf("wire shape changed:\n got %s\nwant %s", got, c.want)
+		}
+	}
 }
 
 func TestAnnounceMakesUsMainAndHolder(t *testing.T) {
@@ -34,19 +82,19 @@ func TestAnnounceMakesUsMainAndHolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["class"] != ClassMain || got["holder"] != true {
-		t.Fatalf("announcer should be MAIN and holder: %v", got)
+	if got.Class != ClassMain || !got.Holder {
+		t.Fatalf("announcer should be MAIN and holder: %+v", got)
 	}
-	if epoch, _ := jsonInt(got["claimEpoch"]); epoch != 1 {
-		t.Fatalf("first claim should be epoch 1: %v", got["claimEpoch"])
+	if got.ClaimEpoch == nil || *got.ClaimEpoch != 1 {
+		t.Fatalf("first claim should be epoch 1: %+v", got.ClaimEpoch)
 	}
 
 	held, err := RequireHolder(root, self, nil)
 	if err != nil {
 		t.Fatalf("require-holder refused the holder: %v", err)
 	}
-	if held["class"] != "HOLDER" || held["holder"] != true {
-		t.Fatalf("require-holder should confirm HOLDER: %v", held)
+	if held.Class != "HOLDER" || !held.Holder {
+		t.Fatalf("require-holder should confirm HOLDER: %+v", held)
 	}
 }
 
@@ -78,8 +126,8 @@ func TestRenewBumpsRevision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renew refused: %v", err)
 	}
-	if rev, _ := jsonInt(out["revision"]); rev != 2 {
-		t.Fatalf("renew should bump revision to 2, got %v", out["revision"])
+	if out.Revision != 2 {
+		t.Fatalf("renew should bump revision to 2, got %d", out.Revision)
 	}
 }
 
@@ -125,8 +173,8 @@ func TestProtocolGrowthAndAdvance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg, _ := growth["message"].(string); !strings.Contains(msg, "PROTOCOL-ERRORS") {
-		t.Fatalf("growth should report the new error: %v", growth["message"])
+	if !strings.Contains(growth.Message, "PROTOCOL-ERRORS") {
+		t.Fatalf("growth should report the new error: %q", growth.Message)
 	}
 
 	if err := ProtocolAdvance(root, mainID, self, `{"job-1":1}`); err != nil {
@@ -136,7 +184,7 @@ func TestProtocolGrowthAndAdvance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg, _ := growth["message"].(string); msg != "" {
-		t.Fatalf("after advancing, there should be no new growth: %q", msg)
+	if growth.Message != "" {
+		t.Fatalf("after advancing, there should be no new growth: %q", growth.Message)
 	}
 }

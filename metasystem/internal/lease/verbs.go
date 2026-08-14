@@ -143,84 +143,113 @@ func Retire(root, session string, pid, start int64) error {
 	return nil
 }
 
-// Classify resolves and reports who a caller is, plus whether it holds the
-// checkout and the current epoch/revision.
-func ClassifyVerb(root string, callerPid int64) (map[string]any, error) {
+// ClassifyResult is ClassifyVerb's report: who the caller is, whether it
+// holds the checkout, and the lease coordinates when a lease exists. Field
+// order is the wire order: `lease classify` marshals this struct directly,
+// and the keys must keep the sorted order the historical map form produced.
+// The conditional keys ride on invariants the classifier enforces: an
+// authenticated main always has a mainId and announcement, a walked ancestor
+// pid is never zero, and a custody job record with an empty jobId refuses.
+type ClassifyResult struct {
+	Announcement *Announcement `json:"announcement,omitempty"`
+	ClaimEpoch   *int64        `json:"claimEpoch,omitempty"`
+	Class        string        `json:"class"`
+	Holder       bool          `json:"holder"`
+	JobId        string        `json:"jobId,omitempty"`
+	MainId       string        `json:"mainId,omitempty"`
+	Pid          int64         `json:"pid,omitempty"`
+	Revision     *int64        `json:"revision,omitempty"`
+}
+
+// ClassifyVerb resolves and reports who a caller is, plus whether it holds
+// the checkout and the current epoch/revision.
+func ClassifyVerb(root string, callerPid int64) (ClassifyResult, error) {
 	root = resolveRoot(root)
 	identity, err := Classify(root, callerPid)
 	if err != nil {
-		return nil, err
+		return ClassifyResult{}, err
 	}
 	lease, err := loadLease(root, false)
 	if err != nil {
-		return nil, err
+		return ClassifyResult{}, err
 	}
-	out := classificationMap(identity)
-	out["holder"] = identity.Class == ClassMain && (lease == nil || identity.MainId == lease.HolderMainId)
+	out := classificationView(identity)
+	out.Holder = identity.Class == ClassMain && (lease == nil || identity.MainId == lease.HolderMainId)
 	if lease != nil {
-		out["claimEpoch"] = lease.ClaimEpoch
-		out["revision"] = lease.Revision
+		out.ClaimEpoch = &lease.ClaimEpoch
+		out.Revision = &lease.Revision
 	}
 	return out, nil
 }
 
-func classificationMap(c Classification) map[string]any {
-	out := map[string]any{"class": c.Class}
+func classificationView(c Classification) ClassifyResult {
+	out := ClassifyResult{Class: c.Class}
 	switch c.Class {
 	case ClassMain:
-		out["mainId"] = c.MainId
-		out["announcement"] = c.Announcement
+		out.MainId = c.MainId
+		out.Announcement = c.Announcement
 	case ClassDelegate, ClassSupervision:
-		out["pid"] = c.Pid
+		out.Pid = c.Pid
 	case ClassAdapterSupervisor:
-		out["pid"] = c.Pid
-		out["jobId"] = c.JobId
+		out.Pid = c.Pid
+		out.JobId = c.JobId
 	}
 	return out
+}
+
+// HolderView is RequireHolder's report. claimEpoch and mainId are always on
+// the wire (null for a caller passed through ungated), revision only for the
+// authenticated holder — the exact shape the historical map form produced.
+type HolderView struct {
+	ClaimEpoch *int64  `json:"claimEpoch"`
+	Class      string  `json:"class"`
+	Holder     bool    `json:"holder"`
+	MainId     *string `json:"mainId"`
+	Revision   *int64  `json:"revision,omitempty"`
 }
 
 // RequireHolder gates a write: it succeeds only for the authenticated holder
 // (claiming an unheld checkout for an authenticated main), and reports HUMAN
 // and internal-helper callers without re-gating them.
-func RequireHolder(root string, callerPid int64, expectedEpoch *int64) (map[string]any, error) {
+func RequireHolder(root string, callerPid int64, expectedEpoch *int64) (HolderView, error) {
 	root = resolveRoot(root)
 	identity, err := Classify(root, callerPid)
 	if err != nil {
-		return nil, err
+		return HolderView{}, err
 	}
 	switch identity.Class {
 	case ClassHuman:
-		return map[string]any{"class": ClassHuman, "holder": true, "claimEpoch": nil, "mainId": nil}, nil
+		return HolderView{Class: ClassHuman, Holder: true}, nil
 	case ClassDelegate, ClassAdapterSupervisor, ClassSupervision:
-		return map[string]any{"class": identity.Class, "holder": false, "claimEpoch": nil, "mainId": nil}, nil
+		return HolderView{Class: identity.Class, Holder: false}, nil
 	}
 	lease, err := loadLease(root, false)
 	if err != nil {
-		return nil, err
+		return HolderView{}, err
 	}
 	if lease == nil {
 		if identity.Class != ClassMain {
-			return nil, fmt.Errorf("checkout lease is absent and caller pid %d is %s, not an authenticated main", callerPid, identity.Class)
+			return HolderView{}, fmt.Errorf("checkout lease is absent and caller pid %d is %s, not an authenticated main", callerPid, identity.Class)
 		}
 		if err := newClaimer(root).claim(identity.Announcement); err != nil {
-			return nil, err
+			return HolderView{}, err
 		}
 		if lease, err = loadLease(root, true); err != nil {
-			return nil, err
+			return HolderView{}, err
 		}
 	}
 	if identity.Class != ClassMain || identity.MainId != lease.HolderMainId {
-		return nil, ownedElsewhere(lease, identity)
+		return HolderView{}, ownedElsewhere(lease, identity)
 	}
 	if !newClaimer(root).stampComplete(lease) {
-		return nil, fmt.Errorf("checkout lease claim sweep is incomplete for the current claim epoch")
+		return HolderView{}, fmt.Errorf("checkout lease claim sweep is incomplete for the current claim epoch")
 	}
 	if expectedEpoch != nil && lease.ClaimEpoch != *expectedEpoch {
-		return nil, fmt.Errorf("checkout lease claim epoch changed before the final mutation")
+		return HolderView{}, fmt.Errorf("checkout lease claim epoch changed before the final mutation")
 	}
-	return map[string]any{
-		"class": "HOLDER", "holder": true,
-		"claimEpoch": lease.ClaimEpoch, "revision": lease.Revision, "mainId": lease.HolderMainId,
+	return HolderView{
+		Class: "HOLDER", Holder: true,
+		ClaimEpoch: &lease.ClaimEpoch, Revision: &lease.Revision, MainId: &lease.HolderMainId,
 	}, nil
 }
 
@@ -230,39 +259,45 @@ func ownedElsewhere(lease *Lease, identity Classification) error {
 		lease.HolderMainId, identity.Class, identity.MainId)
 }
 
+// RenewResult reports the lease coordinates after a renewal.
+type RenewResult struct {
+	ClaimEpoch int64 `json:"claimEpoch"`
+	Revision   int64 `json:"revision"`
+}
+
 // Renew bumps the holder's lease revision and renewal time.
-func Renew(root string, callerPid int64) (map[string]any, error) {
+func Renew(root string, callerPid int64) (RenewResult, error) {
 	root = resolveRoot(root)
 	lock, err := acquireBounded(leasePaths(root).Lock, "renew")
 	if err != nil {
-		return nil, err
+		return RenewResult{}, err
 	}
 	defer lock.release()
 	identity, err := Classify(root, callerPid)
 	if err != nil {
-		return nil, err
+		return RenewResult{}, err
 	}
 	lease, err := loadLease(root, true)
 	if err != nil {
-		return nil, err
+		return RenewResult{}, err
 	}
 	if identity.Class != ClassMain || identity.MainId != lease.HolderMainId {
-		return nil, fmt.Errorf("checkout lease renewal refused: caller is not the authenticated holder")
+		return RenewResult{}, fmt.Errorf("checkout lease renewal refused: caller is not the authenticated holder")
 	}
 	expected := lease.Revision
 	lease.RenewedAt = nowStamp()
 	lease.Revision++
 	current, err := loadLease(root, true)
 	if err != nil {
-		return nil, err
+		return RenewResult{}, err
 	}
 	if err := verifyRevision(current, &expected); err != nil {
-		return nil, err
+		return RenewResult{}, err
 	}
 	if err := saveLease(root, lease); err != nil {
-		return nil, err
+		return RenewResult{}, err
 	}
-	return map[string]any{"claimEpoch": lease.ClaimEpoch, "revision": lease.Revision}, nil
+	return RenewResult{ClaimEpoch: lease.ClaimEpoch, Revision: lease.Revision}, nil
 }
 
 // RunHeld runs argv while holding the lease lock, gated on the caller being
@@ -307,18 +342,25 @@ func gateHolder(root string, identity Classification, expectedEpoch *int64) erro
 	return nil
 }
 
+// GrowthReport is ProtocolGrowth's report: the muster line (empty when
+// nothing is new) and the checkout's current per-chain counts.
+type GrowthReport struct {
+	Counts  map[string]int `json:"counts"`
+	Message string         `json:"message"`
+}
+
 // ProtocolGrowth reports how many new protocol errors appeared since a main
 // last advanced its cursor.
-func ProtocolGrowth(root, mainID string) (map[string]any, error) {
+func ProtocolGrowth(root, mainID string) (GrowthReport, error) {
 	root = resolveRoot(root)
 	cursorPath := filepath.Join(root, "artifacts/agents/mains", mainID+".protocol-cursor.json")
 	cursor, err := readObject(cursorPath)
 	if err != nil || cursor == nil {
-		return nil, fmt.Errorf("protocol-error cursor schema is invalid")
+		return GrowthReport{}, fmt.Errorf("protocol-error cursor schema is invalid")
 	}
 	base, _ := cursor["counts"].(map[string]any)
 	if id, _ := cursor["mainId"].(string); id != mainID || base == nil {
-		return nil, fmt.Errorf("protocol-error cursor schema is invalid")
+		return GrowthReport{}, fmt.Errorf("protocol-error cursor schema is invalid")
 	}
 	counts := protocolCounts(root)
 	growth := map[string]int{}
@@ -338,7 +380,7 @@ func ProtocolGrowth(root, mainID string) (map[string]any, error) {
 		}
 		message = fmt.Sprintf("PROTOCOL-ERRORS: %d new validation error(s) since this main's last report (%s).", total, strings.Join(parts, ", "))
 	}
-	return map[string]any{"message": message, "counts": counts}, nil
+	return GrowthReport{Counts: counts, Message: message}, nil
 }
 
 // ProtocolAdvance merges a main's reported protocol-error counts into its

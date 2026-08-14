@@ -1,10 +1,25 @@
 package census
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+// TestAgentAncestorWireShape pins `proc find-ancestor`'s JSON bytes to what
+// the map[string]any form produced: sorted keys. The struct's field order IS
+// the wire order.
+func TestAgentAncestorWireShape(t *testing.T) {
+	got, err := json.Marshal(AgentAncestor{Argv: "claude -p", Pgid: 2, Pid: 3, PidStartedAt: 4, Runtime: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"argv":"claude -p","pgid":2,"pid":3,"pidStartedAt":4,"runtime":"claude"}`
+	if string(got) != want {
+		t.Fatalf("wire shape changed:\n got %s\nwant %s", got, want)
+	}
+}
 
 func TestAuthIdentityFixtureFile(t *testing.T) {
 	dir := t.TempDir()
@@ -15,7 +30,7 @@ func TestAuthIdentityFixtureFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id["pidStartedAt"].(int64) != 100 || id["command"].(string) != "claude serve" {
+	if id.PidStartedAt != 100 || id.Command != "claude serve" {
 		t.Fatalf("wrong identity: %+v", id)
 	}
 	// A pid absent from the fixture falls through to ps (and fails for a

@@ -83,8 +83,8 @@ func TestRequireHolderClaimsUnheldForAuthenticatedMain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an authenticated main should claim an unheld checkout: %v", err)
 	}
-	if held["class"] != "HOLDER" {
-		t.Fatalf("first gated write should become HOLDER: %v", held)
+	if held.Class != "HOLDER" {
+		t.Fatalf("first gated write should become HOLDER: %+v", held)
 	}
 	if lease, _ := loadLease(root, true); lease == nil || lease.ClaimEpoch != 1 {
 		t.Fatalf("the checkout should now be claimed at epoch 1")

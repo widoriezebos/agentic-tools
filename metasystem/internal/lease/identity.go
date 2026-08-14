@@ -38,16 +38,11 @@ func CommandHash(command string) string {
 // otherwise the kernel — via the census. ok is false when the pid is not a
 // live, readable process.
 func ProcessIdentity(pid int64) (Identity, bool) {
-	raw, err := census.AuthIdentity(pid)
+	proc, err := census.AuthIdentity(pid)
 	if err != nil {
 		return Identity{}, false
 	}
-	started, startedOK := raw["pidStartedAt"].(int64)
-	command, commandOK := raw["command"].(string)
-	if !startedOK || !commandOK || command == "" {
-		return Identity{}, false
-	}
-	return Identity{Pid: pid, StartedAt: started, Command: command}, true
+	return Identity{Pid: pid, StartedAt: proc.PidStartedAt, Command: proc.Command}, true
 }
 
 // StartedAt is the process's start second from the one source. ok is false
