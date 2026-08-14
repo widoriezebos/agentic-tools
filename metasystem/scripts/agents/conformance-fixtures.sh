@@ -426,102 +426,14 @@ commit_worktree
 expect_failure waiver-control-plane 'agent control plane contains delegate-created files' \
   "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
 
-# CC-1-5, CC-1-7, and CC-1-10 exercise the dispatcher's deterministic
-# exhaustion owner without launching a delegate or inspecting processes.
-exhaustion_root="$fixture_root/exhaustion-dispatch"
-mkdir -p "$exhaustion_root/scripts/agents" "$exhaustion_root/artifacts/agents/jobs" \
-  "$exhaustion_root/artifacts/agents/critic/rounds/3"
-cp "$source_root/scripts/agents/dispatch.sh" "$exhaustion_root/scripts/agents/"
-mkdir -p "$exhaustion_root/bin"
-cp "$source_root/bin/metasystem" "$exhaustion_root/bin/metasystem"
-git -C "$exhaustion_root" init -q -b main
-printf 'fixture\n' >"$exhaustion_root/source.txt"
-git -C "$exhaustion_root" add .
-git -C "$exhaustion_root" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
-python3 - "$exhaustion_root" <<'PY'
-import json, sys
-from pathlib import Path
-root = Path(sys.argv[1])
-jobs = root / "artifacts/agents/jobs"
-records = {
-    "impl": {"jobId":"impl","role":"implementer","round":1,"parentJob":None,"status":"completed","error":None,"critiqueExhaustions":[]},
-    "critic": {"jobId":"critic","role":"code-critic","round":1,"parentJob":None,"reviews":"impl","status":"completed","error":None,"critiqueExhaustions":[]},
-    "critic-r2": {"jobId":"critic-r2","role":"code-critic","round":2,"parentJob":"critic","reviews":"impl","status":"completed","error":None},
-    "critic-r3": {"jobId":"critic-r3","role":"code-critic","round":3,"parentJob":"critic-r2","reviews":"impl","status":"completed","error":None},
-}
-for name, value in records.items():
-    (jobs / f"{name}.json").write_text(json.dumps(value) + "\n")
-# The return deliberately lies that it is round two. The record's round three
-# must still trigger budget exhaustion.
-result = {"round":2,"findings":[{"id":"F-10","material":True}]}
-(root / "artifacts/agents/critic/rounds/3/return.json").write_text(json.dumps(result) + "\n")
-PY
-printf 'does not enumerate the finding\n' >"$exhaustion_root/missing.md"
-printf 'Fix F-10 in the implementation follow-up.\n' >"$exhaustion_root/present.md"
-exhaustion_manifest="$exhaustion_root/action.json"
-expect_failure exhaustion-wrong-party 'successor follow-up must enumerate every open finding identifier: F-10' \
-  "$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
-    --root-job impl --role implementer --latest "$exhaustion_root/artifacts/agents/jobs/impl.json" \
-    --message "$exhaustion_root/missing.md" --successor impl-r2 --output "$exhaustion_manifest"
-"$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
-  --root-job impl --role implementer --latest "$exhaustion_root/artifacts/agents/jobs/impl.json" \
-  --message "$exhaustion_root/present.md" --successor impl-r2 --output "$exhaustion_manifest" \
-  >"$fixture_root/exhaustion-record.out"
-expect_failure critic-cannot-own-successor 'dispatch an implementer follow-up that enumerates every open finding identifier' \
-  "$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
-    --root-job critic --role code-critic --latest "$exhaustion_root/artifacts/agents/jobs/critic-r3.json" \
-    --message "$exhaustion_root/present.md" --successor critic-r4 --output "$exhaustion_manifest"
-python3 - "$exhaustion_root" "$exhaustion_manifest" <<'PY'
-import json, sys
-from pathlib import Path
-root, manifest_path = map(Path, sys.argv[1:])
-manifest = json.loads(manifest_path.read_text())
-item = manifest["records"][0]
-assert item["jobId"] == "critic"
-entry = item["critiqueExhaustions"][0]
-assert entry == {"round": 3, "openFindingIds": ["F-10"], "successorJobId": "impl-r2"}
-path = root / "artifacts/agents/jobs/critic.json"
-record = json.loads(path.read_text()); record["critiqueExhaustions"] = item["critiqueExhaustions"]
-path.write_text(json.dumps(record) + "\n")
-PY
-"$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
-  --root-job critic --role code-critic --latest "$exhaustion_root/artifacts/agents/jobs/critic-r3.json" \
-  --message "$exhaustion_root/missing.md" --successor critic-r4 --output "$exhaustion_manifest" \
-  >"$fixture_root/critic-continuation.out"
-grep -Fxq none "$fixture_root/critic-continuation.out" \
-  || { echo "recorded implementer successor did not reopen the critic budget" >&2; exit 1; }
-python3 - "$exhaustion_root/artifacts/agents/jobs/critic-r3.json" <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text())
-value.update({"status":"failed","error":"protocol_error"}); path.write_text(json.dumps(value) + "\n")
-PY
-rm "$exhaustion_root/artifacts/agents/critic/rounds/3/return.json"
-"$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
-  --root-job critic --role code-critic --latest "$exhaustion_root/artifacts/agents/jobs/critic-r3.json" \
-  --message "$exhaustion_root/missing.md" --successor critic-r4 --output "$exhaustion_manifest" \
-  >"$fixture_root/protocol-recovery.out" 2>"$fixture_root/protocol-recovery.err"
-grep -Fxq none "$fixture_root/protocol-recovery.out" \
-  || { echo "protocol-error recovery did not bypass the absent return" >&2; exit 1; }
-[[ ! -s "$fixture_root/protocol-recovery.err" ]] \
-  || { echo "protocol-error recovery emitted a traceback or empty diagnostic" >&2; exit 1; }
-mkdir -p "$exhaustion_root/artifacts/agents/critic/rounds/6"
-python3 - "$exhaustion_root" <<'PY'
-import json, sys
-from pathlib import Path
-root = Path(sys.argv[1]); jobs = root / "artifacts/agents/jobs"
-parent = "critic-r3"
-for round_number in (4, 5, 6):
-    job_id = f"critic-r{round_number}"
-    value = {"jobId":job_id,"role":"code-critic","round":round_number,"parentJob":parent,"reviews":"impl","status":"completed","error":None}
-    (jobs / f"{job_id}.json").write_text(json.dumps(value) + "\n")
-    parent = job_id
-result = {"round":6,"findings":[{"id":"F-11","material":True}]}
-(root / "artifacts/agents/critic/rounds/6/return.json").write_text(json.dumps(result) + "\n")
-PY
-expect_failure second-budget-exhaustion 'waiting on the human is the only remedy' \
-  "$exhaustion_root/scripts/agents/dispatch.sh" __critique-exhaustion \
-    --root-job impl --role implementer --latest "$exhaustion_root/artifacts/agents/jobs/impl.json" \
-    --message "$exhaustion_root/present.md" --successor impl-r2 --output "$exhaustion_manifest"
+# The critique-exhaustion owner is proven in-process under the go gate
+# (script-fixtures-021/D44): TestCritiqueExhaustionDesignCritic,
+# TestCritiqueExhaustionRoundOffBudget, TestCritiqueExhaustionGuards
+# (protocol-error recovery with an absent return), and the ported
+# TestCritiqueExhaustionCodeCriticChain (critic-cannot-own-successor,
+# recorded-implementer-successor budget reopen, record-round-beats-
+# lying-return). The one refusal string covers both the second-budget
+# and human-only-remedy assertions the shell greps split across. The
+# assert-conformance.sh stage-level E2E above remains this file's job.
 
 echo "conformance fixtures passed"

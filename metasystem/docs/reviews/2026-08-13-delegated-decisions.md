@@ -1057,6 +1057,20 @@ hammering the record under -race across fifty applications, with the
 stronger than the python poller it replaces: the race detector watches
 the same window the poller sampled.
 
+## D44 — The exhaustion legs retire; three cases ported first (script-fixtures-021 sign-off)
+
+**Decision**: conformance-fixtures.sh's six-leg __critique-exhaustion
+section drops. The leg-by-leg diff found three cases Go lacked —
+critic-cannot-own-successor, the recorded-implementer-successor budget
+reopen, and record-round-beats-a-lying-return — ported GREEN as
+TestCritiqueExhaustionCodeCriticChain before the cut; wrong-party
+enumeration, the manifest patch shape, off-budget none, and
+protocol-error recovery with an absent return were already owned by
+the three existing tests. The shell's separate second-budget and
+human-remedy greps proved to be two substrings of ONE refusal string,
+already asserted. The stage-level assert-conformance E2E remains the
+file's job. This closes W6 item 3 (D41-D44).
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

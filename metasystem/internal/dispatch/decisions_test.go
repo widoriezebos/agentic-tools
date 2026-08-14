@@ -741,3 +741,47 @@ func TestLineageRootOneVerdict(t *testing.T) {
 		t.Fatalf("chain members = %v, want [kid root]", ids)
 	}
 }
+
+// The code-critic chain cases ported from conformance-fixtures.sh's
+// exhaustion section (script-fixtures-021/D44): a critic may never own the
+// successor; a RECORDED implementer successor reopens the budget to none;
+// and the RECORD's round beats a return that lies about its own round.
+func TestCritiqueExhaustionCodeCriticChain(t *testing.T) {
+	repo := t.TempDir()
+	agents := filepath.Join(repo, "artifacts", "agents")
+	writeJSONFile(t, filepath.Join(agents, "jobs"), "critic.json", map[string]any{
+		"jobId": "critic", "role": "code-critic", "round": 1, "parentJob": nil,
+		"reviews": "impl", "status": "completed", "critiqueExhaustions": []any{},
+	})
+	writeJSONFile(t, filepath.Join(agents, "jobs"), "critic-r3.json", map[string]any{
+		"jobId": "critic-r3", "role": "code-critic", "round": 3, "parentJob": "critic-r2",
+		"reviews": "impl", "status": "completed",
+	})
+	// The return deliberately lies that it is round two; the record's round
+	// three must still trigger the budget.
+	writeJSONFile(t, filepath.Join(agents, "critic", "rounds", "3"), "return.json", map[string]any{
+		"round": 2, "findings": []any{map[string]any{"id": "F-10", "material": true}},
+	})
+	message := filepath.Join(t.TempDir(), "m.md")
+	os.WriteFile(message, []byte("Fix F-10 in the implementation follow-up.\n"), 0o644)
+	output := filepath.Join(t.TempDir(), "manifest.json")
+
+	// A critic-owned successor is refused toward the implementer follow-up.
+	_, err := CritiqueExhaustionAction(repo, "critic", "code-critic",
+		filepath.Join(agents, "jobs", "critic-r3.json"), message, "critic-r4", output)
+	if err == nil || !strings.Contains(err.Error(), "implementer follow-up") {
+		t.Fatalf("critic-owned successor = %v", err)
+	}
+
+	// A recorded implementer successor reopens the critic budget: none.
+	rootRecord := readJSONFile(t, filepath.Join(agents, "jobs", "critic.json"))
+	rootRecord["critiqueExhaustions"] = []any{map[string]any{
+		"round": 3, "openFindingIds": []any{"F-10"}, "successorJobId": "impl-r2",
+	}}
+	writeRecord(filepath.Join(agents, "jobs", "critic.json"), rootRecord)
+	action, err := CritiqueExhaustionAction(repo, "critic", "code-critic",
+		filepath.Join(agents, "jobs", "critic-r3.json"), message, "critic-r4", output)
+	if err != nil || action != "none" {
+		t.Fatalf("recorded implementer successor should reopen: action=%q err=%v", action, err)
+	}
+}
