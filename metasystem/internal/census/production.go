@@ -78,63 +78,8 @@ type cwdResult struct {
 
 // RunProductionCensus computes the verdict from the LIVE process table (no
 // fixture), resolving cwds only for the signature-matched processes — the
-// production counterpart of RunFixtureCensus over the same classification.
+// production counterpart of RunFixtureCensus over the same runCensus core.
 func RunProductionCensus(metasystemRoot, repo, fingerprint string, interval int, now time.Time) (Verdict, error) {
-	metasystemRoot = realpath(metasystemRoot)
-	repoReal := realpath(repo)
-	var errors, diagnostics []string
-	counts := map[string]int{"CUSTODY": 0, "ANNOUNCED": 0, "UNTRACKED": 0}
-	var generation *int64
-	var stateDigest *string
-
-	if ids, gen, digest, err := readSupervisionSnapshot(metasystemRoot); err != nil {
-		errors = append(errors, "supervision-state:"+err.Error())
-	} else {
-		generation, stateDigest = &gen, &digest
-		verifySupervisionSnapshot(ids, &errors)
-	}
-
-	processes, enumErr := EnumerateProcesses()
-	var signatures []Signature
-	if enumErr != nil {
-		errors = append(errors, "enumeration:"+enumErr.Error())
-		processes = nil
-	} else if sigs, err := configuredSignatures(metasystemRoot); err != nil {
-		errors = append(errors, "enumeration:"+err.Error())
-		processes = nil
-	} else {
-		signatures = sigs
-	}
-
-	argvs := make([]string, len(processes))
-	for i, p := range processes {
-		argvs[i] = p.Argv
-	}
-	matched := Classify(argvs, signatures)
-	// Resolve cwds only for matched processes — the cwd-resolution cost the
-	// census is careful about.
-	var matchedPids []int64
-	for _, a := range matched {
-		matchedPids = append(matchedPids, processes[a.Index].Pid)
-	}
-	cwds := ResolveCwds(matchedPids)
-
-	custody := liveCustody(metasystemRoot)
-	announced := announcementsList(metasystemRoot, processes, &errors)
-	var inventory []InventoryItem
-	for _, assignment := range matched {
-		process := processes[assignment.Index]
-		if resolved, ok := cwds[process.Pid]; ok {
-			process.Cwd, process.CwdError = resolved.Cwd, resolved.CwdError
-		}
-		item, ok := classifyProcess(process, assignment.Runtime, repoReal, custody, announced, &errors, &diagnostics)
-		if !ok {
-			continue
-		}
-		counts[item.Class]++
-		inventory = append(inventory, item)
-	}
-
-	return assembleVerdict(verdictLabelFor(errors), fingerprint, interval, generation, stateDigest,
-		counts, inventory, diagnostics, errors, now), nil
+	return runCensus(metasystemRoot, repo, fingerprint, interval, now,
+		func(string) ([]Process, error) { return EnumerateProcesses() }, ResolveCwds)
 }

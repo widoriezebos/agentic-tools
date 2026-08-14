@@ -21,6 +21,12 @@ import (
 // and capture time are deterministic.
 var now = time.Now
 
+// timestampUTC renders a time the way every dated artifact in this system is
+// stamped: whole seconds, UTC, trailing Z.
+func timestampUTC(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05") + "Z"
+}
+
 // readObject parses a JSON object from a file, keeping numbers in their exact
 // on-disk form so a value that is read and rewritten stays byte-stable.
 func readObject(path string) (map[string]any, error) {

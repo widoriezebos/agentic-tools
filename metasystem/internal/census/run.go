@@ -84,10 +84,24 @@ var sha256Re = CommandHashRe
 // RunFixtureCensus computes the verdict from a recorded bundle rooted at
 // metasystemRoot: the process fixture at processFile, plus state.json,
 // mains/, and jobs|missions custody records under metasystemRoot/artifacts.
-// The clock is injected so the verdict's timestamps are deterministic. This is
-// the census core; the production path substitutes live enumeration and cwd
-// resolution for the fixture, over the same logic.
+// The clock is injected so the verdict's timestamps are deterministic. The
+// fixture table already records each process's cwd, so no resolver runs.
 func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, interval int, now time.Time) (Verdict, error) {
+	return runCensus(metasystemRoot, repo, fingerprint, interval, now,
+		func(root string) ([]Process, error) { return enumerateFixture(root, processFile) }, nil)
+}
+
+// runCensus is the one census orchestration, shared by the fixture and
+// production runners: realpath the roots, read and verify the supervision
+// snapshot, enumerate the process table and compile the configured
+// signatures (either failure zeroes the table under the enumeration label),
+// classify every signature-matched process, and assemble the verdict.
+// enumerate receives the realpathed metasystem root; resolveCwds, when
+// non-nil, patches the matched processes' cwds before classification — the
+// production path resolves cwds for matched pids only, the cost rule the
+// live process table is careful about.
+func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.Time,
+	enumerate func(root string) ([]Process, error), resolveCwds func([]int64) map[int64]cwdResult) (Verdict, error) {
 	metasystemRoot = realpath(metasystemRoot)
 	repoReal := realpath(repo)
 	var errors, diagnostics []string
@@ -97,37 +111,45 @@ func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, int
 
 	if ids, gen, digest, err := readSupervisionSnapshot(metasystemRoot); err != nil {
 		errors = append(errors, "supervision-state:"+err.Error())
-		_ = ids
 	} else {
 		generation, stateDigest = &gen, &digest
 		verifySupervisionSnapshot(ids, &errors)
 	}
 
-	processes, enumErr := enumerateFixture(metasystemRoot, processFile)
+	processes, enumErr := enumerate(metasystemRoot)
 	var signatures []Signature
 	if enumErr != nil {
 		errors = append(errors, "enumeration:"+enumErr.Error())
 		processes = nil
+	} else if sigs, err := configuredSignatures(metasystemRoot); err != nil {
+		errors = append(errors, "enumeration:"+err.Error())
+		processes = nil
 	} else {
-		sigs, err := configuredSignatures(metasystemRoot)
-		if err != nil {
-			errors = append(errors, "enumeration:"+err.Error())
-			processes = nil
-		} else {
-			signatures = sigs
-		}
+		signatures = sigs
 	}
 
-	custody := liveCustody(metasystemRoot)
-	announced := announcementsList(metasystemRoot, processes, &errors)
-
-	var inventory []InventoryItem
 	argvs := make([]string, len(processes))
 	for i, p := range processes {
 		argvs[i] = p.Argv
 	}
-	for _, assignment := range Classify(argvs, signatures) {
+	matched := Classify(argvs, signatures)
+	var cwds map[int64]cwdResult
+	if resolveCwds != nil {
+		var matchedPids []int64
+		for _, a := range matched {
+			matchedPids = append(matchedPids, processes[a.Index].Pid)
+		}
+		cwds = resolveCwds(matchedPids)
+	}
+
+	custody := liveCustody(metasystemRoot)
+	announced := announcementsList(metasystemRoot, processes, &errors)
+	var inventory []InventoryItem
+	for _, assignment := range matched {
 		process := processes[assignment.Index]
+		if resolved, ok := cwds[process.Pid]; ok {
+			process.Cwd, process.CwdError = resolved.Cwd, resolved.CwdError
+		}
 		item, ok := classifyProcess(process, assignment.Runtime, repoReal, custody, announced, &errors, &diagnostics)
 		if !ok {
 			continue

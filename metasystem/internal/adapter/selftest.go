@@ -126,7 +126,7 @@ func WriteSelftestRecord(outputPath, runtime, job, usage string, devinChecks boo
 	value := map[string]any{
 		"runtime":            runtime,
 		"job":                job,
-		"passedAt":           now().UTC().Format("2006-01-02T15:04:05") + "Z",
+		"passedAt":           timestampUTC(now()),
 		"provenBehaviorally": proven,
 		"permissionEnvelopeEvidence": map[string]any{
 			"declaredEnforcement": map[string]any{

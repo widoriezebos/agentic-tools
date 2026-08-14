@@ -69,7 +69,7 @@ func WriteCapabilitySnapshot(dir, runtime, version, configHash, transports, capa
 		"cliVersion":          version,
 		"configHash":          configHash,
 		"configKeyHashes":     keyHashesValue,
-		"capturedAt":          captured.Format("2006-01-02T15:04:05") + "Z",
+		"capturedAt":          timestampUTC(captured),
 		"sequence":            sequence,
 		"transports":          transportsValue,
 		"capabilities":        capabilitiesValue,

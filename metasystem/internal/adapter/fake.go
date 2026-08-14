@@ -17,12 +17,6 @@ import (
 // the effective-permissions edits its behavior markers ask for, and the pass
 // record its selftest leaves behind.
 
-// timestampUTC renders a time the way every dated artifact in this system is
-// stamped: whole seconds, UTC, trailing Z.
-func timestampUTC(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05") + "Z"
-}
-
 // WriteFakeUsage writes the fixed typed usage the fake runtime reports for
 // every turn. The values are arbitrary but stable, so fixtures can assert
 // usage aggregation against known numbers.

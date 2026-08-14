@@ -75,21 +75,7 @@ func WaiverFacts(root string, delegates []string) (class, stream string) {
 			rootJob = id
 		}
 
-		stream := "standalone"
-		brief := filepath.Join(root, "artifacts", "agents", rootJob, "brief.md")
-		if data, err := os.ReadFile(brief); err == nil {
-			for _, line := range splitLines(string(data)) {
-				if !strings.HasPrefix(line, "Mission Stream:") {
-					continue
-				}
-				_, value, _ := strings.Cut(line, ":")
-				if trimmed := strings.TrimSpace(value); trimmed != "" {
-					stream = trimmed
-				}
-				break
-			}
-		}
-		return waiverClass, stream
+		return waiverClass, missionStream(root, rootJob)
 	}
 	return "none", "none"
 }

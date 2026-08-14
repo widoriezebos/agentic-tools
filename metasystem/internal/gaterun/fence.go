@@ -1,11 +1,6 @@
 package gaterun
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"sort"
-
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -34,36 +29,17 @@ func selfChain(pid int64) map[int64]bool {
 }
 
 // Fence returns the live gate runs in root that are foreign to selfPid's
-// process chain, pruning dead or unparsable markers exactly like Running.
-// An empty result means the checkout is clear to start a gate or rebuild
-// the binary a live gate is running on.
+// process chain, pruning dead or unparsable markers through the same
+// liveMarkers scan Running uses. An empty result means the checkout is clear
+// to start a gate or rebuild the binary a live gate is running on.
 func Fence(root string, selfPid int64) []Holder {
 	chain := selfChain(selfPid)
-	paths, _ := filepath.Glob(filepath.Join(markerDir(root), "*.json"))
-	sort.Strings(paths)
 	var holders []Holder
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
+	for _, marker := range liveMarkers(root) {
+		if chain[marker.Pid] {
 			continue
 		}
-		var marker struct {
-			Pid          *int64 `json:"pid"`
-			PidStartedAt *int64 `json:"pidStartedAt"`
-			Gate         string `json:"gate"`
-		}
-		if json.Unmarshal(data, &marker) != nil || marker.Pid == nil || marker.PidStartedAt == nil {
-			_ = os.Remove(path)
-			continue
-		}
-		if !alive(*marker.Pid, *marker.PidStartedAt) {
-			_ = os.Remove(path)
-			continue
-		}
-		if chain[*marker.Pid] {
-			continue
-		}
-		holders = append(holders, Holder{Pid: *marker.Pid, Gate: marker.Gate})
+		holders = append(holders, Holder{Pid: marker.Pid, Gate: marker.Gate})
 	}
 	return holders
 }

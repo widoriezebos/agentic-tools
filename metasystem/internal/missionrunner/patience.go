@@ -139,7 +139,7 @@ func patienceParticipants(records []jobRecord) (participating []jobRecord, byID 
 	byID = map[string]jobRecord{}
 	for _, record := range records {
 		id, _ := record.doc["jobId"].(string)
-		stem := strings.TrimSuffix(pathBase(record.path), ".json")
+		stem := jobRecordStem(record)
 		status, _ := record.doc["status"].(string)
 		if id == "" || !patienceIDRe.MatchString(id) || id != stem ||
 			(!terminalJobStatuses[status] && !patienceLawfulNonterminal[status]) {
@@ -502,13 +502,4 @@ func sortJobsNewestFirst(records []jobRecord) {
 		bi, _ := b["jobId"].(string)
 		return ai > bi
 	})
-}
-
-// pathBase is filepath.Base without importing path/filepath twice in this
-// package's mental model — records always come from one flat directory.
-func pathBase(path string) string {
-	if idx := strings.LastIndexByte(path, '/'); idx >= 0 {
-		return path[idx+1:]
-	}
-	return path
 }

@@ -84,12 +84,22 @@ func Register(root string, pid int64, gate string) (string, error) {
 	return path, nil
 }
 
-// Running reports whether any gate is still running in this checkout, pruning
-// every marker whose process is gone or whose record is unparsable.
-func Running(root string) bool {
+// liveMarker is one surviving gate-run marker: a live registered process and
+// the gate name it recorded.
+type liveMarker struct {
+	Pid          int64
+	PidStartedAt int64
+	Gate         string
+}
+
+// liveMarkers scans the checkout's gate-run markers and is the one home of
+// the prune policy: a marker whose record is unparsable or whose process is
+// gone is deleted; an unreadable file is left alone. Only live, well-formed
+// markers return. Running and Fence both build on this scan.
+func liveMarkers(root string) []liveMarker {
 	paths, _ := filepath.Glob(filepath.Join(markerDir(root), "*.json"))
 	sort.Strings(paths)
-	found := false
+	var out []liveMarker
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -98,16 +108,23 @@ func Running(root string) bool {
 		var marker struct {
 			Pid          *int64 `json:"pid"`
 			PidStartedAt *int64 `json:"pidStartedAt"`
+			Gate         string `json:"gate"`
 		}
 		if json.Unmarshal(data, &marker) != nil || marker.Pid == nil || marker.PidStartedAt == nil {
 			_ = os.Remove(path)
 			continue
 		}
-		if alive(*marker.Pid, *marker.PidStartedAt) {
-			found = true
-		} else {
+		if !alive(*marker.Pid, *marker.PidStartedAt) {
 			_ = os.Remove(path)
+			continue
 		}
+		out = append(out, liveMarker{Pid: *marker.Pid, PidStartedAt: *marker.PidStartedAt, Gate: marker.Gate})
 	}
-	return found
+	return out
+}
+
+// Running reports whether any gate is still running in this checkout, pruning
+// every marker whose process is gone or whose record is unparsable.
+func Running(root string) bool {
+	return len(liveMarkers(root)) > 0
 }

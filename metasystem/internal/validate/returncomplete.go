@@ -456,16 +456,12 @@ func jsonSame(a, b any) bool {
 	return string(aj) == string(bj)
 }
 
+// jsonRepr renders the shared dialect core with quoted strings; everything
+// outside the core (bools, non-integral floats, composites) renders as raw
+// JSON bytes — this gate's deliberate difference from the conformance one.
 func jsonRepr(v any) string {
-	if v == nil {
-		return "None"
-	}
-	if s, isStr := v.(string); isStr {
-		return "'" + s + "'"
-	}
-	if f, isNum := v.(float64); isNum && f == float64(int64(f)) {
-		return strconv.FormatInt(int64(f), 10)
-	}
-	data, _ := json.Marshal(v)
-	return string(data)
+	return reprValue(v, true, func(rest any) string {
+		data, _ := json.Marshal(rest)
+		return string(data)
+	})
 }

@@ -26,41 +26,6 @@ import (
 
 var conformanceJobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// quoted formats a decoded JSON value for a refusal message: strings in
-// single quotes, null as None, numbers plainly. The quoting style is part of
-// the gate's message contract, which the conformance fixtures assert.
-func quoted(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return "None"
-	case bool:
-		if v {
-			return "True"
-		}
-		return "False"
-	case string:
-		return "'" + v + "'"
-	case float64:
-		if v == float64(int64(v)) {
-			return strconv.FormatInt(int64(v), 10)
-		}
-		return strconv.FormatFloat(v, 'g', -1, 64)
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
-func quotedList(items []string) string {
-	if len(items) == 0 {
-		return "[]"
-	}
-	quoted := make([]string, len(items))
-	for i, item := range items {
-		quoted[i] = "'" + item + "'"
-	}
-	return "[" + strings.Join(quoted, ", ") + "]"
-}
-
 type conformanceRun struct {
 	root          string
 	job           string
@@ -198,29 +163,6 @@ func (r *conformanceRun) resolveFacts() []string {
 	return nil
 }
 
-// scalarText renders a decoded JSON scalar plainly: integers without a
-// decimal point, strings as themselves.
-func scalarText(value any) string {
-	switch v := value.(type) {
-	case float64:
-		if v == float64(int64(v)) {
-			return strconv.FormatInt(int64(v), 10)
-		}
-		return strconv.FormatFloat(v, 'g', -1, 64)
-	case string:
-		return v
-	case nil:
-		return "None"
-	case bool:
-		if v {
-			return "True"
-		}
-		return "False"
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
 // Conformance implements `validate conformance`: stage review or merge for
 // one implementer job. It returns stdout lines, stderr lines, and the exit
 // code, matching the shell gate's contract exactly.
@@ -302,20 +244,7 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 		return r.fail("conformance failure: could not snapshot the implementer worktree")
 	}
 	paths := nulSplitPaths(rawPaths)
-
-	var violations []string
-	for _, path := range paths {
-		normalized := r.installationPath(path)
-		if normalized == "plans" || strings.HasPrefix(normalized, "plans/") {
-			violations = append(violations, "trusted plans/ state changed: "+path)
-		}
-		if normalized == "artifacts/agents" || strings.HasPrefix(normalized, "artifacts/agents/") {
-			violations = append(violations, "agent control plane changed: "+path)
-		}
-	}
-	if r.controlPlaneTampered() {
-		violations = append(violations, "agent control plane contains delegate-created files")
-	}
+	violations := r.boundaryViolations(paths)
 
 	currentRound := 0
 	if parsed, err := strconv.Atoi(r.roundText); err == nil {
@@ -500,19 +429,7 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 }
 
 func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string, isInstructionBearing func(string) bool) ([]string, []string, int) {
-	var violations []string
-	for _, path := range paths {
-		normalized := r.installationPath(path)
-		if normalized == "plans" || strings.HasPrefix(normalized, "plans/") {
-			violations = append(violations, "trusted plans/ state changed: "+path)
-		}
-		if normalized == "artifacts/agents" || strings.HasPrefix(normalized, "artifacts/agents/") {
-			violations = append(violations, "agent control plane changed: "+path)
-		}
-	}
-	if r.controlPlaneTampered() {
-		violations = append(violations, "agent control plane contains delegate-created files")
-	}
+	violations := r.boundaryViolations(paths)
 	var waiverClass any
 	if claim, isObject := waiver.(map[string]any); isObject && exactlyClassKey(claim) {
 		waiverClass = claim["class"]
@@ -568,7 +485,7 @@ func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string,
 		return r.out, r.errs, 1
 	}
 
-	currentStream := r.streamFor(r.rootJob)
+	currentStream := missionStream(r.root, r.rootJob)
 	count := 0
 	jobsDir := filepath.Join(r.root, "artifacts", "agents", "jobs")
 	if entries, err := os.ReadDir(jobsDir); err == nil {
@@ -585,7 +502,7 @@ func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string,
 				continue
 			}
 			candidateJob, _ := candidate["jobId"].(string)
-			if r.streamFor(candidateJob) == currentStream {
+			if missionStream(r.root, candidateJob) == currentStream {
 				count++
 			}
 		}
@@ -618,21 +535,45 @@ func allDigits(value string) bool {
 	return true
 }
 
-func (r *conformanceRun) streamFor(rootJob string) string {
-	brief := filepath.Join(r.root, "artifacts", "agents", rootJob, "brief.md")
-	data, err := os.ReadFile(brief)
+// boundaryViolations is the gate's tampering policy over a changed-path
+// set: trusted plans/ state and the agent control plane are out of bounds
+// for an implementer, and the control plane must hold no delegate-created
+// files. The review and merge stages apply this one policy.
+func (r *conformanceRun) boundaryViolations(paths []string) []string {
+	var violations []string
+	for _, path := range paths {
+		normalized := r.installationPath(path)
+		if normalized == "plans" || strings.HasPrefix(normalized, "plans/") {
+			violations = append(violations, "trusted plans/ state changed: "+path)
+		}
+		if normalized == "artifacts/agents" || strings.HasPrefix(normalized, "artifacts/agents/") {
+			violations = append(violations, "agent control plane changed: "+path)
+		}
+	}
+	if r.controlPlaneTampered() {
+		violations = append(violations, "agent control plane contains delegate-created files")
+	}
+	return violations
+}
+
+// missionStream reads the mission stream a root job's brief declares. A
+// missing brief, an absent "Mission Stream:" line, or an empty value all
+// mean the standalone stream — the default is gate policy, shared by the
+// conformance run and the waiver receipts.
+func missionStream(root, rootJob string) string {
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", rootJob, "brief.md"))
 	if err != nil {
 		return "standalone"
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range splitLines(string(data)) {
 		if !strings.HasPrefix(line, "Mission Stream:") {
 			continue
 		}
-		value := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
-		if value == "" {
-			return "standalone"
+		_, value, _ := strings.Cut(line, ":")
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
 		}
-		return value
+		return "standalone"
 	}
 	return "standalone"
 }

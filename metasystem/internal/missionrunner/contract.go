@@ -233,9 +233,8 @@ func fenceReachedAt(fences map[string]any, values map[string]string, jobStatus m
 func missionJobStatuses(root, mission string) map[string]string {
 	statuses := map[string]string{}
 	for _, record := range missionJobs(root, mission) {
-		stem := strings.TrimSuffix(filepath.Base(record.path), ".json")
 		status, _ := record.doc["status"].(string)
-		statuses[stem] = status
+		statuses[jobRecordStem(record)] = status
 	}
 	return statuses
 }

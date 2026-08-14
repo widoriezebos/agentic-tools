@@ -17,6 +17,12 @@ type jobRecord struct {
 	doc  map[string]any
 }
 
+// jobRecordStem is a record's file stem — the job-id spelling a record's
+// path carries, used when the body names no id and to verify the two match.
+func jobRecordStem(record jobRecord) string {
+	return strings.TrimSuffix(filepath.Base(record.path), ".json")
+}
+
 // missionJobs lists the job records stamped for a mission, in path order so
 // every downstream decision is deterministic. Unreadable records are skipped:
 // they cannot prove mission membership.
@@ -80,7 +86,7 @@ func jobRecordID(record jobRecord) string {
 	if id, ok := record.doc["jobId"].(string); ok && id != "" {
 		return id
 	}
-	return strings.TrimSuffix(filepath.Base(record.path), ".json")
+	return jobRecordStem(record)
 }
 
 // CloseableChains lists the root jobs of this mission's delegation chains
