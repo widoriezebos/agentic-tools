@@ -1657,6 +1657,24 @@ Spend: $32.89 tonight, ~$122 of EUR 240 total. The budget-5 bm-1
 test rep (RULING 5's go/no-go) launches now on the freed machine —
 it was always first in line.
 
+## D58 — The budget-5 test rep converts the serialized shape to a COMPLETED 0.981 run; the baseline arm is done
+
+**The rep (bm-1-20260814t221633z-40460/1, engine 1a38553, budget 5,
+$17.64, 82 min)**: the host serialized exactly like the two empty
+parks — two critic-only cycles first — and then used the runway
+budget 3 never gave it: implementers, a repair, and a code-critic
+from cycle 3 on, five cycles total, mission COMPLETED (not parked),
+VALID on all seven gates, acceptance 0.981, requirement coverage
+0.962, determinism at its floor. **The finding, now by direct
+experiment**: the same host shape costs $9 and produces nothing at
+budget 3, or $17.64 and produces the series' best product at budget
+5 — Wido's raise-to-5 ruling is validated, and the host-serialization
+question for item 14 gains its control case. **Series position**: the
+baseline arm holds its two valid reps (0.962 and 0.981) and is DONE
+per the drive-to-2-valid ruling. bm-2 stays HELD (D57). Next: the
+bm-2s contained codex arm (its manifest's own deliberate budget 8)
+toward two valid reps. Spend ~$140 of EUR 240.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
