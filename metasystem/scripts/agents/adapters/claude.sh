@@ -160,14 +160,7 @@ supervise() { # dispatch|follow-up and supervisor args
 
   result_session=$(claude_result_field "$result_file" session_id 2>/dev/null || true)
   result_model=$(claude_result_field "$result_file" model 2>/dev/null || true)
-  if (( ! handshake_done )) && [[ -n "$result_session" ]]; then
-    record_handshake "$result_session" "" "$result_model" || return 1
-  elif (( handshake_done )) && [[ -n "$result_session" && "$result_session" != "$session_id" ]]; then
-    finish_running failed resume_collision resume "$usage_file"
-    return 1
-  elif (( handshake_done )) && [[ -n "$result_model" ]]; then
-    record_result_effective_model "$result_model" || return 1
-  fi
+  settle_result_identity "$result_session" "" "$result_model" "$result_model" "$usage_file" || return 1
   complete_from_cli "$cli_status" "$usage_file" "$result_file"
 }
 

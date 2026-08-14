@@ -158,7 +158,9 @@ supervise() { # verb and remaining args
   fi
   if behavior_present handshake-failure; then
     patch="$round_dir/handshake-failure.json"
-    printf '{"error":"authentication_failed","phase":"handshake"}\n' >"$patch"
+    # Through the one patch writer like every other failure path; the patch
+    # gains the explicit usage:null that fail_pending's shape already carries.
+    "$ms" adapter result-patch --output "$patch" --error authentication_failed --phase handshake --usage ""
     "$dispatch" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
     exit 1
   fi

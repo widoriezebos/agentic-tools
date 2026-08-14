@@ -22,15 +22,15 @@
   conf gaining runtimes or arming taught subdirectory conf resolution;
   the review work itself does not dispatch jobs, so it proceeds unarmed.
 - Dead ends (do not retry without new evidence): none in this stream.
-- Next step: W4.18 selftest-run LANDED (D27; suites pending at the
-  cluster boundary); then W4.20 smalls, W4.21
-  refactor gate, W4.22 = D17 implementation pass (solo), W4.23-25; then
+- Next step: W4.21 refactor gate (→ D29); then W4.22 = D17
+  implementation pass (solo), W4.23-25; then
   W5 (10, suite decomposition), W6 (9, fixture retirement — each
   whole-file retirement its own decisions-doc entry), W7 (7, docs);
   queue tail F4 orphan-window design and F5 reaper decline logging.
-  Boundary validated 2026-08-14 at 8c6a114: VM suite green (HEAD
-  confirmed in-log); Mac suite flaked four times under an actively-used
-  machine — three were real test-harness races, each root-caused and
-  fixed (see the flake dossier); the fourth (S4-2 timing cap) is green
-  solo, so VM-green authority applies per the dossier's session
-  decision.
+  Boundaries: 8c6a114 VM-green (Mac flaked 4x under active use; three
+  real harness races fixed, dossier); e91cec4 (W4.18/D27) GREEN ON BOTH
+  HOSTS, trusted baseline recorded there. W4.20 smalls landed (D28:
+  -08 devin-prompt verb, -09 settle_result_identity, -12 minimal with
+  the wholesale-sourcing decline, -15 resolved by D27) — first low-risk
+  checkpoint after the e91cec4 boundary, canaries + gate green, full
+  suite due at the batch boundary after W4.21.

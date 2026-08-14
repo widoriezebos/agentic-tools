@@ -148,6 +148,7 @@ func families() []family {
 				{"selftest-record", "write the selftest pass record", runAdapterSelftestRecord},
 				{"selftest-listener", "one-shot loopback listener for the denied-fetch probe", runAdapterSelftestListener},
 				{"selftest-run", "run the full-contract adapter self-test", runAdapterSelftestRun},
+				{"devin-prompt", "write the schema-augmented prompt copy the Devin CLI reads", runAdapterDevinPrompt},
 			},
 		},
 		{

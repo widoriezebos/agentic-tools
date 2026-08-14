@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
@@ -250,4 +251,29 @@ func DevinSettle(transcriptPath, correlatedSession, roundDir string, requireTran
 		return model, false, err
 	}
 	return model, true, nil
+}
+
+// DevinPrompt writes the schema-augmented prompt copy the Devin CLI reads
+// (script-adapters-08/D28): this runtime has no schema flag, so the schema
+// goes in the prompt or the model invents field names. The dispatcher's
+// prompt file stays untouched as evidence. One writer replaces the two
+// hand-maintained copies (adapter round turns and host turns) whose
+// line-break placement had already drifted.
+func DevinPrompt(promptPath, schemaPath, outputPath string) error {
+	prompt, err := os.ReadFile(promptPath)
+	if err != nil {
+		return fmt.Errorf("cannot read the prompt: %w", err)
+	}
+	schema, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return fmt.Errorf("cannot read the schema: %w", err)
+	}
+	var text strings.Builder
+	text.Write(prompt)
+	text.WriteString("\n\n# Return schema, exact\n\n")
+	text.WriteString("Your reply must be ONE JSON object valid against this schema and nothing else:\n")
+	text.WriteString("no prose before or after it, no code fence, and no property this schema\n")
+	text.WriteString("does not name. Every property listed in \"required\" must be present.\n\n")
+	text.Write(schema)
+	return os.WriteFile(outputPath, []byte(text.String()), 0o644)
 }

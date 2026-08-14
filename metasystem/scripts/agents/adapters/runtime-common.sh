@@ -121,6 +121,24 @@ record_handshake() { # session, turn, effective model
   handshake_done=1
 }
 
+# The three-way decision after the CLI exits (script-adapters-09/D28), one
+# copy of the protocol state machine: a late handshake adopts the observed
+# session, an observed session that differs from the handshaken one is a
+# resume collision, and a completed result's model is recorded when the
+# runtime reports one (a runtime with no result model passes an empty
+# result_model and the branch stays quiet — a capability fact, not drift).
+settle_result_identity() { # observed session, observed turn, model for a late handshake, completed result model, usage file
+  local observed_session=$1 observed_turn=$2 handshake_model=$3 result_model=$4 usage_file=$5
+  if (( ! handshake_done )) && [[ -n "$observed_session" ]]; then
+    record_handshake "$observed_session" "$observed_turn" "$handshake_model" || return 1
+  elif (( handshake_done )) && [[ -n "$observed_session" && "$observed_session" != "$session_id" ]]; then
+    finish_running failed resume_collision resume "$usage_file"
+    return 1
+  elif (( handshake_done )) && [[ -n "$result_model" ]]; then
+    record_result_effective_model "$result_model" || return 1
+  fi
+}
+
 record_result_effective_model() { # effective model reported by the completed runtime result
   local model=$1 patch="$round_dir/result-model-patch.json"
   [[ -n "$model" ]] || return 2

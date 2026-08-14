@@ -619,6 +619,39 @@ full orchestration end to end, plus refusal tests for every verdict.
 refactor gate; that work takes D28's slot when it lands. D-numbers are
 assigned in landing order.
 
+## D28 — The W4.20 smalls: two dedups done, one done minimally, one already resolved (script-adapters-08/-09/-12/-15 sign-offs)
+
+**script-adapters-08 (done)**: `adapter devin-prompt` is the one writer of
+the schema-augmented prompt copy, consumed by both the adapter round path
+and the host turn path. The two hand-maintained heredocs had drifted in
+line-break placement; the adapter's wording is the canonical text, pinned
+by a byte test. This prose is the runtime's only schema channel, so it
+gets the byte-pin treatment load-bearing text gets here.
+
+**script-adapters-09 (done)**: `settle_result_identity` in
+runtime-common.sh is the one copy of the post-CLI three-way decision
+(late handshake / resume collision / result-model recording). claude
+passes its result model for both the handshake and the recording branch;
+codex passes its requested model for the handshake and an empty result
+model — the quiet third branch is a capability fact, not drift, exactly
+as the verifier put it. Behavior byte-preserved on both paths; the CAS
+writes stay in the called helpers (D24 authority principle untouched).
+
+**script-adapters-12 (minimal, rest declined)**: the fake adapter's
+inline handshake-failure patch now goes through `adapter result-patch`
+like every other failure path; the patch gains the explicit usage:null
+that fail_pending's shape already carries. The finding's original target
+— wholesale sourcing of runtime-common by fake.sh — is DECLINED on the
+verifier's own analysis: the library's hooks cover only the repair path
+while the fixture injects failures before and inside the fixed sequence,
+and the fixture exercises the dispatch/Go surface, where drift breaks
+loudly. Restructuring the library to save a fixture duplication would
+invert the risk.
+
+**script-adapters-15 (resolved by D27)**: the unquoted $dispatch/$root
+expansions lived entirely inside the selftest block the D27 port
+deleted; a sweep finds no unquoted remnants in runtime-common.sh.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

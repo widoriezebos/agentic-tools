@@ -170,3 +170,25 @@ func runAdapterSelftestRun(args []string) int {
 	}
 	return 0
 }
+
+// runAdapterDevinPrompt writes the schema-augmented prompt copy the Devin
+// CLI reads (script-adapters-08/D28) — one writer for the adapter and host
+// paths whose hand-maintained copies had drifted.
+func runAdapterDevinPrompt(args []string) int {
+	flags := flag.NewFlagSet("adapter devin-prompt", flag.ContinueOnError)
+	prompt := flags.String("prompt", "", "dispatcher prompt file (left untouched)")
+	schema := flags.String("schema", "", "return schema file")
+	output := flags.String("output", "", "augmented prompt output file")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *prompt == "" || *schema == "" || *output == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-prompt --prompt FILE --schema FILE --output FILE")
+		return 2
+	}
+	if err := adapter.DevinPrompt(*prompt, *schema, *output); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}

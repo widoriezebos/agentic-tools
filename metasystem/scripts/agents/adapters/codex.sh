@@ -158,12 +158,7 @@ supervise() { # dispatch|follow-up and supervisor args
   codex_usage "$events" "$usage_file"
   event_session=$(codex_event_field "$events" session 2>/dev/null || true)
   event_turn=$(codex_event_field "$events" turn 2>/dev/null || true)
-  if (( ! handshake_done )) && [[ -n "$event_session" ]]; then
-    record_handshake "$event_session" "$event_turn" "$requested_model" || return 1
-  elif (( handshake_done )) && [[ -n "$event_session" && "$event_session" != "$session_id" ]]; then
-    finish_running failed resume_collision resume "$usage_file"
-    return 1
-  fi
+  settle_result_identity "$event_session" "$event_turn" "$requested_model" "" "$usage_file" || return 1
   complete_from_cli "$cli_status" "$usage_file" "$raw"
 }
 

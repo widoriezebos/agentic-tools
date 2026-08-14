@@ -46,14 +46,7 @@ model=$("$ms" json get --file "$turn_record" --field model)
 # dispatcher's prompt file is left untouched as evidence; the CLI reads the
 # augmented copy.
 devin_prompt="$turn_dir/prompt.devin.md"
-{
-  cat "$prompt"
-  printf '\n\n# Return schema, exact\n\n'
-  printf 'Your reply must be ONE JSON object valid against this schema and nothing\n'
-  printf 'else: no prose before or after it, no code fence, and no property this\n'
-  printf 'schema does not name. Every property listed in "required" must be present.\n\n'
-  cat "$schema"
-} >"$devin_prompt"
+"$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" --output "$devin_prompt"
 
 devin_command=(
   devin -p

@@ -234,14 +234,7 @@ supervise() { # dispatch|follow-up and supervisor args
   # runtime has. The dispatcher's prompt stays untouched as evidence; the
   # augmented copy is what the CLI reads.
   local devin_prompt="$round_dir/prompt.devin.md"
-  {
-    cat "$prompt"
-    printf '\n\n# Return schema, exact\n\n'
-    printf 'Your reply must be ONE JSON object valid against this schema and nothing else:\n'
-    printf 'no prose before or after it, no code fence, and no property this schema\n'
-    printf 'does not name. Every property listed in "required" must be present.\n\n'
-    cat "$schema"
-  } >"$devin_prompt"
+  "$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" --output "$devin_prompt"
 
   record_actual_workspace_write_scope
   fail_if_effective_wider_before_launch || return 1
