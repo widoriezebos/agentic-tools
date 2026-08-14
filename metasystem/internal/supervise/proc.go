@@ -256,3 +256,32 @@ func processGroupMembers(pgid int64) (int, error) {
 	}
 	return count, nil
 }
+
+// GroupMemberPids lists the live members of the group led by pgid, minus an
+// excluded pid — the F4 kill domain "my own group except me" (D32). The
+// same indeterminability rule as the ceiling count: only ESRCH is an absent
+// member; any other probe failure refuses, because a sweep that silently
+// undercounts would prove a death that was not proven.
+func GroupMemberPids(pgid, except int64) ([]int64, error) {
+	pids, err := groupAllPids()
+	if err != nil {
+		return nil, fmt.Errorf("group membership is indeterminable: %w", err)
+	}
+	var members []int64
+	for _, pid := range pids {
+		if pid == except {
+			continue
+		}
+		pg, err := groupGetpgid(pid)
+		if err != nil {
+			if err == syscall.ESRCH {
+				continue
+			}
+			return nil, fmt.Errorf("group membership is indeterminable: getpgid %d: %w", pid, err)
+		}
+		if pg == pgid {
+			members = append(members, pid)
+		}
+	}
+	return members, nil
+}

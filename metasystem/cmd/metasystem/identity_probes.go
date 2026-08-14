@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 // runIdentityExists exits 0 when the pid exists — a zero-signal probe where a
@@ -47,4 +49,30 @@ func runIdentityGroupExists(args []string) int {
 	default:
 		return 1
 	}
+}
+
+// runProcGroupMembers prints the live pids of a process group, optionally
+// excluding one — the F4 kill domain enumeration (D32). Indeterminable
+// membership (any probe failure but ESRCH) refuses with exit 1: a sweep
+// must never act on an undercount.
+func runProcGroupMembers(args []string) int {
+	flags := flag.NewFlagSet("proc group-members", flag.ContinueOnError)
+	pgid := flags.Int64("pgid", 0, "process group id")
+	except := flags.Int64("except", 0, "pid to exclude (the caller itself)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *pgid < 1 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem proc group-members --pgid P [--except PID]")
+		return 2
+	}
+	members, err := supervise.GroupMemberPids(*pgid, *except)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	for _, pid := range members {
+		fmt.Println(pid)
+	}
+	return 0
 }

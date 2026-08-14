@@ -231,3 +231,28 @@ func TestProcessGroupMembersErrorPaths(t *testing.T) {
 		t.Fatal("an unreadable table must be indeterminable")
 	}
 }
+
+// GroupMemberPids: the F4 kill domain (own group minus self), same
+// indeterminability contract as the ceiling count.
+func TestGroupMemberPids(t *testing.T) {
+	restoreAll, restoreGet := groupAllPids, groupGetpgid
+	defer func() { groupAllPids, groupGetpgid = restoreAll, restoreGet }()
+	groupAllPids = func() ([]int64, error) { return []int64{10, 11, 12, 13}, nil }
+	groupGetpgid = func(pid int64) (int64, error) {
+		switch pid {
+		case 10, 11, 12:
+			return 42, nil
+		case 13:
+			return 0, syscall.ESRCH // gone between enumeration and probe
+		}
+		return 0, syscall.EPERM
+	}
+	members, err := GroupMemberPids(42, 11)
+	if err != nil || len(members) != 2 || members[0] != 10 || members[1] != 12 {
+		t.Fatalf("members = %v, %v", members, err)
+	}
+	groupGetpgid = func(pid int64) (int64, error) { return 0, syscall.EPERM }
+	if _, err := GroupMemberPids(42, 0); err == nil {
+		t.Fatal("an unreadable probe must refuse, not undercount")
+	}
+}

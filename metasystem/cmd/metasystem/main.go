@@ -36,6 +36,7 @@ func families() []family {
 				{"probe", "print a pid's exact identity as JSON", runIdentityProbe},
 				{"exists", "exit 0 if the pid exists (permission denial proves existence)", runIdentityExists},
 				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
+				{"group-members", "print a process group's live member pids, optionally excluding one", runProcGroupMembers},
 				{"census", "compute a fixture-driven census verdict", runCensusRun},
 				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
 				{"classify", "print live, stale, dead, or unknown for a recorded pid and tag", runProcClassify},
