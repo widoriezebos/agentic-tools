@@ -1504,3 +1504,11 @@ func contractIntField(v any) (int64, bool) {
 	}
 	return intValue(v)
 }
+
+// CanonicalContractHash is the digest a human approval records, exposed for
+// the hash-only verb (script-validate-1/D34): the suite's fixture used to
+// shadow contractCanonicalSignedBytes in awk, and a canonicalization change
+// in Go would have left the awk silently computing yesterday's algorithm.
+func CanonicalContractHash(text string) string {
+	return sha256Hex(string(contractCanonicalSignedBytes(text)))
+}

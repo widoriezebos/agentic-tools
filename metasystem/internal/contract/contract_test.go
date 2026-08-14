@@ -397,3 +397,15 @@ func TestContractPatienceEntriesRejected(t *testing.T) {
 		})
 	}
 }
+
+// The hash-only surface (script-validate-1/D34), pinned against an
+// independently constructed canonical image: approval lines dropped,
+// per-line trailing whitespace stripped, trailing blanks trimmed.
+func TestCanonicalContractHash(t *testing.T) {
+	text := "# Title  \nbody line\t\nApproval: name=X; contract-sha256=deadbeef\n\n  \n"
+	canonical := "# Title\nbody line"
+	expected := sha256Hex(canonical)
+	if got := CanonicalContractHash(text); got != expected {
+		t.Fatalf("canonical hash drifted: got %s want %s", got, expected)
+	}
+}

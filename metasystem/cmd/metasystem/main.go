@@ -283,6 +283,7 @@ func families() []family {
 				{"fence-release-job", "release a husked dispatch's fence reservation", runMissionFenceReleaseJob},
 				{"contract-validate", "validate a mission contract's authored block", runMissionContractValidate},
 				{"contract-seal", "seal a validated contract and print its digest", runMissionContractSeal},
+				{"contract-hash", "print a contract's canonical signed-bytes digest", runMissionContractHash},
 				{"contract-preflight", "preflight a sealed, signed contract and emit its verified bytes", runMissionContractPreflight},
 				{"contract-measure", "run the gate and guards and classify metrics against a prior measurement", runMissionContractMeasure},
 				{"contract-envelope-allows", "exit 0 when the signed contract's dispatch-allow carries a pair", runMissionContractEnvelopeAllows},

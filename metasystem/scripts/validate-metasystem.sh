@@ -2738,10 +2738,8 @@ EOF
   # stripped of trailing spaces/tabs, trailing blank lines dropped. This is
   # contractCanonicalSignedBytes (internal/mission/contract.go), verified
   # byte-identical to the retired python contract_hash before its deletion.
-  fixture_contract_hash() { # contract path
-    awk '!/^Approval:/{sub(/[ \t]+$/,""); line[++n]=$0}
-      END{while(n>0 && line[n]=="") n--; for(i=1;i<=n;i++) printf "%s%s", line[i], (i<n ? "\n" : "")}' \
-      "$1" | shasum -a 256 | awk '{print $1}'
+  fixture_contract_hash() { # contract path — the ENGINE's canonical hash
+    "$agent_repo/bin/metasystem" mission contract-hash --file "$1"
   }
   printf '\nApproval: name=Fixture-Human; date=2026-08-06; contract-sha256=%s\n' \
     "$(fixture_contract_hash "$agent_repo/plans/mission-mission-alpha.contract.md")" \

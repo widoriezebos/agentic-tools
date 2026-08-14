@@ -74,3 +74,26 @@ func runMissionContractPreflight(args []string) int {
 	fmt.Printf("mission preflight passed: %s approvedContractSha256=%s\n", missionID, rawSHA)
 	return 0
 }
+
+// runMissionContractHash prints the canonical signed-bytes digest of a
+// contract file — the hash an approval records — without validating the
+// authored grammar (script-validate-1/D34: the envelope-only fixtures need
+// the hash, not the full gate instruments).
+func runMissionContractHash(args []string) int {
+	flags := flag.NewFlagSet("mission contract-hash", flag.ContinueOnError)
+	file := flags.String("file", "", "contract file")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *file == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem mission contract-hash --file FILE")
+		return 2
+	}
+	data, err := os.ReadFile(*file)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(contract.CanonicalContractHash(string(data)))
+	return 0
+}
