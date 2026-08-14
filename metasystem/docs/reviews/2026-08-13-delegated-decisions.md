@@ -873,6 +873,31 @@ TestSnapshotNameGrammar under the go gate (generated names against the
 grammar, sequence advance included); the source-text grep that failed
 on any reflow is gone.
 
+## D35 — The suite is an orchestrator again (script-validate-4 sign-off)
+
+**Decision**: both giant inline blocks moved to the sub-suite shape the
+file already used for every other fixture family. The adopt self-test
+(~450 lines, with fill_harness_conf and copy_tree_without_artifacts,
+whose only callers lived inside it) became scripts/adopt-fixtures.sh;
+the dispatcher/adapter-selftest/mission-runner E2E block (2,007 lines)
+became scripts/agents/dispatch-fixtures.sh. Each sub-suite owns its
+temp tree, its armed-supervision shutdown (the tracker machinery is
+copied, because a child's registrations must shut down in the child's
+own trap), and orchestrator-grade failure-evidence preservation. The
+orchestrator keeps the delegate-scope and delivery-contract gating at
+the invocation, and makes the tail's SKIP_AGENT_FIXTURES export itself
+— a child's export dies with it. validate-metasystem.sh went from
+4,676 lines this morning to 2,201; both halves proven by full VM runs
+(534s and 495s, each with the witness path live). The shared-state
+audit found exactly two pre-block couplings (the fixture-budget caps
+and the tracker) and zero post-block references — recorded here
+because that audit is what made a verbatim extraction safe.
+
+**Why now**: beyond the finding's own case, the decomposition is the
+prerequisite for the parallel-fixture-families option noted in the
+D33 discussion — independently runnable sections are the unit of
+parallelism.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
