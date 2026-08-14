@@ -2,8 +2,11 @@ package returnschema
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -86,5 +89,101 @@ func TestMaterializeV1AndV2(t *testing.T) {
 	_ = json.Unmarshal(data, &v2)
 	if v2["$comment"] != "metasystem.version=2" {
 		t.Fatalf("v2 output missing the marker: %v", v2["$comment"])
+	}
+}
+
+// The structured-output invariants, in the generator's own package
+// (script-fixtures-002/D37): every object typed and closed, every required
+// list complete, every property declaring a type. Two shipped defects
+// motivated the original shell-side linter — an object without required
+// and a bare const without a type — each of which failed every codex
+// dispatch before the model produced a token. Running under the go gate,
+// they now survive fixture retirement.
+func TestMaterializedSchemasObeyStructuredOutputRules(t *testing.T) {
+	// go test runs with the package directory as cwd; the shipped role
+	// schemas this linter guards live two levels up.
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := []string{"behavior-judge", "code-critic", "design-critic", "implementer", "investigator", "verifier"}
+	var problems []string
+	declaresAType := func(node map[string]any) bool {
+		for _, key := range []string{"type", "enum", "anyOf", "oneOf", "allOf", "$ref"} {
+			if _, ok := node[key]; ok {
+				return true
+			}
+		}
+		return false
+	}
+	var walk func(node any, where string)
+	walk = func(node any, where string) {
+		object, ok := node.(map[string]any)
+		if !ok {
+			return
+		}
+		if properties, ok := object["properties"].(map[string]any); ok {
+			if object["type"] != "object" {
+				problems = append(problems, where+": has properties but is not typed object")
+			}
+			required, ok := object["required"].([]any)
+			if !ok {
+				problems = append(problems, where+": object without a required list")
+			} else {
+				have := map[string]bool{}
+				for _, name := range required {
+					if s, ok := name.(string); ok {
+						have[s] = true
+					}
+				}
+				var absent []string
+				for name := range properties {
+					if !have[name] {
+						absent = append(absent, name)
+					}
+				}
+				sort.Strings(absent)
+				if len(absent) > 0 {
+					problems = append(problems, fmt.Sprintf("%s: properties absent from required: %v", where, absent))
+				}
+			}
+			if object["additionalProperties"] != false {
+				problems = append(problems, where+": object without additionalProperties false")
+			}
+			for name, child := range properties {
+				if childObject, ok := child.(map[string]any); ok && !declaresAType(childObject) {
+					problems = append(problems, where+"/"+name+": declares neither type nor enum")
+				}
+				walk(child, where+"/"+name)
+			}
+		}
+		if items, ok := object["items"].(map[string]any); ok {
+			walk(items, where+"[]")
+		}
+		for _, key := range []string{"anyOf", "oneOf", "allOf"} {
+			if children, ok := object[key].([]any); ok {
+				for index, child := range children {
+					walk(child, fmt.Sprintf("%s/%s[%d]", where, key, index))
+				}
+			}
+		}
+	}
+	for _, role := range roles {
+		output := filepath.Join(t.TempDir(), role+".json")
+		if err := Materialize(root, role, 2, output); err != nil {
+			t.Fatalf("materialize %s: %v", role, err)
+		}
+		data, err := os.ReadFile(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema any
+		if err := json.Unmarshal(data, &schema); err != nil {
+			t.Fatalf("materialized %s is not JSON: %v", role, err)
+		}
+		walk(schema, role)
+	}
+	if len(problems) > 0 {
+		t.Fatalf("version-2 schemas violate the structured-output rules:\n%s", strings.Join(problems, "\n"))
 	}
 }

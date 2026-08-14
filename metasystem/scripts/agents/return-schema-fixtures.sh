@@ -36,51 +36,11 @@ PY
 # `type`, each of which failed EVERY codex delegate dispatch before the model
 # produced a token. The rules are cheap to state, so they are checked here
 # instead of being rediscovered live.
-for role in behavior-judge code-critic design-critic implementer investigator verifier; do
-  "$ms" schema materialize --root "$root" --role "$role" --version 2 \
-    --output "$fixture/strict-$role.json"
-done
-python3 - "$fixture" <<'PY'
-import json, sys
-from pathlib import Path
-
-problems = []
-
-def declares_a_type(node):
-    return any(key in node for key in ("type", "enum", "anyOf", "oneOf", "allOf", "$ref"))
-
-def walk(node, where):
-    if not isinstance(node, dict):
-        return
-    properties = node.get("properties")
-    if isinstance(properties, dict):
-        if node.get("type") != "object":
-            problems.append(f"{where}: has properties but is not typed object")
-        required = node.get("required")
-        if not isinstance(required, list):
-            problems.append(f"{where}: object without a required list")
-        else:
-            absent = sorted(set(properties) - set(required))
-            if absent:
-                problems.append(f"{where}: properties absent from required: {absent}")
-        if node.get("additionalProperties") is not False:
-            problems.append(f"{where}: object without additionalProperties false")
-        for name, child in properties.items():
-            if isinstance(child, dict) and not declares_a_type(child):
-                problems.append(f"{where}/{name}: declares neither type nor enum")
-            walk(child, f"{where}/{name}")
-    if isinstance(node.get("items"), dict):
-        walk(node["items"], f"{where}[]")
-    for key in ("anyOf", "oneOf", "allOf"):
-        for index, child in enumerate(node.get(key) or []):
-            walk(child, f"{where}/{key}[{index}]")
-
-for path in sorted(Path(sys.argv[1]).glob("strict-*.json")):
-    walk(json.loads(path.read_text()), path.stem)
-if problems:
-    print("\n".join(problems), file=sys.stderr)
-    raise SystemExit("version-2 schemas violate the structured-output rules above")
-PY
+# The structured-output linter moved to the generator's own package
+# (TestMaterializedSchemasObeyStructuredOutputRules, internal/returnschema,
+# under the go gate — script-fixtures-002/D37): generator invariants of
+# Go-owned code belong where they survive fixture retirement. This file
+# keeps its thin normalize_return and assert-return-complete legs.
 
 "$root/scripts/assert-return-complete.sh" --role implementer --file "$fixture/v1.json"
 

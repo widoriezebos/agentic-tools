@@ -962,6 +962,19 @@ delegates, which the standing rule keeps apart from suite runs on one
 machine — so the series resumes tonight after the final review
 boundary, machine dedicated.
 
+## D37 — The schema linter lives in the generator's package (script-fixtures-002 sign-off)
+
+**Decision**: the structured-output invariants — every object typed and
+closed, every required list complete, every property declaring a type —
+moved from the ~45-line python walker in return-schema-fixtures.sh to
+TestMaterializedSchemasObeyStructuredOutputRules in
+internal/returnschema, walking every role's REAL materialized version-2
+schema under the go gate. The shell file keeps its normalize_return and
+assert-return-complete legs (the file itself is NOT retired — only the
+linter leg — so the shipped surface keeps its name and its remaining
+duties). Proven green against the shipped schemas before the shell leg
+was cut, per the tier's never-delete-first rule.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
