@@ -3,8 +3,32 @@ package report
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// TestRunningWorkClauseJobsHalf covers the record scan end to end. Only the
+// PREFIX is asserted: the process-scan half may truthfully append mission or
+// gate clauses when this test itself runs under a live suite.
+func TestRunningWorkClauseJobsHalf(t *testing.T) {
+	repo := t.TempDir()
+	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobs, "job-a.json"),
+		[]byte(`{"jobId":"job-a","role":"implementer","runtime":"codex","status":"running"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobs, "done.json"),
+		[]byte(`{"jobId":"done","status":"completed"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	clause := RunningWorkClause(repo)
+	if !strings.HasPrefix(clause, "1 helper agent(s): implementer job-a [running, codex]") {
+		t.Fatalf("clause = %q", clause)
+	}
+}
 
 func TestRunningJobDetail(t *testing.T) {
 	dir := t.TempDir()
