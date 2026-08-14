@@ -477,6 +477,23 @@ Rejected: the wait cap is fixture-scaled shell policy
 (supervision_wait_cap), and a verb that sleeps is a verb a caller cannot
 compose.
 
+## D22 — `report running-work` is a verb (script-orchestration-05 sign-off)
+
+**Decision:** the turn-end "is anything still working?" inventory becomes
+report.RunningWorkClause behind the new verb, beside open-work: job
+records decoded properly (killing the raw-grep class where a nested
+"running" inside an error field counted as live work), mission runners
+found by argv tokens instead of pgrep-plus-sed, gate runs matched the same
+way, and the historical clause wording built in one home. The hook keeps
+only the three-way sentence choice, which depends on its own open-work
+state. The clause (not raw JSON) is the verb's output: the hook is the
+single consumer and the wording is the contract a human reads every turn.
+
+**Alternative not taken:** a JSON inventory the hook re-words. Rejected:
+two homes for human-facing wording is how the sentence and the data drift;
+if a second consumer ever needs the raw inventory, the clause function
+already sits on top of typed pieces to expose.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

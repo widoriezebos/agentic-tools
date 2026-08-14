@@ -1,0 +1,115 @@
+package report
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+)
+
+// The turn-end "is anything still working?" answer (review
+// script-orchestration-05, relocated from supervision-hook.sh): live
+// delegate jobs read from decoded records instead of a raw status grep,
+// mission runners found by argv tokens instead of pgrep-plus-sed, and gate
+// runs. This is the surface the README's unsupervised-runs failure class
+// hangs off — a false "nothing running" while a mission burns.
+
+var missionRunnerArgv = regexp.MustCompile(`mission(-runner)? run-loop`)
+var gateArgv = regexp.MustCompile(`validate-metasystem\.sh|validate-kit\.sh`)
+
+// runningJobDetail names one live delegate: "role jobId [status, runtime]".
+func runningJobDetail(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var record struct {
+		JobId   string `json:"jobId"`
+		Role    string `json:"role"`
+		Runtime string `json:"runtime"`
+		Status  string `json:"status"`
+	}
+	if json.Unmarshal(data, &record) != nil {
+		return "", false
+	}
+	if record.Status != "pending" && record.Status != "running" {
+		return "", false
+	}
+	if record.JobId == "" {
+		record.JobId = strings.TrimSuffix(filepath.Base(path), ".json")
+	}
+	if record.Role == "" {
+		record.Role = "?"
+	}
+	if record.Runtime == "" {
+		record.Runtime = "?"
+	}
+	return fmt.Sprintf("%s %s [%s, %s]", record.Role, record.JobId, record.Status, record.Runtime), true
+}
+
+// missionRootBase extracts the basename of a runner argv's --root value.
+func missionRootBase(argv string) string {
+	tokens := strings.Fields(argv)
+	for i, token := range tokens {
+		if token == "--root" && i+1 < len(tokens) {
+			return filepath.Base(tokens[i+1])
+		}
+	}
+	return ""
+}
+
+// RunningWorkClause composes the active clause of the turn-end sentence —
+// empty when nothing is running. The wording is the hook's historical one:
+// "N helper agent(s): role id [status, runtime]; ...", ", and a mission
+// still going in a, b", ", and the test gates".
+func RunningWorkClause(repo string) string {
+	var details []string
+	records, _ := filepath.Glob(filepath.Join(repo, "artifacts", "agents", "jobs", "*.json"))
+	sort.Strings(records)
+	for _, record := range records {
+		if detail, ok := runningJobDetail(record); ok {
+			details = append(details, detail)
+		}
+	}
+
+	var missions []string
+	gates := false
+	seen := map[string]bool{}
+	if processes, err := census.EnumerateProcesses(); err == nil {
+		for _, process := range processes {
+			if missionRunnerArgv.MatchString(process.Argv) {
+				if base := missionRootBase(process.Argv); base != "" && !seen[base] {
+					seen[base] = true
+					missions = append(missions, base)
+				}
+			}
+			if gateArgv.MatchString(process.Argv) {
+				gates = true
+			}
+		}
+	}
+	sort.Strings(missions)
+	return composeRunningClause(details, missions, gates)
+}
+
+// composeRunningClause is the pure wording: pieces joined ", and ", empty
+// when idle. Split out because the process-scan half cannot be pinned in a
+// unit test that itself runs under a live gate.
+func composeRunningClause(details, missions []string, gates bool) string {
+	var pieces []string
+	if len(details) > 0 {
+		pieces = append(pieces, fmt.Sprintf("%d helper agent(s): %s", len(details), strings.Join(details, "; ")))
+	}
+	if len(missions) > 0 {
+		pieces = append(pieces, "a mission still going in "+strings.Join(missions, ", "))
+	}
+	if gates {
+		pieces = append(pieces, "the test gates")
+	}
+	return strings.Join(pieces, ", and ")
+}
