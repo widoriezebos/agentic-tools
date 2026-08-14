@@ -1,7 +1,10 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -9,9 +12,11 @@ import (
 )
 
 // runReceipt relays scripts/receipt.sh's calling convention: the action
-// word, then one flag vocabulary shared by every action, exactly as the
-// shell parsed it. A retro summary may ride as the first positional
-// argument after the action.
+// word, then one flag vocabulary shared by every action (a flag.FlagSet,
+// cli-9 — the former hand-rolled switch re-implemented flag semantics). A
+// retro summary may ride as the first positional argument after the
+// action. The FlagSet's own messages are discarded so a misuse prints
+// exactly the historical one-line usage.
 func runReceipt(args []string) int {
 	usage := func() {
 		fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|correct|check|stats|retro [flags] (see scripts/receipt.sh --help)")
@@ -30,87 +35,50 @@ func runReceipt(args []string) int {
 		opts.Summary = args[0]
 		args = args[1:]
 	}
-	need := func(i int) (string, bool) {
-		if i+1 >= len(args) {
-			usage()
-			return "", false
-		}
-		return args[i+1], true
-	}
-	for i := 0; i < len(args); i++ {
-		value, valueOK := "", true
-		switch args[i] {
-		case "--root":
-			value, valueOK = need(i)
-			opts.Root = value
-		case "--file":
-			value, valueOK = need(i)
-			opts.File = value
-		case "--type":
-			value, valueOK = need(i)
-			opts.Type = value
-		case "--outcome":
-			value, valueOK = need(i)
-			opts.Outcome = value
-		case "--skills":
-			value, valueOK = need(i)
-			opts.Skills = value
-		case "--verify":
-			value, valueOK = need(i)
-			opts.Verify = value
-		case "--corrections":
-			value, valueOK = need(i)
-			opts.Corrections = value
-		case "--stop-loss":
-			value, valueOK = need(i)
-			opts.StopLoss = value
-		case "--delegate":
-			value, valueOK = need(i)
-			opts.Delegates = append(opts.Delegates, value)
-		case "--note":
-			value, valueOK = need(i)
-			opts.Note = value
-		case "--ref-epoch":
-			value, valueOK = need(i)
-			opts.RefEpoch = value
-		case "--ref-sha1":
-			value, valueOK = need(i)
-			opts.RefSHA1 = value
-		case "--field":
-			value, valueOK = need(i)
-			opts.Field = value
-		case "--was":
-			value, valueOK = need(i)
-			opts.Was = value
-		case "--now":
-			value, valueOK = need(i)
-			opts.NowValue = value
-		case "--reason":
-			value, valueOK = need(i)
-			opts.Reason = value
-		case "--all":
-			opts.All = true
-			continue // boolean flag: no value to skip
-		case "--max-age-days":
-			value, valueOK = need(i)
-			opts.MaxAgeDays = value
-			opts.MaxAgeSet = true
-		case "--max-receipts":
-			value, valueOK = need(i)
-			opts.MaxReceipts = value
-			opts.MaxReceiptsSet = true
-		case "-h", "--help":
+	flags := flag.NewFlagSet("receipt "+action, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&opts.Root, "root", opts.Root, "checkout root")
+	flags.StringVar(&opts.File, "file", opts.File, "receipt ledger file")
+	flags.StringVar(&opts.Type, "type", "", "receipt type")
+	flags.StringVar(&opts.Outcome, "outcome", "", "receipt outcome")
+	flags.StringVar(&opts.Skills, "skills", opts.Skills, "skills used")
+	flags.StringVar(&opts.Verify, "verify", opts.Verify, "verify outcome")
+	flags.StringVar(&opts.Corrections, "corrections", opts.Corrections, "correction count")
+	flags.StringVar(&opts.StopLoss, "stop-loss", opts.StopLoss, "stop-loss engaged")
+	flags.Func("delegate", "runtime:model:job delegate entry (repeatable)", func(value string) error {
+		opts.Delegates = append(opts.Delegates, value)
+		return nil
+	})
+	flags.StringVar(&opts.Note, "note", "", "free-text note")
+	flags.StringVar(&opts.RefEpoch, "ref-epoch", "", "corrected line's epoch")
+	flags.StringVar(&opts.RefSHA1, "ref-sha1", "", "corrected line's sha1")
+	flags.StringVar(&opts.Field, "field", "", "corrected field")
+	flags.StringVar(&opts.Was, "was", "", "corrected field's old value")
+	flags.StringVar(&opts.NowValue, "now", "", "corrected field's new value")
+	flags.StringVar(&opts.Reason, "reason", "", "correction reason")
+	flags.BoolVar(&opts.All, "all", false, "count the whole ledger")
+	flags.StringVar(&opts.MaxAgeDays, "max-age-days", "", "cadence age ceiling")
+	flags.StringVar(&opts.MaxReceipts, "max-receipts", "", "cadence receipt ceiling")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
 			usage()
 			return 0
-		default:
-			usage()
-			return 2
 		}
-		if !valueOK {
-			return 2
-		}
-		i++
+		usage()
+		return 2
 	}
+	if flags.NArg() > 0 {
+		usage()
+		return 2
+	}
+	flags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "max-age-days":
+			opts.MaxAgeSet = true
+		case "max-receipts":
+			opts.MaxReceiptsSet = true
+		}
+	})
 	var result receipt.Result
 	switch action {
 	case "add":

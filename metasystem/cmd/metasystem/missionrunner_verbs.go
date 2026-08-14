@@ -214,6 +214,13 @@ func missionRunnerUsage() {
 // parseRunnerArgs reads --key value pairs and bare switches with the
 // runner's strict grammar: only the given keys, every valued key valued, and
 // nothing else. It reports whether the arguments parsed cleanly.
+//
+// Kept hand-rolled deliberately (cli-9): the five runner verbs share ONE
+// grammar whose flag sets are data (the valued/switches maps), and the
+// grammar refuses a stray positional anywhere in the argument list —
+// flag.FlagSet stops parsing at the first positional instead of refusing
+// it, and cannot be table-driven this tersely. Nothing here re-implements
+// flag semantics loosely: unknown keys and unvalued keys refuse.
 func parseRunnerArgs(args []string, valued map[string]*string, switches map[string]*bool) bool {
 	for index := 0; index < len(args); {
 		if target, known := valued[args[index]]; known && index+1 < len(args) {

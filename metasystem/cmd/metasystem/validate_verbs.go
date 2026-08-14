@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -227,42 +228,31 @@ the template does not satisfy the gate. Table cells must not contain literal
 pipe characters; the column parser cannot see an escaped pipe as content.
 `)
 	}
-	root := "."
+	flags := flag.NewFlagSet("validate design-obligations", flag.ContinueOnError)
+	flags.Usage = usage
+	root := flags.String("root", ".", "root for resolving relative plan paths")
 	files := []string{}
-	runtimeRequired := false
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--file":
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "missing value for --file")
-				return 2
-			}
-			files = append(files, args[i+1])
-			i++
-		case "--root":
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "missing value for --root")
-				return 2
-			}
-			root = args[i+1]
-			i++
-		case "--runtime-required":
-			runtimeRequired = true
-		case "-h", "--help":
-			usage()
+	flags.Func("file", "design-obligation matrix (repeatable)", func(value string) error {
+		files = append(files, value)
+		return nil
+	})
+	runtimeRequired := flags.Bool("runtime-required", false, "CRITICAL/HIGH obligations must be DONE")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
 			return 0
-		default:
-			fmt.Fprintf(os.Stderr, "unknown argument: %s\n", args[i])
-			usage()
-			return 2
 		}
+		return 2
+	}
+	if flags.NArg() > 0 {
+		usage()
+		return 2
 	}
 	if len(files) == 0 {
 		fmt.Fprintln(os.Stderr, "at least one --file is required")
 		usage()
 		return 2
 	}
-	out, errs, code := validate.DesignObligations(root, files, runtimeRequired)
+	out, errs, code := validate.DesignObligations(*root, files, *runtimeRequired)
 	for _, line := range out {
 		fmt.Println(line)
 	}
@@ -292,39 +282,32 @@ closed, independent code-critic chain over the branch's final committed tree.
 Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 `)
 	}
-	root := "."
-	stage := ""
-	job := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--stage":
-			if i+1 >= len(args) || stage != "" {
-				usage()
-				return 2
+	flags := flag.NewFlagSet("validate conformance", flag.ContinueOnError)
+	flags.Usage = usage
+	root := flags.String("root", ".", "merge-target checkout root")
+	stage, job := "", ""
+	// A gate argument given twice is a caller confusion this verb refuses
+	// rather than last-wins (the hand-rolled loop's strictness, kept).
+	once := func(target *string, name string) func(string) error {
+		return func(value string) error {
+			if *target != "" {
+				return fmt.Errorf("--%s given twice", name)
 			}
-			stage = args[i+1]
-			i++
-		case "--job":
-			if i+1 >= len(args) || job != "" {
-				usage()
-				return 2
-			}
-			job = args[i+1]
-			i++
-		case "--root":
-			if i+1 >= len(args) {
-				usage()
-				return 2
-			}
-			root = args[i+1]
-			i++
-		case "-h", "--help":
-			usage()
-			return 0
-		default:
-			usage()
-			return 2
+			*target = value
+			return nil
 		}
+	}
+	flags.Func("stage", "review or merge", once(&stage, "stage"))
+	flags.Func("job", "implementer job id", once(&job, "job"))
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if flags.NArg() > 0 {
+		usage()
+		return 2
 	}
 	if stage != "review" && stage != "merge" {
 		usage()
@@ -334,7 +317,7 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 		usage()
 		return 2
 	}
-	out, errs, code := validate.Conformance(root, stage, job)
+	out, errs, code := validate.Conformance(*root, stage, job)
 	for _, line := range out {
 		fmt.Println(line)
 	}
@@ -373,29 +356,24 @@ Run it before contracting a new cycle.
 Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 `)
 	}
-	file := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--file":
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "missing --file ledger")
-				return 2
-			}
-			file = args[i+1]
-			i++
-		case "-h", "--help":
-			usage()
+	flags := flag.NewFlagSet("validate stop-loss", flag.ContinueOnError)
+	flags.Usage = usage
+	file := flags.String("file", "", "investigation ledger")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
 			return 0
-		default:
-			usage()
-			return 2
 		}
+		return 2
 	}
-	if file == "" {
+	if flags.NArg() > 0 {
+		usage()
+		return 2
+	}
+	if *file == "" {
 		fmt.Fprintln(os.Stderr, "missing --file ledger")
 		return 2
 	}
-	out, errs, code := validate.StopLoss(file)
+	out, errs, code := validate.StopLoss(*file)
 	for _, line := range out {
 		fmt.Println(line)
 	}
