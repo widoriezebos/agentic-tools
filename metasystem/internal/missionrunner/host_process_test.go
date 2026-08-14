@@ -102,6 +102,41 @@ func TestGroupProbes(t *testing.T) {
 	}
 }
 
+// TestAssembleHostCommandExportsMissionLineage pins the succession wiring:
+// every turn's host process must inherit METASYSTEM_OWNER_LINEAGE derived
+// from the mission id, or each turn's host takes the lease from its own
+// dead predecessor and sweeps the previous turn's delegates (the loop that
+// cost bm-2 two of three delegates). This replaces the shell fixture's
+// grep of host.go source text (script-fixtures-019).
+func TestAssembleHostCommandExportsMissionLineage(t *testing.T) {
+	root := t.TempDir()
+	engine := &Engine{Mission: "mr-lineage", Root: root}
+	adapterDir := filepath.Join(root, "scripts", "agents", "hosts")
+	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	adapter := filepath.Join(adapterDir, "fake.sh")
+	if err := os.WriteFile(adapter, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	launch := &hostLaunch{
+		turnID:    "turn-1",
+		turnDir:   t.TempDir(),
+		turn:      map[string]any{"runtime": "fake"},
+		leasePath: filepath.Join(root, "lease.json"),
+	}
+	if err := engine.assembleHostCommand(launch); err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	want := "METASYSTEM_OWNER_LINEAGE=" + MissionLineage("mr-lineage")
+	for _, entry := range launch.command.Env {
+		if entry == want {
+			return
+		}
+	}
+	t.Fatalf("host environment must carry %s, got:\n%s", want, strings.Join(launch.command.Env, "\n"))
+}
+
 // terminateGroup's three verdicts: a dead group is a no-op; an unowned live
 // group is skipped with the census left to catch strays; an owned group is
 // signaled and reaped within the grace window.

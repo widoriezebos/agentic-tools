@@ -72,10 +72,15 @@
   first), D49 config tailor grows --runtimes fake + repeatable
   --set and the three divergent perl conf rewrites die
   (equivalence-diffed old-vs-new on the shipped conf; fingerprint,
-  supervision, and dispatch harnesses green standalone). W6 at 8 of
-  9. Remaining: item-8 boundary (VM detached + pid Monitor, Mac
-  sampling, baseline re-record), hygiene batch (D50, final W6
-  boundary); then W7 (7 docs) closes the program. Superseded: W5 batch 1
+  supervision, and dispatch harnesses green standalone). Item-8
+  boundary GREEN ON BOTH HOSTS at a1877a8 (VM 528s, Mac sampling
+  1296s; baseline re-recorded there). W6 COMPLETE (9/9): the hygiene
+  batch landed as D50 with one disposition per finding — two real Go
+  ports first (lease-refused witness, lineage-export env assertion),
+  -016 resolved-as-found (W1.24), the rest retirements/fixes; four
+  Go packages green in full, six edited fixture files green
+  standalone. Remaining: final W6 boundary (VM detached + pid
+  Monitor, Mac sampling); then W7 (7 docs) closes the program. Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in

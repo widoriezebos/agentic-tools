@@ -1165,6 +1165,41 @@ adopt.sh's production call is untouched. Proof: validate unit tests
 (fake collapse, explicit-fake wins, SetConfKeys
 replace/append/dedupe), then all three harnesses green end to end.
 
+## D50 — The W6 hygiene batch, one disposition per finding (closes W6)
+
+**script-fixtures-009**: the grep -Eq ERE pre-check died — it validated
+signatures with the wrong engine (POSIX ERE) while the consumer
+compiles RE2, and the authoritative `proc signature-check` runs two
+lines later. **-010**: FRCC-011 was vacuous (command and grep both
+ended in || true) and the lease-refused witness had NO Go coverage, so
+the retirement discipline held: TestNonHolderAnnounceEmitsLeaseRefused-
+Witness now asserts the event lands on the stream when a live holder
+refuses an announce, and the shell leg is a pointer. **-011**: sections
+4/5 and FRCC-001/002 retired after verifying emit_event is a thin
+wrapper over `event emit` — the four named emit_test.go tests prove
+the same properties; the real-process legs (caller harmlessness,
+concurrent writers, torn fragment, witness-not-authority) stay.
+**-015**: copy-verification and symlink-refusal legs retired to their
+two named sessionisolation_test.go tests; the adapters' manifest
+aggregation and WC-8 human-shell bootstrap stay. **-016**:
+RESOLVED-AS-FOUND — W1.24 already fixed it (per-run gofix-$$ tag,
+scoped pkill) and the file cites the finding id. **-017**: the wait
+ceilings now come from fixture-budget.sh (go-owner-wait=8,
+go-owner-crashloop=30 in the owner's table) and the poll rides
+METASYSTEM_FIXTURE_POLL_INTERVAL_SEC; the 3s stability window stays a
+deliberate literal — it is an assertion window, not a wait ceiling,
+and scaling it up only lengthens exposure to load-induced churn.
+**-018**: the stray root-level cp in make_repo died; the explicit
+per-path copies already place every asset. **-019**: the shell grep of
+host.go source text is replaced by TestAssembleHostCommandExports-
+MissionLineage, which asserts the constructed host command's actual
+environment. **-022**: mission-fixtures' fast-fail now reads status
+through `json get` (indentation-proof) and supervision-fixtures'
+python json_field is the engine verb — verified first that no caller
+uses list indices, the one shape the verb lacks. Proof: four touched
+Go packages green in full, all six edited fixture files green
+standalone.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

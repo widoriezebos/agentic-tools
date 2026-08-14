@@ -100,10 +100,6 @@ make_repo() { # destination
   fixture_harness_roots+=("$repo")
   mkdir -p "$repo/scripts"
   cp -R "$source_root/scripts/agents" "$repo/scripts/"
-  cp "$source_root/scripts/watch-background-jobs.sh" \
-    "$source_root/scripts/metasystem-config.sh" "$source_root/metasystem.conf" "$repo/scripts/../" 2>/dev/null || true
-  # The previous copy places metasystem.conf under scripts/; put each asset at its
-  # actual shipped path explicitly.
   cp "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
   cp "$source_root/scripts/metasystem-config.sh" "$repo/scripts/"
   cp "$source_root/metasystem.conf" "$repo/metasystem.conf"
@@ -125,16 +121,8 @@ make_repo() { # destination
   cp "$ms" "$repo/bin/metasystem"
 }
 
-json_field() { # file, dotted field
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-for part in sys.argv[2].split("."):
-    value = value[int(part)] if isinstance(value, list) else value[part]
-if isinstance(value, (dict, list)): print(json.dumps(value, separators=(",", ":")))
-elif isinstance(value, bool): print("true" if value else "false")
-elif value is not None: print(value)
-PY
+json_field() { # file, dotted field (script-fixtures-022: the engine verb)
+  "$ms" json get --file "$1" --field "$2"
 }
 
 inventory_has() { # last-census, class, pid
@@ -344,8 +332,6 @@ for runtime in claude codex devin fake; do
   while IFS= read -r line; do
     [[ "$line" == match\ * || "$line" == exclude\ * ]] \
       || { echo "S4-7: malformed $runtime signature line: $line" >&2; exit 1; }
-    printf '' | grep -Eq -- "${line#* }" || [[ $? -eq 1 ]] \
-      || { echo "S4-7: invalid POSIX ERE from $runtime" >&2; exit 1; }
   done <<<"$signature"
   positive=$runtime
   # The real CLIs are invoked by their bare command word, so that word is the

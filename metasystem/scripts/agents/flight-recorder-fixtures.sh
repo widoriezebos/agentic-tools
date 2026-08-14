@@ -90,41 +90,15 @@ if not any(v.get("event") == "lease-renewed" for v in good):
     raise SystemExit(1)
 PY
 
-# 4. Oversize payloads degrade detail, never validity: a huge summary yields a
-#    complete, parseable event under 4096 bytes.
-bash -c "
-source '$root/scripts/agents/emit-event.sh'
-_metasystem_event_root='$checkout'
-emit_event lease lease-claimed epoch=3 summary=\"$(printf 'x%.0s' {1..6000})\""
-python3 - "$stream" <<'PY' || exit 1
-import json, sys
-last = [l for l in open(sys.argv[1]).read().split("\n") if l.strip()][-1]
-if len(last.encode()) > 4096:
-    print("flight recorder fixture failed: oversize event exceeded the cap", file=sys.stderr)
-    raise SystemExit(1)
-value = json.loads(last)
-assert value["event"] == "lease-claimed"
-PY
-
-# 5. Registry conformance: every event this fixture emitted names a registered
-#    event with an allowed component.
-python3 - "$stream" "$root/scripts/agents/event-registry.json" <<'PY' || exit 1
-import json, sys
-registry = json.load(open(sys.argv[2]))
-events = registry["events"]
-for line in open(sys.argv[1]).read().split("\n"):
-    line = line.strip()
-    if not line or line.startswith('{"torn"'):
-        continue
-    v = json.loads(line)
-    entry = events.get(v["event"])
-    if entry is None:
-        print(f"flight recorder fixture failed: unregistered event {v['event']}", file=sys.stderr)
-        raise SystemExit(1)
-    if v["component"] not in entry["emitters"]:
-        print(f"flight recorder fixture failed: {v['component']} may not emit {v['event']}", file=sys.stderr)
-        raise SystemExit(1)
-PY
+# Sections 4 (oversize degradation), 5 (registry conformance) and the
+# FRCC-001/FRCC-002 door-and-cap legs retired to the go gate
+# (script-fixtures-011): emit_event is a thin wrapper over `event emit`,
+# and internal/events/emit_test.go proves the same properties as
+# TestEmitWritesRegisteredEvent, TestEmitDropsUnregisteredEventAndWrong-
+# Emitter, TestEmitHonorsHardCap, and TestEmitShrinksOptionalFieldsUnder-
+# Cap. What stays here needs real processes: caller harmlessness under
+# set -e, concurrent writers, the torn fragment, and the two
+# witness-not-authority lease legs below.
 
 # 6. Witness, not authority: with the stream unwritable, a real lease claim in
 #    a scratch checkout still succeeds and emits nothing.
@@ -154,44 +128,9 @@ git -C "$lease_repo2" init -q -b main .
 grep -q '"event":"lease-claimed"' "$lease_repo2/artifacts/agents/events.jsonl" \
   || fail "a successful claim left no lease-claimed event"
 
-# FRCC-001: the registry is enforced at the door — an unregistered event and
-# a wrong-component emit are both dropped, a valid one written.
-before=$(grep -c '' "$stream" 2>/dev/null || echo 0)
-bash -c "
-source '$root/scripts/agents/emit-event.sh'
-_metasystem_event_root='$checkout'
-emit_event lease not-a-real-event summary=x
-emit_event census lease-claimed epoch=1 summary=wrong-component
-emit_event lease lease-claimed epoch=9 summary=valid"
-python3 - "$stream" <<'PY' || exit 1
-import json, sys
-lines = [l for l in open(sys.argv[1]).read().splitlines() if l.strip() and not l.startswith('{"torn"')]
-events = [json.loads(l) for l in lines]
-if any(v["event"] == "not-a-real-event" for v in events):
-    print("flight recorder fixture failed: unregistered event was written", file=sys.stderr); raise SystemExit(1)
-if any(v["event"] == "lease-claimed" and v["component"] == "census" for v in events):
-    print("flight recorder fixture failed: disallowed emitter was written", file=sys.stderr); raise SystemExit(1)
-if not any(v["event"] == "lease-claimed" and v.get("epoch") == "9" or v.get("epoch") == 9 for v in events):
-    print("flight recorder fixture failed: the valid event was lost", file=sys.stderr); raise SystemExit(1)
-PY
-
-# FRCC-002: the cap is HARD even for a giant payload field.
-bash -c "
-source '$root/scripts/agents/emit-event.sh'
-_metasystem_event_root='$checkout'
-emit_event lease lease-refused holder=\"$(printf 'h%.0s' {1..8000})\" summary=cap-test"
-python3 - "$stream" <<'PY' || exit 1
-import sys
-for line in open(sys.argv[1]).read().splitlines():
-    if len(line.encode()) > 4096:
-        print("flight recorder fixture failed: a line exceeds the hard cap", file=sys.stderr)
-        raise SystemExit(1)
-PY
-
-# FRCC-011: a live holder's refusal is witnessed.
-"$root/bin/metasystem" lease announce --root "$lease_repo2" \
-  --session fr-live-refuse --pid $$ --start "$start" --tag metasystem-main-fr3 --runtime fake >/dev/null 2>&1 || true
-grep -q '"event":"lease-refused"' "$lease_repo2/artifacts/agents/events.jsonl" 2>/dev/null \
-  || true # (the same-pid path renews rather than refuses; the unit case below is authoritative)
+# FRCC-011 (a live holder's refusal is witnessed) was vacuous here — both
+# its command and its grep ended in || true — and is now a REAL assertion:
+# internal/lease/refusals_test.go TestNonHolderAnnounceEmitsLeaseRefused-
+# Witness (script-fixtures-010).
 
 echo "flight recorder fixtures: PASSED"

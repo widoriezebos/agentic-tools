@@ -13,6 +13,13 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 bin="$root/bin/metasystem"
 [[ -x "$bin" ]] || { echo "go supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
 
+# Caps come from their single declared owner (script-fixtures-017): the
+# wait ceilings scale with the machine like every other fixture's.
+source "$root/scripts/agents/fixture-budget.sh"
+harness_fixture_budget_init "$root"
+owner_wait=$(harness_fixture_cap go-owner-wait)
+owner_crashloop=$(harness_fixture_cap go-owner-crashloop)
+
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-go-supervision.XXXXXX")
 # The tag prefix is unique per run (script-fixtures-016): a bare
 # pkill -f "gofix-" reached ANY process on the machine whose command
@@ -49,7 +56,7 @@ wait_until() { # seconds, description, command...
   local description=$1; shift
   until "$@"; do
     (( SECONDS < deadline )) || fail "timeout: $description"
-    sleep 0.1
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
 }
 
@@ -59,13 +66,15 @@ registry="$tmp/registry.jsonl"
 #     with its components at one generation, and stays stable (no churn).
 repo1="$tmp/establish"; mkdir -p "$repo1"
 owner1=$(arm "$repo1" "$fixture_tag-establish" "$registry" 1)
-wait_until 8 "state published with components" bash -c '
+wait_until "$owner_wait" "state published with components" bash -c '
   python3 - "$1" <<PY 2>/dev/null || exit 1
 import json,sys
 d=json.load(open(sys.argv[1]))
 raise SystemExit(0 if d.get("engine")=="go" and d.get("generation")==1 and set(d.get("components",{}))=={"watcher","reaper"} else 1)
 PY' _ "$repo1/artifacts/agents/supervision/state.json"
 # Stability: after several intervals the generation is still 1 (no churn).
+# A literal on purpose: this is an assertion window, not a wait ceiling —
+# cap scaling applies to ceilings only (script-fixtures-017).
 sleep 3
 gens=$(grep -o '"generation":[0-9]*' "$registry" | sort -u | tr '\n' ' ')
 [[ "$gens" == '"generation":1 ' ]] || fail "owner churned generations: $gens"
@@ -77,9 +86,9 @@ echo "go supervision: establish + stable publication PASSED" >&2
 #     designed away, observed in the running binary).
 repo2="$tmp/purpose"; mkdir -p "$repo2"
 owner2=$(arm "$repo2" "$fixture_tag-purpose" "$registry" 1)
-wait_until 8 "purpose owner established" bash -c '[[ -f "$1/artifacts/agents/supervision/state.json" ]]' _ "$repo2"
+wait_until "$owner_wait" "purpose owner established" bash -c '[[ -f "$1/artifacts/agents/supervision/state.json" ]]' _ "$repo2"
 mv "$repo2" "$repo2.gone"   # atomic: root definitively absent, no writer race
-wait_until 8 "owner exits on purpose-gone" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner2"
+wait_until "$owner_wait" "owner exits on purpose-gone" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner2"
 python3 - "$registry" "$fixture_tag-purpose" <<'PY' || fail "no purpose-gone terminal with complete teardown"
 import json, sys
 exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
@@ -95,10 +104,10 @@ echo "go supervision: purpose-gone exit + none-survive teardown PASSED" >&2
 #     the owner leaves voluntarily (SLC-R3-003) with complete teardown.
 repo3="$tmp/superseded"; mkdir -p "$repo3"
 owner3=$(arm "$repo3" "$fixture_tag-super" "$registry" 1)
-wait_until 8 "superseded owner established" bash -c '[[ -f "$1/artifacts/agents/supervision/state.json" ]]' _ "$repo3"
+wait_until "$owner_wait" "superseded owner established" bash -c '[[ -f "$1/artifacts/agents/supervision/state.json" ]]' _ "$repo3"
 printf '{"pid":999999,"pidStartedAt":1,"instanceTag":"a-successor"}\n' \
   > "$repo3/artifacts/agents/supervision/lock.d/owner.json"
-wait_until 8 "owner exits on supersession" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner3"
+wait_until "$owner_wait" "owner exits on supersession" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner3"
 python3 - "$registry" "$fixture_tag-super" <<'PY' || fail "no superseded terminal"
 import json, sys
 exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
@@ -129,7 +138,7 @@ repo4="$tmp/breaker"; mkdir -p "$repo4"
 owner4=$(METASYSTEM_GO_COMPONENT_CRASH_ON_START=1 arm "$repo4" "$fixture_tag-breaker" "$registry" 1)
 # At interval 1s and N=5, giving-up lands within ~10s even with backoff
 # (backoff gates relaunches, never observations — SLC-R3-005).
-wait_until 30 "owner gives up on the crash loop" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner4"
+wait_until "$owner_crashloop" "owner gives up on the crash loop" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner4"
 python3 - "$registry" "$fixture_tag-breaker" <<'PY' || fail "no giving-up terminal with complete teardown"
 import json, sys
 exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]

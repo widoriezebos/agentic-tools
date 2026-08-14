@@ -62,6 +62,27 @@ func TestRequireHolderRefusesNonHolderMain(t *testing.T) {
 	}
 }
 
+// TestNonHolderAnnounceEmitsLeaseRefusedWitness pins the flight-recorder
+// witness FRCC-011: an announce refused by a live different holder leaves
+// a lease-refused event on the stream. The shell leg that carried this
+// label was vacuous (both its command and its grep ended in || true).
+func TestNonHolderAnnounceEmitsLeaseRefusedWitness(t *testing.T) {
+	root := t.TempDir()
+	announceLiveChild(t, root) // the child holds the lease
+
+	self := int64(os.Getpid())
+	if _, err := Announce(root, "my sess", self, selfStart(t), "tag", "fake", ""); err != nil {
+		t.Fatalf("announce self: %v", err)
+	}
+	stream, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "events.jsonl"))
+	if err != nil {
+		t.Fatalf("events stream: %v", err)
+	}
+	if !strings.Contains(string(stream), "lease-refused") {
+		t.Fatalf("refused announce must leave a lease-refused witness, stream:\n%s", stream)
+	}
+}
+
 func TestRenewRefusesNonHolder(t *testing.T) {
 	root := t.TempDir()
 	announceLiveChild(t, root)

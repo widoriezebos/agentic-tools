@@ -399,7 +399,7 @@ wait_end_state() { # mission, expected status exit
     set -e
     [[ $result -eq $expected ]] && return 0
     if [[ -f "$repo/artifacts/agents/missions/runners/$mission.json" ]] \
-      && grep -Fq '"status": "failed"' "$repo/artifacts/agents/missions/runners/$mission.json"; then
+      && [[ "$("$repo/bin/metasystem" json get --file "$repo/artifacts/agents/missions/runners/$mission.json" --field status --default '')" == failed ]]; then
       echo "mission end-state fixture runner failed: $mission" >&2
       sed -n '1,240p' "$repo/artifacts/agents/missions/runners/$mission.json" >&2
       return 1

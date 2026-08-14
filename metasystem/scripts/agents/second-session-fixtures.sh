@@ -6,14 +6,6 @@ ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 [[ -x "$ms" ]] || { echo "second-session fixtures: binary absent; run the go gate first" >&2; exit 1; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-second-session.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
-source_checkout="$tmp/source"
-isolated_checkout="$tmp/isolated"
-mkdir -p "$source_checkout/metasystem" "$isolated_checkout/metasystem" \
-  "$source_checkout/.codex" "$source_checkout/.claude" "$source_checkout/.devin"
-printf 'model = "fixture"\n' >"$source_checkout/.codex/config.toml"
-printf '{"theme":"dark"}\n' >"$source_checkout/.claude/settings.local.json"
-printf '{"hooks":[]}\n' >"$source_checkout/.devin/hooks.v1.json"
-
 manifest="$tmp/paths"
 for adapter in "$root"/scripts/agents/adapters/*.sh; do
   [[ ${adapter##*/} != runtime-common.sh ]] || continue
@@ -31,26 +23,12 @@ assert Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() == [
     ".devin/hooks.v1.json",
 ]
 PY
-new_harness=$("$ms" validate session-isolation --source-root "$source_checkout" \
-  --destination-root "$isolated_checkout" --manifest "$manifest" \
-  --harness-root "$source_checkout/metasystem")
-[[ "$new_harness" == "$(cd "$isolated_checkout/metasystem" && pwd -P)" ]]
-cmp "$source_checkout/.codex/config.toml" "$isolated_checkout/.codex/config.toml"
-cmp "$source_checkout/.claude/settings.local.json" \
-  "$isolated_checkout/.claude/settings.local.json"
-cmp "$source_checkout/.devin/hooks.v1.json" "$isolated_checkout/.devin/hooks.v1.json"
-
-# A pre-existing link back to the primary checkout is not accepted as a copy.
-unsafe_checkout="$tmp/unsafe"
-mkdir -p "$unsafe_checkout/metasystem" "$unsafe_checkout/.codex"
-ln -s "$source_checkout/.codex/config.toml" "$unsafe_checkout/.codex/config.toml"
-if "$ms" validate session-isolation --source-root "$source_checkout" --destination-root "$unsafe_checkout" \
-  --manifest "$manifest" --harness-root "$source_checkout/metasystem" \
-  >"$tmp/unsafe.out" 2>"$tmp/unsafe.err"; then
-  echo "second-session fixture: audit accepted a local-config link into the primary checkout" >&2
-  exit 1
-fi
-grep -Fq 'isolation audit failed' "$tmp/unsafe.err"
+# The copy-verification and symlink-into-primary refusal legs retired to
+# the go gate (script-fixtures-015): internal/validate's
+# TestSessionIsolationCopiesAndResolvesHarness and
+# TestSessionIsolationRejectsSymlinkIntoPrimary prove the same
+# properties. What stays here is what shell owns: the adapters'
+# local-config-paths manifest above, and WC-8's human-shell bootstrap.
 
 # WC-8: the paved command must work from a human shell, whose ancestry has no
 # runtime signature. Build the smallest committed source checkout and replace
