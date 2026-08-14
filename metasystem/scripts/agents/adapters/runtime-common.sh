@@ -188,108 +188,100 @@ terminate_cli_child() { # exact child pid owned by this adapter
   wait "$child" 2>/dev/null || true
 }
 
-normalize_return() { # candidate file, optional transcript file
-  local candidate=$1 transcript=${2:-}
-  "$ms" adapter normalize-return --candidate "$candidate" --transcript "$transcript" \
-    --record "$record" --output "$round_dir/return.json" \
-    --markdown "$round_dir/return.md" --session "$session_id"
-}
-
-validate_candidate() { # candidate file, transcript, violation file
-  local candidate=$1 transcript=$2 violation=$3
-  if ! normalize_return "$candidate" "$transcript" >"$violation" 2>&1; then
-    printf 'return normalization failed: ' | cat - "$violation" >"$violation.tmp"
-    mv "$violation.tmp" "$violation"
-    return 1
-  fi
-  "$root/scripts/assert-return-complete.sh" --job "$job" >"$violation" 2>&1
-}
-
-# One repair turn, in the SAME session, for a runtime that was never handed a
-# schema by its CLI. A reply can be perfect work in the wrong shape, and burning
-# the whole session over the shape is the wrong price -- but so is the harness
-# renaming fields to make a return validate, because the fields it would be
-# guessing at are the evidence a critique is judged on. So the delegate is shown
-# its own violations and asked again, once, with everything it already did still
-# in context.
-#
-# Bounded to one attempt: a delegate that cannot follow a schema it has just
-# been handed twice does not get unbounded turns. Recorded either way, so a
-# chain that needed a repair never reads as one that got it right first time.
-attempt_return_repair() { # violation file -> 0 ran+usable, 1 ran+failed, 2 not attempted
-  local violation=$1 repair_prompt="$round_dir/repair-1.prompt.md"
-  declare -F runtime_repair_turn >/dev/null 2>&1 || return 2
-  (( ${return_repairs:-0} == 0 )) || return 2
-  [[ -n "${session_id:-}" ]] || return 2
-  {
-    printf 'Your previous reply did not validate against the required schema.\n'
-    printf 'Everything you already did in this session still stands; only the\n'
-    printf 'shape of the reply was wrong.\n\n# What failed\n\n'
-    cat "$violation"
-    printf '\n# The schema your reply must satisfy\n\n'
-    cat "$schema"
-    printf '\n# What to send now\n\n'
-    printf 'Reply with ONE JSON object valid against that schema and nothing\n'
-    printf 'else: no prose before or after it, no code fence, no property the\n'
-    printf 'schema does not name, and every property listed in "required".\n'
-    printf 'Do not repeat the work; report what you already found.\n'
-  } >"$repair_prompt"
-  printf '%s return repair attempt 1: reply did not validate, asking again in session %s\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$session_id" >>"$log"
-  return_repairs=1
-  runtime_repair_turn "$repair_prompt" "$round_dir/repair-1.out"
+# The terminal-outcome state machine lives in `adapter adjudicate-turn`
+# (script-adapters-01/D24): the engine validates the candidate, chooses
+# every error code and phase name, and decides whether the one bounded
+# repair turn runs. This file keeps only what must stay shell — the CAS
+# through dispatch.sh's lease-held re-exec, the repair CLI launch, and the
+# per-runtime usage/settle hooks. One repair attempt, in the SAME session:
+# a reply can be perfect work in the wrong shape, but the harness never
+# renames fields to make a return validate.
+adjudicate_turn() { # stage, extra flags...
+  local stage=$1; shift
+  "$ms" adapter adjudicate-turn --stage "$stage" --root "$root" --job "$job" \
+    --record "$record" --session "${session_id:-}" --schema "$schema" \
+    --return "$round_dir/return.json" --markdown "$round_dir/return.md" \
+    --violation "$round_dir/protocol-violation.txt" \
+    --repair-prompt "$round_dir/repair-1.prompt.md" "$@"
 }
 
 complete_from_cli() { # cli status, usage file, candidate file, optional transcript
   local status=$1 usage_file=$2 candidate=$3 transcript=${4:-} violation="$round_dir/protocol-violation.txt"
-  if (( status != 0 )); then
-    if (( handshake_done )); then
-      finish_running failed runtime_error runtime "$usage_file"
-    else
-      fail_pending runtime_error handshake "$usage_file"
-    fi
-    return 1
+  local repair_available=0 settle_available=0 verdict repair_rc=0
+  local initial_args=(--cli-status "$status" --candidate "$candidate" --transcript "$transcript")
+  if declare -F runtime_repair_turn >/dev/null 2>&1 \
+      && (( ${return_repairs:-0} == 0 )) && [[ -n "${session_id:-}" ]]; then
+    repair_available=1
+    initial_args+=(--repair-available)
   fi
-  if (( ! handshake_done )); then
-    fail_pending handshake_missing_session_id handshake "$usage_file"
-    return 1
-  fi
-  if validate_candidate "$candidate" "$transcript" "$violation"; then
-    rm -f "$violation"
-    finish_running completed null completed "$usage_file"
-    return 0
-  fi
-  cat "$violation" >>"$log"
-  local repair_rc=0
-  attempt_return_repair "$violation" || repair_rc=$?
-  if (( repair_rc != 2 )); then
-    # The repair RAN, whether or not it produced a usable reply. Record it and
-    # re-fence its usage BEFORE branching on the outcome: a repair that failed
-    # still spent provider budget on a cumulative-usage runtime, and its
-    # transcript carries the up-to-date total. Leaving that to the success path
-    # only dropped a failed repair's spend from the fences entirely.
-    record_return_repairs 1
-    if declare -F runtime_usage_after_repair >/dev/null 2>&1; then
-      runtime_usage_after_repair "$usage_file" || true
-    fi
-    if (( repair_rc == 0 )) && validate_candidate "$round_dir/repair-1.out" "" "$violation"; then
-      printf '%s return repaired in session %s; the first reply is kept as evidence\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$session_id" >>"$log"
-      # The repair transcript is now the final turn, so it -- not the pre-repair
-      # transcript -- is authoritative for session and model identity.
-      if declare -F runtime_settle_after_repair >/dev/null 2>&1 \
-          && ! runtime_settle_after_repair; then
-        finish_running failed session_identity_disagreement delivery "$usage_file"
-        return 1
-      fi
+  declare -F runtime_settle_after_repair >/dev/null 2>&1 && settle_available=1
+  (( handshake_done )) && initial_args+=(--handshake-done)
+
+  verdict=$(adjudicate_turn initial "${initial_args[@]}")
+  case "$verdict" in
+    "finish completed null completed")
       rm -f "$violation"
       finish_running completed null completed "$usage_file"
-      return 0
+      return 0 ;;
+    fail-pending\ *)
+      set -- $verdict
+      fail_pending "$2" "$3" "$usage_file"
+      return 1 ;;
+    finish\ *)
+      set -- $verdict
+      finish_running "$2" "$3" "$4" "$usage_file"
+      return 1 ;;
+    protocol-error)
+      cat "$violation" >>"$log"
+      finish_protocol_error "$violation"
+      return 1 ;;
+    repair) ;;
+    *)
+      printf 'adjudicate-turn returned an unknown verdict: %s\n' "$verdict" >>"$log"
+      return 1 ;;
+  esac
+
+  cat "$violation" >>"$log"
+  printf '%s return repair attempt 1: reply did not validate, asking again in session %s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$session_id" >>"$log"
+  return_repairs=1
+  runtime_repair_turn "$round_dir/repair-1.prompt.md" "$round_dir/repair-1.out" || repair_rc=$?
+  # The repair RAN, whether or not it produced a usable reply. Record it and
+  # re-fence its usage BEFORE branching on the outcome: a failed repair still
+  # spent provider budget on a cumulative-usage runtime.
+  record_return_repairs 1
+  if declare -F runtime_usage_after_repair >/dev/null 2>&1; then
+    runtime_usage_after_repair "$usage_file" || true
+  fi
+  local after_args=(--repair-rc "$repair_rc" --repair-candidate "$round_dir/repair-1.out")
+  (( settle_available )) && after_args+=(--settle-available)
+  verdict=$(adjudicate_turn after-repair "${after_args[@]}")
+  if [[ "$verdict" == settle ]]; then
+    # The repair transcript is now the final turn, so it — not the
+    # pre-repair transcript — is authoritative for session and model
+    # identity.
+    if runtime_settle_after_repair; then
+      verdict=$(adjudicate_turn settle-result --ok)
+    else
+      verdict=$(adjudicate_turn settle-result)
     fi
   fi
-  cat "$violation" >>"$log"
-  finish_protocol_error "$violation"
-  return 1
+  case "$verdict" in
+    "finish completed null completed")
+      printf '%s return repaired in session %s; the first reply is kept as evidence\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$session_id" >>"$log"
+      rm -f "$violation"
+      finish_running completed null completed "$usage_file"
+      return 0 ;;
+    finish\ *)
+      set -- $verdict
+      finish_running "$2" "$3" "$4" "$usage_file"
+      return 1 ;;
+    *)
+      cat "$violation" >>"$log"
+      finish_protocol_error "$violation"
+      return 1 ;;
+  esac
 }
 
 record_return_repairs() { # count

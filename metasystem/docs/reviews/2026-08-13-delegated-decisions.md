@@ -515,6 +515,31 @@ concatenated digit check accepted an EMPTY --stale-min, after which
 non-positive thresholds loudly — a misconfigured watcher now dies at
 arming instead of watching nothing.
 
+## D24 — `adapter adjudicate-turn` is pure decision; the CAS stays shell-side (script-adapters-01)
+
+**Decision:** the adapter turn's terminal-outcome state machine —
+cli-status/handshake mapping, candidate validation (normalization plus the
+return-complete judgment, both already Go), the bounded-repair decision
+with the byte-identical repair prompt, the settle verdicts, and devin's
+empty-reply rule — is adapter.AdjudicateTurn behind four stages of one
+verb (initial, after-repair, settle-result, empty-reply), each printing
+the tuple the shell executes. THE CAS DELIBERATELY STAYS in the shell
+wrappers: adapter record writes ride dispatch.sh's lease-held
+__record-cas re-exec, and a verb writing records directly would create a
+second authority path around the lease discipline. The shell keeps
+process launches (the repair CLI turn) and the per-runtime usage/settle
+hooks; every error code and phase name now has one home beside the
+dispatch and missionrunner code that adjudicates on it.
+
+**Known log-line shift:** "return repaired ... kept as evidence" now
+prints only when the repair actually completes (after settle), not before
+the settle attempt — truer, and nothing greps it.
+
+**Coverage note:** adapter re-floors 86.5 → 86.3 on both platforms: the
+genuinely-valid return paths need the full role-schema fixture and are
+proven by the suite's fake-adapter turns end to end; every refusal and
+decision branch is unit-pinned.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

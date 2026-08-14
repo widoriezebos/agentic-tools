@@ -396,16 +396,18 @@ supervise() { # dispatch|follow-up and supervisor args
 
   # Exit 0 with no reply is this runtime's shape for "could not do it", so it
   # is named rather than left to fail later as a missing return. Which failure
-  # writer applies depends on where the record got to: a turn that never
-  # correlated is still pending; a turn that correlated and then produced
-  # nothing is running, and fail_pending's expect=pending would miss it and --
-  # because it treats a status mismatch as success -- leave the record running
-  # for the reaper to relabel process-lost.
+  # writer applies depends on where the record got to (the engine's stage
+  # decision, script-adapters-01/D24): a turn that never correlated is still
+  # pending; a turn that correlated and then produced nothing is running.
   if (( cli_status == 0 )) && [[ ! -s "$raw" ]]; then
-    if (( handshake_done )); then
-      finish_running failed empty_reply delivery "$usage_file"
+    local empty_args=() verdict
+    (( handshake_done )) && empty_args+=(--handshake-done)
+    verdict=$(adjudicate_turn empty-reply ${empty_args[@]+"${empty_args[@]}"})
+    set -- $verdict
+    if [[ "$1" == fail-pending ]]; then
+      fail_pending "$2" "$3" "$usage_file"
     else
-      fail_pending empty_reply delivery "$usage_file"
+      finish_running "$2" "$3" "$4" "$usage_file"
     fi
     return 1
   fi

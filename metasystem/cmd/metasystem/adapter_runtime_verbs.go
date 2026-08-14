@@ -259,6 +259,48 @@ func runAdapterDevinConfig(args []string) int {
 	return 0
 }
 
+// runAdapterAdjudicateTurn relays `adapter adjudicate-turn`: the terminal-
+// outcome state machine lives in adapter.AdjudicateTurn
+// (script-adapters-01/D24). Pure decision — the CAS stays in the shell
+// wrappers riding dispatch.sh's lease-held re-exec.
+func runAdapterAdjudicateTurn(args []string) int {
+	flags := flag.NewFlagSet("adapter adjudicate-turn", flag.ContinueOnError)
+	var p adapter.AdjudicateParams
+	flags.StringVar(&p.Stage, "stage", "", "initial, after-repair, settle-result, or empty-reply")
+	flags.StringVar(&p.Root, "root", "", "checkout root")
+	flags.StringVar(&p.Job, "job", "", "job id")
+	flags.StringVar(&p.RecordPath, "record", "", "job record file")
+	flags.StringVar(&p.SessionID, "session", "", "correlated session id")
+	flags.StringVar(&p.SchemaPath, "schema", "", "return schema file")
+	flags.StringVar(&p.CandidatePath, "candidate", "", "raw reply file")
+	flags.StringVar(&p.TranscriptPath, "transcript", "", "transcript file (optional)")
+	flags.StringVar(&p.ReturnPath, "return", "", "round return.json output")
+	flags.StringVar(&p.MarkdownPath, "markdown", "", "round return.md output")
+	flags.StringVar(&p.ViolationPath, "violation", "", "violation output file")
+	flags.StringVar(&p.RepairPromptPath, "repair-prompt", "", "repair prompt output file")
+	flags.Int64Var(&p.CLIStatus, "cli-status", 0, "adapter CLI exit status")
+	flags.BoolVar(&p.HandshakeDone, "handshake-done", false, "the session correlated")
+	flags.BoolVar(&p.RepairAvailable, "repair-available", false, "a bounded repair turn may run")
+	flags.Int64Var(&p.RepairRC, "repair-rc", 0, "repair turn exit status")
+	flags.StringVar(&p.RepairCandidate, "repair-candidate", "", "repair reply file")
+	flags.BoolVar(&p.SettleAvailable, "settle-available", false, "a settle hook exists")
+	flags.BoolVar(&p.SettleOK, "ok", false, "the settle hook agreed")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if p.Stage == "" {
+		fmt.Fprintln(os.Stderr, "adapter adjudicate-turn: --stage is required")
+		return 2
+	}
+	verdict, err := adapter.AdjudicateTurn(p)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(verdict)
+	return 0
+}
+
 // runAdapterDevinSession correlates this turn's Devin session against the
 // pre-launch baseline. It prints the id and exits 0, exits 1 when none is
 // found yet, and exits 3 (naming the candidates) when the correlation is

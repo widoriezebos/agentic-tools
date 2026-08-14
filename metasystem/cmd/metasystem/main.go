@@ -129,6 +129,7 @@ func families() []family {
 				{"claude-append-result", "append a Claude result to the event stream", runAdapterClaudeAppendResult},
 				{"claude-session-signal", "record the Claude session-established signal", runAdapterClaudeSessionSignal},
 				{"devin-config", "build the Devin job config from the user config", runAdapterDevinConfig},
+				{"adjudicate-turn", "decide a turn's terminal outcome, repair, or settle stage", runAdapterAdjudicateTurn},
 				{"devin-session", "correlate the new Devin session against the baseline", runAdapterDevinSession},
 				{"devin-usage", "compute the Devin per-round usage delta", runAdapterDevinUsage},
 				{"usage-unavailable", "write the unavailable-usage record", runAdapterUsageUnavailable},
