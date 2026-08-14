@@ -2,13 +2,21 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: scripts/validate-metasystem.sh [--delegate-scope]" >&2
+  echo "Usage: scripts/validate-metasystem.sh [--delegate-scope|--delivery-contract]" >&2
 }
 
 delegate_scope=0
+delivery_contract=0
 case ${1:-} in
   '') ;;
   --delegate-scope) [[ $# -eq 1 ]] || { usage; exit 2; }; delegate_scope=1 ;;
+  # The delivery contract (D33): a nested adopted validation proves the
+  # payload is complete, wired, and self-gating; the engine-behavior
+  # families are skipped only because the outer controller verified the
+  # staged content is digest-identical to the tree its own full gate
+  # proved. Its verdict line is its own — it can never be read as the
+  # canonical suite's.
+  --delivery-contract) [[ $# -eq 1 ]] || { usage; exit 2; }; delivery_contract=1 ;;
   -h|--help) usage; exit 0 ;;
   *) usage; exit 2 ;;
 esac
@@ -19,6 +27,12 @@ delegate_owed_sections=(
   "dispatcher, adapter selftest, and mission-runner process fixtures"
 )
 delegate_skipped_sections=()
+delivery_skipped=()
+delivery_contract_skip() { # family or section name; returns 0 = skip it
+  (( delivery_contract )) || return 1
+  delivery_skipped+=("$1")
+  return 0
+}
 delegate_process_section() { # human-readable section name
   if (( delegate_scope )); then
     delegate_skipped_sections+=("$1")
@@ -76,16 +90,32 @@ if (( ! metasystem_go_source )) && [[ -f internal/missionrunner/stoploss.go || -
 fi
 if (( ! delegate_scope )) && (( metasystem_go_source )); then
   bash scripts/agents/go-gate.sh
+  if (( delivery_contract )); then
+    # The delivery smoke (D33): the freshly stamped binary answers a
+    # decision verb, and when the outer run's witness matches this tree
+    # the binary's ldflags stamp must carry that digest — binary
+    # identity is part of the equivalence, not an assumption.
+    [[ "$(bin/metasystem json get --value '{"ok":1}' --field ok)" == 1 ]] \
+      || { echo "delivery contract: the rebuilt binary did not answer" >&2; exit 1; }
+    if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]] \
+      && bash scripts/agents/go-gate.sh --witness-check-only >/dev/null 2>&1; then
+      delivery_stamp=$(go version -m bin/metasystem | sed -n 's/.*BuildStamp=\(witness-[a-f0-9]*\).*/\1/p' | head -1)
+      delivery_recorded=$(sed -n 's/.*"digest":"\([a-f0-9]*\)".*/\1/p' "$METASYSTEM_GATE_WITNESS")
+      [[ -n "$delivery_stamp" && "$delivery_stamp" == "witness-${delivery_recorded:0:12}" ]] \
+        || { echo "delivery contract: binary stamp ${delivery_stamp:-absent} does not match the witness digest" >&2; exit 1; }
+    fi
+  fi
   # The engine-seam tripwire and the Go-vs-python census conformance
   # harnesses (signature, fingerprint, run) retired with the migration:
   # the python reference no longer exists to diff against, and the Go
   # packages carry their own unit coverage under the go gate above.
   # Owner-alone Go supervision fixtures drive the running binary.
-  bash scripts/agents/supervision-go-fixtures.sh
+  delivery_contract_skip supervision-go-fixtures || bash scripts/agents/supervision-go-fixtures.sh
 
   # The gate fence, live: this suite's own marker never blocks (this shell
   # is the registered run's chain), a foreign live run blocks both the
   # fence and a standalone go-gate rebuild, and a dead run stops blocking.
+  if ! delivery_contract_skip gate-fence-fixtures; then
   bin/metasystem gate fence --root "$root" --self-pid $$ \
     || { echo "the suite's own gate marker blocked its fence" >&2; exit 1; }
   sleep 60 & gate_fence_foreign=$!
@@ -104,6 +134,7 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
   bin/metasystem gate fence --root "$root" --self-pid $$ \
     || { echo "a dead foreign gate run kept blocking the fence" >&2; exit 1; }
   echo "gate fence fixtures passed"
+  fi
 fi
 
 source scripts/agents/fixture-budget.sh
@@ -169,6 +200,16 @@ done
 # project-added skills are not required to invent profiles they never shipped.
 template_mode=0
 [[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]] && template_mode=1
+if (( delivery_contract )); then
+  # The gate honors a handed witness only in delivery-contract runs, and
+  # the agent-fixture region is the orchestrating run's to prove. A
+  # delivery run is never the orchestrating template either — wherever it
+  # runs, adoption fixtures and the other template-only blocks belong to
+  # the FULL suite that spawned it.
+  export METASYSTEM_DELIVERY_CONTRACT=1
+  export METASYSTEM_SKIP_AGENT_FIXTURES=1
+  template_mode=0
+fi
 if (( ! template_mode )); then
   scripts/metasystem-config.sh validate
 fi
@@ -265,10 +306,10 @@ done
 # name S4-1 through S4-10 at their owning checks and contain no uncapped
 # process wait (IL-1).
 if [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" || $delegate_scope -eq 1 ]]; then
-  if delegate_process_section "supervision and census fixtures"; then
+  if delegate_process_section "supervision and census fixtures" && ! delivery_contract_skip "supervision and census fixtures"; then
     scripts/agents/supervision-fixtures.sh
   fi
-  if delegate_process_section "supervisor fingerprint heal harness"; then
+  if delegate_process_section "supervisor fingerprint heal harness" && ! delivery_contract_skip "supervisor fingerprint heal harness"; then
     scripts/agents/fingerprint-harness.sh --iterations 2
   fi
   scripts/agents/mission-fixtures.sh
@@ -306,9 +347,9 @@ bash -n scripts/assert-turn-prompt.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
-bash scripts/agents/conformance-fixtures.sh
-bash scripts/agents/telemetry-census-fixtures.sh
-bash scripts/agents/return-schema-fixtures.sh
+delivery_contract_skip conformance-fixtures || bash scripts/agents/conformance-fixtures.sh
+delivery_contract_skip telemetry-census-fixtures || bash scripts/agents/telemetry-census-fixtures.sh
+delivery_contract_skip return-schema-fixtures || bash scripts/agents/return-schema-fixtures.sh
 bash scripts/agents/config-identity-fixtures.sh
 # worktree-lease-fixtures.py retired with the python lease helper: it
 # monkeypatched that module's internals (started_at, live, classify, ...),
@@ -316,15 +357,15 @@ bash scripts/agents/config-identity-fixtures.sh
 # internal/lease's unit tests under the go gate. The cross-process
 # behavioral coverage it also carried (succession, lock contention)
 # lives in scripts/agents/lease-succession-fixtures.sh below.
-bash scripts/agents/authority-regression-fixtures.sh
-bash scripts/agents/pre-commit-guard-fixtures.sh
-bash scripts/agents/record-protocol-fixtures.sh
-bash scripts/agents/evidence-segment-fixtures.sh
+delivery_contract_skip authority-regression-fixtures || bash scripts/agents/authority-regression-fixtures.sh
+delivery_contract_skip pre-commit-guard-fixtures || bash scripts/agents/pre-commit-guard-fixtures.sh
+delivery_contract_skip record-protocol-fixtures || bash scripts/agents/record-protocol-fixtures.sh
+delivery_contract_skip evidence-segment-fixtures || bash scripts/agents/evidence-segment-fixtures.sh
 bash scripts/agents/second-session-fixtures.sh
-bash scripts/agents/lease-succession-fixtures.sh
-bash scripts/agents/flight-recorder-fixtures.sh
-bash scripts/agents/delegate-caps-fixtures.sh
-bash scripts/agents/adapter-deadline-fixtures.sh
+delivery_contract_skip lease-succession-fixtures || bash scripts/agents/lease-succession-fixtures.sh
+delivery_contract_skip flight-recorder-fixtures || bash scripts/agents/flight-recorder-fixtures.sh
+delivery_contract_skip delegate-caps-fixtures || bash scripts/agents/delegate-caps-fixtures.sh
+delivery_contract_skip adapter-deadline-fixtures || bash scripts/agents/adapter-deadline-fixtures.sh
 [[ $(grep -Ec '^# Example model\.tier\.[123]=' metasystem.conf) -eq 3 ]] \
   || { echo "template demotion fixture: model tiers are not three commented examples" >&2; exit 1; }
 [[ $(grep -Ec '^# Example mode\.[a-z0-9-]+\.role\.' metasystem.conf) -eq 3 ]] \
@@ -1472,6 +1513,7 @@ done
 # process-lifecycle runs while a direct adopted-repository validation still
 # exercises the full contract.
 if delegate_process_section "dispatcher, adapter selftest, and mission-runner process fixtures" \
+  && ! delivery_contract_skip "dispatcher, adapter selftest, and mission-runner process fixtures" \
   && [[ -z "${METASYSTEM_SKIP_AGENT_FIXTURES:-}" ]]; then
   agent_fixture="$tmp/agent-fixture"
   agent_repo="$agent_fixture/repo"
@@ -4530,7 +4572,11 @@ scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/mine  --once 2>/de
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --scope /r/other --once 2>/dev/null | grep -q "^DONE nu-other" || {
   echo "watch-background-jobs: distinct scopes shared a default state file" >&2; exit 1; }
 
-if (( delegate_scope )); then
+if (( delivery_contract )); then
+  echo "metasystem delivery contract validated"
+  echo "engine-behavior families skipped behind the outer run's digest equality:"
+  printf -- '- %s\n' ${delivery_skipped[@]+"${delivery_skipped[@]}"}
+elif (( delegate_scope )); then
   [[ ${#delegate_skipped_sections[@]} -eq ${#delegate_owed_sections[@]} ]] \
     || { echo "delegate-scope skipped-section accounting drifted" >&2; exit 1; }
   for index in "${!delegate_owed_sections[@]}"; do
