@@ -30,7 +30,14 @@ EVERY live pid, so any process on the machine mid-execve makes it
 rightly unprovable for an instant (the deliberate
 only-ESRCH-is-absence reading from W1.3); surfaced by a nested gate
 under an active machine, now waits bounded like the rest of the
-family. Production is not affected: real
+family. Sixth instance 2026-08-14: liveChild (internal/lease
+claim_test) read a freshly spawned child's start one-shot — first
+surfaced by the VM's first SNAPSHOT gate (D33), whose fresh-directory
+compile load widened the window on Linux too; the helper now waits
+bounded, covering every test that spawns through it. A sweep found no
+further child-probing one-shots (remaining sites are self-reads,
+post-exec by definition, or fixture-table reads).
+Production is not affected: real
 callers announce themselves post-exec.
 
 ## ROOT-CAUSED 2026-08-14: the fixture identity-table tear

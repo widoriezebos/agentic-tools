@@ -3,6 +3,7 @@ package lease
 import (
 	"os/exec"
 	"testing"
+	"time"
 )
 
 // liveChild spawns a real, long-lived process and returns its pid and true
@@ -15,11 +16,20 @@ func liveChild(t *testing.T) (pid, start int64) {
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	pid = int64(cmd.Process.Pid)
-	s, ok := StartedAt(pid)
-	if !ok {
-		t.Fatalf("could not read live child %d start", pid)
+	// The child's identity is rightly unreadable inside its fork-to-execve
+	// window (the flake dossier's family — sixth instance, first seen on
+	// the VM's snapshot gate); the property is steady-state, wait bounded.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		s, ok := StartedAt(pid)
+		if ok {
+			return pid, s
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("could not read live child %d start", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	return pid, s
 }
 
 // deadPid returns a pid that is certainly not alive.
