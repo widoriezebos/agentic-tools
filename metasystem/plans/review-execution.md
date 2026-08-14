@@ -30,7 +30,23 @@
   launch) — the W4.22 boundary's authoritative half — and the trusted
   baseline is re-recorded there.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
-  ON BOTH HOSTS). Queue tail: F5 LANDED (D31), next F4 (DESIGN pass: the orphan window — a job whose
+  ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in
+  plans/f4-orphan-window-design.md. Round-1 critique (codex
+  gpt-5.6-sol at xhigh via CLI fallback — supervision dispatch still
+  blocked): REVISE, ten material findings, ALL folded; the design
+  pivoted from Option A (waiter adoption) to the critique's simpler
+  Option C: the DETACHED ADAPTER SUPERVISOR (already the record's
+  custodian, own session/group, survives waiter death) enforces the
+  record's own handshakeDeadline and capDeadline over its CLI child;
+  waiter and reaper unchanged; custodian-dies-leaving-grandchildren
+  accepted as the stated residual. Critique CONVERGED at round 5
+  (10-4-3-1-AGREE; D32). Next: SOLO implementation per the design's
+  'What changes where' — runtime-common wait-loop deadline
+  enforcement (cached fail-closed deadlines, gate-wait coverage,
+  before-any-signal stand-down, own-group-minus-self kill sweeps with
+  death proof), fake adapter deadline-expiry behaviors, suite legs per
+  the Verification section; canary supervision per commit; boundary
+  suites (VM detached, Mac detached) after; D32 addendum on landing. After F4 (DESIGN pass: the orphan window — a job whose
   waiter and runner both exit has no kill-capable enforcer until
   mission end; decide between waiter adoption and a kill-capable
   supervision sweep; touches the no-kill-authority rule; design →

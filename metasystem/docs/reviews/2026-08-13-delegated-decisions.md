@@ -727,6 +727,34 @@ now demands exactly one decline per pass, which is the finding's
 "nothing needed doing" from "something needs doing that only dispatch
 may do" — F4's orphan-window design will lean on exactly this signal.
 
+## D32 — The orphan window closes from the inside (F4 design, critique-converged)
+
+**Decision**: F4 is designed and converged (plans/f4-orphan-window-design.md,
+revision 5): the DETACHED ADAPTER SUPERVISOR — already the record's
+custodian, launched into its own session, already the CLI's parent —
+enforces the record's own handshakeDeadline and capDeadline over its
+CLI child. No adoption protocol, no new authority class, no new
+standing component; the waiter and the standing reaper are unchanged
+(D31's REAP-DECLINED line becomes the regression signal). Kill domain:
+the supervisor's own process group minus itself (membership survives
+reparenting; per-pid TERM/grace/KILL sweeps; death proven — no member
+but self — before the terminal CAS, else the record stays
+nonterminal). Deadlines are cached once after the launch CAS,
+fail-closed; enforcement runs from the first instruction including the
+gate wait. Accepted residuals, stated in the design: a custodian that
+dies leaving grandchildren (existing reaper + census case) and an
+inert-but-alive custodian (no hard bound without a fenced heartbeat
+lease, which would be its own design).
+
+**Process note**: five critique rounds, codex gpt-5.6-sol at
+reasoning_effort=xhigh through the codex CLI directly — the sanctioned
+fallback while this checkout's supervision dispatch stays blocked on
+subdirectory conf resolution. Round 1 (ten material findings) replaced
+my Option A lean with this simpler shape the draft had missed; rounds
+2-4 narrowed to mechanics (4, 3, 1 findings); round 5: AGREE.
+Critique transcripts in the session scratchpad (f4-critique-r*.out).
+Implementation is SOLO (supervision core) with boundary suites after.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
