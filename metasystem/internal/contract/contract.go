@@ -130,12 +130,26 @@ func (d *contractDoc) calibrationWarnings() []string {
 	if errNoGain != nil || errCycles != nil {
 		return nil
 	}
+	var warnings []string
 	if 2*noGain < cycles {
-		return []string{fmt.Sprintf(
+		warnings = append(warnings, fmt.Sprintf(
 			"ledger.no-gain-budget=%d is below half of fence.cycles=%d; the stop-loss is a last defense sized in the order of the cycle fence (docs/design/stop-loss-core.md)",
-			noGain, cycles)}
+			noGain, cycles))
 	}
-	return nil
+	// The critique cadence exhausts at round 3 (internal/dispatch's
+	// exhaustion rule), so a host that serializes critique before
+	// implementation needs a no-gain budget STRICTLY ABOVE 3 to reach
+	// its first implementer dispatch — at 3 or below the fuse fires the
+	// moment critique ends. Two such empty parks on 2026-08-14 (cohort
+	// bm-1-20260814t192803z-44271 reps 1-2) are the evidence. A warning,
+	// not a refusal: fixture beds legitimately exercise the fuse with
+	// tiny budgets.
+	if noGain <= 3 {
+		warnings = append(warnings, fmt.Sprintf(
+			"ledger.no-gain-budget=%d does not exceed the critique cadence (exhaustion at round 3): a serialized host is fused before its first implementer job (docs/design/stop-loss-core.md)",
+			noGain))
+	}
+	return warnings
 }
 
 // Seal measures the reproducible baseline and writes the generated

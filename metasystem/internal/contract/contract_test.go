@@ -116,9 +116,11 @@ func TestContractValidateAcceptsBase(t *testing.T) {
 	if !strings.HasSuffix(resolved, "mission-alpha.contract.md") {
 		t.Fatalf("unexpected resolved path: %s", resolved)
 	}
-	// no-gain 2 against fence.cycles 3 is not below half the fence.
-	if len(warnings) != 0 {
-		t.Fatalf("base contract should carry no calibration warning: %v", warnings)
+	// no-gain 2 against fence.cycles 3 is not below half the fence, but
+	// it sits under the critique cadence — the base fixture is
+	// fixture-scale on purpose, and the cadence warning is expected.
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "critique cadence") {
+		t.Fatalf("base contract should carry exactly the cadence warning: %v", warnings)
 	}
 }
 
@@ -130,14 +132,33 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an undersized no-gain budget warns, never refuses: %v", err)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "docs/design/stop-loss-core.md") {
-		t.Fatalf("expected one warning naming the design, got %v", warnings)
+	if len(warnings) != 2 || !strings.Contains(warnings[0], "docs/design/stop-loss-core.md") {
+		t.Fatalf("expected the half-fence and cadence warnings, got %v", warnings)
 	}
-	// Exactly half the fence is not below half: no warning.
+	// Exactly half the fence is not below half: only the cadence warning
+	// remains (baseContract's budget of 2 is under the critique cadence).
 	atHalf := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=4", 1)
 	writeFileMode(t, contractPath, atHalf, 0o644)
+	if _, warnings, err = Validate(contractPath); err != nil ||
+		len(warnings) != 1 || !strings.Contains(warnings[0], "critique cadence") {
+		t.Fatalf("a budget at half the fence must warn only for the cadence: %v %v", warnings, err)
+	}
+	// A budget of 3 sits exactly at the critique cadence: still fused
+	// before a serialized host implements, so it warns; 4 clears it.
+	atCadence := strings.Replace(strings.Replace(baseContract(),
+		"ledger.no-gain-budget=2", "ledger.no-gain-budget=3", 1),
+		"fence.cycles=3", "fence.cycles=6", 1)
+	writeFileMode(t, contractPath, atCadence, 0o644)
+	if _, warnings, err = Validate(contractPath); err != nil ||
+		len(warnings) != 1 || !strings.Contains(warnings[0], "critique cadence") {
+		t.Fatalf("budget 3 must warn for the cadence alone: %v %v", warnings, err)
+	}
+	aboveCadence := strings.Replace(strings.Replace(baseContract(),
+		"ledger.no-gain-budget=2", "ledger.no-gain-budget=4", 1),
+		"fence.cycles=3", "fence.cycles=8", 1)
+	writeFileMode(t, contractPath, aboveCadence, 0o644)
 	if _, warnings, err = Validate(contractPath); err != nil || len(warnings) != 0 {
-		t.Fatalf("a budget at half the fence must not warn: %v %v", warnings, err)
+		t.Fatalf("budget 4 with cycles 8 must not warn: %v %v", warnings, err)
 	}
 }
 

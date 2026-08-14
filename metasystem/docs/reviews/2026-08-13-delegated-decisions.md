@@ -1563,6 +1563,37 @@ unattended stretch, given in writing:
    the option allowing same-night implementation was offered and not
    taken, so nothing implements while he is away.
 
+**Addendum (same evening, Wido still present)**: after reading the
+empty-park rosters he asked whether the fuse should be fixed BEFORE
+the runs. Two further rulings, in writing: (5) "Middle path" — the
+seal-time inequality check (no-gain budget must exceed the
+critique-round cap) lands now; ONE budget-5 baseline rep is the
+hypothesis test that decides whether the overnight series continues
+or halts; the leading-indicator fuse design is critiqued in
+parallel. (6) "Yes, if critique converges" — the leading-indicator
+design MAY implement tonight under the full gates if its critique
+loop converges; subsequent reps run on the fixed fuse and are
+labeled as such. Ruling 4's designs-only scope is superseded for
+this one design by ruling 6.
+
+## D55 — The seal-time cadence warning: budgets at or under the critique cadence name their trap (middle-path ruling, part 1)
+
+**Decision**: calibrationWarnings gains a second rule — a no-gain
+budget that does not exceed 3 (the critique-exhaustion cadence) warns
+that a serialized host is fused before its first implementer job,
+naming tonight's two empty parks as the evidence. A WARNING, not a
+refusal, deliberately: the fixture beds exercise the fuse with budgets
+of 2 and 3 on purpose (that is how the fuse's own behavior is tested),
+and a refusal would force a fixture bypass seam — worse than the
+disease. The base test fixture keeps its fixture-scale budget and its
+test now expects exactly this warning. Reopen as a refusal (with a
+proper seam) if a real mission ever again seals into this trap despite
+the warning. The existing half-fence warning fired on every provision
+tonight and prevented nothing — the D-entry says so plainly — so the
+durable protections are the raised budgets (HUMAN RULING 3) and the
+leading-indicator design in flight (RULING 5/6), not this tripwire
+alone.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
