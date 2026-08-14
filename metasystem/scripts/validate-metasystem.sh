@@ -4155,6 +4155,8 @@ PYEOF
     || { echo "adopt: code-critique was not registered for claude" >&2; exit 1; }
   [[ -f "$tgt/scripts/agents/dispatch.sh" && -f "$tgt/metasystem.conf" ]] \
     || { echo "adopt: orchestration payload missing" >&2; exit 1; }
+  [[ -f "$tgt/go.mod" && -d "$tgt/internal" && -d "$tgt/cmd" ]] \
+    || { echo "adopt: engine source did not ship (D17)" >&2; exit 1; }
   grep -qxF 'metasystem.runtimes=claude' "$tgt/metasystem.conf" \
     || { echo "adopt: default runtime selection was not recorded" >&2; exit 1; }
   grep -qxF 'role.default.runtime=claude' "$tgt/metasystem.conf" \
@@ -4222,6 +4224,10 @@ PYEOF
     tail -20 "$tmp/adopt-filled.out" >&2
     exit 1
   }
+  # D17's whole point, asserted: with the source shipped, the adopted
+  # target's own validation rebuilds and gates the engine.
+  grep -Fq 'go gate: PASSED' "$tmp/adopt-filled.out" \
+    || { echo "adopt: filled target did not run the go gate" >&2; exit 1; }
 
   echo drift >>"$tgt/.claude/agents/verify.md"
   if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/profile-drift.out" 2>&1; then

@@ -22,9 +22,10 @@
   conf gaining runtimes or arming taught subdirectory conf resolution;
   the review work itself does not dispatch jobs, so it proceeds unarmed.
 - Dead ends (do not retry without new evidence): none in this stream.
-- Next step: boundary suites (VM then Mac) over the ff7cb2b..HEAD
-  batch (W4.20/D28 + W4.21/D29), then W4.22 = D17 implementation pass
-  (SOLO), W4.23-25; then
+- Next step: W4.22 boundary suites (VM then Mac attempt) proving the
+  D17 implementation pass (payload ships engine source, CI gains the Go
+  toolchain, adopt fixtures assert the filled target runs the go gate);
+  then W4.23-25; then
   W5 (10, suite decomposition), W6 (9, fixture retirement — each
   whole-file retirement its own decisions-doc entry), W7 (7, docs);
   queue tail F4 orphan-window design and F5 reaper decline logging.
@@ -32,6 +33,11 @@
   real harness races fixed, dossier); e91cec4 (W4.18/D27) GREEN ON BOTH
   HOSTS, trusted baseline recorded there. W4.20 smalls landed (D28:
   -08 devin-prompt verb, -09 settle_result_identity, -12 minimal with
-  the wholesale-sourcing decline, -15 resolved by D27) — first low-risk
-  checkpoint after the e91cec4 boundary, canaries + gate green, full
-  suite due at the batch boundary after W4.21.
+  the wholesale-sourcing decline, -15 resolved by D27) and W4.21/D29
+  (refactor gate → validate family) both VM-validated at d47c595; the
+  Mac half of that boundary was SKIPPED: the harness's 10-minute
+  background cap killed the run under load ~6 (Wido active on the
+  machine), kill left no orphans, VM-green authority per the dossier;
+  re-attempt at the W4.22 boundary. Suite runtime will GROW at W4.22:
+  every nested adopted validation now pays its own go gate (D17's
+  designed cost).

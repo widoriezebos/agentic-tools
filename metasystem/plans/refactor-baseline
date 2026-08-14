@@ -1,3 +1,3 @@
-sha=e91cec4a892bb60b92a5494210fa900a2b9c8e78
-recorded_epoch=1786697464
-gate=bash scripts/validate-metasystem.sh (GREEN on BOTH hosts at e91cec4; VM HEAD confirmed in-log)
+sha=d47c595613befffb2e02e02e1dbcafb0a767f5b9
+recorded_epoch=1786699021
+gate=bash scripts/validate-metasystem.sh (VM acceptance host at d47c595, HEAD in-log; Mac half skipped: harness 10-min background cap under load 6.2, kill left no orphans)

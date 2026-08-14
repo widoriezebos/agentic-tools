@@ -159,7 +159,11 @@ rm -f "$stage/payload.tar"
 # leaks in one day came from ship-by-default — the held-out grader, the
 # development ledgers, and the roster — and an allowlist inverts the failure
 # mode: a forgotten new file stays home instead of going out.
-payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md docs metasystem.conf optional-skills plans scripts skills wow.md"
+# cmd/, internal/, go.mod, go.sum are the engine source (D17): the payload
+# ships source and CI rebuilds, so the pair of scripts and engine can prove
+# its coherence by building. The adoption-time binary copy into gitignored
+# bin/ remains a host convenience, never the delivery.
+payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md cmd docs go.mod go.sum internal metasystem.conf optional-skills plans scripts skills wow.md"
 for entry in "$stage"/* "$stage"/.[!.]*; do
   [[ -e "$entry" || -L "$entry" ]] || continue
   keep=0

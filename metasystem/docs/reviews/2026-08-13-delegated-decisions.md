@@ -673,6 +673,20 @@ invisible to the coverage ratchet, in a repo whose ruling is that core
 decisions live in Go. The verifier's downgrade (doctrine gap, no active
 harm) is why it waited this long, not a reason to leave it.
 
+## D17 addendum — the implementation pass landed (W4.22)
+
+The three moves D17 decided are now real: cmd/, internal/, go.mod, and
+go.sum joined the adoption allowlist (benchmark/ and development/ remain
+excluded — verified in the smoke run); the shipped CI workflow gained
+actions/setup-go pinned by go-version-file so the go.mod toolchain
+decides; and the adopt fixture asserts the filled target's own
+validation prints "go gate: PASSED" — D17's whole point, behaviorally.
+Known cost accepted: every nested adopted validation now rebuilds and
+gates the engine, so suite wall-clock grows on both hosts (Go build and
+module caches are user-level, so nested runs stay warm). The r10
+criticals close as designed: source tracked, platform-independent, no
+embedded committing-HEAD.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
