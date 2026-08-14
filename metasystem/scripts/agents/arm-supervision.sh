@@ -44,32 +44,12 @@ cap_authority_lock_held=0
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+# The ceiling derivation lives in `supervise derive-ceiling`
+# (script-orchestration-04/D20): the supervision contract's core number is
+# the engine's arithmetic now, beside the blocking-reserved-cap fence that
+# consumes it.
 derive_watcher_ceiling() { # optional declared maximum cap
-  local declared=${1:-} key value maximum=120
-  if [[ -n "$declared" ]]; then
-    [[ "$declared" =~ ^[1-9][0-9]*$ ]] || die 2 "--max-cap must be a positive integer"
-    (( declared > maximum )) && maximum=$declared
-  fi
-  value=$("$config" get --key dispatch.cap-min --default 120)
-  [[ "$value" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch.cap-min must be a positive integer"
-  (( value > maximum )) && maximum=$value
-  value=$("$config" get --key fence.job-cap-min --default '')
-  if [[ -n "$value" ]]; then
-    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die 1 "fence.job-cap-min must be a positive integer"
-    (( value > maximum )) && maximum=$value
-  fi
-  while IFS= read -r key; do
-    [[ "$key" == cap.min.* ]] || continue
-    value=$("$config" get --key "$key" --default '')
-    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die 1 "$key must be a positive integer"
-    (( value > maximum )) && maximum=$value
-  done < <("$config" keys --prefix cap.min.)
-  while IFS='=' read -r key value; do
-    [[ "$key" == METASYSTEM_CAP_MIN_* ]] || continue
-    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die 1 "$key must be a positive integer"
-    (( value > maximum )) && maximum=$value
-  done < <(env)
-  printf '%s\n' "$((maximum + 30))"
+  "$ms" supervise derive-ceiling --conf "$harness_root/metasystem.conf" ${1:+--max-cap "$1"}
 }
 
 blocking_reserved_cap() { # proposed watcher ceiling; prints job|cap for first blocker

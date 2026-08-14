@@ -440,6 +440,25 @@ would carry kill authority the standing-reaper ruling explicitly denies.
 mode retired; use supervise component reaper"). Rejected: 80 lines of
 kill-capable code kept compiling toward divergence, guarded only by prose.
 
+## D20 — `supervise derive-ceiling` is a verb (script-orchestration-04 sign-off)
+
+**Decision:** the watcher-ceiling derivation — max over the 120 floor, the
+declared --max-cap, dispatch.cap-min, fence.job-cap-min, every cap.min.*
+key, and every raw METASYSTEM_CAP_MIN_* environment value, plus the
+30-minute allowance — moves into supervise.DeriveCeiling behind the new
+verb, beside the blocking-reserved-cap fence that consumes its output.
+arm-supervision.sh forwards. Refusal texts keep the raw key and env-name
+spellings; --max-cap misuse stays a usage exit 2. One deliberate
+strictening: an ambiguous conf (duplicate key) now refuses through the
+resolver instead of whatever the shell's per-key get happened to do —
+consistent with every other resolution verb.
+
+**Alternative not taken:** folding the derivation into
+blocking-reserved-cap as a combined arm-check verb. Rejected: the ceiling
+is also attested into state.json and read back by re-arm refusals and
+dispatch independently of the reservation scan — separate questions,
+separate verbs.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
