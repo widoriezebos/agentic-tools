@@ -216,3 +216,25 @@
    purpose: black-box and language-neutral is what makes them the
    migration's arbiter.
 
+
+14. **A generic goal system for every agent in the metasystem
+   (human-raised 2026-08-14).** The problem, in the human's words: "we lose
+   track of the goal that we are chasing." Motivating incident, same day:
+   the stop hook told the human "NOTHING LEFT TO WORK ON in this checkout"
+   while roughly a quarter of a 101-finding program remained — the backlog
+   lived in docs/reviews/, invisible to the open-work scanner, and even
+   after the narrow fix (a plans/ note) the turn-end verdict only says THAT
+   open work exists, not WHAT to do next. The ask: a goal facility like the
+   session-level task tracking Claude has natively, but generic — one
+   mechanism, working identically for every agent operating inside the
+   metasystem, any runtime. Shape to be designed properly: (a) a declared
+   goal with an explicit, named next step, owned like a plan note but
+   consumed by machinery; (b) the stop-hook verdict names that next step
+   VERBATIM — "the task may be done, but proceed with <next step>" — so an
+   orchestrating agent continues instead of idling, with no ambiguity;
+   (c) runtime-neutral: the same surface for claude, codex, and devin
+   agents, host and delegate alike; (d) relates to backlog item 1 (turn
+   may not end with unwatched work) — that item guards in-flight work,
+   this one guards the thread of intent between turns; the design should
+   say whether they are one mechanism or two. Path per the human: design,
+   critique, implement — queued deliberately, not scheduled now.

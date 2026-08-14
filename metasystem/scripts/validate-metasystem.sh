@@ -237,6 +237,7 @@ for link in \
   scripts/agents/mission-fixtures.sh \
   scripts/agents/delegate-caps-fixtures.sh \
   scripts/agents/mission-runner.sh \
+  scripts/agents/hosts/host-common.sh \
   scripts/agents/hosts/claude.sh \
   scripts/agents/hosts/codex.sh \
   scripts/agents/hosts/devin.sh \

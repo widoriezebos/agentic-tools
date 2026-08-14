@@ -9,44 +9,12 @@ Usage:
 USAGE
 }
 
-root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
-ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+host_runtime=claude
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/host-common.sh"
 
 
-wait_for_start_gate() {
-  local gate=${METASYSTEM_HOST_START_GATE:-} cap=${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} started=$SECONDS
-  local poll_ms=${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20} poll_sleep
-  [[ -z "$gate" ]] && return 0
-  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || return 3
-  [[ "$poll_ms" =~ ^[1-9][0-9]*$ ]] || return 3
-  printf -v poll_sleep '%d.%03d' "$((poll_ms / 1000))" "$((poll_ms % 1000))"
-  while [[ ! -e "$gate" ]]; do
-    (( SECONDS - started < cap )) || return 3
-    sleep "$poll_sleep"
-  done
-}
-
-command_name=${1:-}
-if [[ "$command_name" == -h || "$command_name" == --help ]]; then usage; exit 0; fi
-[[ "$command_name" == start-turn ]] || { usage; exit 2; }
-shift
-mission= turn_id= prompt= result= resume_session= instance_tag=
-while (($#)); do
-  case "$1" in
-    --mission) [[ $# -ge 2 ]] || { usage; exit 2; }; mission=$2; shift 2 ;;
-    --turn-id) [[ $# -ge 2 ]] || { usage; exit 2; }; turn_id=$2; shift 2 ;;
-    --prompt) [[ $# -ge 2 ]] || { usage; exit 2; }; prompt=$2; shift 2 ;;
-    --result) [[ $# -ge 2 ]] || { usage; exit 2; }; result=$2; shift 2 ;;
-    --resume-session) [[ $# -ge 2 ]] || { usage; exit 2; }; resume_session=$2; shift 2 ;;
-    --instance-tag) [[ $# -ge 2 ]] || { usage; exit 2; }; instance_tag=$2; shift 2 ;;
-    -h|--help) usage; exit 0 ;;
-    *) usage; exit 2 ;;
-  esac
-done
-[[ "$mission" =~ ^[a-z0-9][a-z0-9-]*$ && "$turn_id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { usage; exit 2; }
-[[ -f "$prompt" && -n "$result" && -n "$instance_tag" ]] || { usage; exit 2; }
-command -v claude >/dev/null 2>&1 || { echo "claude CLI is not installed" >&2; exit 3; }
-wait_for_start_gate || { echo "claude host start gate was not released" >&2; exit 3; }
+host_parse_start_turn "$@"
+host_require_cli claude
 
 turn_dir=$(cd "$(dirname "$prompt")" && pwd -P)
 turn_record="$turn_dir/turn.json"

@@ -540,6 +540,14 @@ genuinely-valid return paths need the full role-schema fixture and are
 proven by the suite's fake-adapter turns end to end; every refusal and
 decision branch is unit-pinned.
 
+**Addendum (W4.17/script-adapters-04):** absorbed by this decision — the
+repair prompt is written byte-pinned by the verb, the one-attempt bound
+and eligibility feed the --repair-available flag the verb adjudicates,
+and the shell keeps only the runtime_repair_turn process launch, which is
+the finding's own Target. The eligibility INPUTS (does a repair hook
+exist, has one run, is a session present) are shell facts by necessity:
+`declare -F` cannot be asked from Go. No further change.
+
 ## D25 — Command construction has one home per runtime (script-adapters-02/-06 sign-offs)
 
 **Decision:** `adapter claude-command` joins codex-command as the one

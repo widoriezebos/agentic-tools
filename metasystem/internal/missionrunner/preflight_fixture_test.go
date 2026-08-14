@@ -265,12 +265,16 @@ func buildFullCycleRoot(t *testing.T, behavior string) *Engine {
 	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	adapter, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "hosts", "fake.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	os.MkdirAll(filepath.Join(root, "scripts", "agents", "hosts"), 0o755)
-	os.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", "fake.sh"), adapter, 0o755)
+	// The host and its shared library travel together (script-adapters-13):
+	// fake.sh sources host-common.sh from its own directory.
+	for _, name := range []string{"fake.sh", "host-common.sh"} {
+		adapter, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "hosts", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", name), adapter, 0o755)
+	}
 	os.WriteFile(filepath.Join(root, "scripts", "assert-turn-prompt.sh"),
 		[]byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	// The prompt authority artifacts, verbatim from the repository: without
