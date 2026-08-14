@@ -80,6 +80,7 @@ func families() []family {
 				{"record-cas", "compare-and-swap a record's status and fields", runDispatchRecordCAS},
 				{"record-protocol-error", "stamp a job failed with a protocol violation", runDispatchRecordProtocolError},
 				{"build-setup", "assemble a pending-setup reservation record", runDispatchBuildSetup},
+				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
 				{"build-record", "assemble the full pending job record", runDispatchBuildRecord},
 				{"build-follow-record", "assemble a follow-up round's record from its parent", runDispatchBuildFollowRecord},
 				{"latest-chain-record", "print the newest record path in a job chain", runDispatchLatestChainRecord},

@@ -117,6 +117,10 @@ json_field() { # file, dotted field
   "$ms" json get --file "$1" --field "$2"
 }
 
+json_value() { # json string, dotted field
+  "$ms" json get --value "$1" --field "$2"
+}
+
 record_cas() { # job, expected status, target status, patch file
   local cas_rc=0
   "$0" __record-cas --job "$1" --expect "$2" --status "$3" --patch "$4" || cas_rc=$?
@@ -460,72 +464,15 @@ attested_watcher_ceiling() {
   "$ms" job watcher-ceiling --state "$agents/supervision/state.json"
 }
 
-registered_runtime() { # runtime
-  local configured entry
-  configured=$(config_get --key metasystem.runtimes --default '')
-  while IFS= read -r entry; do
-    entry="${entry#"${entry%%[![:space:]]*}"}"
-    entry="${entry%"${entry##*[![:space:]]}"}"
-    [[ -n "$entry" && "$entry" == "$1" ]] && return 0
-  done < <(printf '%s\n' "${configured//,/$'\n'}")
-  return 1
-}
-
 brief_mode() { # brief
   "$ms" job brief-mode --brief "$1"
 }
 
-# Tiers are read through the configuration resolver, not by parsing the
-# template. Reading metasystem.conf directly made every tier in
-# metasystem.conf.local invisible -- the file the system itself tells you to put
-# local settings in -- so a dispatch refused as "unrankable" pointed the caller
-# at a key they had already set, in the place they were told to set it.
-# Tiers are contiguous from 1 -- config validation refuses a gap -- so scanning
-# stops at the first missing index rather than at a fixed cap. A fixed cap
-# silently ignored model.tier.<cap+1> and beyond; there is no cap now, and a
-# non-contiguous config never reaches dispatch because validation rejects it.
-model_tier() { # runtime, model; prints 999999 if absent or ambiguous
-  local wanted="$1:$2" index=1 value found=0 rank=999999
-  while value=$(config_get --key "model.tier.$index" --default ''); [[ -n "$value" ]]; do
-    while IFS= read -r entry; do
-      entry="${entry#"${entry%%[![:space:]]*}"}"
-      entry="${entry%"${entry##*[![:space:]]}"}"
-      [[ "$entry" == "$wanted" ]] || continue
-      found=$((found + 1))
-      rank=$index
-    done < <(printf '%s\n' "${value//,/$'\n'}")
-    index=$((index + 1))
-  done
-  (( found == 1 )) && printf '%s\n' "$rank" || printf '999999\n'
-}
-
-# The configured tier indices, enumerated from the MERGED config the resolver
-# actually reads (base + .local), not probed over a fixed range. A fixed bound
-# was itself a cap: a tier above it would be silently dropped even though config
-# validation accepts any positive index. Enumerating the real keys removes the
-# cap entirely.
-configured_tier_indices() {
-  "$config" keys --prefix model.tier. 2>/dev/null \
-    | sed -n 's/^model\.tier\.\([1-9][0-9]*\)$/\1/p' | sort -n
-}
-
-model_tiers_configured() {
-  [[ -n "$(configured_tier_indices)" ]]
-}
-
-# A gap is a config error, not a truncation: dispatch stops ranking at the first
-# missing index, so a gap in the merged config would silently drop every tier
-# above it. The set of present indices must be exactly 1..n.
-assert_tiers_contiguous() {
-  local indices expected=1 index
-  indices=$(configured_tier_indices)
-  for index in $indices; do
-    if (( index != expected )); then
-      die 1 "model tiers must be contiguous from 1: found index $index where $expected was expected (a gap would be silently ignored during ranking)"
-    fi
-    expected=$((expected + 1))
-  done
-}
+# Roster resolution, tier ranking, and escalation classification moved to
+# `job resolve-roster` (script-orchestration-02) — including the lessons the
+# retired shell helpers carried: tiers read through the MERGED resolver so
+# .local entries stay visible, enumeration unbounded so no fixed cap drops a
+# tier, and a gap refuses instead of silently truncating the ranking.
 
 signed_dispatch_envelope_allows() { # mission id, exact runtime:model pair
   "$ms" mission contract-envelope-allows --root "$root" --mission "$1" --pair "$2"
@@ -968,47 +915,27 @@ dispatch_job() {
   [[ -z "$mode_override" || "$mode_override" == "$mode" ]] || die 1 "--mode contradicts the brief's Working Mode header"
   lease_entry_check
 
-  roster_runtime=$(config_get --key "role.$role.runtime" --mode "$mode" --default __missing__)
-  [[ "$roster_runtime" != __missing__ ]] || roster_runtime=$(config_get --key role.default.runtime --mode "$mode" --default __missing__)
-  runtime=${runtime_override:-$roster_runtime}
-  [[ "$runtime" != __missing__ && -n "$runtime" ]] || die 1 "role $role has neither a runtime entry nor role.default.runtime"
-  [[ "$runtime" != main ]] || die 1 "role $role is assigned to main and cannot be dispatched"
-  registered_runtime "$runtime" || die 1 "runtime $runtime is outside metasystem.runtimes"
-  if [[ "$roster_runtime" == main ]]; then
-    roster_model='<current-session>'
-  else
-    roster_model=$(config_get --key "role.$role.model.$roster_runtime" --mode "$mode" --default __missing__)
-    [[ "$roster_model" != __missing__ ]] || roster_model=$(config_get --key "role.default.model.$roster_runtime" --mode "$mode" --default __missing__)
-    [[ "$roster_model" != __missing__ ]] || die 1 "role $role resolves to $roster_runtime but has no model.$roster_runtime value"
-  fi
-  roster_pair="$roster_runtime:$roster_model"
-  requested_model=$(config_get --key "role.$role.model.$runtime" --mode "$mode" --default __missing__)
-  [[ "$requested_model" != __missing__ ]] || requested_model=$(config_get --key "role.default.model.$runtime" --mode "$mode" --default __missing__)
-  [[ "$requested_model" != __missing__ ]] || die 1 "role $role resolves to $runtime but has no model.$runtime value"
-  model=${model_override:-$requested_model}
-  requested_pair="$runtime:$model"
-  [[ -z "$runtime_override" && -z "$model_override" ]] || overridden=true
+  # The roster, tier, and escalation DECISIONS live in the engine
+  # (script-orchestration-02); this block relays the verb's result and
+  # keeps only the approval ladder below.
+  roster_json=$("$ms" job resolve-roster --conf "$root/metasystem.conf" --role "$role" --mode "$mode" \
+    ${runtime_override:+--runtime-override "$runtime_override"} \
+    ${model_override:+--model-override "$model_override"}) || exit 1
+  roster_runtime=$(json_value "$roster_json" rosterRuntime)
+  roster_model=$(json_value "$roster_json" rosterModel)
+  roster_pair=$(json_value "$roster_json" rosterPair)
+  runtime=$(json_value "$roster_json" runtime)
+  model=$(json_value "$roster_json" model)
+  requested_pair=$(json_value "$roster_json" requestedPair)
+  requested_model=$model
+  overridden=$(json_value "$roster_json" overridden)
+  tiers_present=$(json_value "$roster_json" tiersPresent)
+  cost_direction=$(json_value "$roster_json" costDirection)
+  escalation_required=0
+  [[ "$(json_value "$roster_json" escalationRequired)" == true ]] && escalation_required=1
 
   mission_data=$(resolve_mission "$mission_override")
   IFS='|' read -r mission lease mission_turn <<<"$mission_data"
-  if [[ "$overridden" == true && "$requested_pair" != "$roster_pair" ]]; then
-    if model_tiers_configured; then
-      assert_tiers_contiguous
-      tiers_present=true
-      roster_tier=$(model_tier "$roster_runtime" "$roster_model")
-      requested_tier=$(model_tier "$runtime" "$model")
-      if [[ "$roster_tier" == 999999 || "$requested_tier" == 999999 ]]; then
-        escalation_required=1
-        cost_direction='unranked (one or both resolved pairs are absent from model.tier.*)'
-      elif (( requested_tier > roster_tier )); then
-        escalation_required=1
-        cost_direction="higher (tier $roster_tier -> tier $requested_tier)"
-      fi
-    else
-      escalation_required=1
-      cost_direction='unranked (model tiers absent; overrides always escalate)'
-    fi
-  fi
   if (( escalation_required )); then
     if (( approve_escalation )); then
       approval_name=$(confirm_escalation "$roster_pair" "$requested_pair" "$cost_direction")

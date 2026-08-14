@@ -121,6 +121,35 @@ func runDispatchBuildSetup(args []string) int {
 	return recordExit(dispatchcore.BuildSetup(*output, *job, *role, *parent, *mainID, *claimEpoch))
 }
 
+// runDispatchResolveRoster relays `job resolve-roster`: the roster, tier,
+// and escalation decisions live in dispatchcore.ResolveRoster
+// (script-orchestration-02); the shell keeps only the approval ladder.
+func runDispatchResolveRoster(args []string) int {
+	flags := flag.NewFlagSet("job resolve-roster", flag.ContinueOnError)
+	conf := flags.String("conf", "", "path to metasystem.conf")
+	role := flags.String("role", "", "dispatch role")
+	mode := flags.String("mode", "", "working mode scope")
+	runtimeOverride := flags.String("runtime-override", "", "requested runtime (optional)")
+	modelOverride := flags.String("model-override", "", "requested model (optional)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *conf == "" || *role == "" {
+		fmt.Fprintln(os.Stderr, "job resolve-roster: --conf and --role are required")
+		return 2
+	}
+	resolution, err := dispatchcore.ResolveRoster(dispatchcore.RosterParams{
+		ConfPath: *conf, Role: *role, Mode: *mode,
+		RuntimeOverride: *runtimeOverride, ModelOverride: *modelOverride,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	printJSON(resolution)
+	return 0
+}
+
 func runDispatchBuildRecord(args []string) int {
 	flags := flag.NewFlagSet("job build-record", flag.ContinueOnError)
 	var p dispatchcore.BuildRecordParams
