@@ -93,7 +93,7 @@ func runMissionStateVerify(args []string) int {
 	}
 	if (*repo == "") != (*ledger == "") {
 		fmt.Fprintln(os.Stderr, "--repo and --ledger are required together for anchor verification")
-		return 1
+		return 2
 	}
 	var (
 		seq  int64
@@ -160,11 +160,11 @@ func runMissionFenceReserve(name string, reserve bool) func([]string) int {
 		}
 		if !missionIDRe.MatchString(*missionID) {
 			fmt.Fprintln(os.Stderr, "invalid mission id")
-			return 1
+			return 2
 		}
 		if !missionIDRe.MatchString(*job) || *capMin < 1 {
 			fmt.Fprintln(os.Stderr, "invalid mission job reservation")
-			return 1
+			return 2
 		}
 		if err := mission.CheckOrReserve(*repo, *missionID, *job, *capMin, reserve); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -183,7 +183,7 @@ func runMissionFenceReserveCycle(args []string) int {
 	}
 	if !missionIDRe.MatchString(*missionID) {
 		fmt.Fprintln(os.Stderr, "invalid mission id")
-		return 1
+		return 2
 	}
 	if err := mission.ReserveCycle(*repo, *missionID); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -212,13 +212,13 @@ func runMissionFenceAuthorizeCap(args []string) int {
 	})
 	if !missionIDRe.MatchString(*missionID) {
 		fmt.Fprintln(os.Stderr, "invalid mission id")
-		return 1
+		return 2
 	}
 	if !missionIDRe.MatchString(*job) || !missionIDRe.MatchString(*runtime) ||
 		*model == "" || *model != config.CanonicalModel(*model) ||
 		(requestedPtr != nil && *requestedPtr < 1) {
 		fmt.Fprintln(os.Stderr, "invalid mission cap authorization request")
-		return 1
+		return 2
 	}
 	result, err := mission.AuthorizeCap(*repo, *missionID, *job, *runtime, *model, requestedPtr)
 	if err != nil {
@@ -239,7 +239,7 @@ func runMissionFenceAggregateUsage(args []string) int {
 	}
 	if !missionIDRe.MatchString(*missionID) {
 		fmt.Fprintln(os.Stderr, "invalid mission id")
-		return 1
+		return 2
 	}
 	if err := mission.AggregateUsage(*repo, *missionID); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -258,7 +258,7 @@ func runMissionFenceReleaseJob(args []string) int {
 	}
 	if !missionIDRe.MatchString(*missionID) || *job == "" {
 		fmt.Fprintln(os.Stderr, "fence-release-job requires --repo, --mission and --job")
-		return 1
+		return 2
 	}
 	if err := mission.ReleaseJob(*repo, *missionID, *job); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -277,7 +277,7 @@ func runMissionFenceRefuse(args []string) int {
 	}
 	if !missionIDRe.MatchString(*missionID) {
 		fmt.Fprintln(os.Stderr, "invalid mission id")
-		return 1
+		return 2
 	}
 	ask, err := mission.Refuse(*repo, *missionID, *reason)
 	if err != nil {

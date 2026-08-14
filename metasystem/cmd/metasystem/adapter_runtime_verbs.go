@@ -161,6 +161,9 @@ func runAdapterClaudeResultField(args []string) int {
 	}
 	value, print, err := adapter.ClaudeResultField(*result, *field)
 	if err != nil {
+		// Named on stderr like every sibling adapter verb: this runs inside
+		// hook plumbing where stderr is the only diagnostic channel (cli-8).
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	if print {
@@ -257,8 +260,10 @@ func runAdapterDevinConfig(args []string) int {
 }
 
 // runAdapterDevinSession correlates this turn's Devin session against the
-// pre-launch baseline. It prints the id and exits 0, exits 1 when none is found
-// yet, and exits 2 (naming the candidates) when the correlation is ambiguous.
+// pre-launch baseline. It prints the id and exits 0, exits 1 when none is
+// found yet, and exits 3 (naming the candidates) when the correlation is
+// ambiguous — its own code, distinct from the package-wide 2 for usage
+// errors (D15/cli-6; the owner-lock 3/4 and chain-usage 7 precedent).
 func runAdapterDevinSession(args []string) int {
 	flags := flag.NewFlagSet("adapter devin-session", flag.ContinueOnError)
 	before := flags.String("before", "", "pre-launch session listing")
@@ -279,7 +284,7 @@ func runAdapterDevinSession(args []string) int {
 	}
 	if len(candidates) > 1 {
 		fmt.Fprintln(os.Stderr, "ambiguous-session-correlation:"+strings.Join(candidates, ","))
-		return 2
+		return 3
 	}
 	return 1
 }

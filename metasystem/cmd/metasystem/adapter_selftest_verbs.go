@@ -86,7 +86,7 @@ func runAdapterSelftestRecord(args []string) int {
 	runtime := flags.String("runtime", "", "runtime name")
 	job := flags.String("job", "", "main self-test job id")
 	usage := flags.String("usage", "", "native, unavailable, or metered")
-	devinChecks := flags.String("devin-checks", "0", "1 when the Devin-only probes ran")
+	devinChecks := strictBool(flags, "devin-checks", "1", "0", "1 when the Devin-only probes ran")
 	writeEnforcement := flags.String("write-enforcement", "", "declared writeRoots enforcement")
 	networkEnforcement := flags.String("network-enforcement", "", "declared network enforcement")
 	if flags.Parse(args) != nil {
@@ -98,7 +98,7 @@ func runAdapterSelftestRecord(args []string) int {
 		return 2
 	}
 	if err := adapter.WriteSelftestRecord(*output, *runtime, *job, *usage,
-		*devinChecks == "1", *writeEnforcement, *networkEnforcement); err != nil {
+		*devinChecks, *writeEnforcement, *networkEnforcement); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

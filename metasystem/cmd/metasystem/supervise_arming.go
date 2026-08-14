@@ -114,8 +114,17 @@ func runSuperviseComponentIdentity(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if *state == "" || *component == "" {
+		fmt.Fprintln(os.Stderr, "supervise component-identity: --state and --component are required")
+		return 2
+	}
 	doc, err := readJSONObject(*state)
 	if err != nil {
+		// Named on stderr (cli-8): this runs in detached supervision where
+		// stderr is the only diagnostic channel. An absent component or
+		// field below stays silent by design — the callers probe with
+		// || true and an absent entry is an ordinary outcome, not a fault.
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	components, _ := doc["components"].(map[string]any)

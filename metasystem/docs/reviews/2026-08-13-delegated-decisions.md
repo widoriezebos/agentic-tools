@@ -313,6 +313,40 @@ both shell fixture writers, and the shared reader still accepts it during
 the transition so any straggler fixture keeps working. The dual-read drops
 once a full suite cycle proves no writer emits it.
 
+## D15 — Usage errors exit 2 everywhere; ambiguity gets its own code (cli-6 sign-off)
+
+**Decision:** the package convention (2 = usage/validation error, 1 =
+operation failure) applies uniformly: the mission-fence verbs' invalid
+mission id / job / cap and mission-state-verify's flag-pairing error move
+from 1 to 2, matching what the runner verbs already do for the identical
+condition. adapter devin-session stops overloading 2 for ambiguous
+correlation and gets its own documented code, chosen at implementation
+from the verb's unused range (the precedent is owner-lock's 3/4 and
+chain-usage's 7). Implementation rule: before the change lands, every
+shell caller of the affected verbs is surveyed for exit-code branches, and
+any branch on the old meaning updates in the same commit; the full suite
+on both machines is the gate.
+
+**Alternative not taken:** grandfathering the fence verbs' 1 as "their
+local convention". Rejected because shell plumbing branches on these codes
+across verb families — a caller cannot know which dialect it is talking
+to, which is the defect being signed off.
+
+## D16 — Boolean flags: keep the wire, refuse the typo (cli-7 sign-off)
+
+**Decision:** existing string-boolean flags KEEP their exact wire
+spellings ("true"/"false" for the --overridden/--signal/--network family,
+"0"/"1" for --worktree/--devin-checks) but gain strict validation via
+flags.Func: any other value is a usage error (exit 2), never a silent
+false. New verbs use flags.Bool. This kills the real trap (a mistyped
+--signal value quietly disabling the session-handshake deadline) while
+touching zero shell call sites.
+
+**Alternative not taken:** migrating every string boolean to flags.Bool
+for one uniform dialect. Rejected because it rewrites dozens of live call
+sites across dispatch/adapters/hooks for no safety gain over strict
+validation — the wire compatibility risk dwarfs the idiom win.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

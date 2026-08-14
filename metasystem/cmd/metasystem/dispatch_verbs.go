@@ -133,13 +133,13 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.Workspace, "workspace", "", "job workspace root")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
 	flags.StringVar(&p.Model, "model", "", "requested model")
-	overridden := flags.String("overridden", "false", "true when runtime or model was overridden")
+	overridden := strictBool(flags, "overridden", "true", "false", "true when runtime or model was overridden")
 	flags.StringVar(&p.Snapshot, "snapshot", "", "capability snapshot path")
 	flags.Int64Var(&p.InputBytes, "input-bytes", 0, "brief size in bytes")
 	flags.StringVar(&p.InputHash, "input-hash", "", "brief SHA-256")
 	flags.StringVar(&p.Permissions, "permissions", "", "requested-permissions envelope file")
 	flags.StringVar(&p.Fallbacks, "fallbacks", "", "capability fallbacks JSON")
-	signal := flags.String("signal", "false", "true when the runtime signals session establishment")
+	signal := strictBool(flags, "signal", "true", "false", "true when the runtime signals session establishment")
 	flags.Int64Var(&p.HandshakeBudget, "handshake-budget", 0, "session-established timeout seconds")
 	flags.StringVar(&p.ApprovalName, "approval-name", "", "escalation approval name (optional)")
 	flags.StringVar(&p.ApprovedAt, "approved-at", "", "escalation approval timestamp")
@@ -157,8 +157,8 @@ func runDispatchBuildRecord(args []string) int {
 		fmt.Fprintln(os.Stderr, "job build-record: --output, --job, --role, --runtime, --workspace, --cap-resolution, --permissions, and --fallbacks are required")
 		return 2
 	}
-	p.Overridden = *overridden == "true"
-	p.Signal = *signal == "true"
+	p.Overridden = *overridden
+	p.Signal = *signal
 	return recordExit(dispatchcore.BuildRecord(p))
 }
 
@@ -172,7 +172,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.ParentJob, "parent-job", "", "parent job id")
 	flags.StringVar(&p.Snapshot, "snapshot", "", "capability snapshot path")
 	flags.StringVar(&p.Fallbacks, "fallbacks", "", "capability fallbacks JSON")
-	signal := flags.String("signal", "false", "true when the runtime signals session establishment")
+	signal := strictBool(flags, "signal", "true", "false", "true when the runtime signals session establishment")
 	flags.Int64Var(&p.HandshakeBudget, "handshake-budget", 0, "session-established timeout seconds")
 	flags.StringVar(&p.ResumeMode, "resume-mode", "", "resumed or fresh-context")
 	flags.Int64Var(&p.InputBytes, "input-bytes", 0, "delivery size in bytes")
@@ -189,7 +189,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 		fmt.Fprintln(os.Stderr, "job build-follow-record: --output, --parent, --job, --round (>=2), --parent-job, --fallbacks, --resume-mode, and --cap-resolution are required")
 		return 2
 	}
-	p.Signal = *signal == "true"
+	p.Signal = *signal
 	return recordExit(dispatchcore.BuildFollowRecord(p))
 }
 
@@ -281,7 +281,7 @@ func runDispatchHandshakeEval(args []string) int {
 	session := flags.String("session", "", "session id the adapter reported")
 	turn := flags.String("turn", "", "turn id the adapter reported")
 	model := flags.String("model", "", "effective model the adapter reported")
-	signal := flags.String("signal", "false", "true when the runtime promised a session signal")
+	signal := strictBool(flags, "signal", "true", "false", "true when the runtime promised a session signal")
 	output := flags.String("output", "", "output file for {target, patch}")
 	if flags.Parse(args) != nil {
 		return 2
@@ -290,7 +290,7 @@ func runDispatchHandshakeEval(args []string) int {
 		fmt.Fprintln(os.Stderr, "job handshake-eval: --record, --effective, and --output are required")
 		return 2
 	}
-	return recordExit(dispatchcore.HandshakeEval(*record, *effective, *session, *turn, *model, *signal == "true", *output))
+	return recordExit(dispatchcore.HandshakeEval(*record, *effective, *session, *turn, *model, *signal, *output))
 }
 
 func runDispatchReapFacts(args []string) int {
@@ -355,7 +355,7 @@ func runDispatchExpandPermissions(args []string) int {
 	source := flags.String("source", "", "permissions envelope file")
 	repo := flags.String("repo", "", "repository root")
 	workspace := flags.String("workspace", "", "job workspace root")
-	worktree := flags.String("worktree", "0", "1 when the workspace is a job worktree")
+	worktree := strictBool(flags, "worktree", "1", "0", "1 when the workspace is a job worktree")
 	preset := flags.String("preset", "", "preset name (or custom)")
 	networkFloor := flags.String("network-floor", "", "repository network floor: deny, allow, or empty")
 	output := flags.String("output", "", "expanded envelope output file")
@@ -366,7 +366,7 @@ func runDispatchExpandPermissions(args []string) int {
 		fmt.Fprintln(os.Stderr, "job expand-permissions: --source, --repo, --workspace, --preset, and --output are required")
 		return 2
 	}
-	return recordExit(dispatchcore.ExpandPermissions(*source, *repo, *workspace, *worktree == "1", *preset, *networkFloor, *output))
+	return recordExit(dispatchcore.ExpandPermissions(*source, *repo, *workspace, *worktree, *preset, *networkFloor, *output))
 }
 
 func runDispatchValidateMission(args []string) int {

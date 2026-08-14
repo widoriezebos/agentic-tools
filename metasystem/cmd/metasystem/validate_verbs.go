@@ -90,7 +90,10 @@ func runValidatePlanConsistency(args []string) int {
 	}
 	retired, violations, err := validate.PlanConsistency(*plansDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "no such plans directory: %s\n", *plansDir)
+		// The real error, not a guessed label: an EACCES or not-a-directory
+		// mislabeled "no such plans directory" sent investigations the wrong
+		// way (cli-8).
+		fmt.Fprintf(os.Stderr, "plan-consistency: %s: %v\n", *plansDir, err)
 		return 2
 	}
 	if len(violations) > 0 {

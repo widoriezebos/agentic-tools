@@ -354,10 +354,11 @@ supervise() { # dispatch|follow-up and supervisor args
       list_devin_sessions "$current_sessions" || true
       local correlate_rc=0
       resolved_session=$(new_devin_session "$before_sessions" "$current_sessions" "$signal_file" "$workspace" 2>>"$log") || correlate_rc=$?
-      # Exit 2 is two new sessions in this workspace at once: the adapter cannot
+      # Exit 3 is two new sessions in this workspace at once: the adapter cannot
       # tell which is this turn's, and guessing records a peer's session as this
       # job's identity. That is a named refusal, not a keep-polling empty result.
-      if (( correlate_rc == 2 )); then
+      # (3, not 2: the package reserves 2 for usage errors — D15/cli-6.)
+      if (( correlate_rc == 3 )); then
         fail_pending ambiguous_session_correlation handshake
         terminate_cli_child "$cli_pid"
         return 1
