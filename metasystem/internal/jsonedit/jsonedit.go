@@ -131,3 +131,18 @@ func Get(content []byte, field string, def *string) (string, bool) {
 		return string(encoded), true
 	}
 }
+
+// StripKeys removes named top-level keys from a decoded JSON object — the
+// structural replacement for producing settings.json by sed-deleting the
+// "_comment" line (script-misc-8/D30). Stripping an absent key is a no-op:
+// adoption is re-runnable and an already-clean file must stay a success.
+func StripKeys(data []byte, keys []string) (map[string]any, error) {
+	var object map[string]any
+	if err := json.Unmarshal(data, &object); err != nil {
+		return nil, err
+	}
+	for _, key := range keys {
+		delete(object, key)
+	}
+	return object, nil
+}

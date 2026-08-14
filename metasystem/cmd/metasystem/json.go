@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -105,5 +106,42 @@ func runJSONGet(args []string) int {
 		return 1
 	}
 	fmt.Println(out)
+	return 0
+}
+
+// runJSONStrip prints a JSON object with named top-level keys removed
+// (indented, key-sorted) — the structural way to derive a runtime config
+// from an annotated enforcement asset.
+func runJSONStrip(args []string) int {
+	flags := flag.NewFlagSet("json strip", flag.ContinueOnError)
+	file := flags.String("file", "", "JSON object file to read")
+	var keys []string
+	flags.Func("key", "top-level key to remove (repeatable)", func(v string) error {
+		keys = append(keys, v)
+		return nil
+	})
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *file == "" || len(keys) == 0 {
+		fmt.Fprintln(os.Stderr, "json strip: --file and at least one --key are required")
+		return 2
+	}
+	data, err := os.ReadFile(*file)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	object, err := jsonedit.StripKeys(data, keys)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	encoded, err := json.MarshalIndent(object, "", "  ")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(string(encoded))
 	return 0
 }

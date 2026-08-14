@@ -687,6 +687,28 @@ module caches are user-level, so nested runs stay warm). The r10
 criticals close as designed: source tracked, platform-independent, no
 embedded committing-HEAD.
 
+## D30 — The W4.23-25 tail: two smalls done, two optional verbs declined (script-misc-8/-9/-5/-7 sign-offs)
+
+**script-misc-8 (done)**: settings.json is now derived structurally —
+`json strip --key _comment` over the annotated enforcement asset —
+instead of sed-deleting any line containing the substring. The annotated
+file keeps its comment for humans; StripKeys treats an absent key as a
+no-op so adoption stays re-runnable; unit tests pin both.
+
+**script-misc-9 (done)**: the watcher's dead emit-event wiring is
+deleted. Its only event emission happens inside `supervise
+watcher-pass`, and the sourced-but-never-called block was exactly the
+false impression the finding named. The other emit-event.sh consumers
+are real and untouched.
+
+**script-misc-5 and -7 (DECLINED)**: the adoption-plan and
+skill-validation verbs stay unbuilt. The verifier downgraded both as
+not carrying their weight, and nothing has changed that: no caller
+pulls for either surface, and building speculative verbs contradicts
+the consolidation ruling that shrank the family count in the first
+place. Reopen if an adopter actually asks for a machine-readable
+adoption plan or a skill linter with teeth.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

@@ -246,6 +246,7 @@ func families() []family {
 				{"get", "print a dotted field from a JSON file or string", runJSONGet},
 				{"object", "build a compact JSON object from key=value args", runJSONObject},
 				{"set", "set top-level fields in a JSON object file atomically", runJSONSet},
+				{"strip", "print a JSON object with named top-level keys removed", runJSONStrip},
 			},
 		},
 		{

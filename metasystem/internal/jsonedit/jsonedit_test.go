@@ -83,3 +83,26 @@ func TestObjectSpelling(t *testing.T) {
 		t.Fatal("HTML escaping crept into json object output")
 	}
 }
+
+// StripKeys: the structural settings.json derivation (script-misc-8/D30).
+func TestStripKeys(t *testing.T) {
+	data := []byte(`{"_comment":"note","hooks":{"Stop":[{"command":"x"}]},"systemMessage":"m"}`)
+	object, err := StripKeys(data, []string{"_comment"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := object["_comment"]; present {
+		t.Fatal("stripped key survived")
+	}
+	if object["systemMessage"] != "m" {
+		t.Fatalf("unrelated keys disturbed: %v", object)
+	}
+	// Absent keys are a no-op: adoption is re-runnable.
+	again, err := StripKeys(data, []string{"absent"})
+	if err != nil || len(again) != 3 {
+		t.Fatalf("absent-key strip changed the object: %v %v", again, err)
+	}
+	if _, err := StripKeys([]byte("not json"), []string{"k"}); err == nil {
+		t.Fatal("invalid JSON accepted")
+	}
+}

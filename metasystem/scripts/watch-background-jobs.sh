@@ -197,12 +197,6 @@ running_file=$(mktemp "${TMPDIR:-/tmp}/watch-running.XXXXXX")
 trap 'rm -f "$running_file"' EXIT
 
 
-if [[ -f "$(dirname "${BASH_SOURCE[0]}")/agents/emit-event.sh" ]]; then
-  source "$(dirname "${BASH_SOURCE[0]}")/agents/emit-event.sh"
-else
-  emit_event() { :; }
-fi
-
 append_census_log() { # captured scan output
   local captured=$1 log="$supervision_dir/census.log" max_bytes current=0 incoming
   max_bytes=$("$config" get --key census.log-max-bytes --default 1048576)

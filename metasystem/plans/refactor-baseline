@@ -1,3 +1,3 @@
-sha=d47c595613befffb2e02e02e1dbcafb0a767f5b9
-recorded_epoch=1786699021
-gate=bash scripts/validate-metasystem.sh (VM acceptance host at d47c595, HEAD in-log; Mac half skipped: harness 10-min background cap under load 6.2, kill left no orphans)
+sha=015f949ff36dbf6274b17837085168621b579e86
+recorded_epoch=1786700780
+gate=bash scripts/validate-metasystem.sh (VM acceptance host at 015f949, HEAD in-log at launch; incl. the D17 adopt fixtures)

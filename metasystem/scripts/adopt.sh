@@ -285,7 +285,10 @@ for rt in "${selected_runtimes[@]}"; do
         [[ -f "$target/skills/$n/agents/claude-profile.md" ]] \
           && cp "$target/skills/$n/agents/claude-profile.md" "$target/.claude/agents/$n.md"
       done
-      sed '/"_comment"/d' "$target/scripts/enforcement/claude-code-hooks.json" >"$target/.claude/settings.json"
+      # Structurally, not by line-deleting JSON: the annotated enforcement
+      # asset keeps its comment for humans, the runtime config never sees it.
+      "$ms" json strip --file "$target/scripts/enforcement/claude-code-hooks.json" \
+        --key _comment >"$target/.claude/settings.json"
       ;;
     devin)
       mkdir -p "$target/.agents/skills" "$target/.devin/skills"
