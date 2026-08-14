@@ -40,8 +40,11 @@ func TailorConf(confPath string, requested []string) error {
 	for _, runtime := range selected {
 		selectedSet[runtime] = true
 	}
+	// The fake runtime never outranks a real one: it becomes the default
+	// only when it is the sole selection, which is the fixture-harness
+	// shape (validation suites tailor a copied conf to the fake adapter).
 	defaultRuntime := ""
-	for _, candidate := range []string{"codex", "devin", "claude"} {
+	for _, candidate := range []string{"codex", "devin", "claude", "fake"} {
 		if selectedSet[candidate] {
 			defaultRuntime = candidate
 			break
@@ -51,6 +54,20 @@ func TailorConf(confPath string, requested []string) error {
 	data, err := os.ReadFile(confPath)
 	if err != nil {
 		return err
+	}
+
+	// Tailoring to the fake runtime collapses each role's dropped
+	// per-runtime model bindings into one model.fake=fake-model line (the
+	// fake adapter's fixed model name); prefixes that already bind a fake
+	// model keep theirs.
+	hasFakeModel := map[string]bool{}
+	if defaultRuntime == "fake" {
+		for _, raw := range splitLines(string(data)) {
+			key := strings.TrimSpace(strings.SplitN(raw, "=", 2)[0])
+			if strings.HasSuffix(key, ".model.fake") && modelKeyRe.MatchString(key) {
+				hasFakeModel[strings.TrimSuffix(key, ".model.fake")] = true
+			}
+		}
 	}
 
 	var out []string
@@ -108,11 +125,22 @@ func TailorConf(confPath string, requested []string) error {
 		// The template ships one placeholder model binding keyed by the
 		// literal token <runtime>; it becomes the default runtime's key.
 		if key == "role.code-critic.model.<runtime>" {
-			out = append(out, "role.code-critic.model."+defaultRuntime+"="+value)
+			if defaultRuntime == "fake" {
+				out = append(out, "role.code-critic.model.fake=fake-model")
+			} else {
+				out = append(out, "role.code-critic.model."+defaultRuntime+"="+value)
+			}
 			continue
 		}
 
 		if match := modelKeyRe.FindStringSubmatch(key); match != nil && !selectedSet[match[1]] {
+			if defaultRuntime == "fake" {
+				prefix := strings.TrimSuffix(key, ".model."+match[1])
+				if !hasFakeModel[prefix] {
+					hasFakeModel[prefix] = true
+					out = append(out, prefix+".model.fake=fake-model")
+				}
+			}
 			continue
 		}
 

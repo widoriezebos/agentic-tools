@@ -1135,6 +1135,36 @@ is Go-owned, the shell proves only that the adapter's plumbing reaches
 the dispatcher and the return schema. The CENSUS-FAILED schema leg at
 the CLI boundary stays untouched, per the finding.
 
+## D49 — config tailor learns the fake runtime and --set; the three divergent perl rewrites die (script-fixtures-020 sign-off)
+
+**Decision**: the verb-surface extension the finding needed sign-off
+for is shaped as `--runtimes fake` plus a repeatable generic
+`--set key=value`, not the suggested monolithic `--fixture` profile:
+the three sites want different override values (watch interval 1 vs 5,
+census bytes 350/4096/untouched, tiers, investigator), so a profile
+would have needed all the same knobs while hiding them. TailorConf
+gains exactly two fake-runtime rules — fake may be the default runtime
+only when it is the sole selection, and dropped per-runtime model
+bindings collapse to one `model.fake=fake-model` per role (explicit
+fake bindings win) — and SetConfKeys is a tested atomic
+replace-or-append editor, so no conf-key grammar remains in fixture
+regex. Equivalence was proven before the swap: old-perl output vs
+engine output on the shipped conf is byte-identical on effective lines
+for the dispatch-fixtures and fingerprint-harness variants. The
+supervision variant differs in exactly one place, and it is the drift
+the finding warned about: its perl left `role.code-critic.runtime=
+<runtime>` and the `<model>` placeholder untouched (its tier clauses
+also never matched anything — recorded, no behavior lost); the engine
+now normalizes those to real fake bindings, strictly better-formed,
+and supervision never dispatches a code-critic. Out of scope and left
+alone: the one- and two-clause rewrites (supervision's operator
+harness, mission-fixtures' evidence-root line, delegate-caps'
+runtimes append, adopt-fixtures' placeholder-emptying) — they set
+specific keys rather than reimplementing tailoring semantics.
+adopt.sh's production call is untouched. Proof: validate unit tests
+(fake collapse, explicit-fake wins, SetConfKeys
+replace/append/dedupe), then all three harnesses green end to end.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

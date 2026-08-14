@@ -107,9 +107,15 @@ make_repo() { # destination
   cp "$source_root/scripts/watch-background-jobs.sh" "$repo/scripts/"
   cp "$source_root/scripts/metasystem-config.sh" "$repo/scripts/"
   cp "$source_root/metasystem.conf" "$repo/metasystem.conf"
-  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=1/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=350/m; s/^model\.tier\.1=.*$/model.tier.1=fake:fake-model/m; s/^model\.tier\.2=.*$/model.tier.2=/m; s/^model\.tier\.3=.*$/model.tier.3=/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$repo/metasystem.conf"
-  grep -q '^watch\.interval-sec=' "$repo/metasystem.conf" || printf 'watch.interval-sec=1\n' >>"$repo/metasystem.conf"
-  grep -q '^census\.log-max-bytes=' "$repo/metasystem.conf" || printf 'census.log-max-bytes=350\n' >>"$repo/metasystem.conf"
+  # The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
+  # only harness-specific overrides ride --set. The old rewrite's
+  # model.tier clauses never matched: the shipped conf carries no tier
+  # lines, and this harness never grew an append. Investigator stays
+  # main here, as before.
+  "$ms" config tailor --conf "$repo/metasystem.conf" --runtimes fake \
+    --set evidence.root="$evidence" \
+    --set watch.interval-sec=1 \
+    --set census.log-max-bytes=350
   git -C "$repo" init -q -b main
   git -C "$repo" add .
   git -C "$repo" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture

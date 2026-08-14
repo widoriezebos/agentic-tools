@@ -86,6 +86,70 @@ func TestTailorConfNoneDropsEveryBinding(t *testing.T) {
 	}
 }
 
+func TestTailorConfFakeRuntimeCollapsesModelBindings(t *testing.T) {
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	writeFile(t, conf, tailorFixture)
+	if err := TailorConf(conf, []string{"fake"}); err != nil {
+		t.Fatal(err)
+	}
+	got := readFile(t, conf)
+	want := `# adopted configuration
+metasystem.runtimes=fake
+role.default.runtime=fake
+role.implementer.runtime=fake
+role.verifier.runtime=main
+mode.cheap.role.verifier.runtime=main
+role.code-critic.model.fake=fake-model
+role.implementer.model.fake=fake-model
+model.tier.1=local-model
+model.tier.2=<members>
+evidence.root=artifacts
+`
+	if got != want {
+		t.Fatalf("tailored conf mismatch:\n--- got ---\n%s--- want ---\n%s", got, want)
+	}
+}
+
+func TestTailorConfFakeRuntimeKeepsExplicitFakeModel(t *testing.T) {
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	writeFile(t, conf, "metasystem.runtimes=<runtimes>\n"+
+		"role.implementer.model.fake=pinned-model\n"+
+		"role.implementer.model.codex=frontier-code\n")
+	if err := TailorConf(conf, []string{"fake"}); err != nil {
+		t.Fatal(err)
+	}
+	got := readFile(t, conf)
+	want := "metasystem.runtimes=fake\n" +
+		"role.implementer.model.fake=pinned-model\n" +
+		"role.default.runtime=fake\n"
+	if got != want {
+		t.Fatalf("an explicit fake model binding must win over synthesis:\n--- got ---\n%s--- want ---\n%s", got, want)
+	}
+}
+
+func TestSetConfKeysReplacesAppendsAndDedupes(t *testing.T) {
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	writeFile(t, conf, "# heading\n"+
+		"watch.interval-sec=60\n"+
+		"evidence.root=artifacts\n"+
+		"watch.interval-sec=120\n")
+	err := SetConfKeys(conf, []ConfSetting{
+		{Key: "watch.interval-sec", Value: "1"},
+		{Key: "census.log-max-bytes", Value: "350"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readFile(t, conf)
+	want := "# heading\n" +
+		"watch.interval-sec=1\n" +
+		"evidence.root=artifacts\n" +
+		"census.log-max-bytes=350\n"
+	if got != want {
+		t.Fatalf("set mismatch:\n--- got ---\n%s--- want ---\n%s", got, want)
+	}
+}
+
 func TestTailorConfInsertsMissingDurableKeys(t *testing.T) {
 	conf := filepath.Join(t.TempDir(), "metasystem.conf")
 	writeFile(t, conf, "evidence.root=artifacts\n")

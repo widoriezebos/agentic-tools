@@ -69,10 +69,13 @@
   D47 armer identity via proc classify (production fix) + ps shim
   and mirror daemon retired, D48 telemetry wiring through the real
   __record-cas (derivation cases verified 1:1 in runtime_test.go
-  first). Remaining: -020 (tailor sign-off, D49), then the item-8
-  boundary (VM detached + pid Monitor, Mac sampling, baseline
-  re-record), hygiene batch (D50, final W6 boundary); then W7
-  (7 docs) closes the program. Superseded: W5 batch 1
+  first), D49 config tailor grows --runtimes fake + repeatable
+  --set and the three divergent perl conf rewrites die
+  (equivalence-diffed old-vs-new on the shipped conf; fingerprint,
+  supervision, and dispatch harnesses green standalone). W6 at 8 of
+  9. Remaining: item-8 boundary (VM detached + pid Monitor, Mac
+  sampling, baseline re-record), hygiene batch (D50, final W6
+  boundary); then W7 (7 docs) closes the program. Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in

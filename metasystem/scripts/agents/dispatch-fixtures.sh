@@ -62,10 +62,15 @@ cp scripts/metasystem-config.sh scripts/assert-mission.sh scripts/assert-stop-lo
   scripts/watch-background-jobs.sh "$agent_repo/scripts/"
 cp docs/project-rules.md "$agent_repo/docs/"
 cp metasystem.conf "$agent_repo/"
-perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=fake/m; s|^evidence\.root=.*$|evidence.root='"$agent_evidence"'|m; s/^watch\.interval-sec=.*$/watch.interval-sec=5/m; s/^census\.log-max-bytes=.*$/census.log-max-bytes=4096/m; s/^role\.default\.runtime=.*$/role.default.runtime=fake/m; s/^role\.default\.model\.codex=.*$/role.default.model.fake=fake-model/m; s/^role\.default\.model\.(?:claude|devin)=.*\n//mg; s/^role\.code-critic\.runtime=.*$/role.code-critic.runtime=fake/m; s/^role\.code-critic\.model\.<runtime>=.*$/role.code-critic.model.fake=fake-model/m; s/^role\.investigator\.runtime=main$/role.investigator.runtime=fake/m; s/\.runtime=(?:codex|devin)$/\.runtime=fake/mg; s/\.model\.(?:codex|devin)=.*$/\.model.fake=fake-model/mg' "$agent_repo/metasystem.conf"
-printf '\nmodel.tier.1=fake:fake-model\nmodel.tier.2=fake:fake-premium\n' >>"$agent_repo/metasystem.conf"
-grep -q '^watch\.interval-sec=' "$agent_repo/metasystem.conf" || printf 'watch.interval-sec=5\n' >>"$agent_repo/metasystem.conf"
-grep -q '^census\.log-max-bytes=' "$agent_repo/metasystem.conf" || printf 'census.log-max-bytes=4096\n' >>"$agent_repo/metasystem.conf"
+# The engine owns fake-runtime conf tailoring (script-fixtures-020/D49);
+# only harness-specific overrides ride --set.
+"$root/bin/metasystem" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
+  --set evidence.root="$agent_evidence" \
+  --set watch.interval-sec=5 \
+  --set census.log-max-bytes=4096 \
+  --set role.investigator.runtime=fake \
+  --set model.tier.1=fake:fake-model \
+  --set model.tier.2=fake:fake-premium
 git -C "$agent_repo" init -q -b main
 git -C "$agent_repo" add .
 git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm base
