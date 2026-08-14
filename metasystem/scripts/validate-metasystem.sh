@@ -3844,25 +3844,26 @@ scripts/receipt.sh add --type improve --outcome shipped --verify caught --file "
 # converted into a grep miss) needs. The if-guard keeps errexit from
 # killing the run before the capture lands.
 receipt_probe_dir="${TMPDIR:-/tmp}/receipt-evidence"; mkdir -p "$receipt_probe_dir"
-receipt_stats_probe() { # label, expected pattern, extra stats args...
-  local label=$1 expected=$2 out rc=0
-  shift 2
-  if out=$(scripts/receipt.sh stats "$@" --file "$rfile"); then rc=0; else rc=$?; fi
+receipt_stats_probe() { # label, expected pattern, ledger file, extra stats args...
+  local label=$1 expected=$2 file=$3 out rc=0
+  local stats_sh="${receipt_stats_sh:-scripts/receipt.sh}"
+  shift 3
+  if out=$("$stats_sh" stats "$@" --file "$file"); then rc=0; else rc=$?; fi
   if printf '%s\n' "$out" | grep -q "$expected"; then return 0; fi
   {
     echo "FAILURE $label rc=$rc at $(date -u +%Y%m%dT%H%M%SZ)"
     echo "--- stats output:"; printf '%s\n' "$out"
-    echo "--- ledger bytes:"; cat "$rfile"
-    echo "--- ledger stat:"; ls -la "$rfile"
+    echo "--- ledger bytes:"; cat "$file"
+    echo "--- ledger stat:"; ls -la "$file"
     echo "--- env:"; env | grep -i METASYSTEM || true
     echo "--- binary:"; ls -la bin/metasystem 2>/dev/null || true; shasum bin/metasystem 2>/dev/null || true
   } >"$receipt_probe_dir/fail-$(date +%s)-$label.txt"
   echo "receipt stats probe captured $label into $receipt_probe_dir" >&2
   return 1
 }
-receipt_stats_probe receipts-1 '^receipts=1$' || { echo "receipt stats miscounted the post-retro period" >&2; exit 1; }
-receipt_stats_probe type-improve '^type_improve=1$' || { echo "receipt stats missed the improve type" >&2; exit 1; }
-receipt_stats_probe all-receipts-3 '^receipts=3$' --all || { echo "receipt stats --all miscounted" >&2; exit 1; }
+receipt_stats_probe receipts-1 '^receipts=1$' "$rfile" || { echo "receipt stats miscounted the post-retro period" >&2; exit 1; }
+receipt_stats_probe type-improve '^type_improve=1$' "$rfile" || { echo "receipt stats missed the improve type" >&2; exit 1; }
+receipt_stats_probe all-receipts-3 '^receipts=3$' "$rfile" --all || { echo "receipt stats --all miscounted" >&2; exit 1; }
 
 receipt_relation="$tmp/receipt-relation"
 mkdir -p "$receipt_relation/scripts" "$receipt_relation/artifacts/agents/jobs" "$receipt_relation/bin"
@@ -3919,8 +3920,12 @@ printf 'Working Mode: implement\nMission Stream: waiver-stream\n' \
   --delegate fake:model:waived-implementer --file "$relation_log" >/dev/null
 grep -Fq '|critique_waived=prose-under-30|waiver_stream=waiver-stream|' "$relation_log" \
   || { echo "receipt did not surface the accepted waiver and its stream" >&2; exit 1; }
-"$receipt_relation/scripts/receipt.sh" stats --file "$relation_log" | grep -q '^critique_waivers=1$' \
+# Probed like the three stats greps above: the 2026-08-14 flake landed on
+# this previously unprobed grep inside a nested adopted-copy validation.
+receipt_stats_sh="$receipt_relation/scripts/receipt.sh"
+receipt_stats_probe critique-waivers '^critique_waivers=1$' "$relation_log" \
   || { echo "receipt stats did not count the stream waiver for retro" >&2; exit 1; }
+receipt_stats_sh=""
 
 correction_log="$tmp/receipt-correction.log"
 scripts/receipt.sh add --type implement --outcome shipped --skills none \
@@ -4174,7 +4179,23 @@ PYEOF
   mkdir -p "$snap"
   cp -R "$tgt/." "$snap"
   bash "$adopt" "$tgt" >/dev/null
-  diff -r "$snap" "$tgt" >/dev/null || { echo "adopt: second run changed an adopted target" >&2; exit 1; }
+  # Explicit walk, not diff -r (KI-3, recurred here 2026-08-14): the adopted
+  # tree carries .claude/skills symlinks, and BSD diff both warns "Directory
+  # loop detected" and silently SKIPS those directories — a weakened check
+  # behind noisy output. Same entry lists, same symlink targets, same bytes.
+  (cd "$snap" && find . -mindepth 1 | LC_ALL=C sort) >"$tmp/adopt-idem-snap"
+  (cd "$tgt" && find . -mindepth 1 | LC_ALL=C sort) >"$tmp/adopt-idem-tgt"
+  cmp -s "$tmp/adopt-idem-snap" "$tmp/adopt-idem-tgt" \
+    || { echo "adopt: second run changed an adopted target (entry lists differ)" >&2; exit 1; }
+  while IFS= read -r rel; do
+    a="$snap/$rel"; b="$tgt/$rel"
+    if [[ -L "$a" || -L "$b" ]]; then
+      [[ -L "$a" && -L "$b" && "$(readlink "$a")" == "$(readlink "$b")" ]] \
+        || { echo "adopt: second run changed symlink $rel" >&2; exit 1; }
+    elif [[ -f "$a" ]]; then
+      cmp -s "$a" "$b" || { echo "adopt: second run changed $rel" >&2; exit 1; }
+    fi
+  done <"$tmp/adopt-idem-snap"
   if bash "$tgt/scripts/validate-metasystem.sh" >/dev/null 2>&1; then
     echo "adopt: target validated with unreplaced placeholders" >&2
     exit 1
@@ -4188,7 +4209,13 @@ PYEOF
   grep -q 'metasystem.conf' "$tmp/conf-placeholder.out" \
     || { echo "adopt: placeholder failure did not name metasystem.conf" >&2; exit 1; }
   fill_harness_conf "$tgt/metasystem.conf" "$tmp/adopt-default-evidence"
-  bash "$tgt/scripts/validate-metasystem.sh" >/dev/null 2>&1 || { echo "adopt: filled target failed validation" >&2; exit 1; }
+  # Capture, never discard: the receipt-stats flake's nested firings kept
+  # dying invisibly behind this redirect (2026-08-14, evidence 51987/94210).
+  bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/adopt-filled.out" 2>&1 || {
+    echo "adopt: filled target failed validation" >&2
+    tail -20 "$tmp/adopt-filled.out" >&2
+    exit 1
+  }
 
   echo drift >>"$tgt/.claude/agents/verify.md"
   if bash "$tgt/scripts/validate-metasystem.sh" >"$tmp/profile-drift.out" 2>&1; then

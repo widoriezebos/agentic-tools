@@ -70,3 +70,21 @@ exit codes precisely to catch this.
 Mac full-suite runs remain useful (the probe needs samples), but VM-green
 is the validation authority while this stays open: the VM is the plan's
 acceptance host and has never exhibited the failure.
+
+## 2026-08-14 firing: landed on an unprobed grep, nested
+
+First Mac-suite hit since the probe was committed, and it dodged the
+instrumentation twice over: it fired INSIDE the adopt fixture's
+filled-target validation (whose output the outer suite discarded), and the
+inner run died in the receipt-relation block — at or near the
+`critique_waivers=1` grep, which the probe did not wrap. Evidence:
+suite-failures/20260814T002343Z-51987 (outer) containing
+.../adopt-default/artifacts/agents/suite-failures/20260814T002343Z-94210
+(inner). The inner receipt-relation artifacts are byte-perfect as always
+(missing-chain.out carries the exact expected refusal), and the probe dir
+stayed empty — consistent with the flake striking an unprobed invocation.
+Fixed the observability the same day: the probe now takes the ledger file
+(and honors `receipt_stats_sh` for fixture-local copies) and wraps the
+critique-waivers grep, and the filled-target validation captures its
+output to adopt-filled.out with a tail on failure. The next firing —
+outer or nested — names its dying line and leaves probe evidence.
