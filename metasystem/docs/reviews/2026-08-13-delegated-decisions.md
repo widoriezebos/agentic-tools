@@ -459,6 +459,24 @@ is also attested into state.json and read back by re-arm refusals and
 dispatch independently of the reservation scan — separate questions,
 separate verbs.
 
+## D21 — `supervise verify-armed` is a verb (script-orchestration-10 sign-off)
+
+**Decision:** the arming success criterion — live owner, live watcher and
+reaper with fresh heartbeats, loadedCapMin equal to the attested derived
+ceiling, and a fresh successful census matching the state's fingerprint
+and generation — is supervise.ArmedNow behind the new verify-armed verb:
+one attempt, pure over the clock. arm-supervision.sh keeps the scaled
+retry loop and its timeout message. The component-liveness rule is spelled
+as the ladder's: census-alive at the recorded start, and a recorded tag
+must not be PROVABLY absent (live and unknown pass; stale and dead fail) —
+the same identity.TagState the dispatch ladder consumes since W4.5, so
+arming and dispatch can no longer diverge on what alive means.
+
+**Alternative not taken:** giving the verb the retry loop (--deadline-sec).
+Rejected: the wait cap is fixture-scaled shell policy
+(supervision_wait_cap), and a verb that sleeps is a verb a caller cannot
+compose.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

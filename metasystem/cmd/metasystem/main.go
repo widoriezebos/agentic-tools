@@ -302,6 +302,7 @@ func families() []family {
 			verbs: []verb{
 				{"fingerprint", "print a checkout's supervision fingerprint (code, signatures, configuration)", runCensusFingerprint},
 				{"derive-ceiling", "derive the watcher cap ceiling from config, environment, and the declared maximum", runSuperviseDeriveCeiling},
+				{"verify-armed", "exit 0 when supervision is verifiably armed at this instant", runSuperviseVerifyArmed},
 				{"owner", "run the owner loop for a checkout (internal; launched by arm)", runSuperviseOwnerLoop},
 				{"component", "run a supervised component (internal; launched by the owner)", runSuperviseComponent},
 				{"status", "print the checkout's supervision state as JSON", runSuperviseStatus},

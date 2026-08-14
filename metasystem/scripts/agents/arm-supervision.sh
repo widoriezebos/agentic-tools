@@ -267,41 +267,19 @@ stop_recorded_components() {
 
 
 verify_armed() { # repo, owner pid/start/tag
-  local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 supervision state last interval cap started deadline elapsed component pid start tag heartbeat observed expected actual verdict completed expected_generation actual_generation derived_cap loaded_cap
-  supervision=$agents/supervision; state=$supervision/state.json; last=$supervision/last-census.json
+  # One attempt's verdict is the engine's (`supervise verify-armed`,
+  # script-orchestration-10/D21): the same freshness judgment dispatch's
+  # census gate renders, computed once. This script keeps the retry loop
+  # and the timeout message.
+  local repo=$1 owner_pid=$2 owner_start=$3 owner_tag=$4 interval cap started deadline elapsed
   interval=$("$config" get --key watch.interval-sec --default 60)
   cap=$(supervision_wait_cap "$((interval + 10))")
   started=$SECONDS
   deadline=$((SECONDS + cap))
   while (( SECONDS < deadline )); do
-    if identity_alive "$owner_pid" "$owner_start" "$owner_tag" && [[ -f "$state" && -f "$last" ]]; then
-      functions_live=1
-      for component in watcher reaper; do
-        read -r pid start tag < <(read_component_identity "$state" "$component" 2>/dev/null || true) || true
-        if [[ -z "${pid:-}" ]] || ! identity_alive "$pid" "$start" "$tag"; then functions_live=0; break; fi
-        heartbeat=$(json_field "$state" "components.$component.heartbeat" 2>/dev/null || true)
-        observed=$(json_field "$heartbeat" observedAtEpoch 2>/dev/null || echo 0)
-        (( $(date +%s) - observed <= interval * 2 + 2 )) || { functions_live=0; break; }
-        if [[ "$component" == watcher ]]; then
-          derived_cap=$(json_field "$state" derivedWatcherCapMin 2>/dev/null || true)
-          loaded_cap=$(json_field "$heartbeat" loadedCapMin 2>/dev/null || true)
-          [[ "$derived_cap" =~ ^[1-9][0-9]*$ && "$loaded_cap" == "$derived_cap" ]] \
-            || { functions_live=0; break; }
-        fi
-      done
-      if (( functions_live )); then
-        verdict=$(json_field "$last" verdict 2>/dev/null || true)
-        completed=$(json_field "$last" completedAtEpoch 2>/dev/null || echo 0)
-        actual=$(json_field "$last" fingerprint 2>/dev/null || true)
-        expected=$(json_field "$state" fingerprint 2>/dev/null || true)
-        actual_generation=$(json_field "$last" generation 2>/dev/null || true)
-        expected_generation=$(json_field "$state" generation 2>/dev/null || true)
-        if [[ "$verdict" == SUCCESS && -n "$expected" && "$actual" == "$expected" \
-          && -n "$expected_generation" && "$actual_generation" == "$expected_generation" ]] \
-          && (( $(date +%s) - completed <= interval )); then
-          return 0
-        fi
-      fi
+    if "$ms" supervise verify-armed --agents "$agents" --owner-pid "$owner_pid" \
+        --owner-start "$owner_start" --owner-tag "$owner_tag" --interval "$interval"; then
+      return 0
     fi
     sleep 0.05
   done
