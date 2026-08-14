@@ -67,9 +67,24 @@ func TestGroupOwnsTag(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	// A tag no process carries is not owned (but still provable).
-	if owned, provable := groupOwnsTag(int64(pgid), "no-process-carries-this-xyzzy"); owned || !provable {
-		t.Fatalf("absent tag should not be owned: owned=%v provable=%v", owned, provable)
+	// A tag no process carries is not owned (but still provable). Unlike
+	// the own-tag scan, this one must inspect EVERY live pid — so any
+	// process on the machine inside its fork-to-execve window makes the
+	// sweep rightly unprovable for that instant. Same dossier mechanism,
+	// same remedy: the property is steady-state, wait it out bounded.
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		owned, provable := groupOwnsTag(int64(pgid), "no-process-carries-this-xyzzy")
+		if !owned && provable {
+			break
+		}
+		if owned {
+			t.Fatalf("absent tag reads as owned")
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("absent tag never became provable: owned=%v provable=%v", owned, provable)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

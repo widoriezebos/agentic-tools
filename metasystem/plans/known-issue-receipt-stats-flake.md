@@ -24,7 +24,13 @@ leaving the sleep alive for the assertion. The production skip is
 correct by design; the test now polls, bounded, for the proof in its
 final stable form (a member whose argv[0] IS the tagged name) before
 exercising the wind-down, after which no exec transition remains.
-Production is not affected: real
+Fifth instance 2026-08-14 afternoon: the
+absent-tag assertion of TestGroupOwnsTag — that scan must inspect
+EVERY live pid, so any process on the machine mid-execve makes it
+rightly unprovable for an instant (the deliberate
+only-ESRCH-is-absence reading from W1.3); surfaced by a nested gate
+under an active machine, now waits bounded like the rest of the
+family. Production is not affected: real
 callers announce themselves post-exec.
 
 ## ROOT-CAUSED 2026-08-14: the fixture identity-table tear
