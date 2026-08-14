@@ -1,3 +1,3 @@
-sha=646ac4500c4972075a70e30a52ac4d1e6fd496a7
-recorded_epoch=1786710697
-gate=bash scripts/validate-metasystem.sh (GREEN ON BOTH HOSTS at 724a136; VM HEAD in-log; Mac detached sampling green)
+sha=bcc96b7a9579452a5311613229bf7623c3c38ea2
+recorded_epoch=1786717861
+gate=bash scripts/validate-metasystem.sh (VM GREEN at e8538af in 545s, D33 measured; docs-only delta since)
