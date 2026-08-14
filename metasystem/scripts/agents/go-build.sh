@@ -22,7 +22,12 @@ if [[ "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x "$root/bin/metasystem"
   fi
 fi
 
-commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)
+# The stamp is the enclosing commit by default; the witness path (D33)
+# overrides it with the engine-input digest so byte-identical source yields
+# identity-identical binaries in the template and in adopted trees. VCS
+# stamping is pinned OFF either way: the explicit stamp is the attestation,
+# and implicit repository metadata made equal source build unequal binaries.
+commit=${METASYSTEM_BUILD_STAMP:-$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)}
 mkdir -p bin
 # Build beside the target and rename over it: go build refuses to overwrite
 # a non-object file (exactly the stale/foreign case this script exists to
@@ -30,7 +35,7 @@ mkdir -p bin
 # a live process might exec it.
 staging="bin/.metasystem.build.$$"
 trap 'rm -f "$staging"' EXIT
-CGO_ENABLED=0 go build \
+CGO_ENABLED=0 go build -buildvcs=false \
   -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=$commit" \
   -o "$staging" ./cmd/metasystem \
   || { echo "go-build: build failed" >&2; exit 1; }
