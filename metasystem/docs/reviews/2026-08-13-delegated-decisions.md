@@ -1083,6 +1083,23 @@ tests before the ninety-line section retired. The supervision-hook
 legs (S4-14, S4-15, the idle wording) stay: they exercise the shell
 hook itself, which has no Go home.
 
+## D46 — The G-5 lint moves to Go; D17 dissolved the scope objection (script-fixtures-001 sign-off)
+
+**Scope decision, delegated**: the verifier downgraded this finding
+because a Go test "runs only where Go source exists" and adopted repos
+ran the fixture unconditionally. D17 changed the facts: adopted
+repositories now SHIP the engine source (metasystem.engine-delivery is
+required) and run the full gate in their own CI, so a gate test
+enforces in adopted repos through the same rails as everything else.
+The 37-line python heuristic parser is now
+TestInstructionOwnersAreInstructionBearing in internal/validate,
+beside the preamble-quote parser that reads the same markers, with the
+heuristics preserved verbatim. Residue, stated: nested
+delivery-contract runs skip gate tests behind digest equality, and
+AGENTS.md is not in the gate-input closure — a nested target's doc
+drift is caught by that repo's own CI, not by the outer template run;
+same as every gate test, now written down.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

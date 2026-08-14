@@ -195,43 +195,12 @@ PY
 # G-5, the canonical-instruction protection amendment: derive rule-owning
 # references from the contract, role preambles, and host-turn instruction, then
 # prove that the one conformance-owned list covers every one of them.
-python3 - "$source_root" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1])
-entries = [
-    line.strip()
-    for line in (root / "scripts/agents/instruction-bearing-paths.txt").read_text().splitlines()
-    if line.strip() and not line.lstrip().startswith("#")
-]
-
-
-def covered(path):
-    return any(
-        path == entry
-        if not entry.endswith("/")
-        else path == entry[:-1] or path.startswith(entry)
-        for entry in entries
-    )
-
-
-owners = {"AGENTS.md"}
-contract = (root / "AGENTS.md").read_text(encoding="utf-8")
-for line in contract.splitlines():
-    lowered = line.lower()
-    if "owns" in lowered or "only routing index" in lowered or "lists the project" in lowered:
-        owners.update(re.findall(r"`((?:docs|skills)/[^`]+\.md|(?:AGENTS|CLAUDE|wow)\.md)`", line))
-for path in sorted((root / "scripts/agents/roles").glob("*.md")):
-    text = path.read_text(encoding="utf-8")
-    owners.update(re.findall(r'<!-- quote source="([^"]+)" -->', text))
-host = (root / "scripts/agents/templates/host-turn-instruction.md").read_text(encoding="utf-8")
-owners.update(re.findall(r"`((?:docs|skills)/[^`]+\.md|(?:AGENTS|CLAUDE|wow)\.md)`", host))
-missing = sorted(path for path in owners if not covered(path))
-if missing:
-    raise SystemExit("rule-owning documents missing from instruction-bearing path list: " + ", ".join(missing))
-PY
+# The G-5 instruction-owner coverage lint moved to
+# TestInstructionOwnersAreInstructionBearing (internal/validate, under
+# the go gate — script-fixtures-001/D46). Post-D17 adopted repositories
+# carry the engine source and run the full gate in their own CI, so the
+# adopted-mode enforcement the verifier feared losing rides the same
+# rails as every other gate test now.
 
 commit_worktree() {
   git -C "$worktree" add .
