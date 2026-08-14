@@ -1,17 +1,20 @@
 // Package authority applies the control-plane authority matrix to one
 // classified caller: given a write mode and a caller's classification, it
-// decides whether the write is permitted, returning a typed refusal naming
-// why when it is not.
+// decides whether the write is permitted, returning a refusal error
+// naming why when it is not.
 package authority
 
 import "fmt"
 
-// Modes are the control-plane write modes the matrix understands.
-var Modes = map[string]bool{
-	"holder-only":      true,
-	"record-writer":    true,
-	"adapter-writer":   true,
-	"supervision-only": true,
+// ValidMode reports whether name is a control-plane write mode the
+// matrix understands. A function, not an exported map: the mode set is
+// closed and importers must not be able to mutate it.
+func ValidMode(name string) bool {
+	switch name {
+	case "holder-only", "record-writer", "adapter-writer", "supervision-only":
+		return true
+	}
+	return false
 }
 
 // Authorize reports whether a caller with the given classification may perform

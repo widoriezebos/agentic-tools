@@ -188,8 +188,11 @@ skills/              triggered workflows: verify, design-critique, refactor, imp
 optional-skills/     opt-in specialists (debug-java), enabled per project
 scripts/             deterministic checks and shipped enforcement configs
 plans/               task-local state, handoff notes, standing ledgers
-development/                template maintenance and rationale, never copied to projects
 ```
+
+Template maintenance notes and rationale live one level above this
+directory, in `../development/` — template repository only, never copied
+to adopting projects.
 
 ### Scripts
 

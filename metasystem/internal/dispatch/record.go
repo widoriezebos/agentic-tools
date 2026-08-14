@@ -1,8 +1,14 @@
-// Package dispatch owns the job-record lifecycle: the single writer of a
-// job's control-plane record on disk. Every create, setup, protocol-error
-// stamp, and compare-and-swap runs under one exclusive per-record lock so two
-// dispatchers can never double-create or double-reap the same job, and every
-// write lands atomically so a record is never observed half-written.
+// Package dispatch owns the delegate-job control plane. The record
+// lifecycle in this file is its spine — the single writer of a job's
+// record on disk, where every create, setup, protocol-error stamp, and
+// compare-and-swap runs under one exclusive per-record lock and lands
+// atomically. Around it the package carries the rest of the dispatch
+// decisions: attestation gates (attest.go), permission-envelope
+// expansion (envelope.go), mission-lease proof (mission.go), evidence
+// mirroring and chain close proof (mirror.go, close.go),
+// critique-exhaustion policy (critique.go), the dispatch owner lock
+// (ownerlock.go), brief and cap parsing (brief.go), and chain usage
+// accounting (usage.go).
 package dispatch
 
 import (

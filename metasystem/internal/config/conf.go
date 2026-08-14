@@ -1,7 +1,9 @@
-// Package config reads the metasystem.conf settings file. This is the
-// CONF-ONLY reader (no metasystem.conf.local precedence — that belongs to
-// dispatch's config_get): last matching key wins, comments and blanks
-// skipped.
+// Package config owns metasystem configuration reading at three depths:
+// ConfValue in this file is the never-fails hot-path reader of one
+// conf-format file (last matching key wins, comments and blanks
+// skipped), Get in resolve.go is the full layered resolution (flag →
+// env → .local → mode-scoped → committed → default) behind the config
+// verbs, and Validate checks the whole domain against a repository.
 package config
 
 import (

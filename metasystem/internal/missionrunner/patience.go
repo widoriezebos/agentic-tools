@@ -299,7 +299,6 @@ func patienceDroughts(floors patienceFloors, chains map[string]*patienceChain, b
 			})
 			continue
 		}
-		//lint:ignore U1000 staged by the patience stream (plans/patience-satellite-4.md); wired by its next satellite, not dead code
 		floor := selectPatienceFloor(floors, chain.streak)
 		if floor <= 0 || chain.count <= floor {
 			continue // infinite patience, or tolerated (strictly-exceeds, r1/P4-011)

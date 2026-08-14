@@ -24,6 +24,6 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Metasystem retro | `skills/retro/SKILL.md` | `scripts/receipt.sh check` reports a retro due, or the human asks for one |
 | Reconciling an existing repository | `docs/metasystem-reconciliation.md` | Installing or upgrading the metasystem where instructions, skills, or prompts already exist |
 | Opt-in specialist skills | `optional-skills/` | Only when enabled during adaptation (e.g. `debug-java` for JVM repositories) |
-| Metasystem maintenance and rationale | `meta/` (template repository only) | Changing the metasystem template itself; this directory is absent in adopting projects |
+| Metasystem maintenance and rationale | `development/` at the repository toplevel, one level above this directory (template repository only) | Changing the metasystem template itself; absent in adopting projects |
 
 Task-local plans, ledgers, receipts, benchmark artifacts, and incident notes are evidence. They must not become global policy unless a stable lesson is deliberately promoted into one canonical owner above. Worked examples illustrate templates; they are not policy either.

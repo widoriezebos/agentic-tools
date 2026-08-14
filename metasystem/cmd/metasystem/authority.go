@@ -19,7 +19,7 @@ func runAuthorityCheck(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if !authority.Modes[*mode] {
+	if !authority.ValidMode(*mode) {
 		fmt.Fprintf(os.Stderr, "unknown control-plane mode %q\n", *mode)
 		return 2
 	}

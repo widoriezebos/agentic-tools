@@ -1,6 +1,8 @@
-// Package report holds the turn-end report decisions: the stop-hook block that
-// refuses to end a turn while planned work is unblocked and idle, and the
-// open-work check.
+// Package report holds the turn-end report decisions — the stop-hook
+// block that refuses to end a turn while planned work is unblocked and
+// idle, and the open-work check — plus the improvement-mode frontier
+// ledger (frontier.go), which shares the CLI's report family: it reads
+// git, enforces the noise floor, and rewrites plans/frontier.
 package report
 
 // stopBlockReason is the fixed guidance a block carries. The refusal is

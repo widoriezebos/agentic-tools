@@ -79,8 +79,19 @@
   ports first (lease-refused witness, lineage-export env assertion),
   -016 resolved-as-found (W1.24), the rest retirements/fixes; four
   Go packages green in full, six edited fixture files green
-  standalone. Remaining: final W6 boundary (VM detached + pid
-  Monitor, Mac sampling); then W7 (7 docs) closes the program. Superseded: W5 batch 1
+  standalone. Final W6 boundary running on both hosts at 7c96452
+  (VM pid 3268969-successor, Mac pid 7074, Monitors armed). W7
+  STARTED in parallel (docs run from pinned copies): items 1
+  (architecture-4 glossary), 5 (architecture-8 wow.md route), and 6
+  (the eleven-part package-doc batch incl. foundations-15's
+  ValidMode and missionrunner-8's dead fields; architecture-6
+  rename declined) landed as D51. Remaining W7: architecture-3
+  (assembly architecture doc), architecture-5 (promote standing
+  contracts to docs/design), architecture-7 (dispatch-sequence
+  ground truth), item-7 idiom-lows disposition; then the FINAL
+  PROGRAM BOUNDARY (both hosts, Monitors), closeout (program
+  summary here, memory rewrite, decisions-doc tally, plain-English
+  message to Wido). Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in

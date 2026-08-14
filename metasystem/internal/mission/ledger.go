@@ -1,6 +1,8 @@
-// Package mission holds the mission lifecycle decisions. This file is the
-// atomic owner of the mission-wide
-// stop-loss ledger: a markdown file with a cycle and no-gain budget and one
+// Package mission holds the mission lifecycle decisions: the stop-loss
+// ledger, the resource fences and cap authorization, mission state and
+// end-state adjudication, and the ask/answer park protocol.
+//
+// This file is the atomic owner of the mission-wide stop-loss ledger: a markdown file with a cycle and no-gain budget and one
 // contiguous "### Cycle N" block per adjudicated cycle. Every mutation takes
 // the ledger's flock and writes atomically.
 package mission

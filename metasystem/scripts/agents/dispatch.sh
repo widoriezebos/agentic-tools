@@ -311,9 +311,8 @@ wind_down_group() { # record
 # contender read an ownerless lock and refused. A release frees only a lock this
 # process still owns, and never fails when it no longer does -- a release that
 # deletes whatever it finds hands a live owner's lock to a third writer.
-# TODO(go-wiring): the claim/release protocol (staged rename, holder liveness,
-# husk healing) is one atomic unit around ps and kill probes; it moves to Go
-# whole or not at all.
+# The whole protocol (staged rename, holder liveness, husk healing) lives
+# in internal/dispatch/ownerlock.go behind this one verb.
 owner_lock() { # claim|release, directory, pid, tag -> 0 done, 3 busy, 4 not-owner
   "$ms" job owner-lock --command "$1" --dir "$2" --pid "$3" --tag "$4"
 }
@@ -537,9 +536,6 @@ launch_adapter() { # runtime verb job tag
   local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}")
   mkdir -p "$heartbeats"
-  # TODO(go-wiring): the setsid/exec daemonization below hands the adapter its
-  # own session and identity env in one process image; it stays python until a
-  # dedicated launcher exists.
   pid=$("$ms" supervise launch-detached --cwd "$root" \
     --env "GIT_AUTHOR_NAME=$job" --env "GIT_AUTHOR_EMAIL=$job@metasystem.invalid" -- \
     "$adapter" "$verb" --job "$job" --start-gate "$gate" --instance-tag "$tag") || return 1

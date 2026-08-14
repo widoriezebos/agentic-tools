@@ -1,7 +1,12 @@
-// Package audit holds the kill-shell program's mechanical fences
-// (plans/kill-shell.md): decisions the gate consults between steps, never
-// gate sequencing — the bootstrap owns that, because Go never launches the
-// toolchain and no trustworthy binary exists before the first build.
+// Package audit holds two audit concerns that share a family. The
+// shipped instruction-asset audit (metasystem.go, behind `audit
+// metasystem`) is a product feature adopted repositories run: required
+// files, outside references, placeholders, word budgets. The coverage
+// ratchet in this file is the kill-shell program's mechanical fence
+// (plans/kill-shell.md): a decision the gate consults between steps,
+// never gate sequencing — the bootstrap owns that, because Go never
+// launches the toolchain and no trustworthy binary exists before the
+// first build.
 package audit
 
 import (

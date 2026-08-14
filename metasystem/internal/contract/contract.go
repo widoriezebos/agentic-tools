@@ -1,3 +1,13 @@
+// A mission contract is a human-authored markdown file with three prose
+// sections (Intent, Non-goals, Initial streams) and one fenced `mission`
+// key=value block that declares the gate, guards, streams, lifecycle fences,
+// and pre-authorized envelope. Package contract parses and type-checks that grammar,
+// seals a contract by measuring a reproducible baseline and binding the frozen
+// instruments and priced exposure into a generated `mission-seal` block, and
+// runs the preflight that a mission must pass before it may launch: the seal is
+// intact, the human approval covers the exact sealed bytes, those bytes are on
+// the fetched origin default branch, the gate still measures, the supervisor
+// set is armed and fresh, and the mission lease is acquirable.
 package contract
 
 import (
@@ -24,17 +34,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
-
-// A mission contract is a human-authored markdown file with three prose
-// sections (Intent, Non-goals, Initial streams) and one fenced `mission`
-// key=value block that declares the gate, guards, streams, lifecycle fences,
-// and pre-authorized envelope. This file parses and type-checks that grammar,
-// seals a contract by measuring a reproducible baseline and binding the frozen
-// instruments and priced exposure into a generated `mission-seal` block, and
-// runs the preflight that a mission must pass before it may launch: the seal is
-// intact, the human approval covers the exact sealed bytes, those bytes are on
-// the fetched origin default branch, the gate still measures, the supervisor
-// set is armed and fresh, and the mission lease is acquirable.
 
 const (
 	contractIDPat        = `[a-z0-9][a-z0-9-]*`

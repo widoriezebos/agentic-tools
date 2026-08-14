@@ -1200,6 +1200,44 @@ uses list indices, the one shape the verb lacks. Proof: four touched
 Go packages green in full, all six edited fixture files green
 standalone.
 
+## D51 — W7 smalls: the glossary tells the truth, the routing index routes, and eleven package docs match their territory
+
+**architecture-4**: the five glossary owners that named deleted Python
+scripts now point at the engine (`metasystem lease`/internal/lease,
+the census via `watch-background-jobs.sh --census`/internal/census,
+emit-event.sh as a thin `event emit` wrapper, the `mission fence-*`
+verbs, `metasystem schema` + `validate return-complete`); zero .py
+references remain and the instruction audit passes. **architecture-8**:
+wow.md's dead `meta/` route now names `development/` at the repository
+toplevel — phrased without a `../` path because the audit rightly
+refuses outside references in metasystem-owned files (first attempt
+was caught by exactly that rule); README's layout block no longer
+draws development/ inside the tree. **Package-doc batch**:
+mission-contract-11 (contract's overview moved above the package
+clause where go doc surfaces it; mission got a package-level sentence
+distinct from ledger.go's file role), dispatch-supervise-8 (Launch's
+false launcher-shell/reparent-to-launchd narrative replaced with the
+direct-exec Setsid truth), -10 (dispatch's doc owns all ten
+responsibilities by file), -12 (backoff docs now state the pinned
+schedule: 0 for k=1, interval × 2^(k-2) for k≥2), adapter-host-
+registry-7 (the "only the reusable core lives here" boundary claim
+corrected — runtime decision helpers live in the package since the
+port; stacked encodeJSON comment collapsed), validate-report-14/
+architecture-10 (report owns frontier honestly), validate-report-16
+(audit states both concerns), foundations-13/architecture-9 (config's
+three-depth span), foundations-15 (doc claims a refusal error, not a
+typed one; exported mutable Modes map replaced by ValidMode()),
+missionrunner-8 (cycleContext.values, hostProcess.err, and the stray
+pragma on a used local deleted), script-orchestration-14 (both stale
+TODO(go-wiring) comments resolved to the shipped truth;
+lock_owner_state's ps shadow-classification was ALREADY gone —
+resolved-as-found). **Declined: architecture-6's rename half** —
+renaming internal/contract ripples every import for a naming-taste
+win; the doc-comment half (the finding's substance) landed. Reopen if
+contract-the-word confusion actually bites. Proof: ten touched Go
+packages green in full, gofmt/vet clean, audit passes, dispatch.sh
+syntax-checked (comment-only change).
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

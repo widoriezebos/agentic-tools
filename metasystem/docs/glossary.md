@@ -24,7 +24,8 @@ not paths.
 
 - **Checkout lease** — the single-writer claim on one repository checkout,
   stored at `artifacts/agents/mains/worktree-lease.json`. One holder at a
-  time; everything else reads. Owned by `scripts/agents/worktree-lease.py`.
+  time; everything else reads. Owned by the engine's `metasystem lease`
+  family (`internal/lease`).
 - **Holder / main** — the process (a "main" agent session) currently
   holding the lease. Identified by kernel facts — pid plus its start time —
   never by claims. A **delegate** is a worker dispatched *by* a holder; it
@@ -74,8 +75,8 @@ not paths.
   (`scripts/agents/arm-supervision.sh`): announce the session, claim or
   join the lease, launch the watcher and reaper, and wait for a first
   healthy census. "Armed" means the checkout is being watched.
-- **Census** — the periodic scan (`scripts/agents/process-census.py`, run
-  by `scripts/watch-background-jobs.sh`) that classifies every process
+- **Census** — the periodic scan (the engine's census, run by
+  `scripts/watch-background-jobs.sh --census`; `internal/census`) that classifies every process
   touching the checkout: **ANNOUNCED** (a registered main), **CUSTODY**
   (owned by a tracked job), or **UNTRACKED** (nobody can account for it —
   surfaced, never killed). Each scan ends in a **verdict**: SUCCESS or
@@ -115,8 +116,9 @@ not paths.
 - **Event registry** — `scripts/agents/event-registry.json`, the closed
   catalogue of event names, allowed emitters, required ids, and typed
   payloads. An event not in the registry is a bug, not a feature.
-- **Emitter** — the never-fail append helpers
-  (`scripts/agents/emit-event.{sh,py}`). An emit may silently lose its own
+- **Emitter** — the never-fail append helper
+  (`scripts/agents/emit-event.sh`, a thin wrapper over `metasystem event
+  emit`; `internal/events`). An emit may silently lose its own
   event; it may never fail its caller.
 - **executionId** — the cohort id, exported by the benchmark driver to
   everything it spawns so one run's events can be joined across the
@@ -153,7 +155,8 @@ not paths.
   auditable.
 - **Fence** — a hard resource boundary a mission may not cross: wall-clock
   hours, cycle count, job count, concurrency, per-job minutes, and spend.
-  Enforced by the runner and `scripts/agents/mission-fence.py`.
+  Enforced by the runner and the engine's `mission fence-*` verbs
+  (`internal/mission`).
 - **Park / ask / answer** — a mission that cannot safely continue parks
   with a reason and an **ask**; a human answers; `resume` continues it.
   "Running with no live runner but a cleanly concluded record" is the
@@ -189,7 +192,8 @@ not paths.
   bound, dispatch refuses — unless the role carries a **waiver**: a
   recorded human acceptance of that named residual for that runtime.
 - **Return schema** — the JSON contract a delegate's final answer must
-  satisfy (`scripts/agents/return-schema.py`); one bounded same-session
+  satisfy (materialized by `metasystem schema`, validated by `validate
+  return-complete`; `internal/returnschema`); one bounded same-session
   **repair turn** may fix a malformed return, recorded, never invented.
 - **ATIF transcript** — the exported trajectory of a runtime session
   (agent trajectory interchange format); the source of settled session

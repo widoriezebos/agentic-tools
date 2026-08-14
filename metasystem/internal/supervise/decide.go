@@ -113,8 +113,8 @@ type Breaker struct {
 	// GiveUpAt is D-6's N: the observation count at which the owner
 	// stops healing and exits reason giving-up.
 	GiveUpAt int
-	// BaseInterval and BackoffCap are D-6's numbers: relaunch k waits
-	// interval × 2^(k-1), capped.
+	// BaseInterval and BackoffCap are D-6's numbers: relaunch 1 waits
+	// nothing, relaunch k≥2 waits interval × 2^(k-2), capped.
 	BaseInterval time.Duration
 	BackoffCap   time.Duration
 }
@@ -138,8 +138,10 @@ func (b *Breaker) Advance(observation Observation) BreakerVerdict {
 }
 
 // backoff returns the delay before the NEXT relaunch attempt: after k
-// consecutive incrementing observations, interval × 2^(k-1), capped
-// (D-6). Observations and D-1's checks never slow down (SLC-R2-008).
+// consecutive incrementing observations, 0 for k=1 and interval ×
+// 2^(k-2) for k≥2 (k=2→interval, k=3→2×interval, …), capped (D-6;
+// the schedule TestBackoffSchedule pins). Observations and D-1's
+// checks never slow down (SLC-R2-008).
 func (b *Breaker) backoff() time.Duration {
 	if b.Consecutive <= 1 {
 		return 0

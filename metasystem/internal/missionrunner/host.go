@@ -23,7 +23,6 @@ import (
 type hostProcess struct {
 	cmd  *exec.Cmd
 	done chan struct{}
-	err  error
 }
 
 // startProcess starts a command and begins its one Wait in the background.
@@ -33,7 +32,8 @@ func startProcess(cmd *exec.Cmd) (*hostProcess, error) {
 	}
 	process := &hostProcess{cmd: cmd, done: make(chan struct{})}
 	go func() {
-		process.err = cmd.Wait()
+		// The Wait is the reap; exit status flows through ProcessState.
+		_ = cmd.Wait()
 		close(process.done)
 	}()
 	return process, nil

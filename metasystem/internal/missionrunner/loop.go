@@ -965,7 +965,6 @@ type cycleContext struct {
 	turnID        string
 	turnDir       string
 	turnPath      string
-	values        map[string]string
 	priorFailures int
 	turn          map[string]any
 
@@ -1024,7 +1023,6 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	if err != nil {
 		return nil, true, err
 	}
-	c.values = values
 	turnCapMin, err := intFromString(values["host.turn-cap-min"])
 	if err != nil {
 		return nil, true, failf(3, "mission contract host.turn-cap-min is invalid: %v", err)

@@ -3,8 +3,11 @@
 // bounding the effective-permissions file a launch is measured against,
 // comparing that effective grant to what the job requested, writing the small
 // compare-and-swap patch files the record lifecycle consumes, and writing a
-// runtime's capability snapshot. The runtime command lines, event parsing, and
-// identity stay in each adapter; only the reusable core lives here.
+// runtime's capability snapshot. Since the port it also carries the
+// runtime-specific decision helpers the shell adapters call back into —
+// command construction, event-stream reads, result-field derivation, and
+// session correlation (claude.go, codex.go, devin.go); what stays in each
+// scripts/agents/adapters/*.sh is launching and OS plumbing, not decisions.
 package adapter
 
 import (
@@ -57,12 +60,10 @@ func decodeJSONBytes(data []byte) (any, error) {
 	return value, nil
 }
 
-// encodeJSON renders a value the way every on-disk artifact in this system is
-// rendered: 2-space indent, map keys sorted, HTML left unescaped, and a
-// trailing newline. The encoder already appends the newline.
-// encodeJSON renders in the unescaped canon through the wire-document
-// owner (Phase 5.3); byte equivalence is pinned by the package's own
-// bytecheck test.
+// encodeJSON renders a value the way every on-disk artifact in this
+// system is rendered — 2-space indent, sorted keys, HTML unescaped,
+// trailing newline — through the wire-document owner; byte equivalence
+// is pinned by the package's own bytecheck test.
 func encodeJSON(value any) ([]byte, error) {
 	return wiredoc.RenderValue(value)
 }

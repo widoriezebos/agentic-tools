@@ -56,25 +56,18 @@ func (p *ProcComponents) heartbeatPath(component Component) string {
 	return filepath.Join(p.SupervisionDir, string(component)+".heartbeat.json")
 }
 
-// Launch starts one component FULLY DETACHED and returns its
-// identity. Detachment is by reparenting, not just setsid: a child
-// still parented to the owner becomes a ZOMBIE when killed (nobody
-// reaps it) and lingers in the process table, so Stop could never
-// prove it gone. So the component is backgrounded inside a launcher
-// shell that immediately exits — the component reparents to launchd,
-// which reaps it on death exactly as the shell system's
-// launch_detached arranges. The launcher prints the component's pid
-// on stdout; the owner Waits on the (short-lived) launcher so IT does
-// not zombie, and supervises the component by identity thereafter.
+// Launch starts one component in its own session and returns its
+// identity. argv is exec'd directly with Setsid — the launched
+// process IS the component, a session leader (pgid == pid) for group
+// signalling. It stays a direct child of the owner on purpose: the
+// owner reaps it when it dies (ReapDead's Wait), so no zombie
+// lingers and Stop can prove it gone, and supervises it by identity
+// (pid + start time), never by the child handle alone.
 func (p *ProcComponents) Launch(component Component, tag string) (identity.Ref, error) {
 	argv := p.Command(component, tag, p.heartbeatPath(component))
 	if len(argv) == 0 {
 		return identity.Ref{}, fmt.Errorf("component command for %s is empty", component)
 	}
-	// The launcher backgrounds argv, prints its pid, and exits. The
-	// backgrounded process reparents to launchd when the launcher
-	// exits. setsid on the launcher gives the component its own
-	// session (pgid == its pid) for group signalling.
 	launcher := exec.Command(argv[0], argv[1:]...)
 	launcher.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := launcher.Start(); err != nil {
