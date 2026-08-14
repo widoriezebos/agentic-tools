@@ -1,6 +1,6 @@
 package missionrunner
 
-// The mission stop-loss verdict (plans/stop-loss-core.md): a pure replay of
+// The mission stop-loss verdict (docs/design/stop-loss-core.md): a pure replay of
 // (sealed contract, ledger). No cached counter and no state field — identical
 // inputs give identical verdicts on every load, after any crash. Bests seed
 // from the sealed baseline and fold forward over each measurement line; the

@@ -130,7 +130,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an undersized no-gain budget warns, never refuses: %v", err)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "plans/stop-loss-core.md") {
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "docs/design/stop-loss-core.md") {
 		t.Fatalf("expected one warning naming the design, got %v", warnings)
 	}
 	// Exactly half the fence is not below half: no warning.

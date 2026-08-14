@@ -41,7 +41,7 @@ process_instance_tag=
 cap_authority_lock_held=0
 exit_cleanup_job=
 exit_cleanup_chain=
-# Flight-recorder witness (plans/flight-recorder.md). emit_event never fails.
+# Flight-recorder witness (docs/design/flight-recorder.md). emit_event never fails.
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/emit-event.sh"
 else

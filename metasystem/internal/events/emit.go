@@ -1,4 +1,4 @@
-// Package events is the flight-recorder emitter (plans/flight-recorder.md).
+// Package events is the flight-recorder emitter (docs/design/flight-recorder.md).
 // The stream is a witness, not an authority, so emitting an event must NEVER
 // fail the caller: every error — bad input, missing registry, unwritable
 // stream, full disk — is swallowed. Framing is one append of "\n" + compact

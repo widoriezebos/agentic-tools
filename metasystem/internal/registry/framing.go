@@ -1,5 +1,5 @@
 // Package registry implements the supervision registry contract
-// (plans/supervision-registry.md): the single machine-wide custody view
+// (docs/design/supervision-registry.md): the single machine-wide custody view
 // for supervision owners. Each file in this package names the REG clause
 // it implements; the contract document is the authority and this package
 // is its executable form.

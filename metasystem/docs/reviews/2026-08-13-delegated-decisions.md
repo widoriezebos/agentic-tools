@@ -1238,6 +1238,39 @@ contract-the-word confusion actually bites. Proof: ten touched Go
 packages green in full, gofmt/vet clean, audit passes, dispatch.sh
 syntax-checked (comment-only change).
 
+## D52 — W7's three documents land; the map matches the territory (closes W7's numbered items)
+
+**architecture-3**: `docs/architecture.md` is the engine map — what
+the binary is, the source-delivery story, the core-vs-plumbing ruling
+stated as standing doctrine with its origin, the three-tier layering
+with its two deliberate exceptions, one line per package (31), and
+the family-to-package table (19) derived from cmd's actual imports.
+README's layout block now draws cmd/, internal/, go.mod, and
+bin/metasystem, and wow.md routes to the map. **architecture-7**:
+`docs/design/dispatch-sequence.md`, the delegate-job ground-truth
+map in mission-cycle-sequence.md's genre, pinned to 48442ef —
+26 ordered steps from the `__lock-owner` re-exec to close, each
+naming the verb that decides and the shell lines that plumb, with
+the failure joins and the sequence's real surprises stated as facts
+(the dispatcher reaps its own job on every poll; the handshake
+deadline is stamped at launch so waiter and backstop share one
+number; the handshake-timeout verdict lands before the kill).
+Anchors spot-verified against the pinned sources. **architecture-5**:
+the four standing contracts are promoted to docs/design following
+the wire-documents pattern — supervision-registry (REG-1..7),
+supervision-lifecycle (D-1..D-7), flight-recorder (D-1..D-8),
+stop-loss-core (C1..C3 + invariants + failure behavior) — verbatim
+moves with contract preambles, PROMOTED stamps on the plans (kept
+as history per the finding, unlike wire-documents' deleted plan),
+and every code, script, and doc citation repointed to the promoted
+homes (15 code files, 7 doc sites; the contract-warning string and
+its test moved together). **W7 item 7 (idiom lows)**: dispositioned
+as the review itself scoped them — "as encountered", not mandatory;
+missionrunner-8 landed in D51, several others fell out of W1-W6
+restructures; the remainder stay ambient idiom notes, not review
+debt. Proof: audit green after every docs pass, contract package
+green in full, build green.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

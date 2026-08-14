@@ -1,45 +1,11 @@
-> PROMOTED: the standing contract (Design, Invariants, Failure
-> behavior) now lives at `docs/design/stop-loss-core.md`, which is the
-> authority. This file is the design history.
+# The stop-loss core: the fuse contract
 
-# Stop-loss core: the fuse alone
-
-Owner: main session (claude). Status: ACCEPTED FOR IMPLEMENTATION —
-rounds 1 and 2 adjudicated (9/9 and 7/7 accepted; dispositions r1/r2
-committed). Round 2 challenged no structure — every finding was a
-specification seam of round 1's own edits — which is the documented
-diminishing-returns stop signal (skills/design-critique/SKILL.md): the
-loop is stopped by judgment, rounds retained verbatim, and implementation
-is the next source of truth. Not claimed perfect; claimed that further
-critique stopped being worth its cost.
-Parent: `plans/stop-loss-last-defense.md` (critique-exhausted; split
-approved by the human 2026-08-11). This core inherits its ruling — the
-stop-loss is a last defense with high, human-set, mission-level caps and a
-vocal-only reset — and ONLY the fuse. Turn identity, mission-scoped
-reaping/drain, and orphan/usage capture are satellites
-(`plans/stop-loss-satellites.md`), each to be designed against the
-runner's actual cycle sequence. The parent's 41 accepted findings route:
-core findings are resolved here; the rest carry to the satellites.
-
-# Intent
-
-One stop-loss trigger for missions, sized above any healthy runway, that
-cannot be tripped by lawful phase structure, cannot be farmed by
-oscillation, cannot be reset quietly, and is derived rather than stored —
-a pure replay of the ledger inside the runner — leaving
-`assert-stop-loss.sh` untouched for every non-mission caller.
-
-# Non-goals
-
-- No closure-credit machinery and no decay rule (`loop-advanced` is
-  deferred to a satellite; round 1 refuted decay as farmable): with
-  last-defense-sized budgets, a lawful design phase survives on budget
-  alone, and the human reset covers reverts and tails.
-- No change for non-mission stop-loss users: investigate/improve keep
-  `assert-stop-loss.sh` behavior and fixtures bit-for-bit.
-- No new sealed contract keys. `ledger.no-gain-budget` keeps its type and
-  meaning; only its calibration guidance and its enforcement location
-  change.
+The durable rules of the mission stop-loss fuse (C1..C3, its
+invariants, and its failure behavior), promoted from
+`plans/stop-loss-core.md` (which keeps intent, tests, and migration
+history). `internal/mission`'s ledger and `internal/missionrunner`'s
+stop-loss step implement it. A change here is a contract change, not a
+cleanup.
 
 # Design
 
@@ -156,38 +122,3 @@ coherent and no crash window between "recorded" and "counted".
   baseline plus any parseable `observed=` values, and classification
   words alone drive the count. Unparseable measurement values fold as
   baseline. Derivation never writes anything.
-
-# Tests
-
-- Replay arithmetic: stagnant counts from last best/reset; no-progress
-  and unresolved both count; fuse at budget; cycle-budget enforced in the
-  same verdict; a regression followed by recovery never lowers the count
-  (no decay).
-- New-best qualification: baseline-initialized bests; thresholds-met
-  dominance; declaration-order comparison; first-differing-component
-  noise gate; single-metric missions behave exactly as a scalar ratchet;
-  best=yes|no recorded and honored by replay over re-derivation.
-- Reset: `reset:` answer appends, marks answered, unparks — in that
-  order; append failure blocks everything after it; duplicate answers are
-  harmless and vocal; crash at each boundary replays correctly; reconcile
-  forgives exactly the predicate suffix and still parks on any other
-  divergence; a newline-bearing reason is refused; `reset:` on a
-  cycle-budget park is refused with the amendment guidance; non-reset
-  answers keep amendment guidance everywhere.
-- Semantics: legacy missions (no ledgerSemantics field) verdict under old
-  rules; new missions under the replay; the same ledger yields its
-  mission's pinned verdict on both binaries.
-- Grammar: Ledger Tail validator accepts measurement records with and
-  without the best token; marker wins over re-derivation when present.
-- Non-mission: assert-stop-loss.sh fixtures untouched and green.
-- Legacy replay: marker-less ledgers derive conservatively; unparseable
-  observed values fold as baseline; derivation is read-only.
-- Validator: relative warning below half the cycle fence.
-
-# Migration
-
-No state shape change at all. One additive ledger annotation (`best=yes|no`
-on measurement lines) and the reset line kind; legacy lines replay
-conservatively as specified. No contract grammar changes, no new sealed
-keys, no script changes. The reconciliation tolerance for a trailing reset
-line is the only behavioral change outside the runner.

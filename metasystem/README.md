@@ -174,7 +174,11 @@ Runtime portability is handled by separating intent from mechanism: skills and d
 AGENTS.md            always-loaded contract (small, audited)
 CLAUDE.md            runtime compatibility pointer to AGENTS.md
 wow.md               the single routing index
+cmd/, internal/      the Go engine: one binary, decisions live here (docs/architecture.md)
+go.mod, go.sum       the engine's module identity, shipped with adoption
+bin/metasystem       untracked build artifact; scripts/agents/go-build.sh rebuilds it
 docs/
+  architecture.md    the engine map: packages, layering, family table
   project-rules.md   project facts, replaced on adoption
   working-modes.md   plain-English guide to all working modes
   working-with-agents.md  the human teammate's guide

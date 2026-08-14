@@ -85,13 +85,15 @@
   (architecture-4 glossary), 5 (architecture-8 wow.md route), and 6
   (the eleven-part package-doc batch incl. foundations-15's
   ValidMode and missionrunner-8's dead fields; architecture-6
-  rename declined) landed as D51. Remaining W7: architecture-3
-  (assembly architecture doc), architecture-5 (promote standing
-  contracts to docs/design), architecture-7 (dispatch-sequence
-  ground truth), item-7 idiom-lows disposition; then the FINAL
-  PROGRAM BOUNDARY (both hosts, Monitors), closeout (program
-  summary here, memory rewrite, decisions-doc tally, plain-English
-  message to Wido). Superseded: W5 batch 1
+  rename declined) landed as D51. W7 NUMBERED ITEMS COMPLETE (D52):
+  docs/architecture.md (engine map), docs/design/dispatch-sequence.md
+  (26-step delegate-job ground truth, anchors spot-verified), four
+  standing contracts promoted to docs/design with all citations
+  repointed, item-7 idiom lows dispositioned as-encountered per the
+  review's own scoping. Remaining: FINAL PROGRAM BOUNDARY at the D52
+  commit (both hosts, Monitors — Mac waits for the W6 sampling run
+  to drain first), then closeout (program summary here, memory
+  rewrite, decisions-doc tally, plain-English message to Wido). Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in

@@ -51,7 +51,7 @@ var (
 	// verdict, candidate sha, and observed tokens.
 	measurementLineRe = regexp.MustCompile(`^([a-z-]+); candidate-sha=([^;\n]+); observed=(.*)$`)
 	// resetLineRe is the vocal stop-loss reset line the answer path appends
-	// (plans/stop-loss-core.md): the only automatic stagnation reset besides a
+	// (docs/design/stop-loss-core.md): the only automatic stagnation reset besides a
 	// new best, and it always names the human-answered ask it echoes.
 	resetLineRe = regexp.MustCompile(`^Stop-loss reset: ask=([a-z0-9][a-z0-9-]*); reason=([^\n]*)$`)
 	// Annotation lines inside a cycle block (plans/patience-turn-identity.md):
@@ -232,7 +232,7 @@ func InitLedger(file string, cycleBudget, noGainBudget int) error {
 // AppendCycle appends the next cycle's verdict. cycle must be exactly one past
 // the last recorded cycle, the classification must be known, and the candidate
 // sha must be a resolved git sha. best is the new-best marker replay honors
-// over re-derivation (plans/stop-loss-core.md): "yes" or "no" appends the
+// over re-derivation (docs/design/stop-loss-core.md): "yes" or "no" appends the
 // token, "" writes a marker-less legacy line. Annotations land as their own
 // lines under the classification line, one atomic append with it, so a cycle
 // block always carries both facts or neither.

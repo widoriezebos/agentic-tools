@@ -123,7 +123,7 @@ func Validate(path string) (string, []string, error) {
 // calibrationWarnings flags budget sizings the stop-loss design advises
 // against without refusing them: an unattended mission's no-gain budget is a
 // last defense sized in the order of the cycle fence, so a budget below half
-// the fence warns, naming plans/stop-loss-core.md.
+// the fence warns, naming docs/design/stop-loss-core.md.
 func (d *contractDoc) calibrationWarnings() []string {
 	noGain, errNoGain := strconv.Atoi(d.values["ledger.no-gain-budget"])
 	cycles, errCycles := strconv.Atoi(d.values["fence.cycles"])
@@ -132,7 +132,7 @@ func (d *contractDoc) calibrationWarnings() []string {
 	}
 	if 2*noGain < cycles {
 		return []string{fmt.Sprintf(
-			"ledger.no-gain-budget=%d is below half of fence.cycles=%d; the stop-loss is a last defense sized in the order of the cycle fence (plans/stop-loss-core.md)",
+			"ledger.no-gain-budget=%d is below half of fence.cycles=%d; the stop-loss is a last defense sized in the order of the cycle fence (docs/design/stop-loss-core.md)",
 			noGain, cycles)}
 	}
 	return nil

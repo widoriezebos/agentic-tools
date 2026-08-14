@@ -310,7 +310,7 @@ func families() []family {
 		},
 		{
 			name:    "supervise",
-			summary: "the supervision lifecycle (plans/supervision-lifecycle.md)",
+			summary: "the supervision lifecycle (docs/design/supervision-lifecycle.md)",
 			verbs: []verb{
 				{"fingerprint", "print a checkout's supervision fingerprint (code, signatures, configuration)", runCensusFingerprint},
 				{"derive-ceiling", "derive the watcher cap ceiling from config, environment, and the declared maximum", runSuperviseDeriveCeiling},

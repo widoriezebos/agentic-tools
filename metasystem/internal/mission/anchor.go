@@ -426,7 +426,7 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 		return 0, atomicWriteJSON(statePath, finalized)
 	default:
 		if err := verifyAnchor(repo, raw, ledgerPath); err != nil {
-			// One named, checkable exception (plans/stop-loss-core.md): a
+			// One named, checkable exception (docs/design/stop-loss-core.md): a
 			// stagnation-parked mission whose unanchored ledger suffix is
 			// solely vocal stop-loss reset lines is replayable state — a
 			// crash between the reset append and its anchor — not divergence.

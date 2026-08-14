@@ -1,38 +1,10 @@
-> PROMOTED: the standing contract (REG-1..7) now lives at
-> `docs/design/supervision-registry.md`, which is the authority. This
-> file is the design history.
+# The supervision registry: the machine-wide custody contract
 
-# Supervision registry contract
-
-- Goal and current status: the single machine-wide custody view for
-  supervision owners. Extracted from `plans/supervision-lifecycle.md`
-  after critique round 3; revised against round 4 (locking, reduction,
-  custody, corruption), round 5 (reservation slots, guarded appends,
-  framing, kill proof, growth), round 6 (slot accounting until
-  closure, gate-resolved orphans, the owner invocation shape, gating
-  writes, run-tolerant torn repair, terminal-path reuse), round 7
-  (guarded custodied arming, lock crash recovery, the newline edge,
-  generation pairing, unseen-tag uniqueness, the terminated reason —
-  SLC-R7-002..004, SLC-R7-007..009 folded here), round 8 (rename-born
-  lock acquisition, `retiredThrough`, the triple kill proof —
-  SLC-R8-001/002/006 folded here), and round 9 (the contiguous
-  retirement watermark, the `shutdown-escalated` reason, binding
-  records surviving compaction — SLC-R9-003/004/006 folded here),
-  round 10 (compaction retains a bound custody's claim SKELETON
-  including its terminal — SLC-R10-001), rounds 11-12 (the
-  no-claim-append scope, arming-failure closure, custody release
-  duties — SLC-R11-004..006, SLC-R12-003/004 folded here), and
-  round 13 (armed before the lock replacement, custodyId
-  uniqueness — SLC-R13-003/004 folded here). The chain is CLOSED at
-  the cap. Being implemented in GO: internal/registry (REG-1..3),
-  internal/lock (REG-4).
-- Next step: none
-  (the chain is CLOSED at the cap — see the lifecycle plan's close
-  record; implementation is live: internal/registry implements
-  REG-1..3 with 91.8% coverage, internal/lock implements REG-4.)
-- In flight right now: nothing in this checkout — implementation
-  proceeds in the orchestrator session.
-- Waiting on the human: nothing.
+The durable rules of the single machine-wide custody view for
+supervision owners, promoted from `plans/supervision-registry.md`
+(which keeps the design history and critique chain). `internal/registry`
+implements REG-1..3, `internal/lock` implements REG-4. A change to any
+REG rule is a contract change, not a cleanup.
 
 ## REG-1. Location, framing, and canonical paths
 

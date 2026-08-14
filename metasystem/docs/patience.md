@@ -1,7 +1,7 @@
 # Patience, progress, and stall
 
 Status: SHIPPED — the whole mechanism is implemented. The stop-loss
-core (`plans/stop-loss-core.md`, `internal/missionrunner/stoploss.go`)
+core (`docs/design/stop-loss-core.md`, `internal/missionrunner/stoploss.go`)
 and all four satellites of `plans/stop-loss-satellites.md` are built
 and suite-verified; satellite 4 (patience floors,
 `plans/patience-satellite-4.md`, accepted after a 22-round critique

@@ -142,7 +142,7 @@ func (e *Engine) Answer(askID, answer string) int {
 }
 
 // answerStopLoss applies a human's answer to a stop-loss ask. The vocal
-// reset (plans/stop-loss-core.md) applies to a stagnation park alone and in
+// reset (docs/design/stop-loss-core.md) applies to a stagnation park alone and in
 // binding order: (1) append the reset ledger line under the ledger lock,
 // (2) mark the ask answered, (3) apply the unpark state write. A crash after
 // (1) leaves the ask open — re-answering appends a second line, lawful and

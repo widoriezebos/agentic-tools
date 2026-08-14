@@ -207,7 +207,7 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 
 	// Ledger Tail records carry four fields, or five when the measurement
 	// line recorded its new-best marker — both vintages are legal during the
-	// best-token migration (plans/stop-loss-core.md).
+	// best-token migration (docs/design/stop-loss-core.md).
 	ledger, violation := turnDataRecordsRange(sections, "## Ledger Tail", 4, 5)
 	if violation != nil {
 		return violation

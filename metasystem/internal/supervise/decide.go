@@ -1,5 +1,5 @@
 // Package supervise implements the owner lifecycle of
-// plans/supervision-lifecycle.md: the purpose/currency check that
+// docs/design/supervision-lifecycle.md: the purpose/currency check that
 // gives the owner a lifetime (D-1) and the breaker that bounds its
 // self-healing (D-2). The decision logic is pure — observations in,
 // verdicts out — so every Proof row about it runs as a table test;

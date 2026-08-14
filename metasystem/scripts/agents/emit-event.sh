@@ -1,6 +1,6 @@
 # Sourceable flight-recorder emitter for shell components.
 #
-# Contract (plans/flight-recorder.md D-3): emit_event NEVER fails its caller,
+# Contract (docs/design/flight-recorder.md D-3): emit_event NEVER fails its caller,
 # whatever is broken -- missing binary, unwritable stream. Every lookup is
 # individually guarded and the last token is `|| true`.
 #

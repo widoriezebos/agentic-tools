@@ -9,7 +9,7 @@ import (
 )
 
 // RegistryLedger implements Ledger against the machine-wide
-// supervision registry (plans/supervision-registry.md): the owner's
+// supervision registry (docs/design/supervision-registry.md): the owner's
 // write-ahead relaunched/launched records and its terminal exited
 // record. Every append holds the registry lock and frames per REG-1;
 // this adapter is the owner's slice of that contract.

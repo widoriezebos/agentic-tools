@@ -19,6 +19,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Benchmark-driven improvement | `skills/improve/SKILL.md` | Chasing a measured improvement goal against a runnable evaluation |
 | Investigation stop-loss | `skills/take-a-step-back/SKILL.md` | Work is stuck, repetitive, expensive, or premise is uncertain |
 | Working modes, explained in plain English | `docs/working-modes.md` | Learning the system, or unsure which mode a task is in |
+| The Go engine's architecture | `docs/architecture.md` | Locating a decision in the binary, or judging where new logic belongs |
 | Worked examples | `docs/examples/` | A template above is unclear in practice |
 | Adoption and the change gate | `docs/project-adaptation.md` | Starting a new repository, or judging any instruction change |
 | Metasystem retro | `skills/retro/SKILL.md` | `scripts/receipt.sh check` reports a retro due, or the human asks for one |

@@ -184,7 +184,7 @@ and transfer streams of work.
 `docs/design/mission-cycle-sequence.md` (the runner's ground truth),
 `docs/orchestration.md` (delegation and modes),
 `skills/design-critique/SKILL.md` (the loop's rules, the exhaustion
-precedent, satellites), `plans/stop-loss-core.md` (the shipped fuse).
+precedent, satellites), `docs/design/stop-loss-core.md` (the shipped fuse).
 
 TODO: the benchmark kit's concepts (cohorts, repetitions, held-out
 graders, seal boundaries, trial fences and their calibration rule).

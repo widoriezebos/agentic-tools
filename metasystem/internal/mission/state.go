@@ -208,7 +208,7 @@ func validateShape(state map[string]any) error {
 	}
 	if raw, present := state["ledgerSemantics"]; present {
 		// Pinned at mission init by the binary that sealed the ledger's
-		// meaning (plans/stop-loss-core.md); absent on legacy missions.
+		// meaning (docs/design/stop-loss-core.md); absent on legacy missions.
 		if v, ok := intValue(raw); !ok || v < 1 {
 			return stateErr("mission state ledgerSemantics must be a positive integer")
 		}
@@ -642,7 +642,7 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 		"ledger":        map[string]any{"path": ledgerPath, "cycles": 0},
 		// The ledger semantics under which this mission's stop-loss verdict
 		// replays, pinned for the mission's whole life: a sealed budget's
-		// meaning never changes mid-mission (plans/stop-loss-core.md).
+		// meaning never changes mid-mission (docs/design/stop-loss-core.md).
 		"ledgerSemantics": 2,
 		"integrity":       map[string]any{},
 	}

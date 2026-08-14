@@ -61,7 +61,7 @@ not paths.
   to blame. Mission level: the fuse parks vocally and a human resets
   via a ledger-recorded answer. Chain level: vocal only — annotation
   and prompt line, never a park (`docs/patience.md`,
-  `plans/patience-satellite-4.md`, `plans/stop-loss-core.md`).
+  `plans/patience-satellite-4.md`, `docs/design/stop-loss-core.md`).
 - **Sweep** — the takeover's cleanup: every non-terminal job stamped with
   an older epoch is failed with `stale-claim-epoch`, so an abandoned
   session's children cannot keep mutating a checkout that changed hands.
@@ -102,7 +102,7 @@ not paths.
   (`artifacts/agents/events.jsonl`, one per checkout) in which every
   component narrates its decisions: lease claims and renewals, census
   verdicts, job verdicts, turns, phases. One `tail -F` is the live view; a
-  collected bundle is the post-mortem. Design: `plans/flight-recorder.md`.
+  collected bundle is the post-mortem. Contract: `docs/design/flight-recorder.md`.
 - **Witness, never an authority** — the recorder's one law. No machinery
   decision reads the stream; verdicts come from records, liveness from the
   kernel, custody from the lease. The log may be lossy or absent without
