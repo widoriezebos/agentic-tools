@@ -38,6 +38,7 @@ func families() []family {
 				{"group-exists", "exit 0 if the process group exists", runIdentityGroupExists},
 				{"census", "compute a fixture-driven census verdict", runCensusRun},
 				{"alive", "exit 0 if a pid is live at its expected start", runCensusAlive},
+				{"classify", "print live, stale, dead, or unknown for a recorded pid and tag", runProcClassify},
 				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
 			},

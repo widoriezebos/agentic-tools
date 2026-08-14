@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // runCensusRun computes a fixture-driven census verdict and writes it to
@@ -55,6 +56,25 @@ func runCensusRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "proc census:", err)
 		return 1
 	}
+	return 0
+}
+
+// runProcClassify relays `proc classify`: the shell liveness ladder's
+// four-way verdict — live, stale, dead, unknown — from internal/identity
+// (script-orchestration-09). Callers on kill-capable paths DEFER on
+// unknown; indeterminacy never acts.
+func runProcClassify(args []string) int {
+	flags := flag.NewFlagSet("proc classify", flag.ContinueOnError)
+	pid := flags.Int64("pid", 0, "process id")
+	tag := flags.String("tag", "", "recorded instance tag the argv must carry")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *pid < 1 {
+		fmt.Fprintln(os.Stderr, "proc classify: --pid is required")
+		return 2
+	}
+	fmt.Println(identity.TagState(identity.KernelProber{}, *pid, *tag))
 	return 0
 }
 

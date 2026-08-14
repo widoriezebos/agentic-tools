@@ -213,12 +213,13 @@ internal_authority() { # holder-only|record-writer|adapter-writer|supervision-on
   fi
 }
 
-process_matches() { # pid, tag
-  local pid=$1 tag=$2 command
-  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
-  kill -0 "$pid" 2>/dev/null || return 1
-  command=$(ps -p "$pid" -o command= 2>/dev/null || true)
-  [[ -n "$tag" && "$command" == *"$tag"* ]]
+# The four-way liveness verdict lives in `proc classify`
+# (script-orchestration-09): live, stale, dead, or unknown, one semantics
+# for every ladder rung instead of two-way ps probes that turned an
+# unreadable process table into process-lost on the kill-capable path.
+tag_state() { # pid, tag -> live, stale, dead, or unknown
+  [[ "$1" =~ ^[1-9][0-9]*$ ]] || { printf 'dead\n'; return; }
+  "$ms" proc classify --pid "$1" --tag "$2"
 }
 
 process_exists() { # pid; permission denied still proves the pid exists
@@ -231,21 +232,20 @@ process_exists() { # pid; permission denied still proves the pid exists
 }
 
 lock_owner_state() { # pid, tag -> live, dead, stale, or unknown
-  local pid=$1 tag=$2 command status
-  if ! process_exists "$pid"; then printf 'dead\n'; return; fi
-  set +e
-  command=$(ps -p "$pid" -o command= 2>/dev/null)
-  status=$?
-  set -e
-  if [[ $status -ne 0 ]]; then printf 'unknown\n'; return; fi
-  if [[ -n "$tag" && "$command" == *"$tag"* ]]; then printf 'live\n'; else printf 'stale\n'; fi
+  tag_state "$1" "$2"
 }
 
 job_supervisor_matches() { # record
   local record=$1 pid tag runtime proof heartbeat
   pid=$(json_field "$record" pid 2>/dev/null || true)
   tag=$(json_field "$record" instanceTag 2>/dev/null || true)
-  process_matches "$pid" "$tag" && return 0
+  case "$(tag_state "$pid" "$tag")" in
+    live) return 0 ;;
+    # Indeterminacy never acts: an uninspectable supervisor is not a dead
+    # one, so the kill-capable callers defer exactly as arm-supervision's
+    # identity ladder does (script-orchestration-09).
+    unknown) return 0 ;;
+  esac
   runtime=$(json_field "$record" runtime 2>/dev/null || true)
   [[ "$runtime" == fake ]] || return 1
   process_exists "$pid" || return 1
