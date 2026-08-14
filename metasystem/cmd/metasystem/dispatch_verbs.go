@@ -490,6 +490,45 @@ func runDispatchExhaustionPatches(args []string) int {
 	return 0
 }
 
+// runDispatchResolveCap relays `job resolve-cap`: the non-mission cap chain
+// and the unsigned-mission-cap refusal live in dispatchcore
+// (script-orchestration-03). With --mission it only runs the refusal; the
+// mission fence remains cap authority.
+func runDispatchResolveCap(args []string) int {
+	flags := flag.NewFlagSet("job resolve-cap", flag.ContinueOnError)
+	conf := flags.String("conf", "", "path to metasystem.conf")
+	role := flags.String("role", "", "dispatch role")
+	runtime := flags.String("runtime", "", "resolved runtime")
+	model := flags.String("model", "", "canonical model")
+	requested := flags.String("requested", "", "explicit cap-min argument (optional)")
+	mission := flags.Bool("mission", false, "only refuse unsigned mission cap overrides")
+	output := flags.String("output", "", "cap-resolution output file (non-mission)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *conf == "" || *role == "" || *runtime == "" || *model == "" {
+		fmt.Fprintln(os.Stderr, "job resolve-cap: --conf, --role, --runtime, and --model are required")
+		return 2
+	}
+	if *mission {
+		if err := dispatchcore.RefuseUnsignedMissionCap(*conf, *role, *runtime, *model); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
+	if *output == "" {
+		fmt.Fprintln(os.Stderr, "job resolve-cap: --output is required without --mission")
+		return 2
+	}
+	capMin, rule, origin, err := dispatchcore.ResolveCap(*conf, *role, *runtime, *model, *requested)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return recordExit(dispatchcore.WriteCapResolution(*output, capMin, rule, origin))
+}
+
 func runDispatchCapResolution(args []string) int {
 	flags := flag.NewFlagSet("job cap-resolution", flag.ContinueOnError)
 	capMin := flags.Int64("cap", 0, "authorized cap in minutes")

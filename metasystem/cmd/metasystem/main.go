@@ -98,6 +98,7 @@ func families() []family {
 				{"critique-exhaustion", "decide a critique-exhaustion action", runDispatchCritiqueExhaustion},
 				{"exhaustion-patches", "list the exhaustion patches a manifest names", runDispatchExhaustionPatches},
 				{"cap-resolution", "write a cap-resolution record", runDispatchCapResolution},
+				{"resolve-cap", "resolve the non-mission cap chain or refuse an unsigned mission cap", runDispatchResolveCap},
 				{"brief-mode", "check a brief names a known mode", runDispatchBriefMode},
 				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},

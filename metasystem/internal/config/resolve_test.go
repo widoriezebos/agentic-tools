@@ -185,3 +185,60 @@ func TestEnvName(t *testing.T) {
 		}
 	}
 }
+
+// TestKeyOrigin pins the origin vocabulary — env, conf-local, conf,
+// default — to the resolver's own precedence, including the mode-scoped
+// hit the retired shell shadow probe could not see.
+func TestKeyOrigin(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("dispatch.cap-min=45\nmode.deep.role.implementer.runtime=codex\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	origin := func(key, mode string) string {
+		t.Helper()
+		got, err := KeyOrigin(GetParams{Key: key, Mode: mode, ConfPath: conf})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := origin("dispatch.cap-min", ""); got != "conf" {
+		t.Fatalf("committed key origin = %q", got)
+	}
+	if got := origin("cap.min.codex.gpt-5.6", ""); got != "default" {
+		t.Fatalf("absent key origin = %q", got)
+	}
+	if got := origin("role.implementer.runtime", "deep"); got != "conf" {
+		t.Fatalf("mode-scoped key origin = %q", got)
+	}
+	if got := origin("role.implementer.runtime", ""); got != "default" {
+		t.Fatalf("mode-scoped key without mode = %q", got)
+	}
+
+	if err := os.WriteFile(conf+".local", []byte("dispatch.cap-min=99\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := origin("dispatch.cap-min", ""); got != "conf-local" {
+		t.Fatalf("local override origin = %q", got)
+	}
+
+	t.Setenv("METASYSTEM_DISPATCH_CAP_MIN", "5")
+	if got := origin("dispatch.cap-min", ""); got != "env" {
+		t.Fatalf("environment origin = %q", got)
+	}
+
+	if _, err := KeyOrigin(GetParams{Key: "Bad Key", ConfPath: conf}); err == nil {
+		t.Fatal("an invalid key must refuse")
+	}
+	if _, err := KeyOrigin(GetParams{Key: "dispatch.cap-min", Mode: "Bad Mode", ConfPath: conf}); err == nil {
+		t.Fatal("an invalid mode must refuse")
+	}
+	dup := filepath.Join(dir, "dup.conf")
+	if err := os.WriteFile(dup, []byte("k.a=1\nk.a=2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := KeyOrigin(GetParams{Key: "k.a", ConfPath: dup}); err == nil {
+		t.Fatal("a duplicate key must refuse, not pick a winner")
+	}
+}

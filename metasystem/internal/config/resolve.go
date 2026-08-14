@@ -189,3 +189,52 @@ func isFile(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
 }
+
+// KeyOrigin reports the source Get would take a key from — "env",
+// "conf-local", "conf", or "default" — using the resolver's own precedence
+// instead of a shadow probe (review script-orchestration-03: the shell copy
+// re-derived the env mangling and ignored mode-scoped keys). A mode-scoped
+// hit in the committed file reports "conf": the vocabulary names files, not
+// key spellings.
+func KeyOrigin(p GetParams) (string, error) {
+	lookupEnv := p.LookupEnv
+	if lookupEnv == nil {
+		lookupEnv = os.LookupEnv
+	}
+	if !confKeyPattern.MatchString(p.Key) {
+		return "", fmt.Errorf("invalid configuration key: %s", p.Key)
+	}
+	if p.Mode != "" && !modePattern.MatchString(p.Mode) {
+		return "", fmt.Errorf("invalid mode: %s", p.Mode)
+	}
+	if _, ok := lookupEnv(EnvName(p.Key)); ok {
+		return "env", nil
+	}
+	localPath := p.ConfPath + ".local"
+	if isFile(localPath) {
+		_, found, err := ConfLookup(localPath, p.Key)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			return "conf-local", nil
+		}
+	}
+	if p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) {
+		_, found, err := ConfLookup(p.ConfPath, "mode."+p.Mode+"."+p.Key)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			return "conf", nil
+		}
+	}
+	_, found, err := ConfLookup(p.ConfPath, p.Key)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		return "conf", nil
+	}
+	return "default", nil
+}

@@ -399,65 +399,17 @@ config_get() { "$config" get "$@"; }
 
 canonical_model() { "$ms" config canonical-model "$1"; }
 
-config_key_origin() { # exact resolved key; prints env, conf-local, conf, or default
-  local key=$1 env_name path origin rc
-  env_name=$(printf 'METASYSTEM_%s' "$key" | tr '[:lower:]' '[:upper:]' | tr '.-' '__')
-  if [[ ${!env_name+x} ]]; then
-    printf 'env\n'
-    return
-  fi
-  for origin in conf-local conf; do
-    path="$root/metasystem.conf"
-    [[ "$origin" == conf-local ]] && path="$root/metasystem.conf.local"
-    [[ -f "$path" ]] || continue
-    rc=0
-    "$ms" config conf-value --file "$path" --key "$key" >/dev/null 2>&1 || rc=$?
-    case "$rc" in
-      0) printf '%s\n' "$origin"; return ;;
-      3) ;; # absent here; keep looking
-      *) die 1 "config origin probe failed for $key in $path" ;;
-    esac
-  done
-  printf 'default\n'
-}
-
+# The cap chain, its origin answer, and the unsigned-mission-cap refusal
+# live in `job resolve-cap` (script-orchestration-03): the origin now comes
+# from the resolver's own precedence instead of a shadow probe, and the
+# fence-authority refusal is the engine's decision.
 resolve_nonmission_cap() { # role, runtime, canonical model, explicit override, output json
-  local role=$1 runtime=$2 model=$3 explicit=$4 output=$5 key value rule origin cap
-  if [[ -n "$explicit" ]]; then
-    cap=$explicit; rule=argument; origin=argument
-  else
-    key="cap.min.$role.$runtime.$model"
-    value=$(config_get --key "$key" --default __missing__)
-    if [[ "$value" != __missing__ ]]; then
-      cap=$value; rule=config-role-pair; origin=$(config_key_origin "$key")
-    else
-      key="cap.min.$runtime.$model"
-      value=$(config_get --key "$key" --default __missing__)
-      if [[ "$value" != __missing__ ]]; then
-        cap=$value; rule=config-pair; origin=$(config_key_origin "$key")
-      else
-        key=dispatch.cap-min
-        value=$(config_get --key "$key" --default __missing__)
-        if [[ "$value" != __missing__ ]]; then
-          cap=$value; rule=config-general; origin=$(config_key_origin "$key")
-        else
-          cap=120; rule=built-in; origin=default
-        fi
-      fi
-    fi
-  fi
-  [[ "$cap" =~ ^[1-9][0-9]*$ ]] || die 1 "dispatch cap must be a positive integer"
-  "$ms" job cap-resolution --cap "$cap" --rule "$rule" --origin "$origin" --output "$output"
+  "$ms" job resolve-cap --conf "$root/metasystem.conf" --role "$1" --runtime "$2" --model "$3" \
+    ${4:+--requested "$4"} --output "$5"
 }
 
 refuse_unsigned_mission_cap_override() { # role, runtime, canonical model
-  local role=$1 runtime=$2 model=$3 key origin
-  for key in "cap.min.$role.$runtime.$model" "cap.min.$runtime.$model"; do
-    origin=$(config_key_origin "$key")
-    if [[ "$origin" == conf-local || "$origin" == env ]]; then
-      die 1 "mission dispatch refused: the mission fence is cap authority; unsigned $origin key $key cannot set a mission cap"
-    fi
-  done
+  "$ms" job resolve-cap --conf "$root/metasystem.conf" --role "$1" --runtime "$2" --model "$3" --mission
 }
 
 attested_watcher_ceiling() {
