@@ -433,45 +433,20 @@ printf '{"jobId":"landed-orphan"}\n' >"$repo/artifacts/agents/landed-orphan/roun
 METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
   --mission gate-and-close --foreground >/dev/null
 wait_end_state gate-and-close 10
-python3 - "$repo/artifacts/agents/missions/gate-and-close/state.json" <<'PY'
-import json,sys
-state=json.load(open(sys.argv[1]))
-assert state["status"]=="completed" and state["parkReason"] is None and state["gatePassed"] is True, state
-assert state["streams"]["primary"]["state"]=="done", state["streams"]
-PY
-python3 - "$repo/artifacts/agents/missions/gate-and-close" <<'PY'
-import json,sys
-from pathlib import Path
-mission=Path(sys.argv[1])
-prompts=sorted(mission.glob("turns/*/prompt.md"))
-assert prompts, "the completed mission left no archived turn prompt"
-prompt=prompts[-1].read_text()
-assert "## Landed Returns" in prompt, prompt
-assert "landed-orphan\tinvalid\tartifacts/agents/landed-orphan/rounds/1/return.json" in prompt, prompt
-ledger=(mission/"ledger.md").read_text()
-line="- Landed unconsumed: chain=landed-orphan round=invalid path=artifacts/agents/landed-orphan/rounds/1/return.json"
-assert line in ledger.splitlines(), ledger
-usage=json.loads((mission/"usage.json").read_text())
-entries={item["jobId"]:item for item in usage["rounds"]}
-assert set(entries["landed-orphan"])=={"jobId","round","provenance","source","detail"}, entries
-assert entries["landed-orphan"]["provenance"]=="unavailable", entries
-PY
+# The end-state details this leg used to re-assert — completed state,
+# park reason, landed-orphan prompt/ledger/usage annotations — are
+# TestInternalRunCloseStreamCycle and
+# TestDeliverLandedUnconsumedWritesFinalBlock (internal/missionrunner,
+# under the go gate; script-fixtures-005/D40). The runner launch and the
+# status exit-10 wait above remain the process-level proof.
 
 make_end_state_contract runner-closes-chain dispatch-terminal
 METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
   --mission runner-closes-chain --foreground >/dev/null
 wait_end_state runner-closes-chain 10
-python3 - "$repo" <<'PY'
-import json,sys
-from pathlib import Path
-root=Path(sys.argv[1]); mission=root/"artifacts/agents/missions/runner-closes-chain"
-state=json.loads((mission/"state.json").read_text())
-record=json.loads((root/"artifacts/agents/jobs/verifier-runner-closes-chain.json").read_text())
-assert state["status"]=="completed", state
-assert record["chainClosed"] is True and record["runnerClosed"] is True, record
-assert record["mirror"] and (Path(record["mirror"]["path"])/"manifest.json").is_file(), record
-assert any(item["kind"]=="dispatched" and item["value"]["jobId"]==record["jobId"] for item in state["turnLog"][-1]["accepted"]), state["turnLog"][-1]
-PY
+# The runner-closed chain, mirror manifest, and turn-log acceptance are
+# TestInternalRunDispatchTerminalCycle and TestArmAndPreflightFullPass
+# (internal/missionrunner; script-fixtures-005/D40).
 
 # The host adapter is a witness, not a judge (plans/patience-turn-identity.md
 # T3): a rotated session is reported in the result envelope with outcome

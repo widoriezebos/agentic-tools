@@ -1007,6 +1007,22 @@ finding required. The reaper/fence and runner legs stay; CLI
 arg-forwarding remains proven by them. mission-fixtures.sh keeps its
 name and its remaining duties (no whole-file retirement).
 
+## D40 — The end-state assertions retire; the process-level runs stay (script-fixtures-005 sign-off)
+
+**Decision**: mission-fixtures.sh keeps everything the Go fixtures
+cannot reach — the real mission-runner.sh `start --foreground`
+launches, the status exit-code contract via wait_end_state, the
+contract seal-sign flow, and the landed-orphan staging — and retires
+the three python blocks that re-asserted end-state JSON the runner's
+own package proves: TestInternalRunCloseStreamCycle,
+TestDeliverLandedUnconsumedWritesFinalBlock,
+TestInternalRunDispatchTerminalCycle, and TestArmAndPreflightFullPass
+were verified present before the cut, covering completed state, the
+landed-orphan prompt/ledger/usage annotations, runner-closed chains,
+mirror manifests, and turn-log acceptance. This closes W6 item 2: the
+mission fixture file survives with its irreducible process-level
+duties, roughly a third its former weight across D38+D39+D40.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
