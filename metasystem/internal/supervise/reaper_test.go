@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,8 +170,19 @@ func TestReaperPassCoreTransitions(t *testing.T) {
 			t.Fatalf("reaped record %s missing provenance: %v", path, got)
 		}
 	}
-	if len(emitted) != 3 {
-		t.Fatalf("expected three reap lines, got %v", emitted)
+	// Three reap verdicts plus the live-over-budget DECLINE (review F5):
+	// the state the reaper may not act on is still said out loud.
+	if len(emitted) != 4 {
+		t.Fatalf("expected three reap lines and one decline, got %v", emitted)
+	}
+	declines := 0
+	for _, line := range emitted {
+		if strings.Contains(line, "REAP-DECLINED job=live-over-budget") {
+			declines++
+		}
+	}
+	if declines != 1 {
+		t.Fatalf("live-over-budget must decline exactly once per pass: %v", emitted)
 	}
 }
 
@@ -297,5 +309,46 @@ func TestReaperPassClearsAbandonedSetupHusks(t *testing.T) {
 	}
 	if got := readStatus(t, fresh); got["status"] != "pending-setup" {
 		t.Fatalf("a setup still inside its grace must be untouched, got %v", got["status"])
+	}
+}
+
+// The decline is itself reportable (review F5): a running job past its cap
+// with a custodian this reaper may not kill emits its state once per pass
+// and the record is left untouched for the kill-capable dispatch path.
+func TestReaperPassEmitsTheDeclineItCannotAct(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Unix(1786000000, 0).UTC()
+	job := writeJobRecord(t, dir, "declined", map[string]any{
+		"jobId": "declined", "status": "running",
+		"pid": 777, "pidStartedAt": 4, "instanceTag": "job-declined",
+		"capDeadline": now.Add(-1 * time.Minute).Format(isoSecond),
+	})
+	within := writeJobRecord(t, dir, "budgeted", map[string]any{
+		"jobId": "budgeted", "status": "running",
+		"pid": 778, "pidStartedAt": 4, "instanceTag": "job-budgeted",
+		"capDeadline": now.Add(30 * time.Minute).Format(isoSecond),
+	})
+	var emitted []string
+	cfg := ReaperConfig{
+		JobsDir:   dir,
+		Now:       func() time.Time { return now },
+		Custodian: func(int64, int64, string) identity.Liveness { return identity.Alive },
+		Apply:     casApplier(t, dir),
+		Emit:      func(line string) { emitted = append(emitted, line) },
+	}
+	if err := cfg.ReaperPass(); err != nil {
+		t.Fatalf("reaper pass: %v", err)
+	}
+	if got := readStatus(t, job); got["status"] != "running" {
+		t.Fatalf("declined job must stay running, got %v", got["status"])
+	}
+	if len(emitted) != 1 ||
+		!strings.Contains(emitted[0], "REAP-DECLINED job=declined") ||
+		!strings.Contains(emitted[0], "custodian alive") {
+		t.Fatalf("decline not emitted once with its state: %v", emitted)
+	}
+	// A live custodian still inside its budget is unremarkable: no emit.
+	if got := readStatus(t, within); got["status"] != "running" {
+		t.Fatalf("budgeted job must stay running, got %v", got["status"])
 	}
 }

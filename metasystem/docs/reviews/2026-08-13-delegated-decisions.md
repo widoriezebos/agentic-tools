@@ -709,6 +709,24 @@ the consolidation ruling that shrank the family count in the first
 place. Reopen if an adopter actually asks for a machine-readable
 adoption plan or a skill linter with teeth.
 
+## D31 — The standing reaper says its decline out loud (F5)
+
+**Decision**: the reaper's no-kill decline is now an emitted state, not
+silence. When a record reads running, its cap has expired, and the
+custodian is not provably dead, each pass emits one
+"REAP-DECLINED job=<id> cap expired, custodian <verdict>; kill
+authority stays with dispatch" line. Nothing else changes: the record
+stays with the kill-capable dispatch path, the no-kill-authority rule
+is untouched, and the emit is suppressed when no emitter is wired
+(library callers). The pre-existing core-transitions fixture already
+staged this exact state and asserted the old silence — its expectation
+now demands exactly one decline per pass, which is the finding's
+"once per pass" contract made executable.
+
+**Why**: an operator reading the reaper's output could not distinguish
+"nothing needed doing" from "something needs doing that only dispatch
+may do" — F4's orphan-window design will lean on exactly this signal.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

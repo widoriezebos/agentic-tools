@@ -119,7 +119,15 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	}
 	start, _ := recordInt(record["pidStartedAt"])
 	tag, _ := record["instanceTag"].(string)
-	if cfg.Custodian(pid, start, tag) != identity.Dead {
+	if verdict := cfg.Custodian(pid, start, tag); verdict != identity.Dead {
+		// The decline is a decision too (review F5): a running job past
+		// its cap whose custodian this reaper may not kill is exactly the
+		// state an operator needs to see. Said once per pass; the record
+		// itself stays with the kill-capable dispatch path.
+		if cfg.Emit != nil && status == "running" && dispatch.CapExpired(record, now) {
+			cfg.Emit(fmt.Sprintf("REAP-DECLINED job=%s cap expired, custodian %s; kill authority stays with dispatch",
+				jobIDFor(record, path), verdict))
+		}
 		return nil
 	}
 	patch := map[string]any{

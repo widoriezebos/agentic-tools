@@ -22,17 +22,19 @@
   conf gaining runtimes or arming taught subdirectory conf resolution;
   the review work itself does not dispatch jobs, so it proceeds unarmed.
 - Dead ends (do not retry without new evidence): none in this stream.
-- In flight right now: the Mac sampling suite at 015f949, running
-  DETACHED from the pinned worktree (nohup, log at the session
+- In flight right now: nothing in this checkout — last detached Mac
+  suite finished GREEN. (Historical: suites run DETACHED from the pinned worktree (nohup, log at the session
   scratchpad's mac-suite-015f949.log) because the harness's 10-minute
   background cap kills tracked suite runs now that D17 adds nested go
   gates; the loop polls the log. VM GREEN at 015f949 (HEAD in-log at
   launch) — the W4.22 boundary's authoritative half — and the trusted
   baseline is re-recorded there.
-- Next step: W4.23-25 IMPLEMENTED in the working tree (D30 drafted:
-  json strip writer, dead emit-event wiring deleted, -5/-7 declined);
-  gate + canaries + commit WAIT for the in-flight Mac suite; then W4 is
-  COMPLETE (25 of 25) and the queue tail follows:
+- Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
+  ON BOTH HOSTS). Queue tail: F5 LANDED (D31), next F4 (DESIGN pass: the orphan window — a job whose
+  waiter and runner both exit has no kill-capable enforcer until
+  mission end; decide between waiter adoption and a kill-capable
+  supervision sweep; touches the no-kill-authority rule; design →
+  named critique → implement per the standing discipline); then
   W5 (10, suite decomposition), W6 (9, fixture retirement — each
   whole-file retirement its own decisions-doc entry), W7 (7, docs);
   queue tail F4 orphan-window design and F5 reaper decline logging.
