@@ -1117,6 +1117,24 @@ discipline from the tear fix. Supervision pids change only at arm
 time, so a loop was never the right shape. AUTH-R2-005..009 green end
 to end without either.
 
+## D48 — The telemetry wiring test runs the real dispatcher CAS; the derivation cases live in Go (script-fixtures-013 sign-off)
+
+**Decision**: telemetry-census-fixtures.sh's `fixture_record_cas` — a
+python reimplementation of `__record-cas` that skipped the transition
+rules production enforces (status-in-patch refusal, immutable fields) —
+is deleted. The wiring leg now stages the record-protocol fixture's
+scratch-repository shape (git-inited parent, copied dispatch.sh +
+bin/metasystem, jobs and record-locks dirs) and drives
+`record_result_effective_model` through the REAL `__record-cas`; the
+scratch shell classifies HUMAN, the same ungated trust story every
+operator command rides. Of the three model-derivation cases, one-key
+stays as the wiring vehicle; zero-keys ("unobserved") and two-keys
+(sorted "multi-model:a,b") were verified 1:1 against ClaudeResultField
+rows in internal/adapter/runtime_test.go before retiring — derivation
+is Go-owned, the shell proves only that the adapter's plumbing reaches
+the dispatcher and the return schema. The CENSUS-FAILED schema leg at
+the CLI boundary stays untouched, per the finding.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

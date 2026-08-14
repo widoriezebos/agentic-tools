@@ -9,30 +9,28 @@ trap 'rm -rf -- "$tmp"' EXIT
 # launching the provider command.
 source "$root/scripts/agents/adapters/claude.sh" --help >/dev/null 2>&1
 
-fixture_record_cas() {
-  [[ $1 == __record-cas && $2 == --job && $4 == --expect && $6 == --status && $8 == --patch ]] || return 2
-  python3 - "$record" "$9" "$5" "$7" <<'PY'
-import json, sys
-from pathlib import Path
-
-record_path, patch_path = Path(sys.argv[1]), Path(sys.argv[2])
-record = json.loads(record_path.read_text(encoding="utf-8"))
-assert record["status"] == sys.argv[3]
-record.update(json.loads(patch_path.read_text(encoding="utf-8")))
-record["status"] = sys.argv[4]
-record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
-}
+# The wiring runs against the REAL dispatcher CAS (script-fixtures-013/
+# D48): a hand-rolled fake drifted from transition rules production
+# actually has (status-in-patch refusal, immutable fields). This scratch
+# root classifies the fixture shell as HUMAN, which the authority matrix
+# passes ungated — the same trust story every operator command rides.
+cas_repository="$tmp/cas-repository"
+fixture_root="$cas_repository/metasystem"
+mkdir -p "$fixture_root/scripts/agents" "$fixture_root/artifacts/agents/jobs" \
+  "$fixture_root/artifacts/agents/record-locks" "$fixture_root/bin"
+git -C "$cas_repository" init -q -b main
+cp "$root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/"
+cp "$root/bin/metasystem" "$fixture_root/bin/metasystem"
+dispatch="$fixture_root/scripts/agents/dispatch.sh"
 
 run_model_case() { # case name, expected model, modelUsage JSON
   local name=$1 expected=$2 model_usage=$3 case_dir="$tmp/$1"
   mkdir -p "$case_dir/round"
-  record="$case_dir/job.json"
-  round_dir="$case_dir/round"
   job="fixture-$name"
+  record="$fixture_root/artifacts/agents/jobs/$job.json"
+  round_dir="$case_dir/round"
   session_id=fixture-session
   effective_model=provisional-handshake-model
-  dispatch=fixture_record_cas
   python3 - "$record" "$case_dir/result.json" "$job" "$model_usage" <<'PY'
 import json, sys
 from pathlib import Path
@@ -89,9 +87,10 @@ assert role_return["model"] == {"requested": "requested-model", "effective": exp
 PY
 }
 
+# One wiring case through the real CAS; the zero-keys and two-keys
+# DERIVATION cases are ClaudeResultField rows in internal/adapter's
+# runtime_test.go under the go gate (verified 1:1 before retirement).
 run_model_case one-key actual-model '{"actual-model": {}}'
-run_model_case zero-keys unobserved '{}'
-run_model_case two-keys multi-model:a-model,z-model '{"z-model": {}, "a-model": {}}'
 
 # The census verdict schema, at the CLI boundary. The old leg imported
 # process-census.py and monkeypatched its internals; that module is gone and
