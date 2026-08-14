@@ -2064,7 +2064,7 @@ PY
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["startedAt"] = "2000-01-01T00:00:00Z"
-path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
 PY
   run_agent_fixture launch-window-old-reap launch-window "$agent_dispatch" reap --job launch-window
   python3 - "$agent_repo/artifacts/agents/jobs/launch-window.json" <<'PY'
@@ -2206,10 +2206,15 @@ from pathlib import Path
 # only the fallback), so the fixture must backdate BOTH: backdating only
 # startedAt left the real one-minute deadline live and the explicit reap
 # inert, a coin-flip against the fixture's own wait ceiling.
+#
+# Rewrites of LIVE records are atomic (tmp + rename): the waiting
+# dispatcher classifies on every poll, classification reads every job
+# record fail-closed, and a torn read here refused reap-held and mapped
+# this timeout to wait exit 3 (VM, 2026-08-14, evidence 014657Z-2066978).
 path = Path(sys.argv[1]); value = json.loads(path.read_text())
 value["startedAt"] = "2000-01-01T00:00:00Z"
 value["capDeadline"] = "2000-01-01T00:01:00Z"
-path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
 PY
   run_agent_fixture timed-reap timed "$agent_dispatch" reap --job timed
   wait_for_agent_fixture_process timed-driver timed "$timeout_driver"
@@ -2345,7 +2350,7 @@ PY
   python3 - "$agent_repo/artifacts/agents/jobs/default-role.json" <<'PY'
 import json, sys
 from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["sessionId"] = None; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["sessionId"] = None; tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
 PY
   agent_fails null-session-follow-up 'fresh-context embed fallback' "$agent_dispatch" follow-up --job default-role --message "$follow_message"
 
@@ -2412,7 +2417,7 @@ PY
   python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt <<'PY'
 import json, sys
 from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
 PY
   (cd "$agent_repo" && scripts/agents/assert-conformance.sh --stage review --job conformance)
   mkdir -p "$conformance_workspace/plans"
@@ -2420,7 +2425,7 @@ PY
   python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt plans/delegate.md <<'PY'
 import json, sys
 from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
 PY
   agent_fails untracked-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
   git -C "$conformance_workspace" add source.txt plans/delegate.md
@@ -2655,7 +2660,7 @@ else:
              "cycles": 0, "reservations": {}}
 value["approvedContractSha256"] = hashlib.sha256(contract.read_bytes()).hexdigest()
 fences_path.parent.mkdir(parents=True, exist_ok=True)
-fences_path.write_text(json.dumps(value) + "\n")
+tmp = fences_path.with_name(fences_path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value) + "\n"); tmp.replace(fences_path)
 PY_STAMP
   }
   stamp_fixture_contract mission-alpha
@@ -2807,7 +2812,7 @@ from pathlib import Path
 path=Path(sys.argv[1]); value=json.loads(path.read_text())
 value["startedAt"]="2000-01-01T00:00:00Z"
 value["capDeadline"]="2000-01-01T00:01:00Z"
-path.write_text(json.dumps(value)+"\n")
+tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value)+"\n"); tmp.replace(path)
 PY
   run_agent_fixture mission-timeout-reap mission-timeout-job "$agent_dispatch" reap --job mission-timeout-job
   wait_for_agent_fixture_process mission-timeout-driver mission-timeout-job "$mission_timeout_driver"

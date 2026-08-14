@@ -347,6 +347,49 @@ for one uniform dialect. Rejected because it rewrites dozens of live call
 sites across dispatch/adapters/hooks for no safety gain over strict
 validation — the wire compatibility risk dwarfs the idiom win.
 
+## D17 — Adopted-engine delivery: the payload ships the source, CI rebuilds (script-misc-1 / r10 sign-off)
+
+**Authority note, stated plainly:** kill-shell.md r10 severed this as "a
+HUMAN decision under the reserved-decisions rule" — that severance predates
+the 2026-08-13 AFK delegation, which handed me the review's sign-off items
+including this one ("decide everything, document, revert on disagreement").
+The review's own critique round moved this decision AHEAD of all of W4
+because the shipped CI enforcement is red-on-day-one in every adopted repo.
+I am deciding it under the later, more specific delegation; if Wido wants
+this one back, this entry is the revert point and nothing below is hard to
+unwind (adoption is re-runnable).
+
+**Decision:** the adopted payload ships the engine SOURCE — cmd/,
+internal/, go.mod, go.sum join the adoption allowlist — and the shipped CI
+workflow gains a Go toolchain step, after which the suite's EXISTING gate
+path does the rest: with source present, validate-metasystem.sh's
+metasystem_go_source detection turns the go-gate build back on, and
+ALWAYS-REBUILD (r31) becomes the adopted repo's doctrine exactly as it is
+the template's. The adoption-time binary copy into gitignored bin/ stays as
+the host convenience it already is — it was never the delivery, and now
+nothing pretends it is.
+
+**Why this resolves all three r10 criticals:** source is tracked
+(KS-R10-001), platform-independent (KS-R10-002), and needs no embedded
+committing-HEAD because the compiler rebuilds from whatever HEAD is checked
+out (KS-R10-003 — the stamp stays informational). COHERENCE BY PAIRING
+strengthens: the scripts and the engine source travel through the same
+adoption run, and the pair can now PROVE its coherence by building.
+
+**Alternatives not taken:** per-platform release artifacts (a release
+pipeline, download auth, and a network dependency for a tool whose whole
+doctrine is self-contained checkouts); committing the binary (single
+platform, repo bloat, r10 already proved it wrong); building from the
+template repo at the recorded SHA (couples every adopted CI run to the
+template's availability and auth).
+
+**Implementation contract (W4.22, own pass):** adopt.sh allowlist grows the
+four source roots; github-actions-metasystem.yml gains setup-go before the
+suite; the adopt fixtures assert the filled target's suite now RUNS the
+go-gate (the red-on-day-one defect becomes the tested path); template SHA
+recording unchanged. Until that pass lands, nothing changed on disk — this
+entry is the ruling, not the landing.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
