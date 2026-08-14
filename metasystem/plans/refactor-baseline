@@ -1,3 +1,3 @@
-sha=c16cc70fafa16c84dd95ac04a5b1714b16b0e12f
-recorded_epoch=1786695197
-gate=bash scripts/validate-metasystem.sh (VM acceptance host at 8c6a114, HEAD confirmed in-log; docs-only delta since)
+sha=e91cec4a892bb60b92a5494210fa900a2b9c8e78
+recorded_epoch=1786697464
+gate=bash scripts/validate-metasystem.sh (GREEN on BOTH hosts at e91cec4; VM HEAD confirmed in-log)

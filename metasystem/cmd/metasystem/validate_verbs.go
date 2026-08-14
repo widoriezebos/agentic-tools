@@ -382,3 +382,31 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 	}
 	return code
 }
+
+// runValidateRefactorBaseline relays the refactor gate (script-misc-2/D29):
+// record a trusted baseline after the acceptance gate, or check whether a
+// new refactor edit batch may start. Exit 0 safe, 1 blocked, 2 usage or
+// environment error — the shim's contract, unchanged.
+func runValidateRefactorBaseline(args []string) int {
+	flags := flag.NewFlagSet("validate refactor-baseline", flag.ContinueOnError)
+	var p validate.RefactorBaselineParams
+	flags.StringVar(&p.Command, "command", "", "record or check")
+	flags.StringVar(&p.File, "file", "plans/refactor-baseline", "baseline file path")
+	flags.StringVar(&p.Gate, "gate", "", "record: the acceptance gate command that passed")
+	flags.IntVar(&p.MaxAgeMinutes, "max-age-minutes", 1440, "check: maximum baseline age")
+	flags.IntVar(&p.MaxCommits, "max-commits", 40, "check: maximum commits since the baseline")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if p.Command != "record" && p.Command != "check" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem validate refactor-baseline --command record|check [--file F] [--gate CMD] [--max-age-minutes N] [--max-commits N]")
+		return 2
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	p.Cwd = cwd
+	return validate.RefactorBaseline(p, os.Stdout, os.Stderr)
+}

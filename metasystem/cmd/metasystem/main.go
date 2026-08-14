@@ -66,6 +66,7 @@ func families() []family {
 				{"preamble-quotes", "verify role-preamble quote blocks are byte-exact substrings of their sources", runValidatePreambleQuotes},
 				{"wrapper-token", "prove the caller's ancestry contains the live commit wrapper", runValidateWrapperToken},
 				{"session-isolation", "copy adapter local config into a second-session worktree and audit isolation", runValidateSessionIsolation},
+				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
 				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
 				{"conformance", "review or merge conformance for an implementer job", runValidateConformance},

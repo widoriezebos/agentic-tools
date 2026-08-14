@@ -22,8 +22,9 @@
   conf gaining runtimes or arming taught subdirectory conf resolution;
   the review work itself does not dispatch jobs, so it proceeds unarmed.
 - Dead ends (do not retry without new evidence): none in this stream.
-- Next step: W4.21 refactor gate (→ D29); then W4.22 = D17
-  implementation pass (solo), W4.23-25; then
+- Next step: boundary suites (VM then Mac) over the ff7cb2b..HEAD
+  batch (W4.20/D28 + W4.21/D29), then W4.22 = D17 implementation pass
+  (SOLO), W4.23-25; then
   W5 (10, suite decomposition), W6 (9, fixture retirement — each
   whole-file retirement its own decisions-doc entry), W7 (7, docs);
   queue tail F4 orphan-window design and F5 reaper decline logging.

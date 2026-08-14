@@ -652,6 +652,27 @@ invert the risk.
 expansions lived entirely inside the selftest block the D27 port
 deleted; a sweep finds no unquoted remnants in runtime-common.sh.
 
+## D29 — The refactor gate joins the validate family (script-misc-2 sign-off)
+
+**Decision**: `validate refactor-baseline --command record|check` owns
+every decision the last shell policy gate made — baseline parsing, the
+dirt-beyond-baseline classification (NUL-delimited porcelain, rename
+second-records read as foreign dirt: the safe direction), ancestry, and
+the cadence backstops. scripts/refactor-baseline.sh is now the Phase A
+shim shape: usage, flag parsing, config plumbing (still through
+metasystem-config.sh, so flag/env/.local precedence is byte-identical),
+one exec. The on-disk sha=/recorded_epoch=/gate= format, every message,
+and the 0/1/2 exit contract are preserved and unit-proven against real
+git repositories, including the spaced-path and +signed-epoch edges the
+shell's regex semantics implied. Verb name follows the family's noun
+convention; sign-off delegated per the AFK ruling.
+
+**Why**: the gate is the refactor skill's blocking check — a
+completion-gate decision engine that was untestable by unit test and
+invisible to the coverage ratchet, in a repo whose ruling is that core
+decisions live in Go. The verifier's downgrade (doctrine gap, no active
+harm) is why it waited this long, not a reason to leave it.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
