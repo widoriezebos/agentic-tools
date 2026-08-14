@@ -142,3 +142,65 @@ two fix-target revisions, one severity consolidation, three backlog/process chan
 MISSED-list disposition: all five entries correspond to points 2, 1/9, 6, 8, and 7
 above — four accepted as new or expanded findings, the archive half of the second one
 rebutted as above.
+
+## Round 2 — Codex critique (verbatim)
+
+VERDICT: REVISE
+
+1. **MATERIAL — `codex-1` offers an unsafe fix alternative.** Re-mirroring after the close CAS is insufficient by itself: the CAS has already persisted closure state (scripts/agents/dispatch.sh:1324), while mirroring can fail before updating the manifest (scripts/agents/dispatch.sh:725). The old manifest remains, and GC still deletes by manifest presence and age alone (internal/evidence/gc.go:381). Even if `close` reports failure, a later GC loses the already-written closure state.
+   **Change:** Make current-record/manifest semantic-hash equality mandatory before pruning. Post-close re-mirroring may be added for prompt durability, but not presented as an alternative to the GC guard. Test close → forced mirror failure → GC retention.
+
+2. **MATERIAL — `codex-3` can still authorize an erroneous classification other than HUMAN.** The revised target permits merely refusing HUMAN after uncertainty. But when identity reads fail for an intermediate adapter/supervision ancestor, `Classify` skips that classification and continues upward (internal/lease/classify.go:282); it can then recognize a higher authenticated main at line 279 and return `ClassMain`. `RequireHolder` can authorize that result as the checkout holder (internal/lease/verbs.go:212).
+   **Change:** Any non-absence identity, command, start-time, or parent-read uncertainty encountered before classification completes must abort classification; it must not continue to a more privileged higher ancestor. Add a child → unreadable adapter → authenticated-main test.
+
+3. **MATERIAL — the chosen `dispatch-supervise-6` implementation leaves process-count uncertainty fail-open.** Real enumeration makes `GroupCount` capable of returning errors, but `Owner.Cycle` ignores the error and retains the independently computed observation, which can remain Healthy and reset the breaker (internal/supervise/owner.go:270). The cited census precedent also converts every `Getpgid` error into PGID zero (internal/census/production.go:41). A process-table denial can therefore undercount while supervision continues normally.
+   **Change:** Specify that only ESRCH is an absent member; `AllPids` or any other `Getpgid` failure makes the count indeterminable. Map that error to `Indeterminable` in `Owner.Cycle`, preventing reset or relaunch, and test both error paths.
+
+4. **MATERIAL — the "full verified" seven-site subprocess inventory remains incomplete.** Dispatch still runs bare, unbounded git commands (internal/dispatch/gitcmd.go:13), used while building records (internal/dispatch/build.go:127). The shell acquires the chain and global cap-authority locks first (scripts/agents/dispatch.sh:1002), then invokes `build-record` (scripts/agents/dispatch.sh:1058). A hung git therefore blocks dispatch and arming indefinitely. Other omitted bare git helpers remain in conformance and frontier processing (internal/validate/conformance.go:77, internal/report/frontier.go:153).
+   **Change:** Expand W1.8 to an actual production `exec.Command` inventory. Add dispatch's locked `build-record` path to W1, with a hanging-git test, and classify the remaining intentional long-lived versus improperly unbounded calls explicitly.
+
+5. **MATERIAL — accepted revisions were added as annotations without replacing contradictory formal targets.** Most importantly, the revision says `mission-contract-2` must not share a worktree (report:413), while its formal Target still instructs one shared worktree (report:422); arbitrary gate execution makes the old target unsafe (internal/contract/contract.go:890). The same patch seam remains for `mission-contract-3`, `lease-census-1`, `lease-census-2`, `dispatch-supervise-6`, and `architecture-1`: their notes/backlog contain the accepted resolution, but their formal Targets retain the superseded scope or alternative.
+   **Change:** Rewrite each canonical Current/Target/Why and severity line to contain the adjudicated result, then remove the superseded annotation. An implementer must never have to decide whether the italic note or the designated Target governs.
+
+6. **MATERIAL — W1 delays the test seam until after the high-risk lease fixes.** W1.2–W1.3 implement new fail-closed classification and sweep behavior, but the process-table seam and refusal tests remain W1.25. Today `groupOwnsTag` hardwires `AllPids`, `Getpgid`, and `ProcessCommand` (internal/lease/sweep.go:126); existing tests cover only real-kernel success and known absence (internal/lease/sweep_test.go:43). This contradicts the accepted request to fold uncertainty tests into the correctness fix.
+   **Change:** Move the necessary seams and refusal tests into W1.2/W1.3 and require them in the same changes. Leave W1.25 only for additional coverage not required to prove those fixes.
+
+## Round 2 — Adjudication
+
+All six points ACCEPTED. The genuinely new code claims were verified directly before
+acceptance: internal/dispatch/gitcmd.go is a bare exec.Command with stderr discarded,
+called from build.go:127/131 on the locked build-record path; bare git helpers
+confirmed at validate/conformance.go:78/87 and report/frontier.go:154 (round 1's
+verification swept only contract, mission, and census — the scope gap was real);
+Owner.Cycle runs the ceiling check only under err == nil; census production
+enumeration collapses Getpgid errors to PGID 0 and skips prober errors entirely; the
+classification walk demonstrably skips an ancestor whose ProcessCommand or StartedAt
+read fails and continues upward, and RequireHolder's MAIN path grants holder authority
+and even auto-claims an absent lease.
+
+Report deltas: codex-1's GC hash guard made mandatory (re-mirror demoted to
+supplement); codex-3's target now aborts classification on any pre-completion
+uncertainty, with the MAIN-escalation path documented in Current/Why; the
+dispatch-supervise-6 spec gained the uncertainty mapping (only ESRCH is absence;
+count errors map to Indeterminable in Owner.Cycle); mission-contract-3's inventory
+expanded to ten sites plus a classify-the-rest sweep and a hanging-git test, effort
+M-L; all six annotated findings (mission-contract-2, -3, lease-census-1, -2,
+dispatch-supervise-6, architecture-1, plus adapter-host-registry-1) had their
+canonical Current/Target/Why and severity lines rewritten to the adjudicated content
+and the italic annotations removed; W1.2/W1.3 now carry their seams and refusal tests
+in the same change, with W1.25 reduced to residual coverage. No new findings, no
+severity changes.
+
+## Round 3 — Codex critique (verbatim)
+
+VERDICT: AGREE
+
+## Convergence
+
+The loop converged after three rounds on 2026-08-13. Round 3 carried this side's
+stated position (converged; remaining differences wording-only) and Codex's verdict on
+the revised report was AGREE with no further points. Totals across the loop: 19
+critique points raised, 18 accepted (6 new findings, 6 expansions or fix-target
+revisions, 3 calibration changes, 3 process/ordering changes), 1 partially accepted
+with its data-loss half rebutted on evidence. Every accepted code claim was verified
+against the tree before acceptance; no point was accepted on assertion alone.

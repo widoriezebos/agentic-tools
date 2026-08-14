@@ -64,7 +64,14 @@ every round recorded verbatim, with adjudications, in `2026-08-12-critique-trail
 Round 1 added six findings (codex-1 … codex-6, stated in full at the end of Part 1),
 expanded four existing ones, revised two fix targets, and downgraded the
 triple-reported usage duplication to medium. Every accepted point was verified against
-the tree before acceptance. The table below includes those changes.
+the tree before acceptance. Round 2 tightened four fix specifications (the GC hash
+guard is mandatory, classification aborts on any walk uncertainty, ceiling-count
+uncertainty maps to Indeterminable, gate/guard worktrees stay independent), expanded
+the external-call inventory to ten sites across three packages round 1 never swept,
+folded every adjudicated target into the canonical finding text, and moved the test
+seams into the fixes they prove — no new findings, no severity changes. The table
+below includes all of it. The loop converged in round 3: Codex's verdict on the
+revised report was AGREE, with no remaining material points on either side.
 
 | | high | medium | low | total |
 |---|---|---|---|---|
@@ -110,14 +117,14 @@ authorizes nothing" — and these are the places the code contradicts it. Items 
 [R1.n] were added or expanded by round 1 of the Codex critique; the added findings are
 stated in full at the end of Part 1.
 
-1. codex-1 (high/M) — evidence GC can permanently discard a chain's closure state: re-mirror after the close CAS, or require the manifest's sourceStateHash to match the current record before pruning. [R1.1]
-2. lease-census-1, expanded (high/M) — classification fail-open: distinguish absence from failure for supervision state and job records, treat corrupt records like corrupt state, and refuse HUMAN when the identity/ancestry walk was truncated by an error (codex-3). [R1.3]
-3. lease-census-2, expanded (high/M) — the sweep: only IsNotExist means vanished; unparseable records are hard errors; schema-invalid records (missing or noninteger claimEpoch, unknown status) are hard errors; in groupOwnsTag only ESRCH counts as member absence — any other inspection error yields unprovable. [R1.4]
+1. codex-1 (high/M) — evidence GC can permanently discard a chain's closure state: the sourceStateHash equality guard in pruneMirroredRecords is mandatory; a post-close re-mirror is a durability supplement, never the alternative (a failed re-mirror leaves the stale manifest and GC still prunes). [R1.1, R2.1]
+2. lease-census-1, expanded (high/M) — classification fail-open: distinguish absence from failure for supervision state and job records, treat corrupt records like corrupt state, and abort classification on any identity/ancestry uncertainty — a skipped unreadable ancestor escalates to MAIN, not just HUMAN (codex-3). Seam and refusal tests land in the same change. [R1.3, R2.2, R2.6]
+3. lease-census-2, expanded (high/M) — the sweep: only IsNotExist means vanished; unparseable records are hard errors; schema-invalid records (missing or noninteger claimEpoch, unknown status) are hard errors; in groupOwnsTag only ESRCH counts as member absence — any other inspection error yields unprovable. Seam and refusal tests land in the same change. [R1.4, R2.6]
 4. codex-2 (high/S) — owner-lock takeover on unreadable argv: holderState treats Alive+ArgvKnown=false as busy, ideally by delegating to identity.Custodian. Prerequisite for W4.1. [R1.2]
 5. codex-4 (high/S) — the arming blocker scans fail open in cmd: tolerate only ENOENT; any other read, parse, or schema failure refuses arming. Fix in place first; W3.1 relocates the fixed code. [R1.6]
 6. dispatch-supervise-3 (high/S) — census-lock takeover on Unknown liveness; with codex-2, the two remaining three-way violations in the tree.
 7. mission-contract-1 + cli-4 (high/S) — the Dir^3 root-discovery off-by-one, both copies.
-8. mission-contract-3, expanded (high/M) — bound every external call: the two original sites, both gitTry copies (contract/helpers.go, mission/anchor.go), census.SignatureText (a hung adapter script hangs watcher passes and lease classification), and group-kill + WaitDelay for the gate/guard CommandContext execs, which are bounded in name only. [R1.7]
+8. mission-contract-3, expanded (high/M-L) — bound every production external call; the verified inventory is ten sites: the two original, both gitTry copies, census.SignatureText, the gate/guard CommandContext execs (group-kill + WaitDelay), dispatch's gitOutput inside the locked build-record path (a hung git blocks dispatch and arming), and the bare git helpers in validate/conformance.go and report/frontier.go. Sweep the remaining production exec.Command sites and classify each. [R1.7, R2.4]
 9. mission-contract-2, target revised (high/M) — pin candidateSHA and gateRef once; run gate and guards in independent clean worktrees at the pinned SHAs (a shared worktree would let the gate pollute what guards read). [R1.5]
 10. foundations-1 (high/M) — evidence GC must not trust other checkouts' manifests.
 11. mission-contract-6 (med/S) — surface batched-ask write failures in fence refusals.
@@ -130,11 +137,11 @@ stated in full at the end of Part 1.
 18. foundations-2 (med/S) — fix `chain()`'s non-ancestor behavior to match its doc.
 19. missionrunner-5 (med/S) — decouple drain reap cadence from the 100ms heartbeat.
 20. lease-census-9 + codex-5 (med/M) — bound BOTH record-lock implementations: the sweep's acquireRecordLock and dispatch's withRecordLock (a wedged holder currently stalls every lease claim and succession while RunHeld holds the lease lock). [R1.8]
-21. dispatch-supervise-6 (med/M) — make the group-ceiling verdict real: enumerate group members via AllPids + Getpgid (precedent in internal/census/production.go); the documentation-only option is withdrawn. [R1.13]
+21. dispatch-supervise-6 (med/M) — make the group-ceiling verdict real: enumerate via AllPids + Getpgid; only ESRCH is an absent member, and any other failure maps to Indeterminable in Owner.Cycle instead of being ignored (today the ceiling check runs only when err == nil). [R1.13, R2.3]
 22. foundations-11 (med/M) — structural self-hooks check instead of substring matching.
 23. foundations-5, -9 (med/S each) — bound-kind in timeout errors; validate numeric knobs.
 24. Shell error-handling batch (all S): script-validate-11 (unguarded kill), script-orchestration-07 (reap sweep aborts on first failure), -11 (silent arming death), -15 (swallowed mirror CAS failure), script-adapters-11 (unbounded start-gate wait), script-fixtures-016 (machine-wide pkill), script-misc-10 (state-file key collision), script-misc-4 (non-JSON records misclassified).
-25. lease-census-10 (med/M) — make the sweep's refusal branches testable, then test them; the codex-3 and R1.4 uncertainty rows land on the same injection seam.
+25. lease-census-10 (med/M) — residual sweep coverage beyond the seams and refusal tests that now land inside W1.2 and W1.3 themselves (R2.6): additional rows, not the proof of those fixes.
 26. codex-6 (low/S) — segment the durable events root by checkout hash like mirrors; consistency hardening, the collision is practically foreclosed by PID+timestamp naming. [R1.9]
 
 ### W2 — One rule, one home: Go consolidations
@@ -410,37 +417,19 @@ carry those notes inline.
 
 `internal/contract/contract.go:845` · duplication · **high / effort M**
 
-*Target revised in critique round 1 (R1.5): the defect stands, but the fix is NOT one
-shared worktree — gate and guards are arbitrary bash with cwd inside the worktree, so
-the gate can mutate what guards read and defeat the frozen-instruments restore. Pin
-candidateSHA and gateRef once in measure(), then run gate and guards in independent
-clean worktrees at the pinned SHAs (or reset+clean+re-restore between). Add a test
-where the gate mutates a guarded path.*
-
 **Current:** runGate (contract.go:845-936) contains a near line-for-line copy of measure.go's candidateWorktree (gate-ref resolve, branch resolve, candidate rev-parse, restoredPaths, MkdirTemp, worktree add, gate-ref checkout, project-rel compute) and of measureCommand (bash -lc under the job-cap timeout, metric-line scraping). measure() then calls runGate and runGuards back to back, and runGuards builds a SECOND throwaway worktree via candidateWorktree (measure.go:147), re-resolving the branch tip; runGuards even discards candidateWorktree's returned SHA.
 
-**Target:** runGate takes its worktree from candidateWorktree and its execution from measureCommand; measure() materializes the candidate once and runs gate and guards in the same worktree at the same SHA. One home for the worktree recipe and one for the bounded-command-with-metrics recipe.
+**Target:** measure() resolves candidateSHA and gateRef exactly once and passes the pinned SHAs to runGate and runGuards, each materializing an independent clean worktree at the pinned SHA (or one worktree with reset+clean+re-restore between gate and guards); runGate takes its worktree recipe from candidateWorktree and its execution from measureCommand, so each recipe keeps one home. A shared live worktree is NOT the fix: gate and guards are arbitrary bash with cwd inside the worktree, so the gate could mutate what guards read and defeat the frozen-instruments restore. Add a test where the gate mutates a guarded path. [revised R1.5]
 
 **Why:** Beyond the maintenance cost of ~80 duplicated lines in one package, the double materialization is a correctness hole: with fence.concurrency jobs allowed to land commits on the mission branch while a cycle measures, the gate metrics and the guard readings can be taken at DIFFERENT commits, yet MeasureResult reports one CandidateSHA and one GatePassed verdict over the mixed readings — the ledger then records evidence that never existed on any single commit, in a system whose stated point is measured evidence.
 
 #### mission-contract-3 — landedRoundValid and the anchor commit run external commands with no bound, violating the tree's own B4 rule
 
-`internal/mission/landed.go:148` · boundary · **high / effort S**
-
-*Expanded in critique round 1 (R1.7) to the full verified inventory — seven sites, not
-two: these two, both gitTry copies (contract/helpers.go:94, mission/anchor.go:41,
-each with multiple production call sites), census.SignatureText (fingerprint.go —
-fully unbounded, and a hung adapter script hangs watcher passes and lease
-classification), and the gate/guard CommandContext execs (contract.go:888,
-measure.go:252), which are bounded in name only: no process group, so at the deadline
-Go kills only bash and grandchildren holding the output pipe block Run() past the
-ceiling. Fix shape: route gitTry and SignatureText through boundedexec; give the two
-CommandContext sites Setpgid + group-kill Cancel + WaitDelay (or boundedexec with the
-job-cap bound). Effort is M with the expansion.*
+`internal/mission/landed.go:148` · boundary · **high / effort M-L**
 
 **Current:** landedRoundValid execs scripts/assert-return-complete.sh with a bare cmd.Run() — no boundedexec, no timeout — and runs once per emitted Landed Returns row (up to 19 spawns) inside every prompt assembly; the script itself re-enters the metasystem binary (Go→bash→Go). Anchor's commit exec (anchor.go:227-233, git commit or the scripts/agents/commit.sh wrapper) is likewise unbounded, while every neighboring git call in both packages routes through boundedexec with an explicit "Bounded like every other external call (B4)" comment.
 
-**Target:** Route both through boundedexec.Run with the Local timeout, exactly as gitOutput in the same files already does; treat a timed-out checker as "unproven" (the invalid marker landedRoundValid already documents for a checker that cannot run).
+**Target:** Route every production external call through boundedexec or give it group-kill semantics; a timed-out checker is "unproven" (the invalid marker landedRoundValid already documents). The verified inventory is ten sites: these two; both gitTry copies (contract/helpers.go:94, mission/anchor.go:41, each with multiple production call sites); census.SignatureText (fingerprint.go:47 — fully unbounded, and a hung adapter script hangs watcher passes and lease classification); the gate/guard CommandContext execs (contract.go:888, measure.go:252 — bounded in name only: no process group, so at the deadline Go kills only bash, grandchildren holding the output pipe block Run() past the ceiling, and the deferred worktree cleanup waits with it — fix with Setpgid + group-kill Cancel + WaitDelay or boundedexec at the job-cap bound); dispatch's gitOutput (gitcmd.go:13, called from build.go:127/131 inside the locked build-record path, where a hung git blocks dispatch and arming indefinitely); and the bare git helpers in validate/conformance.go:78/87 and report/frontier.go:154. Sweep the remaining production exec.Command sites and classify each as deliberately-bounded or defect; add a hanging-git test for the locked dispatch path. [expanded R1.7, R2.4]
 
 **Why:** A wedged checker or commit wrapper (stdin-blocking child, NFS stall, lease-wrapper hang) freezes unattended prompt assembly or the anchor step forever with no fence — the exact failure mode the repository's B4 doctrine exists to prevent, applied everywhere else in these two files. The Go→shell→Go re-entry also deserves a look: return-validity is decision logic that internal/validate already owns natively.
 
@@ -712,16 +701,13 @@ Overall state: strong, with one structural debt. registry is exemplary — contr
 
 #### adapter-host-registry-1 — Devin usage metering and Claude usage extraction duplicated wholesale between adapter and host
 
-`internal/host/devin_usage.go:23` · duplication · **high / effort M**
-
-*Downgraded to medium in critique round 1 (R1.11) together with architecture-1 — see
-the note there; one backlog item (W2.1), one designated owner (a small leaf package).*
+`internal/host/devin_usage.go:23` · duplication · **medium / effort M**
 
 *Same defect as cli-3 and architecture-1; one backlog item (W2.1).*
 
 **Current:** host.DevinUsage (internal/host/devin_usage.go:23-108, plus devinUsageFields and providerUnit) is a near-verbatim copy of adapter.DevinUsage (internal/adapter/devin.go:206-291, devinUsageFields, devinProviderUnit): same signature, same cumulative-delta algorithm, same ACU handling, same unavailable-on-missing-predecessor rule. host.ClaudeResult (internal/host/claude.go:23-39) likewise re-implements adapter.ClaudeUsage's typed-usage map (internal/adapter/claude.go:78-97) field for field. Both copies are live: cmd wires adapter.DevinUsage to 'adapter devin-usage' and host.DevinUsage to 'host devin-usage'.
 
-**Target:** One implementation of each runtime's usage extraction, with both CLI families calling it. Simplest home given the current graph: host imports adapter (or both import a small internal/runtimeusage package) for the Devin delta algorithm and the Claude usage shape; the differing lenient-read wrappers stay in each caller. Output bytes and both verb surfaces are unchanged.
+**Target:** One implementation of each runtime's usage extraction, with both CLI families calling it, in a small leaf package — see architecture-1 for the adjudicated shape (the leaf, not host-imports-adapter, because mission/fence.go must also come off its adapter import); the differing lenient-read wrappers stay in each caller. Output bytes and both verb surfaces are unchanged. Same issue and severity as architecture-1 (R1.11); one backlog item, W2.1.
 
 **Why:** This is fence/spend metering — the code the mission budget trusts. The two copies have already started to drift trivially (isNumber vs asFloat acceptance in the ACU probe); the next real fix (a new Devin metric spelling, a double-count bug) applied to one copy will silently leave the other wrong, and nothing will fail loudly because each package's tests only see its own copy.
 
@@ -817,32 +803,21 @@ the note there; one backlog item (W2.1), one designated owner (a small leaf pack
 
 #### lease-census-1 — Unreadable supervision state or job records fail open to HUMAN, which bypasses the holder gate
 
-`internal/lease/classify.go:203` · error-handling · **high / effort S**
-
-*Expanded in critique round 1 (R1.3): corrupt job records (unmarshal failure or empty
-jobId, classify.go:234) must refuse like corrupt state — a fix covering only ReadFile
-errors still fails open on corruption. The identity/ancestry half of the same
-fail-open pattern is codex-3. Effort is M with the expansion.*
+`internal/lease/classify.go:203` · error-handling · **high / effort M**
 
 **Current:** custodyIdentities ignores os.ReadFile failures: `if data, readErr := os.ReadFile(statePath); readErr == nil { ... }` has no else branch, and job-record read errors at line 225 `continue`. A parse failure refuses classification loudly ("caller classification refused"), but a read failure (EACCES, EIO) silently yields empty custody maps. Classify then finds no recognised ancestor and returns HUMAN — and RequireHolder (verbs.go:193) returns {"holder": true} for HUMAN, so the caller passes the write gate ungated.
 
-**Target:** Distinguish absence from failure: os.IsNotExist on state.json (supervision not armed) keeps the current skip; any other read error refuses classification exactly like the existing unmarshal path does. Same for job records: ENOENT (glob race) skips, other errors refuse.
+**Target:** Distinguish absence from failure across all of classification's inputs: os.IsNotExist on state.json (supervision not armed) keeps the current skip; any other read error refuses classification exactly like the existing unmarshal path does. Job records: ENOENT (glob race) skips; any other read error refuses; and corrupt records — unmarshal failure or empty jobId (classify.go:234) — refuse like corrupt state instead of silently dropping custody, since a fix covering only ReadFile errors still fails open on corruption. The identity/ancestry half of the same pattern is codex-3. The refusal tests land in the same change as the fix (R2.6). [expanded R1.3]
 
 **Why:** This inverts the tree's own doctrine ("fail toward the fuse, refuse loudly, never skip silently") at the single most security-relevant decision: a permissions mishap on state.json turns a SUPERVISION-descended helper into a HUMAN with full write authority. The neighbouring parse-failure branch already fails closed, so the asymmetry is clearly unintended.
 
 #### lease-census-2 — Sweep certifies an epoch complete despite unreadable or unparseable job records
 
-`internal/lease/sweep.go:66` · error-handling · **high / effort S**
-
-*Expanded in critique round 1 (R1.4): schema-invalid records that parse as JSON —
-missing or noninteger claimEpoch, missing or unknown status (sweep.go:72-75) — take
-the same silent skip and must be hard errors too; and in groupOwnsTag (sweep.go:131-140)
-only ESRCH counts as member absence — any other Getpgid/identity error must yield
-provable=false instead of "provably not owned". Effort is M with the expansion.*
+`internal/lease/sweep.go:66` · error-handling · **high / effort M**
 
 **Current:** sweepOne treats every os.ReadFile error as "vanished under us; nothing to sweep" (return false, nil) and silently skips records that fail json.Unmarshal (line 69). cleanupStaleJobs then emits sweep-completed and the caller stamps the epoch. Yet the function's own contract comment (lines 30-32) says "A job it cannot prove ownership of is a hard error: the sweep must not certify a generation it did not actually clear."
 
-**Target:** Only os.IsNotExist means vanished; any other read error, and an unparseable record, is a hard error that aborts the sweep before the stamp is written — the same refusal shape stopStaleGroup already uses for unprovable ownership.
+**Target:** Only os.IsNotExist means vanished; any other read error, an unparseable record, and a schema-invalid record that parses as JSON — missing or noninteger claimEpoch, missing or unknown status (sweep.go:72-75) — is a hard error that aborts the sweep before the stamp is written, the same refusal shape stopStaleGroup already uses for unprovable ownership. In groupOwnsTag (sweep.go:131-140), only ESRCH counts as member absence: any other Getpgid or identity error yields provable=false instead of "provably not owned". The process-table seam and these refusal tests land in the same change as the fix (R2.6). [expanded R1.4]
 
 **Why:** An EACCES-unreadable or corrupted stale job record means its process group is never TERMed and its record never failed, but the reaped-after-claim stamp still certifies the new epoch — so RequireHolder admits the new generation while the predecessor's job may still be writing. That is precisely the duplicate-writer scenario the lease exists to prevent, and the code contradicts its own stated contract.
 
@@ -2387,20 +2362,13 @@ Evolvability: adding a runtime adapter or a mission fence today is well-supporte
 
 #### architecture-1 — Typed usage extraction has no single owner; DevinUsage is copied verbatim across packages
 
-`internal/host/devin_usage.go:23` · duplication · **high / effort M**
-
-*Downgraded to medium in critique round 1 (R1.11), matching the cli-3 verifier
-adjudication this report already carried: both copies are floored, tested, and
-semantically identical today, so this is preventive consolidation, not a live defect.
-The target's either/or is also resolved: one small leaf package, because
-mission/fence.go must come off its adapter import too — host-imports-adapter fixes
-only half the graph.*
+`internal/host/devin_usage.go:23` · duplication · **medium / effort M**
 
 *Canonical statement of the defect also reported as adapter-host-registry-1 and cli-3.*
 
 **Current:** internal/host.DevinUsage (devin_usage.go:23) and internal/adapter.DevinUsage (devin.go:206) have the identical signature and near-identical bodies implementing the same correctness-sensitive rule: per-turn deltas against Devin's cumulative session counters, with publish-unavailable-on-missing-predecessor to avoid double counting. Meanwhile internal/mission/fence.go:748-761 imports adapter to call RootJobID and CodexUsageValue for fence usage aggregation, pulling runtime event-stream parsing into the mission domain's dependency set.
 
-**Target:** One owner for typed usage extraction and aggregation: either a small leaf package (e.g. internal/usage) consumed by adapter, host, and mission, or host calling adapter's function. The r1/GSC-R1-003 ruling that keeps adapter and host as separate CLI families adjudicated the verb surface, not the implementation; both verbs can front one function. A Devin metric change or a delta bugfix must land once.
+**Target:** One owner for typed usage extraction and aggregation: a small leaf package (e.g. internal/usage) consumed by adapter, host, and mission — the host-imports-adapter alternative is rejected because mission/fence.go must also come off its adapter import, which that shape leaves in place. The r1/GSC-R1-003 ruling that keeps adapter and host as separate CLI families adjudicated the verb surface, not the implementation; both verbs front one function. A Devin metric change or a delta bugfix must land once. Severity is medium per adjudication (R1.11): both copies are floored, tested, and identical today — preventive consolidation, not a live defect.
 
 **Why:** This is exactly the failure the tree's own atomicfile doc names: two copies become two fixes that silently diverge. The duplicated rule guards against double-counting spend, and runaway spend is one of the nine failure classes the README says the system exists to prevent. The copies have already drifted cosmetically (loadObject vs readObject, comment wording), which is how semantic drift starts.
 
