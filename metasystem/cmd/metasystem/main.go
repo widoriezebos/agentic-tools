@@ -184,6 +184,7 @@ func families() []family {
 				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
 				{"running-work", "print the turn-end active clause: live jobs, missions, gate runs", runReportRunningWork},
+				{"scan-jobs", "one watcher classification pass over job files", runReportScanJobs},
 				{"frontier", "record, challenge, or show the measured-improvement frontier", runReportFrontier},
 			},
 		},

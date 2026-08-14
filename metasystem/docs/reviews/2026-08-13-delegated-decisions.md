@@ -494,6 +494,27 @@ two homes for human-facing wording is how the sentence and the data drift;
 if a second consumer ever needs the raw inventory, the clause function
 already sits on top of typed pieces to expose.
 
+## D23 — The watcher's classification engine joins the REPORT family (script-orchestration-06 = script-misc-3 sign-off)
+
+**Decision:** the DONE/CAPPED/NEVER-STARTED/STALE/VANISHED engine —
+sidecar-vs-primary selection, sibling-mtime liveness, verdict precedence,
+seen-state marking, baseline adoption — is report.ScanJobs behind `report
+scan-jobs`. FAMILY: report, not the review Target's supervise — the
+recorded r3/KS-R3-009 ruling already assigned job-file classification to
+the report family, and the verb's whole output is greppable report lines;
+the recorded ruling wins over the finding's suggestion. The script keeps
+argument parsing, the ARMED banner, the census invocation, and the sleep
+loop. Report-line bytes and the seen-state format are unchanged wire,
+pinned by tests. The running set (formerly in-process arrays) rides in a
+script-owned mktemp scratch file, so a watcher restart still resets
+VANISHED tracking exactly as before.
+
+**Defect fixed in the port (the verifier's find):** the shell's
+concatenated digit check accepted an EMPTY --stale-min, after which
+`[ age -ge "" ]` failed silently and STALE never fired. The engine refuses
+non-positive thresholds loudly — a misconfigured watcher now dies at
+arming instead of watching nothing.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

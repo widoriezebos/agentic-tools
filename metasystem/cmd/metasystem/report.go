@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
@@ -36,6 +37,48 @@ func runReportRunningWork(args []string) int {
 	}
 	if clause := report.RunningWorkClause(*repo); clause != "" {
 		fmt.Println(clause)
+	}
+	return 0
+}
+
+// runReportScanJobs relays `report scan-jobs`: one watcher classification
+// pass from report.ScanJobs (script-orchestration-06; the report family per
+// r3/KS-R3-009). Threshold misuse is a usage error; anything else exits 1.
+func runReportScanJobs(args []string) int {
+	flags := flag.NewFlagSet("report scan-jobs", flag.ContinueOnError)
+	var dirs []string
+	flags.Func("dir", "job directory or glob pattern (repeatable)", func(value string) error {
+		dirs = append(dirs, value)
+		return nil
+	})
+	state := flags.String("state", "", "seen-state file")
+	running := flags.String("running", "", "running-set scratch file")
+	scope := flags.String("scope", "", "scope root (optional)")
+	scopeField := flags.String("scope-field", "workspaceRoot", "record field naming the job's workspace")
+	staleMin := flags.Int64("stale-min", 0, "minutes before a live record is STALE")
+	capMin := flags.Int64("cap-min", 0, "minutes before a job is CAPPED")
+	startVerifyMin := flags.Int64("start-verify-min", 0, "minutes before a queued job is NEVER-STARTED")
+	baseline := flags.Bool("baseline", false, "adopt history without reporting")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if len(dirs) == 0 || *state == "" || *running == "" {
+		fmt.Fprintln(os.Stderr, "report scan-jobs: --dir, --state, and --running are required")
+		return 2
+	}
+	if *staleMin < 1 || *capMin < 1 || *startVerifyMin < 0 {
+		fmt.Fprintln(os.Stderr, "report scan-jobs: --stale-min and --cap-min must be positive integers, --start-verify-min non-negative")
+		return 2
+	}
+	err := report.ScanJobs(report.ScanJobsParams{
+		Dirs: dirs, StateFile: *state, RunningFile: *running,
+		Scope: *scope, ScopeField: *scopeField,
+		StaleMin: *staleMin, CapMin: *capMin, StartVerifyMin: *startVerifyMin,
+		Baseline: *baseline, Now: time.Now(),
+	}, os.Stdout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	return 0
 }

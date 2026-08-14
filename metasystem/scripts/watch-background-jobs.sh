@@ -190,7 +190,11 @@ script_fp=$(cksum "$0" 2>/dev/null | tr -d ' \t' | cut -c1-12)
 printf 'ARMED watcher fp=%s dirs=%s scope=%s state=%s stale=%sm cap=%sm start-verify=%sm auto-baseline=%s\n' \
   "$script_fp" "${dirs[*]}" "${scope:-none}" "$state_file" "$stale_min" "$cap_min" "$start_verify_min" "$auto_baseline"
 
-now_epoch() { date +%s; }
+# The running set rides in a scratch file so one classification pass can
+# hand it to the next; mktemp per watcher keeps the restart-resets-tracking
+# behavior the in-process arrays had.
+running_file=$(mktemp "${TMPDIR:-/tmp}/watch-running.XXXXXX")
+trap 'rm -f "$running_file"' EXIT
 
 
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/agents/emit-event.sh" ]]; then
@@ -234,153 +238,23 @@ run_process_census() {
 
 
 
-file_mtime() {
-  # A failed GNU `stat -f` still prints filesystem details for valid operands,
-  # so a plain command chain leaks that output into the fallback result.
-  local mtime
-  if mtime=$(stat -c %Y "$1" 2>/dev/null); then
-    printf '%s\n' "$mtime"
-  elif mtime=$(stat -f %m "$1" 2>/dev/null); then
-    printf '%s\n' "$mtime"
-  else
-    echo 0
-  fi
-}
-
-job_field() { # record field -> value ("" when absent/unparseable)
-  "$ms" json get --file "$1" --field "$2" 2>/dev/null || true
-}
-
-in_scope() { # record -> 0 when the job belongs to this scope
-  [ -z "$scope" ] && return 0
-  local ws; ws=$(job_field "$1" "$scope_field")
-  # No workspace field: report it. Unknown ownership beats an unobserved job.
-  [ -z "$ws" ] && return 0
-  case "${ws%/}/" in "$scope"/*) return 0 ;; *) return 1 ;; esac
-}
-
-job_status() {
-  # Top-level JSON "status" if the record parses as JSON, else empty.
-  "$ms" json get --file "$1" --field status 2>/dev/null || true
-}
-
-record_parses_json() {
-  # Distinguishes "JSON without a status field" from "not JSON at all":
-  # the header promises non-JSON records mtime-only STALE/CAPPED, never a
-  # status-based verdict (script-misc-4).
-  "$ms" json get --file "$1" --field status --default "" >/dev/null 2>&1
-}
-
-is_terminal() {
-  case "$1" in
-    completed|complete|success|succeeded|failed|failure|error|errored|cancelled|canceled|killed|timeout|timed_out) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-seen() { grep -qxF "$1" "$state_file" 2>/dev/null; }
-mark() { printf '%s\n' "$1" >> "$state_file"; }
-
-# Records observed running, so a disappearance is distinguishable from a job
-# that was never seen at all.
-declare -a running_ids=()
-declare -a running_paths=()
-running_index() {
-  local i=0
-  while [ $i -lt ${#running_ids[@]} ]; do
-    [ "${running_ids[$i]}" = "$1" ] && { printf '%s' "$i"; return 0; }
-    i=$((i + 1))
-  done
-  return 1
-}
-remember_running() {
-  running_index "$1" >/dev/null && return 0
-  running_ids+=("$1"); running_paths+=("$2")
-}
-forget_running() {
-  local idx; idx=$(running_index "$1") || return 0
-  unset 'running_ids[idx]' 'running_paths[idx]'
-  running_ids=(${running_ids[@]+"${running_ids[@]}"})
-  running_paths=(${running_paths[@]+"${running_paths[@]}"})
-}
-
-report() { # state id status age record
-  printf '%s %s status=%s age=%sm record=%s\n' "$1" "$2" "${3:-unknown}" "$4" "$5"
-}
-
+# The classification engine — sidecar selection, sibling-mtime liveness,
+# the DONE/CAPPED/NEVER-STARTED/STALE/VANISHED precedence, seen-state and
+# baseline policy — lives in `report scan-jobs` (script-orchestration-06 =
+# script-misc-3, D23; the REPORT family per r3/KS-R3-009). Report lines and
+# the seen-state format are unchanged wire. The engine also refuses empty
+# thresholds loudly: the shell's concatenated digit check let an empty
+# --stale-min silently disable STALE.
 scan_once() {
-  local now; now=$(now_epoch)
-  local pattern path id status mtime age_min primary sib
-
   (( census_enabled )) && run_process_census
-
-  for pattern in "${dirs[@]}"; do
-    # word-splitting is intended: patterns may be globs
-    for path in $pattern/*; do
-      [ -f "$path" ] || continue
-      id=$(basename "$path"); id="${id%.*}"
-      seen "$id" && continue
-      # Prefer the record that actually carries fields; skip sidecars of an id
-      # whose primary record exists, so one job reports once and scope holds.
-      primary="$path"
-      for sib in "$(dirname "$path")/$id".*; do
-        [ -f "$sib" ] || continue
-        if [ -n "$(job_status "$sib")" ] || [ -n "$(job_field "$sib" "$scope_field")" ]; then
-          primary="$sib"; break
-        fi
-      done
-      [ "$primary" = "$path" ] || continue
-      in_scope "$path" || continue
-
-      status=$(job_status "$path")
-      # Liveness is the NEWEST mtime across every file the runner keeps for this
-      # job, not the record alone. Runners commonly write the status record once
-      # at dispatch and then stream progress to a sibling log, so a record-only
-      # check reports STALE for a job that is demonstrably working — observed on
-      # a healthy 25-minute build whose .log was updating continuously.
-      # Scope and status still come from the primary record; only age widens.
-      mtime=$(file_mtime "$path")
-      for sib in "$(dirname "$path")/$id".*; do
-        [ -f "$sib" ] || continue
-        sib_mtime=$(file_mtime "$sib")
-        if [ "${sib_mtime:-0}" -gt "${mtime:-0}" ] 2>/dev/null; then mtime=$sib_mtime; fi
-      done
-      age_min=$(( (now - mtime) / 60 ))
-
-      if [ -n "$status" ] && is_terminal "$status"; then
-        if [ "$baseline" -eq 1 ]; then mark "$id"; continue; fi
-        report DONE "$id" "$status" "$age_min" "$path"; mark "$id"; forget_running "$id"
-      elif [ "$age_min" -ge "$cap_min" ]; then
-        [ "$baseline" -eq 1 ] && { mark "$id"; continue; }
-        report CAPPED "$id" "${status:-running}" "$age_min" "$path"; mark "$id"; forget_running "$id"
-      elif [ "$start_verify_min" -gt 0 ] && [ "$age_min" -ge "$start_verify_min" ] && \
-           { { [ -z "$status" ] && record_parses_json "$path"; } || case "$status" in queued|pending|starting|created) true ;; *) false ;; esac; }; then
-        # A dispatch that never left the queue is a silent failure long before
-        # STALE would fire — observed 2026-08-03: a resume queued, died, and
-        # cost 2.3 idle hours. Report it early and by its real name.
-        [ "$baseline" -eq 1 ] && { mark "$id"; continue; }
-        report NEVER-STARTED "$id" "${status:-absent}" "$age_min" "$path"; mark "$id"; forget_running "$id"
-      elif [ "$age_min" -ge "$stale_min" ]; then
-        [ "$baseline" -eq 1 ] && continue
-        report STALE "$id" "${status:-running}" "$age_min" "$path"; mark "$id"; forget_running "$id"
-      else
-        remember_running "$id" "$path"
-      fi
-    done
-  done
-
-  # Records that were running and are now gone: the runner lost the job.
-  local i=0
-  while [ $i -lt ${#running_ids[@]} ]; do
-    if [ ! -f "${running_paths[$i]}" ]; then
-      [ "$baseline" -eq 1 ] || { report VANISHED "${running_ids[$i]}" running 0 "${running_paths[$i]}"; mark "${running_ids[$i]}"; }
-      unset 'running_ids[i]' 'running_paths[i]'
-      running_ids=(${running_ids[@]+"${running_ids[@]}"})
-      running_paths=(${running_paths[@]+"${running_paths[@]}"})
-      continue
-    fi
-    i=$((i + 1))
-  done
+  local scan_args=(--state "$state_file" --running "$running_file" \
+    --scope-field "$scope_field" --stale-min "$stale_min" --cap-min "$cap_min" \
+    --start-verify-min "$start_verify_min")
+  [ -z "$scope" ] || scan_args+=(--scope "$scope")
+  [ "$baseline" -eq 1 ] && scan_args+=(--baseline)
+  local pattern
+  for pattern in "${dirs[@]}"; do scan_args+=(--dir "$pattern"); done
+  "$ms" report scan-jobs "${scan_args[@]}"
 }
 
 
