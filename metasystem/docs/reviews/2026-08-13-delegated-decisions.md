@@ -898,6 +898,54 @@ prerequisite for the parallel-fixture-families option noted in the
 D33 discussion — independently runnable sections are the unit of
 parallelism.
 
+## D36 — The W5 tail: two fixes, one guard, three declines, one cap ruling
+
+**script-validate-12 (done)**: the own-hooks check reads the one
+template_mode derivation instead of restating the detection expression.
+
+**script-validate-11 (resolved as found)**: the fence fixture's kill
+already carries `|| true` in the current tree — the D33-era reshaping
+of that block closed it; no edit needed, verified at the single site.
+
+**script-validate-10 (triage, delegated sign-off)**: python3 remains a
+fixture-harness dependency, now DECLARED — all three suite entry
+points refuse up front with a message naming that the metasystem
+itself does not need python. The seventy remaining heredocs triage as:
+JSON field reads (largely already converted — D34 removed the census
+pair; the remainder ride in fixture-fabrication blocks), synthetic
+record/conf fabrication (STAYS python: it deliberately writes shapes
+the engine refuses, and negative fixtures need a tool without
+opinions), and the pty/TTY drivers (STAYS: no engine equivalent, and
+building one buys nothing). Wholesale conversion is declined; the
+per-read conversions continue opportunistically as files get touched.
+
+**script-validate-5 (declined)**: the 90-line protocol-shape heredoc
+is, per the verifier's own analysis, the ONLY drift pin protecting the
+shipped protocol files — a drift pin needs an independent copy by
+definition, and relocating it into Go changes its home, not its
+duplication. The residual (a Go-owned home under the gate would be
+sturdier) is noted for whenever internal/returnschema next changes.
+
+**script-validate-7 (declined)**: most of the perl surgery fabricates
+deliberately INVALID confs, where a grammar-aware verb is the wrong
+tool; the valid-conf builders are self-checking through the engine's
+own validate. A config set/unset verb family remains available if a
+third valid-conf builder ever appears.
+
+**shellcheck (declined, reopen-when)**: absent on BOTH validation
+hosts and the shipped CI image. A conditional only-where-installed
+check enforces nothing reproducibly. Reopen when someone provisions it
+everywhere; the adapters-cluster quoting bugs it would have caught are
+the standing argument for doing so.
+
+**S4-2 cap ruling**: three identical timing-cap firings today (36s
+elapsed = the 36s scaled cap exactly), all under active machine use,
+all green on immediate solo reproduction. The fixture is correct; its
+scale factor is too tight for a shared machine. RULING: Mac sampling
+runs are expected to flake at S4-2 under active use and the solo
+reproduction stays the answer; widening the scale factor is declined
+because it would slow the quiet-machine (VM) case the cap protects.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

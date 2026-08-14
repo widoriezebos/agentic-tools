@@ -10,6 +10,8 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$root"
+command -v python3 >/dev/null 2>&1 \
+  || { echo "${0##*/}: python3 is required by these fixtures (the metasystem itself does not need it)" >&2; exit 1; }
 tmp=$(mktemp -d)
 cleanup() {
   status=$?

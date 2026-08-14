@@ -16,6 +16,8 @@ fixture_mission_job_cap_min=$(harness_fixture_semantic_cap mission-job-minutes)
 fixture_dispatch_envelope_cap_min=$(harness_fixture_semantic_cap dispatch-envelope-minutes)
 fixture_dispatch_over_envelope_cap_min=$(harness_fixture_semantic_cap dispatch-over-envelope-minutes)
 
+command -v python3 >/dev/null 2>&1 \
+  || { echo "${0##*/}: python3 is required by these fixtures (the metasystem itself does not need it)" >&2; exit 1; }
 tmp=$(mktemp -d)
 agent_supervision_repo=
 armed_supervision_repos=()

@@ -55,7 +55,13 @@
   S4-2's 36s scaled cap under load ~5 (Wido active), GREEN SOLO on
   immediate reproduction — the morning's exact signature; VM-green
   authority holds per the dossier. Baseline recorded at bcc96b7,
-  memory updated. W5 batch-1 boundary GREEN ON BOTH HOSTS at 975b0a9 (VM 491s; Mac sampling 1155s under active use — D33 paths Darwin-validated). W5 BATCH 1 CLOSED (5/10; D34): -8/-9 a5bc087, -2 b3e3557, -1 aa7eae8, -3 de9e88d. W5.1 DONE (D35; a6bccf5 + 0795bf7, both VM-proven; orchestrator 4676→2201 lines). Next: the W5 tail (-10 heredoc triage sign-off, -5/-7 declines, shellcheck decision, -11/-12 smalls), then W6 (9 retirements, each its own D-entry), W7 (7 docs). Superseded: W5 batch 1
+  memory updated. W5 batch-1 boundary GREEN ON BOTH HOSTS at 975b0a9 (VM 491s; Mac sampling 1155s under active use — D33 paths Darwin-validated). W5 BATCH 1 CLOSED (5/10; D34): -8/-9 a5bc087, -2 b3e3557, -1 aa7eae8, -3 de9e88d. W5.1 DONE (D35; a6bccf5 + 0795bf7, both VM-proven; orchestrator
+  4676→2201 lines). Mac sampling at 0795bf7: S4-2 timing-cap flake
+  AGAIN (third today, always under active use, always exactly the 36s
+  scaled cap, always green solo — reproduced green at load 4.4).
+  CANDIDATE for the W5 tail's D36: S4-2's cap scaling may be too
+  tight for a shared machine; either widen its scale factor or accept
+  and stop sampling the Mac during active use. W5 COMPLETE (10/10; D36 closed the tail: -12 fixed, -11 resolved-as-found, -10 guarded+triaged, -5/-7/shellcheck declined with reopen conditions, S4-2 cap ruling). Next: W6 (9 retirements, each its own D-entry, parity first), then W7 (7 docs). Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
 - Next step: W4 is COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in

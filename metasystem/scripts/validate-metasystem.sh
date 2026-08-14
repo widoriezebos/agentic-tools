@@ -203,6 +203,13 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
   fi
 fi
 
+
+# python3 is a load-bearing validation dependency (script-validate-10/D36):
+# dozens of fixture heredocs use it even in adopted repositories, where the
+# PRODUCT no longer needs python at all. Say so up front, loudly, instead
+# of dying mid-suite with a cryptic 127.
+command -v python3 >/dev/null 2>&1 \
+  || { echo "validate-metasystem: python3 is required by the validation fixtures (the metasystem itself does not need it)" >&2; exit 1; }
 source scripts/agents/fixture-budget.sh
 if (( delegate_scope )); then
   # Load calibration is itself a real census. Delegate validation uses the
@@ -1361,7 +1368,8 @@ scripts/assert-critique-closed.sh \
 # Template repository only. An adopted copy gets its hooks from adopt.sh at its
 # own root, with a different layout; this is about the repository that builds the
 # metasystem running under it.
-if [[ "${metasystem_here##*/}" == metasystem && -f "${metasystem_here%/*}/development/metasystem-design.md" ]]; then
+# One derivation of template_mode (script-validate-12/D36): line ~272 owns it.
+if (( template_mode )); then
   harness_own_settings=$(cd "$root/.." && pwd -P)/.claude/settings.json
   [[ -f "$harness_own_settings" ]] \
     || { echo "this repository has no .claude/settings.json: the metasystem is not running under itself" >&2; exit 1; }
