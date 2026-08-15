@@ -1914,6 +1914,31 @@ its next rep runs (rep policy itself stays as ruled — no new cohorts
 without Wido's word beyond the standing drive-to-2-valid, which for
 bm-2 remains open at zero valid).
 
+## D66 — HUMAN RULINGS: the goal-system loop resumes with two questions answered and a standing doctrine
+
+Wido, 2026-08-15, in writing: (1) on delegate goal visibility, "You
+and I agree" with the delegate's stated view — the projection is
+PER-DISPATCH and ORCHESTRATOR-CHOSEN, carried in the brief as
+bounded, clearly-labeled context-not-instruction, DEFAULT OFF; a
+brief that only works with goal context is a briefing failure, and
+the opt-in exists for genuinely under-determined tasks. (2) The
+EXCHANGEABILITY DOCTRINE, his words: "agents need to be exchangeable
+at all levels. So we should be able to have Devin as the orchestrator
+and Claude as the delegate etc. So whatever we implement it must fit
+this." Consequence for every mechanism: built only from files, engine
+verbs, and plain prompt text — never runtime-native features; turn-end
+delivery is a CONTRACT with an open conformance table, and no runtime
+is privileged in the mechanism itself. This hardens items 16 and 18
+and answers D60's staging question. The remaining two D60 questions
+the delegate now decides under the general delegation, both recorded
+in the design: human-reserved goal transitions are ADVISORY-GRADE at
+the current trust model (the same grade stagnation resets already
+have; authenticated-human identity is its own future work), and
+mission hosts get their causal read path from the RUNNER including
+the goal orientation line in every turn prompt — runner-side,
+runtime-neutral, no new write authority. Path per his order: design,
+critique loop, implement.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
