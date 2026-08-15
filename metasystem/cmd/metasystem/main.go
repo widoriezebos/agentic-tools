@@ -274,6 +274,22 @@ func families() []family {
 			},
 		},
 		{
+			name:    "run",
+			summary: "tracked long-running work: launch, watch, conclude (the monitor facility)",
+			verbs: []verb{
+				{"launch", "reserve, spawn the wrapped command detached, print the watch line", runRunLaunch},
+				{"wrap", "the setsid leader: bind, run the workload, write the exit sidecar (internal)", runRunWrap},
+				{"watch", "block until the run is terminal; exit with its pinned code", runRunWatch},
+				{"register", "bind an already-running process as an adopted run", runRunRegister},
+				{"adopt", "rebind a running record to a successor process", runRunAdopt},
+				{"ack", "acknowledge a terminal run", runRunAck},
+				{"conclude", "one assessment pass over a run (the watcher's verb)", runRunConclude},
+				{"status", "print one run record", runRunStatus},
+				{"list", "print every run record plus unreadable paths", runRunList},
+				{"prune", "drop acked terminal runs older than 14 days, reporting drops", runRunPrune},
+			},
+		},
+		{
 			name:    "lease",
 			summary: "checkout write-authority: announce/classify/hold/renew",
 			verbs: []verb{
