@@ -1791,6 +1791,23 @@ cohort: rep 1 (in flight on the pre-fix target) is expected to fail
 empty and is kept as the dangerous-mode-alone control; rep 2
 provisions from this commit and tests the named-channel fix live.
 
+## HUMAN RULING — 2026-08-15 morning: delivery robustness is designed before anything else runs
+
+Wido, in writing, after the ACP and follow-up discussion: "we came up
+with a good idea that should reliably fix the Devin problem. And I
+think this is more important than running the second benchmark. So do
+not run the second benchmark. Let the one that is running now
+complete. That is okay. We might learn things from it still. But then
+prioritize this design, get it designed, critiqued in a loop and then
+implemented before we do anything else." Consequences: rep 2 of
+cohort bm-2-20260815t062523z-18265 is CANCELLED (the cohort closes
+incomplete at rep 1, which runs to its natural end as the
+dangerous-mode-alone control); the in-progress incremental recovery
+code (transcript-mining verb, drafted after D62) is REVERTED
+uncommitted so the design loop owns the shape; the deliverable is
+plans/delegate-delivery-design.md through the full
+design-critique-implement path, ahead of all other queued work.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
