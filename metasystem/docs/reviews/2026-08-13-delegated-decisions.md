@@ -1954,6 +1954,29 @@ families needs Wido's sign-off — this adds a new family for a new
 feature and consolidates nothing. Revert cost if overruled: a rename
 in cmd/metasystem plus doctrine text, no on-disk contract changes.
 
+## D68 — 2026-08-15: bm-2 rep 1 valid; the D64 delivery machinery's first live evidence
+
+First valid repetition of the bm-2 arm (Devin delegates as swe-1-7
+-> swe-1-7-max acceptable-effective, D65) on the full D61+D64
+stack. All seven validity gates passed; acceptance 0.981132 (the
+value every completed run of every arm converges to),
+requirementCoverage 0.9615, all other product metrics 1.0. Cost:
+orchestrator (Claude) $5.56; Devin 30 ACUs (design-critic) + 86
+ACUs (implementer). Wall clock 67 minutes.
+
+The D64 live proof: both delegate rounds produced
+reply-source.json with channel=stdout, delivered=true,
+attempt=initial, candidatesPresent=true — zero descents down the
+ladder, zero repairs. Reading: D61's dangerous mode removed the
+empty-reply failure at its source (the confirmation-blocked final
+write), and the D64 ladder stands as armed insurance, exactly the
+intended shape. The named-file, transcript-mining, and repair rungs
+remain exercised only by the suite's fixtures, which is what
+"robust but unneeded" looks like when the primary channel works.
+
+Decision: proceed to rep 2 under the same contract; channel counts
+recorded here per the delivery-evidence mandate.
+
 ## HUMAN RULING — 2026-08-15 afternoon: run the backlog to completion
 
 Wido, in writing: continue the goal system "until it is fully
