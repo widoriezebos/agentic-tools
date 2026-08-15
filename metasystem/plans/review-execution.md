@@ -106,10 +106,12 @@
   drains; then backlog items 14 (goal system) and 15 (monitor
   facility). Superseded: W5 batch 1
   (script-validate-1/-2/-3/-8/-9), W5.1 solo, W6, W7.
-- Next step: none — the 101-finding review program closed complete
-  (D48-D52 record the closing tally; the boundary ran green on both
-  hosts). Historical detail below is evidence, not work.
-  Superseded next-step text kept for the record: W4 COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
+- Next step: none
+
+The 101-finding review program closed complete: D48-D52 record the
+closing tally, and the boundary ran green on both hosts. Everything
+below is historical evidence, not work. The superseded next-step text
+read: W4 COMPLETE (25/25 at 132953f; 015f949 boundary GREEN
   ON BOTH HOSTS). Queue tail: F5 LANDED (D31). F4 IN PROGRESS: design at r2 in
   plans/f4-orphan-window-design.md. Round-1 critique (codex
   gpt-5.6-sol at xhigh via CLI fallback — supervision dispatch still
