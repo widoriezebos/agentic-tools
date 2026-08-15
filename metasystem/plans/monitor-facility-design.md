@@ -3,9 +3,19 @@
 Working Mode: design
 
 Owner: main session (delegate), goal monitor-facility (detail notes
-at plans/backlog-notes.md item 15). Status: r4 — folds the eight r3
-findings (critiques at plans/monitor-facility-critique-r{1..3}.md;
-trajectory 12/10/8). Human rulings fixed as input: the
+at plans/backlog-notes.md item 15). Status: r5 — folds the six r4
+findings (critiques at plans/monitor-facility-critique-r{1..4}.md;
+trajectory 12/10/8/6; the r4 disposition audit closed or
+architecturally closed most of the r3 worklist). r5 splits Watched
+into Supervised and WaiterLive, adds typed JobFacts and pins
+unwatched-before-Busy, keys the attestation on full lifecycle
+triples with a named freshness bound, totalizes the draining
+transition across modes with a provisional verdict and defines the
+adopted-verified kinship predicate, makes waiter registration
+exclusive-by-liveness with pinned exit codes, routes the event rows
+through the real string-payload emitter with full-row conformance
+and a CAS-refusal event, and replaces the green FIFO with a
+monotonic cursor. Human rulings fixed as input: the
 exchangeability doctrine, the verbatim monitor-pattern intent, and
 backlog item 1's literal waiter contract.
 
@@ -36,6 +46,14 @@ Backlog item 1 folds in as written, and runs get the SAME waiter:
   `artifacts/agents/waiters/<kind>-<id>.json` {kind: "job"|"run",
   pid, pidStartedAt, session, mainId} — identity-verified at write,
   removed on exit, provably dead by the three-way rule otherwise.
+  EXCLUSIVE by liveness (r4 finding 4): registration REFUSES while
+  a live waiter record holds the name; a dead owner is replaced by
+  identity-checked compare-and-delete under a bounded flock, so one
+  waiter can never overwrite or delete another's registration.
+- `run watch` exit mappings, pinned like the job waiter's: green=0,
+  red=1, ended-unknown=2, launch-failed=3, record missing or
+  malformed=4. Non-waiting FOLLOW-UPS print their waiter command
+  exactly as the initial dispatch does.
 - The turn-end rule spans both kinds: an in-flight job whose record
   mainId equals the CALLER's mainId, or a launching/running/
   draining run this mainId registered, with no LIVE waiter record,
@@ -91,15 +109,26 @@ Legal transitions (CAS refusals loud):
 launching → running (wrapper binds via nonce);
 launching → launch-failed (launcher error path or the 2-minute
 fence — an error note, never deletion; prune ages failures);
-running → draining (evidence recorded, group may survive);
-draining → green | red | ended-unknown (group provably empty or
-windDownMin expired; survivors then surface as UNTRACKED — honest);
-running → ended-unknown (dead + no evidence — the ONE verdict for
-that fact; vanished does not exist);
+running → draining in EVERY mode whenever the leader is dead and
+the recorded group is non-empty (r4 finding 3: adopted runs have no
+sidecar, and a dead evidence-less leader with survivors must not
+shed them) — the draining record carries its PROVISIONAL verdict
+(from evidence if present, else ended-unknown);
+running → green | red | ended-unknown DIRECTLY only when the group
+is provably empty at leader death (evidence decides which; no
+evidence means ended-unknown — the one dead-no-evidence verdict);
+draining → green | red | ended-unknown (the provisional verdict
+finalizes when the group provably empties or windDownMin expires;
+survivors past the wind-down surface as UNTRACKED — honest);
 adopt: RUNNING record only, and ONLY when the old generation's
-identity is provably dead (refuse otherwise — a live old group is
-never shed, r3 finding 2); identity replaced, generation++,
-hungSince cleared.
+leader is provably dead AND its recorded group provably empty
+(refuse otherwise); identity replaced, generation++, hungSince
+cleared. ADOPTED-VERIFIED'S PREDICATE, exactly: the caller's
+process ancestry (the ParentPid walk the classifier already uses)
+contains a live member of the target's process group, OR the
+target's group session leader is an ancestor of the caller —
+provable group kinship at registration time; anything less is
+adopted-unverified, honestly labeled.
 
 ## Custody, stated honestly PER MODE (r3 finding 2)
 
@@ -110,8 +139,10 @@ strongest proof it can actually have:
   launch nonce visible in the leader's argv (`run wrap --nonce`).
   Three factors, leader alive. ArgvKnown=false surfaces, never
   proves or condemns.
-- DRAINING (any mode): the leader is dead BY CONSTRUCTION (its last
-  act was the sidecar). Custody = pgid + the record's claim,
+- DRAINING (any mode): the leader is dead by definition — draining
+  IS the dead-leader-with-survivors state (for wrapped runs its
+  last act was the sidecar; adopted and evidence-less runs enter
+  with a provisional ended-unknown). Custody = pgid + the record's claim,
   bounded by windDownMin. The pgid-reuse window during wind-down is
   a NAMED ACCEPTED RESIDUAL (≤120 minutes by bound, 10 by default);
   census labels these "RUN <id> (draining)".
@@ -147,12 +178,17 @@ fence; evidence on death; the drain check; hungSince by log mtime;
 one event per transition. After each SUCCESSFUL pass the watcher
 atomically writes `artifacts/agents/supervision/runs-pass.json`:
 {completedAt, watcherPid, watcherStart, scannedRuns: [{id,
-generation}]}. The verdict's Watched fact for a run requires ALL
-of: its (id, generation) in scannedRuns; the attestation fresh; AND
-the attesting watcher identity equal to the CURRENTLY ARMED watcher
-component's recorded identity (supervision state) — a one-shot
-`supervise watcher-pass` writes an attestation whose identity is
-not the armed component, so it can never fake a standing watcher.
+generation, launchNonce}]} — the FULL lifecycle triple (r4 finding
+2: id reuse is legal and generations restart, so (id,generation)
+alone can bless a lifecycle never scanned; the dispatch attestation
+precedent binds to exact identity for the same reason). The
+verdict's Supervised fact requires ALL of: the run's complete
+triple in scannedRuns; completedAt within the NAMED bound (twice
+the watcher interval, from the same config the component reads);
+AND the attesting watcher identity equal to the currently armed
+watcher component's recorded identity AND that process alive — a
+one-shot `supervise watcher-pass` can never fake a standing
+watcher.
 
 ## Verbs and authority
 
@@ -171,11 +207,24 @@ proof above — SIGTERM the group, bounded drain, conclude
 ended-unknown unacked. Without proof (including every
 adopted-unverified record): refuse loudly, surface, never signal.
 
-## Scanner and verdict (r3 finding 5)
+## Scanner and verdict (r3 finding 5; r4 finding 1 splits Watched)
 
-ScanResult gains `Runs []RunFact{Id, Generation, Nonce, Status,
-ProbeState, OwnedByCaller, Watched, Acked, HungSince, Continuation
-≤240}` AND `RunUnreadable []string` — run-reader failures ride
+WATCHED WAS TWO FACTS WEARING ONE NAME. They separate:
+- `Supervised`: the standing watcher's attestation covers this
+  lifecycle (it cannot wake anyone; it proves scanning).
+- `WaiterLive`: a live identity-verified waiter record exists (it
+  wakes a session; it proves nothing about scanning).
+The UNWATCHED block requires WaiterLive for the caller's work; the
+warning "supervision is not scanning your runs" keys on Supervised
+separately. ScanResult gains `Jobs []JobFact{Id, MainId, Status,
+WaiterLive}` (typed — the Busy reduction discards mainId, so job
+facts get their own field) and `Runs []RunFact{Id, Generation,
+Nonce, Status, ProbeState, OwnedByCaller, Supervised, WaiterLive,
+Acked, HungSince, Continuation ≤240}`. PRECEDENCE PINNED: the
+unwatched-own-work block is evaluated BEFORE the Busy suppression
+(a watched active run counts as Busy; an unwatched one blocks
+despite being busy — that is the point). ScanResult also gains
+`RunUnreadable []string` — run-reader failures ride
 their own channel OUTSIDE the shipped ladder (the ladder's
 Unreadable keeps its exact shipped semantics, including Busy
 suppression; run failures must never be hidden by Busy, so they do
@@ -185,8 +234,13 @@ not share its slot).
   {red, ended-unknown, launch-failed}, currently hung,
   unknown-identity, and every RunUnreadable entry — continuation
   verbatim (launch-failed and ended-unknown speak expect.unknown).
-- GREEN terminal surfaces once per session (greenDigests, ≤16 FIFO,
-  lifecycle-keyed), informational only.
+- GREEN terminal surfaces once per session via a MONOTONIC CURSOR,
+  not a FIFO (r4 finding 6: eviction resurrects old entries): the
+  session entry stores greenCursor = the latest surfaced green
+  run's endedAt; greens at or before the cursor never resurface;
+  the cursor only advances. Ties on equal timestamps resolve by the
+  lifecycle triple's digest ordering — deterministic, bounded, and
+  actually once.
 - The UNWATCHED block covers launching, running, AND draining work
   owned by the caller (jobs via mainId + runs), keyed on the sha256
   of the sorted LIFECYCLE triples (blockedUnwatchedDigests, ≤16
@@ -198,16 +252,23 @@ not share its slot).
 
 Component `run`; authorized emitters: the run verbs and the watcher
 (both emit as component "run"); runId joins the canonical
-identifier set. Rows:
-- run-launched — required: runId (identifier), kind (string),
-  custody (string). Emitter: run verbs.
-- run-transition — required: runId (identifier), from (string),
-  to (string), generation (int). Emitters: run verbs, watcher.
+identifier set. The real emitter carries map[string]string and
+validates only name+emitter (r4 finding 5), so the rows declare
+STRING payloads and the conformance obligation validates FULL rows
+against the registry grammar, not mere emission. Rows:
+- run-launched — required: runId (identifier), kind (string, enum
+  suite|cohort|custom), custody (string, enum wrapped|
+  adopted-verified|adopted-unverified). Emitter: run verbs.
+- run-transition — required: runId (identifier), from (string,
+  status enum), to (string, status enum), generation (string,
+  decimal int). Emitters: run verbs, watcher.
 - run-swept — required: runId (identifier), reason (string).
-  Emitter: the lease sweep via the run package.
-A conformance test emits each row and proves the registry accepts
-it (the catalogue silently drops unknowns; these rows make them
-known).
+  Emitter: component run — the run package emits it when the lease
+  sweep invokes it (ONE emitter; the sweep itself keeps emitting
+  its own lease events as component lease, unchanged).
+- run-cas-refused — required: runId (identifier), expected
+  (string), found (string). Emitters: run verbs, watcher — the
+  serialization refusals are evidence, not silence.
 
 ## Exchangeability
 
