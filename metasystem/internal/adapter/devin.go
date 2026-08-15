@@ -274,7 +274,14 @@ func DevinSettle(transcriptPath, correlatedSession, roundDir string, requireTran
 // prompt file stays untouched as evidence. One writer replaces the two
 // hand-maintained copies (adapter round turns and host turns) whose
 // line-break placement had already drifted.
-func DevinPrompt(promptPath, schemaPath, outputPath string) error {
+// returnFile, when non-empty, names a SECOND delivery channel the prompt
+// instructs the model to use alongside printing: swe-1-7 finishes work by
+// writing files rather than emitting a final message (D62's evidence: a
+// schema-perfect return written to /tmp while stdout stayed empty, in
+// both graded and dangerous permission modes), so the adapter names a
+// deterministic path inside the round's evidence and reads it whenever
+// stdout comes back empty.
+func DevinPrompt(promptPath, schemaPath, outputPath, returnFile string) error {
 	prompt, err := os.ReadFile(promptPath)
 	if err != nil {
 		return fmt.Errorf("cannot read the prompt: %w", err)
@@ -290,5 +297,12 @@ func DevinPrompt(promptPath, schemaPath, outputPath string) error {
 	text.WriteString("no prose before or after it, no code fence, and no property this schema\n")
 	text.WriteString("does not name. Every property listed in \"required\" must be present.\n\n")
 	text.Write(schema)
+	if returnFile != "" {
+		text.WriteString("\n\n# Delivery, exact\n\n")
+		text.WriteString("Write that ONE JSON object to this exact file path, and also print it\n")
+		text.WriteString("as your final message. Do not choose a different path:\n\n")
+		text.WriteString(returnFile)
+		text.WriteString("\n")
+	}
 	return os.WriteFile(outputPath, []byte(text.String()), 0o644)
 }

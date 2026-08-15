@@ -234,7 +234,13 @@ supervise() { # dispatch|follow-up and supervisor args
   # runtime has. The dispatcher's prompt stays untouched as evidence; the
   # augmented copy is what the CLI reads.
   local devin_prompt="$round_dir/prompt.devin.md"
-  "$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" --output "$devin_prompt"
+  # The named return file is the delivery channel this model actually uses:
+  # it finishes by writing files, not by final message (D62), so the prompt
+  # names a deterministic path inside the round evidence and the collect
+  # step below reads it whenever stdout comes back empty.
+  devin_return_file="$round_dir/devin-return.json"
+  "$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" \
+    --output "$devin_prompt" --return-file "$devin_return_file"
 
   record_actual_workspace_write_scope
   fail_if_effective_wider_before_launch || return 1
@@ -258,8 +264,9 @@ supervise() { # dispatch|follow-up and supervisor args
   # `autonomous` is not a mode this CLI offers, and --sandbox asks for a mode
   # this organisation's policy refuses outright, so every dispatch that passed
   # them failed before it began. The modes are auto, accept-edits, smart, and
-  # dangerous; a role with no write roots gets `auto` with edit and exec denied,
-  # a write-capable role gets `accept-edits`, and `dangerous` is never used.
+  # dangerous; since D61 (the human's waiver, 2026-08-15) every dispatch runs
+  # `dangerous` — the graded modes turned envelope refusals into sessions
+  # that ended without delivering.
   command=(
     devin -p
     --prompt-file "$devin_prompt"
@@ -340,6 +347,17 @@ supervise() { # dispatch|follow-up and supervisor args
   if (( handshake_done )) && (( ${settle_failed:-0} )); then
     finish_running failed session_identity_disagreement delivery "$usage_file"
     return 1
+  fi
+
+  # Empty stdout first checks the NAMED return file (D62): this model
+  # delivers by writing files, and the prompt names this exact path. The
+  # recovered bytes become the reply; the file itself stays in the round
+  # evidence. Recovery requires parseable JSON — a torn or partial write
+  # must not be promoted into a reply.
+  if (( cli_status == 0 )) && [[ ! -s "$raw" && -n "${devin_return_file:-}" && -s "${devin_return_file:-}" ]] \
+    && "$ms" util json-validate --file "$devin_return_file"; then
+    cp "$devin_return_file" "$raw"
+    printf 'devin reply recovered from the named return file\n' >>"$log"
   fi
 
   # Exit 0 with no reply is this runtime's shape for "could not do it", so it

@@ -179,14 +179,15 @@ func runAdapterDevinPrompt(args []string) int {
 	prompt := flags.String("prompt", "", "dispatcher prompt file (left untouched)")
 	schema := flags.String("schema", "", "return schema file")
 	output := flags.String("output", "", "augmented prompt output file")
+	returnFile := flags.String("return-file", "", "named return-file delivery path the prompt instructs (optional)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *prompt == "" || *schema == "" || *output == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-prompt --prompt FILE --schema FILE --output FILE")
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-prompt --prompt FILE --schema FILE --output FILE [--return-file FILE]")
 		return 2
 	}
-	if err := adapter.DevinPrompt(*prompt, *schema, *output); err != nil {
+	if err := adapter.DevinPrompt(*prompt, *schema, *output, *returnFile); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

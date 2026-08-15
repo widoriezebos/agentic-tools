@@ -1762,6 +1762,35 @@ queued. Proof: adapter package green in full, build green; VM suite
 next; the bm-2 arm relaunches on green toward its two valid reps
 under the standing rulings.
 
+## D62 — The Devin delivery channel: the model writes files, so the adapter names one and reads it
+
+**The discovery (first D61 rep, in flight)**: dangerous mode removed
+the confirmation block — and delivery STILL came back empty. The
+transcript shows why, and it is better than a flake: the delegate did
+the whole job and wrote a schema-perfect return to
+/tmp/design-critique-return.json, then ended its session without ever
+emitting a final text message. swe-1-7 finishes work by WRITING
+FILES; `devin -p` treats stdout as the reply; stdout is empty every
+time. In the old cohort that same final write was what the
+confirmation block killed — one bias, two failure shapes.
+
+**Decision**: give the model the channel it insists on. `adapter
+devin-prompt` gains --return-file: the augmented prompt names ONE
+exact path inside the round evidence (devin-return.json) and
+instructs writing the return there as well as printing it. The
+collect step recovers from that file whenever the CLI exits 0 with
+empty stdout — recovery requires parseable JSON so a torn write is
+never promoted into a reply — and logs the recovery. Stale
+"dangerous is never used" comment corrected to D61 reality.
+
+**Validation, per Wido's ruling this morning**: he waived the full
+suite for the Devin-path changes in his own words — the benchmark IS
+the acceptance test, "I will trust that to be a proper test of the
+functionality" — so the proof is the adapter package green plus the
+cohort: rep 1 (in flight on the pre-fix target) is expected to fail
+empty and is kept as the dangerous-mode-alone control; rep 2
+provisions from this commit and tests the named-channel fix live.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
