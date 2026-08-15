@@ -2,21 +2,22 @@
 
 Working Mode: design
 
-Owner: main session (delegate), backlog item 14. Status: r7 — folds
-the five r6 findings (critiques at
-plans/goal-system-critique-r{1..6}.md; trajectory 16/14/13/13/8/5,
-zero criticals since r6). r7 hardens mechanisms: mission-seat
-refusal keys on the MAIN lease's recorded ownerLineage (env markers
-are strippable); Busy consumes checkout-scoped file facts only
-(gaterun markers, runner heartbeat, job records — argv matching
-retired); inventory-source failures join Unreadable and its
-two-sided veto; sessionId hygiene happens once at the hook boundary
-and covers the watchdog state files; --serving-goal resolves through
-the exported parser as its third named consumer, and the proof text
-now matches the exit-3 refusal. The obligation matrix (GOAL-01..21)
-stays PARTIAL until implementation; the gate exits 1 by design until
-completion. Human rulings (D66/D67) remain fixed input. Awaiting r7
-critique.
+Owner: main session (delegate), backlog item 14. Status: r8 — folds
+the four r7 findings (critiques at
+plans/goal-system-critique-r{1..7}.md; trajectory
+16/14/13/13/8/5/4, all HIGH since r6). r8 settles the last
+mechanisms: mission-seat refusal keys on ACTIVE MISSION per
+status.go's record-plus-kernel-identity rule (lease lineage missed
+attended missions; env markers were strippable — the full arc is
+recorded at the refusal clause); the runner-liveness correlation
+cites the rule that actually exists instead of an invented
+heartbeat-freshness rule; the gate inventory is lossless at its
+edges (atomic Register, fatal registration failure, live-process
+markers surface instead of vanishing); watchdog state folds into
+the one capped map, retiring loose per-session files. The
+obligation matrix (GOAL-01..21) stays PARTIAL until implementation;
+the gate exits 1 by design until completion. Human rulings
+(D66/D67) remain fixed input. Awaiting r8 critique.
 
 ## The problem, in the human's words and one incident
 
@@ -226,11 +227,15 @@ state the equivalent verb sequence would have refused.
   HOOK BOUNDARY (r6 finding 4): the hook derives safe_session on
   entry — accepted only matching ^[A-Za-z0-9._-]{1,128}$, anything
   else replaced by its sha256 hex — and every downstream use rides
-  it, including the existing per-session watchdog state files
-  (watchdog-surfaced-$session.state today takes the raw runtime
-  string, path-shaped input included); those per-session files adopt
-  the same 30-day prune-on-write as the map. The caps bound Stop
-  latency and storage by construction. Flock with a 2-SECOND DEADLINE (the installed Stop
+  it. The per-session watchdog-surfaced files are RETIRED INTO THE
+  MAP (r7 finding 4: 30-day pruning of loose files is an age rule,
+  not a count bound — arbitrarily many fresh sessions mean
+  arbitrarily many files and unbounded Stop-time pruning): the
+  session entry gains "watchdogSurfaced": str|null, the hook passes
+  --watchdog-surfaced <signature> to the verdict verb instead of
+  touching its own file, and the one capped, pruned, flocked map is
+  the ONLY Stop-state on disk. The caps bound Stop latency and
+  storage by construction. Flock with a 2-SECOND DEADLINE (the installed Stop
   hook runs a 5-second budget; a wedged lock degrades, never
   hangs); atomic write; check-and-record atomic under the lock;
   concurrent Stop calls serialize there.
@@ -243,15 +248,28 @@ state the equivalent verb sequence would have refused.
   exactly that defect): live delegate job records under this root
   (already scoped), gate-run markers via internal/gaterun (already
   checkout-scoped, alive-checked by kernel facts), and the mission
-  runner's own heartbeat/lease files under this root's artifacts
-  with the runner's existing freshness rule. The verdict path
-  retires argv matching; the scanner supplies these facts to every
-  consumer, so another checkout's mission can never suppress this
-  checkout's goal. ANY inventory-source failure — job-record read
-  error, gate-marker enumeration error, heartbeat stat error —
-  appends to Unreadable (r6 finding 3: enumeration failure must not
-  collapse to idle), so the veto below covers unknown activity by
-  the same rule; the legacy
+  runner records under this root correlated by status.go's existing
+  record-plus-kernel-identity rule (r7 finding 3: r7's earlier
+  "heartbeat freshness rule" named a rule that does not exist —
+  heartbeats are written but nothing reads their freshness, and
+  sidecars survive completion; the status verb's rule is the one
+  authority, reused by reference). The verdict path retires argv
+  matching; the scanner supplies these facts to every consumer, so
+  another checkout's mission can never suppress this checkout's
+  goal. The gate inventory becomes LOSSLESS at its edges (r7
+  finding 2): Register writes its marker atomically (temp+rename —
+  today's plain write races the scanner's malformed-delete), the
+  suite's registration call stops suppressing errors (a gate that
+  cannot record its liveness fails loudly at startup instead of
+  running invisibly), and the reader classifies per marker —
+  unreadable or unparsable markers of a LIVE process append to
+  Unreadable (today both are silently skipped or deleted; deletion
+  remains correct only for dead-process markers). ANY
+  inventory-source failure — job-record read error, gate-marker
+  enumeration or per-marker read failure, runner-record read error
+  — appends to Unreadable (r6 finding 3: enumeration failure must
+  not collapse to idle), so the veto below covers unknown activity
+  by the same rule; the legacy
   []string surface remains as a formatter over it for existing
   callers. The verdict verb consumes ScanResult — precedence is then
   DECIDABLE: Busy → no goal clause (an active checkout needs no
@@ -339,19 +357,21 @@ authority); a missing, absent, or degraded ledger produces NO line —
 prompt assembly never degrades and never blocks on goal state.
 Runner-side and runtime-neutral: every host of every runtime gets
 the same line the same way. Hosts do not mutate goals, ENFORCED
-AT THE VERB ON A RECORDED FACT (r5 finding 7, hardened by r6
-finding 1: inherited environment is strippable — `env -u` defeats
-any env marker): every goal-MUTATION verb reads the checkout's MAIN
-lease record and refuses when its ownerLineage is a mission lineage
-(the runner writes that lineage into the lease at acquisition —
-internal/lease stores it on disk, where no subprocess can unset it).
-This refusal is TOTAL for the mission's duration: holder-only
-authority already refuses every non-holder, and during a mission
-the holder chain IS the mission — so mission-owned lease means no
-mutation path exists, for any runtime, with "goal mutation inside a
-mission is refused; the mission's intent is the contract". The env
-marker is not consulted. Read verbs and the verdict remain
-available everywhere.
+AT THE VERB ON A RECORDED FACT (r5 finding 7 → r6 finding 1 → r7
+finding 1, the final form): every goal-MUTATION verb refuses while
+the checkout has an ACTIVE MISSION — decided by the SAME rule the
+mission status verb already applies (the runner record plus kernel
+process identity, status.go's authority: a record claiming
+"running" counts only while the recorded runner process is actually
+alive). Lease lineage was the r6 answer and is WRONG for attended
+missions (live-holder launches deliberately preserve the prior
+main's lineage — lease-succession.md); environment markers were the
+r5 answer and are strippable. Active-mission is total across
+attended and unattended, on-disk, and runtime-agnostic. The refusal
+reads "goal mutation while a mission is active is refused; the
+mission's intent is the contract — conclude or park the mission
+first", which is also the human's path mid-attended-mission. Read
+verbs and the verdict remain available everywhere.
 
 ## Delegates (D66, question 1 — the human's ruling)
 
@@ -462,7 +482,7 @@ conformance table), the doctrine files above, adopt.sh, fixtures.
 | GOAL-01 | CRITICAL | The ledger: staleness rule | A Goal-free declaration whose scan digest no longer matches blocks once and never reads as all-clear | internal/report goal parser + verdict | internal/report/goal.go | TestGoalFreeStaleness | fixture leg: declare, add a stream, verdict blocks | PARTIAL | implement |
 | GOAL-02 | CRITICAL | Mutation discipline | Reconcile replays FULL transition authority over the accepted-bytes delta; a manual edit never reaches a state the verbs would refuse | internal/report goal verbs | internal/report/goalverbs.go | TestReconcileReplaysAuthority (human-origin done via edit refused for MAIN) | fixture: edit + reconcile round-trip | PARTIAL | implement |
 | GOAL-03 | CRITICAL | Mutation discipline | Ledger-then-accepted write order; crash between the two degrades and reconcile repairs; accepted state lives at plans/goals-accepted.json | internal/report goal verbs | internal/report/goalverbs.go | TestAcceptedStateCrashWindow | fixture: kill between writes | PARTIAL | implement |
-| GOAL-04 | CRITICAL | The turn verdict | Dual-slot block-once: the G-01 sequence cannot re-block; state flock bounded at 2s; concurrent Stop calls serialize; sessions map capped at 128 oldest-evicted; sessionId normalized once at the hook boundary (regex-or-sha256) for every use incl. watchdog state files | internal/report verdict + hook | turnverdict.go + supervision-hook.sh | TestVerdictDualSlotSequence + goroutine race test + TestSessionMapCapAndHygiene | hook boundary fixture | PARTIAL | implement |
+| GOAL-04 | CRITICAL | The turn verdict | Dual-slot block-once: the G-01 sequence cannot re-block; state flock bounded at 2s; concurrent Stop calls serialize; sessions map capped at 128 oldest-evicted; sessionId normalized once at the hook boundary (regex-or-sha256); watchdog-surfaced state lives IN the map via --watchdog-surfaced (loose per-session files retired — the map is the only Stop-state) | internal/report verdict + hook | turnverdict.go + supervision-hook.sh | TestVerdictDualSlotSequence + goroutine race test + TestSessionMapCapAndHygiene + TestWatchdogStateInMap | hook boundary fixture | PARTIAL | implement |
 | GOAL-05 | CRITICAL | Hook envelope | Block reason is the display byte-verbatim; watchdog/protocol-growth stay in the non-blocking channel; verb I/O failure yields the hook's fixed degraded message, never silence | supervision-hook.sh + hook contract doc | scripts/agents/supervision-hook.sh | supervision fixture leg asserting byte-identity and the degraded path | claude hook fixture | PARTIAL | implement |
 | GOAL-06 | HIGH | Transition table | park/done on the only Current require --then/--and-none; reopen requires --next; open/promote/unpark drop a standing Goal-free atomically | internal/report goal verbs | internal/report/goalverbs.go | TestTransitionTableMatrix (every cell incl. refusals) | — | PARTIAL | implement |
 | GOAL-07 | HIGH | Precedence | Human-waiting streams suppress the goal clause; goal blocks only when the scanner reports nothing | internal/report verdict | internal/report/turnverdict.go | TestPrecedenceWaitingOnHuman | fixture leg | PARTIAL | implement |
@@ -474,9 +494,9 @@ conformance table), the doctrine files above, adopt.sh, fixtures.
 | GOAL-13 | MEDIUM | Ledger honesty | Prune reports dropped blocks on stdout; docs state the ledger is not an audit log | internal/report goal verbs | goalverbs.go | TestPruneReportsDrops | — | PARTIAL | implement |
 | GOAL-14 | CRITICAL | Mutation discipline: initialization | Adoption seeds goals.md + goals-accepted.json together; ledger-without-baseline degrades and reconcile bootstraps via genesis replay | scripts/adopt.sh + internal/report | adopt.sh + goalverbs.go | adopt fixture pair-assertion + TestReconcileGenesis | adopt fixture | PARTIAL | implement |
 | GOAL-15 | HIGH | Goal-free staleness | declare-free renews (the named idempotence exception); stale digests block once via blockedFreeDigests | internal/report | goalverbs.go + turnverdict.go | TestGoalFreeRenewAndBlockOnce | fixture leg | PARTIAL | implement |
-| GOAL-16 | HIGH | Scanner facts | openwork exposes ScanResult; Busy = three classes from checkout-scoped FILE facts only (job records, gaterun markers, runner heartbeat) — argv matching retired from the verdict path; stale plans never block | internal/report | openwork.go + runningwork.go + gaterun | TestScanResultClassification incl. live-mission Busy + TestOtherCheckoutNeverSuppresses | supervision fixture leg | PARTIAL | implement |
-| GOAL-17 | HIGH | Unreadable safety | Non-empty Unreadable vetoes both the all-clear and any goal block; inventory-source failures (job read, gate enumeration, heartbeat stat) join Unreadable — enumeration failure never collapses to idle; paths surface in diagnostics and the non-blocking display | internal/report | openwork.go + runningwork.go + turnverdict.go | TestUnreadableVetoesBothOutcomes + TestInventoryFailureVetoes | hook transport leg | PARTIAL | implement |
+| GOAL-16 | HIGH | Scanner facts | openwork exposes ScanResult; Busy = three classes from checkout-scoped FILE facts only (job records, gaterun markers, runner records correlated by status.go's record-plus-kernel-identity rule) — argv matching retired from the verdict path; stale plans never block | internal/report + missionrunner status rule | openwork.go + runningwork.go + gaterun | TestScanResultClassification covering live, completed, crashed, stale-sidecar, and identity-mismatch runners + TestOtherCheckoutNeverSuppresses | supervision fixture leg | PARTIAL | implement |
+| GOAL-17 | HIGH | Unreadable safety | Non-empty Unreadable vetoes both the all-clear and any goal block; inventory-source failures join Unreadable at every edge: gate Register atomic (temp+rename), suite registration failure fatal at gate startup, live-process unreadable/unparsable markers surface (dead-only deletion), job/runner record read errors surface — enumeration failure never collapses to idle | internal/report + internal/gaterun + suite | openwork.go + runningwork.go + gaterun.go + validate-metasystem.sh + turnverdict.go | TestUnreadableVetoesBothOutcomes + TestInventoryFailureVetoes + TestGateMarkerEdges (register-scan race, live-unreadable, dead-delete) | hook transport leg | PARTIAL | implement |
 | GOAL-18 | MEDIUM | Delivery contract audit | The instruction audit checks the conformance table's rows against shipped enforcement configs | internal/audit | metasystem.go | TestConformanceTableAudit | — | PARTIAL | implement |
 | GOAL-19 | CRITICAL | Program-start doctrine is audited | The instruction audit content-checks the doctrine's program-start rule (programs start with `goal open`) — the sole compensating control for the accepted blind spot | internal/audit | metasystem.go | TestDoctrineProgramStartRule | — | PARTIAL | implement |
 | GOAL-20 | CRITICAL | One-command start lands actionable | `goal open` on a no-Current ledger creates the Current goal; queued-only ledgers get the defined block-once verdict, never a silent all-clear | internal/report goal verbs | goalverbs.go + turnverdict.go | TestOpenPromotesWhenEmpty + TestQueuedOnlyVerdict | — | PARTIAL | implement |
-| GOAL-21 | HIGH | Mission seat cannot mutate | Every goal-mutation verb refuses when the checkout's MAIN lease ownerLineage is a mission lineage — a recorded fact no env-strip can defeat; reads and the verdict stay available | internal/report goal verbs + internal/lease | goalverbs.go | TestGoalMutationRefusesMissionLease incl. env-stripped invocation | — | PARTIAL | implement |
+| GOAL-21 | HIGH | Mission seat cannot mutate | Every goal-mutation verb refuses while the checkout has an ACTIVE mission per status.go's record-plus-kernel-identity rule — total across attended and unattended, env-strip immune; reads and the verdict stay available | internal/report goal verbs + missionrunner status rule | goalverbs.go | TestGoalMutationRefusesActiveMission covering attended (live-holder lineage), unattended, env-stripped, and dead-runner (mutation allowed) cases | — | PARTIAL | implement |
