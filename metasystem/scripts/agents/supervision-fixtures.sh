@@ -852,11 +852,12 @@ printf '{"session_id":"idle","cwd":"%s","hook_event_name":"Stop"}\n' "$idle_repo
 grep -q 'systemMessage' "$tmp/idle.out" \
   || { echo "turn-end hook emitted no surfaced message" >&2; cat "$tmp/idle.out" >&2; exit 1; }
 
-# And the idle wording itself, exercised directly on the branch that produces
-# it, so the sentence a human reads cannot silently change.
-grep -Fq 'NOTHING LEFT TO WORK ON' "$idle_repo/scripts/agents/supervision-hook.sh" \
-  && grep -Fq 'STILL WORKING' "$idle_repo/scripts/agents/supervision-hook.sh" \
-  || { echo "turn-end hook lost one of its two plain-words states" >&2; exit 1; }
+# And the idle wording itself: the two plain-words states now live in the
+# verdict verb (goal-system GOAL-05 — the hook transports, the verdict
+# decides), so the pin points at the decision's one owner.
+grep -Fq 'NOTHING LEFT TO WORK ON' "$source_root/internal/goal/turnverdict.go" \
+  && grep -Fq 'STILL WORKING' "$source_root/internal/goal/turnverdict.go" \
+  || { echo "the turn verdict lost one of its two plain-words states" >&2; exit 1; }
 
 # The open-work, stale-plan, and gate-marker legs retired to Go
 # (script-fixtures-008/D45): the five basic cases were already
@@ -992,4 +993,39 @@ settled=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervis
 printf '%s' "$settled" | grep -q '"decision":"block"' \
   && { echo "the stop hook refused a turn with no open work" >&2; exit 1; }
 
-echo "supervision fixtures passed (S4-1 through S4-14)"
+# S4-15: the goal thread through the same hook (goal-system GOAL-04/05).
+# (a) Byte-identity: the block reason carries the verdict display
+# verbatim — the first refusal above named the open step exactly.
+printf '%s' "$first" | grep -Fq 'OPEN WORK (1)' \
+  || { echo "the block reason does not carry the verdict display" >&2; echo "$first" >&2; exit 1; }
+# (b) End to end, unseeded: with work settled, opening a goal makes the
+# NEXT turn end block once pointing at the goal's next step — the
+# incident's fix observed through the real hook.
+"$stop_root/bin/metasystem" goal open --root "$stop_root" \
+  --id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." >/dev/null
+goal_block=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$goal_block" | grep -q '"decision":"block"' \
+  && printf '%s' "$goal_block" | grep -Fq 'Advance the fixture goal.' \
+  || { echo "a current goal did not reach the turn end through the hook" >&2; echo "$goal_block" >&2; exit 1; }
+goal_again=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$goal_again" | grep -q '"decision":"block"' \
+  && { echo "the same goal revision blocked twice" >&2; exit 1; }
+printf '%s' "$goal_again" | grep -Fq 'NOTHING LEFT TO WORK ON' \
+  || { echo "the spent goal revision did not read as the all-clear naming the goal" >&2; echo "$goal_again" >&2; exit 1; }
+# (c) Session hygiene at the hook boundary: a path-shaped session id never
+# reaches the state file.
+evil_payload=$(printf '{"session_id":"../../evil","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
+printf '%s' "$evil_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop >/dev/null
+grep -q '\.\./' "$stop_root/artifacts/agents/turn-verdict-state.json" \
+  && { echo "a path-shaped session id reached the verdict state" >&2; exit 1; }
+# (d) The degraded path: a verb that cannot speak yields the hook's fixed
+# message, never silence and never an all-clear.
+chmod 0500 "$stop_root/artifacts/agents"
+degraded=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+chmod 0755 "$stop_root/artifacts/agents"
+printf '%s' "$degraded" | grep -Fq 'turn-verdict unavailable:' \
+  || { echo "verb failure did not surface the fixed degraded message" >&2; echo "$degraded" >&2; exit 1; }
+printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
+  && { echo "the degraded path composed with an all-clear it cannot vouch for" >&2; exit 1; }
+
+echo "supervision fixtures passed (S4-1 through S4-15)"
