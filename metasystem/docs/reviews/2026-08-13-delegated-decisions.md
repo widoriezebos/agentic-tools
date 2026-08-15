@@ -1807,6 +1807,12 @@ code (transcript-mining verb, drafted after D62) is REVERTED
 uncommitted so the design loop owns the shape; the deliverable is
 plans/delegate-delivery-design.md through the full
 design-critique-implement path, ahead of all other queued work.
+Same morning, the boundary ruling in his words: "Do as much of the
+code that is critical in Go … Everything for which Go is much better
+suited we should do in Go. The rest should remain as plumbing in the
+shell script." Applied to this design: the whole delivery ladder —
+ordering, guards, provenance, verdicts — becomes one engine collect
+verb; devin.sh keeps spawn/wait/custody and one repair invocation.
 
 ## Series position for Wido (2026-08-14, after the first valid rep)
 

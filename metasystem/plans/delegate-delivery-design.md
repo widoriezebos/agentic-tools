@@ -4,8 +4,17 @@ Working Mode: design
 
 Owner: main session (delegate), under Wido's 2026-08-15 morning ruling
 ("prioritize this design, get it designed, critiqued in a loop and
-then implemented before we do anything else"). Status: r1, awaiting
-first critique.
+then implemented before we do anything else"). Status: r1, critique
+in flight; r2 will ALSO fold Wido's boundary ruling (same morning, in
+writing): everything Go is better suited for goes in Go — which moves
+the ladder walk itself out of the shell. r2's shape: ONE collect verb
+(`adapter devin-collect`) owns rung ordering, fall-through, every
+guard, the reply-source decision, and writes the provenance itself,
+emitting a structured verdict (delivered | needs-repair | empty);
+devin.sh keeps process lifecycle only — spawn, wait, custody, and on
+needs-repair one repair CLI invocation followed by a second
+devin-collect over the repair's outputs. The r1 text below still
+shows the walk in shell; r2 supersedes that section.
 
 ## The problem, with two cohorts of evidence
 
