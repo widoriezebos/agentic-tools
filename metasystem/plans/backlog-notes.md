@@ -1,6 +1,6 @@
-# Backlog
+# Backlog notes
 
-- Goal and current status: the standing queue of ratified-but-not-scheduled work. Items leave by becoming a design stream, a retro proposal, or a deliberate rejection recorded here.
+- Goal and current status: DETAIL NOTES for queued goals — the queue itself lives in plans/goals.md (the goal ledger) per the human's 2026-08-15 ruling: the goal queue IS the backlog. Items 15-20 below are migrated (their goals reference these notes); items 1-13 remain historical/queued matter pending their own migration or retirement.
 - Next step: none
 - In flight right now: nothing
 - Waiting on: nothing — items here are deliberately queued

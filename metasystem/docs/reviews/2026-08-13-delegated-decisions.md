@@ -2095,3 +2095,38 @@ detail lives in a plans note the queued step references; migrate
 plans/backlog.md items 15-20 into the queue once item 14's gates
 are green; extend the goal family only if real usage exposes a gap
 (ordering, notes) rather than ever building a second system.
+
+## D71 — 2026-08-15: the goal system is complete; the metasystem runs on its own goal thread
+
+Backlog item 14 closed end to end in one day: design converged at
+r12 after eleven adversarial critique rounds (D69), implementation
+landed in checkpointed commits with every obligation row GOAL-01..22
+DONE and concretely proven, the design-obligation gate passes, and
+the full validation suite ran GREEN ON BOTH HOSTS at e446500 (Mac
+launch 5; VM guest at the identical sha). The gate fought its
+builder honestly on the way: gofmt, go vet, staticcheck, and the
+coverage ratchet each caught real hygiene debt from the day's
+refactors — four fast-fails, four source-level fixes, no floor
+games, no suppressed checks.
+
+The system also proved itself live before its gates finished: its
+verdict blocked this session's own turn twice — first on a
+genuinely stale plan field from the finished review program, then
+on the builder's own grammar-sloppy fix — once each, exactly as
+designed.
+
+Per the human's backlog ruling (recorded above), plans/backlog.md
+became plans/backlog-notes.md (detail notes) and items 15-20
+migrated into the goal ledger through the verbs themselves:
+monitor-facility is the metasystem's first Current goal; the
+agnosticism audit, runtime-file placement, ACP transport, disk
+hygiene, and the narrator stand queued with their steps referencing
+the notes. Items 1-13 of the old backlog remain in the notes
+pending their own migration or retirement — a follow-up decision,
+not silently dropped.
+
+Residuals stated honestly: the accepted blind spot (intent recorded
+where no sensor reads) is compensated by the audited program-start
+doctrine; codex/devin conformance rows sit at declared until item
+16's audit upgrades them; the D61 dangerous-mode waiver stands
+until item 18 retires it.
