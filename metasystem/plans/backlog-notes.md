@@ -424,4 +424,13 @@
     the defense against a narrator inventing causality; (e) cadence
     is on-demand or watermark-batched, never per-event — narration
     costs tokens and the read watermark already exists in the
-    design sketch above.
+    design sketch above. FOLLOW-UP (human, same session): because
+    the narrator is an agent role, it is CONFIGURED like every
+    other rostered role — runtime and model declared where all role
+    bindings live (metasystem.conf role.<role>.runtime and
+    role.<role>.model.<tier>), and the human expects a mid-tier
+    model to suffice ("a sonnet type model can easily do this") —
+    narration is faithful summarization plus prose, and the
+    citation requirement keeps a cheaper model honest. The tier
+    stays revisable through the roster's normal escalation rules if
+    stories come out muddled.
