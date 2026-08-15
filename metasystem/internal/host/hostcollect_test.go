@@ -236,3 +236,78 @@ func TestHostCollectMinesDesignatedWrite(t *testing.T) {
 		t.Fatalf("provenance must bind the channel: %s", source)
 	}
 }
+
+func TestHostCollectMechanicalAndFallthroughShapes(t *testing.T) {
+	f := newHostCollectFixture(t)
+
+	// Absent turn record is mechanical.
+	broken := f.params
+	broken.TurnRecordPath = filepath.Join(f.root, "absent.json")
+	if _, err := HostDevinCollect(broken); err == nil {
+		t.Fatal("an absent turn record must be mechanical")
+	}
+
+	// A torn named file falls through with the rejection named; nothing
+	// else delivers; provenance still lands.
+	if err := os.WriteFile(f.params.NamedPath, []byte("{ torn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verdict, err := HostDevinCollect(f.params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Delivered {
+		t.Fatalf("a torn named file cannot deliver: %+v", verdict)
+	}
+	if !strings.Contains(strings.Join(verdict.Rejected, "|"), "not a JSON object") {
+		t.Fatalf("the parse rejection must be named: %+v", verdict.Rejected)
+	}
+	if _, err := os.Stat(filepath.Join(f.turnDir, "reply-source.json")); err != nil {
+		t.Fatal("provenance must land on the no-delivery path too")
+	}
+
+	// Cycle mismatch is a pre-envelope identity rejection.
+	wrongCycle := strings.Replace(string(f.validReturn), `"cycle":3`, `"cycle":4`, 1)
+	if err := os.WriteFile(f.params.NamedPath, []byte(wrongCycle), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verdict, err = HostDevinCollect(f.params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Delivered || !strings.Contains(strings.Join(verdict.Rejected, "|"), "cycle mismatch") {
+		t.Fatalf("cycle mismatch must reject pre-envelope: %+v", verdict)
+	}
+}
+
+func TestHostCollectOversizeTranscriptPropagates(t *testing.T) {
+	f := newHostCollectFixture(t)
+	big := filepath.Join(f.root, "big.json")
+	body := append([]byte(`{"steps":[`), make([]byte, 9<<20)...)
+	if err := os.WriteFile(big, append(body, ']', '}'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.params.TranscriptPath = big
+	if _, err := HostDevinCollect(f.params); err == nil {
+		t.Fatal("an oversize transcript must surface its own error")
+	}
+}
+
+func TestHostCollectMiningRefusesNonPersistedWrite(t *testing.T) {
+	f := newHostCollectFixture(t)
+	ghost := filepath.Join(f.workspace, "devin-return.json")
+	args, _ := json.Marshal(map[string]string{"file_path": ghost, "content": string(f.validReturn)})
+	transcript := filepath.Join(f.root, "export.json")
+	body := fmt.Sprintf(`{"session_id":"s","steps":[{"step_id":1,"tool_calls":[{"tool_call_id":"t1","function_name":"write","arguments":%s}]}]}`, args)
+	if err := os.WriteFile(transcript, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.params.TranscriptPath = transcript
+	verdict, err := HostDevinCollect(f.params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Delivered || !strings.Contains(strings.Join(verdict.Rejected, "|"), "did not persist") {
+		t.Fatalf("a non-persisted designated write must not deliver: %+v", verdict)
+	}
+}
