@@ -2,25 +2,19 @@
 
 Working Mode: design
 
-Owner: main session (delegate), backlog item 14. Status: r11 —
-folds the four r10 findings (critiques at
-plans/goal-system-critique-r{1..10}.md; trajectory
-16/14/13/13/8/5/4/4/5/4). r10 CONFIRMED every core mechanism
-(lease-serialized publication closes the race; the missionstate
-extraction works; serving-root registration is implementable); its
-four findings were contract completions, all decided here:
-ScanResult is goal-owned and report fills it across the declared
-report→goal edge; post-adoption-deletion repair is RESTORATION from
-the baseline's full bytes; Busy items carry a bounded detail string
-so the preserved display needs no second scan; the GOAL-22 proof
-asserts the schedule the fix makes possible (B neither publishes
-nor finalizes). Stale internal/report owners in GOAL-01/12/14/15
-corrected. The obligation matrix (GOAL-01..22) stays PARTIAL until
-implementation; the gate exits 1 by design until completion. Human
-rulings (D66/D67) remain fixed input. Awaiting r11 critique — the
-stop criterion governs: mechanisms are all confirmed, so REVISE now
-requires a contract that would make an implementer build the wrong
-thing.
+Owner: main session (delegate), backlog item 14. Status: CONVERGED
+at r12 (trajectory 16/14/13/13/8/5/4/4/5/4/2; critiques at
+plans/goal-system-critique-r{1..11}.md). r11's two residual
+findings were stale text from earlier folds — the blast radius
+naming internal/report for goal-owned components and the corrected
+GOAL-22 schedule surviving uncorrected in prose — fixed here with
+zero new decisions; its other two dispositions were confirmed
+outright, and every mechanism was confirmed by r10/r11. The stop
+criterion is met: findings stopped changing what gets built.
+Convergence recorded as D69. IMPLEMENTATION IS GO against the
+obligation matrix (GOAL-01..22), statuses PARTIAL→DONE row by row;
+the design-obligation gate exits 1 until every critical/high row is
+DONE. Human rulings (D66/D67) remain fixed input.
 
 ## The problem, in the human's words and one incident
 
@@ -416,8 +410,10 @@ yourself wrote is circular): a runner acquires the mission lease
 FIRST and publishes the shared runner record only as the WINNER;
 the loser never writes the shared record at all, and finalization
 re-verifies lease ownership before every terminal write. The test
-forces the exact A-acquires -> B-publishes -> B-loses ordering the
-critic constructed; (b) the
+contends A and B for the lease and proves the loser NEITHER
+publishes NOR finalizes while the winner's record survives
+byte-identical (the schedule the fix makes possible — r10 finding 4
+corrected the earlier impossible ordering); (b) the
 identity package's THREE outcomes propagate uncollapsed: Live means
 active, Dead means not active, and UNKNOWN means indeterminate —
 Unknown joins ScanResult.Unreadable (vetoing all-clear and goal
@@ -504,10 +500,15 @@ instruction audit's required-file list.
 
 ## Blast radius
 
-internal/report (goal parser, turn-verdict verb, state file,
-scanner exclusion), internal/dispatch (the --serving-goal brief
-section), internal/missionrunner (the turn-prompt orientation line +
-the runner-context mutation refusal), cmd/metasystem (verb rows),
+internal/goal (NEW: ledger grammar, parser, verbs, turn-verdict
+verb, state file, ScanResult), internal/missionstate (NEW leaf: the
+active-mission rule), internal/report (scanner produces
+goal.ScanResult; goals.md scanner exclusion), internal/dispatch
+(the --serving-goal brief section), internal/missionrunner
+(lease-serialized record publication + the turn-prompt orientation
+line; mutation refusal lives in internal/goal on the missionstate
+fact), internal/gaterun (atomic nonempty-or-error Register),
+cmd/metasystem (verb rows),
 scripts/agents/supervision-hook.sh (verdict transport per the
 contract; suppression removed), docs/design (the delivery contract +
 conformance table), the doctrine files above, adopt.sh, fixtures.

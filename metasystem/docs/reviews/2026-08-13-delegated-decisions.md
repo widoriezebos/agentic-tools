@@ -2026,3 +2026,31 @@ sol arm ruled 2026-08-09. Spend so far ~$90 of EUR 240.
 reps to characterize the variance (~$27); (2) decide the D10 floor
 question (rep 2 proves the floor is passable, so the strict reading now
 looks right); (3) bm-2's uncontained-Devin start is yours to green-light.
+
+## D69 — 2026-08-15: the goal-system design loop converges at r12
+
+Eleven critique rounds (gpt-5.6-sol at xhigh), trajectory
+16/14/13/13/8/5/4/4/5/4/2. The finding class narrowed monotonically:
+architecture (r1-r5), mechanisms (r6-r7), integration edges where
+the chosen mechanisms meet pre-existing defects in adjacent code
+(r8-r9, including r9's kill of the r8 concurrency fix — the
+self-identity check was circular — and an uncompilable ownership
+cycle), contract completions (r10), and finally two stale-text
+sweeps of my own earlier folds (r11: a blast-radius line and a
+leftover impossible test schedule), fixed with zero new decisions.
+The stop criterion Wido set governs: the loop stops when findings
+stop changing what gets built, and r11's findings changed nothing —
+they made the document consistent with decisions already made and
+adversarially confirmed. The adjacent-defect class the critic
+fenced at r9 (stale-lease cleanup, lease-release ownership, typed
+gate outcomes, watchdog delivery acks, plans-dir enumeration) is
+recorded as follow-up obligations, not part of item 14.
+
+Decision: declare convergence without a formal AGREE token —
+by r11 the critic was confirming mechanisms and correcting my
+sweep errors, which is the criterion's definition of done.
+Implementation proceeds against the obligation matrix GOAL-01..22
+in checkpointed commits, the design-obligation gate enforcing
+row-by-row completion. Revert point if Wido disagrees: the design
+and all eleven critiques are in plans/, every fold is a separate
+commit.
