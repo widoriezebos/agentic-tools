@@ -2082,3 +2082,16 @@ discriminators remain validity rate, wall clock, and cost. Total
 bm-2 cohort spend: ~$21.56 orchestrator + 292 Devin ACUs across
 both reps. No further reps are approved or planned; the series
 awaits Wido's read.
+
+## HUMAN RULING — 2026-08-15: the goal queue IS the metasystem's backlog
+
+Wido, in session, on whether to build a generic backlog mechanism:
+"agreed with your recommendation" — the recommendation being: no
+separate backlog system; the goal ledger's Queued section is the
+one generic backlog (verb-mediated, turn-end-surfaced,
+origin-protected, shipped by adoption); "put it on the backlog"
+from the human lands as `goal open` with Origin: human; rich item
+detail lives in a plans note the queued step references; migrate
+plans/backlog.md items 15-20 into the queue once item 14's gates
+are green; extend the goal family only if real usage exposes a gap
+(ordering, notes) rather than ever building a second system.
