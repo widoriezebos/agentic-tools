@@ -378,3 +378,52 @@ func TestRecordProtocolErrorNeverExposesFailedWithoutViolation(t *testing.T) {
 		t.Fatalf(".tmp residue survived: %v", residue)
 	}
 }
+
+// RepairClaim's contract (D64): absent returnRepairs means zero; the
+// claim wins once, atomically, only on a running record; a second claim
+// and a non-running record are delegate-side losses (observed set); an
+// unreadable record is a harness failure (error).
+func TestRepairClaimWinsOnceAbsentMeansZero(t *testing.T) {
+	root := t.TempDir()
+	writeJSON(t, filepath.Join(root, "artifacts/agents/jobs/job-r.json"),
+		map[string]any{"jobId": "job-r", "status": "running"})
+
+	observed, err := RepairClaim(root, "job-r")
+	if err != nil || observed != "" {
+		t.Fatalf("first claim on an absent field must win: observed=%q err=%v", observed, err)
+	}
+	record, _ := readObject(filepath.Join(root, "artifacts/agents/jobs/job-r.json"))
+	if isZeroNumber(record["returnRepairs"]) {
+		t.Fatalf("won claim must stamp returnRepairs=1, got %v", record["returnRepairs"])
+	}
+
+	observed, err = RepairClaim(root, "job-r")
+	if err == nil || observed != "observed=returnRepairs-claimed" {
+		t.Fatalf("second claim must lose as already-claimed: observed=%q err=%v", observed, err)
+	}
+
+	writeJSON(t, filepath.Join(root, "artifacts/agents/jobs/job-c.json"),
+		map[string]any{"jobId": "job-c", "status": "completed"})
+	observed, err = RepairClaim(root, "job-c")
+	if err == nil || observed != "observed=status=completed" {
+		t.Fatalf("non-running record must lose with the status named: observed=%q err=%v", observed, err)
+	}
+
+	if _, err = RepairClaim(root, "job-absent"); err == nil {
+		t.Fatal("an unreadable record is a harness failure, not a loss")
+	}
+}
+
+func TestRepairClaimExplicitZeroWins(t *testing.T) {
+	root := t.TempDir()
+	writeJSON(t, filepath.Join(root, "artifacts/agents/jobs/job-z.json"),
+		map[string]any{"jobId": "job-z", "status": "running", "returnRepairs": 0})
+	if observed, err := RepairClaim(root, "job-z"); err != nil || observed != "" {
+		t.Fatalf("explicit zero must win: observed=%q err=%v", observed, err)
+	}
+	writeJSON(t, filepath.Join(root, "artifacts/agents/jobs/job-one.json"),
+		map[string]any{"jobId": "job-one", "status": "running", "returnRepairs": 1})
+	if observed, err := RepairClaim(root, "job-one"); err == nil || observed != "observed=returnRepairs-claimed" {
+		t.Fatalf("returnRepairs=1 must lose: observed=%q err=%v", observed, err)
+	}
+}

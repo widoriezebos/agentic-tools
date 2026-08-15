@@ -82,6 +82,7 @@ func families() []family {
 				{"record-setup", "complete a reservation into the full pending record", runDispatchRecordSetup},
 				{"record-cas", "compare-and-swap a record's status and fields", runDispatchRecordCAS},
 				{"record-protocol-error", "stamp a job failed with a protocol violation", runDispatchRecordProtocolError},
+				{"repair-claim", "atomically claim the round's one paid repair (0 won, 3 lost, 1 mechanical)", runDispatchRepairClaim},
 				{"build-setup", "assemble a pending-setup reservation record", runDispatchBuildSetup},
 				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
 				{"build-record", "assemble the full pending job record", runDispatchBuildRecord},

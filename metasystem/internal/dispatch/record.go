@@ -446,3 +446,52 @@ func isFalsy(v any) bool {
 func nowISO() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05Z")
 }
+
+// RepairClaim atomically claims the round's ONE paid repair (the
+// delegate-delivery design, D64): under the record lock it requires
+// status running and returnRepairs absent-or-zero — ABSENT MEANS ZERO,
+// because the record builders do not initialize the field and should
+// not have to — then stamps returnRepairs to 1 in the same write. The
+// claim precedes the paid provider call by contract; the old order
+// (record after the call, failure ignored) allowed a crash to leave
+// durable state saying no repair happened. Exit taxonomy via the
+// returned observed string and error: nil error with empty observed is
+// a won claim; a lost claim (already claimed, or not running) returns
+// observed non-empty for exit 3 — a DELEGATE-side outcome; a mechanical
+// failure (unreadable record, lock) returns an error for exit 1 — a
+// HARNESS failure that must never masquerade as delegate emptiness.
+func RepairClaim(root, job string) (observed string, err error) {
+	err = withRecordLock(root, job, func(recordPath string) error {
+		record, readErr := readObject(recordPath)
+		if readErr != nil {
+			return refuse(1, "cannot read job record %s: %v", job, readErr)
+		}
+		status := asString(record["status"])
+		if status != "running" {
+			observed = "observed=status=" + status
+			return silentRefusal(3)
+		}
+		repairs, has := record["returnRepairs"]
+		if has && !isZeroNumber(repairs) {
+			observed = "observed=returnRepairs-claimed"
+			return silentRefusal(3)
+		}
+		record["returnRepairs"] = 1
+		return writeRecord(recordPath, record)
+	})
+	return observed, err
+}
+
+// isZeroNumber reports whether a decoded JSON value is the number zero,
+// tolerating the json.Number and float64 spellings the readers produce.
+func isZeroNumber(value any) bool {
+	switch typed := value.(type) {
+	case json.Number:
+		return typed.String() == "0"
+	case float64:
+		return typed == 0
+	case int:
+		return typed == 0
+	}
+	return false
+}

@@ -104,6 +104,28 @@ func runDispatchRecordProtocolError(args []string) int {
 	return recordExit(dispatchcore.RecordProtocolError(*root, *job, *expect, *violation, *violationFile))
 }
 
+// runDispatchRepairClaim atomically claims the round's one paid repair
+// (D64): exit 0 won, exit 3 lost (already claimed or not running, the
+// observation on stdout), exit 1 mechanical — the caller must treat 3 as
+// a delegate-side outcome and 1 as a harness failure, never conflating.
+func runDispatchRepairClaim(args []string) int {
+	flags := flag.NewFlagSet("job repair-claim", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	job := flags.String("job", "", "job id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *job == "" {
+		fmt.Fprintln(os.Stderr, "job repair-claim: --root and --job are required")
+		return 2
+	}
+	observed, err := dispatchcore.RepairClaim(*root, *job)
+	if observed != "" {
+		fmt.Println(observed)
+	}
+	return recordExit(err)
+}
+
 func runDispatchBuildSetup(args []string) int {
 	flags := flag.NewFlagSet("job build-setup", flag.ContinueOnError)
 	output := flags.String("output", "", "pending-setup record output file")
