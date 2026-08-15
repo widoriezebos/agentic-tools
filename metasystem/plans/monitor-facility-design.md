@@ -3,10 +3,18 @@
 Working Mode: design
 
 Owner: main session (delegate), goal monitor-facility (detail notes
-at plans/backlog-notes.md item 15). Status: r5 — folds the six r4
-findings (critiques at plans/monitor-facility-critique-r{1..4}.md;
-trajectory 12/10/8/6; the r4 disposition audit closed or
-architecturally closed most of the r3 worklist). r5 splits Watched
+at plans/backlog-notes.md item 15). Status: r6 — folds the six r5
+findings (critiques at plans/monitor-facility-critique-r{1..5}.md;
+trajectory 12/10/8/6/6, character shifted to contract precision:
+the r5 critic discarded a wording item as nonmaterial unprompted).
+r6 pins: the kinship predicate in pgid terms only with
+adopted-unverified never signaled; provisionalVerdict frozen at
+draining entry with endedAt as the wind-down clock; owner-keyed
+waiter records so a foreign waiter neither satisfies nor blocks
+anyone, with disjoint operational exit codes; the tagged cross-kind
+digest encoding; MON-07 gated on the corrected attestation
+contract with freshness from the armed state's loaded intervalSec;
+and green exactly-once on a lock-assigned terminal sequence. r5 splits Watched
 into Supervised and WaiterLive, adds typed JobFacts and pins
 unwatched-before-Busy, keys the attestation on full lifecycle
 triples with a named freshness bound, totalizes the draining
@@ -42,17 +50,26 @@ Backlog item 1 folds in as written, and runs get the SAME waiter:
   from the record and kernel state; flight-recorder events narrate
   and are never the wake authority (their contract permits lost
   finals).
-- Every waiter REGISTERS ITSELF in one namespace:
-  `artifacts/agents/waiters/<kind>-<id>.json` {kind: "job"|"run",
-  pid, pidStartedAt, session, mainId} — identity-verified at write,
-  removed on exit, provably dead by the three-way rule otherwise.
-  EXCLUSIVE by liveness (r4 finding 4): registration REFUSES while
-  a live waiter record holds the name; a dead owner is replaced by
-  identity-checked compare-and-delete under a bounded flock, so one
-  waiter can never overwrite or delete another's registration.
-- `run watch` exit mappings, pinned like the job waiter's: green=0,
-  red=1, ended-unknown=2, launch-failed=3, record missing or
-  malformed=4. Non-waiting FOLLOW-UPS print their waiter command
+- Every waiter REGISTERS ITSELF, keyed by OWNER (r5 finding 3 — a
+  foreign waiter must neither satisfy your unwatched rule nor block
+  your own watching):
+  `artifacts/agents/waiters/<kind>-<id>-<owner-digest>.json`
+  {kind: "job"|"run", pid, pidStartedAt, session, mainId} where
+  owner-digest is sha256(mainId or "human:"+session) truncated 12
+  hex. Identity-verified at write, removed on exit, provably dead
+  otherwise. Exclusive PER KEY by liveness: registration refuses
+  while a live record holds the key; a dead owner is replaced by
+  identity-checked compare-and-delete under a bounded flock.
+  WaiterLive is therefore an OWNER-CORRELATED fact: the unwatched
+  rule counts only a live waiter whose mainId equals the work
+  owner's. Multiple owners may watch the same work; nobody's waiter
+  suppresses anybody else's block.
+- `run watch` exit mappings, pinned like the job waiter's:
+  outcomes green=0, red=1, ended-unknown=2, launch-failed=3, record
+  missing or malformed=4; OPERATIONAL failures are disjoint from
+  outcomes — live same-owner waiter already registered=64, waiter
+  lock timeout or write failure=65, waiter record with unknown
+  identity=66. Non-waiting FOLLOW-UPS print their waiter command
   exactly as the initial dispatch does.
 - The turn-end rule spans both kinds: an in-flight job whose record
   mainId equals the CALLER's mainId, or a launching/running/
@@ -102,8 +119,22 @@ plus an epoch recheck INSIDE the lock. Per-record CAS is over
                 "hung": "≤240", "unknown": "≤240"},
      "status": "launching" | "running" | "draining"
               | "green" | "red" | "ended-unknown" | "launch-failed",
+     "provisionalVerdict": "green"|"red"|"ended-unknown"|null,
+                                      // frozen at draining ENTRY:
+                                      // adopted-pattern evidence is
+                                      // evaluated once there, so
+                                      // descendants writing the log
+                                      // later cannot change it
+     "terminalSeq": <int|null>,       // assigned under the runs lock
+                                      // at terminalization: the total
+                                      // order the green cursor rides
      "acked": false, "error": "<str|null>",
-     "exitCode": <int|null>, "endedAt": "<ISO|null>"}
+     "exitCode": <int|null>,
+     "endedAt": "<ISO|null>"}          // stamped at draining entry (the
+                                       // leader's death IS the run's
+                                       // end; the wind-down clock runs
+                                       // from it; terminalization only
+                                       // finalizes status)
 
 Legal transitions (CAS refusals loud):
 launching → running (wrapper binds via nonce);
@@ -123,12 +154,14 @@ survivors past the wind-down surface as UNTRACKED — honest);
 adopt: RUNNING record only, and ONLY when the old generation's
 leader is provably dead AND its recorded group provably empty
 (refuse otherwise); identity replaced, generation++, hungSince
-cleared. ADOPTED-VERIFIED'S PREDICATE, exactly: the caller's
-process ancestry (the ParentPid walk the classifier already uses)
-contains a live member of the target's process group, OR the
-target's group session leader is an ancestor of the caller —
-provable group kinship at registration time; anything less is
-adopted-unverified, honestly labeled.
+cleared. ADOPTED-VERIFIED'S PREDICATE, exactly and in pgid terms only (r5
+finding 1 — "session leader" was ambiguous and no session-id
+primitive exists): there exists a live process P with P.pgid equal
+to the target's pgid such that P is an ancestor of the caller or
+the caller is an ancestor of P (the ParentPid walk both ways).
+Provable process-group kinship at registration time; anything less
+is adopted-unverified, honestly labeled — and adopted-unverified is
+never signaled by anyone.
 
 ## Custody, stated honestly PER MODE (r3 finding 2)
 
@@ -234,17 +267,20 @@ not share its slot).
   {red, ended-unknown, launch-failed}, currently hung,
   unknown-identity, and every RunUnreadable entry — continuation
   verbatim (launch-failed and ended-unknown speak expect.unknown).
-- GREEN terminal surfaces once per session via a MONOTONIC CURSOR,
-  not a FIFO (r4 finding 6: eviction resurrects old entries): the
-  session entry stores greenCursor = the latest surfaced green
-  run's endedAt; greens at or before the cursor never resurface;
-  the cursor only advances. Ties on equal timestamps resolve by the
-  lifecycle triple's digest ordering — deterministic, bounded, and
-  actually once.
+- GREEN terminal surfaces exactly once per session via the
+  MONOTONIC TERMINAL SEQUENCE (r5 finding 6: endedAt has ties and
+  draining reorders it): terminalization assigns terminalSeq from a
+  counter file under the runs lock — a total order with no ties and
+  no reordering; the session entry stores greenCursor = the highest
+  surfaced terminalSeq, and every green above the cursor surfaces,
+  in order, exactly once.
 - The UNWATCHED block covers launching, running, AND draining work
   owned by the caller (jobs via mainId + runs), keyed on the sha256
-  of the sorted LIFECYCLE triples (blockedUnwatchedDigests, ≤16
-  FIFO, additive to the item-14 state schema).
+  of the sorted TAGGED lifecycle strings — "job:<jobId>" and
+  "run:<id>.g<generation>.<nonce>" (r5 finding 4: jobs have no
+  triple; the tag pins the cross-kind encoding) —
+  blockedUnwatchedDigests, ≤16 FIFO, additive to the item-14 state
+  schema.
 - Required mixed-state display tests: Busy+RunUnreadable,
   Open+RunRed, Busy+RunHung — both parts visible in each.
 
@@ -293,12 +329,12 @@ cmd/metasystem (run family + watch verbs), fixtures, docs.
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | MON-01 | CRITICAL | Launch topology | Pending-before-process with nullable identity; nonce CAS bind; fence and error path conclude launch-failed with a note, never deletion | internal/run | internal/run/run.go | run_test.go TestLaunchReservationAndFence | fixture leg: fast-exit concluded; killed launcher leaves launch-failed | PARTIAL | implement |
-| MON-02 | CRITICAL | Evidence | Generation-scoped nonce-checked sidecars; pattern only on adopted, no-match=ended-unknown; dead+no-evidence=ended-unknown; Unknown concludes nothing | internal/run | run.go Conclude | run_test.go TestConcludeEvidenceTable | fixture: green, red, stale-generation sidecar ignored, unknown surfaces | PARTIAL | implement |
+| MON-02 | CRITICAL | Evidence | Generation-scoped nonce-checked sidecars; pattern only on adopted, evaluated ONCE at draining entry into provisionalVerdict; dead+no-evidence=ended-unknown; endedAt stamps at draining entry; Unknown concludes nothing | internal/run | run.go Conclude | run_test.go TestConcludeEvidenceTable + TestDrainingFreezesVerdict | fixture: green, red, stale-generation sidecar ignored, unknown surfaces | PARTIAL | implement |
 | MON-03 | CRITICAL | Custody per mode | Wrapped three-factor; draining pgid+claim bounded (named residual); adopted two-factor with registration proof; census labels draining; survivors surface after wind-down | internal/census + internal/run | census run source | census run_test.go TestCustodyPerMode | supervision-fixtures.sh leg: detached run + children owned through draining | PARTIAL | implement |
-| MON-04 | CRITICAL | The waiter contract | dispatch AND run launch print their exact watch commands; both watch verbs block to terminal and register identity-verified waiter records in one namespace, removed on exit | internal/dispatch + internal/run + dispatch.sh | watch decision cores | watch round-trip tests both kinds | dispatch-fixtures.sh watch leg + run fixture | PARTIAL | implement |
+| MON-04 | CRITICAL | The waiter contract | dispatch AND run launch print their exact watch commands; watch verbs block to terminal with the pinned outcome and operational exit codes; waiter records are owner-keyed, exclusive per key by liveness, replaced only by identity-checked compare-and-delete; WaiterLive is owner-correlated | internal/dispatch + internal/run + dispatch.sh | watch decision cores | watch round-trip + foreign-waiter-does-not-satisfy + collision exit-code tests | dispatch-fixtures.sh watch leg + run fixture | PARTIAL | implement |
 | MON-05 | CRITICAL | Turn verdict | Unwatched (launching/running/draining, jobs+runs, by mainId) blocks once on lifecycle-triple digests; warnings incl. launch-failed and RunUnreadable always prepend; green once per session | internal/goal + internal/report | turnverdict.go + scan.go | turnverdict_test.go TestUnwatchedAndWarnings + the three mixed-state display tests | supervision-fixtures.sh run leg through the real hook | PARTIAL | implement |
 | MON-06 | CRITICAL | Serialization + lease | The runs lock spans every mutation (the HUMAN run-held bypass is why); CAS over (status,generation); adopt requires the old generation provably dead; sweep signals only with per-mode proof | internal/run + internal/lease | run.go + sweep.go | run_test.go TestRunsLockAndGenerationFencing + sweep test | fixture: stale-epoch run swept only with proof; adopted-unverified only surfaced | PARTIAL | implement |
-| MON-07 | HIGH | Attestation | runs-pass.json carries watcher identity + scanned (id,generation) pairs; Watched requires membership, freshness, AND armed-component identity match | cmd/metasystem + internal/run + internal/goal | supervise_component.go + turnverdict.go | attestation tests incl. one-shot-cannot-fake | supervision fixture: armed repo concludes and attests | PARTIAL | implement |
+| MON-07 | HIGH | Attestation | runs-pass.json carries watcher identity + full scanned lifecycle triples (id, generation, launchNonce); Supervised requires triple membership, freshness within twice the armed state's loaded intervalSec, armed-component identity match, AND that watcher process alive | cmd/metasystem + internal/run + internal/goal | supervise_component.go + turnverdict.go | attestation tests incl. one-shot-cannot-fake and reused-id-cannot-bless | supervision fixture: armed repo concludes and attests | PARTIAL | implement |
 | MON-08 | HIGH | Authority | Holder-only mutations with nullable HUMAN coordinates; conclude record-writer; custody labels honest and evented | internal/run + cmd/metasystem | run.go + cmd wiring | run_test.go TestAuthorityMatrix | — | PARTIAL | implement |
 | MON-09 | HIGH | Events | The three rows as specified (fields, requiredness, emitters); runId canonical; conformance test proves acceptance | internal/events + scripts/agents/event-registry.json | emit.go + registry | events conformance test | — | PARTIAL | implement |
 | MON-10 | MEDIUM | Ledger honesty | prune acked-terminal >14d with sidecars, drops reported | internal/run | run.go Prune | run_test.go TestPruneReportsDrops | — | PARTIAL | implement |
