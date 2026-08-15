@@ -127,3 +127,37 @@ func TestRootJobIDCycle(t *testing.T) {
 		t.Fatalf("expected a cyclic-chain error, got %v", err)
 	}
 }
+
+// The snapshot path (D64): usage reads the attempt snapshot when given
+// one, the snapshot survives export mutation, and oversize propagates.
+func TestDevinUsageThroughSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	transcript := filepath.Join(dir, "t.json")
+	if err := os.WriteFile(transcript,
+		[]byte(`{"final_metrics":{"total_prompt_tokens":10,"total_cached_tokens":4,"total_completion_tokens":3,"total_steps":2}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	usage := filepath.Join(dir, "usage.json")
+	cumulative := filepath.Join(dir, "cumulative.json")
+	snapshot := filepath.Join(dir, "snap.json")
+	if err := DevinUsage(usage, transcript, snapshot, cumulative, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(snapshot); err != nil {
+		t.Fatal("the snapshot must be materialized")
+	}
+	// Mutating the export does not change a re-read through the snapshot.
+	if err := os.WriteFile(transcript, []byte(`{"final_metrics":{"total_prompt_tokens":999}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	usage2 := filepath.Join(dir, "usage2.json")
+	cumulative2 := filepath.Join(dir, "cumulative2.json")
+	if err := DevinUsage(usage2, transcript, snapshot, cumulative2, "", false); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := os.ReadFile(cumulative)
+	second, _ := os.ReadFile(cumulative2)
+	if string(first) != string(second) {
+		t.Fatalf("snapshot-fed usage must be immutable across export mutation:\n%s\n%s", first, second)
+	}
+}

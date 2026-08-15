@@ -85,3 +85,40 @@ func TestSnapshotOversizePropagates(t *testing.T) {
 		t.Fatalf("oversize export must refuse snapshotting, got %v", err)
 	}
 }
+
+func TestReadBoundedObjectAndSnapshotObject(t *testing.T) {
+	dir := t.TempDir()
+	export := write(t, dir, "export.json", sample)
+	object, err := ReadBoundedObject(export)
+	if err != nil || object["session_id"] != "s-1" {
+		t.Fatalf("bounded object read = %v %v", object, err)
+	}
+	if _, err := ReadBoundedObject(write(t, dir, "arr.json", `[1,2]`)); err == nil {
+		t.Fatal("a non-object transcript must refuse the object read")
+	}
+	if _, err := ReadBoundedObject(filepath.Join(dir, "absent.json")); err == nil {
+		t.Fatal("an absent file must error")
+	}
+
+	snapshot := filepath.Join(dir, "snap.json")
+	object, err = SnapshotObject(export, snapshot)
+	if err != nil || object["session_id"] != "s-1" {
+		t.Fatalf("snapshot object = %v %v", object, err)
+	}
+	// Export mutation after materialization changes nothing.
+	if err := os.WriteFile(export, []byte(`{"session_id":"tampered"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	object, err = SnapshotObject(export, snapshot)
+	if err != nil || object["session_id"] != "s-1" {
+		t.Fatalf("snapshot must stay immutable: %v %v", object, err)
+	}
+}
+
+func TestSnapshotUnparseableExportErrors(t *testing.T) {
+	dir := t.TempDir()
+	export := write(t, dir, "torn.json", `{"steps":[{`)
+	if _, err := Snapshot(export, filepath.Join(dir, "snap.json")); err == nil {
+		t.Fatal("a torn export must not snapshot")
+	}
+}
