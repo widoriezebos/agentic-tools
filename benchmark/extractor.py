@@ -777,6 +777,17 @@ class Extractor:
         detail = "at least one completed and certified implementer job exists per stream" if passed else "streams without a completed and certified implementer job: " + ", ".join(failed)
         return metric, passed, detail
 
+    def acceptable_effective(self, requested: Any, effective: Any) -> bool:
+        # The manifest may declare effective-model names the human ruled
+        # equivalent to a requested model (the SWE-1.7 Max ruling of
+        # 2026-08-15, D65): the service reports a display variant of the
+        # same pinned arm. Aliases are per-requested-model and explicit --
+        # nothing is inferred from name similarity.
+        if self.manifest is None or not isinstance(requested, str) or not isinstance(effective, str):
+            return False
+        aliases = self.manifest.get("roster", {}).get("acceptableEffective", {})
+        return effective in aliases.get(requested, [])
+
     def roster_gate(self, identity: dict[str, Any]) -> tuple[bool | None, str]:
         expected = {item["role"]: item for item in identity["roster"]["delegates"]}
         problems = []
@@ -791,7 +802,9 @@ class Extractor:
                 problems.append(f"job {job.get('jobId')} role {role} has no pinned roster resolution")
             elif job.get("runtime") != resolution.get("runtime") or job.get("requestedModel") != resolution.get("model"):
                 problems.append(f"job {job.get('jobId')} requested runtime/model differs from roster")
-            if job.get("effectiveModel") != job.get("requestedModel"):
+            if job.get("effectiveModel") != job.get("requestedModel") and not self.acceptable_effective(
+                job.get("requestedModel"), job.get("effectiveModel")
+            ):
                 problems.append(f"job {job.get('jobId')} effective model differs from requested model")
         if not identity["roster"]["host"].get("runtime") or not identity["roster"]["host"].get("model"):
             return None, "host roster is unavailable"

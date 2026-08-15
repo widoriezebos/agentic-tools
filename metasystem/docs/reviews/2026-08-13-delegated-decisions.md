@@ -1898,6 +1898,22 @@ floor) — all answered with branch tests, never floor adjustments;
 host followed the same discipline (80.2 vs 79.3). Both phases sit
 under the full VM gate.
 
+## D65 — HUMAN RULING: "Max is acceptable" — the SWE-1.7 Max identity resolves in the kit
+
+Wido, 2026-08-15, on the D63 question: "Max is acceptable." The
+implementation follows the benchmark-specifics-stay-in-the-kit
+doctrine, not core canonicalization: the manifest's roster gains
+`acceptableEffective` ({"swe-1-7": ["swe-1-7-max"]}) and the
+extractor's rosterPinned gate accepts a declared alias for its
+requested model — explicit, per-model, nothing inferred from name
+similarity, and the core engine still names no runtime's marketing
+variants. The kit's own fixtures and validation pass. Effect: the
+D63 control rep's only failed gate is resolved by ruling; the Devin
+arm can produce VALID reps on the new delivery machinery whenever
+its next rep runs (rep policy itself stays as ruled — no new cohorts
+without Wido's word beyond the standing drive-to-2-valid, which for
+bm-2 remains open at zero valid).
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
