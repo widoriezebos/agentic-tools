@@ -1,9 +1,9 @@
 # Agnosticism audit: the ruling set
 
-- Status: DRAFT r5 — critique r4 folded (7 findings); awaiting critique r5
+- Status: DRAFT r6 — critique r5 folded (9 findings: 6 structural, 3 mechanical); awaiting critique r6, the FINAL budgeted round
 - Goal: agnosticism-audit (backlog item 16, D-series: pending)
-- Next step: Fold the critique verdict when run agno-critique-r5 concludes; implement only after convergence.
-- In flight right now: run agno-critique-r5 (codex xhigh critique of this revision; watch it with: bin/metasystem run watch --id agno-critique-r5 --root .)
+- Next step: Fold the critique verdict when run agno-critique-r6 concludes; on non-convergence the goal SPLITS (converged classes implement; the adoption/registration contract becomes its own design goal).
+- In flight right now: run agno-critique-r6 (codex xhigh critique of this revision; watch it with: bin/metasystem run watch --id agno-critique-r6 --root .)
 
 The human's rule, verbatim intent (2026-08-15): "the meta system must be
 agent agnostic (it should work with Codex and Devin and any other future
@@ -35,7 +35,17 @@ registration contract kept parallel owners and an untyped transform,
 the capability table needed per-owner typing, config-identity filters
 and skill profiles sat outside every declaration, the probe replaced
 only the marker, and shipped docs still enumerate the universe
-(critique r4). r5 is the r4 fold.
+(critique r4). r5's fold left nine (6 structural / 3 mechanical): the
+fixture gate's "armed fixture mode" wording collided with supervision
+arming and named no real predicate, the flat row schema could not
+carry operation payloads or the three profile projections, duplicate-
+destination rejection broke codex+devin's shared tree, collision
+roots were unpinned, the installer escape pointed at the probes
+table, the config-identity filter had no live-path verb, checkout
+configuration itself had no sanctioned class, the enforcement enum
+admitted a value the live schema rejects, and framing/idempotency
+stayed contradictory (critique r5). r6 is the r5 fold and the FINAL
+budgeted round.
 
 ## The sanctioned seams
 
@@ -110,7 +120,13 @@ Each runtime declares:
   constructs it per runtime and validate-metasystem.sh:373 hardcodes
   the three existing filter JSONs; `has adapter` cannot derive it —
   the fake adapter has none). Filter existence and validation derive
-  from this declaration
+  from this declaration, AND live identity consumes it (critique
+  r5-6): a `runtime config-identity-filter <runtime>` verb with
+  pinned absent semantics (exit 1 + empty output when undeclared)
+  replaces runtime-common.sh's path construction, so the bytes the
+  suite validates are provably the bytes live identity hashes for
+  snapshot selection (dispatch.sh:485) — one test asserts that
+  equality
 - `adoptable` (claude, codex, devin — never fake) and ONE
   `adoptionDefault` (claude), pinning adopt.sh:53's default and
   adopt-fixtures.sh:245's expectation (critique r2-3); config
@@ -123,26 +139,50 @@ Each runtime declares:
 - registration contract — the ONE canonical row schema (critique
   r4-3: no parallel path declarations anywhere; the skills/agents
   `dirs` view below is a DERIVED view of these rows, not a second
-  declaration). Row: {operation, source, destination,
-  required|optional, collision-root}. operation ∈ {tree (with a
-  user-selectable link|copy mode, adopt.sh:293), copy-file,
-  optional-profile-copy, json-strip-key {key} (the TYPED generic
-  transform whose one current use is claude's enforcement install
-  stripping _comment, adopt.sh:317)}. A future operation that the
-  vocabulary cannot express registers as a seam-local installer
-  capability in the adapter's typed table — a seam edit, never a
-  doctrine edit (critique r4-3). collision-root is the runtime-OWNED
-  directory whose mere existence refuses adoption (adopt.sh:129).
-  Rows with the same destination are an error at declaration-test
-  time; re-running adoption over an installed tree is idempotent
-  (same rows, same bytes → no-op). Shell framing is PINNED: one row
-  per line, fields tab-separated, and the declaration grammar
-  forbids tabs and newlines in every field, so no quoting layer
-  exists to get wrong. Config directory-presence validation
-  (validate.go:339), installed-enforcement paths, and byte-drift
-  validation are DERIVED from these rows. adopt.sh builds the
-  source-fresh binary BEFORE any pre-mutation registry query (today
-  it rebuilds only after mutation, adopt.sh:50,225,268)
+  declaration). A row is a TAGGED UNION (critique r5-2: a flat
+  5-tuple cannot carry payloads): every row has {id (stable artifact
+  role, e.g. enforcement-config, skill-tree, skill-profiles),
+  required|optional, destination}; per-operation payloads are
+  - tree {source, mode: user-selectable link|copy (adopt.sh:293)}
+  - copy-file {source}
+  - json-strip-key {source, key} (claude's enforcement install
+    strips _comment, adopt.sh:317)
+  - skill-profiles {source pattern, delivery: copy|in-place,
+    destination pattern, template-required/adopted-optional} — the
+    typed profile contract carrying claude's <skill>.md projection,
+    devin's <skill>/AGENT.md projection, and codex's in-place
+    agents/openai.yaml consumption (adopt.sh:308;
+    validate-metasystem.sh:525 template-required vs :580
+    adopted-optional)
+  `shippedEnforcementConfig` becomes a ROW REFERENCE by artifact
+  role, never a repeated path (critique r5-2). Installation computes
+  the UNION of the selected runtimes' rows before mutation,
+  deduplicates compatible overlaps (identical operation, source,
+  payload, mode — codex+devin's shared .agents/skills, adopt.sh:323,
+  334), and rejects only INCOMPATIBLE overlaps (critique r5-3).
+  Collision roots are PINNED to today's exact values — .claude,
+  .devin, .agents, scanned as the FULL population regardless of
+  selected runtimes (adopt.sh:129; selection-scoped scanning would
+  weaken foreign-instruction detection); adding .codex is a
+  human-adjudicated security change NOT taken here (critique r5-4).
+  Re-running adoption: healthy same-SHA installation exits
+  successfully as a no-op regardless of newly requested options
+  (adopt.sh:117); incomplete same-SHA refuses (adopt.sh:125) — both
+  pinned (critique r5-9). Shell framing is PINNED as ONE versioned
+  tab encoding: schema-version header line, one row per line, fixed
+  field order with the operation tag and payload fields flattened,
+  zero rows = header only, trailing newline; the declaration grammar
+  forbids tabs and newlines in every field (critique r5-9). Config
+  directory-presence validation (validate.go:339), installed-
+  enforcement paths, and byte-drift validation are DERIVED from
+  these rows. A future operation the vocabulary cannot express
+  registers in a SEPARATE typed INSTALLER capability table owned by
+  the installation layer (critique r5-5: not the probes table),
+  with duplicate rejection, lookup/list conformance views, and one
+  generic shell invocation — a registry-plus-seam edit; the doctrine
+  never enumerates uses. adopt.sh builds the source-fresh binary
+  BEFORE any pre-mutation registry query (today it rebuilds only
+  after mutation, adopt.sh:50,225,268)
 - session-environment names (claude: CLAUDE_PROJECT_DIR; devin: its
   project-dir variable) for supervision-hook.sh's dispatch
 - skills/agents directories — a DERIVED view over the registration
@@ -176,8 +216,11 @@ Each runtime declares:
   identifiers collide (uniqueness is a declaration test). SCOPE
   (critique r4-1): residuals govern ONLY live selection — the case
   where a snapshot lists a field in permissions.unverified
-- `expectedEnvelopeEnforcement[field]`: a SEPARATE complete map
-  (enforced | mapped | notEnforced per field) that static adapter
+- `expectedEnvelopeEnforcement[field]`: a SEPARATE complete map over
+  EXACTLY {writeRoots, readRoots, network} with values
+  mapped | notEnforced (critique r5-8: snapshot.go:101 and
+  select.go:260 accept exactly these two; a conformance fixture pins
+  the registry and snapshot enums identical) that static adapter
   validation asserts against each adapter's declared snapshot shape
   (critique r4-1: codex declares readRoots notEnforced while
   reporting NO unverified fields — the two facts are independent, and
@@ -190,8 +233,9 @@ Each runtime declares:
 The `metasystem runtime` verbs are purpose-filtered, not one flat list
 (critique r2-3): `list` (all), `list --adoptable`, `adoption-default`,
 `dirs`, `enforcement-config`, `self-check`, `instruction-file`,
-`session-env`, `registration` (the structured contract, NUL- or
-tab-delimited rows for shell). Each verb has a pinned output encoding
+`session-env`, `config-identity-filter`, `registration` (the
+structured contract in the ONE versioned tab encoding pinned above —
+critique r5-9 removed this section's stale NUL-or-tab alternative). Each verb has a pinned output encoding
 and exit codes (0 ok, 1 unknown runtime, 2 usage); adoption's
 pre-mutation checks run against these verbs before any file lands.
 
@@ -259,8 +303,10 @@ readRoots disproves the equivalence; Devin's unenforced boundaries
 stay protected by their own declared rows). Where an
 arm is irreducibly runtime-specific plumbing beyond the contract's
 vocabulary, it moves into that runtime's adapter script and adopt.sh
-dispatches to it — the contract rows are preferred; the dispatch
-escape is the exception and each use is listed in the doctrine.
+dispatches to it — the contract rows are preferred, and anything
+beyond them registers in the typed installer capability table
+(critique r5-5: no doctrine enumeration of uses; registry-plus-seam
+edits only).
 
 ### Class 4 — the hooks self-check: GENERALIZE
 
@@ -426,22 +472,25 @@ trusted-fixture capability with authority consequences:
   (critique r4-2 caught its omission)
 RULING: `fake` remains a NAMED test-harness exception; every branch
 above is listed in the doctrine and keeps its explicit local guard at
-its security boundary. The identity-fixture path gets a REAL gate
-(critique r4-2: FixtureEntryFor trusts an env var with no root,
-runtime, or armed-state input, and the reserved-cap scan is neither
-ordered before arming's mutations nor consulted by lease, census, or
-custodian reads). The CENTRAL READER itself becomes root-checked: it
-honors the fixture env var only when the checkout's armed fixture
-mode is on, verified against the root it is asked about — one gate
-at the choke point every authority consumer already flows through,
-so census authentication, census supervision liveness, lease
-classification, and custodian verdicts are all covered without
-per-site duplication. The arming script moves its fixture check
-BEFORE the announcement, lease authorization, and any lock or
-mutation; the reader's root check stands regardless (defense in
-depth, not sole gate). Tests exercise all four authority consumers
-directly in a NON-fake checkout and prove fixture identity is
-refused. The pinning test for this list is enumeration-based (the
+its security boundary. The identity-fixture path gets a REAL,
+PRE-ARMING, ROOT-BOUND authorization (critique r4-2, r5-1 — the r5
+wording "armed fixture mode" collided with supervision arming, which
+happens AFTER the fixture-capable reads the bootstrap needs). The
+predicate is EXACTLY today's reserved-cap rule: the checkout's conf
+declares `metasystem.runtimes=fake` (reservedcap.go:38) — read from
+the ROOT, not the environment. Because `internal/identity` is
+foundational and must not read configuration (docs/architecture.md
+layering), the checked capability is a small FixtureAuthorization
+VALUE constructed at the entry points that HAVE a root — census
+verbs, lease classification, custodian callers, the reserved-cap
+scan — and passed down to the fixture reader; the reader refuses
+fixture identity without it. arm-supervision.sh constructs the
+authorization from its root BEFORE the announcement, lease
+authorization, and any lock or mutation (its first fixture-capable
+read at :359-361 is already covered). Tests: positive fake-checkout
+bootstrap, plus census authentication, census supervision liveness,
+lease classification, and custodian verdicts each REFUSING fixture
+identity in a non-fake checkout. The pinning test for this list is enumeration-based (the
 sweep plus the named helper paths), because a textual fake-string
 sweep cannot find helper-hidden authority (critique r3-7). Explicitly REFUSED: a generic
 IsFixture bypass — future fixtures must NOT inherit security-sensitive
@@ -493,6 +542,22 @@ the supported universe nor prescribe the installation contract — the
 doctrine states that boundary, and the docs audit (the same one that
 checks instruction assets) asserts no doc claims an exhaustive
 universe outside registry-derived text.
+
+### Class 15 — checkout configuration: A NARROW SANCTIONED SEAM
+
+`metasystem.conf` carries live runtime selections (metasystem.conf:5)
+and one default-model row per real runtime (:30), consumed by dispatch
+(roster.go:117), tailoring (conftailor.go:125), and validation
+(validate.go:275) — and the shipped template scaffold enumerates the
+universe, so a new runtime edits core (critique r5-7). RULING:
+runtime-name VALUES in checkout configuration are a sanctioned narrow
+seam: they express the OPERATOR'S selection, are validated against
+the registry, and never define the supported universe. The per-runtime
+model boilerplate in the shipped scaffold is replaced by generic
+tailoring that materializes `role.default.model.<runtime>=<model>`
+for every selected non-synthesized runtime (the synthesized fake-model
+rule already lives in the registry declaration). Sweep scope includes
+the shipped conf template.
 
 ## Doctrine
 
