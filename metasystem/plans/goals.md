@@ -48,6 +48,10 @@
 - Origin: main
 - Next step: Sweep the ~150 python3 heredocs in scripts/ into engine verbs and shell; the doctrine is backlog-notes item 13's end state.
 
+## Queued goal: runtime-integration-contracts — The contested runtime-integration contracts: adoption/registration/installation, fixture authorization, conf schema, enforcement transport
+- Origin: main
+- Next step: Design loop seeded by plans/agnosticism-critique-r1..r6; the r6 findings are the opening worklist.
+
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
 - Origin: main
 - Concluded: Shipped: run records with custody proofs, the waiter contract, verdict integration, the locked sweep. The mandatory code critique found 11 defects (4 critical); all folded with tests. Both hosts green at 0d76eb1.

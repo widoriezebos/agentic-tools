@@ -1,9 +1,9 @@
 # Agnosticism audit: the ruling set
 
-- Status: DRAFT r6 — critique r5 folded (9 findings: 6 structural, 3 mechanical); awaiting critique r6, the FINAL budgeted round
-- Goal: agnosticism-audit (backlog item 16, D-series: pending)
-- Next step: Fold the critique verdict when run agno-critique-r6 concludes; on non-convergence the goal SPLITS (converged classes implement; the adoption/registration contract becomes its own design goal).
-- In flight right now: run agno-critique-r6 (codex xhigh critique of this revision; watch it with: bin/metasystem run watch --id agno-critique-r6 --root .)
+- Status: SPLIT AT BUDGET (D74) — phase A (the converged classes below) is IMPLEMENTATION scope for goal agnosticism-audit; phase B (the contested contracts) moved to goal runtime-integration-contracts with its own design loop
+- Goal: agnosticism-audit (backlog item 16; D74)
+- Next step: Implement phase A: registry core, capability tables, hooks --runtime, fence dispatch, waiver identifiers, docs and conf classes; mandatory code critique after gates.
+- In flight right now: none
 
 The human's rule, verbatim intent (2026-08-15): "the meta system must be
 agent agnostic (it should work with Codex and Devin and any other future
@@ -44,8 +44,54 @@ roots were unpinned, the installer escape pointed at the probes
 table, the config-identity filter had no live-path verb, checkout
 configuration itself had no sanctioned class, the enforcement enum
 admitted a value the live schema rejects, and framing/idempotency
-stayed contradictory (critique r5). r6 is the r5 fold and the FINAL
-budgeted round.
+stayed contradictory (critique r5). r6 was the r5 fold and the FINAL
+budgeted round; critique r6 returned REVISE with structural findings
+remaining (trajectory 10/7/9/7/9/11, rising at budget exhaustion), so
+neither convergence nor the fixtures-as-arbiter exit was available.
+Per D74 the goal SPLIT: everything the critic's own fold tables mark
+resolved across r2-r6 is phase A and implements under this goal;
+the still-contested subdomains are phase B, moved WHOLE to goal
+runtime-integration-contracts with critiques r1-r6 as seed material.
+
+## The split (D74)
+
+PHASE A — implement now (converged across rounds; the critic's fold
+tables mark each resolved): the `internal/runtimes` pure-data registry
+core (names + grammars, tailoring priority, fake-model synthesis,
+adoptable/adoptionDefault with the `none` sentinel, session-env names,
+instruction files reaching every consumer, the exact
+expectedEnvelopeEnforcement enum, permissionResiduals with role-owned
+live waivers, shippedEnforcementConfig/liveSelfCheck split); the
+purpose-filtered `runtime` verbs EXCEPT `registration` (list,
+list --adoptable, adoption-default, dirs*, enforcement-config,
+self-check, instruction-file, session-env, config-identity-filter —
+*dirs reads the validate.go:344 table until phase B's rows replace its
+source); the per-owner typed capability tables (host recollection,
+usage recovery with RecoveryOutcome, adapter probes with the typed
+lifecycle); Class 5 (delivery recollection), Classes 6+7 (usage seam
+split, fence dispatch, preservation tests), Class 4 (hooks --runtime
+with explicit paths), Class 8 (audit + conformance consumers), Class 9
+(residual identifiers, waivers stay role-owned), Classes 1/11/12/13
+(stays + the probe lifecycle), Class 14 (docs claims), Class 15 (conf
+seam — including r6-7's refinement: SCHEMA-DEFINED runtime positions,
+key segments as well as values, validated against the registry; conf
+joins the seam list, sweep, and doctrine), and r6-11's site: Class 3
+gains dispatch.sh:8's help line, whose runtime choices derive from
+`runtime list`.
+
+PHASE B — goal runtime-integration-contracts (design loop, seeded by
+plans/agnosticism-critique-r1..r6; the r6 findings are the opening
+worklist): the ENTIRE adoption/registration/installation contract
+(tagged-union rows, artifact roles and requiredness semantics,
+union/dedup with alias preservation, collision-root declarations,
+per-skill tree grain, the typed installer owner, wire framing bytes,
+per-operation drift validation, same-SHA recognition order — r6
+findings 2,3,4,5,6,9,10); fixture authorization transport and full
+consumer coverage (r6-1); the enforcement-map adapter transport verb
+(r6-8). Until phase B lands, adopt.sh, supervision-hook.sh, and
+validate-metasystem.sh keep their current open-coded arms — phase A
+does NOT touch them except where a phase-A declaration already has a
+consumer test (instruction files, shipped-hook iteration).
 
 ## The sanctioned seams
 

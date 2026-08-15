@@ -2172,3 +2172,30 @@ ledger closed monitor-facility and promoted agnosticism-audit; a
 follow-on decision will record that audit's ruling set. Revert
 cost: git revert of the fold commit; the pre-fold behavior is the
 gated 04a1bbe tree.
+
+## D74 — 2026-08-16: the agnosticism design loop splits at budget exhaustion
+
+Six critique rounds (gpt-5.6-sol at xhigh), trajectory
+10/7/9/7/9/11 — RISING at the second budget's exhaustion, with ten
+of eleven r6 findings structural. Neither exit applied: not
+converged, and the fixtures-as-arbiter exit requires a falling
+trajectory with mechanical-grain findings. The critic's stated
+lawful moves: human escalation or the split announced in the r6
+header. Decision: SPLIT, under the standing delegation. What six
+rounds actually revealed is that item 16 contains a second design
+problem the size of the first — the adoption/registration/
+installation contract (seven of eleven r6 findings cluster there),
+plus fixture-authorization transport — hiding inside an audit
+framed as "rule per site." Phase A (the registry core, capability
+tables, usage/hooks/waiver/docs/conf classes — every class the
+critic's own fold tables mark resolved) implements now under
+agnosticism-audit with the mandatory post-gate code critique.
+Phase B moved whole to new goal runtime-integration-contracts,
+seeded with all six critiques; its design loop starts fresh with
+its own budget. Rationale for splitting rather than waking Wido:
+the delegation covers scope decisions, the split loses no
+information (critiques preserved verbatim), and the alternative —
+freezing all progress on a mostly-converged design to await a
+ruling — contradicts the standing "keep going" directive. Revert
+cost: goal park runtime-integration-contracts and resume prose
+rounds on the unified document.
