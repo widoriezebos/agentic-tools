@@ -2,12 +2,13 @@
 
 Working Mode: design
 
-Owner: main session (delegate), backlog item 14. Status: r4 — folds
-the thirteen r3 findings (critiques at
-plans/goal-system-critique-r{1..3}.md; r3 closed G-02/G-13/G-15 and
-ran the design-obligation gate, which this revision now satisfies
-with the matrix at the end). Human rulings (D66) remain fixed input.
-Awaiting r4 critique; implementation follows convergence.
+Owner: main session (delegate), backlog item 14. Status: r5 — folds
+the thirteen r4 findings (critiques at
+plans/goal-system-critique-r{1..4}.md). The obligation matrix passes
+the gate's STRUCTURAL check; its rows stay PARTIAL until
+implementation, so the gate exits 1 by design until completion (r4's
+"satisfies" wording was wrong and is retracted). Human rulings (D66)
+remain fixed input. Awaiting r5 critique.
 
 ## The problem, in the human's words and one incident
 
@@ -16,6 +17,22 @@ the human "NOTHING LEFT TO WORK ON" while a quarter of a 101-finding
 program remained: the backlog lived where no machinery looks, and
 even after the narrow fix the verdict could say only THAT work
 exists, never WHAT to do next.
+
+**Stated non-goal, with the residual named (r4 finding 1, closing
+the loop's longest-running objection honestly)**: intent recorded
+ONLY where no sensor reads — a backlog in docs/reviews/, a TODO in a
+commit message — is undetectable by construction, and this design
+does not claim otherwise. What it does: makes declaring intent a
+one-command act (`goal open`), makes UNDECLARED absence
+unrepresentable in the ledger (zero-current requires a queue or a
+declaration), expires declarations when the plans-stream world
+moves, and adds the doctrine rule (project-adaptation + AGENTS.md
+amendments) that programs START with `goal open`. The residual — a
+human or agent who writes a program down somewhere unscanned and
+declares nothing — remains possible and is accepted in writing; the
+regression tests therefore test the DECLARED lifecycle, and the
+incident's full prevention is the doctrine rule plus this
+machinery, not the machinery alone.
 
 ## Governing constraints (D66)
 
@@ -55,7 +72,8 @@ Grammar (parse-refusal on violation):
     - Next step: ...                            (kept for unpark)
 
     ## Done goal: <kebab-id> — <intent>
-    - Concluded: <one sentence>
+    - Origin: ...                               (kept for reopen)
+    - Concluded: <one sentence, ≤240 bytes>
 
     ## Goal-free: declared <ISO time> by <origin>   (zero-current only)
 
@@ -67,8 +85,16 @@ digest at declaration time (`## Goal-free: declared <time> by
 <origin> over <scan-digest>`), and the verdict recomputes that
 digest — a changed stream set invalidates the declaration, and the
 verdict then BLOCKS ONCE with "the goal-free declaration predates
-new work; declare a goal or renew" — the world moved, so the
-declared absence of intent expired with it. An ABSENT ledger on an
+new work; declare a goal or renew with `goal declare-free`" — the
+world moved, so the declared absence of intent expired with it.
+RENEWAL IS DEFINED (r4 finding 3): `declare-free` on a ledger
+already carrying a declaration is the renewal transition — it
+rewrites the declaration with the fresh time and scan digest (the
+one deliberate exception to idempotence-refusal, named in the
+table). The block-once state for staleness is the STALE DIGEST
+itself, stored in the same per-session state as goal revisions
+(blockedFreeDigests, same append/prune rules) — one stale world
+blocks once, a further world change blocks once more. An ABSENT ledger on an
 existing installation is ADVISORY, never degraded (r3 finding 11's
 upgrade cliff): the verdict reports "no goal ledger; `goal open`
 starts one" without blocking and without forbidding the all-clear —
@@ -91,7 +117,11 @@ the per-stream in-flight authority; the verdict's precedence
 
 Family `goal` (name needs the usual verb sign-off; `report goal-*`
 is the fallback): open, set-next, promote, park, unpark, done,
-reopen, declare-free, list, next, reconcile.
+reopen, declare-free, prune, list, next, reconcile. Byte bounds are
+COMPLETE (r4 finding 12): intent ≤160, next step ≤240, id ≤64,
+Evidence ≤3 lines of ≤200 bytes, Parked-because ≤240, Concluded
+≤240; the parser refuses any excess at write and flags it degraded
+at read.
 
 | From \ verb | open | promote | park | unpark | done | reopen | declare-free |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -100,7 +130,7 @@ reopen, declare-free, list, next, reconcile.
 | Current | refuse | refuse (already) | → Parked; REQUIRES --then <queued-id> or --and-none exactly like done (r3 finding 4: parking the only Current may not manufacture an illegal ledger) | refuse | → Done; REQUIRES --then <queued-id> or --and-none (writes Goal-free) | refuse | n/a |
 | Parked | refuse | refuse | refuse | → Queued | refuse | refuse | n/a |
 | Done | refuse | refuse | refuse | refuse | refuse | → Queued, Origin preserved; REQUIRES --next "<step>" (Done blocks carry no step — r3 finding 4) | n/a |
-| (ledger-level) | any open/promote/unpark DROPS an existing Goal-free declaration in the same atomic write — declaring intent supersedes declared absence (r3 finding 4) | | | | | | legal only at zero Current AND zero Queued |
+| (ledger-level) | any open/promote/unpark/REOPEN drops an existing Goal-free declaration in the same atomic write — declaring intent supersedes declared absence (r3+r4 finding 4) | | | | | | legal only at zero Current AND zero Queued; --and-none REFUSES while Queued goals exist, naming them — declared absence with a standing queue is a contradiction the caller resolves by promoting or parking first; declare-free on an existing declaration RENEWS (the named idempotence exception) |
 
 Every verb is idempotence-explicit: re-running a completed
 transition refuses with the current state named (no silent
@@ -122,7 +152,17 @@ describes, NOT under disposable artifacts/ — r3's doctrine catch),
 holding the last accepted ledger's full bytes and digest, written
 AFTER the ledger in verb order; on crash between the two writes the
 digest mismatches, the state degrades, and reconcile repairs — the
-crash window is a named degraded state, never silence. RECONCILE
+crash window is a named degraded state, never silence.
+INITIALIZATION (r4 finding 2): adoption seeds goals.md AND
+goals-accepted.json together (the adopter's plans-set rebuild and
+its exact-files fixture both gain the pair); on an EXISTING
+installation, the first `goal` verb ever run initializes the
+baseline from the ledger it accepts — and when a ledger exists with
+NO baseline and no verb has run, the verdict treats it as degraded
+with the display naming `goal reconcile` as the bootstrap, which
+adopts the ledger as the first accepted state after full grammar and
+zero-history transition checks (every block must be reachable from
+empty — reconcile's replay handles genesis). RECONCILE
 REPLAYS AUTHORITY (r3 finding 3): it computes the block-level delta
 between the accepted bytes (which it has — this is why the baseline
 keeps full bytes, not a digest alone) and the edited ledger, maps
@@ -151,26 +191,37 @@ state the equivalent verb sequence would have refused.
   unchanged ask is the same ask, and any wording change to the step
   re-arms it. Unrelated queued/done edits never re-arm (the hash
   scopes to the Current block alone).
-- **Two block-state slots, not one** (r2's G-01 tail): the verb owns
-  `artifacts/agents/turn-verdict-state.json` (schemaVersion field;
-  flock with a 2-SECOND DEADLINE — the installed Stop hook runs
-  under a 5-second budget and a wedged lock must degrade, not hang;
-  atomic write) holding {sessionId → {openWorkSignature (resettable,
-  today's semantics), blockedGoalRevisions (append-only,
-  age-pruned: sessions untouched for 30 days drop on write)}}. The
-  goal-block sequence cannot re-block; check-and-record is atomic
-  under the lock; concurrent Stop calls serialize there.
-- **Precedence** (r3 finding 8 folded): open work blocks first
-  (today's discipline). When the scanner reports streams WAITING ON
-  THE HUMAN — suppressed from blocking today — the goal clause is
-  suppressed too: a human-blocked checkout must not be handed a
-  contradictory imperative, and the verdict reports the wait exactly
-  as today. The goal blocks ONCE only when the scanner reports
-  nothing at all — no open work, no human-waits — with display "open
-  work is done; the goal file names the next step: <step verbatim>".
-  Goal-free reports its declaration (or its staleness block, above);
-  a DEGRADED ledger forbids the all-clear and says why; an ABSENT
-  ledger is advisory (the upgrade rule above).
+- **The block-state file, fully specified** (r4 finding 7):
+  `artifacts/agents/turn-verdict-state.json` = {"schemaVersion": 1,
+  "sessions": {sessionId: {"lastTouched": ISO, "openWorkSignature":
+  str, "blockedGoalRevisions": [≤64, FIFO-evicted],
+  "blockedFreeDigests": [≤16, FIFO-evicted]}}}. lastTouched updates
+  on every write; sessions with lastTouched older than 30 days drop
+  on any write; the caps bound Stop latency and storage by
+  construction. Flock with a 2-SECOND DEADLINE (the installed Stop
+  hook runs a 5-second budget; a wedged lock degrades, never
+  hangs); atomic write; check-and-record atomic under the lock;
+  concurrent Stop calls serialize there.
+- **The scanner grows a STRUCTURED result first** (r4 finding 5 —
+  a named prerequisite, in this change's scope): openwork gains
+  `ScanResult{Open []Item, WaitingOnHuman []Item, StalePlans []Item,
+  Busy bool, Unreadable []string}` (Busy = live delegate jobs or
+  gate runs, the fact the hook reads separately today); the legacy
+  []string surface remains as a formatter over it for existing
+  callers. The verdict verb consumes ScanResult — precedence is then
+  DECIDABLE: Busy → no goal clause (an active checkout needs no
+  prodding); Open non-empty → open-work block, today's semantics;
+  WaitingOnHuman non-empty (and Open empty) → the wait reported,
+  goal clause suppressed (no contradictory imperative); StalePlans
+  stay warning-only and NEVER block (r4's accidental-blockable
+  catch); all empty → the goal blocks once with "open work is done;
+  the goal file names the next step: <step verbatim>". Unreadable
+  inputs populate diagnostics (never silently dropped). Goal-free
+  reports its declaration or staleness block; DEGRADED ledger: the
+  verdict sets shouldBlock=false, ledgerStatus=degraded, suppresses
+  the all-clear sentence, and the display explains — degradation
+  warns loudly and vetoes 'nothing left', but never fabricates a
+  block (r4 finding 6's choice, made); ABSENT stays advisory.
 - **The final hook envelope, defined** (r3 findings 6+7 close r2's
   G-09): the verdict's display becomes the BLOCK REASON byte-verbatim
   when shouldBlock; the hook's other messages — watchdog,
@@ -185,9 +236,12 @@ state the equivalent verb sequence would have refused.
   ledgerStatus); verb nonzero means I/O failure, and the hook
   contract requires the hook to emit its own FIXED degraded
   systemMessage naming the failure ("turn-verdict unavailable:
-  <stderr line>") — hook-side, so it is representable even when the
-  verb cannot speak; the current 2>/dev/null||true suppression is
-  the named defect the contract removes. The scanner's silently
+  <stderr line>") AND suppresses its own all-clear/"NOTHING LEFT"
+  sentence for that turn (r4 finding 6: the fixed degraded message
+  may never compose with an all-clear it cannot vouch for) —
+  hook-side, so it is representable even when the verb cannot
+  speak; the current 2>/dev/null||true suppression is the named
+  defect the contract removes. The scanner's silently
   dropped unreadable inputs (r3 finding 6 tail) become diagnostics
   entries via a scoped openwork API change: unreadable plan or
   record files are REPORTED, not skipped.
@@ -197,9 +251,14 @@ state the equivalent verb sequence would have refused.
 docs/design/ gains the TURN-VERDICT DELIVERY CONTRACT: what an
 adapter must do to claim conformance (invoke the verb at turn end,
 honor shouldBlock via its runtime's mechanism, transport display
-verbatim, never suppress degraded). The conformance table ships in
-the contract with four states per runtime (declared / installed /
-observed / blocking-capable — the honest model from the D60 record):
+verbatim, never suppress degraded). The conformance table describes
+THE DISTRIBUTION, not any installation (r4 finding 10's choice,
+made): it ships in the contract document unchanged through adoption
+— which runtimes THIS checkout installed is already answerable from
+metasystem.conf and is not the table's job; the instruction-audit
+owner (internal/audit, named in the matrix) checks the table's
+claims against the shipped enforcement configs. Four states per
+runtime (declared / installed / observed / blocking-capable):
 claude starts at installed-with-fixture-proven-EMISSION — the
 fixture proves the hook emits decision:block, and the row says
 exactly that; blocking-capable is claimed only after a live
@@ -217,11 +276,13 @@ delivery automation differs, and the table says so in public.
 
 ## Mission hosts (D66, question 4)
 
-The orientation line is owned where the prompt is owned (r3 finding
-9): internal/mission.AssemblePrompt gains the optional bounded
-section, and internal/validate's turn-prompt grammar gains its
-matching optional rule — the exact-grammar validator and the
-assembler move together or the prompt gate would refuse every turn.
+The orientation line is owned where the prompt is owned (r3+r4
+finding 9), with the EXACT contract: AssemblePrompt emits, between
+the mission-intent section and the streams section, the optional
+block `## Serving goal\n<id> — <intent>\n` (one heading, one line,
+no fields); internal/validate's turn-prompt grammar gains that
+optional block at exactly that position. The assembler and validator
+change in the same commit or the prompt gate refuses every turn.
 Reading goals.md rides the goal parser (read-only, no new
 authority); a missing, absent, or degraded ledger produces NO line —
 prompt assembly never degrades and never blocks on goal state.
@@ -243,7 +304,11 @@ decision per chain, made at dispatch, never re-evaluated mid-chain:
     # Serving goal (context, not instruction)
     <id> — <intent>
 
-Default OFF. Per dispatch, never per role, never global. The section
+`--serving-goal` with NO usable Current goal (absent ledger, no
+Current, degraded) REFUSES the dispatch loudly at setup (exit 3,
+"no current goal to project") — the orchestrator asked for a
+projection that does not exist, and a silent no-op would record a
+brief hash that lies about intent (r4 finding 9). Default OFF. Per dispatch, never per role, never global. The section
 confers zero authority (the envelope, schema, and certification
 govern exactly as before); its text is quoted data bounded at the
 ledger (id ≤64, intent ≤160). Queued/Parked/Done goals never
@@ -253,11 +318,12 @@ transport every runtime receives (exchangeability).
 ## Item-15 composition (read-side only, unchanged from r2)
 
 Run records own conditional continuations. Item 14 ships NO
-enrichment (r3 finding 12: MAY was an observable implementer
-choice): the verdict verb exposes one documented Go read interface
-(the goal facts struct the verb itself consumes) and nothing calls
-it beyond the verb; item 15's design owns whether and how run state
-enriches orientation, with its own tests when it does.
+enrichment: the goal PARSER is an exported function with exactly TWO
+consumers in this change — the verdict verb and
+mission.AssemblePrompt (r4 finding 11: the mission projection reads
+through the same parser, no duplication, and the design says so
+rather than leaving it to be discovered); item 15's design owns run
+enrichment with its own tests when it exists.
 
 ## Registration and the incident regression (r2's G-05)
 
@@ -308,8 +374,10 @@ conformance table), the doctrine files above, adopt.sh, fixtures.
   concurrent Stop atomicity; degraded/absent/goal-free displays;
   open-work precedence; byte-verbatim next-step quoting.
 - Hook: fixture proving the shell transports display and degraded
-  byte-identically and that the advisor/watchdog paths bypass the
-  verdict verb untouched.
+  byte-identically; the ADVISOR path alone bypasses the verdict
+  verb; the WATCHDOG path calls it like every other (r4 finding 8:
+  the r4 proof line contradicted the normative prose — the prose was
+  right).
 - Projection: --serving-goal appends exactly the bounded section;
   absence appends nothing; oversized ledger fields are refused at
   the LEDGER, so the brief builder never truncates.
@@ -337,3 +405,8 @@ conformance table), the doctrine files above, adopt.sh, fixtures.
 | GOAL-11 | HIGH | Delivery contract | Conformance table rows carry only evidenced states; AGENTS.md turn-end amendment ships | docs/design + AGENTS.md | contract doc | audit leg: table matches shipped configs | live blocking observation upgrades claude's row by date | PARTIAL | implement |
 | GOAL-12 | MEDIUM | Item-15 seam | The verdict verb's goal-facts read interface is exported and UNCONSUMED in item 14 | internal/report | turnverdict.go | compile-level + a no-enrichment assertion | — | PARTIAL | implement |
 | GOAL-13 | MEDIUM | Ledger honesty | Prune reports dropped blocks on stdout; docs state the ledger is not an audit log | internal/report goal verbs | goalverbs.go | TestPruneReportsDrops | — | PARTIAL | implement |
+| GOAL-14 | CRITICAL | Mutation discipline: initialization | Adoption seeds goals.md + goals-accepted.json together; ledger-without-baseline degrades and reconcile bootstraps via genesis replay | scripts/adopt.sh + internal/report | adopt.sh + goalverbs.go | adopt fixture pair-assertion + TestReconcileGenesis | adopt fixture | PARTIAL | implement |
+| GOAL-15 | HIGH | Goal-free staleness | declare-free renews (the named idempotence exception); stale digests block once via blockedFreeDigests | internal/report | goalverbs.go + turnverdict.go | TestGoalFreeRenewAndBlockOnce | fixture leg | PARTIAL | implement |
+| GOAL-16 | HIGH | Scanner facts | openwork exposes ScanResult (Open/WaitingOnHuman/StalePlans/Busy/Unreadable); legacy strings become a formatter; stale plans never block | internal/report | openwork.go | TestScanResultClassification | supervision fixture leg | PARTIAL | implement |
+| GOAL-17 | HIGH | Diagnostics | Unreadable plan/record inputs are reported in diagnostics, never silently dropped | internal/report | openwork.go | TestUnreadableInputsSurface | — | PARTIAL | implement |
+| GOAL-18 | MEDIUM | Delivery contract audit | The instruction audit checks the conformance table's rows against shipped enforcement configs | internal/audit | metasystem.go | TestConformanceTableAudit | — | PARTIAL | implement |
