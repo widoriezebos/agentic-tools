@@ -749,7 +749,6 @@ func (s *Store) BaselineMatches() bool {
 	return string(state.ledgerBytes) == state.base.Ledger && sha256Hex(state.ledgerBytes) == state.base.Sha256
 }
 
-
 // CurrentProjection is the one projection surface mission assembly and
 // the dispatch setup core share (the parser's second and third
 // consumers): the Current goal's id and intent, ok only when the ledger
