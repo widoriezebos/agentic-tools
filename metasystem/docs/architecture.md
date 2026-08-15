@@ -31,6 +31,46 @@ environments, and call back into engine verbs at every decision point
 (`dispatch.sh` is the largest example — the delegate-job choreography
 stays shell, every verdict inside it is a verb).
 
+## Runtime agnosticism
+
+The core never names an agent runtime in behavior (human ruling
+2026-08-15; agnosticism audit, D74). Runtime knowledge lives in the
+sanctioned seams as declarations the core consumes:
+
+- `internal/runtimes` — the ONE pure-data registry: names, priorities,
+  adoption shape, session environments, instruction files, hook
+  capabilities, enforcement expectations, permission residuals,
+  expected behavioral capabilities. Shell consumes it through the
+  `metasystem runtime` verbs, never by parsing.
+- `internal/adapter`, `internal/host`, and `internal/usage`'s
+  per-runtime files — behavioral seams. Behavioral capabilities
+  (delivery recollection, usage recovery, self-test probes) register
+  seam-locally into their owner package's typed table; the registry
+  only declares what is EXPECTED, and a conformance test joins the two
+  both ways.
+- `scripts/agents/adapters/*.sh` (with their runtime-owned JSON
+  assets), `scripts/agents/hosts/*.sh`, per-skill runtime profiles,
+  and `scripts/enforcement/<runtime>-*.json` — the shell seams.
+
+Sanctioned appearances of runtime names outside seam files: (a)
+provenance comments naming the critic or incident behind a decision,
+(b) the adapter/host families' CLI verb names, (c) operator-selected
+VALUES in checkout configuration, validated against the registry,
+(d) the named `fake` test-harness exceptions (each fake-gated branch
+keeps its explicit local guard; no generic fixture bypass exists), and
+(e) the handwritten conformance-evidence rows in
+docs/design/turn-verdict-delivery-contract.md.
+
+Adding a runtime touches its seam entries plus one registry
+declaration — with two declared exceptions: granting a new runtime's
+permission-residual waiver is a HUMAN edit to the role requirements
+files (the live, checkout-local security control; a runtime with an
+undeclared residual fails closed), and the delivery-contract evidence
+row is handwritten prose the audit cross-checks. The
+adoption/registration/installation contract is being generalized under
+goal runtime-integration-contracts (plans/agnosticism-audit-rulings.md
+carries the split).
+
 ## Layering
 
 Three tiers, imports point strictly downward:

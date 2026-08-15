@@ -36,7 +36,7 @@ type SelftestParams struct {
 	Runtime        string
 	AdapterPath    string // the adapter script, exec'd for identity and probe
 	Usage          string // native, unavailable, or metered
-	DevinChecks    bool
+	Probe          *SelftestProbe
 	TurnCeilingSec int  // how long one self-test turn may take
 	DenialEndsTurn bool // the runtime ends a turn on a denied tool
 }
@@ -190,7 +190,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	selftestID := fmt.Sprintf("%s-selftest-%s-%d", p.Runtime, now().UTC().Format("20060102t150405z"), os.Getpid())
 	scratch := filepath.Join(dir, "repo")
 	nonce := p.Runtime + "-" + randomToken()
-	if err := stageScratchRepo(scratch, nonce, p.DevinChecks); err != nil {
+	if err := stageScratchRepo(scratch, nonce, p.Probe); err != nil {
 		return err
 	}
 
@@ -268,8 +268,8 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	defer stopListener()
 
 	skillInstruction := ""
-	if p.DevinChecks {
-		skillInstruction = " Invoke the metasystem-selftest skill discovered through .agents/skills and include its SYMLINKED_SKILL marker in evidence."
+	if p.Probe != nil {
+		skillInstruction = p.Probe.PromptText(nonce)
 	}
 	permissionJob := selftestID + "-permissions"
 	permittedGoal := "Open permitted.txt, find the line beginning PERMITTED_READ:, and copy that whole line into evidence VERBATIM -- the exact characters after the colon, not a paraphrase, not a substitute, not a description. The value is a random token; if you did not read the file you cannot know it."
@@ -340,10 +340,9 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err != nil || !proven {
 		return fmt.Errorf("%s permission probe did not prove the permitted read", p.Runtime)
 	}
-	if p.DevinChecks {
-		proven, err := ReturnProvesMarker(returnPath, "SYMLINKED_SKILL:"+nonce)
-		if err != nil || !proven {
-			return errors.New("devin did not prove symlinked .agents/skills discovery")
+	if p.Probe != nil {
+		if err := p.Probe.VerifyEvidence(returnPath, nonce); err != nil {
+			return err
 		}
 	}
 
@@ -351,8 +350,12 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 	if err := os.MkdirAll(filepath.Dir(recordPath), 0o755); err != nil {
 		return err
 	}
+	var probeLabels []string
+	if p.Probe != nil {
+		probeLabels = p.Probe.BehaviorLabels
+	}
 	if err := WriteSelftestRecord(recordPath, p.Runtime, mainJob, p.Usage,
-		p.DevinChecks, writeEnforcement, networkEnforcement); err != nil {
+		probeLabels, writeEnforcement, networkEnforcement); err != nil {
 		return err
 	}
 	fmt.Fprintf(stdout, "%s adapter selftest passed: full protocol sequence, permission probes, and usage=%s\n",
@@ -363,7 +366,7 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 // stageScratchRepo builds the committed scratch workspace: the nonce the
 // permitted-read leg must echo, and for Devin the symlinked skill whose
 // discovery the runtime must prove.
-func stageScratchRepo(scratch, nonce string, devinChecks bool) error {
+func stageScratchRepo(scratch, nonce string, probe *SelftestProbe) error {
 	if err := os.MkdirAll(scratch, 0o755); err != nil {
 		return err
 	}
@@ -375,21 +378,8 @@ func stageScratchRepo(scratch, nonce string, devinChecks bool) error {
 		[]byte("# Scratch repository\n"), 0o644); err != nil {
 		return err
 	}
-	if devinChecks {
-		skillDir := filepath.Join(scratch, "skills", "metasystem-selftest")
-		agentsSkills := filepath.Join(scratch, ".agents", "skills")
-		if err := os.MkdirAll(skillDir, 0o755); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(agentsSkills, 0o755); err != nil {
-			return err
-		}
-		skill := "---\nname: metasystem-selftest\ndescription: Report the marker from this file.\n---\n\nSYMLINKED_SKILL:" + nonce + "\n"
-		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skill), 0o644); err != nil {
-			return err
-		}
-		if err := os.Symlink("../../skills/metasystem-selftest",
-			filepath.Join(agentsSkills, "metasystem-selftest")); err != nil {
+	if probe != nil {
+		if err := probe.PrepareScratch(scratch, nonce); err != nil {
 			return err
 		}
 	}
@@ -554,4 +544,23 @@ func randomToken() string {
 		return fmt.Sprintf("%d", os.Getpid())
 	}
 	return hex.EncodeToString(buffer) + fmt.Sprintf("-%d", os.Getpid())
+}
+
+// stageSymlinkedSkill is the devin probe's scratch fixture: a skill
+// reachable only through the symlinked .agents/skills tree.
+func stageSymlinkedSkill(scratch, nonce string) error {
+	skillDir := filepath.Join(scratch, "skills", "metasystem-selftest")
+	agentsSkills := filepath.Join(scratch, ".agents", "skills")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(agentsSkills, 0o755); err != nil {
+		return err
+	}
+	skill := "---\nname: metasystem-selftest\ndescription: Report the marker from this file.\n---\n\nSYMLINKED_SKILL:" + nonce + "\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skill), 0o644); err != nil {
+		return err
+	}
+	return os.Symlink("../../skills/metasystem-selftest",
+		filepath.Join(agentsSkills, "metasystem-selftest"))
 }

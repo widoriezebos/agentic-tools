@@ -103,7 +103,7 @@ func SelftestEnvelopeDeclaration(capabilitiesDir, runtime, field string) string 
 // proof; a notEnforced field's attempt was not asserted either way (a shell
 // can escape it), so claiming it proven would be the exact overclaim a reader
 // retains as acceptance evidence. Usage likewise reflects the mode observed.
-func WriteSelftestRecord(outputPath, runtime, job, usage string, devinChecks bool, writeEnforcement, networkEnforcement string) error {
+func WriteSelftestRecord(outputPath, runtime, job, usage string, probeLabels []string, writeEnforcement, networkEnforcement string) error {
 	proven := []string{"dispatch", "return-validation", "resume-identity", "cancel", "permitted-read"}
 	// Only a mapped (enforced) field yields behavioural proof of denial.
 	if writeEnforcement == "mapped" {
@@ -120,9 +120,7 @@ func WriteSelftestRecord(outputPath, runtime, job, usage string, devinChecks boo
 	default:
 		proven = append(proven, "usage-unavailable-recording")
 	}
-	if devinChecks {
-		proven = append(proven, "documented-exit-status-observation", "symlinked-skill-discovery")
-	}
+	proven = append(proven, probeLabels...)
 	value := map[string]any{
 		"runtime":            runtime,
 		"job":                job,

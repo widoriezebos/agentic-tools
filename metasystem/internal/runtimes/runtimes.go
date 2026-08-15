@@ -158,6 +158,10 @@ var declarations = []Declaration{
 		Name: "fake", HasAdapter: true, HasHostLauncher: true,
 		TailoringPriority: 4, SynthesizedModel: "fake-model",
 		InstructionFile: "AGENTS.md",
+		// The fixture harness's own declared gap: the unverified-network
+		// profile reports network unverified, and the waiver machinery's
+		// fixtures exercise exactly this residual.
+		PermissionResiduals: map[string]string{"network": "fake-network-unverified"},
 	},
 }
 

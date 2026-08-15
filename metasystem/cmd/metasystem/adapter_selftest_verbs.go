@@ -88,7 +88,7 @@ func runAdapterSelftestRecord(args []string) int {
 	runtime := flags.String("runtime", "", "runtime name")
 	job := flags.String("job", "", "main self-test job id")
 	usage := flags.String("usage", "", "native, unavailable, or metered")
-	devinChecks := strictBool(flags, "devin-checks", "1", "0", "1 when the Devin-only probes ran")
+	probeName := flags.String("probe", "", "declared probe whose labels the record earns")
 	writeEnforcement := flags.String("write-enforcement", "", "declared writeRoots enforcement")
 	networkEnforcement := flags.String("network-enforcement", "", "declared network enforcement")
 	if flags.Parse(args) != nil {
@@ -96,11 +96,20 @@ func runAdapterSelftestRecord(args []string) int {
 	}
 	if *output == "" || *runtime == "" || *job == "" || *usage == "" ||
 		*writeEnforcement == "" || *networkEnforcement == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-record --output FILE --runtime RT --job ID --usage MODE --write-enforcement E --network-enforcement E [--devin-checks 0|1]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-record --output FILE --runtime RT --job ID --usage MODE --write-enforcement E --network-enforcement E [--probe NAME]")
 		return 2
 	}
+	var probeLabels []string
+	if *probeName != "" {
+		probe, err := adapter.SelftestProbeFor(*runtime, *probeName)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		probeLabels = probe.BehaviorLabels
+	}
 	if err := adapter.WriteSelftestRecord(*output, *runtime, *job, *usage,
-		*devinChecks, *writeEnforcement, *networkEnforcement); err != nil {
+		probeLabels, *writeEnforcement, *networkEnforcement); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -143,7 +152,7 @@ func runAdapterSelftestRun(args []string) int {
 	flags.StringVar(&p.Runtime, "runtime", "", "runtime name")
 	flags.StringVar(&p.AdapterPath, "adapter", "", "adapter script, exec'd for identity and probe")
 	flags.StringVar(&p.Usage, "usage", "", "native, unavailable, or metered")
-	flags.BoolVar(&p.DevinChecks, "devin-checks", false, "run the Devin-only skill-discovery leg")
+	probeName := flags.String("probe", "", "declared probe to run alongside the contract legs")
 	flags.IntVar(&p.TurnCeilingSec, "turn-ceiling-sec", 240, "how long one self-test turn may take")
 	flags.BoolVar(&p.DenialEndsTurn, "denial-ends-turn", false, "the runtime ends a turn on a denied tool")
 	if flags.Parse(args) != nil {
@@ -151,8 +160,16 @@ func runAdapterSelftestRun(args []string) int {
 	}
 	if p.Root == "" || p.Runtime == "" || p.AdapterPath == "" ||
 		(p.Usage != "native" && p.Usage != "unavailable" && p.Usage != "metered") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-run --root DIR --runtime NAME --adapter SCRIPT --usage native|unavailable|metered [--devin-checks] [--turn-ceiling-sec N] [--denial-ends-turn]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter selftest-run --root DIR --runtime NAME --adapter SCRIPT --usage native|unavailable|metered [--probe NAME] [--turn-ceiling-sec N] [--denial-ends-turn]")
 		return 2
+	}
+	if *probeName != "" {
+		probe, err := adapter.SelftestProbeFor(p.Runtime, *probeName)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		p.Probe = &probe
 	}
 	model, _, err := config.Get(config.GetParams{
 		Key:        "role.default.model." + p.Runtime,

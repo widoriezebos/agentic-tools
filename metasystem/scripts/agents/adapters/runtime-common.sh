@@ -447,9 +447,9 @@ write_capability_snapshot() { # runtime version hash transports caps permissions
 # adapter keeps only its runtime-specific knobs: how long one turn may take
 # (a property of the RUNTIME, not the contract) and whether a denied tool
 # ends the turn (those runtimes run the permission legs as separate turns).
-run_full_contract_selftest() { # native|unavailable|metered, optional devin flag
-  local usage_expectation=$1 devin_checks=${2:-0} extra=()
-  (( devin_checks )) && extra+=(--devin-checks)
+run_full_contract_selftest() { # native|unavailable|metered, optional probe name
+  local usage_expectation=$1 probe=${2:-} extra=()
+  [[ -n "$probe" ]] && extra+=(--probe "$probe")
   [[ "${selftest_denial_ends_turn:-0}" == 1 ]] && extra+=(--denial-ends-turn)
   "$ms" adapter selftest-run --root "$root" --runtime "$runtime" --adapter "$0" \
     --usage "$usage_expectation" --turn-ceiling-sec "${selftest_turn_ceiling_sec:-240}" \

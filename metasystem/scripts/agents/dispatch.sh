@@ -5,7 +5,7 @@ usage() {
   cat <<'USAGE' >&2
 Usage:
   scripts/agents/dispatch.sh dispatch --role <role> --brief <file>
-      [--mode <working-mode>] [--runtime claude|codex|devin|fake]
+      [--mode <working-mode>] [--runtime <name>; see: bin/metasystem runtime list]
       [--model <model>] [--job-id <id>] [--reviews <implementer-job-id>]
       [--workspace <dir> | --worktree]
       [--permissions <preset|envelope-file>] [--mission <id>]

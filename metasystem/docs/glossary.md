@@ -180,8 +180,9 @@ not paths.
   sweep judge it. A bare "job" in this repository always means this; a
   mission's host TURNS are not jobs.
 - **Adapter** — the per-runtime driver (`scripts/agents/adapters/*.sh`)
-  that turns one dispatched job into one runtime session: claude, codex,
-  devin, or the fixture-only `fake`. A **host adapter**
+  that turns one dispatched job into one runtime session — one per
+  registered runtime (`bin/metasystem runtime list`; today claude,
+  codex, devin, and the fixture-only `fake`). A **host adapter**
   (`scripts/agents/hosts/*.sh`) does the same for mission turns.
 - **Capability snapshot** — the probed record of what a runtime CLI can
   actually do and enforce, captured by `<adapter> probe`. Its

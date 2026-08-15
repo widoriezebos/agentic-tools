@@ -8,6 +8,7 @@ package capability
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"math"
 	"os"
 	"path/filepath"
@@ -129,10 +130,26 @@ func Select(root, runtime, role, identityJSON string, maxAge int, envelopePath, 
 	waivers, _ := requirements["waivers"].(map[string]any)
 	unverified := permissionsUnverified(snapshot)
 	for _, field := range unverified {
-		if isRestrictive(field, envelope[field], enforcement) && !waived(waivers, field, runtime) {
+		if !isRestrictive(field, envelope[field], enforcement) {
+			continue
+		}
+		// The waiver match is by DECLARED RESIDUAL IDENTIFIER, never by
+		// runtime name (agnosticism audit class 9): the registry names
+		// each runtime's enforcement gap per field; the role file — the
+		// live, checkout-local security control — must waive that exact
+		// identifier under the same field. An unverified restrictive
+		// field with NO declared residual fails closed: a new
+		// under-enforced runtime is refused until a human edits role
+		// policy, by design.
+		residual := runtimes.ResidualFor(runtime, field)
+		if residual == "" {
+			return fmt.Errorf("runtime %s reports permission field %s unverified but declares no residual for it; "+
+				"refusing (no waiver can apply)", runtime, field)
+		}
+		if !waived(waivers, field, residual) {
 			return fmt.Errorf("runtime %s cannot enforce restrictive permission field %s (requested %v); "+
 				"record a role waiver for %s in %s or choose another runtime",
-				runtime, field, envelope[field], runtime, filepath.Base(requirementsPath))
+				runtime, field, envelope[field], residual, filepath.Base(requirementsPath))
 		}
 	}
 
@@ -297,13 +314,13 @@ func isRestrictive(field string, value any, enforcement map[string]any) bool {
 	}
 }
 
-func waived(waivers map[string]any, field, runtime string) bool {
+func waived(waivers map[string]any, field, residual string) bool {
 	list, ok := waivers[field].([]any)
 	if !ok {
 		return false
 	}
 	for _, r := range list {
-		if s, ok := r.(string); ok && s == runtime {
+		if s, ok := r.(string); ok && s == residual {
 			return true
 		}
 	}

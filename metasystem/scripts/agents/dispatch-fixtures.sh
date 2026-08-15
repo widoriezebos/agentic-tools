@@ -1139,7 +1139,7 @@ python3 - "$requirements" <<'PY'
 import json, sys
 from pathlib import Path
 p = Path(sys.argv[1]); v = json.loads(p.read_text())
-v.setdefault("waivers", {}).setdefault("network", []).append("fake")
+v.setdefault("waivers", {}).setdefault("network", []).append("fake-network-unverified")
 p.write_text(json.dumps(v, indent=2) + "\n")
 PY
 run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id waived-deny --wait
@@ -1170,11 +1170,19 @@ if bin/metasystem job snapshot-select --root "$agent_repo" --runtime ghostrt \
 fi
 grep -Fq 'writeRoots' "$agent_fixture/ew-unwaived.err" \
   || { cp "$ew_role_saved" "$ew_role"; echo "empty-writeRoots refusal did not name the field" >&2; cat "$agent_fixture/ew-unwaived.err" >&2; exit 1; }
+# An UNREGISTERED runtime fails closed even with a name waiver on
+# record (agnosticism audit class 9): no declared residual means no
+# waiver can apply — a future under-enforced runtime is refused until
+# its registry declaration AND a human role-policy edit both exist.
 printf '%s\n' '{"required":[],"optional":{},"waivers":{"writeRoots":["ghostrt"]}}' >"$ew_role"
-bin/metasystem job snapshot-select --root "$agent_repo" --runtime ghostrt \
-  --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
-  --output "$agent_fixture/ew-waived.out" \
-  || { cp "$ew_role_saved" "$ew_role"; echo "empty writeRoots was refused even with the writeRoots waiver on record" >&2; exit 1; }
+if bin/metasystem job snapshot-select --root "$agent_repo" --runtime ghostrt \
+    --role design-critic --identity "$ew_identity" --max-age 40000 --envelope "$ew_env" \
+    --output "$agent_fixture/ew-waived.out" 2>"$agent_fixture/ew-waived.err"; then
+  cp "$ew_role_saved" "$ew_role"
+  echo "an unregistered runtime's name waiver bypassed the residual rule" >&2; exit 1
+fi
+grep -Fq 'declares no residual' "$agent_fixture/ew-waived.err" \
+  || { cp "$ew_role_saved" "$ew_role"; echo "the fail-closed refusal did not name the missing residual" >&2; cat "$agent_fixture/ew-waived.err" >&2; exit 1; }
 cp "$ew_role_saved" "$ew_role"
 rm -f "$ew_snap"
 

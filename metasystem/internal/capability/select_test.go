@@ -146,15 +146,32 @@ func TestSelectRestrictiveFieldRefusedThenWaived(t *testing.T) {
 	e.writeSnapshot(t, "codex-0.146.0-abc123-20260810-001.json", snap)
 	e.writeEnvelope(t, map[string]any{"network": "deny"}) // deny != allow -> restrictive
 
-	// No waiver: refused.
+	// Codex declares NO network residual: fail closed, and no waiver
+	// can change that (agnosticism audit class 9).
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
-		!strings.Contains(err.Error(), "cannot enforce restrictive permission field network") {
-		t.Fatalf("an unenforceable restriction should refuse, got %v", err)
+		!strings.Contains(err.Error(), "declares no residual") {
+		t.Fatalf("an undeclared residual should fail closed, got %v", err)
 	}
-	// With a waiver for codex: allowed.
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{"network": []any{"codex"}}})
-	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err != nil {
-		t.Fatalf("a waived restriction should be allowed: %v", err)
+	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
+		!strings.Contains(err.Error(), "declares no residual") {
+		t.Fatalf("a name waiver bypassed the residual rule, got %v", err)
+	}
+	// Fake DOES declare a network residual: unwaived refuses naming the
+	// identifier; waiving the identifier allows.
+	fakeSnap := baseSnapshot("abc123", "2026-08-10T00:00:00Z")
+	fakeSnap["runtime"] = "fake"
+	fakeSnap["permissions"] = map[string]any{"unverified": []any{"network"}}
+	e.writeSnapshot(t, "fake-0.146.0-abc123-20260810-001.json", fakeSnap)
+	fakeIdentity := `{"runtime":"fake","cliVersion":"0.146.0","configHash":"abc123","configKeyHashes":{"model":"` + hash64 + `"}}`
+	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
+	if err := Select(e.root, "fake", e.role, fakeIdentity, 30, e.envelopePath, e.outputPath); err == nil ||
+		!strings.Contains(err.Error(), "fake-network-unverified") {
+		t.Fatalf("the refusal should name the residual identifier, got %v", err)
+	}
+	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{"network": []any{"fake-network-unverified"}}})
+	if err := Select(e.root, "fake", e.role, fakeIdentity, 30, e.envelopePath, e.outputPath); err != nil {
+		t.Fatalf("a residual waiver should be allowed: %v", err)
 	}
 }

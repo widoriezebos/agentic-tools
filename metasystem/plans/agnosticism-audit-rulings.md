@@ -1,9 +1,23 @@
 # Agnosticism audit: the ruling set
 
-- Status: SPLIT AT BUDGET (D74) — phase A (the converged classes below) is IMPLEMENTATION scope for goal agnosticism-audit; phase B (the contested contracts) moved to goal runtime-integration-contracts with its own design loop
+- Status: SPLIT AT BUDGET (D74); phase A IMPLEMENTED — awaiting both host gates, then the MANDATORY code critique
 - Goal: agnosticism-audit (backlog item 16; D74)
-- Next step: Implement phase A: registry core, capability tables, hooks --runtime, fence dispatch, waiver identifiers, docs and conf classes; mandatory code critique after gates.
+- Next step: Gate both hosts on the phase-A implementation; run the mandatory code critique; fold; goal done --then runtime-integration-contracts.
 - In flight right now: none
+
+Phase-A implementation notes (what shipped vs the text below): the
+registry, runtime verbs, all Class-2/4/8/9 consumers, the three typed
+capability tables with the both-ways conformance test, the usage split
+with the fence's declared-recovery dispatch, the probe lifecycle, the
+role files rewritten to residual identifiers (fake declares its
+network residual for the fixture harness; the unregistered-runtime
+fixture now proves fail-closed), dispatch.sh's help line, the four
+docs' universe claims, and the architecture doctrine. Deferred WITH
+phase B (they interlock with the adoption/registration contract): the
+conf-template tailoring materialization, the mechanical
+no-exhaustive-universe docs assertion, and every adopt.sh/
+supervision-hook.sh/validate-metasystem.sh open-coded arm except the
+hooks-check call site.
 
 The human's rule, verbatim intent (2026-08-15): "the meta system must be
 agent agnostic (it should work with Codex and Devin and any other future

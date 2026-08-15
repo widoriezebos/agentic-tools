@@ -1,16 +1,16 @@
 {
-  "required": [],
-  "optional": {
-    "resume": {
-      "fallback": "fresh dispatch with the prior brief, prior return, and correction embedded"
-    }
-  },
-  "waivers": {
-    "readRoots": [
-      "devin"
-    ],
-    "writeRoots": [
-      "devin"
-    ]
+ "required": [],
+ "optional": {
+  "resume": {
+   "fallback": "fresh dispatch with the prior brief, prior return, and correction embedded"
   }
+ },
+ "waivers": {
+  "readRoots": [
+   "devin-read-roots-unenforced"
+  ],
+  "writeRoots": [
+   "devin-write-roots-unenforced"
+  ]
+ }
 }

@@ -96,7 +96,7 @@ func TestWriteSelftestRecordStatesOnlyWhatWasProven(t *testing.T) {
 	defer func() { now = restore }()
 
 	path := filepath.Join(t.TempDir(), "pass.json")
-	if err := WriteSelftestRecord(path, "codex", "job-1", "metered", false, "mapped", "notEnforced"); err != nil {
+	if err := WriteSelftestRecord(path, "codex", "job-1", "metered", nil, "mapped", "notEnforced"); err != nil {
 		t.Fatal(err)
 	}
 	record := readJSONFile(t, path)
@@ -128,7 +128,7 @@ func TestWriteSelftestRecordStatesOnlyWhatWasProven(t *testing.T) {
 
 func TestWriteSelftestRecordNativeUsageAndDevinChecks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pass.json")
-	if err := WriteSelftestRecord(path, "devin", "job-2", "native", true, "notEnforced", "mapped"); err != nil {
+	if err := WriteSelftestRecord(path, "devin", "job-2", "native", []string{"documented-exit-status-observation", "symlinked-skill-discovery"}, "notEnforced", "mapped"); err != nil {
 		t.Fatal(err)
 	}
 	record := readJSONFile(t, path)

@@ -322,3 +322,26 @@ func DevinPrompt(promptPath, schemaPath, outputPath, returnFile string) error {
 	}
 	return os.WriteFile(outputPath, []byte(text.String()), 0o644)
 }
+
+// The devin probe: symlinked .agents/skills discovery, registered
+// seam-locally (agnosticism audit class 13). The labels reproduce the
+// old --devin-checks pass record byte-for-byte.
+func init() {
+	RegisterSelftestProbe("devin", SelftestProbe{
+		Name: "symlinked-skill-discovery",
+		PrepareScratch: func(scratch, nonce string) error {
+			return stageSymlinkedSkill(scratch, nonce)
+		},
+		PromptText: func(nonce string) string {
+			return " Invoke the metasystem-selftest skill discovered through .agents/skills and include its SYMLINKED_SKILL marker in evidence."
+		},
+		VerifyEvidence: func(returnPath, nonce string) error {
+			proven, err := ReturnProvesMarker(returnPath, "SYMLINKED_SKILL:"+nonce)
+			if err != nil || !proven {
+				return fmt.Errorf("devin did not prove symlinked .agents/skills discovery")
+			}
+			return nil
+		},
+		BehaviorLabels: []string{"documented-exit-status-observation", "symlinked-skill-discovery"},
+	})
+}

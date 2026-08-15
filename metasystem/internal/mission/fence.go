@@ -783,17 +783,26 @@ func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]a
 	if _, err := os.Stat(eventsPath); err != nil {
 		return usageUnavailable, nil, fmt.Sprintf("event stream is unreadable: %s", rel)
 	}
-	derived := usage.CodexUsageValue(eventsPath)
+	// Recovery is DECLARED per provider (agnosticism audit classes
+	// 6+7): the seam's registered recoverer answers, and a provider
+	// without one is honestly unsupported instead of being fed through
+	// another runtime's parser.
+	outcome := usage.Recover(provider, usage.RecoveryContext{
+		Repo: repo, RoundDir: filepath.Dir(eventsPath), EventsPath: eventsPath,
+	})
+	if outcome.State != usage.Recovered {
+		return usageUnavailable, nil, outcome.Detail
+	}
 	measured := false
 	for _, field := range usageTokenFields {
-		if v, ok := nonNegNumber(derived[field]); ok {
+		if v, ok := nonNegNumber(outcome.Fields[field]); ok {
 			units[[2]string{provider, "tokens." + field}] += v
 			measured = true
 		}
 	}
 	if !measured {
-		// The parser's native-with-nulls answer on an unusable stream
-		// normalizes here to plain unavailability.
+		// A Recovered outcome with every value null normalizes to plain
+		// unavailability — the measured count IS the contract (r3-6).
 		return usageUnavailable, nil, fmt.Sprintf("event stream carries no usage block: %s", rel)
 	}
 	return usageDerived, rel, nil

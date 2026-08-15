@@ -1382,8 +1382,8 @@ if (( template_mode )); then
   harness_own_settings=$(cd "$root/.." && pwd -P)/.claude/settings.json
   [[ -f "$harness_own_settings" ]] \
     || { echo "this repository has no .claude/settings.json: the metasystem is not running under itself" >&2; exit 1; }
-  "$root/bin/metasystem" hooks check "$harness_own_settings" \
-    "$root/scripts/enforcement/claude-code-hooks.json"
+  "$root/bin/metasystem" hooks check --runtime claude "$harness_own_settings" \
+    "$root/scripts/enforcement/$("$root/bin/metasystem" runtime enforcement-config claude)"
   echo "metasystem runs under its own hooks"
 fi
 

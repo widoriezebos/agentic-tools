@@ -527,7 +527,7 @@ case "$command_name" in
     # reports token counts; an enterprise one reports ACU and no tokens at all.
     # Both must pass, and both must leave the turn measured by something the
     # mission fence can meter.
-    run_full_contract_selftest metered 1
+    run_full_contract_selftest metered symlinked-skill-discovery
     ;;
   -h|--help) usage ;;
   *) usage; exit 2 ;;

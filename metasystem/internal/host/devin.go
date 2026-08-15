@@ -87,3 +87,25 @@ func resolvePath(path string) string {
 	}
 	return path
 }
+
+// The devin delivery recollection, registered seam-locally
+// (agnosticism audit class 5): re-run the collect ladder past the
+// rejected digests, naming devin's own artifact files.
+func init() {
+	RegisterDeliveryRecollector("devin", func(p RecollectParams) (RecollectResult, error) {
+		verdict, err := HostDevinCollect(HostCollectParams{
+			Root:           p.Root,
+			TurnRecordPath: p.TurnRecordPath,
+			TurnDir:        p.TurnDir,
+			Workspace:      p.Workspace,
+			StdoutPath:     filepath.Join(p.TurnDir, "raw.out"),
+			NamedPath:      filepath.Join(p.TurnDir, "devin-return.json"),
+			TranscriptPath: filepath.Join(p.TurnDir, "transcript.atif.json"),
+			RejectDigests:  p.RejectDigests,
+		})
+		if err != nil {
+			return RecollectResult{}, err
+		}
+		return RecollectResult{Delivered: verdict.Delivered, ReplyPath: verdict.Reply}, nil
+	})
+}

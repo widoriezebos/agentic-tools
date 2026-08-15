@@ -13,11 +13,12 @@ import (
 	"strings"
 )
 
-// CheckOwnHooks verifies the live Claude settings carry every lifecycle hook
-// the metasystem ships, invoke the supervision hook, and enter the vendored
-// metasystem directory (since here the metasystem is one level down, not the
-// project root). It returns nil when the repository runs under itself.
-func CheckOwnHooks(livePath, shippedPath string) error {
+// CheckOwnHooks verifies the live settings carry every lifecycle hook
+// the metasystem ships, invoke the supervision hook, and enter the
+// vendored metasystem directory via the RUNTIME-DECLARED marker (the
+// registry's liveSelfCheck; core names no runtime here — agnosticism
+// audit class 4). It returns nil when the repository runs under itself.
+func CheckOwnHooks(livePath, shippedPath, vendoredMarker string) error {
 	liveData, err := os.ReadFile(livePath)
 	if err != nil {
 		return fmt.Errorf("cannot read hook configuration: %w", err)
@@ -59,7 +60,7 @@ func CheckOwnHooks(livePath, shippedPath string) error {
 		matched := false
 		for _, command := range liveCommands {
 			if supervisionInvokeRe.MatchString(command) {
-				if !strings.Contains(command, "$CLAUDE_PROJECT_DIR/metasystem") {
+				if !strings.Contains(command, vendoredMarker) {
 					return fmt.Errorf("this repository's %s supervision hook does not enter the vendored metasystem directory", name)
 				}
 				matched = true

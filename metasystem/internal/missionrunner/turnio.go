@@ -60,8 +60,9 @@ func AdjudicateFiles(root, mission, statePath, turnPath, resultPath, turnDir, no
 		// the resumed candidate falls back to the ORIGINAL error; there is
 		// never a second resume.
 		var fault *SessionFault
-		if errors.As(err, &fault) && turn.Runtime == "devin" {
-			if resumed, resumeErr := resumeDevinDelivery(root, turn, turnPath, turnDir); resumeErr == nil && resumed != nil {
+		recollect := host.DeliveryRecollector(turn.Runtime)
+		if errors.As(err, &fault) && recollect != nil {
+			if resumed, resumeErr := resumeDelivery(root, turn, turnPath, turnDir, recollect); resumeErr == nil && resumed != nil {
 				validation = resumed
 			} else {
 				return nil, err
@@ -126,33 +127,32 @@ func ConcludeFiles(root, mission, statePath, turnPath, verdictPath, returnPath, 
 	})
 }
 
-// resumeDevinDelivery re-collects a devin host turn's delivery past the
-// candidate the runner just rejected, then validates the new candidate
-// through the same return-level path. A nil, nil return means nothing
-// further qualified.
-func resumeDevinDelivery(root string, turn Turn, turnPath, turnDir string) (*ReturnValidation, error) {
+// resumeDelivery re-collects a host turn's delivery past the candidate
+// the runner just rejected — through the runtime's REGISTERED
+// recollection capability, never a runtime name (agnosticism audit
+// class 5) — then validates the new candidate through the same
+// return-level path. The digest computation, validation, and
+// ReturnValidation construction are runner-owned.
+func resumeDelivery(root string, turn Turn, turnPath, turnDir string, recollect host.RecollectFn) (*ReturnValidation, error) {
 	rejectedPath := filepath.Join(turnDir, "reply-accepted.json")
 	rejectedBytes, err := os.ReadFile(rejectedPath)
 	if err != nil {
 		return nil, err
 	}
 	sum := sha256.Sum256(rejectedBytes)
-	verdict, err := host.HostDevinCollect(host.HostCollectParams{
+	result, err := recollect(host.RecollectParams{
 		Root:           root,
 		TurnRecordPath: turnPath,
 		TurnDir:        turnDir,
 		Workspace:      root,
-		StdoutPath:     filepath.Join(turnDir, "raw.out"),
-		NamedPath:      filepath.Join(turnDir, "devin-return.json"),
-		TranscriptPath: filepath.Join(turnDir, "transcript.atif.json"),
 		RejectDigests:  []string{hex.EncodeToString(sum[:])},
 	})
-	if err != nil || !verdict.Delivered {
+	if err != nil || !result.Delivered {
 		return nil, fmt.Errorf("no further delivery candidate qualified")
 	}
-	returned, err := validateReturnAt(turn, verdict.Reply, returnCompletenessCheck(root))
+	returned, err := validateReturnAt(turn, result.ReplyPath, returnCompletenessCheck(root))
 	if err != nil {
 		return nil, err
 	}
-	return &ReturnValidation{Returned: returned, RawPath: filepath.Join(turnDir, "raw.out"), ReturnPath: verdict.Reply}, nil
+	return &ReturnValidation{Returned: returned, RawPath: filepath.Join(turnDir, "raw.out"), ReturnPath: result.ReplyPath}, nil
 }

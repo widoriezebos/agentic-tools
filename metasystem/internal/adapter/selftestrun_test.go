@@ -253,8 +253,13 @@ func TestSelftestRunSplitLegsWithDevinChecks(t *testing.T) {
 	var out strings.Builder
 	p := SelftestParams{
 		Root: root, Runtime: "stub", AdapterPath: filepath.Join(root, "adapter.sh"),
-		Usage: "native", TurnCeilingSec: 10, DenialEndsTurn: true, DevinChecks: true,
+		Usage: "native", TurnCeilingSec: 10, DenialEndsTurn: true,
 	}
+	devinProbe, err := SelftestProbeFor("devin", "symlinked-skill-discovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Probe = &devinProbe
 	if err := SelftestRun(p, "stub-model", &out); err != nil {
 		t.Fatalf("split-leg selftest failed: %v", err)
 	}
@@ -489,7 +494,11 @@ func TestSelftestRunEvidenceRefusals(t *testing.T) {
 		root := stageSelftestFixture(t, "mapped", "mapped")
 		edit(root, `skill=$(tail -1 "$workspace/skills/metasystem-selftest/SKILL.md")`, `skill="unproven"`)
 		p := params(root)
-		p.DevinChecks = true
+		devinProbe, probeErr := SelftestProbeFor("devin", "symlinked-skill-discovery")
+		if probeErr != nil {
+			t.Fatal(probeErr)
+		}
+		p.Probe = &devinProbe
 		err := SelftestRun(p, "stub-model", &strings.Builder{})
 		if err == nil || !strings.Contains(err.Error(), "symlinked .agents/skills discovery") {
 			t.Fatalf("missing skill proof accepted: %v", err)

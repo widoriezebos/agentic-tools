@@ -223,6 +223,10 @@ The specific shared paths, caches, and lock locations are project facts for `doc
 
 Adapters own launch, resume, model, permissions, output-format, and cancellation flags. Do not copy those flags into prose.
 
+The authoritative runtime set is the registry (`bin/metasystem runtime
+list`); this table describes the currently shipped runtimes, not the
+supported universe.
+
 | Runtime | Rostered adapter | Skill and profile registration |
 | --- | --- | --- |
 | Claude Code | `scripts/agents/adapters/claude.sh` | `.claude/skills/<name>` and `.claude/agents/<name>.md` |
