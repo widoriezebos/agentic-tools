@@ -423,14 +423,24 @@ func TestHungFlagAndRegisterPattern(t *testing.T) {
 	}
 
 	// A second registered run with a NON-matching pattern: ended-unknown,
-	// never a red guess.
-	prober.verdicts[999] = identity.Alive
-	prober.starts[999] = 9000
-	os.WriteFile(filepath.Join(s.Root, "nm.log"), []byte("no verdict here\n"), 0o644)
-	if err := s.Register(mainCaller, LaunchParams{Id: "nomatch-run", Kind: "custom", Log: filepath.Join(s.Root, "nm.log")}, 999, "NEVER$"); err != nil {
+	// never a red guess. The leader must be a REAL process (Register
+	// reads the kernel pgid), so spawn a sleeper in its own group — the
+	// Mac's coincidental pid 999 hid this until the Linux gate refused.
+	sleeper := exec.Command("/bin/sleep", "30")
+	sleeper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := sleeper.Start(); err != nil {
 		t.Fatal(err)
 	}
-	prober.verdicts[999] = identity.Dead
+	sleeperPid := int64(sleeper.Process.Pid)
+	prober.verdicts[sleeperPid] = identity.Alive
+	prober.starts[sleeperPid] = 9000
+	os.WriteFile(filepath.Join(s.Root, "nm.log"), []byte("no verdict here\n"), 0o644)
+	if err := s.Register(mainCaller, LaunchParams{Id: "nomatch-run", Kind: "custom", Log: filepath.Join(s.Root, "nm.log")}, sleeperPid, "NEVER$"); err != nil {
+		t.Fatal(err)
+	}
+	sleeper.Process.Kill()
+	sleeper.Wait()
+	prober.verdicts[sleeperPid] = identity.Dead
 	result, _ = s.Assess("nomatch-run")
 	if result.To == StatusDraining {
 		s.Now = func() time.Time { return now.Add(200 * time.Minute) }
