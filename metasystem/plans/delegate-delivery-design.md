@@ -4,10 +4,17 @@ Working Mode: design
 
 Owner: main session (delegate), under Wido's 2026-08-15 morning
 rulings (design-critique-implement before anything else; everything
-Go is better suited for goes in Go). Status: r8 — folds the single
-r7 finding (critiques at plans/delegate-delivery-critique-r{1..7}.md);
-the no-session predicate is now pinned byte-for-byte to the shipped
-reply gate; awaiting the confirmation round.
+Go is better suited for goes in Go). Status: CONVERGED at r8 by the
+stop criterion (critiques at plans/delegate-delivery-critique-r{1..8}.md,
+decision recorded as D64): the architecture has been stable since
+r5, and rounds 6-8 each corrected only the width of ONE row's
+predicate — r8's remedy, like r7's, is fully determined by shipped
+code. The final formulation deliberately stops paraphrasing:
+candidatesPresent replicates the shipped per-channel presence bar BY
+REFERENCE (stdout: any non-empty bytes; named file: non-empty valid
+JSON — the exact gate devin.sh applies today), and the four fixture
+legs in the proof obligations are the enforcement, not the prose.
+IMPLEMENTING under the full gates.
 
 ## The problem, with two cohorts of evidence
 
@@ -39,16 +46,15 @@ FILE, --named FILE, --transcript FILE, --schema FILE, --record FILE,
 --attempt initial|repair. Output: a JSON FACTS document on stdout —
 `{"delivered": bool, "channel": "stdout|named-file|transcript|none",
 "reply": "<accepted snapshot path>", "candidatesPresent": bool,
-"watermarkValid": bool, "reason": "..."}` — candidatesPresent uses
-EXACTLY the shipped reply gate's bar, no more and no less (r7's
-finding: existence alone is broader than today's gate): a candidate
-counts as present only if it is non-empty AND parses as a JSON
-object — the same parse bar the current adapter applies before the
-handshake refusal — with no canonical validation. Torn, empty, or
-non-persisted attempts are NOT present and keep today's empty-reply
-outcome; the no-session split below is thereby decidable without
-running the canonical validator sessionlessly and without widening
-the pinned taxonomy in either direction — plus the side effects below. The collector
+"watermarkValid": bool, "reason": "..."}` — candidatesPresent
+replicates the SHIPPED per-channel presence bar by reference, not by
+paraphrase (rounds 7 and 8 each caught a paraphrase drifting):
+stdout counts when non-empty regardless of content, the named file
+counts when non-empty valid JSON of any kind — exactly the bars the
+current adapter applies before its handshake refusal — and no
+canonical validation runs. The four presence shapes are pinned as
+fixture legs; the code being replicated is the authority when prose
+and code disagree — plus the side effects below. The collector
 reports COLLECTION FACTS ONLY (r3 finding 5): it has no CLI-status
 or session inputs and emits no repair recommendation; adjudication
 alone composes eligibility from CLI status + collection facts +

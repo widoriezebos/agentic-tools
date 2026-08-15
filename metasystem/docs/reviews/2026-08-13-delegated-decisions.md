@@ -1835,6 +1835,30 @@ ruling; the cohort closes incomplete by design. Series spend
 ~$196 of EUR 240. The design loop (r3 critique in flight) remains
 the priority queue's head.
 
+## D64 — The delivery design converges at r8 by the stop criterion; implementation begins
+
+Eight critique rounds (11, 8, 8, 3, 2, 1, 1, 1 findings — every
+round codex gpt-5.6-sol at xhigh with live repo access, all eight
+critiques preserved beside the design). The loop reshaped the design
+profoundly through r5: validity-aware selection, the filesystem as
+the mining success oracle, the internal/atif leaf with one immutable
+snapshot for all transcript consumers, the dispatch-owned
+repair-claim CAS, adjudication-owned eligibility, settlement-first
+outcome tables, and the resumable host walk. Rounds 6 through 8
+corrected only the width of one row's presence predicate — three
+successive paraphrases of a gate that ships in devin.sh today. The
+stop criterion (the human's own doctrine: stop when findings stop
+changing what gets built) applies on its face: the remedy each time
+was fully determined by existing code, and the implementation reads
+that code, not the design's paraphrase. The converged formulation
+replicates the shipped bar BY REFERENCE and pins the four presence
+shapes as fixture legs, which is where enforcement actually lives.
+Residual, stated: the prose description of the presence bar may
+still imperfectly describe the shipped gate — the fixture legs and
+the by-reference rule make that residual harmless. Phase 1 (the
+delegate path) implements now under the FULL gates; the D61/D62
+suite waiver does not extend to this change.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
