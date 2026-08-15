@@ -315,3 +315,25 @@
     outside the adapter seam, this one rules on placement WITHIN the
     seam — one audit pass can serve both. Not scheduled now, per the
     human.
+
+18. **ACP as the delegate transport (human-raised 2026-08-15).** The
+    human's question, on the Devin delivery failures: "Is there no way
+    to use ACP to make this more robust?" There is: the installed CLI
+    ships `devin acp` (Agent Client Protocol server over stdio,
+    verified at devin 3000.4.25). ACP replaces both failure roots the
+    bm-2 arm exposed: permission requests arrive as JSON-RPC calls the
+    adapter answers by policy — the envelope enforced per tool call
+    with no dead-stop, which is the path to RETIRING the D61
+    dangerous-mode waiver — and delivery becomes a typed end-of-turn
+    event with streamed tool-call updates instead of stdout scraping
+    (the D62 ladder becomes a live tap). Costs: the adapter seam gains
+    a long-lived Go protocol client (session lifecycle, capability
+    negotiation, envelope-driven permission answering, cancellation,
+    usage parity); this is an architecture change deserving its own
+    design + critique loop. Composition: feeds item 15 (streamed
+    events are the monitor facility's raw material) and item 16 (ACP
+    is runtime-neutral — Claude Code and Codex-class CLIs speak it,
+    so adapters shrink toward launch configs behind one client).
+    Prototype against `devin acp` first; the graded-permissions
+    restoration is the acceptance story. Sequenced by the human's
+    ruling when the current series closes.
