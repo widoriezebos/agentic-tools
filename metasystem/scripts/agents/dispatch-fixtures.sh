@@ -562,6 +562,19 @@ sg_actual=$(shasum -a 256 "$sg_brief" | cut -d' ' -f1)
 [[ "$sg_recorded" == "$sg_actual" ]] \
   || { echo "the projection is not inside the recorded input hash ($sg_recorded != $sg_actual)" >&2; exit 1; }
 
+# MON-04 (the human's item-1 waiter contract): a non-waiting dispatch
+# prints the exact watch command, and the watch verb exits with the
+# terminal status while holding the waiter record the verdict reads.
+watch_line_out="$agent_fixture/watch-line.out"
+(cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic \
+  --brief "$happy_brief" --job-id watch-line-job) >"$watch_line_out" 2>&1
+grep -Fq 'watch it with: scripts/agents/dispatch.sh watch --job watch-line-job' "$watch_line_out" \
+  || { echo "non-wait dispatch did not print the watch command" >&2; cat "$watch_line_out" >&2; exit 1; }
+watch_happy_rc=0
+(cd "$agent_repo" && scripts/agents/dispatch.sh watch --job happy) || watch_happy_rc=$?
+(( watch_happy_rc == 0 )) \
+  || { echo "watching the completed happy job exited $watch_happy_rc, want 0" >&2; exit 1; }
+
 mkdir -p "$agent_repo/artifacts/agents/locks/stale-lock.d"
 printf '{"pid":999999,"instanceTag":"dead-owner","acquiredAt":"2000-01-01T00:00:00Z"}\n' >"$agent_repo/artifacts/agents/locks/stale-lock.d/owner.json"
 run_agent_fixture stale-lock stale-lock "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-lock --wait

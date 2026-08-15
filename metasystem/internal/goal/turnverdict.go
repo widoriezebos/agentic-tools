@@ -228,7 +228,10 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 	}
 	for _, runFact := range scan.Runs {
 		inFlight := runFact.Status == "launching" || runFact.Status == "running" || runFact.Status == "draining"
-		owned := mainId != "" && runFact.MainId == mainId
+		// A main owns its own runs; a HUMAN caller (empty mainId) owns
+		// human-launched runs (null coordinates) — the waiter side already
+		// keys humans on the OS user id.
+		owned := runFact.MainId == mainId
 		if owned && inFlight && !runFact.WaiterLive {
 			unwatchedTags = append(unwatchedTags, fmt.Sprintf("run:%s.g%d.%s", runFact.Id, runFact.Generation, runFact.Nonce))
 			unwatchedIds = append(unwatchedIds, runFact.Id)

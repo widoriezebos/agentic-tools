@@ -1028,4 +1028,39 @@ printf '%s' "$degraded" | grep -Fq 'turn-verdict unavailable:' \
 printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
   && { echo "the degraded path composed with an all-clear it cannot vouch for" >&2; exit 1; }
 
-echo "supervision fixtures passed (S4-1 through S4-15)"
+# S4-16: the monitor facility through the same hook (MON-04/05, D72).
+# Launch a real wrapped run; the turn end refuses to walk away from it
+# unwatched, once; a live watch clears the rule; conclusion surfaces the
+# green continuation exactly once.
+"$stop_root/bin/metasystem" run launch --root "$stop_root" --id fixture-run \
+  --kind custom --display "the fixture run" --log fix-run.log \
+  --expect-green "proceed to checkpoint seven" -- /bin/sleep 2 >/dev/null
+mon1=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$mon1" | grep -q '"decision":"block"' \
+  && printf '%s' "$mon1" | grep -Fq 'unwatched' \
+  || { echo "an unwatched run did not block the turn end" >&2; echo "$mon1" >&2; exit 1; }
+mon2=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$mon2" | grep -q '"decision":"block"' \
+  && { echo "the same unwatched set blocked twice" >&2; exit 1; }
+"$stop_root/bin/metasystem" run watch --id fixture-run --root "$stop_root" --poll-ms 200 &
+mon_watch_pid=$!
+sleep 1
+mon3=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$mon3" | grep -Fq 'STILL WORKING' \
+  && printf '%s' "$mon3" | grep -Fq 'run fixture-run' \
+  || { echo "a live watched run did not read STILL WORKING" >&2; echo "$mon3" >&2; exit 1; }
+sleep 2.5
+"$stop_root/bin/metasystem" run conclude --root "$stop_root" --id fixture-run >/dev/null
+mon_watch_rc=0
+wait "$mon_watch_pid" || mon_watch_rc=$?
+(( mon_watch_rc == 0 )) \
+  || { echo "the run watch did not exit green (rc=$mon_watch_rc)" >&2; exit 1; }
+mon4=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$mon4" | grep -Fq 'finished green' \
+  && printf '%s' "$mon4" | grep -Fq 'proceed to checkpoint seven' \
+  || { echo "the green continuation did not surface" >&2; echo "$mon4" >&2; exit 1; }
+mon5=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
+printf '%s' "$mon5" | grep -Fq 'finished green' \
+  && { echo "the green surfaced twice" >&2; exit 1; }
+
+echo "supervision fixtures passed (S4-1 through S4-16)"

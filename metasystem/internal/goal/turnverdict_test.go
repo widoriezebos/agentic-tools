@@ -397,3 +397,20 @@ func TestGreenPrefixConsistency(t *testing.T) {
 		t.Fatalf("a fresh session saw no greens: %s", v.Display)
 	}
 }
+
+// A HUMAN caller (empty mainId) owns human-launched runs (null
+// coordinates): the unwatched rule fires for them too.
+func TestHumanOwnsHumanRuns(t *testing.T) {
+	s := testStore(t)
+	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
+	humanRun := RunFact{Id: "h-run", MainId: "", Generation: 1, Nonce: "n", Status: "running"}
+	v, _ := s.TurnVerdict(ScanResult{Runs: []RunFact{humanRun}}, "hs", "", "")
+	if !v.ShouldBlock || *v.BlockSource != "unwatched-work" {
+		t.Fatalf("a human's unwatched run did not block: %+v", v)
+	}
+	// A MAIN caller does NOT own the human's run.
+	v, _ = s.TurnVerdict(ScanResult{Runs: []RunFact{humanRun}}, "hs2", "", "main-1")
+	if v.BlockSource != nil && *v.BlockSource == "unwatched-work" {
+		t.Fatalf("a main owned the human's run: %+v", v)
+	}
+}
