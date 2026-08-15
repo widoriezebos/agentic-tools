@@ -344,4 +344,3 @@ func runRunStatus(args []string) int {
 	printJSON(record)
 	return 0
 }
-
