@@ -14,7 +14,12 @@ candidatesPresent replicates the shipped per-channel presence bar BY
 REFERENCE (stdout: any non-empty bytes; named file: non-empty valid
 JSON — the exact gate devin.sh applies today), and the four fixture
 legs in the proof obligations are the enforcement, not the prose.
-IMPLEMENTING under the full gates.
+IMPLEMENTED — both phases — under the full gates: phase 1 in
+checkpoints A-F (2e035c4..6432948, gated green on the VM), phase 2
+at 412b596..a2be65b (host walk, resumable rejection seam, FinishTurn
+accepted-reply). The D64 entry and its addenda in the decisions doc
+carry the disposition trail; the live devin path's proof remains the
+arm's selftest and its next rep.
 
 ## The problem, with two cohorts of evidence
 

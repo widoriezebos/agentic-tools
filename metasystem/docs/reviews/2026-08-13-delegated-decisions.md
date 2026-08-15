@@ -1883,6 +1883,21 @@ resumes the arm — the suite cannot run a real swe-1-7 session.
 Phase 2 (the host path, interface already specified) follows the
 green gate.
 
+**Phase 2 addendum (same day)**: landed as designed — hosts/devin.sh
+names the return path with the stale-file guard and routes the walk;
+internal/host's turn-shaped collector pre-checks the orchestrator
+schema plus turnId/missionId/cycle (session stays post-envelope by
+construction) and skips runner-rejected digests; FinishTurn judges
+require-reply against the accepted snapshot while raw stays evidence;
+and the runner's ONE resume (turnio.go) re-collects past a
+session-faulted candidate and validates the replacement through the
+same validateReturnAt path — never a second resume, any failure falls
+back to the original fault. The phase-1 gate also caught three
+coverage debts first (atif unregistered, usage and adapter under
+floor) — all answered with branch tests, never floor adjustments;
+host followed the same discipline (80.2 vs 79.3). Both phases sit
+under the full VM gate.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
