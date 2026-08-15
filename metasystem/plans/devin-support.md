@@ -7,7 +7,7 @@
   now, and the live runs contradict several of its assumptions — including one
   that matters more than the rest: on this account Devin cannot confine a
   delegate at all.
-- Next step: none for the metasystem. The adapter, host, and bm-2 spec are
+- Next step: none
   implemented, reviewed, gate-green, and pushed (origin bc21214). The bm-2
   cohort is provisioned and stopped at its seal/sign boundary.
 - Waiting on the human: nothing — the bm-2 cohort was signed, ran, and closed at 2/2 valid (D70)

@@ -6,7 +6,7 @@
 - Decisions made (and who made them): the user answered four of the prior plan's six reserved decisions on 2026-08-03 (recorded in Part 1), and all seven of this plan's decisions the same day (recorded in the Decisions section); D2 with the user's own direction (Devin fully implemented, live-tested by the user); Devin capabilities resolved from the online documentation at the user's direction
 - Waiting on the human: nothing — the BM-1 gate and fences were ruled and run; Devin was proven end to end in the bm-2 cohort (D68/D70)
 - Dead ends: none recorded
-- Next step: review the grader implementation when its chain returns; then the human decides the BM-1 completion gate and fences; then the retro, 40+ receipts overdue, with Mission Zero's evidence fresh. Mission Zero is DONE 2026-08-05: the first unattended mission completed by its own gate
+- Next step: none
 
 Scope is the template repository. Evidence level: the whole metasystem was read; no runtime was driven; every claim about CLI behavior is marked as an open verification item where it is not certain. The proven prior art is the Codex plugin pattern used in this project today: a Claude session launching `codex exec` through the shell and resuming one Codex thread across rounds, which carried the seven-round critique loop recorded in `plans/metasystem-review-remediation.md`.
 

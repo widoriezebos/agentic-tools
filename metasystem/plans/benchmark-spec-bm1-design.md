@@ -6,7 +6,7 @@
 - Decisions made (and who made them): the user chose the three-benchmark structure and the task-runner subject on 2026-08-05; design decisions S-1 through S-7 taken here with recorded defaults
 - Waiting on the human: nothing — the fence sizing was approved in writing (2026-08-05 blanket + the 2026-08-10 cap revision) and the series ran to completion
 - Dead ends: a log summariser was drafted first and discarded: the subject was picked without asking, and it was too shallow to discriminate. A diff and patch toolkit was rejected because the core algorithm is a well-known exercise, so it would partly measure recall. An append-only store with compaction was rejected because its most interesting property, crash safety, cannot be graded in minutes
-- Next step: the grader build is dispatched to Codex (item S-C, v0.1 scope per the manifest); Mission Zero's contract awaits the human's signature; fences for BM-1 still need human approval before any BM-1 run
+- Next step: none
 
 This plan fills in item B-1 of `plans/metasystem-benchmark-design.md`, which fixed the shape of a spec but wrote neither requirements nor grader. It **does** amend that design in one place: the human replaced the log-summariser note with the task runner and the three-case structure on 2026-08-05, and the parent's BM-1 paragraph now points here as the authority. The earlier claim that this changed nothing was wrong, and two documents describing different first specs would have left an implementer with no way to know which governs.
 
