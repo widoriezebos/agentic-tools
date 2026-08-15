@@ -127,13 +127,18 @@ func TestCodexPermissionSettings(t *testing.T) {
 func TestDevinPermissionMode(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "job.json")
+	// Every readable record runs dangerous under the D61 human waiver;
+	// the graded modes turned refusals into non-delivery (D57).
 	os.WriteFile(record, []byte(`{"permissions":{"requested":{"writeRoots":[]}}}`), 0o644)
-	if mode, err := DevinPermissionMode(record); err != nil || mode != "auto" {
-		t.Fatalf("read-only mode = (%s,%v)", mode, err)
+	if mode, err := DevinPermissionMode(record); err != nil || mode != "dangerous" {
+		t.Fatalf("read-only role = (%s,%v)", mode, err)
 	}
 	os.WriteFile(record, []byte(`{"permissions":{"requested":{"writeRoots":["/ws"]}}}`), 0o644)
-	if mode, err := DevinPermissionMode(record); err != nil || mode != "accept-edits" {
-		t.Fatalf("write mode = (%s,%v)", mode, err)
+	if mode, err := DevinPermissionMode(record); err != nil || mode != "dangerous" {
+		t.Fatalf("write role = (%s,%v)", mode, err)
+	}
+	if _, err := DevinPermissionMode(filepath.Join(dir, "absent.json")); err == nil {
+		t.Fatal("an unreadable record must refuse, never default open")
 	}
 }
 

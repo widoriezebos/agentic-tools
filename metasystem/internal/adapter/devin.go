@@ -189,6 +189,21 @@ func recordInWorkspace(record map[string]any, workspaceResolved string) bool {
 	return resolve(directory) == workspaceResolved
 }
 
+// DevinPermissionMode decides the Devin CLI's --permission-mode. Every
+// dispatch runs `dangerous` (auto-approve all tools) under the human
+// waiver of 2026-08-15 (D61): Devin already runs uncontained by the
+// human's earlier ruling, and the graded modes turned envelope
+// refusals into sessions that ended without delivering — swe-1-7
+// worked nine minutes and a confirmation-blocked tool call ate the
+// return (D57). The record read stays: an unreadable or malformed
+// record must still refuse the launch rather than default open.
+func DevinPermissionMode(recordPath string) (string, error) {
+	if _, err := requestedPermissions(recordPath); err != nil {
+		return "", err
+	}
+	return "dangerous", nil
+}
+
 func WriteUnavailableUsage(outputPath string) error {
 	value := map[string]any{
 		"availability":      "unavailable",

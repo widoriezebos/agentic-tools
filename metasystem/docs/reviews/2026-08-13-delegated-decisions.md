@@ -1740,6 +1740,28 @@ context: codex and devin Stop-hook configurations ARE shipped
 (scripts/enforcement/), and the honest conformance model is
 declared/installed/observed/blocking-capable.
 
+## D61 — HUMAN RULING: Devin runs in full auto-approve mode; the arm unblocks
+
+Wido, 2026-08-15 morning, in writing after the D57 explanation: "we
+have not set up the Devin agents properly. we should run it in a mode
+that allows for everything we needed to do. So figure out what that
+mode is. something equivalent to Yolo." The mode is the Devin CLI's
+--permission-mode dangerous (auto-approve all tools) — the adapter
+had deliberately capped at accept-edits ("dangerous is never used"),
+which auto-accepts edits but turns any other confirmation-requiring
+tool call into a dead stop in unattended runs; that cap is what ate
+every delivery in D57. DevinPermissionMode now returns dangerous for
+every readable record (an unreadable record still refuses — the
+fail-closed read survives), and this entry is the recorded human
+waiver the glossary's permission doctrine calls for: the runtime
+already runs uncontained by the earlier ruling, and the graded modes
+provably converted refusals into non-delivery. While touching the
+function it moved from codex.go to devin.go — its runtime's home,
+backlog item 17's confirmed stray; the item's wider sweep stays
+queued. Proof: adapter package green in full, build green; VM suite
+next; the bm-2 arm relaunches on green toward its two valid reps
+under the standing rulings.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at

@@ -125,17 +125,3 @@ func CodexPermissionSettings(permissionsPath, recordPath string) (sandbox, netwo
 	}
 	return sandbox, network, nil
 }
-
-// DevinPermissionMode is the analogous decision for the Devin CLI: a role
-// with no write roots runs `auto` (edit and exec denied by config);
-// a write-capable role runs `accept-edits`. `dangerous` is never used.
-func DevinPermissionMode(recordPath string) (string, error) {
-	requested, err := requestedPermissions(recordPath)
-	if err != nil {
-		return "", err
-	}
-	if len(stringList(requested["writeRoots"])) == 0 {
-		return "auto", nil
-	}
-	return "accept-edits", nil
-}
