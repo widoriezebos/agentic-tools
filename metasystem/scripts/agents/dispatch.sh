@@ -1469,6 +1469,11 @@ case "$command" in
     internal_authority adapter-writer "$2"
     "$ms" job record-protocol-error --root "$root" "$@"
     ;;
+  __repair-claim)
+    [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
+    internal_authority record-writer "$2"
+    "$ms" job repair-claim --root "$root" "$@"
+    ;;
   __launch) internal_launch "$@" ;;
   __handshake-timeout) internal_handshake_timeout "$@" ;;
   __reap-held) internal_reap_held "$@" ;;

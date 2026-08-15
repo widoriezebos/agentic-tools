@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -349,6 +351,7 @@ func runAdapterAdjudicateTurn(args []string) int {
 	flags.StringVar(&p.MarkdownPath, "markdown", "", "round return.md output")
 	flags.StringVar(&p.ViolationPath, "violation", "", "violation output file")
 	flags.StringVar(&p.RepairPromptPath, "repair-prompt", "", "repair prompt output file")
+	flags.StringVar(&p.NamedRepairPath, "named-repair-path", "", "the repair attempt's named return file (empty-delivery)")
 	flags.Int64Var(&p.CLIStatus, "cli-status", 0, "adapter CLI exit status")
 	flags.BoolVar(&p.HandshakeDone, "handshake-done", false, "the session correlated")
 	flags.BoolVar(&p.RepairAvailable, "repair-available", false, "a bounded repair turn may run")
@@ -402,6 +405,50 @@ func runAdapterDevinSettle(args []string) int {
 		return 0
 	}
 	return 1
+}
+
+// runAdapterDevinCollect walks the delivery channels (D64). Exit 0
+// delivered (verdict JSON on stdout), 3 nothing qualified, 5 transcript
+// over the ceiling, 1 mechanical.
+func runAdapterDevinCollect(args []string) int {
+	flags := flag.NewFlagSet("adapter devin-collect", flag.ContinueOnError)
+	params := adapter.CollectParams{}
+	flags.StringVar(&params.Root, "root", "", "checkout root")
+	flags.StringVar(&params.Job, "job", "", "job id")
+	flags.StringVar(&params.RoundDir, "round-dir", "", "round evidence directory")
+	flags.StringVar(&params.Workspace, "workspace", "", "delegate workspace (relative write targets resolve here)")
+	flags.StringVar(&params.StdoutPath, "stdout", "", "the CLI's stdout capture")
+	flags.StringVar(&params.NamedPath, "named", "", "the attempt's named return file")
+	flags.StringVar(&params.TranscriptPath, "transcript", "", "the exported ATIF transcript")
+	flags.StringVar(&params.RecordPath, "record", "", "job record file")
+	flags.StringVar(&params.Attempt, "attempt", "initial", "initial or repair")
+	flags.StringVar(&params.Session, "session", "", "correlated session (required unless presence-only)")
+	flags.BoolVar(&params.PresenceOnly, "presence-only", false, "report candidatesPresent only, no validation")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if params.Root == "" || params.Job == "" || params.RoundDir == "" || params.RecordPath == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-collect --root D --job ID --round-dir D --record F [--workspace D --stdout F --named F --transcript F --attempt A --session SID | --presence-only]")
+		return 2
+	}
+	verdict, err := adapter.DevinCollect(params)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, atif.ErrOversize) {
+			return 5
+		}
+		return 1
+	}
+	encoded, err := json.Marshal(verdict)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(string(encoded))
+	if verdict.Delivered || params.PresenceOnly {
+		return 0
+	}
+	return 3
 }
 
 // runAdapterDevinSession correlates this turn's Devin session against the

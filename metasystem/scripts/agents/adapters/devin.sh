@@ -135,10 +135,10 @@ devin_usage() { # output, transcript, cumulative-out, previous-cumulative-or-emp
   # mixed into a token field or dressed up as cost.
   if [[ "${5:-0}" == 1 ]]; then
     "$ms" adapter devin-usage --usage "$1" --transcript "$2" \
-      --cumulative "$3" --previous "${4:-}" --expect-previous
+      --snapshot "${6:-}" --cumulative "$3" --previous "${4:-}" --expect-previous
   else
     "$ms" adapter devin-usage --usage "$1" --transcript "$2" \
-      --cumulative "$3" --previous "${4:-}"
+      --snapshot "${6:-}" --cumulative "$3" --previous "${4:-}"
   fi
 }
 
@@ -154,9 +154,9 @@ previous_round_artifact() { # file name -> path of the previous round's copy, if
 # Session certification and the effective-model fallback are the engine's
 # (`adapter devin-settle`, script-adapters-07/D26): it prints the derived
 # model and its exit is the certification verdict; record writes stay here.
-devin_settle() { # transcript, extra verb flags -> prints model; rc 1 = not certified
-  "$ms" adapter devin-settle --transcript "$1" --session "${session_id:-}" \
-    --round-dir "$round_dir" "${@:2}"
+devin_settle() { # transcript, snapshot, extra verb flags -> prints model; rc 1 = not certified
+  "$ms" adapter devin-settle --transcript "$1" --snapshot "${2:-}" \
+    --session "${session_id:-}" --round-dir "$round_dir" "${@:3}"
 }
 
 # Recompute this round's usage from the REPAIR transcript when a repair
@@ -175,7 +175,7 @@ runtime_usage_after_repair() { # usage file
     return 0
   fi
   devin_usage "$usage_file" "$repair_transcript" "${cumulative:-$round_dir/session-usage.json}" \
-    "${previous:-}" "${expect_previous:-0}"
+    "${previous:-}" "${expect_previous:-0}" "$round_dir/transcript.repair.snapshot"
 }
 
 # The repair turn the shared contract calls when a reply does not validate. It
@@ -184,14 +184,17 @@ runtime_usage_after_repair() { # usage file
 # same config -- a repair that changed any of those would not be a repair.
 runtime_settle_after_repair() { # -> nonzero when the repair cannot be confirmed
   local repair_transcript="$round_dir/transcript.repair-1.atif.json" observed settle_rc=0
-  observed=$(devin_settle "$repair_transcript" --require-transcript) || settle_rc=$?
+  observed=$(devin_settle "$repair_transcript" "$round_dir/transcript.repair.snapshot" --require-transcript) || settle_rc=$?
   # The observed model records even when certification fails: the record
   # must reflect what the transcript actually named.
   [[ -z "$observed" ]] || record_result_effective_model "$observed" || true
   return "$settle_rc"
 }
 
-runtime_repair_turn() { # prompt file, output file
+# The raw repair invocation: reports the provider's exit alone, so the
+# delivery walk can judge file-only deliveries (D64). The malformed-repair
+# contract keeps its stricter gate in the wrapper below.
+runtime_repair_invoke() { # prompt file, output file -> provider exit
   local repair_prompt=$1 output=$2 repair_status
   [[ -n "${session_id:-}" && -n "${config_file:-}" ]] || return 1
   set +e
@@ -205,11 +208,17 @@ runtime_repair_turn() { # prompt file, output file
       --export "$round_dir/transcript.repair-1.atif.json" ) >"$output" 2>>"$log"
   repair_status=$?
   set -e
+  return "$repair_status"
+}
+
+runtime_repair_turn() { # prompt file, output file
+  local rc=0
+  runtime_repair_invoke "$1" "$2" || rc=$?
   # A repair that exits nonzero has failed, even if it printed something that
   # happens to parse: a failed provider call must not be turned into a completed
   # job by a lucky-looking stdout. Both a clean exit AND non-empty output are
   # required.
-  (( repair_status == 0 )) && [[ -s "$output" ]]
+  (( rc == 0 )) && [[ -s "$2" ]]
 }
 
 supervise() { # dispatch|follow-up and supervisor args
@@ -239,6 +248,12 @@ supervise() { # dispatch|follow-up and supervisor args
   # names a deterministic path inside the round evidence and the collect
   # step below reads it whenever stdout comes back empty.
   devin_return_file="$round_dir/devin-return.json"
+  # A pre-existing named file is evidence of a crashed earlier attempt:
+  # surfaced, never clobbered (D64).
+  if [[ -e "$devin_return_file" ]]; then
+    fail_pending stale_named_return setup
+    return 1
+  fi
   "$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" \
     --output "$devin_prompt" --return-file "$devin_return_file"
 
@@ -340,8 +355,17 @@ supervise() { # dispatch|follow-up and supervisor args
     previous=$(previous_round_artifact session-usage.json)
     expect_previous=1
   fi
-  devin_usage "$usage_file" "$transcript" "$cumulative" "$previous" "$expect_previous"
-  settle_observed=$(devin_settle "$transcript") || settle_failed=1
+  # The transcript ceiling is checked up front (D64): usage, settlement,
+  # and collection all read the attempt snapshot, and an over-ceiling
+  # export is its own named terminal — never identity disagreement,
+  # never an empty reply, never a paid repair.
+  if [[ -s "$transcript" ]] && (( $(wc -c <"$transcript") > 8388608 )); then
+    finish_running failed transcript_oversize delivery "$usage_file"
+    return 1
+  fi
+  attempt_snapshot="$round_dir/transcript.initial.snapshot"
+  devin_usage "$usage_file" "$transcript" "$cumulative" "$previous" "$expect_previous" "$attempt_snapshot"
+  settle_observed=$(devin_settle "$transcript" "$attempt_snapshot") || settle_failed=1
   [[ -z "$settle_observed" ]] || record_result_effective_model "$settle_observed" || true
   # The transcript is authoritative for session identity once the turn ends.
   if (( handshake_done )) && (( ${settle_failed:-0} )); then
@@ -349,26 +373,63 @@ supervise() { # dispatch|follow-up and supervisor args
     return 1
   fi
 
-  # Empty stdout first checks the NAMED return file (D62): this model
-  # delivers by writing files, and the prompt names this exact path. The
-  # recovered bytes become the reply; the file itself stays in the round
-  # evidence. Recovery requires parseable JSON — a torn or partial write
-  # must not be promoted into a reply.
-  if (( cli_status == 0 )) && [[ ! -s "$raw" && -n "${devin_return_file:-}" && -s "${devin_return_file:-}" ]] \
-    && "$ms" util json-validate --file "$devin_return_file"; then
-    cp "$devin_return_file" "$raw"
-    printf 'devin reply recovered from the named return file\n' >>"$log"
+  # THE DELIVERY WALK (D64): every decision — presence bars, candidate
+  # selection, the designation rule, watermark, provenance — is the
+  # engine's (`adapter devin-collect`); this shell only routes verdicts.
+  if (( cli_status == 0 )) && (( ! handshake_done )) && [[ ! -s "$raw" ]]; then
+    # No session and empty stdout: the presence scan decides between the
+    # two pinned outcomes without any validation.
+    local presence
+    presence=$("$ms" adapter devin-collect --presence-only --root "$root" --job "$job" \
+      --round-dir "$round_dir" --record "$record" --stdout "$raw" \
+      --named "${devin_return_file:-}") || true
+    if [[ "$presence" == *'"candidatesPresent":true'* ]]; then
+      fail_pending handshake_missing_session_id handshake "$usage_file"
+      return 1
+    fi
+    fail_pending empty_reply delivery "$usage_file"
+    return 1
   fi
 
-  # Exit 0 with no reply is this runtime's shape for "could not do it", so it
-  # is named rather than left to fail later as a missing return. Which failure
-  # writer applies depends on where the record got to (the engine's stage
-  # decision, script-adapters-01/D24): a turn that never correlated is still
-  # pending; a turn that correlated and then produced nothing is running.
-  if (( cli_status == 0 )) && [[ ! -s "$raw" ]]; then
-    local empty_args=() verdict
-    (( handshake_done )) && empty_args+=(--handshake-done)
-    verdict=$(adjudicate_turn empty-reply ${empty_args[@]+"${empty_args[@]}"})
+  if (( cli_status == 0 )) && (( handshake_done )); then
+    local collect_rc=0 collect_json reply_path
+    set +e
+    collect_json=$("$ms" adapter devin-collect --root "$root" --job "$job" \
+      --round-dir "$round_dir" --workspace "$workspace" --stdout "$raw" \
+      --named "${devin_return_file:-}" --transcript "$transcript" \
+      --record "$record" --attempt initial --session "$session_id")
+    collect_rc=$?
+    set -e
+    case "$collect_rc" in
+      0)
+        reply_path=$(printf '%s' "$collect_json" | "$ms" json get --value "$collect_json" --field reply)
+        complete_from_cli "$cli_status" "$usage_file" "$reply_path" "$transcript"
+        return $? ;;
+      3)
+        devin_delivery_repair "$usage_file"
+        return $? ;;
+      5)
+        finish_running failed transcript_oversize delivery "$usage_file"
+        return 1 ;;
+      *)
+        finish_running failed collect_mechanical delivery "$usage_file"
+        return 1 ;;
+    esac
+  fi
+  complete_from_cli "$cli_status" "$usage_file" "$raw" "$transcript"
+}
+
+# The delivery repair (D64): adjudication recommends, the durable claim
+# is won BEFORE the paid call, the repair CLI's exit is reported
+# separately, and delivery is judged by the post-repair collect walk.
+devin_delivery_repair() { # usage file
+  local usage_file=$1 verdict claim_rc=0 repair_rc=0
+  local repair_named="$round_dir/devin-return.repair-1.json"
+  local repair_transcript="$round_dir/transcript.repair-1.atif.json"
+  local repair_args=(--handshake-done --named-repair-path "$repair_named")
+  (( ${return_repairs:-0} == 0 )) && [[ -n "${session_id:-}" ]] && repair_args+=(--repair-available)
+  verdict=$(adjudicate_turn empty-delivery "${repair_args[@]}")
+  if [[ "$verdict" != delivery-repair ]]; then
     set -- $verdict
     if [[ "$1" == fail-pending ]]; then
       fail_pending "$2" "$3" "$usage_file"
@@ -377,7 +438,54 @@ supervise() { # dispatch|follow-up and supervisor args
     fi
     return 1
   fi
-  complete_from_cli "$cli_status" "$usage_file" "$raw" "$transcript"
+
+  set +e
+  "$dispatch" __repair-claim --job "$job" >>"$log" 2>&1
+  claim_rc=$?
+  set -e
+  if (( claim_rc == 3 )); then
+    # The repair is spent (this round or the malformed flow): the pinned
+    # empty outcome stands.
+    finish_running failed empty_reply delivery "$usage_file"
+    return 1
+  elif (( claim_rc != 0 )); then
+    finish_running failed collect_mechanical delivery "$usage_file"
+    return 1
+  fi
+  return_repairs=1
+  printf '%s delivery repair attempt 1: no return was delivered, asking session %s to write %s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$session_id" "$repair_named" >>"$log"
+
+  runtime_repair_invoke "$round_dir/repair-1.prompt.md" "$round_dir/repair-1.out" || repair_rc=$?
+  runtime_usage_after_repair "$usage_file" || true
+  if (( repair_rc != 0 )); then
+    printf 'delivery repair provider call failed rc=%s\n' "$repair_rc" >"$round_dir/protocol-violation.txt"
+    finish_protocol_error "$round_dir/protocol-violation.txt"
+    return 1
+  fi
+
+  local collect_rc=0 collect_json reply_path
+  set +e
+  collect_json=$("$ms" adapter devin-collect --root "$root" --job "$job" \
+    --round-dir "$round_dir" --workspace "$workspace" \
+    --stdout "$round_dir/repair-1.out" --named "$repair_named" \
+    --transcript "$repair_transcript" --record "$record" \
+    --attempt repair --session "$session_id")
+  collect_rc=$?
+  set -e
+  if (( collect_rc != 0 )); then
+    printf 'delivery repair produced no qualifying return (collect rc=%s)\n' "$collect_rc" >"$round_dir/protocol-violation.txt"
+    finish_protocol_error "$round_dir/protocol-violation.txt"
+    return 1
+  fi
+  # Delivered: the repaired session settles before the pipeline runs,
+  # exactly as the repaired-session path orders it today.
+  if ! runtime_settle_after_repair; then
+    finish_running failed session_identity_disagreement delivery "$usage_file"
+    return 1
+  fi
+  reply_path=$(printf '%s' "$collect_json" | "$ms" json get --value "$collect_json" --field reply)
+  complete_from_cli 0 "$usage_file" "$reply_path" ""
 }
 
 command_name=${1:-}
