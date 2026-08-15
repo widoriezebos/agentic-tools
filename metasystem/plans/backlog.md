@@ -370,3 +370,34 @@
     store's aging (`evidence` family already ages archives — the
     pattern to extend). Design → critique → implement; queued per
     the human ("do not do this now").
+
+20. **The narrator: a plain-English story of how we got here
+    (human-raised 2026-08-15).** The human's ask, verbatim intent: a
+    feature that "should explain what happened, why it happened, who
+    did it in terms of a story in plain English. So that reading this
+    narrative, the human can see what happened since the beginning,
+    why it happened... a great brief summary and explanation of why we
+    are where we are and how we got here as an easy to read story.
+    This is a great way for a human to catch up on what happened since
+    the last time the human read the narrative. This is a crucial
+    feature of the meta system because this explains how the meta
+    system got to the result where it is at." Raw material the system
+    already captures: the flight-recorder event stream (who did what,
+    when), job records and chains (delegated work and its outcomes),
+    mission ledgers (cycles, measurements, parks and their reasons),
+    the decisions documents (why, with alternatives named), receipts,
+    and git history — the narrator's job is DISTILLATION into
+    narrative, not new capture. Key semantics to design later: the
+    catch-up boundary ("since the last time the human read" implies a
+    read watermark per reader), causality over chronology (the story
+    explains WHY, so it follows decision threads, not timestamps),
+    honest attribution (who = human ruling vs delegated decision vs
+    agent action — the decisions docs' grammar already distinguishes
+    these), and brevity discipline (a story, not a log dump — the
+    plain-English program summaries written by hand this week are the
+    prototype of the register). Composes with: item 19 (the narrator
+    IS a distill-then-delete consumer for logs), item 14's goals (the
+    story's through-line is the goal thread), and the exchangeability
+    doctrine (the narrative is a file produced by verbs — readable
+    and writable regardless of which runtime narrates). Do not design
+    or build now, per the human; pick up later.
