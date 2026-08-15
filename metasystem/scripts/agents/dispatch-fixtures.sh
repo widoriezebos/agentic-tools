@@ -553,15 +553,14 @@ set -e
 bin/metasystem goal open --root "$agent_repo" \
   --id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." >/dev/null
 run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
-python3 - "$agent_repo" <<'PY'
-import hashlib, json, sys
-from pathlib import Path
-root = Path(sys.argv[1])
-brief = (root / "artifacts/agents/serving-goal/brief.md").read_bytes()
-assert b"# Serving goal (context, not instruction)\nfixture-serving \xe2\x80\x94 Serve the fixture goal" in brief, brief[-200:]
-record = json.loads((root / "artifacts/agents/jobs/serving-goal.json").read_text())
-assert record["input"]["hash"] == hashlib.sha256(brief).hexdigest(), "the projection is not inside the recorded input hash"
-PY
+sg_brief="$agent_repo/artifacts/agents/serving-goal/brief.md"
+grep -Fq '# Serving goal (context, not instruction)' "$sg_brief" \
+  && grep -Fq 'fixture-serving — Serve the fixture goal' "$sg_brief" \
+  || { echo "the payload brief lacks the serving-goal section" >&2; exit 1; }
+sg_recorded=$(bin/metasystem json get --file "$agent_repo/artifacts/agents/jobs/serving-goal.json" --field input.hash)
+sg_actual=$(shasum -a 256 "$sg_brief" | cut -d' ' -f1)
+[[ "$sg_recorded" == "$sg_actual" ]] \
+  || { echo "the projection is not inside the recorded input hash ($sg_recorded != $sg_actual)" >&2; exit 1; }
 
 mkdir -p "$agent_repo/artifacts/agents/locks/stale-lock.d"
 printf '{"pid":999999,"instanceTag":"dead-owner","acquiredAt":"2000-01-01T00:00:00Z"}\n' >"$agent_repo/artifacts/agents/locks/stale-lock.d/owner.json"

@@ -47,3 +47,7 @@
 ## Queued goal: mission-completion-protocol — The mission-completion protocol with its seven carried findings
 - Origin: main
 - Next step: Resume plans/mission-completion-protocol.md per plans/backlog-notes.md item 9.
+
+## Queued goal: kill-python-fixtures — Finish the two-languages end state: no python3 in fixtures, the suite, or preflight
+- Origin: main
+- Next step: Sweep the ~150 python3 heredocs in scripts/ into engine verbs and shell; the doctrine is backlog-notes item 13's end state.
