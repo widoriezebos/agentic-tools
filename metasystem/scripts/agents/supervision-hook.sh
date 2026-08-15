@@ -109,7 +109,8 @@ $protocol_message"
   # old 2>/dev/null||true suppression was the named defect this removes.
   verdict_stderr=$(mktemp "${TMPDIR:-/tmp}/metasystem-verdict-err.XXXXXX")
   if verdict=$("$ms" report turn-verdict --root "$harness_root" \
-      --session "$session" --watchdog-surfaced "$watchdog_digest" 2>"$verdict_stderr"); then
+      --session "$session" --watchdog-surfaced "$watchdog_digest" \
+      --main-id "$main_id" 2>"$verdict_stderr"); then
     rm -f "$verdict_stderr"
     should_block=$("$ms" json get --value "$verdict" --field shouldBlock)
     display=$("$ms" json get --value "$verdict" --field display)

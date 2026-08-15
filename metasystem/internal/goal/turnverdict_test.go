@@ -20,7 +20,7 @@ func TestVerdictDualSlotSequence(t *testing.T) {
 	mustOpen(t, s, mainHolder, "g", "the goal", "Ship it.")
 
 	// 1. Nothing scanned: the goal blocks once, byte-verbatim step.
-	v, err := s.TurnVerdict(ScanResult{}, "session-1", "")
+	v, err := s.TurnVerdict(ScanResult{}, "session-1", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,19 +30,19 @@ func TestVerdictDualSlotSequence(t *testing.T) {
 
 	// 2. Open work appears: open-work blocks once.
 	scan := ScanResult{Open: []Item{openItem("plans/x.md next: do")}}
-	v, _ = s.TurnVerdict(scan, "session-1", "")
+	v, _ = s.TurnVerdict(scan, "session-1", "", "")
 	if !v.ShouldBlock || *v.BlockSource != "open-work" {
 		t.Fatalf("open work did not block: %+v", v)
 	}
 	// Same signature again: reported, not re-blocked.
-	v, _ = s.TurnVerdict(scan, "session-1", "")
+	v, _ = s.TurnVerdict(scan, "session-1", "", "")
 	if v.ShouldBlock {
 		t.Fatalf("unchanged open work re-blocked: %+v", v)
 	}
 
 	// 3. Work clears: the unchanged goal does NOT re-block (its revision
 	// is spent), and the all-clear names the goal.
-	v, _ = s.TurnVerdict(ScanResult{}, "session-1", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "session-1", "", "")
 	if v.ShouldBlock {
 		t.Fatalf("the spent goal revision re-blocked: %+v", v)
 	}
@@ -54,13 +54,13 @@ func TestVerdictDualSlotSequence(t *testing.T) {
 	if _, err := s.SetNext(mainHolder, "Ship it harder."); err != nil {
 		t.Fatal(err)
 	}
-	v, _ = s.TurnVerdict(ScanResult{}, "session-1", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "session-1", "", "")
 	if !v.ShouldBlock || !strings.Contains(v.Display, "Ship it harder.") {
 		t.Fatalf("a re-armed revision did not block: %+v", v)
 	}
 
 	// A different session has its own slots.
-	v, _ = s.TurnVerdict(ScanResult{}, "session-2", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "session-2", "", "")
 	if !v.ShouldBlock {
 		t.Fatal("a fresh session inherited a spent revision")
 	}
@@ -72,12 +72,12 @@ func TestPrecedenceLadder(t *testing.T) {
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "the goal", "Ship it.")
 
-	v, _ := s.TurnVerdict(ScanResult{Busy: []Item{{Kind: "mission", Id: "m1", Detail: "mission m1 [running]"}}}, "s", "")
+	v, _ := s.TurnVerdict(ScanResult{Busy: []Item{{Kind: "mission", Id: "m1", Detail: "mission m1 [running]"}}}, "s", "", "")
 	if v.ShouldBlock || !strings.Contains(v.Display, "STILL WORKING") || strings.Contains(v.Display, "Ship it.") {
 		t.Fatalf("busy precedence wrong: %+v", v)
 	}
 
-	v, _ = s.TurnVerdict(ScanResult{WaitingOnHuman: []Item{{Kind: "plan", Id: "w", Detail: "plans/w.md waits on the human"}}}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{WaitingOnHuman: []Item{{Kind: "plan", Id: "w", Detail: "plans/w.md waits on the human"}}}, "s", "", "")
 	if v.ShouldBlock || !strings.Contains(v.Display, "WAITING ON THE HUMAN") || strings.Contains(v.Display, "Ship it.") {
 		t.Fatalf("human-wait precedence wrong: %+v", v)
 	}
@@ -85,13 +85,13 @@ func TestPrecedenceLadder(t *testing.T) {
 	// Stale plans are warning-only: they ride Diagnostics/display via the
 	// scanner, never the block path — an all-empty-but-stale scan lets
 	// the goal block normally.
-	v, _ = s.TurnVerdict(ScanResult{StalePlans: []Item{{Kind: "plan", Id: "old", Detail: "plans/old.md is stale"}}}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{StalePlans: []Item{{Kind: "plan", Id: "old", Detail: "plans/old.md is stale"}}}, "s", "", "")
 	if !v.ShouldBlock || *v.BlockSource != "goal" {
 		t.Fatalf("stale plans changed the goal outcome: %+v", v)
 	}
 
 	// GOAL-17: unreadable vetoes the goal block AND the all-clear.
-	v, _ = s.TurnVerdict(ScanResult{Unreadable: []string{"plans/broken.md: permission denied"}}, "s2", "")
+	v, _ = s.TurnVerdict(ScanResult{Unreadable: []string{"plans/broken.md: permission denied"}}, "s2", "", "")
 	if v.ShouldBlock || strings.Contains(v.Display, "NOTHING LEFT") || !strings.Contains(v.Display, "unreadable") {
 		t.Fatalf("unreadable veto wrong: %+v", v)
 	}
@@ -104,14 +104,14 @@ func TestPrecedenceLadder(t *testing.T) {
 // degraded with the all-clear vetoed and reconcile named.
 func TestAbsenceAdvisoryVsDeletionDegraded(t *testing.T) {
 	s := testStore(t)
-	v, _ := s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ := s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.LedgerStatus != "absent" || v.ShouldBlock || !strings.Contains(v.Display, "`goal open` starts one") || !strings.Contains(v.Display, "NOTHING LEFT") {
 		t.Fatalf("pre-adoption absence not advisory: %+v", v)
 	}
 
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 	os.Remove(LedgerPath(s.Root))
-	v, _ = s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.LedgerStatus != "degraded" || v.ShouldBlock || strings.Contains(v.Display, "NOTHING LEFT") || !strings.Contains(v.Display, "reconcile") {
 		t.Fatalf("post-adoption deletion not degraded: %+v", v)
 	}
@@ -143,12 +143,12 @@ func TestQueuedOnlyVerdict(t *testing.T) {
 		t.Fatalf("not queued-only: %+v", ledger)
 	}
 
-	v, _ := s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ := s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.LedgerStatus != "queued-only" || !v.ShouldBlock || !strings.Contains(v.Display, "goal promote a") {
 		t.Fatalf("queued-only verdict wrong: %+v", v)
 	}
 	// Once.
-	v, _ = s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.ShouldBlock {
 		t.Fatalf("queued-only re-blocked: %+v", v)
 	}
@@ -161,7 +161,7 @@ func TestGoalFreeStaleness(t *testing.T) {
 	if _, err := s.DeclareFree(human); err != nil {
 		t.Fatal(err)
 	}
-	v, _ := s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ := s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.ShouldBlock || !strings.Contains(v.Display, "goal-free declared") {
 		t.Fatalf("fresh declaration did not read all-clear: %+v", v)
 	}
@@ -169,18 +169,18 @@ func TestGoalFreeStaleness(t *testing.T) {
 	// The world moves.
 	os.MkdirAll(filepath.Join(s.Root, "plans"), 0o755)
 	os.WriteFile(filepath.Join(s.Root, "plans", "new-work.md"), []byte("x"), 0o644)
-	v, _ = s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
 	if !v.ShouldBlock || !strings.Contains(v.Display, "predates new work") {
 		t.Fatalf("stale declaration did not block: %+v", v)
 	}
 	// Once per world.
-	v, _ = s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.ShouldBlock {
 		t.Fatalf("stale declaration re-blocked: %+v", v)
 	}
 	// A FURTHER world change blocks once more.
 	os.WriteFile(filepath.Join(s.Root, "plans", "even-newer.md"), []byte("y"), 0o644)
-	v, _ = s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
 	if !v.ShouldBlock {
 		t.Fatalf("a further world change did not block: %+v", v)
 	}
@@ -188,7 +188,7 @@ func TestGoalFreeStaleness(t *testing.T) {
 	if _, err := s.DeclareFree(human); err != nil {
 		t.Fatal(err)
 	}
-	v, _ = s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.ShouldBlock || !strings.Contains(v.Display, "goal-free declared") {
 		t.Fatalf("renewal did not restore the all-clear: %+v", v)
 	}
@@ -204,7 +204,7 @@ func TestSessionMapCapAndHygiene(t *testing.T) {
 	for i := 0; i < 140; i++ {
 		tick := base.Add(time.Duration(i) * time.Minute)
 		s.Now = func() time.Time { return tick }
-		if _, err := s.TurnVerdict(ScanResult{}, fmt.Sprintf("session-%03d", i), ""); err != nil {
+		if _, err := s.TurnVerdict(ScanResult{}, fmt.Sprintf("session-%03d", i), "", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -220,7 +220,7 @@ func TestSessionMapCapAndHygiene(t *testing.T) {
 	}
 
 	// A path-shaped session id normalizes to its sha256.
-	if _, err := s.TurnVerdict(ScanResult{}, "../../etc/passwd", ""); err != nil {
+	if _, err := s.TurnVerdict(ScanResult{}, "../../etc/passwd", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	state, _ = s.loadVerdictState()
@@ -232,7 +232,7 @@ func TestSessionMapCapAndHygiene(t *testing.T) {
 
 	// 30-day expiry drops dormant sessions on any write.
 	s.Now = func() time.Time { return base.Add(40 * 24 * time.Hour) }
-	if _, err := s.TurnVerdict(ScanResult{}, "fresh", ""); err != nil {
+	if _, err := s.TurnVerdict(ScanResult{}, "fresh", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	state, _ = s.loadVerdictState()
@@ -249,21 +249,21 @@ func TestWatchdogProtocol(t *testing.T) {
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 
 	digest := strings.Repeat("a", 64)
-	v, _ := s.TurnVerdict(ScanResult{}, "s", digest)
+	v, _ := s.TurnVerdict(ScanResult{}, "s", digest, "")
 	if !v.SurfaceWatchdog {
 		t.Fatal("new digest did not surface")
 	}
-	v, _ = s.TurnVerdict(ScanResult{}, "s", digest)
+	v, _ = s.TurnVerdict(ScanResult{}, "s", digest, "")
 	if v.SurfaceWatchdog {
 		t.Fatal("same digest surfaced twice")
 	}
 	// No findings clears the slot...
-	v, _ = s.TurnVerdict(ScanResult{}, "s", "")
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.SurfaceWatchdog {
 		t.Fatal("clear surfaced")
 	}
 	// ...so the same digest surfaces again (recover-then-warn-again).
-	v, _ = s.TurnVerdict(ScanResult{}, "s", digest)
+	v, _ = s.TurnVerdict(ScanResult{}, "s", digest, "")
 	if !v.SurfaceWatchdog {
 		t.Fatal("post-clear digest did not re-surface")
 	}
@@ -276,7 +276,7 @@ func TestWatchdogProtocol(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			v, err := s.TurnVerdict(ScanResult{}, "s", fresh)
+			v, err := s.TurnVerdict(ScanResult{}, "s", fresh, "")
 			if err == nil {
 				surfaced <- v.SurfaceWatchdog
 			}
@@ -302,8 +302,98 @@ func TestInventoryFailureVetoes(t *testing.T) {
 	if _, err := s.DeclareFree(human); err != nil {
 		t.Fatal(err)
 	}
-	v, _ := s.TurnVerdict(ScanResult{Unreadable: []string{"runners/m1.json: runner liveness unknown"}}, "s", "")
+	v, _ := s.TurnVerdict(ScanResult{Unreadable: []string{"runners/m1.json: runner liveness unknown"}}, "s", "", "")
 	if v.ShouldBlock || strings.Contains(v.Display, "NOTHING LEFT") {
 		t.Fatalf("inventory failure did not veto: %+v", v)
+	}
+}
+
+// MON-05 + FIX-R6-01: unwatched work blocks once before Busy can hide it,
+// keys on lifecycle tags so a reused job id re-arms, and run warnings ride
+// above the ladder.
+func TestUnwatchedAndWarnings(t *testing.T) {
+	s := testStore(t)
+	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
+
+	job := JobFact{Id: "j1", MainId: "main-1", StartedAt: "2026-08-15T10:00:00Z", Status: "running"}
+	busy := []Item{{Kind: "job", Id: "j1", Detail: "impl j1 [running, codex]"}}
+
+	// Unwatched job, Busy present: the block fires DESPITE Busy.
+	v, _ := s.TurnVerdict(ScanResult{Busy: busy, Jobs: []JobFact{job}}, "s", "", "main-1")
+	if !v.ShouldBlock || *v.BlockSource != "unwatched-work" || !strings.Contains(v.Display, "unwatched") {
+		t.Fatalf("unwatched did not block before Busy: %+v", v)
+	}
+	// Same set again: reported once, no re-block; Busy shows.
+	v, _ = s.TurnVerdict(ScanResult{Busy: busy, Jobs: []JobFact{job}}, "s", "", "main-1")
+	if v.ShouldBlock || !strings.Contains(v.Display, "STILL WORKING") {
+		t.Fatalf("unwatched re-blocked or Busy hidden: %+v", v)
+	}
+	// FIX-R6-01: the SAME job id with a NEW startedAt is a new incarnation
+	// and re-arms.
+	reused := job
+	reused.StartedAt = "2026-08-15T11:00:00Z"
+	v, _ = s.TurnVerdict(ScanResult{Busy: busy, Jobs: []JobFact{reused}}, "s", "", "main-1")
+	if !v.ShouldBlock {
+		t.Fatalf("a reused job id did not re-arm: %+v", v)
+	}
+	// A watched job never blocks; a foreign main's job never blocks us.
+	watched := reused
+	watched.WaiterLive = true
+	v, _ = s.TurnVerdict(ScanResult{Jobs: []JobFact{watched}}, "s", "", "main-1")
+	if v.BlockSource != nil && *v.BlockSource == "unwatched-work" {
+		t.Fatalf("a watched job blocked as unwatched: %+v", v)
+	}
+	foreign := JobFact{Id: "j9", MainId: "main-other", StartedAt: "x", Status: "running"}
+	v, _ = s.TurnVerdict(ScanResult{Jobs: []JobFact{foreign}}, "s-f", "", "main-1")
+	if v.BlockSource != nil && *v.BlockSource == "unwatched-work" {
+		t.Fatalf("a foreign job blocked as unwatched: %+v", v)
+	}
+
+	// Run warnings above the ladder: red with continuation verbatim,
+	// even while Busy (mixed-state display test Busy+RunRed).
+	red := RunFact{Id: "r1", MainId: "main-1", Generation: 1, Nonce: "n", Status: "red", ExpectRed: "read the log at /tmp/r1.log"}
+	v, _ = s.TurnVerdict(ScanResult{Busy: busy, Jobs: []JobFact{watched}, Runs: []RunFact{red}}, "s", "", "main-1")
+	if !strings.Contains(v.Display, "went red") || !strings.Contains(v.Display, "read the log at /tmp/r1.log") || !strings.Contains(v.Display, "STILL WORKING") {
+		t.Fatalf("Busy hid the red warning or the continuation: %s", v.Display)
+	}
+	// Busy+RunUnreadable: both visible.
+	v, _ = s.TurnVerdict(ScanResult{Busy: busy, Jobs: []JobFact{watched}, RunUnreadable: []string{"runs/x.json: torn"}}, "s", "", "main-1")
+	if !strings.Contains(v.Display, "runs/x.json: torn") || !strings.Contains(v.Display, "STILL WORKING") {
+		t.Fatalf("Busy hid the run-unreadable line: %s", v.Display)
+	}
+}
+
+// FIX-R6-04: greens surface exactly once per session in terminal-sequence
+// order, and any unreadable run record freezes the cursor so a delayed
+// green is never skipped.
+func TestGreenPrefixConsistency(t *testing.T) {
+	s := testStore(t)
+	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
+
+	greenB := RunFact{Id: "run-b", Status: "green", TerminalSeq: 11, ExpectGreen: "ship B"}
+	// Turn 1: B green at seq 11, but run A's record is unreadable —
+	// cursor FROZEN, nothing surfaces.
+	v, _ := s.TurnVerdict(ScanResult{Runs: []RunFact{greenB}, RunUnreadable: []string{"runs/run-a.json: unreadable"}}, "s", "", "")
+	if strings.Contains(v.Display, "finished green") {
+		t.Fatalf("green surfaced through the freeze: %s", v.Display)
+	}
+	// Turn 2: A recovered and concluded green at seq 10 — BOTH surface,
+	// in order, once.
+	greenA := RunFact{Id: "run-a", Status: "green", TerminalSeq: 10, ExpectGreen: "ship A"}
+	v, _ = s.TurnVerdict(ScanResult{Runs: []RunFact{greenA, greenB}}, "s", "", "")
+	aIdx := strings.Index(v.Display, "run-a finished green")
+	bIdx := strings.Index(v.Display, "run-b finished green")
+	if aIdx < 0 || bIdx < 0 || aIdx > bIdx {
+		t.Fatalf("greens missing or out of order: %s", v.Display)
+	}
+	// Turn 3: neither resurfaces.
+	v, _ = s.TurnVerdict(ScanResult{Runs: []RunFact{greenA, greenB}}, "s", "", "")
+	if strings.Contains(v.Display, "finished green") {
+		t.Fatalf("a surfaced green repeated: %s", v.Display)
+	}
+	// A fresh session gets its own cursor.
+	v, _ = s.TurnVerdict(ScanResult{Runs: []RunFact{greenA, greenB}}, "s2", "", "")
+	if !strings.Contains(v.Display, "run-a finished green") {
+		t.Fatalf("a fresh session saw no greens: %s", v.Display)
 	}
 }

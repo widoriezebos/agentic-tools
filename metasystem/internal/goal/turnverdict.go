@@ -36,6 +36,40 @@ type ScanResult struct {
 	// liveness. Non-empty Unreadable vetoes BOTH the all-clear and any
 	// goal block: nothing can be asserted over unread inputs.
 	Unreadable []string
+	// Jobs and Runs are the monitor facility's typed facts (MON-05):
+	// the unwatched rule, the run warnings, and the green cursor
+	// consume these, never the display-shaped Busy items.
+	Jobs []JobFact
+	Runs []RunFact
+	// RunUnreadable is the run readers' own failure channel — surfaced
+	// OUTSIDE the ladder so Busy can never hide it, and it freezes the
+	// green cursor (FIX-R6-04).
+	RunUnreadable []string
+}
+
+// JobFact is one delegate job's monitor-relevant slice.
+type JobFact struct {
+	Id         string
+	MainId     string
+	StartedAt  string
+	Status     string
+	WaiterLive bool
+}
+
+// RunFact is one run record's monitor-relevant slice.
+type RunFact struct {
+	Id                                                string
+	MainId                                            string
+	Generation                                        int
+	Nonce                                             string
+	Status                                            string
+	ProbeState                                        string // alive | dead | unknown | ""
+	TerminalSeq                                       int64
+	Supervised                                        bool
+	WaiterLive                                        bool
+	Acked                                             bool
+	Hung                                              bool
+	ExpectGreen, ExpectRed, ExpectHung, ExpectUnknown string
 }
 
 // OpenWorkSignature keys the open-work block-once slot: the sorted open
@@ -92,6 +126,11 @@ type sessionState struct {
 	BlockedGoalRevisions []string `json:"blockedGoalRevisions"`
 	BlockedFreeDigests   []string `json:"blockedFreeDigests"`
 	WatchdogSurfaced     *string  `json:"watchdogSurfaced"`
+	// The monitor facility's two additive slots (MON-05): the
+	// unwatched-work block-once digests and the green cursor riding the
+	// terminal sequence's total order.
+	BlockedUnwatchedDigests []string `json:"blockedUnwatchedDigests,omitempty"`
+	GreenCursor             int64    `json:"greenCursor,omitempty"`
 }
 
 type verdictState struct {
@@ -117,8 +156,9 @@ func NormalizeSession(id string) string {
 
 // TurnVerdict decides one turn end. watchdogDigest is the hook's
 // --watchdog-surfaced value ("" = no watchdog findings this turn, which
-// clears the stored digest).
-func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest string) (Verdict, error) {
+// clears the stored digest); mainId is the CALLER's main identity for
+// the unwatched-work rule (empty for humans and unidentified callers).
+func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId string) (Verdict, error) {
 	sessionId = NormalizeSession(sessionId)
 	verdict := Verdict{SchemaVersion: 1, LedgerStatus: "ok"}
 
@@ -129,7 +169,10 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest string) (
 		}
 		session := state.touch(sessionId, s.nowISO())
 
+		prefix := s.decideRuns(&verdict, scan, session, mainId)
 		s.decide(&verdict, scan, session)
+		greens := s.decideGreens(scan, session)
+		verdict.Display = composeDisplay(prefix, verdict.Display, greens)
 		verdict.SurfaceWatchdog = session.watchdog(watchdogDigest)
 
 		if err := s.saveVerdictState(state); err != nil {
@@ -144,6 +187,113 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest string) (
 	return verdict, nil
 }
 
+// decideRuns applies the monitor facility's rules OUTSIDE the ladder:
+// run warnings always surface, and unwatched work blocks once — BEFORE
+// Busy can suppress anything (a watched active run is Busy; an unwatched
+// one blocks despite being busy, which is the point).
+func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string) []string {
+	var warnings []string
+	warn := func(format string, args ...any) {
+		warnings = append(warnings, fmt.Sprintf(format, args...))
+	}
+	continuation := func(text string) string {
+		if text == "" {
+			return "no continuation recorded"
+		}
+		return text
+	}
+	for _, runFact := range scan.Runs {
+		switch {
+		case runFact.Status == "red" && !runFact.Acked:
+			warn("run %s went red; the run record says: %s", runFact.Id, continuation(runFact.ExpectRed))
+		case (runFact.Status == "ended-unknown" || runFact.Status == "launch-failed") && !runFact.Acked:
+			warn("run %s ended %s; the run record says: %s", runFact.Id, runFact.Status, continuation(runFact.ExpectUnknown))
+		case runFact.Hung:
+			warn("run %s looks hung; the run record says: %s", runFact.Id, continuation(runFact.ExpectHung))
+		case runFact.ProbeState == "unknown":
+			warn("run %s liveness unknown", runFact.Id)
+		}
+	}
+	warnings = append(warnings, scan.RunUnreadable...)
+	verdict.Diagnostics = append(verdict.Diagnostics, scan.RunUnreadable...)
+
+	// The unwatched-work block (MON-05, FIX-R6-01: lifecycle-tagged keys).
+	var unwatchedTags, unwatchedIds []string
+	for _, job := range scan.Jobs {
+		if mainId != "" && job.MainId == mainId &&
+			(job.Status == "pending" || job.Status == "running") && !job.WaiterLive {
+			unwatchedTags = append(unwatchedTags, "job:"+job.Id+"@"+job.StartedAt)
+			unwatchedIds = append(unwatchedIds, job.Id)
+		}
+	}
+	for _, runFact := range scan.Runs {
+		inFlight := runFact.Status == "launching" || runFact.Status == "running" || runFact.Status == "draining"
+		owned := mainId != "" && runFact.MainId == mainId
+		if owned && inFlight && !runFact.WaiterLive {
+			unwatchedTags = append(unwatchedTags, fmt.Sprintf("run:%s.g%d.%s", runFact.Id, runFact.Generation, runFact.Nonce))
+			unwatchedIds = append(unwatchedIds, runFact.Id)
+		}
+	}
+	if len(unwatchedTags) > 0 {
+		sort.Strings(unwatchedTags)
+		digest := sha256Hex([]byte(strings.Join(unwatchedTags, "\n")))
+		if !contains(session.BlockedUnwatchedDigests, digest) {
+			session.BlockedUnwatchedDigests = appendCapped(session.BlockedUnwatchedDigests, digest, maxFreeDigests)
+			verdict.ShouldBlock = true
+			source := "unwatched-work"
+			verdict.BlockSource = &source
+			warnings = append(warnings, fmt.Sprintf(
+				"work you launched is unwatched: %s; arm the printed watch command or conclude the runs",
+				strings.Join(unwatchedIds, ", ")))
+		}
+	}
+	return warnings
+}
+
+// decideGreens surfaces green terminals exactly once per session on the
+// terminal sequence's total order; any unreadable run record freezes the
+// cursor entirely (FIX-R6-04).
+func (s *Store) decideGreens(scan ScanResult, session *sessionState) []string {
+	if len(scan.RunUnreadable) > 0 {
+		return nil
+	}
+	type green struct {
+		seq  int64
+		line string
+	}
+	var greens []green
+	for _, runFact := range scan.Runs {
+		if runFact.Status != "green" || runFact.TerminalSeq <= session.GreenCursor {
+			continue
+		}
+		text := runFact.ExpectGreen
+		if text == "" {
+			text = "no continuation recorded"
+		}
+		greens = append(greens, green{runFact.TerminalSeq, fmt.Sprintf(
+			"run %s finished green; the run record says: %s", runFact.Id, text)})
+	}
+	sort.Slice(greens, func(i, j int) bool { return greens[i].seq < greens[j].seq })
+	var lines []string
+	for _, g := range greens {
+		lines = append(lines, g.line)
+		session.GreenCursor = g.seq
+	}
+	return lines
+}
+
+// composeDisplay joins the run prefix, the ladder's display, and the
+// green lines, dropping empties.
+func composeDisplay(prefix []string, ladder string, greens []string) string {
+	var parts []string
+	parts = append(parts, prefix...)
+	if ladder != "" {
+		parts = append(parts, ladder)
+	}
+	parts = append(parts, greens...)
+	return strings.Join(parts, "\n")
+}
+
 // decide is the precedence ladder from the design, in order.
 func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState) {
 	for _, item := range scan.Open {
@@ -156,8 +306,17 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState)
 	verdict.LedgerStatus = status
 	verdict.Goal = facts
 
+	// An unwatched-work block from decideRuns holds the turn already;
+	// the ladder still composes its display but must not overwrite the
+	// block source or re-block.
+	alreadyBlocked := verdict.ShouldBlock
+
 	var display []string
 	blockGoal := func(reason string) {
+		if alreadyBlocked {
+			display = append(display, reason)
+			return
+		}
 		verdict.ShouldBlock = true
 		source := "goal"
 		verdict.BlockSource = &source
@@ -177,9 +336,11 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState)
 		// Open work blocks first — once per signature.
 		if session.OpenWorkSignature != verdict.OpenWorkSignature {
 			session.OpenWorkSignature = verdict.OpenWorkSignature
-			verdict.ShouldBlock = true
-			source := "open-work"
-			verdict.BlockSource = &source
+			if !alreadyBlocked {
+				verdict.ShouldBlock = true
+				source := "open-work"
+				verdict.BlockSource = &source
+			}
 		}
 		display = append(display, fmt.Sprintf("OPEN WORK (%d): %s", len(scan.Open), strings.Join(verdict.OpenWork, "; ")))
 

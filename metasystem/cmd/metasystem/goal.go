@@ -243,11 +243,12 @@ func runReportTurnVerdict(args []string) int {
 	root := flags.String("root", ".", "checkout root")
 	session := flags.String("session", "", "normalized session id")
 	watchdog := flags.String("watchdog-surfaced", "", "sha256 of this turn's watchdog report (empty clears)")
+	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	scan := report.Scan(*root)
-	verdict, err := (&goal.Store{Root: *root}).TurnVerdict(scan, *session, *watchdog)
+	verdict, err := (&goal.Store{Root: *root}).TurnVerdict(scan, *session, *watchdog, *mainId)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
