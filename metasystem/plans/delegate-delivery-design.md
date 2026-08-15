@@ -4,9 +4,10 @@ Working Mode: design
 
 Owner: main session (delegate), under Wido's 2026-08-15 morning
 rulings (design-critique-implement before anything else; everything
-Go is better suited for goes in Go). Status: r7 — folds the single
-r6 finding (critiques at plans/delegate-delivery-critique-r{1..6}.md;
-r6 closed repair precedence); awaiting r7 critique.
+Go is better suited for goes in Go). Status: r8 — folds the single
+r7 finding (critiques at plans/delegate-delivery-critique-r{1..7}.md);
+the no-session predicate is now pinned byte-for-byte to the shipped
+reply gate; awaiting the confirmation round.
 
 ## The problem, with two cohorts of evidence
 
@@ -38,11 +39,16 @@ FILE, --named FILE, --transcript FILE, --schema FILE, --record FILE,
 --attempt initial|repair. Output: a JSON FACTS document on stdout —
 `{"delivered": bool, "channel": "stdout|named-file|transcript|none",
 "reply": "<accepted snapshot path>", "candidatesPresent": bool,
-"watermarkValid": bool, "reason": "..."}` — candidatesPresent is an
-EXISTENCE-ONLY fact (non-empty stdout, named file on disk, or a
-designation-rule write in the transcript window), computed without
-any validation, so the no-session split below is decidable without
-running the canonical validator sessionlessly — plus the side effects below. The collector
+"watermarkValid": bool, "reason": "..."}` — candidatesPresent uses
+EXACTLY the shipped reply gate's bar, no more and no less (r7's
+finding: existence alone is broader than today's gate): a candidate
+counts as present only if it is non-empty AND parses as a JSON
+object — the same parse bar the current adapter applies before the
+handshake refusal — with no canonical validation. Torn, empty, or
+non-persisted attempts are NOT present and keep today's empty-reply
+outcome; the no-session split below is thereby decidable without
+running the canonical validator sessionlessly and without widening
+the pinned taxonomy in either direction — plus the side effects below. The collector
 reports COLLECTION FACTS ONLY (r3 finding 5): it has no CLI-status
 or session inputs and emits no repair recommendation; adjudication
 alone composes eligibility from CLI status + collection facts +
@@ -186,7 +192,7 @@ provider failure):
 | disagreement/unreadable | any | never consulted | session_identity_disagreement, as today |
 | transcript over ceiling | any | never consulted | transcript-oversize, a NAMED degraded terminal — never identity disagreement, never empty-reply, never repair |
 | certified | non-zero | never consulted | provider failure, as today — no channel promotes output from a failed call |
-| certified | 0, NO session correlated | existence scan ONLY (candidatesPresent; no validation — r5 finding 1: canonical validation cannot represent a sessionless acceptance) | candidatesPresent=true → handshake_missing_session_id, today's gate for a reply that arrived uncorrelated; candidatesPresent=false → empty-reply adjudication, today's PINNED outcome for empty-without-correlation (r6's finding: an unconditional gate would have silently reclassified this case) |
+| certified | 0, NO session correlated | candidatesPresent scan ONLY (the shipped gate's non-empty-parseable bar; no canonical validation — r5 finding 1, r7's width pin) | candidatesPresent=true → handshake_missing_session_id, today's gate for a parseable reply that arrived uncorrelated; candidatesPresent=false (nothing, torn, or non-persisted) → empty-reply adjudication, today's PINNED outcome (r6+r7: neither reclassification direction is permitted) |
 | certified | 0 + session correlated | delivered | normal return pipeline on the accepted snapshot |
 | certified | 0 + session correlated | nothing-qualified + claim exit 0 | the REPAIR attempt below |
 | certified | 0 + session correlated | nothing-qualified + claim exit 3 | empty-reply adjudication, as today |
@@ -317,11 +323,13 @@ turn-contract validator wiring), a host-path selftest leg.
   end to end in the selftest; a wrong-identity stdout candidate is
   rejected post-envelope and the walk RESUMES to deliver the valid
   named file (r4 finding 2's exact scenario).
-- Initial no-session split (r5 finding 1 + r6's finding): with no
-  correlated session and a candidate PRESENT, the turn refuses
-  handshake_missing_session_id with no validation artifacts; with no
-  session and NO candidates, empty-reply adjudication exactly as
-  pinned today — both as fixture legs.
+- Initial no-session split (r5 finding 1 + r6 + r7): with no
+  correlated session and a PARSEABLE candidate, the turn refuses
+  handshake_missing_session_id with no validation artifacts; with
+  nothing, a torn file, or a non-persisted attempt, empty-reply
+  adjudication exactly as pinned today — all four shapes as fixture
+  legs (parseable stdout; parseable named file; torn named file;
+  empty everything).
 - Repair precedence: a nonzero repair with a disagreeing transcript
   is protocol-error (settlement never reached); a DELIVERED repair
   with a disagreeing transcript is session_identity_disagreement;
