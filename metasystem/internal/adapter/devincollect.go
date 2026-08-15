@@ -53,7 +53,6 @@ type CollectVerdict struct {
 	Reply             string   `json:"reply,omitempty"`
 	CandidatesPresent bool     `json:"candidatesPresent"`
 	WatermarkValid    bool     `json:"watermarkValid"`
-	Reason            string   `json:"reason,omitempty"`
 	Rejected          []string `json:"rejected,omitempty"`
 }
 

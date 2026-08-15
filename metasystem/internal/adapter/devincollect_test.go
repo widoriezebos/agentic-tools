@@ -233,3 +233,83 @@ func TestCollectFullWalkWithoutSessionRefuses(t *testing.T) {
 		t.Fatal("a full collect without a session must refuse; presence-only is the sessionless mode")
 	}
 }
+
+func TestCollectOversizeCandidateFallsThrough(t *testing.T) {
+	f := newCollectFixture(t)
+	big := make([]byte, MaxCandidateBytes+1)
+	for i := range big {
+		big[i] = 'x'
+	}
+	if err := os.WriteFile(f.params.StdoutPath, big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, f.params.NamedPath, string(f.validReturn))
+	verdict, err := DevinCollect(f.params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Channel != "named-file" {
+		t.Fatalf("an oversize stdout must fall through, never go mechanical: %+v", verdict)
+	}
+	if !strings.Contains(strings.Join(verdict.Rejected, "|"), "over the candidate ceiling") {
+		t.Fatalf("the ceiling rejection must be named: %+v", verdict.Rejected)
+	}
+}
+
+func TestCollectMiningRefusesDivergedOnDiskContent(t *testing.T) {
+	f := newCollectFixture(t)
+	target := filepath.Join(f.workspace, "devin-return.json")
+	writeFile(t, target, `{"tampered": true}`)
+	f.params.TranscriptPath = f.transcriptWith(t, writeStep(1, target, string(f.validReturn)))
+	verdict, err := DevinCollect(f.params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Delivered {
+		t.Fatalf("diverged on-disk content must not deliver: %+v", verdict)
+	}
+	if !strings.Contains(strings.Join(verdict.Rejected, "|"), "diverged") {
+		t.Fatalf("the divergence must be named: %+v", verdict.Rejected)
+	}
+}
+
+func TestCollectRefusesUnknownAttempt(t *testing.T) {
+	f := newCollectFixture(t)
+	f.params.Attempt = "third-time-lucky"
+	f.params.TranscriptPath = f.transcriptWith(t, writeStep(1, "/x.json", "{}"))
+	if _, err := DevinCollect(f.params); err == nil {
+		t.Fatal("an unknown attempt label must be a mechanical error")
+	}
+}
+
+func TestCollectNothingAnywhereIsNothingQualified(t *testing.T) {
+	f := newCollectFixture(t)
+	verdict, err := DevinCollect(f.params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Delivered || verdict.CandidatesPresent || verdict.Channel != "none" {
+		t.Fatalf("empty everything must report nothing cleanly: %+v", verdict)
+	}
+	if !strings.Contains(strings.Join(verdict.Rejected, "|"), "no export") {
+		t.Fatalf("the absent transcript must be named: %+v", verdict.Rejected)
+	}
+}
+
+func TestCollectScratchFailureRejectsWithoutMechanicalVerdict(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory modes")
+	}
+	f := newCollectFixture(t)
+	writeFile(t, f.params.StdoutPath, string(f.validReturn))
+	if err := os.Chmod(f.roundDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(f.roundDir, 0o755) })
+	// The candidate is rejected at the scratch branch, and the turn then
+	// goes MECHANICAL because provenance itself cannot be written — a
+	// harness failure by the design's taxonomy, never a delivery verdict.
+	if _, err := DevinCollect(f.params); err == nil {
+		t.Fatal("an unwritable round dir must be a mechanical error")
+	}
+}
