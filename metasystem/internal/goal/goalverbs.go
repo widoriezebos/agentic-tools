@@ -126,7 +126,6 @@ func (s *Store) refuseMissionSeat() error {
 
 // ledgerState is what the mutation spine reads before a transition.
 type ledgerState struct {
-	ledger      *Ledger
 	ledgerBytes []byte
 	base        *baseline
 }

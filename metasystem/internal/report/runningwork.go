@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -16,9 +15,6 @@ import (
 // mission runners found by argv tokens instead of pgrep-plus-sed, and gate
 // runs. This is the surface the README's unsupervised-runs failure class
 // hangs off — a false "nothing running" while a mission burns.
-
-var missionRunnerArgv = regexp.MustCompile(`mission(-runner)? run-loop`)
-var gateArgv = regexp.MustCompile(`validate-metasystem\.sh|validate-kit\.sh`)
 
 // runningJobDetail names one live delegate: "role jobId [status, runtime]".
 func runningJobDetail(path string) (string, bool) {
