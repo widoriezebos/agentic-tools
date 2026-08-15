@@ -419,3 +419,12 @@ var emitEvent = func(root, event string, fields map[string]string) {}
 func (s *Store) emit(event string, fields map[string]string) {
 	emitEvent(s.Root, event, fields)
 }
+
+// SetEmitter wires the flight-recorder seam; the command layer installs
+// the real events emitter, tests install probes. Events narrate — they
+// are never the wake authority.
+func SetEmitter(fn func(root, event string, fields map[string]string)) {
+	if fn != nil {
+		emitEvent = fn
+	}
+}

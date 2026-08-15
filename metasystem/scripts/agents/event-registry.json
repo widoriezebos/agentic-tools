@@ -17,7 +17,8 @@
       "host",
       "driver",
       "suite",
-      "arming"
+      "arming",
+      "run"
     ],
     "executionId": "required-when-exported",
     "levels": [
@@ -586,6 +587,86 @@
         },
         "reason": {
           "required": false,
+          "type": "str"
+        }
+      }
+    },
+    "run-launched": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {
+        "run": {
+          "runId": "required"
+        }
+      },
+      "payload": {
+        "kind": {
+          "required": true,
+          "type": "str"
+        },
+        "custody": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "run-transition": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {
+        "run": {
+          "runId": "required"
+        }
+      },
+      "payload": {
+        "from": {
+          "required": true,
+          "type": "str"
+        },
+        "to": {
+          "required": true,
+          "type": "str"
+        },
+        "generation": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "run-swept": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {
+        "run": {
+          "runId": "required"
+        }
+      },
+      "payload": {
+        "reason": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "run-cas-refused": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {
+        "run": {
+          "runId": "required"
+        }
+      },
+      "payload": {
+        "expected": {
+          "required": true,
+          "type": "str"
+        },
+        "found": {
+          "required": true,
           "type": "str"
         }
       }

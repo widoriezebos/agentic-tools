@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -363,4 +364,17 @@ func runJobWatchVerb(args []string) int {
 		return run.ExitWaiterUnknown
 	}
 	return dispatchcore.JobWatch(*root, *job, caller, time.Duration(*pollMs)*time.Millisecond)
+}
+
+// The run package's flight-recorder wiring: component "run", this
+// process's identity, one emitter for verbs and watcher alike.
+func init() {
+	emitter := &events.Emitter{Component: "run", Pid: int64(os.Getpid())}
+	run.SetEmitter(func(root, event string, fields map[string]string) {
+		summary := event
+		if id, ok := fields["runId"]; ok {
+			summary = event + " " + id
+		}
+		emitter.Emit(root, event, summary, fields)
+	})
 }

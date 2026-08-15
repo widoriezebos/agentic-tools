@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 // terminalStatuses are the job states the sweep must never touch — the job
@@ -50,8 +51,55 @@ func (c *claimer) cleanupStaleJobs(epoch int64) error {
 			swept++
 		}
 	}
+	if err := c.cleanupStaleRuns(epoch); err != nil {
+		return err
+	}
 	c.emitter.Emit(c.root, "sweep-completed", fmt.Sprintf("epoch %d", epoch),
 		map[string]string{"epoch": itoa(epoch), "sweptCount": itoa(int64(swept))})
+	return nil
+}
+
+// cleanupStaleRuns extends the takeover sweep to run records (monitor
+// facility, MON-06): a running or draining run whose claim epoch predates
+// the new generation is TERMed and concluded ONLY with the argv-nonce
+// group proof; without proof — including every adopted-unverified record,
+// which never had a wrapper to carry the nonce — the sweep refuses
+// loudly. It never signals blind and never silently terminalizes; human
+// runs (null epoch) are out of scope by contract.
+func (c *claimer) cleanupStaleRuns(epoch int64) error {
+	store := &run.Store{Root: c.root}
+	records, unreadable := store.List()
+	for _, line := range unreadable {
+		return fmt.Errorf("run sweep refused: %s", line)
+	}
+	for _, record := range records {
+		if record.ClaimEpoch == nil || *record.ClaimEpoch >= epoch {
+			continue
+		}
+		if record.Status != run.StatusRunning && record.Status != run.StatusDraining {
+			continue
+		}
+		if record.Pgid == nil {
+			continue
+		}
+		owned, provable := groupOwnsTag(*record.Pgid, record.LaunchNonce)
+		if !provable {
+			return fmt.Errorf("run sweep cannot prove ownership of stale run %s", record.RunId)
+		}
+		if !owned {
+			return fmt.Errorf("run sweep refused: stale run %s carries no provable group (custody %s); surfacing, never signaling blind", record.RunId, record.Custody)
+		}
+		switch err := sweepKill(*record.Pgid, unix.SIGTERM); err {
+		case nil, unix.ESRCH:
+		default:
+			return fmt.Errorf("run sweep cannot stop stale run %s: %v", record.RunId, err)
+		}
+		if _, err := store.Assess(record.RunId); err != nil {
+			return fmt.Errorf("run sweep conclusion failed for %s: %v", record.RunId, err)
+		}
+		c.emitter.Emit(c.root, "run-swept", "stale-claim-epoch "+record.RunId,
+			map[string]string{"runId": record.RunId, "reason": "stale-claim-epoch"})
+	}
 	return nil
 }
 

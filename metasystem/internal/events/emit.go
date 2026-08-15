@@ -19,7 +19,7 @@ const capBytes = 4096
 
 var caps = map[string]int{"component": 16, "event": 40, "id": 160, "level": 8, "payload": 256}
 
-var idFields = []string{"missionId", "jobId", "turnId", "cohortId", "executionId"}
+var idFields = []string{"missionId", "jobId", "turnId", "cohortId", "executionId", "runId"}
 
 var requiredEnvelope = map[string]bool{
 	"schemaVersion": true, "ts": true, "component": true, "event": true,
