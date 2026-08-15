@@ -76,15 +76,23 @@ func fakeUsage(input, cached, output int) map[string]any {
 // requireReply is the runtime shape where exit 0 with no reply means
 // "could not do it" (Devin): treating it as success would hand the runner
 // an empty return and blame the wrong thing.
-func FinishTurn(resultPath, session, usagePath, rawPath, returnPath string, cliStatus int64, requireReply bool) (int, error) {
+// acceptedPath, when non-empty, is the delivery walk's accepted
+// snapshot (D64 phase 2): the require-reply judgment consults IT
+// instead of raw stdout, so a file-delivered host result is a reply.
+// The raw path stays in the envelope as evidence either way.
+func FinishTurn(resultPath, session, usagePath, rawPath, returnPath, acceptedPath string, cliStatus int64, requireReply bool) (int, error) {
 	if cliStatus != 0 {
 		if err := ResultWrite(resultPath, session, "failed", usagePath, rawPath, ""); err != nil {
 			return 1, err
 		}
 		return 3, nil
 	}
+	replyEvidence := rawPath
+	if acceptedPath != "" {
+		replyEvidence = acceptedPath
+	}
 	if requireReply {
-		if info, err := os.Stat(rawPath); err != nil || info.Size() == 0 {
+		if info, err := os.Stat(replyEvidence); err != nil || info.Size() == 0 {
 			if err := ResultWrite(resultPath, session, "failed", usagePath, rawPath, ""); err != nil {
 				return 1, err
 			}

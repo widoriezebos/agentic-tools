@@ -46,7 +46,15 @@ model=$("$ms" json get --file "$turn_record" --field model)
 # dispatcher's prompt file is left untouched as evidence; the CLI reads the
 # augmented copy.
 devin_prompt="$turn_dir/prompt.devin.md"
-"$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" --output "$devin_prompt"
+# The named return path (D64 phase 2): this model delivers by writing
+# files; the prompt names the exact path and the walk below reads it.
+host_return_file="$turn_dir/devin-return.json"
+if [[ -e "$host_return_file" ]]; then
+  echo "stale named return file from a crashed earlier attempt: $host_return_file" >&2
+  exit 3
+fi
+"$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" --output "$devin_prompt" \
+  --return-file "$host_return_file"
 
 devin_command=(
   devin -p
@@ -68,11 +76,24 @@ cli_status=$?
 set -e
 [[ -f "$raw" ]] || : >"$raw"
 
-# Devin has no native structured output, so the return is whatever the turn
-# printed, kept only when it parses as an object. Anything else leaves the
-# return absent for the runner's own validation to report, rather than being
-# passed on as a return that is not one.
-"$ms" host devin-return --raw "$raw" --output "$return_path"
+# The delivery walk (D64 phase 2): stdout, the named file, then the
+# transcript's designated writes — the engine decides, this script routes.
+# On delivery the accepted snapshot feeds the return extraction and the
+# finish judgment; with nothing delivered the old raw path stands and the
+# runner's validation reports the absence.
+collect_rc=0 collect_json="" accepted_reply=""
+set +e
+collect_json=$("$ms" host devin-collect --root "$root" --turn-record "$turn_record" \
+  --turn-dir "$turn_dir" --workspace "$root" --stdout "$raw" \
+  --named "$host_return_file" --transcript "$transcript")
+collect_rc=$?
+set -e
+if (( collect_rc == 0 )); then
+  accepted_reply=$("$ms" json get --value "$collect_json" --field reply)
+  "$ms" host devin-return --raw "$accepted_reply" --output "$return_path"
+else
+  "$ms" host devin-return --raw "$raw" --output "$return_path"
+fi
 
 # final_metrics is CUMULATIVE for a session (a resumed turn reports the session
 # total, not its own), and mission and benchmark consumers ADD turn records, so
@@ -102,7 +123,8 @@ session=$("$ms" json get --file "$transcript" --field session_id --default "" 2>
 # script-adapters-10/D26); this script propagates its exit taxonomy.
 finish_rc=0
 "$ms" host finish --result "$result" --session "$session" --usage-file "$usage_path" \
-  --raw "$raw" --return-path "$return_path" --cli-status "$cli_status" --require-reply || finish_rc=$?
+  --raw "$raw" --return-path "$return_path" --accepted-reply "$accepted_reply" \
+  --cli-status "$cli_status" --require-reply || finish_rc=$?
 # Publish this turn's cumulative totals into the per-session store so the next
 # turn of THIS session subtracts the right predecessor. Keyed by the observed
 # session, written only on a completion that names one.

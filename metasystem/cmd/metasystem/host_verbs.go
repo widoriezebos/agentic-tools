@@ -1,10 +1,14 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"
 
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -52,6 +56,7 @@ func runHostFinish(args []string) int {
 	raw := flags.String("raw", "", "raw output path")
 	returnPath := flags.String("return-path", "", "return path for a surviving turn")
 	cliStatus := flags.Int64("cli-status", 0, "host CLI exit status")
+	acceptedReply := flags.String("accepted-reply", "", "the delivery walk's accepted snapshot (judges require-reply instead of raw)")
 	requireReply := flags.Bool("require-reply", false, "exit 0 with an empty reply is a failure (Devin's shape)")
 	if flags.Parse(args) != nil {
 		return 2
@@ -60,11 +65,58 @@ func runHostFinish(args []string) int {
 		fmt.Fprintln(os.Stderr, "host finish: --result and --raw are required")
 		return 2
 	}
-	code, err := host.FinishTurn(*result, *session, *usageFile, *raw, *returnPath, *cliStatus, *requireReply)
+	code, err := host.FinishTurn(*result, *session, *usageFile, *raw, *returnPath, *acceptedReply, *cliStatus, *requireReply)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
 	return code
+}
+
+// runHostDevinCollect walks a devin HOST turn's delivery channels (D64
+// phase 2). Exit 0 delivered (facts JSON on stdout), 3 nothing
+// qualified, 5 transcript over the ceiling, 1 mechanical.
+func runHostDevinCollect(args []string) int {
+	flags := flag.NewFlagSet("host devin-collect", flag.ContinueOnError)
+	params := host.HostCollectParams{}
+	var rejects rejectList
+	flags.StringVar(&params.Root, "root", "", "checkout root")
+	flags.StringVar(&params.TurnRecordPath, "turn-record", "", "turn record file")
+	flags.StringVar(&params.TurnDir, "turn-dir", "", "turn evidence directory")
+	flags.StringVar(&params.Workspace, "workspace", "", "checkout root the host worked in")
+	flags.StringVar(&params.StdoutPath, "stdout", "", "the CLI's stdout capture")
+	flags.StringVar(&params.NamedPath, "named", "", "the turn's named return file")
+	flags.StringVar(&params.TranscriptPath, "transcript", "", "the exported ATIF transcript")
+	flags.Var(&rejects, "reject", "sha256 of a runner-rejected candidate (repeatable)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if params.Root == "" || params.TurnRecordPath == "" || params.TurnDir == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem host devin-collect --root D --turn-record F --turn-dir D [--workspace D --stdout F --named F --transcript F --reject SHA ...]")
+		return 2
+	}
+	params.RejectDigests = rejects
+	verdict, err := host.HostDevinCollect(params)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, atif.ErrOversize) {
+			return 5
+		}
+		return 1
+	}
+	encoded, _ := json.Marshal(verdict)
+	fmt.Println(string(encoded))
+	if verdict.Delivered {
+		return 0
+	}
+	return 3
+}
+
+type rejectList []string
+
+func (r *rejectList) String() string { return strings.Join(*r, ",") }
+func (r *rejectList) Set(value string) error {
+	*r = append(*r, value)
+	return nil
 }
 
 // runHostJSONCompact prints the JSON in a file on a single line, preserving key

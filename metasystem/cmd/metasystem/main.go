@@ -161,6 +161,7 @@ func families() []family {
 			verbs: []verb{
 				{"result-write", "write a host turn's result envelope", runHostResultWrite},
 				{"finish", "adjudicate a host turn outcome and write its envelope", runHostFinish},
+				{"devin-collect", "walk a devin host turn's delivery channels (0 delivered, 3 empty, 5 oversize)", runHostDevinCollect},
 				{"json-compact", "print a JSON file as one line", runHostJSONCompact},
 				{"claude-result", "extract the Claude return and usage", runHostClaudeResult},
 				{"devin-config", "assemble the Devin job config", runHostDevinConfig},

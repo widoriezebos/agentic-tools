@@ -105,6 +105,18 @@ func ValidateReturn(turn Turn, result map[string]any, turnDir string, checkRetur
 	if err != nil {
 		return nil, err
 	}
+	returned, err := validateReturnAt(turn, returnPath, checkReturn)
+	if err != nil {
+		return nil, err
+	}
+	return &ReturnValidation{Returned: returned, RawPath: rawPath, ReturnPath: returnPath}, nil
+}
+
+// validateReturnAt runs the return-level half of ValidateReturn against an
+// explicit file: completeness, turn identity, runtime/model, and the
+// session rule. The delivery walk's resume (D64 phase 2) validates its
+// re-collected candidate through exactly this path — one validator.
+func validateReturnAt(turn Turn, returnPath string, checkReturn func(returnPath string) error) (map[string]any, error) {
 	if err := checkReturn(returnPath); err != nil {
 		return nil, err
 	}
@@ -134,7 +146,7 @@ func ValidateReturn(turn Turn, result map[string]any, turnDir string, checkRetur
 	if err := sessionIdentityFault(identity["sessionId"], turn); err != nil {
 		return nil, err
 	}
-	return &ReturnValidation{Returned: returned, RawPath: rawPath, ReturnPath: returnPath}, nil
+	return returned, nil
 }
 
 // SessionFault is the refusal for a return whose identity.sessionId matched
