@@ -13,6 +13,7 @@ Usage:
   scripts/agents/dispatch.sh --role <role> --brief <file> [dispatch options]
   scripts/agents/dispatch.sh follow-up --job <job-id> --message <file> [--wait]
   scripts/agents/dispatch.sh status --job <job-id>
+  scripts/agents/dispatch.sh watch --job <job-id>
   scripts/agents/dispatch.sh cancel --job <job-id>
   scripts/agents/dispatch.sh close --job <root-id> [--runner-closed]
   scripts/agents/dispatch.sh reap [--job <job-id>]
@@ -1016,6 +1017,23 @@ finalize_and_launch() { # job id, chain id, record json, runtime, adapter verb, 
   await_handshake "$job" "$budget" "$current_claim_epoch" || return 3
   if (( wait_flag )); then wait_for_job "$job"; return $?; fi
   printf '%s\n' "$job"
+  # The exact waiter command (monitor facility, MON-04; backlog item 1
+  # as the human wrote it): the agent never invents a polling loop.
+  printf 'watch it with: scripts/agents/dispatch.sh watch --job %s\n' "$job" >&2
+}
+
+watch_job() { # --job <id>
+  local job=
+  while (( $# )); do
+    case "$1" in
+      --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
+      *) usage; exit 2 ;;
+    esac
+  done
+  [[ -n "$job" ]] || { usage; exit 2; }
+  # The Go core blocks to terminal and holds the waiter record the turn
+  # verdict reads; exit codes ride through verbatim.
+  "$ms" job watch --root "$root" --job "$job" --caller-pid $$
 }
 
 critique_exhaustion_action() { # root job, role, latest record, message, successor id, output manifest
@@ -1472,6 +1490,7 @@ command=${1:-}
 if [[ "$command" == --* ]]; then command=dispatch; else shift || true; fi
 case "$command" in
   dispatch) dispatch_job "$@" ;;
+  watch) watch_job "$@" ;;
   follow-up) follow_up "$@" ;;
   status) status_job "$@" ;;
   cancel) cancel_job "$@" ;;

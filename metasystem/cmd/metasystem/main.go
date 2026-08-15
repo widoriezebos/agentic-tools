@@ -108,6 +108,7 @@ func families() []family {
 				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
 				{"authority-check", "check a control-plane write against the authority matrix", runAuthorityCheck},
+				{"watch", "block until a delegate job is terminal; exit with its pinned code", runJobWatchVerb},
 			},
 		},
 		{

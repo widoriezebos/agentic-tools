@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -343,4 +344,23 @@ func runRunStatus(args []string) int {
 	}
 	printJSON(record)
 	return 0
+}
+
+// runJobWatchVerb is the delegate-job waiter: the same waiter discipline
+// as run watch, over job records.
+func runJobWatchVerb(args []string) int {
+	flags := flag.NewFlagSet("job watch", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	job := flags.String("job", "", "job id")
+	pollMs := flags.Int("poll-ms", 2000, "poll interval")
+	callerPid := flags.Int64("caller-pid", 0, "caller pid")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	caller, err := runCaller(*root, *callerPid, "")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return run.ExitWaiterUnknown
+	}
+	return dispatchcore.JobWatch(*root, *job, caller, time.Duration(*pollMs)*time.Millisecond)
 }
