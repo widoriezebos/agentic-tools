@@ -381,15 +381,16 @@ func runAdapterDevinSettle(args []string) int {
 	transcript := flags.String("transcript", "", "exported ATIF transcript")
 	session := flags.String("session", "", "correlated session id (empty when none)")
 	roundDir := flags.String("round-dir", "", "round directory for the disagreement artifact")
+	settleSnapshot := flags.String("snapshot", "", "attempt snapshot path (D64: shared bytes with usage and collection)")
 	requireTranscript := flags.Bool("require-transcript", false, "an absent transcript is unconfirmable (the repair shape)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *transcript == "" || *roundDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-settle --transcript F --round-dir D [--session SID] [--require-transcript]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-settle --transcript F --round-dir D [--snapshot F] [--session SID] [--require-transcript]")
 		return 2
 	}
-	model, certified, err := adapter.DevinSettle(*transcript, *session, *roundDir, *requireTranscript)
+	model, certified, err := adapter.DevinSettle(*transcript, *settleSnapshot, *session, *roundDir, *requireTranscript)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -441,15 +442,16 @@ func runAdapterDevinUsage(args []string) int {
 	transcript := flags.String("transcript", "", "Devin transcript with final_metrics")
 	cumulative := flags.String("cumulative", "", "this turn's cumulative totals output file")
 	previous := flags.String("previous", "", "predecessor's cumulative totals file (empty when none)")
+	usageSnapshot := flags.String("snapshot", "", "attempt snapshot path (D64: shared bytes with settlement and collection)")
 	expectPrevious := flags.Bool("expect-previous", false, "the turn resumes a session and must find a predecessor")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *usage == "" || *transcript == "" || *cumulative == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-usage --usage FILE --transcript FILE --cumulative FILE [--previous FILE] [--expect-previous]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-usage --usage FILE --transcript FILE --cumulative FILE [--snapshot FILE] [--previous FILE] [--expect-previous]")
 		return 2
 	}
-	if err := usagepkg.DevinUsage(*usage, *transcript, *cumulative, *previous, *expectPrevious); err != nil {
+	if err := usagepkg.DevinUsage(*usage, *transcript, *usageSnapshot, *cumulative, *previous, *expectPrevious); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

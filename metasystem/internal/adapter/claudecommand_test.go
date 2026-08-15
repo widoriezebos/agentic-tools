@@ -153,11 +153,11 @@ func TestDevinSettle(t *testing.T) {
 	disagreement := filepath.Join(dir, "session-disagreement.txt")
 
 	write(`{"session_id":"sess-1","agent":{"model_name":"SWE-1.7"}}`)
-	model, certified, err := DevinSettle(transcript, "sess-1", dir, false)
+	model, certified, err := DevinSettle(transcript, "", "sess-1", dir, false)
 	if err != nil || !certified || model != "swe-1-7" {
 		t.Fatalf("agreeing settle = (%s,%v,%v)", model, certified, err)
 	}
-	model, certified, err = DevinSettle(transcript, "sess-OTHER", dir, false)
+	model, certified, err = DevinSettle(transcript, "", "sess-OTHER", dir, false)
 	if err != nil || certified {
 		t.Fatalf("disagreement = (%s,%v,%v)", model, certified, err)
 	}
@@ -166,7 +166,7 @@ func TestDevinSettle(t *testing.T) {
 		t.Fatalf("artifact = %q", body)
 	}
 	write(`{"agent":{"model_name":null}}`)
-	model, certified, err = DevinSettle(transcript, "sess-1", dir, false)
+	model, certified, err = DevinSettle(transcript, "", "sess-1", dir, false)
 	if err != nil || certified || model != "unobserved" {
 		t.Fatalf("nameless transcript = (%s,%v,%v)", model, certified, err)
 	}
@@ -174,13 +174,13 @@ func TestDevinSettle(t *testing.T) {
 	if string(body) != "correlated session sess-1 but the transcript names no session\n" {
 		t.Fatalf("artifact = %q", body)
 	}
-	if model, certified, err = DevinSettle(transcript, "", dir, false); err != nil || !certified {
+	if model, certified, err = DevinSettle(transcript, "", "", dir, false); err != nil || !certified {
 		t.Fatalf("nothing correlated settles = (%s,%v,%v)", model, certified, err)
 	}
 	if err := os.Remove(transcript); err != nil {
 		t.Fatal(err)
 	}
-	model, certified, err = DevinSettle(transcript, "sess-1", dir, true)
+	model, certified, err = DevinSettle(transcript, "", "sess-1", dir, true)
 	if err != nil || certified || model != "" {
 		t.Fatalf("repair without transcript = (%s,%v,%v)", model, certified, err)
 	}

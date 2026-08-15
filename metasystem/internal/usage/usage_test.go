@@ -39,7 +39,7 @@ func TestDevinUsageDeltaAndUnavailable(t *testing.T) {
 	writeFile(t, transcript, `{"final_metrics":{"total_prompt_tokens":25799,"total_completion_tokens":1200,"total_cached_tokens":900,"total_steps":40}}`)
 
 	// First turn (no predecessor) records the totals as the delta.
-	if err := DevinUsage(usage, transcript, cumulative, "", false); err != nil {
+	if err := DevinUsage(usage, transcript, "", cumulative, "", false); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, usage)
@@ -57,7 +57,7 @@ func TestDevinUsageDeltaAndUnavailable(t *testing.T) {
 	// A resumed turn subtracts its predecessor's cumulative totals.
 	previous := filepath.Join(dir, "prev.json")
 	writeFile(t, previous, `{"total_prompt_tokens":12833,"total_completion_tokens":700,"total_cached_tokens":400,"total_steps":22}`)
-	if err := DevinUsage(usage, transcript, cumulative, previous, true); err != nil {
+	if err := DevinUsage(usage, transcript, "", cumulative, previous, true); err != nil {
 		t.Fatal(err)
 	}
 	got = readJSONFile(t, usage)
@@ -66,7 +66,7 @@ func TestDevinUsageDeltaAndUnavailable(t *testing.T) {
 	}
 
 	// A resumed turn whose predecessor is missing is unavailable.
-	if err := DevinUsage(usage, transcript, cumulative, "", true); err != nil {
+	if err := DevinUsage(usage, transcript, "", cumulative, "", true); err != nil {
 		t.Fatal(err)
 	}
 	got = readJSONFile(t, usage)
@@ -82,7 +82,7 @@ func TestDevinUsageACU(t *testing.T) {
 	cumulative := filepath.Join(dir, "cum.json")
 	// An enterprise account reports ACU and no token totals.
 	writeFile(t, transcript, `{"final_metrics":{"total_acu_used": 12.5}}`)
-	if err := DevinUsage(usage, transcript, cumulative, "", false); err != nil {
+	if err := DevinUsage(usage, transcript, "", cumulative, "", false); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSONFile(t, usage)

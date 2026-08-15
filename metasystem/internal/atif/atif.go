@@ -9,6 +9,7 @@
 package atif
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -112,4 +113,34 @@ func Snapshot(exportPath, snapshotPath string) (*Transcript, error) {
 		return nil, closeErr
 	}
 	return transcript, nil
+}
+
+// ReadBoundedObject is the generic bounded decode for consumers that
+// need fields the typed view does not carry (usage metrics, agent
+// metadata): the same ceiling, a UseNumber object decode.
+func ReadBoundedObject(path string) (map[string]any, error) {
+	transcript, err := ReadBounded(path)
+	if err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(transcript.Raw()))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, fmt.Errorf("transcript is not parseable: %w", err)
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("transcript is not a JSON object")
+	}
+	return object, nil
+}
+
+// SnapshotObject materializes (or reuses) the attempt snapshot and
+// returns its generic decode — the object-shaped twin of Snapshot.
+func SnapshotObject(exportPath, snapshotPath string) (map[string]any, error) {
+	if _, err := Snapshot(exportPath, snapshotPath); err != nil {
+		return nil, err
+	}
+	return ReadBoundedObject(snapshotPath)
 }

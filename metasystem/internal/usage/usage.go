@@ -25,6 +25,10 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
+
+	"errors"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 )
 
 // devinUsageFields are the cumulative counters Devin reports for a session.
@@ -42,9 +46,24 @@ var devinUsageFields = []string{
 // its predecessor's totals publishes unavailable rather than a number that
 // would double-count every earlier turn. An enterprise account reports ACU and
 // no tokens; ACU rides in providerUnits, never as a token or a cost.
-func DevinUsage(usagePath, transcriptPath, cumulativePath, previousPath string, expectPrevious bool) error {
+func DevinUsage(usagePath, transcriptPath, snapshotPath, cumulativePath, previousPath string, expectPrevious bool) error {
+	// The attempt snapshot (D64): when a snapshot path is given, the
+	// transcript is read through atif's bounded, materialize-once copy so
+	// usage, settlement, and collection all decide over the SAME bytes.
+	// An oversize transcript surfaces as its own error for the caller's
+	// transcript-oversize terminal.
 	metrics := map[string]any(nil)
-	if transcript := loadObject(transcriptPath); transcript != nil {
+	var transcript map[string]any
+	if snapshotPath != "" {
+		var err error
+		transcript, err = atif.SnapshotObject(transcriptPath, snapshotPath)
+		if err != nil && errors.Is(err, atif.ErrOversize) {
+			return err
+		}
+	} else {
+		transcript = loadObject(transcriptPath)
+	}
+	if transcript != nil {
 		metrics, _ = transcript["final_metrics"].(map[string]any)
 	}
 

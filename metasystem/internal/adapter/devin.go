@@ -1,12 +1,14 @@
 package adapter
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
@@ -230,7 +232,7 @@ func WriteUnavailableUsage(outputPath string) error {
 // repair shape: no transcript at all means session and model are
 // unconfirmable, and no model is derived. Record writes stay with the
 // caller (D24).
-func DevinSettle(transcriptPath, correlatedSession, roundDir string, requireTranscript bool) (model string, certified bool, err error) {
+func DevinSettle(transcriptPath, snapshotPath, correlatedSession, roundDir string, requireTranscript bool) (model string, certified bool, err error) {
 	disagreement := filepath.Join(roundDir, "session-disagreement.txt")
 	if requireTranscript {
 		info, statErr := os.Stat(transcriptPath)
@@ -240,8 +242,22 @@ func DevinSettle(transcriptPath, correlatedSession, roundDir string, requireTran
 			return "", false, err
 		}
 	}
-	transcript, readErr := readObject(transcriptPath)
-	if readErr != nil {
+	// The attempt snapshot (D64): with a snapshot path, settlement decides
+	// over the same immutable bytes usage and collection read; oversize
+	// propagates for the caller's transcript-oversize terminal.
+	var transcript map[string]any
+	if snapshotPath != "" {
+		var snapErr error
+		transcript, snapErr = atif.SnapshotObject(transcriptPath, snapshotPath)
+		if snapErr != nil {
+			if errors.Is(snapErr, atif.ErrOversize) {
+				return "", false, snapErr
+			}
+			transcript = map[string]any{}
+		}
+	} else if object, readErr := readObject(transcriptPath); readErr == nil {
+		transcript = object
+	} else {
 		transcript = map[string]any{}
 	}
 	agent, _ := transcript["agent"].(map[string]any)
