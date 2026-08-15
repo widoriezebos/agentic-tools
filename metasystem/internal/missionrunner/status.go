@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionstate"
 )
 
 // Status is the driver-facing view of a mission. It prints one status line
@@ -61,15 +64,21 @@ func (e *Engine) Status() int {
 		default:
 			pid, pidOK := jsonInt(record["pid"])
 			recordedStart, startOK := jsonInt(record["pidStartedAt"])
-			alive := false
+			fields := missionstate.RecordFields{Status: "running"}
 			if pidOK && startOK {
-				// A pid whose identity cannot be resolved is a pid that is
-				// gone.
-				if startedAt, err := processStartedAt(int(pid)); err == nil && startedAt == recordedStart {
-					alive = true
-				}
+				fields.Pid = pid
+				fields.PidStartedAt = recordedStart
 			}
-			if !alive {
+			// The three-way rule is owned by internal/missionstate now;
+			// this path is its first consumer. Unknown liveness is
+			// UNREADABLE, never abandoned: reporting a live-but-unprovable
+			// runner as gone invites cleanup against a running mission.
+			switch missionstate.Classify(fields, identity.KernelProber{}) {
+			case missionstate.Active:
+			case missionstate.Indeterminate:
+				fmt.Printf("mission=%s status=unreadable reason=runner-identity-unknown\n", e.Mission)
+				return 7
+			default:
 				fmt.Printf("mission=%s status=abandoned reason=runner-process-gone\n", e.Mission)
 				return 13
 			}

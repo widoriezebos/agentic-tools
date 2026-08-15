@@ -33,27 +33,6 @@ func (e *Engine) RunLoop(mode, tag, startSignal string) int {
 }
 
 func (e *Engine) internalRun(mode, tag, startSignal string) int {
-	recordPath, _, _ := e.runnerPaths()
-	pid := os.Getpid()
-	pgid, err := unix.Getpgid(pid)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 3
-	}
-	started, err := processStartedAt(pid)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return exitFor(err)
-	}
-	if err := atomicWriteJSON(recordPath, e.runnerRecord(pid, pgid, started, tag)); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 3
-	}
-	if err := e.heartbeat(nil); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return exitFor(err)
-	}
-
 	notified := false
 	leaseHeld := false
 	// fail is the one exit ramp for a runner that dies mid-mission: tell the
@@ -70,10 +49,14 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 		}
 		if leaseHeld {
 			aggregateUsageForProjection(e.Root, e.Mission, "failure-ramp")
+			// Finalize BEFORE releasing: the shared record belongs to the
+			// lease winner, and after release another runner may own it
+			// (goal-system GOAL-22). A loser that never held the lease
+			// never touches the record at all.
+			e.finishRunner("failed", err.Error())
 			e.releaseLease()
 			leaseHeld = false
 		}
-		e.finishRunner("failed", err.Error())
 		return exitFor(err)
 	}
 	defer func() {
@@ -87,6 +70,26 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 		return fail(err)
 	}
 	leaseHeld = true
+
+	// Publication is lease-serialized (goal-system GOAL-22): only the
+	// winner writes the shared runner record, so a losing contender can
+	// never replace or finalize the record of a live runner.
+	pid := os.Getpid()
+	pgid, err := unix.Getpgid(pid)
+	if err != nil {
+		return fail(err)
+	}
+	started, err := processStartedAt(pid)
+	if err != nil {
+		return fail(err)
+	}
+	recordPath, _, _ := e.runnerPaths()
+	if err := atomicWriteJSON(recordPath, e.runnerRecord(pid, pgid, started, tag)); err != nil {
+		return fail(err)
+	}
+	if err := e.heartbeat(nil); err != nil {
+		return fail(err)
+	}
 
 	var statePath, ledger string
 	var state map[string]any
@@ -115,9 +118,11 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 			return fail(err)
 		}
 	}
+	// Finalize before releasing (goal-system GOAL-22): after release the
+	// record may belong to the next winner.
+	e.finishRunner("completed", nil)
 	e.releaseLease()
 	leaseHeld = false
-	e.finishRunner("completed", nil)
 	return 0
 }
 
@@ -140,7 +145,11 @@ func (e *Engine) runnerRecord(pid, pgid int, started int64, tag string) map[stri
 
 // finishRunner finalizes the runner record. Best-effort by design: the
 // record is a witness for status, and failing to finalize it must not change
-// how the mission itself ended.
+// how the mission itself ended. Terminal writes are OWNER-ONLY (goal-system
+// GOAL-22): the record must be the one THIS process published — on a resume
+// that failed before publication, the previous runner's concluded record
+// survives untouched, and a contender that never won the lease never gets
+// here at all.
 func (e *Engine) finishRunner(status string, errMsg any) {
 	if status == "failed" {
 		message := valueString(errMsg)
@@ -154,6 +163,9 @@ func (e *Engine) finishRunner(status string, errMsg any) {
 	recordPath, _, _ := e.runnerPaths()
 	record, err := readDocLabeled(recordPath, "mission runner record", 3)
 	if err != nil {
+		return
+	}
+	if pid, ok := jsonInt(record["pid"]); !ok || int(pid) != os.Getpid() {
 		return
 	}
 	record["status"] = status
