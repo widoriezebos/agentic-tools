@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -161,8 +163,70 @@ func setupWatcher(repo, scope string, self identity.Ref, tag string, intervalSec
 		if err := cfg.WatcherPass(); err != nil {
 			fmt.Fprintln(os.Stderr, "supervise component watcher:", err)
 		}
+		// The run pass (monitor facility, MON-06/07): assess every
+		// non-terminal run record, then attest the pass — the attestation
+		// is written ONLY when every assessment succeeded, and it names
+		// this watcher's identity plus the full lifecycle triples it
+		// scanned, so a one-shot invocation can never impersonate the
+		// standing watcher and a reused id can never be blessed unseen.
+		runPass(repo, self)
 	}
 	return lock.Release, pass, true
+}
+
+// runPass assesses runs and writes the attestation on full success.
+func runPass(repo string, self identity.Ref) {
+	store := &run.Store{Root: repo}
+	records, unreadable := store.List()
+	type scanned struct {
+		Id          string `json:"id"`
+		Generation  int    `json:"generation"`
+		LaunchNonce string `json:"launchNonce"`
+	}
+	var scannedRuns []scanned
+	clean := len(unreadable) == 0
+	for _, record := range records {
+		if run.Terminal(record.Status) {
+			continue
+		}
+		if _, err := store.Assess(record.RunId); err != nil {
+			fmt.Fprintln(os.Stderr, "supervise component watcher run pass:", err)
+			clean = false
+			continue
+		}
+		scannedRuns = append(scannedRuns, scanned{record.RunId, record.Generation, record.LaunchNonce})
+	}
+	for _, line := range unreadable {
+		fmt.Fprintln(os.Stderr, "supervise component watcher run pass:", line)
+	}
+	if !clean {
+		return
+	}
+	if scannedRuns == nil {
+		scannedRuns = []scanned{}
+	}
+	attestation := map[string]any{
+		"completedAt":  time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		"watcherPid":   self.Pid,
+		"watcherStart": self.StartedAtSec,
+		"scannedRuns":  scannedRuns,
+	}
+	data, err := json.MarshalIndent(attestation, "", " ")
+	if err != nil {
+		return
+	}
+	path := filepath.Join(supervise.SupervisionDir(repo), "runs-pass.json")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".runs-pass-*")
+	if err != nil {
+		return
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write(append(data, '\n')); err == nil && tmp.Close() == nil {
+		_ = os.Rename(name, path)
+	} else {
+		tmp.Close()
+		os.Remove(name)
+	}
 }
 
 // setupReaper returns the per-interval job sweep, proving custody liveness

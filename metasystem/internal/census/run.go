@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -117,6 +118,7 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 	}
 
 	processes, enumErr := enumerate(metasystemRoot)
+	runOwners := loadRunOwners(repoReal, processes, &diagnostics)
 	var signatures []Signature
 	if enumErr != nil {
 		errors = append(errors, "enumeration:"+enumErr.Error())
@@ -150,7 +152,7 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 		if resolved, ok := cwds[process.Pid]; ok {
 			process.Cwd, process.CwdError = resolved.Cwd, resolved.CwdError
 		}
-		item, ok := classifyProcess(process, assignment.Runtime, repoReal, custody, announced, &errors, &diagnostics)
+		item, ok := classifyProcess(process, assignment.Runtime, repoReal, custody, announced, runOwners, &errors, &diagnostics)
 		if !ok {
 			continue
 		}
@@ -166,7 +168,7 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 // It appends diagnostics/errors and returns the inventory item, or ok=false
 // when the process is skipped. Shared by the fixture and production paths so
 // the classification core is identical.
-func classifyProcess(process Process, runtime, repoReal string, custody, announced []identityRecord, errors, diagnostics *[]string) (InventoryItem, bool) {
+func classifyProcess(process Process, runtime, repoReal string, custody, announced []identityRecord, runOwners []runOwner, errors, diagnostics *[]string) (InventoryItem, bool) {
 	if !process.Alive {
 		*diagnostics = append(*diagnostics, fmt.Sprintf("RACED-EXIT pid=%d", process.Pid))
 		return InventoryItem{}, false
@@ -201,7 +203,7 @@ func classifyProcess(process Process, runtime, repoReal string, custody, announc
 		}
 		return InventoryItem{}, false
 	}
-	classification, registry, tag := classifyOwnership(process, custody, announced)
+	classification, registry, tag := classifyOwnership(process, custody, announced, runOwners)
 	cwd := resolvedCwd
 	if cwd == "" {
 		cwd = "UNRESOLVED-CWD"
@@ -249,7 +251,7 @@ func assembleVerdict(label, fingerprint string, interval int, generation *int64,
 	}
 }
 
-func classifyOwnership(process Process, custody, announced []identityRecord) (string, string, any) {
+func classifyOwnership(process Process, custody, announced []identityRecord, runOwners []runOwner) (string, string, any) {
 	for _, item := range custody {
 		if item.Pid == process.Pid && item.Started == process.Started {
 			return "CUSTODY", item.Registry, item.InstanceTag
@@ -260,7 +262,77 @@ func classifyOwnership(process Process, custody, announced []identityRecord) (st
 			return "ANNOUNCED", item.Registry, item.InstanceTag
 		}
 	}
+	// The RUN custody source (monitor facility, MON-03): group-level, with
+	// the strongest proof each custody mode can actually carry. Owned
+	// processes ride the CUSTODY class with a RUN tag — the label carries
+	// the run id, the enum stays closed.
+	for _, owner := range runOwners {
+		if process.PGID != owner.Pgid {
+			continue
+		}
+		if owner.Draining {
+			return "CUSTODY", owner.Registry, "RUN " + owner.Id + " (draining)"
+		}
+		if owner.LeaderVerified {
+			return "CUSTODY", owner.Registry, "RUN " + owner.Id
+		}
+	}
 	return "UNTRACKED", "none", nil
+}
+
+// runOwner is one live run record's custody claim, its leader proof
+// precomputed against the same enumerated process table the census
+// classifies (wrapped: pid+start+argv-nonce three-factor; adopted:
+// pid+start two-factor; draining: pgid plus the record's bounded claim).
+type runOwner struct {
+	Id             string
+	Registry       string
+	Pgid           int64
+	Draining       bool
+	LeaderVerified bool
+}
+
+// loadRunOwners reads run records, surfacing every unreadable input.
+func loadRunOwners(repo string, processes []Process, diagnostics *[]string) []runOwner {
+	store := &run.Store{Root: repo}
+	records, unreadable := store.List()
+	for _, line := range unreadable {
+		*diagnostics = append(*diagnostics, "RUN-RECORD-UNREADABLE "+line)
+	}
+	var owners []runOwner
+	for _, record := range records {
+		switch record.Status {
+		case run.StatusRunning, run.StatusDraining:
+		default:
+			continue
+		}
+		if record.Pgid == nil || record.Pid == nil || record.PidStartedAt == nil {
+			continue
+		}
+		owner := runOwner{
+			Id: record.RunId, Registry: run.RecordPath(repo, record.RunId),
+			Pgid: *record.Pgid, Draining: record.Status == run.StatusDraining,
+		}
+		if !owner.Draining {
+			for _, process := range processes {
+				if process.Pid != *record.Pid || process.Started != *record.PidStartedAt {
+					continue
+				}
+				if record.Custody == run.CustodyWrapped {
+					if process.Argv == "" {
+						*diagnostics = append(*diagnostics, "RUN-LEADER-ARGV-UNKNOWN "+record.RunId)
+					} else if strings.Contains(process.Argv, record.LaunchNonce) {
+						owner.LeaderVerified = true
+					}
+				} else {
+					owner.LeaderVerified = true
+				}
+				break
+			}
+		}
+		owners = append(owners, owner)
+	}
+	return owners
 }
 
 type identityRecord struct {
