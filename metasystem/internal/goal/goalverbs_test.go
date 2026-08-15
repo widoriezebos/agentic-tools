@@ -381,3 +381,85 @@ func TestGoalMutationRefusesActiveMission(t *testing.T) {
 		t.Fatalf("read refused under active mission: %v", err)
 	}
 }
+
+// The refusal edges the matrix test does not reach: promote on every
+// wrong section, read-side helpers, and the empty-checkout read.
+func TestVerbRefusalEdges(t *testing.T) {
+	s := testStore(t)
+	if ledger, problems, err := s.ReadLedger(); ledger != nil || problems != nil || err != nil {
+		t.Fatal("empty checkout read was not clean-empty")
+	}
+	if s.BaselinePresent() {
+		t.Fatal("baseline present in an empty checkout")
+	}
+	mustOpen(t, s, mainHolder, "a", "goal a", "Do a.")
+	mustOpen(t, s, mainHolder, "b", "goal b", "Do b.")
+	if !s.BaselinePresent() {
+		t.Fatal("baseline missing after open")
+	}
+	if _, err := s.Promote(mainHolder, "ghost"); err == nil {
+		t.Fatal("promote of a missing id passed")
+	}
+	if _, err := s.Promote(mainHolder, "a"); err == nil {
+		t.Fatal("promote of the Current goal passed")
+	}
+	if _, err := s.Park(mainHolder, "a", "why", "b", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Promote(mainHolder, "a"); err == nil {
+		t.Fatal("promote of a parked goal passed")
+	}
+	if _, err := s.Done(mainHolder, "a", "x", "", true); err == nil {
+		t.Fatal("done on a parked goal passed")
+	}
+	if _, err := s.Reopen(mainHolder, "a", "step"); err == nil {
+		t.Fatal("reopen of a parked goal passed")
+	}
+	if _, err := s.Park(mainHolder, "ghost", "why", "", true); err == nil {
+		t.Fatal("park of a missing id passed")
+	}
+	if _, err := s.SetNext(mainHolder, "Do a."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetNext(mainHolder, "Do a."); err == nil {
+		t.Fatal("identical set-next passed (idempotence-explicit)")
+	}
+	// The queued park path (no successor requirement).
+	mustOpen(t, s, mainHolder, "c", "goal c", "Do c.")
+	if _, err := s.Park(mainHolder, "c", "later", "", false); err != nil {
+		t.Fatalf("queued park: %v", err)
+	}
+	// Revision and queued digest read through the ledger.
+	ledger, _, _ := s.ReadLedger()
+	if ledger.Revision() == "" {
+		t.Fatal("no revision on a current goal")
+	}
+	if ledger.QueuedDigest() != "" {
+		t.Fatal("queued digest without queued goals")
+	}
+}
+
+// Concurrent verbs serialize under the flock: two goroutines opening
+// distinct goals both land, and the ledger stays legal.
+func TestConcurrentVerbsSerialize(t *testing.T) {
+	s := testStore(t)
+	mustOpen(t, s, mainHolder, "root-goal", "the root", "Do.")
+	done := make(chan error, 2)
+	go func() { _, err := s.Open(mainHolder, "left", "left goal", "L."); done <- err }()
+	go func() { _, err := s.Open(mainHolder, "right", "right goal", "R."); done <- err }()
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	ledger, problems, err := s.ReadLedger()
+	if err != nil || len(problems) > 0 {
+		t.Fatalf("post-race ledger: %v %v", err, problems)
+	}
+	if len(ledger.Queued) != 2 {
+		t.Fatalf("lost an open under the lock: %+v", ledger.Queued)
+	}
+	if !s.BaselineMatches() {
+		t.Fatal("baseline out of step after concurrent writes")
+	}
+}
