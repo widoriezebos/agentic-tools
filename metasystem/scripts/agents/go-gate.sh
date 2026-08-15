@@ -39,6 +39,22 @@ if ! command -v go >/dev/null 2>&1; then
   exit 1
 fi
 
+# A STANDALONE go-gate run registers itself (goal-system GOAL-17: an
+# unrecorded supported gate was invisible to the turn-end scan). Under the
+# suite the parent already holds the serving root's marker; this adds one
+# for this process, which is correct either way — markers are per-pid and
+# die with their process. Skipped only where no binary exists yet (the
+# bootstrap residual, bounded by this very gate's build step).
+go_gate_marker=
+if [[ -x "$root/bin/metasystem" ]]; then
+  go_gate_marker=$("$root/bin/metasystem" gate register --root "$root" \
+    --gate go-gate.sh --pid $$) || {
+    echo "go gate: registration failed; refusing to run invisibly" >&2
+    exit 1
+  }
+  trap '[[ -z "$go_gate_marker" ]] || rm -f "$go_gate_marker"' EXIT
+fi
+
 # ---- The boundary-scoped gate witness (D33) ----------------------------
 # One validation run, one gate: the outer suite runs this gate inside an
 # extracted git-archive-HEAD snapshot with METASYSTEM_GATE_WITNESS_WRITE

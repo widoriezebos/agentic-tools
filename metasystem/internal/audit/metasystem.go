@@ -167,6 +167,8 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 	}
 	result.Report = append(result.Report,
 		fmt.Sprintf("Effective common-path bundle: %d words (report only)", bundleWords))
+
+	result.Violations = append(result.Violations, auditGoalSystem(absRoot)...)
 	return result, nil
 }
 
@@ -299,4 +301,52 @@ func auditFindNamed(root string, dirs []string, names map[string]bool, pruneArti
 	}
 	sort.Strings(found)
 	return found, nil
+}
+
+// auditGoalSystem holds the goal system's two instruction checks
+// (goal-system GOAL-18 + GOAL-19). The program-start rule is the SOLE
+// compensating control for the design's accepted blind spot (intent
+// recorded where no sensor reads), so its presence is audited by
+// CONTENT, not just file existence; and the delivery contract's
+// conformance rows are checked against the enforcement configs the
+// distribution actually ships, so the table can never overclaim.
+func auditGoalSystem(root string) []string {
+	var violations []string
+
+	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil || !strings.Contains(string(agents), "goal open") || !strings.Contains(string(agents), "goal next") {
+		violations = append(violations, "AGENTS.md must carry the goal-thread doctrine: programs start with `goal open`, turn ends read `goal next`")
+	}
+	adaptation, err := os.ReadFile(filepath.Join(root, "docs", "project-adaptation.md"))
+	if err != nil || !strings.Contains(string(adaptation), "goal open") {
+		violations = append(violations, "docs/project-adaptation.md must carry the goal-open convention")
+	}
+
+	contractPath := filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md")
+	contract, err := os.ReadFile(contractPath)
+	if err != nil {
+		violations = append(violations, "missing required file: docs/design/turn-verdict-delivery-contract.md")
+		return violations
+	}
+	table := string(contract)
+	for _, runtime := range []string{"claude", "codex", "devin"} {
+		rowRe := regexp.MustCompile(`(?m)^\| ` + runtime + ` \|`)
+		if !rowRe.MatchString(table) {
+			violations = append(violations, "delivery contract lacks a conformance row for "+runtime)
+			continue
+		}
+		config := filepath.Join(root, "scripts", "enforcement", enforcementConfigFor(runtime))
+		if _, err := os.Stat(config); err != nil {
+			violations = append(violations,
+				"delivery contract claims a shipped Stop config for "+runtime+" but "+enforcementConfigFor(runtime)+" is absent")
+		}
+	}
+	return violations
+}
+
+func enforcementConfigFor(runtime string) string {
+	if runtime == "claude" {
+		return "claude-code-hooks.json"
+	}
+	return runtime + "-hooks.json"
 }

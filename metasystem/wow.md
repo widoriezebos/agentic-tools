@@ -10,6 +10,7 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Working with the human team | `docs/collaboration.md` | Answering a question, reporting, committing, preparing changes for review, or receiving a correction |
 | The human teammate's manual | `docs/working-with-agents.md` | The user asks how to work with agents under this metasystem |
 | Session handoff and task-local state | `plans/README.md` | Starting or ending a session on a multi-session stream |
+| The goal thread (`goal open`/`goal next`) | `plans/README.md` | Starting a program, ending a turn, or wondering what this repository is FOR right now — goals.md is a standing ledger, exempt from delete-when-shipped |
 | Code and design standards | `docs/design/design-principles.md` | Writing or changing code beyond trivial edits; any design, refactor, or consequential change |
 | Completion check and design proof | `docs/design/design-obligation-gate.md` | Finishing any change; full matrix only on its listed triggers |
 | End-to-end verification | `skills/verify/SKILL.md` | A change claims to work and has a runnable surface |

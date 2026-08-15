@@ -120,6 +120,17 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		// The goal-system doctrine and delivery contract (GOAL-18/19):
+		// content the audit now requires, not just files.
+		os.WriteFile(filepath.Join(root, "AGENTS.md"),
+			[]byte("clean instruction text\nprograms start with `goal open`; at turn end read `goal next`\n"), 0o644)
+		os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
+			[]byte("programs start with `goal open`\n"), 0o644)
+		os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
+			[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
+		for _, config := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
+			os.WriteFile(filepath.Join(root, "scripts", "enforcement", config), []byte("{}\n"), 0o644)
+		}
 		return root
 	}
 	t.Run("clean passes", func(t *testing.T) {
@@ -198,6 +209,13 @@ func TestAuditMetasystemReport(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "docs/project-rules.md"), []byte("budget: <amount and period>\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "skills/demo/SKILL.md"), []byte("a skill\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "optional-skills/x/SKILL.md"), []byte("optional\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("programs start with `goal open`; read `goal next`\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs/project-adaptation.md"), []byte("the `goal open` convention\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs/design/turn-verdict-delivery-contract.md"), []byte("| claude |\n| codex |\n| devin |\n"), 0o644)
+	for _, config := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
+		os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
+		os.WriteFile(filepath.Join(root, "scripts", "enforcement", config), []byte("{}\n"), 0o644)
+	}
 	os.WriteFile(filepath.Join(root, "artifacts/agents/AGENTS.md"), []byte("runtime state, pruned\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "meta/binary.bin"), append([]byte("bin"), 0), 0o644)
 
@@ -295,5 +313,46 @@ func TestAuditMetasystemErrorPropagation(t *testing.T) {
 	defer os.Chmod(sealed, 0o644)
 	if _, err := AuditMetasystem(root, AuditOptions{}); err == nil {
 		t.Fatal("unreadable always-loaded file must error")
+	}
+}
+
+// GOAL-19: the program-start rule is audited by CONTENT — a doctrine file
+// present but silent on `goal open` refuses.
+func TestDoctrineProgramStartRule(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
+	os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
+	os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("no doctrine here\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"), []byte("nothing\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
+		[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
+	violations := auditGoalSystem(root)
+	if len(violations) < 2 {
+		t.Fatalf("silent doctrine passed the content check: %v", violations)
+	}
+}
+
+// GOAL-18: a conformance row claiming a shipped config that is absent
+// refuses; the full shipped set passes.
+func TestConformanceTableAudit(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
+	os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
+	os.WriteFile(filepath.Join(root, "AGENTS.md"),
+		[]byte("programs start with `goal open`; read `goal next`\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
+		[]byte("`goal open` starts programs\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
+		[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "claude-code-hooks.json"), []byte("{}\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "codex-hooks.json"), []byte("{}\n"), 0o644)
+	// devin's config deliberately absent: the row overclaims.
+	violations := auditGoalSystem(root)
+	if len(violations) != 1 || !strings.Contains(violations[0], "devin") {
+		t.Fatalf("overclaiming row not caught: %v", violations)
+	}
+	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "devin-hooks.json"), []byte("{}\n"), 0o644)
+	if violations := auditGoalSystem(root); len(violations) != 0 {
+		t.Fatalf("full shipped set refused: %v", violations)
 	}
 }

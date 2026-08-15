@@ -24,6 +24,10 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 - Keep machine-verifiable requirements in schemas, tests, linters, permissions, or scripts, never in repeated prose.
 - Keep project-specific commands and policies in `docs/project-rules.md`.
 
+## The Goal Thread
+
+Programs START with `goal open`: any multi-session effort gets a goal in `plans/goals.md` before its first commit, so the thread of intent survives every turn boundary. At turn end, read `goal next` — one line naming the current goal and its next step; this is the universal transport every runtime has, hooks or none. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through the `goal` verbs; the supported manual-edit path is edit-then-`goal reconcile`.
+
 ## Completion
 
 Before calling any change complete, run the default completion check in `docs/design/design-obligation-gate.md`. When the change has a runnable surface, verify it end to end per `skills/verify/SKILL.md`. Work is complete only when the requested outcome exists, focused verification passes, and all critical or high design obligations are done. Report what changed, what proved it, what was not run, and remaining risk, structured for human review per `docs/collaboration.md`. On unfinished multi-session work, update the stream's handoff note in `plans/` before ending the session. If the task changed the repository, append a receipt with `scripts/receipt.sh add`; in review-only work, include the proposed receipt line in your report instead of writing it.

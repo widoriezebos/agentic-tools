@@ -74,11 +74,20 @@ fi
 
 # A gate run is work in flight that no job record describes, so it says so
 # itself rather than being guessed at from process command lines. The marker
-# names this process by pid and start time; the turn-end report believes it
-# only while that exact process is alive. On a first build the binary does
-# not exist yet; the marker is best-effort and the register is skipped.
-gate_run_marker=$(bin/metasystem gate register --root "$root" \
-  --gate validate-metasystem.sh --pid $$ 2>/dev/null || true)
+# names THIS parent process by pid and start time and spans the WHOLE suite
+# including the snapshot gate (goal-system GOAL-17: a snapshot-side
+# registration marks the wrong root, so the serving root's liveness is the
+# parent's job). Registration failure is FATAL — a gate that cannot record
+# its liveness must not run invisibly. The one named residual: on a truly
+# clean bootstrap no binary exists anywhere yet, bounded by the first build.
+gate_run_marker=
+if [[ -x bin/metasystem ]]; then
+  gate_run_marker=$(bin/metasystem gate register --root "$root" \
+    --gate validate-metasystem.sh --pid $$) || {
+    echo "gate registration failed; refusing to run invisibly" >&2
+    exit 1
+  }
+fi
 
 # The Go engine gate runs first (plans/go-migration.md): gofmt, vet, the
 # race unit suite, and the build. A broken binary fails here, before any

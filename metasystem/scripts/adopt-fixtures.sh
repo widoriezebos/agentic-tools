@@ -259,8 +259,12 @@ PYEOF
   [[ ! -e "$tgt/optional-skills" ]] || { echo "adopt: unselected optional skills were copied" >&2; exit 1; }
   [[ "$(cat "$tgt/README.md")" == "project readme" ]] || { echo "adopt: the project's own README was touched" >&2; exit 1; }
   [[ ! -e "$tgt/ignored-fixture.txt" ]] || { echo "adopt: ignored source content entered the payload" >&2; exit 1; }
-  [[ "$(ls "$tgt/plans" | sort | tr '\n' ' ')" == "README.md instruction-ledger.md known-issues.md " ]] \
-    || { echo "adopt: plans/ payload carries more than the standing ledgers" >&2; exit 1; }
+  [[ "$(ls "$tgt/plans" | sort | tr '\n' ' ')" == "README.md goals-accepted.json goals.md instruction-ledger.md known-issues.md " ]] \
+    || { echo "adopt: plans/ payload must carry the standing ledgers INCLUDING the goal pair (goal-system GOAL-14)" >&2; exit 1; }
+  grep -q '^## Goal-free: declared .* over ' "$tgt/plans/goals.md" \
+    || { echo "adopt: the seeded goal ledger lacks its digest-pinned Goal-free declaration" >&2; exit 1; }
+  "$tgt/bin/metasystem" goal reconcile --root "$tgt" | grep -q 'already reconciled' \
+    || { echo "adopt: the seeded goal pair is not reconciled (baseline out of step)" >&2; exit 1; }
   [[ -d "$tgt/artifacts" ]] || { echo "adopt: artifacts directory missing" >&2; exit 1; }
   grep -qxF 'artifacts/' "$tgt/.gitignore" || { echo "adopt: artifacts/ not gitignored" >&2; exit 1; }
   grep -q "$src_sha" "$tgt/docs/project-rules.md" || { echo "adopt: template SHA not recorded" >&2; exit 1; }

@@ -26,6 +26,12 @@ arm=$script_dir/arm-supervision.sh
 [[ -x "$ms" && -x "$arm" ]] || exit 0
 session=$(read_payload session_id)
 [[ -n "$session" ]] || session="session-$PPID"
+# Session hygiene happens ONCE at this boundary (goal-system GOAL-04):
+# the runtime's string is untrusted input; anything not matching the safe
+# shape becomes its sha256 hex, and every downstream use rides the result.
+if ! [[ "$session" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+  session=$(printf '%s' "$session" | "$ms" util sha256)
+fi
 
 # Hook frameworks commonly insert `/bin/sh -c` between the agent and this
 # script. Start above that shell so the runtime name in the hook command itself
@@ -49,24 +55,6 @@ fi
 
 surface_json() { # message
   "$ms" json object "systemMessage=$1"
-}
-
-work_sentence() {
-  # The active clause is the engine's inventory (`report running-work`,
-  # script-orchestration-05/D22): records decoded instead of status-grepped
-  # (a nested "running" in an error field no longer counts), mission
-  # runners found by argv tokens instead of pgrep-plus-sed. This hook keeps
-  # only the three-way sentence choice.
-  local active
-  active=$("$ms" report running-work --repo "$harness_root" 2>/dev/null || true)
-  if [[ -n "$active" ]]; then
-    printf 'STILL WORKING: %s.' "$active"
-  elif [[ -n "${open_work:-}" ]]; then
-    # Never assert an idle the open-work checker just contradicted.
-    printf 'NO AGENTS RUNNING — but a plan still names open work, listed below.'
-  else
-    printf 'NOTHING LEFT TO WORK ON in this checkout: no jobs, missions, gate runs, or open plan work.'
-  fi
 }
 
 if [[ "$event" == stop ]]; then
@@ -96,78 +84,64 @@ $protocol_message"
   fi
   [[ -z "$identity_pid" ]] || \
     "$ms" lease renew --root "$harness_root" --caller-pid "$identity_pid" >/dev/null 2>&1 || true
-  message=$("$ms" supervise watchdog-report --repo "$harness_root" 2>/dev/null || true)
-  # The same discipline the stop-block holds — a report is ignorable and was
-  # ignored — applies to the watchdog: an UNCHANGED report was surfaced once
-  # and repeating it every turn is noise, so it is suppressed until it
-  # changes (a component dies, recovers, or the census goes stale a
-  # different way). The state is keyed by session, like the stop block.
-  watchdog_state="$harness_root/artifacts/agents/supervision/watchdog-surfaced-$session.state"
-  if [[ -n "$message" && -f "$watchdog_state" ]] \
-    && [[ "$message" == "$(cat "$watchdog_state" 2>/dev/null)" ]]; then
-    message=""
-  elif [[ -n "$message" ]]; then
-    mkdir -p "${watchdog_state%/*}" && printf '%s' "$message" >"$watchdog_state" 2>/dev/null || true
-  else
-    rm -f "$watchdog_state" 2>/dev/null || true
-  fi
-  # Continuation is the one part of the loop no prompt can guarantee, so it is
-  # checked here rather than asked for in prose: a turn ending while a plan
-  # still names an unblocked next step and nothing is in flight says so.
-  open_work=$("$ms" report open-work --repo "$harness_root" 2>/dev/null || true)
-  [[ -z "$open_work" ]] || message=$(printf '%s%s%s' "$message" "${message:+$'\n'}" "$open_work")
-  [[ -z "$protocol_message" ]] || message=$(printf '%s%s%s' "$message" "${message:+$'\n'}" "$protocol_message")
+
+  # The WATCHDOG path calls the verdict like every other path (only the
+  # advisor early-exit above bypasses it): the report's text stays
+  # hook-side, its DIGEST rides to the verb, and the verb's surfaceWatchdog
+  # answer decides exactly-once surfacing across concurrent Stop calls
+  # (goal-system GOAL-04; the loose per-session state files are retired).
+  watchdog_text=$("$ms" supervise watchdog-report --repo "$harness_root" 2>/dev/null || true)
+  watchdog_digest=
+  [[ -z "$watchdog_text" ]] || watchdog_digest=$(printf '%s' "$watchdog_text" | "$ms" util sha256)
 
   # Leave evidence that this ran. Without it there is no telling a hook that
   # fired and found nothing from one that never fired, which is the confusion
   # that let this repository run for days with its hooks uninstalled.
   supervision_dir="$harness_root/artifacts/agents/supervision"
   mkdir -p "$supervision_dir"
-  # Hygiene runs itself: every turn end collects what the mirror already
-  # holds, so residue never waits for a human to wander in with a flashlight.
-  # Best-effort by design; a repo without an evidence root is politely refused
-  # by the collector and that is fine.
   "$script_dir/evidence-gc.sh" >>"$supervision_dir/hooks.log" 2>&1 || true
 
-  printf '%s stop open=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    "$(printf '%s' "$message" | grep -c '^OPEN-WORK' || true)" \
-    >>"$supervision_dir/hooks.log" 2>/dev/null || true
+  # ONE structured decision (goal-system GOAL-05): the verdict verb owns
+  # open work, the goal clause, precedence, block-once state, and the
+  # all-clear. Every representable state is exit 0 with JSON; a nonzero
+  # exit is I/O failure and this hook's own FIXED degraded message takes
+  # over — never silence, and never an all-clear it cannot vouch for. The
+  # old 2>/dev/null||true suppression was the named defect this removes.
+  verdict_stderr=$(mktemp "${TMPDIR:-/tmp}/metasystem-verdict-err.XXXXXX")
+  if verdict=$("$ms" report turn-verdict --root "$harness_root" \
+      --session "$session" --watchdog-surfaced "$watchdog_digest" 2>"$verdict_stderr"); then
+    rm -f "$verdict_stderr"
+    should_block=$("$ms" json get --value "$verdict" --field shouldBlock)
+    display=$("$ms" json get --value "$verdict" --field display)
+    surface_watchdog=$("$ms" json get --value "$verdict" --field surfaceWatchdog)
 
-  # Refuse to end the turn while work is open, once. A report is ignorable and
-  # was ignored. An unbounded block is the loop the design forbids, so the same
-  # open work never blocks twice: the second attempt passes and the human
-  # decides.
-  # Keyed by session: with a shared file, a peer session's refusal consumed
-  # this session's one block, and the same open work then sailed through.
-  blocked_state="$supervision_dir/stop-block-$session.state"
-  open_only=$(printf '%s' "$message" | grep '^OPEN-WORK' || true)
-  if [[ -n "$open_only" ]]; then
-    signature=$(printf '%s' "$open_only" | "$ms" util sha256)
-    if [[ "$(cat "$blocked_state" 2>/dev/null || true)" != "$signature" ]]; then
-      printf '%s' "$signature" >"$blocked_state" 2>/dev/null || true
-      "$ms" report stop-block "$message"
-      exit 0
+    printf '%s stop verdict block=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      "$should_block" >>"$supervision_dir/hooks.log" 2>/dev/null || true
+
+    extras=
+    [[ "$surface_watchdog" == true && -n "$watchdog_text" ]] && extras=$watchdog_text
+    [[ -z "$protocol_message" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$protocol_message")
+
+    if [[ "$should_block" == true ]]; then
+      # The display is the block reason byte-verbatim; watchdog and
+      # protocol text stay in the non-blocking channel and never enter
+      # the reason.
+      "$ms" report stop-block "$display"
+    elif [[ -n "$extras" ]]; then
+      surface_json "$display
+$extras"
+    else
+      surface_json "$display"
     fi
   else
-    rm -f "$blocked_state" 2>/dev/null || true
-  fi
-
-  # Busy-or-not is answered on every single turn end, warnings or not. A
-  # warning used to REPLACE the answer, so a human asking "is it still
-  # working?" got a sentence about watchdog internals instead. Warnings are
-  # added to the answer now, never substituted for it.
-  if [[ -n "$message" ]]; then
-    surface_json "$(work_sentence)
-$message"
-  else
-    # Say so when there is nothing to say. Silence is ambiguous to a human:
-    # it reads the same whether work is finished, still running, or the hook
-    # never fired at all. An explicit idle line distinguishes all three, and
-    # it costs one sentence at the end of a turn.
-    # No pipelines here: under pipefail a grep that matches nothing fails the
-    # whole assignment, and set -e then kills the hook before it can report —
-    # the silent-exit failure this very check exists to make visible.
-    surface_json "$(work_sentence)"
+    degraded_line=$(tail -1 "$verdict_stderr" 2>/dev/null || true)
+    rm -f "$verdict_stderr"
+    printf '%s stop verdict unavailable\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      >>"$supervision_dir/hooks.log" 2>/dev/null || true
+    degraded_message="turn-verdict unavailable: ${degraded_line:-no diagnostic}"
+    [[ -z "$protocol_message" ]] || degraded_message="$degraded_message
+$protocol_message"
+    surface_json "$degraded_message"
   fi
   [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \
     "$ms" lease protocol-advance --root "$harness_root" --main-id "$main_id" \

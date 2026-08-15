@@ -195,6 +195,21 @@ Accepted defects and risks, each with its consequence and the condition that reo
 | Id | Date | Issue | Consequence | Reopen when | Status |
 | --- | --- | --- | --- | --- | --- |
 SKELETON
+# The goal ledger ships as a PAIR with its accepted baseline (goal-system
+# GOAL-14: initialization is reconcile-only, and adoption is the one other
+# legal genesis — both files together, never a ledger without its
+# baseline). The declaration's scan digest reproduces goal.ScanDigest's
+# exact rule — sorted plans/*.md basenames minus goals.md, newline-joined,
+# no trailing newline — over the seeded set. A live example goal would
+# parse as real work, so the skeleton declares goal-free instead.
+goal_scan_digest=$(printf '%s' "README.md
+instruction-ledger.md
+known-issues.md" | shasum -a 256 | cut -d' ' -f1)
+cat >"$stage/plans/goals.md" <<GOALSKELETON
+# Goals
+
+## Goal-free: declared $(date -u +%Y-%m-%dT%H:%M:%SZ) by human over $goal_scan_digest
+GOALSKELETON
 for s in ${enable_skills[@]+"${enable_skills[@]}"}; do
   [[ -d "$stage/optional-skills/$s" ]] || die 2 "unknown optional skill: $s"
   mv "$stage/optional-skills/$s" "$stage/skills/$s"
@@ -216,6 +231,11 @@ collisions=0
 while IFS= read -r p; do
   rel=${p#"$stage"/}
   case "$rel" in .gitattributes|.gitignore) continue ;; esac
+  # The goal pair is SEED-ONCE (goal-system GOAL-14): after adoption it is
+  # the project's own state (the declaration carries adoption's timestamp
+  # and digest), so a re-adoption neither collides on it nor overwrites it.
+  case "$rel" in plans/goals.md|plans/goals-accepted.json)
+    [[ -e "$target/plans/goals.md" ]] && continue ;; esac
   if [[ -e "$target/$rel" ]] && ! cmp -s "$p" "$target/$rel"; then
     echo "collision: $rel" >&2
     collisions=$((collisions + 1))
@@ -228,6 +248,8 @@ done < <(find "$stage" -type f)
 (cd "$stage" && find . -type f ! -name .gitattributes ! -name .gitignore -print0) \
   | while IFS= read -r -d '' p; do
       rel=${p#./}
+      case "$rel" in plans/goals.md|plans/goals-accepted.json)
+        [[ -e "$target/plans/goals.md" ]] && continue ;; esac
       mkdir -p "$target/$(dirname "$rel")"
       cp "$stage/$rel" "$target/$rel"
     done
@@ -254,6 +276,13 @@ bash "$root/scripts/agents/go-build.sh" \
 mkdir -p "$target/bin"
 cp "$root/bin/metasystem" "$target/bin/metasystem"
 chmod +x "$target/bin/metasystem"
+
+# The goal baseline is written by the engine's ONE genesis authority path
+# (goal-system GOAL-14: initialization is reconcile-only): the seeded
+# ledger is adopted as the first accepted state, leaving the
+# goals.md + goals-accepted.json pair standing together.
+"$target/bin/metasystem" goal reconcile --root "$target" >/dev/null \
+  || die 1 "goal baseline genesis failed in the target"
 
 mkdir -p "$target/artifacts"
 touch "$target/.gitignore"
