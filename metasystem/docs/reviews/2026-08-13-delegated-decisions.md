@@ -2130,3 +2130,23 @@ where no sensor reads) is compensated by the audited program-start
 doctrine; codex/devin conformance rows sit at declared until item
 16's audit upgrades them; the D61 dangerous-mode waiver stands
 until item 18 retires it.
+
+## D72 — 2026-08-15: the monitor-facility design converges via the fixtures-as-arbiter exit
+
+Six critique rounds (gpt-5.6-sol at xhigh), trajectory
+12/10/8/6/6/4. At r6 the critic invoked the critique skill's
+round-budget rule: the second three-round budget is exhausted and
+another prose round requires a human ruling. Rather than wake the
+human mid-delegation, the loop closes by the FIXTURES-AS-ARBITER
+exit the human ratified in the flight-recorder instance ("I really
+like the approach... you fold the remaining issues into fixtures
+that then together with code critique become the arbiter"), whose
+conditions all hold here: falling trajectory past budget; all four
+r6 findings mechanical-grain (a job-incarnation discriminator in
+the digest key, a waiter target field, human:<uid> as the canonical
+human waiter key, prefix-consistent green scanning with an honest
+replay caveat); each folded 1:1 as a decision AND a named fixture
+obligation (FIX-R6-01..04); code-critique of the implementation
+made mandatory; the switch recorded in the plan header with the
+trajectory. Revert cost if the human overrules: one more critique
+round against the r7 text before implementation continues.

@@ -3,10 +3,20 @@
 Working Mode: design
 
 Owner: main session (delegate), goal monitor-facility (detail notes
-at plans/backlog-notes.md item 15). Status: r6 — folds the six r5
-findings (critiques at plans/monitor-facility-critique-r{1..5}.md;
-trajectory 12/10/8/6/6, character shifted to contract precision:
-the r5 critic discarded a wording item as nonmaterial unprompted).
+at plans/backlog-notes.md item 15). Status: CONVERGED at r7 via the
+FIXTURES-AS-ARBITER EXIT (critiques at
+plans/monitor-facility-critique-r{1..6}.md; trajectory
+12/10/8/6/6/4; the r6 critic noted the second three-round critique
+budget exhausted). The exit's ratified conditions all hold: the
+trajectory is falling past its budget; every r6 finding is
+mechanical-grain (an incarnation discriminator, a waiter target
+field, a canonical human key, a scan-consistency rule + one honest
+promise weakening) with no invariant-grade finding; each is folded
+1:1 below AND as a NAMED fixture obligation (FIX-R6-01..04 in the
+matrix); code-critique of the implementation is MANDATORY, not a
+judgement call; and this header records the switch, as the
+flight-recorder instance did. Recorded as D72 for the human's
+review.
 r6 pins: the kinship predicate in pgid terms only with
 adopted-unverified never signaled; provisionalVerdict frozen at
 draining entry with endedAt as the wind-down clock; owner-keyed
@@ -54,9 +64,18 @@ Backlog item 1 folds in as written, and runs get the SAME waiter:
   foreign waiter must neither satisfy your unwatched rule nor block
   your own watching):
   `artifacts/agents/waiters/<kind>-<id>-<owner-digest>.json`
-  {kind: "job"|"run", pid, pidStartedAt, session, mainId} where
-  owner-digest is sha256(mainId or "human:"+session) truncated 12
-  hex. Identity-verified at write, removed on exit, provably dead
+  {kind: "job"|"run", pid, pidStartedAt, session, mainId,
+  target: {startedAt} for jobs | {generation, launchNonce} for
+  runs} where owner-digest is sha256(mainId, or "human:"+uid for
+  HUMAN callers — the OS user id is the canonical stable human key,
+  r6 finding 3: classification gives humans no session and the
+  printed command carries none; one waiter per human user per work,
+  documented) truncated 12 hex. WaiterLive requires the TARGET to
+  match the work's current lifecycle (r6 finding 2: a live waiter
+  from a dead lifecycle must neither satisfy WaiterLive nor hold
+  the slot — a mismatched-target live waiter is replaceable by the
+  same identity-checked compare-and-delete, since its own watch is
+  about to exit on the terminal record it is actually reading). Identity-verified at write, removed on exit, provably dead
   otherwise. Exclusive PER KEY by liveness: registration refuses
   while a live record holds the key; a dead owner is replaced by
   identity-checked compare-and-delete under a bounded flock.
@@ -267,18 +286,24 @@ not share its slot).
   {red, ended-unknown, launch-failed}, currently hung,
   unknown-identity, and every RunUnreadable entry — continuation
   verbatim (launch-failed and ended-unknown speak expect.unknown).
-- GREEN terminal surfaces exactly once per session via the
-  MONOTONIC TERMINAL SEQUENCE (r5 finding 6: endedAt has ties and
-  draining reorders it): terminalization assigns terminalSeq from a
-  counter file under the runs lock — a total order with no ties and
-  no reordering; the session entry stores greenCursor = the highest
-  surfaced terminalSeq, and every green above the cursor surfaces,
-  in order, exactly once.
+- GREEN terminal surfaces once per session via the MONOTONIC
+  TERMINAL SEQUENCE with PREFIX-CONSISTENT observation (r6 finding
+  4): terminalization assigns terminalSeq from a counter file under
+  the runs lock; the VERDICT re-reads terminal run records inside
+  its own state flock (runs are few; the re-read is cheap), so no
+  scan can see seq 11 without having seen seq 10; an UNREADABLE run
+  record freezes cursor advancement entirely for that turn. The
+  promise, stated honestly: exactly-once per RETAINED session state
+  — state eviction (30 days / 128 sessions) or a malformed-state
+  reset may replay greens, the same documented replay class as
+  every block-once slot in the item-14 state file.
 - The UNWATCHED block covers launching, running, AND draining work
   owned by the caller (jobs via mainId + runs), keyed on the sha256
-  of the sorted TAGGED lifecycle strings — "job:<jobId>" and
-  "run:<id>.g<generation>.<nonce>" (r5 finding 4: jobs have no
-  triple; the tag pins the cross-kind encoding) —
+  of the sorted TAGGED lifecycle strings — "job:<jobId>@<the job
+  record's own startedAt>" and "run:<id>.g<generation>.<nonce>"
+  (r5 finding 4 pinned the tags; r6 finding 1: job ids are reusable
+  after evidence GC, so the record's immutable startedAt is the
+  incarnation discriminator) —
   blockedUnwatchedDigests, ≤16 FIFO, additive to the item-14 state
   schema.
 - Required mixed-state display tests: Busy+RunUnreadable,
@@ -338,4 +363,8 @@ cmd/metasystem (run family + watch verbs), fixtures, docs.
 | MON-08 | HIGH | Authority | Holder-only mutations with nullable HUMAN coordinates; conclude record-writer; custody labels honest and evented | internal/run + cmd/metasystem | run.go + cmd wiring | run_test.go TestAuthorityMatrix | — | PARTIAL | implement |
 | MON-09 | HIGH | Events | The three rows as specified (fields, requiredness, emitters); runId canonical; conformance test proves acceptance | internal/events + scripts/agents/event-registry.json | emit.go + registry | events conformance test | — | PARTIAL | implement |
 | MON-10 | MEDIUM | Ledger honesty | prune acked-terminal >14d with sidecars, drops reported | internal/run | run.go Prune | run_test.go TestPruneReportsDrops | — | PARTIAL | implement |
+| FIX-R6-01 | HIGH | Arbiter exit r6-1 | The unwatched block re-arms for a reused job id: the digest keys on jobId@startedAt | internal/goal | turnverdict.go | turnverdict_test.go TestReusedJobIdReArms | — | PARTIAL | implement |
+| FIX-R6-02 | HIGH | Arbiter exit r6-2 | A live waiter whose target mismatches the current lifecycle neither satisfies WaiterLive nor blocks re-registration | internal/run + internal/dispatch | waiter records | run_test.go TestStaleLifecycleWaiter | — | PARTIAL | implement |
+| FIX-R6-03 | HIGH | Arbiter exit r6-3 | HUMAN waiters key on human:<uid>; the printed command works with no session plumbing | internal/run + internal/dispatch | waiter key derivation | run_test.go TestHumanWaiterKey | — | PARTIAL | implement |
+| FIX-R6-04 | HIGH | Arbiter exit r6-4 | Greens surface in terminalSeq order under the verdict's flock; an unreadable run record freezes the cursor; replay-on-state-loss is the documented class | internal/goal + internal/run | turnverdict.go re-read | turnverdict_test.go TestGreenPrefixConsistency | — | PARTIAL | implement |
 | MON-11 | MEDIUM | Grammar | Every bound at the source incl. windDownMin 1..120 and the log containment/symlink rule; sidecar suffix excluded from the record glob; status shape pinned | internal/run | run.go validation | run_test.go TestBounds | — | PARTIAL | implement |
