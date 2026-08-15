@@ -2,248 +2,265 @@
 
 Working Mode: design
 
-Owner: main session (delegate), backlog item 14, under Wido's
-2026-08-14 night ruling 4 (design pass tonight, DESIGNS ONLY).
-Status: r2, PAUSED FOR HUMAN RULINGS after the round-2 critique
-(plans/goal-system-critique-r2.md; disposition audit: G-02 and G-13
-resolved, five partial, nine unresolved). The loop stops here
-deliberately: the remaining reshapes hang on four questions that are
-Wido's to answer, not the design's to assume —
-
-1. DELEGATE PROJECTION (G-03): default-on for every brief or
-   role-opt-in; and should the projection carry the next step
-   verbatim rather than id+intent only?
-2. CROSS-RUNTIME STAGING (G-04): may item 14 ship as mechanism +
-   hook contract + Claude conformance, with codex/devin delivery
-   following item 16 — or must all three runtimes land together?
-   (Corrected fact from the critique: codex/devin Stop hook configs
-   ARE shipped in scripts/enforcement/, but only one runtime has
-   been observed firing them; conformance needs the four-state
-   model declared/installed/observed/blocking-capable.)
-3. THE HUMAN-CLASSIFIER TRUST GAP (G-07/G-08): the authority
-   classifier treats any caller without a recognized agent ancestor
-   as HUMAN with unconditional authority (classify.go), so
-   "human-reserved" goal transitions cannot be authenticated today.
-   Accept advisory-grade human reservation for goals, or scope an
-   authenticated-human mechanism — which is bigger than item 14?
-4. MISSION HOSTS (G-03 tail): headless mission hosts have no causal
-   read path without mission-prompt integration — is that in scope
-   for item 14 after all?
-
-The specification debts that are the DESIGN'S to pay in r3 once the
-rulings land (no ruling needed): the block-once dual-source state
-machine (G-01/G-09: separate resettable open-work signature vs
-permanent goal-revision set, atomic check-and-record), the complete
-hook response composition (the verdict verb's schema must carry or
-explicitly compose with the advisor exit, watchdog, protocol-growth,
-running-work, and evidence paths), the full transition table with
-parked/goal-free records in the grammar (G-14, G-05's zero-current
-states), whole-ledger CAS for reconcile (G-07 tail), bounds on every
-projected field (G-15 tail), the run-record join contract with item
-15 (G-10), and the adoption/fixture amendments (G-12 tail).
+Owner: main session (delegate), backlog item 14. Status: r3 — the
+loop RESUMES from the D60 pause with all four human questions
+answered (D66: the per-dispatch projection ruling and the
+exchangeability doctrine in Wido's words; the trust-grade and
+mission-host questions decided under the delegation with residuals
+named below) and every r2 specification debt paid. Critiques r1/r2
+at plans/goal-system-critique-r{1,2}.md. Awaiting r3 critique;
+implementation follows convergence per the human's order.
 
 ## The problem, in the human's words and one incident
 
-"We lose track of the goal that we are chasing." The motivating
-incident: the stop hook told the human "NOTHING LEFT TO WORK ON in
-this checkout" while a quarter of a 101-finding program remained —
-the backlog lived in docs/reviews/, invisible to the open-work
-scanner, and even the narrow fix (a plans/ note) yields a verdict
-that says THAT work exists, never WHAT to do next.
+"We lose track of the goal that we are chasing." The stop hook told
+the human "NOTHING LEFT TO WORK ON" while a quarter of a 101-finding
+program remained: the backlog lived where no machinery looks, and
+even after the narrow fix the verdict could say only THAT work
+exists, never WHAT to do next.
 
-## Design r2
+## Governing constraints (D66)
 
-### 1. One CURRENT goal, a bounded stack behind it (G-13)
+1. **Exchangeability**: any runtime fills any seat. Everything below
+   is files, engine verbs, and plain prompt text. No runtime-native
+   feature is ever part of the mechanism; runtime delivery surfaces
+   are CONTRACTS with an open conformance table.
+2. **Delegates**: the goal reaches a delegate only when its
+   dispatching orchestrator chooses, per dispatch, default off.
+3. **Trust grade**: "human-reserved" transitions are ADVISORY at the
+   current classifier (any agent-ancestor-free caller classifies
+   HUMAN with unconditional authority — classify.go's documented
+   default). This is the same grade the stagnation-reset reservation
+   already has. Named residual: authenticated human identity is its
+   own future work; when it lands, these reservations harden for
+   free because they ride the same authority check.
 
-`plans/goals.md` holds exactly one `## Current goal` block and any
-number of `## Queued goal` / `## Done goal` blocks. The grammar:
+## The ledger: plans/goals.md, sixth standing ledger
+
+Grammar (parse-refusal on violation):
 
     # Goals
 
-    ## Current goal: <kebab-id> — <one-line intent>
+    ## Current goal: <kebab-id> — <intent, one line, ≤160 bytes>
     - Origin: human | main
-    - Next step: <one imperative sentence, ≤240 bytes, no control
-      characters, single line>
-    - Evidence: <path or D-entry>          (optional)
+    - Next step: <one imperative sentence, ≤240 bytes, single line,
+      no control characters>
+    - Evidence: <path or D-entry>              (optional, ≤3 lines)
 
     ## Queued goal: <kebab-id> — <intent>
     - Origin: ...
-    - Next step: ...                        (required)
+    - Next step: ...                            (required)
+
+    ## Parked goal: <kebab-id> — <intent>
+    - Origin: ...
+    - Parked because: <one sentence>            (required)
+    - Next step: ...                            (kept for unpark)
 
     ## Done goal: <kebab-id> — <intent>
     - Concluded: <one sentence>
 
-At most one Current goal (parse refusal otherwise); "next" is always
-the Current goal's step — deterministic, no file-order policy to
-game. Parking the current goal promotes nothing automatically; the
-holder (or human) promotes a queued goal explicitly.
+    ## Goal-free: declared <ISO time> by <origin>   (zero-current only)
 
-### 2. This IS a sixth standing ledger — owned as one (G-12)
+Rules: AT MOST one Current goal; ids unique across all sections; a
+ledger with zero Current goals is legal ONLY when it carries either
+at least one Queued goal or a Goal-free declaration — silence is a
+parse-level violation, which is how the incident's silent variant
+dies (r2's G-05: the zero-current states are all named). Every field
+above carries its byte bound (r2's G-15 tail: intent and id are
+bounded too — id ≤64 bytes; everything projected anywhere is
+bounded at its source). Done goals prune to the last ten; pruning is
+a verb-mediated mutation like any other, so history beyond ten is in
+git BY CONSTRUCTION (the prune commit), answering r2's objection.
 
-goals.md joins the named standing ledgers. The doctrine amendments
-ship with the change: plans/README.md names it and its relation to
-handoff notes, wow.md's evidence rule gains the exception, the
-adoption payload ships a template with one example block, and the
-instruction audit checks its presence like the other ledgers. Done
-goals are PRUNED to the last ten (history beyond that is git),
-capping growth.
+Scanner disjointness: `planFiles` excludes goals.md by name; only
+the goal parser reads it. The handoff-plan "Next step" field remains
+the per-stream in-flight authority; the verdict's precedence
+(open-work first, below) is the one reconciliation point.
 
-### 3. Causal continuation: goals ride the block-once path (G-01, G-09)
+## Verbs and the transition table (r2's G-14)
 
-One engine verb — `report turn-verdict` — replaces the current
-split where the engine reports open work and shell assembles the
-message. It returns one structured decision:
+Family `goal` (name needs the usual verb sign-off; `report goal-*`
+is the fallback): open, set-next, promote, park, unpark, done,
+reopen, declare-free, list, next, reconcile.
 
-    {"shouldBlock": bool, "signature": "...", "openWork": [...],
-     "goal": {"id": ..., "nextStep": ..., "revision": "<sha of the
-     goal block bytes>"}, "degraded": bool, "display": "..."}
+| From \ verb | open | promote | park | unpark | done | reopen | declare-free |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| (no such id) | → Queued (or → Current with --current when none current) | refuse | refuse | refuse | refuse | refuse | n/a |
+| Queued | refuse (duplicate) | → Current (refuse if one exists) | → Parked | refuse | refuse | refuse | n/a |
+| Current | refuse | refuse (already) | → Parked (Current empties) | refuse | → Done; REQUIRES --then <queued-id> or --and-none (writes Goal-free) | refuse | n/a |
+| Parked | refuse | refuse | refuse | → Queued | refuse | refuse | n/a |
+| Done | refuse | refuse | refuse | refuse | refuse | → Queued, Origin preserved (Done keeps Origin in its block for exactly this) | n/a |
+| (ledger-level) | | | | | | | legal only at zero Current AND zero Queued |
 
-Blocking rules, in order: (a) open work blocks exactly as today
-(same signature discipline); (b) with NO open work and a Current
-goal whose revision the session has not yet been blocked on, the
-verdict blocks ONCE with display "open work is done; the goal file
-names the next step: <step verbatim>" — the causal continuation the
-incident needed; (c) the same revision never blocks the same session
-twice (no loop); (d) with neither, today's all-clear stands and is
-now true. The hook's shell shrinks to transporting the decision —
-signature state, block-once bookkeeping, and display text all come
-from the verb (G-09's single owner).
+Every verb is idempotence-explicit: re-running a completed
+transition refuses with the current state named (no silent
+success). `set-next` rewrites the Current goal's step only.
+Authority: all mutations holder-only through the record-writer-style
+matrix path; `done`/`park` on Origin: human ADDITIONALLY requires a
+HUMAN classification (advisory-grade per constraint 3).
 
-The goal clause never rides along with an open-work block (r1's
-dual display is DROPPED): in-flight work first, orientation after —
-one message, one meaning (G-02's collision source, G-11's conflict
-surface).
+Mutation discipline (r2's G-07): the engine is the only writer,
+under a goals.md flock with whole-ledger compare-and-swap — every
+verb re-reads under the lock, verifies the WHOLE-FILE sha256 it
+based its decision on, and atomically renames. A manual edit is
+detected as a whole-ledger digest mismatch at the next read by ANY
+verb or the verdict: the state goes degraded (never all-clear) and
+names `goal reconcile`, which validates the edited bytes under the
+lock (grammar + transition-legality against the last accepted
+snapshot at `artifacts/agents/goals-accepted.digest`) and adopts or
+refuses. Origin downgrades (human → main) are transition-illegal in
+reconcile: they refuse, naming the line.
 
-### 4. The scanner and goals.md are disjoint by construction (G-02)
+## The turn verdict: one verb, one structured decision (r2's G-01/G-06/G-09)
 
-`planFiles` excludes goals.md by name (it is a ledger, not a plan —
-exactly how the scanner should treat the other ledgers), and the
-goal reader is its own grammar-aware parser. A done goal's retained
-text can never produce OPEN-WORK because the scanner never reads the
-file; the verdict verb reads goals only through the goal parser.
+`report turn-verdict` returns:
 
-### 5. Handoff plans keep in-flight next steps; goals reference them (G-11)
+    {"schemaVersion": 1,
+     "shouldBlock": bool,
+     "blockSource": "open-work" | "goal" | null,
+     "openWork": [...],
+     "openWorkSignature": "...",
+     "goal": {"id","intent","nextStep","revision"} | null,
+     "ledgerStatus": "ok" | "absent" | "degraded" | "goal-free",
+     "diagnostics": ["..."],
+     "display": "..."}
 
-A handoff plan's "Next step" remains the per-stream, in-flight
-authority the scanner consumes. The Current goal's Evidence field
-references the plan(s) serving it. One direction, enforced by the
-verdict verb's precedence (open work first) and checked by the
-suite: an active plan stream whose file the goal references cannot
-coexist with a "nothing left" verdict — which is the incident's
-regression test, end to end, no pre-seeded record (G-05's test
-objection).
+- **Two block-state slots, not one** (r2's G-01 tail): the verb owns
+  `artifacts/agents/turn-verdict-state.json` (flock + atomic write)
+  holding {sessionId → {openWorkSignature (resettable, exactly
+  today's semantics), blockedGoalRevisions (append-only set)}}. The
+  sequence goal-blocks / open-work-blocks / open-work-clears / goal
+  returns CANNOT re-block on the goal: its revision is in the set.
+  Check-and-record is atomic under the file lock; concurrent Stop
+  calls serialize there.
+- **Precedence**: open work blocks first (today's discipline, same
+  signature semantics); with no open work, a Current goal whose
+  revision is unseen blocks ONCE with display "open work is done;
+  the goal file names the next step: <step verbatim>"; goal-free is
+  reported as "goal-free by declaration <time>"; a degraded or
+  absent ledger FORBIDS the all-clear and says why.
+- **Composition with the existing hook** (r2's G-09 tail): the verb
+  owns ONLY the block decision and its display sentence. The hook's
+  other duties (advisor early exit, watchdog suppression,
+  protocol-growth reporting, evidence collection, lease cursor) stay
+  in the hook, explicitly listed in the hook contract as OUTSIDE the
+  verdict. The hook maps shouldBlock → its runtime's block mechanism
+  (Claude: decision:block with display as reason) and appends
+  nothing to the display. Transport of degraded: the verb NEVER
+  exits nonzero for a representable state — every outcome above is
+  exit 0 with JSON; nonzero is reserved for I/O failure, and the
+  hook contract requires transporting THAT as a degraded verdict
+  rather than swallowing (the current 2>/dev/null||true is named as
+  the defect the contract removes).
 
-### 6. Losing the thread becomes an explicit act (G-05)
+## Delivery: the runtime contract and the conformance table (D66)
 
-`goal done` on the CURRENT goal refuses unless the caller either
-promotes a named queued goal (`--then <id>`) or declares the
-checkout intentionally goal-free (`--and-none`, which the verdict
-verb then reports as "goal-free by declaration at <time>" instead
-of silence). Programs start by creating a goal (`goal open`), and
-the adoption template documents that convention. Registration stays
-an act — but silent absence and declared absence are now different
-verdicts, and the incident's silent variant cannot recur while any
-referenced plan stream is open (section 5's cross-check).
+docs/design/ gains the TURN-VERDICT DELIVERY CONTRACT: what an
+adapter must do to claim conformance (invoke the verb at turn end,
+honor shouldBlock via its runtime's mechanism, transport display
+verbatim, never suppress degraded). The conformance table ships in
+the contract with four states per runtime (declared / installed /
+observed / blocking-capable — the honest model from the D60 record):
+claude starts blocking-capable (its hook exists), codex and devin
+start at declared (their shipped Stop configs exist; observation
+pending — exactly what item 16's audit keeps honest). ORCHESTRATOR
+parity does not wait for hooks: any runtime's main can read `goal
+next` by instruction (AGENTS.md's turn-end section names it), which
+under exchangeability is the same information on the only universal
+transport. The mechanism is identical for every runtime; only
+delivery automation differs, and the table says so in public.
 
-### 7. Authority: the engine is the only writer; origin gates transitions (G-07, G-08)
+## Mission hosts (D66, question 4)
 
-The file is mutated only through the verbs, under its own flock +
-atomic rewrite (the ledger discipline verbatim). A manual edit is
-detected by revision mismatch at the next read: the verdict goes
-degraded (never all-clear, G-06) and names `goal reconcile`, which
-validates the edited bytes under the lock and adopts or refuses
-them. Verbs: `goal open|set-next|promote|park|unpark|done|reopen`,
-with a legal-transition table in the contract (G-14). Authority:
-mutations are holder-only (checkout custody), AND goals carry
-Origin — `done`/`park` on a human-origin goal is HUMAN-reserved
-(the stagnation-reset doctrine applied to intent): the holder may
-progress the step, only the human may declare the human's goal
-finished. Lease takeover changes nothing about goals — the file is
-checkout state, not holder state; a new holder inherits intent
-(G-08's custody/authority split, stated).
+The RUNNER includes the orientation line in every turn prompt it
+assembles: reading goals.md through the goal parser (read-only, no
+new authority), it appends one bounded line — "Serving goal:
+<id> — <intent>" — to the turn prompt when a Current goal exists.
+Runner-side and runtime-neutral: every host of every runtime gets
+the same line the same way. Hosts do not mutate goals (they are
+lease holders mid-mission; goal mutation from inside a mission is
+refused by a runner-context check — the mission's intent is the
+contract, not the goal file).
 
-### 8. Failure is loud (G-06)
+## Delegates (D66, question 1 — the human's ruling)
 
-Missing file → a distinct verdict field ("no goal ledger"), exit 3
-from `goal next`. Malformed file → exit 1, degraded verdict,
-all-clear FORBIDDEN. The hook contract (below) requires transporting
-degraded state, not swallowing it; the current `2>/dev/null || true`
-suppression is named as a defect this change removes.
+`dispatch` gains `--serving-goal` (no value): when the ORCHESTRATOR
+passes it, the brief builder appends a bounded, labeled section:
 
-### 9. Runtime equivalence, honestly staged (G-04)
+    # Serving goal (context, not instruction)
+    <id> — <intent>
 
-The decision is one verb; delivery is per-runtime and TODAY only
-Claude has a turn-end hook. The design makes the gap explicit
-instead of wishing it away: the deliverable includes a HOOK CONTRACT
-(docs/design/): what a runtime adapter must declare to deliver
-turn-verdicts (invoke the verb, transport display, honor
-shouldBlock, never suppress degraded). Claude's hook implements it
-at ship; codex and devin CANNOT claim it until item 16's audit gives
-them a declared surface, and the contract document carries a
-conformance table (claude: yes; codex: no turn-end surface; devin:
-no turn-end surface) that the audit keeps honest. Item 14 ships as
-"the mechanism plus one conforming runtime and a contract the others
-must meet" — stated in those words for Wido's sign-off, not implied
-(G-04's ruling made explicit).
+Default OFF. Per dispatch, never per role, never global. The section
+confers zero authority (the envelope, schema, and certification
+govern exactly as before); its text is quoted data bounded at the
+ledger (id ≤64, intent ≤160). Queued/Parked/Done goals never
+project. The projection is brief-carried plain text — the only
+transport every runtime receives (exchangeability).
 
-### 10. Delegates get a projection, not the file (G-03)
+## Item-15 composition (read-side only, unchanged from r2)
 
-Item 14 says "host and delegate alike"; r1's exclusion overreached.
-r2: mission hosts are mains and read goals natively. DELEGATES get a
-projection: the dispatch brief builder includes the Current goal's
-one-line intent (id + intent, never the file, never queued/done
-blocks) as a "serving goal" line, envelope-safe by size and content
-bounds. Whether every brief carries it by default or roles opt in is
-FLAGGED FOR WIDO — both are cheap; the difference is context-budget
-policy, and that call is his (G-03 asked for exactly this ruling
-rather than a design assertion).
+Run records own conditional continuations; the verdict verb MAY
+enrich orientation from run state at read time. The join contract is
+item 15's design obligation; this design promises only the read seam
+and the goal file's ignorance of runs.
 
-### 11. Goal text is quoted data, never instruction (G-15)
+## Registration and the incident regression (r2's G-05)
 
-The grammar bounds the step (single line, ≤240 bytes, no control
-characters); the verdict frames it as quotation from a named file;
-and the contract states: a goal confers ZERO authority — an agent
-following it still meets every envelope, authority check, and
-human-reserved boundary. Injection through goals.md is bounded to
-what a plans-file note could already do, and the framing plus bounds
-shrink it further.
+`goal open` is how programs start; the adoption template documents
+the convention and ships a Goal-free declaration (not an example
+block — r2's G-12: a live example would parse as real work). The
+regression test is end-to-end and unseeded: a checkout holding an
+active plans/ stream referenced by the Current goal's Evidence can
+never produce an all-clear verdict; and a checkout with the incident
+'s original shape (work recorded only in a non-plans document, no
+goal) now FAILS THE LEDGER GRAMMAR (zero-current with neither queue
+nor declaration) rather than passing silently — the silent variant
+is unrepresentable, which is stronger than detected.
 
-### 12. Item-15 composition, corrected (G-10)
+## Doctrine amendments that ship with this change (r2's G-12)
 
-A watched run's three continuations (green/red/hang) live on the RUN
-record — conditional intent is run state, not goal state. The goal
-file never learns about runs directly and supervision never writes
-goals (the authority matrix already refuses it). Composition is
-read-side only: the verdict verb MAY read run records to enrich
-orientation ("the goal's step is waiting on run X, still in
-flight"), which needs no new write authority anywhere. Item 15's
-design owns the run record; this design only promises the read seam.
+plans/README.md (the sixth ledger and its relation to handoff
+notes), wow.md (evidence-rule exception), docs/project-adaptation.md
+(the goal-open convention), adopt.sh (skeleton with the Goal-free
+declaration), the suite's exact-ledger-set fixture, and the
+instruction audit's required-file list.
 
-## What this deliberately does not do
+## Blast radius
 
-- No priorities, deadlines, or dependency graphs — one current goal,
-  a queue, done history.
-- No mission-prompt integration — the serialization question (D58)
-  stays with the mission machinery; goals are checkout-level.
-- No per-runtime hooks invented here — the hook contract defines
-  them; item 16 delivers the surfaces.
+internal/report (goal parser, turn-verdict verb, state file,
+scanner exclusion), internal/dispatch (the --serving-goal brief
+section), internal/missionrunner (the turn-prompt orientation line +
+the runner-context mutation refusal), cmd/metasystem (verb rows),
+scripts/agents/supervision-hook.sh (verdict transport per the
+contract; suppression removed), docs/design (the delivery contract +
+conformance table), the doctrine files above, adopt.sh, fixtures.
 
-## Proof obligations (rewritten to the seams, G-16)
+## Proof obligations
 
-- Scanner/goal disjointness: goals.md content can never produce
-  OPEN-WORK; plan streams still can; the incident regression runs
-  the verdict end to end from a backlog-plus-goal checkout.
-- Block-once across both sources: unchanged open work does not
-  re-block after a goal edit; a new goal revision blocks once; the
-  same revision never re-blocks; goal-then-openwork transitions.
-- Failure: malformed goals.md forbids all-clear; missing file is
-  the distinct no-ledger verdict; the hook transports degraded.
-- Authority: non-holder mutation refused; human-origin done/park
-  refused for the holder; manual edit → degraded → reconcile
-  round-trip; lease takeover leaves goals intact.
-- Projection: brief carries id+intent only, bounded; no queued/done
-  leakage.
-- Verdict verb owns display: the shell transports byte-identical
-  text; signature/bookkeeping parity with today's block-once proven
-  by fixture.
-- Runtime conformance table matches reality (audit-checked).
+- Grammar: parse round-trips for every section; zero-current
+  legality matrix; every byte bound; duplicate ids; prune-at-ten as
+  a verb.
+- Transitions: the full table as a test matrix including every
+  refusal and idempotence-refusal; origin preservation through
+  Done→reopen; the advisory human gate refusing a DELEGATE-classified
+  caller.
+- CAS/reconcile: whole-ledger digest mismatch → degraded, never
+  all-clear; reconcile adopts legal edits and refuses origin
+  downgrades; concurrent verb writes serialize under the flock
+  (goroutine test).
+- Verdict: the dual-slot state machine — the G-01 sequence
+  (goal-block, open-work-block, clear, no re-block) as a table test;
+  concurrent Stop atomicity; degraded/absent/goal-free displays;
+  open-work precedence; byte-verbatim next-step quoting.
+- Hook: fixture proving the shell transports display and degraded
+  byte-identically and that the advisor/watchdog paths bypass the
+  verdict verb untouched.
+- Projection: --serving-goal appends exactly the bounded section;
+  absence appends nothing; oversized ledger fields are refused at
+  the LEDGER, so the brief builder never truncates.
+- Runner: the orientation line in assembled turn prompts (fixture);
+  goal mutation from runner context refused.
+- Incident regression: as specified above, end to end, unseeded.
+- Conformance: the table's claude row proven by the hook fixture;
+  codex/devin rows asserted "declared" by reading the shipped
+  enforcement configs (their observation upgrade is item 16's).
