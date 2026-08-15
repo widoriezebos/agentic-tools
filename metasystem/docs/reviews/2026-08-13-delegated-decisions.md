@@ -1675,6 +1675,48 @@ per the drive-to-2-valid ruling. bm-2 stays HELD (D57). Next: the
 bm-2s contained codex arm (its manifest's own deliberate budget 8)
 toward two valid reps. Spend ~$140 of EUR 240.
 
+## D59 — The overnight series is complete: two arms banked, one held, and the night's findings
+
+**bm-2s (codex sol, contained, its own budget 8)**: rep 1 valid,
+completed, acceptance 0.981, $18.87, 79 min; rep 2 valid, completed,
+acceptance 0.981, $17.78, 89 min. The arm holds its two valid reps.
+
+**The series, whole night**: the baseline arm holds 0.962 and 0.981
+(D53/D58); bm-2s holds 0.981 twice; bm-2 (uncontained Devin) is HELD
+after one invalid rep with the denial-behavior diagnosis written for
+Wido (D57). Spend for the night ≈ $177 against the EUR 240 ceiling
+(cohorts: $28.32 baseline-3, $4.57 bm-2, $17.64 budget-5 test,
+$36.65 bm-2s). Wido's drive-to-2-valid ruling is satisfied for every
+arm that can currently deliver.
+
+**Findings the series bought**:
+1. **The budget-5 conversion (D58, by controlled experiment)**: the
+   serializing host shape parks empty at budget 3 and runs to
+   completion at budget 5. The empty parks were structural
+   (cadence 3 vs budget 3), not product variance.
+2. **Completed runs converge**: every run that reached completion —
+   two arms, different delegate runtimes, different hosts — landed
+   acceptance 0.981132 EXACTLY, with 0.962 from the one valid
+   parked-early run. The remaining acceptance gap looks structural
+   (the same checks fail the same way), so the benchmark's
+   discriminator between arms is validity rate and cost per valid
+   rep, not the product score. The series design question for Wido —
+   how many valid reps per arm — now has a shape: more reps buy
+   validity-rate precision, not score precision.
+3. **The Devin arm's blocker is a design question, not a flake**
+   (D57): swe-1-7 works, then a confirmation-blocked tool call eats
+   delivery. How denials should behave for an uncontained delegate
+   is on Wido's desk.
+4. **Serialization is the variance source** (D54/D58): whether a
+   host dispatches implementers alongside critique in cycle 1 is
+   the difference between $9-parks and completed runs; that goes to
+   the item-14 design pass as its control case.
+
+**The night's tail (per RULING 4)**: the item-14 goal-system design
+pass runs now, DESIGNS ONLY, carrying the serialization case, the
+denial-behavior question, and items 15-17 as context. Targets stay
+in place for replay, per prior practice.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
