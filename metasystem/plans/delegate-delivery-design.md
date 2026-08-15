@@ -4,9 +4,9 @@ Working Mode: design
 
 Owner: main session (delegate), under Wido's 2026-08-15 morning
 rulings (design-critique-implement before anything else; everything
-Go is better suited for goes in Go). Status: r6 — folds the two r5
-findings (critiques at plans/delegate-delivery-critique-r{1..5}.md;
-r5 closed the host walk); awaiting r6 critique.
+Go is better suited for goes in Go). Status: r7 — folds the single
+r6 finding (critiques at plans/delegate-delivery-critique-r{1..6}.md;
+r6 closed repair precedence); awaiting r7 critique.
 
 ## The problem, with two cohorts of evidence
 
@@ -37,8 +37,12 @@ Inputs per call: --job, --round-dir, --workspace DIR, --stdout
 FILE, --named FILE, --transcript FILE, --schema FILE, --record FILE,
 --attempt initial|repair. Output: a JSON FACTS document on stdout —
 `{"delivered": bool, "channel": "stdout|named-file|transcript|none",
-"reply": "<accepted snapshot path>", "watermarkValid": bool,
-"reason": "..."}` — plus the side effects below. The collector
+"reply": "<accepted snapshot path>", "candidatesPresent": bool,
+"watermarkValid": bool, "reason": "..."}` — candidatesPresent is an
+EXISTENCE-ONLY fact (non-empty stdout, named file on disk, or a
+designation-rule write in the transcript window), computed without
+any validation, so the no-session split below is decidable without
+running the canonical validator sessionlessly — plus the side effects below. The collector
 reports COLLECTION FACTS ONLY (r3 finding 5): it has no CLI-status
 or session inputs and emits no repair recommendation; adjudication
 alone composes eligibility from CLI status + collection facts +
@@ -182,7 +186,7 @@ provider failure):
 | disagreement/unreadable | any | never consulted | session_identity_disagreement, as today |
 | transcript over ceiling | any | never consulted | transcript-oversize, a NAMED degraded terminal — never identity disagreement, never empty-reply, never repair |
 | certified | non-zero | never consulted | provider failure, as today — no channel promotes output from a failed call |
-| certified | 0, NO session correlated | never consulted | handshake_missing_session_id refusal BEFORE collection runs at all, exactly today's gate order (r5 finding 1: the collector's canonical validation cannot even represent a sessionless acceptance — reconciled "unobserved" vs the record's null rejects — so collection without correlation could only misclassify; it is therefore never invoked) |
+| certified | 0, NO session correlated | existence scan ONLY (candidatesPresent; no validation — r5 finding 1: canonical validation cannot represent a sessionless acceptance) | candidatesPresent=true → handshake_missing_session_id, today's gate for a reply that arrived uncorrelated; candidatesPresent=false → empty-reply adjudication, today's PINNED outcome for empty-without-correlation (r6's finding: an unconditional gate would have silently reclassified this case) |
 | certified | 0 + session correlated | delivered | normal return pipeline on the accepted snapshot |
 | certified | 0 + session correlated | nothing-qualified + claim exit 0 | the REPAIR attempt below |
 | certified | 0 + session correlated | nothing-qualified + claim exit 3 | empty-reply adjudication, as today |
@@ -313,10 +317,11 @@ turn-contract validator wiring), a host-path selftest leg.
   end to end in the selftest; a wrong-identity stdout candidate is
   rejected post-envelope and the walk RESUMES to deliver the valid
   named file (r4 finding 2's exact scenario).
-- Initial no-session gate: with no correlated session, collection
-  is NEVER INVOKED and the turn refuses handshake_missing_session_id
-  (r5 finding 1's order, pinned as a fixture leg asserting the
-  collector left no verdict artifacts).
+- Initial no-session split (r5 finding 1 + r6's finding): with no
+  correlated session and a candidate PRESENT, the turn refuses
+  handshake_missing_session_id with no validation artifacts; with no
+  session and NO candidates, empty-reply adjudication exactly as
+  pinned today — both as fixture legs.
 - Repair precedence: a nonzero repair with a disagreeing transcript
   is protocol-error (settlement never reached); a DELIVERED repair
   with a disagreeing transcript is session_identity_disagreement;
