@@ -194,6 +194,7 @@ func families() []family {
 			summary: "turn-end report decisions",
 			verbs: []verb{
 				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
+				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},
 				{"running-work", "print the turn-end active clause: live jobs, missions, gate runs", runReportRunningWork},
 				{"scan-jobs", "one watcher classification pass over job files", runReportScanJobs},
@@ -252,6 +253,24 @@ func families() []family {
 				{"object", "build a compact JSON object from key=value args", runJSONObject},
 				{"set", "set top-level fields in a JSON object file atomically", runJSONSet},
 				{"strip", "print a JSON object with named top-level keys removed", runJSONStrip},
+			},
+		},
+		{
+			name:    "goal",
+			summary: "the goal ledger: the thread of intent that survives every turn (D67)",
+			verbs: []verb{
+				{"open", "declare a goal; Current when none exists, queued otherwise", runGoalOpen},
+				{"set-next", "rewrite the Current goal's next step", runGoalSetNext},
+				{"promote", "move a queued goal to Current", runGoalPromote},
+				{"park", "park a goal; parking the Current one requires --then or --and-none", runGoalPark},
+				{"unpark", "return a parked goal to the queue", runGoalUnpark},
+				{"done", "conclude the Current goal; requires --then or --and-none", runGoalDone},
+				{"reopen", "return a done goal to the queue with a fresh --next", runGoalReopen},
+				{"declare-free", "declare (or renew) the absence of intent over the current plans world", runGoalDeclareFree},
+				{"prune", "drop done goals beyond the newest ten, reporting every drop", runGoalPrune},
+				{"list", "print the parsed ledger as JSON (read-only)", runGoalList},
+				{"next", "print the one orientation line (read-only, the universal fallback)", runGoalNext},
+				{"reconcile", "adopt, restore, or authority-replay bytes the verbs did not write", runGoalReconcile},
 			},
 		},
 		{
