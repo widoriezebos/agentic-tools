@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -139,7 +140,7 @@ func TestConcludeEvidenceTable(t *testing.T) {
 	}
 
 	// Unknown identity: concludes NOTHING, surfaces.
-	record = bind("unknown-run", 104)
+	bind("unknown-run", 104)
 	prober.verdicts[104] = identity.Unknown
 	result, _ = s.Assess("unknown-run")
 	if result.Transitioned || len(result.Unreadable) == 0 {
@@ -299,5 +300,143 @@ func TestHumanCoordinatesNullable(t *testing.T) {
 	record, _ := s.Read("human-run")
 	if record.MainId != nil || record.ClaimEpoch != nil {
 		t.Fatalf("human coordinates not nullable: %+v", record)
+	}
+}
+
+// The remaining verb refusals and helpers: ack rules, sidecar filename
+// exclusion from the record glob, owner digests, lifecycle tags.
+func TestVerbRefusalsAndHelpers(t *testing.T) {
+	s := testStore(t)
+	prober := fakeProber{verdicts: map[int64]identity.Liveness{401: identity.Alive}, starts: map[int64]int64{401: 5000}}
+	s.Prober = prober
+	nonce := launchOne(t, s, "helper-run")
+	if err := s.Ack(mainCaller, "helper-run"); err == nil {
+		t.Fatal("ack of a non-terminal record passed")
+	}
+	if err := s.Bind("helper-run", strings.Repeat("0", 32), 401, 401); err == nil {
+		t.Fatal("a wrong nonce bound")
+	}
+	if err := s.Bind("helper-run", nonce, 401, 401); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Adopt(mainCaller, "helper-run", 401); err == nil {
+		t.Fatal("adopt passed with a live old leader")
+	}
+	record, _ := s.Read("helper-run")
+	s.WriteSidecar("helper-run", record.Generation, record.LaunchNonce, 3)
+	prober.verdicts[401] = identity.Dead
+	s.Assess("helper-run")
+	if err := s.Ack(mainCaller, "helper-run"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Ack(mainCaller, "helper-run"); err == nil {
+		t.Fatal("double ack passed")
+	}
+
+	// The record glob never ingests a sidecar.
+	files := RecordFiles(s.Root)
+	for _, f := range files {
+		if strings.Contains(f, ".exit.json") {
+			t.Fatalf("sidecar in the record glob: %s", f)
+		}
+	}
+	if len(files) != 1 {
+		t.Fatalf("record glob wrong: %v", files)
+	}
+
+	if OwnerDigest("main-1") == OwnerDigest("") {
+		t.Fatal("human and main owner digests collide")
+	}
+	if got := record.LifecycleTag(); !strings.HasPrefix(got, "run:helper-run.g1.") {
+		t.Fatalf("lifecycle tag wrong: %s", got)
+	}
+
+	// Assess on a missing record errors; on a terminal record it is a
+	// no-op.
+	if _, err := s.Assess("ghost"); err == nil {
+		t.Fatal("assess of a missing record passed")
+	}
+	if result, err := s.Assess("helper-run"); err != nil || result.Transitioned {
+		t.Fatalf("terminal assess moved: %+v %v", result, err)
+	}
+}
+
+// The hung flag rides log mtime; Register adopts an already-running
+// process with pattern evidence; the pattern path concludes green on
+// match and ended-unknown otherwise.
+func TestHungFlagAndRegisterPattern(t *testing.T) {
+	s := testStore(t)
+	prober := fakeProber{verdicts: map[int64]identity.Liveness{}, starts: map[int64]int64{}}
+	s.Prober = prober
+
+	// Register our own live process (kinship with ourselves holds).
+	self := int64(os.Getpid())
+	prober.verdicts[self] = identity.Alive
+	prober.starts[self] = 8000
+	logPath := filepath.Join(s.Root, "reg.log")
+	os.WriteFile(logPath, []byte("working\n"), 0o644)
+	err := s.Register(mainCaller, LaunchParams{
+		Id: "reg-run", Kind: "custom", Display: "registered work",
+		Log: logPath, StaleAfterMin: 1,
+	}, self, "(?m)^ALL GREEN$")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, _ := s.Read("reg-run")
+	if record.Custody != CustodyAdoptedVerified || record.Evidence.Mode != EvidencePattern {
+		t.Fatalf("register custody/evidence wrong: %+v", record)
+	}
+
+	// Quiet log past staleAfterMin: hung flag sets; activity clears it.
+	s.Now = func() time.Time { return time.Unix(1786900000, 0).Add(2 * time.Minute) }
+	if _, err := s.Assess("reg-run"); err != nil {
+		t.Fatal(err)
+	}
+	record, _ = s.Read("reg-run")
+	if record.HungSince == nil {
+		t.Fatal("quiet log did not set the hung flag")
+	}
+	now := time.Unix(1786900000, 0).Add(3 * time.Minute)
+	os.Chtimes(logPath, now, now)
+	s.Now = func() time.Time { return now }
+	s.Assess("reg-run")
+	record, _ = s.Read("reg-run")
+	if record.HungSince != nil {
+		t.Fatal("log activity did not clear the hung flag")
+	}
+
+	// Death with a matching pattern: green. (Group is our own — alive —
+	// so this drains first; write the match, kill the identity, and walk
+	// the drain to expiry.)
+	os.WriteFile(logPath, []byte("done\nALL GREEN\n"), 0o644)
+	prober.verdicts[self] = identity.Dead
+	result, err := s.Assess("reg-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.To == StatusDraining {
+		s.Now = func() time.Time { return now.Add(time.Duration(record.WindDownMin+1) * time.Minute) }
+		result, _ = s.Assess("reg-run")
+	}
+	if result.To != StatusGreen {
+		t.Fatalf("pattern match did not conclude green: %+v", result)
+	}
+
+	// A second registered run with a NON-matching pattern: ended-unknown,
+	// never a red guess.
+	prober.verdicts[999] = identity.Alive
+	prober.starts[999] = 9000
+	os.WriteFile(filepath.Join(s.Root, "nm.log"), []byte("no verdict here\n"), 0o644)
+	if err := s.Register(mainCaller, LaunchParams{Id: "nomatch-run", Kind: "custom", Log: filepath.Join(s.Root, "nm.log")}, 999, "NEVER$"); err != nil {
+		t.Fatal(err)
+	}
+	prober.verdicts[999] = identity.Dead
+	result, _ = s.Assess("nomatch-run")
+	if result.To == StatusDraining {
+		s.Now = func() time.Time { return now.Add(200 * time.Minute) }
+		result, _ = s.Assess("nomatch-run")
+	}
+	if result.To != StatusEndedUnknown {
+		t.Fatalf("pattern no-match guessed: %+v", result)
 	}
 }

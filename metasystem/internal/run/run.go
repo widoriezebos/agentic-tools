@@ -57,8 +57,8 @@ const (
 	StatusEndedUnknown = "ended-unknown"
 	StatusLaunchFailed = "launch-failed"
 
-	CustodyWrapped          = "wrapped"
-	CustodyAdoptedVerified  = "adopted-verified"
+	CustodyWrapped           = "wrapped"
+	CustodyAdoptedVerified   = "adopted-verified"
 	CustodyAdoptedUnverified = "adopted-unverified"
 
 	EvidenceSidecar = "exit-sidecar"
@@ -86,29 +86,29 @@ type Expect struct {
 
 // Record is the run record, schema v1.
 type Record struct {
-	SchemaVersion int     `json:"schemaVersion"`
-	RunId         string  `json:"runId"`
-	Kind          string  `json:"kind"`
-	Display       string  `json:"display"`
-	Custody       string  `json:"custody"`
-	Generation    int     `json:"generation"`
-	Pid           *int64  `json:"pid"`
-	PidStartedAt  *int64  `json:"pidStartedAt"`
-	Pgid          *int64  `json:"pgid"`
-	LaunchNonce   string  `json:"launchNonce"`
-	Log           string  `json:"log"`
-	StartedAt     string  `json:"startedAt"`
-	MainId        *string `json:"mainId"`
-	OwnerLineage  *string `json:"ownerLineage"`
-	ClaimEpoch    *int64  `json:"claimEpoch"`
-	SessionId     string  `json:"sessionId"`
-	GoalId        string  `json:"goalId"`
-	StaleAfterMin int     `json:"staleAfterMin"`
-	HungSince     *string `json:"hungSince"`
-	WindDownMin   int     `json:"windDownMin"`
+	SchemaVersion int      `json:"schemaVersion"`
+	RunId         string   `json:"runId"`
+	Kind          string   `json:"kind"`
+	Display       string   `json:"display"`
+	Custody       string   `json:"custody"`
+	Generation    int      `json:"generation"`
+	Pid           *int64   `json:"pid"`
+	PidStartedAt  *int64   `json:"pidStartedAt"`
+	Pgid          *int64   `json:"pgid"`
+	LaunchNonce   string   `json:"launchNonce"`
+	Log           string   `json:"log"`
+	StartedAt     string   `json:"startedAt"`
+	MainId        *string  `json:"mainId"`
+	OwnerLineage  *string  `json:"ownerLineage"`
+	ClaimEpoch    *int64   `json:"claimEpoch"`
+	SessionId     string   `json:"sessionId"`
+	GoalId        string   `json:"goalId"`
+	StaleAfterMin int      `json:"staleAfterMin"`
+	HungSince     *string  `json:"hungSince"`
+	WindDownMin   int      `json:"windDownMin"`
 	Evidence      Evidence `json:"evidence"`
 	Expect        Expect   `json:"expect"`
-	Status        string  `json:"status"`
+	Status        string   `json:"status"`
 	// ProvisionalVerdict freezes at draining ENTRY: adopted-pattern
 	// evidence is evaluated once there, so descendants writing the log
 	// later cannot change it.

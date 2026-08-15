@@ -217,8 +217,6 @@ func (s *Store) kinship(targetPgid int64) bool {
 	return false
 }
 
-
-
 // Adopt rebinds identity on a RUNNING record — only when the old
 // generation's leader is provably dead AND its recorded group provably
 // empty. Generation increments; hungSince clears.
@@ -378,7 +376,6 @@ func defaulted(value, fallback int) int {
 	}
 	return value
 }
-
 
 // parentOf answers a live pid's parent through the identity package's
 // per-platform reader; Unknown or dead answers refuse the walk.
