@@ -147,3 +147,60 @@ func TestScanPlansClassification(t *testing.T) {
 		}
 	}
 }
+
+// The monitor facility's scan fills: job facts with waiter liveness, run
+// facts with lifecycle and attestation, live runs joining Busy, and the
+// attestation freshness/identity rules.
+func TestMonitorFacts(t *testing.T) {
+	root := t.TempDir()
+	prober := scanProber{
+		verdicts: map[int64]identity.Liveness{601: identity.Alive, 602: identity.Alive},
+		starts:   map[int64]int64{601: 7000, 602: 7500},
+	}
+	nonce := strings.Repeat("cd", 16)
+	writeFile(t, root, "artifacts/agents/jobs/j1.json",
+		`{"jobId":"j1","role":"impl","runtime":"codex","status":"running","mainId":"main-x","startedAt":"2026-08-15T10:00:00Z"}`)
+	writeFile(t, root, "artifacts/agents/runs/live-run.json",
+		`{"schemaVersion":1,"runId":"live-run","kind":"suite","display":"suite work","custody":"wrapped",`+
+			`"generation":1,"pid":601,"pidStartedAt":7000,"pgid":601,"launchNonce":"`+nonce+`",`+
+			`"log":"/tmp/x.log","startedAt":"2026-08-15T10:00:00Z","mainId":"main-x","sessionId":"s","goalId":"",`+
+			`"staleAfterMin":30,"windDownMin":10,"evidence":{"mode":"exit-sidecar"},`+
+			`"expect":{"green":"gg","red":"rr","hung":"hh","unknown":"uu"},"status":"running","acked":false}`)
+	writeFile(t, root, "artifacts/agents/runs/broken-run.json", "{torn")
+	// A fresh attestation by a live watcher covering the run's triple.
+	writeFile(t, root, "artifacts/agents/supervision/runs-pass.json",
+		`{"completedAt":"`+time.Now().UTC().Format("2006-01-02T15:04:05Z")+`",`+
+			`"watcherPid":602,"watcherStart":7500,`+
+			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
+
+	scan := scanWithProber(root, prober)
+	if len(scan.Jobs) != 1 || scan.Jobs[0].MainId != "main-x" || scan.Jobs[0].WaiterLive {
+		t.Fatalf("job facts wrong: %+v", scan.Jobs)
+	}
+	if len(scan.Runs) != 1 {
+		t.Fatalf("run facts wrong: %+v", scan.Runs)
+	}
+	fact := scan.Runs[0]
+	if !fact.Supervised || fact.ProbeState != "alive" || fact.ExpectGreen != "gg" {
+		t.Fatalf("run fact fields wrong: %+v", fact)
+	}
+	busyHasRun := false
+	for _, item := range scan.Busy {
+		if item.Kind == "run" && strings.Contains(item.Detail, "live-run") {
+			busyHasRun = true
+		}
+	}
+	if !busyHasRun {
+		t.Fatal("live run missing from Busy")
+	}
+	if len(scan.RunUnreadable) != 1 || !strings.Contains(scan.RunUnreadable[0], "broken-run") {
+		t.Fatalf("torn run record did not surface: %v", scan.RunUnreadable)
+	}
+
+	// A DEAD watcher's attestation supervises nothing.
+	prober.verdicts[602] = identity.Dead
+	scan = scanWithProber(root, prober)
+	if scan.Runs[0].Supervised {
+		t.Fatal("a dead watcher's attestation was believed")
+	}
+}
