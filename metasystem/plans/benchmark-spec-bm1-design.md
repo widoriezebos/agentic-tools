@@ -4,7 +4,7 @@
 - Goal and current status: design the first benchmark spec, a task runner the metasystem builds from scratch unattended, substantial enough that building it successfully means something, and shaped so the result becomes the fixture for the two benchmarks after it. Status: design critique CLOSED (round 9); artifact critique CLOSED by join at round 5 (2026-08-05): 41 material findings across rounds BA-1 to BA-4, zero in round 5, all five rounds joined mechanically
 - In flight right now: nothing
 - Decisions made (and who made them): the user chose the three-benchmark structure and the task-runner subject on 2026-08-05; design decisions S-1 through S-7 taken here with recorded defaults
-- Waiting on the human: the fence sizing in S-6, which is larger than Mission Zero's and costs real money
+- Waiting on the human: nothing — the fence sizing was approved in writing (2026-08-05 blanket + the 2026-08-10 cap revision) and the series ran to completion
 - Dead ends: a log summariser was drafted first and discarded: the subject was picked without asking, and it was too shallow to discriminate. A diff and patch toolkit was rejected because the core algorithm is a well-known exercise, so it would partly measure recall. An append-only store with compaction was rejected because its most interesting property, crash safety, cannot be graded in minutes
 - Next step: the grader build is dispatched to Codex (item S-C, v0.1 scope per the manifest); Mission Zero's contract awaits the human's signature; fences for BM-1 still need human approval before any BM-1 run
 
