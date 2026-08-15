@@ -2,13 +2,21 @@
 
 Working Mode: design
 
-Owner: main session (delegate), backlog item 14. Status: r5 — folds
-the thirteen r4 findings (critiques at
-plans/goal-system-critique-r{1..4}.md). The obligation matrix passes
-the gate's STRUCTURAL check; its rows stay PARTIAL until
-implementation, so the gate exits 1 by design until completion (r4's
-"satisfies" wording was wrong and is retracted). Human rulings (D66)
-remain fixed input. Awaiting r5 critique.
+Owner: main session (delegate), backlog item 14. Status: r6 — folds
+the eight r5 findings (critiques at
+plans/goal-system-critique-r{1..5}.md; trajectory 16/14/13/13/8,
+ten of thirteen r4 findings confirmed closed). r6 decides: open
+promotes when no Current exists and queued-only has a defined
+block-once verdict; baseline bootstrap is reconcile-only (reads
+never mutate, unbaselined mutation refuses); the program-start
+doctrine gains an audit row (GOAL-19, the compensating control for
+the accepted blind spot); Busy is the existing three-class inventory
+by reference; Unreadable vetoes both outcomes; the sessions map is
+capped at 128 with sessionId hygiene; mission-seat mutation refusal
+moves to the verb on METASYSTEM_MISSION_ID; the family name `goal`
+is signed (D67). The obligation matrix (GOAL-01..21) stays PARTIAL
+until implementation; the gate exits 1 by design until completion.
+Human rulings (D66) remain fixed input. Awaiting r6 critique.
 
 ## The problem, in the human's words and one incident
 
@@ -115,9 +123,12 @@ the per-stream in-flight authority; the verdict's precedence
 
 ## Verbs and the transition table (r2's G-14)
 
-Family `goal` (name needs the usual verb sign-off; `report goal-*`
-is the fallback): open, set-next, promote, park, unpark, done,
-reopen, declare-free, prune, list, next, reconcile. Byte bounds are
+Family `goal` — SIGNED (r5 finding 8, delegated decision D67): a
+top-level family in the router, not `report goal-*` sub-verbs; the
+doctrine commands humans and agents type (`goal open`, `goal next`)
+are the surface, and a mutating ledger is not diagnostics-shaped.
+Verbs: open, set-next, promote, park, unpark, done, reopen,
+declare-free, prune, list, next, reconcile. Byte bounds are
 COMPLETE (r4 finding 12): intent ≤160, next step ≤240, id ≤64,
 Evidence ≤3 lines of ≤200 bytes, Parked-because ≤240, Concluded
 ≤240; the parser refuses any excess at write and flags it degraded
@@ -125,7 +136,7 @@ at read.
 
 | From \ verb | open | promote | park | unpark | done | reopen | declare-free |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| (no such id) | → Queued (or → Current with --current when none current) | refuse | refuse | refuse | refuse | refuse | n/a |
+| (no such id) | → Current when no Current exists (the one-command program start — r5 finding 1); → Queued otherwise | refuse | refuse | refuse | refuse | refuse | n/a |
 | Queued | refuse (duplicate) | → Current (refuse if one exists) | → Parked | refuse | refuse | refuse | n/a |
 | Current | refuse | refuse (already) | → Parked; REQUIRES --then <queued-id> or --and-none exactly like done (r3 finding 4: parking the only Current may not manufacture an illegal ledger) | refuse | → Done; REQUIRES --then <queued-id> or --and-none (writes Goal-free) | refuse | n/a |
 | Parked | refuse | refuse | refuse | → Queued | refuse | refuse | n/a |
@@ -153,16 +164,19 @@ holding the last accepted ledger's full bytes and digest, written
 AFTER the ledger in verb order; on crash between the two writes the
 digest mismatches, the state degrades, and reconcile repairs — the
 crash window is a named degraded state, never silence.
-INITIALIZATION (r4 finding 2): adoption seeds goals.md AND
-goals-accepted.json together (the adopter's plans-set rebuild and
-its exact-files fixture both gain the pair); on an EXISTING
-installation, the first `goal` verb ever run initializes the
-baseline from the ledger it accepts — and when a ledger exists with
-NO baseline and no verb has run, the verdict treats it as degraded
-with the display naming `goal reconcile` as the bootstrap, which
-adopts the ledger as the first accepted state after full grammar and
-zero-history transition checks (every block must be reachable from
-empty — reconcile's replay handles genesis). RECONCILE
+INITIALIZATION IS RECONCILE-ONLY (r4 finding 2, sharpened by r5
+finding 2): adoption seeds goals.md AND goals-accepted.json together
+(the adopter's plans-set rebuild and its exact-files fixture both
+gain the pair). On an existing installation, ledger-without-baseline
+has exactly ONE authority path: `goal reconcile`, which adopts the
+ledger as the first accepted state after full grammar and
+genesis-replay transition checks (every block reachable from empty).
+Read verbs (list, next) NEVER mutate anything — not the ledger, not
+the baseline; a MUTATING verb invoked on an unbaselined ledger
+REFUSES with "no accepted baseline; run `goal reconcile` first" (it
+must not trust bytes reconciliation never accepted); the verdict
+reports the state as degraded naming the same command. One
+transition, one owner, no verb-has-run marker to invent. RECONCILE
 REPLAYS AUTHORITY (r3 finding 3): it computes the block-level delta
 between the accepted bytes (which it has — this is why the baseline
 keeps full bytes, not a digest alone) and the edited ledger, maps
@@ -185,6 +199,15 @@ state the equivalent verb sequence would have refused.
      "diagnostics": ["..."],
      "display": "..."}
 
+- **QUEUED-ONLY is a defined verdict state** (r5 finding 1): a
+  legal ledger with zero Current and a non-empty queue (reachable
+  via reopen, which drops Goal-free) yields goal=null,
+  ledgerStatus="queued-only"; when the scanner is all-empty it
+  blocks ONCE with "no current goal; the queue holds <first queued
+  id>: `goal promote <id>` or park it", keyed on the sha256 of the
+  Queued section bytes stored in blockedGoalRevisions like any
+  revision — never a silent all-clear, never arbitrary selection,
+  never forced promotion.
 - **The revision is DEFINED** (r3 finding 5): sha256 of the Current
   block's exact bytes (heading through its last field line). An
   identical reopened goal therefore does NOT re-block — intended: an
@@ -197,7 +220,12 @@ state the equivalent verb sequence would have refused.
   str, "blockedGoalRevisions": [≤64, FIFO-evicted],
   "blockedFreeDigests": [≤16, FIFO-evicted]}}}. lastTouched updates
   on every write; sessions with lastTouched older than 30 days drop
-  on any write; the caps bound Stop latency and storage by
+  on any write; the sessions MAP ITSELF is capped at 128 entries
+  with oldest-lastTouched eviction on overflow (r5 finding 6: expiry
+  is not a cardinality bound), and a sessionId is accepted only
+  matching ^[A-Za-z0-9._-]{1,128}$ — anything else is replaced by
+  its sha256 hex before use (the hook takes the runtime's string
+  unvalidated today). The caps bound Stop latency and storage by
   construction. Flock with a 2-SECOND DEADLINE (the installed Stop
   hook runs a 5-second budget; a wedged lock degrades, never
   hangs); atomic write; check-and-record atomic under the lock;
@@ -205,8 +233,12 @@ state the equivalent verb sequence would have refused.
 - **The scanner grows a STRUCTURED result first** (r4 finding 5 —
   a named prerequisite, in this change's scope): openwork gains
   `ScanResult{Open []Item, WaitingOnHuman []Item, StalePlans []Item,
-  Busy bool, Unreadable []string}` (Busy = live delegate jobs or
-  gate runs, the fact the hook reads separately today); the legacy
+  Busy bool, Unreadable []string}` (Busy = internal/report's
+  EXISTING three-class active-work inventory by reference — live
+  delegate jobs, mission runners by argv, gate runs
+  (runningwork.go); r5 finding 4: omitting missions would prod a
+  goal at a checkout whose hook simultaneously says STILL WORKING);
+  the legacy
   []string surface remains as a formatter over it for existing
   callers. The verdict verb consumes ScanResult — precedence is then
   DECIDABLE: Busy → no goal clause (an active checkout needs no
@@ -215,8 +247,14 @@ state the equivalent verb sequence would have refused.
   goal clause suppressed (no contradictory imperative); StalePlans
   stay warning-only and NEVER block (r4's accidental-blockable
   catch); all empty → the goal blocks once with "open work is done;
-  the goal file names the next step: <step verbatim>". Unreadable
-  inputs populate diagnostics (never silently dropped). Goal-free
+  the goal file names the next step: <step verbatim>". UNREADABLE
+  HAS A DECISION OUTCOME (r5 finding 5): non-empty Unreadable vetoes
+  BOTH the all-clear sentence AND any goal block for that turn — the
+  scanner cannot assert "nothing left" over inputs it could not
+  read, and must not prod with a goal when unread files may hold
+  open work; the paths surface in diagnostics AND in the
+  non-blocking display ("N inputs unreadable: <paths>"), warning
+  every turn until readable, never blocking by themselves. Goal-free
   reports its declaration or staleness block; DEGRADED ledger: the
   verdict sets shouldBlock=false, ledgerStatus=degraded, suppresses
   the all-clear sentence, and the display explains — degradation
@@ -287,10 +325,15 @@ Reading goals.md rides the goal parser (read-only, no new
 authority); a missing, absent, or degraded ledger produces NO line —
 prompt assembly never degrades and never blocks on goal state.
 Runner-side and runtime-neutral: every host of every runtime gets
-the same line the same way. Hosts do not mutate goals (they are
-lease holders mid-mission; goal mutation from inside a mission is
-refused by a runner-context check — the mission's intent is the
-contract, not the goal file).
+the same line the same way. Hosts do not mutate goals, ENFORCED
+AT THE VERB (r5 finding 7): the runner cannot intercept a later
+subprocess, and mission hosts hold MAIN leases so holder-authority
+alone permits them — so every goal-MUTATION verb refuses when
+METASYSTEM_MISSION_ID is set in its environment (the marker the
+runner already exports to every host of every runtime — an
+engine-owned seat fact, exchangeability-clean), with "goal mutation
+inside a mission is refused; the mission's intent is the contract".
+Read verbs and the verdict remain available everywhere.
 
 ## Delegates (D66, question 1 — the human's ruling)
 
@@ -407,6 +450,9 @@ conformance table), the doctrine files above, adopt.sh, fixtures.
 | GOAL-13 | MEDIUM | Ledger honesty | Prune reports dropped blocks on stdout; docs state the ledger is not an audit log | internal/report goal verbs | goalverbs.go | TestPruneReportsDrops | — | PARTIAL | implement |
 | GOAL-14 | CRITICAL | Mutation discipline: initialization | Adoption seeds goals.md + goals-accepted.json together; ledger-without-baseline degrades and reconcile bootstraps via genesis replay | scripts/adopt.sh + internal/report | adopt.sh + goalverbs.go | adopt fixture pair-assertion + TestReconcileGenesis | adopt fixture | PARTIAL | implement |
 | GOAL-15 | HIGH | Goal-free staleness | declare-free renews (the named idempotence exception); stale digests block once via blockedFreeDigests | internal/report | goalverbs.go + turnverdict.go | TestGoalFreeRenewAndBlockOnce | fixture leg | PARTIAL | implement |
-| GOAL-16 | HIGH | Scanner facts | openwork exposes ScanResult (Open/WaitingOnHuman/StalePlans/Busy/Unreadable); legacy strings become a formatter; stale plans never block | internal/report | openwork.go | TestScanResultClassification | supervision fixture leg | PARTIAL | implement |
-| GOAL-17 | HIGH | Diagnostics | Unreadable plan/record inputs are reported in diagnostics, never silently dropped | internal/report | openwork.go | TestUnreadableInputsSurface | — | PARTIAL | implement |
+| GOAL-16 | HIGH | Scanner facts | openwork exposes ScanResult; Busy = the existing three-class inventory (delegate jobs, mission runners, gate runs) by reference; stale plans never block | internal/report | openwork.go + runningwork.go | TestScanResultClassification incl. live-mission Busy | supervision fixture leg | PARTIAL | implement |
+| GOAL-17 | HIGH | Unreadable safety | Non-empty Unreadable vetoes both the all-clear and any goal block; paths surface in diagnostics and the non-blocking display | internal/report | openwork.go + turnverdict.go | TestUnreadableVetoesBothOutcomes | hook transport leg | PARTIAL | implement |
 | GOAL-18 | MEDIUM | Delivery contract audit | The instruction audit checks the conformance table's rows against shipped enforcement configs | internal/audit | metasystem.go | TestConformanceTableAudit | — | PARTIAL | implement |
+| GOAL-19 | CRITICAL | Program-start doctrine is audited | The instruction audit content-checks the doctrine's program-start rule (programs start with `goal open`) — the sole compensating control for the accepted blind spot | internal/audit | metasystem.go | TestDoctrineProgramStartRule | — | PARTIAL | implement |
+| GOAL-20 | CRITICAL | One-command start lands actionable | `goal open` on a no-Current ledger creates the Current goal; queued-only ledgers get the defined block-once verdict, never a silent all-clear | internal/report goal verbs | goalverbs.go + turnverdict.go | TestOpenPromotesWhenEmpty + TestQueuedOnlyVerdict | — | PARTIAL | implement |
+| GOAL-21 | HIGH | Mission seat cannot mutate | Every goal-mutation verb refuses when METASYSTEM_MISSION_ID is set; reads and the verdict stay available | internal/report goal verbs | goalverbs.go | TestGoalMutationRefusesMissionSeat | — | PARTIAL | implement |

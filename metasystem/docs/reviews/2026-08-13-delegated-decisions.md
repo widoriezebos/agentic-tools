@@ -1939,6 +1939,21 @@ the goal orientation line in every turn prompt — runner-side,
 runtime-neutral, no new write authority. Path per his order: design,
 critique loop, implement.
 
+## D67 — 2026-08-15: the goal family is a top-level verb family named `goal`
+
+The goal-system critic (r5 finding 8) required the open naming
+question closed before implementation: `goal ...` as its own router
+family versus `report goal-*` sub-verbs. Decided: top-level `goal`
+family. The doctrine commands humans and agents type (`goal open`
+starts a program; `goal next` is the universal fallback named in
+every projection) are the public surface; a mutating ledger with its
+own transition table and authority matrix is not diagnostics-shaped,
+and the router's family/verb registry is exactly the seam for it.
+Note the standing constraint that CLI consolidation of EXISTING
+families needs Wido's sign-off — this adds a new family for a new
+feature and consolidates nothing. Revert cost if overruled: a rename
+in cmd/metasystem plus doctrine text, no on-disk contract changes.
+
 ## HUMAN RULING — 2026-08-15 afternoon: run the backlog to completion
 
 Wido, in writing: continue the goal system "until it is fully
