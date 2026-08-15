@@ -245,7 +245,9 @@ func planFiles(root string) []string {
 	sort.Strings(paths)
 	var out []string
 	for _, path := range paths {
-		if filepath.Base(path) != "README.md" {
+		// goals.md is the goal ledger, read only by the goal parser
+		// (scanner disjointness); README.md is the format doc.
+		if base := filepath.Base(path); base != "README.md" && base != "goals.md" {
 			out = append(out, path)
 		}
 	}

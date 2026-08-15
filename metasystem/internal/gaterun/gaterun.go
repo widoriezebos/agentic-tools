@@ -13,9 +13,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -37,32 +41,16 @@ func processStart(pid int64) (int64, bool) {
 	return exact.StartedAt.Unix(), true
 }
 
-// alive reports whether the process identified by (pid, start) is still
-// running. An unreadable start time cannot prove the recorded process died, so
-// the safe answer is alive; a readable mismatch proves pid reuse.
-func alive(pid, start int64) bool {
-	switch err := unix.Kill(int(pid), 0); err {
-	case nil:
-	case unix.EPERM:
-		return true
-	default:
-		return false
-	}
-	actual, ok := processStart(pid)
-	if !ok {
-		return true
-	}
-	return actual == start
-}
-
-// Register records that the given process is a gate run. It returns the marker
-// path, or an empty path when the pid's start time is unreadable: a marker
-// that cannot be verified later would be believed forever, so recording
-// nothing is safer.
+// Register records that the given process is a gate run. NONEMPTY-OR-ERROR
+// (goal-system GOAL-17): an unreadable process identity is an error the
+// caller must surface, never a silent success — a gate that cannot record
+// its liveness must not run invisibly. The marker is written atomically
+// (temp+rename) so a concurrent scan can never read, and prune, a
+// half-written record.
 func Register(root string, pid int64, gate string) (string, error) {
 	start, ok := processStart(pid)
 	if !ok {
-		return "", nil
+		return "", fmt.Errorf("gate register: process identity for pid %d is unreadable; refusing an unverifiable marker", pid)
 	}
 	dir := markerDir(root)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -78,7 +66,7 @@ func Register(root string, pid int64, gate string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	if err := atomicfile.WriteVolatile(path, string(data)+"\n"); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -92,17 +80,37 @@ type liveMarker struct {
 	Gate         string
 }
 
-// liveMarkers scans the checkout's gate-run markers and is the one home of
-// the prune policy: a marker whose record is unparsable or whose process is
-// gone is deleted; an unreadable file is left alone. Only live, well-formed
-// markers return. Running and Fence both build on this scan.
-func liveMarkers(root string) []liveMarker {
-	paths, _ := filepath.Glob(filepath.Join(markerDir(root), "*.json"))
+// Survey is the lossless classification (goal-system GOAL-17): live
+// well-formed markers return as facts; every marker the scan cannot vouch
+// for surfaces in Unreadable instead of vanishing. Deletion remains
+// correct ONLY for a provably dead process — an unparsable or unreadable
+// marker whose process is alive (or unknowable) is a live gate the scan
+// must not erase.
+type SurveyResult struct {
+	Live       []Marker
+	Unreadable []string
+}
+
+// Marker is one live gate run, exported for the scanner.
+type Marker struct {
+	Pid  int64
+	Gate string
+}
+
+// Survey classifies every marker in the checkout.
+func Survey(root string) SurveyResult {
+	var result SurveyResult
+	dir := markerDir(root)
+	paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		result.Unreadable = append(result.Unreadable, dir+": "+err.Error())
+		return result
+	}
 	sort.Strings(paths)
-	var out []liveMarker
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
+			result.Unreadable = append(result.Unreadable, path+": "+err.Error())
 			continue
 		}
 		var marker struct {
@@ -111,20 +119,71 @@ func liveMarkers(root string) []liveMarker {
 			Gate         string `json:"gate"`
 		}
 		if json.Unmarshal(data, &marker) != nil || marker.Pid == nil || marker.PidStartedAt == nil {
-			_ = os.Remove(path)
+			// Register always writes <pid>.json atomically, so a file
+			// whose name is not a pid was never a gate marker — prune it.
+			// A <pid>.json with unparsable content is deleted only when
+			// that process is provably gone; a live or unknowable owner
+			// surfaces instead of vanishing.
+			pidFromName, parseErr := strconv.ParseInt(strings.TrimSuffix(filepath.Base(path), ".json"), 10, 64)
+			if parseErr != nil || provablyGone(pidFromName) {
+				_ = os.Remove(path)
+				continue
+			}
+			result.Unreadable = append(result.Unreadable, path+": unparsable marker for a live or unknowable process")
 			continue
 		}
-		if !alive(*marker.Pid, *marker.PidStartedAt) {
+		switch livenessOf(*marker.Pid, *marker.PidStartedAt) {
+		case identity.Alive:
+			result.Live = append(result.Live, Marker{Pid: *marker.Pid, Gate: marker.Gate})
+		case identity.Dead:
 			_ = os.Remove(path)
+		default:
+			result.Unreadable = append(result.Unreadable, path+": gate liveness unknown")
+		}
+	}
+	return result
+}
+
+// livenessOf is the three-way verdict on a recorded identity.
+func livenessOf(pid, start int64) identity.Liveness {
+	switch err := unix.Kill(int(pid), 0); err {
+	case nil, unix.EPERM:
+	default:
+		return identity.Dead
+	}
+	actual, ok := processStart(pid)
+	if !ok {
+		// The process exists but its start is unreadable: unknown, and
+		// unknown never authorizes deletion.
+		return identity.Unknown
+	}
+	if actual == start {
+		return identity.Alive
+	}
+	return identity.Dead
+}
+
+// provablyGone is true only on a definitive absence.
+func provablyGone(pid int64) bool {
+	return unix.Kill(int(pid), 0) == unix.ESRCH
+}
+
+// liveMarkers keeps the historical live-only view Running and Fence build
+// on, now riding the lossless classification.
+func liveMarkers(root string) []liveMarker {
+	var out []liveMarker
+	for _, marker := range Survey(root).Live {
+		start, ok := processStart(marker.Pid)
+		if !ok {
 			continue
 		}
-		out = append(out, liveMarker{Pid: *marker.Pid, PidStartedAt: *marker.PidStartedAt, Gate: marker.Gate})
+		out = append(out, liveMarker{Pid: marker.Pid, PidStartedAt: start, Gate: marker.Gate})
 	}
 	return out
 }
 
-// Running reports whether any gate is still running in this checkout, pruning
-// every marker whose process is gone or whose record is unparsable.
+// Running reports whether any gate is still running in this checkout,
+// pruning markers whose processes are provably gone.
 func Running(root string) bool {
 	return len(liveMarkers(root)) > 0
 }

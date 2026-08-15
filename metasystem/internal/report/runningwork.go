@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 )
 
 // The turn-end "is anything still working?" answer (review
@@ -66,33 +64,29 @@ func missionRootBase(argv string) string {
 // RunningWorkClause composes the active clause of the turn-end sentence —
 // empty when nothing is running. The wording is the hook's historical one:
 // "N helper agent(s): role id [status, runtime]; ...", ", and a mission
-// still going in a, b", ", and the test gates".
+// still going in a, b", ", and the test gates". The facts now come from
+// the checkout-scoped scanner (goal-system GOAL-16): argv matching
+// answered for the whole machine, so another checkout's mission could
+// swing this checkout's sentence.
 func RunningWorkClause(repo string) string {
-	var details []string
-	records, _ := filepath.Glob(filepath.Join(repo, "artifacts", "agents", "jobs", "*.json"))
-	sort.Strings(records)
-	for _, record := range records {
-		if detail, ok := runningJobDetail(record); ok {
-			details = append(details, detail)
-		}
-	}
-
-	var missions []string
+	scan := Scan(repo)
+	var details, missions []string
 	gates := false
 	seen := map[string]bool{}
-	if processes, err := census.EnumerateProcesses(); err == nil {
-		for _, process := range processes {
-			if missionRunnerArgv.MatchString(process.Argv) {
-				if base := missionRootBase(process.Argv); base != "" && !seen[base] {
-					seen[base] = true
-					missions = append(missions, base)
-				}
+	for _, item := range scan.Busy {
+		switch item.Kind {
+		case "job":
+			details = append(details, item.Detail)
+		case "mission":
+			if !seen[item.Id] {
+				seen[item.Id] = true
+				missions = append(missions, item.Id)
 			}
-			if gateArgv.MatchString(process.Argv) {
-				gates = true
-			}
+		case "gate":
+			gates = true
 		}
 	}
+	sort.Strings(details)
 	sort.Strings(missions)
 	return composeRunningClause(details, missions, gates)
 }
