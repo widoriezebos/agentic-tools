@@ -2,26 +2,25 @@
 
 Working Mode: design
 
-Owner: main session (delegate), backlog item 14. Status: r10 —
-folds the five r9 findings (critiques at
-plans/goal-system-critique-r{1..9}.md; trajectory
-16/14/13/13/8/5/4/4/5). r9 killed r8's GOAL-22 fix outright —
-self-identity finalization is circular; publication is now
-LEASE-SERIALIZED (losers never write the shared record) — and
-caught an ownership graph that could not compile: internal/goal
-(grammar, parser, verbs, verdict) and the leaf internal/missionstate
-(the active-mission rule) make the graph acyclic by construction.
-Gate registration follows the real snapshot topology (the parent
-registers the serving root across the gate span); ledger absence is
-baseline-aware (pre-adoption advisory vs post-adoption deletion
-degraded); Busy is an inventory, not a bool. r9's critic explicitly
-fenced the adjacent-defect class (stale-lease cleanup, lease-release
-ownership, typed gate outcomes, watchdog delivery acks, plans-dir
-enumeration) as follow-up obligations, not convergence blockers.
-The obligation matrix (GOAL-01..22) stays PARTIAL until
+Owner: main session (delegate), backlog item 14. Status: r11 —
+folds the four r10 findings (critiques at
+plans/goal-system-critique-r{1..10}.md; trajectory
+16/14/13/13/8/5/4/4/5/4). r10 CONFIRMED every core mechanism
+(lease-serialized publication closes the race; the missionstate
+extraction works; serving-root registration is implementable); its
+four findings were contract completions, all decided here:
+ScanResult is goal-owned and report fills it across the declared
+report→goal edge; post-adoption-deletion repair is RESTORATION from
+the baseline's full bytes; Busy items carry a bounded detail string
+so the preserved display needs no second scan; the GOAL-22 proof
+asserts the schedule the fix makes possible (B neither publishes
+nor finalizes). Stale internal/report owners in GOAL-01/12/14/15
+corrected. The obligation matrix (GOAL-01..22) stays PARTIAL until
 implementation; the gate exits 1 by design until completion. Human
-rulings (D66/D67) remain fixed input. Awaiting r10 critique — same
-convergence framing as r9.
+rulings (D66/D67) remain fixed input. Awaiting r11 critique — the
+stop criterion governs: mechanisms are all confirmed, so REVISE now
+requires a contract that would make an implementer build the wrong
+thing.
 
 ## The problem, in the human's words and one incident
 
@@ -116,7 +115,12 @@ without forbidding the all-clear. With a BASELINE PRESENT, an absent
 ledger is POST-ADOPTION DELETION — degraded exactly like a mismatch
 (the baseline promised detection of every surviving change, and
 deletion is a change): all-clear vetoed, display names `goal
-reconcile` as the repair. A PRESENT-but-malformed ledger stays
+reconcile` as the repair, and RECONCILE'S REPAIR HERE IS
+RESTORATION (r10 finding 2: with no candidate bytes there is no
+delta to replay): it rewrites goals.md from the baseline's full
+accepted bytes and reports "restored from baseline" — this is why
+the baseline keeps full bytes, twice over. Wanting the ledger gone
+has a legal path (the verbs); rm is not it. A PRESENT-but-malformed ledger stays
 degraded as before. Fresh adoption
 ships the declaration; existing installations bootstrap when ready. Every field
 above carries its byte bound (r2's G-15 tail: intent and id are
@@ -260,8 +264,12 @@ state the equivalent verb sequence would have refused.
   Busy []Item, Unreadable []string}` — Busy is an INVENTORY, not a
   bool (r9 finding 5: the hook's display names which jobs, missions,
   and gates are live; a bool would force a second scanner or lose
-  the detail), each Item carrying kind (job|mission|gate) and id;
-  emptiness is the idle test. Busy keeps r5's three classes
+  the detail), each Item carrying kind (job|mission|gate), id, and
+  a bounded detail string (≤200 bytes — the display line the
+  scanner already composes today, e.g. "role jobId [status,
+  runtime]"; r10 finding 3: kind+id alone cannot reproduce the
+  preserved output, and the hook renders detail verbatim with no
+  second scan); emptiness is the idle test. Busy keeps r5's three classes
   but from CHECKOUT-SCOPED FILE FACTS ONLY (r6 finding 2: argv
   matching answers for the whole machine — gaterun.go documents
   exactly that defect): live delegate job records under this root
@@ -463,9 +471,13 @@ verdict; a NEW LEAF internal/missionstate owns the active-mission
 rule (the record+kernel-identity authority extracted from
 missionrunner's status path, which becomes its first consumer).
 Edges: goal→missionstate; mission→goal; dispatch→goal;
-missionrunner→{mission, dispatch, missionstate}; report→goal for
-display composition. No cycle exists; every GOAL row's owner/code
-target reads accordingly (goalverbs.go and turnverdict.go live in
+missionrunner→{mission, dispatch, missionstate}; report→goal. THE
+SCAN BOUNDARY RIDES THAT LAST EDGE (r10 finding 1): ScanResult is
+DEFINED IN internal/goal — it is the verdict's input contract — and
+internal/report's scanner produces a goal.ScanResult (report
+imports goal, the declared direction; the verdict never imports
+report). No cycle exists; every GOAL row's owner/code target reads
+accordingly (goalverbs.go and turnverdict.go live in
 internal/goal). Item 15's design owns run enrichment with its own
 tests when it exists.
 
@@ -540,7 +552,7 @@ conformance table), the doctrine files above, adopt.sh, fixtures.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GOAL-01 | CRITICAL | The ledger: staleness rule | A Goal-free declaration whose scan digest no longer matches blocks once and never reads as all-clear | internal/report goal parser + verdict | internal/report/goal.go | TestGoalFreeStaleness | fixture leg: declare, add a stream, verdict blocks | PARTIAL | implement |
+| GOAL-01 | CRITICAL | The ledger: staleness rule | A Goal-free declaration whose scan digest no longer matches blocks once and never reads as all-clear | internal/goal goal parser + verdict | internal/goal/goal.go | TestGoalFreeStaleness | fixture leg: declare, add a stream, verdict blocks | PARTIAL | implement |
 | GOAL-02 | CRITICAL | Mutation discipline | Reconcile replays FULL transition authority over the accepted-bytes delta; a manual edit never reaches a state the verbs would refuse | internal/goal | internal/goal/goalverbs.go | TestReconcileReplaysAuthority (human-origin done via edit refused for MAIN) | fixture: edit + reconcile round-trip | PARTIAL | implement |
 | GOAL-03 | CRITICAL | Mutation discipline | Ledger-then-accepted write order; crash between the two degrades and reconcile repairs; accepted state lives at plans/goals-accepted.json | internal/goal | internal/goal/goalverbs.go | TestAcceptedStateCrashWindow | fixture: kill between writes | PARTIAL | implement |
 | GOAL-04 | CRITICAL | The turn verdict | Dual-slot block-once: the G-01 sequence cannot re-block; state flock bounded at 2s; concurrent Stop calls serialize; sessions map capped at 128 oldest-evicted; sessionId normalized once at the hook boundary (regex-or-sha256); watchdog-surfaced state lives IN the map via --watchdog-surfaced (loose per-session files retired — the map is the only Stop-state) | internal/goal verdict + hook | turnverdict.go + supervision-hook.sh | TestVerdictDualSlotSequence + goroutine race test + TestSessionMapCapAndHygiene + TestWatchdogProtocol (changed-same-clear-same + concurrent exactly-once via surfaceWatchdog) | hook boundary fixture | PARTIAL | implement |
@@ -551,14 +563,14 @@ conformance table), the doctrine files above, adopt.sh, fixtures.
 | GOAL-09 | HIGH | Mission hosts | AssemblePrompt emits the optional section and the turn-prompt validator accepts it; goal absence produces no line and never blocks assembly | internal/mission + internal/validate | prompt.go + turnprompt.go | TestPromptGoalSection both ways | runner fixture leg | PARTIAL | implement |
 | GOAL-10 | HIGH | Absence semantics | Pre-adoption absence (no baseline) is advisory; post-adoption deletion (baseline present, ledger absent) is degraded with all-clear vetoed and reconcile named | internal/goal | turnverdict.go | TestAbsenceAdvisoryVsDeletionDegraded | — | PARTIAL | implement |
 | GOAL-11 | HIGH | Delivery contract | Conformance table rows carry only evidenced states; AGENTS.md turn-end amendment ships | docs/design + AGENTS.md | contract doc | audit leg: table matches shipped configs | live blocking observation upgrades claude's row by date | PARTIAL | implement |
-| GOAL-12 | MEDIUM | Item-15 seam | The verdict verb's goal-facts read interface is exported and UNCONSUMED in item 14 | internal/report | turnverdict.go | compile-level + a no-enrichment assertion | — | PARTIAL | implement |
+| GOAL-12 | MEDIUM | Item-15 seam | The verdict verb's goal-facts read interface is exported and UNCONSUMED in item 14 | internal/goal | turnverdict.go | compile-level + a no-enrichment assertion | — | PARTIAL | implement |
 | GOAL-13 | MEDIUM | Ledger honesty | Prune reports dropped blocks on stdout; docs state the ledger is not an audit log | internal/goal | goalverbs.go | TestPruneReportsDrops | — | PARTIAL | implement |
-| GOAL-14 | CRITICAL | Mutation discipline: initialization | Adoption seeds goals.md + goals-accepted.json together; ledger-without-baseline degrades and reconcile bootstraps via genesis replay | scripts/adopt.sh + internal/report | adopt.sh + goalverbs.go | adopt fixture pair-assertion + TestReconcileGenesis | adopt fixture | PARTIAL | implement |
-| GOAL-15 | HIGH | Goal-free staleness | declare-free renews (the named idempotence exception); stale digests block once via blockedFreeDigests | internal/report | goalverbs.go + turnverdict.go | TestGoalFreeRenewAndBlockOnce | fixture leg | PARTIAL | implement |
+| GOAL-14 | CRITICAL | Mutation discipline: initialization | Adoption seeds goals.md + goals-accepted.json together; ledger-without-baseline degrades and reconcile bootstraps via genesis replay | scripts/adopt.sh + internal/goal | adopt.sh + goalverbs.go | adopt fixture pair-assertion + TestReconcileGenesis | adopt fixture | PARTIAL | implement |
+| GOAL-15 | HIGH | Goal-free staleness | declare-free renews (the named idempotence exception); stale digests block once via blockedFreeDigests | internal/goal | goalverbs.go + turnverdict.go | TestGoalFreeRenewAndBlockOnce | fixture leg | PARTIAL | implement |
 | GOAL-16 | HIGH | Scanner facts | openwork exposes ScanResult; Busy is an inventory of Items (kind job|mission|gate + id) from checkout-scoped FILE facts only, correlated by internal/missionstate's record-plus-kernel-identity rule — argv matching retired; the hook display keeps its detail; stale plans never block | internal/report + internal/missionstate | openwork.go + runningwork.go + gaterun | TestScanResultClassification covering live, completed, crashed, stale-sidecar, identity-mismatch, and identity-UNKNOWN runners (Unknown joins Unreadable, never dead) + TestOtherCheckoutNeverSuppresses | supervision fixture leg | PARTIAL | implement |
 | GOAL-17 | HIGH | Unreadable safety | Non-empty Unreadable vetoes both the all-clear and any goal block; inventory-source failures join Unreadable at every edge: gate Register atomic (temp+rename), suite registration failure fatal at gate startup, live-process unreadable/unparsable markers surface (dead-only deletion), job/runner record read errors surface — enumeration failure never collapses to idle | internal/report + internal/gaterun + suite | openwork.go + runningwork.go + gaterun.go + validate-metasystem.sh + turnverdict.go | TestUnreadableVetoesBothOutcomes + TestInventoryFailureVetoes + TestGateMarkerEdges (register-scan race, live-unreadable, dead-delete, nonempty-or-error Register, parent serving-root registration across the snapshot span, go-gate self-registration) | hook transport leg | PARTIAL | implement |
 | GOAL-18 | MEDIUM | Delivery contract audit | The instruction audit checks the conformance table's rows against shipped enforcement configs | internal/audit | metasystem.go | TestConformanceTableAudit | — | PARTIAL | implement |
 | GOAL-19 | CRITICAL | Program-start doctrine is audited | The instruction audit content-checks the doctrine's program-start rule (programs start with `goal open`) — the sole compensating control for the accepted blind spot | internal/audit | metasystem.go | TestDoctrineProgramStartRule | — | PARTIAL | implement |
 | GOAL-20 | CRITICAL | One-command start lands actionable | `goal open` on a no-Current ledger creates the Current goal; queued-only ledgers get the defined block-once verdict, never a silent all-clear | internal/goal | goalverbs.go + turnverdict.go | TestOpenPromotesWhenEmpty + TestQueuedOnlyVerdict | — | PARTIAL | implement |
 | GOAL-21 | HIGH | Mission seat cannot mutate | Every goal-mutation verb refuses while the checkout has an ACTIVE mission per status.go's record-plus-kernel-identity rule — total across attended and unattended, env-strip immune; reads and the verdict stay available | internal/goal + internal/missionstate | goalverbs.go | TestGoalMutationRefusesActiveMission covering attended (live-holder lineage), unattended, env-stripped, dead-runner (mutation allowed), and identity-Unknown (mutation refused fail-closed) cases | — | PARTIAL | implement |
-| GOAL-22 | CRITICAL | Mission-fact integrity | Runner-record publication is lease-serialized: only the lease winner writes the shared record; losers never write it; finalization re-verifies lease ownership before terminal writes | internal/missionrunner + internal/missionstate | loop.go | TestOverlappingResumeKeepsWinnerRecord forcing A-acquires, B-publishes, B-loses | — | PARTIAL | implement |
+| GOAL-22 | CRITICAL | Mission-fact integrity | Runner-record publication is lease-serialized: only the lease winner writes the shared record; losers never write it; finalization re-verifies lease ownership before terminal writes | internal/missionrunner + internal/missionstate | loop.go | TestOverlappingResumeKeepsWinnerRecord: A acquires and publishes; B contends, loses, and is proven to NEITHER publish NOR finalize; A's record survives byte-identical | — | PARTIAL | implement |
