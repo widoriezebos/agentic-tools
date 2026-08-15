@@ -401,3 +401,27 @@
     doctrine (the narrative is a file produced by verbs — readable
     and writable regardless of which runtime narrates). Do not design
     or build now, per the human; pick up later.
+
+    ADDENDUM (human-raised 2026-08-15, in session — capture so the
+    idea is not lost): THE NARRATOR IS AN AGENT ROLE. The human's
+    words, near-verbatim: the various agents produce the logs and
+    everything that happens, both technically and functionally; the
+    narrator is then responsible for turning that into a consistent,
+    easy-to-understand story for the human. "We need to take the
+    information and the signals and the logs of the many agents that
+    might run in parallel and turn them into a consistent story...
+    that's not an easy thing to do. So I think that could be an
+    agent's job." Design implications to weigh when this is picked
+    up: (a) narration is judgment work — causality over chronology,
+    attribution, brevity — which is agent-shaped, while CAPTURE
+    stays deterministic (verbs and files, already true today);
+    (b) a rostered narrator role rides the existing dispatch
+    machinery and satisfies exchangeability for free — any runtime
+    can fill the seat; (c) the role must be READ-ONLY with zero
+    authority — the story is data, never instruction; (d) the role
+    contract should REQUIRE citations into the records it narrates
+    (event ids, D-entries, job ids) so every sentence is checkable —
+    the defense against a narrator inventing causality; (e) cadence
+    is on-demand or watermark-batched, never per-event — narration
+    costs tokens and the read watermark already exists in the
+    design sketch above.
