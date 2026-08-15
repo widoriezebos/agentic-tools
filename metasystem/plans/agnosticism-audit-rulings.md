@@ -1,9 +1,9 @@
 # Agnosticism audit: the ruling set
 
-- Status: DRAFT r3 — critique r2 folded (7 findings); awaiting critique r3
+- Status: DRAFT r4 — critique r3 folded (9 findings); awaiting critique r4
 - Goal: agnosticism-audit (backlog item 16, D-series: pending)
-- Next step: Fold the critique verdict when run agno-critique-r3 concludes; implement only after convergence.
-- In flight right now: run agno-critique-r3 (codex xhigh critique of this revision; watch it with: bin/metasystem run watch --id agno-critique-r3 --root .)
+- Next step: Fold the critique verdict when run agno-critique-r4 concludes; implement only after convergence.
+- In flight right now: run agno-critique-r4 (codex xhigh critique of this revision; watch it with: bin/metasystem run watch --id agno-critique-r4 --root .)
 
 The human's rule, verbatim intent (2026-08-15): "the meta system must be
 agent agnostic (it should work with Codex and Devin and any other future
@@ -20,7 +20,15 @@ hook capability bundle dropped codex/devin audit coverage, the registry
 had no adoption shape, the fake list was incomplete, instruction
 filenames missed four consumers, the shell verb schema could not express
 registration, and recovery had no outcome contract (critique r2). The
-critiques are preserved beside this plan; r3 is the r2 fold.
+critiques are preserved beside this plan. r3's fold left nine: the
+residual identifiers lacked field binding, the pure-data registry could
+not hold behavioral capabilities, the registration rows could not
+express installation reality (json-transform, user-selectable
+link/copy, directory collisions, build ordering), the `none` sentinel
+vanished, hook verification kept hardcoded consumers, recovered could
+be unmeasured, the fake list missed the identity-fixture authority
+path, more validate-metasystem rows were open-coded, and --devin-checks
+sat in shared CLI code (critique r3). r4 is the r3 fold.
 
 ## The sanctioned seams
 
@@ -36,8 +44,16 @@ critiques are preserved beside this plan; r3 is the r2 fold.
    routing whose verb NAMES are the seam's CLI face, and whose bodies
    call seam entry points only (obligation: the two Devin verbs that
    today call `usage.DevinUsage` directly reroute through the seam).
+6. `internal/usage`'s per-runtime files (usage/claude.go,
+   usage/codex.go, usage/devin.go) — the declared single owner of
+   shared usage parsing (critique r3-2 resolved the r3 contradiction:
+   these ARE seam entries; usage.go itself stays runtime-neutral).
 
-Everything else is core, and core consumes declarations only.
+Everything else is core, and core consumes declarations only. Cross-
+package consumption of per-runtime behavior goes through the
+capability table below — never a direct named call from core (Go
+imports packages, not files, so the boundary is enforced by the sweep
+check over call sites, not by the import graph).
 
 ## The sweep (r2 scope)
 
@@ -54,9 +70,19 @@ construction now.
 New leaf package `internal/runtimes`: pure data, importable by config,
 validate, audit, missionrunner, and cmd without cycles. Shell never
 parses it directly — plumbing consumes it via new thin `metasystem
-runtime` verbs (list, dirs, enforcement-config, instruction-file), per
-the core-vs-plumbing boundary: the declaration lives in Go, scripts ask
-the binary.
+runtime` verbs, per the core-vs-plumbing boundary: the declaration
+lives in Go, scripts ask the binary.
+
+Behavior does NOT live in the leaf (critique r3-2). Behavioral
+capabilities — delivery recollection (Class 5), usage recovery (Class
+6/7), the devin self-test probe (Class 13) — use SEAM-LOCAL
+REGISTRATION: each per-runtime seam file registers its function into a
+neutral capability table (keyed runtime × capability name) from its
+own package init or an explicit seam wire-up call; the pure-data
+registry declares which capabilities each runtime is EXPECTED to
+provide; a conformance test joins the two sets both ways (expected but
+unregistered fails; registered but undeclared fails). Core consumes
+lookups and neutral results only.
 
 Each runtime declares:
 - name — validated against a shell-safe grammar (kebab, `^[a-z][a-z0-9-]{0,31}$`);
@@ -66,12 +92,27 @@ Each runtime declares:
 - `adoptable` (claude, codex, devin — never fake) and ONE
   `adoptionDefault` (claude), pinning adopt.sh:53's default and
   adopt-fixtures.sh:245's expectation (critique r2-3); config
-  validation keeps consuming the FULL list including fake
+  validation keeps consuming the FULL list including fake. `none` is
+  NOT a runtime and never enters the registry: adoption and `config
+  tailor` keep it as a named non-runtime sentinel handled BEFORE
+  registry validation, preserving its exclusivity and empty-roster
+  semantics (adopt.sh:72, conftailor.go:29, adopt-fixtures.sh:387;
+  critique r3-4)
 - registration contract — the structured shape adopt.sh:311 and
-  validate-metasystem.sh:591 currently open-code: entries of
-  {source pattern, destination, kind, required|optional, copy|link}
-  so installation and byte-drift validation both consume declarations
-  (critique r2-6)
+  validate-metasystem.sh:591 currently open-code. Row vocabulary
+  (critique r3-3): operation ∈ {tree (user-selectable link|copy,
+  adopt.sh:293), copy-file, optional-profile-copy, json-transform},
+  source, destination, required|optional, collision-root (the
+  runtime-OWNED directory whose mere existence refuses adoption,
+  adopt.sh:129 — not just exact-destination collision). json-transform
+  is the enumerated escape hatch and claude's enforcement install
+  (adopt.sh:317) is its one current use; any new escape operation is a
+  doctrine edit. The `dirs` view, config directory-presence validation
+  (validate.go:339), installed-enforcement paths, and byte-drift
+  validation are all DERIVED from these rows — one owner, no parallel
+  path declarations (critique r3-3). adopt.sh builds the source-fresh
+  binary BEFORE any pre-mutation registry query (today it rebuilds
+  only after mutation, adopt.sh:50,225,268)
 - session-environment names (claude: CLAUDE_PROJECT_DIR; devin: its
   project-dir variable) for supervision-hook.sh's dispatch
 - skills/agents directories (today's validate.go:344 table)
@@ -82,11 +123,25 @@ Each runtime declares:
 - TWO independent optional hook fields (critique r2-2 — bundling them
   dropped real coverage: codex-hooks.json and devin-hooks.json ship
   today): `shippedEnforcementConfig` (filename; declared by claude,
-  codex, AND devin) and `liveSelfCheck` {settingsPath, vendoredMarker}
-  (declared by claude only). The audit iterates the first; `hooks
-  check` requires the second
-- permission-residual identifiers — see Class 9 (the WAIVERS stay
-  role-owned; the registry only NAMES the residuals a role may waive)
+  codex, AND devin) and `liveSelfCheck` {vendoredMarker} (declared by
+  claude only). EVERY shipped-config consumer iterates the first —
+  the audit loop AND the suite's required-asset and JSON-shape rows
+  (validate-metasystem.sh:315,464; critique r3-5). `hooks check`
+  KEEPS its explicit live/shipped path arguments (the suite resolves
+  live settings in the parent repository for the nested-template case,
+  validate-metasystem.sh:1382, and a clean-relative path cannot
+  express that); `--runtime` selects only the capability and marker.
+  Both the nested-template and adopted-root cases are pinned
+- session-environment names are validated against `^[A-Z][A-Z0-9_]*$`
+  and expanded indirectly (bash `${!name}`), never via eval
+  (critique r3-5)
+- `permissionResiduals`: an exact map of permission FIELD (readRoots,
+  writeRoots, network, ...) to a GLOBALLY UNIQUE residual identifier
+  (critique r3-1) — the registry names the enforcement gaps; role
+  files waive an identifier UNDER ITS FIELD; selection fails closed
+  when an unverified restrictive field has no declared residual, when
+  an identifier is claimed for another field or runtime, and when
+  identifiers collide (uniqueness is a declaration test)
 
 The `metasystem runtime` verbs are purpose-filtered, not one flat list
 (critique r2-3): `list` (all), `list --adoptable`, `adoption-default`,
@@ -134,6 +189,10 @@ The r1 sweep missed these entirely (critique r1-1):
   Claude/Devin project-directory variables
 - `scripts/validate-metasystem.sh:473,505,591` — fixed runtime lists
   and registration layouts
+- `scripts/validate-metasystem.sh:315,368,427,464,488` (critique
+  r3-5, r3-8) — hardcoded shipped-hook assets and their JSON-shape
+  validation, host and adapter/config-filter asset lists, per-host
+  syntax checks, and the expected envelope-enforcement declarations
 
 RULING: the runtime LISTS and per-runtime lookups in these scripts come
 from the purpose-filtered `bin/metasystem runtime ...` verbs (adopt.sh
@@ -145,23 +204,32 @@ loop over `runtime registration <name>` rows ({source, destination,
 kind, required|optional, copy|link}), and validate-metasystem.sh's
 byte-drift checks walk the same rows, so neither weakens (critique
 r2-6). supervision-hook.sh resolves the project-dir variable via
-`runtime session-env`. Where an arm is irreducibly runtime-specific
-plumbing beyond the contract's vocabulary, it moves into that runtime's
-adapter script and adopt.sh dispatches to it — the contract rows are
-preferred; the dispatch escape is the exception and each use is listed
-in the doctrine.
+`runtime session-env`. The suite's per-runtime validation rows derive
+from the registry (critique r3-8): required seam assets and per-host
+syntax checks walk the capability flags and registration rows;
+shipped-hook presence and JSON shape iterate shippedEnforcementConfig;
+the expected envelope-enforcement rows derive from permissionResiduals
+(a runtime's declared residuals ARE its expected non-enforcement — the
+suite asserts the two agree, so Devin's unenforced boundaries stay
+protected by declaration rather than by an open-coded row). Where an
+arm is irreducibly runtime-specific plumbing beyond the contract's
+vocabulary, it moves into that runtime's adapter script and adopt.sh
+dispatches to it — the contract rows are preferred; the dispatch
+escape is the exception and each use is listed in the doctrine.
 
 ### Class 4 — the hooks self-check: GENERALIZE
 
 `internal/hooks/hooks.go:62` hardcodes `$CLAUDE_PROJECT_DIR/metasystem`.
 RULING: `CheckOwnHooks` takes the vendored-entry marker as a parameter;
 `metasystem hooks check` gains a REQUIRED `--runtime` flag (critique
-r1-10) that resolves settingsPath and vendoredMarker from the registry's
-`liveSelfCheck` field; a runtime without liveSelfCheck gets a LOUD "no
-live self-check declared for <runtime>". This is INDEPENDENT of
-shippedEnforcementConfig (critique r2-2): codex and devin keep their
-shipped-config audit rows while declaring no live self-check. The one
-suite call site passes the runtime.
+r1-10) that resolves the vendoredMarker from the registry's
+`liveSelfCheck` field while KEEPING its explicit live/shipped path
+arguments (critique r3-5: the suite's nested-template case resolves
+live settings in the parent repository); a runtime without
+liveSelfCheck gets a LOUD "no live self-check declared for <runtime>".
+This is INDEPENDENT of shippedEnforcementConfig (critique r2-2): codex
+and devin keep their shipped-config audit rows while declaring no live
+self-check. The one suite call site passes the runtime.
 
 ### Class 5 — the devin resume branch: MOVE THE RECOLLECTION ONLY
 
@@ -198,7 +266,13 @@ artifacts} and returns a `RecoveryOutcome` (critique r2-7), not a bare
 value or error:
 - state: recovered | unavailable | unsupported
 - typed usage (on recovered) fed through the SAME generic aggregator
-  as reported usage (critique r1-6)
+  as reported usage (critique r1-6); `recovered` is VALID ONLY when
+  the aggregator reports measured=true — a typed object with every
+  value null normalizes to unavailable with today's source/detail
+  (critique r3-6: fence.go:786 counts fields today; that check is the
+  contract, not an implementation detail). `unsupported` maps outward
+  exactly as today's unavailable rows do (provenance, source, detail),
+  plus the declared reason
 - exact source paths and detail for provenance, matching today's
   per-round source/detail records (fence.go:794)
 - malformed provider evidence NORMALIZES to unavailable or is skipped
@@ -208,7 +282,9 @@ value or error:
   (usageprojection.go:13's standing-aggregate hazard)
 Group-death and custodian-death gating stays in `internal/mission`
 (fence.go:746). Preservation tests pin today's claude and codex
-recoveries field-for-field, including the malformed-tail case. Devin
+recoveries field-for-field, including the malformed-tail case, PLUS
+the devin (unsupported) and no-recoverer rows' outward provenance
+(critique r3-6). Devin
 dead-round recovery is DECLARED UNSUPPORTED — its usage math needs
 transcript metrics and predecessor cumulative state a dead round's
 event stream does not carry; today's behavior (unavailable) is
@@ -292,11 +368,24 @@ trusted-fixture capability with authority consequences:
   `internal/dispatch/mirror.go:44`
 - fake supervisor and process-group ownership fallbacks:
   `scripts/agents/dispatch.sh:238,265`
+- the SHARED identity-fixture authority path (critique r3-7): the
+  fixture reader `internal/identity/fixture.go:25` and its authority
+  consumers — census authentication identity
+  (`internal/census/verbs.go:28`), lease identity
+  (`internal/lease/identity.go:36`), custodian liveness
+  (`internal/identity/custodian.go:24`)
+- mission-runner fixture helpers accepting fixture commands, group
+  ownership, and published fixture identity:
+  `internal/missionrunner/proc.go:32,76,102`
 RULING: `fake` remains a NAMED test-harness exception; every branch
-above is listed in the doctrine and keeps its explicit local
-`== "fake"` guard at its security boundary. The implementation adds a
-pinning test that THIS list matches the tree (the sweep re-run), so a
-new fake branch cannot land unlisted. Explicitly REFUSED: a generic
+above is listed in the doctrine and keeps its explicit local guard at
+its security boundary. The identity-fixture path's OWNER is the
+arm-time fence that already gates fixture use — the doctrine names
+that fence as the gate, and the implementation pins it with a test
+proving fixture identity is REFUSED outside armed-fixture mode. The
+pinning test for this list is enumeration-based (the sweep plus the
+named helper paths), because a textual fake-string sweep cannot find
+helper-hidden authority (critique r3-7). Explicitly REFUSED: a generic
 IsFixture bypass — future fixtures must NOT inherit security-sensitive
 bypasses by declaration.
 
@@ -309,6 +398,18 @@ entry points; the two Devin usage verbs are the known reroutes.
 
 Fixture data exercising seam-declared behavior. The mechanical fence for
 future core code is item 17's scope, not built here.
+
+### Class 13 — the self-test's --devin-checks switch: GENERALIZE
+
+`cmd/metasystem/adapter_selftest_verbs.go:91,146` expose
+`--devin-checks`, steering shared self-test code
+(`internal/adapter/selftestrun.go:270,343`) by runtime name (critique
+r3-9). RULING: the switch becomes a capability-named probe — the devin
+adapter seam registers a symlinked-skill-discovery self-test probe
+(declared path and marker) in the capability table; the generic
+self-test verbs accept `--probe <name>` and shared code consumes the
+registered probe. The devin adapter scripts pass the probe name; no
+shared command or self-test code names the runtime.
 
 ## Doctrine
 
