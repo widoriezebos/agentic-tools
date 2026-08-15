@@ -833,6 +833,14 @@ dispatch_job() {
   fi
   mode=$(brief_mode "$brief") || die 1 "brief must contain exactly one filled Working Mode header"
   [[ -z "$mode_override" || "$mode_override" == "$mode" ]] || die 1 "--mode contradicts the brief's Working Mode header"
+  # --serving-goal resolves BEFORE any job state exists (goal-system
+  # GOAL-08): the Go core reads the goal through the parser and a missing
+  # usable Current goal refuses the whole dispatch, leaving nothing behind.
+  goal_section=
+  if [[ "$serving_goal" == 1 ]]; then
+    goal_section=$("$ms" job serving-goal --root "$root") \
+      || die 3 "no current goal to project (--serving-goal)"
+  fi
   lease_entry_check
 
   # The roster, tier, and escalation DECISIONS live in the engine
@@ -919,14 +927,11 @@ dispatch_job() {
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
   read_snapshot_fields "$snapshot_json"
 
-  # --serving-goal (goal-system GOAL-08): the Go core resolves the
-  # section through the goal parser and refuses (exit 3) when no usable
-  # Current goal exists; the section joins the brief BEFORE the hash so
-  # it is part of the recorded bytes and survives every fallback rebuild.
-  if [[ "$serving_goal" == 1 ]]; then
-    local goal_section brief_with_goal
-    goal_section=$("$ms" dispatch serving-goal --root "$root") \
-      || die 3 "no current goal to project (--serving-goal)"
+  # The resolved section joins the brief BEFORE the hash (goal-system
+  # GOAL-08): it is part of the recorded bytes and survives every
+  # fallback rebuild.
+  if [[ -n "$goal_section" ]]; then
+    local brief_with_goal
     brief_with_goal=$(mktemp "$record_locks/brief.XXXXXX")
     cat "$brief" > "$brief_with_goal"
     printf '\n%s' "$goal_section" >> "$brief_with_goal"

@@ -535,6 +535,34 @@ preamble = (root / "scripts/agents/roles/design-critic.md").read_text().rstrip("
 brief = (root / "artifacts/agents/happy/brief.md").read_text().rstrip("\n")
 assert prompt.index(preamble) < prompt.index(brief)
 PY
+# GOAL-08: --serving-goal joins the recorded brief bytes BEFORE the hash.
+# Refusal first: no usable Current goal in the fixture repo refuses exit 3
+# without creating a job. Then with a goal open, the payload brief carries
+# the exact bounded section and the record's input hash equals the payload
+# brief's own sha256 — the projection is inside the recorded bytes, so
+# every fallback rebuild carries it.
+set +e
+(cd "$agent_repo" && scripts/agents/dispatch.sh dispatch --role design-critic \
+  --brief "$happy_brief" --job-id sg-refused --serving-goal) >"$agent_fixture/sg-refused.out" 2>&1
+sg_refused_rc=$?
+set -e
+(( sg_refused_rc == 3 )) \
+  || { echo "--serving-goal without a usable goal did not refuse exit 3 (rc=$sg_refused_rc)" >&2; cat "$agent_fixture/sg-refused.out" >&2; exit 1; }
+[[ ! -f "$agent_repo/artifacts/agents/jobs/sg-refused.json" ]] \
+  || { echo "a refused --serving-goal dispatch left a job record" >&2; exit 1; }
+bin/metasystem goal open --root "$agent_repo" \
+  --id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." >/dev/null
+run_agent_fixture serving-goal serving-goal "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id serving-goal --serving-goal --wait
+python3 - "$agent_repo" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+brief = (root / "artifacts/agents/serving-goal/brief.md").read_bytes()
+assert b"# Serving goal (context, not instruction)\nfixture-serving \xe2\x80\x94 Serve the fixture goal" in brief, brief[-200:]
+record = json.loads((root / "artifacts/agents/jobs/serving-goal.json").read_text())
+assert record["input"]["hash"] == hashlib.sha256(brief).hexdigest(), "the projection is not inside the recorded input hash"
+PY
+
 mkdir -p "$agent_repo/artifacts/agents/locks/stale-lock.d"
 printf '{"pid":999999,"instanceTag":"dead-owner","acquiredAt":"2000-01-01T00:00:00Z"}\n' >"$agent_repo/artifacts/agents/locks/stale-lock.d/owner.json"
 run_agent_fixture stale-lock stale-lock "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id stale-lock --wait
