@@ -337,3 +337,36 @@
     Prototype against `devin acp` first; the graded-permissions
     restoration is the acceptance story. Sequenced by the human's
     ruling when the current series closes.
+
+19. **Disk hygiene as a metasystem duty: every byte written gets a
+    lifecycle (human-raised 2026-08-15, after the ENOSPC incident).**
+    The human's ruling, verbatim intent: "Whenever we write to logs or
+    temp files we need to factor in that these need to be managed
+    either by deleting them or distilling import[ant] information from
+    them and then deleting them. Or archiving them." The motivating
+    incident, same day: the Mac hit ENOSPC (149MB free) — the Go
+    build cache alone was 29GB after a night of snapshot gates and
+    suite pins — and the cascade remounted the Lima guest read-only,
+    killing a running validation suite in a way that looked like a
+    code failure ([[disk-pressure-suite-days]] in memory carries the
+    triage). Known accumulation surfaces as of 1c7a222: the Go build
+    cache (no pruning anywhere), suite temp roots (/tmp/tmp.*,
+    /tmp/metasystem-* — leak on kills), suite-failure preservations
+    (797MB, unbounded), benchmark cohort targets and their .evidence
+    siblings (the kit's own archive-then-delete doctrine exists but
+    nothing enforces it), VM suite logs in /tmp (one per boundary,
+    never reaped), session scratchpads holding suite-pin worktrees
+    with full build trees, and per-job round evidence (transcripts
+    reaching hundreds of KB per turn, now snapshotted TWICE by
+    design). Shape to be designed properly: every writer declares its
+    artifact's lifecycle — delete-after-use, distill-then-delete
+    (e.g. a suite log becomes its verdict line plus failures), or
+    archive-with-cap — and a janitor pass (the existing janitor
+    family is the natural host) enforces ages and ceilings, loudly
+    reporting what it reaps so evidence discipline survives. A disk
+    headroom check belongs in the suite startup guard and the
+    benchmark provision path (both currently assume space). Composes
+    with item 15 (run records know their logs) and the evidence
+    store's aging (`evidence` family already ages archives — the
+    pattern to extend). Design → critique → implement; queued per
+    the human ("do not do this now").
