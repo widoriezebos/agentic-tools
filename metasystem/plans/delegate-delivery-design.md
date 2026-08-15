@@ -4,10 +4,9 @@ Working Mode: design
 
 Owner: main session (delegate), under Wido's 2026-08-15 morning
 rulings (design-critique-implement before anything else; everything
-Go is better suited for goes in Go). Status: r4 — folds the eight r3
-findings (critiques at plans/delegate-delivery-critique-r{1,2,3}.md;
-r3 closed r2's 4/6/8 and sharpened the rest to contract precision);
-awaiting r4 critique.
+Go is better suited for goes in Go). Status: r5 — folds the three r4
+findings (critiques at plans/delegate-delivery-critique-r{1..4}.md;
+r4 closed six of eight r3 findings); awaiting r5 critique.
 
 ## The problem, with two cohorts of evidence
 
@@ -183,7 +182,8 @@ provider failure):
 | disagreement/unreadable | any | never consulted | session_identity_disagreement, as today |
 | transcript over ceiling | any | never consulted | transcript-oversize, a NAMED degraded terminal — never identity disagreement, never empty-reply, never repair |
 | certified | non-zero | never consulted | provider failure, as today — no channel promotes output from a failed call |
-| certified | 0 | delivered | normal return pipeline on the accepted snapshot |
+| certified | 0 | delivered + session correlated | normal return pipeline on the accepted snapshot |
+| certified | 0 | delivered, NO session correlated | handshake_missing_session_id refusal, exactly as today — settlement can certify without correlation, and adjudication's gate refuses before return validation; collection does not weaken that invariant (r4 finding 1) |
 | certified | 0 | nothing-qualified + session correlated + claim exit 0 | the REPAIR attempt below |
 | certified | 0 | nothing-qualified + (no session, or claim exit 3) | empty-reply adjudication, as today |
 | certified | 0 | nothing-qualified + claim exit 1 | degraded harness terminal (the claim's mechanical taxonomy) |
@@ -194,18 +194,18 @@ verdict: it falls through to the next rung with its rejection named
 in provenance; mechanical is reserved for failures that make the
 walk itself impossible.
 
-The REPAIR attempt (aligned with the existing after-repair
-protocol-error taxonomy; repaired-session settlement runs on the
-repair transcript snapshot BEFORE delivery is judged, exactly as
-the repaired-session path orders it today):
+The REPAIR attempt. Explicit precedence, matching the real state
+machine (r4 finding 3): repair USAGE EXTRACTION runs on the repair
+snapshot first regardless of the eventual verdict (exactly as
+today), then settlement, then CLI status, then collection:
 
-| Repair CLI exit | Repair settlement | Post-repair collect | Outcome |
+| Repair settlement | Repair CLI exit | Post-repair collect | Outcome |
 | --- | --- | --- | --- |
-| non-zero | never consulted | never consulted | protocol-error, as the after-repair path maps today |
-| 0 | disagreement/unreadable | never consulted | protocol-error via the repaired-session settlement failure, as today |
-| 0 | transcript over ceiling | never consulted | transcript-oversize degraded terminal (same as initial) |
-| 0 | certified | delivered | normal pipeline on the accepted snapshot |
-| 0 | certified | nothing-qualified or mechanical | protocol-error, as today — a repair that did not deliver is a protocol violation, never a second empty-reply loop |
+| disagreement/unreadable | any | never consulted | session_identity_disagreement — today's outcome, kept (r4 corrected the r3 table, which wrongly said protocol-error) |
+| transcript over ceiling | any | never consulted | transcript-oversize degraded terminal (usage already extracted from the bounded snapshot or marked unavailable) |
+| certified | non-zero | never consulted | protocol-error, as the after-repair path maps today |
+| certified | 0 | delivered | normal pipeline on the accepted snapshot |
+| certified | 0 | nothing-qualified or mechanical | protocol-error, as today — a repair that did not deliver is a protocol violation, never a second empty-reply loop |
 
 ## Provenance, bound to bytes (r1 finding 11)
 
@@ -226,20 +226,25 @@ validates against the TURN contract, and host.FinishTurn fails today
 whenever raw.out is empty. The host half is an explicit SECOND PHASE
 — committed scope, landing right after phase 1 under the same
 priority ruling — and its interface is specified NOW so phase 2
-implements rather than guesses (r3 finding 4): a SEPARATE verb,
-`host devin-collect`, with --turn-record, --turn-id, --workspace,
---stdout, --named, --transcript, --round-dir. Its candidate check is
-turn-shaped and PRE-ENVELOPE: shape-parse plus turnId equality
-against the turn record — deliberately NOT the completed-envelope
-validation, which stays exactly where it is (the runner's
-adjudication, after FinishTurn). FinishTurn gains an
---accepted-reply input replacing its raw.out read when collection
-delivered; the runner's adjudication and session rule are untouched
-— collection selects candidate bytes, the existing validators keep
-judging them. Same snapshot/bounds/provenance machinery via
-internal/atif. No host repair rung in either phase: the runner's
-turn-retry machinery owns host failures. Phase 1 ships no half-wired
-host path.
+implements rather than guesses (r3 finding 4, r4 finding 2): a
+SEPARATE verb, `host devin-collect`, with --turn-record, --turn-id,
+--workspace, --stdout, --named, --transcript, --round-dir. Its
+pre-envelope check is EVERYTHING decidable before the envelope
+exists: schema shape, turnId, missionId, cycle, and runtime/model
+against the turn record. Session identity alone cannot move earlier
+(the runner reads the observed session from the completed envelope),
+so the walk is RESUMABLE: when the runner's post-envelope validation
+rejects the selected candidate on session identity, it re-invokes
+the collector with --reject <sha256-of-rejected-candidate> and the
+walk continues from the next channel — a wrong-identity stdout can
+delay but never destroy a valid named-file result (bounded: at most
+one pass over the three channels, each candidate judged once).
+FinishTurn gains an --accepted-reply input replacing its raw.out
+read when collection delivered. Same snapshot/bounds/provenance
+machinery via internal/atif; provenance records every rejected
+candidate including post-envelope rejections. No host repair rung in
+either phase: the runner's turn-retry machinery owns host failures.
+Phase 1 ships no half-wired host path.
 
 ## Runtime scope
 
@@ -302,7 +307,14 @@ turn-contract validator wiring), a host-path selftest leg.
 - Provenance: sha256 matches accepted bytes on every path; kit
   extractor tolerates the new files (additive).
 - Host: the host-turn collect recovers a file-delivered host result
-  end to end in the selftest.
+  end to end in the selftest; a wrong-identity stdout candidate is
+  rejected post-envelope and the walk RESUMES to deliver the valid
+  named file (r4 finding 2's exact scenario).
+- Initial no-session gate: a delivered candidate with no correlated
+  session refuses handshake_missing_session_id, never completes
+  (r4 finding 1).
+- Repair settlement disagreement lands session_identity_disagreement
+  with repair usage already extracted (r4 finding 3).
 - Regression, corrected (r3 finding 2): the D62 frozen transcript
   — whose write predates the named-path instruction and targets an
   invented filename — must NOT deliver via mining (the designation
