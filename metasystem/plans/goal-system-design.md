@@ -4,9 +4,43 @@ Working Mode: design
 
 Owner: main session (delegate), backlog item 14, under Wido's
 2026-08-14 night ruling 4 (design pass tonight, DESIGNS ONLY).
-Status: r2 — every r1 finding (G-01..G-16, critique preserved at
-plans/goal-system-critique-r1.md) is dispositioned inline below;
-awaiting r2 critique.
+Status: r2, PAUSED FOR HUMAN RULINGS after the round-2 critique
+(plans/goal-system-critique-r2.md; disposition audit: G-02 and G-13
+resolved, five partial, nine unresolved). The loop stops here
+deliberately: the remaining reshapes hang on four questions that are
+Wido's to answer, not the design's to assume —
+
+1. DELEGATE PROJECTION (G-03): default-on for every brief or
+   role-opt-in; and should the projection carry the next step
+   verbatim rather than id+intent only?
+2. CROSS-RUNTIME STAGING (G-04): may item 14 ship as mechanism +
+   hook contract + Claude conformance, with codex/devin delivery
+   following item 16 — or must all three runtimes land together?
+   (Corrected fact from the critique: codex/devin Stop hook configs
+   ARE shipped in scripts/enforcement/, but only one runtime has
+   been observed firing them; conformance needs the four-state
+   model declared/installed/observed/blocking-capable.)
+3. THE HUMAN-CLASSIFIER TRUST GAP (G-07/G-08): the authority
+   classifier treats any caller without a recognized agent ancestor
+   as HUMAN with unconditional authority (classify.go), so
+   "human-reserved" goal transitions cannot be authenticated today.
+   Accept advisory-grade human reservation for goals, or scope an
+   authenticated-human mechanism — which is bigger than item 14?
+4. MISSION HOSTS (G-03 tail): headless mission hosts have no causal
+   read path without mission-prompt integration — is that in scope
+   for item 14 after all?
+
+The specification debts that are the DESIGN'S to pay in r3 once the
+rulings land (no ruling needed): the block-once dual-source state
+machine (G-01/G-09: separate resettable open-work signature vs
+permanent goal-revision set, atomic check-and-record), the complete
+hook response composition (the verdict verb's schema must carry or
+explicitly compose with the advisor exit, watchdog, protocol-growth,
+running-work, and evidence paths), the full transition table with
+parked/goal-free records in the grammar (G-14, G-05's zero-current
+states), whole-ledger CAS for reconcile (G-07 tail), bounds on every
+projected field (G-15 tail), the run-record join contract with item
+15 (G-10), and the adoption/fixture amendments (G-12 tail).
 
 ## The problem, in the human's words and one incident
 

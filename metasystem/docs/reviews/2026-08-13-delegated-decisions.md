@@ -1717,6 +1717,29 @@ pass runs now, DESIGNS ONLY, carrying the serialization case, the
 denial-behavior question, and items 15-17 as context. Targets stay
 in place for replay, per prior practice.
 
+## D60 — The goal-system design pauses at r2: the next moves are Wido's
+
+Two critique rounds (16 findings, then a disposition audit closing
+only two) drove real reshapes — causal continuation through the
+block-once path, the sixth-ledger admission, one Current goal,
+engine-only writes — and then ran into four questions the design
+cannot answer for itself: the delegate-projection default, whether
+cross-runtime delivery may stage behind item 16, what
+"human-reserved" can mean while the authority classifier grants any
+agent-ancestor-free caller unconditional HUMAN authority, and
+whether headless mission hosts pull mission-prompt integration into
+scope. The questions and the design-side specification debts are
+enumerated at the top of plans/goal-system-design.md; both critiques
+are preserved beside it. Stopping here is the design-loop stop
+criterion applied honestly: findings were still changing what gets
+built, and every further change is the human's to direct. Item 15's
+design is NOT started tonight — it composes with 14 at exactly the
+seams awaiting these rulings, so starting it would speculate twice.
+A factual correction the critique surfaced rides into item 16's
+context: codex and devin Stop-hook configurations ARE shipped
+(scripts/enforcement/), and the honest conformance model is
+declared/installed/observed/blocking-capable.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
