@@ -189,7 +189,9 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 	// The serving-goal block is OPTIONAL at exactly one position:
 	// immediately after the mission contract (goal-system GOAL-09). The
 	// assembler and this grammar move together by design.
-	withGoal := append(append([]string{turnHeadings[0], servingGoalHeading}), turnHeadings[1:]...)
+	withGoal := make([]string, 0, len(turnHeadings)+1)
+	withGoal = append(withGoal, turnHeadings[0], servingGoalHeading)
+	withGoal = append(withGoal, turnHeadings[1:]...)
 	if !equalStrings(found, turnHeadings) && !equalStrings(found, withGoal) {
 		return &Violation{"headings", "the required headings are missing, duplicated, or out of order (the optional ## Serving goal sits only between the contract and the ledger tail)"}
 	}
