@@ -1859,6 +1859,30 @@ the by-reference rule make that residual harmless. Phase 1 (the
 delegate path) implements now under the FULL gates; the D61/D62
 suite waiver does not extend to this change.
 
+**Implementation addendum (same morning, checkpoints A-F, each its
+own commit)**: internal/atif (bounded reads, ErrOversize, the O_EXCL
+per-attempt snapshot, the generic object decode); `job repair-claim`
+(conditional CAS, absent-as-zero, 0/3/1 taxonomy) with dispatch.sh's
+__repair-claim entry on the record-writer authority path;
+adapter.DevinCollect (facts-only walk, shipped presence bars,
+per-candidate normalize-then-validate through the validator's new
+ReturnCompleteJobFile entry — schema-only could not reject a
+wrong-job return — the designation rule with the filesystem success
+oracle, the fail-closed watermark, digest-bound provenance with the
+mining audit); the empty-delivery adjudication stage and its
+delivery-repair prompt; usage and settlement reading the attempt
+snapshot with oversize as its own terminal; and the devin.sh walk
+per both outcome tables, with runtime_repair_turn split into the raw
+invoke and its stricter malformed gate. The two repair flows compose
+through returnRepairs itself: a won delivery claim disables the
+malformed repair and vice versa — one paid repair ever, now durable.
+Proof: every decision Go-tested (32 packages green), the wiring
+syntax-checked, the full VM suite as the gate. The LIVE devin path's
+proof remains the arm's own selftest and the next bm-2 rep when Wido
+resumes the arm — the suite cannot run a real swe-1-7 session.
+Phase 2 (the host path, interface already specified) follows the
+green gate.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
