@@ -1814,6 +1814,27 @@ shell script." Applied to this design: the whole delivery ladder —
 ordering, guards, provenance, verdicts — becomes one engine collect
 verb; devin.sh keeps spawn/wait/custody and one repair invocation.
 
+## D63 — The dangerous-mode control rep: Devin completes at 0.981; the last blocker is model identity
+
+**The rep (bm-2-20260815t062523z-18265/1, engine 4e8dbb6, budget 5,
+$18.70, 71 min)**: mission COMPLETED, acceptance 0.981132 — the
+Devin arm's product converges to the same score as every other
+completed run. Two implementers and three critics delivered; the
+delegation floor PASSED. The empty_reply class still fired twice
+(plus one dispatch-refused) and retries absorbed them — evidence the
+delivery ladder being designed is needed for efficiency, not just
+viability. INVALID on exactly one gate: rosterPinned — seven jobs'
+effective model settled as "SWE-1.7 Max" against the requested
+"swe-1-7". Two readings, both recorded: a silent service-side tier
+escalation (a true roster violation the gate exists to catch), or
+the same model under a display name that our canonicalization does
+not map. Which reading governs — and whether SWE-1.7 Max is
+roster-acceptable for the arm — is benchmark policy, Wido's call,
+parked with this evidence. Target 2 stays unsealed per the morning
+ruling; the cohort closes incomplete by design. Series spend
+~$196 of EUR 240. The design loop (r3 critique in flight) remains
+the priority queue's head.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
