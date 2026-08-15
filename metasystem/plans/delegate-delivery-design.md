@@ -4,9 +4,10 @@ Working Mode: design
 
 Owner: main session (delegate), under Wido's 2026-08-15 morning
 rulings (design-critique-implement before anything else; everything
-Go is better suited for goes in Go). Status: r3 — folds the eight r2
-findings (critique at plans/delegate-delivery-critique-r2.md; r1 at
--critique-r1.md); awaiting r3 critique.
+Go is better suited for goes in Go). Status: r4 — folds the eight r3
+findings (critiques at plans/delegate-delivery-critique-r{1,2,3}.md;
+r3 closed r2's 4/6/8 and sharpened the rest to contract precision);
+awaiting r4 critique.
 
 ## The problem, with two cohorts of evidence
 
@@ -33,14 +34,17 @@ hosts/devin.sh integrates the same verb for its turn result
 (rungs 1-3 only; host retries belong to the mission runner's
 existing priorFailures machinery, never to a delegate-style repair).
 
-Inputs per call: --job, --round-dir, --stdout FILE, --named FILE,
---transcript FILE, --schema FILE, --record FILE, --attempt
-initial|repair. Output: a JSON verdict on stdout —
+Inputs per call: --job, --round-dir, --workspace DIR, --stdout
+FILE, --named FILE, --transcript FILE, --schema FILE, --record FILE,
+--attempt initial|repair. Output: a JSON FACTS document on stdout —
 `{"delivered": bool, "channel": "stdout|named-file|transcript|none",
-"reply": "<path of the accepted snapshot>", "repairEligible": bool,
-"reason": "..."}` — plus the side effects below. Exit codes: 0
-delivered, 3 nothing qualified, 1 mechanical failure (unreadable
-inputs beyond bounds).
+"reply": "<accepted snapshot path>", "watermarkValid": bool,
+"reason": "..."}` — plus the side effects below. The collector
+reports COLLECTION FACTS ONLY (r3 finding 5): it has no CLI-status
+or session inputs and emits no repair recommendation; adjudication
+alone composes eligibility from CLI status + collection facts +
+session correlation. Exit codes: 0 delivered, 3 nothing qualified,
+1 mechanical failure (the walk itself impossible).
 
 ## Selection is validity-aware (r1 finding 2)
 
@@ -82,14 +86,19 @@ credited to a repair.
 - **The designation rule (final intent, not convenience)**: a write
   qualifies ONLY if its target path's BASENAME equals the attempt's
   named return file (devin-return.json / devin-return.repair-1.json,
-  any directory) AND its recorded tool outcome is success. The model
-  using the exact name we gave it, wherever it put the file, is the
-  designation of final intent; drafts under invented names (r2's
-  evidence: a denied validation draft that was schema-valid) never
-  qualify. Stated residual, accepted: a model that both skips stdout
-  AND invents its own filename is served by the repair rung alone.
-  Denied writes no longer deliver — under D61's dangerous mode
-  writes are not denied, so this costs the recovery path nothing.
+  any directory). The model using the exact name we gave it,
+  wherever it put the file, is the designation of final intent;
+  drafts under invented names never qualify.
+- **The success oracle is the filesystem, not the transcript** (r3
+  finding 1: stored ATIF tool results carry no success field, only
+  free-form text — parsing English is not a predicate): a qualifying
+  write DELIVERS only if the target file EXISTS at collect time
+  (relative paths resolved against --workspace) and its content's
+  sha256 equals the transcript argument's. A denied, rolled-back, or
+  since-deleted write demonstrably did not persist and falls to the
+  repair rung. Stated residuals, accepted: a model that skips stdout
+  AND invents its own filename, or whose named-basename write no
+  longer exists on disk, is served by the repair rung alone.
 - **Attempt watermark, fail-closed**: the initial collect records
   the step count in `<round>/collect-watermark` ONLY when the
   bounded read was complete. A repair collect mines steps after the
@@ -102,14 +111,20 @@ credited to a repair.
   reconciliation — the pinned behaviors stay) and THEN the canonical
   validator; nothing supported today is deleted.
 - **Write-tool calls only**, last qualifying match in-window.
-- **Bounds are lifecycle-wide** (r2 finding 3): one shared bounded
-  transcript reader in internal/adapter (8 MiB ceiling) becomes the
-  ONLY way usage extraction, settlement, and collection read a
-  transcript; per-candidate the 1 MiB snapshot ceiling applies. An
-  over-ceiling transcript is a NAMED degraded terminal
-  (transcript-oversize), distinct from identity disagreement and
-  never repair-eligible — a loud harness verdict, not a wedge and
-  not an empty reply.
+- **Bounds are lifecycle-wide, through ONE snapshot** (r2 finding
+  3, r3 findings 3+8): a new LEAF package `internal/atif` owns the
+  bounded transcript read (8 MiB ceiling) and step iteration —
+  internal/adapter already imports internal/usage, so the reader
+  cannot live in adapter without a cycle; atif imports neither. The
+  FIRST consumer of an attempt materializes
+  `<round>/transcript.attempt-<n>.snapshot` via atif (copy-once,
+  bounded); usage extraction, settlement, and collection ALL read
+  that immutable snapshot path, and provenance hashes it — identity
+  and mining are decided over the same bytes by construction, not by
+  hoping three reads raced nothing. Per-candidate the 1 MiB snapshot
+  ceiling applies. An over-ceiling transcript is a NAMED degraded
+  terminal (transcript-oversize), never identity disagreement, never
+  repair-eligible, never a wedge.
 - **No re-mining downstream**: the accepted snapshot is handed
   forward as a file on EVERY channel (stdout and named-file
   included), so the normalizer's brace-scanning never runs on a raw
@@ -129,16 +144,20 @@ extends the ENGINE's adjudication state machine:
   delivery-repair prompt exactly like the malformed prompt today.
   Record mutation never enters adjudication.
 - **The claim is a new dispatch-owned conditional operation**:
-  `job repair-claim` compare-and-swaps requiring
-  `status == running && returnRepairs == 0` atomically under the
-  record lock (the existing record-cas compares status only and
-  cannot express this — named as why the verb is new). The shell
-  invokes it BETWEEN the recommendation and the paid launch; a
-  failed claim is terminal for repair (already claimed = never a
-  second paid repair, across crash or re-entry). The current
-  record-after-provider-call ordering with its ignored CAS failure
-  is the defect this replaces. Authority: record-writer mode, the
-  same matrix path every record mutation rides.
+  `job repair-claim` compare-and-swaps requiring `status == running
+  && returnRepairs absent-or-0` atomically under the record lock —
+  ABSENT MEANS ZERO by the verb's contract (r3 finding 6: neither
+  record builder initializes the field, and they should not have
+  to). The exit taxonomy separates the refusals: exit 3 =
+  already-claimed (the repair is spent; the turn adjudicates
+  empty-reply as a delegate outcome), exit 1 = mechanical
+  (unreadable record, lock, authority) — a HARNESS failure that
+  terminates degraded and never masquerades as delegate emptiness.
+  The shell invokes the claim BETWEEN adjudication's recommendation
+  and the paid launch. The current record-after-provider-call
+  ordering with its ignored CAS failure is the defect this
+  replaces. Authority: record-writer mode, the same matrix path
+  every record mutation rides.
 - **The repair interface separates provider exit from delivery**:
   the repair invocation reports its CLI exit; delivery is judged
   solely by the post-repair devin-collect walk (stdout, repair
@@ -153,17 +172,22 @@ extends the ENGINE's adjudication state machine:
 
 ## Precedence: two outcome tables (r1 finding 9, r2 findings 4, 7)
 
-The INITIAL attempt:
+The INITIAL attempt (settlement runs FIRST, before CLI status is
+inspected — today's order, kept deliberately and named: identity
+adjudication precedes everything, so a nonzero call WITH settlement
+disagreement terminates as session_identity_disagreement, not as
+provider failure):
 
-| CLI exit | Settlement | Collect verdict | Outcome |
+| Settlement | CLI exit | Collect facts | Outcome |
 | --- | --- | --- | --- |
-| non-zero | any | never consulted | provider failure, as today — no channel promotes output from a failed call |
-| 0 | disagreement | never consulted | session_identity_disagreement, as today: identity outranks delivery |
-| 0 | transcript over ceiling | never consulted | transcript-oversize, a NAMED degraded terminal — never identity disagreement, never empty-reply, never repair |
-| 0 | certified | delivered | normal return pipeline on the accepted snapshot |
-| 0 | certified | nothing-qualified + session correlated | repair recommendation → `job repair-claim` → the REPAIR table |
-| 0 | certified | nothing-qualified, no session or claim refused | empty-reply adjudication, as today |
-| 0 | certified | mechanical | degraded terminal naming the harness failure (unreadable schema/record, snapshot or provenance write failure) — NEVER a paid repair, exactly the taxonomy the adjudication tests already pin for unreadable schemas |
+| disagreement/unreadable | any | never consulted | session_identity_disagreement, as today |
+| transcript over ceiling | any | never consulted | transcript-oversize, a NAMED degraded terminal — never identity disagreement, never empty-reply, never repair |
+| certified | non-zero | never consulted | provider failure, as today — no channel promotes output from a failed call |
+| certified | 0 | delivered | normal return pipeline on the accepted snapshot |
+| certified | 0 | nothing-qualified + session correlated + claim exit 0 | the REPAIR attempt below |
+| certified | 0 | nothing-qualified + (no session, or claim exit 3) | empty-reply adjudication, as today |
+| certified | 0 | nothing-qualified + claim exit 1 | degraded harness terminal (the claim's mechanical taxonomy) |
+| certified | 0 | mechanical | degraded terminal naming the harness failure — NEVER a paid repair |
 
 An oversized or unreadable SINGLE candidate is not a mechanical
 verdict: it falls through to the next rung with its rejection named
@@ -171,13 +195,17 @@ in provenance; mechanical is reserved for failures that make the
 walk itself impossible.
 
 The REPAIR attempt (aligned with the existing after-repair
-protocol-error taxonomy, not the initial table):
+protocol-error taxonomy; repaired-session settlement runs on the
+repair transcript snapshot BEFORE delivery is judged, exactly as
+the repaired-session path orders it today):
 
-| Repair CLI exit | Post-repair collect | Outcome |
-| --- | --- | --- |
-| non-zero | never consulted | protocol-error, as the after-repair path maps today |
-| 0 | delivered | repaired-session settlement, then the normal pipeline (settlement order unchanged from today's repair path) |
-| 0 | nothing-qualified or mechanical | protocol-error, as today — a repair that did not deliver is a protocol violation, never a second empty-reply loop |
+| Repair CLI exit | Repair settlement | Post-repair collect | Outcome |
+| --- | --- | --- | --- |
+| non-zero | never consulted | never consulted | protocol-error, as the after-repair path maps today |
+| 0 | disagreement/unreadable | never consulted | protocol-error via the repaired-session settlement failure, as today |
+| 0 | transcript over ceiling | never consulted | transcript-oversize degraded terminal (same as initial) |
+| 0 | certified | delivered | normal pipeline on the accepted snapshot |
+| 0 | certified | nothing-qualified or mechanical | protocol-error, as today — a repair that did not deliver is a protocol violation, never a second empty-reply loop |
 
 ## Provenance, bound to bytes (r1 finding 11)
 
@@ -193,19 +221,25 @@ in-window; anything less is unauditable.
 
 ## Host scope: phase 2 of this design, host-shaped (r1 finding 11, r2 finding 2)
 
-The host cannot reuse the job-shaped collector as r2 sketched: a
-host return validates against the TURN contract (turnId, missionId,
-cycle, the announced-or-observed session rule), and host.FinishTurn
-fails today whenever raw.out is empty. The host half is therefore an
-explicit SECOND PHASE of this same design — committed scope, its own
-proof legs, landing right after phase 1 under the same priority
-ruling: hosts/devin.sh gains the named return path; the collect walk
-gains a host mode whose validator is the turn contract (internal/
-host + internal/missionrunner join the blast radius honestly);
-FinishTurn accepts the accepted-snapshot input. No host repair rung
-in either phase: the runner's turn-retry machinery owns host
-failures. Phase 1 does not ship a half-wired host path — hosts stay
-exactly as today until phase 2 lands whole.
+The host cannot reuse the job-shaped collector: a host return
+validates against the TURN contract, and host.FinishTurn fails today
+whenever raw.out is empty. The host half is an explicit SECOND PHASE
+— committed scope, landing right after phase 1 under the same
+priority ruling — and its interface is specified NOW so phase 2
+implements rather than guesses (r3 finding 4): a SEPARATE verb,
+`host devin-collect`, with --turn-record, --turn-id, --workspace,
+--stdout, --named, --transcript, --round-dir. Its candidate check is
+turn-shaped and PRE-ENVELOPE: shape-parse plus turnId equality
+against the turn record — deliberately NOT the completed-envelope
+validation, which stays exactly where it is (the runner's
+adjudication, after FinishTurn). FinishTurn gains an
+--accepted-reply input replacing its raw.out read when collection
+delivered; the runner's adjudication and session rule are untouched
+— collection selects candidate bytes, the existing validators keep
+judging them. Same snapshot/bounds/provenance machinery via
+internal/atif. No host repair rung in either phase: the runner's
+turn-retry machinery owns host failures. Phase 1 ships no half-wired
+host path.
 
 ## Runtime scope
 
@@ -223,11 +257,14 @@ claude/codex changes. No second repair. No new validator.
 ## Blast radius
 
 Phase 1 (delegates):
+- internal/atif (NEW LEAF): the bounded transcript reader, step
+  iteration, and the per-attempt immutable snapshot — imported by
+  adapter and usage without cycles.
 - internal/adapter: devin-collect (walk, per-candidate
-  normalization, snapshots, bounds, watermark, provenance), the
-  shared bounded transcript reader adopted by usage extraction and
-  settlement, the return-complete library entry point,
-  adjudicate.go's empty-delivery recommendation.
+  normalization, snapshots, watermark, provenance; facts only —
+  no repair recommendation), settlement through the atif snapshot,
+  the return-complete library entry point, adjudicate.go's
+  empty-delivery recommendation.
 - internal/dispatch: the `job repair-claim` conditional CAS.
 - cmd/metasystem: devin-collect and repair-claim verb rows.
 - internal/usage: transcript reads through the bounded reader.
@@ -266,5 +303,11 @@ turn-contract validator wiring), a host-path selftest leg.
   extractor tolerates the new files (additive).
 - Host: the host-turn collect recovers a file-delivered host result
   end to end in the selftest.
-- Regression: the D62 frozen transcript replays to a rung-3
-  recovery with full validation.
+- Regression, corrected (r3 finding 2): the D62 frozen transcript
+  — whose write predates the named-path instruction and targets an
+  invented filename — must NOT deliver via mining (the designation
+  rule's negative case); its shape is served by the repair rung. The
+  POSITIVE mining regression is synthetic: a named-basename write to
+  a foreign directory (e.g. /tmp/devin-return.json) with the file
+  present and digest-matching recovers via rung 3; the same write
+  with the file absent falls to repair (the success-oracle case).
