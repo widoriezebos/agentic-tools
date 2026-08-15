@@ -1939,6 +1939,23 @@ the goal orientation line in every turn prompt — runner-side,
 runtime-neutral, no new write authority. Path per his order: design,
 critique loop, implement.
 
+## HUMAN RULING — 2026-08-15 afternoon: run the backlog to completion
+
+Wido, in writing: continue the goal system "until it is fully
+implemented and once it is, continue with whatever is next until the
+entire backlog is implemented." The queue this covers, in order
+unless findings reorder it: item 14 (in critique r3 now) through
+implementation and gate; then 15 (monitor facility), 16
+(agnosticism audit), 17 (placement sweep), 18 (ACP transport), 19
+(disk hygiene), 20 (narrator) — each through the
+design-critique-implement discipline where design-sized, direct
+implementation where mechanical. The bm-2 arm's standing
+drive-to-2-valid resumes IN PARALLEL (its D64 delivery machinery is
+gated and D65 unblocked the roster gate; a live rep is the design's
+own stated proof path) — reps do not contend with critique rounds,
+and Mac suites still wait for mission gaps. His decisions-doc review
+(point 3) stays queued on his word.
+
 ## Series position for Wido (2026-08-14, after the first valid rep)
 
 **The measurement pipeline is done.** Cohort bm-1-20260813t203657z at
