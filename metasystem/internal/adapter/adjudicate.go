@@ -33,6 +33,7 @@ type AdjudicateParams struct {
 	CLIStatus        int64
 	HandshakeDone    bool
 	RepairAvailable  bool
+	NamedRepairPath  string // the repair attempt's named return file (empty-delivery)
 	RepairRC         int64
 	RepairCandidate  string
 	SettleAvailable  bool
@@ -72,6 +73,25 @@ func writeRepairPrompt(path, violationText string, schema []byte) error {
 	prompt.WriteString("else: no prose before or after it, no code fence, no property the\n")
 	prompt.WriteString("schema does not name, and every property listed in \"required\".\n")
 	prompt.WriteString("Do not repeat the work; report what you already found.\n")
+	return os.WriteFile(path, []byte(prompt.String()), 0o644)
+}
+
+// writeDeliveryRepairPrompt is the empty-delivery ask (D64): the session
+// did its work and delivered nothing our channels could read; the repair
+// names the exact file to write and asks for the print as well.
+func writeDeliveryRepairPrompt(path, namedRepairPath string, schema []byte) error {
+	var prompt strings.Builder
+	prompt.WriteString("Your session completed its work, but no return was delivered:\n")
+	prompt.WriteString("nothing was printed and no return file was found. Everything you\n")
+	prompt.WriteString("already did still stands; only the delivery is missing.\n\n")
+	prompt.WriteString("# What to do now\n\n")
+	prompt.WriteString("Write your ONE JSON return object to this exact file path, and\n")
+	prompt.WriteString("also print it as your final message. Do not choose a different\n")
+	prompt.WriteString("path and do not repeat the work:\n\n")
+	prompt.WriteString(namedRepairPath)
+	prompt.WriteString("\n\n# The schema your return must satisfy\n\n")
+	prompt.Write(schema)
+	prompt.WriteString("\n")
 	return os.WriteFile(path, []byte(prompt.String()), 0o644)
 }
 
@@ -139,6 +159,27 @@ func AdjudicateTurn(p AdjudicateParams) (string, error) {
 			return "finish completed null completed", nil
 		}
 		return "finish failed session_identity_disagreement delivery", nil
+	case "empty-delivery":
+		// The delivery-repair recommendation (D64): CLI 0, settlement
+		// certified, and the collector found nothing qualified. PURE
+		// recommendation — the shell must win `job repair-claim` between
+		// this verdict and the paid launch; a lost claim re-enters at
+		// empty-reply. Without a correlated session there is nothing to
+		// resume and the empty-reply verdicts apply directly.
+		if !p.HandshakeDone || !p.RepairAvailable {
+			if p.HandshakeDone {
+				return "finish failed empty_reply delivery", nil
+			}
+			return "fail-pending empty_reply delivery", nil
+		}
+		schema, err := os.ReadFile(p.SchemaPath)
+		if err != nil {
+			return "", fmt.Errorf("adjudicate-turn cannot read the schema: %v", err)
+		}
+		if err := writeDeliveryRepairPrompt(p.RepairPromptPath, p.NamedRepairPath, schema); err != nil {
+			return "", fmt.Errorf("adjudicate-turn cannot write the repair prompt: %v", err)
+		}
+		return "delivery-repair", nil
 	case "empty-reply":
 		// Exit 0 with no reply is a runtime's shape for "could not do it";
 		// which failure writer applies depends on where the record got to.

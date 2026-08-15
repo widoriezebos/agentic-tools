@@ -176,3 +176,38 @@ func TestAdjudicateTurnAfterRepairInvalidGoesProtocolError(t *testing.T) {
 		t.Fatalf("verdict = %q err=%v, want protocol-error", got, err)
 	}
 }
+
+// The empty-delivery stage (D64): a pure recommendation. Correlated +
+// repair-available writes the delivery prompt naming the repair path;
+// uncorrelated or repair-unavailable falls to the empty-reply verdicts.
+func TestAdjudicateEmptyDeliveryStage(t *testing.T) {
+	dir := t.TempDir()
+	schema := filepath.Join(dir, "schema.json")
+	if err := os.WriteFile(schema, []byte(`{"required":["evidence"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prompt := filepath.Join(dir, "repair-prompt.md")
+	named := filepath.Join(dir, "devin-return.repair-1.json")
+
+	p := AdjudicateParams{Stage: "empty-delivery", SchemaPath: schema,
+		RepairPromptPath: prompt, NamedRepairPath: named,
+		HandshakeDone: true, RepairAvailable: true}
+	verdict, err := AdjudicateTurn(p)
+	if err != nil || verdict != "delivery-repair" {
+		t.Fatalf("eligible empty delivery must recommend the repair: %q %v", verdict, err)
+	}
+	text, err := os.ReadFile(prompt)
+	if err != nil || !strings.Contains(string(text), named) ||
+		!strings.Contains(string(text), "also print it") {
+		t.Fatalf("the delivery prompt must name the exact path and the print ask: %v\n%s", err, text)
+	}
+
+	p.RepairAvailable = false
+	if verdict, _ := AdjudicateTurn(p); verdict != "finish failed empty_reply delivery" {
+		t.Fatalf("repair-unavailable must keep the pinned empty verdict: %q", verdict)
+	}
+	p.HandshakeDone = false
+	if verdict, _ := AdjudicateTurn(p); verdict != "fail-pending empty_reply delivery" {
+		t.Fatalf("uncorrelated must keep the pinned pending verdict: %q", verdict)
+	}
+}
