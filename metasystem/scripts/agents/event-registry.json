@@ -596,18 +596,26 @@
         "run"
       ],
       "ids": {
-        "run": {
-          "runId": "required"
-        }
+        "runId": "required"
       },
       "payload": {
         "kind": {
           "required": true,
-          "type": "str"
+          "type": "enum",
+          "values": [
+            "suite",
+            "cohort",
+            "custom"
+          ]
         },
         "custody": {
           "required": true,
-          "type": "str"
+          "type": "enum",
+          "values": [
+            "wrapped",
+            "adopted-verified",
+            "adopted-unverified"
+          ]
         }
       }
     },
@@ -616,22 +624,38 @@
         "run"
       ],
       "ids": {
-        "run": {
-          "runId": "required"
-        }
+        "runId": "required"
       },
       "payload": {
         "from": {
           "required": true,
-          "type": "str"
+          "type": "enum",
+          "values": [
+            "launching",
+            "running",
+            "draining",
+            "green",
+            "red",
+            "ended-unknown",
+            "launch-failed"
+          ]
         },
         "to": {
           "required": true,
-          "type": "str"
+          "type": "enum",
+          "values": [
+            "launching",
+            "running",
+            "draining",
+            "green",
+            "red",
+            "ended-unknown",
+            "launch-failed"
+          ]
         },
         "generation": {
           "required": true,
-          "type": "str"
+          "type": "int"
         }
       }
     },
@@ -640,9 +664,7 @@
         "run"
       ],
       "ids": {
-        "run": {
-          "runId": "required"
-        }
+        "runId": "required"
       },
       "payload": {
         "reason": {
@@ -656,9 +678,7 @@
         "run"
       ],
       "ids": {
-        "run": {
-          "runId": "required"
-        }
+        "runId": "required"
       },
       "payload": {
         "expected": {

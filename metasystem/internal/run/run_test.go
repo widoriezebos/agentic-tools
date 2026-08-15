@@ -38,7 +38,13 @@ var mainCaller = Caller{Class: "MAIN", MainId: "main-test-1", OwnerLineage: "mai
 func testStore(t *testing.T) *Store {
 	t.Helper()
 	base := time.Unix(1786900000, 0)
-	return &Store{Root: t.TempDir(), Now: func() time.Time { return base }}
+	return &Store{
+		Root: t.TempDir(),
+		Now:  func() time.Time { return base },
+		// Synthetic pids are their own group leaders unless a test
+		// overrides with the real kernel.
+		Getpgid: func(pid int64) (int64, error) { return pid, nil },
+	}
 }
 
 func launchOne(t *testing.T, s *Store, id string) string {
@@ -541,5 +547,99 @@ func TestWaiterContract(t *testing.T) {
 	// Watch on a missing record: 4.
 	if code := s.Watch("ghost-run", mainCaller, time.Millisecond); code != ExitNoRecord {
 		t.Fatalf("missing record watch exit %d, want 4", code)
+	}
+}
+
+// Critique finding 2: a mutation carrying lease coordinates must prove
+// its epoch is STILL current inside the runs lock — a stale child, an
+// unverifiable lease, and a current holder each get their exact answer.
+// Humans (nil epoch) are never gated.
+func TestEpochSeamRefusesStale(t *testing.T) {
+	s := testStore(t)
+	current := int64(5)
+	verifiable := true
+	s.CurrentEpoch = func() (*int64, bool) {
+		if !verifiable {
+			return nil, false
+		}
+		return &current, true
+	}
+	epoch := int64(5)
+	holder := mainCaller
+	holder.ClaimEpoch = &epoch
+
+	if _, err := s.Launch(holder, LaunchParams{Id: "epoch-ok", Kind: "suite", Log: "a.log"}); err != nil {
+		t.Fatalf("a current-epoch launch refused: %v", err)
+	}
+	current = 6
+	_, err := s.Launch(holder, LaunchParams{Id: "epoch-stale", Kind: "suite", Log: "b.log"})
+	if err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("a stale-epoch launch was allowed: %v", err)
+	}
+	verifiable = false
+	_, err = s.Launch(holder, LaunchParams{Id: "epoch-blind", Kind: "suite", Log: "c.log"})
+	if err == nil || !strings.Contains(err.Error(), "cannot verify") {
+		t.Fatalf("an unverifiable epoch was allowed: %v", err)
+	}
+	// A human carries no epoch and is never gated on it.
+	if _, err := s.Launch(Caller{Class: "HUMAN", SessionId: "h"}, LaunchParams{Id: "epoch-human", Kind: "suite", Log: "d.log"}); err != nil {
+		t.Fatalf("a human launch was epoch-gated: %v", err)
+	}
+}
+
+// Critique finding 7: pattern evidence trusts the BOUND file, not the
+// path — a log swapped for a symlink between bind and conclusion is
+// refused as ended-unknown, never read through to a green.
+func TestPatternEvidenceSymlinkSwap(t *testing.T) {
+	s := testStore(t)
+	prober := fakeProber{verdicts: map[int64]identity.Liveness{}, starts: map[int64]int64{}}
+	s.Prober = prober
+
+	sleeper := exec.Command("/bin/sleep", "30")
+	sleeper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := sleeper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { sleeper.Process.Kill(); sleeper.Wait() }()
+	pid := int64(sleeper.Process.Pid)
+	prober.verdicts[pid] = identity.Alive
+	prober.starts[pid] = 9000
+
+	logPath := filepath.Join(s.Root, "swap.log")
+	os.WriteFile(logPath, []byte("working\n"), 0o644)
+	if err := s.Register(mainCaller, LaunchParams{Id: "swap-run", Kind: "custom", Log: logPath, WindDownMin: 1}, pid, "(?m)^ALL GREEN$"); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := s.Read("swap-run")
+
+	// The swap: the bound path becomes a symlink to a file that WOULD
+	// match the verdict pattern.
+	decoy := filepath.Join(s.Root, "decoy.log")
+	os.WriteFile(decoy, []byte("ALL GREEN\n"), 0o644)
+	os.Remove(record.Log)
+	if err := os.Symlink(decoy, record.Log); err != nil {
+		t.Fatal(err)
+	}
+
+	sleeper.Process.Kill()
+	sleeper.Wait()
+	prober.verdicts[pid] = identity.Dead
+	result, err := s.Assess("swap-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.To == StatusDraining {
+		s.Now = func() time.Time { return time.Unix(1786900000, 0).Add(200 * time.Minute) }
+		result, err = s.Assess("swap-run")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if result.To != StatusEndedUnknown {
+		t.Fatalf("a swapped log concluded %s, not ended-unknown", result.To)
+	}
+	record, _ = s.Read("swap-run")
+	if record.Error == nil || !strings.Contains(*record.Error, "moved since bind") {
+		t.Fatalf("the swap was not surfaced: %+v", record.Error)
 	}
 }

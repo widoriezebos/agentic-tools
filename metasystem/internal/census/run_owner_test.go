@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -15,18 +16,25 @@ import (
 func TestRunGroupCustody(t *testing.T) {
 	repo := t.TempDir()
 	nonce := strings.Repeat("ab", 16)
-	writeRecord := func(id, status, custody string, pid, pgid int64) {
+	writeRecord := func(id, status, custody string, pid, pgid int64, endedAt string) {
+		ended := "null"
+		if endedAt != "" {
+			ended = `"` + endedAt + `"`
+		}
 		record := `{"schemaVersion":1,"runId":"` + id + `","kind":"suite","display":"x","custody":"` + custody + `",` +
 			`"generation":1,"pid":` + itoa(pid) + `,"pidStartedAt":5000,"pgid":` + itoa(pgid) + `,` +
 			`"launchNonce":"` + nonce + `","log":"/tmp/x.log","startedAt":"2026-08-15T10:00:00Z",` +
-			`"sessionId":"s","goalId":"","staleAfterMin":30,"windDownMin":10,` +
+			`"sessionId":"s","goalId":"","staleAfterMin":30,"windDownMin":10,"endedAt":` + ended + `,` +
 			`"evidence":{"mode":"exit-sidecar"},"expect":{"green":"","red":"","hung":"","unknown":""},` +
 			`"status":"` + status + `","provisionalVerdict":` + provisional(status) + `,"acked":false}`
 		os.MkdirAll(run.Dir(repo), 0o755)
 		os.WriteFile(run.RecordPath(repo, id), []byte(record), 0o644)
 	}
-	writeRecord("wrapped-run", "running", "wrapped", 900, 900)
-	writeRecord("drain-run", "draining", "wrapped", 901, 901)
+	writeRecord("wrapped-run", "running", "wrapped", 900, 900, "")
+	writeRecord("drain-run", "draining", "wrapped", 901, 901, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+	// Finding 6: a drain whose wind-down expired owns NOTHING anymore.
+	writeRecord("expired-drain", "draining", "wrapped", 902, 902,
+		time.Now().UTC().Add(-30*time.Minute).Format("2006-01-02T15:04:05Z"))
 	os.WriteFile(filepath.Join(run.Dir(repo), "broken.json"), []byte("{nope"), 0o644)
 
 	processes := []Process{
@@ -40,6 +48,11 @@ func TestRunGroupCustody(t *testing.T) {
 	owners := loadRunOwners(repo, processes, &diagnostics)
 	if len(owners) != 2 {
 		t.Fatalf("owners wrong: %+v", owners)
+	}
+	for _, owner := range owners {
+		if owner.Id == "expired-drain" {
+			t.Fatalf("an expired drain still owns its group: %+v", owner)
+		}
 	}
 
 	check := func(p Process, wantClass, wantTagPrefix string) {

@@ -41,4 +41,17 @@ func TestRunEventConformance(t *testing.T) {
 	if !strings.Contains(stream, `"runId":"r1"`) {
 		t.Fatalf("runId identifier missing from the stream:\n%s", stream)
 	}
+	// Every registered payload field must land verbatim — the catalogue
+	// silently drops unknown FIELDS too, so name-level checks alone would
+	// let a renamed field vanish from the flight record.
+	for _, want := range []string{
+		`"kind":"suite"`, `"custody":"wrapped"`,
+		`"from":"running"`, `"to":"green"`, `"generation":"1"`,
+		`"reason":"stale-claim-epoch"`,
+		`"expected":"running.g1"`, `"found":"green.g1"`,
+	} {
+		if !strings.Contains(stream, want) {
+			t.Fatalf("payload field %s missing from the stream:\n%s", want, stream)
+		}
+	}
 }

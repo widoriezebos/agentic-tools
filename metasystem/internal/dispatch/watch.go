@@ -39,6 +39,14 @@ func JobWatch(root, jobId string, caller run.Caller, poll time.Duration) int {
 			return 0
 		case "failed":
 			return 1
+		case "timeout":
+			return 2
+		case "cancelled":
+			return 3
+		case "pending-setup", "pending", "running":
+			// still in flight
+		default:
+			return run.ExitNoRecord // an unknown status is a malformed record
 		}
 		time.Sleep(poll)
 	}

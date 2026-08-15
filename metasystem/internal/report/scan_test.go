@@ -167,7 +167,11 @@ func TestMonitorFacts(t *testing.T) {
 			`"staleAfterMin":30,"windDownMin":10,"evidence":{"mode":"exit-sidecar"},`+
 			`"expect":{"green":"gg","red":"rr","hung":"hh","unknown":"uu"},"status":"running","acked":false}`)
 	writeFile(t, root, "artifacts/agents/runs/broken-run.json", "{torn")
-	// A fresh attestation by a live watcher covering the run's triple.
+	// A fresh attestation by the ARMED live watcher covering the run's
+	// triple — the armed state supplies the identity and the interval
+	// (critique finding 5).
+	writeFile(t, root, "artifacts/agents/supervision/state.json",
+		`{"schemaVersion":1,"components":{"watcher":{"pid":602,"pidStartedAt":7500,"instanceTag":"w"}},"intervalSec":300}`)
 	writeFile(t, root, "artifacts/agents/supervision/runs-pass.json",
 		`{"completedAt":"`+time.Now().UTC().Format("2006-01-02T15:04:05Z")+`",`+
 			`"watcherPid":602,"watcherStart":7500,`+
@@ -197,7 +201,49 @@ func TestMonitorFacts(t *testing.T) {
 		t.Fatalf("torn run record did not surface: %v", scan.RunUnreadable)
 	}
 
+	// A FUTURE-stamped attestation supervises nothing (finding 5).
+	writeFile(t, root, "artifacts/agents/supervision/runs-pass.json",
+		`{"completedAt":"`+time.Now().UTC().Add(time.Hour).Format("2006-01-02T15:04:05Z")+`",`+
+			`"watcherPid":602,"watcherStart":7500,`+
+			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
+	scan = scanWithProber(root, prober)
+	if scan.Runs[0].Supervised {
+		t.Fatal("a future-stamped attestation was believed")
+	}
+
+	// An attestation older than TWICE the armed interval supervises
+	// nothing — the bound is the loaded interval, not a constant.
+	writeFile(t, root, "artifacts/agents/supervision/state.json",
+		`{"schemaVersion":1,"components":{"watcher":{"pid":602,"pidStartedAt":7500,"instanceTag":"w"}},"intervalSec":1}`)
+	writeFile(t, root, "artifacts/agents/supervision/runs-pass.json",
+		`{"completedAt":"`+time.Now().UTC().Add(-time.Minute).Format("2006-01-02T15:04:05Z")+`",`+
+			`"watcherPid":602,"watcherStart":7500,`+
+			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
+	scan = scanWithProber(root, prober)
+	if scan.Runs[0].Supervised {
+		t.Fatal("an attestation beyond 2x the armed interval was believed")
+	}
+
+	// An attestation from someone OTHER than the armed watcher supervises
+	// nothing, however fresh and alive.
+	writeFile(t, root, "artifacts/agents/supervision/state.json",
+		`{"schemaVersion":1,"components":{"watcher":{"pid":777,"pidStartedAt":1,"instanceTag":"w"}},"intervalSec":300}`)
+	writeFile(t, root, "artifacts/agents/supervision/runs-pass.json",
+		`{"completedAt":"`+time.Now().UTC().Format("2006-01-02T15:04:05Z")+`",`+
+			`"watcherPid":602,"watcherStart":7500,`+
+			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
+	scan = scanWithProber(root, prober)
+	if scan.Runs[0].Supervised {
+		t.Fatal("a non-armed watcher's attestation was believed")
+	}
+	writeFile(t, root, "artifacts/agents/supervision/state.json",
+		`{"schemaVersion":1,"components":{"watcher":{"pid":602,"pidStartedAt":7500,"instanceTag":"w"}},"intervalSec":300}`)
+
 	// A DEAD watcher's attestation supervises nothing.
+	writeFile(t, root, "artifacts/agents/supervision/runs-pass.json",
+		`{"completedAt":"`+time.Now().UTC().Format("2006-01-02T15:04:05Z")+`",`+
+			`"watcherPid":602,"watcherStart":7500,`+
+			`"scannedRuns":[{"id":"live-run","generation":1,"launchNonce":"`+nonce+`"}]}`)
 	prober.verdicts[602] = identity.Dead
 	scan = scanWithProber(root, prober)
 	if scan.Runs[0].Supervised {

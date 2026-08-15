@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -69,23 +70,7 @@ type AssessResult struct {
 func (s *Store) Assess(id string) (AssessResult, error) {
 	var result AssessResult
 	err := s.withLock(func() error {
-		record, err := s.Read(id)
-		if err != nil {
-			return err
-		}
-		if record == nil {
-			return fmt.Errorf("no run record %s", id)
-		}
-		switch record.Status {
-		case StatusLaunching:
-			return s.assessLaunching(record, &result)
-		case StatusRunning:
-			return s.assessRunning(record, &result)
-		case StatusDraining:
-			return s.assessDraining(record, &result)
-		default:
-			return nil // terminal: nothing to advance
-		}
+		return s.assessHeld(id, &result)
 	})
 	return result, err
 }
@@ -106,6 +91,10 @@ func (s *Store) assessLaunching(record *Record, result *AssessResult) error {
 // assessRunning probes the leader three-way and applies the evidence
 // table on death.
 func (s *Store) assessRunning(record *Record, result *AssessResult) error {
+	if record.Pid == nil || record.PidStartedAt == nil {
+		result.Unreadable = append(result.Unreadable, record.RunId+": running record with null identity")
+		return nil
+	}
 	switch identity.AliveRef(s.prober(), identity.Ref{Pid: *record.Pid, StartedAtSec: *record.PidStartedAt}) {
 	case identity.Alive:
 		return s.assessHung(record)
@@ -201,6 +190,10 @@ func (s *Store) provisional(record *Record) (verdict string, exitCode *int64, no
 		}
 		return StatusRed, &code, nil, nil
 	case EvidencePattern:
+		if resolved, err := filepath.EvalSymlinks(record.Log); err != nil || resolved != record.Log {
+			message := record.RunId + ": log path moved since bind; refusing pattern evidence"
+			return StatusEndedUnknown, nil, strPtr(message), []string{message}
+		}
 		tail, err := readTail(record.Log, PatternTailBytes)
 		if err != nil {
 			message := record.RunId + ": log unreadable at conclusion: " + err.Error()
@@ -259,6 +252,10 @@ func (s *Store) terminalize(record *Record, status string, exitCode *int64, note
 		r.TerminalSeq = &seq
 		r.ExitCode = exitCode
 		r.Error = note
+		if r.EndedAt == nil {
+			stamped := s.nowISO()
+			r.EndedAt = &stamped
+		}
 		return nil
 	})
 	if err == nil {
@@ -291,3 +288,88 @@ func readTail(path string, limit int64) ([]byte, error) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// SweepStale is the takeover sweep's run half (critique finding 1): it
+// holds the runs lock for the whole pass, signals ONLY wrapped runs whose
+// group ownership the proof function establishes (adopted custody never
+// carries the argv nonce and is never signaled — it surfaces through the
+// returned refusal), waits a bounded drain after TERM, and FORCES the
+// conclusion to ended-unknown when the assessment cannot move the record
+// — a takeover never completes over an unswept run.
+func (s *Store) SweepStale(epoch int64,
+	proof func(pgid int64, nonce string) (owned, provable bool),
+	kill func(pgid int64) error) error {
+	return s.withLock(func() error {
+		records, unreadable := s.List()
+		if len(unreadable) > 0 {
+			return fmt.Errorf("run sweep refused: %s", unreadable[0])
+		}
+		for i := range records {
+			record := &records[i]
+			if record.ClaimEpoch == nil || *record.ClaimEpoch >= epoch {
+				continue
+			}
+			if record.Status != StatusRunning && record.Status != StatusDraining {
+				continue
+			}
+			if record.Custody != CustodyWrapped {
+				return fmt.Errorf("run sweep refused: stale run %s has custody %s — never signaled, only surfaced", record.RunId, record.Custody)
+			}
+			if record.Pgid == nil {
+				return fmt.Errorf("run sweep refused: stale run %s has no bound group", record.RunId)
+			}
+			owned, provable := proof(*record.Pgid, record.LaunchNonce)
+			if !provable {
+				return fmt.Errorf("run sweep cannot prove ownership of stale run %s", record.RunId)
+			}
+			if !owned {
+				return fmt.Errorf("run sweep refused: stale run %s group ownership disproven; surfacing", record.RunId)
+			}
+			if err := kill(*record.Pgid); err != nil {
+				return fmt.Errorf("run sweep cannot stop stale run %s: %v", record.RunId, err)
+			}
+			// Bounded drain: give the TERM five seconds to land.
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) && !s.groupEmpty(*record.Pgid) {
+				time.Sleep(100 * time.Millisecond)
+			}
+			var result AssessResult
+			if err := s.assessHeld(record.RunId, &result); err != nil {
+				return err
+			}
+			fresh, err := s.Read(record.RunId)
+			if err != nil {
+				return err
+			}
+			if !Terminal(fresh.Status) {
+				note := "swept at takeover: forced conclusion"
+				if err := s.terminalizeWithVerdict(fresh, StatusEndedUnknown, nil, &note, &result); err != nil {
+					return fmt.Errorf("run sweep could not conclude %s: %v", record.RunId, err)
+				}
+			}
+			s.emit("run-swept", map[string]string{"runId": record.RunId, "reason": "stale-claim-epoch"})
+		}
+		return nil
+	})
+}
+
+// assessHeld is Assess's body for callers already holding the runs lock.
+func (s *Store) assessHeld(id string, result *AssessResult) error {
+	record, err := s.Read(id)
+	if err != nil {
+		return err
+	}
+	if record == nil {
+		return fmt.Errorf("no run record %s", id)
+	}
+	switch record.Status {
+	case StatusLaunching:
+		return s.assessLaunching(record, result)
+	case StatusRunning:
+		return s.assessRunning(record, result)
+	case StatusDraining:
+		return s.assessDraining(record, result)
+	default:
+		return nil
+	}
+}

@@ -309,6 +309,16 @@ func loadRunOwners(repo string, processes []Process, diagnostics *[]string) []ru
 		if record.Pgid == nil || record.Pid == nil || record.PidStartedAt == nil {
 			continue
 		}
+		if record.Status == run.StatusDraining && record.EndedAt != nil {
+			// Draining custody is BOUNDED (critique finding 6): past the
+			// wind-down the survivors surface as UNTRACKED — a stopped
+			// watcher must not let a dead run own a reused group forever.
+			if ended, err := time.Parse("2006-01-02T15:04:05Z", *record.EndedAt); err == nil {
+				if time.Since(ended) > time.Duration(record.WindDownMin)*time.Minute {
+					continue
+				}
+			}
+		}
 		owner := runOwner{
 			Id: record.RunId, Registry: run.RecordPath(repo, record.RunId),
 			Pgid: *record.Pgid, Draining: record.Status == run.StatusDraining,

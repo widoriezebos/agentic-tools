@@ -133,11 +133,46 @@ func Terminal(status string) bool {
 	return false
 }
 
-// Store binds one checkout. Prober and Now are test seams.
+// Store binds one checkout. Prober and Now are test seams; CurrentEpoch
+// is the in-lock lease-epoch reader (finding 2 of the code critique): a
+// mutation carrying lease coordinates must prove its epoch is STILL the
+// checkout's epoch inside the runs lock — authorization at the command
+// layer is point-in-time and a stalled child can outlive its main.
 type Store struct {
-	Root   string
-	Prober identity.Prober
-	Now    func() time.Time
+	Root         string
+	Prober       identity.Prober
+	Now          func() time.Time
+	CurrentEpoch func() (*int64, bool)
+	// Getpgid is the kernel process-group reader, a seam for tests
+	// whose recorded pids are synthetic.
+	Getpgid func(pid int64) (int64, error)
+}
+
+func (s *Store) getpgid(pid int64) (int64, error) {
+	if s.Getpgid != nil {
+		return s.Getpgid(pid)
+	}
+	pg, err := unix.Getpgid(int(pid))
+	return int64(pg), err
+}
+
+// checkEpoch refuses a stale-epoch mutation; callers hold the runs lock.
+// HUMAN callers (nil epoch) are exempt by contract.
+func (s *Store) checkEpoch(caller Caller) error {
+	if caller.ClaimEpoch == nil {
+		return nil
+	}
+	if s.CurrentEpoch == nil {
+		return nil // no seam wired: local library use (tests) — the CLI always wires it
+	}
+	current, ok := s.CurrentEpoch()
+	if !ok || current == nil {
+		return fmt.Errorf("cannot verify the lease epoch; refusing the mutation")
+	}
+	if *current != *caller.ClaimEpoch {
+		return fmt.Errorf("the caller's lease epoch %d is stale (current %d); refusing", *caller.ClaimEpoch, *current)
+	}
+	return nil
 }
 
 func (s *Store) prober() identity.Prober {
@@ -213,7 +248,11 @@ func (s *Store) nextTerminalSeq() (int64, error) {
 	data, err := os.ReadFile(path)
 	seq := int64(0)
 	if err == nil {
-		seq, _ = strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+		parsed, parseErr := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+		if parseErr != nil || parsed < 0 {
+			return 0, fmt.Errorf("terminal-seq counter is malformed; refusing to reset the total order")
+		}
+		seq = parsed
 	} else if !os.IsNotExist(err) {
 		return 0, err
 	}
@@ -236,6 +275,9 @@ func (s *Store) Read(id string) (*Record, error) {
 	var record Record
 	if err := json.Unmarshal(data, &record); err != nil {
 		return nil, fmt.Errorf("run record %s is unparsable: %v", id, err)
+	}
+	if problems := Validate(&record); len(problems) > 0 {
+		return nil, fmt.Errorf("run record %s is structurally illegal: %s", id, problems[0])
 	}
 	return &record, nil
 }

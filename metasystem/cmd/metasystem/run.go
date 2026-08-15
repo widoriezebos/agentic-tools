@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -45,6 +46,20 @@ func runCaller(root string, callerPid int64, mode string) (run.Caller, error) {
 	}, nil
 }
 
+// runStore binds a Store with the in-lock epoch reader (critique
+// finding 2): the CLI ALWAYS wires CurrentEpoch so a stale-epoch child
+// cannot mutate records after a takeover; only library/test use leaves
+// the seam nil.
+func runStore(root string) *run.Store {
+	return &run.Store{Root: root, CurrentEpoch: func() (*int64, bool) {
+		view, err := lease.ClassifyVerb(root, int64(os.Getpid()))
+		if err != nil {
+			return nil, false
+		}
+		return view.ClaimEpoch, true
+	}}
+}
+
 // watchLine is THE printed waiter command — one grammar, everywhere.
 func watchLine(root, id string) string {
 	return fmt.Sprintf("bin/metasystem run watch --id %s --root %s", id, root)
@@ -77,7 +92,7 @@ func runRunLaunch(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	nonce, err := store.Launch(caller, run.LaunchParams{
 		Id: *id, Kind: *kind, Display: *display, Log: *log,
 		StaleAfterMin: *stale, WindDownMin: *windDown,
@@ -90,11 +105,13 @@ func runRunLaunch(args []string) int {
 	record, err := store.Read(*id)
 	if err != nil || record == nil {
 		fmt.Fprintln(os.Stderr, "pending record unreadable after launch")
+		_ = store.FailLaunch(*id, "pending record unreadable after launch")
 		return 1
 	}
 	self, err := os.Executable()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		_ = store.FailLaunch(*id, "cannot resolve the wrapper executable")
 		return 1
 	}
 	wrapArgs := append([]string{"run", "wrap",
@@ -106,6 +123,7 @@ func runRunLaunch(args []string) int {
 	wrapper.Stdin = nil
 	if err := wrapper.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, "wrapper spawn failed:", err)
+		_ = store.FailLaunch(*id, "wrapper spawn failed: "+err.Error())
 		return 1
 	}
 	// The wrapper is detached on purpose; the record, not the process
@@ -129,7 +147,7 @@ func runRunWrap(args []string) int {
 		fmt.Fprintln(os.Stderr, "run wrap requires -- <command...>")
 		return 2
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	self := int64(os.Getpid())
 	// A setsid leader's pgid is its own pid.
 	if err := store.Bind(*id, *nonce, self, self); err != nil {
@@ -180,7 +198,7 @@ func runRunWatch(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return run.ExitWaiterUnknown
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	return store.Watch(*id, caller, time.Duration(*pollMs)*time.Millisecond)
 }
 
@@ -203,7 +221,7 @@ func runRunRegister(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	if err := store.Register(caller, run.LaunchParams{
 		Id: *id, Kind: *kind, Display: *display, Log: *log, StaleAfterMin: *stale,
 	}, *pid, *pattern); err != nil {
@@ -229,7 +247,7 @@ func runRunAdopt(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	if err := store.Adopt(caller, *id, *pid); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -251,7 +269,7 @@ func runRunAck(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	if err := store.Ack(caller, *id); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -272,7 +290,7 @@ func runRunConclude(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	result, err := store.Assess(*id)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -301,7 +319,7 @@ func runRunPrune(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	dropped, err := store.Prune(caller)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -320,7 +338,7 @@ func runRunList(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	records, unreadable := store.List()
 	printJSON(map[string]any{"schemaVersion": 1, "runs": records, "unreadable": unreadable})
 	return 0
@@ -333,7 +351,7 @@ func runRunStatus(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	store := &run.Store{Root: *root}
+	store := runStore(*root)
 	record, err := store.Read(*id)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -370,6 +388,9 @@ func runJobWatchVerb(args []string) int {
 // process's identity, one emitter for verbs and watcher alike.
 func init() {
 	emitter := &events.Emitter{Component: "run", Pid: int64(os.Getpid())}
+	if exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid())); err == nil && state == identity.Alive {
+		emitter.PidStartedAt = exact.StartedAt.Unix()
+	}
 	run.SetEmitter(func(root, event string, fields map[string]string) {
 		summary := event
 		if id, ok := fields["runId"]; ok {

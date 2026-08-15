@@ -368,3 +368,25 @@ cmd/metasystem (run family + watch verbs), fixtures, docs.
 | FIX-R6-03 | HIGH | Arbiter exit r6-3 | HUMAN waiters key on human:<uid>; the printed command works with no session plumbing | internal/run + internal/dispatch | internal/run/run.go OwnerDigest | run_test.go TestWaiterContract | run_test.go TestWaiterContract: human waiter keyed on the OS user id, no session plumbing | DONE | — |
 | FIX-R6-04 | HIGH | Arbiter exit r6-4 | Greens surface in terminalSeq order under the verdict's flock; an unreadable run record freezes the cursor; replay-on-state-loss is the documented class | internal/goal + internal/run | turnverdict.go re-read | turnverdict_test.go TestGreenPrefixConsistency | turnverdict_test.go TestGreenPrefixConsistency: freeze under unreadable, ordered surfacing, no repeats | DONE | — |
 | MON-11 | MEDIUM | Grammar | Every bound at the source incl. windDownMin 1..120 and the log containment/symlink rule; sidecar suffix excluded from the record glob; status shape pinned | internal/run | run.go validation | run_test.go TestBounds | run_test.go TestBounds refuses every bound at the source | DONE | — |
+
+## Code-critique fold (mandatory review, 2026-08-15)
+
+The arbiter exit made a code critique of the implementation MANDATORY.
+It ran against the gated tree (Mac 04a1bbe, VM d50909a) and returned
+REVISE with 11 material findings — 4 critical — every one real, every
+one folded with a test. The critique is preserved verbatim at
+plans/monitor-facility-code-critique.md.
+
+| Finding | Fix | Proof |
+| --- | --- | --- |
+| 1 CRITICAL sweep unserialized, one proof rule, no forced conclusion | Store.SweepStale under the runs lock: wrapped-only signaling, loud refusal on other custody, 5s bounded drain, forced ended-unknown; lease side thinned to seams | sweep_run_test.go TestRunSweepProofOrRefuse |
+| 2 CRITICAL no in-lock epoch recheck | Store.CurrentEpoch seam checked inside every mutation's lock; CLI always wires it via lease | run_test.go TestEpochSeamRefusesStale |
+| 3 CRITICAL green cursor can skip a green; counter resets when malformed | decideGreens re-reads records from disk inside the verdict flock; unreadable freezes; nextTerminalSeq refuses a malformed counter | turnverdict_test.go TestGreenCursorRereadsDisk |
+| 4 CRITICAL waiters miss timeout/cancelled; no lifecycle compare; remove by pid only | JobWatch full terminal map 0/1/2/3, unknown=4; run Watch compares generation+nonce each poll; RemoveWaiter compares pid AND start | watch_test.go + run_test.go TestWaiterContract |
+| 5 HIGH Supervised not tied to the armed watcher | readRunsPass loads state.json: armed identity match, 2x loaded intervalSec, future stamps rejected; verdict warns "supervision is not scanning run" | scan_test.go TestMonitorFacts armed-state legs |
+| 6 HIGH draining custody unbounded | census skips draining owners past endedAt+windDownMin | run_owner_test.go expired-drain leg |
+| 7 HIGH symlinked log redirects pattern evidence | resolveLog resolves the FILE; separator-safe containment; conclusion re-resolves and requires equality | run_test.go TestPatternEvidenceSymlinkSwap |
+| 8 HIGH bind/adopt/emptiness proofs not preserved | Bind verifies kernel pgid; Adopt recomputes custody with downgrade; groupEmpty treats non-ESRCH errors as unprovable | run_test.go kinship legs |
+| 9 HIGH invalid records treated as valid | Read runs Validate; List surfaces failures and sorts by startedAt; assessRunning nil-identity guard | run_test.go + census/report fixture legs |
+| 10 HIGH launch failures never become launch-failed; fenced records unprunable | FailLaunch on every post-reserve error path; terminalize stamps endedAt | run_test.go TestLaunchReservationAndFence |
+| 11 MEDIUM registry grammar wrong; conformance test name-only; cmd emitter identityless | flat runId ids + enum payload types; payload-field assertions; cmd emitter self-probes pidStartedAt; sweep emits as run | run_conformance_test.go |

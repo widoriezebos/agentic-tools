@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -163,7 +164,10 @@ func (s *Store) RemoveWaiter(kind, id string, owner Caller) {
 		if json.Unmarshal(data, &existing) != nil {
 			return nil
 		}
-		if existing.Pid == int64(os.Getpid()) {
+		self := int64(os.Getpid())
+		exact, state, _ := s.prober().Probe(self)
+		if existing.Pid == self && state == identity.Alive &&
+			existing.PidStartedAt == exact.StartedAt.Unix() {
 			os.Remove(path)
 		}
 		return nil
@@ -210,6 +214,11 @@ func (s *Store) Watch(id string, owner Caller, poll time.Duration) int {
 		if err != nil || record == nil {
 			return ExitNoRecord
 		}
+		if record.Generation != target.Generation || record.LaunchNonce != target.LaunchNonce {
+			// The public id now names a DIFFERENT lifecycle (reuse or
+			// adoption): this waiter's target is gone.
+			return ExitNoRecord
+		}
 		switch record.Status {
 		case StatusGreen:
 			return ExitGreen
@@ -238,7 +247,12 @@ func (s *Store) List() (records []Record, unreadable []string) {
 			unreadable = append(unreadable, path+": unparsable run record")
 			continue
 		}
+		if problems := Validate(&record); len(problems) > 0 {
+			unreadable = append(unreadable, path+": "+problems[0])
+			continue
+		}
 		records = append(records, record)
 	}
+	sort.Slice(records, func(i, j int) bool { return records[i].StartedAt < records[j].StartedAt })
 	return records, unreadable
 }

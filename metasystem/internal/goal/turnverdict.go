@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 // The turn verdict: one verb, one structured decision (GOAL-04, GOAL-07,
@@ -212,6 +214,8 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 			warn("run %s looks hung; the run record says: %s", runFact.Id, continuation(runFact.ExpectHung))
 		case runFact.ProbeState == "unknown":
 			warn("run %s liveness unknown", runFact.Id)
+		case (runFact.Status == "launching" || runFact.Status == "running" || runFact.Status == "draining") && !runFact.Supervised:
+			warn("supervision is not scanning run %s", runFact.Id)
 		}
 	}
 	warnings = append(warnings, scan.RunUnreadable...)
@@ -254,10 +258,15 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 }
 
 // decideGreens surfaces green terminals exactly once per session on the
-// terminal sequence's total order; any unreadable run record freezes the
-// cursor entirely (FIX-R6-04).
+// terminal sequence's total order. The greens are RE-READ FROM DISK
+// inside this verdict's flock (critique finding 3): the scanner's
+// ScanResult predates the lock and a stale snapshot could advance the
+// cursor past a green it never saw. Any unreadable run record freezes
+// the cursor entirely (FIX-R6-04). Crafted scan facts still drive the
+// warning paths; the CURSOR trusts only the fresh read.
 func (s *Store) decideGreens(scan ScanResult, session *sessionState) []string {
-	if len(scan.RunUnreadable) > 0 {
+	records, unreadable := (&run.Store{Root: s.Root}).List()
+	if len(unreadable) > 0 || len(scan.RunUnreadable) > 0 {
 		return nil
 	}
 	type green struct {
@@ -265,8 +274,23 @@ func (s *Store) decideGreens(scan ScanResult, session *sessionState) []string {
 		line string
 	}
 	var greens []green
+	seen := map[string]bool{}
+	for _, record := range records {
+		if record.Status != "green" || record.TerminalSeq == nil || *record.TerminalSeq <= session.GreenCursor {
+			continue
+		}
+		text := record.Expect.Green
+		if text == "" {
+			text = "no continuation recorded"
+		}
+		greens = append(greens, green{*record.TerminalSeq, fmt.Sprintf(
+			"run %s finished green; the run record says: %s", record.RunId, text)})
+		seen[record.RunId] = true
+	}
+	// Crafted scan facts (tests, and any future non-record source) join
+	// when the disk read did not already carry them.
 	for _, runFact := range scan.Runs {
-		if runFact.Status != "green" || runFact.TerminalSeq <= session.GreenCursor {
+		if runFact.Status != "green" || runFact.TerminalSeq <= session.GreenCursor || seen[runFact.Id] {
 			continue
 		}
 		text := runFact.ExpectGreen

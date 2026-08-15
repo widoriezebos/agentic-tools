@@ -414,3 +414,60 @@ func TestHumanOwnsHumanRuns(t *testing.T) {
 		t.Fatalf("a main owned the human's run: %+v", v)
 	}
 }
+
+// Critique finding 3: the green cursor trusts the DISK read inside the
+// verdict flock, not the scanner's snapshot — a scan that predates a
+// run's conclusion must not let the cursor advance past it, and a torn
+// record on disk freezes the cursor even when the scan looked clean.
+func TestGreenCursorRereadsDisk(t *testing.T) {
+	s := testStore(t)
+	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
+	writeGreen := func(id string, seq int) {
+		record := `{"schemaVersion":1,"runId":"` + id + `","kind":"suite","display":"x","custody":"wrapped",` +
+			`"generation":1,"pid":null,"pidStartedAt":null,"pgid":null,` +
+			`"launchNonce":"` + strings.Repeat("ef", 16) + `","log":"/tmp/x.log","startedAt":"2026-08-15T10:00:00Z",` +
+			`"sessionId":"s","goalId":"","staleAfterMin":30,"windDownMin":10,` +
+			`"endedAt":"2026-08-15T10:05:00Z","terminalSeq":` + fmt.Sprintf("%d", seq) + `,` +
+			`"evidence":{"mode":"exit-sidecar"},"expect":{"green":"ship ` + id + `","red":"","hung":"","unknown":""},` +
+			`"status":"green","acked":false}`
+		dir := filepath.Join(s.Root, "artifacts", "agents", "runs")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(record), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeGreen("disk-run", 5)
+
+	// The scan snapshot is STALE — it never saw disk-run — yet the green
+	// surfaces because the verdict re-reads the records under its flock.
+	v, _ := s.TurnVerdict(ScanResult{}, "s", "", "")
+	if !strings.Contains(v.Display, "disk-run finished green") || !strings.Contains(v.Display, "ship disk-run") {
+		t.Fatalf("the stale scan hid the on-disk green: %s", v.Display)
+	}
+	// Once surfaced, never repeated.
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
+	if strings.Contains(v.Display, "finished green") {
+		t.Fatalf("the disk green repeated: %s", v.Display)
+	}
+
+	// A torn record ON DISK freezes the cursor even when the scan carries
+	// a clean green fact.
+	writeGreen("late-run", 6)
+	dir := filepath.Join(s.Root, "artifacts", "agents", "runs")
+	if err := os.WriteFile(filepath.Join(dir, "torn.json"), []byte("{torn"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = s.TurnVerdict(ScanResult{Runs: []RunFact{{Id: "late-run", Status: "green", TerminalSeq: 6, ExpectGreen: "x"}}}, "s", "", "")
+	if strings.Contains(v.Display, "finished green") {
+		t.Fatalf("green surfaced through an on-disk freeze: %s", v.Display)
+	}
+	if err := os.Remove(filepath.Join(dir, "torn.json")); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = s.TurnVerdict(ScanResult{}, "s", "", "")
+	if !strings.Contains(v.Display, "late-run finished green") {
+		t.Fatalf("the frozen green never surfaced after recovery: %s", v.Display)
+	}
+}

@@ -263,8 +263,19 @@ func readRunsPass(root string, prober identity.Prober) (map[string]bool, string)
 	if json.Unmarshal(data, &attestation) != nil {
 		return nil, path + ": unparsable attestation"
 	}
+	// The freshness bound and the ARMED watcher identity come from the
+	// supervision state (critique finding 5): a one-shot pass or a
+	// future-stamped file supervises nothing.
+	armedPid, armedStart, intervalSec, armedOK := armedWatcherIdentity(root)
+	if !armedOK {
+		return nil, ""
+	}
+	if attestation.WatcherPid != armedPid || attestation.WatcherStart != armedStart {
+		return nil, ""
+	}
 	completed, err := time.Parse("2006-01-02T15:04:05Z", attestation.CompletedAt)
-	if err != nil || time.Since(completed) > 10*time.Minute {
+	if err != nil || completed.After(time.Now().Add(2*time.Second)) ||
+		time.Since(completed) > 2*time.Duration(intervalSec)*time.Second {
 		return nil, ""
 	}
 	if identity.AliveRef(prober, identity.Ref{Pid: attestation.WatcherPid, StartedAtSec: attestation.WatcherStart}) != identity.Alive {
@@ -275,4 +286,28 @@ func readRunsPass(root string, prober identity.Prober) (map[string]bool, string)
 		out[fmt.Sprintf("%s.g%d.%s", scanned.Id, scanned.Generation, scanned.LaunchNonce)] = true
 	}
 	return out, ""
+}
+
+// armedWatcherIdentity reads the standing watcher's recorded identity and
+// the loaded interval from the supervision state.
+func armedWatcherIdentity(root string) (pid, start int64, intervalSec int, ok bool) {
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "state.json"))
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	var state struct {
+		Components map[string]struct {
+			Pid          int64 `json:"pid"`
+			PidStartedAt int64 `json:"pidStartedAt"`
+		} `json:"components"`
+		IntervalSec int `json:"intervalSec"`
+	}
+	if json.Unmarshal(data, &state) != nil {
+		return 0, 0, 0, false
+	}
+	watcher, present := state.Components["watcher"]
+	if !present || state.IntervalSec <= 0 {
+		return 0, 0, 0, false
+	}
+	return watcher.Pid, watcher.PidStartedAt, state.IntervalSec, true
 }

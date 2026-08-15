@@ -59,48 +59,22 @@ func (c *claimer) cleanupStaleJobs(epoch int64) error {
 	return nil
 }
 
-// cleanupStaleRuns extends the takeover sweep to run records (monitor
-// facility, MON-06): a running or draining run whose claim epoch predates
-// the new generation is TERMed and concluded ONLY with the argv-nonce
-// group proof; without proof — including every adopted-unverified record,
-// which never had a wrapper to carry the nonce — the sweep refuses
-// loudly. It never signals blind and never silently terminalizes; human
-// runs (null epoch) are out of scope by contract.
+// cleanupStaleRuns hands the run half of the takeover sweep to the run
+// package, which owns the lock, the wrapped-only proof rule, the bounded
+// drain, and the forced conclusion (critique finding 1); this side
+// supplies the group-proof and kill seams the job sweep already tests.
 func (c *claimer) cleanupStaleRuns(epoch int64) error {
 	store := &run.Store{Root: c.root}
-	records, unreadable := store.List()
-	for _, line := range unreadable {
-		return fmt.Errorf("run sweep refused: %s", line)
-	}
-	for _, record := range records {
-		if record.ClaimEpoch == nil || *record.ClaimEpoch >= epoch {
-			continue
-		}
-		if record.Status != run.StatusRunning && record.Status != run.StatusDraining {
-			continue
-		}
-		if record.Pgid == nil {
-			continue
-		}
-		owned, provable := groupOwnsTag(*record.Pgid, record.LaunchNonce)
-		if !provable {
-			return fmt.Errorf("run sweep cannot prove ownership of stale run %s", record.RunId)
-		}
-		if !owned {
-			return fmt.Errorf("run sweep refused: stale run %s carries no provable group (custody %s); surfacing, never signaling blind", record.RunId, record.Custody)
-		}
-		switch err := sweepKill(*record.Pgid, unix.SIGTERM); err {
-		case nil, unix.ESRCH:
-		default:
-			return fmt.Errorf("run sweep cannot stop stale run %s: %v", record.RunId, err)
-		}
-		if _, err := store.Assess(record.RunId); err != nil {
-			return fmt.Errorf("run sweep conclusion failed for %s: %v", record.RunId, err)
-		}
-		c.emitter.Emit(c.root, "run-swept", "stale-claim-epoch "+record.RunId,
-			map[string]string{"runId": record.RunId, "reason": "stale-claim-epoch"})
-	}
-	return nil
+	return store.SweepStale(epoch,
+		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(pgid, nonce) },
+		func(pgid int64) error {
+			switch err := sweepKill(pgid, unix.SIGTERM); err {
+			case nil, unix.ESRCH:
+				return nil
+			default:
+				return err
+			}
+		})
 }
 
 func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (bool, error) {

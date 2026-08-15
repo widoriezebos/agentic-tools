@@ -49,6 +49,9 @@ type LaunchParams struct {
 // deletes on failure; the fence concludes stale pendings.
 func (s *Store) Launch(caller Caller, p LaunchParams) (nonce string, err error) {
 	err = s.withLock(func() error {
+		if err := s.checkEpoch(caller); err != nil {
+			return err
+		}
 		existing, err := s.Read(p.Id)
 		if err != nil {
 			return err
@@ -104,6 +107,9 @@ func (s *Store) Bind(id, nonce string, pid, pgid int64) error {
 		if state != identity.Alive {
 			return fmt.Errorf("bind identity for pid %d is not provably alive", pid)
 		}
+		if kernelPgid, err := s.getpgid(pid); err != nil || kernelPgid != pgid {
+			return fmt.Errorf("bind pgid %d does not match the kernel for pid %d", pgid, pid)
+		}
 		started := exact.StartedAt.Unix()
 		_, err = s.cas(id, StatusLaunching, record.Generation, func(r *Record) error {
 			r.Pid = &pid
@@ -128,6 +134,9 @@ func (s *Store) Bind(id, nonce string, pid, pgid int64) error {
 // labeled and never signaled.
 func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPattern string) error {
 	return s.withLock(func() error {
+		if err := s.checkEpoch(caller); err != nil {
+			return err
+		}
 		existing, err := s.Read(p.Id)
 		if err != nil {
 			return err
@@ -139,12 +148,12 @@ func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPatter
 		if state != identity.Alive {
 			return fmt.Errorf("register: pid %d is not provably alive", pid)
 		}
-		pgid, err := unix.Getpgid(int(pid))
+		pgid, err := s.getpgid(pid)
 		if err != nil {
 			return fmt.Errorf("register: pgid for %d unreadable: %v", pid, err)
 		}
 		custody := CustodyAdoptedUnverified
-		if s.kinship(int64(pgid)) {
+		if s.kinship(pgid) {
 			custody = CustodyAdoptedVerified
 		}
 		nonce, err := mintNonce()
@@ -156,7 +165,7 @@ func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPatter
 			return err
 		}
 		started := exact.StartedAt.Unix()
-		pgid64 := int64(pgid)
+		pgid64 := pgid
 		mainId, lineage, epoch := caller.coordinates()
 		mode := EvidenceNone
 		if verdictPattern != "" {
@@ -222,6 +231,9 @@ func (s *Store) kinship(targetPgid int64) bool {
 // empty. Generation increments; hungSince clears.
 func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 	return s.withLock(func() error {
+		if err := s.checkEpoch(caller); err != nil {
+			return err
+		}
 		record, err := s.Read(id)
 		if err != nil {
 			return err
@@ -245,7 +257,7 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 		if state != identity.Alive {
 			return fmt.Errorf("adopt: pid %d is not provably alive", pid)
 		}
-		pgid, err := unix.Getpgid(int(pid))
+		pgid, err := s.getpgid(pid)
 		if err != nil {
 			return fmt.Errorf("adopt: pgid for %d unreadable: %v", pid, err)
 		}
@@ -254,7 +266,7 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 			return err
 		}
 		started := exact.StartedAt.Unix()
-		pgid64 := int64(pgid)
+		pgid64 := pgid
 		from := record.Generation
 		_, err = s.cas(id, StatusRunning, from, func(r *Record) error {
 			r.Pid = &pid
@@ -263,12 +275,16 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 			r.Generation = from + 1
 			r.LaunchNonce = nonce
 			r.HungSince = nil
+			// Custody is RECOMPUTED from fresh kinship every adoption —
+			// an old adopted-verified label never survives a generation
+			// whose kinship fails (critique finding 8).
 			if r.Custody == CustodyWrapped {
-				r.Custody = CustodyAdoptedUnverified
 				r.Evidence = Evidence{Mode: EvidenceNone}
 			}
-			if s.kinship(pgid64) && r.Custody != CustodyWrapped {
+			if s.kinship(pgid64) {
 				r.Custody = CustodyAdoptedVerified
+			} else {
+				r.Custody = CustodyAdoptedUnverified
 			}
 			return nil
 		})
@@ -285,6 +301,9 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 // Ack acknowledges a terminal record.
 func (s *Store) Ack(caller Caller, id string) error {
 	return s.withLock(func() error {
+		if err := s.checkEpoch(caller); err != nil {
+			return err
+		}
 		record, err := s.Read(id)
 		if err != nil {
 			return err
@@ -310,6 +329,9 @@ func (s *Store) Ack(caller Caller, id string) error {
 // sidecars, reporting every drop.
 func (s *Store) Prune(caller Caller) (dropped []string, err error) {
 	err = s.withLock(func() error {
+		if err := s.checkEpoch(caller); err != nil {
+			return err
+		}
 		cutoff := s.now().AddDate(0, 0, -PruneAgeDays)
 		for _, path := range RecordFiles(s.Root) {
 			data, err := os.ReadFile(path)
@@ -350,17 +372,22 @@ func (s *Store) resolveLog(log string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(s.Root, path)
 	}
-	resolvedDir, err := filepath.EvalSymlinks(filepath.Dir(path))
-	if err != nil {
-		return "", fmt.Errorf("log directory unresolvable: %v", err)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved // the file exists: pin its REAL location
+	} else {
+		resolvedDir, dirErr := filepath.EvalSymlinks(filepath.Dir(path))
+		if dirErr != nil {
+			return "", fmt.Errorf("log directory unresolvable: %v", dirErr)
+		}
+		path = filepath.Join(resolvedDir, filepath.Base(path))
 	}
-	path = filepath.Join(resolvedDir, filepath.Base(path))
 	root, err := filepath.EvalSymlinks(s.Root)
 	if err != nil {
 		root = s.Root
 	}
 	inRepo := strings.HasPrefix(path, root+string(filepath.Separator))
-	inTmp := strings.HasPrefix(path, "/tmp/") || strings.HasPrefix(path, os.TempDir())
+	tmpRoot := filepath.Clean(os.TempDir()) + string(filepath.Separator)
+	inTmp := strings.HasPrefix(path, "/tmp/") || strings.HasPrefix(path, tmpRoot) || strings.HasPrefix(path, "/private/tmp/")
 	if !inRepo && !inTmp {
 		return "", fmt.Errorf("log path escapes the repo and /tmp: %s", path)
 	}
@@ -395,9 +422,32 @@ func (s *Store) groupEmpty(pgid int64) bool {
 		return false
 	}
 	for _, pid := range pids {
-		if pg, err := unix.Getpgid(int(pid)); err == nil && int64(pg) == pgid {
+		pg, err := unix.Getpgid(int(pid))
+		if err != nil {
+			if err == unix.ESRCH {
+				continue // raced an exit: provably absent
+			}
+			return false // unreadable membership is NOT provably empty
+		}
+		if int64(pg) == pgid {
 			return false
 		}
 	}
 	return true
+}
+
+// FailLaunch concludes a pending record the launcher could not spawn —
+// the reservation is never deleted, it fails loudly (critique finding 10).
+func (s *Store) FailLaunch(id, note string) error {
+	return s.withLock(func() error {
+		record, err := s.Read(id)
+		if err != nil || record == nil {
+			return fmt.Errorf("no run record %s to fail", id)
+		}
+		if record.Status != StatusLaunching {
+			return fmt.Errorf("run %s is %s, not launching", id, record.Status)
+		}
+		var result AssessResult
+		return s.terminalize(record, StatusLaunchFailed, nil, &note, &result)
+	})
 }
