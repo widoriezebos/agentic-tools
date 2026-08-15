@@ -4,9 +4,9 @@ Working Mode: design
 
 Owner: main session (delegate), under Wido's 2026-08-15 morning
 rulings (design-critique-implement before anything else; everything
-Go is better suited for goes in Go). Status: r5 — folds the three r4
-findings (critiques at plans/delegate-delivery-critique-r{1..4}.md;
-r4 closed six of eight r3 findings); awaiting r5 critique.
+Go is better suited for goes in Go). Status: r6 — folds the two r5
+findings (critiques at plans/delegate-delivery-critique-r{1..5}.md;
+r5 closed the host walk); awaiting r6 critique.
 
 ## The problem, with two cohorts of evidence
 
@@ -182,10 +182,10 @@ provider failure):
 | disagreement/unreadable | any | never consulted | session_identity_disagreement, as today |
 | transcript over ceiling | any | never consulted | transcript-oversize, a NAMED degraded terminal — never identity disagreement, never empty-reply, never repair |
 | certified | non-zero | never consulted | provider failure, as today — no channel promotes output from a failed call |
-| certified | 0 | delivered + session correlated | normal return pipeline on the accepted snapshot |
-| certified | 0 | delivered, NO session correlated | handshake_missing_session_id refusal, exactly as today — settlement can certify without correlation, and adjudication's gate refuses before return validation; collection does not weaken that invariant (r4 finding 1) |
-| certified | 0 | nothing-qualified + session correlated + claim exit 0 | the REPAIR attempt below |
-| certified | 0 | nothing-qualified + (no session, or claim exit 3) | empty-reply adjudication, as today |
+| certified | 0, NO session correlated | never consulted | handshake_missing_session_id refusal BEFORE collection runs at all, exactly today's gate order (r5 finding 1: the collector's canonical validation cannot even represent a sessionless acceptance — reconciled "unobserved" vs the record's null rejects — so collection without correlation could only misclassify; it is therefore never invoked) |
+| certified | 0 + session correlated | delivered | normal return pipeline on the accepted snapshot |
+| certified | 0 + session correlated | nothing-qualified + claim exit 0 | the REPAIR attempt below |
+| certified | 0 + session correlated | nothing-qualified + claim exit 3 | empty-reply adjudication, as today |
 | certified | 0 | nothing-qualified + claim exit 1 | degraded harness terminal (the claim's mechanical taxonomy) |
 | certified | 0 | mechanical | degraded terminal naming the harness failure — NEVER a paid repair |
 
@@ -195,17 +195,20 @@ in provenance; mechanical is reserved for failures that make the
 walk itself impossible.
 
 The REPAIR attempt. Explicit precedence, matching the real state
-machine (r4 finding 3): repair USAGE EXTRACTION runs on the repair
-snapshot first regardless of the eventual verdict (exactly as
-today), then settlement, then CLI status, then collection:
+machine (r5 finding 2 corrected r4's order): repair USAGE
+EXTRACTION first, then the COMBINED REPAIR RESULT (CLI exit and
+delivery together), and settlement LAST — only a repair that
+otherwise succeeded reaches identity settlement, so a nonzero,
+empty, or malformed repair is protocol-error today even when the
+transcript disagrees, and stays so:
 
-| Repair settlement | Repair CLI exit | Post-repair collect | Outcome |
+| Repair usage | Repair CLI exit + collect | Repair settlement | Outcome |
 | --- | --- | --- | --- |
-| disagreement/unreadable | any | never consulted | session_identity_disagreement — today's outcome, kept (r4 corrected the r3 table, which wrongly said protocol-error) |
-| transcript over ceiling | any | never consulted | transcript-oversize degraded terminal (usage already extracted from the bounded snapshot or marked unavailable) |
-| certified | non-zero | never consulted | protocol-error, as the after-repair path maps today |
-| certified | 0 | delivered | normal pipeline on the accepted snapshot |
-| certified | 0 | nothing-qualified or mechanical | protocol-error, as today — a repair that did not deliver is a protocol violation, never a second empty-reply loop |
+| extracted (always attempted; oversize snapshot → usage unavailable, noted) | non-zero | never reached | protocol-error, as today |
+| extracted | 0 + nothing-qualified or mechanical | never reached | protocol-error, as today — a repair that did not deliver is a protocol violation, never a second empty-reply loop |
+| extracted | 0 + delivered | disagreement/unreadable | session_identity_disagreement, as the repaired-session settlement maps today |
+| extracted | 0 + delivered | transcript over ceiling | transcript-oversize degraded terminal |
+| extracted | 0 + delivered | certified | normal pipeline on the accepted snapshot |
 
 ## Provenance, bound to bytes (r1 finding 11)
 
@@ -310,11 +313,14 @@ turn-contract validator wiring), a host-path selftest leg.
   end to end in the selftest; a wrong-identity stdout candidate is
   rejected post-envelope and the walk RESUMES to deliver the valid
   named file (r4 finding 2's exact scenario).
-- Initial no-session gate: a delivered candidate with no correlated
-  session refuses handshake_missing_session_id, never completes
-  (r4 finding 1).
-- Repair settlement disagreement lands session_identity_disagreement
-  with repair usage already extracted (r4 finding 3).
+- Initial no-session gate: with no correlated session, collection
+  is NEVER INVOKED and the turn refuses handshake_missing_session_id
+  (r5 finding 1's order, pinned as a fixture leg asserting the
+  collector left no verdict artifacts).
+- Repair precedence: a nonzero repair with a disagreeing transcript
+  is protocol-error (settlement never reached); a DELIVERED repair
+  with a disagreeing transcript is session_identity_disagreement;
+  repair usage is extracted in every row (r5 finding 2).
 - Regression, corrected (r3 finding 2): the D62 frozen transcript
   — whose write predates the named-path instruction and targets an
   invented filename — must NOT deliver via mining (the designation
