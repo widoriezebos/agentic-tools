@@ -3,11 +3,11 @@
 Working Mode: design
 
 Owner: main session (delegate), goal monitor-facility (detail notes
-at plans/backlog-notes.md item 15). Status: r3 — folds the ten r2
-findings (critiques at plans/monitor-facility-critique-r{1,2}.md;
-trajectory 12/10). Human rulings fixed as input: the exchangeability
-doctrine, the verbatim monitor-pattern intent, and backlog item 1's
-LITERAL waiter contract, which r3 stops substituting for.
+at plans/backlog-notes.md item 15). Status: r4 — folds the eight r3
+findings (critiques at plans/monitor-facility-critique-r{1..3}.md;
+trajectory 12/10/8). Human rulings fixed as input: the
+exchangeability doctrine, the verbatim monitor-pattern intent, and
+backlog item 1's literal waiter contract.
 
 ## The problem, in the human's words and two incidents
 
@@ -18,66 +18,68 @@ harness's 10-minute cap forced detached launches; a monitor caught
 a 205-second failure a fallback timer would have slept 15 minutes
 on. The pattern works — it must become metasystem behavior.
 
-## One mechanism, two record kinds, the waiter honored (r2 finding 1)
+## One mechanism, two record kinds, ONE waiter shape (r3 finding 1)
 
-Backlog item 1 folds in AS WRITTEN, not replaced:
+Backlog item 1 folds in as written, and runs get the SAME waiter:
 
-- `dispatch.sh dispatch` WITHOUT `--wait` prints the exact waiter
-  command for the job it created: `scripts/agents/dispatch.sh watch
-  --job <id>` — the agent never invents a polling loop.
-- `dispatch.sh watch --job <id>` is a NEW blocking verb (the poll
-  decision in Go): it blocks until the job record is terminal and
-  exits with the terminal status, which is what every runtime's
-  background facility turns into a wake-up.
-- The waiter REGISTERS ITSELF: `artifacts/agents/waiters/<job>.json`
-  {pid, pidStartedAt, session, mainId}, identity-verified at write,
-  removed on exit; a dead waiter's record is provably dead by the
-  same three-way rule as everything else.
-- The turn-end rule is then computable and per-session: an in-flight
-  job whose record's mainId equals the CALLER's mainId with no LIVE
-  identity-verified waiter record, or a running run this mainId
-  registered, blocks the turn end ONCE. `report turn-verdict` gains
-  `--main-id` (the hook already computes main_id); TurnVerdict does
-  the waiter join internally.
+- `dispatch.sh dispatch` without `--wait` prints the exact waiter
+  command: `scripts/agents/dispatch.sh watch --job <id>`.
+- `run launch` prints ITS exact waiter command the same way:
+  `bin/metasystem run watch --id <run-id>`.
+- Both watch verbs BLOCK until their record is terminal and exit
+  with the terminal status — the shape every runtime's background
+  facility turns into a wake-up. The wake is the waiter deciding
+  from the record and kernel state; flight-recorder events narrate
+  and are never the wake authority (their contract permits lost
+  finals).
+- Every waiter REGISTERS ITSELF in one namespace:
+  `artifacts/agents/waiters/<kind>-<id>.json` {kind: "job"|"run",
+  pid, pidStartedAt, session, mainId} — identity-verified at write,
+  removed on exit, provably dead by the three-way rule otherwise.
+- The turn-end rule spans both kinds: an in-flight job whose record
+  mainId equals the CALLER's mainId, or a launching/running/
+  draining run this mainId registered, with no LIVE waiter record,
+  blocks the turn end once. `report turn-verdict` gains `--main-id`
+  (the hook already computes main_id); TurnVerdict joins waiters
+  internally.
 
-Run records exist only for NON-JOB work (suites, cohorts, detached
-processes); jobs keep their one lifecycle. The goal system carries
-WHAT next; this carries WHEN; the verdict is where both speak.
-Flight-recorder events narrate; they are never the wake authority
-(the recorder contract permits lost finals) — the wake is the
-blocking waiter deciding from the record and kernel state.
+Run records exist only for NON-JOB work; jobs keep their one
+lifecycle. The goal system carries WHAT next; this carries WHEN;
+the verdict is where both speak.
 
 ## The run record: artifacts/agents/runs/<run-id>.json
 
-Engine-written, per-record flock + compare-and-swap over
-(status, generation) + legal transitions. Schema (v1):
+Engine-written. ALL mutations — launch, register, adopt, ack,
+conclude, prune — hold the runs-directory lock
+(`artifacts/agents/runs/.lock`, bounded flock) for the WHOLE
+operation: this is the operation-spanning fence, run-owned because
+`lease run-held` deliberately does not fence HUMAN callers (r3
+finding 3 — the lease contract is not changed; the bypass is why
+this lock exists). Lease authority stays the point-in-time check
+plus an epoch recheck INSIDE the lock. Per-record CAS is over
+(status, generation). Schema (v1):
 
     {"schemaVersion": 1,
-     "runId": "<kebab, unique, ≤64>",           // collision refuses
+     "runId": "<kebab, unique among live records, ≤64>",
      "kind": "suite" | "cohort" | "custom",
-     "display": "<from --display only, ≤200>",   // never argv join:
-                                                  // argv can carry secrets
+     "display": "<from --display only, ≤200>",
      "custody": "wrapped" | "adopted-verified" | "adopted-unverified",
-     "generation": <int, starts 1>,               // adoption fences on it
-     "pid": <int|null>, "pidStartedAt": <int|null>,
-     "pgid": <int|null>,                          // null while launching
-     "launchNonce": "<32 hex>",                   // in the wrapper's ARGV:
-                                                  // the third identity factor
-     "log": "<path ≤512, exists-or-creatable at bind>",
+     "generation": <int, starts 1>,
+     "pid": <int|null>, "pidStartedAt": <int|null>, "pgid": <int|null>,
+     "launchNonce": "<32 hex>",
+     "log": "<path ≤512; absolute or repo-relative, resolved at
+             bind; contained to the repo or /tmp; symlinks resolved
+             at bind and re-resolved per read, mismatch surfaces>",
      "startedAt": "<ISO>",
      "mainId": "<str|null>", "ownerLineage": "<str|null>",
-     "claimEpoch": <int|null>,                    // null for HUMAN callers:
-                                                  // human runs have no epoch
-                                                  // and are swept only by
-                                                  // identity-death
-     "sessionId": "<normalized>",
-     "goalId": "<informational, never authority>",
-     "staleAfterMin": <int 1..1440>,
-     "hungSince": "<ISO|null>",                   // a flag on running,
-                                                  // cleared by log activity
-     "windDownMin": <int, default 10>,
+     "claimEpoch": <int|null>,       // null for HUMAN callers: human
+                                      // runs have no epoch, swept only
+                                      // by identity-death
+     "sessionId": "<normalized>", "goalId": "<informational>",
+     "staleAfterMin": <int 1..1440>, "hungSince": "<ISO|null>",
+     "windDownMin": <int 1..120, default 10>,
      "evidence": {"mode": "exit-sidecar" | "pattern" | "none",
-                  "verdictPattern": "<RE2 ≤256, adopted records only>"},
+                  "verdictPattern": "<RE2 ≤256, adopted only>"},
      "expect": {"green": "≤240", "red": "≤240",
                 "hung": "≤240", "unknown": "≤240"},
      "status": "launching" | "running" | "draining"
@@ -85,167 +87,158 @@ Engine-written, per-record flock + compare-and-swap over
      "acked": false, "error": "<str|null>",
      "exitCode": <int|null>, "endedAt": "<ISO|null>"}
 
-Legal transitions (CAS on status AND generation; refusals loud):
-- launching → running (the wrapper binds identity via launchNonce)
-- launching → launch-failed (the launcher's error path OR the
-  bounded launch fence, default 2 min — an error note, NEVER
-  deletion: the dispatch precedent keeps failed reservations, and
-  deletion races the wrapper's bind; prune ages failures out)
-- running → draining (evidence recorded; the group may survive)
-- draining → green | red | ended-unknown (group provably empty or
-  windDownMin expired; survivors then surface as UNTRACKED — the
-  honest answer, they are)
-- running → ended-unknown (dead + no evidence; VANISHED IS DROPPED
-  — r2 caught the contradiction; one dead-no-evidence verdict)
-- adopt: identity fields replaced on a RUNNING record, generation
-  incremented, hungSince cleared; a stale-generation conclusion
-  fails its CAS by construction. Sidecars are generation-scoped
-  (below), so an old sidecar can never conclude a new generation.
+Legal transitions (CAS refusals loud):
+launching → running (wrapper binds via nonce);
+launching → launch-failed (launcher error path or the 2-minute
+fence — an error note, never deletion; prune ages failures);
+running → draining (evidence recorded, group may survive);
+draining → green | red | ended-unknown (group provably empty or
+windDownMin expired; survivors then surface as UNTRACKED — honest);
+running → ended-unknown (dead + no evidence — the ONE verdict for
+that fact; vanished does not exist);
+adopt: RUNNING record only, and ONLY when the old generation's
+identity is provably dead (refuse otherwise — a live old group is
+never shed, r3 finding 2); identity replaced, generation++,
+hungSince cleared.
 
-## Launch topology (r2 finding 7 closed)
+## Custody, stated honestly PER MODE (r3 finding 2)
 
-`run launch` writes the PENDING record (nullable identity, nonce
-minted) BEFORE any process exists; spawns the wrapper via setsid
-(`metasystem run wrap --nonce <hex> ...` — the nonce is visible in
-argv, giving census and sweep their third identity factor); the
-wrapper's first act is the CAS launching→running binding pid/start/
-pgid; its last act is the atomic exit sidecar; the record then
-drains. Fast commands cannot escape (the record precedes the
-process); a killed launcher leaves launching → the fence concludes
-launch-failed with the note.
+The universal three-factor rule was false; each mode carries the
+strongest proof it can actually have:
 
-## Exit evidence (r2 findings 4+5 closed)
+- WRAPPED, launching/running: pgid match + leader pid/start + the
+  launch nonce visible in the leader's argv (`run wrap --nonce`).
+  Three factors, leader alive. ArgvKnown=false surfaces, never
+  proves or condemns.
+- DRAINING (any mode): the leader is dead BY CONSTRUCTION (its last
+  act was the sidecar). Custody = pgid + the record's claim,
+  bounded by windDownMin. The pgid-reuse window during wind-down is
+  a NAMED ACCEPTED RESIDUAL (≤120 minutes by bound, 10 by default);
+  census labels these "RUN <id> (draining)".
+- ADOPTED: no wrapper exists, so no argv nonce can — two factors
+  (pgid + leader pid/start), plus the ancestry/group-membership
+  proof at registration for adopted-verified; adopted-unverified is
+  the honest label when even that is absent. Evidence mode for
+  adopted records is pattern|none only.
 
-The wrapper writes `runs/<run-id>.g<generation>.exit.json`
-atomically: {"runId","generation","nonce","exitCode","endedAt"}.
-The sidecar is believed only when nonce AND generation match the
-record. exitCode 0 → green; nonzero (incl. 128+n signals) → red.
-The `.g<n>.exit.json` suffix is excluded from the record glob by
-filename grammar, so a sidecar can never be read as a malformed
-record. `verdictPattern` exists only for adopted records: RE2 ≤256
-against a bounded 64 KiB tail; match → green; no-match →
-ENDED-UNKNOWN, never a red guess; an unreadable or missing log at
-conclusion → ended-unknown AND the path surfaces via Unreadable.
-Unknown identity concludes NOTHING — it surfaces and stays.
-Prune removes a record's sidecars with it; id reuse after prune is
-legal (nonce + generation disambiguate).
+Census owns launching, running, and draining records; terminal
+records own nothing.
 
-## The watcher and its attestation (r2 finding 2 closed)
+## Exit evidence
 
-The run pass lives in the Go WatcherPass armed supervision actually
-executes (supervise component --component watcher), beside the
-census. Each pass: three-way identity per launching/running/
-draining record; the launch fence; evidence rules on death; the
-drain check; hungSince set/cleared by log mtime vs staleAfterMin;
-ONE flight-recorder event per transition. After every SUCCESSFUL
-pass the watcher atomically writes
-`artifacts/agents/supervision/runs-pass.json` {completedAt, ok,
-scanned} — the ATTESTATION. The verdict's unwatched rule requires
-this attestation fresh; a fresh component heartbeat alone never
-suffices (the heartbeat precedes work and errors are logged-and-
-continue — attestation is the fact that the run reader RAN).
+The wrapper's last act: `runs/<run-id>.g<generation>.exit.json`
+atomic, {"runId","generation","nonce","exitCode","endedAt"} —
+believed only when nonce AND generation match. exit 0 → green;
+nonzero (incl. 128+n) → red. The `.g<n>.exit.json` suffix is
+excluded from the record glob by filename grammar. verdictPattern
+(adopted only): RE2 ≤256 over a 64 KiB tail; match → green;
+no-match → ended-unknown, never a red guess; unreadable/missing log
+at conclusion → ended-unknown + the path surfaces. Unknown identity
+concludes nothing. Prune removes a record's sidecars with it; id
+reuse after prune is legal — every once-only key below uses the
+LIFECYCLE identity (id, generation, launchNonce), never the public
+id alone (r3 finding 6).
 
-## Census custody (r2 finding 3 closed)
+## The watcher and the attestation that cannot be faked (r3 finding 4)
 
-A process belongs to a run when its pgid equals the record's pgid
-AND the leader's identity verifies (pid + start + the argv nonce;
-ArgvKnown=false is absence of evidence — the process surfaces
-rather than being claimed or condemned). Census owns launching,
-running, AND draining records; terminal records own nothing —
-draining is precisely the bounded window that keeps surviving
-descendants accounted for until they are provably gone or the
-wind-down expires.
+The run pass lives in the Go WatcherPass armed supervision
+executes. Each pass: three-way identity per live record; the launch
+fence; evidence on death; the drain check; hungSince by log mtime;
+one event per transition. After each SUCCESSFUL pass the watcher
+atomically writes `artifacts/agents/supervision/runs-pass.json`:
+{completedAt, watcherPid, watcherStart, scannedRuns: [{id,
+generation}]}. The verdict's Watched fact for a run requires ALL
+of: its (id, generation) in scannedRuns; the attestation fresh; AND
+the attesting watcher identity equal to the CURRENTLY ARMED watcher
+component's recorded identity (supervision state) — a one-shot
+`supervise watcher-pass` writes an attestation whose identity is
+not the armed component, so it can never fake a standing watcher.
 
-## Verbs and authority (r2 finding 6 closed)
+## Verbs and authority
 
-All mutating run verbs execute under `lease run-held` — the
-existing operation-spanning fence — not just a point-in-time check:
-- `run launch` / `run register` / `run adopt` / `run ack` /
-  `run prune` — holder-only. HUMAN callers pass with nullable
-  coordinates (the authority matrix already admits HUMAN; the
-  record stores null mainId/epoch and is exempt from epoch sweep).
-- `run register` (already-running work): group-membership or
-  ancestry proof upgrades custody to adopted-verified; without
-  proof the record is adopted-unverified — census owns it, the
-  label is honest, the act is evented.
-- `run conclude` — record-writer (the watcher concludes; holders
-  may). Evidence rules only.
-- `run status` / `run list` — open reads; {"schemaVersion":1,
-  "runs":[...]} sorted by startedAt.
-- `run prune` — acked terminal records older than 14 days, drops
-  reported (the events are the audit trail).
+- launch / register / adopt / ack / prune — holder-only (HUMAN
+  passes with nullable coordinates); all under the runs lock.
+- conclude — record-writer (the watcher; holders may); evidence
+  rules only; under the runs lock.
+- watch — open; blocks, registers its waiter record, exits with the
+  terminal status.
+- status / list — open reads; {"schemaVersion":1,"runs":[...]}
+  sorted by startedAt.
+- prune — acked terminal >14 days, drops reported.
 
-Takeover (stale claimEpoch, running/draining): WITH the argv-nonce
-group proof — SIGTERM the group, bounded drain, conclude
-ended-unknown unacked (the successor sees it at the next turn end).
-WITHOUT proof — including every adopted-unverified record — the
-sweep REFUSES loudly and only surfaces; it never signals and never
-silently terminalizes. Live untracked work is a surfaced fact, not
-a casualty.
+Takeover (stale claimEpoch, running/draining): with the per-mode
+proof above — SIGTERM the group, bounded drain, conclude
+ended-unknown unacked. Without proof (including every
+adopted-unverified record): refuse loudly, surface, never signal.
 
-## Scanner and verdict (r2 finding 8 closed)
+## Scanner and verdict (r3 finding 5)
 
-ScanResult gains `Runs []RunFact{Id, Status, ProbeState(alive|dead|
-unknown), OwnedByCaller, Watched, Acked, HungSince, Continuation
-≤240}`. Composition, stated against the ladder AS SHIPPED (Busy
-suppresses the goal/open/waiting/unreadable ladder — all of it):
+ScanResult gains `Runs []RunFact{Id, Generation, Nonce, Status,
+ProbeState, OwnedByCaller, Watched, Acked, HungSince, Continuation
+≤240}` AND `RunUnreadable []string` — run-reader failures ride
+their own channel OUTSIDE the shipped ladder (the ladder's
+Unreadable keeps its exact shipped semantics, including Busy
+suppression; run failures must never be hidden by Busy, so they do
+not share its slot).
 
-- Run WARNINGS live OUTSIDE the ladder, always prepended to
-  Display: terminal-unacknowledged red/ended-unknown, currently
-  hung, unknown-identity, and run-reader unreadables — continuation
-  verbatim ("suite run <id> went red; the run record says:
-  <expect.red>"). Busy can never hide them.
-- GREEN terminal surfaces at most once per session (greenDigests
-  slot, ≤16 FIFO — one additive array in the item-14 state schema),
-  informational, never blocking; acknowledgment stays `run ack`.
-- The UNWATCHED block: the caller's in-flight jobs without live
-  waiters, or its running runs, OR a stale/absent runs-pass
-  attestation while such work exists → block ONCE, keyed on the
-  sha256 of the sorted unwatched-id set (blockedUnwatchedDigests,
-  ≤16 FIFO, additive).
-- REQUIRED mixed-state display tests: Busy+Unreadable, Open+RunRed,
-  Busy+RunHung — the display carries both parts in each.
+- Run WARNINGS, always prepended to Display: terminal-unacked in
+  {red, ended-unknown, launch-failed}, currently hung,
+  unknown-identity, and every RunUnreadable entry — continuation
+  verbatim (launch-failed and ended-unknown speak expect.unknown).
+- GREEN terminal surfaces once per session (greenDigests, ≤16 FIFO,
+  lifecycle-keyed), informational only.
+- The UNWATCHED block covers launching, running, AND draining work
+  owned by the caller (jobs via mainId + runs), keyed on the sha256
+  of the sorted LIFECYCLE triples (blockedUnwatchedDigests, ≤16
+  FIFO, additive to the item-14 state schema).
+- Required mixed-state display tests: Busy+RunUnreadable,
+  Open+RunRed, Busy+RunHung — both parts visible in each.
 
-## Events (r2 finding 9 closed)
+## Events (r3 finding 7 — the rows in full, per the registry grammar)
 
-scripts/agents/event-registry.json gains component "run" with
-events run-launched, run-transition, run-swept; runId joins the
-canonical identifier set in internal/events; authorized emitters:
-the run verbs and the watcher. A conformance test proves the events
-are emittable (the registry is a closed catalogue that silently
-drops unknowns — the row exists so they are known).
+Component `run`; authorized emitters: the run verbs and the watcher
+(both emit as component "run"); runId joins the canonical
+identifier set. Rows:
+- run-launched — required: runId (identifier), kind (string),
+  custody (string). Emitter: run verbs.
+- run-transition — required: runId (identifier), from (string),
+  to (string), generation (int). Emitters: run verbs, watcher.
+- run-swept — required: runId (identifier), reason (string).
+  Emitter: the lease sweep via the run package.
+A conformance test emits each row and proves the registry accepts
+it (the catalogue silently drops unknowns; these rows make them
+known).
 
 ## Exchangeability
 
-Files and engine verbs only. Any runtime's session prints and runs
-the same waiter command, arms the same supervision, reads
-`run status` by instruction, and gets the same verdict through the
-same hook contract.
+Files and engine verbs only: any runtime's session prints and runs
+the same waiter commands, arms the same supervision, reads
+`run status` by instruction, and receives the same verdict through
+the same hook contract.
 
 ## Blast radius
 
-internal/run (NEW), internal/dispatch (watch verb decision core +
+internal/run (NEW), internal/dispatch (job watch decision core +
 waiter records), scripts/agents/dispatch.sh (watch plumbing + the
-printed waiter line), cmd/metasystem supervise_component.go
-(WatcherPass run pass + attestation), internal/census (RUN group
-custody), internal/goal (RunFacts, --main-id, the two new state
+printed line), cmd/metasystem supervise_component.go (run pass +
+attestation), internal/census (per-mode RUN custody),
+internal/goal (RunFacts, RunUnreadable, --main-id, two state
 arrays), internal/report scan.go, internal/lease (run sweep),
 internal/events + scripts/agents/event-registry.json,
-cmd/metasystem (run family + watch + turn-verdict flag), fixtures,
-docs.
+cmd/metasystem (run family + watch verbs), fixtures, docs.
 
 ## Design-obligation matrix
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| MON-01 | CRITICAL | Launch topology | Pending-before-process with nullable identity; wrapper binds via nonce CAS; fence and launcher error path both conclude launch-failed with a note, never deletion | internal/run | internal/run/run.go | run_test.go TestLaunchReservationAndFence | fixture leg: fast-exit concluded; killed launcher leaves launch-failed | PARTIAL | implement |
-| MON-02 | CRITICAL | Evidence | Generation-scoped nonce-checked sidecars; pattern only on adopted records, no-match=ended-unknown; dead+no-evidence=ended-unknown (one verdict); Unknown concludes nothing | internal/run | run.go Conclude | run_test.go TestConcludeEvidenceTable | fixture: green, red, stale-generation sidecar ignored, unknown surfaces | PARTIAL | implement |
-| MON-03 | CRITICAL | Census custody | Group custody with the argv-nonce third factor; draining keeps survivors owned until provably gone or wind-down expiry; ArgvKnown=false surfaces | internal/census | census run source | census run_test.go TestRunGroupCustodyAndDrain | supervision-fixtures.sh leg: detached run + children never UNTRACKED while draining | PARTIAL | implement |
-| MON-04 | CRITICAL | The waiter contract | dispatch prints the watch command; watch blocks to terminal and registers an identity-verified waiter record removed on exit | internal/dispatch + scripts/agents/dispatch.sh | watch decision core + dispatch.sh | dispatch watch test + waiter record round-trip | dispatch-fixtures.sh watch leg | PARTIAL | implement |
-| MON-05 | CRITICAL | Turn verdict | Unwatched (caller's jobs without live waiters, runs, or stale attestation) blocks once on the id-set digest; run warnings always prepend to Display; green once per session | internal/goal + internal/report | turnverdict.go + scan.go | turnverdict_test.go TestUnwatchedAndWarnings + mixed-state display tests | supervision-fixtures.sh run leg through the real hook | PARTIAL | implement |
-| MON-06 | CRITICAL | Serialization + lease | CAS over (status,generation); adopt increments generation and clears hungSince; all mutations under lease run-held; sweep signals only with argv-nonce proof, refuses loudly without | internal/run + internal/lease | run.go + sweep.go | run_test.go TestGenerationFencing + sweep test | fixture: stale-epoch run swept only with proof; adopted-unverified only surfaced | PARTIAL | implement |
-| MON-07 | HIGH | Watcher host + attestation | The run pass inside the Go WatcherPass; runs-pass.json written only after a successful pass; the verdict requires it fresh | cmd/metasystem + internal/run | supervise_component.go | component pass test + attestation freshness test | supervision fixture: armed repo concludes a run | PARTIAL | implement |
-| MON-08 | HIGH | Authority | launch/register/adopt/ack/prune holder-only with nullable HUMAN coordinates; conclude record-writer; custody labels honest and evented | internal/run + cmd/metasystem | run.go + cmd wiring | run_test.go TestAuthorityMatrix | — | PARTIAL | implement |
-| MON-09 | HIGH | Events | Registry gains the run component and events; runId a canonical identifier; emitters authorized; conformance test | internal/events + scripts/agents/event-registry.json | emit.go + registry | events conformance test | — | PARTIAL | implement |
+| MON-01 | CRITICAL | Launch topology | Pending-before-process with nullable identity; nonce CAS bind; fence and error path conclude launch-failed with a note, never deletion | internal/run | internal/run/run.go | run_test.go TestLaunchReservationAndFence | fixture leg: fast-exit concluded; killed launcher leaves launch-failed | PARTIAL | implement |
+| MON-02 | CRITICAL | Evidence | Generation-scoped nonce-checked sidecars; pattern only on adopted, no-match=ended-unknown; dead+no-evidence=ended-unknown; Unknown concludes nothing | internal/run | run.go Conclude | run_test.go TestConcludeEvidenceTable | fixture: green, red, stale-generation sidecar ignored, unknown surfaces | PARTIAL | implement |
+| MON-03 | CRITICAL | Custody per mode | Wrapped three-factor; draining pgid+claim bounded (named residual); adopted two-factor with registration proof; census labels draining; survivors surface after wind-down | internal/census + internal/run | census run source | census run_test.go TestCustodyPerMode | supervision-fixtures.sh leg: detached run + children owned through draining | PARTIAL | implement |
+| MON-04 | CRITICAL | The waiter contract | dispatch AND run launch print their exact watch commands; both watch verbs block to terminal and register identity-verified waiter records in one namespace, removed on exit | internal/dispatch + internal/run + dispatch.sh | watch decision cores | watch round-trip tests both kinds | dispatch-fixtures.sh watch leg + run fixture | PARTIAL | implement |
+| MON-05 | CRITICAL | Turn verdict | Unwatched (launching/running/draining, jobs+runs, by mainId) blocks once on lifecycle-triple digests; warnings incl. launch-failed and RunUnreadable always prepend; green once per session | internal/goal + internal/report | turnverdict.go + scan.go | turnverdict_test.go TestUnwatchedAndWarnings + the three mixed-state display tests | supervision-fixtures.sh run leg through the real hook | PARTIAL | implement |
+| MON-06 | CRITICAL | Serialization + lease | The runs lock spans every mutation (the HUMAN run-held bypass is why); CAS over (status,generation); adopt requires the old generation provably dead; sweep signals only with per-mode proof | internal/run + internal/lease | run.go + sweep.go | run_test.go TestRunsLockAndGenerationFencing + sweep test | fixture: stale-epoch run swept only with proof; adopted-unverified only surfaced | PARTIAL | implement |
+| MON-07 | HIGH | Attestation | runs-pass.json carries watcher identity + scanned (id,generation) pairs; Watched requires membership, freshness, AND armed-component identity match | cmd/metasystem + internal/run + internal/goal | supervise_component.go + turnverdict.go | attestation tests incl. one-shot-cannot-fake | supervision fixture: armed repo concludes and attests | PARTIAL | implement |
+| MON-08 | HIGH | Authority | Holder-only mutations with nullable HUMAN coordinates; conclude record-writer; custody labels honest and evented | internal/run + cmd/metasystem | run.go + cmd wiring | run_test.go TestAuthorityMatrix | — | PARTIAL | implement |
+| MON-09 | HIGH | Events | The three rows as specified (fields, requiredness, emitters); runId canonical; conformance test proves acceptance | internal/events + scripts/agents/event-registry.json | emit.go + registry | events conformance test | — | PARTIAL | implement |
 | MON-10 | MEDIUM | Ledger honesty | prune acked-terminal >14d with sidecars, drops reported | internal/run | run.go Prune | run_test.go TestPruneReportsDrops | — | PARTIAL | implement |
-| MON-11 | MEDIUM | Grammar | Every bound at the source: display 200 via --display, log 512 exists-or-creatable, nonce 32 hex, pattern 256, staleAfterMin 1..1440, continuations 240 incl. unknown; sidecar suffix excluded from the record glob; status output shape pinned | internal/run | run.go validation | run_test.go TestBounds | — | PARTIAL | implement |
+| MON-11 | MEDIUM | Grammar | Every bound at the source incl. windDownMin 1..120 and the log containment/symlink rule; sidecar suffix excluded from the record glob; status shape pinned | internal/run | run.go validation | run_test.go TestBounds | — | PARTIAL | implement |
