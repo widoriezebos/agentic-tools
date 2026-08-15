@@ -32,6 +32,12 @@ var turnHeadings = []string{
 	"## Streams", "## Reconciliation", "## Landed Returns", "## This Turn",
 }
 
+// servingGoalHeading is the one OPTIONAL section (goal-system GOAL-09):
+// a single orientation line between the contract and the ledger tail.
+const servingGoalHeading = "## Serving goal"
+
+var servingGoalLine = regexp.MustCompile(`^.{1,64} — .{1,160}$`)
+
 var (
 	turnIDRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	turnShaRe   = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
@@ -180,8 +186,12 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 	for _, position := range positions {
 		found = append(found, position.heading)
 	}
-	if !equalStrings(found, turnHeadings) {
-		return &Violation{"headings", "the seven required headings are missing, duplicated, or out of order"}
+	// The serving-goal block is OPTIONAL at exactly one position:
+	// immediately after the mission contract (goal-system GOAL-09). The
+	// assembler and this grammar move together by design.
+	withGoal := append(append([]string{turnHeadings[0], servingGoalHeading}), turnHeadings[1:]...)
+	if !equalStrings(found, turnHeadings) && !equalStrings(found, withGoal) {
+		return &Violation{"headings", "the required headings are missing, duplicated, or out of order (the optional ## Serving goal sits only between the contract and the ledger tail)"}
 	}
 
 	sections := map[string][]string{}
@@ -203,6 +213,12 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 			body = body[:len(body)-1]
 		}
 		sections[position.heading] = body
+	}
+
+	if body, present := sections[servingGoalHeading]; present {
+		if len(body) != 1 || !servingGoalLine.MatchString(body[0]) {
+			return &Violation{"serving-goal", "## Serving goal must hold exactly one '<id> — <intent>' line within the ledger's bounds"}
+		}
 	}
 
 	// Ledger Tail records carry four fields, or five when the measurement
@@ -310,6 +326,9 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 }
 
 func isTurnHeading(line string) bool {
+	if line == servingGoalHeading {
+		return true
+	}
 	for _, heading := range turnHeadings {
 		if line == heading {
 			return true

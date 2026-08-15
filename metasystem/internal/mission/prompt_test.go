@@ -1,6 +1,9 @@
 package mission
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -351,5 +354,83 @@ func TestPatiencePromptLines(t *testing.T) {
 	// A missing ledger projects nothing and never fails assembly.
 	if lines := patiencePromptLines(filepath.Join(dir, "absent.md"), jobs); lines != nil {
 		t.Fatalf("missing ledger projected: %v", lines)
+	}
+}
+
+// GOAL-09 both ways: a usable Current goal projects exactly one optional
+// section between the contract and the ledger tail, and the assembled
+// prompt passes the turn-prompt grammar; a degraded or absent ledger
+// produces no line and never blocks assembly.
+func TestPromptGoalSection(t *testing.T) {
+	repo := promptSandbox(t)
+
+	// Absent ledger: no line, assembly clean.
+	out := filepath.Join(t.TempDir(), "prompt-absent.txt")
+	if err := AssemblePrompt(repo, "m1", "t1", out); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(out)
+	if strings.Contains(string(data), "## Serving goal") {
+		t.Fatal("an absent ledger projected a goal section")
+	}
+
+	// A usable Current goal: the one-line block lands after the contract.
+	seedLedger := "# Goals\n\n## Current goal: ship-it — Ship the whole thing\n- Origin: human\n- Next step: Land it.\n"
+	write := func(rel, content string) {
+		path := filepath.Join(repo, rel)
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("plans/goals.md", seedLedger)
+	// Baseline in step (the projection requires a fully usable ledger).
+	gs := &goalStoreForTest{repo: repo}
+	gs.accept(t, seedLedger)
+
+	out2 := filepath.Join(t.TempDir(), "prompt-goal.txt")
+	if err := AssemblePrompt(repo, "m1", "t1", out2); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := os.ReadFile(out2)
+	idx := strings.Index(string(text), "## Serving goal\nship-it — Ship the whole thing")
+	contractIdx := strings.Index(string(text), "## Mission Contract")
+	ledgerIdx := strings.Index(string(text), "## Ledger Tail")
+	if idx < 0 || idx < contractIdx || idx > ledgerIdx {
+		t.Fatalf("goal section missing or misplaced (contract=%d goal=%d ledger=%d)", contractIdx, idx, ledgerIdx)
+	}
+
+	// Degraded (manual edit, baseline mismatch): the line disappears,
+	// assembly still succeeds.
+	write("plans/goals.md", seedLedger+"\n## Queued goal: extra — More\n- Origin: main\n- Next step: Q.\n")
+	out3 := filepath.Join(t.TempDir(), "prompt-degraded.txt")
+	if err := AssemblePrompt(repo, "m1", "t1", out3); err != nil {
+		t.Fatal(err)
+	}
+	text3, _ := os.ReadFile(out3)
+	if strings.Contains(string(text3), "## Serving goal") {
+		t.Fatal("a degraded ledger projected a goal section")
+	}
+}
+
+// goalStoreForTest writes the accepted baseline the way the goal verbs
+// do, without importing their unexported plumbing: full bytes + digest.
+type goalStoreForTest struct{ repo string }
+
+func (g *goalStoreForTest) accept(t *testing.T, ledger string) {
+	t.Helper()
+	sum := sha256.Sum256([]byte(ledger))
+	baseline := map[string]any{
+		"schemaVersion": 1,
+		"ledger":        ledger,
+		"sha256":        hex.EncodeToString(sum[:]),
+	}
+	data, err := json.MarshalIndent(baseline, "", " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(g.repo, "plans", "goals-accepted.json")
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

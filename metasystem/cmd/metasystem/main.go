@@ -85,6 +85,7 @@ func families() []family {
 				{"repair-claim", "atomically claim the round's one paid repair (0 won, 3 lost, 1 mechanical)", runDispatchRepairClaim},
 				{"build-setup", "assemble a pending-setup reservation record", runDispatchBuildSetup},
 				{"resolve-roster", "resolve a role's roster pair and classify escalation", runDispatchResolveRoster},
+				{"serving-goal", "print the brief section projecting the current goal (exit 3 when none is usable)", runDispatchServingGoal},
 				{"build-record", "assemble the full pending job record", runDispatchBuildRecord},
 				{"build-follow-record", "assemble a follow-up round's record from its parent", runDispatchBuildFollowRecord},
 				{"latest-chain-record", "print the newest record path in a job chain", runDispatchLatestChainRecord},

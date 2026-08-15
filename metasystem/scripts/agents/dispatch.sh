@@ -791,7 +791,7 @@ reap_one() { # job
 }
 
 dispatch_job() {
-  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override=
+  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0
   local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= roster_json=
@@ -811,6 +811,7 @@ dispatch_job() {
       --mission) [[ $# -ge 2 ]] || { usage; exit 2; }; mission_override=$2; shift 2 ;;
       --cap-min) [[ $# -ge 2 ]] || { usage; exit 2; }; cap_override=$2; shift 2 ;;
       --approve-escalation) approve_escalation=1; shift ;;
+      --serving-goal) serving_goal=1; shift ;;
       --wait) wait=1; shift ;;
       *) usage; exit 2 ;;
     esac
@@ -917,6 +918,20 @@ dispatch_job() {
   snapshot_json=$(mktemp "$record_locks/snapshot.XXXXXX")
   select_snapshot "$runtime" "$role" "$permission_json" "$snapshot_json"
   read_snapshot_fields "$snapshot_json"
+
+  # --serving-goal (goal-system GOAL-08): the Go core resolves the
+  # section through the goal parser and refuses (exit 3) when no usable
+  # Current goal exists; the section joins the brief BEFORE the hash so
+  # it is part of the recorded bytes and survives every fallback rebuild.
+  if [[ "$serving_goal" == 1 ]]; then
+    local goal_section brief_with_goal
+    goal_section=$("$ms" dispatch serving-goal --root "$root") \
+      || die 3 "no current goal to project (--serving-goal)"
+    brief_with_goal=$(mktemp "$record_locks/brief.XXXXXX")
+    cat "$brief" > "$brief_with_goal"
+    printf '\n%s' "$goal_section" >> "$brief_with_goal"
+    brief=$brief_with_goal
+  fi
 
   input_bytes=$(enforce_inline_input_limit "$brief" brief)
   input_hash=$(sha256_file "$brief")

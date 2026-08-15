@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -534,13 +535,30 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 		{"machine header", headers},
 		{"orchestrator preamble", strings.TrimRight(string(preambleData), "\n")},
 		{"## Mission Contract", "## Mission Contract\n" + strings.TrimRight(contractText, "\n")},
+	}
+	// The serving-goal orientation line (goal-system GOAL-09): one
+	// optional block between the mission intent and the streams, read
+	// through the goal parser. A missing, absent, or degraded ledger
+	// produces NO line — prompt assembly never degrades and never blocks
+	// on goal state. Runner-side and runtime-neutral: every host of every
+	// runtime gets the same line the same way.
+	if goalId, goalIntent, ok := (&goal.Store{Root: repo}).CurrentProjection(); ok {
+		blocks = append(blocks, struct {
+			name    string
+			content string
+		}{"## Serving goal", "## Serving goal\n" + goalId + " — " + goalIntent})
+	}
+	blocks = append(blocks, []struct {
+		name    string
+		content string
+	}{
 		{"## Ledger Tail", promptDataSection("## Ledger Tail", ledgerRecords)},
 		{"## Open Asks", promptDataSection("## Open Asks", askRecords)},
 		{"## Streams", promptDataSection("## Streams", streamRecords)},
 		{"## Reconciliation", promptDataSection("## Reconciliation", reconRecords)},
 		{"## Landed Returns", promptDataSection("## Landed Returns", landedRecords)},
 		{"## This Turn", "## This Turn\n" + thisTurn},
-	}
+	}...)
 	parts := make([]string, len(blocks))
 	for i, block := range blocks {
 		parts[i] = block.content

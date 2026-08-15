@@ -749,3 +749,21 @@ func (s *Store) BaselineMatches() bool {
 	return string(state.ledgerBytes) == state.base.Ledger && sha256Hex(state.ledgerBytes) == state.base.Sha256
 }
 
+
+// CurrentProjection is the one projection surface mission assembly and
+// the dispatch setup core share (the parser's second and third
+// consumers): the Current goal's id and intent, ok only when the ledger
+// is fully usable — present, well-formed, baseline-matched, with a
+// Current goal. Absent, degraded, queued-only, and goal-free states all
+// answer ok=false; the callers decide whether that means omit-the-line
+// (mission) or refuse-loudly (dispatch --serving-goal).
+func (s *Store) CurrentProjection() (id, intent string, ok bool) {
+	ledger, problems, err := s.ReadLedger()
+	if err != nil || ledger == nil || len(problems) > 0 || ledger.Current == nil {
+		return "", "", false
+	}
+	if !s.BaselineMatches() {
+		return "", "", false
+	}
+	return ledger.Current.Id, ledger.Current.Intent, true
+}

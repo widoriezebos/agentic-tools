@@ -644,3 +644,21 @@ func runDispatchOwnerLock(args []string) int {
 	fmt.Fprintln(os.Stderr, "job owner-lock: --command must be claim or release")
 	return 2
 }
+
+// runDispatchServingGoal resolves --serving-goal at dispatch setup: the
+// section on stdout, or exit 3 when no usable Current goal exists — the
+// refusal the orchestrator asked for by requesting a projection.
+func runDispatchServingGoal(args []string) int {
+	flags := flag.NewFlagSet("dispatch serving-goal", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	section, err := dispatchcore.ServingGoalSection(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 3
+	}
+	fmt.Print(section)
+	return 0
+}
