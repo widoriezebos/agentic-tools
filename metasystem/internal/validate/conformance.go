@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -403,6 +404,16 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 	}
 	if len(instructionPaths) == 0 || duplicate {
 		return r.fail("conformance failure: instruction-bearing path list is empty or contains duplicates")
+	}
+	// The registry's declared instruction filenames join the no-waiver
+	// set unconditionally (agnosticism audit, critique r1-8): a future
+	// runtime's instruction file must be protected the moment it is
+	// declared, whether or not the checked-in path list keeps up.
+	for _, declared := range runtimes.InstructionFiles() {
+		if !seenInstruction[declared] {
+			seenInstruction[declared] = true
+			instructionPaths = append(instructionPaths, declared)
+		}
 	}
 	isInstructionBearing := func(path string) bool {
 		normalized := r.installationPath(path)

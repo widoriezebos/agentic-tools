@@ -221,6 +221,20 @@ func families() []family {
 			},
 		},
 		{
+			name:    "runtime",
+			summary: "the declared agent-runtime registry (list, lookups)",
+			verbs: []verb{
+				{"list", "runtime names in priority order (--adoptable filters)", runRuntimeList},
+				{"adoption-default", "the one default adoption runtime", runRuntimeAdoptionDefault},
+				{"dirs", "a runtime's adopted registration directories", runRuntimeDirs},
+				{"enforcement-config", "a runtime's shipped enforcement config filename", runRuntimeEnforcementConfig},
+				{"self-check", "a runtime's live self-check vendored marker", runRuntimeSelfCheck},
+				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
+				{"session-env", "a runtime's project-dir environment variable", runRuntimeSessionEnv},
+				{"config-identity-filter", "a runtime's config identity filter filename", runRuntimeConfigIdentityFilter},
+			},
+		},
+		{
 			name:    "hooks",
 			summary: "self-check that the repo runs under its own metasystem",
 			verbs: []verb{

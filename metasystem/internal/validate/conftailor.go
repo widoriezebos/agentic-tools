@@ -2,6 +2,7 @@ package validate
 
 import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"regexp"
 	"strings"
@@ -17,9 +18,7 @@ var (
 // tailorKnownRuntimes lists every runtime a model-tier member may name
 // as its prefix; a member with any other prefix is a bare model name,
 // not a runtime binding, and tier filtering must leave it alone.
-var tailorKnownRuntimes = map[string]bool{
-	"claude": true, "codex": true, "devin": true, "fake": true,
-}
+func tailorKnownRuntime(name string) bool { return runtimes.Supported(name) }
 
 // TailorConf rewrites a metasystem.conf in place for the selected
 // runtime set. The selected list becomes the durable
@@ -43,13 +42,7 @@ func TailorConf(confPath string, requested []string) error {
 	// The fake runtime never outranks a real one: it becomes the default
 	// only when it is the sole selection, which is the fixture-harness
 	// shape (validation suites tailor a copied conf to the fake adapter).
-	defaultRuntime := ""
-	for _, candidate := range []string{"codex", "devin", "claude", "fake"} {
-		if selectedSet[candidate] {
-			defaultRuntime = candidate
-			break
-		}
-	}
+	defaultRuntime := runtimes.DefaultFor(selectedSet)
 
 	data, err := os.ReadFile(confPath)
 	if err != nil {
@@ -156,7 +149,7 @@ func TailorConf(confPath string, requested []string) error {
 				if colon := strings.Index(member, ":"); colon >= 0 {
 					runtime = member[:colon]
 				}
-				if !tailorKnownRuntimes[runtime] || selectedSet[runtime] {
+				if !tailorKnownRuntime(runtime) || selectedSet[runtime] {
 					kept = append(kept, member)
 				}
 			}

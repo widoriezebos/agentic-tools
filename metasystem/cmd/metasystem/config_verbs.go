@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"strings"
 
@@ -38,16 +39,19 @@ func runConfigTailor(args []string) int {
 		return 2
 	}
 	if *conf == "" || *runtimes == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem config tailor --conf F --runtimes claude,devin,codex,fake|none [--set key=value ...]")
+		fmt.Fprintf(os.Stderr, "usage: metasystem config tailor --conf F --runtimes %s|none [--set key=value ...]\n",
+			strings.Join(runtimereg.Names(), ","))
 		return 2
 	}
 	selected := strings.Split(*runtimes, ",")
 	seen := map[string]bool{}
 	for _, runtime := range selected {
-		switch runtime {
-		case "claude", "devin", "codex", "fake", "none":
+		switch {
+		case runtime == "none":
+		case runtimereg.Supported(runtime):
 		default:
-			fmt.Fprintf(os.Stderr, "unknown runtime: %s (claude, devin, codex, fake, or none)\n", runtime)
+			fmt.Fprintf(os.Stderr, "unknown runtime: %s (%s, or none)\n",
+				runtime, strings.Join(runtimereg.Names(), ", "))
 			return 2
 		}
 		if seen[runtime] {

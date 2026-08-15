@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // conformanceFixture builds the controller checkout and implementer
@@ -310,4 +312,20 @@ func TestConformanceFactRefusals(t *testing.T) {
 		errs[0] != "conformance failure: implementer round return is missing" {
 		t.Fatalf("missing return wrong: %v %d", errs, code)
 	}
+}
+
+// Agnosticism audit (critique r1-8): a NEWLY declared runtime
+// instruction filename is protected by the no-waiver set the moment it
+// is declared — even when the checked-in path list has not caught up.
+func TestConformanceProtectsDeclaredInstructionFile(t *testing.T) {
+	restore := runtimes.OverrideForTest(append(runtimes.All(), runtimes.Declaration{
+		Name: "newrt", HasAdapter: true, TailoringPriority: 99,
+		InstructionFile: "NEWRT.md",
+	}))
+	defer restore()
+	f := newConformanceFixture(t)
+	os.WriteFile(filepath.Join(f.worktree, "NEWRT.md"), []byte("changed\n"), 0o644)
+	f.writeImplementer("prose-under-30", "NEWRT.md")
+	f.commitWorktree()
+	expectConformance(t, f, "merge", 1, "instruction-bearing paths that are never waivable")
 }

@@ -2,6 +2,7 @@ package audit
 
 import (
 	"fmt"
+	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,8 +27,8 @@ var auditRequiredFiles = []string{
 // docs/project-rules.md is project-owned and deliberately absent, and so are
 // the audit's own shim and adopt.sh (both legitimately contain dot-dot
 // segments for root resolution).
-var auditScanRoots = []string{
-	"AGENTS.md", "CLAUDE.md", "wow.md",
+var auditScanRoots = append(runtimereg.InstructionFiles(), []string{
+	"wow.md",
 	"docs/orchestration.md", "docs/collaboration.md", "docs/working-modes.md",
 	"docs/working-with-agents.md", "docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
 	"docs/design/design-principles.md", "docs/design/design-obligation-gate.md", "docs/examples",
@@ -36,7 +37,7 @@ var auditScanRoots = []string{
 	"scripts/assert-design-obligation-gate.sh", "scripts/refactor-baseline.sh", "scripts/frontier.sh",
 	"scripts/receipt.sh", "scripts/assert-stop-loss.sh", "scripts/enforcement",
 	"plans/README.md", "plans/instruction-ledger.md", "plans/known-issues.md",
-}
+}...)
 
 var (
 	// The path pattern anchors on a non-word, non-slash character before the
@@ -105,8 +106,11 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 	result.Report = append(result.Report, skills...)
 
 	result.Report = append(result.Report, "Instruction inventory")
-	instructions, err := auditFindNamed(absRoot, []string{"."},
-		map[string]bool{"AGENTS.md": true, "CLAUDE.md": true, "wow.md": true, "SKILL.md": true, "AGENT.md": true}, true)
+	instructionNames := map[string]bool{"wow.md": true, "SKILL.md": true, "AGENT.md": true}
+	for _, name := range runtimereg.InstructionFiles() {
+		instructionNames[name] = true
+	}
+	instructions, err := auditFindNamed(absRoot, []string{"."}, instructionNames, true)
 	if err != nil {
 		return nil, err
 	}
@@ -329,13 +333,17 @@ func auditGoalSystem(root string) []string {
 		return violations
 	}
 	table := string(contract)
-	for _, runtime := range []string{"claude", "codex", "devin"} {
+	for _, declaration := range runtimereg.All() {
+		if declaration.ShippedEnforcementConfig == "" {
+			continue
+		}
+		runtime := declaration.Name
 		rowRe := regexp.MustCompile(`(?m)^\| ` + runtime + ` \|`)
 		if !rowRe.MatchString(table) {
 			violations = append(violations, "delivery contract lacks a conformance row for "+runtime)
 			continue
 		}
-		config := filepath.Join(root, "scripts", "enforcement", enforcementConfigFor(runtime))
+		config := filepath.Join(root, "scripts", "enforcement", declaration.ShippedEnforcementConfig)
 		if _, err := os.Stat(config); err != nil {
 			violations = append(violations,
 				"delivery contract claims a shipped Stop config for "+runtime+" but "+enforcementConfigFor(runtime)+" is absent")
@@ -345,8 +353,9 @@ func auditGoalSystem(root string) []string {
 }
 
 func enforcementConfigFor(runtime string) string {
-	if runtime == "claude" {
-		return "claude-code-hooks.json"
+	declaration, ok := runtimereg.Lookup(runtime)
+	if !ok {
+		return ""
 	}
-	return runtime + "-hooks.json"
+	return declaration.ShippedEnforcementConfig
 }

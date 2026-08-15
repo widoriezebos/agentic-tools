@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -115,10 +116,9 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	if len(runtimes) != len(runtimeSet) {
 		add("metasystem.runtimes contains a duplicate runtime")
 	}
-	supportedRuntimes := map[string]bool{"claude": true, "codex": true, "devin": true, "fake": true}
 	var unsupported []string
 	for r := range runtimeSet {
-		if !supportedRuntimes[r] {
+		if !runtimereg.Supported(r) {
 			unsupported = append(unsupported, r)
 		}
 	}
@@ -340,13 +340,9 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	// template carries development/metasystem-design.md). The fake runtime is a
 	// fixture adapter with no external registration.
 	if !isFile(filepath.Join(repo, "development", "metasystem-design.md")) {
-		registrationRoots := map[string][]string{
-			"claude": {".claude/skills", ".claude/agents"},
-			"codex":  {".agents/skills"},
-			"devin":  {".agents/skills", ".devin/skills", ".devin/agents"},
-		}
 		for _, runtime := range sortedKeysOf(runtimeSet) {
-			for _, relative := range registrationRoots[runtime] {
+			declaration, _ := runtimereg.Lookup(runtime)
+			for _, relative := range declaration.RegistrationDirs {
 				if !isDir(filepath.Join(repo, filepath.FromSlash(relative))) {
 					add("metasystem.runtimes enables %s but registration directory %s is missing", pyRepr(runtime), relative)
 				}
