@@ -32,6 +32,7 @@
   "internal/registry": 90.8,
   "internal/report": 85.2,
   "internal/returnschema": 76.3,
+  "internal/run": 70.0,
   "internal/supervise": 89.8,
   "internal/turn": 100.0,
   "internal/usage": 65.0,
