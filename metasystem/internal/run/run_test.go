@@ -440,3 +440,96 @@ func TestHungFlagAndRegisterPattern(t *testing.T) {
 		t.Fatalf("pattern no-match guessed: %+v", result)
 	}
 }
+
+// FIX-R6-02 + FIX-R6-03 + the watch round-trip: owner-keyed exclusive
+// waiters, stale-lifecycle replacement, human keys, pinned exit codes.
+func TestWaiterContract(t *testing.T) {
+	s := testStore(t)
+	prober := fakeProber{verdicts: map[int64]identity.Liveness{}, starts: map[int64]int64{}}
+	s.Prober = prober
+	self := int64(os.Getpid())
+	prober.verdicts[self] = identity.Alive
+	prober.starts[self] = 8000
+
+	target := WaiterTarget{Generation: 1, LaunchNonce: strings.Repeat("a", 32)}
+	if err := s.RegisterWaiter("run", "w-run", mainCaller, target); err != nil {
+		t.Fatal(err)
+	}
+	// Same owner, same lifecycle, still alive: busy (64).
+	err := s.RegisterWaiter("run", "w-run", mainCaller, target)
+	if WaiterExitCode(err) != ExitWaiterBusy {
+		t.Fatalf("live same-lifecycle waiter not busy: %v", err)
+	}
+	// Same owner, NEW lifecycle: the stale live waiter is replaceable
+	// (FIX-R6-02).
+	fresh := WaiterTarget{Generation: 2, LaunchNonce: strings.Repeat("b", 32)}
+	if err := s.RegisterWaiter("run", "w-run", mainCaller, fresh); err != nil {
+		t.Fatalf("stale-lifecycle waiter blocked replacement: %v", err)
+	}
+	// A FOREIGN owner registers beside, not against, ours — and its
+	// record never satisfies OUR LiveWaiter fact.
+	foreign := Caller{Class: "MAIN", MainId: "main-other", SessionId: "s2"}
+	if err := s.RegisterWaiter("run", "w-run", foreign, fresh); err != nil {
+		t.Fatalf("foreign owner blocked: %v", err)
+	}
+	if !LiveWaiter(s.Root, prober, "run", "w-run", mainCaller.MainId, fresh) {
+		t.Fatal("own live waiter not seen")
+	}
+	if LiveWaiter(s.Root, prober, "run", "w-run", "main-third", fresh) {
+		t.Fatal("a third party saw someone else's waiter as its own")
+	}
+	// Target mismatch never satisfies.
+	if LiveWaiter(s.Root, prober, "run", "w-run", mainCaller.MainId, target) {
+		t.Fatal("a stale target satisfied LiveWaiter")
+	}
+	// FIX-R6-03: a HUMAN caller keys on human:<uid> — distinct from
+	// every main and stable without session plumbing.
+	human := Caller{Class: "HUMAN", SessionId: "h1"}
+	if err := s.RegisterWaiter("run", "w-run", human, fresh); err != nil {
+		t.Fatalf("human waiter refused: %v", err)
+	}
+	if !LiveWaiter(s.Root, prober, "run", "w-run", "", fresh) {
+		t.Fatal("the human's waiter not seen under the uid key")
+	}
+	// Compare-and-delete: removal only deletes our own record.
+	s.RemoveWaiter("run", "w-run", human)
+	if LiveWaiter(s.Root, prober, "run", "w-run", "", fresh) {
+		t.Fatal("removal missed the human record")
+	}
+	if !LiveWaiter(s.Root, prober, "run", "w-run", mainCaller.MainId, fresh) {
+		t.Fatal("removal deleted someone else's record")
+	}
+
+	// The watch round-trip: a launched run concluded green exits 0 with
+	// the waiter record gone.
+	nonce := launchOne(t, s, "watch-run")
+	prober.verdicts[501] = identity.Alive
+	prober.starts[501] = 5000
+	if err := s.Bind("watch-run", nonce, 501, 501); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := s.Read("watch-run")
+	s.WriteSidecar("watch-run", record.Generation, record.LaunchNonce, 0)
+	prober.verdicts[501] = identity.Dead
+	done := make(chan int, 1)
+	go func() { done <- s.Watch("watch-run", mainCaller, 30*time.Millisecond) }()
+	time.Sleep(60 * time.Millisecond)
+	if _, err := s.Assess("watch-run"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-done:
+		if code != ExitGreen {
+			t.Fatalf("watch exit %d, want green", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("watch did not return after conclusion")
+	}
+	if LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, WaiterTarget{Generation: record.Generation, LaunchNonce: record.LaunchNonce}) {
+		t.Fatal("the waiter record survived the watch exit")
+	}
+	// Watch on a missing record: 4.
+	if code := s.Watch("ghost-run", mainCaller, time.Millisecond); code != ExitNoRecord {
+		t.Fatalf("missing record watch exit %d, want 4", code)
+	}
+}
