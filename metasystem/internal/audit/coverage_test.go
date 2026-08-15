@@ -356,3 +356,35 @@ func TestConformanceTableAudit(t *testing.T) {
 		t.Fatalf("full shipped set refused: %v", violations)
 	}
 }
+
+// The remaining goal-audit branches: a contract missing a runtime's row,
+// and a missing contract file naming itself.
+func TestConformanceTableMissingRow(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
+	os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
+	os.WriteFile(filepath.Join(root, "AGENTS.md"),
+		[]byte("programs start with `goal open`; read `goal next`\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
+		[]byte("`goal open` starts programs\n"), 0o644)
+	// The contract exists but names only claude.
+	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
+		[]byte("| claude |\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "claude-code-hooks.json"), []byte("{}\n"), 0o644)
+	violations := auditGoalSystem(root)
+	if len(violations) != 2 {
+		t.Fatalf("missing rows not caught pairwise: %v", violations)
+	}
+	for _, v := range violations {
+		if !strings.Contains(v, "conformance row") {
+			t.Fatalf("wrong violation shape: %v", violations)
+		}
+	}
+
+	// No contract file at all names itself and stops there.
+	os.Remove(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"))
+	violations = auditGoalSystem(root)
+	if len(violations) != 1 || !strings.Contains(violations[0], "turn-verdict-delivery-contract.md") {
+		t.Fatalf("missing contract not named: %v", violations)
+	}
+}
