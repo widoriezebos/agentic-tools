@@ -2054,3 +2054,31 @@ in checkpointed commits, the design-obligation gate enforcing
 row-by-row completion. Revert point if Wido disagrees: the design
 and all eleven critiques are in plans/, every fold is a separate
 commit.
+
+## D70 — 2026-08-15: bm-2 rep 2 valid; the arm closes at 2/2 and the ladder proved itself both ways
+
+Second valid repetition, all seven gates passed. Acceptance
+0.981132 and requirementCoverage 0.9615 — byte-identical to rep 1
+and to every completed run of every arm; the product-metric
+convergence holds across a fourth arm. Cost: orchestrator $16.00;
+Devin 176 ACUs (design-critic 61 + implementer 115). The bm-2
+(swe-1-7 -> swe-1-7-max, D65) arm is CLOSED at 2 valid of 2.
+
+The delivery-channel census across the whole rep (reply-source.json
+per round): four rounds delivered channel=stdout at the initial
+attempt; three rounds were EMPTY at the initial attempt, descended
+the ladder, ran the one same-session repair, got nothing there
+either, and settled channel=none delivered=false — after which the
+mission relaunched follow-up rounds and completed within fences.
+Combined with rep 1 (2 of 2 stdout/initial), the D64 machinery has
+now shown both faces live: the primary channel works under D61
+dangerous mode, and when Devin genuinely returns nothing the ladder
+refuses to fabricate, records the descent, and the mission-level
+retry absorbs it. Validity was unaffected in both shapes.
+
+Benchmark series state: baseline 2/2 valid, bm-2s 2/2 valid, bm-2
+(Devin) 2/2 valid — every arm converges to acceptance 0.981132; the
+discriminators remain validity rate, wall clock, and cost. Total
+bm-2 cohort spend: ~$21.56 orchestrator + 292 Devin ACUs across
+both reps. No further reps are approved or planned; the series
+awaits Wido's read.
