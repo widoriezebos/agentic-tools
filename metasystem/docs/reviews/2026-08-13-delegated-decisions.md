@@ -2150,3 +2150,25 @@ obligation (FIX-R6-01..04); code-critique of the implementation
 made mandatory; the switch recorded in the plan header with the
 trajectory. Revert cost if the human overrules: one more critique
 round against the r7 text before implementation continues.
+
+## D73 — 2026-08-16: monitor-facility ships; the arbiter exit's mandatory review is vindicated
+
+Implementation C1-C6 landed and BOTH host gates went green (Mac
+04a1bbe, VM d50909a) — and then the mandatory code critique the
+arbiter exit demanded (gpt-5.6-sol at xhigh, read-only against the
+gated tree) returned REVISE with 11 material findings, 4 critical:
+the takeover sweep unserialized with no forced conclusion, no
+in-lock lease-epoch recheck, a green cursor that could permanently
+skip a green, and waiters that miss timeout/cancelled. Every
+finding was real; every finding is now folded with a test
+(plans/monitor-facility-code-critique.md verbatim, fold table in
+the design doc). This is the exit's design working as ratified:
+gates alone certified a tree carrying four critical defects, and
+the mandatory review caught what fixtures did not encode. Decision:
+fold all 11 at the source rather than triage — the critique's
+grain was uniformly mechanical and each fix strengthened a matrix
+row's proof. Both hosts green on the fold at 0d76eb1. The goal
+ledger closed monitor-facility and promoted agnosticism-audit; a
+follow-on decision will record that audit's ruling set. Revert
+cost: git revert of the fold commit; the pre-fold behavior is the
+gated 04a1bbe tree.

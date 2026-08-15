@@ -1,10 +1,6 @@
 # Goals
 
-## Current goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
-- Origin: main
-- Next step: Design per plans/backlog-notes.md item 15; critique loop with codex at xhigh; implement.
-
-## Queued goal: agnosticism-audit — The core never names an agent runtime; every runtime surface is adapter-declared
+## Current goal: agnosticism-audit — The core never names an agent runtime; every runtime surface is adapter-declared
 - Origin: main
 - Next step: Audit every runtime name outside the adapter seam per plans/backlog-notes.md item 16; rule per site.
 
@@ -51,3 +47,7 @@
 ## Queued goal: kill-python-fixtures — Finish the two-languages end state: no python3 in fixtures, the suite, or preflight
 - Origin: main
 - Next step: Sweep the ~150 python3 heredocs in scripts/ into engine verbs and shell; the doctrine is backlog-notes item 13's end state.
+
+## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
+- Origin: main
+- Concluded: Shipped: run records with custody proofs, the waiter contract, verdict integration, the locked sweep. The mandatory code critique found 11 defects (4 critical); all folded with tests. Both hosts green at 0d76eb1.
