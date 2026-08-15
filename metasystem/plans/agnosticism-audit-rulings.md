@@ -1,9 +1,9 @@
 # Agnosticism audit: the ruling set
 
-- Status: DRAFT r2 — critique r1 folded (10 findings, all material); awaiting critique r2
+- Status: DRAFT r3 — critique r2 folded (7 findings); awaiting critique r3
 - Goal: agnosticism-audit (backlog item 16, D-series: pending)
-- Next step: Fold the critique verdict when run agno-critique-r2 concludes; implement only after convergence.
-- In flight right now: run agno-critique-r2 (codex xhigh critique of this revision; watch it with: bin/metasystem run watch --id agno-critique-r2 --root .)
+- Next step: Fold the critique verdict when run agno-critique-r3 concludes; implement only after convergence.
+- In flight right now: run agno-critique-r3 (codex xhigh critique of this revision; watch it with: bin/metasystem run watch --id agno-critique-r3 --root .)
 
 The human's rule, verbatim intent (2026-08-15): "the meta system must be
 agent agnostic (it should work with Codex and Devin and any other future
@@ -14,8 +14,13 @@ runtime touches only its own seam files plus one registry declaration.
 Revision history: r1 swept only cmd/ + internal/ and missed the shipped
 script control plane, the `fake` runtime's production branches, and the
 role-requirements waiver matrix; its usage and host-resume moves crossed
-seam boundaries the wrong way. Critique r1
-(plans/agnosticism-critique-r1.md) found all of this; r2 is the fold.
+seam boundaries the wrong way (critique r1, 10 findings). r2's fold left
+seven material defects: the waiver move inverted security ownership, the
+hook capability bundle dropped codex/devin audit coverage, the registry
+had no adoption shape, the fake list was incomplete, instruction
+filenames missed four consumers, the shell verb schema could not express
+registration, and recovery had no outcome contract (critique r2). The
+critiques are preserved beside this plan; r3 is the r2 fold.
 
 ## The sanctioned seams
 
@@ -54,25 +59,48 @@ the core-vs-plumbing boundary: the declaration lives in Go, scripts ask
 the binary.
 
 Each runtime declares:
-- name; delegate/host capability flags (has adapter, has host launcher)
+- name — validated against a shell-safe grammar (kebab, `^[a-z][a-z0-9-]{0,31}$`);
+  every emitted relative path is validated clean-relative (no `..`, no
+  absolute, no whitespace) at declaration-test time (critique r2-3)
+- delegate/host capability flags (has adapter, has host launcher)
+- `adoptable` (claude, codex, devin — never fake) and ONE
+  `adoptionDefault` (claude), pinning adopt.sh:53's default and
+  adopt-fixtures.sh:245's expectation (critique r2-3); config
+  validation keeps consuming the FULL list including fake
+- registration contract — the structured shape adopt.sh:311 and
+  validate-metasystem.sh:591 currently open-code: entries of
+  {source pattern, destination, kind, required|optional, copy|link}
+  so installation and byte-drift validation both consume declarations
+  (critique r2-6)
+- session-environment names (claude: CLAUDE_PROJECT_DIR; devin: its
+  project-dir variable) for supervision-hook.sh's dispatch
 - skills/agents directories (today's validate.go:344 table)
 - instruction-file name (CLAUDE.md for claude; AGENTS.md otherwise)
 - tailoring priority — an explicit UNIQUE integer pinning today's
-  precedence codex > devin > claude > fake (critique r1-2: map order
-  never substitutes for policy), plus an optional synthesized-model
-  value (fake declares "fake-model"; real runtimes declare none)
-- OPTIONAL hook-enforcement capability: {enforcement-config filename,
-  live-settings path, vendored-entry marker} — declared only by
-  runtimes that ship hook enforcement (claude today). Enforcement
-  config and self-check are INDEPENDENT optional capabilities
-  (critique r1-10): a hookless runtime is not an audit failure
-- permission-waiver matrix: the exact (role, field) sites where this
-  runtime's non-enforcement is waived (critique r1-7) — see Class 9
+  precedence codex > devin > claude > fake (critique r1-2), plus an
+  optional synthesized-model value (fake declares "fake-model")
+- TWO independent optional hook fields (critique r2-2 — bundling them
+  dropped real coverage: codex-hooks.json and devin-hooks.json ship
+  today): `shippedEnforcementConfig` (filename; declared by claude,
+  codex, AND devin) and `liveSelfCheck` {settingsPath, vendoredMarker}
+  (declared by claude only). The audit iterates the first; `hooks
+  check` requires the second
+- permission-residual identifiers — see Class 9 (the WAIVERS stay
+  role-owned; the registry only NAMES the residuals a role may waive)
+
+The `metasystem runtime` verbs are purpose-filtered, not one flat list
+(critique r2-3): `list` (all), `list --adoptable`, `adoption-default`,
+`dirs`, `enforcement-config`, `self-check`, `instruction-file`,
+`session-env`, `registration` (the structured contract, NUL- or
+tab-delimited rows for shell). Each verb has a pinned output encoding
+and exit codes (0 ok, 1 unknown runtime, 2 usage); adoption's
+pre-mutation checks run against these verbs before any file lands.
 
 Conformance tests pin: registered real runtimes have their declared seam
-files/launchers; the tailoring precedence and fake-model synthesis are
-byte-identical to today; a NEWLY declared instruction filename enters
-both the audit allowlist and the conformance no-waiver set.
+files/launchers; the tailoring precedence, fake-model synthesis,
+adoption default, and registration layout validation are byte-identical
+to today; a NEWLY declared instruction filename reaches EVERY consumer
+in Class 8; name/path grammars reject a hostile declaration.
 
 ## Rulings by class
 
@@ -108,23 +136,32 @@ The r1 sweep missed these entirely (critique r1-1):
   and registration layouts
 
 RULING: the runtime LISTS and per-runtime lookups in these scripts come
-from `bin/metasystem runtime ...` verbs. The per-runtime ARMS (what to
-install for claude, which env var carries the project dir) are seam
-knowledge: each runtime's session-env names move into its declaration
-(claude: CLAUDE_PROJECT_DIR; devin: its own), and the scripts branch on
-declared values, not names. Where a script's arm is irreducibly
-runtime-specific plumbing (adopt.sh's install steps), the arm moves into
-that runtime's adapter script and adopt.sh dispatches to it.
+from the purpose-filtered `bin/metasystem runtime ...` verbs (adopt.sh
+uses `list --adoptable` and `adoption-default`; config surfaces use the
+full list — the two populations differ and MUST not merge, critique
+r2-3). Installation and registration-layout validation consume the
+declared registration contract: adopt.sh's install arms become a generic
+loop over `runtime registration <name>` rows ({source, destination,
+kind, required|optional, copy|link}), and validate-metasystem.sh's
+byte-drift checks walk the same rows, so neither weakens (critique
+r2-6). supervision-hook.sh resolves the project-dir variable via
+`runtime session-env`. Where an arm is irreducibly runtime-specific
+plumbing beyond the contract's vocabulary, it moves into that runtime's
+adapter script and adopt.sh dispatches to it — the contract rows are
+preferred; the dispatch escape is the exception and each use is listed
+in the doctrine.
 
 ### Class 4 — the hooks self-check: GENERALIZE
 
 `internal/hooks/hooks.go:62` hardcodes `$CLAUDE_PROJECT_DIR/metasystem`.
 RULING: `CheckOwnHooks` takes the vendored-entry marker as a parameter;
 `metasystem hooks check` gains a REQUIRED `--runtime` flag (critique
-r1-10: a claude default would reintroduce the core name) that resolves
-the marker and paths from the registry's hook-enforcement capability; a
-runtime without that capability gets a LOUD "no hook enforcement
-declared for <runtime>". The one suite call site passes the runtime.
+r1-10) that resolves settingsPath and vendoredMarker from the registry's
+`liveSelfCheck` field; a runtime without liveSelfCheck gets a LOUD "no
+live self-check declared for <runtime>". This is INDEPENDENT of
+shippedEnforcementConfig (critique r2-2): codex and devin keep their
+shipped-config audit rows while declaring no live self-check. The one
+suite call site passes the runtime.
 
 ### Class 5 — the devin resume branch: MOVE THE RECOLLECTION ONLY
 
@@ -146,19 +183,36 @@ its result with top-level usage to events.jsonl, and today's parser
 recognizes input_tokens/output_tokens/reasoning_tokens — a claude round
 IS partially recoverable today (critique r1-5).
 
-RULING: per-runtime parsing/recovery moves into the adapter/host seams
-(per-runtime files there); `internal/usage` retains only runtime-neutral
-typed-usage arithmetic and serialization. Recovery is declared per
-runtime over a runtime-NEUTRAL recovery context {repo, round directory,
-predecessor artifacts} and returns TYPED usage fed through the same
-generic aggregator as reported usage (critique r1-6: the token-only sink
-undercounts cost/provider-unit recoveries; unifying is an intentional,
-tested improvement, not silent). Preservation tests pin today's claude
-and codex recoveries field-for-field. Devin dead-round recovery is
-DECLARED UNSUPPORTED — its usage math needs transcript metrics and
-predecessor cumulative state that a dead round's event stream does not
-carry; today's behavior (unavailable) is preserved, now stated. The two
-Devin cmd verbs reroute through the seam entry points.
+RULING: `internal/usage` is DECLARED the single seam owner of shared
+usage parsing (critique r2-7: adapter AND host both consume Devin's
+math — the package's documented dedup purpose stands), reorganized into
+per-runtime files (usage/claude.go, usage/codex.go, usage/devin.go —
+item 17's placement rule) that are sanctioned seam entries, with
+usage.go retaining only runtime-neutral typed-usage arithmetic and
+serialization. Core packages other than the seams and the fence's
+declared recovery dispatch may not import the per-runtime files. The
+two Devin cmd verbs reroute through adapter/host entry points that call
+the seam owner (critique r1-4). Recovery is declared per runtime over a
+runtime-NEUTRAL recovery context {repo, round directory, predecessor
+artifacts} and returns a `RecoveryOutcome` (critique r2-7), not a bare
+value or error:
+- state: recovered | unavailable | unsupported
+- typed usage (on recovered) fed through the SAME generic aggregator
+  as reported usage (critique r1-6)
+- exact source paths and detail for provenance, matching today's
+  per-round source/detail records (fence.go:794)
+- malformed provider evidence NORMALIZES to unavailable or is skipped
+  per today's parser semantics (usage.go:236 skips bad JSONL lines and
+  still recovers an earlier valid block) — a truncated final line in a
+  killed stream must NEVER become an aggregate-wide error
+  (usageprojection.go:13's standing-aggregate hazard)
+Group-death and custodian-death gating stays in `internal/mission`
+(fence.go:746). Preservation tests pin today's claude and codex
+recoveries field-for-field, including the malformed-tail case. Devin
+dead-round recovery is DECLARED UNSUPPORTED — its usage math needs
+transcript metrics and predecessor cumulative state a dead round's
+event stream does not carry; today's behavior (unavailable) is
+preserved, now stated.
 
 ### Class 7 — round-usage recovery call in the fence: GENERALIZE
 
@@ -174,43 +228,77 @@ Two defects beyond r1's audit-allowlist fix:
   `scripts/agents/instruction-bearing-paths.txt:5` and
   `internal/validate/conformance.go:385,448`; a future runtime's
   instruction file could be merged under a prose waiver (critique
-  r1-8). RULING: registry-declared instruction filenames feed BOTH the
-  audit allowlist and the conformance protected set; the test declares
-  a new filename and proves it lands in both.
+  r1-8). And the filename has more consumers the r2 ruling missed
+  (critique r2-5): the audit's outside-reference scan roots
+  (audit/metasystem.go:29), its instruction inventory (:107),
+  adoption's collision detection (adopt.sh:129), and the adoption
+  payload allowlist (adopt.sh:166). RULING: the registry-declared
+  instruction-file set feeds ALL of: audit inventory, outside-reference
+  scan roots, conformance no-waiver protection, adoption collision
+  detection, and adoption payload inclusion (the last two via the
+  `runtime` verbs). Declared instruction files are themselves
+  sanctioned seam entries. ONE test declares a new filename and proves
+  it lands in every consumer.
 - The audit loop at `internal/audit/metasystem.go:332` requires every
   runtime to have a contract row and enforcement config; that fails
   hookless runtimes (critique r1-10). RULING: the loop iterates
   runtimes DECLARING hook enforcement; the handwritten conformance row
   in docs/design/turn-verdict-delivery-contract.md is admitted in the
-  doctrine as the one explicit exception to "one declaration" — it is
+  doctrine as an explicit exception to "one declaration" — it is
   evidence prose, and the audit checks consistency between it and the
-  declarations rather than deriving it.
+  declarations rather than deriving it. (The other declared exception
+  is Class 9's role-file waiver edit.)
 
 ### Class 9 — the permission-waiver matrix: GENERALIZE, EXACTLY
 
 `scripts/agents/roles/*.requirements.json` name devin under
 readRoots/writeRoots, and `internal/capability/select.go:129,300` treat
 those names as waiver gates — live security behavior, not fixture data
-(critique r1-7). RULING: the exact current (runtime, role, field) waiver
-matrix moves into the registry's per-runtime waiver declaration,
-consumed generically by capability selection. The move is
-byte-preserving: a golden test regenerates today's decisions for every
-role file. Explicitly REFUSED: waiving any runtime that reports
-notEnforced — that would broaden privilege.
+(critique r1-7). The r2 ruling moved the matrix into the compiled
+registry; critique r2-1 showed that INVERTS security ownership: role
+files are the live, checkout-local control (select.go:81 reads them on
+every dispatch; docs/orchestration.md:58 assigns capability policy to
+them), and a compiled default would keep authorizing after a role file
+revoked. RULING: waivers STAY role-owned and live in the role
+requirements files. The registry declares only each runtime's
+PERMISSION-RESIDUAL IDENTIFIERS (unique names for the enforcement gaps
+a role could waive, e.g. devin's unenforced read/write roots);
+capability selection matches a role file's explicit waiver of an
+identifier generically instead of matching the runtime NAME. A role
+file that does not name the identifier fails closed — including for
+every future runtime, whose new identifiers no existing role file
+waives. This is a declared exception to "one registry edit": granting
+a new runtime's waiver is a HUMAN policy edit to role files, by
+design. A golden test regenerates today's decisions for every role
+file. Explicitly REFUSED: waiving any runtime that reports notEnforced
+— that would broaden privilege.
 
 ### Class 10 — the `fake` runtime's production branches: NAMED EXCEPTION, PER SITE
 
 The r1 sweep excluded `fake` while treating it as part of the universe
-(critique r1-9). Its production branches are trusted-fixture
-capabilities: host identity/wind-down (`internal/missionrunner/host.go:213`,
-`launch.go:134`), the synthetic census ancestor
-(`internal/census/ancestor_production.go:55`), the trusted
-process-identity override (`internal/supervise/reservedcap.go:39`).
-RULING: `fake` remains a NAMED test-harness exception; each fake-gated
-capability is listed individually in the doctrine and keeps its explicit
-`== "fake"` guard. Explicitly REFUSED: a generic IsFixture bypass —
-future fixtures must NOT inherit security-sensitive bypasses by
-declaration.
+(critique r1-9), and r2's list was still incomplete (critique r2-4).
+The FULL enumeration of fake-gated production branches, each a
+trusted-fixture capability with authority consequences:
+- host identity/wind-down: `internal/missionrunner/host.go:213`,
+  `internal/missionrunner/launch.go:134`
+- the synthetic census ancestor:
+  `internal/census/ancestor_production.go:55`
+- fake-only census process enumeration: `internal/census/run.go:355`
+- the trusted process-identity override:
+  `internal/supervise/reservedcap.go:39`
+- mission lease identity substitution:
+  `internal/dispatch/mission.go:100`
+- delegate-writable mirror fault injection:
+  `internal/dispatch/mirror.go:44`
+- fake supervisor and process-group ownership fallbacks:
+  `scripts/agents/dispatch.sh:238,265`
+RULING: `fake` remains a NAMED test-harness exception; every branch
+above is listed in the doctrine and keeps its explicit local
+`== "fake"` guard at its security boundary. The implementation adds a
+pinning test that THIS list matches the tree (the sweep re-run), so a
+new fake branch cannot land unlisted. Explicitly REFUSED: a generic
+IsFixture bypass — future fixtures must NOT inherit security-sensitive
+bypasses by declaration.
 
 ### Class 11 — cmd verb tables naming runtimes: STAYS (with the Class-6 reroute)
 
