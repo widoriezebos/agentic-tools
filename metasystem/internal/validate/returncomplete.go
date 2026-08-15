@@ -63,9 +63,24 @@ func ReturnCompleteRole(root, role, file string) []string {
 	return c.violations
 }
 
+// ReturnCompleteJobFile validates an EXPLICIT candidate file with the
+// full job flow — record, chain walk, schema, and identity — instead of
+// the round's conventional return path. The delivery collector's
+// per-candidate selection (D64) needs exactly this: schema-only
+// validation cannot catch a schema-valid return for the wrong job.
+func ReturnCompleteJobFile(root, job, file string) []string {
+	return returnCompleteJobAt(root, job, file)
+}
+
 // ReturnCompleteJob validates a job's round return: the record, the chain
 // walk to the root job, the schema, and the identity fields.
 func ReturnCompleteJob(root, job string) []string {
+	return returnCompleteJobAt(root, job, "")
+}
+
+// returnCompleteJobAt is the shared job flow; an empty overridePath means
+// the round's conventional return location.
+func returnCompleteJobAt(root, job, overridePath string) []string {
 	c := &returnChecker{root: root}
 	recordPath := filepath.Join(root, "artifacts", "agents", "jobs", job+".json")
 	raw := c.loadJSON(recordPath, "job record")
@@ -122,6 +137,8 @@ func ReturnCompleteJob(root, job string) []string {
 	var returnPath string
 	if !roundOK {
 		c.violation("job record round must be an integer")
+	} else if overridePath != "" {
+		returnPath = overridePath
 	} else {
 		returnPath = filepath.Join(root, "artifacts", "agents", rootJobID,
 			"rounds", strconv.FormatInt(round, 10), "return.json")
