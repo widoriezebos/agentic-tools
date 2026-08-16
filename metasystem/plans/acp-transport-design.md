@@ -351,11 +351,16 @@ never restart or replay; an ACP failure never switches the job to
 legacy or dangerous (r1 F8); rollback is pre-launch for the NEXT
 job (r1 F9).
 
-## D61 and D62 (r1 F8, F9) — unchanged
+## D61 and D62 (r1 F8, F9; amended by D82)
 
-ACP jobs never invoke D61; it retires only when the legacy path is
-removed. D62 owners survive with one additive channel. Session
-bridges proven per direction or closed.
+ACP jobs never invoke D61. Per D82 the legacy delegate machinery
+is RETAINED as reusable adapter capability for future devin-like
+runtimes — so D61 retires FOR DEVIN when ACP becomes its default
+and the dangerous path stops being invoked for devin jobs, not
+when the machinery is deleted. A future runtime adopting the
+legacy shape gets its own waiver decision on its own evidence.
+D62 owners survive with one additive channel. Session bridges
+proven per direction or closed.
 
 ## Registry: data only (r1 F14) — unchanged
 
@@ -403,9 +408,14 @@ exclusion, token comparison, generation snapshot CAS), and the
 marker gating fixtures (a legacy record beside a sealed-v1 record:
 external writers apply the right rules to each).
 
-P3: devin's declarations + adapter integration behind a conf flag;
-bm-style live smoke; containment flips need behavioral proof;
-admission states advance only on P1-shaped evidence.
+P3: devin's declarations + adapter integration behind a conf
+flag. The acceptance gate is D82, human-ratified: a FULLY
+SUCCESSFUL benchmark run on BOTH hosts — the Mac and the VM —
+with the flag on; then the switch flips, ACP becomes devin's
+default, and the posture is FIX FORWARD (ACP problems are fixed
+on ACP; the legacy path is not a devin escape hatch after the
+flip). Containment flips need behavioral proof; admission states
+advance only on P1-shaped evidence.
 
 ## Blast radius
 
