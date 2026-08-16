@@ -2590,3 +2590,35 @@ declined because an unapproved provisioned target is wasted disk and
 the seal may never come. provision-genesis-authority should be
 marked done when the human confirms; I left it queued rather than
 churn the current-goal pointer.
+
+## D89 — 2026-08-16: the worktree observer was built, its code critique found the verdict unsound, reverted rather than shipped
+
+The disk-hygiene worktree accumulation is real (118 dirs / ~500MB,
+dispatch never reclaims a finished job's worktree), so I built a
+report-only `janitor worktrees` observer that classified each
+worktree by "job terminal + custody dead" and, on the live checkout,
+named 106 as reclaimable. The mandatory post-implementation code
+critique (codex xhigh, plans/wt-code-critique-r1.md) returned REVISE
+with five structural findings and, decisively, VERIFIED against the
+live tree that the verdict is unsound: it classified as reclaimable
+three implementer worktrees still holding UNMERGED work, including
+caps-census-gate-order with a modified dispatch.sh. The reasons are
+load-bearing, not mechanical: terminality is a record-state, not a
+data-release proof (conformance review and the authoritative diff
+read the worktree AFTER the job terminates); custody-list death is
+not process-group death (grandchildren survive reparenting);
+follow-up rounds alias the same workspace, so a running <job>-r2
+uses a worktree whose <job>.json reads terminal.
+
+Decision: REVERT the code rather than ship an unsound reclamation-
+adjacent verdict or grind a half-fix for a modest diagnostic. The
+sound reclaim is the full journaled destructive slice (data-release
++ group-death + alias-resolution-under-lock + ownership/containment
++ same-user procfs), captured as "The worktree-reclaim proof" in
+plans/disk-hygiene-design.md. The accumulation and a SAFE human
+cleanup (`git worktree remove` self-refuses dirty trees) are
+recorded as KI-35. The alternative NOT taken — shipping a
+no-verdict status report — was declined as marginal value in a
+subtle, dangerous area; the critique itself, catching this before
+it shipped, is the process working as intended. The critique is
+preserved beside the design.

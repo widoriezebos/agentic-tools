@@ -1,4 +1,4 @@
-- Status: IMPLEMENTATION-FIRST (D81/D85) — r1/r2 folded, r3 (14 findings) is the fixture list; building highest-value slices behind fixtures rather than a 4th prose round. Slice 1: the headroom guard (the ENOSPC fix).
+- Status: IMPLEMENTATION-FIRST (D81/D85) — r1/r2 folded, r3 (14 findings) is the fixture list; building highest-value slices behind fixtures rather than a 4th prose round. Slice 1: the headroom guard (the ENOSPC fix) — SHIPPED, both hosts green. Slice 2 attempt: a worktree observer (`janitor worktrees`) classifying the dispatch-owned-worktrees row by "job terminal + custody dead" — BUILT then REVERTED (D89). Its mandatory code critique (plans/wt-code-critique-r1.md, 5 structural) proved the verdict UNSOUND for any future reclaimer to trust: it classified as reclaimable three implementer worktrees still holding UNMERGED work (a modified dispatch.sh in caps-census-gate-order), because terminality is NOT a data-release proof — conformance review and merge read the worktree AFTER the job terminates. The corrected worktree-reclaim proof is captured below; the accumulation it surfaced (118 dirs / ~500MB) is recorded in plans/known-issues.md with a SAFE manual cleanup for the human meanwhile.
   Critiques r1 and r2 are folded into this text (12 and 15
   findings). The r3 verdict landed after the park: REVISE, 14
   findings (13 structural), preserved UNFOLDED at
@@ -214,7 +214,7 @@ reuse across suites.
 | run-launch logs (namespace) | distill-then-delete at log-sealed, DELEGATED to internal/run |
 | adopted/caller-path run logs | report-only until ownership transfer + alias clearance (r2 F4) |
 | per-job round evidence | DELEGATED to evidence-gc, published as subclasses (r2 F7) |
-| dispatch-owned worktrees | delete-after-use, janitor, proof: job terminal + group quiescent |
+| dispatch-owned worktrees | delete-after-use, janitor, proof: DATA-RELEASED (see "The worktree-reclaim proof" — terminal + group quiescent is NOT sufficient) |
 | dispatch recovery/setup temps (migrated) | delete-after-use, janitor |
 | external/session scratchpads | report-only unless registered via adapter capability |
 | benchmark resources | kit-declared via the envelope below; `.evidence` is a PROTECTED evidence-GC destination, never a disposable source (r2 F5) |
@@ -241,6 +241,49 @@ unattended between provisioning and the human's signing (r2 F5).
 Only `released` (plus verification and minimum retention)
 authorizes deletion; `.evidence` removal requires an explicit
 ownership handoff from the evidence GC.
+
+## The worktree-reclaim proof (corrected by plans/wt-code-critique-r1.md)
+
+The slice-2 attempt proved that "job terminal + custody dead" is
+NOT a sound proof that a dispatch worktree is disposable. A sound
+reclaim of `artifacts/agents/worktrees/<job>` must hold ALL of:
+
+1. **Data released, not just terminal (critique F1).** Terminality
+   is a record-state, not a merge/review state: conformance review
+   and the authoritative-diff computation READ the worktree after
+   the implementer terminates, and CloseCheck admits a completed,
+   unreviewed implementer with no computed diff. Reclaim needs an
+   explicit release/merge proof (reviewed AND merged-or-discarded
+   by decision AND no downstream consumer still needs the tree).
+   The cheapest sound proxy is git's own: `git worktree remove`
+   WITHOUT `--force` refuses a worktree with uncommitted or
+   unmerged changes — that refusal IS a data-release check, and a
+   reclaimer should use it rather than re-derive one.
+2. **Group death, not custody death (F2).** The custody list holds
+   the direct CLI child only; grandchildren survive reparenting and
+   a failed handshake writes `failed` before a best-effort wind-down
+   that may not complete. Proof needs process-GROUP death (pgid,
+   no-escape enrollment), not a dead custody entry, and an empty
+   custody list is NOT quiescence.
+3. **Alias resolution under the chain lock (F3).** Follow-up rounds
+   (`<job>-rN`) inherit the root's workspace, so a running `-r2`
+   uses `worktrees/<root>` while `<root>.json` reads terminal.
+   Reclaim must resolve EVERY record referencing the canonical
+   workspace (workspaceRoot, which is inconsistently populated —
+   sometimes null, sometimes the repo root) and revalidate while
+   holding the same lock that excludes follow-up creation (TOCTOU).
+4. **Ownership + containment (F4).** Prove dir-name == jobId ==
+   the record's workspaceRoot, the dir is a registered git worktree,
+   and the path is canonical with no symlinked ancestor before any
+   RemoveAll-style operation.
+5. **Same-user + procfs trust for Dead (F5).** ENOENT-as-Dead is
+   only sound under same-user scope and non-restrictive procfs; a
+   reclaimer must enforce/prove that, as supervision does.
+
+This is the full journaled destructive slice, not a report. Until
+it exists there is no sound automatic worktree reclaim; the human
+cleanup path (git worktree remove, which self-refuses dirty trees)
+is recorded in plans/known-issues.md.
 
 ## Boundaries
 

@@ -10,16 +10,16 @@
   namespace-orphan verdict from disk-hygiene, D87)
 - Next step: BLOCKED, not actionable now — do not pick this up as
   open work. It waits on a typed verdict about a currently-UNWATCHED
-  invariant that no owner emits yet. The disk-hygiene worktree
-  observer (internal/janitor/worktrees.go, shipped) now provides the
-  PLUMBING the cheapest such verdict would reuse — job-record reads,
-  custody-liveness probing, the terminal-status join — but it does
-  NOT itself emit the orphan verdict (terminal job + LIVE custody),
-  and the full first slice also needs the incident record,
-  Stop-precedence, and attestation-freshness contracts named below.
-  Resume only when that orphan verdict exists; then build the
-  aggregator + those contracts once, against it. Do NOT build the
-  supervision-liveness duplicate.
+  invariant that no owner emits yet. The cheapest candidate — a
+  "finished job left a live process" orphan verdict — turns out to
+  need process-GROUP death detection (custody-list death is not
+  group death; a reverted worktree-observer attempt proved this,
+  plans/wt-code-critique-r1.md, D89), so it is NOT cheap and is
+  itself unbuilt. The full first slice also needs the incident
+  record, Stop-precedence, and attestation-freshness contracts named
+  below. Resume only when a sound owner-boundary verdict exists;
+  then build the aggregator + those contracts once, against it. Do
+  NOT build the supervision-liveness duplicate.
 
 ## The human's mandate (2026-08-16, verbatim intent)
 
