@@ -1,14 +1,23 @@
 # ACP as the delegate transport (backlog item 18)
 
-- Status: DRAFT r6 — critiques r1–r5 folded (15, 8, 13, 13, 10
-  findings; all folded, none refuted). Final round of the second
-  budget. r5's scope finding (F10) forced the structural pivot
-  recorded in D79: the sealed-custody protocol is GATED to ACP
-  records, and the system-wide custody holes ACP exposed are split
-  to the new goal custody-death-proof.
-- Goal: acp-transport
-- Next step: Fold the critique verdict when run acp-critique-r6 concludes; at this budget boundary the exits are converged, fixtures-as-arbiter, or escalate with the split already recorded.
-- In flight right now: run acp-critique-r6 (codex xhigh critique; watch it with: bin/metasystem run watch --id acp-critique-r6 --root .)
+- Status: PARKED AT BUDGET (D80) — six rounds, trajectory 15, 8,
+  13, 13, 10, 8; falling but five structural findings stand at
+  exhaustion (plans/acp-critique-r6.md). r6 ACCEPTED the D79 scope
+  pivot as sound and confirmed the ancestry-authentication
+  mechanism implementable; the residue is marker immutability
+  under the terminal lock, the lease-sweep lock split, the
+  cancellation committer split, the settlement refusal table, and
+  the newly surfaced PromptResponse.usage source. Third
+  execution-heavy subdomain to diverge under prose critique — the
+  methodology ruling parked on runtime-install-execution (D76)
+  covers this goal too: implementation-first behind fixtures
+  (evidence now favors it three times), a third prose budget, or
+  descope.
+- Goal: acp-transport (parked; joins runtime-install-execution on
+  the human's methodology ruling)
+- Next step: Wido's ruling. Under implementation-first, P1 (the
+  wire probe, throwaway) runs first regardless — every r6 residue
+  except F1/F2 needs its facts.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more

@@ -2328,3 +2328,31 @@ possible de-risking for the wider goal. Revert path: close the
 custody-death-proof goal unstarted and widen acp-transport's scope
 back, or rule the fleet migration first and park acp-transport on
 it.
+
+## D80 — 2026-08-16: acp-transport parks at budget; the methodology question now has three data points
+
+The acp-transport design loop ran its full two budgets: six codex
+rounds at xhigh, trajectory 15, 8, 13, 13, 10, 8 findings. The
+trajectory falls but never empties, and round six still carries
+five structural findings (marker immutability under the terminal
+lock, the lease sweep's nested-lock conflict with the fused
+proof-commit verb, cancellation's two committers, the settlement
+refusal table, and ACP v1.3's experimental PromptResponse.usage
+that the design had not considered). The ratified exit for
+falling-but-structural at exhaustion is escalation, so the goal
+parks — joining runtime-install-execution on the SAME methodology
+ruling (D76), because the pattern is now unmistakable: three
+execution-heavy subdomains (installer execution twice, now
+transport custody/settlement) diverge under prose critique while
+prose keeps discovering lock orderings and refusal mappings that
+fixtures would pin mechanically in an afternoon. What the loop
+banked before parking: the D79 scope pivot was ACCEPTED by the
+final critique as sound; the ancestry-authentication mechanism was
+confirmed implementable on both platforms; the admission
+enum and its P1 evidence pipeline were confirmed coherent; the
+fleet-wide custody holes are safely split to custody-death-proof;
+and the design document plus six critiques are a complete seed for
+whichever path the ruling picks. Under implementation-first, the
+throwaway P1 wire probe runs first on any continue path — its
+facts gate everything except the two lock-discipline findings.
+The program advances to disk-hygiene (next in queue).

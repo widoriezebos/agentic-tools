@@ -1,10 +1,6 @@
 # Goals
 
-## Current goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
-- Origin: main
-- Next step: Prototype against devin acp per plans/backlog-notes.md item 18; design loop before build.
-
-## Queued goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
+## Current goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main
 - Next step: Design per plans/backlog-notes.md item 19; headroom checks in suite and provision paths.
 
@@ -52,6 +48,11 @@
 - Origin: main
 - Parked because: Two six-round budgets show this subdomain diverges under prose critique (structural 12/11/5/5/5/8); the approach choice is Wido's: implementation-first behind fixtures, a third budget, or descope
 - Next step: PARKED for Wido's ruling: implementation-first behind fixtures, a third prose budget, or descope. Seeds: plans/ric-critique-r1..r6.
+
+## Parked goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
+- Origin: main
+- Parked because: Two budgets exhausted, five structural findings stand; parks on the D76 methodology ruling (implementation-first behind fixtures, third budget, or descope) — three subdomains now show the same divergence
+- Next step: Prototype against devin acp per plans/backlog-notes.md item 18; design loop before build.
 
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
 - Origin: main
