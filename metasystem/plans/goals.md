@@ -40,6 +40,10 @@
 - Origin: main
 - Next step: Sweep the ~150 python3 heredocs in scripts/ into engine verbs and shell; the doctrine is backlog-notes item 13's end state.
 
+## Queued goal: process-steward — A standing role that watches the development PROCESS itself against expectations and signals deviations to the orchestrator, or acts
+- Origin: main
+- Next step: Design per plans/backlog-notes.md item 21 when picked up: inventory the process invariants, decide signal-vs-act per class.
+
 ## Parked goal: runtime-install-execution — The adoption/installation execution rewrite: plan owner, resume records, engine transport, crash-consistent completion
 - Origin: main
 - Parked because: Two six-round budgets show this subdomain diverges under prose critique (structural 12/11/5/5/5/8); the approach choice is Wido's: implementation-first behind fixtures, a third budget, or descope

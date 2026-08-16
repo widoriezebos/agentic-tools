@@ -434,3 +434,31 @@
     citation requirement keeps a cheaper model honest. The tier
     stays revisable through the roster's normal escalation rules if
     stories come out muddled.
+
+21. **The process steward: watch the process itself, not just the
+    processes (human-raised 2026-08-16).** The human's intent,
+    verbatim: "we probably need something that watches the process
+    itself and signals issues or potential issues so that the
+    orchestration agent can act on them or maybe even the process
+    watcher, however we call it, itself... something better than a
+    retro or something next to the retro... more like a process
+    coach." Named the PROCESS STEWARD here (watchdog, watcher,
+    auditor, and narrator are all taken by other roles; "steward"
+    carries both noticing and tending — rename freely if a better
+    word arrives). The motivating instance, same day: the supervision
+    fleet had been dead for days, runs sat draining unswept, and the
+    turn verdict was DISPLAYING all of it ("supervision is not
+    scanning run X", stuck [draining] entries) — the signals existed,
+    but the only consumer was the human happening to read a Stop
+    message. The steward closes that loop: a standing check of
+    process invariants (fleet armed and attesting, no run stuck
+    draining past its wind-down, no unacked terminal pile-up, no
+    block-once loops, receipts recorded per ship, goals moving) with
+    a decision per class: fix silently (sweep a drainer), signal the
+    orchestrator (the human's own move here), or page the human.
+    Relation to neighbors: the RETRO looks back at cadence; the
+    NARRATOR (item 20) tells the story; the steward watches LIVE and
+    intervenes. Likely shape: part supervision component (mechanical
+    invariants), part cheap-model agent role (judgment calls),
+    rostered like the narrator. Design → critique → implement when
+    its turn comes.
