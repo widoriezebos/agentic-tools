@@ -39,20 +39,23 @@ func newCollectFixture(t *testing.T) *collectFixture {
 		t.Fatal(err)
 	}
 	writeFile(t, f.record, `{
-	  "jobId": "job-1", "round": 1, "role": "implementer", "status": "running", "runtime": "fake",
-	  "sessionId": "sess-1", "requestedModel": "fake-model", "effectiveModel": null
+	  "jobId": "job-1", "round": 1, "role": "implementer", "status": "running", "runtime": "devin",
+	  "sessionId": "sess-1", "requestedModel": "devin-model", "effectiveModel": null
 	}`)
 
-	prompt := filepath.Join(f.root, "prompt.md")
-	writeFile(t, prompt, "Job-Id: job-1\nWorking Mode: implement\n")
-	returnPath := filepath.Join(f.root, "valid-return.json")
-	if err := WriteFakeReturn(f.record, prompt, returnPath); err != nil {
-		t.Fatal(err)
-	}
-	f.validReturn, err = os.ReadFile(returnPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// A schema-valid devin return built locally (placement audit, item
+	// 17 critique finding 2): devin's collect tests no longer depend on
+	// the fake runtime's production writer.
+	f.validReturn = []byte(`{
+	  "schemaVersion": 2, "jobId": "job-1", "round": 1, "runtime": "devin",
+	  "sessionId": "sess-1",
+	  "model": {"requested": "devin-model", "effective": "unobserved"},
+	  "evidence": [{"command": "local fixture", "observed": "canned role return", "level": "ran"}],
+	  "gaps": [], "mode": "implement",
+	  "riskiestPart": "fixture boundary", "diffBoundary": [],
+	  "whatWasDone": "fixture implementation",
+	  "claimed": {"sessionId": null, "model": null}
+	}`)
 
 	f.roundDir = filepath.Join(f.root, "artifacts", "agents", "job-1", "rounds", "1")
 	f.workspace = filepath.Join(f.root, "workspace")

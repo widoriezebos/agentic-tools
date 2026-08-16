@@ -8,24 +8,24 @@ import (
 )
 
 func TestClaudeBudgetPolicy(t *testing.T) {
-	budget, turns, err := ClaudeBudget(fakeEnv(nil))
+	budget, turns, err := ClaudeBudget(stubEnv(nil))
 	if err != nil || budget != "5.00" || turns != "50" {
 		t.Fatalf("defaults = (%s,%s,%v)", budget, turns, err)
 	}
-	budget, turns, err = ClaudeBudget(fakeEnv(map[string]string{
+	budget, turns, err = ClaudeBudget(stubEnv(map[string]string{
 		"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "12.5", "METASYSTEM_CLAUDE_MAX_TURNS": "9"}))
 	if err != nil || budget != "12.5" || turns != "9" {
 		t.Fatalf("overrides = (%s,%s,%v)", budget, turns, err)
 	}
-	if _, _, err := ClaudeBudget(fakeEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "free"})); err == nil ||
+	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "free"})); err == nil ||
 		err.Error() != "invalid_native_budget" {
 		t.Fatalf("budget refusal = %v", err)
 	}
-	if _, _, err := ClaudeBudget(fakeEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "0"})); err == nil ||
+	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_BUDGET_USD": "0"})); err == nil ||
 		err.Error() != "invalid_native_budget" {
 		t.Fatalf("zero budget refusal = %v", err)
 	}
-	if _, _, err := ClaudeBudget(fakeEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_TURNS": "0"})); err == nil ||
+	if _, _, err := ClaudeBudget(stubEnv(map[string]string{"METASYSTEM_CLAUDE_MAX_TURNS": "0"})); err == nil ||
 		err.Error() != "invalid_native_turn_limit" {
 		t.Fatalf("turns refusal = %v", err)
 	}
