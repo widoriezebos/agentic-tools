@@ -575,8 +575,20 @@ func (s *Store) Reconcile(caller Caller) (Result, error) {
 			// verb-reachable state set (every parse-legal ledger is
 			// producible from empty by a verb sequence), so a strict parse
 			// is the genesis replay.
-			if _, problems := Parse(state.ledgerBytes); len(problems) > 0 {
+			parsed, problems := Parse(state.ledgerBytes)
+			if len(problems) > 0 {
 				return Result{}, fmt.Errorf("genesis reconcile refused: %s", problems[0])
+			}
+			// The deleted-baseline downgrade guard (authority review
+			// F2/F3), re-checked HERE under the lock so a baseline
+			// appearing between authorization and this write cannot be
+			// bypassed: a populated ledger with no baseline is a
+			// corrupted or attacked INITIALIZED project, not a virgin
+			// genesis. Only its holder may re-baseline it; a genesis
+			// caller (human or main adopting) creates only from a
+			// goal-free skeleton.
+			if parsed.HasGoals() && !caller.Holder {
+				return Result{}, fmt.Errorf("genesis reconcile refused: the ledger already carries goals but has no accepted baseline; only the lease holder may re-baseline an initialized project (a deleted goals-accepted.json is restored, not re-adopted)")
 			}
 			if err := s.writeBaseline(state.ledgerBytes); err != nil {
 				return Result{}, err

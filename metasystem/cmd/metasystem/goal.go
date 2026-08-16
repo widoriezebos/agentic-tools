@@ -21,39 +21,72 @@ import (
 
 // goalCaller classifies the invoking process and authorizes a mutation.
 // Reconcile against a root with NO accepted baseline is GENESIS: the
-// control plane being seeded does not exist yet, so a main agent may
-// seed it without holding a lease nobody could hold (the adopt and
-// provisioning path; goal-system GOAL-14's reconcile-only
-// initialization). Genesis classification runs against the SOURCE
-// root the adoption came from (--genesis-from) when one is given:
-// a virgin target has no announcements, so the session's own CLI
-// ancestor would read as a delegate signature there — while against
-// the source, announcements are checked before signatures and the
-// main authenticates. A REAL delegate is still refused either way:
-// its adapter markers sit nearer in the ancestry than any main.
+// control plane being seeded does not exist yet, so the human or a
+// main agent may seed it without holding a lease nobody could hold
+// (the adopt/provisioning path; goal-system GOAL-14's reconcile-only
+// initialization).
+//
+// The authority review's F1 laundering hole: a caller-supplied
+// --genesis-from that is missing or crafted classifies as HUMAN by
+// fallthrough, and HUMAN is admitted — so a delegate could launder
+// itself into genesis. The fix keys genesis on an EFFECTIVE class
+// that no caller-controlled root can forge upward:
+//
+//	effective = MAIN   iff --genesis-from classifies the caller as a
+//	                       positively-ANNOUNCED main (an announcement
+//	                       match, which a missing/crafted root cannot
+//	                       fabricate — it yields HUMAN, not MAIN);
+//	            else   the class against the TARGET being written.
+//
+// The target carries the adapter signatures, so a real delegate
+// classifies DELEGATE there and genesis refuses it; a genuine human
+// classifies HUMAN there and passes; a main agent (misread as a
+// delegate against the target because its own CLI process matches a
+// runtime signature) authenticates by announcement against the
+// source. A laundered missing-root gives effective = target class,
+// which is DELEGATE for a real delegate → refused.
 func goalCaller(root string, callerPid int64, verb, genesisFrom string) (goal.Caller, error) {
 	if callerPid == 0 {
 		callerPid = int64(os.Getppid())
 	}
 	mode := "holder-only"
-	classifyRoot := root
-	if verb == "reconcile" {
-		if _, statErr := os.Stat(filepath.Join(root, "plans", "goals-accepted.json")); os.IsNotExist(statErr) {
-			mode = "genesis"
-			if genesisFrom != "" {
-				classifyRoot = genesisFrom
-			}
+	genesis := verb == "reconcile"
+	if genesis {
+		if _, statErr := os.Stat(filepath.Join(root, "plans", "goals-accepted.json")); statErr == nil {
+			genesis = false // an initialized project: holder-only, unchanged
 		}
 	}
-	view, err := lease.ClassifyVerb(classifyRoot, callerPid)
+
+	targetView, err := lease.ClassifyVerb(root, callerPid)
 	if err != nil {
 		return goal.Caller{}, fmt.Errorf("caller classification failed: %v", err)
 	}
-	classification := map[string]any{"class": view.Class, "holder": view.Holder}
+	effective := targetView
+	if genesis {
+		mode = "genesis"
+		if genesisFrom != "" {
+			fromView, fromErr := lease.ClassifyVerb(genesisFrom, callerPid)
+			if fromErr != nil {
+				return goal.Caller{}, fmt.Errorf("genesis-from classification failed: %v", fromErr)
+			}
+			// A positively-announced main against the source is the
+			// only way --genesis-from raises the effective class; any
+			// other result (including a laundered HUMAN from a missing
+			// or crafted root) falls back to the target class.
+			if fromView.Class == "MAIN" {
+				effective = fromView
+			}
+		}
+	}
+
+	classification := map[string]any{"class": effective.Class, "holder": effective.Holder}
 	if err := authority.Authorize(mode, classification, ""); err != nil {
 		return goal.Caller{}, err
 	}
-	return goal.Caller{Class: view.Class, Holder: view.Holder}, nil
+	// The store's genesis branch re-checks under the lock that a
+	// non-holder only seeds a goal-free ledger (review F2/F3), so the
+	// holder bit carried here is the target's, not the source's.
+	return goal.Caller{Class: effective.Class, Holder: targetView.Holder}, nil
 }
 
 // goalMutation is the shared verb spine: flags, classification, the

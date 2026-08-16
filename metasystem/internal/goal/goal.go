@@ -79,6 +79,14 @@ type Ledger struct {
 	QueuedSection []byte
 }
 
+// HasGoals reports whether the ledger carries any real goal (current,
+// queued, parked, or done). A genesis skeleton is goal-free; an
+// initialized project is not — the distinction blocks the
+// deleted-baseline downgrade (genesis authority review F2).
+func (l *Ledger) HasGoals() bool {
+	return l.Current != nil || len(l.Queued) > 0 || len(l.Parked) > 0 || len(l.Done) > 0
+}
+
 // Revision is the Current goal's revision: sha256 of its exact block
 // bytes. Empty when there is no Current goal.
 func (l *Ledger) Revision() string {

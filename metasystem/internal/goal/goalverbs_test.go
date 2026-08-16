@@ -463,3 +463,49 @@ func TestConcurrentVerbsSerialize(t *testing.T) {
 		t.Fatal("baseline out of step after concurrent writes")
 	}
 }
+
+// The deleted-baseline downgrade guard (authority review F2/F3): a
+// non-holder may not genesis-adopt a ledger that already carries
+// goals — that is a corrupted initialized project, restored by its
+// holder, never re-adopted by a passing genesis caller.
+func TestGenesisRefusesPopulatedLedgerForNonHolder(t *testing.T) {
+	s := testStore(t)
+	if _, err := s.Open(mainHolder, "real-goal", "intent", "next"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reconcile(mainHolder); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the attack: the accepted baseline is deleted, leaving a
+	// populated ledger with no baseline — which looks like genesis.
+	if err := os.Remove(BaselinePath(s.Root)); err != nil {
+		t.Fatal(err)
+	}
+	nonHolderMain := Caller{Class: "MAIN", Holder: false}
+	if _, err := s.Reconcile(nonHolderMain); err == nil || !strings.Contains(err.Error(), "already carries goals") {
+		t.Fatalf("a non-holder must not re-baseline a populated ledger: %v", err)
+	}
+	if _, err := s.Reconcile(human); err == nil || !strings.Contains(err.Error(), "already carries goals") {
+		t.Fatalf("even the human genesis path refuses a populated ledger without a holder: %v", err)
+	}
+	// The holder (the project's owner) may re-baseline it.
+	if _, err := s.Reconcile(mainHolder); err != nil {
+		t.Fatalf("the holder must be able to re-baseline: %v", err)
+	}
+}
+
+// A genuinely goal-free genesis (the adopt skeleton shape) is still
+// admitted for a non-holder — the legitimate provisioning path.
+func TestGenesisAdmitsGoalFreeLedgerForNonHolder(t *testing.T) {
+	s := testStore(t)
+	if _, err := s.DeclareFree(human); err != nil {
+		t.Fatalf("declare-free: %v", err)
+	}
+	if err := os.Remove(BaselinePath(s.Root)); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	nonHolderMain := Caller{Class: "MAIN", Holder: false}
+	if _, err := s.Reconcile(nonHolderMain); err != nil {
+		t.Fatalf("a goal-free genesis must pass for a non-holder main: %v", err)
+	}
+}
