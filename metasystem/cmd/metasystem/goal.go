@@ -100,8 +100,6 @@ func runGoalPromote(args []string) int {
 
 func runGoalPark(args []string) int {
 	return goalMutation("park", args, func(f *flag.FlagSet) []*string {
-		andNone := f.Bool("and-none", false, "declare goal-free after parking the Current goal")
-		_ = andNone
 		return []*string{
 			f.String("id", "", "goal id"),
 			f.String("because", "", "why it parks"),

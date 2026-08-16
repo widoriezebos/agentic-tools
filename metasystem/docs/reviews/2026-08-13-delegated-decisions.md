@@ -2224,3 +2224,29 @@ promoted. Operational note: this stretch also produced the LEASH
 pattern — remote work (the VM suite) held as a local run via a
 polling process whose log carries the verdict pattern — which closed
 the turn-verdict visibility gap for off-machine work twice.
+
+## D76 — 2026-08-16: the phase-B loop splits at its budget; the installer execution parks for a methodology ruling
+
+Six critique rounds on the runtime-integration-contracts design
+(gpt-5.6-sol at xhigh), trajectory 14/15/14/10/9/15 with structural
+findings 12/11/5/5/5/8. The fold-verification tables show real
+convergence everywhere EXCEPT one subdomain: for three consecutive
+rounds every surviving structural finding sat in the adoption/
+installation execution mechanics, and the final round's structural
+count ROSE there (crash-consistent completion transitions, plan
+carriers, resume-record capabilities, engine-build transport) while
+the fixture-authorization, enforcement-transport, validator-
+population, and docs contracts went mechanical or resolved. This is
+the SECOND full budget the installer subdomain has consumed
+(agnosticism r1-r6 was the first). Decision: split per the recorded
+boundary option. B1 — everything converged — implements now under
+the goal. B2 — the installer execution rewrite — is goal
+runtime-install-execution, PARKED with the reason on the ledger,
+because the choice it needs is methodological and reserved: build it
+implementation-first behind fixtures and let code arbitrate (the
+pattern the evidence now recommends twice over), spend a third prose
+budget, or descope. Nothing blocks: B1 is weeks of work and the
+queue continues behind it. Incidental: the park verb's first real
+use found a flag-registration panic in the goal CLI (a stray
+duplicate and-none registration) — fixed directly with a regression
+test, per the two-bars doctrine's mechanical-defect arm.

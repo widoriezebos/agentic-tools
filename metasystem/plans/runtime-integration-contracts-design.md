@@ -1,9 +1,23 @@
 # Runtime integration contracts (agnosticism phase B)
 
-- Status: DRAFT r6 — critique r5 folded (9 findings); awaiting critique r6, the FINAL budgeted round
-- Goal: runtime-integration-contracts
-- Next step: Fold the critique verdict when run ric-critique-r6 concludes; on non-convergence the recorded boundary options fire (split the adoption-plan mechanics, or escalate).
-- In flight right now: run ric-critique-r6 (codex xhigh critique; watch it with: bin/metasystem run watch --id ric-critique-r6 --root .)
+- Status: SPLIT AT BUDGET (D76) — phase B1 (Contracts 2/3/4/5 plus Contract 1's data-side rows for VALIDATION consumption) is IMPLEMENTATION scope under this goal; phase B2 (the adoption/installation EXECUTION rewrite — plan owner, resume records, engine transport, crash-consistent completion, r6's eight structural findings) is goal runtime-install-execution, PARKED for Wido's ruling (implementation-first behind fixtures, a third prose budget, or descope)
+- Goal: runtime-integration-contracts (B1)
+- Next step: Implement B1: internal/fixtureauth with the seven capability values and all consumer threading; the deterministic-construction contract verb and enforcement-map compare; the validator population views and signature vectors; the supervision-hook contract; the docs and population-test classes. Mandatory code critique after gates.
+- In flight right now: none
+
+The split line (D76): six rounds, trajectory 14/15/14/10/9/15 with
+structural 12/11/5/5/5/8 — every surviving structural finding for
+three consecutive rounds sat in Contract 1's installation-execution
+mechanics, and the final round's structural count ROSE there while
+Contracts 2-5 went mechanical or resolved. Twice now (the agnosticism
+loop, this loop) the adoption-installer subdomain has consumed a full
+budget demanding executable bytes prose cannot stabilize. B1
+implements what converged. B2's approach — build it behind fixtures
+and let code arbitrate, spend a third prose budget, or descope — is a
+methodology ruling reserved for Wido. Until B2 lands, adopt.sh keeps
+today's open-coded arms, and Contract 1's rows serve VALIDATION
+consumers only (dirs, asset lists, drift policies as data) — no
+installation behavior changes.
 
 Scope (D74): the three subdomains the six-round agnosticism loop left
 structurally contested, moved here WHOLE with their critique history
