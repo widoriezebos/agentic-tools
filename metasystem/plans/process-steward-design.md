@@ -1,118 +1,142 @@
 # The process steward (backlog item 21)
 
-- Status: DRAFT r1 — awaiting critique r1
+- Status: DRAFT r2 — critique r1 folded (plans/ps-critique-r1.md:
+  7 findings, all structural; all folded, none refuted). The r1
+  over-reached; r2 scopes to a read-only aggregator.
 - Goal: process-steward
-- Next step: Fold the critique verdict when run ps-critique-r1 concludes; implement only after convergence.
+- Next step: Fold the critique verdict when run ps-critique-r2 concludes; implement only after convergence.
 
 ## The human's mandate (2026-08-16, verbatim intent)
 
-"We probably need something that watches the process itself and
-signals issues or potential issues so that the orchestration agent
-can act on them, or maybe even the process watcher itself... more
-like a process coach... something better than a retro... add this
-one to the backlog and come up with a proper name for it." Named
-the PROCESS STEWARD: it both NOTICES (watches the development
-process against expectations) and TENDS (signals or acts).
+"Something that watches the process itself and signals issues... so
+that the orchestration agent can act on them... more like a process
+coach... add this to the backlog and name it." Named the PROCESS
+STEWARD: it NOTICES process drift and SIGNALS it. r1's critique
+proved the noticing must be narrow and records-based, and the
+tending must NOT act — so r2 is an observer that signals, never a
+second actor.
 
-## What it watches: process invariants, not code
+## The reshape r1's critique forced
 
-A retro looks back after work; the steward watches WHILE work runs
-and catches deviations early. It watches the PROCESS invariants —
-facts that should hold about how the development is being conducted
-— distinct from the product invariants the suite already checks.
-The motivating deviations, all real this program:
+1. **Aggregate, don't reinterpret (PSD-06).** Five existing owners
+   already produce typed verdicts about their own domains
+   (supervision liveness, run lifecycle, turn warnings, open-work,
+   gate/critique conformance). The steward AGGREGATES those typed
+   verdicts into one process view; it does NOT re-derive them from
+   raw records — that would make it a sixth policy owner with
+   threshold disagreements.
+2. **Only what's observable ships (PSD-01).** Of the five candidate
+   invariants, exactly ONE is fully checkable from existing records
+   today (supervision liveness, via the canonical armed predicate).
+   The others need new records at THEIR owning boundaries (a
+   temp-namespace ownership record; a typed plan-work correlation;
+   an ack-history/timestamp; a ship certification joining tree +
+   gate + critique). r2 ships the aggregator over what owners
+   already expose and lists the missing owner-boundary records as
+   named prerequisites — it does not promise checks it cannot make.
+3. **The act-allowlist is EMPTY (PSD-02).** `run ack` is holder-only
+   authority; killing is destructive; dispatching a coach spends and
+   is authority-bearing. The steward OBSERVES, persists a verdict,
+   and SIGNALS. Any future remediation is a separately reviewed verb
+   owned by the affected subsystem — never the steward's.
 
-1. **Dead supervision.** The supervision fleet died and nothing
-   noticed for hours until the human read a Stop message. Invariant:
-   while a session is active, supervision is armed AND attesting
-   (a fresh runs-pass.json within the interval).
-2. **Leaked-process compounding flake.** Fixture children leaked and
-   accumulated until the reaper missed its window. Invariant: no
-   process rooted under a finished run's temp namespace outlives it;
-   the leaked-process count trends to zero, not upward.
-3. **Promised work with no leash.** A turn ended with "I'll resume"
-   and nothing armed to resume it. Invariant: no plan claims work
-   in flight while no run/monitor/background task is pending for it
-   (the Stop hook already enforces a slice of this — the steward
-   generalizes it and watches the trend).
-4. **Run-ledger hygiene.** Runs left draining/unacked; greens with
-   "no continuation recorded." Invariant: terminal runs get
-   concluded and acked; the unacked count trends down.
-5. **Critique/gate discipline.** A ship without its mandatory code
-   critique; a commit past a red gate. Invariant: every ship on the
-   branch has a preserved critique and a green gate witness.
+## The first slice: a read-only aggregator + one durable record
 
-## Shape: a mechanical watcher plus a coach role
+`steward scan --root` reads the TYPED verdicts the existing owners
+already expose and writes ONE durable, atomic, typed STEWARD
+INCIDENT RECORD (its own file under artifacts/agents/steward/,
+atomic-published like every other record — NOT the flight recorder,
+which is best-effort and may not own authority; NOT the run ledger,
+which is a process ledger, per PSD-04). The record carries: scan
+identity, completion time, per-invariant outcome, evidence
+references, and an explicit UNKNOWN/DEGRADED outcome when an
+authority record is missing or unreadable (PSD-05 — missing
+evidence is never silently ok and never permission to act).
 
-Two cooperating parts, mirroring the human's "watcher itself acts,
-or signals the orchestrator":
+### The one shipped invariant, with its decision table (PSD-05)
 
-- **The steward CHECK (mechanical, Go).** `steward check --root`
-  evaluates the invariants above from records the metasystem already
-  keeps (supervision attestations, run ledger, process table vs the
-  temp namespace, plan in-flight markers vs pending runs, the branch's
-  critique files vs its ship commits). It emits a typed VERDICT per
-  invariant: ok | drift | breach, each with evidence and a suggested
-  action. It NEVER acts destructively — it reports. Runs cheaply on
-  a cadence (a supervision component, like the reaper/watcher) and on
-  demand.
-- **The steward COACH (agent role, cheap model).** When a check
-  returns drift/breach the orchestrator can't self-resolve, a coach
-  turn (a delegate on a cheap model, the [[narrator]]'s sibling)
-  reads the verdict + recent flight-recorder context and produces a
-  plain-English SIGNAL to the orchestrator: what deviated, why it
-  matters, the smallest corrective action. The coach distills; it
-  does not re-derive the invariants (the check owns those).
+**Supervision liveness.** Reuses the CANONICAL armed predicate
+(internal/supervise/verifyarmed.go) — the steward introduces NO
+fourth timing rule (PSD-01 flagged three existing intervals).
 
-The division: the CHECK is the authority (mechanical, records-based,
-runtime-neutral — no agent name); the COACH is the accelerator
-(latency: turns a breach into an actionable human-readable nudge
-faster than a human reading logs). This mirrors the accelerator
-ruling — correctness lives in the check's records, the coach only
-speeds the human/orchestrator's response.
+| Outcome | Predicate |
+|---|---|
+| ok | a session is active AND supervision is armed AND attesting fresh by the canonical predicate |
+| unknown | the supervision state or attestation is unreadable |
+| breach | a session is active AND the canonical predicate says not-armed-or-stale |
 
-## What it does on a breach
+This is an IMMEDIATE binary invariant (a missing attestation is a
+breach now, not a trend). Trend-based invariants (unacked runs
+rising) are DEFERRED because ack history is not recorded (PSD-01);
+they arrive when their owning boundary records the history.
 
-Escalation ladder, least-invasive first: (1) emit the verdict to the
-run/flight record (always); (2) surface a SIGNAL the orchestrator
-sees at its next turn boundary (the Stop-hook channel already exists
-— the steward feeds it); (3) for a NARROW, SAFE, pre-declared class
-of deviations (e.g. an unacked terminal run, a leaked temp-namespace
-process past its run's death), the check MAY act — the same bounded,
-proven-safe reap the fixture-leak fix now does — but only within an
-allowlist of reversible mechanical corrections, never a destructive
-or authority-touching action. Everything else signals and waits.
+### The owner-boundary prerequisites (named, not promised)
 
-## Boundaries
+Each future invariant is a record at its owner, designed there
+first (PSD-01, PSD-06):
+- temp-namespace ownership + orphan observation (internal/run +
+  the namespace the disk-hygiene goal introduces);
+- typed plan-work correlation (expose the run's GoalId + a
+  runtime-neutral background-work record; internal/report open-work);
+- ack timestamp/transition (internal/run conclude/ack);
+- ship certification joining shipped tree + green gate witness +
+  critique/waiver (owned at the commit/gate boundary, gaterun +
+  commit.sh — retrospective detection cannot reconstruct evidence
+  never preserved, PSD-01).
+The steward gains each check only when its owner emits the typed
+verdict; it never scrapes.
 
-- Runtime-agnostic: the check names no agent runtime; the coach is
-  an adapter-seam role like the narrator.
-- Not a second retro: the retro looks back and records lessons; the
-  steward watches live and catches drift. They compose — a breach
-  the steward caught becomes a retro line.
-- Not the suite: the suite checks the PRODUCT; the steward checks the
-  PROCESS OF PRODUCING. Different invariants, different cadence.
-- Defense-in-depth honesty: the steward reduces the time-to-notice
-  for process drift; it is not a guarantee against it (a wedged
-  steward is itself a drift — its own attestation is an invariant the
-  supervision watcher checks, closing the who-watches-the-watcher).
+## Who watches the steward (PSD-03)
+
+The steward is NOT a third supervision component (that set is
+schema-fixed at watcher+reaper). Instead the steward scan writes an
+independent STEWARD-PASS ATTESTATION (its own freshness record).
+The OUTSIDE observers are the ones r1's critique named: the Stop
+hook and the next arming — the same independent boundaries that
+already catch a fully-dead supervision fleet. The steward's own
+staleness is thus one of the process facts the Stop hook surfaces,
+closing the loop without circularity.
+
+## Delivery (PSD-04)
+
+The durable steward incident record is the authority. Delivery is
+an accelerator: the Stop hook (which already does digest-based
+exactly-once turn-verdict delivery) gains the steward verdict as
+one MORE input, with explicit precedence and dedup against the
+existing watchdog/turn-verdict signals — never a second
+independent warning source that contradicts them. The no-hook
+fallback still exposes the durable record (the accelerator ruling:
+correctness survives on records alone).
+
+## The coach (PSD-07), deferred to a later slice
+
+The coach is a ROSTERED ROLE dispatched through the existing
+orchestration path (not an adapter — only its model binding is
+adapter config), with NO repository permissions, producing
+UNTRUSTED advice the orchestrator adjudicates. Automatic invocation
+needs an explicit caller, cost budget, cadence, and dedup — so it
+is a LATER slice, after the read-only aggregator proves the
+verdict record. First slice signals via the record + Stop hook
+only.
 
 ## Prototype plan
 
-P1: the check's invariant set as Go over existing records (supervision
-attestation freshness, run-ledger unacked/draining trend, temp-namespace
-orphan scan, plan-in-flight vs pending-run join, ship-vs-critique join),
-each a pure function with fixtures. P2: the `steward check` verb + a
-supervision-component cadence. P3: the coach role behind the adapter
-seam on a cheap model; the signal channel into the Stop-hook surface;
-the narrow safe-act allowlist.
+P1: the aggregator as pure Go reading the supervision-liveness typed
+verdict via the canonical predicate, emitting the typed incident
+record with ok/unknown/breach and evidence — fixtures for each
+outcome including unreadable-evidence→unknown. P2: `steward scan`
+verb + the steward-pass attestation + the Stop-hook input with
+precedence/dedup. Owner-boundary records and the coach are named
+follow-ups, each their own goal.
 
 ## Loop discipline
 
-Critique at codex xhigh; the critique should attack: whether each
-invariant is checkable from records that actually exist (name any that
-need new instrumentation); whether the safe-act allowlist can ever
-reach a destructive or authority action; whether the steward's own
-liveness is watched (who-watches-the-watcher); whether the check stays
-runtime-neutral; and whether "drift vs breach" thresholds are
-principled or arbitrary.
+Critique at codex xhigh; the critique should attack: whether the
+aggregator truly only reads typed owner verdicts (no raw
+reinterpretation); whether the canonical armed predicate is the
+right single source; whether the incident record's atomicity and
+unknown-state handling are complete; whether the Stop-hook
+precedence/dedup is fully specified against the existing
+turn-verdict contract; and whether the owner-boundary prerequisites
+are correctly assigned to their owners rather than smuggled back
+into the steward.
