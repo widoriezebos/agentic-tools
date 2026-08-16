@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/acp"
@@ -111,12 +113,14 @@ func runACPTurn(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	journal, err := os.OpenFile(*journalPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// One attempt, one journal: an existing file is a path
+	// collision that would concatenate stale sessions into
+	// settlement evidence — refuse, never append or truncate.
+	journal, err := os.OpenFile(*journalPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "journal open: "+err.Error())
+		fmt.Fprintln(os.Stderr, "journal create: "+err.Error())
 		return 1
 	}
-	defer journal.Close()
 
 	// Open order is the script's contract: the read side first
 	// (the server opens its write side symmetrically), then the
@@ -126,16 +130,23 @@ func runACPTurn(args []string) int {
 		fmt.Fprintln(os.Stderr, "server-out open: "+err.Error())
 		return 1
 	}
-	defer readEnd.Close()
 	writeEnd, err := os.OpenFile(*serverIn, os.O_WRONLY, 0)
 	if err != nil {
+		readEnd.Close()
 		fmt.Fprintln(os.Stderr, "server-in open: "+err.Error())
 		return 1
 	}
-	defer writeEnd.Close()
+
+	// The signal bridge: scripts keep kill authority, and a TERM or
+	// INT lands here as parent-context cancellation so the courtesy
+	// session/cancel and the typed cancelled outcome still happen —
+	// the critique's live probe showed exit 143 with no outcome
+	// without this.
+	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stopSignals()
 
 	conn := acp.NewConn(readEnd, writeEnd, journal)
-	outcome := acp.RunTurn(context.Background(), conn, acp.TurnConfig{
+	outcome := acp.RunTurn(ctx, conn, acp.TurnConfig{
 		ExpectedProtocolVersion: *expectedProtocol,
 		WorkspaceDir:            *workspace,
 		LoadSessionID:           *loadSession,
@@ -146,6 +157,24 @@ func runACPTurn(args []string) int {
 		PromptTimeout:           time.Duration(*promptSec) * time.Second,
 		LateFrameWindow:         time.Duration(*lateMs) * time.Millisecond,
 	})
+
+	// Quiesce before sampling journal health: close the pipe ends
+	// so the read loop terminates, wait for it (bounded), then sync
+	// and close the journal — the settlement journal must be whole
+	// BEFORE the outcome claims it is.
+	writeEnd.Close()
+	readEnd.Close()
+	select {
+	case <-conn.Done():
+	case <-time.After(3 * time.Second):
+	}
+	journalIssue := conn.JournalErr()
+	if err := journal.Sync(); err != nil && journalIssue == nil {
+		journalIssue = err
+	}
+	if err := journal.Close(); err != nil && journalIssue == nil {
+		journalIssue = err
+	}
 
 	wire := turnOutcome{
 		Row:        string(outcome.Row),
@@ -159,10 +188,10 @@ func runACPTurn(args []string) int {
 		text := string(outcome.Candidate)
 		wire.Candidate = &text
 	}
-	if err := conn.JournalErr(); err != nil {
+	if journalIssue != nil {
 		// A thinned journal must be visible to settlement even when
 		// the turn otherwise delivered.
-		wire.JournalError = err.Error()
+		wire.JournalError = journalIssue.Error()
 	}
 	payload, _ := json.Marshal(wire)
 	fmt.Println(string(payload))
