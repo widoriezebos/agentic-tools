@@ -251,6 +251,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "janitor",
+			summary: "disk-hygiene: headroom guard and (later) the artifact-class sweep",
+			verbs: []verb{
+				{"headroom", "check free space per filesystem against a floor (exit 3 below)", runJanitorHeadroom},
+			},
+		},
+		{
 			name:    "hooks",
 			summary: "self-check that the repo runs under its own metasystem",
 			verbs: []verb{

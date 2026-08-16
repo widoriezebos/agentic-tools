@@ -1,6 +1,4 @@
-# Disk hygiene: every byte written gets a lifecycle (backlog item 19)
-
-- Status: DRAFT r3, PARKED at the budget-one boundary (D81).
+- Status: IMPLEMENTATION-FIRST (D81/D85) — r1/r2 folded, r3 (14 findings) is the fixture list; building highest-value slices behind fixtures rather than a 4th prose round. Slice 1: the headroom guard (the ENOSPC fix).
   Critiques r1 and r2 are folded into this text (12 and 15
   findings). The r3 verdict landed after the park: REVISE, 14
   findings (13 structural), preserved UNFOLDED at
