@@ -151,7 +151,13 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
            METASYSTEM_GATE_WITNESS_RUN="$witness_run" bash scripts/agents/go-gate.sh ) \
       && [[ -f "$witness_state/witness.json" ]]; then
       # Clean roots mean the snapshot's binary IS this tree's binary.
-      mkdir -p bin && cp "$witness_snap/bin/metasystem" bin/metasystem
+      # Stage beside the target and rename over it (go-build.sh's
+      # documented pattern): cp over the live inode poisons macOS's
+      # code-signature cache and later execs die SIGKILL — exactly the
+      # silent suite death this line caused on 2026-08-16.
+      mkdir -p bin \
+        && cp "$witness_snap/bin/metasystem" "bin/.metasystem.witness.$$" \
+        && mv -f "bin/.metasystem.witness.$$" bin/metasystem
       export METASYSTEM_GATE_WITNESS="$witness_state/witness.json"
       export METASYSTEM_GATE_WITNESS_ROOT="$witness_state"
       export METASYSTEM_GATE_WITNESS_RUN="$witness_run"
