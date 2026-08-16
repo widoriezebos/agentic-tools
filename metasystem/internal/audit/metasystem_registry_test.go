@@ -61,4 +61,17 @@ func TestRegistryPointerAuditRefuses(t *testing.T) {
 	if found < 3 {
 		t.Fatalf("pointer refusals missing: %v", violations)
 	}
+	// With the template marker present, README joins the owed set.
+	os.MkdirAll(filepath.Join(root, "development"), 0o755)
+	os.WriteFile(filepath.Join(root, "development", "metasystem-design.md"), []byte("design\n"), 0o644)
+	templateViolations := auditGoalSystem(root)
+	readmeOwed := false
+	for _, violation := range templateViolations {
+		if strings.Contains(violation, "README.md must point") {
+			readmeOwed = true
+		}
+	}
+	if !readmeOwed {
+		t.Fatalf("the template tree did not owe the README pointer: %v", templateViolations)
+	}
 }
