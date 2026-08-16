@@ -1,10 +1,6 @@
 # Goals
 
-## Current goal: runtime-file-placement — Runtime code lives in its runtime's file within the adapter seam
-- Origin: main
-- Next step: Sweep the seam for strays per plans/backlog-notes.md item 17; decide the mechanical check.
-
-## Queued goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
+## Current goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
 - Next step: Prototype against devin acp per plans/backlog-notes.md item 18; design loop before build.
 
@@ -60,3 +56,7 @@
 ## Done goal: runtime-integration-contracts — The contested runtime-integration contracts: adoption/registration/installation, fixture authorization, conf schema, enforcement transport
 - Origin: main
 - Concluded: B1 shipped: fixtureauth capability system, declared vectors and enforcement compare, registration rows as data, hook contract. The mandatory critique found 16 defects, all folded. Both hosts green fb6b7df. B2 parked (D76).
+
+## Done goal: runtime-file-placement — Runtime code lives in its runtime's file within the adapter seam
+- Origin: main
+- Concluded: Every runtime symbol home (the original stray was D25 copy-drift, fixed by D61). The parser-based placement check pins the convention; its critique-driven rebuild caught two more strays. Both hosts green 2f42ec7.

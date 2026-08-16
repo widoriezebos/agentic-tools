@@ -2276,3 +2276,26 @@ one commit briefly rode past a failing test before the gate would
 have caught it — the fixup chain shows both. Ledger: goal closed,
 runtime-file-placement promoted, runtime-install-execution still
 parked for the human's methodology ruling (D76).
+
+## D78 — 2026-08-16: item 17 closes; the review catches the check that could not catch
+
+The mandate's history question is answered: DevinPermissionMode
+landed in codex.go during D25's envelope-mapping consolidation
+(copy-drift), and the human's own D61 commit already moved it home.
+Today's sweep found the residue — the shared usage parser wearing
+codex's name in the neutral file, and claudecommand_test.go grown
+into a grab-bag holding codex and devin tests — and shipped the
+mechanical placement check the mandate asked for. The mandatory
+critique then delivered the sharpest finding of the program so far:
+the check's word-boundary regex could NEVER match a runtime name
+inside an identifier, so it was structurally incapable of catching
+the exact stray it existed to prevent. Rebuilt on Go's parser with
+identifier tokenization and regression rows pinning the
+DevinPermissionMode shape; the rebuilt check immediately flagged two
+further strays (the fakeEnv helper name, devin's collect tests
+riding the fake runtime's production writer), both fixed. Fourth
+consecutive ship the mandatory review found real defects — including,
+this time, in the safety net itself. Both hosts green at 2f42ec7;
+acp-transport promoted. Also recorded this stretch: the human's
+accelerator ruling (runtime capabilities may accelerate, never
+carry) in the architecture doctrine at f833e68.
