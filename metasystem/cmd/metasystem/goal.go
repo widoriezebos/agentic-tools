@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -19,16 +20,37 @@ import (
 // discipline, the advisory human reservation — live in the package.
 
 // goalCaller classifies the invoking process and authorizes a mutation.
-func goalCaller(root string, callerPid int64) (goal.Caller, error) {
+// Reconcile against a root with NO accepted baseline is GENESIS: the
+// control plane being seeded does not exist yet, so a main agent may
+// seed it without holding a lease nobody could hold (the adopt and
+// provisioning path; goal-system GOAL-14's reconcile-only
+// initialization). Genesis classification runs against the SOURCE
+// root the adoption came from (--genesis-from) when one is given:
+// a virgin target has no announcements, so the session's own CLI
+// ancestor would read as a delegate signature there — while against
+// the source, announcements are checked before signatures and the
+// main authenticates. A REAL delegate is still refused either way:
+// its adapter markers sit nearer in the ancestry than any main.
+func goalCaller(root string, callerPid int64, verb, genesisFrom string) (goal.Caller, error) {
 	if callerPid == 0 {
 		callerPid = int64(os.Getppid())
 	}
-	view, err := lease.ClassifyVerb(root, callerPid)
+	mode := "holder-only"
+	classifyRoot := root
+	if verb == "reconcile" {
+		if _, statErr := os.Stat(filepath.Join(root, "plans", "goals-accepted.json")); os.IsNotExist(statErr) {
+			mode = "genesis"
+			if genesisFrom != "" {
+				classifyRoot = genesisFrom
+			}
+		}
+	}
+	view, err := lease.ClassifyVerb(classifyRoot, callerPid)
 	if err != nil {
 		return goal.Caller{}, fmt.Errorf("caller classification failed: %v", err)
 	}
 	classification := map[string]any{"class": view.Class, "holder": view.Holder}
-	if err := authority.Authorize("holder-only", classification, ""); err != nil {
+	if err := authority.Authorize(mode, classification, ""); err != nil {
 		return goal.Caller{}, err
 	}
 	return goal.Caller{Class: view.Class, Holder: view.Holder}, nil
@@ -41,6 +63,7 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	flags := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid (defaults to the parent process)")
+	genesisFrom := flags.String("genesis-from", "", "source root whose announcements authenticate a genesis reconcile")
 	var extras []*string
 	if extra != nil {
 		extras = extra(flags)
@@ -48,7 +71,7 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	caller, err := goalCaller(*root, *callerPid)
+	caller, err := goalCaller(*root, *callerPid, name, *genesisFrom)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

@@ -50,3 +50,27 @@ func TestValidMode(t *testing.T) {
 		}
 	}
 }
+
+// Genesis admits the human or a main agent — holder or not, because
+// a virgin root has no lease anyone could hold — and never a
+// machinery class (provision-genesis-authority).
+func TestGenesisMode(t *testing.T) {
+	if !ValidMode("genesis") {
+		t.Fatal("genesis must be a known mode")
+	}
+	for class, allowed := range map[string]bool{
+		"HUMAN":              true,
+		"MAIN":               true,
+		"SUPERVISION":        false,
+		"ADAPTER-SUPERVISOR": false,
+		"DELEGATE":           false,
+	} {
+		err := Authorize("genesis", map[string]any{"class": class, "holder": false}, "")
+		if (err == nil) != allowed {
+			t.Fatalf("genesis class %s: err=%v want allowed=%v", class, err, allowed)
+		}
+	}
+	if err := Authorize("holder-only", map[string]any{"class": "MAIN", "holder": false}, ""); err == nil {
+		t.Fatal("holder-only must still refuse a non-holder main")
+	}
+}

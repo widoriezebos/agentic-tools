@@ -281,7 +281,7 @@ chmod +x "$target/bin/metasystem"
 # (goal-system GOAL-14: initialization is reconcile-only): the seeded
 # ledger is adopted as the first accepted state, leaving the
 # goals.md + goals-accepted.json pair standing together.
-"$target/bin/metasystem" goal reconcile --root "$target" >/dev/null \
+"$target/bin/metasystem" goal reconcile --root "$target" --genesis-from "$root" >/dev/null \
   || die 1 "goal baseline genesis failed in the target"
 
 mkdir -p "$target/artifacts"

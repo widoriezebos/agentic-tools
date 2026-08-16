@@ -11,7 +11,7 @@ import "fmt"
 // closed and importers must not be able to mutate it.
 func ValidMode(name string) bool {
 	switch name {
-	case "holder-only", "record-writer", "adapter-writer", "supervision-only":
+	case "holder-only", "record-writer", "adapter-writer", "supervision-only", "genesis":
 		return true
 	}
 	return false
@@ -33,6 +33,18 @@ func Authorize(mode string, classification map[string]any, job string) error {
 			return fmt.Errorf("standing reap requires authenticated supervision custody")
 		}
 		return nil
+	}
+
+	if mode == "genesis" {
+		// Genesis writes seed a control plane that does not exist
+		// yet — a virgin root has no lease anyone could hold, so
+		// holder-only would protect nothing and refuse everything
+		// (the provisioning break, provision-genesis-authority). A
+		// main agent seeds it; machinery classes never do.
+		if class == "MAIN" {
+			return nil
+		}
+		return fmt.Errorf("genesis admits only the human or a main agent")
 	}
 
 	if mode == "holder-only" {
