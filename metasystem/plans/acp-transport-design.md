@@ -37,10 +37,24 @@
   probe/selection machinery (P3 critique F4); the registry
   expectation now reaches the launch (--expected-protocol is
   queried, never re-defaulted), but snapshot identity work is a
-  flip prerequisite with the fixture. Remaining before the flip:
-  provision-genesis-authority, devin-in-the-guest setup, the
-  supervise_acp fixture, the snapshot identity surfaces, and the
-  four D82/D83 acceptance benchmarks.
+  flip prerequisite with the fixture.
+- Remaining before the flip, split by who is blocked (D88):
+  - RESOLVED: provision-genesis-authority (1654c85's genesis-mode
+    fix; validate-kit.sh green). devin-in-the-guest: CONFIRMED
+    (Devin 3000.4.25 authed in the VM; the guest is up).
+  - UNBLOCKED ENGINEERING (no human needed, sequenced next): the
+    supervise_acp shell fixture, and the snapshot identity surfaces
+    (single-transport snapshots, protocol/schema pins in selection,
+    the (runtime, transport) admission evidence — P3 critique F4).
+    These are the next build on this goal after the disk-hygiene
+    worktree-observer slice lands.
+  - WAITING ON THE HUMAN (D88, cannot be crossed autonomously): the
+    D82/D83 acceptance benchmarks. benchmark/run-cohort.sh stops at
+    a human seal/sign boundary by design, and bm-2d is a 12h
+    full-mission run; the flip is not made on the already-proven
+    live delegate path (e1ce759) alone, nor by forging the seal.
+    On a human-sealed green benchmark the flip is the one-line
+    dispatch.transport.devin=acp default, fix-forward.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more
