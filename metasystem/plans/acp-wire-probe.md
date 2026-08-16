@@ -180,3 +180,33 @@ Loaded session `marvelous-answer` from step A in a fresh
    SIGTERM IS honored — `SERVER-EXIT-ON-TERM signal: terminated`
    after a 20s EOF grace. Teardown contract: EOF no, TERM yes,
    KILL as backstop.
+
+---
+
+# P1 step C (2026-08-16): ask mode — enforcement is TOOL REMOVAL
+
+Fresh session `zesty-bonnet`, `session/set_mode` → `ask`
+(succeeded: empty result, three current_mode_update echoes), then
+the provocation prompt (write probe-c.txt + run `echo done`).
+
+## Facts established
+
+1. **`session/set_mode` exists and works** — the envelope-grade →
+   session-mode mapping has a real wire verb.
+2. **In ask mode, ZERO `session/request_permission` requests
+   fired.** Enforcement is SERVER-SIDE TOOL REMOVAL: Devin
+   itself reported its toolset as read-only
+   (`find_file_by_name, get_output, grep, read, todo_write` — no
+   write, no exec) and REFUSED both actions in prose. No file was
+   created, no command ran (verified on disk).
+3. **Strict-refusal livability is ANSWERED** (r3 F4's fear does
+   not manifest): the denied turn ended `end_turn` with a
+   coherent 378-token explanation — a tool-less Devin degrades
+   gracefully, it does not dead-end the turn.
+4. Design consequence: the permission model's PRIMARY lever is
+   mode selection at session setup (tools=read-only → ask;
+   restricted-write grades → accept-edits; the D61-shaped mode is
+   `bypass`). Per-request admission via `Decide` governs only
+   whatever requests actually fire — step D (default mode, same
+   provocation) establishes whether they EVER fire in the
+   delegate topology with no client fs/terminal capabilities.
