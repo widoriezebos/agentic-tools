@@ -1,6 +1,10 @@
 package adapter
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 // The dialect refusal and devin's evidenced mappings: read-only
 // rides ask (probe step C), runtime-default rides accept-edits
@@ -44,4 +48,24 @@ func TestACPDialectRegistrationGuards(t *testing.T) {
 	mustPanic("incomplete cover", func() {
 		RegisterACPDialect("test-incomplete", ACPDialect{ModeForTools: map[string]string{"read-only": "a"}})
 	})
+}
+
+// The transport pin accepts exactly the two transports and writes
+// the compare-and-swap patch shape.
+func TestWriteTransportPatch(t *testing.T) {
+	dir := t.TempDir()
+	patch := dir + "/patch.json"
+	if err := WriteTransportPatch(patch, "acp"); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(patch)
+	if string(body) != `{"transport":"acp"}` && !strings.Contains(string(body), `"transport": "acp"`) {
+		t.Fatalf("patch shape drifted: %s", body)
+	}
+	if err := WriteTransportPatch(patch, "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteTransportPatch(patch, "carrier-pigeon"); err == nil {
+		t.Fatal("an unknown transport must refuse")
+	}
 }
