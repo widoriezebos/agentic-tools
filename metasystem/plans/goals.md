@@ -1,8 +1,8 @@
 # Goals
 
-## Current goal: agnosticism-audit — The core never names an agent runtime; every runtime surface is adapter-declared
+## Current goal: runtime-integration-contracts — The contested runtime-integration contracts: adoption/registration/installation, fixture authorization, conf schema, enforcement transport
 - Origin: main
-- Next step: Audit every runtime name outside the adapter seam per plans/backlog-notes.md item 16; rule per site.
+- Next step: Design loop seeded by plans/agnosticism-critique-r1..r6; the r6 findings are the opening worklist.
 
 ## Queued goal: runtime-file-placement — Runtime code lives in its runtime's file within the adapter seam
 - Origin: main
@@ -48,10 +48,10 @@
 - Origin: main
 - Next step: Sweep the ~150 python3 heredocs in scripts/ into engine verbs and shell; the doctrine is backlog-notes item 13's end state.
 
-## Queued goal: runtime-integration-contracts — The contested runtime-integration contracts: adoption/registration/installation, fixture authorization, conf schema, enforcement transport
-- Origin: main
-- Next step: Design loop seeded by plans/agnosticism-critique-r1..r6; the r6 findings are the opening worklist.
-
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
 - Origin: main
 - Concluded: Shipped: run records with custody proofs, the waiter contract, verdict integration, the locked sweep. The mandatory code critique found 11 defects (4 critical); all folded with tests. Both hosts green at 0d76eb1.
+
+## Done goal: agnosticism-audit — The core never names an agent runtime; every runtime surface is adapter-declared
+- Origin: main
+- Concluded: Phase A shipped: registry, capability tables, fail-closed residual waivers, all consumers. The mandatory critique found 14 defects, all folded. Both hosts green 91ff675. Phase B split per D74.

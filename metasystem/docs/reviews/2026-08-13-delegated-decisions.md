@@ -2199,3 +2199,28 @@ freezing all progress on a mostly-converged design to await a
 ruling — contradicts the standing "keep going" directive. Revert
 cost: goal park runtime-integration-contracts and resume prose
 rounds on the unified document.
+
+## D75 — 2026-08-16: agnosticism phase A ships; the mandatory review pays for itself again
+
+Phase A implemented in two checkpointed commits (registry + first
+consumers at 30b792f; capability tables, residual waivers, probes,
+docs at 14d3ab0), both hosts green — and the MANDATORY code critique
+then found 14 material defects (1 high: live config identity still
+constructed its filter filename instead of asking the registry; the
+mediums included recovery dispatch order, the aggregator bypass that
+dropped cost-only recoveries, missing containment on recollected
+replies, fail-open registry validation gaps, the two dropped devin
+verb reroutes, and four missing proofs the ruling set had promised).
+All folded with tests at 2555f28; ratchets re-seeded per procedure
+(Darwin same commit, Linux from the synced guest at 87b6665). The
+re-gate then surfaced an UNRELATED latent defect: the suite's witness
+path copied its binary over the live inode, which macOS answers with
+silent SIGKILLs — two gate runs died with zero diagnostics before the
+rc-capture rerun exposed it; fixed atomically (stage+rename) at
+91ff675, recorded in memory as a standing signature. One S4-2 timing
+flake reproduced clean solo per the standing rule. Final state: both
+hosts green at 91ff675, goal closed, runtime-integration-contracts
+promoted. Operational note: this stretch also produced the LEASH
+pattern — remote work (the VM suite) held as a local run via a
+polling process whose log carries the verdict pattern — which closed
+the turn-verdict visibility gap for off-machine work twice.
