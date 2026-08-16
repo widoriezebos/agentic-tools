@@ -1,10 +1,19 @@
 # The process steward (backlog item 21)
 
-- Status: DRAFT r2 — critique r1 folded (plans/ps-critique-r1.md:
-  7 findings, all structural; all folded, none refuted). The r1
-  over-reached; r2 scopes to a read-only aggregator.
-- Goal: process-steward
-- Next step: Fold the critique verdict when run ps-critique-r2 concludes; implement only after convergence.
+- Status: PAUSED on a sequencing truth (D87). r1 (plans/ps-critique-r1.md,
+  7 findings) forced the rescope to a read-only aggregator; r2
+  (plans/ps-critique-r2.md, 8 findings) established that the only
+  currently-buildable invariant duplicates the Stop watchdog and
+  every valuable invariant waits on owner-boundary instrumentation.
+  Not converged — blocked on a dependency.
+- Goal: process-steward (blocked; resequenced behind the janitor
+  namespace-orphan verdict from disk-hygiene, D87)
+- Next step: Resume when the first owner boundary emits a typed
+  verdict about a currently-UNWATCHED invariant (cheapest: the
+  janitor namespace-orphan verdict). Then build the aggregator +
+  incident record + Stop-precedence contracts named below, once,
+  against that verdict. Do NOT build the supervision-liveness
+  duplicate.
 
 ## The human's mandate (2026-08-16, verbatim intent)
 
@@ -119,24 +128,92 @@ is a LATER slice, after the read-only aggregator proves the
 verdict record. First slice signals via the record + Stop hook
 only.
 
-## Prototype plan
+## The r2 verdict: this goal is blocked on owner instrumentation (D87)
 
-P1: the aggregator as pure Go reading the supervision-liveness typed
-verdict via the canonical predicate, emitting the typed incident
-record with ok/unknown/breach and evidence — fixtures for each
-outcome including unreadable-evidence→unknown. P2: `steward scan`
-verb + the steward-pass attestation + the Stop-hook input with
-precedence/dedup. Owner-boundary records and the coach are named
-follow-ups, each their own goal.
+The r2 critique (plans/ps-critique-r2.md, 8 structural findings,
+codex xhigh) accepted the rescope's direction but reached a
+load-bearing conclusion the design must honor rather than fold away:
+
+**The one currently-checkable invariant duplicates the Stop
+watchdog, and every genuinely-unwatched invariant needs a typed
+verdict its owner does not yet emit.**
+
+- Supervision liveness is ALREADY surfaced end-of-turn by
+  `internal/supervise.WatchdogReport` (stale/failed census,
+  untracked processes, stale fingerprint, dead recorded identities,
+  each with re-arm advice) through the same Stop hook the steward
+  would use. A steward re-check is a duplicate signal, not new
+  coverage (r2 #36).
+- Worse, even that duplicate is NOT a small slice: `ArmedNow` is a
+  Boolean that collapses missing/unreadable/stale/dead into `false`,
+  so the steward cannot even distinguish `unknown` from `breach`
+  without a NEW supervise-owned typed liveness verdict (r2 #1) — and
+  it would still need an incident lifecycle, a scan-cadence/
+  attestation protocol, a turn-verdict state-machine extension, and
+  arming integration (r2 #4–#7).
+- The invariants that would be genuine NEW value — orphaned temp
+  namespaces, unleashed plan promises, uncertified ships — each
+  require instrumentation at an owner that does not exist yet
+  (r2 #8): the janitor's namespace-orphan verdict (a disk-hygiene
+  slice), `Run.GoalId` populated by the public launch/register
+  verbs plus a plan-work decision owner, and a real ship-
+  certification domain owner joining tree + green gate + critique.
+
+Building a duplicate of the watchdog to add complexity for no new
+coverage is the opposite of the clean system the program is for.
+So the steward does not build now. D87: process-steward is
+RESEQUENCED behind the cheapest owner-boundary that emits a typed
+verdict about a currently-unwatched invariant. The natural first
+one is the **janitor namespace-orphan verdict** from the
+disk-hygiene goal — when that owner emits a typed
+"finished run left a process/namespace behind" verdict, the steward
+becomes a thin read-only aggregator that surfaces it (a fact the
+watchdog does NOT cover), and the incident-record / attestation /
+Stop-precedence contracts below get built once, against a verdict
+that pays for them.
+
+## The target design once unblocked (unchanged from r2's shape)
+
+When the first genuinely-new owner verdict exists, the first slice
+is the read-only aggregator + one durable typed incident record
+described above, with these r2 contracts made concrete rather than
+asserted:
+
+- a supervise-owned (or janitor-owned) TYPED verdict carrying
+  outcome + reason + evidence identity — the steward reads it, never
+  re-derives it (r2 #1, #8);
+- ONE named supervision-health owner contract, so the steward does
+  not invent a freshness window that disagrees with dispatch, the
+  watchdog, and the run-pass reader (r2 #2);
+- a decision table with a SINGLE fail-unknown outcome for missing/
+  unreadable evidence (no "unknown here, breach there") and a named,
+  kernel-revalidated source for "a session is active" (r2 #3);
+- an incident record with a STABLE incident identity + semantic
+  digest, compare-and-swap ordering, reopen/resolve transitions, a
+  rule for whether `unknown` preserves an open breach, and evidence
+  refs bound to their generation/digest — the run-record disciplines,
+  not bare atomic rename (r2 #4);
+- a fully specified Stop-hook composition: input fields, a
+  precedence table, an all-clear veto, no blocking authority for a
+  steward-only finding while the act-allowlist is empty, and
+  acknowledgement-safe dedup/clear/retry that composes into the ONE
+  authoritative turn display instead of racing the watchdog digest
+  (r2 #5, #6);
+- a named freshness owner for the steward-pass attestation with a
+  defined caller, cadence, future-clock rule, first-attestation
+  bootstrap, and publication ordering (r2 #7);
+- the coach as a rostered role whose model binding is `metasystem.conf`
+  roster config (NOT adapter config), on the `none` permission preset
+  (repository reads, no writes), producing untrusted advice (r2 #9).
 
 ## Loop discipline
 
-Critique at codex xhigh; the critique should attack: whether the
-aggregator truly only reads typed owner verdicts (no raw
-reinterpretation); whether the canonical armed predicate is the
-right single source; whether the incident record's atomicity and
-unknown-state handling are complete; whether the Stop-hook
-precedence/dedup is fully specified against the existing
-turn-verdict contract; and whether the owner-boundary prerequisites
-are correctly assigned to their owners rather than smuggled back
-into the steward.
+The design loop pauses here, not on convergence but on a sequencing
+truth: two rounds established that the buildable slice duplicates
+existing machinery and the valuable slices wait on instrumentation
+owned by other goals. Resuming the loop (r3+) on the current premise
+would re-derive the same duplication finding. The loop resumes when
+an owner boundary ships its first typed verdict about an unwatched
+invariant — at which point the critique attacks the concrete
+contracts above (incident lifecycle, Stop precedence, attestation
+freshness), not the premise.

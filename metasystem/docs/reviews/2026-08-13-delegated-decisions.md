@@ -2509,3 +2509,42 @@ rushed unattended. genesis-authority-design is parked on this
 decision; the finding is captured in plans/genesis-authority-design.md.
 This is consistent with the accelerator/enforcement doctrine:
 the metasystem never claims enforcement it cannot guarantee.
+
+## D87 — 2026-08-16: process-steward is resequenced behind owner instrumentation, not built as a watchdog duplicate
+
+Picking up the process-steward goal (backlog item 21), two design
+rounds (plans/ps-critique-r1.md, r2.md; codex xhigh) established a
+sequencing truth rather than a converged design. r1 forced the
+rescope from five invariants and an act-capable checker to a
+read-only aggregator over ONE invariant with an empty act-allowlist.
+r2 then showed that the one currently-checkable invariant —
+supervision liveness — is ALREADY surfaced end-of-turn by
+internal/supervise.WatchdogReport through the same Stop hook the
+steward would use, so a steward re-check adds complexity for no new
+coverage. It is not even a small slice: internal/supervise.ArmedNow
+is a Boolean that collapses missing/unreadable/stale/dead into
+false, so the steward could not distinguish unknown from breach
+without a NEW supervise-owned typed verdict, plus an incident
+lifecycle, a scan-cadence/attestation protocol, a turn-verdict
+state-machine extension, and arming integration.
+
+The invariants that would be genuine new value — orphaned temp
+namespaces, unleashed plan promises, uncertified ships — each need a
+typed verdict its owner does not emit yet: the janitor's
+namespace-orphan verdict (a disk-hygiene slice), Run.GoalId
+populated by the public launch/register verbs plus a plan-work
+decision owner, and a real ship-certification domain owner.
+
+Decision: do NOT build the steward now. Resequence process-steward
+behind the cheapest owner boundary that emits a typed verdict about
+a currently-unwatched invariant — the janitor namespace-orphan
+verdict from the disk-hygiene goal. When that verdict exists, the
+steward becomes a thin read-only aggregator that surfaces a fact the
+watchdog does not cover, and the r2 contracts (incident lifecycle,
+Stop-hook precedence/dedup, attestation freshness owner) get built
+once, against a verdict that pays for them. The alternative NOT
+taken — grinding r3+ to force the supervision-liveness slice to
+convergence — would ship a duplicate of the watchdog, the opposite
+of the clean system the program is for. The design record carries
+the full target shape for when the dependency lands
+(plans/process-steward-design.md).

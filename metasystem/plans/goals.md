@@ -36,10 +36,6 @@
 - Origin: main
 - Next step: Sweep the ~150 python3 heredocs in scripts/ into engine verbs and shell; the doctrine is backlog-notes item 13's end state.
 
-## Queued goal: process-steward — A standing role that watches the development PROCESS itself against expectations and signals deviations to the orchestrator, or acts
-- Origin: main
-- Next step: Design per plans/backlog-notes.md item 21 when picked up: inventory the process invariants, decide signal-vs-act per class.
-
 ## Queued goal: custody-death-proof — Every terminal record write rides a real death proof: reaper, drain, lease sweep, protocol-error path, and fleet identity resolution
 - Origin: main
 - Next step: Design loop over the four shipped holes named in plans/acp-critique-r5.md finding 10 and D79; sealed-v1 (acp-transport) is the working prototype of the target contract.
@@ -61,6 +57,11 @@
 - Origin: main
 - Parked because: Impossibility result across 4 review passes: sound genesis needs OS delegate sandboxing (A) or a compiled-in asymmetric anchor + control-plane read-exclusion (B); both architectural, human's design call. D84 defense-in-depth kept.
 - Next step: Design over the 3 holes in plans/genesis-authority-review.md; classification-against-caller-root is unsound — the fix is architectural.
+
+## Parked goal: process-steward — A standing role that watches the development PROCESS itself against expectations and signals deviations to the orchestrator, or acts
+- Origin: main
+- Parked because: Resequenced behind the janitor namespace-orphan verdict from disk-hygiene (D87): the one checkable invariant duplicates the Stop watchdog; valuable invariants wait on owner instrumentation. See plans/process-steward-design.md.
+- Next step: Design per plans/backlog-notes.md item 21 when picked up: inventory the process invariants, decide signal-vs-act per class.
 
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
 - Origin: main
