@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -26,24 +27,71 @@ func runtimeArg(args []string, verbName string) (runtimes.Declaration, int) {
 }
 
 func runRuntimeList(args []string) int {
-	adoptableOnly := false
+	var names []string
 	switch {
 	case len(args) == 0:
+		names = runtimes.Names()
 	case len(args) == 1 && args[0] == "--adoptable":
-		adoptableOnly = true
+		names = runtimes.Adoptable()
+	case len(args) == 1 && args[0] == "--with-adapter":
+		names = runtimes.WithAdapter()
+	case len(args) == 1 && args[0] == "--with-host":
+		names = runtimes.WithHost()
+	case len(args) == 1 && args[0] == "--with-common-lifecycle":
+		names = runtimes.WithCommonLifecycle()
 	default:
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime list [--adoptable]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem runtime list [--adoptable|--with-adapter|--with-host|--with-common-lifecycle]")
 		return 2
 	}
-	if adoptableOnly {
-		for _, name := range runtimes.Adoptable() {
-			fmt.Println(name)
-		}
-		return 0
-	}
-	for _, name := range runtimes.Names() {
+	for _, name := range names {
 		fmt.Println(name)
 	}
+	return 0
+}
+
+func runRuntimeSignatureVectors(args []string) int {
+	declaration, code := runtimeArg(args, "signature-vectors")
+	if code != 0 {
+		return code
+	}
+	if declaration.SignatureVectors.Positive == "" {
+		fmt.Fprintln(os.Stderr, "no signature vectors declared for "+declaration.Name)
+		return 1
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"positive":  declaration.SignatureVectors.Positive,
+		"lookalike": declaration.SignatureVectors.Lookalike,
+	})
+	fmt.Println(string(payload))
+	return 0
+}
+
+func runRuntimeCollisionRoots(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem runtime collision-roots")
+		return 2
+	}
+	for _, root := range runtimes.CollisionRootsAll() {
+		fmt.Println(root)
+	}
+	return 0
+}
+
+func runRuntimeEnforcementMap(args []string) int {
+	declaration, code := runtimeArg(args, "enforcement-map")
+	if code != 0 {
+		return code
+	}
+	if declaration.ExpectedEnvelopeEnforcement == nil {
+		fmt.Fprintln(os.Stderr, "no static enforcement map declared for "+declaration.Name)
+		return 1
+	}
+	ordered := map[string]string{}
+	for field, value := range declaration.ExpectedEnvelopeEnforcement {
+		ordered[field] = string(value)
+	}
+	payload, _ := json.Marshal(ordered)
+	fmt.Println(string(payload))
 	return 0
 }
 

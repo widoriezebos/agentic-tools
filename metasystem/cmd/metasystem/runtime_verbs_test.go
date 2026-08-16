@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"os"
 	"strings"
 	"testing"
@@ -29,8 +30,15 @@ func TestRuntimeVerbContract(t *testing.T) {
 		code   int
 		stdout string // "" means MUST be empty; "*" means non-empty
 	}{
-		{"list", runRuntimeList, nil, 0, "codex\ndevin\nclaude\nfake\n"},
-		{"list adoptable", runRuntimeList, []string{"--adoptable"}, 0, "codex\ndevin\nclaude\n"},
+		{"list", runRuntimeList, nil, 0, joinLines(runtimes.Names())},
+		{"list adoptable", runRuntimeList, []string{"--adoptable"}, 0, joinLines(runtimes.Adoptable())},
+		{"list with-adapter", runRuntimeList, []string{"--with-adapter"}, 0, joinLines(runtimes.WithAdapter())},
+		{"list with-common-lifecycle", runRuntimeList, []string{"--with-common-lifecycle"}, 0, joinLines(runtimes.WithCommonLifecycle())},
+		{"collision-roots", runRuntimeCollisionRoots, nil, 0, joinLines(runtimes.CollisionRootsAll())},
+		{"signature-vectors", runRuntimeSignatureVectors, []string{"fake"}, 0, "{\"lookalike\":\"metasystem-fake-lookalike\",\"positive\":\"metasystem-fake-agent\"}\n"},
+		{"signature-vectors unknown", runRuntimeSignatureVectors, []string{"nope"}, 1, ""},
+		{"enforcement-map", runRuntimeEnforcementMap, []string{"devin"}, 0, "{\"network\":\"notEnforced\",\"readRoots\":\"notEnforced\",\"writeRoots\":\"notEnforced\"}\n"},
+		{"enforcement-map absent", runRuntimeEnforcementMap, []string{"fake"}, 1, ""},
 		{"list usage", runRuntimeList, []string{"--bogus"}, 2, ""},
 		{"adoption-default", runRuntimeAdoptionDefault, nil, 0, "claude\n"},
 		{"adoption-default usage", runRuntimeAdoptionDefault, []string{"x"}, 2, ""},
@@ -59,4 +67,15 @@ func TestRuntimeVerbContract(t *testing.T) {
 			}
 		})
 	}
+}
+
+// joinLines derives the expected population from the declarations —
+// a valid new runtime must not fail shared core tests (ric critique
+// r3-13); only RELATIONAL policies are pinned elsewhere.
+func joinLines(names []string) string {
+	out := ""
+	for _, name := range names {
+		out += name + "\n"
+	}
+	return out
 }

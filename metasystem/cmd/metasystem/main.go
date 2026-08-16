@@ -224,7 +224,10 @@ func families() []family {
 			name:    "runtime",
 			summary: "the declared agent-runtime registry (list, lookups)",
 			verbs: []verb{
-				{"list", "runtime names in priority order (--adoptable filters)", runRuntimeList},
+				{"list", "runtime names in priority order (--adoptable/--with-* filter)", runRuntimeList},
+				{"signature-vectors", "a runtime's declared positive/lookalike process vectors", runRuntimeSignatureVectors},
+				{"collision-roots", "the deduplicated full population of adoption collision roots", runRuntimeCollisionRoots},
+				{"enforcement-map", "a runtime's static envelope-enforcement map as canonical JSON", runRuntimeEnforcementMap},
 				{"adoption-default", "the one default adoption runtime", runRuntimeAdoptionDefault},
 				{"dirs", "a runtime's adopted registration directories", runRuntimeDirs},
 				{"enforcement-config", "a runtime's shipped enforcement config filename", runRuntimeEnforcementConfig},

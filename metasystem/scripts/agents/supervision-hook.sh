@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The pinned resolution contract (agnosticism B1, ric critiques r1-9,
+# r2-8, r3-7): (1) shell-owned SYNTAX refusals — the event name and the
+# runtime argument's registry-grammar SHAPE (no binary needed for a
+# shape check; the closed name list is gone, so a future runtime needs
+# no edit here); (2) executable resolution — a missing engine OR arm
+# script stays benign exit 0, as before; (3) with both present,
+# registry MEMBERSHIP — an unknown runtime exits 2; (4) the runtime's
+# OPTIONAL session environment via the registry, expanded indirectly,
+# never eval; (5) cwd resolution: payload cwd, then the declared
+# variable's nonempty value, then PWD.
 runtime=${1:-}
 event=${2:-}
-case "$runtime" in claude|codex|devin|fake) ;; *) exit 2 ;; esac
+[[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
 case "$event" in start|stop|end) ;; *) exit 2 ;; esac
 
 payload=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX")
@@ -13,17 +23,25 @@ cat >"$payload"
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
+arm=$script_dir/arm-supervision.sh
+[[ -x "$ms" && -x "$arm" ]] || exit 0
+"$ms" runtime list | grep -Fxq "$runtime" || exit 2
 
 read_payload() {
   "$ms" json get --file "$payload" --field "$1" 2>/dev/null || true
 }
 
 cwd=$(read_payload cwd)
-[[ -n "$cwd" ]] || cwd=${CLAUDE_PROJECT_DIR:-${DEVIN_PROJECT_DIR:-$PWD}}
+if [[ -z "$cwd" ]]; then
+  session_env=$("$ms" runtime session-env "$runtime" 2>/dev/null) || session_env=""
+  if [[ -n "$session_env" && "$session_env" =~ ^[A-Z][A-Z0-9_]*$ && -n "${!session_env:-}" ]]; then
+    cwd=${!session_env}
+  else
+    cwd=$PWD
+  fi
+fi
 repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
 repo=$(cd "$repo" && pwd -P)
-arm=$script_dir/arm-supervision.sh
-[[ -x "$ms" && -x "$arm" ]] || exit 0
 session=$(read_payload session_id)
 [[ -n "$session" ]] || session="session-$PPID"
 # Session hygiene happens ONCE at this boundary (goal-system GOAL-04):

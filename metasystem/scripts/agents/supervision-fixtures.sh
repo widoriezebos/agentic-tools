@@ -325,7 +325,12 @@ export METASYSTEM_CENSUS_LOG_MAX_BYTES=350
 # S4-7: all four adapters own a strict, line-oriented POSIX-ERE signature
 # grammar. Exclude wins ties, malformed declarations fail the whole census,
 # and lookalikes from each runtime stay out.
-for runtime in claude codex devin fake; do
+# The vectors are PROVIDER-OWNED declarations (agnosticism B1, ric
+# critique r3-5): the registry serves them and this loop iterates the
+# declared adapter population with no shared runtime branch — a future
+# runtime joins by declaration, not by editing this fixture.
+s47_count=0
+while IFS= read -r runtime; do
   adapter="$source_root/scripts/agents/adapters/$runtime.sh"
   signature=$($adapter signature)
   [[ -n "$signature" ]] || { echo "S4-7: $runtime returned no signatures" >&2; exit 1; }
@@ -333,15 +338,17 @@ for runtime in claude codex devin fake; do
     [[ "$line" == match\ * || "$line" == exclude\ * ]] \
       || { echo "S4-7: malformed $runtime signature line: $line" >&2; exit 1; }
   done <<<"$signature"
-  positive=$runtime
-  # The real CLIs are invoked by their bare command word, so that word is the
-  # honest positive for claude, codex and devin. The fake runtime has no CLI:
-  # its processes carry the fixture name, and a bare-word positive was exactly
-  # the looseness that let commit-message prose in a tool shell match (KI-14).
-  [[ "$runtime" == fake ]] && positive=metasystem-fake-agent
+  vectors=$("$census_engine" runtime signature-vectors "$runtime")
+  positive=$("$census_engine" json get --value "$vectors" --field positive)
+  lookalike=$("$census_engine" json get --value "$vectors" --field lookalike)
+  [[ -n "$positive" && -n "$lookalike" ]] \
+    || { echo "S4-7: $runtime declared no signature vectors" >&2; exit 1; }
   "$census_engine" proc signature-check --adapter "$adapter" --positive "$positive" \
-    --lookalike "metasystem-${runtime}-lookalike" >/dev/null
-done
+    --lookalike "$lookalike" >/dev/null
+  s47_count=$((s47_count + 1))
+done < <("$census_engine" runtime list --with-adapter)
+(( s47_count >= 4 )) \
+  || { echo "S4-7: only $s47_count adapter runtimes exercised — the declared population went missing" >&2; exit 1; }
 for failure in malformed invalid-ere adapter-failed exclude-tie; do
   bad_adapter="$tmp/signature-$failure.sh"
   case "$failure" in

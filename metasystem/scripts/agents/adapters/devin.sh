@@ -7,6 +7,7 @@ Usage:
   scripts/agents/adapters/devin.sh identity
   scripts/agents/adapters/devin.sh config-identity
   scripts/agents/adapters/devin.sh signature
+  scripts/agents/adapters/devin.sh enforcement-map
   scripts/agents/adapters/devin.sh probe
   scripts/agents/adapters/devin.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -85,7 +86,7 @@ probe() {
       "nativeBudget": false
     }' \
     '{"unverified": ["readRoots", "writeRoots", "network"]}' \
-    '{"writeRoots":"notEnforced","readRoots":"notEnforced","network":"notEnforced"}' \
+    "$adapter_enforcement_map" \
     "$key_hashes"
 }
 
@@ -491,10 +492,19 @@ devin_delivery_repair() { # usage file
 command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
+# The declared envelope-enforcement map, served by BOTH the snapshot
+# write and the side-effect-free enforcement-map verb (agnosticism B1):
+# one literal, no drift.
+adapter_enforcement_map='{"writeRoots":"notEnforced","readRoots":"notEnforced","network":"notEnforced"}'
+
 case "$command_name" in
   local-config-paths)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' .devin/config.json .devin/config.local.json .devin/hooks.v1.json
+    ;;
+  enforcement-map)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' "$adapter_enforcement_map"
     ;;
   signature)
     (($# == 0)) || { usage; exit 2; }

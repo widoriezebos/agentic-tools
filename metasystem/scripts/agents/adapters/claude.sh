@@ -7,6 +7,7 @@ Usage:
   scripts/agents/adapters/claude.sh identity
   scripts/agents/adapters/claude.sh config-identity
   scripts/agents/adapters/claude.sh signature
+  scripts/agents/adapters/claude.sh enforcement-map
   scripts/agents/adapters/claude.sh probe
   scripts/agents/adapters/claude.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -76,7 +77,7 @@ probe() {
       "nativeBudget": true
     }' \
     '{"unverified": []}' \
-    '{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}' \
+    "$adapter_enforcement_map" \
     "$key_hashes"
 }
 
@@ -167,10 +168,19 @@ supervise() { # dispatch|follow-up and supervisor args
 command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
+# The declared envelope-enforcement map, served by BOTH the snapshot
+# write and the side-effect-free enforcement-map verb (agnosticism B1):
+# one literal, no drift.
+adapter_enforcement_map='{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}'
+
 case "$command_name" in
   local-config-paths)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' .claude/settings.json .claude/settings.local.json
+    ;;
+  enforcement-map)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' "$adapter_enforcement_map"
     ;;
   signature)
     (($# == 0)) || { usage; exit 2; }

@@ -7,6 +7,7 @@ Usage:
   scripts/agents/adapters/codex.sh identity
   scripts/agents/adapters/codex.sh config-identity
   scripts/agents/adapters/codex.sh signature
+  scripts/agents/adapters/codex.sh enforcement-map
   scripts/agents/adapters/codex.sh probe
   scripts/agents/adapters/codex.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -75,7 +76,7 @@ probe() {
       "nativeBudget": false
     }' \
     '{"unverified": []}' \
-    '{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}' \
+    "$adapter_enforcement_map" \
     "$key_hashes"
 }
 
@@ -169,10 +170,19 @@ fi
 command_name=${1:-}
 [[ -n "$command_name" ]] || { usage; exit 2; }
 shift
+# The declared envelope-enforcement map, served by BOTH the snapshot
+# write and the side-effect-free enforcement-map verb (agnosticism B1):
+# one literal, no drift.
+adapter_enforcement_map='{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}'
+
 case "$command_name" in
   local-config-paths)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' .codex/config.toml
+    ;;
+  enforcement-map)
+    (($# == 0)) || { usage; exit 2; }
+    printf '%s\n' "$adapter_enforcement_map"
     ;;
   signature)
     (($# == 0)) || { usage; exit 2; }

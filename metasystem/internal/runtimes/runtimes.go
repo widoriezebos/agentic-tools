@@ -90,6 +90,26 @@ type Declaration struct {
 	// runtime's seam files must register (conformance joins these
 	// against each owner table's list view, both ways).
 	ExpectedCapabilities []string
+	// SignatureVectors are the provider-owned conformance vectors the
+	// S4-7 fixture consumes (agnosticism B1, critique r3-5): the honest
+	// positive process word and a lookalike that must stay out.
+	SignatureVectors SignatureVectors
+	// CommonLifecycleAdapter marks adapters sharing the common
+	// initializer/writer source shape (runtime-common.sh); fake
+	// deliberately does not (critique r4-4: independent of the static
+	// enforcement map).
+	CommonLifecycleAdapter bool
+	// CollisionRoots are this runtime's contributed adoption collision
+	// roots — scanned as the deduplicated FULL population regardless of
+	// selection (critique r6-4; the B2 installer consumes them, the
+	// verb transports them).
+	CollisionRoots []string
+}
+
+// SignatureVectors is one runtime's positive/lookalike pair.
+type SignatureVectors struct {
+	Positive  string
+	Lookalike string
 }
 
 // Capability names (the declaration side of the seam-local tables).
@@ -111,6 +131,9 @@ var declarations = []Declaration{
 	{
 		Name: "codex", HasAdapter: true, HasHostLauncher: true,
 		Adoptable: true, TailoringPriority: 1,
+		SignatureVectors:         SignatureVectors{Positive: "codex", Lookalike: "metasystem-codex-lookalike"},
+		CommonLifecycleAdapter:   true,
+		CollisionRoots:           []string{".agents"},
 		InstructionFile:          "AGENTS.md",
 		RegistrationDirs:         []string{".agents/skills"},
 		ShippedEnforcementConfig: "codex-hooks.json",
@@ -123,6 +146,9 @@ var declarations = []Declaration{
 	{
 		Name: "devin", HasAdapter: true, HasHostLauncher: true,
 		Adoptable: true, TailoringPriority: 2,
+		SignatureVectors:         SignatureVectors{Positive: "devin", Lookalike: "metasystem-devin-lookalike"},
+		CommonLifecycleAdapter:   true,
+		CollisionRoots:           []string{".agents", ".devin"},
 		SessionEnv:               "DEVIN_PROJECT_DIR",
 		InstructionFile:          "AGENTS.md",
 		RegistrationDirs:         []string{".agents/skills", ".devin/skills", ".devin/agents"},
@@ -143,6 +169,9 @@ var declarations = []Declaration{
 	{
 		Name: "claude", HasAdapter: true, HasHostLauncher: true,
 		Adoptable: true, AdoptionDefault: true, TailoringPriority: 3,
+		SignatureVectors:         SignatureVectors{Positive: "claude", Lookalike: "metasystem-claude-lookalike"},
+		CommonLifecycleAdapter:   true,
+		CollisionRoots:           []string{".claude"},
 		SessionEnv:               "CLAUDE_PROJECT_DIR",
 		InstructionFile:          "CLAUDE.md",
 		RegistrationDirs:         []string{".claude/skills", ".claude/agents"},
@@ -157,7 +186,8 @@ var declarations = []Declaration{
 	{
 		Name: "fake", HasAdapter: true, HasHostLauncher: true,
 		TailoringPriority: 4, SynthesizedModel: "fake-model",
-		InstructionFile: "AGENTS.md",
+		InstructionFile:  "AGENTS.md",
+		SignatureVectors: SignatureVectors{Positive: "metasystem-fake-agent", Lookalike: "metasystem-fake-lookalike"},
 		// The fixture harness's own declared gap: the unverified-network
 		// profile reports network unverified, and the waiver machinery's
 		// fixtures exercise exactly this residual.
@@ -252,6 +282,46 @@ func InstructionFiles() []string {
 	return files
 }
 
+// WithAdapter returns the runtime names declaring an adapter, in
+// priority order; WithHost and WithCommonLifecycle filter likewise.
+func WithAdapter() []string { return filterNames(func(d Declaration) bool { return d.HasAdapter }) }
+
+func WithHost() []string {
+	return filterNames(func(d Declaration) bool { return d.HasHostLauncher })
+}
+
+func WithCommonLifecycle() []string {
+	return filterNames(func(d Declaration) bool { return d.CommonLifecycleAdapter })
+}
+
+func filterNames(keep func(Declaration) bool) []string {
+	var names []string
+	for _, d := range declarations {
+		if keep(d) {
+			names = append(names, d.Name)
+		}
+	}
+	return names
+}
+
+// CollisionRootsAll returns the deduplicated FULL population of
+// contributed collision roots, sorted — the scan never narrows to the
+// selected runtimes.
+func CollisionRootsAll() []string {
+	set := map[string]bool{}
+	for _, d := range declarations {
+		for _, root := range d.CollisionRoots {
+			set[root] = true
+		}
+	}
+	roots := make([]string, 0, len(set))
+	for root := range set {
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	return roots
+}
+
 // ResidualFor returns the declared residual identifier for a runtime's
 // permission field ("" when the runtime declares no residual there —
 // the fail-closed case).
@@ -318,6 +388,14 @@ func Validate() []string {
 		for _, emitted := range []string{d.ShippedEnforcementConfig, d.ConfigIdentityFilter, d.InstructionFile} {
 			if emitted != "" && !cleanRelative(emitted) {
 				add("%s: declared path %q is not clean-relative", d.Name, emitted)
+			}
+		}
+		if d.HasAdapter && (d.SignatureVectors.Positive == "" || d.SignatureVectors.Lookalike == "") {
+			add("%s: an adapter-bearing runtime requires signature vectors", d.Name)
+		}
+		for _, root := range d.CollisionRoots {
+			if !strings.HasPrefix(root, ".") || !cleanRelative(root) {
+				add("%s: collision root %q must be a clean dot-prefixed path", d.Name, root)
 			}
 		}
 		if d.ExpectedEnvelopeEnforcement != nil {

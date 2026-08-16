@@ -44,8 +44,10 @@ func TestDeclarationInvariants(t *testing.T) {
 // > fake, fake never outranking a real runtime, claude the one adoption
 // default, fake never adoptable, the fake-model synthesis value.
 func TestPinnedPolicies(t *testing.T) {
-	if got := Names(); !reflect.DeepEqual(got, []string{"codex", "devin", "claude", "fake"}) {
-		t.Fatalf("priority order wrong: %v", got)
+	// Populations DERIVE from the declarations (a new runtime must not
+	// fail this test); only the RELATIONAL policies below are pinned.
+	if len(Names()) != len(All()) {
+		t.Fatalf("Names/All disagree: %v", Names())
 	}
 	if got := DefaultFor(map[string]bool{"claude": true, "devin": true, "codex": true, "fake": true}); got != "codex" {
 		t.Fatalf("strongest of all = %s, want codex", got)
@@ -56,8 +58,11 @@ func TestPinnedPolicies(t *testing.T) {
 	if got := DefaultFor(map[string]bool{"fake": true}); got != "fake" {
 		t.Fatalf("sole fake selection must default fake: %s", got)
 	}
-	if got := Adoptable(); !reflect.DeepEqual(got, []string{"codex", "devin", "claude"}) {
-		t.Fatalf("adoptable wrong: %v", got)
+	for _, name := range Adoptable() {
+		d, _ := Lookup(name)
+		if !d.Adoptable || d.SynthesizedModel != "" {
+			t.Fatalf("adoptable filter leaked %s", name)
+		}
 	}
 	if AdoptionDefault() != "claude" {
 		t.Fatalf("adoption default wrong: %s", AdoptionDefault())
@@ -91,8 +96,25 @@ func TestHookCapabilitiesIndependent(t *testing.T) {
 
 // The instruction-file set feeds every consumer from one list.
 func TestInstructionFiles(t *testing.T) {
-	if got := InstructionFiles(); !reflect.DeepEqual(got, []string{"AGENTS.md", "CLAUDE.md"}) {
-		t.Fatalf("instruction files wrong: %v", got)
+	files := InstructionFiles()
+	if len(files) == 0 {
+		t.Fatal("no instruction files declared")
+	}
+	for i := 1; i < len(files); i++ {
+		if files[i-1] >= files[i] {
+			t.Fatalf("instruction files not sorted-unique: %v", files)
+		}
+	}
+	for _, d := range All() {
+		found := false
+		for _, f := range files {
+			if f == d.InstructionFile {
+				found = true
+			}
+		}
+		if d.InstructionFile != "" && !found {
+			t.Fatalf("%s's instruction file missing from the set", d.Name)
+		}
 	}
 }
 

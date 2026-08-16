@@ -482,7 +482,7 @@ for runtime in claude codex devin; do
   [[ -x "$adapter" ]] || { echo "$runtime runtime adapter is not executable: $adapter" >&2; exit 1; }
   bash -n "$adapter"
   adapter_usage=$($adapter --help 2>&1)
-  for verb in identity config-identity signature probe dispatch follow-up cancel selftest; do
+  for verb in identity config-identity signature enforcement-map probe dispatch follow-up cancel selftest; do
     grep -Fq "adapters/$runtime.sh $verb" <<<"$adapter_usage" \
       || { echo "$runtime adapter usage does not advertise $verb" >&2; exit 1; }
   done
@@ -491,23 +491,26 @@ for runtime in claude codex devin; do
   grep -Fq "write_capability_snapshot $runtime \"\$version\" \"\$hash\"" "$adapter" \
     || { echo "$runtime adapter does not write its named capability snapshot" >&2; exit 1; }
 done
-grep -Fq '{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}' \
-  scripts/agents/adapters/codex.sh \
-  || { echo "codex adapter envelope enforcement declaration drifted" >&2; exit 1; }
-grep -Fq '{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}' \
-  scripts/agents/adapters/claude.sh \
-  || { echo "claude adapter envelope enforcement declaration drifted" >&2; exit 1; }
-# Devin declares every member unenforced, and that is the measured truth rather
-# than a weakening. --sandbox is the only flag that would enforce roots at the
-# OS level and this organisation's policy refuses the mode it needs; with a
-# shell granted, a Devin turn wrote outside its declared write root and read
-# outside its declared read root. Both were demonstrated on 2026-08-08 and are
-# recorded in plans/devin-support.md as O-9 and O-10. Changing this line back
-# requires evidence that enforcement returned, which is exactly why the guard
-# is here.
-grep -Fq '{"writeRoots":"notEnforced","readRoots":"notEnforced","network":"notEnforced"}' \
-  scripts/agents/adapters/devin.sh \
-  || { echo "devin adapter envelope enforcement declaration drifted" >&2; exit 1; }
+# The envelope-enforcement compare is GENERIC (agnosticism B1, ric
+# critique r6-8): the registry's declared map and the adapter's
+# side-effect-free enforcement-map verb are both decoded and
+# canonicalized by the engine before comparison, for every runtime
+# declaring a static map. Devin's all-notEnforced row is the measured
+# truth (O-9/O-10 in plans/devin-support.md, demonstrated 2026-08-08):
+# its declaration lives in internal/runtimes with that provenance, and
+# changing it back requires evidence that enforcement returned.
+while IFS= read -r rt_name; do
+  registry_map=$("$root/bin/metasystem" runtime enforcement-map "$rt_name" 2>/dev/null) || continue
+  adapter_map=$("scripts/agents/adapters/$rt_name.sh" enforcement-map)
+  adapter_writeroots=$("$root/bin/metasystem" json get --value "$adapter_map" --field writeRoots)
+  adapter_readroots=$("$root/bin/metasystem" json get --value "$adapter_map" --field readRoots)
+  adapter_network=$("$root/bin/metasystem" json get --value "$adapter_map" --field network)
+  registry_writeroots=$("$root/bin/metasystem" json get --value "$registry_map" --field writeRoots)
+  registry_readroots=$("$root/bin/metasystem" json get --value "$registry_map" --field readRoots)
+  registry_network=$("$root/bin/metasystem" json get --value "$registry_map" --field network)
+  [[ "$adapter_writeroots" == "$registry_writeroots" && "$adapter_readroots" == "$registry_readroots" && "$adapter_network" == "$registry_network" ]] \
+    || { echo "$rt_name adapter envelope enforcement drifted from the registry declaration" >&2; exit 1; }
+done < <("$root/bin/metasystem" runtime list --with-adapter)
 for runtime in claude codex fake; do
   host="scripts/agents/hosts/$runtime.sh"
   [[ -x "$host" ]] || { echo "$runtime host adapter is missing or not executable: $host" >&2; exit 1; }
