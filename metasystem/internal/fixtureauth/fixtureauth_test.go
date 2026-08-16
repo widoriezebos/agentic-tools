@@ -1,9 +1,14 @@
 package fixtureauth
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func fakeCheckout(t *testing.T, runtimes string) string {
@@ -58,27 +63,45 @@ func TestAuthorizationMatrix(t *testing.T) {
 }
 
 // Each capability value exposes ONLY its authority's facts, and every
-// zero/nil value refuses.
+// zero/nil value refuses. The group grant additionally demands a
+// KERNEL-LIVE leader at its recorded start in its recorded group (B1
+// critique finding 2), so the fixture row is built from this test's
+// own live process.
 func TestCapabilityScoping(t *testing.T) {
-	table := writeTable(t, `{"42":{"pidStartedAt":100,"command":"runner --tag t","pgid":42},"7":{"pidStartedAt":5}}`)
+	self := int64(os.Getpid())
+	exact, _, err := (identity.KernelProber{}).Probe(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selfPgid, err := unix.Getpgid(int(self))
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := writeTable(t, fmt.Sprintf(
+		`{"%d":{"pidStartedAt":%d,"command":"runner --tag t","pgid":%d},"7":{"pidStartedAt":5},"42":{"pidStartedAt":100,"command":"stale row","pgid":42}}`,
+		self, exact.StartedAt.Unix(), selfPgid))
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
 	authorization, err := New(fakeCheckout(t, "fake"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if command, ok := authorization.Command().FixtureCommand(42); !ok || command != "runner --tag t" {
+	if command, ok := authorization.Command().FixtureCommand(self); !ok || command != "runner --tag t" {
 		t.Fatalf("command probe: %q ok=%v", command, ok)
 	}
 	if _, ok := authorization.Command().FixtureCommand(7); ok {
 		t.Fatal("a command-less entry served a command")
 	}
-	pgid, command, ok := authorization.GroupOwnership().FixtureGroup(42)
-	if !ok || pgid != 42 || command != "runner --tag t" {
+	pgid, command, ok := authorization.GroupOwnership().FixtureGroup(self)
+	if !ok || pgid != int64(selfPgid) || command != "runner --tag t" {
 		t.Fatalf("group grant: %d %q ok=%v", pgid, command, ok)
 	}
 	if _, _, ok := authorization.GroupOwnership().FixtureGroup(7); ok {
 		t.Fatal("a pgid-less entry proved group ownership")
+	}
+	// A stale row for a dead/recycled pid never authorizes a signal.
+	if _, _, ok := authorization.GroupOwnership().FixtureGroup(42); ok {
+		t.Fatal("a stale fixture row proved group ownership (finding 2)")
 	}
 	if path, ok := authorization.Publication().TablePath(); !ok || path != table {
 		t.Fatalf("publication grant: %q ok=%v", path, ok)

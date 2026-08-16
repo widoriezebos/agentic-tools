@@ -329,6 +329,8 @@ export METASYSTEM_CENSUS_LOG_MAX_BYTES=350
 # critique r3-5): the registry serves them and this loop iterates the
 # declared adapter population with no shared runtime branch — a future
 # runtime joins by declaration, not by editing this fixture.
+s47_population=$("$census_engine" runtime list --with-adapter) \
+  || { echo "S4-7: the adapter population query refused" >&2; exit 1; }
 s47_count=0
 while IFS= read -r runtime; do
   adapter="$source_root/scripts/agents/adapters/$runtime.sh"
@@ -346,7 +348,7 @@ while IFS= read -r runtime; do
   "$census_engine" proc signature-check --adapter "$adapter" --positive "$positive" \
     --lookalike "$lookalike" >/dev/null
   s47_count=$((s47_count + 1))
-done < <("$census_engine" runtime list --with-adapter)
+done <<<"$s47_population"
 (( s47_count >= 4 )) \
   || { echo "S4-7: only $s47_count adapter runtimes exercised — the declared population went missing" >&2; exit 1; }
 for failure in malformed invalid-ere adapter-failed exclude-tie; do
@@ -801,7 +803,7 @@ wait_until "S4-4 reaper recovery replaces set" component_replaced watcher "$watc
   || { echo "reaper death was not surfaced" >&2; exit 1; }
 
 stop_owned_pid "supervision owner for takeover" "$owner_before" "$owner_start"
-wait_until "proven-dead owner" bash -c '! "$1" census alive --pid "$2" --start-time "$3" >/dev/null 2>&1' _ "$census_engine" "$owner_before" "$owner_start"
+wait_until "proven-dead owner" bash -c '! "$1" proc alive --pid "$2" --start-time "$3" --root "$4" >/dev/null 2>&1' _ "$census_engine" "$owner_before" "$owner_start" "$repo"
 printf '[]\n' >"$process_fixture"
 release_checkout "$repo"
 "$arm" --repo "$repo" --session takeover --pid "$$" --start-time "$(process_started_at "$$")" --tag takeover-main >/dev/null

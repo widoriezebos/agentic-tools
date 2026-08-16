@@ -108,11 +108,12 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 	repoReal := realpath(repo)
 	var errors, diagnostics []string
 	// The fixture authority for this walk (agnosticism B1): constructed
-	// once from the repo root; a refused construction (leaked fixture in
-	// a non-fake checkout) surfaces as an error and fixtures stay
-	// refused — never granted.
+	// once from the METASYSTEM root — the configuration owner — never
+	// the scan scope (B1 critique finding 3: a fake scope must not
+	// authorize fixtures for a non-fake metasystem). A refused
+	// construction surfaces as an error and fixtures stay refused.
 	var fixtureProbe identity.FixtureProbe
-	if authorization, err := fixtureauth.New(repoReal); err != nil {
+	if authorization, err := fixtureauth.New(metasystemRoot); err != nil {
 		errors = append(errors, "fixture-authorization:"+err.Error())
 	} else {
 		fixtureProbe = authorization.Identity()

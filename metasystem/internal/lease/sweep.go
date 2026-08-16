@@ -66,7 +66,7 @@ func (c *claimer) cleanupStaleJobs(epoch int64) error {
 func (c *claimer) cleanupStaleRuns(epoch int64) error {
 	store := &run.Store{Root: c.root}
 	return store.SweepStale(epoch,
-		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(pgid, nonce, c.probe) },
+		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(pgid, nonce, nil) },
 		func(pgid int64) error {
 			switch err := sweepKill(pgid, unix.SIGTERM); err {
 			case nil, unix.ESRCH:
@@ -149,7 +149,10 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 	if !ok || pgid <= 1 || !tagOK || tag == "" {
 		return nil
 	}
-	owned, provable := groupOwnsTag(pgid, tag, c.probe)
+	// SIGNAL authorization is KERNEL-ONLY (B1 critique finding 1): a
+	// fixture row must never be the evidence that TERMs a real process
+	// group. The claimer's probe serves classification reads, not this.
+	owned, provable := groupOwnsTag(pgid, tag, nil)
 	if !provable {
 		return fmt.Errorf("claim sweep cannot prove ownership of stale job %s", stem)
 	}

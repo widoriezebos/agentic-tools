@@ -35,6 +35,12 @@ func processCommand(pid int, command fixtureauth.CommandProbe) string {
 	if err == nil && state == identity.Alive && len(exact.Argv) > 0 {
 		return strings.Join(exact.Argv, " ")
 	}
+	if err == nil && state == identity.Dead {
+		// Kernel death VETOES the fixture (B1 critique finding 8): a
+		// child that exited after publication must not recover its tag
+		// from the just-written row.
+		return ""
+	}
 	if fixtureCommand, ok := command.FixtureCommand(int64(pid)); ok {
 		return fixtureCommand
 	}

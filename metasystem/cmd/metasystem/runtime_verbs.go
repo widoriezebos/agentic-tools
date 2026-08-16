@@ -175,3 +175,12 @@ func runRuntimeConfigIdentityFilter(args []string) int {
 	return singleValue(declaration.ConfigIdentityFilter,
 		"no config identity filter declared for "+declaration.Name)
 }
+
+func runRuntimeRegistration(args []string) int {
+	declaration, code := runtimeArg(args, "registration")
+	if code != 0 {
+		return code
+	}
+	fmt.Print(runtimes.RegistrationV1(declaration.Name))
+	return 0
+}

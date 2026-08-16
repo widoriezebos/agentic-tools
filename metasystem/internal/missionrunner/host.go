@@ -98,7 +98,11 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 	// requested at all; a zero grant refuses.
 	var grant fixtureauth.GroupOwnershipGrant
 	if allowFake {
-		grant = e.fixtures().GroupOwnership()
+		authorization, authErr := e.fixtures()
+		if authErr != nil {
+			return fmt.Errorf("fixture authorization refused: %w", authErr)
+		}
+		grant = authorization.GroupOwnership()
 	}
 	if !groupOwned(pgid, tag, grant) {
 		fmt.Fprintf(os.Stderr, "host process group %d is no longer provably ours; "+
@@ -306,7 +310,7 @@ func (e *Engine) spawnAndVerifyHost(l *hostLaunch) (code int, detail string, don
 		if at, err := processStartedAt(l.pid); err == nil {
 			started, haveStarted = at, true
 			published := true
-			if l.fakeRuntime && publishFakeIdentity(l.pid, at, l.pid, l.tag, e.fixtures().Publication()) != nil {
+			if l.fakeRuntime && publishFakeIdentityForEngine(e, l.pid, at, l.tag) != nil {
 				published = false
 			}
 			if published {
@@ -439,10 +443,26 @@ func gitAuthorEnvironment(identityName string) []string {
 }
 
 // hostCommandProbe issues the command probe only for the fake runtime
-// (the fixture-mode launcher); a zero probe refuses.
+// (the fixture-mode launcher); a zero probe refuses, and a
+// construction ERROR also refuses (finding 4 — the launch
+// verification then fails on kernel evidence alone).
 func hostCommandProbe(e *Engine, fakeRuntime bool) fixtureauth.CommandProbe {
 	if !fakeRuntime {
 		return fixtureauth.CommandProbe{}
 	}
-	return e.fixtures().Command()
+	authorization, err := e.fixtures()
+	if err != nil {
+		return fixtureauth.CommandProbe{}
+	}
+	return authorization.Command()
+}
+
+// publishFakeIdentityForEngine distinguishes construction refusal (an
+// ERROR, finding 4) from the benign env-absent no-op.
+func publishFakeIdentityForEngine(e *Engine, pid int, started int64, tag string) error {
+	authorization, err := e.fixtures()
+	if err != nil {
+		return fmt.Errorf("fixture publication refused: %w", err)
+	}
+	return publishFakeIdentity(pid, started, pid, tag, authorization.Publication())
 }

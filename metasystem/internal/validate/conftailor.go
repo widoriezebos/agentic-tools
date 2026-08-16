@@ -166,6 +166,28 @@ func TailorConf(confPath string, requested []string) error {
 	if len(selected) > 0 && !sawDefault {
 		out = append(out, "role.default.runtime="+defaultRuntime)
 	}
+	// Every selected non-synthesized runtime gets its default-model row
+	// materialized when the source carried none (B1 critique finding
+	// 13): a new runtime's scaffold needs no per-runtime boilerplate in
+	// the shipped template — the operator fills the value. Synthesized
+	// runtimes (fake) already materialize their fixed model above.
+	for _, runtime := range selected {
+		declaration, known := runtimes.Lookup(runtime)
+		if !known || declaration.SynthesizedModel != "" {
+			continue
+		}
+		key := "role.default.model." + runtime
+		present := false
+		for _, line := range out {
+			if strings.HasPrefix(line, key+"=") {
+				present = true
+				break
+			}
+		}
+		if !present {
+			out = append(out, key+"=")
+		}
+	}
 
 	// Through the durable-write owner (go-production-grade B5): the old
 	// path here was WriteFile plus rename with no sync at all. Empty anchor

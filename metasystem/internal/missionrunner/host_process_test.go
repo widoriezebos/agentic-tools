@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"golang.org/x/sys/unix"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -241,5 +242,26 @@ func TestSmallPureHelpers(t *testing.T) {
 	first, second := randomHex(8), randomHex(8)
 	if len(first) != 16 || first == second {
 		t.Fatal("randomHex shape or uniqueness")
+	}
+}
+
+// B1 critique finding 15: denied capabilities leave OBSERVABLE
+// nothing — a refused publication writes no file, and a refused group
+// grant never proves ownership of a live group.
+func TestDeniedCapabilitiesActNowhere(t *testing.T) {
+	table := filepath.Join(t.TempDir(), "table.json")
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+	if err := publishFakeIdentity(1234, 100, 1234, "t", fixtureauth.PublicationGrant{}); err != nil {
+		t.Fatalf("an unauthorized publication must be a silent no-op for the env-absent CALLER shape: %v", err)
+	}
+	if _, statErr := os.Stat(table); statErr == nil {
+		t.Fatal("a denied publication wrote the fixture file")
+	}
+	self, err := unix.Getpgid(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if groupOwned(self, "any-tag", fixtureauth.GroupOwnershipGrant{}) {
+		t.Fatal("a zero grant proved ownership of a live group")
 	}
 }

@@ -218,7 +218,7 @@ Scripts check structure and declared state. They cannot prove that a named test 
 
 The canonical steps live in [`docs/project-adaptation.md`](docs/project-adaptation.md). The short version is three steps:
 
-1. From the template checkout, run `scripts/adopt.sh <target> [--runtimes claude,devin,codex] [--enable debug-java]`. It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and Claude Code hook, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
+1. From the template checkout, run `scripts/adopt.sh <target> [--runtimes <names from: bin/metasystem runtime list --adoptable>] [--enable debug-java]`. It exports the payload from the template's tracked HEAD, registers skills and subagent profiles for the selected runtimes, installs the shipped CI workflow and Claude Code hook, creates the gitignored `artifacts/` directory, and records the template SHA for future migrations. It refuses targets that already carry instruction assets; those follow the reconciliation manual below.
 2. Fill `docs/project-rules.md` with verified facts: commands, invariants, reserved decisions, budgets, the refactor acceptance gate, delegation facts.
 3. Run `scripts/validate-metasystem.sh` in the target; it must pass with zero placeholders. Then work normally: each repo-changing task ends with the completion check, verification when runnable, and a receipt. Run the first retro after a handful of tasks instead of waiting for the cadence. Early routing errors are the cheapest to fix.
 

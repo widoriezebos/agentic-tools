@@ -1372,11 +1372,11 @@ func contractProcessHasTag(projectRoot string, pid, started int64, tag string) b
 		// The fixture authority for the liveness check (agnosticism B1):
 		// constructed from the project root; a refused construction
 		// refuses fixtures and the kernel alone answers.
-		var probe identity.FixtureProbe
-		if authorization, err := fixtureauth.New(projectRoot); err == nil {
-			probe = authorization.Identity()
+		authorization, authErr := fixtureauth.New(projectRoot)
+		if authErr != nil {
+			return false // leaked fixture refuses the decision (finding 4)
 		}
-		if !census.Alive(pid, started, probe) {
+		if !census.Alive(pid, started, authorization.Identity()) {
 			return false
 		}
 	}

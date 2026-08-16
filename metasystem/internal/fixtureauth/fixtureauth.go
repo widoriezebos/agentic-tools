@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -31,7 +33,12 @@ const fixtureEnv = "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"
 // *Authorization is valid everywhere and refuses every fixture read —
 // the fail-closed default for callers with no root.
 type Authorization struct {
-	tablePath string // "" = no fixture in play (env unset)
+	tablePath string // "" = no identity fixture in play (env unset)
+	// fixtureMode records that the ROOT authorizes fixtures at all —
+	// independent of the identity-table env, because the
+	// mission-process and process-table sources ride their OWN
+	// variables (B1 critique finding 7).
+	fixtureMode bool
 }
 
 // New constructs the authorization from a checkout root. Outcomes:
@@ -44,15 +51,15 @@ type Authorization struct {
 //     at construction so a leaked fixture never rides an unfenced
 //     entry point.
 func New(root string) (*Authorization, error) {
+	mode := FixtureModeRoot(root)
 	path := os.Getenv(fixtureEnv)
 	if path == "" {
-		return &Authorization{}, nil
+		return &Authorization{fixtureMode: mode}, nil
 	}
-	confValue := config.ConfValue(filepath.Join(root, "metasystem.conf"), "metasystem.runtimes", "")
-	if confValue != "fake" {
+	if !mode {
 		return nil, fmt.Errorf("%s is set but metasystem.runtimes is not fake in %s", fixtureEnv, root)
 	}
-	return &Authorization{tablePath: path}, nil
+	return &Authorization{tablePath: path, fixtureMode: true}, nil
 }
 
 // entryFor is the ONE fixture-table read (moved verbatim from
@@ -127,11 +134,22 @@ type GroupOwnershipGrant struct{ a *Authorization }
 func (a *Authorization) GroupOwnership() GroupOwnershipGrant { return GroupOwnershipGrant{a} }
 
 // FixtureGroup returns the fixture's recorded (pgid, command) for the
-// ownership proof — the two facts signal authorization needs, nothing
-// more.
+// ownership proof — and only while the fixture leader is KERNEL-LIVE
+// at its recorded start and still in that group (B1 critique finding
+// 2: a stale row must never authorize signaling a recycled group).
 func (g GroupOwnershipGrant) FixtureGroup(pid int64) (pgid int64, command string, ok bool) {
 	entry, present := g.a.entryFor(pid)
 	if !present || !entry.HasPgid || !entry.HasCommand {
+		return 0, "", false
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(pid)
+	if err != nil || state != identity.Alive {
+		return 0, "", false
+	}
+	if entry.HasStartedAt && exact.StartedAt.Unix() != entry.StartedAt {
+		return 0, "", false
+	}
+	if kernelPgid, pgErr := unix.Getpgid(int(pid)); pgErr != nil || int64(kernelPgid) != entry.Pgid {
 		return 0, "", false
 	}
 	return entry.Pgid, entry.Command, true
@@ -143,8 +161,9 @@ type AncestorProbe struct{ a *Authorization }
 
 func (a *Authorization) Ancestor() AncestorProbe { return AncestorProbe{a} }
 
-// Allows reports whether fixture ancestry may be honored at all.
-func (p AncestorProbe) Allows() bool { return p.a != nil && p.a.tablePath != "" }
+// Allows reports whether fixture ancestry may be honored at all —
+// root fixture mode, its own env var read by the consumer.
+func (p AncestorProbe) Allows() bool { return p.a != nil && p.a.fixtureMode }
 
 // MissionProcessProbe serves the mission-process identity fallback;
 // the consumer keeps its kernel-argv-first order.
@@ -152,7 +171,10 @@ type MissionProcessProbe struct{ a *Authorization }
 
 func (a *Authorization) MissionProcess() MissionProcessProbe { return MissionProcessProbe{a} }
 
-func (p MissionProcessProbe) Allows() bool { return p.a != nil && p.a.tablePath != "" }
+// Allows gates the mission-process source (its OWN env var, read by
+// the consumer): the ROOT's fixture mode authorizes it, not the
+// identity table's presence (B1 critique finding 7).
+func (p MissionProcessProbe) Allows() bool { return p.a != nil && p.a.fixtureMode }
 
 // PublicationGrant authorizes the mission runner's fixture WRITES —
 // its own grant, never implied by any read capability.
@@ -175,7 +197,7 @@ type ProcessTableProbe struct{ a *Authorization }
 
 func (a *Authorization) ProcessTable() ProcessTableProbe { return ProcessTableProbe{a} }
 
-func (p ProcessTableProbe) Allows() bool { return p.a != nil && p.a.tablePath != "" }
+func (p ProcessTableProbe) Allows() bool { return p.a != nil && p.a.fixtureMode }
 
 // MissionHolderProbe serves dispatch.ValidateMission: command plus
 // process-group facts, the two authorities mission-join needs.

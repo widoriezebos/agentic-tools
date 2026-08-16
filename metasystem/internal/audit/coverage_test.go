@@ -105,6 +105,21 @@ func TestReadCoverageBaseline(t *testing.T) {
 }
 
 // The metasystem audit's refusal paths, each a distinct fixture tree.
+
+// registryPointerDocs satisfies the Class-14 positive audit in
+// synthetic trees: the four named documents must carry
+// registry-derived pointers.
+func registryPointerDocs(t *testing.T, root string) {
+	t.Helper()
+	os.MkdirAll(filepath.Join(root, "docs"), 0o755)
+	os.WriteFile(filepath.Join(root, "docs", "orchestration.md"),
+		[]byte("the registry: bin/metasystem runtime list\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs", "glossary.md"),
+		[]byte("the registry: bin/metasystem runtime list\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "README.md"),
+		[]byte("the registry: bin/metasystem runtime list\n"), 0o644)
+}
+
 func TestAuditMetasystemRefusals(t *testing.T) {
 	build := func(t *testing.T) string {
 		root := t.TempDir()
@@ -125,7 +140,8 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 		os.WriteFile(filepath.Join(root, "AGENTS.md"),
 			[]byte("clean instruction text\nprograms start with `goal open`; at turn end read `goal next`\n"), 0o644)
 		os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
-			[]byte("programs start with `goal open`\n"), 0o644)
+			[]byte("programs start with `goal open`; repair via `runtime registration`\n"), 0o644)
+		registryPointerDocs(t, root)
 		os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 			[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
 		for _, config := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
@@ -210,7 +226,8 @@ func TestAuditMetasystemReport(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "skills/demo/SKILL.md"), []byte("a skill\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "optional-skills/x/SKILL.md"), []byte("optional\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("programs start with `goal open`; read `goal next`\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "docs/project-adaptation.md"), []byte("the `goal open` convention\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs/project-adaptation.md"), []byte("the `goal open` convention; repair via `runtime registration`\n"), 0o644)
+	registryPointerDocs(t, root)
 	os.WriteFile(filepath.Join(root, "docs/design/turn-verdict-delivery-contract.md"), []byte("| claude |\n| codex |\n| devin |\n"), 0o644)
 	for _, config := range []string{"claude-code-hooks.json", "codex-hooks.json", "devin-hooks.json"} {
 		os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
@@ -323,7 +340,8 @@ func TestDoctrineProgramStartRule(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "docs", "design"), 0o755)
 	os.MkdirAll(filepath.Join(root, "scripts", "enforcement"), 0o755)
 	os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("no doctrine here\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"), []byte("nothing\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"), []byte("nothing about goals; repair via `runtime registration`\n"), 0o644)
+	registryPointerDocs(t, root)
 	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 		[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
 	violations := auditGoalSystem(root)
@@ -341,7 +359,8 @@ func TestConformanceTableAudit(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "AGENTS.md"),
 		[]byte("programs start with `goal open`; read `goal next`\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
-		[]byte("`goal open` starts programs\n"), 0o644)
+		[]byte("`goal open` starts programs; repair via `runtime registration`\n"), 0o644)
+	registryPointerDocs(t, root)
 	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 		[]byte("| claude |\n| codex |\n| devin |\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "scripts", "enforcement", "claude-code-hooks.json"), []byte("{}\n"), 0o644)
@@ -366,7 +385,8 @@ func TestConformanceTableMissingRow(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "AGENTS.md"),
 		[]byte("programs start with `goal open`; read `goal next`\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "docs", "project-adaptation.md"),
-		[]byte("`goal open` starts programs\n"), 0o644)
+		[]byte("`goal open` starts programs; repair via `runtime registration`\n"), 0o644)
+	registryPointerDocs(t, root)
 	// The contract exists but names only claude.
 	os.WriteFile(filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md"),
 		[]byte("| claude |\n"), 0o644)

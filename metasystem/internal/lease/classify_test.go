@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -141,5 +142,20 @@ func TestReadAnnouncementsSkipsIncompleteButRefusesTampered(t *testing.T) {
 	// The same malformed record is skipped by a lax read.
 	if _, err := readAnnouncements(root, false); err != nil {
 		t.Fatalf("a lax read must skip a malformed record, not error: %v", err)
+	}
+}
+
+// B1 critique finding 15: a leaked fixture in a non-fake checkout
+// refuses CLASSIFICATION itself — the lease's every decision, takeover
+// included, sits behind this gate.
+func TestClassifyRefusesLeakedFixture(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644)
+	table := filepath.Join(t.TempDir(), "table.json")
+	os.WriteFile(table, []byte(`{}`), 0o644)
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+	if _, err := Classify(root, int64(os.Getpid())); err == nil ||
+		!strings.Contains(err.Error(), "metasystem.runtimes is not fake") {
+		t.Fatalf("leaked fixture did not refuse classification: %v", err)
 	}
 }

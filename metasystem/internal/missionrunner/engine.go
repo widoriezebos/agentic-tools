@@ -64,14 +64,12 @@ type Engine struct {
 }
 
 // fixtures is the engine's root-checked fixture authority (agnosticism
-// B1): constructed on demand from Root; a refused construction (leaked
-// fixture in a non-fake checkout) refuses fixtures — never grants.
-func (e *Engine) fixtures() *fixtureauth.Authorization {
-	authorization, err := fixtureauth.New(e.Root)
-	if err != nil {
-		return nil
-	}
-	return authorization
+// B1): constructed on demand from Root. A refused construction (leaked
+// fixture in a non-fake checkout) returns the ERROR — the caller
+// refuses its decision, never normalizes to kernel-only (B1 critique
+// finding 4).
+func (e *Engine) fixtures() (*fixtureauth.Authorization, error) {
+	return fixtureauth.New(e.Root)
 }
 
 // anchor writes the state's anchor commit through the configured anchorer.

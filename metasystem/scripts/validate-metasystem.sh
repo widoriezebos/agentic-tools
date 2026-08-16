@@ -480,6 +480,10 @@ PY
 # population (agnosticism B1, ric critique r4-4: independent of the
 # static enforcement map; fake's standalone shape is excluded by
 # declaration, not by name).
+common_lifecycle_population=$("$root/bin/metasystem" runtime list --with-common-lifecycle) \
+  || { echo "the common-lifecycle population query refused" >&2; exit 1; }
+[[ -n "$common_lifecycle_population" ]] \
+  || { echo "the common-lifecycle population is empty" >&2; exit 1; }
 while IFS= read -r runtime; do
   adapter="scripts/agents/adapters/$runtime.sh"
   [[ -f "$adapter" ]] || { echo "missing $runtime runtime adapter: $adapter" >&2; exit 1; }
@@ -494,19 +498,28 @@ while IFS= read -r runtime; do
     || { echo "$runtime adapter does not bind its snapshot runtime identity" >&2; exit 1; }
   grep -Fq "write_capability_snapshot $runtime \"\$version\" \"\$hash\"" "$adapter" \
     || { echo "$runtime adapter does not write its named capability snapshot" >&2; exit 1; }
-done < <("$root/bin/metasystem" runtime list --with-common-lifecycle)
+done <<<"$common_lifecycle_population"
 # EVERY declared adapter — fake included — proves its contract through
 # the real snapshot construction path with dummy facts (ric critique
 # r4-9's deterministic-construction resolution; no schema field, no
 # live cutover).
+adapter_population=$("$root/bin/metasystem" runtime list --with-adapter) \
+  || { echo "the adapter population query refused" >&2; exit 1; }
+[[ -n "$adapter_population" ]] \
+  || { echo "the adapter population is empty" >&2; exit 1; }
 while IFS= read -r runtime; do
   contract_json=$("scripts/agents/adapters/$runtime.sh" contract)
   contract_runtime=$("$root/bin/metasystem" json get --value "$contract_json" --field runtime)
   [[ "$contract_runtime" == "$runtime" ]] \
     || { echo "$runtime adapter contract snapshot carries wrong identity: $contract_runtime" >&2; exit 1; }
-  "$root/bin/metasystem" json get --value "$contract_json" --field envelopeEnforcement.writeRoots >/dev/null \
-    || { echo "$runtime adapter contract snapshot lacks the enforcement shape" >&2; exit 1; }
-done < <("$root/bin/metasystem" runtime list --with-adapter)
+  # The FULL production snapshot shape, not a fragment (finding 12):
+  # every required top-level member and the complete enforcement
+  # object must decode.
+  for contract_field in cliVersion configHash capabilities permissions envelopeEnforcement.writeRoots envelopeEnforcement.readRoots envelopeEnforcement.network; do
+    "$root/bin/metasystem" json get --value "$contract_json" --field "$contract_field" >/dev/null \
+      || { echo "$runtime adapter contract snapshot lacks $contract_field" >&2; exit 1; }
+  done
+done <<<"$adapter_population"
 # The envelope-enforcement compare is GENERIC (agnosticism B1, ric
 # critique r6-8): the registry's declared map and the adapter's
 # side-effect-free enforcement-map verb are both decoded and
@@ -515,6 +528,9 @@ done < <("$root/bin/metasystem" runtime list --with-adapter)
 # truth (O-9/O-10 in plans/devin-support.md, demonstrated 2026-08-08):
 # its declaration lives in internal/runtimes with that provenance, and
 # changing it back requires evidence that enforcement returned.
+enforcement_population=$("$root/bin/metasystem" runtime list --with-adapter) \
+  || { echo "the enforcement population query refused" >&2; exit 1; }
+enforcement_compared=0
 while IFS= read -r rt_name; do
   registry_map=$("$root/bin/metasystem" runtime enforcement-map "$rt_name" 2>/dev/null) || continue
   adapter_map=$("scripts/agents/adapters/$rt_name.sh" enforcement-map)
@@ -526,13 +542,28 @@ while IFS= read -r rt_name; do
   registry_network=$("$root/bin/metasystem" json get --value "$registry_map" --field network)
   [[ "$adapter_writeroots" == "$registry_writeroots" && "$adapter_readroots" == "$registry_readroots" && "$adapter_network" == "$registry_network" ]] \
     || { echo "$rt_name adapter envelope enforcement drifted from the registry declaration" >&2; exit 1; }
-done < <("$root/bin/metasystem" runtime list --with-adapter)
-for runtime in claude codex fake; do
+  # Field-count equality kills extra members (finding 11): three keys
+  # on both sides, no fourth passenger.
+  adapter_keys=$(printf '%s' "$adapter_map" | tr -cd ':' | wc -c | tr -d ' ')
+  registry_keys=$(printf '%s' "$registry_map" | tr -cd ':' | wc -c | tr -d ' ')
+  [[ "$adapter_keys" == 3 && "$registry_keys" == 3 ]] \
+    || { echo "$rt_name enforcement map carries unexpected members (adapter=$adapter_keys registry=$registry_keys)" >&2; exit 1; }
+  enforcement_compared=$((enforcement_compared + 1))
+done <<<"$enforcement_population"
+(( enforcement_compared >= 3 )) \
+  || { echo "only $enforcement_compared static enforcement maps compared — the population went missing" >&2; exit 1; }
+# The host contract loop rides the DECLARED population (B1 critique
+# finding 10: the hardcoded three already omitted devin).
+host_population=$("$root/bin/metasystem" runtime list --with-host) \
+  || { echo "the host population query refused" >&2; exit 1; }
+[[ -n "$host_population" ]] \
+  || { echo "the host population is empty" >&2; exit 1; }
+while IFS= read -r runtime; do
   host="scripts/agents/hosts/$runtime.sh"
   [[ -x "$host" ]] || { echo "$runtime host adapter is missing or not executable: $host" >&2; exit 1; }
   grep -Fq 'start-turn' <<<"$($host --help 2>&1)" \
     || { echo "$runtime host adapter does not advertise start-turn" >&2; exit 1; }
-done
+done <<<"$host_population"
 # The capability snapshot naming contract is pinned BEHAVIORALLY:
 # TestSnapshotNameGrammar (internal/adapter) under the go gate, plus the
 # fake-probe sequence fixture below — never by grepping Go source text

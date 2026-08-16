@@ -266,7 +266,11 @@ func (e *Engine) custodian(pid, start int64, tag string) identity.Liveness {
 	if e.custodianFn != nil {
 		return e.custodianFn(pid, start, tag)
 	}
-	return identity.Custodian(pid, start, tag, e.fixtures().Identity())
+	authorization, err := e.fixtures()
+	if err != nil {
+		return identity.Unknown // leaked fixture authorizes nothing (finding 4)
+	}
+	return identity.Custodian(pid, start, tag, authorization.Identity())
 }
 
 // drainSurvivors snapshots the live set for the park ask: id, status, age,

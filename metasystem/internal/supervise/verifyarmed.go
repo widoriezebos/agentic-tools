@@ -46,10 +46,13 @@ func ArmedNow(agentsDir string, ownerPid, ownerStart int64, ownerTag string, int
 	// The fixture authority (agnosticism B1): root is two levels above
 	// the agents dir, the reserved-cap fence's own derivation; a refused
 	// construction refuses fixtures.
-	var probe identity.FixtureProbe
-	if authorization, err := fixtureauth.New(filepath.Dir(filepath.Dir(agentsDir))); err == nil {
-		probe = authorization.Identity()
+	authorization, authErr := fixtureauth.New(filepath.Dir(filepath.Dir(agentsDir)))
+	if authErr != nil {
+		// A leaked fixture is a refusal of the VERIFICATION, not a
+		// kernel-only fallback (B1 critique finding 4).
+		return false
 	}
+	probe := identity.FixtureProbe(authorization.Identity())
 	if !armedIdentityAlive(ownerPid, ownerStart, ownerTag, probe) {
 		return false
 	}

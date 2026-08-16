@@ -324,6 +324,21 @@ func auditGoalSystem(root string) []string {
 		violations = append(violations, "docs/project-adaptation.md must carry the goal-open convention")
 	}
 
+	// Class 14's positive audit (B1 critique finding 14): the named
+	// operational documents must carry registry-derived pointers, not
+	// hand-maintained universes.
+	for doc, marker := range map[string]string{
+		"docs/project-adaptation.md": "runtime registration",
+		"docs/orchestration.md":      "runtime\nlist",
+		"docs/glossary.md":           "runtime list",
+		"README.md":                  "runtime list",
+	} {
+		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(doc)))
+		if err != nil || !strings.Contains(strings.ReplaceAll(string(body), "\n", " "), strings.ReplaceAll(marker, "\n", " ")) {
+			violations = append(violations, doc+" must point at the runtime registry ("+strings.ReplaceAll(marker, "\n", " ")+")")
+		}
+	}
+
 	contractPath := filepath.Join(root, "docs", "design", "turn-verdict-delivery-contract.md")
 	contract, err := os.ReadFile(contractPath)
 	if err != nil {

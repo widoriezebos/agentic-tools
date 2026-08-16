@@ -256,12 +256,14 @@ func setupReaper(repo string) func() {
 // root-checked (agnosticism B1); a refused construction refuses
 // fixtures.
 func kernelCustodian(repo string) func(pid, start int64, tag string) identity.Liveness {
-	var probe identity.FixtureProbe
-	if authorization, err := fixtureauth.New(repo); err == nil {
-		probe = authorization.Identity()
+	authorization, err := fixtureauth.New(repo)
+	if err != nil {
+		// A leaked fixture makes every custody verdict Unknown — which
+		// authorizes nothing (B1 critique finding 4).
+		return func(int64, int64, string) identity.Liveness { return identity.Unknown }
 	}
 	return func(pid, start int64, tag string) identity.Liveness {
-		return identity.Custodian(pid, start, tag, probe)
+		return identity.Custodian(pid, start, tag, authorization.Identity())
 	}
 }
 

@@ -16,10 +16,8 @@ event=${2:-}
 [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
 case "$event" in start|stop|end) ;; *) exit 2 ;; esac
 
-payload=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX")
-trap 'rm -f "$payload"' EXIT
-cat >"$payload"
-
+# Executables resolve BEFORE any payload work (B1 critique finding 9:
+# a missing engine with an unusable TMPDIR must still exit 0 benign).
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 harness_root=$(cd "$script_dir/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
@@ -27,17 +25,27 @@ arm=$script_dir/arm-supervision.sh
 [[ -x "$ms" && -x "$arm" ]] || exit 0
 "$ms" runtime list | grep -Fxq "$runtime" || exit 2
 
+payload=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX")
+trap 'rm -f "$payload"' EXIT
+cat >"$payload"
+
 read_payload() {
   "$ms" json get --file "$payload" --field "$1" 2>/dev/null || true
 }
 
 cwd=$(read_payload cwd)
 if [[ -z "$cwd" ]]; then
-  session_env=$("$ms" runtime session-env "$runtime" 2>/dev/null) || session_env=""
-  if [[ -n "$session_env" && "$session_env" =~ ^[A-Z][A-Z0-9_]*$ && -n "${!session_env:-}" ]]; then
+  session_env_rc=0
+  session_env=$("$ms" runtime session-env "$runtime" 2>/dev/null) || session_env_rc=$?
+  if (( session_env_rc == 0 )) && [[ "$session_env" =~ ^[A-Z][A-Z0-9_]*$ && -n "${!session_env:-}" ]]; then
     cwd=${!session_env}
-  else
+  elif (( session_env_rc <= 1 )); then
+    # exit 1 is the DECLARED absent capability: fall back to PWD.
     cwd=$PWD
+  else
+    # An operational query failure must not run Stop decisions against
+    # a guessed cwd (finding 9): benign no-op.
+    exit 0
   fi
 fi
 repo=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0

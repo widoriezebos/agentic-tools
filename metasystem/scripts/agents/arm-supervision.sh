@@ -124,7 +124,7 @@ json_field() { # file, dotted field
 
 identity_alive() { # pid, start, optional tag
   local pid=$1 start=$2 tag=${3:-} command
-  "$ms" proc alive --pid "$pid" --start-time "$start" --root "$repo" >/dev/null 2>&1 || return 1
+  "$ms" proc alive --pid "$pid" --start-time "$start" --root "$harness_root" >/dev/null 2>&1 || return 1
   [[ -z "$tag" ]] && return 0
   # Through the engine's one identity source (script-fixtures-007/D47):
   # the raw ps read here bypassed the fixture table every other reader

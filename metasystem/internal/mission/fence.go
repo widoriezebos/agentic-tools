@@ -763,7 +763,11 @@ func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]a
 	if pid, ok := intValue(record["pid"]); ok && pid >= 1 {
 		start, _ := intValue(record["pidStartedAt"])
 		tag, _ := record["instanceTag"].(string)
-		switch custodianProver(pid, start, tag, fenceProbe(repo)) {
+		fenceFixtures, fenceErr := fixtureauth.New(repo)
+		if fenceErr != nil {
+			return usagePendingProof, nil, fmt.Sprintf("fixture authorization refused: %v", fenceErr)
+		}
+		switch custodianProver(pid, start, tag, fenceFixtures.Identity()) {
 		case identity.Dead:
 		case identity.Alive:
 			return usagePendingProof, nil, fmt.Sprintf("recorded custodian pid %d is still alive", pid)
@@ -854,14 +858,4 @@ func lockFileAt(lockPath string) (*fileLock, error) {
 		return nil, err
 	}
 	return &fileLock{f: f}, nil
-}
-
-// fenceProbe is the usage fence's fixture authority (agnosticism B1):
-// root-checked; a refused construction refuses fixtures.
-func fenceProbe(repo string) identity.FixtureProbe {
-	authorization, err := fixtureauth.New(repo)
-	if err != nil {
-		return nil
-	}
-	return authorization.Identity()
 }
