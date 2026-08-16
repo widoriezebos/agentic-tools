@@ -281,7 +281,12 @@ chmod +x "$target/bin/metasystem"
 # (goal-system GOAL-14: initialization is reconcile-only): the seeded
 # ledger is adopted as the first accepted state, leaving the
 # goals.md + goals-accepted.json pair standing together.
-"$target/bin/metasystem" goal reconcile --root "$target" --genesis-from "$root" >/dev/null \
+# The genesis authority root is where the calling session's main
+# announcements LIVE — runtime state, not git state. A fixture or
+# wrapper adopting from a sterile snapshot exports the live root;
+# everyone else authenticates against this source checkout.
+genesis_authority_root=${METASYSTEM_GENESIS_AUTHORITY_ROOT:-$root}
+"$target/bin/metasystem" goal reconcile --root "$target" --genesis-from "$genesis_authority_root" >/dev/null \
   || die 1 "goal baseline genesis failed in the target"
 
 mkdir -p "$target/artifacts"
