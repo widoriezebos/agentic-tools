@@ -156,3 +156,74 @@ func TestEnvelopeEnforcementPinned(t *testing.T) {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+// The C2 declaration surfaces: filters, vectors, collision roots —
+// derived relationally, with the validator's new rows exercised both
+// ways.
+func TestDeclaredSurfaces(t *testing.T) {
+	for _, name := range WithAdapter() {
+		d, _ := Lookup(name)
+		if !d.HasAdapter {
+			t.Fatalf("with-adapter leaked %s", name)
+		}
+		if d.SignatureVectors.Positive == "" || d.SignatureVectors.Lookalike == "" {
+			t.Fatalf("%s lacks signature vectors", name)
+		}
+	}
+	for _, name := range WithHost() {
+		d, _ := Lookup(name)
+		if !d.HasHostLauncher {
+			t.Fatalf("with-host leaked %s", name)
+		}
+	}
+	commonLifecycle := WithCommonLifecycle()
+	for _, name := range commonLifecycle {
+		if name == "fake" {
+			t.Fatal("fake claimed the common lifecycle shape")
+		}
+	}
+	if len(commonLifecycle) == 0 {
+		t.Fatal("no common-lifecycle adapters declared")
+	}
+	roots := CollisionRootsAll()
+	if len(roots) == 0 {
+		t.Fatal("no collision roots contributed")
+	}
+	for i, root := range roots {
+		if root[0] != '.' {
+			t.Fatalf("collision root %q not dot-prefixed", root)
+		}
+		if i > 0 && roots[i-1] >= root {
+			t.Fatalf("collision roots not sorted-unique: %v", roots)
+		}
+	}
+	// Today's exact full population is a CURRENT-declaration fact the
+	// B2 installer relies on; pinned here with that provenance.
+	if len(roots) != 3 || roots[0] != ".agents" || roots[1] != ".claude" || roots[2] != ".devin" {
+		t.Fatalf("collision-root population drifted: %v", roots)
+	}
+}
+
+// The validator rejects vectorless adapters and hostile collision
+// roots.
+func TestValidateC2Rows(t *testing.T) {
+	saved := declarations
+	defer func() { declarations = saved }()
+	declarations = []Declaration{
+		{Name: "noveec", TailoringPriority: 1, HasAdapter: true, AdoptionDefault: true, Adoptable: true,
+			InstructionFile: "AGENTS.md",
+			CollisionRoots:  []string{"noleadingdot", ".ok/../escape"}},
+	}
+	problems := Validate()
+	for _, want := range []string{"requires signature vectors", "clean dot-prefixed"} {
+		found := false
+		for _, p := range problems {
+			if contains(p, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("validator missed %q in %v", want, problems)
+		}
+	}
+}
