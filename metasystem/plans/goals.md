@@ -2,7 +2,7 @@
 
 ## Current goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
-- Next step: Prototype against devin acp per plans/backlog-notes.md item 18; design loop before build.
+- Next step: READY, blocked on the human-sealed benchmark (D88): delegate path proven, provisioning unblocked, VM+Devin ready. Run bm-2d (run-cohort.sh, VM-only, stops for seal). Do not flip without it (D82).
 
 ## Queued goal: narrator — A plain-English story of what happened, why it happened, and who did it
 - Origin: main

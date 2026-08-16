@@ -2548,3 +2548,45 @@ convergence — would ship a duplicate of the watchdog, the opposite
 of the clean system the program is for. The design record carries
 the full target shape for when the dependency lands
 (plans/process-steward-design.md).
+
+## D88 — 2026-08-16: provisioning is unblocked; the ACP flip is ready but its benchmark gate needs a human seal I will not forge
+
+Two findings settle the current goal's remaining path. First,
+provision-genesis-authority is RESOLVED: f4c4992 recorded
+provisioning as down (virgin-target goal genesis refused), but
+1654c85 then fixed exactly that — authority gained a genesis mode
+admitting the human or a main agent (never machinery) and genesis
+classification runs against the SOURCE root the adoption came from
+(adopt --genesis-from). benchmark/validate-kit.sh now passes on the
+Mac ("provisioning bridge passed", exit 0), confirming the virgin-
+target genesis path works. This is SEPARATE from the parked
+genesis-authority-DESIGN (D86), which is the unforgeable-hardening
+impossibility, not the functional provisioning fix.
+
+Second, the D82 flip gate cannot be crossed autonomously — by
+design, not by limitation. The ACP delegate path is already proven
+live in the VM (e1ce759). The remaining gate is a successful
+acceptance benchmark with ACP on. But benchmark/run-cohort.sh
+deliberately STOPS at a human seal/sign boundary after provisioning
+("each invocation stops at one human seal/sign boundary; after the
+contract has an Approval line, invoke --resume"), reflecting the
+human's own rule that a provisioned trial waits for their signature
+before the mission spends. bm-2d is moreover a 12-wall-clock-hour
+full-mission run whose score is expected poor. I will not (a) flip
+on the live proof alone — that disrespects D82's explicit "run a
+benchmark, then flip" — nor (b) forge past the seal boundary, nor
+(c) start a 12h Devin cohort I cannot verify to completion before
+the human returns.
+
+Decision: the flip is READY and PARKED on the human-sealed
+benchmark. Everything the benchmark needs is confirmed present: VM
+up, Devin authed in the VM (3000.4.25), provisioning green. When the
+human is present, the one command is
+`benchmark/run-cohort.sh --spec bm-2d --repetitions 1` (VM only,
+machineConstraint=linux), which provisions and stops for their seal;
+on approval, the printed --resume runs it. The alternative NOT taken
+— provisioning a cohort now so it sits awaiting approval — was
+declined because an unapproved provisioned target is wasted disk and
+the seal may never come. provision-genesis-authority should be
+marked done when the human confirms; I left it queued rather than
+churn the current-goal pointer.
