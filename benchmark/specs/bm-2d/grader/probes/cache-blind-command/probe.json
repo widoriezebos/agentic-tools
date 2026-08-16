@@ -1,0 +1,6 @@
+{
+  "name": "cache-blind-command",
+  "target": "cache_correctness",
+  "mustNotDisturb": ["determinism", "failure_propagation", "format_agreement"],
+  "flaw": "The successful-cache signature deliberately omits the task command string."
+}

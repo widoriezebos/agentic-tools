@@ -48,6 +48,10 @@
 - Origin: main
 - Next step: PARKED for Wido's ruling: implementation-first behind fixtures, a third prose budget, or descope. Seeds: plans/ric-critique-r1..r6.
 
+## Queued goal: provision-genesis-authority — A virgin adopted target's goal-baseline genesis works again: authority admits genesis where no lease exists yet
+- Origin: main
+- Next step: Reproduce via benchmark/validate-kit.sh (BM-1 provisioning fails at adopt.sh:285); decide the authority rule for rootless genesis; gates the D82/D83 acceptance benchmarks.
+
 ## Parked goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main
 - Parked because: Yields the current slot to the human-approved acp-transport implementation (D81); design held at the budget-one boundary, r3 verdict will be folded when it lands

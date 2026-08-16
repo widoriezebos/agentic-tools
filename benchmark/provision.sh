@@ -208,6 +208,21 @@ host = object_at("roster", "host")
 delegates = object_at("roster", "delegates")
 environment = object_at("environment")
 
+# A spec may pin itself to one operating system (machineConstraint.os);
+# the devin acceptance probes are linux-vm-only by the human's D83
+# ruling, and the refusal belongs HERE so no operator habit can start
+# an untrusted-orchestrator run on the wrong machine.
+constraint = value.get("machineConstraint")
+if constraint is not None:
+    import platform
+    wanted = constraint.get("os", "")
+    if not isinstance(wanted, str) or not wanted:
+        refuse("machineConstraint.os must be a non-empty string when machineConstraint is present")
+    running = platform.system().lower()
+    if running != wanted:
+        reason = constraint.get("reason", "")
+        refuse(f"this spec is constrained to os={wanted} and refuses to provision on {running}: {reason}")
+
 for mapping, key, label in (
     (gate, "command", "missionContract.gate.command"),
     (gate, "metric", "missionContract.gate.metric"),

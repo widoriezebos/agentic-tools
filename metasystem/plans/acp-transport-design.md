@@ -409,13 +409,20 @@ marker gating fixtures (a legacy record beside a sealed-v1 record:
 external writers apply the right rules to each).
 
 P3: devin's declarations + adapter integration behind a conf
-flag. The acceptance gate is D82, human-ratified: a FULLY
-SUCCESSFUL benchmark run on BOTH hosts — the Mac and the VM —
-with the flag on; then the switch flips, ACP becomes devin's
-default, and the posture is FIX FORWARD (ACP problems are fixed
-on ACP; the legacy path is not a devin escape hatch after the
-flip). Containment flips need behavioral proof; admission states
-advance only on P1-shaped evidence.
+flag. The acceptance picture is human-ratified (D82 + D83), four
+benchmarks: (1) the Mac and (2) the VM with the flag on — both
+FULLY SUCCESSFUL gates the flip, after which ACP is devin's
+default and the posture is FIX FORWARD (ACP problems are fixed on
+ACP; the legacy path is not a devin escape hatch). (3) bm-2d:
+devin orchestrating devin, and (4) bm-2dc: devin orchestrating
+claude opus-5 delegates — both VM-ONLY (the provisioner enforces
+machineConstraint os=linux), both devin-testing-only (never a
+standing cadence), both orchestration-health probes whose graded
+score is not the acceptance question. Prerequisite: the
+provision-genesis-authority goal (virgin-target goal genesis is
+currently refused by the authority check; found validating the
+D83 kit changes). Containment flips need behavioral proof;
+admission states advance only on P1-shaped evidence.
 
 ## Blast radius
 

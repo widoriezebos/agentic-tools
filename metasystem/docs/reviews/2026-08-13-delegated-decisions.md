@@ -2402,3 +2402,36 @@ path stops being invoked for devin jobs; the machinery's survival
 no longer blocks that retirement, and any future runtime adopting
 the legacy adapter shape gets its own waiver decision on its own
 evidence.
+
+## D83 — 2026-08-16: the human adds two devin-acceptance benchmarks — VM-only, devin-testing-only
+
+Two rulings in one conversation, verbatim intent. Third benchmark:
+"I want a third benchmark which we run only inside the virtual
+machine because I don't trust Devin on the Mac. The third
+benchmark should be Devin only. … Devin as the orchestrator and
+Devin as the delegate. That third benchmark might not succeed
+because the model is quite bad. However, what we can test is
+whether Devin as an orchestrator just works. And that's the
+important point here." Fourth: "Devin as the orchestrator and
+Claude as the implementer using opus 5 and also use Claude for
+the critique on opus 5. So only the orchestrator is Devin, the
+rest is Claude in opus 5. … I don't want them to run every time
+so these ones we should only use when testing Devin specifically.
+And both should run only inside the virtual machine." Shipped as
+kit specs bm-2d (devin host + devin delegates, swe-1-7) and
+bm-2dc (devin host + claude opus-5 for every delegate role), both
+carrying machineConstraint os=linux — ENFORCED by the provisioner,
+which now refuses a constrained spec on any other OS, so no
+operator habit can start an untrusted-orchestrator run on the Mac
+— and an acceptanceOnly marker recording that neither joins any
+standing cadence. Neither is comparison-eligible: they are
+orchestration-health probes (the graded score is expected to be
+poor and is not the acceptance question). The D82 flip gate stays
+benchmarks one and two; these two run alongside when the devin
+adapter is the thing under test. Discovered while validating the
+kit changes: provisioning is BROKEN independently of this work —
+goal reconcile in a virgin target refuses for want of an
+authenticated lease holder (a goal-genesis × authority-hardening
+regression, present on the pristine kit too). That gates every
+acceptance benchmark, so it is opened as the queued goal
+provision-genesis-authority rather than patched at midnight.
