@@ -1,9 +1,9 @@
 # Runtime integration contracts (agnosticism phase B)
 
-- Status: DRAFT r4 — critique r3 folded (14 findings: 5 structural, 9 mechanical; 6 r2 folds verified resolved); awaiting critique r4 (budget 2 opens; the r3 findings are its declared worklist)
+- Status: DRAFT r5 — critique r4 folded (10 findings: 5 structural, 5 mechanical; 11 r3 folds verified resolved); awaiting critique r5
 - Goal: runtime-integration-contracts
-- Next step: Fold the critique verdict when run ric-critique-r4 concludes; implement only after convergence.
-- In flight right now: run ric-critique-r4 (codex xhigh critique; watch it with: bin/metasystem run watch --id ric-critique-r4 --root .)
+- Next step: Fold the critique verdict when run ric-critique-r5 concludes; implement only after convergence.
+- In flight right now: run ric-critique-r5 (codex xhigh critique; watch it with: bin/metasystem run watch --id ric-critique-r5 --root .)
 
 Scope (D74): the three subdomains the six-round agnosticism loop left
 structurally contested, moved here WHOLE with their critique history
@@ -75,7 +75,14 @@ through `runtime registration <name>`:
     skill (a template-required profile whose source file is missing
     FAILS; zero rows are valid only when there are no staged skills
     or the source is template-optional); `mode` bytes are exactly
-    `link` | `copy` | `in-place`
+    `link` | `copy` | `in-place`. `in-place` is a
+    VALIDATION/REFERENCE-ONLY alias to an already-installed
+    core-payload output (critique r4-3: codex's agents/openai.yaml
+    ships WITH the payload, adopt.sh:247, and codex's arm copies
+    nothing, adopt.sh:334): it carries requiredness and validation
+    but NO Apply, NO runtime collision output, and no second
+    writer — core collision handling keeps ownership of skills/,
+    and the collision-root proof skips reference-only rows
   - installer {handlerId, source, destination} — the PERMANENT escape
     arm (critique r1-2): a stable handler identifier resolved in the
     `internal/install` typed table; new install behaviors add a
@@ -99,22 +106,27 @@ through `runtime registration <name>`:
   link (tree link mode — exact-target enforcement is a HARDENING NOT
   TAKEN here; today's suite accepts any non-dangling link,
   validate-metasystem.sh:568,573; critique r1-11),
-  structural-hook-subset (TEMPLATE-ONLY, as today:
-  validate-metasystem.sh:1387 checks live hooks only in the template
-  tree, and codex/devin declare no self-check marker),
   presence-only (adopted enforcement destinations — today's adopted
   validation does NOT drift-check live hook files, critique r2-7;
   any strengthening is a separately ratified hardening), and
-  in-place-source (codex profiles). Declaration validation rejects
-  unsupported operation/policy combinations.
+  in-place-source (codex profiles). Template live-hook verification
+  is NOT a row policy (critique r4-4: one scalar policy cannot be
+  structural-subset in the template and presence-only adopted, and
+  the template check reads the PARENT repo's live settings through
+  explicit paths, validate-metasystem.sh:1387): it stays owned by
+  LiveSelfCheck + `hooks check`; the enforcement row contributes
+  only its source reference and its ADOPTED policy. Declaration
+  validation rejects unsupported operation/policy combinations.
 - (runtime, artifactRole) is unique; a row reference by role must
   resolve to a row of the right operation; the filename form of
   shippedEnforcementConfig is REMOVED once rows land.
 - Installation plans by EXPANDED CONCRETE DESTINATION: preserve every
   (runtime, id) alias, join requiredness componentwise to the
   stricter state on compatible overlaps — compatibility requires
-  identical operation, source, payload, mode, VALIDATION POLICY, and
-  (for installer rows) handler id (critique r2-6) — execute each
+  identical operation, source, payload, mode, VALIDATION POLICY,
+  COLLISION CLASS, UNCOVERED-EXCEPTION status, and (for installer
+  rows) handler id (critiques r2-6, r4-5 — conflicting security
+  metadata refuses) — execute each
   compatible output once, refuse incompatible overlaps. The
   requiredness orders are pinned: required > source-conditioned >
   optional (adoptedDestination) and required > optional
@@ -132,7 +144,10 @@ through `runtime registration <name>`:
   CLASS (critique r3-3): instruction-bearing | plain, TOTAL over
   built-in operations (tree and skill-profiles outputs are
   instruction-bearing; copy-file/json-strip-key declare per row;
-  installer handlers declare it in their collision metadata).
+  installer rows DERIVE it from the handler table's collision
+  metadata — one owner, and the registration encoder consumes the
+  derived value so row and handler can never disagree, critique
+  r4-5).
   Declaration validation PROVES every instruction-bearing expanded
   destination lies beneath a contributed collision root; the
   exception is a BOOLEAN row field `uncoveredException` (wire column,
@@ -166,25 +181,41 @@ through `runtime registration <name>`:
   dir, adopt.sh:139); the row's own source/destination expressions
   bind against those two roots with containment checks (source under
   staged, destination under target). The unit of planning is the
-  CONCRETE OUTPUT, not the row (critique r3-2): installation first
-  builds one canonical concrete-output plan (every row expanded),
-  prepares EVERY output (read-only; stdout `ready <destination>` per
-  output) before the FIRST target write anywhere — including the
-  core payload, whose apply order is pinned
-  core-payload-then-runtime-outputs, matching today's
-  payload-before-registration sequence (adopt.sh:247,293). apply
+  CONCRETE OUTPUT, not the row (critique r3-2), and the PLAN has an
+  executable owner (critique r4-2): `internal/install` builds ONE
+  immutable plan over the selected runtimes' rows PLUS the explicit
+  core outputs — the payload allowlist and the FINAL ENGINE, a
+  distinct core output built with go-build.sh's exact bytes and
+  stamp, prepared before mutation and atomically installed at
+  R/bin/metasystem (critique r4-6: the query binary is temporary
+  and never ships) — exposed as `metasystem install
+  plan|prepare|apply --root R --staged S --runtimes LIST`; the
+  per-row invocation is the handler-level tool those verbs drive.
+  Before the first target write, install persists an INCOMPLETE
+  record {sha, selection, mode, planDigest} at the target; a rerun
+  that finds it recognizes and idempotently RESUMES that exact plan
+  (digest mismatch refuses with the pinned manual recovery: remove
+  the incomplete record and its listed installed outputs, rerun).
+  The COMPLETED adoption marker is written atomically LAST — today
+  the SHA marker lands before runtime outputs (adopt.sh:291), the
+  exact false-healthy hole this closes. prepare runs for EVERY
+  planned output before the first write; apply order is pinned
+  core-payload-then-runtime-outputs (adopt.sh:247,293). apply
   stdout: `installed|unchanged <destination>` per output (idempotent
   by content compare; each output stage-and-renames individually).
   Exit codes: 0 ok, 1 handler refusal, 2 usage, 3 unknown (runtime,
   row, or handler). NO ROLLBACK, at output grain: a failure stops
-  the remainder loudly, leaves earlier OUTPUTS installed (including
-  earlier outputs of the same expanded row), removes its own staging
-  residue, and the recovery path is the incomplete-same-SHA refusal
-  plus rerun — stated, tested. A pinned VALIDATE phase exists too
-  (critique r3-11): `metasystem install validate --root R --runtime
-  RT` walks every selected row's Validate with the row's policy,
-  one line `ok|drift <destination>` per output, exit 0 clean / 1
-  drift / 2 usage — the ONE aggregate validator the suite calls. The `internal/install` table rejects
+  the remainder loudly, leaves earlier OUTPUTS installed, removes
+  its own staging residue, and recovery is the RESUME path above. A pinned VALIDATE phase exists too
+  (critique r3-11, r4-10): `metasystem install validate --root R
+  --runtime RT` — adopted validation resolves BOTH canonical source
+  and destination below R (the installed payload IS the source of
+  truth; no staged root exists at validation time). One line
+  `ok|drift <destination>` per output; exits 0 clean / 1 drift /
+  2 usage / 3 unknown declaration-or-handler / 4 operational
+  failure (I/O and invariant errors are never drift; on unexpected
+  failure the partial `ok` lines stand and the exit code is
+  authoritative) — the ONE aggregate validator the suite calls. The `internal/install` table rejects
   duplicate handler ids and exposes lookup/list views joined by the
   conformance test.
 - Bootstrap and recognition order (critique r1-10, r2-2) — the
@@ -257,19 +288,29 @@ through `runtime registration <name>`:
     fixture-mode-only publications under the same authorization
   - fixture-backed custody in drain decisions (drain.go:262) and
     usage-derivation custody proofs (fence.go:746)
-  The probe is not ONE interface (critique r3-1: a broad interface
-  hands every consumer groupOwnership, which authorizes real
-  signals): fixtureauth exposes SEPARATE minimal capability values —
-  IdentityProbe, ProcessProbe (command lookup + group ownership,
-  granted only to the runner's signal path), AncestorProbe,
-  MissionProcessProbe, and PublicationGrant (the runner's fixture
-  WRITES, proc.go:102, get their own grant, never an implication) —
-  each constructed only by fixtureauth's root-checked factory. The
-  enumeration also includes METASYSTEM_CENSUS_PROCESS_FILE
-  (census.go:41, supervise_watchercfg.go:45, census/run.go:355): the
-  process-table fixture source is selected and parsed under the same
-  authorization. internal/missionrunner and internal/mission join
-  the blast radius.
+  The probe is not ONE interface (critique r3-1, r4-1): fixtureauth
+  exposes SEPARATE minimal capability values, each constructed only
+  by its root-checked factory, each named with its construction and
+  recipient call sites —
+  - IdentityProbe (identity reads: census verbs, lease classify,
+    custodian)
+  - CommandProbe (fixture command lookup: proc.go:32, consumed by
+    host-start verification, host.go:301)
+  - GroupOwnershipGrant (proc.go:76 — the SIGNAL-authorizing
+    authority, host.go:91; granted ONLY to the runner's signal path
+    and never bundled with command lookup)
+  - AncestorProbe (ancestor_production.go:54, keeps the
+    runtime=="fake" guard)
+  - MissionProcessProbe (contract.go:1375, keeps the
+    kernel-argv-first fallback order)
+  - PublicationGrant (the runner's fixture WRITES, proc.go:102)
+  - ProcessTableProbe (METASYSTEM_CENSUS_PROCESS_FILE selection and
+    parsing: census.go:41, supervise_watchercfg.go:45,
+    census/run.go:355)
+  Tests per authority: fake-positive AND non-fake/unreadable-conf
+  refusal for each, including proof an unauthorized group is never
+  signalled and an unauthorized fixture is never written.
+  internal/missionrunner and internal/mission join the blast radius.
 - CLI transport: fixture-capable verbs reconstruct the authorization
   from their canonical --root. `proc alive` gains --root; EVERY
   caller migrates in the same change (critique r1-14):
@@ -306,8 +347,11 @@ through `runtime registration <name>`:
   its positive process-name vector and a lookalike negative (the
   facts S4-7 hardcodes today, supervision-fixtures.sh:325); the
   fixture iterates `runtime list --with-adapter` consuming declared
-  vectors, with no shared runtime branch and no fake special-case
-  (fake's vectors are declarations like any other). The explicit replacements: required
+  vectors via the pinned transport `runtime signature-vectors
+  <runtime>` — one canonical-JSON line {"positive":...,
+  "lookalike":...}, trailing newline, exits 0 ok / 1 undeclared /
+  2 usage (critique r4-7) — with no shared runtime branch and no
+  fake special-case. The explicit replacements: required
   enforcement/filter assets (validate-metasystem.sh:306,379),
   per-host syntax checks (:433), host contract rows (:511). The
   adapter CONTRACT rows (:479) do NOT use --with-adapter blindly
@@ -318,13 +362,21 @@ through `runtime registration <name>`:
   gains an explicit `commonLifecycleAdapter` capability flag
   (claude, codex, devin today; fake deliberately not, fake.sh:30);
   the common-initializer/writer source-shape assertions iterate that
-  flag's population. The remaining universal checks are OFFLINE
+  flag's population via the pinned view `runtime list
+  --with-common-lifecycle` (same one-name-per-line framing and
+  ordering as the other list filters; fake excluded by declaration;
+  filters do not combine — critique r4-8). The remaining universal checks are OFFLINE
   static assertions every adapter can satisfy (critique r3-8: real
   probes need installed providers, validate-metasystem.sh:409):
   each adapter gains a no-auth, no-provider, side-effect-free
   `<adapter>.sh contract` verb emitting one canonical JSON line
-  {runtime, snapshotSchema: v1} that the suite decodes — the
-  decoded-all-adapters assertion rides that verb, not live probes.
+  {runtime, snapshotSchema} — and the schema value is REAL
+  (critique r4-9): production snapshot construction gains one
+  shared schema constant written into every snapshot, the selector
+  rejects missing/unknown versions, and the contract verb reads
+  that same constant, so the verb cannot advertise a schema its
+  probe does not write. The decoded-all-adapters assertion rides
+  that verb, not live probes.
 - supervision-hook.sh contract (critique r1-9, r2-8) — the
   UNAVOIDABLE precedence, pinned (critique r3-7): (1) shell-owned
   syntax refusals — the event name AND the runtime argument's
