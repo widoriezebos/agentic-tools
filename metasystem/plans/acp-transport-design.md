@@ -42,19 +42,27 @@
   - RESOLVED: provision-genesis-authority (1654c85's genesis-mode
     fix; validate-kit.sh green). devin-in-the-guest: CONFIRMED
     (Devin 3000.4.25 authed in the VM; the guest is up).
-  - UNBLOCKED ENGINEERING (no human needed, sequenced next): the
-    supervise_acp shell fixture, and the snapshot identity surfaces
+  - FIX-FORWARD HARDENING, not a flip blocker: the supervise_acp
+    shell fixture, and the snapshot identity surfaces
     (single-transport snapshots, protocol/schema pins in selection,
     the (runtime, transport) admission evidence — P3 critique F4).
-    These are the next build on this goal after the disk-hygiene
-    worktree-observer slice lands.
-  - WAITING ON THE HUMAN (D88, cannot be crossed autonomously): the
-    D82/D83 acceptance benchmarks. benchmark/run-cohort.sh stops at
-    a human seal/sign boundary by design, and bm-2d is a 12h
-    full-mission run; the flip is not made on the already-proven
-    live delegate path (e1ce759) alone, nor by forging the seal.
-    On a human-sealed green benchmark the flip is the one-line
+    The delegate path runs live over ACP WITHOUT these (e1ce759),
+    so under D82's flip-and-fix-forward they follow the flip; the
+    design's earlier "flip prerequisite" label is superseded by the
+    live proof plus D82.
+  - THE ONE GATE, waiting on the human (D88): the D82/D83 acceptance
+    benchmark. benchmark/run-cohort.sh stops at a human seal/sign
+    boundary by design, and bm-2d is a 12h full-mission run; the
+    flip is not made on the live proof alone nor by forging the
+    seal. On a human-sealed green benchmark the flip is the one-line
     dispatch.transport.devin=acp default, fix-forward.
+- Waiting on the human: the D82/D83 acceptance benchmark is the sole
+  gate to the flip and stops at a human seal by design (D88);
+  provisioning and devin-in-guest are confirmed ready. Run
+  benchmark/run-cohort.sh --spec bm-2d (VM-only) when present; it
+  provisions and stops for the seal, then the printed --resume runs
+  it. The flip and its fix-forward hardening follow a green sealed
+  run.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more

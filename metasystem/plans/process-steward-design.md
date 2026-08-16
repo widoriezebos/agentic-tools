@@ -1,25 +1,25 @@
 # The process steward (backlog item 21)
 
-- Status: PAUSED on a sequencing truth (D87). r1 (plans/ps-critique-r1.md,
-  7 findings) forced the rescope to a read-only aggregator; r2
+- Status: PARKED on a sequencing truth (D87), no actionable step —
+  do NOT pick this up as open work. r1 (plans/ps-critique-r1.md, 7
+  findings) forced the rescope to a read-only aggregator; r2
   (plans/ps-critique-r2.md, 8 findings) established that the only
   currently-buildable invariant duplicates the Stop watchdog and
   every valuable invariant waits on owner-boundary instrumentation.
-  Not converged — blocked on a dependency.
-- Goal: process-steward (blocked; resequenced behind the janitor
-  namespace-orphan verdict from disk-hygiene, D87)
-- Next step: BLOCKED, not actionable now — do not pick this up as
-  open work. It waits on a typed verdict about a currently-UNWATCHED
-  invariant that no owner emits yet. The cheapest candidate — a
-  "finished job left a live process" orphan verdict — turns out to
-  need process-GROUP death detection (custody-list death is not
-  group death; a reverted worktree-observer attempt proved this,
-  plans/wt-code-critique-r1.md, D89), so it is NOT cheap and is
-  itself unbuilt. The full first slice also needs the incident
-  record, Stop-precedence, and attestation-freshness contracts named
-  below. Resume only when a sound owner-boundary verdict exists;
-  then build the aggregator + those contracts once, against it. Do
-  NOT build the supervision-liveness duplicate.
+  UNBLOCK CONDITION (not the human — another goal's work): a sound
+  typed verdict about a currently-UNWATCHED invariant must exist
+  first. The cheapest candidate — a "finished job left a live
+  process" orphan verdict — turns out to need process-GROUP death
+  detection (custody-list death is not group death; a reverted
+  worktree-observer attempt proved this, plans/wt-code-critique-r1.md,
+  D89), so it is NOT cheap and is itself unbuilt. The full first
+  slice also needs the incident record, Stop-precedence, and
+  attestation-freshness contracts named below. When that verdict
+  exists, build the aggregator + those contracts once, against it;
+  never build the supervision-liveness duplicate.
+- Goal: process-steward (parked in the goal ledger; resequenced
+  behind the sound owner-boundary orphan verdict, D87)
+- Next step: none.
 
 ## The human's mandate (2026-08-16, verbatim intent)
 
