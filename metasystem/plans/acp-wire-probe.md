@@ -248,3 +248,41 @@ Remaining P1 items after step E (smart mode + out-of-workspace
 write, running now): session/cancel behavior (Q6), legacy→ACP and
 ACP→legacy bridges (Q2 rest), ATIF export in ACP mode (Q5 rest) —
 capturable during P2 as fixtures need them.
+
+---
+
+# P1 step E (2026-08-16): smart mode writes OUTSIDE the workspace, no questions asked
+
+Fresh session `tall-territory`, `session/set_mode` → `smart`
+("Auto-approve actions the model judges safe"), prompt: write
+/tmp/acp-probe-escape.txt — deliberately OUTSIDE the session cwd.
+
+## Facts established
+
+1. **The file was created** (verified on disk, then removed), with
+   ZERO `session/request_permission` requests. Smart mode judged
+   an out-of-workspace write safe and auto-approved it.
+2. **No Devin ACP mode enforces path containment.** Across ask
+   (tools removed), accept-edits (auto-approve in-root), and
+   smart (auto-approve out-of-root), the permission-request
+   machinery never once engaged, and nothing gated on paths. The
+   design doctrine "admission is not containment" and Devin's
+   all-notEnforced containment declaration are now BEHAVIORALLY
+   PROVEN on the ACP path — writeRoots/readRoots stay notEnforced,
+   the residual waivers stay, and the envelope's real ACP lever is
+   the tools grade via mode selection ONLY.
+
+## P1 status after five steps
+
+Answered: Q1 (unauth works), Q2 partial (ACP→ACP load + replay),
+Q3 (stream shapes, stop reason, thought-vs-message), Q4 (the
+dialect: request_permission is idle in every tested mode;
+enforcement = mode selection; deny/allow legs captured
+behaviorally), Q5 partial (usage_update streams + per-turn
+PromptResponse.usage with cachedReadTokens), Q7 (config-option
+launch surface, set_mode verb), Q8 (EOF ignored, TERM honored,
+KILL backstop, late frames real), Q9 (newline-delimited JSON,
+large single frames).
+Remaining for P2-time capture: session/cancel (Q6), legacy→ACP
+and ACP→legacy bridges (Q2 rest), ATIF export in ACP mode
+(Q5 rest).
