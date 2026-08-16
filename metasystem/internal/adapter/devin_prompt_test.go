@@ -59,3 +59,72 @@ func TestDevinPromptBytes(t *testing.T) {
 		t.Fatal("absent schema accepted")
 	}
 }
+
+// Moved from claudecommand_test.go (placement audit, item 17):
+// devin's test lives in devin's test file.
+func TestDevinPermissionMode(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "job.json")
+	// Every readable record runs dangerous under the D61 human waiver;
+	// the graded modes turned refusals into non-delivery (D57).
+	os.WriteFile(record, []byte(`{"permissions":{"requested":{"writeRoots":[]}}}`), 0o644)
+	if mode, err := DevinPermissionMode(record); err != nil || mode != "dangerous" {
+		t.Fatalf("read-only role = (%s,%v)", mode, err)
+	}
+	os.WriteFile(record, []byte(`{"permissions":{"requested":{"writeRoots":["/ws"]}}}`), 0o644)
+	if mode, err := DevinPermissionMode(record); err != nil || mode != "dangerous" {
+		t.Fatalf("write role = (%s,%v)", mode, err)
+	}
+	if _, err := DevinPermissionMode(filepath.Join(dir, "absent.json")); err == nil {
+		t.Fatal("an unreadable record must refuse, never default open")
+	}
+}
+
+// Moved from claudecommand_test.go (placement audit, item 17).
+func TestDevinSettle(t *testing.T) {
+	dir := t.TempDir()
+	transcript := filepath.Join(dir, "t.json")
+	write := func(body string) {
+		if err := os.WriteFile(transcript, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	disagreement := filepath.Join(dir, "session-disagreement.txt")
+
+	write(`{"session_id":"sess-1","agent":{"model_name":"SWE-1.7"}}`)
+	model, certified, err := DevinSettle(transcript, "", "sess-1", dir, false)
+	if err != nil || !certified || model != "swe-1-7" {
+		t.Fatalf("agreeing settle = (%s,%v,%v)", model, certified, err)
+	}
+	model, certified, err = DevinSettle(transcript, "", "sess-OTHER", dir, false)
+	if err != nil || certified {
+		t.Fatalf("disagreement = (%s,%v,%v)", model, certified, err)
+	}
+	body, _ := os.ReadFile(disagreement)
+	if string(body) != "transcript session sess-1 disagrees with correlated session sess-OTHER\n" {
+		t.Fatalf("artifact = %q", body)
+	}
+	write(`{"agent":{"model_name":null}}`)
+	model, certified, err = DevinSettle(transcript, "", "sess-1", dir, false)
+	if err != nil || certified || model != "unobserved" {
+		t.Fatalf("nameless transcript = (%s,%v,%v)", model, certified, err)
+	}
+	body, _ = os.ReadFile(disagreement)
+	if string(body) != "correlated session sess-1 but the transcript names no session\n" {
+		t.Fatalf("artifact = %q", body)
+	}
+	if model, certified, err = DevinSettle(transcript, "", "", dir, false); err != nil || !certified {
+		t.Fatalf("nothing correlated settles = (%s,%v,%v)", model, certified, err)
+	}
+	if err := os.Remove(transcript); err != nil {
+		t.Fatal(err)
+	}
+	model, certified, err = DevinSettle(transcript, "", "sess-1", dir, true)
+	if err != nil || certified || model != "" {
+		t.Fatalf("repair without transcript = (%s,%v,%v)", model, certified, err)
+	}
+	body, _ = os.ReadFile(disagreement)
+	if string(body) != "repair produced no transcript; session and model are unconfirmable\n" {
+		t.Fatalf("artifact = %q", body)
+	}
+}

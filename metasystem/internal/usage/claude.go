@@ -6,10 +6,11 @@ package usage
 // already recognizes claude's field spellings — a claude round IS
 // partially recoverable and always was; this file states it).
 
-// The claude dead-round recoverer shares codex's event-stream walk:
-// both runtimes land a usage block in rounds/N/events.jsonl.
+// The claude dead-round recoverer rides the NEUTRAL event-stream
+// walk (usage.go): both runtimes land a usage block in
+// rounds/N/events.jsonl.
 func init() {
 	RegisterRecoverer("claude", func(ctx RecoveryContext) RecoveryOutcome {
-		return RecoveryOutcome{State: Recovered, Fields: CodexUsageValue(ctx.EventsPath), Source: ctx.EventsPath}
+		return RecoveryOutcome{State: Recovered, Fields: eventStreamUsageValue(ctx.EventsPath), Source: ctx.EventsPath}
 	})
 }

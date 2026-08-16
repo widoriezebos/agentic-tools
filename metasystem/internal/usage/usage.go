@@ -168,3 +168,27 @@ func sortedKeys(object map[string]any) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// eventStreamUsageValue derives typed usage from the last usage block
+// an events.jsonl stream reports — the RUNTIME-NEUTRAL parser both
+// claude and codex recoverers share (placement audit, item 17: the
+// shared code lives in the neutral file; each runtime's seam file
+// wraps or registers it under its own name). Field spellings vary
+// across builds, so each takes the first present spelling.
+func eventStreamUsageValue(eventsPath string) map[string]any {
+	var last map[string]any
+	for _, event := range jsonlObjects(eventsPath) {
+		if value, ok := event["usage"].(map[string]any); ok {
+			last = value
+		}
+	}
+	return map[string]any{
+		"availability":      "native",
+		"inputTokens":       firstPresent(last, "input_tokens", "inputTokens"),
+		"cachedInputTokens": firstPresent(last, "cached_input_tokens", "cachedInputTokens"),
+		"outputTokens":      firstPresent(last, "output_tokens", "outputTokens"),
+		"reasoningTokens":   firstPresent(last, "reasoning_output_tokens", "reasoning_tokens", "reasoningTokens"),
+		"cost":              nil,
+		"providerUnits":     nil,
+	}
+}

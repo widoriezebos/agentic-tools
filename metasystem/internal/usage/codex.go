@@ -12,21 +12,7 @@ package usage
 // null. Callers that must never write — the mission aggregator recovering a
 // killed round's spend from its dead event stream — read this value directly.
 func CodexUsageValue(eventsPath string) map[string]any {
-	var last map[string]any
-	for _, event := range jsonlObjects(eventsPath) {
-		if value, ok := event["usage"].(map[string]any); ok {
-			last = value
-		}
-	}
-	return map[string]any{
-		"availability":      "native",
-		"inputTokens":       firstPresent(last, "input_tokens", "inputTokens"),
-		"cachedInputTokens": firstPresent(last, "cached_input_tokens", "cachedInputTokens"),
-		"outputTokens":      firstPresent(last, "output_tokens", "outputTokens"),
-		"reasoningTokens":   firstPresent(last, "reasoning_output_tokens", "reasoning_tokens", "reasoningTokens"),
-		"cost":              nil,
-		"providerUnits":     nil,
-	}
+	return eventStreamUsageValue(eventsPath)
 }
 
 // The codex dead-round recoverer: the last usage block in the event
