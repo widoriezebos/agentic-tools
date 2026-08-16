@@ -52,6 +52,10 @@
 - Origin: main
 - Next step: Reproduce via benchmark/validate-kit.sh (BM-1 provisioning fails at adopt.sh:285); decide the authority rule for rootless genesis; gates the D82/D83 acceptance benchmarks.
 
+## Queued goal: genesis-authority-design — Genesis authorization that cannot be laundered: classification root not caller-controlled, or a capability minted by an authenticated holder
+- Origin: main
+- Next step: Design over the 3 holes in plans/genesis-authority-review.md; classification-against-caller-root is unsound — the fix is architectural.
+
 ## Parked goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main
 - Parked because: Yields the current slot to the human-approved acp-transport implementation (D81); design held at the budget-one boundary, r3 verdict will be folded when it lands
