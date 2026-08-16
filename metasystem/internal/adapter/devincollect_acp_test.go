@@ -91,3 +91,20 @@ func TestCollectACPSessionAndPresence(t *testing.T) {
 		t.Fatalf("presence must see the delivered candidate: %+v err %v", verdict, err)
 	}
 }
+
+// A thinned journal disqualifies delivery even with a perfect
+// candidate: the raw evidence is admittedly incomplete (P3
+// critique F8).
+func TestCollectACPJournalThinningRejects(t *testing.T) {
+	f := newCollectFixture(t)
+	candidate, _ := json.Marshal(string(f.validReturn))
+	f.params.ACPOutcomePath = f.acpOutcomeWith(t,
+		`{"row":"delivered","sessionId":"sess-1","stopReason":"end_turn","journalError":"disk full","candidate":`+string(candidate)+`}`)
+	verdict, err := DevinCollect(f.params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Delivered || len(verdict.Rejected) == 0 || !strings.Contains(verdict.Rejected[0], "journal thinned") {
+		t.Fatalf("%+v", verdict)
+	}
+}

@@ -74,3 +74,22 @@ func TestACPUsagePartialMembers(t *testing.T) {
 		t.Fatal("garbage outcome is mechanical")
 	}
 }
+
+// A thinned journal disqualifies native usage the same way (P3
+// critique F8): the number cannot be provably complete when the
+// raw evidence is not.
+func TestACPUsageJournalThinning(t *testing.T) {
+	dir := t.TempDir()
+	outcome := filepath.Join(dir, "outcome.json")
+	usagePath := filepath.Join(dir, "usage.json")
+	os.WriteFile(outcome, []byte(`{"journalError":"disk full","usage":{"inputTokens":5,"outputTokens":2}}`), 0o644)
+	if err := ACPUsage(usagePath, outcome); err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	body, _ := os.ReadFile(usagePath)
+	json.Unmarshal(body, &record)
+	if record["availability"] != "unavailable" {
+		t.Fatalf("thinned journal must ride unavailable: %v", record)
+	}
+}

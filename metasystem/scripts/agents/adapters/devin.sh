@@ -224,22 +224,40 @@ runtime_repair_turn() { # prompt file, output file
 }
 
 # The transport selector (D81/D82): metasystem.conf's
-# dispatch.transport.devin, default legacy. The flag is a ramp —
-# after the dual-host acceptance benchmarks flip it, ACP is the
-# default and the posture is fix forward.
+# dispatch.transport.devin. An ABSENT key is legitimately legacy
+# (the pre-flip default); an unreadable configuration or an
+# unrecognized value REFUSES — a broken config must never fail
+# open into D61's dangerous path (P3 critique F3). Prints legacy
+# or acp; nonzero is the refusal.
 devin_transport() {
-  "$root/scripts/metasystem-config.sh" get --key dispatch.transport.devin --default legacy 2>/dev/null \
-    || echo legacy
+  local value rc=0
+  value=$("$root/scripts/metasystem-config.sh" get --key dispatch.transport.devin --default legacy 2>>"${log:-/dev/null}") || rc=$?
+  if (( rc != 0 )); then
+    echo "transport-config-unreadable"
+    return 1
+  fi
+  case "$value" in
+    legacy|acp) echo "$value"; return 0 ;;
+  esac
+  echo "transport-config-invalid:$value"
+  return 1
 }
 
 # The ACP transport path: the script owns fifos, custody, and
 # killing; `acp turn` owns the wire (plans/acp-transport-design.md).
-# The session id arrives typed from the wire — no baseline listing,
-# no correlation polling — and delivery rides the collector's
-# EXCLUSIVE acp channel: an undelivered turn never falls through to
-# legacy scraping, and the legacy repair command is unreachable
-# from here (repair on ACP is the disabled-pre-claim case until the
-# second-tree machinery lands).
+# The session id surfaces MID-TURN through the session file so the
+# handshake is recorded inside the dispatcher's deadline (critique
+# F1); the client runs backgrounded under wait_for_cli's heartbeat
+# and deadline machinery with BOTH children registered (F2);
+# delivery rides the collector's EXCLUSIVE acp channel; the legacy
+# repair command is unreachable from here.
+record_acp_transport_pin() { # best-effort after handshake; the refusal guards enforce
+  local patch="$round_dir/transport-patch.json"
+  "$ms" adapter transport-patch --output "$patch" --transport acp >>"$log" 2>&1 \
+    && "$dispatch" __record-cas --job "$job" --expect running --status running --patch "$patch" >>"$log" 2>&1 \
+    || true
+}
+
 supervise_acp() { # dispatch|follow-up and supervisor args
   local verb=$1
   shift
@@ -247,9 +265,20 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   local usage_file="$round_dir/usage.json"
   local outcome_file="$round_dir/acp-outcome.json"
   local journal_file="$round_dir/acp-journal.log"
-  local server_out="$round_dir/acp-server-out" server_in="$round_dir/acp-server-in"
-  local server_pid client_rc=0 session_from_wire= row= mode= grade=
+  local session_file="$round_dir/acp-session-id"
+  local attempt_nonce server_out server_in
+  local server_pid client_pid handshake_done=0 session_from_wire= row= mode= grade= expected_protocol=
   local devin_prompt="$round_dir/prompt.devin.md"
+
+  # A chain never switches transports (D82 fix-forward): a record
+  # already born on one transport refuses the other.
+  local recorded_transport
+  recorded_transport=$("$ms" json get --value "$(cat "$record")" --field transport --default "")
+  if [[ -n "$recorded_transport" && "$recorded_transport" != acp ]]; then
+    fail_pending transport_switch_refused setup
+    return 1
+  fi
+
   devin_return_file="$round_dir/devin-return.json"
   if [[ -e "$devin_return_file" ]]; then
     fail_pending stale_named_return setup
@@ -264,9 +293,6 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   fail_if_effective_wider_before_launch || return 1
   : >"$events"
 
-  # Preflight BEFORE any process exists: v1 cannot honor
-  # approvals!=deny or network=ask, and the refusal must beat the
-  # launch (the effective envelope is the five-field file).
   if ! "$ms" acp preflight --envelope-file "$effective" >>"$log" 2>&1; then
     fail_pending acp_preflight_refused setup
     return 1
@@ -276,68 +302,131 @@ supervise_acp() { # dispatch|follow-up and supervisor args
     fail_pending acp_mode_unmapped setup
     return 1
   }
+  # The registry's declaration reaches the launch (critique F4):
+  # the expectation is queried, never re-defaulted downstream.
+  expected_protocol=$("$ms" json get \
+    --value "$("$ms" runtime acp-expectation devin)" \
+    --field expectedProtocolVersion --default "") || expected_protocol=
+  if [[ -z "$expected_protocol" ]]; then
+    fail_pending acp_expectation_missing setup
+    return 1
+  fi
 
-  rm -f "$server_out" "$server_in"
+  # Per-attempt fifo names (critique F2): never reused, never able
+  # to collide with an earlier blocked generation's endpoints.
+  attempt_nonce=$("$ms" util token-hex --bytes 6)
+  server_out="$round_dir/acp-$attempt_nonce-out"
+  server_in="$round_dir/acp-$attempt_nonce-in"
   mkfifo "$server_out" "$server_in" || { fail_pending acp_fifo_setup setup; return 1; }
-  # Redirection order is the deadlock contract: the server opens its
-  # stdout FIRST (pairing with the client's read-side-first open),
-  # then its stdin (pairing with the client's write side).
+  # Redirection order is the deadlock contract: the server opens
+  # stdout FIRST (pairing the client's read-side-first open), then
+  # stdin (pairing the client's write side).
   ( cd "$workspace" && exec devin acp >"$server_out" <"$server_in" 2>>"$log" ) &
   server_pid=$!
   register_cli_custody "$server_pid" || { terminate_cli_child "$server_pid"; fail_pending custody_registration handshake; return 1; }
-  printf '{"type":"acp-server-launched","pid":%s,"mode":"%s"}\n' "$server_pid" "$mode" >>"$events"
 
   local -a turn_args
   turn_args=(
     acp turn --server-out "$server_out" --server-in "$server_in"
     --journal "$journal_file" --workspace "$workspace"
     --envelope-file "$effective" --prompt-file "$devin_prompt"
-    --mode "$mode"
+    --mode "$mode" --expected-protocol "$expected_protocol"
+    --session-file "$session_file"
   )
   # Follow-up rides session/load (ACP-to-ACP proven by the wire
   # probe, step B); the transport never switches mid-chain.
   [[ "$verb" != follow-up ]] || turn_args+=(--load-session "$requested_session")
-  set +e
-  "$ms" "${turn_args[@]}" >"$outcome_file" 2>>"$log"
-  client_rc=$?
-  set -e
-  # EOF is ignored and TERM honored (probe step B): the courtesy is
-  # the client's; the kill is ours.
-  terminate_cli_child "$server_pid" || true
+  "$ms" "${turn_args[@]}" >"$outcome_file" 2>>"$log" &
+  client_pid=$!
+  register_cli_custody "$client_pid" || { terminate_cli_child "$client_pid"; terminate_cli_child "$server_pid"; fail_pending custody_registration handshake; return 1; }
+  printf '{"type":"acp-launched","server_pid":%s,"client_pid":%s,"mode":"%s"}\n' \
+    "$server_pid" "$client_pid" "$mode" >>"$events"
 
-  if (( client_rc != 0 )) || [[ ! -s "$outcome_file" ]]; then
-    fail_pending acp_client_mechanical delivery
-    return 1
-  fi
-  "$ms" adapter acp-usage --usage "$usage_file" --outcome "$outcome_file" >>"$log" 2>&1 || true
-  row=$("$ms" json get --value "$(cat "$outcome_file")" --field row --default "")
-  if [[ "$verb" == follow-up ]]; then
-    session_from_wire=$requested_session
-  else
-    session_from_wire=$("$ms" json get --value "$(cat "$outcome_file")" --field sessionId --default "")
-  fi
-  if [[ -n "$session_from_wire" ]]; then
-    if ! record_handshake "$session_from_wire" "" "$requested_model"; then
+  # The handshake loop: the session id lands in the session file at
+  # setup success — minutes before the turn settles — and a server
+  # that dies before setup bounds the missing-peer path (F2).
+  while kill -0 "$client_pid" 2>/dev/null; do
+    if (( ! handshake_done )) && [[ -s "$session_file" ]]; then
+      session_from_wire=$(head -1 "$session_file")
+      if ! record_handshake "$session_from_wire" "" ""; then
+        terminate_cli_child "$client_pid"
+        terminate_cli_child "$server_pid"
+        return 1
+      fi
+      handshake_done=1
+      printf '{"type":"session-correlated","session_id":"%s","predicate":"acp-wire-typed"}\n' \
+        "$session_from_wire" >>"$events"
+      record_acp_transport_pin
+    fi
+    if (( ! handshake_done )) && ! kill -0 "$server_pid" 2>/dev/null; then
+      terminate_cli_child "$client_pid"
+      fail_pending acp_server_died handshake
       return 1
     fi
-    printf '{"type":"session-correlated","session_id":"%s","predicate":"acp-wire-typed"}\n' \
-      "$session_from_wire" >>"$events"
+    (( handshake_done )) && break
+    touch "$heartbeat"
+    sleep 0.05
+  done
+  wait_for_cli "$client_pid"
+  terminate_cli_child "$server_pid" || true
+  printf 'acp client exit status=%s\n' "$cli_status" >>"$log"
+
+  # Terminal-writer discipline (critique F7): before the handshake
+  # the record is pending; after it the record is running.
+  acp_terminal() { # reason, phase
+    if (( handshake_done )); then
+      finish_running failed "$1" "$2" "$usage_file"
+    else
+      fail_pending "$1" "$2"
+    fi
+  }
+
+  if (( cli_status != 0 )) || [[ ! -s "$outcome_file" ]]; then
+    acp_terminal acp_client_mechanical delivery
+    return 1
+  fi
+  if ! "$ms" adapter acp-usage --usage "$usage_file" --outcome "$outcome_file" >>"$log" 2>&1; then
+    # A usage owner that cannot even write UNAVAILABLE is a
+    # mechanical failure, never silently null usage (critique F9).
+    acp_terminal acp_usage_mechanical delivery
+    return 1
+  fi
+  row=$("$ms" json get --value "$(cat "$outcome_file")" --field row --default "")
+  # The session comes from the WIRE for both verbs: a follow-up
+  # whose load failed has no sessionId in its outcome, and a
+  # fabricated handshake is worse than a failed one (critique F6).
+  if (( ! handshake_done )); then
+    session_from_wire=$("$ms" json get --value "$(cat "$outcome_file")" --field sessionId --default "")
+    if [[ -n "$session_from_wire" ]]; then
+      record_handshake "$session_from_wire" "" "" && handshake_done=1
+      (( ! handshake_done )) || record_acp_transport_pin
+    fi
   fi
   case "$row" in
     delivered) ;;
     auth-required)
-      fail_pending acp_auth_required handshake "$usage_file"
+      acp_terminal acp_auth_required handshake
       return 1 ;;
-    version-mismatch|setup-error|protocol-error)
-      fail_pending "acp_$(printf '%s' "$row" | tr '-' '_')" setup "$usage_file"
+    version-mismatch|setup-error)
+      acp_terminal "acp_$(printf '%s' "$row" | tr '-' '_')" setup
+      return 1 ;;
+    protocol-error)
+      # Post-handshake protocol deaths are delivery-phase facts;
+      # only a pre-session one is setup (critique F7).
+      if (( handshake_done )); then
+        acp_terminal acp_protocol_error delivery
+      else
+        acp_terminal acp_protocol_error setup
+      fi
       return 1 ;;
     *)
-      # cancelled, refused, incomplete, turn-failed: the turn ran
-      # and ended without delivery — a named terminal, never a
-      # legacy fallback, never an automatic replay.
-      finish_running failed "acp_$(printf '%s' "$row" | tr '-' '_')" delivery "$usage_file"
+      acp_terminal "acp_$(printf '%s' "$row" | tr '-' '_')" delivery
       return 1 ;;
   esac
+  if (( ! handshake_done )); then
+    acp_terminal acp_delivered_without_session handshake
+    return 1
+  fi
 
   local collect_rc=0 collect_json reply_path
   set +e
@@ -364,14 +453,26 @@ supervise_acp() { # dispatch|follow-up and supervisor args
 }
 
 supervise() { # dispatch|follow-up and supervisor args
-  local verb=$1
-  if [[ "$(devin_transport)" == acp ]]; then
+  local verb=$1 transport
+  if ! transport=$(devin_transport); then
+    echo "devin transport refused: $transport" >&2
+    return 1
+  fi
+  if [[ "$transport" == acp ]]; then
     shift
     supervise_acp "$verb" "$@"
     return $?
   fi
   shift
   prepare_supervision "$verb" "$@" || { usage; return 2; }
+  local acp_born
+  acp_born=$("$ms" json get --value "$(cat "$record")" --field transport --default "")
+  if [[ "$acp_born" == acp ]]; then
+    # D82 fix-forward: a chain born on ACP never rides legacy,
+    # whatever the flag says today.
+    fail_pending transport_switch_refused setup
+    return 1
+  fi
   config_file="$round_dir/devin-config.json"
   local transcript="$round_dir/transcript.atif.json"
   local before_sessions="$round_dir/devin-sessions-before.json"

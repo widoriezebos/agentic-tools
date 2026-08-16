@@ -16,7 +16,8 @@ import (
 // alternatives, and this owner is the wire branch.
 
 type acpUsageOutcome struct {
-	Usage *struct {
+	JournalError string `json:"journalError"`
+	Usage        *struct {
 		InputTokens      *int64 `json:"inputTokens"`
 		OutputTokens     *int64 `json:"outputTokens"`
 		CachedReadTokens *int64 `json:"cachedReadTokens"`
@@ -44,7 +45,10 @@ func ACPUsage(usagePath, outcomePath string) error {
 		return fmt.Errorf("acp outcome not JSON: %w", err)
 	}
 	usage := outcome.Usage
-	if usage == nil || usage.InputTokens == nil || usage.OutputTokens == nil {
+	if outcome.JournalError != "" || usage == nil || usage.InputTokens == nil || usage.OutputTokens == nil {
+		// A thinned journal disqualifies native publication the same
+		// way an absent member does: the raw evidence is incomplete,
+		// so the number is not provably complete either.
 		if err := atomicWriteJSON(usagePath, unavailable); err != nil {
 			return fmt.Errorf("write acp usage: %w", err)
 		}

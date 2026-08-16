@@ -387,7 +387,9 @@ func TestHungFlagAndRegisterPattern(t *testing.T) {
 	// the moment the wall clock passes the hardcoded epoch — which
 	// it did, hours after this test was written.
 	base := time.Unix(1786900000, 0)
-	os.Chtimes(logPath, base, base)
+	if err := os.Chtimes(logPath, base, base); err != nil {
+		t.Fatalf("the clock pin must hold or the time bomb is back: %v", err)
+	}
 	err := s.Register(mainCaller, LaunchParams{
 		Id: "reg-run", Kind: "custom", Display: "registered work",
 		Log: logPath, StaleAfterMin: 1,

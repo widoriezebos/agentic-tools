@@ -19,6 +19,16 @@ func WriteModelPatch(outputPath, model string) error {
 	return atomicWriteJSON(outputPath, map[string]any{"effectiveModel": model})
 }
 
+// WriteTransportPatch pins the job's transport into its record —
+// a chain never switches transports (D82 fix-forward), and the
+// pin is what lets both branches refuse a switch.
+func WriteTransportPatch(outputPath, transport string) error {
+	if transport != "acp" && transport != "legacy" {
+		return fmt.Errorf("transport must be acp or legacy")
+	}
+	return atomicWriteJSON(outputPath, map[string]any{"transport": transport})
+}
+
 // WriteRepairsPatch writes a patch that records how many return-repair turns a
 // round needed, so a chain that got its return right only after a repair never
 // reads as one that got it right the first time.

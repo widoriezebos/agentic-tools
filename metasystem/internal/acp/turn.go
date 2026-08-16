@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 )
 
@@ -67,6 +68,11 @@ type TurnConfig struct {
 	PromptTimeout           time.Duration
 	LateFrameWindow         time.Duration
 	CancelGrace             time.Duration
+	// SessionFile, when set, receives the session id the moment
+	// setup succeeds — minutes before the prompt settles — so the
+	// adapter can record its handshake inside the dispatcher's
+	// deadline instead of after the turn (P3 critique F1).
+	SessionFile string
 }
 
 type initializeResult struct {
@@ -164,6 +170,12 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 			return *outcome
 		}
 		driver.sessionID = cfg.LoadSessionID
+	}
+
+	if cfg.SessionFile != "" {
+		if err := os.WriteFile(cfg.SessionFile, []byte(driver.sessionID+"\n"), 0o644); err != nil {
+			return Outcome{Row: RowProtocolError, SessionID: driver.sessionID, Violations: driver.violations, Detail: "session file unwritable: " + err.Error()}
+		}
 	}
 
 	if cfg.ModeID != "" {

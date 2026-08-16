@@ -162,10 +162,11 @@ func readCandidate(path string) ([]byte, error) {
 // the collector consumes; the candidate distinguishes nil (no
 // candidate row) from present-but-empty by the pointer.
 type acpOutcome struct {
-	Row        string  `json:"row"`
-	SessionID  string  `json:"sessionId"`
-	StopReason string  `json:"stopReason"`
-	Candidate  *string `json:"candidate"`
+	Row          string  `json:"row"`
+	SessionID    string  `json:"sessionId"`
+	StopReason   string  `json:"stopReason"`
+	Candidate    *string `json:"candidate"`
+	JournalError string  `json:"journalError"`
 }
 
 // collectACP is the ACP transport's exclusive walk: one channel,
@@ -189,6 +190,13 @@ func (p CollectParams) collectACP(verdict *CollectVerdict) (*CollectVerdict, err
 	}
 	if p.Session == "" {
 		return nil, fmt.Errorf("a full collect needs the correlated session; use presence-only without one")
+	}
+	if outcome.JournalError != "" {
+		// The journal is the settlement evidence; a delivery whose
+		// raw record is admittedly incomplete is not a delivery
+		// (the spec's journal-owned completeness boundary).
+		verdict.Rejected = append(verdict.Rejected, "acp: journal thinned: "+outcome.JournalError)
+		return verdict, p.writeProvenance(verdict, nil)
 	}
 	if outcome.SessionID != p.Session {
 		verdict.Rejected = append(verdict.Rejected, "acp: outcome session "+outcome.SessionID+" is not this turn's session")

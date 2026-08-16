@@ -30,9 +30,17 @@
   group sweep) — sealed-v1 lands with/after the
   custody-death-proof goal, which the marker gating made
   separable; (4) the supervise_acp shell fixture is a flag-flip
-  prerequisite alongside the benchmarks. Remaining before the
-  flip: provision-genesis-authority, devin-in-the-guest setup,
-  the four D82/D83 acceptance benchmarks.
+  prerequisite alongside the benchmarks; (5) the transport-
+  identity surfaces — single-transport snapshots, protocol and
+  schema pins in selection, and the (runtime, transport)
+  admission evidence — are NOT yet produced or consumed by the
+  probe/selection machinery (P3 critique F4); the registry
+  expectation now reaches the launch (--expected-protocol is
+  queried, never re-defaulted), but snapshot identity work is a
+  flip prerequisite with the fixture. Remaining before the flip:
+  provision-genesis-authority, devin-in-the-guest setup, the
+  supervise_acp fixture, the snapshot identity surfaces, and the
+  four D82/D83 acceptance benchmarks.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more

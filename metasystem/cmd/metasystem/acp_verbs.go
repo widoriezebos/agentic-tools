@@ -93,6 +93,7 @@ func runACPTurn(args []string) int {
 	handshakeSec := f.Int("handshake-timeout-sec", 120, "handshake phase deadline")
 	promptSec := f.Int("prompt-timeout-sec", 1800, "prompt phase deadline")
 	lateMs := f.Int("late-window-ms", 2000, "late-frame drain window")
+	sessionFile := f.String("session-file", "", "receives the session id at setup success (the adapter's early handshake)")
 	if err := f.Parse(args); err != nil {
 		return 2
 	}
@@ -157,6 +158,7 @@ func runACPTurn(args []string) int {
 		HandshakeTimeout:        time.Duration(*handshakeSec) * time.Second,
 		PromptTimeout:           time.Duration(*promptSec) * time.Second,
 		LateFrameWindow:         time.Duration(*lateMs) * time.Millisecond,
+		SessionFile:             *sessionFile,
 	})
 
 	// Quiesce before sampling journal health: close the pipe ends

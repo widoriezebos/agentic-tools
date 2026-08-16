@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -532,5 +533,28 @@ func TestBlockedWriteIsBounded(t *testing.T) {
 	}
 	if time.Since(start) > 2*time.Second {
 		t.Fatal("the wait was not bounded by the context")
+	}
+}
+
+// The session file lands at setup success — the adapter's early
+// handshake — long before the prompt settles.
+func TestTurnSessionFileEarlyHandshake(t *testing.T) {
+	dir := t.TempDir()
+	sessionFile := dir + "/session-id"
+	conn, _, cleanup := newStubTurn(t, []stubStep{
+		initStep("[]"),
+		newSessionStep(),
+		{expectMethod: "session/prompt", result: `{"stopReason":"end_turn"}`},
+	})
+	defer cleanup()
+	cfg := baseConfig()
+	cfg.SessionFile = sessionFile
+	outcome := RunTurn(context.Background(), conn, cfg)
+	if outcome.Row != RowDelivered {
+		t.Fatalf("%+v", outcome)
+	}
+	body, err := os.ReadFile(sessionFile)
+	if err != nil || strings.TrimSpace(string(body)) != "s-1" {
+		t.Fatalf("session file must carry the id: %q err %v", body, err)
 	}
 }

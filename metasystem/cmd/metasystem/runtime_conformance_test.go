@@ -92,6 +92,9 @@ func TestACPExpectationsMatchDialects(t *testing.T) {
 		declaration, _ := runtimes.Lookup(name)
 		if declaration.ExpectedACP != nil {
 			declared[name] = true
+			if !declaration.HasAdapter {
+				t.Fatalf("%s declares ACP but has no adapter to dispatch it", name)
+			}
 			if _, err := adapter.ACPDialectFor(name); err != nil {
 				t.Fatalf("%s declares ACP but registers no dialect: %v", name, err)
 			}

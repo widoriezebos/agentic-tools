@@ -117,6 +117,26 @@ func runAdapterModelPatch(args []string) int {
 	return 0
 }
 
+// runAdapterTransportPatch writes a {transport} compare-and-swap
+// patch file (the D82 chain pin).
+func runAdapterTransportPatch(args []string) int {
+	flags := flag.NewFlagSet("adapter transport-patch", flag.ContinueOnError)
+	output := flags.String("output", "", "patch output file")
+	transport := flags.String("transport", "", "acp or legacy")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *output == "" || *transport == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter transport-patch --output FILE --transport acp|legacy")
+		return 2
+	}
+	if err := adapter.WriteTransportPatch(*output, *transport); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
 // runAdapterRepairsPatch writes a {returnRepairs} compare-and-swap patch file.
 func runAdapterRepairsPatch(args []string) int {
 	flags := flag.NewFlagSet("adapter repairs-patch", flag.ContinueOnError)

@@ -120,6 +120,7 @@ func families() []family {
 				{"effective-workspace", "pin the effective writeRoots to the resolved workspace", runAdapterEffectiveWorkspace},
 				{"permission-check", "report which effective permission fields are wider than requested", runAdapterPermissionCheck},
 				{"model-patch", "write an {effectiveModel} record patch", runAdapterModelPatch},
+				{"transport-patch", "write a {transport} record patch (the D82 chain pin)", runAdapterTransportPatch},
 				{"repairs-patch", "write a {returnRepairs} record patch", runAdapterRepairsPatch},
 				{"result-patch", "write an {error,phase,usage} record patch", runAdapterResultPatch},
 				{"capability-snapshot", "write a validated capability snapshot", runAdapterCapabilitySnapshot},
