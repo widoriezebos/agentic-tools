@@ -41,6 +41,27 @@ cleanup() {
       "$repo/scripts/agents/arm-supervision.sh" --repo "$repo" --shutdown >/dev/null 2>&1 || true
     fi
   done
+  # Kill any job child still rooted under this run's temp dir before the
+  # dir is preserved or removed. The process-loss/timed/cancelled/
+  # mission-lease fixtures spawn `util hold` children the reaper is meant
+  # to reap; when an assertion fails BEFORE that reap, arm-supervision
+  # --shutdown stops the reaper but leaves those children orphaned, and
+  # the failure branch below PRESERVES the temp dir instead of deleting
+  # it, so the child would otherwise run forever. Each such leak adds
+  # process pressure that slows the next run's reaper past its assertion
+  # window — a self-compounding flake. $tmp is this run's unique mktemp
+  # dir, so every process whose argv references it is this fixture's own;
+  # nothing else can match. (The suite runner's own pid never carries
+  # $tmp in its command line.)
+  local strays
+  if [[ -n "$tmp" && "$tmp" == /*/tmp.* ]]; then
+    strays=$(pgrep -f "$tmp" 2>/dev/null || true)
+    if [[ -n "$strays" ]]; then
+      kill -TERM $strays 2>/dev/null || true
+      sleep 1
+      kill -KILL $(pgrep -f "$tmp" 2>/dev/null || true) 2>/dev/null || true
+    fi
+  fi
   if [[ $status != 0 && -d "$tmp" ]]; then
     keep="artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-dispatch-$$"
     mkdir -p "$(dirname "$keep")"

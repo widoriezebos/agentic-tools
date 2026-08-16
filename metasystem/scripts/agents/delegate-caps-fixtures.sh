@@ -14,6 +14,16 @@ cleanup() {
   if [[ -n "$armed_repo" && -x "$armed_repo/scripts/agents/arm-supervision.sh" ]]; then
     "$armed_repo/scripts/agents/arm-supervision.sh" --repo "$armed_repo" --shutdown >/dev/null 2>&1 || true
   fi
+  # Backstop: kill any process still rooted under this run's unique temp
+  # dir so a failed assertion cannot leak a child that flakes later runs.
+  if [[ -n "$tmp" && "$tmp" == /*/tmp.* ]]; then
+    strays=$(pgrep -f "$tmp" 2>/dev/null || true)
+    if [[ -n "$strays" ]]; then
+      kill -TERM $strays 2>/dev/null || true
+      sleep 1
+      kill -KILL $(pgrep -f "$tmp" 2>/dev/null || true) 2>/dev/null || true
+    fi
+  fi
   if [[ -n "${METASYSTEM_KEEP_DELEGATE_CAPS_FIXTURE:-}" ]]; then
     echo "kept delegate-caps fixture: $tmp" >&2
   else

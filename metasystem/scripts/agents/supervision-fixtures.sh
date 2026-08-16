@@ -87,6 +87,20 @@ cleanup() {
     IFS=: read -r pid start <<<"$tuple"
     stop_owned_pid cleanup "$pid" "$start" >/dev/null 2>&1 || true
   done
+  # Backstop the owned-pid list: any process still rooted under this run's
+  # unique temp dir is this fixture's own leak (a supervision component or
+  # synthetic child that outran its stop), and leaving it running adds
+  # process pressure that flakes later runs. $tmp is a private mktemp dir,
+  # so nothing else can match its path.
+  if [[ -n "$tmp" && "$tmp" == /*/tmp.* ]]; then
+    local strays
+    strays=$(pgrep -f "$tmp" 2>/dev/null || true)
+    if [[ -n "$strays" ]]; then
+      kill -TERM $strays 2>/dev/null || true
+      sleep 1
+      kill -KILL $(pgrep -f "$tmp" 2>/dev/null || true) 2>/dev/null || true
+    fi
+  fi
   if [[ -n "${METASYSTEM_KEEP_SUPERVISION_FIXTURE:-}" ]]; then
     echo "kept supervision fixture: $tmp" >&2
   else

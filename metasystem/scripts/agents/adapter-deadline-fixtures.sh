@@ -16,6 +16,19 @@ driver_pid=
 cleanup() {
   [[ -z "$child_pid" ]] || kill -KILL "$child_pid" 2>/dev/null || true
   [[ -z "$driver_pid" ]] || kill -KILL "$driver_pid" 2>/dev/null || true
+  # Backstop the tracked pids: any process still rooted under this run's
+  # unique temp dir is this fixture's own leak; leaving it running flakes
+  # later runs. The `sleep 30` deadline children this fixture exercises
+  # are the classic escapee.
+  if [[ -n "$tmp" && "$tmp" == /*/tmp.* ]]; then
+    local strays
+    strays=$(pgrep -f "$tmp" 2>/dev/null || true)
+    if [[ -n "$strays" ]]; then
+      kill -TERM $strays 2>/dev/null || true
+      sleep 1
+      kill -KILL $(pgrep -f "$tmp" 2>/dev/null || true) 2>/dev/null || true
+    fi
+  fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
