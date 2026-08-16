@@ -8,6 +8,7 @@ Usage:
   scripts/agents/adapters/codex.sh config-identity
   scripts/agents/adapters/codex.sh signature
   scripts/agents/adapters/codex.sh enforcement-map
+  scripts/agents/adapters/codex.sh contract
   scripts/agents/adapters/codex.sh probe
   scripts/agents/adapters/codex.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -183,6 +184,10 @@ case "$command_name" in
   enforcement-map)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' "$adapter_enforcement_map"
+    ;;
+  contract)
+    (($# == 0)) || { usage; exit 2; }
+    emit_contract_snapshot codex "$adapter_enforcement_map"
     ;;
   signature)
     (($# == 0)) || { usage; exit 2; }

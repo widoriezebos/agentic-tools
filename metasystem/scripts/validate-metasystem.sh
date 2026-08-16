@@ -476,13 +476,17 @@ for source in sys.argv[1:]:
     flattened=json.dumps(hooks)
     assert "supervision-hook.sh" in flattened
 PY
-for runtime in claude codex devin; do
+# The common-lifecycle source-shape rows iterate the DECLARED
+# population (agnosticism B1, ric critique r4-4: independent of the
+# static enforcement map; fake's standalone shape is excluded by
+# declaration, not by name).
+while IFS= read -r runtime; do
   adapter="scripts/agents/adapters/$runtime.sh"
   [[ -f "$adapter" ]] || { echo "missing $runtime runtime adapter: $adapter" >&2; exit 1; }
   [[ -x "$adapter" ]] || { echo "$runtime runtime adapter is not executable: $adapter" >&2; exit 1; }
   bash -n "$adapter"
   adapter_usage=$($adapter --help 2>&1)
-  for verb in identity config-identity signature enforcement-map probe dispatch follow-up cancel selftest; do
+  for verb in identity config-identity signature enforcement-map contract probe dispatch follow-up cancel selftest; do
     grep -Fq "adapters/$runtime.sh $verb" <<<"$adapter_usage" \
       || { echo "$runtime adapter usage does not advertise $verb" >&2; exit 1; }
   done
@@ -490,7 +494,19 @@ for runtime in claude codex devin; do
     || { echo "$runtime adapter does not bind its snapshot runtime identity" >&2; exit 1; }
   grep -Fq "write_capability_snapshot $runtime \"\$version\" \"\$hash\"" "$adapter" \
     || { echo "$runtime adapter does not write its named capability snapshot" >&2; exit 1; }
-done
+done < <("$root/bin/metasystem" runtime list --with-common-lifecycle)
+# EVERY declared adapter — fake included — proves its contract through
+# the real snapshot construction path with dummy facts (ric critique
+# r4-9's deterministic-construction resolution; no schema field, no
+# live cutover).
+while IFS= read -r runtime; do
+  contract_json=$("scripts/agents/adapters/$runtime.sh" contract)
+  contract_runtime=$("$root/bin/metasystem" json get --value "$contract_json" --field runtime)
+  [[ "$contract_runtime" == "$runtime" ]] \
+    || { echo "$runtime adapter contract snapshot carries wrong identity: $contract_runtime" >&2; exit 1; }
+  "$root/bin/metasystem" json get --value "$contract_json" --field envelopeEnforcement.writeRoots >/dev/null \
+    || { echo "$runtime adapter contract snapshot lacks the enforcement shape" >&2; exit 1; }
+done < <("$root/bin/metasystem" runtime list --with-adapter)
 # The envelope-enforcement compare is GENERIC (agnosticism B1, ric
 # critique r6-8): the registry's declared map and the adapter's
 # side-effect-free enforcement-map verb are both decoded and

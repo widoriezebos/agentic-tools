@@ -8,6 +8,7 @@ Usage:
   scripts/agents/adapters/devin.sh config-identity
   scripts/agents/adapters/devin.sh signature
   scripts/agents/adapters/devin.sh enforcement-map
+  scripts/agents/adapters/devin.sh contract
   scripts/agents/adapters/devin.sh probe
   scripts/agents/adapters/devin.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -505,6 +506,10 @@ case "$command_name" in
   enforcement-map)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' "$adapter_enforcement_map"
+    ;;
+  contract)
+    (($# == 0)) || { usage; exit 2; }
+    emit_contract_snapshot devin "$adapter_enforcement_map"
     ;;
   signature)
     (($# == 0)) || { usage; exit 2; }

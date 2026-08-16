@@ -8,6 +8,7 @@ Usage:
   scripts/agents/adapters/claude.sh config-identity
   scripts/agents/adapters/claude.sh signature
   scripts/agents/adapters/claude.sh enforcement-map
+  scripts/agents/adapters/claude.sh contract
   scripts/agents/adapters/claude.sh probe
   scripts/agents/adapters/claude.sh dispatch --job <job-id> --start-gate <file>
       --instance-tag <tag>
@@ -181,6 +182,10 @@ case "$command_name" in
   enforcement-map)
     (($# == 0)) || { usage; exit 2; }
     printf '%s\n' "$adapter_enforcement_map"
+    ;;
+  contract)
+    (($# == 0)) || { usage; exit 2; }
+    emit_contract_snapshot claude "$adapter_enforcement_map"
     ;;
   signature)
     (($# == 0)) || { usage; exit 2; }

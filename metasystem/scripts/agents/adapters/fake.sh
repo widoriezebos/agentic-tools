@@ -7,6 +7,7 @@ Usage:
   scripts/agents/adapters/fake.sh identity
   scripts/agents/adapters/fake.sh config-identity
   scripts/agents/adapters/fake.sh signature
+  scripts/agents/adapters/fake.sh contract
   scripts/agents/adapters/fake.sh probe [--profile current|old|unverified-network]
       [--age-days N]
   scripts/agents/adapters/fake.sh dispatch --job <job-id> --start-gate <file>
@@ -266,6 +267,18 @@ shift
 case "$command" in
   local-config-paths)
     (($# == 0)) || { usage; exit 2; }
+    ;;
+  contract)
+    # Fake's contract emission rides ITS real construction path — the
+    # profile-driven snapshot writer — with the deterministic current
+    # profile (agnosticism B1): no shared-lifecycle helper, because the
+    # standalone shape is exactly what fake proves possible.
+    (($# == 0)) || { usage; exit 2; }
+    contract_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-contract.XXXXXX")
+    "$ms" adapter fake-capability-snapshot --dir "$contract_dir" \
+      --profile current --handshake-sec 1 >/dev/null
+    cat "$contract_dir/$(ls "$contract_dir" | head -1)"
+    rm -rf "$contract_dir"
     ;;
   signature)
     (($# == 0)) || { usage; exit 2; }

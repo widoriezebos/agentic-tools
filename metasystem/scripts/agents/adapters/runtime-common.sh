@@ -462,3 +462,26 @@ run_full_contract_selftest() { # native|unavailable|metered, optional probe name
     --usage "$usage_expectation" --turn-ceiling-sec "${selftest_turn_ceiling_sec:-240}" \
     ${extra[@]+"${extra[@]}"}
 }
+
+emit_contract_snapshot() { # runtime, enforcement-map JSON
+  # The no-auth, no-provider contract emission (agnosticism B1, ric
+  # critique r4-9 second alternative): the REAL snapshot construction
+  # path runs against deterministic dummy facts in a throwaway dir, and
+  # the constructed bytes are printed. No schema field is invented; the
+  # shape the suite decodes IS the shape probes write.
+  local contract_runtime=$1 enforcement=$2 contract_dir snapshot
+  contract_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-contract.XXXXXX")
+  "$ms" adapter capability-snapshot \
+    --dir "$contract_dir" \
+    --runtime "$contract_runtime" \
+    --version "0.0.0-contract" \
+    --config-hash "contract0" \
+    --transports '[]' \
+    --capabilities '{"sessionEstablishedTimeoutSec":1}' \
+    --permissions '{"unverified":[]}' \
+    --envelope-enforcement "$enforcement" \
+    --config-key-hashes '{}' >/dev/null
+  snapshot=$(ls "$contract_dir" | head -1)
+  cat "$contract_dir/$snapshot"
+  rm -rf "$contract_dir"
+}

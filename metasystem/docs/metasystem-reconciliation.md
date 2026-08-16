@@ -14,9 +14,20 @@ Fresh repositories with no existing assets skip this manual and follow `docs/pro
 ## Phase 0: contract and inventory (read-only)
 
 1. Fix the scope with the human: target repository, metasystem template version (record the commit SHA), runtimes in use, and explicit authorization to remove superseded assets.
-2. Inventory every instruction asset. Search at minimum:
-   - Runtime contracts: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules`, `.cursor/rules/`, `.github/copilot-instructions.md`, `.windsurfrules`.
-   - Skills and workflows: `skills/`, `.claude/skills/`, `.claude/agents/`, `.claude/commands/`, `.devin/agents/`, prompt or template directories.
+2. Inventory every instruction asset. The metasystem-owned part of the
+   search list DERIVES from the registry — `bin/metasystem runtime
+   instruction-file <name>` for each `runtime list` entry, plus
+   `runtime dirs <name>` and `runtime collision-roots` for the
+   registration and collision surfaces — so a new runtime extends this
+   inventory by declaration, never by editing this manual. Search at
+   minimum:
+   - Registry-declared runtime contracts and registration roots (the
+     verbs above; today that covers `AGENTS.md`, `CLAUDE.md`,
+     `.claude/`, `.devin/`, `.agents/`).
+   - FOREIGN, unregistered assets no registry can know: `GEMINI.md`,
+     `.cursorrules`, `.cursor/rules/`,
+     `.github/copilot-instructions.md`, `.windsurfrules`, prompt or
+     template directories from other tools.
    - Guidance: agent-directed sections in `README`, `CONTRIBUTING`, and `docs/`; style, review, or ways-of-working documents written for agents.
    - Enforcement: hooks, CI jobs, and scripts that encode agent behavior rules.
 3. Open the reconciliation ledger at `plans/metasystem-reconciliation.md` and give every inventoried asset a row:
