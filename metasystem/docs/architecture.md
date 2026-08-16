@@ -64,6 +64,16 @@ keeps its explicit local guard; no generic fixture bypass exists), and
 (e) the handwritten conformance-evidence rows in
 docs/design/turn-verdict-delivery-contract.md.
 
+Runtime-native capabilities are sanctioned ACCELERATORS (human
+ruling 2026-08-16): an operating agent may use whatever its own
+harness offers — mid-session wakeups, background-task notifications,
+push channels — to act sooner, and should, rather than letting
+available functionality lie unused. The boundary is that correctness
+never depends on them: every outcome an accelerator surfaces must
+also land in metasystem records (runs, jobs, the turn verdict), so an
+agent on any runtime, with no accelerator at all, continues from the
+records alone.
+
 Adding a runtime touches its seam entries plus one registry
 declaration — with two declared exceptions: granting a new runtime's
 permission-residual waiver is a HUMAN edit to the role requirements
