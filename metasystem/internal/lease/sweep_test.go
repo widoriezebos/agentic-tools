@@ -23,7 +23,8 @@ func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
 	writeJSON(t, filepath.Join(jobs, "job-c.json"),
 		`{"jobId":"job-c","claimEpoch":1,"status":"completed"}`)
 
-	if err := newClaimer(root).cleanupStaleJobs(6); err != nil {
+	sweepClaimer, _ := newClaimer(root)
+	if err := sweepClaimer.cleanupStaleJobs(6); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
 
@@ -47,7 +48,7 @@ func TestGroupOwnsTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command, ok := ProcessCommand(int64(self))
+	command, ok := ProcessCommand(int64(self), nil)
 	if !ok {
 		t.Skip("cannot read our own command")
 	}
@@ -58,7 +59,7 @@ func TestGroupOwnsTag(t *testing.T) {
 	// assertion waits it out, bounded.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		owned, provable := groupOwnsTag(int64(pgid), command)
+		owned, provable := groupOwnsTag(int64(pgid), command, nil)
 		if owned && provable {
 			break
 		}
@@ -74,7 +75,7 @@ func TestGroupOwnsTag(t *testing.T) {
 	// same remedy: the property is steady-state, wait it out bounded.
 	deadline = time.Now().Add(2 * time.Second)
 	for {
-		owned, provable := groupOwnsTag(int64(pgid), "no-process-carries-this-xyzzy")
+		owned, provable := groupOwnsTag(int64(pgid), "no-process-carries-this-xyzzy", nil)
 		if !owned && provable {
 			break
 		}
@@ -89,7 +90,7 @@ func TestGroupOwnsTag(t *testing.T) {
 }
 
 func TestStopStaleGroupSkipsWithoutPgidOrTag(t *testing.T) {
-	c := newClaimer(t.TempDir())
+	c, _ := newClaimer(t.TempDir())
 	// No pgid, no tag: nothing to prove or kill.
 	if err := c.stopStaleGroup(map[string]any{}, "job-x"); err != nil {
 		t.Fatalf("a job without a group should not error: %v", err)

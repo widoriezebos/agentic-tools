@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,7 +33,7 @@ func TestCleanupStaleLease(t *testing.T) {
 
 	// A live holder — our own pid, with a tag our argv carries — refuses.
 	self := os.Getpid()
-	selfCommand := processCommand(self, false)
+	selfCommand := processCommand(self, fixtureauth.CommandProbe{})
 	if selfCommand == "" {
 		t.Skip("own argv unreadable on this host")
 	}

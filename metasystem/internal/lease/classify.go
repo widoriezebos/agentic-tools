@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // Announcement is a main's identity record under artifacts/agents/mains. The
@@ -128,8 +129,8 @@ func readAnnouncements(root string, strict bool) ([]announcementFile, error) {
 // authenticatedAnnouncement returns the announcement a live pid authenticates
 // as its own: same pid, same start time, and a command whose hash matches
 // what the record recorded. Nil when the pid is not live or matches nothing.
-func authenticatedAnnouncement(pid int64, records []announcementFile) *Announcement {
-	id, ok := ProcessIdentity(pid)
+func authenticatedAnnouncement(pid int64, records []announcementFile, probe identity.FixtureProbe) *Announcement {
+	id, ok := ProcessIdentity(pid, probe)
 	if !ok {
 		return nil
 	}
@@ -263,11 +264,15 @@ type supervisedProc struct {
 // DELEGATE, and a supervision or adapter-supervisor ancestor names it as
 // such. A caller with no recognised ancestor is a HUMAN.
 func Classify(root string, caller int64) (Classification, error) {
+	probe, err := fixtureProbe(root)
+	if err != nil {
+		return Classification{}, err
+	}
 	records, err := readAnnouncements(root, true)
 	if err != nil {
 		return Classification{}, err
 	}
-	if own := authenticatedAnnouncement(caller, records); own != nil {
+	if own := authenticatedAnnouncement(caller, records, probe); own != nil {
 		return Classification{Class: ClassMain, MainId: own.MainId, Announcement: own}, nil
 	}
 	signatures, err := allAdapterSignatures(root)
@@ -282,13 +287,13 @@ func Classify(root string, caller int64) (Classification, error) {
 	current, ok := ParentPid(caller)
 	for ok && !seen[current] {
 		seen[current] = true
-		if ann := authenticatedAnnouncement(current, records); ann != nil {
+		if ann := authenticatedAnnouncement(current, records, probe); ann != nil {
 			return Classification{Class: ClassMain, MainId: ann.MainId, Announcement: ann}, nil
 		}
-		if command, cok := ProcessCommand(current); cok && census.Runtime(command, signatures) != "" {
+		if command, cok := ProcessCommand(current, probe); cok && census.Runtime(command, signatures) != "" {
 			return Classification{Class: ClassDelegate, Pid: current}, nil
 		}
-		if start, sok := StartedAt(current); sok {
+		if start, sok := StartedAt(current, probe); sok {
 			key := procKey{current, start}
 			if supervision[key] {
 				return Classification{Class: ClassSupervision, Pid: current}, nil

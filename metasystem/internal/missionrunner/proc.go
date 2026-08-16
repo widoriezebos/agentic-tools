@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -29,15 +30,13 @@ func processStartedAt(pid int) (int64, error) {
 // processCommand reads a live pid's command line, falling back to the
 // fixture identity file when the caller allows fakes. An unreadable command
 // is empty, never a guess.
-func processCommand(pid int, allowFake bool) string {
+func processCommand(pid int, command fixtureauth.CommandProbe) string {
 	exact, state, err := identity.KernelProber{}.Probe(int64(pid))
 	if err == nil && state == identity.Alive && len(exact.Argv) > 0 {
 		return strings.Join(exact.Argv, " ")
 	}
-	if allowFake {
-		if entry, ok := identity.FixtureEntryFor(int64(pid)); ok && entry.HasCommand {
-			return entry.Command
-		}
+	if fixtureCommand, ok := command.FixtureCommand(int64(pid)); ok {
+		return fixtureCommand
 	}
 	return ""
 }
@@ -73,7 +72,7 @@ func groupAlive(pgid int) bool {
 // groupOwned reports whether a process group is provably ours: some live
 // member's command line carries the instance tag this runner minted. Without
 // that proof the group must never be signaled.
-func groupOwned(pgid int, tag string, allowFake bool) bool {
+func groupOwned(pgid int, tag string, grant fixtureauth.GroupOwnershipGrant) bool {
 	if pids, err := identity.AllPids(); err == nil {
 		for _, pid := range pids {
 			memberGroup, err := unix.Getpgid(int(pid))
@@ -89,21 +88,17 @@ func groupOwned(pgid int, tag string, allowFake bool) bool {
 			}
 		}
 	}
-	if allowFake {
-		entry, ok := identity.FixtureEntryFor(int64(pgid))
-		if !ok {
-			return false
-		}
-		return entry.HasPgid && entry.Pgid == int64(pgid) && strings.Contains(entry.Command, tag)
+	if fixturePgid, command, ok := grant.FixtureGroup(int64(pgid)); ok {
+		return fixturePgid == int64(pgid) && strings.Contains(command, tag)
 	}
 	return false
 }
 
 // publishFakeIdentity records a launched fake host's identity in the fixture
 // identity file under its lock, so fixture liveness checks can see it.
-func publishFakeIdentity(pid int, started int64, pgid int, tag string) error {
-	path := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
-	if path == "" {
+func publishFakeIdentity(pid int, started int64, pgid int, tag string, grant fixtureauth.PublicationGrant) error {
+	path, authorized := grant.TablePath()
+	if !authorized {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

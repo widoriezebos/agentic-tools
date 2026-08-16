@@ -12,8 +12,10 @@ import (
 // positive/lookalike contract).
 
 // Alive is the `alive` verb: true iff the pid is live at expectedStart.
-func Alive(pid, expectedStart int64) bool {
-	return identityAlive(pid, expectedStart)
+// The probe is the fixture authority (agnosticism B1) — nil refuses
+// fixture identity and only the kernel answers.
+func Alive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
+	return identityAlive(pid, expectedStart, probe)
 }
 
 // ProcIdentity is a live process's identity from the one authoritative
@@ -29,8 +31,8 @@ type ProcIdentity struct {
 // the fixture identity file when installed (its `started` and `command`), else
 // the process table (start time + command). This one-source rule is why a main
 // can recognize its own announcement.
-func AuthIdentity(pid int64) (ProcIdentity, error) {
-	if entry, ok := identity.FixtureEntryFor(pid); ok && entry.HasStartedAt && entry.HasCommand && entry.Command != "" {
+func AuthIdentity(pid int64, probe identity.FixtureProbe) (ProcIdentity, error) {
+	if entry, ok := probeFixture(probe, pid); ok && entry.HasStartedAt && entry.HasCommand && entry.Command != "" {
 		return ProcIdentity{Pid: pid, PidStartedAt: entry.StartedAt, Command: entry.Command}, nil
 	}
 	return psIdentity(pid)
@@ -76,4 +78,12 @@ func adapterBase(path string) string {
 		return path[i+1:]
 	}
 	return path
+}
+
+// probeFixture is the nil-safe fixture read (a nil probe refuses).
+func probeFixture(probe identity.FixtureProbe, pid int64) (identity.FixtureEntry, bool) {
+	if probe == nil {
+		return identity.FixtureEntry{}, false
+	}
+	return probe.FixtureEntry(pid)
 }

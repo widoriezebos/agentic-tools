@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
@@ -60,6 +61,17 @@ type Engine struct {
 	// reaper judges by, so the runner's drain reap can never disagree with
 	// it about one record.
 	custodianFn func(pid, start int64, tag string) identity.Liveness
+}
+
+// fixtures is the engine's root-checked fixture authority (agnosticism
+// B1): constructed on demand from Root; a refused construction (leaked
+// fixture in a non-fake checkout) refuses fixtures — never grants.
+func (e *Engine) fixtures() *fixtureauth.Authorization {
+	authorization, err := fixtureauth.New(e.Root)
+	if err != nil {
+		return nil
+	}
+	return authorization
 }
 
 // anchor writes the state's anchor commit through the configured anchorer.

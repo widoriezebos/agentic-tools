@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -92,7 +93,14 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 	if !groupAlive(pgid) {
 		return nil
 	}
-	if !groupOwned(pgid, tag, allowFake) {
+	// The GroupOwnershipGrant is issued HERE, on the runner's one signal
+	// path (agnosticism B1): allowFake gates whether the grant is
+	// requested at all; a zero grant refuses.
+	var grant fixtureauth.GroupOwnershipGrant
+	if allowFake {
+		grant = e.fixtures().GroupOwnership()
+	}
+	if !groupOwned(pgid, tag, grant) {
 		fmt.Fprintf(os.Stderr, "host process group %d is no longer provably ours; "+
 			"leaving it to the census rather than signaling an unowned group\n", pgid)
 		e.emit("wind-down", fmt.Sprintf("group %d unowned; skipped", pgid), map[string]string{
@@ -117,7 +125,7 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 		time.Sleep(pollInterval)
 	}
 	if groupAlive(pgid) {
-		if !groupOwned(pgid, tag, allowFake) {
+		if !groupOwned(pgid, tag, grant) {
 			fmt.Fprintf(os.Stderr, "ownership proof for host process group %d disappeared "+
 				"during wind-down; skipping the kill of an unowned group\n", pgid)
 			return nil
@@ -298,12 +306,12 @@ func (e *Engine) spawnAndVerifyHost(l *hostLaunch) (code int, detail string, don
 		if at, err := processStartedAt(l.pid); err == nil {
 			started, haveStarted = at, true
 			published := true
-			if l.fakeRuntime && publishFakeIdentity(l.pid, at, l.pid, l.tag) != nil {
+			if l.fakeRuntime && publishFakeIdentity(l.pid, at, l.pid, l.tag, e.fixtures().Publication()) != nil {
 				published = false
 			}
 			if published {
 				pgid, pgErr := unix.Getpgid(l.pid)
-				verified = pgErr == nil && hostStartVerified(l.pid, pgid, processCommand(l.pid, l.fakeRuntime), l.tag, forceUnverified)
+				verified = pgErr == nil && hostStartVerified(l.pid, pgid, processCommand(l.pid, hostCommandProbe(e, l.fakeRuntime)), l.tag, forceUnverified)
 			}
 		}
 		if verified {
@@ -428,4 +436,13 @@ func gitAuthorEnvironment(identityName string) []string {
 		"GIT_AUTHOR_NAME="+identityName,
 		"GIT_AUTHOR_EMAIL="+identityName+"@metasystem.invalid",
 	)
+}
+
+// hostCommandProbe issues the command probe only for the fake runtime
+// (the fixture-mode launcher); a zero probe refuses.
+func hostCommandProbe(e *Engine, fakeRuntime bool) fixtureauth.CommandProbe {
+	if !fakeRuntime {
+		return fixtureauth.CommandProbe{}
+	}
+	return e.fixtures().Command()
 }

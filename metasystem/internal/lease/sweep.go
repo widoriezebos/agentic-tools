@@ -66,7 +66,7 @@ func (c *claimer) cleanupStaleJobs(epoch int64) error {
 func (c *claimer) cleanupStaleRuns(epoch int64) error {
 	store := &run.Store{Root: c.root}
 	return store.SweepStale(epoch,
-		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(pgid, nonce) },
+		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(pgid, nonce, c.probe) },
 		func(pgid int64) error {
 			switch err := sweepKill(pgid, unix.SIGTERM); err {
 			case nil, unix.ESRCH:
@@ -149,7 +149,7 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 	if !ok || pgid <= 1 || !tagOK || tag == "" {
 		return nil
 	}
-	owned, provable := groupOwnsTag(pgid, tag)
+	owned, provable := groupOwnsTag(pgid, tag, c.probe)
 	if !provable {
 		return fmt.Errorf("claim sweep cannot prove ownership of stale job %s", stem)
 	}
@@ -185,7 +185,7 @@ var (
 	}
 )
 
-func groupOwnsTag(pgid int64, tag string) (owned, provable bool) {
+func groupOwnsTag(pgid int64, tag string, probe identity.FixtureProbe) (owned, provable bool) {
 	pids, err := sweepAllPids()
 	if err != nil {
 		return false, false
@@ -205,7 +205,7 @@ func groupOwnsTag(pgid int64, tag string) (owned, provable bool) {
 		if pg != pgid {
 			continue
 		}
-		command, ok := sweepProcessCommand(pid)
+		command, ok := sweepProcessCommand(pid, probe)
 		if !ok {
 			// A live member whose identity cannot be read: ownership is
 			// unprovable, not disproven.

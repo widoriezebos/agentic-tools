@@ -7,7 +7,7 @@ import (
 )
 
 // liveChild spawns a real, long-lived process and returns its pid and true
-// start second, so Live(pid, start) is genuinely true until the test ends.
+// start second, so Live(pid, start, nil) is genuinely true until the test ends.
 func liveChild(t *testing.T) (pid, start int64) {
 	t.Helper()
 	cmd := exec.Command("/bin/sleep", "120")
@@ -21,7 +21,7 @@ func liveChild(t *testing.T) (pid, start int64) {
 	// the VM's snapshot gate); the property is steady-state, wait bounded.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		s, ok := StartedAt(pid)
+		s, ok := StartedAt(pid, nil)
 		if ok {
 			return pid, s
 		}
@@ -54,7 +54,11 @@ func ann(mainID string, pid, start int64, lineage string) *Announcement {
 
 func mustClaim(t *testing.T, root string, a *Announcement) {
 	t.Helper()
-	if err := newClaimer(root).claim(a); err != nil {
+	claimer, err := newClaimer(root)
+	if err != nil {
+		t.Fatalf("claimer(%s): %v", a.MainId, err)
+	}
+	if err := claimer.claim(a); err != nil {
 		t.Fatalf("claim(%s): %v", a.MainId, err)
 	}
 }
@@ -75,7 +79,8 @@ func TestFreshClaim(t *testing.T) {
 		t.Fatalf("absent lineage should default to the holder mainId: %q", lease.OwnerLineage)
 	}
 	// The epoch's sweep stamp must be present so a require-holder gate passes.
-	if !newClaimer(root).stampComplete(lease) {
+	stampClaimer, _ := newClaimer(root)
+	if !stampClaimer.stampComplete(lease) {
 		t.Fatal("fresh claim did not stamp the epoch complete")
 	}
 }

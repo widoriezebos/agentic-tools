@@ -2,6 +2,7 @@ package lease
 
 import (
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,7 +32,7 @@ func announceLiveChild(t *testing.T, root string) (pid, start int64) {
 	var s int64
 	ok := false
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
-		if s, ok = StartedAt(pid); ok {
+		if s, ok = StartedAt(pid, nil); ok {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -210,7 +211,7 @@ func TestSweepFailsClosed(t *testing.T) {
 	root := t.TempDir()
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	os.MkdirAll(jobs, 0o755)
-	c := newClaimer(root)
+	c, _ := newClaimer(root)
 
 	// Unparseable record: hard error, no stamp.
 	os.WriteFile(filepath.Join(jobs, "bad.json"), []byte("{broken"), 0o644)
@@ -271,33 +272,33 @@ func TestGroupOwnsTagUnprovableRows(t *testing.T) {
 
 	// Process table unreadable: unprovable.
 	sweepAllPids = func() ([]int64, error) { return nil, errors.New("table down") }
-	if _, provable := groupOwnsTag(42, "t"); provable {
+	if _, provable := groupOwnsTag(42, "t", nil); provable {
 		t.Fatal("an unreadable table was ruled provable")
 	}
 
 	// A member whose pgid read fails with anything but ESRCH: unprovable.
 	sweepAllPids = func() ([]int64, error) { return []int64{7}, nil }
 	sweepGetpgid = func(pid int64) (int64, error) { return 0, errors.New("EIO") }
-	if _, provable := groupOwnsTag(42, "t"); provable {
+	if _, provable := groupOwnsTag(42, "t", nil); provable {
 		t.Fatal("a failed pgid read was ruled provable")
 	}
 
 	// ESRCH is genuine absence: provable, not owned.
 	sweepGetpgid = func(pid int64) (int64, error) { return 0, unix.ESRCH }
-	if owned, provable := groupOwnsTag(42, "t"); !provable || owned {
+	if owned, provable := groupOwnsTag(42, "t", nil); !provable || owned {
 		t.Fatalf("ESRCH must be provable absence: owned=%v provable=%v", owned, provable)
 	}
 
 	// A live member with unreadable identity: unprovable, never disproven.
 	sweepGetpgid = func(pid int64) (int64, error) { return 42, nil }
-	sweepProcessCommand = func(pid int64) (string, bool) { return "", false }
-	if _, provable := groupOwnsTag(42, "t"); provable {
+	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "", false }
+	if _, provable := groupOwnsTag(42, "t", nil); provable {
 		t.Fatal("an unreadable member identity was ruled provable")
 	}
 
 	// A live tagged member: owned and provable.
-	sweepProcessCommand = func(pid int64) (string, bool) { return "runner --tag t", true }
-	if owned, provable := groupOwnsTag(42, "t"); !owned || !provable {
+	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "runner --tag t", true }
+	if owned, provable := groupOwnsTag(42, "t", nil); !owned || !provable {
 		t.Fatalf("a tagged member must prove ownership: owned=%v provable=%v", owned, provable)
 	}
 }
@@ -347,7 +348,8 @@ func TestSweepStopVerdictRows(t *testing.T) {
 	sweepAllPids = func() ([]int64, error) { return nil, errors.New("table down") }
 	root := t.TempDir()
 	recordPath := staleJob(t, root)
-	err := newClaimer(root).cleanupStaleJobs(5)
+	refusalClaimer, _ := newClaimer(root)
+	err := refusalClaimer.cleanupStaleJobs(5)
 	if err == nil || !strings.Contains(err.Error(), "cannot prove ownership of stale job stale") {
 		t.Fatalf("unprovable ownership must refuse the sweep: %v", err)
 	}
@@ -359,11 +361,12 @@ func TestSweepStopVerdictRows(t *testing.T) {
 	// Owned and provable, but the kill is DENIED (EPERM): loud refusal.
 	sweepAllPids = func() ([]int64, error) { return []int64{7}, nil }
 	sweepGetpgid = func(pid int64) (int64, error) { return 424242, nil }
-	sweepProcessCommand = func(pid int64) (string, bool) { return "runner stale-tag", true }
+	sweepProcessCommand = func(pid int64, _ identity.FixtureProbe) (string, bool) { return "runner stale-tag", true }
 	sweepKill = func(pgid int64, sig unix.Signal) error { return unix.EPERM }
 	root = t.TempDir()
 	staleJob(t, root)
-	err = newClaimer(root).cleanupStaleJobs(5)
+	secondClaimer, _ := newClaimer(root)
+	err = secondClaimer.cleanupStaleJobs(5)
 	if err == nil || !strings.Contains(err.Error(), "cannot stop stale job stale") {
 		t.Fatalf("a denied kill must refuse: %v", err)
 	}
@@ -373,7 +376,8 @@ func TestSweepStopVerdictRows(t *testing.T) {
 	sweepKill = func(pgid int64, sig unix.Signal) error { killed = append(killed, pgid); return nil }
 	root = t.TempDir()
 	recordPath = staleJob(t, root)
-	if err := newClaimer(root).cleanupStaleJobs(5); err != nil {
+	thirdClaimer, _ := newClaimer(root)
+	if err := thirdClaimer.cleanupStaleJobs(5); err != nil {
 		t.Fatalf("a provable stale group must sweep cleanly: %v", err)
 	}
 	if len(killed) != 1 || killed[0] != 424242 {

@@ -21,12 +21,12 @@ import (
 // blocking-reserved-cap refuses to arm a fleet when the env var is set in a
 // checkout whose metasystem.runtimes is not fake (review lease-census-7), so
 // a leaked fixture cannot ride an armed component into production verdicts.
-func Custodian(pid, start int64, tag string) Liveness {
+func Custodian(pid, start int64, tag string, probe FixtureProbe) Liveness {
 	exact, state, err := (KernelProber{}).Probe(pid)
 	if err == nil && state == Dead {
 		return Dead
 	}
-	if entry, ok := FixtureEntryFor(pid); ok {
+	if entry, ok := probeEntry(probe, pid); ok {
 		if entry.StartedAt != start {
 			return Dead
 		}

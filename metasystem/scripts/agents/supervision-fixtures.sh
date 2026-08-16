@@ -21,7 +21,7 @@ process_started_at() {
 }
 
 process_identity_alive() { # pid, start
-  "$ms" proc alive --pid "$1" --start-time "$2" >/dev/null 2>&1
+  "$ms" proc alive --pid "$1" --start-time "$2" --root "$repo" >/dev/null 2>&1
 }
 
 wait_until() { # name, shell predicate...
@@ -929,6 +929,11 @@ cp "$source_root/scripts/agents/arm-supervision.sh" \
 # actually exercised.
 mkdir -p "$foreign/repo/metasystem/bin"
 cp "$ms" "$foreign/repo/metasystem/bin/metasystem"
+# The fixture-identity env rides this whole run; without a fake-mode
+# conf the engine now refuses THAT first (agnosticism B1's
+# leaked-fixture fence) and the foreign-owner rule below would never
+# be exercised.
+printf 'metasystem.runtimes=fake\n' > "$foreign/repo/metasystem/metasystem.conf"
 foreign_sleep_pid=$(
   bash -c '"$1" util hold --tag metasystem-foreign-owner >/dev/null 2>&1 & echo $!' _ "$ms"
 )
@@ -969,6 +974,10 @@ cp "$source_root/scripts/agents/supervision-hook.sh" \
 # live inside it now.
 mkdir -p "$stop_root/bin"
 cp "$ms" "$stop_root/bin/metasystem"
+# The fixture-identity env rides this run: the sandbox needs the
+# fake-mode conf or the engine's leaked-fixture fence (agnosticism B1)
+# refuses classification before the hook logic under test runs.
+printf 'metasystem.runtimes=fake\n' > "$stop_root/metasystem.conf"
 cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - In flight right now: nothing
 - Waiting on the human: nothing blocking

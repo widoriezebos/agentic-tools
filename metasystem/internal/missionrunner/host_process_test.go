@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -97,7 +98,7 @@ func TestGroupProbes(t *testing.T) {
 	if groupAlive(0) || groupAlive(-1) {
 		t.Fatal("a nonsense pgid read alive")
 	}
-	if groupOwned(self, "tag-that-cannot-appear-77aa", false) {
+	if groupOwned(self, "tag-that-cannot-appear-77aa", fixtureauth.GroupOwnershipGrant{}) {
 		t.Fatal("ownership proven by a tag no member carries")
 	}
 }

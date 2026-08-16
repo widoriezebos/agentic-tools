@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,7 +117,7 @@ func (e *Engine) cleanupStaleLease() error {
 	}
 	pid, pidOK := jsonInt(leaseDoc["pid"])
 	tag, tagOK := leaseDoc["instanceTag"].(string)
-	if pidOK && tagOK && pidExists(int(pid)) && strings.Contains(processCommand(int(pid), false), tag) {
+	if pidOK && tagOK && pidExists(int(pid)) && strings.Contains(processCommand(int(pid), fixtureauth.CommandProbe{}), tag) {
 		return failf(3, "mission runner is already live for %s", e.Mission)
 	}
 	turnPaths, _ := filepath.Glob(filepath.Join(dir, "turns", "*", "turn.json"))
@@ -435,7 +436,7 @@ func (e *Engine) launch(mode string, foreground bool) error {
 	}
 	if !process.exited() {
 		pid := command.Process.Pid
-		if strings.Contains(processCommand(pid, false), tag) {
+		if strings.Contains(processCommand(pid, fixtureauth.CommandProbe{}), tag) {
 			if pgid, pgErr := unix.Getpgid(pid); pgErr == nil {
 				if err := e.terminateGroup(pgid, tag, false); err != nil {
 					return err

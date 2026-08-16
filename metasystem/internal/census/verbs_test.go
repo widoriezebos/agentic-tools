@@ -2,6 +2,7 @@ package census
 
 import (
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,8 +26,14 @@ func TestAuthIdentityFixtureFile(t *testing.T) {
 	dir := t.TempDir()
 	idFile := filepath.Join(dir, "id.json")
 	os.WriteFile(idFile, []byte(`{"42":{"started":100,"command":"claude serve"}}`), 0o644)
+	os.WriteFile(filepath.Join(dir, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644)
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", idFile)
-	id, err := AuthIdentity(42)
+	authorization, err := fixtureauth.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := authorization.Identity()
+	id, err := AuthIdentity(42, probe)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +42,14 @@ func TestAuthIdentityFixtureFile(t *testing.T) {
 	}
 	// A pid absent from the fixture falls through to ps (and fails for a
 	// non-existent pid).
-	if _, err := AuthIdentity(999999); err == nil {
+	if _, err := AuthIdentity(999999, probe); err == nil {
 		t.Fatal("a non-existent pid must error")
+	}
+	// The authorization REFUSES construction outside a fake checkout —
+	// the leaked-fixture fence at every entry point (agnosticism B1).
+	os.WriteFile(filepath.Join(dir, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644)
+	if _, err := fixtureauth.New(dir); err == nil {
+		t.Fatal("a leaked fixture in a non-fake checkout was authorized")
 	}
 }
 
@@ -59,7 +72,7 @@ func TestSignatureCheckContract(t *testing.T) {
 }
 
 func TestAliveNonexistentPid(t *testing.T) {
-	if Alive(999999, 1) {
+	if Alive(999999, 1, nil) {
 		t.Fatal("a non-existent pid is not alive")
 	}
 }

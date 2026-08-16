@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -82,10 +83,20 @@ func runCensusAlive(args []string) int {
 	flags := flag.NewFlagSet("proc alive", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
 	start := flags.Int64("start-time", 0, "expected start epoch seconds")
+	root := flags.String("root", "", "checkout root (required; the fixture authority binds to it)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if census.Alive(*pid, *start) {
+	if *root == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem proc alive --pid P --start-time S --root R")
+		return 2
+	}
+	authorization, err := fixtureauth.New(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if census.Alive(*pid, *start, authorization.Identity()) {
 		return 0
 	}
 	return 1

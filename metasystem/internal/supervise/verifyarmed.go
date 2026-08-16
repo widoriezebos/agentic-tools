@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -18,8 +19,8 @@ import (
 // start) must be live by the census's one-source rule, and a recorded tag
 // must not be provably absent — an uninspectable argv is never proof
 // (live and unknown pass; stale and dead fail).
-func armedIdentityAlive(pid, start int64, tag string) bool {
-	if !census.Alive(pid, start) {
+func armedIdentityAlive(pid, start int64, tag string, probe identity.FixtureProbe) bool {
+	if !census.Alive(pid, start, probe) {
 		return false
 	}
 	if tag == "" {
@@ -42,7 +43,14 @@ func ArmedNow(agentsDir string, ownerPid, ownerStart int64, ownerTag string, int
 	supervision := filepath.Join(agentsDir, "supervision")
 	statePath := filepath.Join(supervision, "state.json")
 	lastPath := filepath.Join(supervision, "last-census.json")
-	if !armedIdentityAlive(ownerPid, ownerStart, ownerTag) {
+	// The fixture authority (agnosticism B1): root is two levels above
+	// the agents dir, the reserved-cap fence's own derivation; a refused
+	// construction refuses fixtures.
+	var probe identity.FixtureProbe
+	if authorization, err := fixtureauth.New(filepath.Dir(filepath.Dir(agentsDir))); err == nil {
+		probe = authorization.Identity()
+	}
+	if !armedIdentityAlive(ownerPid, ownerStart, ownerTag, probe) {
 		return false
 	}
 	state, err := readObjectFile(statePath)
@@ -62,7 +70,7 @@ func ArmedNow(agentsDir string, ownerPid, ownerStart int64, ownerTag string, int
 		pid, pidOK := intField(entry["pid"])
 		start, startOK := intField(entry["pidStartedAt"])
 		tag, _ := entry["instanceTag"].(string)
-		if !pidOK || !startOK || !armedIdentityAlive(pid, start, tag) {
+		if !pidOK || !startOK || !armedIdentityAlive(pid, start, tag, probe) {
 			return false
 		}
 		heartbeatPath, _ := entry["heartbeat"].(string)

@@ -32,6 +32,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -1368,7 +1369,14 @@ func contractProcessHasTag(projectRoot string, pid, started int64, tag string) b
 		return false
 	}
 	if fileExists(filepath.Join(projectRoot, "bin", "metasystem")) {
-		if !census.Alive(pid, started) {
+		// The fixture authority for the liveness check (agnosticism B1):
+		// constructed from the project root; a refused construction
+		// refuses fixtures and the kernel alone answers.
+		var probe identity.FixtureProbe
+		if authorization, err := fixtureauth.New(projectRoot); err == nil {
+			probe = authorization.Identity()
+		}
+		if !census.Alive(pid, started, probe) {
 			return false
 		}
 	}
@@ -1377,14 +1385,20 @@ func contractProcessHasTag(projectRoot string, pid, started int64, tag string) b
 	// invocation did, never a tag mismatch on absent evidence (B1).
 	exact, state, err := (identity.KernelProber{}).Probe(pid)
 	if err != nil || state != identity.Alive || !exact.ArgvKnown {
-		return contractFixtureIdentityMatches(pid, started, tag)
+		return contractFixtureIdentityMatches(projectRoot, pid, started, tag)
 	}
 	return strings.Contains(strings.Join(exact.Argv, " "), tag)
 }
 
 // contractFixtureIdentityMatches consults the fixture identity file used when
 // the process table cannot be read, matching the recorded start and tag.
-func contractFixtureIdentityMatches(pid, started int64, tag string) bool {
+func contractFixtureIdentityMatches(projectRoot string, pid, started int64, tag string) bool {
+	// MissionProcessProbe gate (agnosticism B1): the env-var fallback is
+	// honored only under root-checked fixture authorization, and only
+	// AFTER unreadable kernel argv — the caller preserves that order.
+	if authorization, err := fixtureauth.New(projectRoot); err != nil || !authorization.MissionProcess().Allows() {
+		return false
+	}
 	fixture := os.Getenv("METASYSTEM_MISSION_PROCESS_IDENTITY_FILE")
 	if fixture == "" {
 		return false

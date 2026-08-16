@@ -13,7 +13,7 @@ import (
 // terminalizes; a fresh-epoch or human (null-epoch) run is untouched.
 func TestRunSweepProofOrRefuse(t *testing.T) {
 	root := t.TempDir()
-	c := newClaimer(root)
+	c, _ := newClaimer(root)
 
 	nonce := strings.Repeat("ef", 16)
 	writeRun := func(id string, epoch string, status string) {

@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -762,7 +763,7 @@ func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]a
 	if pid, ok := intValue(record["pid"]); ok && pid >= 1 {
 		start, _ := intValue(record["pidStartedAt"])
 		tag, _ := record["instanceTag"].(string)
-		switch custodianProver(pid, start, tag) {
+		switch custodianProver(pid, start, tag, fenceProbe(repo)) {
 		case identity.Dead:
 		case identity.Alive:
 			return usagePendingProof, nil, fmt.Sprintf("recorded custodian pid %d is still alive", pid)
@@ -853,4 +854,14 @@ func lockFileAt(lockPath string) (*fileLock, error) {
 		return nil, err
 	}
 	return &fileLock{f: f}, nil
+}
+
+// fenceProbe is the usage fence's fixture authority (agnosticism B1):
+// root-checked; a refused construction refuses fixtures.
+func fenceProbe(repo string) identity.FixtureProbe {
+	authorization, err := fixtureauth.New(repo)
+	if err != nil {
+		return nil
+	}
+	return authorization.Identity()
 }

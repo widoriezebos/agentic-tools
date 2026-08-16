@@ -38,8 +38,12 @@ func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage
 	if ownerLineage != "" && !validLineage(ownerLineage) {
 		return "", fmt.Errorf("owner lineage must match [A-Za-z0-9._-]{1,128}")
 	}
-	actualStart, startOK := StartedAt(pid)
-	command, commandOK := ProcessCommand(pid)
+	probe, probeErr := fixtureProbe(root)
+	if probeErr != nil {
+		return "", probeErr
+	}
+	actualStart, startOK := StartedAt(pid, probe)
+	command, commandOK := ProcessCommand(pid, probe)
 	if !startOK || !commandOK || actualStart != start {
 		return "", fmt.Errorf("announcement identity is not a live, readable process")
 	}
@@ -53,7 +57,10 @@ func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage
 	}
 	defer lock.release()
 
-	claimer := newClaimer(root)
+	claimer, err := newClaimer(root)
+	if err != nil {
+		return "", err
+	}
 	records, err := readAnnouncements(root, false)
 	if err != nil {
 		return "", err
@@ -231,7 +238,11 @@ func RequireHolder(root string, callerPid int64, expectedEpoch *int64) (HolderVi
 		if identity.Class != ClassMain {
 			return HolderView{}, fmt.Errorf("checkout lease is absent and caller pid %d is %s, not an authenticated main", callerPid, identity.Class)
 		}
-		if err := newClaimer(root).claim(identity.Announcement); err != nil {
+		holderClaimer, claimerErr := newClaimer(root)
+		if claimerErr != nil {
+			return HolderView{}, claimerErr
+		}
+		if err := holderClaimer.claim(identity.Announcement); err != nil {
 			return HolderView{}, err
 		}
 		if lease, err = loadLease(root, true); err != nil {
@@ -241,7 +252,11 @@ func RequireHolder(root string, callerPid int64, expectedEpoch *int64) (HolderVi
 	if identity.Class != ClassMain || identity.MainId != lease.HolderMainId {
 		return HolderView{}, ownedElsewhere(lease, identity)
 	}
-	if !newClaimer(root).stampComplete(lease) {
+	stampClaimer, stampErr := newClaimer(root)
+	if stampErr != nil {
+		return HolderView{}, stampErr
+	}
+	if !stampClaimer.stampComplete(lease) {
 		return HolderView{}, fmt.Errorf("checkout lease claim sweep is incomplete for the current claim epoch")
 	}
 	if expectedEpoch != nil && lease.ClaimEpoch != *expectedEpoch {

@@ -266,7 +266,7 @@ func (e *Engine) custodian(pid, start int64, tag string) identity.Liveness {
 	if e.custodianFn != nil {
 		return e.custodianFn(pid, start, tag)
 	}
-	return identity.Custodian(pid, start, tag)
+	return identity.Custodian(pid, start, tag, e.fixtures().Identity())
 }
 
 // drainSurvivors snapshots the live set for the park ask: id, status, age,

@@ -8,6 +8,7 @@ package lease
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 
 	"golang.org/x/sys/unix"
 
@@ -37,8 +38,8 @@ func CommandHash(command string) string {
 // authoritative source — the fake process table when a fixture installs one,
 // otherwise the kernel — via the census. ok is false when the pid is not a
 // live, readable process.
-func ProcessIdentity(pid int64) (Identity, bool) {
-	proc, err := census.AuthIdentity(pid)
+func ProcessIdentity(pid int64, probe identity.FixtureProbe) (Identity, bool) {
+	proc, err := census.AuthIdentity(pid, probe)
 	if err != nil {
 		return Identity{}, false
 	}
@@ -47,8 +48,8 @@ func ProcessIdentity(pid int64) (Identity, bool) {
 
 // StartedAt is the process's start second from the one source. ok is false
 // when the pid is not live/readable.
-func StartedAt(pid int64) (int64, bool) {
-	id, ok := ProcessIdentity(pid)
+func StartedAt(pid int64, probe identity.FixtureProbe) (int64, bool) {
+	id, ok := ProcessIdentity(pid, probe)
 	if !ok {
 		return 0, false
 	}
@@ -56,8 +57,8 @@ func StartedAt(pid int64) (int64, bool) {
 }
 
 // ProcessCommand is the process's command line from the one source.
-func ProcessCommand(pid int64) (string, bool) {
-	id, ok := ProcessIdentity(pid)
+func ProcessCommand(pid int64, probe identity.FixtureProbe) (string, bool) {
+	id, ok := ProcessIdentity(pid, probe)
 	if !ok {
 		return "", false
 	}
@@ -76,7 +77,7 @@ func ParentPid(pid int64) (int64, bool) {
 // safe answer is alive. A readable start-time mismatch does prove pid reuse,
 // so it reports dead. This is what lets a live holder keep its lease and a
 // dead one lose it.
-func Live(pid, startedAt int64) bool {
+func Live(pid, startedAt int64, probe identity.FixtureProbe) bool {
 	if pid < 1 || startedAt < 1 {
 		return false
 	}
@@ -90,9 +91,20 @@ func Live(pid, startedAt int64) bool {
 		// ESRCH and anything else: no such process.
 		return false
 	}
-	actual, ok := StartedAt(pid)
+	actual, ok := StartedAt(pid, probe)
 	if !ok {
 		return true
 	}
 	return actual == startedAt
+}
+
+// fixtureProbe constructs the root-checked fixture authority for this
+// package's entry points (agnosticism B1). The error is the loud
+// leaked-fixture refusal; a nil probe refuses fixtures.
+func fixtureProbe(root string) (identity.FixtureProbe, error) {
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		return nil, err
+	}
+	return authorization.Identity(), nil
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -237,7 +238,7 @@ func setupReaper(repo string) func() {
 	cfg := supervise.ReaperConfig{
 		JobsDir:   supervise.JobsDir(repo),
 		Now:       func() time.Time { return time.Now().UTC() },
-		Custodian: kernelCustodian,
+		Custodian: kernelCustodian(repo),
 		Apply:     recordCASApplier(repo),
 		Emit:      func(line string) { fmt.Fprintln(os.Stderr, line) },
 	}
@@ -251,9 +252,17 @@ func setupReaper(repo string) func() {
 // kernelCustodian binds the shared kernel custodian discipline
 // (identity.Custodian) as the reaper's custody prover: one implementation,
 // so the standing reaper and the mission runner's drain reap can never
-// disagree about one record's custodian.
-func kernelCustodian(pid, start int64, tag string) identity.Liveness {
-	return identity.Custodian(pid, start, tag)
+// disagree about one record's custodian. The fixture authority is
+// root-checked (agnosticism B1); a refused construction refuses
+// fixtures.
+func kernelCustodian(repo string) func(pid, start int64, tag string) identity.Liveness {
+	var probe identity.FixtureProbe
+	if authorization, err := fixtureauth.New(repo); err == nil {
+		probe = authorization.Identity()
+	}
+	return func(pid, start int64, tag string) identity.Liveness {
+		return identity.Custodian(pid, start, tag, probe)
+	}
 }
 
 // recordCASApplier binds the dispatch record owner as the reaper's verdict

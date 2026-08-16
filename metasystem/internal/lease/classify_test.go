@@ -23,7 +23,7 @@ func childOf(t *testing.T) int64 {
 
 func selfStart(t *testing.T) int64 {
 	t.Helper()
-	s, ok := StartedAt(int64(os.Getpid()))
+	s, ok := StartedAt(int64(os.Getpid()), nil)
 	if !ok {
 		t.Fatal("could not read our own start")
 	}
@@ -97,7 +97,7 @@ func TestClassifyAdapterSupervisorThroughAncestor(t *testing.T) {
 func TestClassifyDelegateThroughSignedAncestor(t *testing.T) {
 	root := t.TempDir()
 	self := int64(os.Getpid())
-	command, ok := ProcessCommand(self)
+	command, ok := ProcessCommand(self, nil)
 	if !ok {
 		t.Skip("cannot read our own command to build a matching signature")
 	}

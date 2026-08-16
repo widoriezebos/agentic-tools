@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // The end-of-turn supervision health judgment (review cli-2, relocated from
@@ -105,7 +107,7 @@ func WatchdogReport(repo string, now time.Time) []string {
 		item := identities[name]
 		pid, pidOK := intField(item["pid"])
 		start, startOK := intField(item["pidStartedAt"])
-		if !pidOK || !startOK || !census.Alive(pid, start) {
+		if !pidOK || !startOK || !census.Alive(pid, start, watchdogProbe(repo)) {
 			dead = append(dead, name)
 		}
 	}
@@ -156,4 +158,14 @@ func stateComponents(state map[string]any) (map[string]any, bool) {
 	}
 	components, ok := state["components"].(map[string]any)
 	return components, ok
+}
+
+// watchdogProbe is the report's fixture authority: root-checked, and a
+// refused construction refuses fixtures (agnosticism B1).
+func watchdogProbe(repo string) identity.FixtureProbe {
+	authorization, err := fixtureauth.New(repo)
+	if err != nil {
+		return nil
+	}
+	return authorization.Identity()
 }

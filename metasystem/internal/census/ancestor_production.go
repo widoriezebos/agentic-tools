@@ -2,6 +2,7 @@ package census
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -52,7 +53,11 @@ type AgentAncestor struct {
 // delegate or wrapper runs under. A fake-agent ancestor may be pinned by
 // environment for the fake runtime.
 func FindAncestorProduction(metasystemRoot string, pid int64, runtime string) (AgentAncestor, error) {
-	if fake := os.Getenv("METASYSTEM_FAKE_AGENT_ANCESTOR_PID"); fake != "" && runtime == "fake" {
+	// The AncestorProbe authority (agnosticism B1): the pin is honored
+	// only in a fixture-mode checkout AND for the fake runtime — the
+	// runtime guard stays, root authorization is necessary not
+	// sufficient.
+	if fake := os.Getenv("METASYSTEM_FAKE_AGENT_ANCESTOR_PID"); fake != "" && runtime == "fake" && fixtureauth.FixtureModeRoot(metasystemRoot) {
 		if candidate, err := strconv.ParseInt(fake, 10, 64); err == nil {
 			pgid, _ := unix.Getpgid(int(candidate))
 			return AgentAncestor{

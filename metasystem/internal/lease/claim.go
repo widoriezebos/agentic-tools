@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // supervisionTagPrefixes mark an announcement as a supervision component
@@ -27,16 +28,22 @@ type claimer struct {
 	root    string
 	paths   Paths
 	emitter *events.Emitter
+	probe   identity.FixtureProbe
 }
 
-func newClaimer(root string) *claimer {
+func newClaimer(root string) (*claimer, error) {
+	probe, err := fixtureProbe(root)
+	if err != nil {
+		return nil, err
+	}
 	self := int64(os.Getpid())
-	started, _ := StartedAt(self)
+	started, _ := StartedAt(self, probe)
 	return &claimer{
 		root:    root,
 		paths:   leasePaths(root),
 		emitter: &events.Emitter{Component: "lease", Pid: self, PidStartedAt: started},
-	}
+		probe:   probe,
+	}, nil
 }
 
 // claim brings the lease into agreement with ann. It handles every case a
@@ -70,7 +77,7 @@ func (c *claimer) claim(ann *Announcement) error {
 	case current.HolderMainId == ann.MainId:
 		return c.renewHeld(current, ann)
 
-	case Live(current.Pid, current.PidStartedAt):
+	case Live(current.Pid, current.PidStartedAt, c.probe):
 		if current.Pid == ann.Pid && current.PidStartedAt == ann.PidStartedAt {
 			// KI-33 fix: the same live process re-announced under a new mainId
 			// (a --shutdown then re-arm). It still owns its own checkout, so

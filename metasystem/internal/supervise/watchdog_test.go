@@ -25,6 +25,12 @@ func watchdogRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+	// The fixture authority requires a fake-mode conf at the root
+	// (agnosticism B1): a fixture without it is now REFUSED.
+	if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"),
+		[]byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return repo
 }
 

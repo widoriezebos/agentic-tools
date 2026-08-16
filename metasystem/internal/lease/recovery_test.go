@@ -32,7 +32,8 @@ func TestRenewCompletesInterruptedSweep(t *testing.T) {
 	if lease.Revision != 4 {
 		t.Fatalf("renewal should bump the revision to 4, got %d", lease.Revision)
 	}
-	if !newClaimer(root).stampComplete(lease) {
+	stampClaimer, _ := newClaimer(root)
+	if !stampClaimer.stampComplete(lease) {
 		t.Fatal("the interrupted sweep should be stamped complete after renewal")
 	}
 }
@@ -62,7 +63,7 @@ func TestRequireHolderClaimsUnheldForAuthenticatedMain(t *testing.T) {
 	root := t.TempDir()
 	self := int64(os.Getpid())
 	start := selfStart(t)
-	command, ok := ProcessCommand(self)
+	command, ok := ProcessCommand(self, nil)
 	if !ok {
 		t.Skip("cannot read our own command")
 	}

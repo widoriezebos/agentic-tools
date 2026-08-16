@@ -2,12 +2,12 @@ package dispatch
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -98,21 +98,14 @@ func processCommand(pid int64) (string, error) {
 // fixture, verifying the fixture agrees with the kernel about the process
 // group.
 func fixtureCommand(root string, pid, actualPgid int64) (string, error) {
-	fixturePath := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
-	configured := ""
-	conf, err := os.ReadFile(filepath.Join(root, "metasystem.conf"))
+	// The MissionHolderProbe (agnosticism B1): fixtureauth owns the
+	// conf predicate this function used to open-code, and mission-join
+	// gets exactly the command+pgid facts it needs.
+	authorization, err := fixtureauth.New(root)
 	if err != nil {
 		return "", fmt.Errorf("mission process command line could not be verified")
 	}
-	for _, raw := range strings.Split(string(conf), "\n") {
-		if strings.HasPrefix(raw, "metasystem.runtimes=") {
-			configured = strings.TrimSpace(strings.SplitN(raw, "=", 2)[1])
-		}
-	}
-	if configured != "fake" || fixturePath == "" {
-		return "", fmt.Errorf("mission process command line could not be verified")
-	}
-	entry, present := identity.FixtureEntryFor(pid)
+	entry, present := authorization.MissionHolder().FixtureEntry(pid)
 	if !present {
 		return "", fmt.Errorf("fake mission process identity fixture is invalid")
 	}

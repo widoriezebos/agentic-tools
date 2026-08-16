@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -106,6 +107,16 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 	metasystemRoot = realpath(metasystemRoot)
 	repoReal := realpath(repo)
 	var errors, diagnostics []string
+	// The fixture authority for this walk (agnosticism B1): constructed
+	// once from the repo root; a refused construction (leaked fixture in
+	// a non-fake checkout) surfaces as an error and fixtures stay
+	// refused — never granted.
+	var fixtureProbe identity.FixtureProbe
+	if authorization, err := fixtureauth.New(repoReal); err != nil {
+		errors = append(errors, "fixture-authorization:"+err.Error())
+	} else {
+		fixtureProbe = authorization.Identity()
+	}
 	counts := map[string]int{"CUSTODY": 0, "ANNOUNCED": 0, "UNTRACKED": 0}
 	var generation *int64
 	var stateDigest *string
@@ -114,7 +125,7 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 		errors = append(errors, "supervision-state:"+err.Error())
 	} else {
 		generation, stateDigest = &gen, &digest
-		verifySupervisionSnapshot(ids, &errors)
+		verifySupervisionSnapshot(ids, fixtureProbe, &errors)
 	}
 
 	processes, enumErr := enumerate(metasystemRoot)
@@ -145,7 +156,7 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 	}
 
 	custody := liveCustody(metasystemRoot)
-	announced := announcementsList(metasystemRoot, processes, &errors)
+	announced := announcementsList(metasystemRoot, processes, fixtureProbe, &errors)
 	var inventory []InventoryItem
 	for _, assignment := range matched {
 		process := processes[assignment.Index]
@@ -353,7 +364,9 @@ type identityRecord struct {
 }
 
 func enumerateFixture(metasystemRoot, processFile string) ([]Process, error) {
-	if config.ConfValue(filepath.Join(metasystemRoot, "metasystem.conf"), "metasystem.runtimes", "") != "fake" {
+	// The ProcessTableProbe authority (agnosticism B1): fixtureauth owns
+	// the one fixture-mode predicate.
+	if !fixtureauth.FixtureModeRoot(metasystemRoot) {
 		return nil, fmt.Errorf("METASYSTEM_CENSUS_PROCESS_FILE is allowed only when metasystem.runtimes=fake")
 	}
 	data, err := os.ReadFile(processFile)
@@ -426,10 +439,10 @@ func readSupervisionSnapshot(metasystemRoot string) (map[string]identityRecord, 
 // alive (by the fixture identity file when set, else the kernel) and its
 // command must carry its tag. A dead identity yields supervision-not-live; a
 // live one whose command lacks the tag yields supervision-tag-mismatch.
-func verifySupervisionSnapshot(ids map[string]identityRecord, errors *[]string) {
+func verifySupervisionSnapshot(ids map[string]identityRecord, probe identity.FixtureProbe, errors *[]string) {
 	for _, name := range []string{"owner", "watcher", "reaper"} {
 		id := ids[name]
-		if !identityAlive(id.Pid, id.Started) {
+		if !identityAlive(id.Pid, id.Started, probe) {
 			*errors = append(*errors, fmt.Sprintf("supervision-not-live:%s:pid=%d", name, id.Pid))
 			continue
 		}
@@ -450,11 +463,11 @@ func verifySupervisionSnapshot(ids map[string]identityRecord, errors *[]string) 
 // a provably dead pid is dead regardless of its fixture entry (the retired
 // python checked pid_exists first for exactly this reason: supervision stop
 // verification must be able to observe a stopped process).
-func identityAlive(pid, expectedStart int64) bool {
+func identityAlive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
 	if _, state, err := kernelProbe(pid); err == nil && state == probeDead {
 		return false
 	}
-	if entry, ok := identity.FixtureEntryFor(pid); ok {
+	if entry, ok := probeFixture(probe, pid); ok {
 		return entry.StartedAt == expectedStart
 	}
 	exact, state, err := kernelProbe(pid)
@@ -519,7 +532,7 @@ func liveCustody(metasystemRoot string) []identityRecord {
 	return records
 }
 
-func announcementsList(metasystemRoot string, processes []Process, errors *[]string) []identityRecord {
+func announcementsList(metasystemRoot string, processes []Process, probe identity.FixtureProbe, errors *[]string) []identityRecord {
 	// Fixture first, kernel second — the same precedence every other identity
 	// reader uses. A simulated process table ADDS processes for a census to
 	// inventory; it does not declare the rest of the machine dead (treating
@@ -578,7 +591,7 @@ func announcementsList(metasystemRoot string, processes []Process, errors *[]str
 		if process, ok := synthetic[pid]; ok {
 			alive = process.Alive && process.Started == started
 		} else {
-			alive = identityAlive(pid, started)
+			alive = identityAlive(pid, started, probe)
 		}
 		if !alive {
 			if err := os.Remove(path); err != nil {
