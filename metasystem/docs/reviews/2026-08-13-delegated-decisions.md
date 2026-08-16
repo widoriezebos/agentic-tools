@@ -2377,3 +2377,28 @@ folded and the design held at the budget-one boundary so nothing
 is lost. The standing rule going forward: when an execution-heavy
 subdomain exhausts two prose budgets without convergence, the
 exit is implementation-first behind fixtures, not more prose.
+
+## D82 — 2026-08-16: the human sets the ACP acceptance gate — benchmark both hosts, flip, fix forward, keep the machinery
+
+The human's ruling, verbatim intent: "After running a benchmark on
+the VM and on the Mac with ACP on and it is fully successful then
+we should flip the switch and keep this on as the default and fix
+forward. The fallback we might want to keep in place for future
+agents that are like Devin and require a similar adapter. So the
+work should not be lost, although for Devin we should really aim
+to use ACP going forwards." Three consequences folded into the
+design: (1) the acceptance gate for the default flip is a FULLY
+SUCCESSFUL benchmark run on both hosts — the Mac and the VM —
+with the flag on; the P3 "live smoke" grows into that dual-host
+benchmark. (2) After the flip the posture is FIX FORWARD: ACP
+problems are fixed on ACP; the legacy path is not a Devin escape
+hatch once the default lands, which supersedes the design's
+rollback-per-job framing for the post-flip era. (3) The legacy
+delegate machinery is RETAINED, not deleted — as reusable adapter
+capability for future Devin-like runtimes — which amends the
+design's D61-retirement condition: the dangerous-mode waiver
+retires FOR DEVIN when ACP becomes its default and the dangerous
+path stops being invoked for devin jobs; the machinery's survival
+no longer blocks that retirement, and any future runtime adopting
+the legacy adapter shape gets its own waiver decision on its own
+evidence.
