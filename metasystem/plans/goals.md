@@ -44,6 +44,10 @@
 - Origin: main
 - Next step: Design per plans/backlog-notes.md item 21 when picked up: inventory the process invariants, decide signal-vs-act per class.
 
+## Queued goal: custody-death-proof — Every terminal record write rides a real death proof: reaper, drain, lease sweep, protocol-error path, and fleet identity resolution
+- Origin: main
+- Next step: Design loop over the four shipped holes named in plans/acp-critique-r5.md finding 10 and D79; sealed-v1 (acp-transport) is the working prototype of the target contract.
+
 ## Parked goal: runtime-install-execution — The adoption/installation execution rewrite: plan owner, resume records, engine transport, crash-consistent completion
 - Origin: main
 - Parked because: Two six-round budgets show this subdomain diverges under prose critique (structural 12/11/5/5/5/8); the approach choice is Wido's: implementation-first behind fixtures, a third budget, or descope

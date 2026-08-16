@@ -2299,3 +2299,32 @@ this time, in the safety net itself. Both hosts green at 2f42ec7;
 acp-transport promoted. Also recorded this stretch: the human's
 accelerator ruling (runtime capabilities may accelerate, never
 carry) in the architecture doctrine at f833e68.
+
+## D79 — 2026-08-16: the ACP custody scope pivot — gate the new protocol, split the old holes
+
+Five rounds into the acp-transport design loop, critique r5's
+finding 10 exposed a scope contradiction I had been feeding for
+three folds: the document claimed "Devin delegate transport only"
+while its custody corrections kept rewriting terminalization for
+every runtime's reaper, mission drain, lease sweep, and record
+CAS. Both could not stay true. Decision, taken under the standing
+delegation: the sealed-custody protocol (generations, birth
+tokens, the one-operation proof-commit verb) is GATED to records
+carrying a custodyProtocol marker that only ACP-selected jobs
+write, so legacy terminal behavior stays byte-for-byte unchanged;
+and the four pre-existing fleet-wide holes the loop surfaced — the
+standing reaper proving only the top-level pid before stamping
+group death, the lease sweep's one-TERM-then-rewrite-failed, the
+RecordProtocolError verb bypassing compare-and-swap entirely, and
+second-resolution process identity that cannot exclude same-second
+pid reuse — are split to the new queued goal custody-death-proof,
+with the critique files as its evidence. Rationale: those defects
+ship today and predate ACP; fixing them fleet-wide inside a
+transport design would couple a risky cross-runtime migration to
+an experimental transport, the exact coupling D74 and D76 were
+split to avoid. The transport design keeps sealed-v1 as the
+working prototype of the target contract, which is the cheapest
+possible de-risking for the wider goal. Revert path: close the
+custody-death-proof goal unstarted and widen acp-transport's scope
+back, or rule the fleet migration first and park acp-transport on
+it.
