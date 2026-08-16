@@ -7,15 +7,22 @@ import (
 
 // The watermark rule, proven necessary by direct capture (probe
 // step B): session/load REPLAYS history as live-looking
-// agent_message_chunk notifications, so an unwatermarked assembler
-// would adopt a prior turn's answer as the new candidate. Assembly
-// consumes only chunks for the matching session that arrive after
-// the watermark opens (load/new response seen, prompt sent) and
-// before the matched PromptResponse closes the window.
+// agent_message_chunk notifications, and channel hand-off loses
+// arrival order between channels — the linux race in slice two
+// proved a post-response chunk can be SELECTED before the response
+// it followed. So the prompt window is a pure SEQUENCE RANGE: the
+// assembler buffers every candidate-relevant event with its wire
+// sequence, and Candidate assembles exactly the events strictly
+// inside (afterSeq, beforeSeq). No drains, no races.
 
 // maxCandidateBytes bounds the assembled candidate; a breach
 // disqualifies delivery (evidence, not candidate).
 const maxCandidateBytes = 8 * 1024 * 1024
+
+// maxBufferedBytes caps the assembler's event buffer; the journal
+// keeps the full stream, so past this point the window is already
+// disqualified and buffering more proves nothing.
+const maxBufferedBytes = 2 * maxCandidateBytes
 
 // ErrCandidateTooLarge reports a disqualified oversized candidate.
 var ErrCandidateTooLarge = errors.New("acp: assembled candidate exceeds the ceiling")
@@ -41,42 +48,32 @@ type updateBody struct {
 	} `json:"content"`
 }
 
-// Assembler accumulates message chunks inside one prompt window.
-// It is NOT safe for concurrent use; the connection's read loop is
-// the single caller.
-type Assembler struct {
-	sessionID string
-	open      bool
-	messages  [][]byte
-	current   []byte
-	currentID string
-	total     int
-	oversize  bool
+type assemblyEvent struct {
+	seq       uint64
+	userBreak bool
+	messageID string
+	text      string
 }
 
-// NewAssembler builds an assembler for one session's prompt window.
+// Assembler buffers candidate-relevant events for one session.
+// It is NOT safe for concurrent use; the turn driver is the single
+// caller.
+type Assembler struct {
+	sessionID string
+	events    []assemblyEvent
+	buffered  int
+	overflow  bool
+}
+
+// NewAssembler builds an assembler for one session.
 func NewAssembler(sessionID string) *Assembler {
 	return &Assembler{sessionID: sessionID}
 }
 
-// OpenWindow marks the watermark: everything consumed before this
-// call was replay or setup noise and is dropped.
-func (a *Assembler) OpenWindow() {
-	a.open = true
-	a.messages = nil
-	a.current = nil
-	a.currentID = ""
-	a.total = 0
-	a.oversize = false
-}
-
-// Consume feeds one session/update notification's params. Returns
-// true when the chunk entered the candidate (window open, session
-// match, text message chunk) — the caller journals regardless.
-func (a *Assembler) Consume(params json.RawMessage) bool {
-	if !a.open {
-		return false
-	}
+// Consume feeds one session/update notification's params with its
+// wire sequence. Returns true when the event was retained as
+// candidate-relevant — the caller journals regardless.
+func (a *Assembler) Consume(seq uint64, params json.RawMessage) bool {
 	var envelope sessionUpdate
 	if err := json.Unmarshal(params, &envelope); err != nil {
 		return false
@@ -95,59 +92,68 @@ func (a *Assembler) Consume(params json.RawMessage) bool {
 			// candidate bytes.
 			return false
 		}
-		// Message-ID grouping (spec: assembly rules): a change of
-		// non-empty identity is a message boundary; chunks without
-		// identity continue the current message.
-		if body.MessageID != "" && a.currentID != "" && body.MessageID != a.currentID {
-			a.breakMessage()
-		}
-		if body.MessageID != "" {
-			a.currentID = body.MessageID
-		}
-		a.total += len(body.Content.Text)
-		if a.total > maxCandidateBytes {
-			a.oversize = true
+		a.buffered += len(body.Content.Text)
+		if a.buffered > maxBufferedBytes {
+			a.overflow = true
 			return false
 		}
-		a.current = append(a.current, body.Content.Text...)
+		a.events = append(a.events, assemblyEvent{seq: seq, messageID: body.MessageID, text: body.Content.Text})
 		return true
 	case "agent_thought_chunk":
 		// The thought stream is verbose (23 chunks for a pong in
 		// the step-A capture) and never enters the candidate.
 		return false
 	case "user_message_chunk":
-		// A user chunk inside an open window means replay bled past
-		// the watermark or a second prompt is interleaving; it
-		// breaks the current message so a later agent message
-		// starts fresh.
-		a.breakMessage()
+		// A message boundary: a later agent message starts fresh.
+		a.events = append(a.events, assemblyEvent{seq: seq, userBreak: true})
 		return false
 	}
 	return false
 }
 
-// breakMessage closes the in-progress message; used at message
-// boundaries so "the final complete message wins" is decidable.
-func (a *Assembler) breakMessage() {
-	if len(a.current) > 0 {
-		a.messages = append(a.messages, a.current)
-		a.current = nil
-	}
-	a.currentID = ""
-}
-
-// Candidate closes the window and returns the final complete
-// message — the candidate under the final-message-wins rule —
-// with earlier messages remaining journaled evidence only. An
-// oversize window disqualifies entirely.
-func (a *Assembler) Candidate() ([]byte, error) {
-	a.breakMessage()
-	a.open = false
-	if a.oversize {
+// Candidate assembles the window (afterSeq, beforeSeq): chunks in
+// arrival order, message-ID grouping (a change of non-empty
+// identity is a boundary), user chunks as boundaries, the FINAL
+// complete message winning, earlier ones remaining journaled
+// evidence. Oversize disqualifies the whole window.
+func (a *Assembler) Candidate(afterSeq, beforeSeq uint64) ([]byte, error) {
+	if a.overflow {
 		return nil, ErrCandidateTooLarge
 	}
-	if len(a.messages) == 0 {
+	var messages [][]byte
+	var current []byte
+	currentID := ""
+	total := 0
+	flush := func() {
+		if len(current) > 0 {
+			messages = append(messages, current)
+			current = nil
+		}
+		currentID = ""
+	}
+	for _, event := range a.events {
+		if event.seq <= afterSeq || event.seq >= beforeSeq {
+			continue
+		}
+		if event.userBreak {
+			flush()
+			continue
+		}
+		if event.messageID != "" && currentID != "" && event.messageID != currentID {
+			flush()
+		}
+		if event.messageID != "" {
+			currentID = event.messageID
+		}
+		total += len(event.text)
+		if total > maxCandidateBytes {
+			return nil, ErrCandidateTooLarge
+		}
+		current = append(current, event.text...)
+	}
+	flush()
+	if len(messages) == 0 {
 		return nil, nil
 	}
-	return a.messages[len(a.messages)-1], nil
+	return messages[len(messages)-1], nil
 }
