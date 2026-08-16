@@ -1,518 +1,531 @@
 # ACP as the delegate transport (backlog item 18)
 
-- Status: DRAFT r4 — critiques r1–r3 folded (r1: 15 findings; r2: 8;
-  r3: 13, of which 11 structural; all folded, none refuted). First
-  three-round budget exhausted at r3; the stop criterion was
-  checked and findings were still changing what gets built (new
-  owners appeared: shared death proof, request normalizer,
-  admission surface, GC pinning), so the ratified second budget is
-  open.
+- Status: DRAFT r5 — critiques r1–r4 folded (r1: 15, r2: 8, r3: 13,
+  r4: 13 findings; all folded, none refuted). Second budget in
+  progress. r4 validated: preflight narrowing is sound against the
+  envelopes real dispatches use, the per-effect matrix is total
+  over validated ordinals, and the shipped record lock can support
+  the sealed-generation protocol.
 - Goal: acp-transport
-- Next step: Fold the critique verdict when run acp-critique-r4 concludes; implement only after convergence.
-- In flight right now: run acp-critique-r4 (codex xhigh critique; watch it with: bin/metasystem run watch --id acp-critique-r4 --root .)
+- Next step: Fold the critique verdict when run acp-critique-r5 concludes; implement only after convergence.
+- In flight right now: run acp-critique-r5 (codex xhigh critique; watch it with: bin/metasystem run watch --id acp-critique-r5 --root .)
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more
 robust?" There is: the installed CLI ships `devin acp` (an Agent
-Client Protocol server over stdio, re-verified at devin 3000.4.25,
-wire capture in plans/acp-wire-probe.md). The ratified direction
-(backlog-notes item on streaming, 2026-08-09) fixes the shape: ACP
-is a transport WITHIN the per-turn lifecycle, not a persistent
-server — process exit stays the turn boundary.
+Client Protocol server over stdio, wire capture in
+plans/acp-wire-probe.md). The ratified direction (backlog-notes
+streaming item, 2026-08-09) fixes the shape: ACP is a transport
+WITHIN the per-turn lifecycle — process exit stays the turn
+boundary.
 
 ## Protocol pins (r2 F4, r3 F12)
 
-Wire protocolVersion 1 does not freeze the message shapes: ACP's
-schema artifact evolves independently of the wire version. The
-implementation and every fixture pin:
-
-- ONE schema artifact release, recorded by digest in the repo when
-  P2 starts; adopting a newer artifact is a deliberate change with
-  a fresh conformance pass.
-- The stdio TRANSPORT/FRAMING contract (delimiter, encoding,
-  stdout-versus-stderr purity, maximum frame size, partial-frame
-  behavior), pinned from P1's raw byte trace — the current probe
-  capture is normalized JSON and proves nothing about framing.
+The implementation and every fixture pin ONE schema artifact
+release (recorded by digest when P2 starts; upgrades are
+deliberate changes with fresh conformance) and the stdio
+TRANSPORT/FRAMING contract (delimiter, encoding, stdout/stderr
+purity, max frame size, partial-frame behavior) from P1's raw byte
+trace.
 
 ## Scope (the honest increment)
 
-- First supported increment: the DEVIN DELEGATE transport only.
-  Cross-runtime neutrality is a property of the protocol, not of
-  this design (r1 F14).
-- Devin MISSION HOSTS are out of scope: hosts keep `devin -p` +
-  `host devin-collect`, and B1 host recollection survives
-  untouched until a separately scoped host-ACP design (r1 F10).
-- Chain persistence (a server crossing job records) is out of
-  scope (r1 F12).
-- Increment-one WORKLOAD eligibility is narrowed honestly (r3 F4):
-  until P1 proves Devin still delivers a useful `end_turn` under
+- DEVIN DELEGATE transport only (r1 F14). Devin MISSION HOSTS out
+  of scope (r1 F10). Chain persistence out of scope (r1 F12).
+- Until P1 proves Devin still delivers a useful `end_turn` under
   denied permissions, ACP dispatch is only offered to workloads
-  expected to issue no permission calls, and strict refusal (below)
-  is classified as a DEFENSIVE FAILURE MODE, not supported
-  transport behavior.
+  expected to issue no permission calls; strict refusal is a
+  DEFENSIVE FAILURE MODE, not supported behavior (r3 F4).
 
 ## What ACP buys, restated without over-claim
 
-1. **Permission requests become answerable.** Today a Devin
-   dispatch runs full auto-approve because prompts dead-stop the
-   CLI (D61's ruled waiver). Under ACP, `session/request_permission`
-   arrives as a JSON-RPC call answered from the job's envelope.
-   This is ADMISSION CONTROL — our side decides what the agent may
-   attempt — not containment (r1 F1): nothing here is a sandbox,
-   and an allowed shell command can still try to escape its roots.
-2. **Delivery gains a typed completion signal.** A `PromptResponse`
-   with a stop reason is completion EVIDENCE, not a typed return
-   object (r1 F6); content arrives as message-chunk notifications
-   and the assembled bytes still enter D62 qualification.
-3. **Progress becomes visible.** Streamed updates give supervision
-   a per-turn last-event-age heartbeat — ADVISORY accelerators
-   under the accelerator ruling (r1 F15); records stay the
-   authoritative state.
+1. **Permission requests become answerable** — ADMISSION CONTROL,
+   not containment (r1 F1): nothing here is a sandbox.
+2. **Delivery gains a typed completion signal** — completion
+   EVIDENCE, not a typed return object (r1 F6); assembled bytes
+   still enter D62 qualification.
+3. **Progress becomes visible** — ADVISORY accelerators under the
+   accelerator ruling (r1 F15); records stay authoritative.
 
-## Transport identity and selection (r1 F2; r2 F3; r3 F6, F7, F8)
+## Transport identity and selection (r1 F2; r2 F3; r3 F6, F7, F8; r4 F7)
 
-Transport is part of capability and enforcement identity, pinned
-BEFORE launch and verified AFTER:
+- Pre-launch, selection pins the REQUESTED transport, the EXPECTED
+  protocol version, and the SCHEMA ARTIFACT DIGEST from trusted
+  configuration; initialization records and verifies the
+  negotiated version. Job provenance records requested transport,
+  expected version, negotiated version, digest, and the exact
+  snapshot path.
+- Snapshots are SINGLE-TRANSPORT with identity (runtime, CLI
+  version, configuration hash, transport, expectedProtocolVersion,
+  schemaArtifactDigest — the pins not-applicable for legacy);
+  identity appears in the snapshot fields, filename, selection
+  match, and GC retention key (r3 F6).
+- GC never deletes a snapshot referenced by an undeleted job
+  record until a durable mirror manifest proves that EXACT file
+  was copied; the mirror's silent omission of missing snapshots is
+  a defect in scope (r3 F8).
+- Existing plural-`transports` snapshots read as legacy under a
+  declared migration rule and never satisfy ACP selection.
+- Transport-keyed interfaces are explicit, not implied (r4 F7):
+  the registry enumerates each runtime's declared transports; the
+  probe, contract producer, fake producer, and self-test all take
+  an explicit transport parameter and emit/consume
+  single-transport snapshots (the common emitter's hard-coded
+  plural list, devin's and fake's zero-argument contract verbs,
+  and the self-test parameter set all change); dispatch self-heal
+  invokes the probe WITH the transport it needs; the self-test
+  reader filters by transport + version + digest, never
+  newest-wins. The suite iterates every declared (runtime,
+  transport) pair: containment certifies once per runtime,
+  admission runs per pair.
+- Each job pins one transport and snapshot before launch; never a
+  mid-job switch; evidence never crosses transports (r1 F2).
 
-- Pre-launch, selection pins the REQUESTED transport (legacy |
-  acp), the EXPECTED protocol version, and the SCHEMA ARTIFACT
-  DIGEST, all from trusted configuration. Initialization records
-  the ACTUAL negotiated version into job provenance and verifies
-  it; a mismatch fails preflight. Job provenance records:
-  requested transport, expected version, negotiated version,
-  schema digest, and the exact snapshot path.
-- The capability snapshot becomes SINGLE-TRANSPORT with identity
-  (runtime, CLI version, configuration hash, transport,
-  expectedProtocolVersion, schemaArtifactDigest) — the latter two
-  not-applicable for legacy. Transport and both pins are explicit
-  snapshot fields, filename identity, selection-match fields, and
-  the garbage-collection retention key (r3 F6). The enforcement
-  content is per-transport by construction.
-- Garbage collection must not delete a snapshot referenced by a
-  live job (r3 F8): every snapshot referenced from an undeleted
-  job record is retained until a durable mirror manifest proves
-  that EXACT file was copied; only unreferenced or durably
-  mirrored superseded snapshots may be deleted. The mirror's
-  current silent omission of a missing snapshot is a defect in
-  scope: mirroring records what it copied, and a referenced
-  snapshot that cannot be mirrored blocks deletion.
-- Existing plural-`transports` snapshots read as legacy-transport
-  snapshots under a declared migration rule; they never satisfy an
-  ACP selection (fail-closed, confirmed sound by r3).
-- Every producer and consumer moves together, now enumerated (r3
-  F7): the Devin probe becomes transport-parameterized (one
-  invocation produces one single-transport snapshot), the contract
-  and fake producers emit single-transport snapshots, dispatch's
-  self-heal invokes the probe WITH the transport it needs, the
-  selector matches the full identity, evidence GC keys on it, and
-  the SELF-TEST READER filters by transport + expected version +
-  schema digest instead of newest-snapshot-wins before certifying
-  live permission behavior.
-- Enforcement declarations split into two surfaces (r3 F7): the
-  existing runtime-wide three-field CONTAINMENT declaration
-  (writeRoots/readRoots/network, mapped|notEnforced) is about the
-  runtime's own sandbox and stays as it is, transport-agnostic. A
-  NEW per-(runtime, transport) five-field ADMISSION surface
-  declares what permission admission has behaviorally proven. Both
-  live in the registry as data; the suite's three-field compare
-  stays valid and a new admission compare joins it.
-- Each job pins exactly one transport and snapshot before launch;
-  never a mid-job switch; evidence never crosses transports (r1
-  F2). Devin's containment declaration stays `notEnforced`
-  everywhere until the ACP path behaviorally proves allowed AND
-  forbidden effects per field (r1 F1); admission proof lands on
-  the admission surface, not the containment one.
+## Two enforcement surfaces (r3 F7; r4 F5)
 
-## The client: one process tree per prompt attempt (r1 F12, F13; r2 F1, F6)
+The existing runtime-wide three-field CONTAINMENT declaration
+(writeRoots/readRoots/network, mapped|notEnforced) is untouched —
+the suite's exactly-three-key compare stays valid, and Devin stays
+`notEnforced` everywhere until behavioral proof of allowed AND
+forbidden effects per field (r1 F1).
 
-`internal/acp` is a protocol client whose lifetime is exactly one
-PROMPT ATTEMPT: spawn `devin acp`, initialize, establish or load a
-session, run one prompt, tear down, exit. A job has at most two
-attempts — the initial prompt and D62's one repair — each a
-separately registered process tree. The repair attempt starts a
-fresh client/server, loads the session via `session/load` (only if
-P1 proves it), and prompts under the SAME pinned transport. If
-load is unproven or fails, ACP jobs run WITHOUT repair. An
-ACP-selected job never invokes the legacy repair command
-(`devin -p -r` stays legacy-only). No process crosses job records.
+The NEW ADMISSION surface is an exact type, defined now:
 
-## Custody: sealed sets, one proof owner (r2 F1; r3 F1, F2, F3)
+- Key: (runtime, transport). Fields: exactly the five envelope
+  fields — readRoots, writeRoots, network, approvals, tools.
+- Values: a closed two-state enum per field — `unproven` |
+  `proven` — where `proven` means admission behavior was
+  demonstrated in BOTH directions (an in-envelope request
+  admitted, an out-of-envelope request refused) on that transport.
+- Absence semantics: a pair with no declaration is all-`unproven`;
+  the legacy transport is all-`unproven` BY DEFINITION (it answers
+  no permission requests); non-ACP runtimes have no ACP pair.
+  Duplicate or unknown field keys fail Validate.
+- Actual side: the adapter registers admission results in a
+  seam-local table (the B1 pattern); each `proven` field binds to
+  its evidence — the certifying snapshot identified by runtime,
+  transport, protocol version, schema digest, and snapshot path.
+- Conformance joins declarations to registrations both ways; the
+  suite gains an admission compare beside the containment compare.
 
-Process tree: adapter shell → Go client → `devin acp` server. BOTH
-the client and the server's exact identities (pid + start time)
-are registered as custody entries before the first protocol byte.
-Children are proven by PID/START IDENTITY, never by the
-tag-in-argv custodian predicate — nothing guarantees `devin acp`
-carries the job tag in argv (r3 F2); P1 captures the server's
-actual proc-table appearance anyway.
+## The client: protocol only — launch stays with scripts (r4 F8)
 
-**Sealed custody generations (r3 F1).** The custody set carries a
-generation. Registration advances it; every death-proof
-compare-and-swap checks status AND generation atomically, so an
-identity appended after a proof was taken invalidates that proof.
-Launching the repair attempt atomically opens a new generation;
-registration against a sealed record refuses and tears the new
-process down. P2 gets the registration-versus-reap and
-registration-versus-cancel race fixtures.
+Doctrine assigns launch, wait, signaling, and environment wiring
+to scripts; this design does not request a third Go-launch
+exception. The topology:
 
-**One proof owner (r3 F3).** A single Go-owned death-proof
-function (internal/supervise) serves every terminal path —
-standing reaper, mission drain, cancellation, handshake and
-capability deadlines, protocol failure, normal completion, repair
-failure — exposed to the shell paths through a verb. It has two
-declared modes:
+- The ADAPTER SCRIPT creates the stdio plumbing (FIFOs), launches
+  `devin acp` with its stdio attached, registers custody, and
+  launches the Go client (`bin/metasystem acp turn …`) with the
+  already-open pipe ends. The script owns fifo cleanup on every
+  exit path.
+- The GO CLIENT (`internal/acp`, exposed as a verb) contains no
+  Devin-specific launch knowledge. It consumes: the pipe ends, the
+  envelope, the pins, the session directive (new | load
+  <sessionId>), and the prompt. It produces: the raw wire journal,
+  the watermarked assembled candidate with protocol provenance,
+  and a TYPED OUTCOME (one row of the failure matrix) on stdout
+  for the script to act on. cmd/metasystem gains the verb; the
+  shell-callable contracts for `acp turn` and the death-proof verb
+  are part of this design's deliverables.
 
-- `full-set`: the top-level adapter identity PLUS every valid
-  custody entry proven dead, and (in kill-capable paths) the
-  process group verified empty, before terminal compare-and-swap.
-  Used by reap, drain, cancel, deadline, and failure paths. The
-  deadline path's current terminalize-before-cleanup order
-  inverts: signal, prove, then terminalize.
-- `except-live-custodian`: everything except the still-running
-  adapter supervisor itself — the explicit weaker proof for NORMAL
-  COMPLETION, where the committer is the survivor. This names
-  today's semantics instead of silently contradicting the full
-  proof (r3 F3): the adapter proves its client and server dead
-  before its own terminal CAS.
+Client lifetime is one PROMPT ATTEMPT (r1 F12): a job has at most
+two attempts — initial and D62's one repair — each its own
+registered process tree. Repair semantics are disambiguated below
+(r4 F9). No process crosses job records. An ACP-selected job never
+invokes the legacy repair command.
 
-The proof-set contract (r3 F2): malformed or unknown custody
-entries DEFER terminalization (never read as dead); a legacy
-record with an absent or empty custody list is proven by the
-top-level identity alone — today's contract, stated, so old
-records stay reapable. Group death is stamped only when the
-applicable mode's whole set is proven. The mission drain's
-independent top-level-only reap changes to call the shared owner;
-internal/missionrunner is in the blast radius.
+## Custody: the sealed-generation state machine (r2 F1; r3 F1–F3; r4 F1–F4)
 
-**Kill paths.** The sweep signals the process group AND each
+Process tree per attempt: adapter shell → `devin acp` server AND
+Go client, both direct children of the script (the launch
+topology above), both registered by exact identity (pid + start
+time). Children are proven by PID/START, never the tag-in-argv
+predicate (r3 F2).
+
+**The state machine (r4 F1), all transitions under the record
+lock the custody file already shares with the record CAS:**
+
+1. OPEN a generation before spawning any process of an attempt.
+2. REGISTER identities against the open generation; every
+   registration advances a mutation revision.
+3. SEAL the generation when the script has finished spawning (no
+   more processes can be created for the attempt: the spawner
+   moves past its spawn section).
+4. Death proof is REFUSED while a generation is open.
+5. Terminal compare-and-swap atomically compares status AND
+   generation AND revision AND sealed state; any mismatch
+   invalidates the proof. (The shipped CAS compares only status;
+   extending it is in scope — r4 confirmed the lock supports
+   this.)
+6. Opening the repair attempt opens a NEW generation atomically;
+   registration against a sealed generation refuses and the new
+   process is torn down.
+7. ABANDONED-OPEN recovery: a generation left open by a spawner
+   proven dead (pid+start) may be sealed by the sweeper — the
+   spawner being dead, no further registration can occur; the
+   identities registered so far are the set.
+8. Records WITHOUT generations follow the stated legacy contract:
+   empty custody list → top-level identity alone; populated list →
+   top-level plus every valid entry. Malformed or unknown entries
+   DEFER terminalization (r3 F2).
+9. Generic record-patch verbs REFUSE to modify custody-control
+   fields (list, generation, seal, revision).
+
+**One proof owner, mode selected by COMMITTER LIVENESS (r3 F3;
+r4 F2):** a single Go-owned death-proof function
+(internal/supervise), exposed as a verb, serves every terminal
+path. The mode is chosen by who commits, not by outcome:
+
+- `except-live-custodian` — any terminal write performed by the
+  STILL-LIVE adapter itself: setup failures, running failures,
+  protocol errors, deadline handling, handshake rejection, normal
+  completion. The committer authenticates itself (its pid+start
+  must match the registered custodian) and proves everything but
+  itself dead.
+- `full-set` — any EXTERNAL committer: the standing reaper,
+  mission drain, dispatch cancellation, and the lease sweep. The
+  whole set including the adapter is proven dead.
+
+**Both modes always observe the process group (r4 F4):**
+`full-set` requires the group EMPTY; `except-live-custodian`
+permits only the exact authenticated adapter in it. Kill authority
+controls SIGNALING only, never proof strength. Non-kill paths
+DEFER terminalization on survivors or indeterminate enumeration.
+
+**Every shipped terminal writer routes through the owner (r4
+F3):** the standing reaper and mission drain (both currently prove
+only the top-level pid); the LEASE SWEEP (currently one group
+SIGTERM then a direct `failed` rewrite — it becomes signal, prove
+full-set, defer on survivors; internal/lease joins the blast
+radius); dispatch's post-spawn launch failures (once launch has
+returned a PID, that identity is retained and proven dead before
+`pending → failed`; only a positively proven never-launched
+reservation husk — no PID ever recorded — may use the zero-process
+exception); and the deadline path (signal, prove, then
+terminalize — never terminalize first).
+
+**Kill paths:** the sweep signals the process group AND each
 registered identity individually, re-verifying pid+start
 immediately before every signal (PID-reuse-safe). A registered
-identity that survives TERM/KILL escalation leaves the record
-NON-TERMINAL with a loud custody failure — never a quiet green. A
-daemonized server that left the group is still an exact registered
-identity, so the sweep finds it. Descendants spawned outside the
-group AND outside registration remain the same residual risk the
-legacy path carries; the instance-tag census sweep is the backstop
-and this design does not claim to close that hole (r2 F1).
+identity surviving TERM/KILL escalation leaves the record
+NON-TERMINAL with a loud custody failure. A daemonized server that
+left the group is still an exact registered identity. Descendants
+outside both the group and registration remain the legacy residual
+(tag census backstop); this design does not claim to close that
+hole, and with r4 F4 folded the no-kill paths no longer widen it.
 
-`session/cancel` is a bounded courtesy (it cancels an active
-prompt; it is NOT a server-shutdown contract — r3 F11), always
-followed by the normal teardown: stdin close, grace deadline, then
-TERM/KILL sweep. Kill authority never depends on protocol
-cooperation. The lifecycle loop keeps heartbeats and deadlines
-running while ACP I/O is blocked in EITHER direction: wedged read
-and blocked write (server not draining our frames) are distinct
+`session/cancel` is a bounded courtesy (it cancels a prompt; it is
+NOT a shutdown contract — r3 F11), always followed by stdin close,
+grace deadline, TERM/KILL sweep. The lifecycle loop keeps
+heartbeats and deadlines running while ACP I/O is blocked in
+either direction: wedged read and blocked write are distinct
 bounded fixtures (r2 F8).
 
 ## Client capabilities: advertise nothing (r1 F3)
 
-The production client advertises NO client filesystem and NO
-terminal capabilities. Any unsolicited server→client effect call
-fails closed and is recorded as a protocol violation. Enabling
-either later is a separate containment and custody design.
+No client filesystem, no terminal capabilities. Unsolicited
+server→client effect calls fail closed and are recorded. Enabling
+either later is a separate design.
 
-## The permission decision (r1 F4, F5; r2 F2; r3 F4, F5)
+## The permission decision (r1 F4, F5; r2 F2; r3 F4, F5; r4 F6, F12, F13)
 
-Two stages with two owners (r3 F5):
+**Correlation gate BEFORE normalization (r4 F6):** a permission
+request must carry the ACTIVE session ID and arrive inside an OPEN
+prompt window. Wrong-session, pre-prompt, and post-response
+requests are named protocol violations — recorded, answered
+`cancelled`, never normalized, never reaching Decide.
 
-**1. The request normalizer** (internal/acp, a named stage)
-translates a wire permission request into a NORMALIZED EFFECT
-REQUEST, resolving live filesystem facts — canonical paths,
-symlink resolution via the existing path canonicalization — so
-that the decision itself stays pure. Its Devin-specific input is
-the versioned wire-to-effect mapping P1 captures (the dialect);
-its output shape is dialect-neutral: one or more effects of class
+**Stage 1 — the request normalizer** (internal/acp, a named
+stage): translates a correlated wire request into a NORMALIZED
+EFFECT REQUEST, resolving live filesystem facts (canonical paths,
+symlinks) so the decision stays pure. Its Devin-specific input is
+the versioned wire-to-effect mapping P1 captures. Output classes:
 read(paths) | write(paths) | execute(command) | network(target) |
-unknown.
+unknown. Effect shapes P1 has not captured (reads, deletes, moves,
+searches — r4 F12) normalize to `unknown` until captured.
 
-**2. `Decide(normalizedEffects, envelope)`** is pure and total.
-The matrix, over the real envelope (readRoots, writeRoots,
-network: deny<ask<allow, approvals: deny<ask<allow, tools:
-read-only<runtime-default):
+**Stage 2 — `Decide(normalizedEffects, envelope)`**, pure and
+total over the real ordinals (network/approvals: deny<ask<allow;
+tools: read-only<runtime-default):
 
 | Effect | Verdict |
 |---|---|
-| read(paths) | allow iff every canonical path is inside readRoots ∪ writeRoots; else deny |
-| write(paths) | allow iff tools ≠ read-only AND every canonical path is inside writeRoots; else deny |
-| execute(command) | deny when tools = read-only (execution is state-changing); allow when tools = runtime-default, recording the raw command as evidence — admission, not containment: the command string is opaque and roots are NOT verified for it |
-| network(target) | allow iff network = allow; deny iff network = deny (ask cannot occur — see preflight) |
+| read(paths) | allow iff every canonical path ⊆ readRoots ∪ writeRoots; else deny |
+| write(paths) | allow iff tools ≠ read-only AND every canonical path ⊆ writeRoots; else deny |
+| execute(command) | deny when tools = read-only; allow when tools = runtime-default, raw command recorded as evidence — admission, not containment |
+| network(target) | allow iff network = allow; deny iff network = deny (ask cannot occur — preflight) |
 | unknown / missing required facts | unclassifiable |
-| multiple effects in one request | allow only if EVERY constituent effect is allow; else the whole request denies |
+| multiple effects | allow only if EVERY constituent allows; else deny |
 
-Preflight narrowing makes the matrix total (r3 F5): v1 has no
-escalation lifecycle, so an ACP-selected job whose envelope has
-approvals ≠ deny or network = ask FAILS PREFLIGHT loudly as
-unsupported-on-ACP-v1 — narrowing eligibility honestly instead of
-silently answering "ask" fields with denials. Both standard
-presets (none, workspace) already carry approvals=deny, so they
-are eligible as-is. This restriction lifts only with a future
-escalation design.
+**Preflight narrowing** keeps the matrix total: an ACP job whose
+envelope has approvals ≠ deny or network = ask fails preflight
+loudly as unsupported-on-ACP-v1 (r3 F5; r4 confirmed this is not
+over-tight: shipped presets use approvals=deny and real dispatches
+use network=allow|deny).
 
-**Option mapping** (the wire has no abstract allow/deny — r2 F2):
-verdict allow → select `allow_once`; if no `allow_once` is offered,
-return cancelled — never substitute a persistent grant. Verdict
-deny or unclassifiable → select `reject_once`; if absent, return
-cancelled. NEITHER `allow_always` NOR `reject_always` is ever
-selected (r3 F4: `reject_always` is remembered by the server and
-would poison the loaded repair session). Authority is never
-inferred from human-readable titles.
+**Option mapping (r2 F2; r3 F4; r4 F13):** the response must
+return one exact offered option ID. Verdict allow → requires
+EXACTLY ONE `allow_once` option: zero, multiple, or duplicate-ID
+matches return `cancelled`. Verdict deny/unclassifiable → exactly
+one `reject_once`, else `cancelled`. NEITHER `allow_always` NOR
+`reject_always` is ever selected (`reject_always` is remembered
+server-side and would poison a loaded repair session). Authority
+is never inferred from titles. Fixtures cover each cardinality.
 
-**Strict-refusal mode** (pre-dialect): until P1 captures the
-versioned Devin dialect, every request takes the deny branch
-(`reject_once`, else cancelled). This is a DEFENSIVE FAILURE MODE,
-not supported behavior (r3 F4): the shipped seam records that a
-denied tool can end a Devin turn with no reply, so P1 must send
-actual denials and cancellations and observe whether the turn
-still produces a useful `end_turn` — until it proves that,
-increment one only dispatches workloads expected to issue no
-permission calls.
+**Strict-refusal mode** (pre-dialect): every request takes the
+deny branch. A defensive failure mode, not supported behavior
+(r3 F4); P1 must send real denials and cancellations and observe
+whether turns still end usefully.
 
-The envelope is immutable for the job's life; no answer may widen
-it. Fixtures must prove the grades bite: `read-only` denies
-state-changing effects even inside an allowed root, and
-`runtime-default` never overrides roots or network (r1 F5).
+The envelope is immutable; no answer may widen it. Fixtures prove
+the grades bite (r1 F5).
 
 ## Delivery: watermarked assembly feeding D62 (r1 F6, F9; r2 F5; r3 F13)
 
-`session/load` REPLAYS history through notifications, so:
-
-- The client establishes a WATERMARK after load completes and
-  before the prompt is sent. Candidate assembly consumes only
-  `agent_message_chunk` updates for the matching session ID inside
-  the current prompt window (after the watermark, before the
-  matched PromptResponse).
-- Assembly is deterministic: chunks are preserved in ARRIVAL ORDER
-  within the window; there is NO content-based deduplication —
-  repeated text is legitimate — and no stable chunk identity is
-  assumed unless P1 proves one (r3 F13). Chunks group by message
-  ID when present, one message when absent; multiple assistant
-  messages in a window → the final complete message is the
-  candidate, earlier ones stay journaled evidence; non-text blocks
-  are journaled, never candidate bytes; truncation and
-  size-ceiling breaches disqualify (evidence, not delivery).
-- Channel rule (r3 F13): for ACP-selected jobs, `acp` is the ONLY
-  candidate channel — an invalid or disqualified ACP candidate
-  FAILS HONESTLY and never falls through to stdout/named-file/
-  transcript scraping (those are legacy-transport channels; falling
-  through would cross transports). For legacy jobs the existing
-  precedence is untouched. The collector gains the `acp` channel
-  with protocol provenance (session ID, prompt window, stop
-  reason, schema pin) additively; everything downstream of
-  candidate selection — qualification, normalization, validation,
-  immutable snapshot, adjudication — is reused as-is.
+- WATERMARK after `session/load` replay completes, before the
+  prompt; candidate assembly consumes only `agent_message_chunk`
+  updates for the matching session inside the current prompt
+  window.
+- Deterministic assembly: arrival order; NO content deduplication
+  (repeated text is legitimate; no stable chunk identity is
+  assumed unless P1 proves one); message-ID grouping when present;
+  final complete message wins, earlier ones stay evidence;
+  non-text blocks journaled, never candidate bytes; truncation and
+  size ceilings disqualify.
+- Channel rule: for ACP jobs, `acp` is the ONLY candidate channel —
+  an invalid candidate FAILS HONESTLY, never falls through to the
+  legacy scraping channels. Legacy jobs keep the existing
+  precedence. The collector gains the channel additively;
+  everything downstream of candidate selection is reused as-is.
 - A matched successful PromptResponse is COMPLETION evidence;
-  partial streams are evidence, never delivery. D62's ladder is
-  not retired by this design (r1 F9); simplification of legacy
-  legs waits until ACP delivery independently earns trust.
-- P1 captures load-replay-followed-by-prompt; P2 proves a stale
-  prior JSON answer cannot win candidate selection.
+  partial streams are never delivery. D62 is not retired (r1 F9).
+- P1 captures load-replay-then-prompt; P2 proves stale prior JSON
+  cannot win.
 
-## Repair: what is reused and what changes (r2 F6; r3 F9)
+## Repair (r2 F6; r3 F9; r4 F9, F10)
 
 Reused unchanged: validation, adjudication RULES, the durable
-repair claim, and precedence. Changed for ACP: repair EXECUTION
-(second registered ACP tree + session/load, never `devin -p -r`),
-COLLECTION (the acp channel on the repair window), USAGE (below),
-SETTLEMENT, CUSTODY (new sealed generation), and TERMINAL
-SEQUENCING (both trees in the proof set).
+repair claim, precedence. Changed for ACP: execution (second
+registered tree + session/load), collection (acp channel on the
+repair window), usage, settlement, custody (new generation),
+terminal sequencing (both trees in the proof set).
 
-Setup failures split (r3 F9): an INITIAL-attempt
-initialize/auth/new/load failure is preflight — no prompt was
-sent, the job fails cleanly. A REPAIR-attempt setup or load
-failure is NOT preflight: it consumes the claimed repair, accounts
-both attempts' usage, proves second-tree custody, skips
-settlement, and follows the existing repair-failure precedence.
+Two DISTINCT no-repair/failed-repair cases (r4 F9):
 
-## Usage: unresolved until P1, then exactly one algorithm (r1 F11; r2 F7; r3 F10)
+- **Repair disabled pre-claim**: P1 never proved `session/load`
+  (or the direction was closed). NO claim is written; the job
+  simply has no repair. This is the "runs without repair" case.
+- **Claimed repair fails**: the durable claim was written, then
+  the live load or setup of the repair attempt failed. The claim
+  is consumed; both attempts' usage is accounted (per the
+  completeness boundary below); second-tree custody is proven;
+  settlement is skipped; repair-failure precedence applies. Never
+  preflight.
 
-ACP v1 defines `usage_update`; whether Devin emits it, with what
-semantics, and whether ACP mode can produce a bounded ATIF export
-at all (today ATIF exists because the legacy command passes an
-explicit export flag) are P1 questions — across initial, loaded,
-and repair prompts. After P1, select EXACTLY ONE complete
-authoritative source; if none exists, the ACP transport publishes
-usage UNAVAILABLE, loudly. Wire and transcript figures are
-alternatives, never summed.
+**ACP settlement (r4 F10):** the shipped settlement requires the
+legacy repair transcript, so `DevinSettle` is declared
+LEGACY-ONLY. ACP repair settlement is defined fresh: authoritative
+session identity is the ACP session ID with negotiated provenance;
+effective-model evidence is the session-certification evidence P1
+question 7 captures; artifacts are the wire journal and the
+immutable candidate snapshot; the owner is a new adapter-registered
+ACP settlement hook (B1 seam pattern); a settlement failure on a
+successful repair fails the round, exactly today's contract. If P1
+shows the wire cannot certify the effective model, ACP repair
+STAYS DISABLED (the pre-claim case) until it can — settlement
+without evidence is not an option.
 
-Both selectable branches are prescribed now (r3 F10):
+## Usage (r1 F11; r2 F7; r3 F10; r4 F11)
 
-- **Cumulative-session totals** (today's shipped algorithm): the
-  repair attempt's metrics REPLACE the provisional initial
-  calculation and are differenced against the exact predecessor's
-  totals.
-- **Genuine per-attempt deltas**: attempts combine EXACTLY ONCE,
-  including the load spend of the repair attempt.
+Unresolved until P1: does Devin emit `usage_update` (semantics?),
+and can ACP mode produce a bounded ATIF export — across initial,
+loaded, and repair prompts, AND through the failure paths: induced
+repair-load error, prompt error, cancellation, early EOF, observed
+through teardown (r4 F11).
 
-Either way: a launched repair lacking complete usage makes the
-whole round's usage unavailable, and FAILED repairs still account
-their spend. Wire `usage_update` frames are journaled evidence; if
-selected as the source, the usage owner consumes the JOURNAL,
-keeping the accelerator ruling intact. Dead-round recovery stays a
-distinct operation, declared unsupported for devin unless complete
-wire evidence proves an honest delta.
+**Completeness boundary (r4 F11):** `usage_update` has no
+final-marker, so an attempt's wire usage is COMPLETE only when a
+matched PromptResponse and clean wind-down bound it — or when the
+selected source proves completeness another way (a post-exit ATIF
+export, if ACP mode has one). An attempt without a complete source
+publishes usage UNAVAILABLE for the round — including initial
+setup/load failures — never a fabricated partial number.
 
-## Failure outcomes (r1 F7; r2 F4; r3 F9)
+After P1: EXACTLY ONE authoritative source, with both selectable
+branches prescribed (r3 F10): cumulative-session totals (repair
+REPLACES provisional, differenced against exact predecessor) or
+genuine per-attempt deltas (combined EXACTLY ONCE, including load
+spend). A launched repair lacking complete usage makes the round
+unavailable; failed repairs still account spend WHEN their source
+is complete. Wire frames are journaled evidence; the owner
+consumes the journal. Dead-round recovery stays unsupported.
 
-Phase-by-phase, against the pinned schema artifact and framing:
+## Failure outcomes (r1 F7; r2 F4; r3 F9; r4 F2)
 
-| Phase / event | Outcome |
-|---|---|
-| initialize: negotiated version ≠ expected | refuse before session; preflight failure; no transport switch |
-| INITIAL attempt — initialize/auth/new/load JSON-RPC error (standard or arbitrary code) | phase-named preflight failure with the error as evidence (no prompt sent) |
-| REPAIR attempt — any setup or load failure | repair failure, NOT preflight: consumes the claim, accounts both attempts, proves second-tree custody, skips settlement (r3 F9) |
-| authMethods non-empty and session methods reject unauthenticated | distinguishable `auth-required` failure; never interactive auth inside a job |
-| unknown REQUIRED capability/variant | refuse the session |
-| malformed frame, oversized frame, mismatched response ID | protocol error; record; teardown |
-| prompt: JSON-RPC error | turn fails with the error as evidence |
-| stop reason end_turn | assemble window + qualify |
-| stop reason cancelled | cancelled turn; chunks are evidence |
-| stop reason refusal | refused turn with evidence |
-| stop reason max_tokens / max_turn_requests | INCOMPLETE turn; evidence only; never enters delivery qualification |
-| unknown stop reason | protocol error; never silent success |
-| update: agent_message_chunk | journal + assemble (inside the watermarked window) |
-| update: tool_call / plan / mode / config / session-info | journal; advisory heartbeat only |
-| update: usage_update | journal; source pending the P1 ruling |
-| unknown / extension notifications | journal and ignore; never fail the turn |
-| unsolicited server→client REQUEST | fail closed; protocol violation recorded |
-| cancellation race | a complete PromptResponse prior to teardown wins; otherwise cancelled; both journaled |
-| EOF before PromptResponse | turn fails; journaled chunks are evidence |
-| teardown timeout | TERM/KILL sweep; full custody proof before terminal CAS |
+Phase-by-phase against the pinned schema and framing. The
+COMMITTER column fixes the proof mode (r4 F2): `adapter` =
+still-live adapter, `except-live-custodian`; `external` =
+reaper/drain/cancel/sweep, `full-set`.
+
+| Phase / event | Committer | Outcome |
+|---|---|---|
+| initialize: negotiated ≠ expected | adapter | preflight failure; no transport switch |
+| INITIAL attempt setup error (initialize/auth/new/load JSON-RPC error) | adapter | phase-named preflight failure, error as evidence |
+| CLAIMED REPAIR setup/load failure | adapter | repair failure: claim consumed, both attempts accounted, second-tree custody proven, settlement skipped (r4 F9) |
+| auth required (authMethods non-empty, unauthenticated rejected) | adapter | distinguishable `auth-required` failure; never interactive auth |
+| unknown REQUIRED capability/variant | adapter | refuse the session |
+| malformed/oversized frame, mismatched ID | adapter | protocol error; teardown |
+| prompt JSON-RPC error | adapter | turn fails, error as evidence |
+| stop end_turn | adapter | assemble window + qualify |
+| stop cancelled | adapter | cancelled turn; chunks are evidence |
+| stop refusal | adapter | refused turn with evidence |
+| stop max_tokens / max_turn_requests | adapter | INCOMPLETE; evidence only |
+| unknown stop reason | adapter | protocol error; never silent success |
+| update: agent_message_chunk | — | journal + assemble (in window) |
+| update: tool_call / plan / mode / config / session-info | — | journal; advisory heartbeat |
+| update: usage_update | — | journal; source pending P1 |
+| unknown/extension notifications | — | journal and ignore |
+| unsolicited server→client request | adapter | fail closed; violation recorded |
+| permission request failing the correlation gate | adapter | protocol violation; answered cancelled; never normalized (r4 F6) |
+| cancellation race | adapter | complete PromptResponse before teardown wins; else cancelled |
+| EOF before PromptResponse | adapter | turn fails; chunks are evidence |
+| teardown timeout | adapter → external | TERM/KILL sweep; proof per the surviving committer's mode |
+| stale record swept (reaper/drain/lease) | external | full-set proof; defer on survivors |
+| post-spawn launch failure | adapter or external | recorded PID retained and proven dead before failed (r4 F3) |
 
 Once a prompt MAY have executed, server death never causes
 automatic restart or replay. An ACP failure never switches the
-same job to the legacy transport or `dangerous` mode (r1 F8);
-rollback is a pre-launch selection for the NEXT job (r1 F9).
+same job to legacy or `dangerous` (r1 F8); rollback is a
+pre-launch selection for the NEXT job (r1 F9).
 
 ## D61 and D62 retirement, stated honestly (r1 F8, F9)
 
-- D61: ACP-selected jobs never invoke it. The legacy path keeps
-  the waiver while callable; D61 retires only when the legacy
-  devin delegate path is REMOVED — a later decision on ACP's
-  record.
-- D62: retirement is not coupled to permission proof; the owners
+- D61: ACP jobs never invoke it; the legacy path keeps the waiver
+  while callable; D61 retires only when the legacy path is
+  REMOVED.
+- D62: retirement is not coupled to permission proof; owners
   survive with one additive channel.
-- Session bridges: P1 proves ACP→ACP load, legacy→ACP load, and
-  ACP→legacy resume separately; a failed direction is CLOSED as a
-  fallback before ACP jobs enter chains.
+- Session bridges: P1 proves all three directions separately; a
+  failed direction is CLOSED before ACP jobs enter chains.
 
 ## Registry: data only (r1 F14)
 
 `internal/runtimes` gains only expected shapes: the expected-ACP
-declaration (transport + expected protocol version) and the
-per-(runtime, transport) admission surface — both data.
-Launch argv and protocol translation live in adapter-owned tables,
-usage decoding in internal/usage, and conformance joins
-declarations to registrations both ways. A runtime without the
-declaration keeps its current path; adoption is per-runtime and
-reversible.
+declaration (transport + expected protocol version), the declared
+transport enumeration, and the admission surface — all data.
+Launch argv and protocol translation live in adapter-owned tables
+and scripts; usage decoding in internal/usage; conformance joins
+both ways. Runtimes without declarations keep their current paths.
 
 ## Events are advisory (r1 F15)
 
-ACP notifications feed progress display and wakeups. They COMMIT
-nothing: outcomes are committed by their existing owners to
-records, and recovery reads records — correct under missing,
-duplicated, reordered, or truncated notifications. The bounded raw
-wire journal stays separate from the typed flight-recorder
-catalog: the journal is evidence, the catalog is contract.
+Notifications feed progress and wakeups; they COMMIT nothing.
+Outcomes are committed by owners to records; recovery reads
+records, correct under missing, duplicated, reordered, or
+truncated notifications. The bounded raw wire journal stays
+separate from the typed flight-recorder catalog.
 
 ## Prototype plan (design gate before build stands)
 
-P1 (extend the existing probe; throwaway, never shipped) must
-answer, beyond the captured initialize:
+P1 (extend the probe; throwaway) must answer:
 
-1. Unauthenticated `session/new`: works or fails, and how
-   `devin-browser` auth manifests on the wire.
-2. `session/load` in all three bridge directions, including a
-   capture of load REPLAY followed by a fresh prompt (watermark
-   evidence).
+1. Unauthenticated `session/new`; how `devin-browser` auth
+   manifests.
+2. `session/load` in all three bridge directions, including load
+   REPLAY followed by a fresh prompt.
 3. A real prompt turn's stream: stop reasons, update kinds,
    message-ID usage.
-4. Permission dialect: provoke real requests (out-of-workspace
-   write, shell command, network fetch), capture offered options
-   verbatim, AND send denial (`reject_once`) and cancellation
-   responses, observing whether the turn still ends usefully
-   (r3 F4).
-5. Usage: `usage_update` emission and semantics; whether ACP mode
-   can produce a bounded ATIF export — across initial, loaded, and
-   repair-shaped prompts.
-6. `session/cancel`: its actual effect on the prompt AND the
-   server process (it is not a shutdown contract).
-7. Launch identity (r3 F11): the production-shaped argv and how
-   cwd/workspace, requested model, and job-derived configuration
-   map into `devin acp` + session/new/load; effective-model
-   certification evidence.
-8. Wind-down (r3 F11): normal-success and setup-failure shutdown —
-   stdin/client close, late frames, exit code, grace deadline,
-   session durability before a repair load, TERM/KILL escalation;
-   pid/start/pgid/descendant proc-table state throughout both
-   attempts (including whether the server carries the job tag in
-   argv).
-9. Raw byte framing trace (r3 F12): delimiter, encoding,
-   stdout/stderr purity, maximum frame size, partial-frame
-   behavior.
+4. Permission dialect — provoked WRITE, shell, network requests
+   AND inside-root/outside-root READS, deletes, moves, searches
+   (r4 F12), options captured verbatim; then send `reject_once`
+   and `cancelled` responses and observe whether turns still end
+   usefully (r3 F4). If reads provoke no request, read admission
+   stays unproven.
+5. Usage: `usage_update` emission and semantics; ATIF export
+   ability in ACP mode; across initial, loaded, repair prompts AND
+   induced failures (repair-load error, prompt error,
+   cancellation, early EOF) through teardown (r4 F11).
+6. `session/cancel`: effect on prompt AND server process.
+7. Launch identity: production argv mapping (cwd/workspace, model,
+   job config) into session/new/load; effective-model
+   certification evidence (also the ACP settlement prerequisite —
+   r4 F10).
+8. Wind-down: normal and failure shutdown — stdin close, late
+   frames, exit code, grace deadline, session durability before
+   repair load, TERM/KILL; pid/start/pgid/descendants through both
+   attempts; whether the server carries the job tag in argv.
+9. Raw byte framing trace: delimiter, encoding, stdout/stderr
+   purity, frame size, partial frames.
 
-The probe advertises no client capabilities; captures land beside
-the first one in plans/acp-wire-probe.md.
+P2: `internal/acp` + the fake runtime's stub ACP server — fixtures
+drive every matrix row with its committer/proof mode, the
+correlation gate, the normalizer + Decide (strict and
+post-dialect, option cardinalities), watermarked assembly with the
+stale-JSON attack, the custody state machine (open/register/seal/
+CAS, abandoned-open recovery, registration races, patch refusal,
+survivor, daemonizer, blocked read, blocked write before/after
+prompt, TERM/KILL, client death, repair second tree), the proof
+owner in both modes across ALL terminal writers (reaper, drain,
+cancel, lease sweep, launch failure), snapshot identity + GC
+pinning + transport-keyed producers and self-test, and both usage
+branches with the completeness boundary.
 
-P2: `internal/acp` with the fake runtime speaking a stub ACP
-server — fixtures drive every matrix row, the normalizer + Decide
-table (strict mode and post-dialect), watermarked assembly
-including the stale-prior-JSON attack, the custody set (sealed
-generations, registration races, survivor, daemonizer, blocked
-read, blocked write before/after prompt, TERM/KILL, client death,
-repair second tree), the shared proof owner in both modes across
-all terminal paths, snapshot identity + GC pinning + self-test
-filtering, and both usage branches.
-
-P3: devin's declaration + adapter integration behind a conf flag,
-selection pinning transport + versions into the snapshot;
-bm-style live smoke. Acceptance for any containment `mapped` flip:
-behavioral proof of allowed AND forbidden effects per field on the
-ACP path; admission proof lands on the admission surface (r1 F1,
-r3 F7).
+P3: devin's declarations + adapter integration behind a conf
+flag; bm-style live smoke. Containment `mapped` flips need
+behavioral proof per field; admission proof lands on the admission
+surface per (runtime, transport).
 
 ## Blast radius
 
-internal/acp (NEW: client, normalizer, Decide), internal/runtimes
-(expected-ACP declaration + admission surface), internal/adapter
-(devin ACP launch table, devincollect `acp` channel, snapshot
-single-transport schema, selftest reader filtering),
-internal/capability (selection on full identity),
-internal/evidence (GC retention key + referenced-snapshot
-pinning), internal/dispatch (custody generations, mirror manifest
-honesty, provenance fields), internal/census (custody identity
-recognition), internal/supervise (shared death-proof owner; reaper
-uses it), internal/missionrunner (drain uses it — r3 F3),
-internal/usage (per the P1 ruling), scripts/agents/dispatch.sh
-(cancellation sweep: group + exact identities; deadline path
-signal-prove-terminalize; self-heal transport parameter),
-scripts/agents/adapters/runtime-common.sh (registration seam,
-completion proof via the verb, repair seam guard),
-scripts/agents/adapters/devin.sh (transport-parameterized probe,
-dispatch path behind the flag), scripts/validate-metasystem.sh
-(admission compare beside the containment compare), dispatch/job
-records (protocol provenance), fixtures (stub server suite), docs
-(orchestration transport section). NOT touched:
-scripts/agents/hosts/devin.sh and internal/host recollection; the
-D62 owners downstream of candidate selection.
+internal/acp (NEW: client verb, normalizer, Decide),
+internal/runtimes (expected-ACP declaration, transport
+enumeration, admission surface), internal/adapter (devin ACP
+integration, devincollect `acp` channel, snapshot single-transport
+schema, selftest reader + parameters, ACP settlement hook;
+DevinSettle declared legacy-only), internal/capability (selection
+on full identity), internal/evidence (GC retention + pinning),
+internal/dispatch (custody state machine, CAS extension, mirror
+manifest honesty, provenance fields, patch refusal),
+internal/census (custody recognition), internal/supervise (shared
+death-proof owner + verb; reaper), internal/missionrunner (drain),
+internal/lease (sweep — r4 F3), internal/usage (per P1),
+cmd/metasystem (acp turn + death-proof verbs — r4 F8),
+scripts/agents/dispatch.sh (launch topology, cancellation sweep,
+deadline ordering, self-heal transport, post-spawn failure
+handling), scripts/agents/adapters/runtime-common.sh (fifo
+plumbing, registration, completion proof via verb, repair guard,
+single-transport emitter), scripts/agents/adapters/devin.sh
+(transport-parameterized probe/contract, flagged dispatch path),
+scripts/agents/adapters/fake.sh + internal fake producer
+(transport parameter), scripts/validate-metasystem.sh (per-pair
+admission compare; containment compare unchanged), dispatch/job
+records (protocol provenance), fixtures, docs (orchestration
+transport section). NOT touched: scripts/agents/hosts/devin.sh,
+internal/host recollection, D62 owners downstream of candidate
+selection, docs/architecture.md's launch doctrine (the fifo
+topology conforms — r4 F8).
 
 ## Loop discipline
 
-Critique rounds with codex at xhigh; two-budget allowance; stop on
-zero unrefuted material findings or the ratified exits. History:
-r1 15 findings, r2 8, r3 13 (11 structural — including that r2's
-custody fold was itself unimplementable against the shipped reaper
-and that a second reaper lives in mission drain). First budget
-exhausted; the findings were still naming new owners, so the
-second budget opened. The r4 critique should attack: whether
-sealed custody generations are implementable against the shipped
-record locking and CAS; whether the two-mode proof owner is
-coherent when the committer is the adapter itself (normal
-completion self-proof); whether the decision matrix is actually
-TOTAL — name a request shape with no row; whether preflight
-narrowing (approvals ≠ deny, network = ask unsupported) is
-over-tight against envelopes actually used in this repo; whether
-the containment/admission surface split keeps every existing suite
-compare and conformance join valid; and whether the P1 list is
-complete — anything the implementation needs that no probe
-question captures is a standing defect.
+Codex at xhigh; two-budget allowance; stop on zero unrefuted
+material findings or the ratified exits. History: r1 15, r2 8, r3
+13, r4 13 — r4 confirmed the lock supports sealed generations and
+that preflight narrowing and the matrix hold, while showing the
+proof owner missed lease sweep and launch-failure writers, the
+admission surface lacked a type, and repair had contradictory
+load-failure outcomes. All folded. The r5 critique should attack:
+the custody state machine's edge cases (abandoned-open recovery
+against a REUSED pid; whether any shipped verb patches
+custody-control fields today; seal timing when the script spawns
+client and server in sequence); whether except-live-custodian
+self-authentication is sound against pid reuse of the adapter
+itself; the fifo topology (who owns cleanup on every exit path;
+does the blocked-write fixture still hold when the script, not the
+client, launched the server; SIGPIPE behavior); whether the
+admission type's two-state enum loses information the selftest
+evidence model already distinguishes; the ACP settlement evidence
+chain against the shipped settle refusals; the usage completeness
+boundary against both branches; and P1 completeness once more —
+anything the implementation needs that no probe question captures
+is a standing defect.
