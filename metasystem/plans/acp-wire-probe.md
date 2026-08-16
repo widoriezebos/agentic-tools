@@ -210,3 +210,41 @@ the provocation prompt (write probe-c.txt + run `echo done`).
    whatever requests actually fire — step D (default mode, same
    provocation) establishes whether they EVER fire in the
    delegate topology with no client fs/terminal capabilities.
+
+---
+
+# P1 step D (2026-08-16): default mode — auto-approve, local execution, rich tool stream
+
+Fresh session `pear-silence`, DEFAULT mode (accept-edits), the
+same provocation prompt.
+
+## Facts established
+
+1. **Zero permission requests, full execution.** Devin wrote
+   probe-c.txt (verified on disk) and ran `echo done` (verified:
+   `terminal_exit {exit_code: 0}` in the update meta, cwd = the
+   workspace) — the local CLI process executes tools itself,
+   auto-approved, regardless of the client advertising no
+   fs/terminal capabilities. The client's capability refusal
+   governs CLIENT-side operations only; it contains nothing.
+2. **The permission-request machinery is idle in BOTH
+   envelope-relevant modes**: ask removes tools (step C),
+   accept-edits auto-approves them (this step). For the delegate
+   topology, `Decide` as per-request policy has no traffic on
+   these modes; the envelope maps to MODE SELECTION, and the
+   admission surface's behavioral evidence is exactly what steps
+   C and D captured (deny leg: ask refused write/exec; allow
+   leg: accept-edits performed them).
+3. **The monitor facility's heartbeat data is rich**: tool_call /
+   tool_call_update carry inferenceToolName, diff content with
+   absolute paths, in_progress/completed status transitions,
+   shell-command previews, cwd, and terminal exit codes — the
+   per-turn last-event-age signal and much more.
+4. Usage: three usage_update frames in one multi-tool turn (they
+   stream, not just finalize); PromptResponse.usage again
+   per-turn shaped (12041 in / 141 out, cachedReadTokens 11968).
+
+Remaining P1 items after step E (smart mode + out-of-workspace
+write, running now): session/cancel behavior (Q6), legacy→ACP and
+ACP→legacy bridges (Q2 rest), ATIF export in ACP mode (Q5 rest) —
+capturable during P2 as fixtures need them.
