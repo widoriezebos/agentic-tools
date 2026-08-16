@@ -12,6 +12,13 @@ import (
 // jsonMarshal is indirected for conn.go's mustMarshal.
 var jsonMarshal = json.Marshal
 
+// authRequiredCode is the pinned schema's authentication-required
+// JSON-RPC error code; auth classification keys on IT, not on
+// whether auth methods were advertised — the live probe proved
+// methods can be advertised while unauthenticated sessions succeed
+// (slice-two critique F8).
+const authRequiredCode = -32000
+
 // Row is the failure-matrix classification of a turn's outcome —
 // one row per matrix entry the protocol level can reach (custody
 // rows belong to the script and the proof owner).
@@ -59,11 +66,15 @@ type TurnConfig struct {
 	HandshakeTimeout        time.Duration
 	PromptTimeout           time.Duration
 	LateFrameWindow         time.Duration
+	CancelGrace             time.Duration
 }
 
 type initializeResult struct {
-	ProtocolVersion int64 `json:"protocolVersion"`
-	AuthMethods     []any `json:"authMethods"`
+	ProtocolVersion   int64 `json:"protocolVersion"`
+	AgentCapabilities struct {
+		LoadSession bool `json:"loadSession"`
+	} `json:"agentCapabilities"`
+	AuthMethods []any `json:"authMethods"`
 }
 
 type newSessionResult struct {
@@ -75,19 +86,33 @@ type promptResult struct {
 	Usage      json.RawMessage `json:"usage"`
 }
 
+// turnDriver is the single event pump: every call — setup and
+// prompt alike — is serviced while notifications and server
+// requests keep flowing, so a request flood or a server that
+// requires its answer before responding can never wedge the read
+// loop (critique F3). phase governs the correlation gate.
+type turnDriver struct {
+	conn       *Conn
+	assembler  *Assembler
+	sessionID  string
+	violations int
+	inWindow   bool
+	failure    error
+}
+
 // RunTurn drives one prompt attempt over an established
-// connection: initialize (version verified), session/new or load,
-// optional set-mode, the sequence-bounded prompt window, and stop-
-// reason mapping. Custody, spawning, and killing are the calling
+// connection. Custody, spawning, and killing are the calling
 // script's; RunTurn only ever touches the wire. The prompt window
-// is the OPEN sequence interval between the last setup response
-// and the PromptResponse — replay before it and stragglers after
-// it are journaled evidence that can never become the candidate.
+// opens at the fence sampled immediately before the prompt is
+// SENT (critique F4) and closes at the PromptResponse's sequence;
+// replay before it and stragglers after it are journaled evidence
+// that arithmetic, not timing, keeps out of the candidate.
 func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
+	driver := &turnDriver{conn: conn}
 	handshake, cancelHandshake := context.WithTimeout(ctx, cfg.HandshakeTimeout)
 	defer cancelHandshake()
 
-	initFrame, err := conn.CallSeq(handshake, "initialize", map[string]any{
+	initFrame, err := driver.call(handshake, "initialize", map[string]any{
 		"protocolVersion": cfg.ExpectedProtocolVersion,
 		"clientCapabilities": map[string]any{
 			// Advertise nothing: no client fs, no terminal — a
@@ -97,199 +122,275 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 		"clientInfo": map[string]any{"name": "metasystem-acp", "version": "1"},
 	})
 	if err != nil {
-		return Outcome{Row: RowProtocolError, Detail: fmt.Sprintf("initialize: %v", err)}
+		return driver.fail("initialize", err)
 	}
 	if initFrame.Msg.Error != nil {
-		return Outcome{Row: RowSetupError, Detail: fmt.Sprintf("initialize refused: %d %s", initFrame.Msg.Error.Code, initFrame.Msg.Error.Message)}
+		return Outcome{Row: RowSetupError, Violations: driver.violations, Detail: fmt.Sprintf("initialize refused: %d %s", initFrame.Msg.Error.Code, initFrame.Msg.Error.Message)}
 	}
 	var initBody initializeResult
 	if err := json.Unmarshal(initFrame.Msg.Result, &initBody); err != nil {
-		return Outcome{Row: RowProtocolError, Detail: "initialize result unreadable"}
+		return Outcome{Row: RowProtocolError, Violations: driver.violations, Detail: "initialize result unreadable"}
 	}
 	if initBody.ProtocolVersion != cfg.ExpectedProtocolVersion {
-		return Outcome{Row: RowVersionMismatch, Detail: fmt.Sprintf("negotiated %d, expected %d", initBody.ProtocolVersion, cfg.ExpectedProtocolVersion)}
+		return Outcome{Row: RowVersionMismatch, Violations: driver.violations, Detail: fmt.Sprintf("negotiated %d, expected %d", initBody.ProtocolVersion, cfg.ExpectedProtocolVersion)}
 	}
-	authAdvertised := len(initBody.AuthMethods) > 0
 
-	sessionID := cfg.LoadSessionID
-	var setupSeq uint64
-	if sessionID == "" {
-		frame, err := conn.CallSeq(handshake, "session/new", map[string]any{
+	if cfg.LoadSessionID == "" {
+		frame, err := driver.call(handshake, "session/new", map[string]any{
 			"cwd": cfg.WorkspaceDir, "mcpServers": []any{},
 		})
-		outcome, id := classifySetup(frame, err, authAdvertised, "session/new")
+		if err != nil {
+			return driver.fail("session/new", err)
+		}
+		outcome, id := classifySetup(frame, driver.violations, "session/new")
 		if outcome != nil {
 			return *outcome
 		}
-		sessionID = id
-		setupSeq = frame.Seq
+		driver.sessionID = id
 	} else {
-		frame, err := conn.CallSeq(handshake, "session/load", map[string]any{
-			"sessionId": sessionID, "cwd": cfg.WorkspaceDir, "mcpServers": []any{},
+		// The capability gate: sending load to a server that never
+		// declared it is a client bug, not a wire experiment
+		// (critique F8).
+		if !initBody.AgentCapabilities.LoadSession {
+			return Outcome{Row: RowSetupError, Violations: driver.violations, Detail: "session/load requested but the server did not declare loadSession"}
+		}
+		frame, err := driver.call(handshake, "session/load", map[string]any{
+			"sessionId": cfg.LoadSessionID, "cwd": cfg.WorkspaceDir, "mcpServers": []any{},
 		})
-		if outcome, _ := classifySetup(frame, err, authAdvertised, "session/load"); outcome != nil {
+		if err != nil {
+			return driver.fail("session/load", err)
+		}
+		if outcome, _ := classifySetup(frame, driver.violations, "session/load"); outcome != nil {
 			return *outcome
 		}
-		setupSeq = frame.Seq
+		driver.sessionID = cfg.LoadSessionID
 	}
 
 	if cfg.ModeID != "" {
-		frame, err := conn.CallSeq(handshake, "session/set_mode", map[string]any{
-			"sessionId": sessionID, "modeId": cfg.ModeID,
+		frame, err := driver.call(handshake, "session/set_mode", map[string]any{
+			"sessionId": driver.sessionID, "modeId": cfg.ModeID,
 		})
-		if err != nil || frame.Msg.Error != nil {
+		if err != nil {
+			return driver.fail("session/set_mode", err)
+		}
+		if frame.Msg.Error != nil {
 			// The mode IS the enforcement lever (probe steps C–E):
 			// a mode that cannot be set means the envelope cannot
 			// be honored, so the turn must not proceed.
-			return Outcome{Row: RowSetupError, SessionID: sessionID, Detail: "set_mode failed; the envelope's grade cannot be applied"}
+			return Outcome{Row: RowSetupError, SessionID: driver.sessionID, Violations: driver.violations, Detail: "set_mode failed; the envelope's grade cannot be applied"}
 		}
-		setupSeq = frame.Seq
 	}
 
-	assembler := NewAssembler(sessionID)
+	// The fence: sampled immediately before the prompt is sent.
+	// Anything already routed is setup noise or replay; the
+	// assembler refuses to buffer at or below it.
+	driver.assembler = NewAssembler(driver.sessionID)
+	driver.assembler.SetFence(conn.LastSeq())
+	driver.inWindow = true
 
 	promptCtx, cancelPrompt := context.WithTimeout(ctx, cfg.PromptTimeout)
 	defer cancelPrompt()
-	promptDone := make(chan Frame, 1)
-	promptErr := make(chan error, 1)
-	go func() {
-		frame, err := conn.CallSeq(promptCtx, "session/prompt", map[string]any{
-			"sessionId": sessionID,
-			"prompt":    []any{map[string]any{"type": "text", "text": cfg.Prompt}},
-		})
-		if err != nil {
-			promptErr <- err
-			return
+	respFrame, err := driver.call(promptCtx, "session/prompt", map[string]any{
+		"sessionId": driver.sessionID,
+		"prompt":    []any{map[string]any{"type": "text", "text": cfg.Prompt}},
+	})
+	if err != nil {
+		if ctx.Err() != nil && promptCtx.Err() == context.Canceled {
+			// Parent cancellation, not the prompt deadline: send
+			// session/cancel as the bounded courtesy and give the
+			// server the grace window to settle; a COMPLETE
+			// PromptResponse inside it wins (the matrix's
+			// cancellation-race row; critique F7).
+			return driver.cancelAndSettle(cfg)
 		}
-		promptDone <- frame
-	}()
+		return driver.fail("prompt", err)
+	}
+	return driver.settle(respFrame, cfg.LateFrameWindow)
+}
 
-	violations := 0
+// call pumps notifications and server requests while one request
+// is in flight, so the read loop never blocks on full queues and
+// servers that demand answers before responding are served.
+func (d *turnDriver) call(ctx context.Context, method string, params any) (Frame, error) {
+	type callResult struct {
+		frame Frame
+		err   error
+	}
+	resultCh := make(chan callResult, 1)
+	go func() {
+		frame, err := d.conn.CallSeq(ctx, method, params)
+		resultCh <- callResult{frame, err}
+	}()
 	for {
 		select {
-		case frame, ok := <-conn.Notifications():
-			if !ok {
-				continue
+		case result := <-resultCh:
+			return result.frame, result.err
+		case frame, ok := <-d.conn.Notifications():
+			if ok && frame.Msg.Method == "session/update" && d.assembler != nil {
+				d.assembler.Consume(frame.Seq, frame.Msg.Params)
 			}
-			if frame.Msg.Method == "session/update" {
-				assembler.Consume(frame.Seq, frame.Msg.Params)
+		case frame, ok := <-d.conn.Requests():
+			if ok {
+				if err := d.answer(ctx, frame); err != nil {
+					// A mandatory answer that never reached the
+					// wire breaks the protocol; remember it so the
+					// turn cannot settle as delivered (critique F2).
+					if d.failure == nil {
+						d.failure = err
+					}
+				}
 			}
-			// Every other notification kind is journaled by the
-			// wire layer and advisory here (accelerator ruling).
-		case frame, ok := <-conn.Requests():
-			if !ok {
-				continue
-			}
-			violations += answerServerRequest(conn, frame.Msg, sessionID)
-		case respFrame := <-promptDone:
-			return settlePrompt(conn, respFrame, assembler, setupSeq, sessionID, violations, cfg.LateFrameWindow)
-		case err := <-promptErr:
-			return Outcome{Row: promptFailureRow(err, conn), SessionID: sessionID, Violations: violations, Detail: fmt.Sprintf("prompt: %v", err)}
-		case <-conn.Done():
-			return Outcome{Row: promptFailureRow(conn.Err(), conn), SessionID: sessionID, Violations: violations, Detail: fmt.Sprintf("connection died mid-prompt: %v", conn.Err())}
 		}
 	}
 }
 
-// promptFailureRow separates the matrix's protocol deaths
-// (malformed, oversize, torn, timeout, mismatched id) from a clean
-// peer close before the response (turn failed; chunks stay
-// evidence).
-func promptFailureRow(err error, conn *Conn) Row {
-	if errors.Is(err, io.EOF) {
-		return RowTurnFailed
-	}
-	if err != nil {
-		return RowProtocolError
-	}
-	if connErr := conn.Err(); connErr != nil && !errors.Is(connErr, io.EOF) {
-		return RowProtocolError
-	}
-	return RowTurnFailed
-}
-
-// classifySetup maps a setup-phase response to its matrix row, or
-// returns the session id on success.
-func classifySetup(frame Frame, err error, authAdvertised bool, phase string) (*Outcome, string) {
-	if err != nil {
-		return &Outcome{Row: RowProtocolError, Detail: fmt.Sprintf("%s: %v", phase, err)}, ""
-	}
-	if frame.Msg.Error != nil {
-		if authAdvertised {
-			// The matrix's auth-required row: the server advertised
-			// auth methods and refused an unauthenticated session.
-			// Never interactive auth inside a job.
-			return &Outcome{Row: RowAuthRequired, Detail: fmt.Sprintf("%s refused with auth advertised: %d %s", phase, frame.Msg.Error.Code, frame.Msg.Error.Message)}, ""
-		}
-		return &Outcome{Row: RowSetupError, Detail: fmt.Sprintf("%s: %d %s", phase, frame.Msg.Error.Code, frame.Msg.Error.Message)}, ""
-	}
-	var body newSessionResult
-	if err := json.Unmarshal(frame.Msg.Result, &body); err != nil || (phase == "session/new" && body.SessionID == "") {
-		return &Outcome{Row: RowProtocolError, Detail: phase + " result unreadable"}, ""
-	}
-	return nil, body.SessionID
-}
-
-// answerServerRequest applies the correlation gate and the strict
-// permission posture; the return value counts violations.
-func answerServerRequest(conn *Conn, request *Message, sessionID string) int {
+// answer applies the correlation gate: permission requests outside
+// the open prompt window or for the wrong session are violations
+// answered cancelled; in-window ones take the strict posture.
+// Anything that is not a permission request fails closed.
+func (d *turnDriver) answer(ctx context.Context, frame Frame) error {
+	request := frame.Msg
 	if request.Method != "session/request_permission" {
-		// Unsolicited server→client effect call: this client
-		// advertised nothing, so anything else fails closed.
-		conn.RespondError(request.ID, -32601, "client capability not advertised")
-		return 1
+		d.violations++
+		return d.conn.RespondError(ctx, request.ID, -32601, "client capability not advertised")
 	}
 	var params struct {
 		SessionID string             `json:"sessionId"`
 		Options   []PermissionOption `json:"options"`
 	}
-	if err := json.Unmarshal(request.Params, &params); err != nil || params.SessionID != sessionID {
-		// The correlation gate: wrong-session or unreadable
-		// requests are protocol violations, answered cancelled,
-		// never normalized (r4 F6).
-		conn.Respond(request.ID, PermissionAnswer{Outcome: outcomeCancelled}.WireResult())
-		return 1
+	inWindow := d.inWindow
+	if err := json.Unmarshal(request.Params, &params); err != nil || params.SessionID != d.sessionID || !inWindow {
+		// Wrong session, unreadable, or outside the open window
+		// (r4 F6; slice-two F6): a violation, answered cancelled,
+		// never normalized.
+		d.violations++
+		return d.conn.Respond(ctx, request.ID, PermissionAnswer{Outcome: outcomeCancelled}.WireResult())
 	}
 	// Strict-refusal posture until a captured dialect wires the
 	// normalizer + Decide (probe steps C–E: no request fired in
 	// any envelope-relevant mode, so this is the defensive
 	// backstop, not the enforcement lever).
-	conn.Respond(request.ID, StrictAnswer(params.Options).WireResult())
-	return 0
+	return d.conn.Respond(ctx, request.ID, StrictAnswer(params.Options).WireResult())
 }
 
-// settlePrompt maps the PromptResponse to its row. Queued
-// notifications drain into the assembler first — the sequence
-// filter, not drain timing, decides what was in the window — and
-// the late-frame window is drained as journaled evidence.
-func settlePrompt(conn *Conn, respFrame Frame, assembler *Assembler, setupSeq uint64, sessionID string, violations int, lateWindow time.Duration) Outcome {
+// fail maps a transport-level call failure to its matrix row.
+func (d *turnDriver) fail(phase string, err error) Outcome {
+	row := RowProtocolError
+	if errors.Is(err, io.EOF) {
+		row = RowTurnFailed
+	}
+	return Outcome{Row: row, SessionID: d.sessionID, Violations: d.violations, Detail: fmt.Sprintf("%s: %v", phase, err)}
+}
+
+// cancelAndSettle implements the cancellation race: the courtesy
+// cancel goes out, and a complete PromptResponse inside the grace
+// window still wins; otherwise the turn is cancelled. The script's
+// kill path follows regardless — cancel is never a shutdown
+// contract.
+func (d *turnDriver) cancelAndSettle(cfg TurnConfig) Outcome {
+	grace := cfg.CancelGrace
+	if grace <= 0 {
+		grace = 2 * time.Second
+	}
+	graceCtx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	if err := d.conn.Notify(graceCtx, "session/cancel", map[string]any{"sessionId": d.sessionID}); err != nil {
+		return Outcome{Row: RowCancelled, SessionID: d.sessionID, Violations: d.violations, Detail: fmt.Sprintf("cancelled; courtesy cancel failed: %v", err)}
+	}
+	// The prompt call was already abandoned with its context; the
+	// response, if it lands, arrives as a pending-call frame the
+	// read loop can no longer match — it kills the connection as an
+	// unknown id. That is acceptable teardown: the turn is already
+	// cancelled, and the kill path owns the rest. We wait only for
+	// quiet.
+	select {
+	case <-time.After(grace):
+	case <-d.conn.Done():
+	}
+	return Outcome{Row: RowCancelled, SessionID: d.sessionID, Violations: d.violations, Detail: "parent cancellation; courtesy cancel sent"}
+}
+
+// classifySetup maps a setup-phase response to its matrix row, or
+// returns the session id on success. Auth classification keys on
+// the pinned schema's code, never on advertisement (critique F8).
+func classifySetup(frame Frame, violations int, phase string) (*Outcome, string) {
+	if frame.Msg.Error != nil {
+		if frame.Msg.Error.Code == authRequiredCode {
+			// Never interactive auth inside a job.
+			return &Outcome{Row: RowAuthRequired, Violations: violations, Detail: fmt.Sprintf("%s: authentication required: %s", phase, frame.Msg.Error.Message)}, ""
+		}
+		return &Outcome{Row: RowSetupError, Violations: violations, Detail: fmt.Sprintf("%s: %d %s", phase, frame.Msg.Error.Code, frame.Msg.Error.Message)}, ""
+	}
+	var body newSessionResult
+	if err := json.Unmarshal(frame.Msg.Result, &body); err != nil || (phase == "session/new" && body.SessionID == "") {
+		return &Outcome{Row: RowProtocolError, Violations: violations, Detail: phase + " result unreadable"}, ""
+	}
+	return nil, body.SessionID
+}
+
+// settle maps the PromptResponse to its row. Queued frames drain
+// first — the sequence fence, not drain timing, decides window
+// membership — and the bounded late window drains as journaled
+// evidence with post-window requests answered as violations.
+func (d *turnDriver) settle(respFrame Frame, lateWindow time.Duration) Outcome {
+	d.inWindow = false
+	settleCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	for {
 		select {
-		case frame, ok := <-conn.Notifications():
-			if !ok {
-				break
+		case frame, ok := <-d.conn.Notifications():
+			if ok && frame.Msg.Method == "session/update" {
+				d.assembler.Consume(frame.Seq, frame.Msg.Params)
 			}
-			if frame.Msg.Method == "session/update" {
-				assembler.Consume(frame.Seq, frame.Msg.Params)
+			if !ok {
+				goto drained
+			}
+			continue
+		case frame, ok := <-d.conn.Requests():
+			if ok {
+				if frame.Seq < respFrame.Seq {
+					// Arrived before the response on the wire: a
+					// legitimate in-window request, answered under
+					// the in-window policy.
+					d.inWindow = true
+					if err := d.answer(settleCtx, frame); err != nil && d.failure == nil {
+						d.failure = err
+					}
+					d.inWindow = false
+				} else {
+					if err := d.answer(settleCtx, frame); err != nil && d.failure == nil {
+						d.failure = err
+					}
+				}
+			}
+			if !ok {
+				goto drained
 			}
 			continue
 		default:
 		}
 		break
 	}
+drained:
+	if d.failure != nil {
+		return Outcome{Row: RowProtocolError, SessionID: d.sessionID, Violations: d.violations, Detail: fmt.Sprintf("mandatory answer never reached the wire: %v", d.failure)}
+	}
 	resp := respFrame.Msg
 	if resp.Error != nil {
-		return Outcome{Row: RowTurnFailed, SessionID: sessionID, Violations: violations, Detail: fmt.Sprintf("prompt error: %d %s", resp.Error.Code, resp.Error.Message)}
+		return Outcome{Row: RowTurnFailed, SessionID: d.sessionID, Violations: d.violations, Detail: fmt.Sprintf("prompt error: %d %s", resp.Error.Code, resp.Error.Message)}
 	}
 	var body promptResult
 	if err := json.Unmarshal(resp.Result, &body); err != nil {
-		return Outcome{Row: RowProtocolError, SessionID: sessionID, Violations: violations, Detail: "prompt result unreadable"}
+		return Outcome{Row: RowProtocolError, SessionID: d.sessionID, Violations: d.violations, Detail: "prompt result unreadable"}
 	}
-	drainLate(conn, lateWindow)
-	base := Outcome{StopReason: body.StopReason, SessionID: sessionID, UsageResult: body.Usage, Violations: violations}
+	d.drainLate(lateWindow, respFrame.Seq)
+	if d.failure != nil {
+		return Outcome{Row: RowProtocolError, SessionID: d.sessionID, Violations: d.violations, Detail: fmt.Sprintf("mandatory answer never reached the wire: %v", d.failure)}
+	}
+	base := Outcome{StopReason: body.StopReason, SessionID: d.sessionID, UsageResult: body.Usage, Violations: d.violations}
 	switch body.StopReason {
 	case "end_turn":
-		candidate, err := assembler.Candidate(setupSeq, respFrame.Seq)
+		candidate, err := d.assembler.Candidate(respFrame.Seq)
 		if err != nil {
 			base.Row = RowIncomplete
 			base.Detail = err.Error()
@@ -315,26 +416,33 @@ func settlePrompt(conn *Conn, respFrame Frame, assembler *Assembler, setupSeq ui
 
 // drainLate consumes frames for the bounded late window after the
 // PromptResponse — the step-A capture proved late frames are real.
-// They are journaled evidence; the sequence filter already
-// excludes them from the candidate.
-func drainLate(conn *Conn, window time.Duration) {
+// They are journaled evidence; the fence arithmetic keeps them out
+// of the candidate, and post-window requests are violations
+// answered cancelled (critique F6).
+func (d *turnDriver) drainLate(window time.Duration, responseSeq uint64) {
 	if window <= 0 {
 		return
 	}
+	lateCtx, cancel := context.WithTimeout(context.Background(), window+5*time.Second)
+	defer cancel()
 	deadline := time.After(window)
 	for {
 		select {
 		case <-deadline:
 			return
-		case _, ok := <-conn.Notifications():
+		case _, ok := <-d.conn.Notifications():
 			if !ok {
 				return
 			}
-		case frame, ok := <-conn.Requests():
-			if ok && frame.Msg != nil {
-				conn.RespondError(frame.Msg.ID, -32601, "turn already settled")
+		case frame, ok := <-d.conn.Requests():
+			if !ok {
+				return
 			}
-		case <-conn.Done():
+			if err := d.answer(lateCtx, frame); err != nil && d.failure == nil {
+				d.failure = err
+			}
+			_ = responseSeq
+		case <-d.conn.Done():
 			return
 		}
 	}

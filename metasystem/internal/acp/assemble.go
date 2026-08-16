@@ -60,6 +60,8 @@ type assemblyEvent struct {
 // caller.
 type Assembler struct {
 	sessionID string
+	fence     uint64
+	fenceSet  bool
 	events    []assemblyEvent
 	buffered  int
 	overflow  bool
@@ -70,10 +72,27 @@ func NewAssembler(sessionID string) *Assembler {
 	return &Assembler{sessionID: sessionID}
 }
 
+// SetFence marks the window's lower bound: the newest routed
+// sequence sampled immediately before the prompt is sent. Events
+// at or below it — setup noise and load replay — are never
+// buffered, so out-of-window bytes cannot poison the accounting
+// (slice-two critique F4, F5).
+func (a *Assembler) SetFence(seq uint64) {
+	a.fence = seq
+	a.fenceSet = true
+}
+
+// maxBufferedEvents caps the event count so boundary floods are
+// bounded like byte floods.
+const maxBufferedEvents = 65536
+
 // Consume feeds one session/update notification's params with its
 // wire sequence. Returns true when the event was retained as
 // candidate-relevant — the caller journals regardless.
 func (a *Assembler) Consume(seq uint64, params json.RawMessage) bool {
+	if !a.fenceSet || seq <= a.fence {
+		return false
+	}
 	var envelope sessionUpdate
 	if err := json.Unmarshal(params, &envelope); err != nil {
 		return false
@@ -85,6 +104,10 @@ func (a *Assembler) Consume(seq uint64, params json.RawMessage) bool {
 	if err := json.Unmarshal(envelope.Update, &body); err != nil {
 		return false
 	}
+	if len(a.events) >= maxBufferedEvents {
+		a.overflow = true
+		return false
+	}
 	switch body.SessionUpdate {
 	case "agent_message_chunk":
 		if body.Content.Type != "text" {
@@ -92,7 +115,9 @@ func (a *Assembler) Consume(seq uint64, params json.RawMessage) bool {
 			// candidate bytes.
 			return false
 		}
-		a.buffered += len(body.Content.Text)
+		// Identifiers count toward the buffer bound too — the cap
+		// is a memory bound, not a text bound.
+		a.buffered += len(body.Content.Text) + len(body.MessageID) + 16
 		if a.buffered > maxBufferedBytes {
 			a.overflow = true
 			return false
@@ -105,18 +130,25 @@ func (a *Assembler) Consume(seq uint64, params json.RawMessage) bool {
 		return false
 	case "user_message_chunk":
 		// A message boundary: a later agent message starts fresh.
+		a.buffered += 16
+		if a.buffered > maxBufferedBytes {
+			a.overflow = true
+			return false
+		}
 		a.events = append(a.events, assemblyEvent{seq: seq, userBreak: true})
 		return false
 	}
 	return false
 }
 
-// Candidate assembles the window (afterSeq, beforeSeq): chunks in
-// arrival order, message-ID grouping (a change of non-empty
-// identity is a boundary), user chunks as boundaries, the FINAL
-// complete message winning, earlier ones remaining journaled
-// evidence. Oversize disqualifies the whole window.
-func (a *Assembler) Candidate(afterSeq, beforeSeq uint64) ([]byte, error) {
+// Candidate assembles the window below beforeSeq (the
+// PromptResponse's sequence; the lower fence was enforced at
+// Consume): chunks in arrival order, message-ID grouping (a
+// change of non-empty identity is a boundary), user chunks as
+// boundaries, the FINAL complete message winning, earlier ones
+// remaining journaled evidence. Oversize disqualifies the whole
+// window.
+func (a *Assembler) Candidate(beforeSeq uint64) ([]byte, error) {
 	if a.overflow {
 		return nil, ErrCandidateTooLarge
 	}
@@ -132,7 +164,7 @@ func (a *Assembler) Candidate(afterSeq, beforeSeq uint64) ([]byte, error) {
 		currentID = ""
 	}
 	for _, event := range a.events {
-		if event.seq <= afterSeq || event.seq >= beforeSeq {
+		if event.seq >= beforeSeq {
 			continue
 		}
 		if event.userBreak {

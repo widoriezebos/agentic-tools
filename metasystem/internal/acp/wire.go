@@ -191,11 +191,14 @@ func (r *Reader) journalLine(prefix string, line []byte) {
 	if r.journal == nil || r.journalErr != nil {
 		return
 	}
-	for _, part := range [][]byte{[]byte(prefix), line, []byte("\n")} {
-		if _, err := r.journal.Write(part); err != nil {
-			r.journalErr = err
-			return
-		}
+	// One Write per line: a shared, serialized sink then cannot
+	// interleave directions into invalid evidence.
+	buffer := make([]byte, 0, len(prefix)+len(line)+1)
+	buffer = append(buffer, prefix...)
+	buffer = append(buffer, line...)
+	buffer = append(buffer, '\n')
+	if _, err := r.journal.Write(buffer); err != nil {
+		r.journalErr = err
 	}
 }
 
@@ -276,11 +279,13 @@ func (w *Writer) Send(m *Message) error {
 		return ErrFrameTooLarge
 	}
 	if w.journal != nil {
-		for _, part := range [][]byte{[]byte("> "), b, []byte("\n")} {
-			if _, err := w.journal.Write(part); err != nil {
-				w.journalErr = err
-				return fmt.Errorf("acp: journal write failed before send: %w", err)
-			}
+		buffer := make([]byte, 0, len(b)+3)
+		buffer = append(buffer, '>', ' ')
+		buffer = append(buffer, b...)
+		buffer = append(buffer, '\n')
+		if _, err := w.journal.Write(buffer); err != nil {
+			w.journalErr = err
+			return fmt.Errorf("acp: journal write failed before send: %w", err)
 		}
 	}
 	_, err = w.w.Write(append(b, '\n'))
