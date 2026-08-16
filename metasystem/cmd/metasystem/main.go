@@ -236,6 +236,7 @@ func families() []family {
 				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
 				{"session-env", "a runtime's project-dir environment variable", runRuntimeSessionEnv},
 				{"config-identity-filter", "a runtime's config identity filter filename", runRuntimeConfigIdentityFilter},
+				{"acp-expectation", "a runtime's expected ACP transport declaration as JSON", runRuntimeACPExpectation},
 			},
 		},
 		{
@@ -243,6 +244,7 @@ func families() []family {
 			summary: "the ACP transport client (wire only; launch and custody stay with scripts)",
 			verbs: []verb{
 				{"preflight", "check an envelope's ACP-v1 eligibility before any launch", runACPPreflight},
+				{"mode", "resolve a runtime's session mode for an envelope tools grade", runACPMode},
 				{"turn", "drive one prompt attempt over pre-created pipes, emitting the typed outcome", runACPTurn},
 			},
 		},

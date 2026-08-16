@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/acp"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 )
 
 // The acp family is the shell-callable surface of internal/acp:
@@ -195,5 +196,32 @@ func runACPTurn(args []string) int {
 	}
 	payload, _ := json.Marshal(wire)
 	fmt.Println(string(payload))
+	return 0
+}
+
+// runACPMode resolves the adapter-owned dialect: which session
+// mode a runtime's envelope tools grade maps to. The mode is the
+// enforcement lever on this transport, so the mapping is a lookup
+// in declared, behaviorally evidenced data — never computed at
+// dispatch time.
+func runACPMode(args []string) int {
+	f := flag.NewFlagSet("acp mode", flag.ContinueOnError)
+	runtimeName := f.String("runtime", "", "runtime whose dialect to consult")
+	tools := f.String("tools", "", "envelope tools grade")
+	if err := f.Parse(args); err != nil || *runtimeName == "" || *tools == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem acp mode --runtime R --tools GRADE")
+		return 2
+	}
+	dialect, err := adapter.ACPDialectFor(*runtimeName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	mode := dialect.ModeForTools[*tools]
+	if mode == "" {
+		fmt.Fprintln(os.Stderr, "no mode mapped for tools="+*tools)
+		return 1
+	}
+	fmt.Println(mode)
 	return 0
 }

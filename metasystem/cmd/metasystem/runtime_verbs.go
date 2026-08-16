@@ -95,6 +95,22 @@ func runRuntimeEnforcementMap(args []string) int {
 	return 0
 }
 
+func runRuntimeACPExpectation(args []string) int {
+	declaration, code := runtimeArg(args, "acp-expectation")
+	if code != 0 {
+		return code
+	}
+	if declaration.ExpectedACP == nil {
+		fmt.Fprintln(os.Stderr, "no ACP expectation declared for "+declaration.Name)
+		return 1
+	}
+	payload, _ := json.Marshal(map[string]int64{
+		"expectedProtocolVersion": declaration.ExpectedACP.ExpectedProtocolVersion,
+	})
+	fmt.Println(string(payload))
+	return 0
+}
+
 func runRuntimeAdoptionDefault(args []string) int {
 	if len(args) != 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem runtime adoption-default")

@@ -81,3 +81,37 @@ func TestCapabilityFlagsBackedByExecutables(t *testing.T) {
 		}
 	}
 }
+
+// The ACP seam joins both ways: every declared expectation has an
+// adapter-owned dialect, every registered dialect has a
+// declaration, and every dialect covers the full tools ordinal —
+// a missing grade would become a silent default at dispatch time.
+func TestACPExpectationsMatchDialects(t *testing.T) {
+	declared := map[string]bool{}
+	for _, name := range runtimes.Names() {
+		declaration, _ := runtimes.Lookup(name)
+		if declaration.ExpectedACP != nil {
+			declared[name] = true
+			if _, err := adapter.ACPDialectFor(name); err != nil {
+				t.Fatalf("%s declares ACP but registers no dialect: %v", name, err)
+			}
+		}
+	}
+	for _, name := range adapter.ACPDialectList() {
+		if !declared[name] {
+			t.Fatalf("%s registers an ACP dialect without a registry declaration", name)
+		}
+		dialect, err := adapter.ACPDialectFor(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, grade := range []string{"read-only", "runtime-default"} {
+			if dialect.ModeForTools[grade] == "" {
+				t.Fatalf("%s dialect does not cover tools=%s", name, grade)
+			}
+		}
+	}
+	if !declared["devin"] {
+		t.Fatal("devin must declare the first ACP increment (D79)")
+	}
+}

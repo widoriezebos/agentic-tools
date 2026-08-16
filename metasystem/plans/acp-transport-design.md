@@ -10,10 +10,18 @@
   during P2, not by more prose. r6 accepted the D79 scope pivot
   and confirmed the ancestry mechanism implementable.
 - Goal: acp-transport (current)
-- Next step: P1 — the throwaway wire probe, per the nine-question
-  list below; its captures land in plans/acp-wire-probe.md. Then
-  P2 (internal/acp + stub-server fixtures, each r6 residue pinned
-  by a named fixture), then P3 behind the conf flag.
+- Done: P1 (five probe steps, seven of nine questions answered —
+  plans/acp-wire-probe.md) and P2 (internal/acp in three slices,
+  each through gate + mandatory critique + fold; both hosts green
+  at f4c4992; the acp verb family with its suite fixtures).
+- Next step: P3 slice A — devin's expected-ACP registry
+  declaration, the adapter-owned grade-to-mode table
+  (read-only→ask, runtime-default→accept-edits, both
+  behaviorally evidenced by probe steps C and D), and the
+  transport conf flag (default legacy). Then slice B: the
+  devin.sh dispatch branch with the fifo launch sequence. Then
+  provision-genesis-authority, devin-in-the-guest setup, and the
+  four D82/D83 acceptance benchmarks.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more

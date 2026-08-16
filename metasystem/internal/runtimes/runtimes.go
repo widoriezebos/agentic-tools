@@ -104,6 +104,17 @@ type Declaration struct {
 	// selection (critique r6-4; the B2 installer consumes them, the
 	// verb transports them).
 	CollisionRoots []string
+	// ExpectedACP declares that this runtime is expected to support
+	// the ACP transport, with the protocol version selection pins
+	// pre-launch (plans/acp-transport-design.md, registry: data
+	// only). The dialect — mode mappings, launch argv — is
+	// adapter-owned; conformance joins the two both ways.
+	ExpectedACP *ACPExpectation
+}
+
+// ACPExpectation is the data half of a runtime's ACP support.
+type ACPExpectation struct {
+	ExpectedProtocolVersion int64
 }
 
 // SignatureVectors is one runtime's positive/lookalike pair.
@@ -165,6 +176,9 @@ var declarations = []Declaration{
 			"writeRoots": "devin-write-roots-unenforced",
 		},
 		ExpectedCapabilities: []string{CapDeliveryRecollection, CapSelfTestProbe},
+		// The one ACP increment (D79 scope): protocol 1 verified
+		// live at devin 3000.4.25 (plans/acp-wire-probe.md).
+		ExpectedACP: &ACPExpectation{ExpectedProtocolVersion: 1},
 	},
 	{
 		Name: "claude", HasAdapter: true, HasHostLauncher: true,
@@ -366,6 +380,9 @@ func Validate() []string {
 		}
 		if d.SessionEnv != "" && !envRe.MatchString(d.SessionEnv) {
 			add("%s: session env %q violates the variable grammar", d.Name, d.SessionEnv)
+		}
+		if d.ExpectedACP != nil && d.ExpectedACP.ExpectedProtocolVersion < 1 {
+			add("%s: an ACP expectation requires a positive protocol version", d.Name)
 		}
 		if previous, taken := priorities[d.TailoringPriority]; taken {
 			add("%s: tailoring priority %d already belongs to %s", d.Name, d.TailoringPriority, previous)
