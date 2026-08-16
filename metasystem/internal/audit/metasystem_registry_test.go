@@ -57,7 +57,8 @@ func TestRegistryPointerAuditRefuses(t *testing.T) {
 			found++
 		}
 	}
-	if found < 4 {
+	// README is template-scoped; a bare tree owes the three shipped docs.
+	if found < 3 {
 		t.Fatalf("pointer refusals missing: %v", violations)
 	}
 }
