@@ -2486,3 +2486,26 @@ both-host gates, the leash pattern for long ops, no turn ends with
 unleashed open work, plain-English decision records. Program order:
 finish acp-transport (sound genesis → benchmarks → flip → close),
 then burn the queue in order.
+
+## D86 — 2026-08-16: genesis authority is an OS-sandbox problem, not a patchable one
+
+Authorized by D85 to design and implement the sound genesis fix, I
+found — across three review rounds plus one design round — an
+impossibility result rather than a fix. Sound (unforgeable) genesis
+authority cannot be built on filesystem state or caller
+classification in the current threat model: a notEnforced devin
+delegate writes goals-accepted.json directly with no CLI at all,
+and even a sandboxed delegate reads the control plane (readRoots
+["."]) to forge classification or self-sign a capability. I did NOT
+ship the HMAC-grant design (it is security theater against this
+threat model). The interim posture: keep the D84 defense-in-depth
+code (validated working for legitimate provisioning; closes the
+accidental cases) and record the two real architectural directions
+for the human's design decision — (A) actually enforce the
+notEnforced delegate sandboxes, which genesis soundness is
+downstream of, or (B) a compiled-in asymmetric trust anchor plus
+control-plane read-exclusion. Both are substantial and were not
+rushed unattended. genesis-authority-design is parked on this
+decision; the finding is captured in plans/genesis-authority-design.md.
+This is consistent with the accelerator/enforcement doctrine:
+the metasystem never claims enforcement it cannot guarantee.
