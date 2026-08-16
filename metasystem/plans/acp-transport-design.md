@@ -496,3 +496,27 @@ still needs a fact only the wire can supply beyond the P1 list. At
 this boundary the exits are: converged; falling-and-mechanical →
 fixtures-as-arbiter; otherwise escalate to the human with the
 critique history and D79 as the evidence.
+
+---
+
+# LIVE VALIDATION (2026-08-16, D85 autonomous run)
+
+The ACP delegate path is PROVEN in production. A real devin
+implementer job dispatched over ACP in the Lima guest against a
+live `devin acp` server (devin 3000.4.16, swe-1-7) delivered:
+job record status=completed, transport=acp, sessionId typed from
+the wire (dandelion-chestnut), effectiveModel=swe-1-7, outcome
+row=delivered/end_turn, a schema-valid candidate through the
+exclusive acp collect channel, and devin actually performed the
+file task. supervise_acp drove the fifo launch, the session-file
+early handshake, mode selection (runtime-default→accept-edits),
+and delivery end to end. This is the D82 acceptance evidence at
+the single-delegate-turn grain; the full benchmark grain follows.
+
+Two pre-existing devin-adapter maintenance items surfaced (NOT
+ACP defects, non-fatal): (1) devin-config-filter.v1.json's CLI
+version range (3000.3.27) is stale against current devin
+(3000.4.x) — it falls back to hashing all keys; worth a range
+bump. (2) the capability snapshot needs a fresh devin adapter
+probe at 3000.4.x. Both are legacy devin-adapter upkeep, tracked
+separately.
