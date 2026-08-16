@@ -141,3 +141,42 @@ probe source: scratchpad acp-p1/main.go (throwaway).
   (turn-bounded); usage_update as journal evidence.
 - Candidate assembly confirmed: exactly agent_message_chunk, in a
   turn that also emitted 23 thought chunks.
+
+---
+
+# P1 step B (2026-08-16): session/load — the watermark attack is real
+
+Loaded session `marvelous-answer` from step A in a fresh
+`devin acp` process, captured the replay, then prompted fresh.
+
+## Facts established
+
+1. **ACP→ACP `session/load` WORKS** (bridge direction one proven).
+   The LoadSessionResponse carries the same configOptions surface
+   as session/new (mode still accept-edits, model still swe-1-7 —
+   config persists with the session).
+2. **The replay attack r2's critique predicted is real on the
+   wire**: before load completed, the server replayed the prior
+   turn as `user_message_chunk` + `agent_message_chunk("pong")` —
+   an unwatermarked assembler would have adopted the OLD answer
+   as the new candidate. The watermark rule is not defensive
+   speculation; it is required by direct capture.
+3. Replay frames carry `_meta cognition.ai/timestamp` (and
+   clientMessageId/messageSubIndex on the user chunk); the live
+   post-watermark chunk came without them. Extension meta could
+   discriminate replay, but the watermark (everything before the
+   LoadSessionResponse is replay) remains the sound boundary.
+4. Replay is COMPACT: one user chunk, one message chunk, one
+   thought chunk — a summary of history, not the original
+   23-thought stream.
+5. **Usage on the loaded turn**: PromptResponse.usage gained
+   `cachedReadTokens: 11072` alongside inputTokens 11737 /
+   outputTokens 22 / totalTokens 11759. Comparing with turn one
+   (11605/90/11695), the figures read PER-TURN (each turn's own
+   context read), not cumulative-session — the counter-semantics
+   answer the usage owner needs, pending one more confirming
+   sample.
+6. **Wind-down refined**: stdin EOF ignored (as in step A), but
+   SIGTERM IS honored — `SERVER-EXIT-ON-TERM signal: terminated`
+   after a 20s EOF grace. Teardown contract: EOF no, TERM yes,
+   KILL as backstop.
