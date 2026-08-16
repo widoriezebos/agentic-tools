@@ -1,6 +1,9 @@
 package acp
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func workspaceEnvelope(tools string) Envelope {
 	return Envelope{
@@ -17,11 +20,14 @@ func TestPreflightNarrowing(t *testing.T) {
 		envelope Envelope
 		refused  bool
 	}{
-		{Envelope{Approvals: "deny", Network: "deny"}, false},
-		{Envelope{Approvals: "deny", Network: "allow"}, false},
-		{Envelope{Approvals: "ask", Network: "deny"}, true},
-		{Envelope{Approvals: "allow", Network: "deny"}, true},
+		{Envelope{Approvals: "deny", Network: "deny", Tools: "read-only"}, false},
+		{Envelope{Approvals: "deny", Network: "allow", Tools: "runtime-default"}, false},
+		{Envelope{Approvals: "ask", Network: "deny", Tools: "read-only"}, true},
+		{Envelope{Approvals: "allow", Network: "deny", Tools: "read-only"}, true},
 		{Envelope{Approvals: "deny", Network: "ask"}, true},
+		{Envelope{Approvals: "deny", Network: "deny", Tools: "bogus"}, true},
+		{Envelope{Approvals: "deny", Network: "wide-open", Tools: "read-only"}, true},
+		{Envelope{Approvals: "sometimes", Network: "deny", Tools: "read-only"}, true},
 	} {
 		reason := PreflightACP(row.envelope)
 		if (reason != "") != row.refused {
@@ -53,7 +59,9 @@ func TestDecideMatrix(t *testing.T) {
 		"unknown unclassifiable":               {[]Effect{{Class: EffectUnknown}}, workspaceEnvelope("runtime-default"), VerdictUnclassifiable},
 		"no effects unclassifiable":            {nil, workspaceEnvelope("runtime-default"), VerdictUnclassifiable},
 		"mixed effects deny wins":              {[]Effect{{Class: EffectWrite, Paths: []string{"/repo/work/f"}}, {Class: EffectWrite, Paths: []string{"/tmp/out"}}}, workspaceEnvelope("runtime-default"), VerdictDeny},
-		"any unclassifiable poisons":           {[]Effect{{Class: EffectWrite, Paths: []string{"/repo/work/f"}}, {Class: EffectUnknown}}, workspaceEnvelope("runtime-default"), VerdictUnclassifiable},
+		"multi-effect unclassifiable denies":   {[]Effect{{Class: EffectWrite, Paths: []string{"/repo/work/f"}}, {Class: EffectUnknown}}, workspaceEnvelope("runtime-default"), VerdictDeny},
+		"empty command unclassifiable":         {[]Effect{{Class: EffectExecute}}, workspaceEnvelope("runtime-default"), VerdictUnclassifiable},
+		"empty network target unclassifiable":  {[]Effect{{Class: EffectNetwork}}, workspaceEnvelope("runtime-default"), VerdictUnclassifiable},
 	} {
 		if got := Decide(row.effects, row.envelope); got != row.want {
 			t.Fatalf("%s: got %v want %v", name, got, row.want)
@@ -112,5 +120,74 @@ func TestMapVerdictCardinality(t *testing.T) {
 	}
 	if got := StrictAnswer([]PermissionOption{allow, reject}); got.OptionID != "r1" {
 		t.Fatalf("strict mode must reject: %+v", got)
+	}
+}
+
+// The answer must marshal to the schema's exact member names, and
+// an ID shared across kinds is ambiguous, never selectable.
+func TestAnswerWireShapeAndCrossKindAmbiguity(t *testing.T) {
+	answer := MapVerdict(VerdictAllow, []PermissionOption{{OptionID: "a1", Kind: "allow_once"}})
+	wire, err := json.Marshal(answer.WireResult())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(wire) != `{"outcome":{"optionId":"a1","outcome":"selected"}}` &&
+		string(wire) != `{"outcome":{"outcome":"selected","optionId":"a1"}}` {
+		t.Fatalf("wire shape drifted: %s", wire)
+	}
+	cancelled, _ := json.Marshal(MapVerdict(VerdictDeny, nil).WireResult())
+	if string(cancelled) != `{"outcome":{"outcome":"cancelled"}}` {
+		t.Fatalf("cancelled shape drifted: %s", cancelled)
+	}
+
+	ambiguous := []PermissionOption{
+		{OptionID: "x", Kind: "allow_once"},
+		{OptionID: "x", Kind: "reject_once"},
+	}
+	if got := MapVerdict(VerdictAllow, ambiguous); got.Outcome != "cancelled" {
+		t.Fatalf("an ID shared across kinds must cancel: %+v", got)
+	}
+}
+
+// Canonicalize resolves symlinks over the existing prefix, keeps
+// nonexistent tails, and (on this case-insensitive host class)
+// substitutes on-disk spelling so containment is identity, not
+// string luck.
+func TestCanonicalize(t *testing.T) {
+	if _, err := Canonicalize("relative/path"); err == nil {
+		t.Fatal("relative paths must be refused")
+	}
+	dir := t.TempDir()
+	resolved, err := Canonicalize(dir + "/does/not/exist/yet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := Canonicalize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allInside([]string{resolved}, []string{base}) {
+		t.Fatalf("a nonexistent tail must stay inside its canonical base: %s vs %s", resolved, base)
+	}
+}
+
+// The last matrix and normalizer branches: single unclassifiable
+// stays unclassifiable, multi-effect all-allow allows, malformed
+// assembler inputs drop, and Canonicalize resolves symlinks to the
+// target's canonical home.
+func TestRemainingBranches(t *testing.T) {
+	envelope := workspaceEnvelope("runtime-default")
+	if Decide([]Effect{{Class: EffectUnknown}}, envelope) != VerdictUnclassifiable {
+		t.Fatal("single unclassifiable stays unclassifiable")
+	}
+	multi := []Effect{
+		{Class: EffectWrite, Paths: []string{"/repo/work/a"}},
+		{Class: EffectRead, Paths: []string{"/repo/b"}},
+	}
+	if Decide(multi, envelope) != VerdictAllow {
+		t.Fatal("multi-effect all-allow must allow")
+	}
+	if allInside([]string{"/x"}, []string{""}) {
+		t.Fatal("empty roots are skipped, not matched")
 	}
 }

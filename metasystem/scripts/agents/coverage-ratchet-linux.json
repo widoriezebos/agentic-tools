@@ -3,7 +3,7 @@
     "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures"
   },
   "floors": {
-    "internal/acp": 93.8,
+    "internal/acp": 97.3,
     "internal/adapter": 86.7,
     "internal/atif": 75.0,
     "internal/atomicfile": 71.6,

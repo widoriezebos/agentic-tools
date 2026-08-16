@@ -29,14 +29,16 @@ type sessionUpdate struct {
 // updateBody is the union of the update fields assembly cares
 // about; unknown kinds are journaled by the connection and ignored
 // here (spec: failure outcomes — unknown notifications never fail
-// the turn).
+// the turn). MessageID is the schema-generic message identity;
+// dialect-specific identities living in _meta belong to the
+// adapter's extractor, never to this package.
 type updateBody struct {
 	SessionUpdate string `json:"sessionUpdate"`
+	MessageID     string `json:"messageId"`
 	Content       struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	Meta map[string]json.RawMessage `json:"_meta"`
 }
 
 // Assembler accumulates message chunks inside one prompt window.
@@ -47,6 +49,7 @@ type Assembler struct {
 	open      bool
 	messages  [][]byte
 	current   []byte
+	currentID string
 	total     int
 	oversize  bool
 }
@@ -62,6 +65,7 @@ func (a *Assembler) OpenWindow() {
 	a.open = true
 	a.messages = nil
 	a.current = nil
+	a.currentID = ""
 	a.total = 0
 	a.oversize = false
 }
@@ -90,6 +94,15 @@ func (a *Assembler) Consume(params json.RawMessage) bool {
 			// Non-text blocks are journaled evidence, never
 			// candidate bytes.
 			return false
+		}
+		// Message-ID grouping (spec: assembly rules): a change of
+		// non-empty identity is a message boundary; chunks without
+		// identity continue the current message.
+		if body.MessageID != "" && a.currentID != "" && body.MessageID != a.currentID {
+			a.breakMessage()
+		}
+		if body.MessageID != "" {
+			a.currentID = body.MessageID
 		}
 		a.total += len(body.Content.Text)
 		if a.total > maxCandidateBytes {
@@ -120,6 +133,7 @@ func (a *Assembler) breakMessage() {
 		a.messages = append(a.messages, a.current)
 		a.current = nil
 	}
+	a.currentID = ""
 }
 
 // Candidate closes the window and returns the final complete
