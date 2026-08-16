@@ -1,10 +1,6 @@
 # Goals
 
-## Current goal: runtime-integration-contracts — The contested runtime-integration contracts: adoption/registration/installation, fixture authorization, conf schema, enforcement transport
-- Origin: main
-- Next step: Design loop seeded by plans/agnosticism-critique-r1..r6; the r6 findings are the opening worklist.
-
-## Queued goal: runtime-file-placement — Runtime code lives in its runtime's file within the adapter seam
+## Current goal: runtime-file-placement — Runtime code lives in its runtime's file within the adapter seam
 - Origin: main
 - Next step: Sweep the seam for strays per plans/backlog-notes.md item 17; decide the mechanical check.
 
@@ -60,3 +56,7 @@
 ## Done goal: agnosticism-audit — The core never names an agent runtime; every runtime surface is adapter-declared
 - Origin: main
 - Concluded: Phase A shipped: registry, capability tables, fail-closed residual waivers, all consumers. The mandatory critique found 14 defects, all folded. Both hosts green 91ff675. Phase B split per D74.
+
+## Done goal: runtime-integration-contracts — The contested runtime-integration contracts: adoption/registration/installation, fixture authorization, conf schema, enforcement transport
+- Origin: main
+- Concluded: B1 shipped: fixtureauth capability system, declared vectors and enforcement compare, registration rows as data, hook contract. The mandatory critique found 16 defects, all folded. Both hosts green fb6b7df. B2 parked (D76).

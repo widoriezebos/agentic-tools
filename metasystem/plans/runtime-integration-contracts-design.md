@@ -1,8 +1,8 @@
 # Runtime integration contracts (agnosticism phase B)
 
-- Status: SPLIT AT BUDGET (D76) — phase B1 (Contracts 2/3/4/5 plus Contract 1's data-side rows for VALIDATION consumption) is IMPLEMENTATION scope under this goal; phase B2 (the adoption/installation EXECUTION rewrite — plan owner, resume records, engine transport, crash-consistent completion, r6's eight structural findings) is goal runtime-install-execution, PARKED for Wido's ruling (implementation-first behind fixtures, a third prose budget, or descope)
-- Goal: runtime-integration-contracts (B1)
-- Next step: Implement B1: internal/fixtureauth with the seven capability values and all consumer threading; the deterministic-construction contract verb and enforcement-map compare; the validator population views and signature vectors; the supervision-hook contract; the docs and population-test classes. Mandatory code critique after gates.
+- Status: B1 SHIPPED (D77) — both hosts green at fb6b7df after the mandatory critique's 16 findings were folded; B2 (goal runtime-install-execution) stays PARKED for Wido's methodology ruling
+- Goal: runtime-integration-contracts CLOSED (D76 split, D77 ship)
+- Next step: none
 - In flight right now: none
 
 The split line (D76): six rounds, trajectory 14/15/14/10/9/15 with

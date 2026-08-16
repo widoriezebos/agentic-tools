@@ -2250,3 +2250,29 @@ queue continues behind it. Incidental: the park verb's first real
 use found a flag-registration panic in the goal CLI (a stray
 duplicate and-none registration) — fixed directly with a regression
 test, per the two-bars doctrine's mechanical-defect arm.
+
+## D77 — 2026-08-16: runtime-integration-contracts B1 ships; the review discipline earns its third notch
+
+B1 landed in three checkpointed commits (fixtureauth capability
+system at e53355d; declared vectors, generic enforcement compare,
+and the hook contract at 64d3c86; contract emission and the derived
+reconciliation inventory at 64bf6f4), each gated green on both
+hosts — and the MANDATORY code critique then found 16 material
+defects (6 high). The highs were real security holes the gates
+could not see: fixture evidence could authorize lease-sweep
+signals, a stale fixture row could target a recycled process group,
+census fixture authority bound to the scan scope instead of the
+metasystem root, and construction errors degraded to kernel-only
+instead of refusing decisions. Three findings were SCOPE honesty:
+the registration rows, the conf materialization, and the docs class
+were in B1's declared letter and had been quietly narrowed — all
+three were built rather than re-scoped. All 16 folded at 2fba4b5
+with the coverage, adopt-fixture, and test-alignment follow-ups
+through fb6b7df; both hosts green there. Operational notes for the
+record: an over-broad README audit row was caught by the adopt
+fixture (adopted projects own their READMEs); a wrapper-only kill
+left an orphaned suite that the gate fence correctly refused, and
+one commit briefly rode past a failing test before the gate would
+have caught it — the fixup chain shows both. Ledger: goal closed,
+runtime-file-placement promoted, runtime-install-execution still
+parked for the human's methodology ruling (D76).
