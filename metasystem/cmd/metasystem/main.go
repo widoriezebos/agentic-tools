@@ -239,6 +239,14 @@ func families() []family {
 			},
 		},
 		{
+			name:    "acp",
+			summary: "the ACP transport client (wire only; launch and custody stay with scripts)",
+			verbs: []verb{
+				{"preflight", "check an envelope's ACP-v1 eligibility before any launch", runACPPreflight},
+				{"turn", "drive one prompt attempt over pre-created pipes, emitting the typed outcome", runACPTurn},
+			},
+		},
+		{
 			name:    "hooks",
 			summary: "self-check that the repo runs under its own metasystem",
 			verbs: []verb{
