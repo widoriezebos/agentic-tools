@@ -265,3 +265,32 @@ func TestDeniedCapabilitiesActNowhere(t *testing.T) {
 		t.Fatal("a zero grant proved ownership of a live group")
 	}
 }
+
+// Construction refusal PROPAGATES on the engine's fixture paths
+// (finding 4): a leaked fixture makes publication and group
+// termination errors, and the command probe refuses.
+func TestEngineFixtureConstructionRefusal(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644)
+	table := filepath.Join(t.TempDir(), "table.json")
+	os.WriteFile(table, []byte(`{}`), 0o644)
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+	engine := &Engine{Root: root}
+	if err := publishFakeIdentityForEngine(engine, 1234, 100, "t"); err == nil {
+		t.Fatal("a leaked fixture did not refuse publication")
+	}
+	if probe := hostCommandProbe(engine, true); func() bool { _, ok := probe.FixtureCommand(1234); return ok }() {
+		t.Fatal("a leaked fixture served a command probe")
+	}
+	self, err := unix.Getpgid(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.terminateGroup(self, "any-tag", true); err == nil {
+		t.Fatal("a leaked fixture did not refuse the fake-mode terminate path")
+	}
+	// The custodian degrades to Unknown, which authorizes nothing.
+	if verdict := engine.custodian(int64(os.Getpid()), 1, "t"); verdict != identity.Unknown {
+		t.Fatalf("leaked-fixture custodian verdict: %v", verdict)
+	}
+}
