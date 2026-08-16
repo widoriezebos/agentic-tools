@@ -2464,3 +2464,25 @@ F4/F5). The review itself was first refused by the codex model's
 cybersecurity content filter on an adversarial framing and ran
 clean on a correctness framing — a note for future authority
 reviews: frame as properties to verify, not exploits to construct.
+
+## D85 — 2026-08-16: the 10-hour autonomous mandate
+
+The human, before a 10-hour absence: "The goal is to complete the
+entire backlog, squash all bugs you encounter along the way, get
+me a clean, fully working production-grade system." Four decisions
+taken to unblock unattended work: (1) run ALL four acceptance
+benchmarks if Devin is authenticated in the Lima VM (real delegate
+API spend authorized); if Devin is not authed, skip them and do
+everything else. (2) Design AND implement the sound genesis
+authority fix (genesis-authority-design) autonomously, behind
+mandatory review. (3) Ship every backlog item — including the
+fleet-authority ones (custody-death-proof, two-bars, acknowledged-
+process) — behind mandatory design and code critique, folding all
+findings before landing. (4) On a clean D82 acceptance-benchmark
+pass on both hosts, PERFORM the flip: dispatch.transport.devin=acp
+as the default, fix-forward. Standing discipline holds throughout:
+critique loops at codex xhigh, mandatory post-gate code critique,
+both-host gates, the leash pattern for long ops, no turn ends with
+unleashed open work, plain-English decision records. Program order:
+finish acp-transport (sound genesis → benchmarks → flip → close),
+then burn the queue in order.
