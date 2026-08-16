@@ -381,6 +381,13 @@ func TestHungFlagAndRegisterPattern(t *testing.T) {
 	prober.starts[self] = 8000
 	logPath := filepath.Join(s.Root, "reg.log")
 	os.WriteFile(logPath, []byte("working\n"), 0o644)
+	// Pin the log's mtime to the test's fake epoch: the hung check
+	// compares REAL mtime against the injected clock, so leaving
+	// the real creation time in place is a time bomb that detonates
+	// the moment the wall clock passes the hardcoded epoch — which
+	// it did, hours after this test was written.
+	base := time.Unix(1786900000, 0)
+	os.Chtimes(logPath, base, base)
 	err := s.Register(mainCaller, LaunchParams{
 		Id: "reg-run", Kind: "custom", Display: "registered work",
 		Log: logPath, StaleAfterMin: 1,
