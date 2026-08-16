@@ -14,14 +14,25 @@
   plans/acp-wire-probe.md) and P2 (internal/acp in three slices,
   each through gate + mandatory critique + fold; both hosts green
   at f4c4992; the acp verb family with its suite fixtures).
-- Next step: P3 slice A — devin's expected-ACP registry
-  declaration, the adapter-owned grade-to-mode table
-  (read-only→ask, runtime-default→accept-edits, both
-  behaviorally evidenced by probe steps C and D), and the
-  transport conf flag (default legacy). Then slice B: the
-  devin.sh dispatch branch with the fifo launch sequence. Then
-  provision-genesis-authority, devin-in-the-guest setup, and the
-  four D82/D83 acceptance benchmarks.
+- Next step: P3 slices A and B are BUILT (A: the registry
+  declaration, dialect table, and mode/expectation verbs; B: the
+  exclusive acp collect channel, the per-turn acp usage owner,
+  and devin.sh's supervise_acp branch behind
+  dispatch.transport.devin, default legacy). Recorded slice-B
+  limitations, each awaiting its own evidence: (1) the model
+  config option — setting a non-default model over the wire is
+  UNPROVEN (no probe captured the method), so the acceptance
+  benchmarks pin swe-1-7, the wire default, and the effective
+  model rides unobserved; (2) repair on ACP is the disabled
+  pre-claim case (no second-tree machinery yet; the legacy repair
+  command is unreachable from the acp branch); (3) custody runs
+  TODAY'S guarantees (server registered like the legacy CLI pid,
+  group sweep) — sealed-v1 lands with/after the
+  custody-death-proof goal, which the marker gating made
+  separable; (4) the supervise_acp shell fixture is a flag-flip
+  prerequisite alongside the benchmarks. Remaining before the
+  flip: provision-genesis-authority, devin-in-the-guest setup,
+  the four D82/D83 acceptance benchmarks.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more

@@ -140,6 +140,7 @@ func families() []family {
 				{"devin-settle", "certify the transcript session and derive the effective model", runAdapterDevinSettle},
 				{"devin-collect", "walk the delivery channels for a devin turn (0 delivered, 3 empty, 5 oversize)", runAdapterDevinCollect},
 				{"devin-usage", "compute the Devin per-round usage delta", runAdapterDevinUsage},
+				{"acp-usage", "the acp transport's typed usage from a turn outcome", runAdapterACPUsage},
 				{"usage-unavailable", "write the unavailable-usage record", runAdapterUsageUnavailable},
 				{"fake-return", "write the fake runtime's canned role return", runAdapterFakeReturn},
 				{"fake-usage", "write the fake runtime's fixed native usage", runAdapterFakeUsage},

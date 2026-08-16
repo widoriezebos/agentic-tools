@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
+	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // These verbs are the per-runtime half of the adapter family: the small
@@ -418,6 +419,7 @@ func runAdapterDevinCollect(args []string) int {
 	flags.StringVar(&params.StdoutPath, "stdout", "", "the CLI's stdout capture")
 	flags.StringVar(&params.NamedPath, "named", "", "the attempt's named return file")
 	flags.StringVar(&params.TranscriptPath, "transcript", "", "the exported ATIF transcript")
+	flags.StringVar(&params.ACPOutcomePath, "acp-outcome", "", "the acp turn outcome (exclusive channel; no fallthrough)")
 	flags.StringVar(&params.RecordPath, "record", "", "job record file")
 	flags.StringVar(&params.Attempt, "attempt", "initial", "initial or repair")
 	flags.StringVar(&params.Session, "session", "", "correlated session (required unless presence-only)")
@@ -447,6 +449,27 @@ func runAdapterDevinCollect(args []string) int {
 		return 0
 	}
 	return 3
+}
+
+// runAdapterACPUsage derives the turn's typed usage from an acp
+// turn outcome (the wire branch: per-turn PromptResponse.usage,
+// unavailable when absent — never a transcript fallback).
+func runAdapterACPUsage(args []string) int {
+	flags := flag.NewFlagSet("adapter acp-usage", flag.ContinueOnError)
+	usagePath := flags.String("usage", "", "typed usage output path")
+	outcomePath := flags.String("outcome", "", "the acp turn outcome file")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *usagePath == "" || *outcomePath == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter acp-usage --usage F --outcome F")
+		return 2
+	}
+	if err := usagepkg.ACPUsage(*usagePath, *outcomePath); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }
 
 // runAdapterDevinSession correlates this turn's Devin session against the

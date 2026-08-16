@@ -37,6 +37,13 @@ type CollectParams struct {
 	StdoutPath     string
 	NamedPath      string
 	TranscriptPath string
+	// ACPOutcomePath selects the ACP transport's EXCLUSIVE channel:
+	// the typed outcome of `acp turn`. When set, the walk consults
+	// nothing else — an invalid or undelivered ACP candidate fails
+	// honestly and never falls through to the legacy scraping
+	// channels, because evidence never crosses transports (the
+	// design's channel rule).
+	ACPOutcomePath string
 	RecordPath     string
 	Attempt        string
 	Session        string
@@ -44,7 +51,7 @@ type CollectParams struct {
 }
 
 // CollectVerdict is the facts document. Channel is one of stdout,
-// named-file, transcript, or none; Reply is the accepted snapshot path
+// named-file, transcript, acp, or none; Reply is the accepted snapshot path
 // (raw candidate bytes — the downstream pipeline keeps its own
 // normalization and validation authority).
 type CollectVerdict struct {
@@ -70,6 +77,10 @@ type miningAudit struct {
 // terminal; everything else is a verdict.
 func DevinCollect(p CollectParams) (*CollectVerdict, error) {
 	verdict := &CollectVerdict{Channel: "none"}
+
+	if p.ACPOutcomePath != "" {
+		return p.collectACP(verdict)
+	}
 
 	stdoutBytes, stdoutErr := readCandidate(p.StdoutPath)
 	namedBytes, namedErr := readCandidate(p.NamedPath)
@@ -147,6 +158,57 @@ func readCandidate(path string) ([]byte, error) {
 // canonical validator. Acceptance writes the RAW candidate bytes as the
 // accepted snapshot — the downstream pipeline keeps its own
 // normalization and validation authority; selection never replaces it.
+// acpOutcome is the subset of the acp turn verb's stdout wire shape
+// the collector consumes; the candidate distinguishes nil (no
+// candidate row) from present-but-empty by the pointer.
+type acpOutcome struct {
+	Row        string  `json:"row"`
+	SessionID  string  `json:"sessionId"`
+	StopReason string  `json:"stopReason"`
+	Candidate  *string `json:"candidate"`
+}
+
+// collectACP is the ACP transport's exclusive walk: one channel,
+// no fallthrough. The candidate rides the SAME qualification path
+// as every legacy channel (snapshot, normalize, full-job validate,
+// accepted snapshot) — the D62 owners downstream of selection are
+// reused unchanged.
+func (p CollectParams) collectACP(verdict *CollectVerdict) (*CollectVerdict, error) {
+	body, err := os.ReadFile(p.ACPOutcomePath)
+	if err != nil {
+		return nil, fmt.Errorf("acp outcome unreadable: %w", err)
+	}
+	var outcome acpOutcome
+	if err := json.Unmarshal(body, &outcome); err != nil {
+		return nil, fmt.Errorf("acp outcome not JSON: %w", err)
+	}
+	present := outcome.Row == "delivered" && outcome.Candidate != nil
+	verdict.CandidatesPresent = present
+	if p.PresenceOnly {
+		return verdict, nil
+	}
+	if p.Session == "" {
+		return nil, fmt.Errorf("a full collect needs the correlated session; use presence-only without one")
+	}
+	if outcome.SessionID != p.Session {
+		verdict.Rejected = append(verdict.Rejected, "acp: outcome session "+outcome.SessionID+" is not this turn's session")
+		return verdict, p.writeProvenance(verdict, nil)
+	}
+	if !present {
+		verdict.Rejected = append(verdict.Rejected, "acp: row="+outcome.Row+" stopReason="+outcome.StopReason+" delivered nothing")
+		return verdict, p.writeProvenance(verdict, nil)
+	}
+	raw := []byte(*outcome.Candidate)
+	if len(raw) > MaxCandidateBytes {
+		verdict.Rejected = append(verdict.Rejected, "acp: over the candidate ceiling")
+		return verdict, p.writeProvenance(verdict, nil)
+	}
+	if p.acceptCandidate(verdict, "acp", raw, nil) {
+		return verdict, p.writeProvenance(verdict, nil)
+	}
+	return verdict, p.writeProvenance(verdict, nil)
+}
+
 func (p CollectParams) acceptCandidate(verdict *CollectVerdict, channel string, raw []byte, audit *miningAudit) bool {
 	scratch := filepath.Join(p.RoundDir, "collect-scratch")
 	if err := os.MkdirAll(scratch, 0o755); err != nil {

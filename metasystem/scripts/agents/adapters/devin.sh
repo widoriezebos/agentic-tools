@@ -223,8 +223,153 @@ runtime_repair_turn() { # prompt file, output file
   (( rc == 0 )) && [[ -s "$2" ]]
 }
 
+# The transport selector (D81/D82): metasystem.conf's
+# dispatch.transport.devin, default legacy. The flag is a ramp —
+# after the dual-host acceptance benchmarks flip it, ACP is the
+# default and the posture is fix forward.
+devin_transport() {
+  "$root/scripts/metasystem-config.sh" get --key dispatch.transport.devin --default legacy 2>/dev/null \
+    || echo legacy
+}
+
+# The ACP transport path: the script owns fifos, custody, and
+# killing; `acp turn` owns the wire (plans/acp-transport-design.md).
+# The session id arrives typed from the wire — no baseline listing,
+# no correlation polling — and delivery rides the collector's
+# EXCLUSIVE acp channel: an undelivered turn never falls through to
+# legacy scraping, and the legacy repair command is unreachable
+# from here (repair on ACP is the disabled-pre-claim case until the
+# second-tree machinery lands).
+supervise_acp() { # dispatch|follow-up and supervisor args
+  local verb=$1
+  shift
+  prepare_supervision "$verb" "$@" || { usage; return 2; }
+  local usage_file="$round_dir/usage.json"
+  local outcome_file="$round_dir/acp-outcome.json"
+  local journal_file="$round_dir/acp-journal.log"
+  local server_out="$round_dir/acp-server-out" server_in="$round_dir/acp-server-in"
+  local server_pid client_rc=0 session_from_wire= row= mode= grade=
+  local devin_prompt="$round_dir/prompt.devin.md"
+  devin_return_file="$round_dir/devin-return.json"
+  if [[ -e "$devin_return_file" ]]; then
+    fail_pending stale_named_return setup
+    return 1
+  fi
+  # The same augmented prompt as the legacy path: its delivery
+  # instruction already demands the JSON as the FINAL MESSAGE too,
+  # which is exactly the acp channel.
+  "$ms" adapter devin-prompt --prompt "$prompt" --schema "$schema" \
+    --output "$devin_prompt" --return-file "$devin_return_file"
+  record_actual_workspace_write_scope
+  fail_if_effective_wider_before_launch || return 1
+  : >"$events"
+
+  # Preflight BEFORE any process exists: v1 cannot honor
+  # approvals!=deny or network=ask, and the refusal must beat the
+  # launch (the effective envelope is the five-field file).
+  if ! "$ms" acp preflight --envelope-file "$effective" >>"$log" 2>&1; then
+    fail_pending acp_preflight_refused setup
+    return 1
+  fi
+  grade=$("$ms" json get --value "$(cat "$effective")" --field tools --default "")
+  mode=$("$ms" acp mode --runtime devin --tools "$grade" 2>>"$log") || {
+    fail_pending acp_mode_unmapped setup
+    return 1
+  }
+
+  rm -f "$server_out" "$server_in"
+  mkfifo "$server_out" "$server_in" || { fail_pending acp_fifo_setup setup; return 1; }
+  # Redirection order is the deadlock contract: the server opens its
+  # stdout FIRST (pairing with the client's read-side-first open),
+  # then its stdin (pairing with the client's write side).
+  ( cd "$workspace" && exec devin acp >"$server_out" <"$server_in" 2>>"$log" ) &
+  server_pid=$!
+  register_cli_custody "$server_pid" || { terminate_cli_child "$server_pid"; fail_pending custody_registration handshake; return 1; }
+  printf '{"type":"acp-server-launched","pid":%s,"mode":"%s"}\n' "$server_pid" "$mode" >>"$events"
+
+  local -a turn_args
+  turn_args=(
+    acp turn --server-out "$server_out" --server-in "$server_in"
+    --journal "$journal_file" --workspace "$workspace"
+    --envelope-file "$effective" --prompt-file "$devin_prompt"
+    --mode "$mode"
+  )
+  # Follow-up rides session/load (ACP-to-ACP proven by the wire
+  # probe, step B); the transport never switches mid-chain.
+  [[ "$verb" != follow-up ]] || turn_args+=(--load-session "$requested_session")
+  set +e
+  "$ms" "${turn_args[@]}" >"$outcome_file" 2>>"$log"
+  client_rc=$?
+  set -e
+  # EOF is ignored and TERM honored (probe step B): the courtesy is
+  # the client's; the kill is ours.
+  terminate_cli_child "$server_pid" || true
+
+  if (( client_rc != 0 )) || [[ ! -s "$outcome_file" ]]; then
+    fail_pending acp_client_mechanical delivery
+    return 1
+  fi
+  "$ms" adapter acp-usage --usage "$usage_file" --outcome "$outcome_file" >>"$log" 2>&1 || true
+  row=$("$ms" json get --value "$(cat "$outcome_file")" --field row --default "")
+  if [[ "$verb" == follow-up ]]; then
+    session_from_wire=$requested_session
+  else
+    session_from_wire=$("$ms" json get --value "$(cat "$outcome_file")" --field sessionId --default "")
+  fi
+  if [[ -n "$session_from_wire" ]]; then
+    if ! record_handshake "$session_from_wire" "" "$requested_model"; then
+      return 1
+    fi
+    printf '{"type":"session-correlated","session_id":"%s","predicate":"acp-wire-typed"}\n' \
+      "$session_from_wire" >>"$events"
+  fi
+  case "$row" in
+    delivered) ;;
+    auth-required)
+      fail_pending acp_auth_required handshake "$usage_file"
+      return 1 ;;
+    version-mismatch|setup-error|protocol-error)
+      fail_pending "acp_$(printf '%s' "$row" | tr '-' '_')" setup "$usage_file"
+      return 1 ;;
+    *)
+      # cancelled, refused, incomplete, turn-failed: the turn ran
+      # and ended without delivery — a named terminal, never a
+      # legacy fallback, never an automatic replay.
+      finish_running failed "acp_$(printf '%s' "$row" | tr '-' '_')" delivery "$usage_file"
+      return 1 ;;
+  esac
+
+  local collect_rc=0 collect_json reply_path
+  set +e
+  collect_json=$("$ms" adapter devin-collect --root "$root" --job "$job" \
+    --round-dir "$round_dir" --workspace "$workspace" \
+    --acp-outcome "$outcome_file" \
+    --record "$record" --attempt initial --session "$session_from_wire")
+  collect_rc=$?
+  set -e
+  case "$collect_rc" in
+    0)
+      reply_path=$(printf '%s' "$collect_json" | "$ms" json get --value "$collect_json" --field reply)
+      complete_from_cli 0 "$usage_file" "$reply_path" ""
+      return $? ;;
+    3)
+      # Repair on ACP is disabled pre-claim (the spec's first
+      # no-repair case): no claim is written, the failure is named.
+      finish_running failed acp_undelivered delivery "$usage_file"
+      return 1 ;;
+    *)
+      finish_running failed collect_mechanical delivery "$usage_file"
+      return 1 ;;
+  esac
+}
+
 supervise() { # dispatch|follow-up and supervisor args
   local verb=$1
+  if [[ "$(devin_transport)" == acp ]]; then
+    shift
+    supervise_acp "$verb" "$@"
+    return $?
+  fi
   shift
   prepare_supervision "$verb" "$@" || { usage; return 2; }
   config_file="$round_dir/devin-config.json"

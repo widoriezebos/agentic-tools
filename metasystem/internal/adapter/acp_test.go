@@ -26,3 +26,22 @@ func TestACPDialects(t *testing.T) {
 		t.Fatalf("dialect list: %v", list)
 	}
 }
+
+// The registration guards are declaration bugs, not runtime states:
+// duplicates and incomplete grade cover panic at init.
+func TestACPDialectRegistrationGuards(t *testing.T) {
+	mustPanic := func(name string, fn func()) {
+		defer func() {
+			if recover() == nil {
+				t.Fatalf("%s must panic", name)
+			}
+		}()
+		fn()
+	}
+	mustPanic("duplicate", func() {
+		RegisterACPDialect("devin", ACPDialect{ModeForTools: map[string]string{"read-only": "a", "runtime-default": "b"}})
+	})
+	mustPanic("incomplete cover", func() {
+		RegisterACPDialect("test-incomplete", ACPDialect{ModeForTools: map[string]string{"read-only": "a"}})
+	})
+}
