@@ -1,9 +1,9 @@
 # Runtime integration contracts (agnosticism phase B)
 
-- Status: DRAFT r5 — critique r4 folded (10 findings: 5 structural, 5 mechanical; 11 r3 folds verified resolved); awaiting critique r5
+- Status: DRAFT r6 — critique r5 folded (9 findings); awaiting critique r6, the FINAL budgeted round
 - Goal: runtime-integration-contracts
-- Next step: Fold the critique verdict when run ric-critique-r5 concludes; implement only after convergence.
-- In flight right now: run ric-critique-r5 (codex xhigh critique; watch it with: bin/metasystem run watch --id ric-critique-r5 --root .)
+- Next step: Fold the critique verdict when run ric-critique-r6 concludes; on non-convergence the recorded boundary options fire (split the adoption-plan mechanics, or escalate).
+- In flight right now: run ric-critique-r6 (codex xhigh critique; watch it with: bin/metasystem run watch --id ric-critique-r6 --root .)
 
 Scope (D74): the three subdomains the six-round agnosticism loop left
 structurally contested, moved here WHOLE with their critique history
@@ -75,14 +75,15 @@ through `runtime registration <name>`:
     skill (a template-required profile whose source file is missing
     FAILS; zero rows are valid only when there are no staged skills
     or the source is template-optional); `mode` bytes are exactly
-    `link` | `copy` | `in-place`. `in-place` is a
-    VALIDATION/REFERENCE-ONLY alias to an already-installed
-    core-payload output (critique r4-3: codex's agents/openai.yaml
-    ships WITH the payload, adopt.sh:247, and codex's arm copies
-    nothing, adopt.sh:334): it carries requiredness and validation
-    but NO Apply, NO runtime collision output, and no second
-    writer — core collision handling keeps ownership of skills/,
-    and the collision-root proof skips reference-only rows
+    `link` | `copy` | `in-place`. `in-place` expands to a
+    ReferenceRequirement, never a ConcreteOutput (critiques r4-3,
+    r5-5: codex's agents/openai.yaml ships WITH the payload,
+    adopt.sh:247, and codex's arm copies nothing, adopt.sh:334): it
+    resolves to exactly one planned core destination, participates
+    ONLY in requiredness and validation, and is EXCLUDED from
+    output-overlap compatibility and every collision field and
+    proof — a reference and its core output are one writer by
+    construction, not a refused overlap
   - installer {handlerId, source, destination} — the PERMANENT escape
     arm (critique r1-2): a stable handler identifier resolved in the
     `internal/install` typed table; new install behaviors add a
@@ -119,7 +120,13 @@ through `runtime registration <name>`:
   validation rejects unsupported operation/policy combinations.
 - (runtime, artifactRole) is unique; a row reference by role must
   resolve to a row of the right operation; the filename form of
-  shippedEnforcementConfig is REMOVED once rows land.
+  shippedEnforcementConfig is REMOVED once rows land — and its ONE
+  remaining consumer, the template live-hook check that resolves the
+  SHIPPED source (validate-metasystem.sh:1387), moves to the
+  projection-backed transport `metasystem install row-source
+  --runtime RT --row enforcement-config` (one line, the row's
+  resolved source path, exits 0/1/2/3 as the other install verbs;
+  critique r5-6).
 - Installation plans by EXPANDED CONCRETE DESTINATION: preserve every
   (runtime, id) alias, join requiredness componentwise to the
   stricter state on compatible overlaps — compatibility requires
@@ -145,9 +152,12 @@ through `runtime registration <name>`:
   built-in operations (tree and skill-profiles outputs are
   instruction-bearing; copy-file/json-strip-key declare per row;
   installer rows DERIVE it from the handler table's collision
-  metadata — one owner, and the registration encoder consumes the
-  derived value so row and handler can never disagree, critique
-  r4-5).
+  metadata — one owner via the RESOLVED-REGISTRATION PROJECTION
+  (critique r5-4, cycle-safe): `internal/install` imports the raw
+  registry rows, joins handler metadata, runs the collision-root
+  proof, and encodes registration/v1; `internal/runtimes` never
+  imports install, and the CLI's registration/collision verbs
+  delegate to the projection).
   Declaration validation PROVES every instruction-bearing expanded
   destination lies beneath a contributed collision root; the
   exception is a BOOLEAN row field `uncoveredException` (wire column,
@@ -185,20 +195,44 @@ through `runtime registration <name>`:
   executable owner (critique r4-2): `internal/install` builds ONE
   immutable plan over the selected runtimes' rows PLUS the explicit
   core outputs — the payload allowlist and the FINAL ENGINE, a
-  distinct core output built with go-build.sh's exact bytes and
-  stamp, prepared before mutation and atomically installed at
+  distinct core output whose bytes the SHELL prepares via a
+  refactored `go-build.sh --output PATH --stamp SHA` (critique
+  r5-3: the staged archive has no git metadata to derive a stamp
+  from, and Go verbs do not invoke scripts) and passes into the
+  plan as an immutable prepared source, atomically installed at
   R/bin/metasystem (critique r4-6: the query binary is temporary
   and never ships) — exposed as `metasystem install
-  plan|prepare|apply --root R --staged S --runtimes LIST`; the
-  per-row invocation is the handler-level tool those verbs drive.
+  plan|prepare|apply --root R --staged S --runtimes LIST --mode
+  link|copy` (the user's skill-tree decision, today's
+  --copy-skills, adopt.sh:57; persisted in the completed
+  installation state so tree validation judges BY INSTALLED MODE —
+  critique r5-9); the per-row invocation is the handler-level tool
+  those verbs drive. Handler Validate returns a TYPED
+  {clean|drift} result plus a SEPARATE error channel, mapped
+  deterministically to exits 0/1/4.
   Before the first target write, install persists an INCOMPLETE
-  record {sha, selection, mode, planDigest} at the target; a rerun
-  that finds it recognizes and idempotently RESUMES that exact plan
-  (digest mismatch refuses with the pinned manual recovery: remove
-  the incomplete record and its listed installed outputs, rerun).
-  The COMPLETED adoption marker is written atomically LAST — today
-  the SHA marker lands before runtime outputs (adopt.sh:291), the
-  exact false-healthy hole this closes. prepare runs for EVERY
+  record at the pinned path `R/.metasystem/adoption-incomplete.json`
+  containing {sha, selection, mode, planDigest, the CANONICAL PLAN
+  MANIFEST (every planned output), generated values (the goal
+  baseline's timestamp, adopt.sh:205 — regenerating would break
+  exact-plan identity), per-output status, and PREIMAGES for merge
+  outputs (.gitignore/.gitattributes, adopt.sh:256 — user-owned
+  content is never blindly deletable)} (critique r5-1). Recognition
+  routes an exact planDigest match into RESUME (skip
+  installed-and-clean outputs, continue); a mismatch refuses with
+  the pinned recovery: restore recorded preimages, remove only the
+  outputs the record lists as installed, rerun — never a generic
+  deletion. The plan is TOTAL over today's mutations (critique
+  r5-2): payload files and MERGE operations, the generated goal
+  baseline, the artifacts directory state (adopt.sh:280-291), the
+  runtime-neutral CI workflow (adopt.sh:346), the FINAL ENGINE, the
+  completion marker, and the git pre-commit hook — whose write can
+  land OUTSIDE R in the git common dir (adopt.sh:364): it gets its
+  own prepared, collision-checked boundary named in the plan, the
+  one sanctioned outside-R output. The COMPLETED adoption marker is
+  written atomically LAST — today the SHA marker lands before
+  runtime outputs (adopt.sh:291), the exact false-healthy hole this
+  closes. prepare runs for EVERY
   planned output before the first write; apply order is pinned
   core-payload-then-runtime-outputs (adopt.sh:247,293). apply
   stdout: `installed|unchanged <destination>` per output (idempotent
@@ -274,7 +308,10 @@ through `runtime registration <name>`:
     claim.go:73; custodian verdicts; census.Alive in verifyarmed,
     watchdog, contract preflight)
   - dispatch.ValidateMission's direct fixture read
-    (dispatch/mission.go:97,115)
+    (dispatch/mission.go:97,115) — assigned its own
+    MissionHolderProbe (command + process-group facts only, the two
+    authorities mission-join needs, mission.go:62-124), constructed
+    inside ValidateMission from its root (critique r5-8)
   - the mission-process identity file
     (METASYSTEM_MISSION_PROCESS_IDENTITY_FILE, contract.go:1375,1387)
     — consulted only AFTER unreadable kernel argv, as today
@@ -369,14 +406,15 @@ through `runtime registration <name>`:
   static assertions every adapter can satisfy (critique r3-8: real
   probes need installed providers, validate-metasystem.sh:409):
   each adapter gains a no-auth, no-provider, side-effect-free
-  `<adapter>.sh contract` verb emitting one canonical JSON line
-  {runtime, snapshotSchema} — and the schema value is REAL
-  (critique r4-9): production snapshot construction gains one
-  shared schema constant written into every snapshot, the selector
-  rejects missing/unknown versions, and the contract verb reads
-  that same constant, so the verb cannot advertise a schema its
-  probe does not write. The decoded-all-adapters assertion rides
-  that verb, not live probes.
+  `<adapter>.sh contract` verb whose output is produced by the REAL
+  snapshot construction path fed deterministic dummy provider facts
+  (critique r4-9 resolved via its second alternative — critique
+  r5-7 showed the schema-discriminator route is an unplanned
+  live-security cutover invalidating every retained snapshot; NOT
+  taken): the suite decodes the constructed snapshot and asserts
+  runtime identity and shape. Retained snapshots stay valid; no
+  reprobe storm; no schema field lands in production output. The
+  decoded-all-adapters assertion rides that verb, not live probes.
 - supervision-hook.sh contract (critique r1-9, r2-8) — the
   UNAVOIDABLE precedence, pinned (critique r3-7): (1) shell-owned
   syntax refusals — the event name AND the runtime argument's
