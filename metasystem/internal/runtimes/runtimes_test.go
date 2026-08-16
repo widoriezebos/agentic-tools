@@ -20,10 +20,14 @@ func TestDeclarationInvariants(t *testing.T) {
 			SessionEnv: "lower", InstructionFile: "../escape.md",
 			PermissionResiduals: map[string]string{"bogus": ""}},
 		{Name: "dup", TailoringPriority: 1},
+		{Name: "dup", TailoringPriority: 0, InstructionFile: "./dot.md",
+			SelfCheck: &LiveSelfCheck{VendoredMarker: ""}},
 	}
 	problems := Validate()
 	for _, want := range []string{"shell-safe grammar", "variable grammar", "clean-relative",
-		"already belongs", "not a permission field", "empty residual"} {
+		"already belongs", "not a permission field", "empty residual",
+		"declared twice", "must be positive", "ascending priority order",
+		"nonblank vendored marker"} {
 		found := false
 		for _, p := range problems {
 			if contains(p, want) {

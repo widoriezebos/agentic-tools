@@ -10,8 +10,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"
-
-	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // The host family carries the per-turn work a runtime host does around a single
@@ -216,7 +214,7 @@ func runHostDevinUsage(args []string) int {
 		fmt.Fprintln(os.Stderr, "host devin-usage: --transcript, --usage, and --cumulative are required")
 		return 2
 	}
-	if err := usagepkg.DevinUsage(*usage, *transcript, "", *cumulative, *previous, *expectPrevious); err != nil {
+	if err := host.HostDevinUsage(*usage, *transcript, *cumulative, *previous, *expectPrevious); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

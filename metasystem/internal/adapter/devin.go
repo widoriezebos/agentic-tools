@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // BuildDevinConfig writes a Devin delegate's job config and its provenance. The
@@ -344,4 +345,11 @@ func init() {
 		},
 		BehaviorLabels: []string{"documented-exit-status-observation", "symlinked-skill-discovery"},
 	})
+}
+
+// DevinTurnUsage is the adapter seam's entry point for devin usage
+// derivation (code critique finding 6): command bodies call the seam,
+// the seam calls the single usage owner.
+func DevinTurnUsage(usagePath, transcriptPath, snapshotPath, cumulativePath, previousPath string, expectPrevious bool) error {
+	return usage.DevinUsage(usagePath, transcriptPath, snapshotPath, cumulativePath, previousPath, expectPrevious)
 }

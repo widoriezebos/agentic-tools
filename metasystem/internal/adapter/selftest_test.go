@@ -220,3 +220,61 @@ func TestSelftestEnvelopeDeclarationPicksByCapturedAt(t *testing.T) {
 		t.Fatalf("declaration = %q; the stale or foreign snapshot won", got)
 	}
 }
+
+// Code critique finding 10: the devin pass record through the
+// REGISTERED probe is byte-pinned — labels, order, and every field.
+func TestDevinPassRecordBytesGolden(t *testing.T) {
+	saved := now
+	now = func() time.Time { return time.Unix(1786924800, 0).UTC() } // 2026-08-16T00:00:00Z
+	defer func() { now = saved }()
+
+	probe, err := SelftestProbeFor("devin", "symlinked-skill-discovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "record.json")
+	if err := WriteSelftestRecord(path, "devin", "job-golden", "metered",
+		probe.BehaviorLabels, "notEnforced", "notEnforced"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{
+  "job": "job-golden",
+  "passedAt": "2026-08-17T00:00:00Z",
+  "permissionEnvelopeEvidence": {
+    "behaviorallyProven": {
+      "network": "not-enforced (containment is the operator's, not asserted here)",
+      "readRoots": "permitted-read",
+      "writeRoots": "not-enforced (containment is the operator's, not asserted here)"
+    },
+    "constructedOnly": [
+      "approvals",
+      "tools",
+      "readRoots-completeness"
+    ],
+    "declaredEnforcement": {
+      "network": "notEnforced",
+      "writeRoots": "notEnforced"
+    }
+  },
+  "provenBehaviorally": [
+    "dispatch",
+    "return-validation",
+    "resume-identity",
+    "cancel",
+    "permitted-read",
+    "usage-metered",
+    "documented-exit-status-observation",
+    "symlinked-skill-discovery"
+  ],
+  "runtime": "devin",
+  "usageAvailability": "metered",
+  "usageNote": "metered: provider units are recorded and fence-metered even when token counts are absent"
+}` + "\n"
+	if string(got) != want {
+		t.Fatalf("devin pass record drifted:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}

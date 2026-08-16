@@ -411,12 +411,19 @@ record_return_repairs() { # count
 }
 
 configuration_identity() { # runtime version declared settings files
-  local identity_runtime=$1 identity_version=$2
+  local identity_runtime=$1 identity_version=$2 identity_filter
   shift 2
+  # The filter file is DECLARED, never constructed (agnosticism code
+  # critique finding 1): the bytes validation checks must be the bytes
+  # live identity hashes. Fail closed when the runtime declares none.
+  identity_filter=$("$ms" runtime config-identity-filter "$identity_runtime") || {
+    echo "no config identity filter declared for $identity_runtime" >&2
+    return 1
+  }
   "$ms" config identity \
     --runtime "$identity_runtime" \
     --version "$identity_version" \
-    --filter "$root/scripts/agents/adapters/$identity_runtime-config-filter.v1.json" \
+    --filter "$root/scripts/agents/adapters/$identity_filter" \
     "$@"
 }
 

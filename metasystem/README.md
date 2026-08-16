@@ -166,7 +166,7 @@ collaboration loop the roles play out — design, critique to agreement,
 build, critique to agreement, merge — is specified in
 [`docs/orchestration.md`](docs/orchestration.md).
 
-Runtime portability is handled by separating intent from mechanism: skills and docs are runtime-neutral, and each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (for the currently registered runtimes — e.g. `claude-profile.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location; the registered set comes from `bin/metasystem runtime list`.
+Runtime portability is handled by separating intent from mechanism: skills and docs are runtime-neutral, and each skill ships per-runtime subagent profile templates under `skills/<name>/agents/` (for the currently registered runtimes — e.g. `claude-profile.md`, `devin/AGENT.md`, `openai.yaml`) that adopting projects copy into their runtime's profile location; the currently ADOPTABLE set comes from `bin/metasystem runtime list --adoptable` (the full registry includes the fixture-only fake runtime, which ships no profiles).
 
 ### Layout
 

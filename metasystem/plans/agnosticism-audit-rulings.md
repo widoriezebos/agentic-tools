@@ -2,8 +2,8 @@
 
 - Status: SPLIT AT BUDGET (D74); phase A IMPLEMENTED — awaiting both host gates, then the MANDATORY code critique
 - Goal: agnosticism-audit (backlog item 16; D74)
-- Next step: Gate both hosts on the phase-A implementation; run the mandatory code critique; fold; goal done --then runtime-integration-contracts.
-- In flight right now: none
+- Next step: Fold the mandatory code critique's verdict when run agno-code-critique concludes; then goal done --then runtime-integration-contracts.
+- In flight right now: run agno-code-critique (the mandatory post-gate code critique of 14d3ab0; watch it with: bin/metasystem run watch --id agno-code-critique --root .)
 
 Phase-A implementation notes (what shipped vs the text below): the
 registry, runtime verbs, all Class-2/4/8/9 consumers, the three typed

@@ -19,6 +19,9 @@ import (
 // registry's liveSelfCheck; core names no runtime here — agnosticism
 // audit class 4). It returns nil when the repository runs under itself.
 func CheckOwnHooks(livePath, shippedPath, vendoredMarker string) error {
+	if strings.TrimSpace(vendoredMarker) == "" {
+		return fmt.Errorf("hooks check requires a nonblank vendored-entry marker")
+	}
 	liveData, err := os.ReadFile(livePath)
 	if err != nil {
 		return fmt.Errorf("cannot read hook configuration: %w", err)

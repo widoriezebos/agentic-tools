@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // DevinConfig writes the Devin CLI config for a turn. It starts from the user's
@@ -108,4 +110,12 @@ func init() {
 		}
 		return RecollectResult{Delivered: verdict.Delivered, ReplyPath: verdict.Reply}, nil
 	})
+}
+
+// HostDevinUsage is the host seam's entry point for devin usage
+// derivation (code critique finding 6): command bodies call the seam,
+// the seam calls the single usage owner. The host path records no
+// attempt snapshot.
+func HostDevinUsage(usagePath, transcriptPath, cumulativePath, previousPath string, expectPrevious bool) error {
+	return usage.DevinUsage(usagePath, transcriptPath, "", cumulativePath, previousPath, expectPrevious)
 }

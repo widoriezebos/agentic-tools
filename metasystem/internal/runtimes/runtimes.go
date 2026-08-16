@@ -273,10 +273,26 @@ func Validate() []string {
 	}
 	priorities := map[int]string{}
 	residuals := map[string]string{}
+	names := map[string]bool{}
 	defaults := 0
+	lastPriority := 0
 	for _, d := range declarations {
 		if !nameRe.MatchString(d.Name) {
 			add("runtime name %q violates the shell-safe grammar", d.Name)
+		}
+		if names[d.Name] {
+			add("runtime name %q declared twice", d.Name)
+		}
+		names[d.Name] = true
+		if d.TailoringPriority <= 0 {
+			add("%s: tailoring priority must be positive", d.Name)
+		}
+		if d.TailoringPriority <= lastPriority {
+			add("%s: declarations must be in ascending priority order (Names promises it)", d.Name)
+		}
+		lastPriority = d.TailoringPriority
+		if d.SelfCheck != nil && d.SelfCheck.VendoredMarker == "" {
+			add("%s: a live self-check requires a nonblank vendored marker", d.Name)
 		}
 		if d.SessionEnv != "" && !envRe.MatchString(d.SessionEnv) {
 			add("%s: session env %q violates the variable grammar", d.Name, d.SessionEnv)
@@ -346,11 +362,11 @@ func cleanRelative(path string) bool {
 	if path == "" || strings.HasPrefix(path, "/") {
 		return false
 	}
-	if strings.ContainsAny(path, "\t\n ") {
+	if strings.ContainsAny(path, "\t\n\r ") {
 		return false
 	}
 	for _, part := range strings.Split(path, "/") {
-		if part == ".." || part == "" {
+		if part == ".." || part == "." || part == "" {
 			return false
 		}
 	}

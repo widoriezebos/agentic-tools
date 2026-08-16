@@ -150,9 +150,17 @@ func resumeDelivery(root string, turn Turn, turnPath, turnDir string, recollect 
 	if err != nil || !result.Delivered {
 		return nil, fmt.Errorf("no further delivery candidate qualified")
 	}
-	returned, err := validateReturnAt(turn, result.ReplyPath, returnCompletenessCheck(root))
+	// The recollected reply must live INSIDE the turn directory (code
+	// critique finding 4): the containment boundary is runner-owned and
+	// a future recollector must not be able to point validation at an
+	// arbitrary schema-valid file.
+	replyPath, err := containedPath(turnDir, result.ReplyPath, "recollected reply")
+	if err != nil {
+		return nil, fmt.Errorf("recollected reply escapes the turn directory: %w", err)
+	}
+	returned, err := validateReturnAt(turn, replyPath, returnCompletenessCheck(root))
 	if err != nil {
 		return nil, err
 	}
-	return &ReturnValidation{Returned: returned, RawPath: filepath.Join(turnDir, "raw.out"), ReturnPath: result.ReplyPath}, nil
+	return &ReturnValidation{Returned: returned, RawPath: filepath.Join(turnDir, "raw.out"), ReturnPath: replyPath}, nil
 }

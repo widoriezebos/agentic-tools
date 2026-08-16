@@ -54,8 +54,11 @@ sanctioned seams as declarations the core consumes:
 
 Sanctioned appearances of runtime names outside seam files: (a)
 provenance comments naming the critic or incident behind a decision,
-(b) the adapter/host families' CLI verb names, (c) operator-selected
-VALUES in checkout configuration, validated against the registry,
+(b) the adapter/host families' CLI verb names, (c) schema-defined runtime
+positions in checkout configuration — operator-selected values AND the
+runtime-bearing key segments the configuration schema defines
+(model-key suffixes, capability-floor segments, tier prefixes) — each
+validated against the registry,
 (d) the named `fake` test-harness exceptions (each fake-gated branch
 keeps its explicit local guard; no generic fixture bypass exists), and
 (e) the handwritten conformance-evidence rows in

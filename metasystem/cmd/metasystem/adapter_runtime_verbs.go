@@ -11,8 +11,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
-
-	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // These verbs are the per-runtime half of the adapter family: the small
@@ -498,7 +496,7 @@ func runAdapterDevinUsage(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-usage --usage FILE --transcript FILE --cumulative FILE [--snapshot FILE] [--previous FILE] [--expect-previous]")
 		return 2
 	}
-	if err := usagepkg.DevinUsage(*usage, *transcript, *usageSnapshot, *cumulative, *previous, *expectPrevious); err != nil {
+	if err := adapter.DevinTurnUsage(*usage, *transcript, *usageSnapshot, *cumulative, *previous, *expectPrevious); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

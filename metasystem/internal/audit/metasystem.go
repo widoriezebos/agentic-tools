@@ -27,17 +27,19 @@ var auditRequiredFiles = []string{
 // docs/project-rules.md is project-owned and deliberately absent, and so are
 // the audit's own shim and adopt.sh (both legitimately contain dot-dot
 // segments for root resolution).
-var auditScanRoots = append(runtimereg.InstructionFiles(), []string{
-	"wow.md",
-	"docs/orchestration.md", "docs/collaboration.md", "docs/working-modes.md",
-	"docs/working-with-agents.md", "docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
-	"docs/design/design-principles.md", "docs/design/design-obligation-gate.md", "docs/examples",
-	"skills", "optional-skills", "meta",
-	"scripts/validate-metasystem.sh", "scripts/validate-skill.sh",
-	"scripts/assert-design-obligation-gate.sh", "scripts/refactor-baseline.sh", "scripts/frontier.sh",
-	"scripts/receipt.sh", "scripts/assert-stop-loss.sh", "scripts/enforcement",
-	"plans/README.md", "plans/instruction-ledger.md", "plans/known-issues.md",
-}...)
+func auditScanRoots() []string {
+	return append(runtimereg.InstructionFiles(), []string{
+		"wow.md",
+		"docs/orchestration.md", "docs/collaboration.md", "docs/working-modes.md",
+		"docs/working-with-agents.md", "docs/project-adaptation.md", "docs/metasystem-reconciliation.md",
+		"docs/design/design-principles.md", "docs/design/design-obligation-gate.md", "docs/examples",
+		"skills", "optional-skills", "meta",
+		"scripts/validate-metasystem.sh", "scripts/validate-skill.sh",
+		"scripts/assert-design-obligation-gate.sh", "scripts/refactor-baseline.sh", "scripts/frontier.sh",
+		"scripts/receipt.sh", "scripts/assert-stop-loss.sh", "scripts/enforcement",
+		"plans/README.md", "plans/instruction-ledger.md", "plans/known-issues.md",
+	}...)
+}
 
 var (
 	// The path pattern anchors on a non-word, non-slash character before the
@@ -75,7 +77,7 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 		}
 	}
 
-	hits, err := auditScanFiles(absRoot, auditScanRoots, auditOutsideRe)
+	hits, err := auditScanFiles(absRoot, auditScanRoots(), auditOutsideRe)
 	if err != nil {
 		return nil, err
 	}
@@ -106,11 +108,7 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 	result.Report = append(result.Report, skills...)
 
 	result.Report = append(result.Report, "Instruction inventory")
-	instructionNames := map[string]bool{"wow.md": true, "SKILL.md": true, "AGENT.md": true}
-	for _, name := range runtimereg.InstructionFiles() {
-		instructionNames[name] = true
-	}
-	instructions, err := auditFindNamed(absRoot, []string{"."}, instructionNames, true)
+	instructions, err := auditFindNamed(absRoot, []string{"."}, instructionInventoryNames(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -358,4 +356,15 @@ func enforcementConfigFor(runtime string) string {
 		return ""
 	}
 	return declaration.ShippedEnforcementConfig
+}
+
+// instructionInventoryNames is the audit's instruction filename set:
+// the generic names plus every registry-declared instruction file,
+// computed when the audit RUNS (code critique finding 8).
+func instructionInventoryNames() map[string]bool {
+	names := map[string]bool{"wow.md": true, "SKILL.md": true, "AGENT.md": true}
+	for _, name := range runtimereg.InstructionFiles() {
+		names[name] = true
+	}
+	return names
 }

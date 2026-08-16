@@ -30,11 +30,18 @@ TOML
 # (internal/capability). This file keeps one CLI smoke — the flag
 # forwarding is the script-side property — and the executable-appendix
 # pin over the SHIPPED filter files, which is data, not behavior.
+# The filter path comes from the REGISTRY (agnosticism code critique
+# finding 1): prove the declared file is the file live identity hashes.
+codex_filter=$("$root/bin/metasystem" runtime config-identity-filter codex)
+[[ "$codex_filter" == "codex-config-filter.v1.json" ]] \
+  || { echo "declared codex filter drifted: $codex_filter" >&2; exit 1; }
+cmp -s "$root/scripts/agents/adapters/$codex_filter" "$root/scripts/agents/adapters/codex-config-filter.v1.json" \
+  || { echo "declared filter bytes differ from the shipped file" >&2; exit 1; }
 identity=$(helper --runtime codex --version 0.146.0 \
-  --filter "$root/scripts/agents/adapters/codex-config-filter.v1.json" <"$config")
+  --filter "$root/scripts/agents/adapters/$codex_filter" <"$config")
 [[ -n "$identity" ]] || { echo "config identity smoke: empty identity" >&2; exit 1; }
 identity_again=$(helper --runtime codex --version 0.146.0 \
-  --filter "$root/scripts/agents/adapters/codex-config-filter.v1.json" <"$config")
+  --filter "$root/scripts/agents/adapters/$codex_filter" <"$config")
 [[ "$identity" == "$identity_again" ]] \
   || { echo "config identity smoke: identity not deterministic across calls" >&2; exit 1; }
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -54,6 +56,27 @@ func TestCapabilityDeclarationsMatchRegistrations(t *testing.T) {
 		for capability := range capabilities {
 			if !expected[runtime][capability] {
 				t.Errorf("%s registered %s but the registry does not declare it", runtime, capability)
+			}
+		}
+	}
+}
+
+// The adapter/host capability FLAGS are backed by executable seam
+// files (code critique finding 7): a declaration cannot claim an
+// adapter or launcher that does not exist.
+func TestCapabilityFlagsBackedByExecutables(t *testing.T) {
+	root := "../.."
+	for _, declaration := range runtimes.All() {
+		if declaration.HasAdapter {
+			path := filepath.Join(root, "scripts", "agents", "adapters", declaration.Name+".sh")
+			if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
+				t.Errorf("%s declares an adapter but %s is not an executable file", declaration.Name, path)
+			}
+		}
+		if declaration.HasHostLauncher {
+			path := filepath.Join(root, "scripts", "agents", "hosts", declaration.Name+".sh")
+			if info, err := os.Stat(path); err != nil || info.Mode()&0o111 == 0 {
+				t.Errorf("%s declares a host launcher but %s is not an executable file", declaration.Name, path)
 			}
 		}
 	}

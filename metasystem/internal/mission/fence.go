@@ -780,32 +780,34 @@ func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]a
 	}
 	rel := path.Join("artifacts", "agents", rootID, "rounds", strconv.FormatInt(round, 10), "events.jsonl")
 	eventsPath := filepath.Join(repo, filepath.FromSlash(rel))
-	if _, err := os.Stat(eventsPath); err != nil {
-		return usageUnavailable, nil, fmt.Sprintf("event stream is unreadable: %s", rel)
-	}
-	// Recovery is DECLARED per provider (agnosticism audit classes
-	// 6+7): the seam's registered recoverer answers, and a provider
-	// without one is honestly unsupported instead of being fed through
-	// another runtime's parser.
+	// Recovery is DECLARED per provider (agnosticism audit classes 6+7)
+	// and dispatches BEFORE any provider-specific evidence check (code
+	// critique finding 2): each recoverer owns its evidence, so an
+	// unsupported provider reports its declared reason instead of a
+	// missing-file guess, and the published source is the OUTCOME's.
 	outcome := usage.Recover(provider, usage.RecoveryContext{
 		Repo: repo, RoundDir: filepath.Dir(eventsPath), EventsPath: eventsPath,
 	})
 	if outcome.State != usage.Recovered {
 		return usageUnavailable, nil, outcome.Detail
 	}
-	measured := false
-	for _, field := range usageTokenFields {
-		if v, ok := nonNegNumber(outcome.Fields[field]); ok {
-			units[[2]string{provider, "tokens." + field}] += v
-			measured = true
-		}
+	if _, err := os.Stat(eventsPath); err != nil {
+		return usageUnavailable, nil, fmt.Sprintf("event stream is unreadable: %s", rel)
 	}
-	if !measured {
-		// A Recovered outcome with every value null normalizes to plain
-		// unavailability — the measured count IS the contract (r3-6).
+	// Recovered fields ride the SAME aggregator as reported usage (code
+	// critique finding 3): a cost-only or provider-unit-only recovery
+	// counts, and an all-null recovery normalizes to unavailability —
+	// the measured answer IS the contract (r3-6).
+	if !addReportedUsage(units, provider, outcome.Fields) {
 		return usageUnavailable, nil, fmt.Sprintf("event stream carries no usage block: %s", rel)
 	}
-	return usageDerived, rel, nil
+	recoveredSource := outcome.Source
+	if recoveredSource == "" {
+		recoveredSource = rel
+	} else if strings.HasPrefix(recoveredSource, repo+string(filepath.Separator)) {
+		recoveredSource = strings.TrimPrefix(recoveredSource, repo+string(filepath.Separator))
+	}
+	return usageDerived, recoveredSource, nil
 }
 
 // aggregateContentEqual compares the aggregate's content — everything except
