@@ -1,138 +1,178 @@
 # Two bars for changes (backlog item 2)
 
-- Status: DRAFT r1 — grounded in the commit wrapper (scripts/agents/commit.sh)
-  and the pre-commit guard (scripts/agents/pre-commit-guard.sh). Under critique.
+- Status: DRAFT r2 — r1 critique folded (plans/two-bars-critique-r1.md:
+  7 findings, 6 structural; all folded). r2 makes the THREAT MODEL
+  explicit, because r1 proved the mechanism can only enforce one of
+  the two. PAUSED for a human ruling on that fork (below) before the
+  build.
 - Goal: two-bars-for-changes
-- In flight right now: the r1 design critique (codex xhigh). It is
-  not a dispatch job record, so the open-work scanner cannot see it
-  (KI-34's blind spot); fold it on return.
-- Next step: none.
+- In flight right now: none. r1 critique folded into this r2.
+- Waiting on the human: ONE ruling — accidental-model or
+  adversarial-model (see "The threat-model fork"). The rest of the
+  design is settled either way up to that choice.
+- Next step: none until the human rules the fork.
 
 ## The human's rule (2026-08-08, backlog-notes item 2)
 
 A change takes ONE of two bars: the DESIGN LOOP (design →
 adversarial critique → converge → implement) for design changes, or
-a DIRECT FIX for mechanical defects. The rule was run for one
-unattended session and worked; the human asked whether it should be
-standard, "maybe with a few conditions". The conditions ARE the
-design — without them, "it's just a bug" becomes the escape hatch
-that launders every design change into a direct fix.
+a DIRECT FIX for mechanical defects — declared, so the choice is
+auditable, with a NEVER-DIRECT-FIX set that no "it's just a bug"
+can launder. The human's stated worry is a rule that "gets
+forgotten under time pressure, which is exactly when it matters":
+the concern is an honest agent FORGETTING, not a hostile one
+tampering. That framing is what the fork below turns on.
 
-Tonight is fresh evidence for both bars. The worktree observer
-looked like a report feature but its critique found a DESIGN defect
-(the reclaim proof was unsound); the loop caught it and it was
-reverted (D89) — a design change that correctly took the loop. The
-same session had genuine direct fixes (a stray build binary, a
-commit that left files unstaged) where a design chain would have
-been pure ceremony.
+## The threat-model fork (r1's decisive finding — needs the human)
 
-## The five conditions, made mechanical
+r1 proved the two enforcement targets need different machinery and
+cannot share one:
 
-1. **The classification is DECLARED, not assumed.** Every agent
-   commit carries a trailer naming the bar it took and its basis, so
-   the choice is auditable after the fact:
-   - `Change-Class: direct-fix` with `Defect-Proof: <failing→passing
-     evidence ref>`; or
-   - `Change-Class: loop` with `Design-Chain: <plan or critique
-     artifact ref>`.
-   A commit with neither trailer is refused by the wrapper. Human
-   commits stay sovereign (the guard already exempts them).
+- **ACCIDENTAL model (recommended):** stop an honest agent from
+  MISCLASSIFYING or forgetting under pressure. Local hooks plus a
+  tree-bound gate witness suffice. Human sovereignty stays intact (a
+  human commit is trusted). This matches the human's "forgotten
+  under time pressure" framing and is buildable now without a new
+  identity system.
+- **ADVERSARIAL model:** stop a misaligned agent from deliberately
+  laundering a design change (raw `git commit`, `--no-verify`,
+  `-a`/pathspec bypasses, forged same-user proof files). r1 shows
+  this cannot be done with local hooks and string trailers: it needs
+  REMOTE enforcement (CI that rejects a push whose commits lack a
+  valid tree-bound attestation), DURABLE agent identity (a signing
+  key, not a same-user file), and it CANNOT coexist with an
+  unverifiable human exemption — an unverifiable "sovereign human
+  commit" is itself the bypass (TB-R1-05).
 
-2. **A named NEVER-DIRECT-FIX set, enforced by path.** Some changes
-   are design changes whatever they look like. The set is a declared
-   MANIFEST of path patterns and, where a file mixes concerns, of
-   in-file markers, covering:
-   - INVARIANTS (the properties tests and predicates assert);
-   - CONTRACTS/SCHEMAS other tools parse (the pinned ACP schema, the
-     return schemas, the config domain, wire documents);
-   - AUTHORITY boundaries (internal/authority, the lease/holder
-     rules, genesis);
-   - SAFETY mechanisms (supervision reaper/watchdog, the janitor
-     destructive paths, stop-loss);
-   - HUMAN RULINGS encoded in code or docs.
-   A commit that touches a never-direct-fix path with
-   `Change-Class: direct-fix` is REFUSED with the specific path
-   named. Such a change must be `loop` with a `Design-Chain` ref.
-   The manifest is itself a never-direct-fix contract (it cannot be
-   edited by a direct fix), closing the "widen the escape hatch"
-   move.
+Recommendation: build the ACCIDENTAL model, name the adversarial
+layer as a separate future goal (it is really "remote enforcement +
+durable agent identity", a sibling of the parked genesis-authority
+impossibility). Everything below is the accidental model; the
+adversarial requirements are recorded so the escalation is a known
+step, not a surprise.
 
-3. **When in doubt, the loop wins.** The default on an unclassified
-   or ambiguous change is refusal, not silent proceed — the wrapper
-   fails closed. Choosing `loop` is always allowed and never
-   refused; only `direct-fix` is challenged. So the cheap path out
-   of doubt is to take the loop, never to guess.
+## The five conditions, corrected
 
-4. **A direct fix that grows escalates.** A `direct-fix` commit
-   whose staged diff exceeds a declared size/scope budget (lines,
-   files, or touching a second subsystem) is refused with the
-   instruction to reclassify as `loop`. The budget is the
-   design's number to set; the point is that "small mechanical fix"
-   cannot quietly become a refactor.
+1. **Classification DECLARED, checked where the message and tree are
+   final (TB-R1-02).** The trailer set — `Change-Class:
+   loop|direct-fix` with a `Design-Chain:` or `Defect-Proof:` ref —
+   lives in the commit message, but `commit.sh -m` parsing is NOT
+   the enforcement boundary: `-a`, pathspec, `--include/--only`,
+   `--amend`, and `-C/-c/--fixup` all bypass it. Enforcement is a
+   COMPOSED pair: a `pre-commit` hook freezes and classifies the
+   actual candidate tree (the staged index as Git will write it) and
+   writes a tree-bound classification token; a `commit-msg` hook
+   validates the final message against that token. `commit.sh`
+   remains the orchestrator (it appends canonical trailers from CLI
+   flags, TB-R1-07) but is not trusted as the only gate. Adoption
+   must COMPOSE an existing pre-commit hook rather than skip
+   installation (TB-R1-02, adopt.sh:369). In the accidental model,
+   `--no-verify` and raw `git` are out of scope (they are the
+   adversarial layer); the design says so plainly.
 
-5. **The EVIDENCE bar does not move.** Skipping the loop skips
-   critique, NEVER proof. A `direct-fix` still requires the
-   `Defect-Proof` ref (a test that failed before and passes after)
-   and the same green gate every commit needs. The wrapper checks
-   the gate witness for both classes; the loop adds critique on top,
-   it does not replace proof.
+2. **The NEVER-DIRECT-FIX manifest is a conservative FLOOR, read
+   from BOTH trees (TB-R1-01).** It is a denylist of path patterns
+   (and, for files that mix a contract with ordinary code, of the
+   whole file — accepting that an innocent helper edit there takes
+   the loop, because a marker around only the struct lets a
+   direct-fix change `SchemaVersion` or field population without
+   touching it, e.g. internal/supervise/disk.go). The manifest is
+   evaluated from the BASE and the CANDIDATE tree, so a direct fix
+   cannot delete its own entry or a file's marker in the same
+   commit. It is explicitly a FLOOR: catching the listed paths, NOT
+   proof that every unlisted edit is mechanical. "Human rulings" are
+   NOT in the path manifest — they are unmarkable scattered prose;
+   they rely on the decisions-doc / instruction-ledger audit
+   (condition below), not commit-time path enforcement.
 
-## The mechanism (not memory)
+3. **When in doubt, the loop wins — fail-closed.** An unclassified
+   or ambiguous commit is refused; `loop` is never refused, only
+   `direct-fix` is challenged, so the cheap way out of doubt is the
+   loop.
 
-commit.sh is the one agent commit path (it already takes the lease,
-mints the wrapper token, and runs git commit). It gains a
-classification gate BEFORE `git commit`:
+4. **Growth is a FUSE against a DEFECT IDENTITY, not a per-commit
+   size cap (TB-R1-04).** A per-commit budget is trivially gamed by
+   splitting one design change across many under-budget direct-fix
+   commits. Instead a `direct-fix` declares a DEFECT IDENTITY, and
+   scope aggregates across every commit citing that identity against
+   an immutable pre-defect base; the fuse blows when the aggregate
+   crosses the budget or touches a second subsystem, forcing
+   reclassification to `loop`. This is a growth fuse, not a semantic
+   classifier — it cannot tell design from mechanics, only stop a
+   "small fix" from quietly becoming a refactor.
 
-1. Read the intended message (the `-m` value or the message file).
-2. Require a valid `Change-Class` trailer; refuse if absent
-   (fail-closed, condition 3).
-3. For `direct-fix`: refuse if the staged set intersects the
-   never-direct-fix manifest (condition 2), or exceeds the scope
-   budget (condition 4); require a `Defect-Proof` ref (condition 5).
-4. For `loop`: require a `Design-Chain` ref resolving to a real
-   plan/critique artifact.
-5. Both: the existing gate-witness requirement stands (condition 5).
+5. **The EVIDENCE bar is TREE-BOUND, not a string (TB-R1-03).** r1
+   showed gaterun records only pid/start/name and the D33 witness
+   describes HEAD, not a pending staged tree, and can be green while
+   later fixtures fail. Sound checks need: the gate witness records
+   its OUTCOME (final zero exit) and the CANDIDATE TREE OID it
+   validated; a `direct-fix`'s `Defect-Proof` is the SAME command
+   run against the immutable baseline AND candidate trees with a red
+   THEN green outcome and evidence hashes; `commit.sh`/the hooks
+   locate and bind the witness to the candidate tree OID. For
+   mechanical fixes with no natural failing test (a stray binary,
+   unstaged files — the draft's own cases, TB-R1-07), the proof is a
+   structured BEFORE/AFTER repository-state assertion, a first-class
+   proof kind, not a fabricated test reference.
 
-The manifest and the trailer grammar are Go-owned (a `change class`
-verb the wrapper calls, table-tested), so the rule is data the
-suite checks, not prose a tired agent forgets — the human's standing
-objection. The pre-commit guard already proves this hook shape works
-(it fail-closes on new plan files and on a missing wrapper token).
+## The audit join (TB-R1-05)
 
-## The anti-bureaucracy test (the real design question)
+"Declared and audited" needs a durable join, not a path that merely
+exists. `Design-Chain` and `Defect-Proof` refs are IMMUTABLE
+`commit:path` or blob identities (plans are task-local and
+deletable, plans/README.md). A validator joins the commit trailer to
+critique CLOSURE (the dispositions table, validate critique-closed)
+and to the decisions-doc / instruction-ledger; the new global rule
+itself gets an instruction-ledger entry with expected effect and a
+later verdict. A defined history-audit pass reports commits whose
+classification cannot be reconstructed — noting that a missing
+classification is indistinguishable from a sovereign human commit
+after the fact, which is exactly why the accidental model does not
+claim to catch a determined bypass.
 
-The rule earns its place only if the COMMON change stays one extra
-line. It does: an ordinary mechanical fix adds
-`Change-Class: direct-fix` + a `Defect-Proof` ref it already has
-(the failing test it wrote). The friction lands exactly where it
-should — on a change touching an invariant, schema, authority, or
-safety path, which SHOULD stop and take the loop. If the manifest is
-too broad it will nag on innocent edits (the KI-23 lesson: noise
-teaches skimming); the design keeps it PRECISE, listing the specific
-contract-bearing paths, not whole directories, and every refusal
-names the exact path and the exact reclassification, so the way out
-is always one obvious step.
+## Emergency (TB-R1-06)
 
-## Prototype plan
+Pick ONE, no reusable escape:
 
-P1: the `change class` verb — parse+validate a trailer set, evaluate
-a staged file list against the manifest, evaluate the scope budget;
-pure Go with table tests for each refusal and each pass. P2: wire it
-into commit.sh before `git commit`, fail-closed; a fixture proving a
-direct-fix on an authority path is refused while a direct-fix on an
-ordinary path with proof passes, and a loop on the authority path
-with a design-chain ref passes. The manifest ships small and grows
-only through the loop (it is on its own list).
+- **Human-personal:** a genuine emergency safety fix is committed by
+  the HUMAN personally (already sovereign), with immediate
+  reconciliation (docs/collaboration.md:68). No agent override
+  exists. Simplest; recommended for the accidental model.
+- **One-use authorization:** if an agent must act, the human mints a
+  ONE-USE token bound to the exact candidate tree OID, reason,
+  expiry, the specific checks skipped, and a mandatory
+  receipt/handoff reconciliation. A reusable env var or generic
+  "emergency" trailer is forbidden — it reopens the hatch.
+
+## The anti-bureaucracy test (TB-R1-07)
+
+The common mechanical change must stay near one extra line. The
+wrapper APPENDS the canonical trailers from CLI flags (the agent
+writes `--direct-fix --proof <ref>`, not hand-formatted trailers),
+and structured before/after proofs cover the no-failing-test cases,
+so ordinary cleanup neither takes a ceremonial loop nor fabricates a
+proof. Friction lands only on a change touching a manifest path,
+which SHOULD stop and take the loop, and every refusal names the
+exact path and the one-step reclassification.
+
+## Prototype plan (after the human rules the fork)
+
+P1: the `change class` verb — parse+validate the trailer set;
+evaluate a candidate-tree file list against the manifest read from
+both trees; aggregate direct-fix scope by defect identity; bind and
+verify a tree-OID gate witness; pure Go, table tests per refusal and
+pass. P2: the composed pre-commit (tree-bound token) + commit-msg
+(final message) hooks, commit.sh trailer-append, adoption hook
+composition, the witness outcome+OID extension in gaterun/go-gate,
+and the audit-join validator; fixtures for a direct-fix refused on a
+manifest path, a direct-fix passing on an ordinary path with a
+before/after proof, a loop passing with an immutable design-chain
+ref, and a split-commit defect-identity fuse blowing.
 
 ## Loop discipline
 
-Codex xhigh. The critique should attack: whether the never-direct-fix
-manifest can be specified precisely enough to avoid nagging without
-leaving a laundering gap; whether the trailer belongs in the message
-(commit.sh sees it) versus a commit-msg hook (the pre-commit hook
-does not see the message); whether the scope budget is gameable
-(split one design change across many small direct-fix commits);
-whether the gate-witness/Defect-Proof checks are real or theater
-given the wrapper cannot re-run the gate; and whether a human
-override path is needed for the genuine emergency without reopening
-the escape hatch.
+Codex xhigh; resumes after the human rules the accidental/adversarial
+fork. If accidental (recommended), the next critique attacks the
+tree-bound witness binding and the composed-hook completeness; if
+adversarial, the design first has to solve durable agent identity
+and remote enforcement, which is a different and larger goal.
