@@ -56,6 +56,22 @@ cd "$root"
 # inherited the template's cwd and believed itself the template.
 metasystem_here=$(pwd -P)
 
+# Disk-hygiene headroom guard (backlog item 19, slice 1): make a full
+# disk NAME ITSELF before the suite assumes space. The ENOSPC incident
+# that motivated the goal remounted the guest read-only and looked like
+# a code failure; a loud named line here turns that into a diagnosis.
+# Checks the filesystems the suite actually fills — the repo, TMPDIR,
+# and the Go build cache. Non-fatal for now (the pressure-sweep recovery
+# is a later slice); it warns loudly with the per-filesystem deficit.
+if [[ -x "$root/bin/metasystem" ]]; then
+  headroom_report=$("$root/bin/metasystem" janitor headroom \
+    --path "$root" --path "${TMPDIR:-/tmp}" --path "$(go env GOCACHE 2>/dev/null || echo "$root")" \
+    --floor-gb "${METASYSTEM_HEADROOM_FLOOR_GB:-5}" 2>/dev/null) || {
+    echo "HEADROOM WARNING: a filesystem the suite fills is below its floor; a full disk will masquerade as a test failure:" >&2
+    printf '%s\n' "$headroom_report" | grep '"belowFloor":true' >&2 || true
+  }
+fi
+
 # Two concurrent suite runs trample each other's shared fixtures, so the
 # suite refuses to start over a live gate run. The decision is the engine's
 # (gate fence prunes dead markers and exempts this process's own chain);
