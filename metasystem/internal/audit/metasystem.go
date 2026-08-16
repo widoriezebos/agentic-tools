@@ -327,12 +327,19 @@ func auditGoalSystem(root string) []string {
 	// Class 14's positive audit (B1 critique finding 14): the named
 	// operational documents must carry registry-derived pointers, not
 	// hand-maintained universes.
-	for doc, marker := range map[string]string{
+	pointerDocs := map[string]string{
 		"docs/project-adaptation.md": "runtime registration",
 		"docs/orchestration.md":      "runtime\nlist",
 		"docs/glossary.md":           "runtime list",
-		"README.md":                  "runtime list",
-	} {
+	}
+	// README ships only with the TEMPLATE (adoption's payload excludes
+	// it — an adopted project's README is the project's own and owes
+	// the metasystem nothing). Same marker the registration presence
+	// checks ride.
+	if fileExists(filepath.Join(root, "development", "metasystem-design.md")) {
+		pointerDocs["README.md"] = "runtime list"
+	}
+	for doc, marker := range pointerDocs {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(doc)))
 		if err != nil || !strings.Contains(strings.ReplaceAll(string(body), "\n", " "), strings.ReplaceAll(marker, "\n", " ")) {
 			violations = append(violations, doc+" must point at the runtime registry ("+strings.ReplaceAll(marker, "\n", " ")+")")
