@@ -1,11 +1,17 @@
 # Disk hygiene: every byte written gets a lifecycle (backlog item 19)
 
-- Status: DRAFT r3 — critiques r1 and r2 folded (r1: 12 findings;
+- Status: DRAFT r3, PARKED at the budget-one boundary (D81) — the
+  goal yielded its slot to the human-approved acp-transport
+  implementation. Critiques r1 and r2 folded (r1: 12 findings;
   r2: 15, of which 14 structural — six r1 folds were shown
-  incomplete and are re-folded for real below). Final round of the
-  first budget.
-- Goal: disk-hygiene
-- Next step: Fold the critique verdict when run dh-critique-r3 concludes; implement only after convergence.
+  incomplete and are re-folded for real below). The in-flight r3
+  verdict will be folded when it lands and the design held here
+  until the goal resumes.
+- Goal: disk-hygiene (parked)
+- Next step (on resume): assess the folded r3 verdict against the
+  stop criterion; under D81, an execution-heavy non-convergence
+  exits to implementation-first behind fixtures, not a third
+  budget.
 - In flight right now: run dh-critique-r3 (codex xhigh critique; watch it with: bin/metasystem run watch --id dh-critique-r3 --root .)
 
 The human's ruling, verbatim intent (2026-08-15): "Whenever we

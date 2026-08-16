@@ -1,8 +1,8 @@
 # Goals
 
-## Current goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
+## Current goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
-- Next step: Design per plans/backlog-notes.md item 19; headroom checks in suite and provision paths.
+- Next step: Prototype against devin acp per plans/backlog-notes.md item 18; design loop before build.
 
 ## Queued goal: narrator — A plain-English story of what happened, why it happened, and who did it
 - Origin: main
@@ -44,15 +44,14 @@
 - Origin: main
 - Next step: Design loop over the four shipped holes named in plans/acp-critique-r5.md finding 10 and D79; sealed-v1 (acp-transport) is the working prototype of the target contract.
 
-## Parked goal: runtime-install-execution — The adoption/installation execution rewrite: plan owner, resume records, engine transport, crash-consistent completion
+## Queued goal: runtime-install-execution — The adoption/installation execution rewrite: plan owner, resume records, engine transport, crash-consistent completion
 - Origin: main
-- Parked because: Two six-round budgets show this subdomain diverges under prose critique (structural 12/11/5/5/5/8); the approach choice is Wido's: implementation-first behind fixtures, a third budget, or descope
 - Next step: PARKED for Wido's ruling: implementation-first behind fixtures, a third prose budget, or descope. Seeds: plans/ric-critique-r1..r6.
 
-## Parked goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
+## Parked goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main
-- Parked because: Two budgets exhausted, five structural findings stand; parks on the D76 methodology ruling (implementation-first behind fixtures, third budget, or descope) — three subdomains now show the same divergence
-- Next step: Prototype against devin acp per plans/backlog-notes.md item 18; design loop before build.
+- Parked because: Yields the current slot to the human-approved acp-transport implementation (D81); design held at the budget-one boundary, r3 verdict will be folded when it lands
+- Next step: Design per plans/backlog-notes.md item 19; headroom checks in suite and provision paths.
 
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
 - Origin: main

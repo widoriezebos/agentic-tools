@@ -2356,3 +2356,24 @@ whichever path the ruling picks. Under implementation-first, the
 throwaway P1 wire probe runs first on any continue path — its
 facts gate everything except the two lock-discipline findings.
 The program advances to disk-hygiene (next in queue).
+
+## D81 — 2026-08-16: the human rules — implementation-first behind fixtures
+
+Asked whether ACP transport "is not going to fly," I answered
+that it flies and is parked on method, and recommended
+implementation-first behind fixtures: run the throwaway P1 wire
+probe, then build internal/acp against a stub server with
+fixtures pinning each contract, the r6 design document serving as
+the spec — with the same ruling unblocking
+runtime-install-execution, and a third prose budget advised
+against. The human: "agreed and approved." That is the
+methodology ruling D76 and D80 parked on, now ratified. Effects:
+acp-transport unparks and becomes current (P1 probe first — its
+facts gate everything except the two lock-discipline findings);
+runtime-install-execution unparks into the queue to await its
+turn under the same method; disk-hygiene yields the current slot
+mid-loop — its r3 critique verdict, already in flight, will be
+folded and the design held at the budget-one boundary so nothing
+is lost. The standing rule going forward: when an execution-heavy
+subdomain exhausts two prose budgets without convergence, the
+exit is implementation-first behind fixtures, not more prose.

@@ -1,23 +1,19 @@
 # ACP as the delegate transport (backlog item 18)
 
-- Status: PARKED AT BUDGET (D80) — six rounds, trajectory 15, 8,
-  13, 13, 10, 8; falling but five structural findings stand at
-  exhaustion (plans/acp-critique-r6.md). r6 ACCEPTED the D79 scope
-  pivot as sound and confirmed the ancestry-authentication
-  mechanism implementable; the residue is marker immutability
-  under the terminal lock, the lease-sweep lock split, the
-  cancellation committer split, the settlement refusal table, and
-  the newly surfaced PromptResponse.usage source. Third
-  execution-heavy subdomain to diverge under prose critique — the
-  methodology ruling parked on runtime-install-execution (D76)
-  covers this goal too: implementation-first behind fixtures
-  (evidence now favors it three times), a third prose budget, or
-  descope.
-- Goal: acp-transport (parked; joins runtime-install-execution on
-  the human's methodology ruling)
-- Next step: Wido's ruling. Under implementation-first, P1 (the
-  wire probe, throwaway) runs first regardless — every r6 residue
-  except F1/F2 needs its facts.
+- Status: IMPLEMENTATION-FIRST (D81, human-ratified 2026-08-16:
+  "agreed and approved") — this document is the SPEC. Six prose
+  rounds (trajectory 15, 8, 13, 13, 10, 8) are folded; the five
+  standing r6 structural findings (plans/acp-critique-r6.md:
+  marker immutability under the terminal lock, the lease-sweep
+  lock split, the cancellation committer split, the settlement
+  refusal table, PromptResponse.usage) are resolved BY FIXTURES
+  during P2, not by more prose. r6 accepted the D79 scope pivot
+  and confirmed the ancestry mechanism implementable.
+- Goal: acp-transport (current)
+- Next step: P1 — the throwaway wire probe, per the nine-question
+  list below; its captures land in plans/acp-wire-probe.md. Then
+  P2 (internal/acp + stub-server fixtures, each r6 residue pinned
+  by a named fixture), then P3 behind the conf flag.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more
