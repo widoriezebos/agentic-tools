@@ -2726,3 +2726,40 @@ recorded in the window's own review but omitted from the park).
 (3) The D84 record's "closes accidental misuse" description stands
 only with those two caveats named; the durable claims that
 caller-controlled roots cannot forge upward are withdrawn.
+
+## D93 — 2026-08-17: the human rules the two re-review forks; the spec-id defect is fixed
+
+Three items, closing the Opus-window corrections' open questions.
+
+(1) Devin on the Mac: the human ruled "allowed when you need one —
+if there is a good reason, go ahead." The D82 flip gate IS a good
+reason, so the dual-host gate stands as originally written: a bm-2
+rep (claude host + devin delegate, dispatch.transport.devin=acp
+proven in the target) on the VM AND on the Mac, judged by the D91
+acceptance contract. Devin on the Mac remains exceptional, not
+routine — each use needs its named reason.
+
+(2) Genesis: the human chose C' — drop "unforgeable genesis" as a
+product contract. The cooperative same-user controls stay (D84),
+the operator and the VM supply real isolation, and no signer or
+sandbox-enforcement machinery is built for genesis. Consequences,
+executing now under the bug mandate: fix the two D92 defects (the
+adapter-supervisor reclassification regression and the pre-lock
+genesis-mode race), then withdraw every durable claim that
+caller-controlled roots cannot forge upward — records say
+cooperative, not unforgeable. The genesis-authority-design goal's
+remaining scope is exactly that; it concludes when those land.
+
+(3) Discovered while executing the approved bm-2d run: bm-2d and
+bm-2dc shipped carrying bm-2's manifest id, which keys cohort
+naming, the recorded benchmarkSpecId, and --resume's spec
+resolution — the first acceptance cohort provisioned under bm-2's
+identity and would have resumed against the wrong spec. Fixed
+(ids now equal their spec directory names), the kit consistency
+check now refuses id/dirname mismatches, the mis-identified
+unsealed cohort was discarded, and the kit gate is green. Also
+fixed en route: the machine fingerprint refused on the aarch64
+guest (no "model name" in /proc/cpuinfo), so the VM-only spec
+could never have provisioned on the machine it is constrained to —
+it now synthesizes a stable identity from vendor + implementer/
+part codes.

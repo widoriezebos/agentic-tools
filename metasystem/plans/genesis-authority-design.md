@@ -25,7 +25,16 @@
   discards non-MAIN source classifications; cmd/metasystem/goal.go)
   and the pre-lock genesis-mode race (os.Stat before Reconcile's
   lock; the guard can be skipped).
-- Goal: genesis-authority-design (parked on the boundary choice)
+- RULED by the human (D93, 2026-08-17): option C'. "Unforgeable
+  genesis" is DROPPED as a product contract. The cooperative
+  same-user controls stay; the operator and the VM supply real
+  isolation; no signer or sandbox-enforcement machinery is built
+  for genesis. Remaining scope, executing now under the bug
+  mandate: fix the two defects above (tests + mandatory code
+  critique), then withdraw every durable claim that
+  caller-controlled roots cannot forge upward — records say
+  cooperative, not unforgeable. The goal concludes when those land.
+- Goal: genesis-authority-design (ruled; concluding work in flight)
 
 ## Why there is no filesystem-only sound fix
 

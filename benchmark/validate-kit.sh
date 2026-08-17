@@ -162,6 +162,18 @@ for manifest_path in sorted(Path("benchmark/specs").glob("*/manifest.json")):
         violations.append(f"{manifest_path}: unparseable: {error}")
         continue
 
+    # A spec's id IS its directory name: the id keys cohort naming, the
+    # recorded benchmarkSpecId, and --resume's spec resolution, so a copied
+    # id silently files one spec's cohorts under another and resumes them
+    # against the wrong spec. bm-2d and bm-2dc shipped carrying bm-2's id
+    # and the first acceptance cohort provisioned under the wrong identity
+    # before anything refused (2026-08-17).
+    spec_id = manifest.get("id")
+    if spec_id != spec_dir.name:
+        violations.append(
+            f"{manifest_path}: id {spec_id!r} must equal the spec directory name {spec_dir.name!r}"
+        )
+
     metrics = set(manifest.get("metrics", {}))
     deferred = set(manifest.get("deferredMetrics", {}))
     for name in sorted(metrics & deferred):

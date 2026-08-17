@@ -65,18 +65,18 @@
     "Mechanically successful" without those checks is not a
     criterion. bm-2d/bm-2dc remain ADDITIONAL VM-only Devin-host
     coverage (D83), never substitutes for the D82 pair.
-  - OPEN, needs the human: whether "I don't trust Devin on the Mac"
-    (D83) covers Devin DELEGATES too. If yes, D82's Mac half needs
-    the human's re-ruling (the wire probe found no devin mode
-    enforces path containment, which argues delegates share the
-    distrust); if no, the Mac bm-2 rep runs as written.
-- Waiting on the human: the D82/D83 conflict above — may a Devin
-  delegate (over ACP) run on the Mac for the D82 Mac-side rep, or
-  is all Devin execution VM-only, in which case rule what replaces
-  the Mac half of the gate. Also each cohort's seal. The in-flight
-  bm-2d run continues as D83 devin-host coverage (human-approved
-  seal), with transport=acp set in its target before resume so its
-  delegates actually ride ACP.
+  - RESOLVED by the human (D93): Devin on the Mac is "allowed when
+    you need one — if there is a good reason, go ahead." The D82
+    gate is a good reason, so the dual-host bm-2 pair runs as
+    written (the Mac rep carries a devin delegate over ACP); Devin
+    on the Mac stays exceptional otherwise, each use with its named
+    reason.
+- Waiting on the human: each cohort's seal (the standing boundary).
+  The in-flight bm-2d run continues as D83 devin-host coverage
+  (human-approved seal), with transport=acp set in its target
+  before resume so its delegates actually ride ACP. The D82 pair
+  (VM + Mac bm-2 reps over ACP) runs after the flip prerequisites
+  (snapshot identity surfaces, supervise_acp fixture) are built.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more
