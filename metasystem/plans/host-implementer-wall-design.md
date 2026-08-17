@@ -1,25 +1,21 @@
 # The host-implementer wall (goal host-implementer-wall, D99/D100)
 
-- Status: DRAFT r5 — r1–r4 folded (plans/hiw-critique-r1..r4.md).
-  D100's rulings stand: NO self-work exception, DETECTOR tier. r5
-  formalizes r4's five edges: the authorization base must BE an
-  E-sequence member with object-id+mode equality after apply;
-  taint resolutions define their E-transition (a new segment whose
-  resolution-changed paths count as intervening); machine paths
-  must be IGNORED (not merely untracked) with a read-only
-  preflight BEFORE arming or any target write; consumption's
-  recovery source is payload-bearing acceptance entries with
-  ledger-ahead defined as unaccepted; and the host-artifact delta
-  must be pairwise-disjoint from every consumed authorization.
-  Budget note: critique budget one (r1–r3) is spent; r5 opens
-  budget two under the ratified rules — if structural findings
-  persist at r6, the D81 implementation-first pivot applies with
-  this design's fixture lists as the arbiter.
+- Status: IMPLEMENTATION-FIRST (D81 pivot, D101) — five critique
+  rounds folded (plans/hiw-critique-r1..r5.md; trajectory 9, 8,
+  4+matrix, 5, 1). r5 left exactly one structural finding
+  (occurrence identity, folded above as the sequence-point
+  binding) and the critic itself invoked the ratified pivot:
+  budget one spent, this document is the SPEC, the 13 obligation
+  rows and their fixture lists are the arbiter, and the remaining
+  mechanical-grain shape choices (exact JSON schemas, event
+  registry types) are owned by golden fixtures during the build.
+  D100's rulings stand: NO self-work exception, DETECTOR tier.
 - Goal: host-implementer-wall (Current)
-- In flight right now: the r5 design critique (codex xhigh); not a
-  dispatch job record, so the open-work scanner cannot see it.
+- In flight right now: implementation, starting with HIW-O4's
+  foundation (the shared git-tree primitive).
 - Waiting on the human: nothing.
-- Next step: none.
+- Next step: implement per the obligation matrix, mandatory code
+  critique per slice, both-host gates before any ship.
 
 ## What happened (unchanged evidence)
 
@@ -90,10 +86,16 @@ CONSUMPTION is one-time, and the STALENESS RULE is explicit
 mission's anchored initial baseline; E(i+1) is turn i's accepted
 post-tree (E(i) + turn i's consumed patches + its declared
 host-artifact delta). An authorization A — apply(P, B) = R — is
-consumable in turn j if and only if B IS AN E-SEQUENCE MEMBER
-(B == E(k) for a unique prior k; an authorization whose base is
-not an accepted expected tree is refused outright — no scanning
-for lookalike trees), AND either k == j, or every accepted change
+consumable in turn j if and only if B IS A NAMED E-SEQUENCE POINT:
+the authorization binds, beside the base tree id, the SEQUENCE-
+POINT IDENTITY of its base — the state-chain sequence number plus
+segment ordinal at which that expected tree was accepted (r5
+HIW-R5-01: tree ids legitimately repeat — a no-change turn yields
+E(i+1)==E(i), and RESTORE deliberately returns to an older tree —
+so a bare tree id can match several occurrences, and which
+occurrence decides the intervening-change set). Conformance reads
+the current sequence point at issuance; consumption verifies the
+named point exists and is prior, AND either k == j, or every accepted change
 between E(k) and E(j) is DISJOINT from A's changed paths
 (changed-path intersection empty, rename endpoints counting on
 both sides) AND P applies to E(j) byte-exactly with no fuzz, AND
@@ -325,7 +327,14 @@ r1's laundering table, closed only by the unbuilt isolation tier.
   get a JSON schema beside the code (internal/missionrunner and
   internal/validate own their halves); digests are sha256 over the
   canonical wiredoc encoding — the repository's one canonical
-  encoder, no ad-hoc serialization.
+  encoder, no ad-hoc serialization. The DIGEST DOMAIN (r5): the
+  embedded `authorizationDigest` field is OMITTED from the bytes
+  being digested (digest-then-embed); the filename carries the
+  same digest. Event identifier fields follow the registry's
+  existing conventions (`missionId`, ids under the registry's ids
+  slot) — the exact registry types land with the implementation's
+  event registration, per the r5 ruling that golden fixtures own
+  the remaining shape choices.
 - EVENTS (emitter → required payload): conformance validation →
   authorization-issued {authorizationDigest, jobId, mission};
   missionrunner adjudication → authorization-consumed
@@ -349,7 +358,7 @@ r1's laundering table, closed only by the unbuilt isolation tier.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | HIW-O1 | CRITICAL | hiw-critique-r2 §3 | Pre-tree/open-turn state is anchored reachable before host launch and inspected before any recovery healing or new baseline | missionrunner loop + mission state chain | loop.go snapshot/anchor path | crash fixture at every snapshot boundary + object-GC fixture | mission fixture run with forced kill between snapshot and launch | MISSING | implement |
 | HIW-O2 | CRITICAL | hiw-critique-r1 §1 | Authorization issues only on the exact patch/base/reviewed-tree join with critic closure | validate conformance | conformance.go issuance join | mutated/stale patch, wrong base, empty patch, critic-mismatch fixtures | conformance run over a real implementer chain | MISSING | implement |
-| HIW-O3 | CRITICAL | hiw-critique-r3 §1-2 | Provenance verified (mission incarnation, stream, role, job digest); consumption is one-time via the acceptance write; the staleness predicate admits disjoint delayed returns and refuses the rest | missionrunner adjudication | adjudicate.go verification + acceptance append | cross-mission, replay, superseded, later-turn-disjoint, later-turn-overlap, unknown-base, same-file-drift (object-id mismatch), rename-endpoint, multi-authorization, resolution-induced-staleness fixtures | mission fixture with delayed certification across turns | MISSING | implement |
+| HIW-O3 | CRITICAL | hiw-critique-r3 §1-2 | Provenance verified (mission incarnation, stream, role, job digest); consumption is one-time via the acceptance write; the staleness predicate admits disjoint delayed returns and refuses the rest | missionrunner adjudication | adjudicate.go verification + acceptance append | cross-mission, replay, superseded, later-turn-disjoint, later-turn-overlap, unknown-base, same-file-drift (object-id mismatch), rename-endpoint, multi-authorization, resolution-induced-staleness fixtures; POSITIVE fixtures: authorization after a no-change turn, and fresh post-resolution work consuming against the new segment | mission fixture with delayed certification across turns | MISSING | implement |
 | HIW-O4 | CRITICAL | hiw-critique-r2 §2 | Exact ordered patch composition over the shared isolated-index primitive equals the accepted tree | shared git-tree primitive (one owner) | new internal/gittree package used by validator + runner | deletion, mode, symlink, binary, gitlink, order, overlap, non-application, crash-after-order-recorded-before-integration fixtures | conformance + wall over one real chain | MISSING | implement |
 | HIW-O5 | CRITICAL | hiw-critique-r1 §5 | Every host-exit path checks the wall; violation taints and parks before measurement or completion, outranking gate success | missionrunner cycle/lifecycle | cycle.go fault path rework | green-gate-after-mutation must park; mutation on capped, nonzero, malformed-return, and recovery exits each checked | scripted-host mission fixture writing product bytes | MISSING | implement |
 | HIW-O6 | CRITICAL | hiw-critique-r2 §4 | No new baseline while tainted; only typed RESTORE (exact equality) or ADOPT_DISPUTED_TREE clears; adoption earns no floor credit | mission resolve-taint verb + state chain | mission.go reserved verb | generic-answer refusal, restore mismatch, exact adoption, crash-recovery fixtures | tainted mission resolved both ways in a fixture | MISSING | implement |
