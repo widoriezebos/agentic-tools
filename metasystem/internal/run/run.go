@@ -94,6 +94,8 @@ type Record struct {
 	Generation    int      `json:"generation"`
 	Pid           *int64   `json:"pid"`
 	PidStartedAt  *int64   `json:"pidStartedAt"`
+	PidStartTicks int64    `json:"pidStartTicks,omitempty"`
+	BootID        string   `json:"bootId,omitempty"`
 	Pgid          *int64   `json:"pgid"`
 	LaunchNonce   string   `json:"launchNonce"`
 	Log           string   `json:"log"`

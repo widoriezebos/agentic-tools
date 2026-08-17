@@ -95,7 +95,8 @@ func (s *Store) assessRunning(record *Record, result *AssessResult) error {
 		result.Unreadable = append(result.Unreadable, record.RunId+": running record with null identity")
 		return nil
 	}
-	switch identity.AliveRef(s.prober(), identity.Ref{Pid: *record.Pid, StartedAtSec: *record.PidStartedAt}) {
+	switch identity.AliveRef(s.prober(), identity.Ref{Pid: *record.Pid, StartedAtSec: *record.PidStartedAt,
+		StartTicks: record.PidStartTicks, BootID: record.BootID}) {
 	case identity.Alive:
 		return s.assessHung(record)
 	case identity.Unknown:

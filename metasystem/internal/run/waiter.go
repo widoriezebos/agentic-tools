@@ -43,12 +43,14 @@ type WaiterTarget struct {
 
 // Waiter is one registered waiter record.
 type Waiter struct {
-	Kind         string       `json:"kind"`
-	Pid          int64        `json:"pid"`
-	PidStartedAt int64        `json:"pidStartedAt"`
-	Session      string       `json:"session"`
-	MainId       string       `json:"mainId"`
-	Target       WaiterTarget `json:"target"`
+	Kind          string       `json:"kind"`
+	Pid           int64        `json:"pid"`
+	PidStartedAt  int64        `json:"pidStartedAt"`
+	PidStartTicks int64        `json:"pidStartTicks,omitempty"`
+	BootID        string       `json:"bootId,omitempty"`
+	Session       string       `json:"session"`
+	MainId        string       `json:"mainId"`
+	Target        WaiterTarget `json:"target"`
 }
 
 // WaitersDir is the one namespace for job and run waiters alike.
@@ -118,7 +120,8 @@ func (s *Store) RegisterWaiter(kind, id string, owner Caller, target WaiterTarge
 				// rather than clobber (66).
 				return &waiterError{ExitWaiterUnknown, "existing waiter record is unreadable; refusing to replace what cannot be identity-checked"}
 			}
-			switch identity.AliveRef(s.prober(), identity.Ref{Pid: existing.Pid, StartedAtSec: existing.PidStartedAt}) {
+			switch identity.AliveRef(s.prober(), identity.Ref{Pid: existing.Pid, StartedAtSec: existing.PidStartedAt,
+				StartTicks: existing.PidStartTicks, BootID: existing.BootID}) {
 			case identity.Alive:
 				if existing.Target == target {
 					return &waiterError{ExitWaiterBusy, "a live waiter already watches this lifecycle for this owner"}
@@ -138,6 +141,7 @@ func (s *Store) RegisterWaiter(kind, id string, owner Caller, target WaiterTarge
 		}
 		record := Waiter{
 			Kind: kind, Pid: self, PidStartedAt: exact.StartedAt.Unix(),
+			PidStartTicks: exact.StartTicks, BootID: exact.BootID,
 			Session: owner.SessionId, MainId: owner.MainId, Target: target,
 		}
 		encoded, err := json.MarshalIndent(record, "", " ")
@@ -166,8 +170,18 @@ func (s *Store) RemoveWaiter(kind, id string, owner Caller) {
 		}
 		self := int64(os.Getpid())
 		exact, state, _ := s.prober().Probe(self)
-		if existing.Pid == self && state == identity.Alive &&
-			existing.PidStartedAt == exact.StartedAt.Unix() {
+		same := false
+		if existing.Pid == self && state == identity.Alive {
+			// The pair decides when both sides carry it (issue #1):
+			// cleanup must not orphan its own record after clock drift.
+			if existing.PidStartTicks > 0 && existing.BootID != "" &&
+				exact.StartTicks > 0 && exact.BootID != "" {
+				same = existing.PidStartTicks == exact.StartTicks && existing.BootID == exact.BootID
+			} else {
+				same = existing.PidStartedAt == exact.StartedAt.Unix()
+			}
+		}
+		if same {
 			os.Remove(path)
 		}
 		return nil
@@ -189,7 +203,8 @@ func LiveWaiter(root string, prober identity.Prober, kind, id, mainId string, ta
 	if waiter.Target != target {
 		return false
 	}
-	return identity.AliveRef(prober, identity.Ref{Pid: waiter.Pid, StartedAtSec: waiter.PidStartedAt}) == identity.Alive
+	return identity.AliveRef(prober, identity.Ref{Pid: waiter.Pid, StartedAtSec: waiter.PidStartedAt,
+		StartTicks: waiter.PidStartTicks, BootID: waiter.BootID}) == identity.Alive
 }
 
 // Watch blocks until the run record is terminal and returns the pinned

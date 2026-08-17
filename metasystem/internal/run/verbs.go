@@ -114,6 +114,8 @@ func (s *Store) Bind(id, nonce string, pid, pgid int64) error {
 		_, err = s.cas(id, StatusLaunching, record.Generation, func(r *Record) error {
 			r.Pid = &pid
 			r.PidStartedAt = &started
+			r.PidStartTicks = exact.StartTicks
+			r.BootID = exact.BootID
 			r.Pgid = &pgid
 			r.Status = StatusRunning
 			return nil
@@ -175,6 +177,7 @@ func (s *Store) Register(caller Caller, p LaunchParams, pid int64, verdictPatter
 			SchemaVersion: 1, RunId: p.Id, Kind: p.Kind, Display: p.Display,
 			Custody: custody, Generation: 1, LaunchNonce: nonce,
 			Pid: &pid, PidStartedAt: &started, Pgid: &pgid64,
+			PidStartTicks: exact.StartTicks, BootID: exact.BootID,
 			Log: logPath, StartedAt: s.nowISO(),
 			MainId: mainId, OwnerLineage: lineage, ClaimEpoch: epoch,
 			SessionId: caller.SessionId, GoalId: p.GoalId,
@@ -247,7 +250,8 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 		if record.Pid == nil {
 			return fmt.Errorf("adopt requires a bound old generation")
 		}
-		if identity.AliveRef(s.prober(), identity.Ref{Pid: *record.Pid, StartedAtSec: *record.PidStartedAt}) != identity.Dead {
+		if identity.AliveRef(s.prober(), identity.Ref{Pid: *record.Pid, StartedAtSec: *record.PidStartedAt,
+			StartTicks: record.PidStartTicks, BootID: record.BootID}) != identity.Dead {
 			return fmt.Errorf("adopt refused: the old generation's leader is not provably dead")
 		}
 		if record.Pgid != nil && !s.groupEmpty(*record.Pgid) {
@@ -271,6 +275,8 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 		_, err = s.cas(id, StatusRunning, from, func(r *Record) error {
 			r.Pid = &pid
 			r.PidStartedAt = &started
+			r.PidStartTicks = exact.StartTicks
+			r.BootID = exact.BootID
 			r.Pgid = &pgid64
 			r.Generation = from + 1
 			r.LaunchNonce = nonce
