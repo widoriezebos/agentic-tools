@@ -22,12 +22,16 @@ type Announcement struct {
 	MainId       string `json:"mainId,omitempty"`
 	Pid          int64  `json:"pid"`
 	PidStartedAt int64  `json:"pidStartedAt"`
-	Pgid         int64  `json:"pgid"`
-	Runtime      string `json:"runtime"`
-	InstanceTag  string `json:"instanceTag"`
-	CommandHash  string `json:"commandHash,omitempty"`
-	AnnouncedAt  string `json:"announcedAt"`
-	OwnerLineage string `json:"ownerLineage,omitempty"`
+	// The clock-step-immune identity pair (issue #1); zero values on
+	// announcements that predate it fall back to the seconds comparison.
+	PidStartTicks int64  `json:"pidStartTicks,omitempty"`
+	BootID        string `json:"bootId,omitempty"`
+	Pgid          int64  `json:"pgid"`
+	Runtime       string `json:"runtime"`
+	InstanceTag   string `json:"instanceTag"`
+	CommandHash   string `json:"commandHash,omitempty"`
+	AnnouncedAt   string `json:"announcedAt"`
+	OwnerLineage  string `json:"ownerLineage,omitempty"`
 }
 
 type announcementFile struct {
@@ -137,7 +141,19 @@ func authenticatedAnnouncement(pid int64, records []announcementFile, probe iden
 	digest := CommandHash(id.Command)
 	for i := range records {
 		ann := records[i].Ann
-		if ann.Pid == pid && ann.PidStartedAt == id.StartedAt && ann.CommandHash == digest {
+		if ann.Pid != pid || ann.CommandHash != digest {
+			continue
+		}
+		// The pair decides when both sides carry it (issue #1: the
+		// btime-derived second drifts on time-synced guests); legacy
+		// announcements keep the seconds rule.
+		if ann.PidStartTicks > 0 && ann.BootID != "" && id.StartTicks > 0 && id.BootID != "" {
+			if ann.PidStartTicks == id.StartTicks && ann.BootID == id.BootID {
+				return &records[i].Ann
+			}
+			continue
+		}
+		if ann.PidStartedAt == id.StartedAt {
 			return &records[i].Ann
 		}
 	}

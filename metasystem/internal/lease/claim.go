@@ -77,8 +77,8 @@ func (c *claimer) claim(ann *Announcement) error {
 	case current.HolderMainId == ann.MainId:
 		return c.renewHeld(current, ann)
 
-	case Live(current.Pid, current.PidStartedAt, c.probe):
-		if current.Pid == ann.Pid && current.PidStartedAt == ann.PidStartedAt {
+	case LiveRef(current.Pid, current.PidStartedAt, current.PidStartTicks, current.BootID, c.probe):
+		if sameLeaseProcess(current, ann) {
 			// KI-33 fix: the same live process re-announced under a new mainId
 			// (a --shutdown then re-arm). It still owns its own checkout, so
 			// reconcile the lease to the new identity instead of stranding the
@@ -104,16 +104,18 @@ func (c *claimer) claim(ann *Announcement) error {
 func (c *claimer) freshClaim(ann *Announcement) error {
 	claimed := nowStamp()
 	lease := &Lease{
-		HolderMainId: ann.MainId,
-		OwnerLineage: announcementLineage(ann),
-		Pid:          ann.Pid,
-		PidStartedAt: ann.PidStartedAt,
-		CommandHash:  ann.CommandHash,
-		ClaimedAt:    claimed,
-		RenewedAt:    claimed,
-		Takeovers:    []Takeover{},
-		Revision:     1,
-		ClaimEpoch:   1,
+		HolderMainId:  ann.MainId,
+		OwnerLineage:  announcementLineage(ann),
+		Pid:           ann.Pid,
+		PidStartedAt:  ann.PidStartedAt,
+		PidStartTicks: ann.PidStartTicks,
+		BootID:        ann.BootID,
+		CommandHash:   ann.CommandHash,
+		ClaimedAt:     claimed,
+		RenewedAt:     claimed,
+		Takeovers:     []Takeover{},
+		Revision:      1,
+		ClaimEpoch:    1,
 	}
 	if err := saveLease(c.root, lease); err != nil {
 		return err
@@ -179,6 +181,8 @@ func (c *claimer) succeed(current *Lease, ann *Announcement) error {
 	successor.HolderMainId = ann.MainId
 	successor.Pid = ann.Pid
 	successor.PidStartedAt = ann.PidStartedAt
+	successor.PidStartTicks = ann.PidStartTicks
+	successor.BootID = ann.BootID
 	successor.CommandHash = ann.CommandHash
 	successor.OwnerLineage = announcementLineage(ann)
 	successor.RenewedAt = nowStamp()
@@ -208,16 +212,18 @@ func (c *claimer) takeover(current *Lease, ann *Announcement) error {
 		Reason:     "holder-death",
 	})
 	lease := &Lease{
-		HolderMainId: ann.MainId,
-		OwnerLineage: announcementLineage(ann),
-		Pid:          ann.Pid,
-		PidStartedAt: ann.PidStartedAt,
-		CommandHash:  ann.CommandHash,
-		ClaimedAt:    claimed,
-		RenewedAt:    claimed,
-		Takeovers:    history,
-		Revision:     current.Revision + 1,
-		ClaimEpoch:   epoch,
+		HolderMainId:  ann.MainId,
+		OwnerLineage:  announcementLineage(ann),
+		Pid:           ann.Pid,
+		PidStartedAt:  ann.PidStartedAt,
+		PidStartTicks: ann.PidStartTicks,
+		BootID:        ann.BootID,
+		CommandHash:   ann.CommandHash,
+		ClaimedAt:     claimed,
+		RenewedAt:     claimed,
+		Takeovers:     history,
+		Revision:      current.Revision + 1,
+		ClaimEpoch:    epoch,
 	}
 	expected := current.Revision
 	if err := c.casSave(lease, &expected); err != nil {
@@ -304,4 +310,18 @@ func jsonInt(v any) (int64, bool) {
 
 func itoa(n int64) string {
 	return fmt.Sprintf("%d", n)
+}
+
+// sameLeaseProcess decides whether the lease holder and an announcement are
+// one process: the clock-step-immune pair when both carry it (issue #1 —
+// KI-33 reconciliation must not fail on a drifted second the moment
+// LiveRef has proven the holder live), else the legacy seconds rule.
+func sameLeaseProcess(current *Lease, ann *Announcement) bool {
+	if current.Pid != ann.Pid {
+		return false
+	}
+	if current.PidStartTicks > 0 && current.BootID != "" && ann.PidStartTicks > 0 && ann.BootID != "" {
+		return current.PidStartTicks == ann.PidStartTicks && current.BootID == ann.BootID
+	}
+	return current.PidStartedAt == ann.PidStartedAt
 }

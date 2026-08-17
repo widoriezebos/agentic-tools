@@ -37,11 +37,14 @@ type Process struct {
 	// on seconds; the exact token exists so a consumer can bind to THE
 	// process the census observed — KI-23's acknowledgement). Fixture
 	// rows may omit it; enumeration backfills seconds*1e6.
-	StartedExactMicro int64  `json:"pidStartedAtExactMicro,omitempty"`
-	Argv              string `json:"argv"`
-	Cwd               string `json:"cwd"`
-	CwdError          bool   `json:"cwdError"`
-	Alive             bool   `json:"alive"`
+	StartedExactMicro int64 `json:"pidStartedAtExactMicro,omitempty"`
+	// The clock-step-immune pair (issue #1); zero/empty on fixture rows.
+	StartTicks int64  `json:"pidStartTicks,omitempty"`
+	BootID     string `json:"bootId,omitempty"`
+	Argv       string `json:"argv"`
+	Cwd        string `json:"cwd"`
+	CwdError   bool   `json:"cwdError"`
+	Alive      bool   `json:"alive"`
 }
 
 // InventoryItem is one classified process in the verdict.
@@ -270,14 +273,28 @@ func assembleVerdict(label, fingerprint string, interval int, generation *int64,
 	}
 }
 
+// sameProcessIdentity joins a census-enumerated process to a durable
+// record: the clock-step-immune pair decides when both sides carry it
+// (issue #1 — the btime-derived second drifts on time-synced guests),
+// else the legacy seconds join stands.
+func sameProcessIdentity(process Process, item identityRecord) bool {
+	if item.Pid != process.Pid {
+		return false
+	}
+	if item.StartTicks > 0 && item.BootID != "" && process.StartTicks > 0 && process.BootID != "" {
+		return item.StartTicks == process.StartTicks && item.BootID == process.BootID
+	}
+	return item.Started == process.Started
+}
+
 func classifyOwnership(process Process, custody, announced []identityRecord, runOwners []runOwner) (string, string, any) {
 	for _, item := range custody {
-		if item.Pid == process.Pid && item.Started == process.Started {
+		if sameProcessIdentity(process, item) {
 			return "CUSTODY", item.Registry, item.InstanceTag
 		}
 	}
 	for _, item := range announced {
-		if item.Pid == process.Pid && item.Started == process.Started {
+		if sameProcessIdentity(process, item) {
 			return "ANNOUNCED", item.Registry, item.InstanceTag
 		}
 	}
@@ -367,6 +384,8 @@ func loadRunOwners(repo string, processes []Process, diagnostics *[]string) []ru
 type identityRecord struct {
 	Pid         int64
 	Started     int64
+	StartTicks  int64  // clock-step-immune pair (issue #1); 0 = legacy record
+	BootID      string // "" = legacy record
 	InstanceTag string
 	Registry    string
 }
@@ -599,10 +618,30 @@ func announcementsList(metasystemRoot string, processes []Process, probe identit
 		// python census did: the file is the registry of LIVE mains, and a
 		// stale one classifies its checkout's next process as a delegate.
 		alive := false
+		annTicks, _ := jsonInt(value["pidStartTicks"])
+		annBootID, _ := value["bootId"].(string)
+		// The pair is EXCLUSIVE when both sides carry it (round-3 R3-1:
+		// "seconds OR pair" let a recycled pid with the same second but
+		// different ticks keep a stale announcement). PRODUCTION
+		// processes land in the enumerated map too (round-2 R2-1);
+		// fixture rows keep zero pairs so the seconds rule stands there.
 		if process, ok := synthetic[pid]; ok {
-			alive = process.Alive && process.Started == started
-		} else {
+			if process.Alive && annTicks > 0 && annBootID != "" &&
+				process.StartTicks > 0 && process.BootID != "" {
+				alive = process.StartTicks == annTicks && process.BootID == annBootID
+			} else {
+				alive = process.Alive && process.Started == started
+			}
+		} else if _, fixtureCovered := probeFixture(probe, pid); fixtureCovered || annTicks == 0 || annBootID == "" {
+			// Fixture-covered pids and pairless announcements keep the
+			// legacy rule (fixture identities never carry pairs).
 			alive = identityAlive(pid, started, probe)
+		} else if exact, state, err := (identity.KernelProber{}).Probe(pid); err == nil && state == identity.Alive {
+			if exact.StartTicks > 0 && exact.BootID != "" {
+				alive = exact.StartTicks == annTicks && exact.BootID == annBootID
+			} else {
+				alive = exact.StartedAt.Unix() == started
+			}
 		}
 		if !alive {
 			if err := os.Remove(path); err != nil {
@@ -611,7 +650,8 @@ func announcementsList(metasystemRoot string, processes []Process, probe identit
 			continue
 		}
 		tag, _ := value["instanceTag"].(string)
-		live = append(live, identityRecord{Pid: pid, Started: started, InstanceTag: tag, Registry: path})
+		live = append(live, identityRecord{Pid: pid, Started: started,
+			StartTicks: annTicks, BootID: annBootID, InstanceTag: tag, Registry: path})
 	}
 	return live
 }

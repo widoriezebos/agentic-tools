@@ -27,16 +27,20 @@ type Takeover struct {
 // compare-and-swap guard against a concurrent writer; claimEpoch stamps which
 // generation of work is current so a predecessor's jobs can be swept.
 type Lease struct {
-	HolderMainId string     `json:"holderMainId"`
-	OwnerLineage string     `json:"ownerLineage"`
-	Pid          int64      `json:"pid"`
-	PidStartedAt int64      `json:"pidStartedAt"`
-	CommandHash  string     `json:"commandHash"`
-	ClaimedAt    string     `json:"claimedAt"`
-	RenewedAt    string     `json:"renewedAt"`
-	Takeovers    []Takeover `json:"takeovers"`
-	Revision     int64      `json:"revision"`
-	ClaimEpoch   int64      `json:"claimEpoch"`
+	HolderMainId string `json:"holderMainId"`
+	OwnerLineage string `json:"ownerLineage"`
+	Pid          int64  `json:"pid"`
+	PidStartedAt int64  `json:"pidStartedAt"`
+	// The clock-step-immune pair (issue #1); zero values on legacy leases
+	// fall back to the seconds comparison.
+	PidStartTicks int64      `json:"pidStartTicks,omitempty"`
+	BootID        string     `json:"bootId,omitempty"`
+	CommandHash   string     `json:"commandHash"`
+	ClaimedAt     string     `json:"claimedAt"`
+	RenewedAt     string     `json:"renewedAt"`
+	Takeovers     []Takeover `json:"takeovers"`
+	Revision      int64      `json:"revision"`
+	ClaimEpoch    int64      `json:"claimEpoch"`
 }
 
 // Paths are the four files the lease protocol keeps under artifacts/agents/mains.

@@ -33,6 +33,9 @@ var (
 	}
 	AnnouncementOptionalKeys = map[string]bool{
 		"mainId": true, "commandHash": true, "ownerLineage": true,
+		// The clock-step-immune identity pair (issue #1): optional so
+		// legacy announcements stay valid; absent on darwin (omitempty).
+		"pidStartTicks": true, "bootId": true,
 	}
 )
 

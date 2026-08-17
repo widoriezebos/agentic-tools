@@ -23,9 +23,11 @@ import (
 // same place. Splitting them across two sources once made a main unable to
 // recognise itself and classify as a delegate through its own ancestor.
 type Identity struct {
-	Pid       int64
-	StartedAt int64
-	Command   string
+	Pid        int64
+	StartedAt  int64
+	Command    string
+	StartTicks int64  // clock-step-immune pair (issue #1); 0 on fixtures/legacy
+	BootID     string // "" on fixtures/legacy — readers fall back to seconds
 }
 
 // CommandHash is the announcement's stable fingerprint of a command line.
@@ -43,7 +45,8 @@ func ProcessIdentity(pid int64, probe identity.FixtureProbe) (Identity, bool) {
 	if err != nil {
 		return Identity{}, false
 	}
-	return Identity{Pid: pid, StartedAt: proc.PidStartedAt, Command: proc.Command}, true
+	return Identity{Pid: pid, StartedAt: proc.PidStartedAt, Command: proc.Command,
+		StartTicks: proc.PidStartTicks, BootID: proc.BootID}, true
 }
 
 // StartedAt is the process's start second from the one source. ok is false
@@ -77,6 +80,36 @@ func ParentPid(pid int64) (int64, bool) {
 // safe answer is alive. A readable start-time mismatch does prove pid reuse,
 // so it reports dead. This is what lets a live holder keep its lease and a
 // dead one lose it.
+// LiveRef is Live with the clock-step-immune pair: when the record and
+// the live process both carry ticks+bootId, the pair decides (issue #1 —
+// a drifted second must not let a claimant judge a live holder dead and
+// sweep its jobs); otherwise the seconds rule below stands.
+func LiveRef(pid, startedAt, startTicks int64, bootID string, probe identity.FixtureProbe) bool {
+	if startTicks > 0 && bootID != "" {
+		if _, ok := probeEntryStart(probe, pid); !ok {
+			if exact, state, err := (identity.KernelProber{}).Probe(pid); err == nil && state == identity.Alive &&
+				exact.StartTicks > 0 && exact.BootID != "" {
+				return exact.StartTicks == startTicks && exact.BootID == bootID
+			}
+		}
+	}
+	return Live(pid, startedAt, probe)
+}
+
+// probeEntryStart reports whether the fixture table covers this pid — a
+// fixture identity never carries the pair, so pair comparison is only
+// meaningful against the real kernel.
+func probeEntryStart(probe identity.FixtureProbe, pid int64) (int64, bool) {
+	if probe == nil {
+		return 0, false
+	}
+	entry, ok := probe.FixtureEntry(pid)
+	if !ok || !entry.HasStartedAt {
+		return 0, false
+	}
+	return entry.StartedAt, true
+}
+
 func Live(pid, startedAt int64, probe identity.FixtureProbe) bool {
 	if pid < 1 || startedAt < 1 {
 		return false

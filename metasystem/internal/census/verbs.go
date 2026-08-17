@@ -22,9 +22,11 @@ func Alive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
 // source: its start second and command line. Command is never empty on
 // success, so a caller's error check is its only absence check.
 type ProcIdentity struct {
-	Command      string `json:"command"`
-	Pid          int64  `json:"pid"`
-	PidStartedAt int64  `json:"pidStartedAt"`
+	Command       string `json:"command"`
+	Pid           int64  `json:"pid"`
+	PidStartedAt  int64  `json:"pidStartedAt"`
+	PidStartTicks int64
+	BootID        string
 }
 
 // AuthIdentity returns a process's start time and command from ONE source —
@@ -48,7 +50,8 @@ func psIdentity(pid int64) (ProcIdentity, error) {
 	if command == "" {
 		return ProcIdentity{}, fmt.Errorf("unreadable command for pid %d", pid)
 	}
-	return ProcIdentity{Pid: pid, PidStartedAt: exact.StartedAt.Unix(), Command: command}, nil
+	return ProcIdentity{Pid: pid, PidStartedAt: exact.StartedAt.Unix(), Command: command,
+		PidStartTicks: exact.StartTicks, BootID: exact.BootID}, nil
 }
 
 // SignatureCheck is the `signature-check` verb: the positive argv must

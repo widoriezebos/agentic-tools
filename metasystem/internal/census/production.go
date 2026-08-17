@@ -44,7 +44,8 @@ func EnumerateProcesses() ([]Process, error) {
 		}
 		processes = append(processes, Process{
 			Pid: pid, PPID: 0, PGID: int64(pgid),
-			Started: exact.StartedAt.Unix(), StartedExactMicro: exact.StartedAt.UnixMicro(), Argv: argv,
+			Started: exact.StartedAt.Unix(), StartedExactMicro: exact.StartedAt.UnixMicro(),
+			StartTicks: exact.StartTicks, BootID: exact.BootID, Argv: argv,
 			Cwd: "", CwdError: false, Alive: true,
 		})
 	}

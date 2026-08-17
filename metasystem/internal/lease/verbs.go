@@ -65,8 +65,22 @@ func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage
 	if err != nil {
 		return "", err
 	}
+	selfTicks, selfBootID := int64(0), ""
+	if id, ok := ProcessIdentity(pid, probe); ok {
+		selfTicks, selfBootID = id.StartTicks, id.BootID
+	}
 	for _, rec := range records {
-		if rec.Ann.Pid != pid || rec.Ann.PidStartedAt != start {
+		if rec.Ann.Pid != pid {
+			continue
+		}
+		// Same-process match prefers the clock-step-immune pair (issue
+		// #1): an earlier announcement of THIS process must stay ours
+		// even after the btime-derived second drifted.
+		if rec.Ann.PidStartTicks > 0 && rec.Ann.BootID != "" && selfTicks > 0 && selfBootID != "" {
+			if rec.Ann.PidStartTicks != selfTicks || rec.Ann.BootID != selfBootID {
+				continue
+			}
+		} else if rec.Ann.PidStartedAt != start {
 			continue
 		}
 		existing := rec.Ann
@@ -103,17 +117,24 @@ func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage
 		return "", err
 	}
 	mainID := fmt.Sprintf("main-%d-%d-%s", start, pid, suffix)
+	var startTicks int64
+	var bootID string
+	if id, ok := ProcessIdentity(pid, probe); ok {
+		startTicks, bootID = id.StartTicks, id.BootID
+	}
 	ann := Announcement{
-		SessionId:    session,
-		MainId:       mainID,
-		Pid:          pid,
-		PidStartedAt: start,
-		Pgid:         int64(pgid),
-		Runtime:      runtime,
-		InstanceTag:  tag,
-		CommandHash:  CommandHash(command),
-		AnnouncedAt:  nowStamp(),
-		OwnerLineage: ownerLineage,
+		SessionId:     session,
+		MainId:        mainID,
+		Pid:           pid,
+		PidStartedAt:  start,
+		PidStartTicks: startTicks,
+		BootID:        bootID,
+		Pgid:          int64(pgid),
+		Runtime:       runtime,
+		InstanceTag:   tag,
+		CommandHash:   CommandHash(command),
+		AnnouncedAt:   nowStamp(),
+		OwnerLineage:  ownerLineage,
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%s-%d.json", safeSession(session), pid))
 	if err := atomicJSON(path, &ann); err != nil {
