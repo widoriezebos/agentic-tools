@@ -30,14 +30,21 @@ schema="$root/scripts/agents/schemas/orchestrator.schema.json"
 permissions="$root/scripts/agents/permissions/workspace.json"
 model=$("$ms" json get --file "$turn_record" --field model)
 
-# The host edits the repository it is advancing, so it runs write-capable:
-# accept-edits with the workspace permission preset. A host confined to `auto`
-# with edit and exec denied could not move a mission at all.
+# The host edits AND executes in the repository it is advancing — an
+# orchestrator's turn is mostly shell (dispatch, gates, git reads).
+# The first live devin-hosted mission (bm-2d rep 1, 2026-08-17) proved
+# accept-edits insufficient: non-interactive devin REJECTED the first
+# confirmable exec call ("rejected a tool call that requires
+# confirmation... Use --permission-mode dangerous"), the host exited 3,
+# and the turn failed before doing anything. On this CLI a working
+# non-interactive host requires the dangerous mode — the same waiver
+# the legacy delegate path carried.
 #
 # The boundary those roots describe is NOT enforced on this runtime: --sandbox
 # is refused by this organisation's policy, and a shell command writes outside
 # the declared write root. The human accepted that residual globally on
-# 2026-08-08; the capability snapshot declares it, and this host does not
+# 2026-08-08 (and D83 confines devin hosts to the VM precisely because
+# of it); the capability snapshot declares it, and this host does not
 # pretend otherwise.
 "$ms" host devin-config --root "$root" --output "$config_file"
 
@@ -61,7 +68,7 @@ devin_command=(
   --prompt-file "$devin_prompt"
   --respect-workspace-trust false
   --model "$model"
-  --permission-mode accept-edits
+  --permission-mode dangerous
   --config "$config_file"
   --export "$transcript"
 )
