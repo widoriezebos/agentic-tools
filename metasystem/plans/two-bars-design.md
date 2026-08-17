@@ -1,16 +1,21 @@
 # Two bars for changes (backlog item 2)
 
-- Status: DRAFT r2 — r1 critique folded (plans/two-bars-critique-r1.md:
-  7 findings, 6 structural; all folded). r2 makes the THREAT MODEL
-  explicit, because r1 proved the mechanism can only enforce one of
-  the two. PAUSED for a human ruling on that fork (below) before the
-  build.
-- Goal: two-bars-for-changes
-- In flight right now: none. r1 critique folded into this r2.
-- Waiting on the human: ONE ruling — accidental-model or
-  adversarial-model (see "The threat-model fork"). The rest of the
-  design is settled either way up to that choice.
-- Next step: none until the human rules the fork.
+- Status: CONVERGED for implementation on the ACCIDENTAL model — the
+  human ruled the fork (D90, 2026-08-17): "stop an honest agent from
+  forgetting the rule". r1 critique (plans/two-bars-critique-r1.md,
+  7 findings, 6 structural) folded into r2; the one open question
+  (the threat-model fork) is now answered. The adversarial layer is
+  a SEPARATE future goal, not built here.
+- Goal: two-bars-for-changes (design done; implementation queued
+  behind the ACP flip)
+- In flight right now: none.
+- Waiting on the human: nothing — the fork is ruled.
+- Next step: none (queued). When picked up, implement the accidental
+  model per the sections below (the composed pre-commit + commit-msg
+  hooks, the both-trees manifest floor, the tree-OID-bound witness,
+  the defect-identity growth fuse, the immutable-ref audit join,
+  human-personal or one-use emergency) — D81 implementation-first,
+  this document is the spec; a code critique gates the ship.
 
 ## The human's rule (2026-08-08, backlog-notes item 2)
 
@@ -23,10 +28,11 @@ forgotten under time pressure, which is exactly when it matters":
 the concern is an honest agent FORGETTING, not a hostile one
 tampering. That framing is what the fork below turns on.
 
-## The threat-model fork (r1's decisive finding — needs the human)
+## The threat-model fork (RESOLVED: accidental, D90)
 
-r1 proved the two enforcement targets need different machinery and
-cannot share one:
+The human ruled the accidental model. What follows is why the fork
+existed and what the ruling commits to. r1 proved the two
+enforcement targets need different machinery and cannot share one:
 
 - **ACCIDENTAL model (recommended):** stop an honest agent from
   MISCLASSIFYING or forgetting under pressure. Local hooks plus a

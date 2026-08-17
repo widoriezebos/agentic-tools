@@ -2622,3 +2622,28 @@ no-verdict status report — was declined as marginal value in a
 subtle, dangerous area; the critique itself, catching this before
 it shipped, is the process working as intended. The critique is
 preserved beside the design.
+
+## D90 — 2026-08-17: the human ruled the two-bars fork and approved the ACP seal
+
+Two rulings from the human, resolving the two open decisions.
+
+(1) two-bars-for-changes targets the ACCIDENTAL model — "stop an
+honest agent from forgetting the rule" — NOT the adversarial model.
+This confirms the r2 recommendation: local composed hooks + a
+tree-bound gate witness, human sovereignty intact, no new identity
+system. The adversarial layer (remote enforcement + durable agent
+identity + signed attestation) is explicitly a SEPARATE future goal
+and is not built here. The two-bars design is now converged for
+implementation on the accidental model; its last open question is
+answered.
+
+(2) The human APPROVED the ACP acceptance-benchmark seal. This
+authorizes running bm-2d on the VM through the human-seal boundary
+to completion and flipping dispatch.transport.devin=acp to the
+default on a mechanically-successful run (bm-2d's score is expected
+poor by design; the acceptance question is whether devin-as-host
+and the devin ACP delegate path mechanically work end to end, per
+the bm-2d manifest). The seal I add on the human's behalf executes
+this explicit approval; it is not the forge D88 declined (that was
+acting without authorization). Fix-forward per D82: the fixture and
+snapshot-identity hardening follow the flip.
