@@ -11,8 +11,19 @@
   registry types) are owned by golden fixtures during the build.
   D100's rulings stand: NO self-work exception, DETECTOR tier.
 - Goal: host-implementer-wall (Current)
-- In flight right now: slice 3 (authorization issuance at
-  conformance's merge-success points, HIW-O2).
+- In flight right now: slice 4 (mission state v2, HIW-O11 + the
+  state half of HIW-O3: schemaVersion 2 with the exact legacy
+  refusal, openTurn, workspaceTaint, payload-bearing acceptance
+  entries, segment ordinals).
+- Landed: slice 3 (authorization issuance, HIW-O2) — two critique
+  rounds (3 findings then 0, AGREE). Round 1's sharpest catch:
+  the prose-under-30 waiver path issued authorizations WITHOUT
+  critic closure; mission chains now refuse any waiver by name
+  (D100). Also folded: the authorization-issued event was being
+  silently dropped (now registered), and the full-merge-path
+  fixture set (waiver/critic-less/tamper/empty-diff). The
+  return-schema field stays deferred to the adjudication slice —
+  deferral verified sound by the critic.
 - Landed: slices 1+2 — internal/gittree (the HIW-O4 primitive,
   one projection owner, reviewStage refactored onto it) and
   dispatch provenance (mission/incarnation/turn/stream immutable,
@@ -24,10 +35,8 @@
   (scratchpad wall-slice*-output.md; scanner gap recorded in
   KI-34).
 - Waiting on the human: nothing.
-- Next step: build slice 3 per the scratchpad draft (record type
-  + digest in validate, issuance at both merge exits, apply-proof
-  at issue time, supersedes[], events), then its critique round;
-  then the remaining rows in matrix order — both-host gates
+- Next step: build slice 4, then its critique loop; then
+  adjudication/wall (slices 5+) in matrix order — both-host gates
   before any ship.
 
 ## What happened (unchanged evidence)

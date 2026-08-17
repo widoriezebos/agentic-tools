@@ -421,12 +421,36 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 	}
 
 	waiver := r.record["critiqueWaived"]
+	var out, errs []string
+	var code int
+	if waiver != nil {
+		// A MISSION chain can never waive critique (slice-3 critique F-1):
+		// the wall issues authorizations only on critic closure, with no
+		// small-change exception (D100 — the micro-dispatch lane is a
+		// separate backlog design). Non-mission chains keep the waiver.
+		if mission, _ := r.record["mission"].(string); mission != "" {
+			return r.fail("conformance failure: a mission chain cannot waive critique; the host-implementer wall issues integration authorizations only on critic closure (no exception, D100)")
+		}
+	}
 	if waiver != nil {
 		rawPaths, _ := r.gitBytes(r.workspace, nil, "diff", "--name-only", "-z", "--no-renames", r.boundaryBase, "HEAD", "--")
 		numstat, _ := r.gitBytes(r.workspace, nil, "diff", "--numstat", "--no-renames", r.boundaryBase, "HEAD", "--")
-		return r.mergeWaiver(waiver, nulSplitPaths(rawPaths), string(numstat), isInstructionBearing)
+		out, errs, code = r.mergeWaiver(waiver, nulSplitPaths(rawPaths), string(numstat), isInstructionBearing)
+	} else {
+		out, errs, code = r.mergeCritique(recordPath, finalTree, configuredRuntime, independence)
 	}
-	return r.mergeCritique(recordPath, finalTree, configuredRuntime, independence)
+	// The wall's issuance point (HIW-O2): a mission chain that passed every
+	// merge check gets its integration authorization HERE, atomically with
+	// acceptance — and a chain that cannot be authorized is not accepted.
+	if code == 0 {
+		if err := r.issueAuthorization(finalTree); err != nil {
+			return r.fail("conformance failure: " + err.Error())
+		}
+		// issueAuthorization appends its digest line to r.out; the locals
+		// captured above hold the pre-append slice header.
+		return r.out, r.errs, 0
+	}
+	return out, errs, code
 }
 
 func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string, isInstructionBearing func(string) bool) ([]string, []string, int) {

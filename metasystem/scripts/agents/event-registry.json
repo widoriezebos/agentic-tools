@@ -18,7 +18,8 @@
       "driver",
       "suite",
       "arming",
-      "run"
+      "run",
+      "conformance"
     ],
     "executionId": "required-when-exported",
     "levels": [
@@ -686,6 +687,21 @@
           "type": "str"
         },
         "found": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "authorization-issued": {
+      "emitters": [
+        "conformance"
+      ],
+      "ids": {
+        "missionId": "required",
+        "jobId": "required"
+      },
+      "payload": {
+        "authorizationDigest": {
           "required": true,
           "type": "str"
         }
