@@ -1,8 +1,8 @@
 # Goals
 
-## Current goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
+## Current goal: host-implementer-wall — The runner mechanically refuses a host turn that did implementer work: product-code diff without certified delegate attribution is a protocol error, not prose
 - Origin: main
-- Next step: READY, blocked on the human-sealed benchmark (D88): delegate path proven, provisioning unblocked, VM+Devin ready. Run bm-2d (run-cohort.sh, VM-only, stops for seal). Do not flip without it (D82).
+- Next step: Design loop first (invariant change): specify the workspace-diff attribution check at turn acceptance, its exemptions (plans/, artifacts/, too-small-to-delegate declarations), and the park semantics; then implement behind fixtures.
 
 ## Queued goal: narrator — A plain-English story of what happened, why it happened, and who did it
 - Origin: main
@@ -52,9 +52,9 @@
 - Origin: main
 - Next step: Design over the 3 holes in plans/genesis-authority-review.md; classification-against-caller-root is unsound — the fix is architectural.
 
-## Queued goal: host-implementer-wall — The runner mechanically refuses a host turn that did implementer work: product-code diff without certified delegate attribution is a protocol error, not prose
+## Queued goal: small-change-lane — The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
-- Next step: Design loop first (invariant change): specify the workspace-diff attribution check at turn acceptance, its exemptions (plans/, artifacts/, too-small-to-delegate declarations), and the park semantics; then implement behind fixtures.
+- Next step: Design when picked up: a micro-dispatch shape (single delegate round, tight brief, fast certification) that keeps every product byte delegate-certified under the host-implementer wall's no-exception rule (D100).
 
 ## Parked goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main
@@ -65,6 +65,11 @@
 - Origin: main
 - Parked because: Parked per D87/D94: no owner emits a typed process verdict yet; the near-checkable invariant mostly duplicates the watchdog. Resume DESIGN when any sound typed owner verdict exists; justify aggregator over direct delivery.
 - Next step: Design per plans/backlog-notes.md item 21 when picked up: inventory the process invariants, decide signal-vs-act per class.
+
+## Parked goal: acp-transport — ACP as the delegate transport, retiring the dangerous-mode waiver
+- Origin: main
+- Parked because: Yields the slot to host-implementer-wall per Wido's ruling (D99): the enforcement failure outranks the flip. Remaining here: snapshot identity surfaces + supervise_acp fixture, then the D82 pair on Wido's seals.
+- Next step: READY, blocked on the human-sealed benchmark (D88): delegate path proven, provisioning unblocked, VM+Devin ready. Run bm-2d (run-cohort.sh, VM-only, stops for seal). Do not flip without it (D82).
 
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
 - Origin: main

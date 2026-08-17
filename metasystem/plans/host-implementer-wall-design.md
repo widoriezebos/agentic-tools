@@ -1,19 +1,18 @@
 # The host-implementer wall (goal host-implementer-wall, D99)
 
-- Status: DRAFT r2 — r1 folded (plans/hiw-critique-r1.md: 9
-  findings, 7 structural, plus a residual-laundering table that
-  reshaped the core mechanism from path allowlists to a byte-level
-  tree equation).
+- Status: DRAFT r2, RULINGS RESOLVED (D100) — r1 folded
+  (plans/hiw-critique-r1.md: 9 findings, 7 structural). Wido ruled:
+  NO self-work exception (every product byte comes from a certified
+  delegate; the "change this little thing" case gets its own
+  backlog goal, small-change-lane, instead of a host exemption),
+  and the wall ships at the DEFECT DETECTOR tier now. The design
+  below is updated to both rulings — the exception machinery is
+  deleted, which removes roughly a third of the build.
 - Goal: host-implementer-wall (Current)
-- In flight right now: none — r2 awaits Wido's two rulings below,
-  then the r2 critique.
-- Waiting on the human: TWO rulings, explained in plain English
-  under "Wido's rulings needed" — (1) does the host self-work
-  exception exist at all, and at what ceiling; (2) confirm the
-  wall's tier: defect detector under the cooperative model, or a
-  hard security boundary (which would require isolating delegate
-  worktrees from the host process — a much larger build).
-- Next step: none until the rulings land.
+- In flight right now: the r2 design critique (codex xhigh); not a
+  dispatch job record, so the open-work scanner cannot see it.
+- Waiting on the human: nothing — both rulings landed (D100).
+- Next step: none.
 
 ## What happened (unchanged evidence)
 
@@ -33,9 +32,12 @@ path heuristic:
 
     post-tree = pre-tree
               + the certified delegates' EXACT patches, in order
-              + the measured self-work residual (if the exception
-                exists at all — Wido's ruling 1)
               + exact machine-owned metadata changes
+
+There is NO self-work term: Wido ruled the exception out entirely
+(D100). Every product byte comes from a certified delegate; the
+legitimate tiny-fix case is served by the small-change-lane goal,
+not by perforating this invariant.
 
 Anything the equation cannot account for is a protocol violation:
 the return is refused, the mission parks immediately (outranking
@@ -98,17 +100,14 @@ the rest of it).
    Wido's TYPED resolution that records which attribution claims
    he is waiving — a generic acknowledgement never clears taint.
    Nothing is reverted: the diff is evidence.
-6. **The self-work exception, IF it exists** (HIW-R1-06, Wido's
-   ruling): the runner COMPUTES the residual patch after applying
-   certified patches — never trusts host-declared paths or line
-   counts. The declaration binds to a stream; the ceiling is
-   CUMULATIVE per stream and per mission (a per-turn budget is
-   gamed by many small turns); binary changes, submodules,
-   symlinks, mode changes, dependency and contract edits, and
-   deletions each need explicit pricing rather than costing zero.
-   The existing 30-line prose waiver precedent is a critic-chain
-   waiver for delegated Markdown — NOT precedent for host
-   implementation authority.
+6. **No self-work machinery** (D100): the exception is ruled out,
+   so nothing here measures residuals or prices edge cases — any
+   residual after certified patches and machine-owned metadata is
+   simply a violation. The typed `selfWork` return field is NOT
+   added; the prompt's "too small to delegate" prose allowance is
+   REMOVED in the same change (it was the license D99's host
+   stretched), replaced by a pointer to the small-change lane once
+   that goal ships.
 7. **The delegation floor stays and hardens** (HIW-R1-09):
    grading-time defense in depth, consuming the runner-adjudicated
    certification facts instead of raw host claims. The benchmark's
@@ -142,39 +141,25 @@ with teeth: it catches every accidental and naive shape, including
 the exact D99 failure, and the residual shapes are recorded, not
 denied. Ruling 2 below confirms or overrides this tier.
 
-## Wido's rulings needed (plain English)
+## Wido's rulings (RESOLVED, D100)
 
-**Ruling 1 — may a mission host ever write product code itself?**
-The situation: the prompt today lets a host do work "too small to
-delegate" by naming it in prose. The critique showed prose
-declarations are unverifiable and a per-turn budget is gamed by
-repetition; if the exception survives, the runner measures the
-residual bytes itself and enforces a CUMULATIVE ceiling per stream
-and mission. The impact: option (a) NO exception — every product
-byte in a mission comes from a certified delegate; cleanest
-invariant, but tiny mechanical fixes (a one-line typo blocking a
-gate) cost a full dispatch round. Option (b) a measured, cumulative
-ceiling — name the number (the critique suggests nothing; 30 lines
-per MISSION is the analogue of your existing delegated-Markdown
-waiver, but that precedent explicitly is not implementation
-authority). If you decide nothing, the design defaults to (a) NO
-exception — the strict pole.
+**Ruling 1:** NO self-work exception — "every product byte comes
+from a certified delegate," with the "change this little thing"
+case explicitly supported by its own backlog goal
+(small-change-lane) rather than a host exemption.
 
-**Ruling 2 — what tier is the wall?** The situation: as designed it
-stops every accidental bypass (D99 could not recur) but a
-deliberately deceptive host with write access to delegate
-worktrees could still forge authorship. Closing that needs
-OS-level isolation of delegate worktrees from the host — a large
-build in the same family as the parked genesis-hardening
-directions. The impact: option (a) defect detector now (consistent
-with your C' and accidental-model rulings; the residual shapes
-stay recorded in the critique's table); option (b) require the
-isolation work first — the wall waits on a much bigger foundation.
-If you decide nothing, (a) proceeds.
+**Ruling 2:** defect detector NOW. The residual deliberately-
+deceptive shapes in the critique's laundering table stay recorded;
+OS-level isolation of delegate worktrees stays unbuilt, consistent
+with the C' and accidental-model rulings.
 
 ## Loop discipline
 
-Codex xhigh. r2 critique launches after the rulings land (they
-change what gets built — the exception machinery is a third of the
-implementation). No code before convergence or the ratified
-mechanical-grain exit.
+Codex xhigh. The r2 critique runs over this rulings-resolved text:
+attack the tree equation's completeness (modes, symlinks,
+submodules, deletions under the isolated-index primitive), the
+authorization record's binding set, the taint channel's recovery
+semantics, the exact machine-owned path enumeration, and whether
+removing the prose allowance from the prompt leaves any legitimate
+host activity unaccounted. No code before convergence or the
+ratified mechanical-grain exit.
