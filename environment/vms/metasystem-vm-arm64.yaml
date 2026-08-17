@@ -709,7 +709,9 @@ provision:
 #      An offline gate then passes only if the project ships ZERO tests -- the
 #      environment would be paying agents to delete their tests. So prime by
 #      running a real test, never by packaging.
-#   2. ./mvnw ignores the system Maven from block 5 and downloads the version
+#   2. The gate also runs `package`; the jar plugin's dependencies resolve
+#      only when that goal executes, so priming must reach the package phase.
+#   3. ./mvnw ignores the system Maven from block 5 and downloads the version
 #      its own properties pin into ~/.m2/wrapper/dists. Priming through
 #      `mvn` alone leaves that fetch to happen at gate time, over a network
 #      the mission is not supposed to need.
@@ -789,9 +791,13 @@ provision:
     mvn -B -q wrapper:wrapper \
       -Dmaven={{.Param.BM1_WRAPPER_MAVEN_VERSION}} -Dtype=only-script
 
-    ./mvnw -B test           # online: warms wrapper, plugins, deps, provider
-    ./mvnw -B -o test        # the gate's real condition -- fail the build here,
-                             # not three hours into a benchmark mission
+    # `package`, not `test`: gate.sh runs BOTH `./mvnw -o -q package` and
+    # `./mvnw -o test`, and maven-jar-plugin resolves its own dependencies
+    # only when the jar goal executes -- a test-only priming leaves the
+    # package half of the gate unresolvable offline (seen in a fresh build).
+    ./mvnw -B package        # online: warms wrapper, plugins + deps, provider
+    ./mvnw -B -o -q package  # the gate's real conditions -- fail the image
+    ./mvnw -B -o test        # build here, not three hours into a mission
 
 probes:
 - description: "the bm-1 offline Maven repository is warm"

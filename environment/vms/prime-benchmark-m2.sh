@@ -25,10 +25,19 @@
 #      mvn leaves that missing, so the gate still reaches for the network.
 #      This script primes through the seed's own ./mvnw for that reason.
 #
+#   3. gate.sh runs BOTH `./mvnw -o -q package` and `./mvnw -o test`. Priming
+#      through `test` alone is not enough: maven-jar-plugin resolves its own
+#      dependencies (file-management, plexus-utils, ...) only when the jar goal
+#      executes, which is the package phase. So prime with `package` -- it runs
+#      the tests on the way -- and verify BOTH commands offline.
+#
 #   Seen for real: the VM's ~/.m2 was a side effect of the descartes-mcp build
 #   (`mvn ... package -DskipTests`), so it carried junit 5.11.x, jar-plugin
 #   3.5.0 and no test provider, while bm-1's pom asks for 5.13.4, 3.4.2 and
 #   surefire 3.5.2. The mission parked rather than delete its tests to pass.
+#   Then a first version of THIS script primed via `test` and a fresh VM built
+#   from the template passed `-o test` but failed `-o package` on the jar
+#   plugin's dependencies -- trap 3 above.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -70,31 +79,37 @@ class PrimeProbeTest {
 }
 JAVA
 
+# The gate's two commands, verbatim from gate.sh. Both must pass offline.
+verify_offline() {
+  ./mvnw -o -B -q package >"$work/offline-package.log" 2>&1 \
+    || { echo "OFFLINE FAIL: ./mvnw -o -q package" >&2; tail -20 "$work/offline-package.log" >&2; return 1; }
+  ./mvnw -o -B test >"$work/offline-test.log" 2>&1 \
+    || { echo "OFFLINE FAIL: ./mvnw -o test" >&2; tail -20 "$work/offline-test.log" >&2; return 1; }
+}
+
 if ((check_only)); then
   echo "==> checking OFFLINE resolution against $seed"
-  if ./mvnw -o -B test >"$work/offline.log" 2>&1; then
-    echo "OK: ./mvnw -o test resolves and passes with a test present"
+  if verify_offline; then
+    echo "OK: ./mvnw -o -q package and ./mvnw -o test both pass with a test present"
     exit 0
   fi
   echo "FAIL: the offline gate cannot pass in this environment" >&2
   echo "     run this script without --check to prime ~/.m2" >&2
-  tail -20 "$work/offline.log" >&2
   exit 1
 fi
 
-echo "==> priming ~/.m2 online (wrapper distribution, plugins, deps, test provider)"
-./mvnw -B test >"$work/online.log" 2>&1 || {
+echo "==> priming ~/.m2 online (wrapper distribution, plugins + their deps, test provider)"
+./mvnw -B package >"$work/online.log" 2>&1 || {
   echo "priming failed -- the online build did not pass" >&2
   tail -30 "$work/online.log" >&2
   exit 1
 }
 
 # Priming that is not verified offline has not proven anything: this second
-# run is the gate's actual condition.
+# pass is the gate's actual condition.
 echo "==> verifying the same build OFFLINE"
-./mvnw -o -B test >"$work/offline.log" 2>&1 || {
-  echo "primed, but ./mvnw -o test still fails -- something resolves at run time" >&2
-  tail -30 "$work/offline.log" >&2
+verify_offline || {
+  echo "primed, but the offline gate still fails -- something resolves at run time" >&2
   exit 1
 }
 
