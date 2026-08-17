@@ -1,6 +1,12 @@
-# metasystem-vm.yaml — reproducible Lima template for the Metasystem acceptance VM.
+# metasystem-vm-arm64.yaml — reproducible Lima template for the Metasystem
+# acceptance VM, on Apple Silicon.
 #
-#   limactl start --name=metasystem-debian-2 ./metasystem-vm.yaml
+#   limactl start --name=metasystem-debian-2 ./metasystem-vm-arm64.yaml
+#
+# Intel hosts want the sibling metasystem-vm-amd64.yaml instead: this file is
+# arm64-only and provision block 2 refuses to run anywhere else. Keep the two in
+# sync when bumping versions -- every param below is duplicated there with an
+# amd64 checksum.
 #
 # AFTER BUILDING, four things this template cannot do for you:
 #
@@ -79,6 +85,18 @@ param:
   TRIVY_VERSION: "0.73.0"
   OSV_VERSION: "2.5.0"
   SEMGREP_VERSION: "1.172.0"
+  # Benchmark bm-1 runs its gate as `./mvnw -o test` -- OFFLINE by design. That
+  # only passes if ~/.m2 already holds these exact artifacts, so block 14 warms
+  # them. They MIRROR benchmark/specs/bm-1/seed/pom.xml and its Maven wrapper;
+  # check-template.sh fails if the two ever drift apart.
+  BM1_JUNIT_VERSION: "5.13.4"
+  BM1_SUREFIRE_VERSION: "3.5.2"
+  BM1_JAR_PLUGIN_VERSION: "3.4.2"
+  BM1_COMPILER_PLUGIN_VERSION: "3.13.0"
+  BM1_COMPILER_RELEASE: "21"
+  # The wrapper's own Maven, NOT MAVEN_VERSION above: ./mvnw downloads the
+  # distribution its properties pin, independently of the system install.
+  BM1_WRAPPER_MAVEN_VERSION: "3.9.11"
   # Which Playwright browsers to fetch. webkit is omitted: add it here if needed.
   PLAYWRIGHT_BROWSERS: "chromium firefox"
   # The single host<->guest channel. Must exist on the host before `start`.

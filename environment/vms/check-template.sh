@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# check-template.sh — validate metasystem-vm.yaml properly.
+# check-template.sh — validate the metasystem VM templates properly.
+#
+#   ./check-template.sh                        both arch templates
+#   ./check-template.sh metasystem-vm-amd64.yaml   just one
 #
 # `limactl validate` only parses YAML. It happily accepts provision scripts that
 # are broken bash, and you only find out minutes into a build. This also runs
@@ -13,7 +16,22 @@
 # command (`git bash coreutils ...`) that fails at provision time.
 set -euo pipefail
 
-TEMPLATE="${1:-$(dirname "$0")/metasystem-vm.yaml}"
+# With no argument, check every arch template rather than defaulting to one of
+# them: the two are meant to stay in sync, and a default that silently skipped
+# the other would let a broken sibling through. Re-invokes itself per file so the
+# validation body below stays single-template.
+if [ $# -eq 0 ]; then
+  rc=0
+  for t in "$(dirname "$0")"/metasystem-vm-arm64.yaml \
+           "$(dirname "$0")"/metasystem-vm-amd64.yaml; do
+    [ -f "$t" ] || continue
+    echo "### $(basename "$t")"
+    "$0" "$t" || rc=1
+  done
+  exit "$rc"
+fi
+
+TEMPLATE="$1"
 
 echo "==> limactl validate"
 limactl validate "$TEMPLATE"
