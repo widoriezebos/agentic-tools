@@ -10,12 +10,14 @@
   behind the ACP flip)
 - In flight right now: none.
 - Waiting on the human: nothing — the fork is ruled.
-- Next step: none (queued). When picked up, implement the accidental
-  model per the sections below (the composed pre-commit + commit-msg
-  hooks, the both-trees manifest floor, the tree-OID-bound witness,
-  the defect-identity growth fuse, the immutable-ref audit join,
-  human-personal or one-use emergency) — D81 implementation-first,
-  this document is the spec; a code critique gates the ship.
+- Implementation (queued behind the ACP flip): when picked up, build
+  the accidental model per the sections below — the composed
+  pre-commit + commit-msg hooks, the both-trees manifest floor, the
+  tree-OID-bound witness, the defect-identity growth fuse, the
+  immutable-ref audit join, and the human-personal or one-use
+  emergency. D81 implementation-first, this document is the spec; a
+  code critique gates the ship.
+- Next step: none.
 
 ## The human's rule (2026-08-08, backlog-notes item 2)
 
