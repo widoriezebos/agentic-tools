@@ -1,14 +1,16 @@
 # The host-implementer wall (goal host-implementer-wall, D99/D100)
 
-- Status: DRAFT r3 — r1 and r2 folded (plans/hiw-critique-r1.md: 9
-  findings; plans/hiw-critique-r2.md: 8 findings + the obligation
-  matrix). D100's rulings stand: NO self-work exception, DETECTOR
-  tier. r3 completes the contracts r2 found missing: the
-  replay-safe authorization, the total tree-composition rule, the
-  taint state machine, the interim prompt text, and the hardened
-  floor outcome rule.
+- Status: DRAFT r4 — r1–r3 folded (plans/hiw-critique-r1..r3.md).
+  D100's rulings stand: NO self-work exception, DETECTOR tier. r4
+  closes r3's four structural decisions: the delayed-authorization
+  staleness rule (disjoint-path transport with exact apply), the
+  atomic acceptance/consumption commit (one hash-chained write),
+  tracked-runner-metadata repositories (refused at mission start),
+  and legacy state (explicit refusal, no migration) — and rewrites
+  the obligation matrix in the gate's canonical ten-column format
+  with the missing rows added.
 - Goal: host-implementer-wall (Current)
-- In flight right now: the r3 design critique (codex xhigh); not a
+- In flight right now: the r4 design critique (codex xhigh); not a
   dispatch job record, so the open-work scanner cannot see it.
 - Waiting on the human: nothing.
 - Next step: none.
@@ -37,10 +39,14 @@ and git administrative state are outside it by construction):
 There is NO self-work term (D100) and NO machine-metadata term:
 r2 proved the metadata term incoherent — in this repository
 artifacts/ is ignored and git state is not in the shippable tree,
-so its contribution is empty; an adopting repository that TRACKS
-runner metadata gets those bytes represented as exact deltas like
-everything else, never exempted because the path looks
-machine-owned. Anything the equation cannot account for is a
+so its contribution is empty. A repository that TRACKS
+machine-owned paths is REFUSED at mission start (r3 HIW-R3-03):
+mission preflight validates that every runner/machine path is
+untracked or ignored in the target and refuses with a named error
+otherwise — no third equation category, no misclassification as
+host artifacts; adoption already gitignores artifacts/ by
+construction, so the precondition is the existing norm made
+explicit. Anything the equation cannot account for is a
 protocol violation: return refused, evidence persisted, workspace
 tainted, MISSION parked — before and outranking any
 completion-gate success.
@@ -68,15 +74,35 @@ content-addressed, and binds ALL of:
   (only the final authorized round of a chain is eligible; a
   superseding authorization retires its predecessors).
 
-CONSUMPTION is one-time and ledgered: the runner keeps a durable
-`authorizationDigest → consumedByTurnId` ledger. Delayed
-certification of landed returns stays legitimate (an unconsumed,
-current, unsuperseded authorization is usable in a later turn);
-a consumed or superseded one is rejected. Adjudication verifies
-every returned certification against the authorization record AND
-the dispatch job record — role, stream, mission incarnation —
-never trusting the return's own fields; only adjudicated facts
-enter the turn log. Dispatch gains the structured immutable
+CONSUMPTION is one-time, and the STALENESS RULE is explicit
+(r3 HIW-R3-01). Define the expected-tree sequence: E0 is the
+mission's anchored initial baseline; E(i+1) is turn i's accepted
+post-tree (E(i) + turn i's consumed patches + its declared
+host-artifact delta). An authorization A — apply(P, B) = R — is
+consumable in turn j if and only if EITHER B == E(j), OR every
+accepted change between B and E(j) is DISJOINT from A's changed
+paths (changed-path intersection empty) AND P applies to E(j)
+byte-exactly with no fuzz. Disjointness plus exact apply means the
+consumed bytes on A's files are exactly the reviewed bytes;
+anything else — overlap, contextual drift, apply failure — means
+fresh conformance or park. Delayed certification of landed returns
+stays legitimate under this predicate; a consumed or superseded
+authorization is rejected always. THE COMMIT POINT IS ONE WRITE (r3
+HIW-R3-02): turn acceptance appends a single hash-chained mission
+state entry carrying, together, the wall verdict, the
+pre/expected/post tree ids, the accepted turn-log reference, and
+the consumed authorization digests. The consumption ledger is a
+DERIVED INDEX over accepted entries, rebuilt on recovery — never a
+separate first writer, so there is no ledger-first burn on a
+tainted turn and no acceptance-first replay window: a crash before
+the append means nothing was consumed and the turn is unaccepted
+(recovery inspects and re-decides); after it, both facts are
+durable together. The return's `certified` entries carry the
+authorizationDigest explicitly (a schema field), ending job-ID
+guessing. Adjudication verifies every returned certification
+against the authorization record AND the dispatch job record —
+role, stream, mission incarnation — never trusting the return's
+own fields; only adjudicated facts enter the turn log. Dispatch gains the structured immutable
 provenance this requires (mission, incarnation, turn, stream, role
 in the job record's immutable set — today stream is unstructured
 and mission/turn are not immutable).
@@ -212,26 +238,60 @@ caught, including D99 exactly. A host that can mutate delegate
 worktrees can still forge apparent authorship — recorded in
 r1's laundering table, closed only by the unbuilt isolation tier.
 
-## Design obligations (the gate's matrix)
+## Named contracts (r3 HIW-R2-07 closed — nothing left to invent)
 
-| ID | Severity | Required behavior | Owner / code target | Focused proof target |
-|---|---|---|---|---|
-| HIW-O1 | CRITICAL | Persist and anchor reachable pre-tree/open-turn state before host launch; inspect before recovery healing or rebasing | missionrunner + mission state | crash and object-GC fixtures at every snapshot boundary |
-| HIW-O2 | CRITICAL | Issue authorization only after the exact patch/base/reviewed-tree and critic-closure join | conformance + dispatch evidence | mutated/stale patch, wrong base, empty patch, critic-mismatch fixtures |
-| HIW-O3 | CRITICAL | Verify immutable mission/incarnation/stream/role/job provenance; consume authorization once; allow legitimate delayed landed returns | dispatch + adjudication | cross-mission, cross-stream, duplicate, replay, superseded, later-turn fixtures |
-| HIW-O4 | CRITICAL | Deterministically compose exact patches and compare the full git tree | shared git-tree primitive + missionrunner | deletion, mode, symlink, binary, gitlink, order, overlap, non-application fixtures |
-| HIW-O5 | CRITICAL | Every host-exit path checks the wall; violation taints and parks before measurement or completion | missionrunner lifecycle/state | green completion gate after host mutation must still park |
-| HIW-O6 | CRITICAL | No new baseline while tainted; only typed restore/adopt clears, never manufacturing floor credit | mission resolution path + state | generic-answer refusal, restore mismatch, exact adoption, crash-recovery fixtures |
-| HIW-O7 | CRITICAL | Tree partition is equation-complete and default-deny | mission contract parser + wall | protected path, path escape, symlink ancestry, directory/glob grant, tracked-metadata fixtures |
-| HIW-O8 | HIGH | Mission prompts carry no self-work license; interactive direct work unaffected | prompt assembler, role/template, orchestration doctrine | assembled-prompt byte test + interactive boundary test |
-| HIW-O9 | HIGH | Delegation floor counts only nonempty, actually consumed adjudicated authorization per stream | benchmark extractor / evidence schema | empty, sham, replayed, unapplied, adopted-tree fixtures |
-| HIW-O10 | HIGH | Authorization, wall, recovery, and taint evidence is durable, mirrored, observable | dispatch mirror/close + event registry | restart/readback, missing-record close failure, event-payload fixtures |
-| HIW-O11 | HIGH | Legacy mission state migrates safely or refuses explicitly | mission state loader | old-schema resume fixture |
+- INTEGRATION AUTHORIZATION record:
+  `artifacts/agents/missions/<mission>/authorizations/<authorizationDigest>.json`,
+  schemaVersion 1, written by conformance validation via the
+  durable two-outcome writer, mirrored by the dispatch mirror at
+  chain close, retained until mission close + the evidence GC's
+  verified-archive rule.
+- CONSUMPTION: no standalone file — the consumed digests ride the
+  accepted turn entry in the hash-chained mission state
+  (state.json chain); the ledger is an in-memory index rebuilt
+  from the chain on every resume.
+- RETURN SCHEMA: `certified[]` gains `authorizationDigest`
+  (required); the benchmark's mirrored evidence schema updates in
+  the same commit.
+- WALL EVIDENCE per turn, in the turn directory:
+  `wall.json` (preTree, expectedTree, postTree, orderedDigests,
+  verdict, unaccounted paths on violation) beside the existing
+  turn records.
+- TREE ANCHORS: `refs/metasystem/missions/<mission>/<treeId>`,
+  created at snapshot, deleted at mission close by the runner.
+- TYPED RESOLUTION: a human-reserved verb, `mission resolve-taint
+  --mission M (--restore <treeId> | --adopt --taint <id> --reason
+  R)`, classifying HUMAN-only through the same authority matrix as
+  every reserved operation.
+- EVENTS (observability only; records are the authority):
+  authorization-issued, authorization-consumed,
+  authorization-refused, wall-passed, wall-violated,
+  recovery-inspected, taint-set, taint-resolved — registered in
+  the event registry with their payload fields.
+- LEGACY STATE (r3 HIW-R3-04, decided): a mission state predating
+  the wall schema REFUSES to resume, with the named error
+  `mission resume refused: state predates the host-implementer
+  wall; re-provision the mission`. No migration machinery —
+  missions are short-lived cohort artifacts; a deterministic
+  refusal beats a migration path nobody exercises.
 
-Events (authorization issued/consumed/refused, wall
-passed/violated, recovery inspected, taint resolved) are
-observability; the state and authorization records are the
-authority.
+## Design obligations
+
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| HIW-O1 | CRITICAL | hiw-critique-r2 §3 | Pre-tree/open-turn state is anchored reachable before host launch and inspected before any recovery healing or new baseline | missionrunner loop + mission state chain | loop.go snapshot/anchor path | crash fixture at every snapshot boundary + object-GC fixture | mission fixture run with forced kill between snapshot and launch | MISSING | implement |
+| HIW-O2 | CRITICAL | hiw-critique-r1 §1 | Authorization issues only on the exact patch/base/reviewed-tree join with critic closure | validate conformance | conformance.go issuance join | mutated/stale patch, wrong base, empty patch, critic-mismatch fixtures | conformance run over a real implementer chain | MISSING | implement |
+| HIW-O3 | CRITICAL | hiw-critique-r3 §1-2 | Provenance verified (mission incarnation, stream, role, job digest); consumption is one-time via the acceptance write; the staleness predicate admits disjoint delayed returns and refuses the rest | missionrunner adjudication | adjudicate.go verification + acceptance append | cross-mission, replay, superseded, later-turn-disjoint, later-turn-overlap fixtures | mission fixture with delayed certification across turns | MISSING | implement |
+| HIW-O4 | CRITICAL | hiw-critique-r2 §2 | Exact ordered patch composition over the shared isolated-index primitive equals the accepted tree | shared git-tree primitive (one owner) | new internal/gittree package used by validator + runner | deletion, mode, symlink, binary, gitlink, order, overlap, non-application fixtures | conformance + wall over one real chain | MISSING | implement |
+| HIW-O5 | CRITICAL | hiw-critique-r1 §5 | Every host-exit path checks the wall; violation taints and parks before measurement or completion, outranking gate success | missionrunner cycle/lifecycle | cycle.go fault path rework | green-gate-after-mutation fixture must park | scripted-host mission fixture writing product bytes | MISSING | implement |
+| HIW-O6 | CRITICAL | hiw-critique-r2 §4 | No new baseline while tainted; only typed RESTORE (exact equality) or ADOPT_DISPUTED_TREE clears; adoption earns no floor credit | mission resolve-taint verb + state chain | mission.go reserved verb | generic-answer refusal, restore mismatch, exact adoption, crash-recovery fixtures | tainted mission resolved both ways in a fixture | MISSING | implement |
+| HIW-O7 | CRITICAL | hiw-critique-r2 §3 | The tree partition is equation-complete and default-deny; protected paths refuse even inside declared locations; machine-path tracking refused at mission start | mission contract parser + wall + preflight | contract.go declaration grammar | protected-path, path-escape, symlink-ancestry, glob-grant, tracked-metadata-refusal fixtures | preflight refusal on a tracking repo fixture | MISSING | implement |
+| HIW-O8 | HIGH | hiw-critique-r2 §5 | The interim rule text lands VERBATIM in both live authorities (host-turn-instruction.md, orchestrator.md), the doctrine narrows, and all four bm-2 completionGate.command fields carry the discipline sentence; interactive direct work is unaffected | prompt assembler + role/template + manifests | template/role bytes + manifest diffs | assembled-prompt byte test asserting the verbatim rule; interactive boundary test | a claude-host mission fixture turn showing the new prompt | MISSING | implement |
+| HIW-O9 | HIGH | hiw-critique-r3 fold of r2 §6 | The delegation floor counts only a validated implementer job with a nonempty patch whose unsuperseded authorization was consumed into the accepted post-tree | benchmark extractor + evidence schema | extractor.py floor rule | empty, sham, replayed, unapplied, adopted-tree fixtures | re-extraction of the D99 cohort must stay invalid | MISSING | implement |
+| HIW-O10 | HIGH | hiw-critique-r2 §7 | Authorization, wall, recovery, and taint evidence is durable, mirrored, and observable via registered events | dispatch mirror/close + event registry | mirror + events registration | restart/readback, missing-record close-failure, event-payload fixtures | mission fixture restart with evidence intact | MISSING | implement |
+| HIW-O11 | HIGH | hiw-critique-r3 §4 | Pre-wall mission state refuses resume with the named error; no migration path exists | mission state loader | loader version check | old-schema resume fixture asserting the exact error | resume attempt on a preserved pre-wall state | MISSING | implement |
+| HIW-O12 | HIGH | hiw-critique-r3 matrix gaps | core.fileMode is pinned in wall-touched repositories and the initial baseline is clean or human-sealed; violations refuse before the first turn | mission preflight | preflight checks | fileMode-off fixture; dirty-baseline refusal fixture; sealed-baseline acceptance fixture | preflight on a deliberately dirty target | MISSING | implement |
+| HIW-O13 | CRITICAL | hiw-critique-r3 §2 | The acceptance write is the single commit point joining wall verdict, trees, turn log, and consumed digests; crash on either side leaves a consistent state | missionrunner acceptance append | single-append implementation | crash-before and crash-after fixtures proving no burn and no replay | forced-kill mission fixture across the append | MISSING | implement |
 
 ## Loop discipline
 
