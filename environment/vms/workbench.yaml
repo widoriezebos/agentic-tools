@@ -1,0 +1,203 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# agent-workbench — a single long-lived Lima VM for multi-agent development
+#
+#   Build:  limactl create --name=agent-workbench workbench.yaml
+#           limactl start  agent-workbench
+#   Or:     source workbench.sh && workbench build
+#
+# Design: ONE VM, ONE flat read-write mount of the whole GitHub root.
+# Switching project = changing directory. No remount, no restart.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Inherit images, cloud-init user setup and defaults from Lima's maintained
+# Debian 13 template, so image URLs don't go stale in this file.
+base: template:debian-13
+
+# Apple Virtualization.framework: native arm64, virtiofs mounts, fast boot.
+vmType: "vz"
+rosetta:
+  enabled: true # run x86_64 binaries and containers on arm64
+  binfmt: true
+
+# 75% of an 18-core / 64 GB host.
+# Disk is a SPARSE file: 100GiB is a ceiling, not an allocation. It only ever
+# occupies what is actually written. Disk can be grown later, never shrunk.
+cpus: 13
+memory: "48GiB"
+disk: "100GiB"
+
+timezone: "Europe/Amsterdam"
+
+# ── The mount ────────────────────────────────────────────────────────────────
+# The entire GitHub root, read-write, at /workspace.
+# NOTE: every repo is reachable from inside the VM. That is the accepted
+# trade-off for instant project switching. `workbench offline`, `readonly` and
+# `git-ro` (see workbench.sh) are the compensating controls.
+mountType: "virtiofs"
+mountInotify: true # EXPERIMENTAL: lets guest file watchers see host edits
+mounts:
+  - location: "/Users/wido/LocalStorage/GitHub"
+    mountPoint: "/workspace"
+    writable: true
+
+# Docker Engine is installed below; Lima's own containerd is not needed.
+containerd:
+  system: false
+  user: false
+
+# ── Parameters ───────────────────────────────────────────────────────────────
+# Set at create time, no need to edit this file:
+#   limactl create --param FRAMEWORK_REPO=git@github.com:you/orchestrator.git \
+#                  --param FRAMEWORK_INSTALL='./install.sh' ...
+# Leave empty to skip the framework install entirely.
+param:
+  FRAMEWORK_REPO: ""
+  FRAMEWORK_INSTALL: ""
+
+# ── Provisioning ─────────────────────────────────────────────────────────────
+# Lima re-runs provision scripts on every start, so each one is idempotent:
+# heavy installs are guarded by sentinel files, light setup runs every boot.
+provision:
+  # 1. System packages (root) ─────────────────────────────────────────────────
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if [ -f /var/lib/.workbench-base-done ]; then exit 0; fi
+      export DEBIAN_FRONTEND=noninteractive
+
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        ca-certificates curl wget gnupg lsb-release \
+        git jq unzip zip rsync openssh-client \
+        build-essential pkg-config \
+        python3 python3-pip python3-venv pipx \
+        ripgrep fd-find htop tmux zsh less \
+        iptables iproute2 \
+        chromium fonts-liberation xvfb
+
+      # Debian ships fd as fdfind
+      ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+
+      touch /var/lib/.workbench-base-done
+
+  # 2. Docker Engine + Node.js + GitHub CLI (root) ────────────────────────────
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if [ -f /var/lib/.workbench-repos-done ]; then exit 0; fi
+      export DEBIAN_FRONTEND=noninteractive
+      install -m 0755 -d /etc/apt/keyrings
+      ARCH="$(dpkg --print-architecture)"
+      CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+
+      # Docker
+      curl -fsSL https://download.docker.com/linux/debian/gpg \
+        -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${CODENAME} stable" \
+        > /etc/apt/sources.list.d/docker.list
+
+      # GitHub CLI
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /etc/apt/keyrings/githubcli.gpg
+      chmod a+r /etc/apt/keyrings/githubcli.gpg
+      echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list
+
+      # Node.js 24 LTS
+      curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+
+      apt-get update
+      apt-get install -y \
+        docker-ce docker-ce-cli containerd.io \
+        docker-buildx-plugin docker-compose-plugin \
+        gh nodejs
+
+      usermod -aG docker "{{.User}}"
+      systemctl enable --now docker
+
+      touch /var/lib/.workbench-repos-done
+
+  # 3. Agents and toolchain (user) ────────────────────────────────────────────
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      mkdir -p "$HOME/.local/bin"
+      export PATH="$HOME/.local/bin:$PATH"
+
+      if [ ! -f "$HOME/.workbench-agents-done" ]; then
+        # Global npm installs into ~/.local — no sudo, survives restarts
+        npm config set prefix "$HOME/.local"
+
+        npm install -g @anthropic-ai/claude-code @openai/codex
+
+        # Devin CLI (Cognition)
+        curl -fsSL https://cli.devin.ai/install.sh | bash
+
+        # mise: picks up .node-version / .python-version / .tool-versions per repo
+        curl -fsSL https://mise.run | sh
+
+        # Headless browser access for Claude Code
+        claude mcp add --scope user chrome-devtools -- \
+          npx -y chrome-devtools-mcp@latest --headless=true --isolated=true || true
+
+        touch "$HOME/.workbench-agents-done"
+      fi
+
+      # Shell environment — rewritten every boot so edits here take effect on restart
+      cat > "$HOME/.workbench-env" <<'EOF'
+      export PATH="$HOME/.local/bin:$PATH"
+      export CHROME_PATH=/usr/bin/chromium
+      export PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      export PUPPETEER_SKIP_DOWNLOAD=1
+      command -v mise >/dev/null && eval "$(mise activate bash)"
+      EOF
+      for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        touch "$rc"
+        grep -q '.workbench-env' "$rc" || \
+          echo '[ -f "$HOME/.workbench-env" ] && . "$HOME/.workbench-env"' >> "$rc"
+      done
+
+  # 4. Orchestration framework (user) ─────────────────────────────────────────
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export PATH="$HOME/.local/bin:$PATH"
+      REPO="${PARAM_FRAMEWORK_REPO:-}"
+      [ -z "$REPO" ] && exit 0
+
+      if [ -d "$HOME/framework/.git" ]; then
+        git -C "$HOME/framework" pull --ff-only || true
+      else
+        git clone "$REPO" "$HOME/framework"
+      fi
+
+      if [ -n "${PARAM_FRAMEWORK_INSTALL:-}" ]; then
+        cd "$HOME/framework" && bash -lc "${PARAM_FRAMEWORK_INSTALL}"
+      fi
+
+  # 5. Per-start hook (user) ──────────────────────────────────────────────────
+  # Runs on every VM start. Lives on the HOST at the GitHub root, so you can
+  # edit it without touching this template or rebuilding the VM.
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eu -o pipefail
+      HOOK=/workspace/.workbench-boot.sh
+      [ -f "$HOOK" ] && bash "$HOOK" || true
+
+# Readiness probe: don't report "ready" until the agents are actually installed.
+probes:
+  - mode: readiness
+    description: "agent CLIs installed"
+    script: |
+      #!/bin/bash
+      set -eu -o pipefail
+      timeout 600 bash -c 'until [ -f "$HOME/.workbench-agents-done" ]; do sleep 3; done'
+    hint: |
+      Agent install did not finish. Check: limactl shell agent-workbench -- \
+        sudo journalctl -u cloud-final -n 100

@@ -1,0 +1,706 @@
+# metasystem-vm.yaml — reproducible Lima template for the Metasystem acceptance VM.
+#
+#   limactl start --name=metasystem-debian-2 ./metasystem-vm.yaml
+#
+# AFTER BUILDING, four things this template cannot do for you:
+#
+#   1. Seed host dotfiles (git identity, known_hosts, claude settings):
+#        VM_INSTANCE=metasystem-debian-2 ./vm-sync.sh
+#   2. Start the VM automatically at macOS login (a HOST-side launchd
+#      registration, not expressible in a Lima template):
+#        limactl autostart enable metasystem-debian-2
+#   3. Authenticate the CLIs. These are interactive credential grants and are
+#      deliberately NOT baked in; a fresh VM starts unauthenticated:
+#        gh auth login --web        (device flow; works with forwarding closed)
+#        codex login                (needs port 1455, allowlisted below)
+#        claude auth login          (use its paste-the-code option)
+#        devin login
+#   4. Clone your working repos into ~/work. Git is the transport by design --
+#      no host repo tree is mounted.
+#
+# `./check-template.sh` validates this file properly: limactl validate only
+# parses YAML and will happily accept a provision script that is broken bash.
+#
+# Target: Apple Silicon (arm64) + macOS 13+. The provision scripts refuse to run
+# on other architectures rather than silently installing something different --
+# ripgrep publishes no x86_64-gnu build, and Rosetta is Apple Silicon only.
+#
+# KNOWN GUEST QUIRK (affects any software doing aarch64 CPU-feature dispatch):
+# under vz on Apple SME-only silicon, the guest kernel advertises sve2 in
+# HWCAP2 while base SVE is absent. Software that probes SVE then warns or
+# crashes with SIGILL. Two instances are handled in this template -- HotSpot
+# warns on every JVM start (MAVEN_OPTS=-XX:UseSVE=0, block 5) and semgrep's
+# bundled OpenSSL SIGILLs (OPENSSL_armcap=0, block 13; read its comments before
+# "improving" the fix). If some new tool crashes instantly with no output,
+# suspect this first: `dpkg --print-architecture`-native binaries that embed
+# their own crypto/SIMD dispatch are the usual victims.
+#
+# Inherits ONLY the image definitions, deliberately NOT template:_default/mounts:
+# that is what adds the read-write `~` mount, and this VM is a clean room.
+base:
+- template:_images/debian-12
+
+param:
+  # Pinned toolchain. Checksums are verified during provisioning; bump both
+  # together. Current values from https://go.dev/dl and BurntSushi/ripgrep.
+  GO_VERSION: "1.26.5"
+  GO_SHA256_ARM64: "fe4789e92b1f33358680864bbe8704289e7bb5fc207d80623c308935bd696d49"
+  RG_VERSION: "15.2.0"
+  RG_SHA256_ARM64: "a740b91c82eaf9914cfedd353572f2791cbe0162c84101ee0951058f4dcbc90d"
+  # Oracle JDKs, pinned to exact point releases via the /archive/ URLs so a
+  # rebuild is reproducible ("latest" drifts and would break these checksums).
+  # Licence: Oracle No-Fee Terms and Conditions. Swap to Temurin/Zulu if that
+  # does not fit -- same layout, only the URLs change.
+  JDK21_VERSION: "21.0.12"
+  JDK21_SHA256_ARM64: "a666a601e229215642e8dbd060d866d4925b58b68c0f7f1bd475765bab94e193"
+  JDK26_VERSION: "26.0.2"
+  JDK26_SHA256_ARM64: "937e69ca8edc96e8f272675a43078628b0d25e70b1430b3b6993745c2c4a1e8e"
+  # bookworm packages Maven 3.8.7 (2022). 3.10.0 and 4.0.0 are both still RC,
+  # so this is the current stable line. Checksum is sha512 (what Apache signs).
+  MAVEN_VERSION: "3.9.16"
+  MAVEN_SHA512: "831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
+  # Node LTS from nodejs.org: bookworm packages 18.x. Brings npm + npx.
+  NODE_VERSION: "24.19.0"
+  NODE_SHA256_ARM64: "01443c1e1a29e531ccad5a46fefa6df490d2189c49f7955904aecdbb0fe86fdc"
+  # Codex CLI ships a static musl binary for aarch64 -- no Node runtime needed.
+  CODEX_TAG: "rust-v0.147.0"
+  # GitHub CLI. Also serves as git's credential helper for HTTPS push/pull.
+  GH_VERSION: "2.97.0"
+  # Descartes MCP debug proxy, run as a systemd service on this port. Public
+  # repo, so the clone needs no credentials at provision time.
+  DESCARTES_REPO: "https://github.com/widoriezebos/descartes-mcp.git"
+  DESCARTES_MCP_PORT: "9090"
+  # Security scanners called by yoda-internal/scripts/security/run-security-scan.sh
+  # (all via run_optional_step, so absence degrades to a skip -- installed so a
+  # VM scan does not silently run with six of its steps missing).
+  GITLEAKS_VERSION: "8.30.1"
+  GRYPE_VERSION: "0.117.0"
+  SYFT_VERSION: "1.51.0"
+  TRIVY_VERSION: "0.73.0"
+  OSV_VERSION: "2.5.0"
+  SEMGREP_VERSION: "1.172.0"
+  # Which Playwright browsers to fetch. webkit is omitted: add it here if needed.
+  PLAYWRIGHT_BROWSERS: "chromium firefox"
+  # The single host<->guest channel. Must exist on the host before `start`.
+  TRANSPORT_DIR: "/Users/wido/LocalStorage/transport"
+
+cpus: 4
+memory: 8GiB
+# Sparse on APFS: an upper bound, not an allocation. Growable later (stop, raise
+# this, start). Shrinking is NOT supported, so overshoot on purpose.
+disk: 100GiB
+
+vmType: vz
+
+vmOpts:
+  vz:
+    rosetta:
+      # Run x86_64 binaries and container images on the arm64 guest.
+      enabled: true
+      # Register with /proc/sys/fs/binfmt_misc so exec is transparent.
+      binfmt: true
+
+mounts:
+# Clean room: the host home and repo trees are deliberately NOT mounted. Git is
+# the transport for source; this channel carries what git cannot (bundles,
+# tarballs, artifacts, evidence). Never run the suite from here -- it inherits
+# macOS case-insensitivity and is ~13x slower for `go build` than guest ext4.
+- location: "{{.Param.TRANSPORT_DIR}}"
+  mountPoint: "{{.Param.TRANSPORT_DIR}}"
+  writable: true
+
+# Default-deny port forwarding. Lima otherwise forwards EVERY guest listener to
+# the host's 127.0.0.1 -- including ones bound to the guest's own loopback, since
+# the builtin rule's guestIP also matches "0.0.0.0", "::" and "::1". Everything
+# this VM runs (Descartes, the JVMs it attaches to via the local-only JVM Attach
+# API, and the agents that talk to it) lives inside the guest and reaches the
+# others over guest localhost, so nothing needs to cross to the host.
+#
+# Rules match sequentially, first match wins: put explicit allows ABOVE the
+# catch-all. SSH (22 <-> ssh.localPort) is exempt and cannot be overridden, so
+# `limactl shell` keeps working.
+#
+# NOTE: this closes browser logins that rely on an automatic localhost callback,
+# because the browser runs on the host while the listener is in the guest.
+# `claude auth login` still works -- it offers a paste-the-code path. Codex needs
+# port 1455 (allowlisted below). For anything else, use vm-authtunnel.sh, or
+# `claude setup-token` on the host + CLAUDE_CODE_OAUTH_TOKEN in the guest.
+portForwards:
+# Known guest-internal ports (deliberately NOT forwarded):
+#   9090  Descartes MCP proxy. It attaches to JVMs via the JVM Attach API, which
+#         is local-only (/proc + /tmp/.java_pid<PID>), so it must run in the same
+#         kernel as its targets. Agents talk to it over guest localhost, so no
+#         forward is needed. To expose it to a HOST-side MCP client instead,
+#         uncomment the rule below AND stop any host process already on 9090,
+#         or Lima fails to bind and only logs "address already in use".
+# - guestPort: 9090
+#   hostPort: 9090
+#
+# Codex's OAuth callback listens on a FIXED port, so it can be allowlisted.
+# Without this, `codex login` completes in the browser and then dead-ends on
+# "this site can't be reached", because the listener is in the guest.
+# (Claude Code picks a RANDOM callback port, so it cannot be allowlisted this
+# way -- use its paste-the-code option, or vm-authtunnel.sh.)
+- guestPort: 1455
+  hostPort: 1455
+#
+# guestIP "0.0.0.0" with guestIPMustBeZero left false matches a listener on ANY
+# interface. Omitting guestIP does NOT work here: the default (127.0.0.1) fails
+# to match 0.0.0.0-bound listeners, which are then forwarded anyway.
+- guestIP: "0.0.0.0"
+  guestPortRange: [1, 65535]
+  ignore: true
+- guestIP: "127.0.0.1"
+  guestPortRange: [1, 65535]
+  ignore: true
+
+provision:
+# --- 1. OS packages --------------------------------------------------------
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    # git bash coreutils procps perl python3 curl ca-certificates: the suite's
+    #   command inventory (ps/pgrep, shasum via perl, mktemp, fixture python3).
+    # gcc + libc6-dev: NOT optional. Without a C compiler Go sets CGO_ENABLED=0
+    #   and `go test -race` refuses to run ("-race requires cgo"). Nothing in
+    #   scripts/ invokes gcc directly, so a command-inventory scan won't find it.
+    # rsync: used by vm-sync.sh to seed host dotfiles.
+    # bubblewrap: codex sandboxing; without it codex warns and falls back to
+    #   its bundled copy.
+    # git-lfs: the synced ~/.gitconfig declares lfs filters, so without the
+    #   binary any LFS-backed checkout fails with "git-lfs: command not found".
+    # jq/lsof/unzip/zip: real dependencies found by scanning the three work
+    #   repos (jq alone has ~1500 invocations); python3-venv is for semgrep.
+    apt-get install -y -qq \
+      git bash coreutils procps perl python3 curl ca-certificates \
+      gcc libc6-dev rsync git-lfs bubblewrap \
+      jq lsof unzip zip python3-venv
+
+# --- 2. Go from the official tarball ---------------------------------------
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    ARCH="$(dpkg --print-architecture)"
+    if [ "$ARCH" != "arm64" ]; then
+      echo "this template targets arm64; got $ARCH" >&2; exit 1
+    fi
+    VER="{{.Param.GO_VERSION}}"
+    # Idempotent: skip if the pinned version is already installed.
+    if [ -x /usr/local/go/bin/go ] && \
+       /usr/local/go/bin/go version | grep -q "go${VER} "; then exit 0; fi
+    # Debian bookworm packages Go 1.19 -- too old to even auto-fetch a pinned
+    # toolchain, so take the official tarball.
+    TARBALL="go${VER}.linux-arm64.tar.gz"
+    cd "$(mktemp -d)"
+    curl -fsSLO "https://go.dev/dl/${TARBALL}"
+    echo "{{.Param.GO_SHA256_ARM64}}  ${TARBALL}" | sha256sum -c -
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf "${TARBALL}"
+    # PATH for every login shell, interactive or not.
+    cat >/etc/profile.d/go.sh <<'EOF'
+    export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+    EOF
+    chmod 0644 /etc/profile.d/go.sh
+
+# --- 3. ripgrep from the official release ----------------------------------
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    VER="{{.Param.RG_VERSION}}"
+    if [ -x /usr/local/bin/rg ] && rg --version | grep -q "ripgrep ${VER}"; then
+      exit 0
+    fi
+    # bookworm packages ripgrep 13.0.0 (2021); take the current release instead.
+    NAME="ripgrep-${VER}-aarch64-unknown-linux-gnu"
+    cd "$(mktemp -d)"
+    curl -fsSLO "https://github.com/BurntSushi/ripgrep/releases/download/${VER}/${NAME}.tar.gz"
+    echo "{{.Param.RG_SHA256_ARM64}}  ${NAME}.tar.gz" | sha256sum -c -
+    tar xzf "${NAME}.tar.gz"
+    install -m 0755 "${NAME}/rg" /usr/local/bin/rg
+    install -d /usr/local/share/man/man1
+    install -m 0644 "${NAME}/doc/rg.1" /usr/local/share/man/man1/rg.1
+    mandb -q 2>/dev/null || true
+
+# --- 4. Oracle JDK 21 + 26, with 26 as the default -------------------------
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    install_jdk() {
+      local major="$1" ver="$2" sha="$3"
+      local file="jdk-${ver}_linux-aarch64_bin.tar.gz"
+      [ -x "/usr/lib/jvm/jdk-${major}/bin/java" ] && return 0
+      local tmp; tmp="$(mktemp -d)"; cd "$tmp"
+      curl -fsSLO "https://download.oracle.com/java/${major}/archive/${file}"
+      echo "${sha}  ${file}" | sha256sum -c -
+      # Listing goes to a file, not a pipe: under pipefail, `head` exiting early
+      # SIGPIPEs tar and aborts the script.
+      tar tzf "$file" > listing.txt
+      local top; top="$(head -1 listing.txt | cut -d/ -f1)"
+      mkdir -p /usr/lib/jvm
+      rm -rf "/usr/lib/jvm/${top}"
+      tar -C /usr/lib/jvm -xzf "$file"
+      # Stable major-version symlink that survives point releases.
+      ln -sfn "/usr/lib/jvm/${top}" "/usr/lib/jvm/jdk-${major}"
+      cd /; rm -rf "$tmp"
+    }
+    install_jdk 21 "{{.Param.JDK21_VERSION}}" "{{.Param.JDK21_SHA256_ARM64}}"
+    install_jdk 26 "{{.Param.JDK26_VERSION}}" "{{.Param.JDK26_SHA256_ARM64}}"
+
+    # Higher priority wins, so 26 is the default. jps/jcmd/jstack matter for the
+    # Descartes JVM Attach API workflow.
+    for tool in java javac jar javadoc jshell jcmd jstack jps jinfo jmap; do
+      for major in 21 26; do
+        bin="/usr/lib/jvm/jdk-${major}/bin/${tool}"
+        [ -x "$bin" ] || continue
+        update-alternatives --install "/usr/bin/${tool}" "$tool" "$bin" "${major}00" >/dev/null
+      done
+    done
+
+    cat >/etc/profile.d/java.sh <<'EOF'
+    export JAVA_HOME=/usr/lib/jvm/jdk-26
+    export PATH="$JAVA_HOME/bin:$PATH"
+    # Pin a specific JDK for one run:  JAVA_HOME="$JAVA_HOME_21" ./run-suite.sh
+    export JAVA_HOME_21=/usr/lib/jvm/jdk-21
+    export JAVA_HOME_26=/usr/lib/jvm/jdk-26
+    EOF
+    chmod 0644 /etc/profile.d/java.sh
+
+# --- 5. Maven ---------------------------------------------------------------
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    VER="{{.Param.MAVEN_VERSION}}"
+    if [ -x /usr/local/maven/bin/mvn ] && \
+       /usr/local/maven/bin/mvn -v 2>/dev/null | grep -q "Apache Maven ${VER}"; then
+      exit 0
+    fi
+    TARBALL="apache-maven-${VER}-bin.tar.gz"
+    cd "$(mktemp -d)"
+    # Binary from the mirror network, checksum from Apache's canonical host.
+    curl -fsSLO "https://dlcdn.apache.org/maven/maven-3/${VER}/binaries/${TARBALL}"
+    echo "{{.Param.MAVEN_SHA512}}  ${TARBALL}" | sha512sum -c -
+    rm -rf "/usr/local/apache-maven-${VER}"
+    tar -C /usr/local -xzf "${TARBALL}"
+    ln -sfn "/usr/local/apache-maven-${VER}" /usr/local/maven
+    # Symlinks cover non-login shells; profile.d supplies MAVEN_HOME/MAVEN_OPTS.
+    ln -sfn /usr/local/maven/bin/mvn      /usr/local/bin/mvn
+    ln -sfn /usr/local/maven/bin/mvnDebug /usr/local/bin/mvnDebug
+
+    cat >/etc/profile.d/maven.sh <<'EOF'
+    export MAVEN_HOME=/usr/local/maven
+    case ":$PATH:" in *":$MAVEN_HOME/bin:"*) ;; *) export PATH="$MAVEN_HOME/bin:$PATH" ;; esac
+    # This guest advertises sve2 in HWCAP2 but base SVE is absent (Apple SME-only
+    # hardware), so HotSpot's vector-length probe fails and it warns on stderr at
+    # every JVM start. MAVEN_OPTS becomes real command-line JVM args, so unlike
+    # JAVA_TOOL_OPTIONS/JDK_JAVA_OPTIONS it silences the warning without printing
+    # a "Picked up ..." notice of its own. Costs nothing: there is no usable SVE
+    # on this hardware, so HotSpot would fall back to NEON regardless.
+    # Guarded: profile.d can be sourced repeatedly and a self-referential append
+    # would compound the flag on every nested login shell.
+    case " ${MAVEN_OPTS:-} " in
+      *" -XX:UseSVE=0 "*) ;;
+      *) export MAVEN_OPTS="-XX:UseSVE=0${MAVEN_OPTS:+ ${MAVEN_OPTS}}" ;;
+    esac
+    EOF
+    chmod 0644 /etc/profile.d/maven.sh
+
+# --- 6. Egress guard: block guest -> host-loopback services -----------------
+# The mirror image of portForwards above. Lima's user-mode NAT proxies the
+# gateway address to the HOST's loopback, so without this anything in the guest
+# can reach every 127.0.0.1 service on the Mac (verified with a canary: a server
+# bound only to host 127.0.0.1 was readable from the guest).
+#
+# This is a guardrail, not a boundary -- an agent with root here can flush it.
+# The real boundary is the hypervisor. It stops accidents, not adversaries.
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    cat >/usr/local/sbin/lima-egress-guard <<'SCRIPT'
+    #!/bin/bash
+    # The gateway is also the default route AND the DNS resolver, so this cannot
+    # just block the address: it rejects traffic addressed TO the gateway while
+    # leaving traffic ROUTED THROUGH it (the internet) alone -- that is destined
+    # elsewhere and never matches -d.
+    set -eu
+    GW="$(ip route | awk '/^default via /{print $3; exit}')"
+    [ -n "$GW" ] || { echo "no default gateway; refusing to install rules" >&2; exit 1; }
+    iptables -N LIMA_EGRESS 2>/dev/null || iptables -F LIMA_EGRESS
+    iptables -C OUTPUT -j LIMA_EGRESS 2>/dev/null || iptables -A OUTPUT -j LIMA_EGRESS
+    # Replies to inbound connections first, so an SSH session cannot cut itself off.
+    iptables -A LIMA_EGRESS -d "$GW" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+    iptables -A LIMA_EGRESS -d "$GW" -p udp --dport 53 -j RETURN   # DNS (hostResolver)
+    iptables -A LIMA_EGRESS -d "$GW" -p tcp --dport 53 -j RETURN   # DNS over TCP
+    iptables -A LIMA_EGRESS -d "$GW" -p udp --dport 67 -j RETURN   # DHCP renewal
+    iptables -A LIMA_EGRESS -d "$GW" -j REJECT --reject-with icmp-port-unreachable
+    SCRIPT
+    chmod 0755 /usr/local/sbin/lima-egress-guard
+
+    cat >/etc/systemd/system/lima-egress-guard.service <<'UNIT'
+    [Unit]
+    Description=Block guest-initiated connections to the Lima host gateway
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    ExecStart=/usr/local/sbin/lima-egress-guard
+
+    [Install]
+    WantedBy=multi-user.target
+    UNIT
+    systemctl daemon-reload
+    systemctl enable --now lima-egress-guard.service
+
+# --- 7. Node LTS + npm ------------------------------------------------------
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    VER="{{.Param.NODE_VERSION}}"
+    if [ -x /usr/local/node/bin/node ] && \
+       [ "$(/usr/local/node/bin/node --version)" = "v${VER}" ]; then exit 0; fi
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get install -y -qq xz-utils   # node tarballs are .tar.xz
+    TARBALL="node-v${VER}-linux-arm64.tar.xz"
+    cd "$(mktemp -d)"
+    curl -fsSLO "https://nodejs.org/dist/v${VER}/${TARBALL}"
+    echo "{{.Param.NODE_SHA256_ARM64}}  ${TARBALL}" | sha256sum -c -
+    rm -rf "/usr/local/node-v${VER}-linux-arm64"
+    tar -C /usr/local -xJf "${TARBALL}"
+    ln -sfn "/usr/local/node-v${VER}-linux-arm64" /usr/local/node
+    for b in node npm npx corepack; do
+      [ -x "/usr/local/node/bin/$b" ] && ln -sfn "/usr/local/node/bin/$b" "/usr/local/bin/$b"
+    done
+
+# --- 8. Playwright + browsers -----------------------------------------------
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    # Browsers go to a shared root rather than root's ~/.cache, so every user
+    # can reach them; PLAYWRIGHT_BROWSERS_PATH below points everyone at it.
+    export PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/playwright-browsers
+    if [ ! -x /usr/local/bin/playwright ]; then
+      /usr/local/node/bin/npm install -g playwright@latest
+      ln -sfn /usr/local/node/bin/playwright /usr/local/bin/playwright
+    fi
+    # --with-deps apt-installs the shared libraries the browsers link against.
+    /usr/local/bin/playwright install --with-deps {{.Param.PLAYWRIGHT_BROWSERS}}
+    cat >/etc/profile.d/playwright.sh <<'EOF'
+    export PLAYWRIGHT_BROWSERS_PATH=/usr/local/share/playwright-browsers
+    EOF
+    chmod 0644 /etc/profile.d/playwright.sh
+
+# --- 9. Agent CLIs: Claude Code, Codex, Devin -------------------------------
+# Codex is a static binary and goes in system-wide. Claude Code and Devin are
+# per-user installers that refuse sudo (they install under $HOME), so they run
+# as the default user via `mode: user` and land in ~/.local/bin.
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    if [ ! -x /usr/local/bin/codex ]; then
+      cd "$(mktemp -d)"
+      curl -fsSLO "https://github.com/openai/codex/releases/download/{{.Param.CODEX_TAG}}/codex-aarch64-unknown-linux-musl.tar.gz"
+      tar xzf codex-aarch64-unknown-linux-musl.tar.gz
+      BIN="$(find . -maxdepth 2 -type f -name 'codex*' ! -name '*.tar.gz' | head -1)"
+      install -m 0755 "$BIN" /usr/local/bin/codex
+    fi
+
+# --- 10. GitHub CLI + git auth plumbing -------------------------------------
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    VER="{{.Param.GH_VERSION}}"
+    if ! { [ -x /usr/local/bin/gh ] && gh --version | grep -q "gh version ${VER}"; }; then
+      cd "$(mktemp -d)"
+      curl -fsSLO "https://github.com/cli/cli/releases/download/v${VER}/gh_${VER}_linux_arm64.tar.gz"
+      tar xzf "gh_${VER}_linux_arm64.tar.gz"
+      install -m 0755 "gh_${VER}_linux_arm64/bin/gh" /usr/local/bin/gh
+      install -d /usr/local/share/man/man1
+      cp -f "gh_${VER}_linux_arm64"/share/man/man1/*.1 /usr/local/share/man/man1/ || true
+      mandb -q 2>/dev/null || true
+    fi
+
+- mode: user
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    # Route GitHub HTTPS auth through gh, so a `gh auth login` (device flow) or a
+    # GH_TOKEN in the environment both make git push/pull work with no extra
+    # setup and no credentials written into remote URLs.
+    git config --global credential."https://github.com".helper '!gh auth git-credential'
+    git config --global credential."https://gist.github.com".helper '!gh auth git-credential'
+    # Register the lfs filters for this user (the synced .gitconfig expects them).
+    git lfs install --skip-repo || true
+    command -v claude >/dev/null 2>&1 || curl -fsSL https://claude.ai/install.sh | bash
+    # Devin's installer ends with an interactive login prompt that cannot succeed
+    # unattended; it still installs the binary first, so ignore that exit status.
+    command -v devin >/dev/null 2>&1 || { curl -fsSL https://cli.devin.ai/install.sh | bash || true; }
+    # Debian's ~/.profile only adds ~/.local/bin when it already exists at login,
+    # so make sure it is on PATH for shells started before/after the installers.
+    grep -q '.local/bin' "$HOME/.bashrc" 2>/dev/null || \
+      echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+
+# --- 11. Descartes MCP debug proxy as a boot service ------------------------
+# Clones to /opt (not ~/work) so agents experimenting in their own checkouts
+# cannot break the service. Runs as the default user, restarts on failure, and
+# comes up automatically with the VM.
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    U=wido
+    install -d -o "$U" -g "$U" /opt/descartes-mcp /var/log/descartes
+    if [ -d /opt/descartes-mcp/.git ]; then
+      sudo -u "$U" git -C /opt/descartes-mcp pull --ff-only || true
+    else
+      sudo -u "$U" git clone {{.Param.DESCARTES_REPO}} /opt/descartes-mcp
+    fi
+    # Build now so the first boot does not stall waiting on Maven.
+    sudo -u "$U" env JAVA_HOME=/usr/lib/jvm/jdk-26 MAVEN_OPTS=-XX:UseSVE=0 \
+      PATH=/usr/lib/jvm/jdk-26/bin:/usr/local/maven/bin:/usr/bin:/bin \
+      bash -lc 'cd /opt/descartes-mcp && mvn -q -B clean package -DskipTests'
+
+    cat >/etc/systemd/system/descartes-mcp.service <<'UNIT'
+    [Unit]
+    Description=Descartes MCP debug proxy (JDWP -> MCP on :{{.Param.DESCARTES_MCP_PORT}})
+    Documentation={{.Param.DESCARTES_REPO}}
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=simple
+    User=wido
+    Group=wido
+    WorkingDirectory=/opt/descartes-mcp
+    # systemd does NOT source /etc/profile.d, so java and mvn must be named here
+    # or the build/launch fails with "command not found" at boot.
+    Environment=JAVA_HOME=/usr/lib/jvm/jdk-26
+    Environment=PATH=/usr/lib/jvm/jdk-26/bin:/usr/local/maven/bin:/usr/local/node/bin:/usr/local/bin:/usr/bin:/bin
+    Environment=MAVEN_OPTS=-XX:UseSVE=0
+    # Stable path for `tail -f`; the launch script tees the proxy output here.
+    Environment=DESCARTES_PROXY_LOG_FILE=/var/log/descartes/proxy.log
+    # --replace is belt-and-braces under systemd (which stops the old unit
+    # first), but reclaims the port if someone started an instance by hand.
+    ExecStart=/opt/descartes-mcp/scripts/run-remote-proxy.sh --replace
+    Restart=always
+    RestartSec=5
+    # If it dies 5 times in 60s, stop rather than hot-loop forever.
+    StartLimitIntervalSec=60
+    StartLimitBurst=5
+
+    [Install]
+    WantedBy=multi-user.target
+    UNIT
+
+    cat >/etc/logrotate.d/descartes <<'ROT'
+    /var/log/descartes/*.log {
+        weekly
+        rotate 4
+        compress
+        missingok
+        notifempty
+        copytruncate
+    }
+    ROT
+
+    cat >/usr/local/bin/descartes <<'CTL'
+    #!/usr/bin/env bash
+    # descartes — control the Descartes MCP debug proxy service.
+    #
+    #   descartes start | stop | restart | status
+    #   descartes log [-n N]     tail the proxy log (follows by default)
+    #   descartes build          rebuild the shaded jar from the current checkout
+    #   descartes update         git pull, rebuild, restart
+    #   descartes port           show what is listening on the MCP port
+    #
+    # The proxy runs as a systemd service so it comes up automatically with the VM.
+    # Checkout lives in /opt (not ~/work) so agents experimenting in their own
+    # checkouts cannot break the service.
+    set -euo pipefail
+
+    UNIT=descartes-mcp.service
+    REPO=/opt/descartes-mcp
+    LOG=/var/log/descartes/proxy.log
+    MCP_PORT=9090
+
+    usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; }
+
+    port_listening() { ss -ltn "sport = :$MCP_PORT" 2>/dev/null | grep -q ":$MCP_PORT"; }
+
+    # systemctl returns as soon as the process is spawned, but the JVM needs a few
+    # seconds to bind the port. Without this wait, start/restart reports "NOT
+    # listening" and looks broken when it is merely still coming up.
+    wait_ready() {
+      local n=0
+      until port_listening; do
+        n=$((n + 1))
+        [ "$n" -ge 30 ] && { echo "timed out waiting for port $MCP_PORT" >&2; return 1; }
+        sleep 1
+      done
+    }
+
+    case "${1:-status}" in
+      start)   sudo systemctl start "$UNIT";   wait_ready || true; exec "$0" status ;;
+      stop)    sudo systemctl stop "$UNIT" ;;
+      restart) sudo systemctl restart "$UNIT"; wait_ready || true; exec "$0" status ;;
+
+      status)
+        systemctl is-active --quiet "$UNIT" && state=running || state="NOT running"
+        echo "service : $state ($(systemctl is-enabled "$UNIT" 2>/dev/null || echo 'not enabled'))"
+        echo "repo    : $REPO @ $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo '?')"
+        echo "jar     : $(ls -t "$REPO"/target/descartes-mcp-*-jar-with-dependencies.jar 2>/dev/null | head -1 | xargs -r basename)"
+        echo "log     : $LOG"
+        # The proxy binds the MCP port; that is the real liveness signal.
+        if port_listening; then
+          echo "port    : $MCP_PORT listening"
+        else
+          echo "port    : $MCP_PORT NOT listening"
+        fi
+        ;;
+
+      log)
+        shift || true
+        if [ "${1:-}" = "-n" ]; then
+          tail -n "${2:-50}" "$LOG"
+        else
+          echo "(tailing $LOG — Ctrl-C to stop)"
+          tail -n 50 -f "$LOG"
+        fi
+        ;;
+
+      build)
+        cd "$REPO" && mvn -B clean package -DskipTests
+        ;;
+
+      update)
+        cd "$REPO"
+        git pull --ff-only
+        mvn -B clean package -DskipTests
+        sudo systemctl restart "$UNIT"
+        exec "$0" status
+        ;;
+
+      port)
+        ss -ltnp "sport = :$MCP_PORT" 2>/dev/null || ss -ltn "sport = :$MCP_PORT"
+        ;;
+
+      -h|--help|help) usage ;;
+      *) echo "unknown command: $1" >&2; usage; exit 2 ;;
+    esac
+    CTL
+    chmod 0755 /usr/local/bin/descartes
+
+    systemctl daemon-reload
+    systemctl enable --now descartes-mcp.service
+
+# --- 12. Security scanners ---------------------------------------------------
+# gitleaks/grype/syft/trivy verify against the checksums.txt shipped with each
+# release (same origin as the tarball -- integrity, not authenticity).
+# osv-scanner publishes a bare binary with no checksums (HTTPS only).
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    install_tgz() {
+      local name="$1" url="$2" sums="$3" file="$4"
+      command -v "$name" >/dev/null 2>&1 && return 0
+      local tmp; tmp="$(mktemp -d)"; cd "$tmp"
+      curl -fsSLO "$url"
+      curl -fsSL "$sums" -o checksums.txt
+      grep " \{1,2\}${file}\$" checksums.txt > want.txt
+      sha256sum -c want.txt
+      tar xzf "$file"
+      install -m 0755 "./${name}" "/usr/local/bin/${name}"
+      cd /; rm -rf "$tmp"
+    }
+    B=https://github.com
+    install_tgz gitleaks \
+      "$B/gitleaks/gitleaks/releases/download/v{{.Param.GITLEAKS_VERSION}}/gitleaks_{{.Param.GITLEAKS_VERSION}}_linux_arm64.tar.gz" \
+      "$B/gitleaks/gitleaks/releases/download/v{{.Param.GITLEAKS_VERSION}}/gitleaks_{{.Param.GITLEAKS_VERSION}}_checksums.txt" \
+      "gitleaks_{{.Param.GITLEAKS_VERSION}}_linux_arm64.tar.gz"
+    install_tgz grype \
+      "$B/anchore/grype/releases/download/v{{.Param.GRYPE_VERSION}}/grype_{{.Param.GRYPE_VERSION}}_linux_arm64.tar.gz" \
+      "$B/anchore/grype/releases/download/v{{.Param.GRYPE_VERSION}}/grype_{{.Param.GRYPE_VERSION}}_checksums.txt" \
+      "grype_{{.Param.GRYPE_VERSION}}_linux_arm64.tar.gz"
+    install_tgz syft \
+      "$B/anchore/syft/releases/download/v{{.Param.SYFT_VERSION}}/syft_{{.Param.SYFT_VERSION}}_linux_arm64.tar.gz" \
+      "$B/anchore/syft/releases/download/v{{.Param.SYFT_VERSION}}/syft_{{.Param.SYFT_VERSION}}_checksums.txt" \
+      "syft_{{.Param.SYFT_VERSION}}_linux_arm64.tar.gz"
+    install_tgz trivy \
+      "$B/aquasecurity/trivy/releases/download/v{{.Param.TRIVY_VERSION}}/trivy_{{.Param.TRIVY_VERSION}}_Linux-ARM64.tar.gz" \
+      "$B/aquasecurity/trivy/releases/download/v{{.Param.TRIVY_VERSION}}/trivy_{{.Param.TRIVY_VERSION}}_checksums.txt" \
+      "trivy_{{.Param.TRIVY_VERSION}}_Linux-ARM64.tar.gz"
+    if ! command -v osv-scanner >/dev/null 2>&1; then
+      cd "$(mktemp -d)"
+      curl -fsSL -o osv-scanner "$B/google/osv-scanner/releases/download/v{{.Param.OSV_VERSION}}/osv-scanner_linux_arm64"
+      install -m 0755 osv-scanner /usr/local/bin/osv-scanner
+    fi
+
+# --- 13. semgrep (pip-only; needs an SVE workaround on this guest) -----------
+# semgrep publishes no arm64 Linux binary, so it goes into a venv (bookworm is
+# PEP 668 externally-managed; plain pip refuses).
+#
+# CRITICAL guest-specific detail: the wheel bundles its own OpenSSL, whose
+# aarch64 capability dispatch trusts HWCAP2. This guest advertises sve2 while
+# base SVE is absent (Apple SME-only silicon under vz; same root cause as the
+# HotSpot SVE warning), so semgrep dies with SIGILL and NO output at import of
+# cryptography. Fix: OPENSSL_armcap=0, injected into the venv console scripts
+# right after the shebang -- the one place every dispatch path passes through.
+#   - NOT a wrapper in /usr/local/bin: semgrep entrypoint re-execs via PATH and
+#     a wrapper there creates an infinite exec loop (hangs in state R forever).
+#   - NOT sitecustomize in the venv: Debian /usr/lib/python3.11/sitecustomize.py
+#     shadows it (only the first one on sys.path is imported).
+#   - NOT a global env var: it would disable ARM crypto acceleration for ALL
+#     TLS in the VM; system OpenSSL, Node and git are unaffected by the bug.
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    V=/usr/local/lib/semgrep-venv
+    if [ ! -x "$V/bin/semgrep" ]; then
+      python3 -m venv "$V"
+      "$V/bin/pip" install --quiet --upgrade pip
+      "$V/bin/pip" install --quiet "semgrep=={{.Param.SEMGREP_VERSION}}"
+    fi
+    for scr in semgrep pysemgrep; do
+      grep -q OPENSSL_armcap "$V/bin/$scr" || \
+        sed -i "1a import os as _os; _os.environ.setdefault(\"OPENSSL_armcap\", \"0\")  # SVE2-without-SVE guest: bundled OpenSSL SIGILLs without this" "$V/bin/$scr"
+    done
+    ln -sfn "$V/bin/semgrep" /usr/local/bin/semgrep
+
+probes:
+- description: "go, gcc and rg are installed and on PATH"
+  script: |
+    #!/bin/bash
+    set -eu -o pipefail
+    if ! timeout 30s bash -c "until [ -x /usr/local/go/bin/go ] && \
+         command -v rg >/dev/null && command -v gcc >/dev/null; do sleep 1; done"; then
+      echo "go/rg/gcc not ready" >&2; exit 1
+    fi
+  hint: |
+    Provisioning did not finish. Check /var/log/cloud-init-output.log in the guest.
+
+message: |
+  Metasystem acceptance VM ready.
+
+    limactl shell {{.Name}}
+
+  Toolchain: Go {{.Param.GO_VERSION}}, ripgrep {{.Param.RG_VERSION}}, gcc (race detector).
+  Rosetta is on: `nerdctl run --platform=linux/amd64 ...` works.
+
+  Clean room -- the only host mount is {{.Param.TRANSPORT_DIR}}.
+  Clone source over git and work on the guest's ext4 $HOME, never from a mount.
+
+  Seed host dotfiles:  VM_INSTANCE={{.Name}} ./vm-sync.sh
