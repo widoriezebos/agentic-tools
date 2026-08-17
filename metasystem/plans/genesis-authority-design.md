@@ -1,11 +1,31 @@
 # Genesis authority: the sound fix is architectural (goal genesis-authority-design)
 
-- Status: PARKED FOR HUMAN DESIGN DECISION (D86). Three review
-  rounds (plans/genesis-authority-review.md) and one design round
-  (plans/gad-critique-r1.md) converged on an IMPOSSIBILITY result,
-  not a fix. The interim state is the D84 defense-in-depth code,
-  which is validated working for legitimate provisioning.
-- Goal: genesis-authority-design (parked)
+- Status: PARKED FOR HUMAN DESIGN DECISION — CORRECTED by the
+  Opus-window re-review (plans/opus-window-review-genesis.md, D92).
+  The D86 "impossibility" was OVERREACH: the reviews' true premises
+  rule out CLI-only authorization, repo-file classification, and
+  symmetric secrets inside the delegate's privilege domain — they
+  do NOT rule out asymmetric signing, because a public verify key
+  needs no secrecy and the private signer can be held by another OS
+  principal, a hardware key, a user-presence keychain, or an
+  external service. The park is real but its decision is now stated
+  correctly: WHERE DOES THE TRUST/INTEGRITY BOUNDARY LIVE —
+  (A') OS sandbox enforcement PLUS control-plane write exclusion
+  (enforcing the current worktree envelope alone still admits
+  writes to a control plane inside it);
+  (B') an externally-held asymmetric signer + a pinned,
+  integrity-protected verifier + signed durable genesis provenance
+  (read-exclusion NOT required; verifier-binary integrity IS an
+  open sub-problem — adopt copies it into the writable target);
+  (C') keep the cooperative same-user doctrine and explicitly drop
+  local "unforgeable genesis" as a product contract.
+  The D84 defense-in-depth stays, but two defects the re-review
+  confirmed are OPEN and scheduled for fixing now, not parked:
+  the adapter-supervisor reclassification regression (goalCaller
+  discards non-MAIN source classifications; cmd/metasystem/goal.go)
+  and the pre-lock genesis-mode race (os.Stat before Reconcile's
+  lock; the guard can be skipped).
+- Goal: genesis-authority-design (parked on the boundary choice)
 
 ## Why there is no filesystem-only sound fix
 

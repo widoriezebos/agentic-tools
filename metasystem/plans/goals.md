@@ -53,15 +53,15 @@
 - Parked because: Yields the current slot to the human-approved acp-transport implementation (D81); design held at the budget-one boundary, r3 verdict will be folded when it lands
 - Next step: Design per plans/backlog-notes.md item 19; headroom checks in suite and provision paths.
 
-## Parked goal: genesis-authority-design — Genesis authorization that cannot be laundered: classification root not caller-controlled, or a capability minted by an authenticated holder
-- Origin: main
-- Parked because: Impossibility result across 4 review passes: sound genesis needs OS delegate sandboxing (A) or a compiled-in asymmetric anchor + control-plane read-exclusion (B); both architectural, human's design call. D84 defense-in-depth kept.
-- Next step: Design over the 3 holes in plans/genesis-authority-review.md; classification-against-caller-root is unsound — the fix is architectural.
-
 ## Parked goal: process-steward — A standing role that watches the development PROCESS itself against expectations and signals deviations to the orchestrator, or acts
 - Origin: main
 - Parked because: Resequenced behind the janitor namespace-orphan verdict from disk-hygiene (D87): the one checkable invariant duplicates the Stop watchdog; valuable invariants wait on owner instrumentation. See plans/process-steward-design.md.
 - Next step: Design per plans/backlog-notes.md item 21 when picked up: inventory the process invariants, decide signal-vs-act per class.
+
+## Parked goal: genesis-authority-design — Genesis authorization that cannot be laundered: classification root not caller-controlled, or a capability minted by an authenticated holder
+- Origin: main
+- Parked because: D92 overturned the D86 impossibility: asymmetric signing with an externally-held signer is viable. Parked on the human's trust-boundary choice: external signer / OS sandboxing + write exclusion / drop the unforgeable-genesis contract.
+- Next step: Design over the 3 holes in plans/genesis-authority-review.md; classification-against-caller-root is unsound — the fix is architectural.
 
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
 - Origin: main

@@ -2690,3 +2690,39 @@ coverage with transport=acp set in its target before resume.
 
 The flip remains HELD until the prerequisites exist and the D82
 pair passes as ruled.
+
+## D92 — 2026-08-17: the Opus-window re-review overturns D86's impossibility; two authority defects reopen for immediate fixing
+
+The second Opus-window re-review (codex sol xhigh,
+plans/opus-window-review-genesis.md) examined the genesis
+conclusions. Verdict: rejecting the HMAC design and pausing for an
+external trust-boundary decision were CORRECT; the impossibility
+claim, the A/B framing, and the D84 description were NOT.
+
+(1) The impossibility is overturned. The true premises (a
+notEnforced devin delegate writes the baseline directly; delegates
+read the whole repo) rule out CLI-only authorization, repo-file
+classification, and symmetric secrets in the delegate's privilege
+domain — and nothing more. Asymmetric signing survives: a public
+verify key needs no secrecy, and the private signer can be held by
+another OS principal, hardware key, user-presence keychain, or
+external service. The goal's park now names the real decision:
+where the trust/integrity boundary lives — (A') sandbox enforcement
+PLUS control-plane write exclusion, (B') an externally-held signer
++ pinned verifier + signed provenance (verifier-binary integrity is
+an open sub-problem), or (C') keep the cooperative doctrine and
+drop "unforgeable genesis" as a product contract.
+
+(2) Two defects confirmed OPEN in shipped code, to be fixed now
+under the bug-squash mandate, each behind tests and the mandatory
+code critique: the D84-introduced adapter-supervisor regression
+(goalCaller discards every non-MAIN source classification, so a
+correctly-identified machinery caller can reclassify as HUMAN
+against a virgin target and be admitted), and the pre-lock
+genesis-mode race (mode chosen by os.Stat before Reconcile's lock,
+skipping the genesis guard when a baseline appears in the window —
+recorded in the window's own review but omitted from the park).
+
+(3) The D84 record's "closes accidental misuse" description stands
+only with those two caveats named; the durable claims that
+caller-controlled roots cannot forge upward are withdrawn.
