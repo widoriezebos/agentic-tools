@@ -69,12 +69,9 @@ func goalCaller(root string, callerPid int64, verb, genesisFrom string) (goal.Ca
 			if fromErr != nil {
 				return goal.Caller{}, fmt.Errorf("genesis-from classification failed: %v", fromErr)
 			}
-			// A positively-announced main against the source is the
-			// only way --genesis-from raises the effective class; any
-			// other result (including a laundered HUMAN from a missing
-			// or crafted root) falls back to the target class.
-			if fromView.Class == "MAIN" {
-				effective = fromView
+			effective, err = genesisEffective(targetView, fromView)
+			if err != nil {
+				return goal.Caller{}, err
 			}
 		}
 	}
@@ -85,8 +82,32 @@ func goalCaller(root string, callerPid int64, verb, genesisFrom string) (goal.Ca
 	}
 	// The store's genesis branch re-checks under the lock that a
 	// non-holder only seeds a goal-free ledger (review F2/F3), so the
-	// holder bit carried here is the target's, not the source's.
-	return goal.Caller{Class: effective.Class, Holder: targetView.Holder}, nil
+	// holder bit carried here is the target's, not the source's. The
+	// Genesis flag makes the authorization MODE travel with the caller:
+	// the store refuses a genesis-admitted caller every non-genesis arm
+	// under its lock (the pre-lock race, re-review finding 4).
+	return goal.Caller{Class: effective.Class, Holder: targetView.Holder, Genesis: mode == "genesis"}, nil
+}
+
+// genesisEffective decides the effective genesis class from the two
+// classifications — pure, so the rule lives in table tests. A
+// positively-announced main against the source is the only way
+// --genesis-from RAISES the effective class; a source HUMAN cannot
+// raise (F1: a missing or crafted root launders to HUMAN, so the
+// target's own view decides); and a POSITIVE machinery classification
+// at the source is DISQUALIFYING, not discardable — discarding it let
+// a correctly-identified adapter supervisor re-classify HUMAN against
+// the virgin target and be admitted (the opus-window re-review's D84
+// regression, plans/opus-window-review-genesis.md finding 3).
+func genesisEffective(targetView, fromView lease.ClassifyResult) (lease.ClassifyResult, error) {
+	switch fromView.Class {
+	case "MAIN":
+		return fromView, nil
+	case "HUMAN":
+		return targetView, nil
+	default:
+		return lease.ClassifyResult{}, fmt.Errorf("genesis refused: the source root classifies the caller as %s; machinery never seeds a control plane", fromView.Class)
+	}
 }
 
 // goalMutation is the shared verb spine: flags, classification, the

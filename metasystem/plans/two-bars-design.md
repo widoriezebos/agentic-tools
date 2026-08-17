@@ -1,23 +1,68 @@
 # Two bars for changes (backlog item 2)
 
-- Status: CONVERGED for implementation on the ACCIDENTAL model — the
-  human ruled the fork (D90, 2026-08-17): "stop an honest agent from
-  forgetting the rule". r1 critique (plans/two-bars-critique-r1.md,
-  7 findings, 6 structural) folded into r2; the one open question
-  (the threat-model fork) is now answered. The adversarial layer is
-  a SEPARATE future goal, not built here.
-- Goal: two-bars-for-changes (design done; implementation queued
-  behind the ACP flip)
+- Status: r3 — the human ruled the fork (D90: the ACCIDENTAL model,
+  "stop an honest agent from forgetting the rule"), and the
+  Opus-window special review (plans/opus-window-review-twobars.md)
+  found the r2 fold left four r1 findings materially open. r3 folds
+  its dispositions below. NOT yet implementation-ready: the review's
+  readiness gaps (the settle-the-contracts step and the
+  design-obligation matrix) are the named remaining work before any
+  build. The adversarial layer stays a separate future goal.
+- Goal: two-bars-for-changes (design r3; implementation queued
+  behind the ACP flip and the settle-step below)
 - In flight right now: none.
 - Waiting on the human: nothing — the fork is ruled.
-- Implementation (queued behind the ACP flip): when picked up, build
-  the accidental model per the sections below — the composed
-  pre-commit + commit-msg hooks, the both-trees manifest floor, the
-  tree-OID-bound witness, the defect-identity growth fuse, the
-  immutable-ref audit join, and the human-personal or one-use
-  emergency. D81 implementation-first, this document is the spec; a
-  code critique gates the ship.
 - Next step: none.
+
+## r3 dispositions (from the special review, all adopted)
+
+- **Emergency (TB-R1-06), CHOSEN:** human-personal. A genuine
+  emergency safety fix is committed by the human (already
+  sovereign) with immediate reconciliation. NO agent authorization
+  machinery is built; the one-use-token alternative is recorded as
+  a future requirement's option, not this design's.
+- **Hook scope (TB-R1-02), corrected:** raw `git commit` BY HABIT is
+  an honest-forgetting case and IS in scope — an agent's raw commit
+  with hooks active must be refused; only deliberate bypass
+  (`--no-verify`, hook tampering, `core.hooksPath` games) is
+  adversarial and out of scope. Hook composition must handle
+  existing pre-commit AND commit-msg hooks, `core.hooksPath`, and
+  post-adoption `git init` (adoption today skips installation when
+  a hook exists — that gap closes as part of this work).
+- **Witness owner (TB-R1-03), corrected:** the tree-bound witness is
+  finalized by the WHOLE owning validator at the END of the full
+  suite — never by go-gate mid-run (the D33 witness lands before
+  later fixture families, which preserves the false-green hole).
+  gaterun's live markers are process state, not outcomes, and gain
+  no witness role.
+- **The accidental-model keep/skip line** (the review's table,
+  adopted verbatim as the build boundary): KEEP the both-trees
+  manifest read, the commit-msg hook, the candidate-tree-OID
+  witness binding, the full-validator zero-outcome identity, local
+  nonce + consume-on-use witness lifecycle, one reusable
+  red-then-green assertion evaluated against both immutable trees
+  (defined to accommodate newly-added regression tests), the
+  defect-identity growth fuse over reachable history, and
+  content-bound reachable audit refs. SKIP cryptographic
+  authentication, protected custody, signatures, authorship
+  inference over trailer-less history, agent emergency tokens,
+  remote CI enforcement, and --no-verify resistance.
+- **Build order, replacing the old P1/P2:** (1) SETTLE THE
+  CONTRACTS — the trailer grammar including Defect-ID, the manifest
+  path/schema/failure-behavior/initial protected set, budgets and
+  subsystem mapping with parent/amend/merge rules, the proof and
+  witness schemas, the audit-chain schema (design + findings +
+  dispositions + closure, immutable and reachable), the
+  hook-composition lifecycle, and the design-obligation matrix this
+  document still lacks (the obligation gate refuses implementation
+  without rows); (2) the pure change-class evaluator, table-tested;
+  (3) the immutable candidate/baseline runner with the
+  full-validator witness finalization; (4) commit.sh + pre-commit +
+  commit-msg integration with idempotent composition, tested over
+  -a, pathspecs, message reuse, editor changes, amend, and raw
+  agent git; (5) the audit join, the instruction-ledger entry, the
+  history-report scope, and the end-to-end common-path fixture
+  proving the one-extra-line claim.
 
 ## The human's rule (2026-08-08, backlog-notes item 2)
 

@@ -30,6 +30,15 @@ type Caller struct {
 	// Holder reports MAIN-lease holdership (already enforced by the
 	// authority matrix; carried for messages).
 	Holder bool
+	// Genesis records that the verb layer authorized this caller under
+	// the GENESIS mode (no baseline existed at authorization time), not
+	// holder-only. Reconcile re-checks it under the lock: a
+	// genesis-admitted caller may take ONLY the genesis arm, so a
+	// baseline appearing between authorization and the lock cannot hand
+	// a non-holder the restore, malformed-replacement, or replay paths
+	// (the opus-window re-review's pre-lock race,
+	// plans/opus-window-review-genesis.md finding 4).
+	Genesis bool
 }
 
 func (c Caller) origin() string {
@@ -556,6 +565,15 @@ func (s *Store) Reconcile(caller Caller) (Result, error) {
 		state, err := s.readState()
 		if err != nil {
 			return Result{}, err
+		}
+		// The authorization mode is re-validated against the state THIS
+		// lock sees: a caller the verb layer admitted under genesis (no
+		// baseline existed then) gets only the genesis arm. If a baseline
+		// appeared in the window, every other arm would run holder-grade
+		// operations on holder-only authority the caller never earned —
+		// refuse and make it re-run, which re-authorizes as holder-only.
+		if caller.Genesis && state.base != nil {
+			return Result{}, fmt.Errorf("reconcile refused: authorized for genesis but an accepted baseline now exists; re-run `goal reconcile` (it will authorize against the initialized project)")
 		}
 		switch {
 		case state.ledgerBytes == nil && state.base == nil:

@@ -509,3 +509,43 @@ func TestGenesisAdmitsGoalFreeLedgerForNonHolder(t *testing.T) {
 		t.Fatalf("a goal-free genesis must pass for a non-holder main: %v", err)
 	}
 }
+
+// The pre-lock race (opus-window re-review finding 4): a caller the
+// verb layer admitted under GENESIS mode reaches Reconcile after a
+// baseline has appeared. Every non-genesis arm must refuse it — the
+// caller never earned holder-only authority — while the same state
+// stays reachable for a holder-authorized (non-genesis) caller.
+func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
+	s := testStore(t)
+	if _, err := s.Open(mainHolder, "real-goal", "intent", "next"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reconcile(mainHolder); err != nil {
+		t.Fatal(err)
+	}
+	// The race outcome: authorization saw no baseline (Genesis true),
+	// the lock sees one. The exact-match arm would be a harmless no-op,
+	// the replay and malformed arms would not — the guard refuses them
+	// all uniformly before any arm runs.
+	raced := Caller{Class: "HUMAN", Holder: false, Genesis: true}
+	if _, err := s.Reconcile(raced); err == nil || !strings.Contains(err.Error(), "authorized for genesis") {
+		t.Fatalf("a genesis-admitted caller must be refused once a baseline exists: %v", err)
+	}
+	// The same caller WITHOUT the stale genesis admission (a re-run,
+	// which re-authorizes holder-only at the verb layer) is unaffected.
+	if _, err := s.Reconcile(Caller{Class: "MAIN", Holder: true}); err != nil {
+		t.Fatalf("a holder-authorized re-run must pass: %v", err)
+	}
+	// And a genesis-admitted caller against a genuinely virgin store
+	// still takes the genesis arm (the flag only bites with a baseline).
+	virgin := testStore(t)
+	if _, err := virgin.DeclareFree(human); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(BaselinePath(virgin.Root)); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if _, err := virgin.Reconcile(Caller{Class: "MAIN", Holder: false, Genesis: true}); err != nil {
+		t.Fatalf("genesis admission must still work on a virgin store: %v", err)
+	}
+}

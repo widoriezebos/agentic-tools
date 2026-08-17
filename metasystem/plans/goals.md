@@ -59,7 +59,7 @@
 
 ## Parked goal: process-steward — A standing role that watches the development PROCESS itself against expectations and signals deviations to the orchestrator, or acts
 - Origin: main
-- Parked because: Resequenced behind the janitor namespace-orphan verdict from disk-hygiene (D87): the one checkable invariant duplicates the Stop watchdog; valuable invariants wait on owner instrumentation. See plans/process-steward-design.md.
+- Parked because: Parked per D87/D94: no owner emits a typed process verdict yet; the near-checkable invariant mostly duplicates the watchdog. Resume DESIGN when any sound typed owner verdict exists; justify aggregator over direct delivery.
 - Next step: Design per plans/backlog-notes.md item 21 when picked up: inventory the process invariants, decide signal-vs-act per class.
 
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior

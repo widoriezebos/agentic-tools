@@ -2763,3 +2763,45 @@ guest (no "model name" in /proc/cpuinfo), so the VM-only spec
 could never have provisioned on the machine it is constrained to —
 it now synthesizes a stable identity from vendor + implementer/
 part codes.
+
+## D94 — 2026-08-17: the steward and two-bars window folds are repaired; the genesis defects are fixed in code
+
+The third and fourth Opus-window re-reviews landed
+(plans/opus-window-review-steward.md, -twobars.md; both REVISE).
+Corrections, all applied:
+
+(1) process-steward: D87's "adds no new coverage" was OVERCLAIM —
+WatchdogReport largely overlaps but is not equivalent to a typed
+liveness verdict (different freshness window, no heartbeat/
+generation/cap/tag verification, prose not tri-state, discarded on
+blocking turns, Stop-only, not persisted). The park STANDS on the
+corrected ground: the typed owner verdict does not exist and
+building it is owner work. The resume condition is generalized —
+any sound typed owner verdict about an unwatched invariant, the
+janitor orphan verdict being A candidate, not THE dependency (D89
+made it non-cheap) — and resuming authorizes DESIGN, which must
+first justify the aggregator over direct owner delivery. The design
+document is rewritten in one voice; the window's fold had left the
+old contradicted sections standing beside the corrected target, and
+had dropped r2's committed-but-durability-unknown outcome, now
+restored.
+
+(2) two-bars: the r2 fold left TB-R1-02/03/05/06 materially open.
+r3 adopts the review's dispositions: human-personal emergency (no
+agent tokens); raw agent git-by-habit IS in scope (honest
+forgetting) while only deliberate bypass is adversarial; the
+tree-bound witness is finalized by the WHOLE validator at suite
+end, never go-gate mid-run (the false-green hole); the
+accidental-model keep/skip table is the build boundary; the build
+order is the review's five steps, starting with settle-the-
+contracts and the design-obligation matrix the document lacks.
+
+(3) The two D92 genesis defects are FIXED in code with tests: the
+adapter-supervisor regression (genesisEffective now refuses a
+positive machinery source classification outright — table-tested,
+including the crafted-root HUMAN non-raise) and the pre-lock race
+(goal.Caller carries the Genesis authorization mode; Reconcile
+refuses a genesis-admitted caller every non-genesis arm under its
+lock — tested for the raced, re-run, and virgin cases). Adopt
+fixtures pass; full gate + mandatory code critique before the
+ship.
