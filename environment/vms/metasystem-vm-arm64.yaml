@@ -698,7 +698,117 @@ provision:
     done
     ln -sfn "$V/bin/semgrep" /usr/local/bin/semgrep
 
+# --- 14. Offline Maven repository for benchmark bm-1 ------------------------
+# bm-1's gate is `./mvnw -o test`: offline on purpose, so a benchmark run is
+# reproducible and cannot quietly pull dependencies mid-mission. Offline only
+# works if ~/.m2 is warm BEFORE the run, and two things make that non-obvious:
+#
+#   1. Surefire fetches its test provider (surefire-junit-platform) when tests
+#      RUN, not when the project packages. Block 11 builds descartes-mcp with
+#      -DskipTests, so the repository it leaves behind has no provider at all.
+#      An offline gate then passes only if the project ships ZERO tests -- the
+#      environment would be paying agents to delete their tests. So prime by
+#      running a real test, never by packaging.
+#   2. ./mvnw ignores the system Maven from block 5 and downloads the version
+#      its own properties pin into ~/.m2/wrapper/dists. Priming through
+#      `mvn` alone leaves that fetch to happen at gate time, over a network
+#      the mission is not supposed to need.
+#
+# Runs as the default user: it is that user's ~/.m2 the benchmark reads.
+# MAVEN_OPTS is set by hand here -- provisioning does not source profile.d, and
+# without -XX:UseSVE=0 every JVM on this guest dies (see block 5).
+- mode: user
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    export JAVA_HOME=/usr/lib/jvm/jdk-26
+    export PATH="$JAVA_HOME/bin:/usr/local/maven/bin:$PATH"
+    export MAVEN_OPTS="-XX:UseSVE=0${MAVEN_OPTS:+ ${MAVEN_OPTS}}"
+
+    D=$(mktemp -d)
+    trap 'rm -rf -- "$D"' EXIT
+    cd "$D"
+
+    cat >pom.xml <<'XML'
+    <?xml version="1.0" encoding="UTF-8"?>
+    <project xmlns="http://maven.apache.org/POM/4.0.0">
+      <modelVersion>4.0.0</modelVersion>
+      <groupId>vm.prime</groupId>
+      <artifactId>bm1-m2-prime</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+      <properties>
+        <maven.compiler.release>{{.Param.BM1_COMPILER_RELEASE}}</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+      </properties>
+      <dependencies>
+        <dependency>
+          <groupId>org.junit.jupiter</groupId>
+          <artifactId>junit-jupiter</artifactId>
+          <version>{{.Param.BM1_JUNIT_VERSION}}</version>
+          <scope>test</scope>
+        </dependency>
+      </dependencies>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>{{.Param.BM1_COMPILER_PLUGIN_VERSION}}</version>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <version>{{.Param.BM1_JAR_PLUGIN_VERSION}}</version>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>{{.Param.BM1_SUREFIRE_VERSION}}</version>
+          </plugin>
+        </plugins>
+      </build>
+    </project>
+    XML
+
+    mkdir -p src/test/java
+    cat >src/test/java/PrimeProbeTest.java <<'JAVA'
+    import org.junit.jupiter.api.Test;
+    import static org.junit.jupiter.api.Assertions.assertTrue;
+
+    class PrimeProbeTest {
+      @Test
+      void primesTheSurefireProvider() {
+        assertTrue(true);
+      }
+    }
+    JAVA
+
+    # Generate the wrapper the benchmark seed uses, pinned to the same Maven, so
+    # the distribution lands in ~/.m2/wrapper/dists under the identical
+    # URL-derived path the seed's own ./mvnw will look for.
+    mvn -B -q wrapper:wrapper \
+      -Dmaven={{.Param.BM1_WRAPPER_MAVEN_VERSION}} -Dtype=only-script
+
+    ./mvnw -B test           # online: warms wrapper, plugins, deps, provider
+    ./mvnw -B -o test        # the gate's real condition -- fail the build here,
+                             # not three hours into a benchmark mission
+
 probes:
+- description: "the bm-1 offline Maven repository is warm"
+  script: |
+    #!/bin/bash
+    set -eu -o pipefail
+    # Named explicitly because its absence is silent and expensive: an offline
+    # gate with no test provider looks like "your tests are wrong".
+    P=$HOME/.m2/repository/org/apache/maven/surefire/surefire-junit-platform/{{.Param.BM1_SUREFIRE_VERSION}}
+    J=$HOME/.m2/repository/org/junit/jupiter/junit-jupiter/{{.Param.BM1_JUNIT_VERSION}}
+    if [ ! -d "$P" ] || [ ! -d "$J" ]; then
+      echo "bm-1 offline repository incomplete: $P or $J missing" >&2; exit 1
+    fi
+  hint: |
+    Benchmark bm-1's gate (./mvnw -o test) cannot pass offline in this guest.
+    Run environment/vms/prime-benchmark-m2.sh inside it to repair, or rebuild.
+
 - description: "go, gcc and rg are installed and on PATH"
   script: |
     #!/bin/bash
