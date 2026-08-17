@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -129,6 +130,14 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 // runnerRecord is the runner's process record, the artifact status reads to
 // decide whether anyone is actually driving a running mission.
 func (e *Engine) runnerRecord(pid, pgid int, started int64, tag string) map[string]any {
+	// The clock-step-immune pair rides beside the legacy second (issue
+	// #1): readers prefer it, and a time-synced guest stepping the clock
+	// can no longer make this record's live runner read as Dead.
+	var startTicks int64
+	var bootID string
+	if exact, state, err := (identity.KernelProber{}).Probe(int64(pid)); err == nil && state == identity.Alive {
+		startTicks, bootID = exact.StartTicks, exact.BootID
+	}
 	return map[string]any{
 		"missionId":     e.Mission,
 		"status":        "running",
@@ -136,6 +145,8 @@ func (e *Engine) runnerRecord(pid, pgid int, started int64, tag string) map[stri
 		"workspaceRoot": e.Root,
 		"pid":           pid,
 		"pidStartedAt":  started,
+		"pidStartTicks": startTicks,
+		"bootId":        bootID,
 		"pgid":          pgid,
 		"instanceTag":   tag,
 		"startedAt":     nowISO(),

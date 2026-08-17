@@ -68,6 +68,16 @@ func (e *Engine) Status() int {
 			if pidOK && startOK {
 				fields.Pid = pid
 				fields.PidStartedAt = recordedStart
+				// The clock-step-immune pair rides along when the record
+				// carries it (issue #1) — without this copy the classifier
+				// falls back to the drifted second and a live runner still
+				// reads abandoned.
+				if ticks, ok := jsonInt(record["pidStartTicks"]); ok {
+					fields.PidStartTicks = ticks
+				}
+				if bootID, ok := record["bootId"].(string); ok {
+					fields.BootID = bootID
+				}
 			}
 			// The three-way rule is owned by internal/missionstate now;
 			// this path is its first consumer. Unknown liveness is

@@ -325,7 +325,7 @@ func TestRunnerRecordAndHeartbeatShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Drivers grep these exact spellings out of the record.
-	for _, want := range []string{`"status": "running"`, `"missionId": "m1"`, `"pidStartedAt": 1700000000`, `"endedAt": null`} {
+	for _, want := range []string{`"status": "running"`, `"missionId": "m1"`, `"pidStartedAt": 1700000000`, `"endedAt": null`, `"pidStartTicks"`, `"bootId"`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("runner record lost %s:\n%s", want, data)
 		}

@@ -27,16 +27,27 @@ import (
 
 // Ref is a recorded process identity: the pid and the second its
 // process started, the resolution every existing record carries.
+// StartTicks and BootID are the clock-step-immune pair (issue #1): on
+// Linux the btime-anchored epoch second MOVES when the realtime clock
+// steps (time-synced guests step every ~30s), so equality on seconds
+// reads live processes as Dead. Ticks are boot-relative and constant
+// for the process's life; the boot id changes only across reboots —
+// the one case where ticks could be ambiguous. Records that predate
+// the pair carry zero values and fall back to the seconds comparison.
 type Ref struct {
 	Pid          int64
 	StartedAtSec int64
+	StartTicks   int64
+	BootID       string
 }
 
 // Exact is a live identity as the kernel reports it.
 type Exact struct {
-	Pid       int64
-	StartedAt time.Time // kernel-exact (microseconds on darwin, 10ms ticks on linux)
-	Argv      []string  // valid only when ArgvKnown; see below
+	Pid        int64
+	StartedAt  time.Time // kernel-exact (microseconds on darwin, 10ms ticks on linux)
+	StartTicks int64     // linux: /proc/<pid>/stat field 22, clock-step-immune; 0 elsewhere
+	BootID     string    // linux: /proc/sys/kernel/random/boot_id; "" elsewhere
+	Argv       []string  // valid only when ArgvKnown; see below
 	// ArgvKnown records whether the argv read SUCCEEDED. Argv is
 	// best-effort at probe time — a process whose argv cannot be read is
 	// still alive — but a consumer matching a tag against Argv must treat
@@ -46,9 +57,23 @@ type Exact struct {
 	ArgvKnown bool
 }
 
-// Ref converts an exact identity to record resolution.
+// Ref converts an exact identity to record resolution, carrying the
+// clock-step-immune pair when the platform supplies one.
 func (e Exact) Ref() Ref {
-	return Ref{Pid: e.Pid, StartedAtSec: e.StartedAt.Unix()}
+	return Ref{Pid: e.Pid, StartedAtSec: e.StartedAt.Unix(), StartTicks: e.StartTicks, BootID: e.BootID}
+}
+
+// sameIdentity is the ONE equality rule between a live probe and a
+// recorded identity: when both sides carry the clock-step-immune pair,
+// the pair decides — the btime-derived second is not consulted at all;
+// otherwise the legacy whole-second comparison stands (darwin's
+// fork-captured start time is stable, and legacy records have nothing
+// stronger to offer).
+func sameIdentity(exact Exact, ref Ref) bool {
+	if ref.StartTicks > 0 && ref.BootID != "" && exact.StartTicks > 0 && exact.BootID != "" {
+		return exact.StartTicks == ref.StartTicks && exact.BootID == ref.BootID
+	}
+	return exact.StartedAt.Unix() == ref.StartedAtSec
 }
 
 // Liveness is the three-way verdict.
@@ -94,9 +119,10 @@ func AliveRef(prober Prober, ref Ref) Liveness {
 	case Unknown:
 		return Unknown
 	}
-	if exact.StartedAt.Unix() != ref.StartedAtSec {
-		// The pid was reused by a process started at a different
-		// second: the recorded process is definitively gone.
+	if !sameIdentity(exact, ref) {
+		// The pid was reused by a different process: definitively gone.
+		// (With the pair recorded this cannot fire from a clock step;
+		// legacy seconds-only records keep the old semantics.)
 		return Dead
 	}
 	return Alive

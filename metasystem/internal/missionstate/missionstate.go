@@ -97,10 +97,12 @@ func (r Result) Indeterminate() bool {
 
 // RecordFields is the slice of a runner record this rule reads.
 type RecordFields struct {
-	MissionId    string `json:"missionId"`
-	Status       string `json:"status"`
-	Pid          int64  `json:"pid"`
-	PidStartedAt int64  `json:"pidStartedAt"`
+	MissionId     string `json:"missionId"`
+	Status        string `json:"status"`
+	Pid           int64  `json:"pid"`
+	PidStartedAt  int64  `json:"pidStartedAt"`
+	PidStartTicks int64  `json:"pidStartTicks"`
+	BootID        string `json:"bootId"`
 }
 
 // Classify applies the rule to one record's fields, three-way.
@@ -113,7 +115,10 @@ func Classify(record RecordFields, prober identity.Prober) Verdict {
 		// verified either way.
 		return Indeterminate
 	}
-	switch identity.AliveRef(prober, identity.Ref{Pid: record.Pid, StartedAtSec: record.PidStartedAt}) {
+	switch identity.AliveRef(prober, identity.Ref{
+		Pid: record.Pid, StartedAtSec: record.PidStartedAt,
+		StartTicks: record.PidStartTicks, BootID: record.BootID,
+	}) {
 	case identity.Alive:
 		return Active
 	case identity.Unknown:

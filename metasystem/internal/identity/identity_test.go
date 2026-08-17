@@ -137,3 +137,44 @@ func TestProbeLiveChildArgv(t *testing.T) {
 		t.Fatalf("round-trip ref not alive: %v", got)
 	}
 }
+
+// btimeShiftProber replays issue #1's kernel behavior: the same live
+// process, constant ticks and boot id, but a start SECOND that walks as
+// the realtime clock is stepped.
+type btimeShiftProber struct{ shift int64 }
+
+func (p btimeShiftProber) Probe(pid int64) (Exact, Liveness, error) {
+	return Exact{
+		Pid:        pid,
+		StartedAt:  time.Unix(1786991670+p.shift, 0),
+		StartTicks: 707949,
+		BootID:     "boot-aaaa",
+	}, Alive, nil
+}
+
+// A pair-bearing record survives clock drift; a legacy seconds-only
+// record keeps the old (drift-exposed) semantics; and a genuinely
+// different process — new boot or different ticks — still reads Dead.
+func TestAliveRefClockStepImmunity(t *testing.T) {
+	paired := Ref{Pid: 40723, StartedAtSec: 1786991670, StartTicks: 707949, BootID: "boot-aaaa"}
+	legacy := Ref{Pid: 40723, StartedAtSec: 1786991670}
+	for _, shift := range []int64{-4, -1, 0, 1, 4} {
+		if got := AliveRef(btimeShiftProber{shift}, paired); got != Alive {
+			t.Fatalf("paired ref at shift %d: want Alive, got %v", shift, got)
+		}
+	}
+	if got := AliveRef(btimeShiftProber{0}, legacy); got != Alive {
+		t.Fatalf("legacy ref, no drift: want Alive, got %v", got)
+	}
+	if got := AliveRef(btimeShiftProber{3}, legacy); got != Dead {
+		t.Fatalf("legacy ref under drift keeps old semantics: want Dead, got %v", got)
+	}
+	rebooted := Ref{Pid: 40723, StartedAtSec: 1786991670, StartTicks: 707949, BootID: "boot-bbbb"}
+	if got := AliveRef(btimeShiftProber{0}, rebooted); got != Dead {
+		t.Fatalf("same ticks across a reboot: want Dead, got %v", got)
+	}
+	recycled := Ref{Pid: 40723, StartedAtSec: 1786991670, StartTicks: 1, BootID: "boot-aaaa"}
+	if got := AliveRef(btimeShiftProber{0}, recycled); got != Dead {
+		t.Fatalf("different ticks same boot: want Dead, got %v", got)
+	}
+}

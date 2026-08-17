@@ -148,3 +148,34 @@ func TestCustodianRow7Alive(t *testing.T) {
 		t.Fatalf("no tag expected: want Alive, got %v", got)
 	}
 }
+
+// Issue #1: on a time-synced guest the btime-derived start second drifts
+// while the process lives. A custodian still bearing its tag must read
+// Alive even when the recorded second no longer matches — the tag is
+// consulted first. A drifted second with a WRONG tag still reads Dead.
+func TestCustodianTagOutranksDriftedStartSecond(t *testing.T) {
+	pid, start, tag := selfIdentity(t)
+	if got := Custodian(pid, start+3, tag, nil); got != Alive {
+		t.Fatalf("tagged custodian with drifted second: want Alive, got %v", got)
+	}
+	if got := Custodian(pid, start+3, "tag-that-cannot-appear-a6f8e2", nil); got != Dead {
+		t.Fatalf("drifted second and wrong tag: want Dead, got %v", got)
+	}
+}
+
+// Round-2 F-2: a composite argv element containing the tag as a substring
+// keeps its pre-override semantics — Alive when identity matches (no
+// exact-element override fires, the Contains fallback rules).
+func TestCustodianCompositeTagElementStillAlive(t *testing.T) {
+	pid, start, tag := selfIdentity(t)
+	composite := tag[:len(tag)-1] // a strict substring of a real element
+	if composite == "" {
+		t.Skip("tag too short to derive a substring")
+	}
+	if got := Custodian(pid, start, composite, nil); got != Alive {
+		t.Fatalf("composite tag with matching identity: want Alive, got %v", got)
+	}
+	if got := Custodian(pid, start+3, composite, nil); got != Dead {
+		t.Fatalf("composite tag cannot override a drifted second: want Dead, got %v", got)
+	}
+}

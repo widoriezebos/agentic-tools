@@ -54,7 +54,7 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 		return Exact{}, Unknown, fmt.Errorf("identity: pid %d start time is implausible (btime=%d ticks=%d)", pid, boot, startTicks)
 	}
 	started := time.Unix(boot, 0).Add(time.Duration(startTicks) * (time.Second / userHZ))
-	exact := Exact{Pid: pid, StartedAt: started}
+	exact := Exact{Pid: pid, StartedAt: started, StartTicks: startTicks, BootID: bootID()}
 	// Argv is best-effort at probe time: a process we cannot read the argv
 	// of is still alive, and the KILL decision separately demands a
 	// readable, claim-consistent argv (REG-6). An empty cmdline (kernel
@@ -116,4 +116,15 @@ func bootTimeEpoch() (int64, error) {
 		}
 	}
 	return 0, fmt.Errorf("/proc/stat has no btime line")
+}
+
+// bootID reads the kernel's per-boot identity token. Best-effort: an
+// unreadable boot id degrades comparisons to the legacy seconds rule
+// rather than failing the probe — absence weakens, never lies.
+func bootID() string {
+	data, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }

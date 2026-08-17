@@ -115,3 +115,28 @@ func TestSurveyClassifiesAndSurfaces(t *testing.T) {
 		t.Fatalf("missing directory is not an empty result: %+v", empty)
 	}
 }
+
+// Issue #1: a pair-bearing runner record classifies Active under clock
+// drift; a legacy record keeps the old semantics. This is the decision
+// surface behind `mission-runner.sh status` — the observed false
+// "abandoned reason=runner-process-gone".
+type driftProber struct{ shift int64 }
+
+func (p driftProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	return identity.Exact{
+		Pid: pid, StartedAt: time.Unix(1786991670+p.shift, 0),
+		StartTicks: 707949, BootID: "boot-aaaa",
+	}, identity.Alive, nil
+}
+
+func TestClassifySurvivesClockDrift(t *testing.T) {
+	paired := RecordFields{Status: "running", Pid: 40723, PidStartedAt: 1786991670,
+		PidStartTicks: 707949, BootID: "boot-aaaa"}
+	if got := Classify(paired, driftProber{4}); got != Active {
+		t.Fatalf("paired record under drift: want Active, got %v", got)
+	}
+	legacy := RecordFields{Status: "running", Pid: 40723, PidStartedAt: 1786991670}
+	if got := Classify(legacy, driftProber{4}); got != Inactive {
+		t.Fatalf("legacy record under drift keeps old semantics: got %v", got)
+	}
+}
