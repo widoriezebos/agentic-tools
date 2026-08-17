@@ -11,11 +11,24 @@
   registry types) are owned by golden fixtures during the build.
   D100's rulings stand: NO self-work exception, DETECTOR tier.
 - Goal: host-implementer-wall (Current)
-- In flight right now: implementation, starting with HIW-O4's
-  foundation (the shared git-tree primitive).
+- In flight right now: slice 3 (authorization issuance at
+  conformance's merge-success points, HIW-O2).
+- Landed: slices 1+2 — internal/gittree (the HIW-O4 primitive,
+  one projection owner, reviewStage refactored onto it) and
+  dispatch provenance (mission/incarnation/turn/stream immutable,
+  complete-or-refused; incarnation read from the mission's own
+  fences; follow-ups re-verify the live incarnation BEFORE any
+  side effect; turnId/envelopeTurn split). Verified through FIVE
+  codex critique rounds under the both-must-agree covenant,
+  finding trajectory 5 → 3 → 3 → 2 → 0, "AGREE — slices land"
+  (scratchpad wall-slice*-output.md; scanner gap recorded in
+  KI-34).
 - Waiting on the human: nothing.
-- Next step: implement per the obligation matrix, mandatory code
-  critique per slice, both-host gates before any ship.
+- Next step: build slice 3 per the scratchpad draft (record type
+  + digest in validate, issuance at both merge exits, apply-proof
+  at issue time, supersedes[], events), then its critique round;
+  then the remaining rows in matrix order — both-host gates
+  before any ship.
 
 ## What happened (unchanged evidence)
 

@@ -181,6 +181,8 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.Role, "role", "", "job role")
 	flags.StringVar(&p.Mission, "mission", "", "mission id (optional)")
 	flags.StringVar(&p.MissionTurn, "mission-turn", "", "mission turn id (optional)")
+	flags.StringVar(&p.Stream, "stream", "", "mission stream this dispatch serves (optional)")
+	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required with --mission)")
 	flags.StringVar(&p.Runtime, "runtime", "", "runtime name")
 	flags.StringVar(&p.Workspace, "workspace", "", "job workspace root")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
@@ -233,6 +235,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.MainID, "main-id", "", "dispatching main id")
 	flags.StringVar(&p.ClaimEpoch, "claim-epoch", "", "worktree-lease claim epoch")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
+	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required for mission chains)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -243,6 +246,29 @@ func runDispatchBuildFollowRecord(args []string) int {
 	}
 	p.Signal = *signal
 	return recordExit(dispatchcore.BuildFollowRecord(p))
+}
+
+// runDispatchVerifyChainIncarnation relays the pre-authorization incarnation
+// check: the shell calls it before any cap/fence side effect so the named
+// re-provision refusal is the FIRST refusal a stale chain can hit.
+func runDispatchVerifyChainIncarnation(args []string) int {
+	flags := flag.NewFlagSet("job verify-chain-incarnation", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	mission := flags.String("mission", "", "mission id")
+	parent := flags.String("parent", "", "parent (latest) record file")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *mission == "" || *parent == "" {
+		fmt.Fprintln(os.Stderr, "job verify-chain-incarnation: --root, --mission, and --parent are required")
+		return 2
+	}
+	record, err := dispatchcore.ReadRecordObject(*parent)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return recordExit(dispatchcore.VerifyChainIncarnation(*root, *mission, record))
 }
 
 func runDispatchLatestChainRecord(args []string) int {

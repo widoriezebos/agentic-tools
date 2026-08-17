@@ -182,8 +182,13 @@ func TestHandshakeEvalVerdicts(t *testing.T) {
 		t.Fatalf("target = %v, want running", result["target"])
 	}
 	patch := result["patch"].(map[string]any)
-	if patch["sessionId"] != "sess-1" || patch["turnId"] != "turn-1" || patch["error"] != nil {
+	if patch["sessionId"] != "sess-1" || patch["envelopeTurn"] != "turn-1" || patch["error"] != nil {
 		t.Fatalf("running patch = %v", patch)
+	}
+	// turnId is immutable dispatch provenance; the handshake patch must
+	// never name it (host-implementer wall).
+	if _, present := patch["turnId"]; present {
+		t.Fatalf("handshake patch names immutable turnId: %v", patch)
 	}
 
 	wider := writeJSONFile(t, dir, "effective-wide.json", map[string]any{
@@ -390,6 +395,138 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 	if follow["sessionId"] != "sess-9" || follow["parentJob"] != "job-b" || follow["resumeMode"] != "resumed" {
 		t.Fatalf("follow record = sessionId %v parentJob %v resumeMode %v",
 			follow["sessionId"], follow["parentJob"], follow["resumeMode"])
+	}
+}
+
+// Mission provenance is complete-or-refused at build, bound from the
+// mission's own fences, and a follow-up refuses when the mission has been
+// re-provisioned under a new incarnation (round-2 critique F7/F8).
+func TestMissionProvenanceTuple(t *testing.T) {
+	root := t.TempDir()
+	tmp := t.TempDir()
+	workspace := filepath.Join(tmp, "ws")
+	os.MkdirAll(workspace, 0o755)
+	for _, args := range [][]string{
+		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
+		{"commit", "-q", "--allow-empty", "-m", "base"},
+	} {
+		cmd := exec.Command("git", append([]string{"-C", workspace}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	capResolution := filepath.Join(tmp, "cap.json")
+	if err := WriteCapResolution(capResolution, 120, "built-in", "default"); err != nil {
+		t.Fatal(err)
+	}
+	permissions := writeJSONFile(t, tmp, "perm.json", map[string]any{
+		"preset": "none", "readRoots": []any{}, "writeRoots": []any{},
+		"network": "deny", "approvals": "deny", "tools": "read-only",
+	})
+	incarnationA := strings.Repeat("a", 64)
+	fencesDir := filepath.Join(root, "artifacts", "agents", "missions", "m-one")
+	os.MkdirAll(fencesDir, 0o755)
+	writeFences := func(digest string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(fencesDir, "fences.json"),
+			[]byte(`{"schemaVersion":1,"missionId":"m-one","approvedContractSha256":"`+digest+`"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFences(incarnationA)
+
+	base := BuildRecordParams{
+		Output: filepath.Join(tmp, "r.json"), Job: "j1", Role: "implementer",
+		Runtime: "fake", Workspace: workspace, CapResolution: capResolution,
+		Permissions: permissions, Fallbacks: "[]", Root: root,
+	}
+
+	partial := base
+	partial.Mission = "m-one"
+	partial.Stream = "main"
+	if err := BuildRecord(partial); err == nil {
+		t.Fatal("mission dispatch without a turn built a record")
+	}
+	partial.MissionTurn = "m-one-t1"
+	partial.Stream = ""
+	if err := BuildRecord(partial); err == nil {
+		t.Fatal("mission dispatch without a stream built a record")
+	}
+
+	complete := base
+	complete.Mission = "m-one"
+	complete.MissionTurn = "m-one-t1"
+	complete.Stream = "main"
+	if err := BuildRecord(complete); err != nil {
+		t.Fatalf("complete tuple refused: %v", err)
+	}
+	record := readJSONFile(t, complete.Output)
+	if record["missionIncarnation"] != incarnationA || record["stream"] != "main" || record["turnId"] != "m-one-t1" {
+		t.Fatalf("provenance not bound: %v %v %v", record["missionIncarnation"], record["stream"], record["turnId"])
+	}
+
+	// Follow-up under the same incarnation, inside a turn, builds; without
+	// a turn it refuses (F9); after a re-provision (same mission id, new
+	// approved digest) it refuses (F8); and a pre-wall MISSION chain (no
+	// recorded incarnation) refuses by name while a pre-wall NON-mission
+	// chain stays followable (F11).
+	parentPath := filepath.Join(tmp, "parent.json")
+	writeRecord(parentPath, record)
+	follow := BuildFollowRecordParams{
+		Output: filepath.Join(tmp, "f.json"), Parent: parentPath, Job: "j1-r2",
+		Round: 2, ParentJob: "j1", Fallbacks: "[]", ResumeMode: "fresh-context",
+		CapResolution: capResolution, Root: root, MissionTurn: "m-one-t2",
+	}
+	if err := BuildFollowRecord(follow); err != nil {
+		t.Fatalf("same-incarnation follow-up refused: %v", err)
+	}
+	noTurn := follow
+	noTurn.MissionTurn = ""
+	if err := BuildFollowRecord(noTurn); err == nil {
+		t.Fatal("mission follow-up without a turn built a record")
+	}
+	writeFences(strings.Repeat("b", 64))
+	if err := BuildFollowRecord(follow); err == nil {
+		t.Fatal("follow-up crossed a mission re-provision")
+	}
+
+	legacyMission := map[string]any{}
+	for k, v := range record {
+		legacyMission[k] = v
+	}
+	delete(legacyMission, "missionIncarnation")
+	delete(legacyMission, "stream")
+	legacyPath := filepath.Join(tmp, "legacy-mission.json")
+	writeRecord(legacyPath, legacyMission)
+	legacyFollow := follow
+	legacyFollow.Parent = legacyPath
+	if err := BuildFollowRecord(legacyFollow); err == nil || !strings.Contains(err.Error(), "predates the host-implementer wall") {
+		t.Fatalf("pre-wall mission chain not refused by name: %v", err)
+	}
+
+	// The one owner classifies the two failures distinctly on the public
+	// path too (round-4 critique R4-F2): an ABSENT incarnation key is
+	// "predates the wall"; a present-but-different value is "re-provisioned".
+	if err := VerifyChainIncarnation(root, "m-one", map[string]any{}); err == nil || !strings.Contains(err.Error(), "predates the host-implementer wall") {
+		t.Fatalf("absent incarnation key misclassified: %v", err)
+	}
+	if err := VerifyChainIncarnation(root, "m-one", map[string]any{"missionIncarnation": incarnationA}); err == nil || !strings.Contains(err.Error(), "re-provisioned") {
+		t.Fatalf("stale incarnation misclassified: %v", err)
+	}
+
+	legacyPlain := map[string]any{}
+	for k, v := range legacyMission {
+		legacyPlain[k] = v
+	}
+	legacyPlain["mission"] = nil
+	legacyPlain["turnId"] = nil
+	plainPath := filepath.Join(tmp, "legacy-plain.json")
+	writeRecord(plainPath, legacyPlain)
+	plainFollow := follow
+	plainFollow.Parent = plainPath
+	plainFollow.MissionTurn = ""
+	if err := BuildFollowRecord(plainFollow); err != nil {
+		t.Fatalf("pre-wall non-mission chain became unfollowable: %v", err)
 	}
 }
 

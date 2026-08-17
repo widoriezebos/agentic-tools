@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
 // The conformance gate. The review stage computes the implementer
@@ -213,38 +214,27 @@ func Conformance(root, stage, job string) (out, errs []string, code int) {
 	return r.mergeStage(recordPath)
 }
 
-// reviewStage snapshots the worktree in an isolated index, persists the
-// diff artifact, and checks the changed paths against the cumulative
-// declared boundary. review.json is written only when the boundary holds.
+// reviewStage snapshots the worktree through the shared gittree primitive
+// (the wall's one projection owner), persists the diff artifact, and checks
+// the changed paths against the cumulative declared boundary. review.json
+// is written only when the boundary holds.
 func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []string, int) {
-	snapshotDir, err := os.MkdirTemp("", "metasystem-conformance.")
-	if err != nil {
-		return r.fail(fmt.Sprintf("conformance failure: %v", err))
-	}
-	defer os.RemoveAll(snapshotDir)
-	index := []string{"GIT_INDEX_FILE=" + filepath.Join(snapshotDir, "index")}
-	if _, err := r.git(r.workspace, index, "read-tree", "HEAD"); err != nil {
-		return r.fail("conformance failure: could not snapshot the implementer worktree")
-	}
-	if _, err := r.git(r.workspace, index, "add", "-A", "--", "."); err != nil {
-		return r.fail("conformance failure: could not snapshot the implementer worktree")
-	}
-	reviewedTree, err := r.git(r.workspace, index, "write-tree")
+	workspace := gittree.Workspace{Dir: r.workspace}
+	reviewedTree, err := workspace.Snapshot("HEAD")
 	if err != nil {
 		return r.fail("conformance failure: could not snapshot the implementer worktree")
 	}
-	diff, err := r.gitBytes(r.workspace, index, "diff", "--cached", "--binary", "--no-renames", r.boundaryBase, "--")
+	diff, err := workspace.Diff(r.boundaryBase, reviewedTree)
 	if err != nil {
 		return r.fail("conformance failure: could not snapshot the implementer worktree")
 	}
 	if err := os.WriteFile(diffFile, diff, 0o644); err != nil {
 		return r.fail(fmt.Sprintf("conformance failure: %v", err))
 	}
-	rawPaths, err := r.gitBytes(r.workspace, index, "diff", "--cached", "--name-only", "-z", "--no-renames", r.boundaryBase, "--")
+	paths, err := workspace.ChangedPaths(r.boundaryBase, reviewedTree)
 	if err != nil {
 		return r.fail("conformance failure: could not snapshot the implementer worktree")
 	}
-	paths := nulSplitPaths(rawPaths)
 	violations := r.boundaryViolations(paths)
 
 	currentRound := 0

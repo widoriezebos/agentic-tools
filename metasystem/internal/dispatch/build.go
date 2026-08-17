@@ -2,8 +2,59 @@ package dispatch
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strconv"
 )
+
+var incarnationRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// VerifyChainIncarnation proves a chain still belongs to the LIVE mission
+// incarnation (round-2 critique F8): a mission identifier can be
+// re-provisioned, and a surviving chain from incarnation A must not consume
+// incarnation B's fences while recording A's provenance. The shell calls
+// this BEFORE cap authorization so the named re-provision refusal outranks
+// any fence side effect (round-3 critique F10); the follow-up builder calls
+// it again as the authoritative gate.
+func VerifyChainIncarnation(root, mission string, parent map[string]any) error {
+	if root == "" {
+		return fmt.Errorf("mission-scoped follow-up requires the checkout root for provenance")
+	}
+	// The pre-wall classification lives HERE, in the one owner (round-4
+	// critique R4-F2): a parent with NO recorded incarnation predates the
+	// wall — that is a different fact than a re-provisioned mission, and an
+	// absent key must never read as an empty string that "drifted".
+	if _, present := parent["missionIncarnation"]; !present {
+		return fmt.Errorf("mission chain predates the host-implementer wall (no recorded incarnation); it cannot be extended — dispatch a fresh chain")
+	}
+	live, err := missionIncarnation(root, mission)
+	if err != nil {
+		return err
+	}
+	recorded, _ := parent["missionIncarnation"].(string)
+	if recorded != live {
+		return fmt.Errorf("mission %s has been re-provisioned since this chain started (incarnation %.12s… is now %.12s…); the chain belongs to a prior incarnation and cannot continue", mission, recorded, live)
+	}
+	return nil
+}
+
+// missionIncarnation reads the approved-contract digest from the mission's
+// fence counters — the signed contract digest pinned at launch. Dispatch
+// reads it itself rather than accepting a caller claim, because the
+// host-implementer wall binds authorizations to this exact value and a
+// mission identifier alone can be reused across re-provisions.
+func missionIncarnation(root, mission string) (string, error) {
+	fencesPath := filepath.Join(root, "artifacts", "agents", "missions", mission, "fences.json")
+	fences, err := readObject(fencesPath)
+	if err != nil {
+		return "", fmt.Errorf("mission %s has no readable fence counters: %v", mission, err)
+	}
+	approved, _ := fences["approvedContractSha256"].(string)
+	if !incarnationRe.MatchString(approved) {
+		return "", fmt.Errorf("mission %s has no pinned approved-contract digest; launch the mission before dispatching into it", mission)
+	}
+	return approved, nil
+}
 
 // The record templates dispatch writes. BuildSetup produces the pending-setup
 // reservation husk; BuildRecord and BuildFollowRecord produce the full pending
@@ -98,6 +149,8 @@ type BuildRecordParams struct {
 	Role            string
 	Mission         string
 	MissionTurn     string
+	Stream          string
+	Root            string // dispatching checkout root, for mission provenance
 	Runtime         string
 	Workspace       string
 	CapResolution   string // cap-resolution file
@@ -148,6 +201,34 @@ func BuildRecord(p BuildRecordParams) error {
 	if err != nil {
 		return err
 	}
+	// Mission provenance is resolved here, not accepted from the caller,
+	// and it is COMPLETE or refused (round-2 critique F7): a mission-scoped
+	// job binds the incarnation dispatch reads from the mission's own fence
+	// counters, the turn it was dispatched in, and the stream it serves —
+	// the wall's authorizations bind this whole tuple, so a partial tuple
+	// is an unusable record. A stream or turn without a mission is
+	// meaningless.
+	var incarnation any
+	if p.Mission != "" {
+		if p.Root == "" {
+			return fmt.Errorf("mission-scoped dispatch requires the checkout root for provenance")
+		}
+		if p.MissionTurn == "" {
+			return fmt.Errorf("mission-scoped dispatch requires the mission turn; run it inside a runner turn (METASYSTEM_MISSION_TURN)")
+		}
+		if p.Stream == "" {
+			return fmt.Errorf("mission-scoped dispatch requires --stream naming the mission stream it serves")
+		}
+		digest, err := missionIncarnation(p.Root, p.Mission)
+		if err != nil {
+			return err
+		}
+		incarnation = digest
+	} else if p.Stream != "" {
+		return fmt.Errorf("a dispatch stream requires a mission")
+	} else if p.MissionTurn != "" {
+		return fmt.Errorf("a mission turn requires a mission")
+	}
 	var escalation any
 	if p.ApprovalName != "" {
 		escalation = map[string]any{
@@ -159,21 +240,23 @@ func BuildRecord(p BuildRecordParams) error {
 		}
 	}
 	record := map[string]any{
-		"jobId":         p.Job,
-		"role":          p.Role,
-		"mission":       nullableString(p.Mission),
-		"runtime":       p.Runtime,
-		"round":         1,
-		"parentJob":     nil,
-		"reviews":       nullableString(p.Reviews),
-		"status":        "pending",
-		"phase":         "handshake",
-		"error":         nil,
-		"mainId":        nullableString(p.MainID),
-		"claimEpoch":    epoch,
-		"workspaceRoot": resolvePath(p.Workspace),
-		"baseSha":       base,
-		"branch":        branch,
+		"jobId":              p.Job,
+		"role":               p.Role,
+		"mission":            nullableString(p.Mission),
+		"missionIncarnation": incarnation,
+		"stream":             nullableString(p.Stream),
+		"runtime":            p.Runtime,
+		"round":              1,
+		"parentJob":          nil,
+		"reviews":            nullableString(p.Reviews),
+		"status":             "pending",
+		"phase":              "handshake",
+		"error":              nil,
+		"mainId":             nullableString(p.MainID),
+		"claimEpoch":         epoch,
+		"workspaceRoot":      resolvePath(p.Workspace),
+		"baseSha":            base,
+		"branch":             branch,
 		"permissions": map[string]any{
 			"requested":           permissions,
 			"effective":           nil,
@@ -231,6 +314,7 @@ type BuildFollowRecordParams struct {
 	MainID          string
 	ClaimEpoch      string
 	CapResolution   string
+	Root            string // dispatching checkout root, for mission provenance
 }
 
 // BuildFollowRecord assembles a follow-up round's pending record: chain
@@ -245,6 +329,23 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	for _, key := range []string{"role", "mission", "runtime", "reviews", "workspaceRoot", "baseSha", "branch", "permissions", "requestedModel"} {
 		if _, present := parent[key]; !present {
 			return fmt.Errorf("parent record is missing %s", key)
+		}
+	}
+	// Mission follow-ups carry the same complete-or-refused provenance as
+	// fresh dispatches (round-3 critique F9/F11): the chain must still run
+	// under the incarnation it started under, the follow-up binds the turn
+	// it is dispatched in, and a MISSION chain predating the wall refuses
+	// by name. Non-mission chains never carried these fields — absent keys
+	// there are legacy, not defects, and stay null.
+	if mission, _ := parent["mission"].(string); mission != "" {
+		if err := VerifyChainIncarnation(p.Root, mission, parent); err != nil {
+			return err
+		}
+		if _, present := parent["stream"]; !present {
+			return fmt.Errorf("mission chain predates the host-implementer wall (no recorded stream); it cannot be extended — dispatch a fresh chain")
+		}
+		if p.MissionTurn == "" {
+			return fmt.Errorf("mission-scoped follow-up requires the mission turn; run it inside a runner turn (METASYSTEM_MISSION_TURN)")
 		}
 	}
 	requested, ok := parent["permissions"].(map[string]any)["requested"]
@@ -271,22 +372,24 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		}
 	}
 	record := map[string]any{
-		"role":           parent["role"],
-		"mission":        parent["mission"],
-		"runtime":        parent["runtime"],
-		"reviews":        parent["reviews"],
-		"workspaceRoot":  parent["workspaceRoot"],
-		"baseSha":        parent["baseSha"],
-		"branch":         parent["branch"],
-		"requestedModel": parent["requestedModel"],
-		"jobId":          p.Job,
-		"round":          p.Round,
-		"parentJob":      p.ParentJob,
-		"status":         "pending",
-		"phase":          "handshake",
-		"error":          nil,
-		"mainId":         nullableString(p.MainID),
-		"claimEpoch":     epoch,
+		"role":               parent["role"],
+		"mission":            parent["mission"],
+		"missionIncarnation": parent["missionIncarnation"],
+		"stream":             parent["stream"],
+		"runtime":            parent["runtime"],
+		"reviews":            parent["reviews"],
+		"workspaceRoot":      parent["workspaceRoot"],
+		"baseSha":            parent["baseSha"],
+		"branch":             parent["branch"],
+		"requestedModel":     parent["requestedModel"],
+		"jobId":              p.Job,
+		"round":              p.Round,
+		"parentJob":          p.ParentJob,
+		"status":             "pending",
+		"phase":              "handshake",
+		"error":              nil,
+		"mainId":             nullableString(p.MainID),
+		"claimEpoch":         epoch,
 		"permissions": map[string]any{
 			"requested":           requested,
 			"effective":           nil,

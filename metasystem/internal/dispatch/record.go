@@ -51,12 +51,17 @@ var terminalStatuses = map[string]bool{
 func TerminalStatus(status string) bool { return terminalStatuses[status] }
 
 // Identity fields a running record fixes for its whole life; a patch that
-// names any of them is refused.
+// names any of them is refused. Mission provenance — mission, incarnation,
+// turn, stream — is immutable because the host-implementer wall's
+// integration authorizations bind these exact values at issue time
+// (plans/host-implementer-wall-design.md): a record that could rewrite its
+// provenance could launder work across missions or turns.
 var immutableFields = map[string]bool{
 	"jobId": true, "role": true, "runtime": true, "round": true,
 	"parentJob": true, "reviews": true, "workspaceRoot": true, "baseSha": true,
 	"branch": true, "startedAt": true, "claimEpoch": true, "mainId": true,
 	"capMin": true, "capDeadline": true, "capResolution": true,
+	"mission": true, "missionIncarnation": true, "turnId": true, "stream": true,
 }
 
 // The only fields a terminal record still accepts: its evidence mirror, the
@@ -354,6 +359,16 @@ func readObject(path string) (map[string]any, error) {
 		return nil, err
 	}
 	return doc.Raw(), nil
+}
+
+// ReadRecordObject is the exported record reader for CLI relays that pass a
+// record into a package decision (verify-chain-incarnation).
+func ReadRecordObject(path string) (map[string]any, error) {
+	record, err := readObject(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the job record: %v", err)
+	}
+	return record, nil
 }
 
 // writeRecord serializes a record and replaces its file atomically, matching

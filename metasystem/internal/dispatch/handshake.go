@@ -98,12 +98,6 @@ func HandshakeEval(recordPath, effectivePath, session, turn, model string, signa
 		mismatched = append(mismatched, "sessionId")
 	}
 
-	var turnID any
-	if existing := record["turnId"]; existing != nil && existing != "" {
-		turnID = existing
-	} else if turn != "" {
-		turnID = turn
-	}
 	patch := map[string]any{
 		"permissions": map[string]any{
 			"requested":           requested,
@@ -111,7 +105,13 @@ func HandshakeEval(recordPath, effectivePath, session, turn, model string, signa
 			"enforcementSnapshot": snapshot,
 		},
 		"effectiveModel": model,
-		"turnId":         turnID,
+	}
+	// The record's turnId is dispatch provenance, stamped at build and
+	// immutable (host-implementer wall): the handshake must not name it.
+	// The turn identifier the runtime's envelope reports is a session
+	// fact, recorded beside the session id under its own key.
+	if turn != "" {
+		patch["envelopeTurn"] = turn
 	}
 	if session != "" {
 		patch["sessionId"] = session

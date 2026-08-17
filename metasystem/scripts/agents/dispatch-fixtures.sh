@@ -1340,20 +1340,20 @@ Path(sys.argv[1]).write_text(json.dumps({"missionId":"mission-alpha","pid":pid,"
 Path(sys.argv[2]).write_text(json.dumps({str(pid): {"pgid": pgid, "command": "metasystem util hold --tag mission-lease-tag"}}) + "\n")
 PY
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
-run_agent_fixture envelope-model-override envelope-model-override "$agent_dispatch" dispatch \
-  --role design-critic --brief "$happy_brief" --model fake-escalated --job-id envelope-model-override --mission mission-alpha --wait
-run_agent_fixture envelope-runtime-override envelope-runtime-override "$agent_dispatch" dispatch \
-  --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --job-id envelope-runtime-override --mission mission-alpha --wait
+run_agent_fixture envelope-model-override envelope-model-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
+  --role design-critic --brief "$happy_brief" --model fake-escalated --job-id envelope-model-override --mission mission-alpha --stream main --wait
+run_agent_fixture envelope-runtime-override envelope-runtime-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
+  --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --job-id envelope-runtime-override --mission mission-alpha --stream main --wait
 agent_fails envelope-runtime-implied-model 'add fake:fake-implied-model to a signed envelope.dispatch-allow' \
-  "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --job-id envelope-runtime-implied --mission mission-alpha
-run_agent_fixture mission-explicit mission-explicit "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --wait
+  env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --job-id envelope-runtime-implied --mission mission-alpha --stream main
+run_agent_fixture mission-explicit mission-explicit env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --stream main --wait
 METASYSTEM_MISSION_ID=mission-alpha METASYSTEM_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
   METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture \
-  run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --wait
+  run_agent_fixture mission-inherited mission-inherited "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-inherited --stream main --wait
 # The caps implementation refuses over-cap mission dispatches with the
 # sharper pair-cap message (names both numbers) instead of the generic
 # lifecycle-fence wrapper; the expectation follows the sharper contract.
-agent_fails mission-cap 'above signed fence.job-cap-min' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --cap-min "$fixture_dispatch_over_envelope_cap_min"
+agent_fails mission-cap 'above signed fence.job-cap-min' env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-cap --mission mission-alpha --stream main --cap-min "$fixture_dispatch_over_envelope_cap_min"
 # Under the caps contract an over-cap request is an AUTHORIZATION
 # refusal — a synchronous host error, deliberately without a
 # fence-bound ask (Codex's delegate-caps fixtures assert exactly
@@ -1405,14 +1405,14 @@ make_fence_mission mission-wall 10 10 2 1
 printf '{"schemaVersion":1,"missionId":"mission-wall","startedAt":"2000-01-01T00:00:00Z","cycles":0,"reservations":{}}\n' \
   >"$agent_repo/artifacts/agents/missions/mission-wall/fences.json"
 stamp_fixture_contract mission-wall
-agent_fails fence-wall 'mission fence refused job (wall-clock-hours)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-wall --mission mission-wall --wait
+agent_fails fence-wall 'mission fence refused job (wall-clock-hours)' env METASYSTEM_MISSION_TURN=mission-wall-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-wall --mission mission-wall --stream main --wait
 assert_fence_ask mission-wall wall-clock-hours
 
 make_fence_mission mission-cycles 1 10 2 2
 printf '{"schemaVersion":1,"missionId":"mission-cycles","startedAt":"%s","cycles":1,"reservations":{}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >"$agent_repo/artifacts/agents/missions/mission-cycles/fences.json"
 stamp_fixture_contract mission-cycles
-agent_fails fence-cycles 'mission fence refused job (cycles)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-cycles --mission mission-cycles --wait
+agent_fails fence-cycles 'mission fence refused job (cycles)' env METASYSTEM_MISSION_TURN=mission-cycles-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-cycles --mission mission-cycles --stream main --wait
 assert_fence_ask mission-cycles cycles
 
 make_fence_mission mission-jobs 10 1 2 2
@@ -1420,7 +1420,7 @@ printf '{"schemaVersion":1,"missionId":"mission-jobs","startedAt":"%s","cycles":
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
   >"$agent_repo/artifacts/agents/missions/mission-jobs/fences.json"
 stamp_fixture_contract mission-jobs
-agent_fails fence-jobs 'mission fence refused job (jobs)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --wait
+agent_fails fence-jobs 'mission fence refused job (jobs)' env METASYSTEM_MISSION_TURN=mission-jobs-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --stream main --wait
 assert_fence_ask mission-jobs jobs
 
 make_fence_mission mission-concurrency 10 10 1 2
@@ -1428,7 +1428,7 @@ printf '{"schemaVersion":1,"missionId":"mission-concurrency","startedAt":"%s","c
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
   >"$agent_repo/artifacts/agents/missions/mission-concurrency/fences.json"
 stamp_fixture_contract mission-concurrency
-agent_fails fence-concurrency 'mission fence refused job (concurrency)' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --wait
+agent_fails fence-concurrency 'mission fence refused job (concurrency)' env METASYSTEM_MISSION_TURN=mission-concurrency-t1-fixture "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --stream main --wait
 assert_fence_ask mission-concurrency concurrency
 
 make_fence_mission mission-timeout 10 10 2 2
@@ -1441,7 +1441,7 @@ wait_for_agent_census_fresh mission-timeout-job
   # Same self-heal transient the shared runner retries; this dispatch runs
   # detached from that runner, so it carries the same bounded retry itself.
   for _ in 1 2 3; do
-    output=$(scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --cap-min "$fixture_minimum_cap_min" --wait 2>&1)
+    output=$(METASYSTEM_MISSION_TURN=mission-timeout-t1-fixture scripts/agents/dispatch.sh dispatch --role design-critic --brief "$timeout_brief" --job-id mission-timeout-job --mission mission-timeout --stream main --cap-min "$fixture_minimum_cap_min" --wait 2>&1)
     driver_status=$?
     printf '%s\n' "$output"
     [[ $driver_status -eq 0 ]] && break

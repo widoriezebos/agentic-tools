@@ -9,6 +9,7 @@ Usage:
       [--model <model>] [--job-id <id>] [--reviews <implementer-job-id>]
       [--workspace <dir> | --worktree]
       [--permissions <preset|envelope-file>] [--mission <id>]
+      [--stream <mission-stream-id>]
       [--approve-escalation] [--wait] [--cap-min N]
   scripts/agents/dispatch.sh --role <role> --brief <file> [dispatch options]
   scripts/agents/dispatch.sh follow-up --job <job-id> --message <file> [--wait]
@@ -454,8 +455,8 @@ resolve_mission() { # explicit id; prints mission|lease|turn or ||
   if [[ -n "$env_id" || -n "$env_lease" ]]; then
     [[ -n "$env_id" && -n "$env_lease" ]] || die 1 "ambiguous inherited mission context: both METASYSTEM_MISSION_ID and METASYSTEM_MISSION_LEASE are required"
   fi
-  [[ -z "$env_turn" || -n "$env_id" ]] \
-    || die 1 "ambiguous inherited mission context: METASYSTEM_MISSION_TURN requires METASYSTEM_MISSION_ID and METASYSTEM_MISSION_LEASE"
+  [[ -z "$env_turn" || -n "$env_id" || -n "$explicit" ]] \
+    || die 1 "ambiguous inherited mission context: METASYSTEM_MISSION_TURN requires a mission (METASYSTEM_MISSION_ID with METASYSTEM_MISSION_LEASE, or --mission)"
   [[ -z "$env_turn" ]] || valid_id "$env_turn" || die 1 "invalid inherited mission turn id"
   if [[ -n "$explicit" && -n "$env_id" && "$explicit" != "$env_id" ]]; then
     die 1 "ambiguous mission context: --mission and METASYSTEM_MISSION_ID disagree"
@@ -792,7 +793,7 @@ reap_one() { # job
 }
 
 dispatch_job() {
-  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0
+  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream=
   local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= roster_json=
@@ -810,6 +811,7 @@ dispatch_job() {
       --worktree) use_worktree=1; shift ;;
       --permissions) [[ $# -ge 2 ]] || { usage; exit 2; }; permissions_override=$2; shift 2 ;;
       --mission) [[ $# -ge 2 ]] || { usage; exit 2; }; mission_override=$2; shift 2 ;;
+      --stream) [[ $# -ge 2 ]] || { usage; exit 2; }; stream=$2; shift 2 ;;
       --cap-min) [[ $# -ge 2 ]] || { usage; exit 2; }; cap_override=$2; shift 2 ;;
       --approve-escalation) approve_escalation=1; shift ;;
       --serving-goal) serving_goal=1; shift ;;
@@ -865,6 +867,18 @@ dispatch_job() {
 
   mission_data=$(resolve_mission "$mission_override")
   IFS='|' read -r mission lease mission_turn <<<"$mission_data"
+  # Mission provenance is COMPLETE or refused (host-implementer wall): a
+  # mission-scoped dispatch binds the turn it runs in and the stream it
+  # serves, because the wall's authorizations bind that whole tuple. A
+  # stream without a mission is meaningless.
+  if [[ -n "$stream" ]]; then
+    [[ -n "$mission" ]] || die 2 "--stream requires a mission context"
+    valid_id "$stream" || die 2 "invalid mission stream id: $stream"
+  fi
+  if [[ -n "$mission" ]]; then
+    [[ -n "$mission_turn" ]] || die 2 "mission dispatch requires a runner turn (METASYSTEM_MISSION_TURN is not set); dispatch from inside the mission host turn"
+    [[ -n "$stream" ]] || die 2 "mission dispatch requires --stream <mission-stream-id> naming the stream this job serves"
+  fi
   if (( escalation_required )); then
     if (( approve_escalation )); then
       approval_name=$(confirm_escalation "$roster_pair" "$requested_pair" "$cost_direction")
@@ -948,7 +962,8 @@ dispatch_job() {
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
   "$ms" job build-record --output "$record_json" --job "$job" --role "$role" \
-    --mission "$mission" --mission-turn "$mission_turn" --runtime "$runtime" \
+    --mission "$mission" --mission-turn "$mission_turn" --stream "$stream" \
+    --root "$root" --runtime "$runtime" \
     --workspace "$workspace" --cap-resolution "$cap_resolution" --model "$model" \
     --overridden "$overridden" --snapshot "$snapshot_path" \
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
@@ -1100,6 +1115,19 @@ follow_up() {
   workspace=$(json_field "$latest" workspaceRoot)
   round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
   [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
+  # Mission provenance refuses BEFORE the child reservation exists (round-4
+  # critique R4-F1: a refusal after record-create strands the -rN husk and a
+  # retry collides). The verb's own stderr names the exact refusal — a
+  # pre-wall chain and a re-provisioned mission are different errors.
+  mission=$(json_field "$latest" mission 2>/dev/null || true); [[ "$mission" == null ]] && mission=
+  mission_turn=
+  if [[ -n "$mission" ]]; then
+    mission_data=$(resolve_mission "$mission")
+    IFS='|' read -r mission lease mission_turn <<<"$mission_data"
+    incarnation_verdict=$("$ms" job verify-chain-incarnation --root "$root" --mission "$mission" --parent "$latest" 2>&1) \
+      || die 1 "${incarnation_verdict:-mission chain incarnation check failed}"
+    [[ -n "$mission_turn" ]] || die 2 "mission follow-up requires a runner turn (METASYSTEM_MISSION_TURN is not set); follow up from inside the mission host turn"
+  fi
   setup_json=$(mktemp "${TMPDIR:-/tmp}/metasystem-follow-pending-setup.XXXXXX")
   "$ms" job build-setup --output "$setup_json" --job "$child" --role "$role" \
     --parent "$root_id" --main-id "$current_main_id" --claim-epoch "$current_claim_epoch"
@@ -1145,12 +1173,6 @@ follow_up() {
       record_critique_exhaustions "$exhaustion_patch"
     fi
   fi
-  mission=$(json_field "$latest" mission 2>/dev/null || true); [[ "$mission" == null ]] && mission=
-  mission_turn=
-  if [[ -n "$mission" ]]; then
-    mission_data=$(resolve_mission "$mission")
-    IFS='|' read -r mission lease mission_turn <<<"$mission_data"
-  fi
   exit_cleanup_job=$child
   exit_cleanup_chain=$root_id
   trap 'code=$?; (( code == 0 )) || fail_setup_husk "$exit_cleanup_job"; release_cap_authority_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
@@ -1187,7 +1209,8 @@ follow_up() {
     --handshake-budget "$handshake_budget" --resume-mode "$resume_mode" \
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
-    --claim-epoch "$current_claim_epoch" --cap-resolution "$cap_resolution"
+    --claim-epoch "$current_claim_epoch" --cap-resolution "$cap_resolution" \
+    --root "$root"
   rm -f "$cap_resolution"
   finalize_and_launch "$child" "$root_id" "$record_json" "$runtime" "$adapter_verb" "$handshake_budget" "$wait"
 }
