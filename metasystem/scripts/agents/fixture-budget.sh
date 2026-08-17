@@ -63,12 +63,17 @@ harness_fixture_budget_init() { # metasystem root
   local harness_root=$1 resolved calibration_cap interval_name interval_value
   calibration_cap=$(harness_fixture_base_cap calibration-census) || return 1
   if [[ -n "${METASYSTEM_FIXTURE_CAP_SCALE:-}" ]]; then
-    # The scale must be a plain decimal from 1 through 20; the paired value is
-    # its millisecond ceiling.
+    # The scale must be a plain decimal from 1 through 48 — the same
+    # ceiling the automatic probe may resolve, because CHILD harnesses
+    # (nested validations, the supervision/mission/fingerprint
+    # sub-suites) re-initialize and read the parent's exported scale
+    # through this branch: a validator tighter than the probe's range
+    # made every automatic scale above the old bound kill its own
+    # children (verification round 4, finding 2).
     resolved=$(awk -v s="$METASYSTEM_FIXTURE_CAP_SCALE" 'BEGIN {
-      if (s !~ /^[0-9]+(\.[0-9]+)?$/) { print "METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 20" > "/dev/stderr"; exit 1 }
+      if (s !~ /^[0-9]+(\.[0-9]+)?$/) { print "METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 48" > "/dev/stderr"; exit 1 }
       v = s + 0
-      if (v < 1 || v > 20) { print "METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 20" > "/dev/stderr"; exit 1 }
+      if (v < 1 || v > 48) { print "METASYSTEM_FIXTURE_CAP_SCALE must be a decimal from 1 through 48" > "/dev/stderr"; exit 1 }
       m = v * 1000; mi = int(m); if (mi < m) mi++
       printf "%s %d\n", v, mi
     }') || return 1
@@ -99,8 +104,25 @@ harness_fixture_budget_init() { # metasystem root
     probe_elapsed_ms=$(( ($("$ms_bin" util now-ns) - probe_started) / 1000000 ))
     (( probe_elapsed_ms >= 1 )) || probe_elapsed_ms=1
     probe_scale=$(( (probe_elapsed_ms + 249) / 250 ))
-    (( probe_scale < 3 )) && probe_scale=3
-    (( probe_scale > 12 )) && probe_scale=12
+    # Floor 8 (was 3): the probe is one-shot, so a calm probe moment
+    # followed by later contention starved the caps; a higher floor
+    # costs a passing run nothing (waits return on condition, not cap).
+    (( probe_scale < 8 )) && probe_scale=8
+    # The cap is a HANG DETECTOR, not a machine-speed assertion (the
+    # human's ruling, 2026-08-17: a quiet machine must not be a suite
+    # requirement). The old ceiling of 12 turned shared-machine
+    # contention into fixture timeouts: a one-shot probe calibrated at
+    # one moment, then a neighbor workload (another session's JVM, the
+    # desktop itself) pushed borderline waits past 12x and two green
+    # trees failed at exactly the cap. Waits poll and return the
+    # moment their condition holds, so a wider ceiling does not slow a
+    # CONVERGING fixture — it bounds how long a genuinely hung one
+    # takes to name itself (e.g. the 12s supervision-wait base: old
+    # worst 144s, new worst 576s, reached only by a real hang on a
+    # maximally-loaded box). The one true cost: NEGATIVE fixtures that
+    # deliberately consume a full timeout (no-session-signal's fake
+    # handshake) stretch with the floor — seconds, accepted knowingly.
+    (( probe_scale > 48 )) && probe_scale=48
     resolved="$probe_scale $((probe_scale * 1000))"
   fi
 

@@ -49,6 +49,15 @@ func WatchdogReport(repo string, now time.Time) []string {
 			problems = append(problems, "last census "+humanAge(age)+" old")
 		}
 		if inventory, ok := last["inventory"].([]any); ok {
+			// Acknowledged processes (KI-23) are silenced only on a full
+			// identity proof: the recorded (pid, second) pair AND a fresh
+			// probe matching the kernel-resolution birth token. A load
+			// failure yields an empty set and an unprovable probe never
+			// silences, so every bad state makes the nag REAPPEAR — the
+			// report fails toward shouting.
+			acks, _ := LoadAcknowledged(repo)
+			acknowledged := acknowledgedIndex(acks)
+			ackProbe := watchdogProbe(repo)
 			byRuntime := map[string][]string{}
 			for _, raw := range inventory {
 				item, _ := raw.(map[string]any)
@@ -56,7 +65,11 @@ func WatchdogReport(repo string, now time.Time) []string {
 					continue
 				}
 				if class, _ := item["class"].(string); class == "UNTRACKED" {
-					pid, _ := intField(item["pid"])
+					pid, pidOK := intField(item["pid"])
+					start, startOK := intField(item["pidStartedAt"])
+					if pidOK && startOK && silencedByAcknowledgement(acknowledged, pid, start, ackProbe) {
+						continue // the human judged this exact process harmless
+					}
 					runtime, _ := item["runtime"].(string)
 					if runtime == "" {
 						runtime = "unknown"

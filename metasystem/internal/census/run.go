@@ -28,29 +28,36 @@ import (
 
 // Process is one enumerated process (a fixture row, or one live process).
 type Process struct {
-	Pid      int64  `json:"pid"`
-	PPID     int64  `json:"ppid"`
-	PGID     int64  `json:"pgid"`
-	Started  int64  `json:"pidStartedAt"`
-	Argv     string `json:"argv"`
-	Cwd      string `json:"cwd"`
-	CwdError bool   `json:"cwdError"`
-	Alive    bool   `json:"alive"`
+	Pid     int64 `json:"pid"`
+	PPID    int64 `json:"ppid"`
+	PGID    int64 `json:"pgid"`
+	Started int64 `json:"pidStartedAt"`
+	// StartedExactMicro is the kernel-resolution birth token, ADDITIVE
+	// beside the whole-second join key (announcements and custody join
+	// on seconds; the exact token exists so a consumer can bind to THE
+	// process the census observed — KI-23's acknowledgement). Fixture
+	// rows may omit it; enumeration backfills seconds*1e6.
+	StartedExactMicro int64  `json:"pidStartedAtExactMicro,omitempty"`
+	Argv              string `json:"argv"`
+	Cwd               string `json:"cwd"`
+	CwdError          bool   `json:"cwdError"`
+	Alive             bool   `json:"alive"`
 }
 
 // InventoryItem is one classified process in the verdict.
 type InventoryItem struct {
-	Key          string `json:"key"`
-	Class        string `json:"class"`
-	Registry     string `json:"registry"`
-	Pid          int64  `json:"pid"`
-	PidStartedAt int64  `json:"pidStartedAt"`
-	PGID         int64  `json:"pgid"`
-	Runtime      string `json:"runtime"`
-	InstanceTag  any    `json:"instanceTag"`
-	Cwd          string `json:"cwd"`
-	Scope        string `json:"scope"`
-	Argv         string `json:"argv"`
+	Key                    string `json:"key"`
+	Class                  string `json:"class"`
+	Registry               string `json:"registry"`
+	Pid                    int64  `json:"pid"`
+	PidStartedAt           int64  `json:"pidStartedAt"`
+	PidStartedAtExactMicro int64  `json:"pidStartedAtExactMicro,omitempty"`
+	PGID                   int64  `json:"pgid"`
+	Runtime                string `json:"runtime"`
+	InstanceTag            any    `json:"instanceTag"`
+	Cwd                    string `json:"cwd"`
+	Scope                  string `json:"scope"`
+	Argv                   string `json:"argv"`
 }
 
 // Verdict is the census output (schemaVersion 2).
@@ -227,7 +234,7 @@ func classifyProcess(process Process, runtime, repoReal string, custody, announc
 	return InventoryItem{
 		Key:   fmt.Sprintf("%s|%d|%d", registry, process.Pid, process.Started),
 		Class: classification, Registry: registry,
-		Pid: process.Pid, PidStartedAt: process.Started, PGID: process.PGID,
+		Pid: process.Pid, PidStartedAt: process.Started, PidStartedAtExactMicro: process.StartedExactMicro, PGID: process.PGID,
 		Runtime: runtime, InstanceTag: tag, Cwd: cwd, Scope: scope, Argv: process.Argv,
 	}, true
 }
@@ -378,9 +385,12 @@ func enumerateFixture(metasystemRoot, processFile string) ([]Process, error) {
 	if err := json.Unmarshal(data, &rows); err != nil {
 		return nil, fmt.Errorf("process enumeration fixture is unreadable: %w", err)
 	}
-	for _, row := range rows {
+	for i, row := range rows {
 		if row.Argv == "" {
 			return nil, fmt.Errorf("process enumeration fixture has unreadable argv")
+		}
+		if row.StartedExactMicro == 0 {
+			rows[i].StartedExactMicro = row.Started * 1_000_000
 		}
 	}
 	return rows, nil

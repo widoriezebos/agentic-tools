@@ -7,9 +7,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 // runCensusRun computes a fixture-driven census verdict and writes it to
@@ -76,6 +79,75 @@ func runProcClassify(args []string) int {
 		return 2
 	}
 	fmt.Println(identity.TagState(identity.KernelProber{}, *pid, *tag))
+	return 0
+}
+
+// runProcAcknowledge records that one exact untracked process (by the
+// pid the human saw in the watchdog line) is known-harmless, so the
+// end-of-turn report stops nagging about it — while a new untracked
+// process, or the same pid reused by a different one, still shouts
+// (KI-23). The caller is classified and authorized holder-only (the
+// human is sovereign; a holder main passes; machinery is refused), so
+// an untracked agent cannot acknowledge itself through the verb — a
+// same-user direct file write remains outside what local state can
+// refuse, per the D93 cooperative ruling.
+func runProcAcknowledge(args []string) int {
+	flags := flag.NewFlagSet("proc acknowledge", flag.ContinueOnError)
+	pid := flags.Int64("pid", 0, "pid of the untracked process to acknowledge")
+	reason := flags.String("reason", "", "the human's reason this process is harmless")
+	root := flags.String("root", "", "checkout root (required; the fixture authority binds to it)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *pid < 1 || *reason == "" || *root == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem proc acknowledge --pid P --reason R --root ROOT")
+		return 2
+	}
+	// The caller is ALWAYS the real parent process — this verb takes no
+	// --caller-pid: the verification round proved a caller-supplied pid
+	// (e.g. -1) classifies HUMAN by fallthrough and launders holder-only
+	// authorization. A human types this command; wrappers that need
+	// identity forwarding have no business acknowledging.
+	parent := int64(os.Getppid())
+	view, err := lease.ClassifyVerb(*root, parent)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "acknowledge refused: caller classification failed:", err)
+		return 1
+	}
+	if err := authority.Authorize("holder-only",
+		map[string]any{"class": view.Class, "holder": view.Holder}, ""); err != nil {
+		fmt.Fprintln(os.Stderr, "acknowledge refused:", err)
+		return 1
+	}
+	// The classifier's ancestry walk checks the exact caller node for
+	// announcements but starts machinery checks at its parent — so an
+	// agent binary SPAWNING this verb directly would be judged by its
+	// own ancestors, not by what it is (verification round 2, finding
+	// 2). Close the seam here against EVERY installed adapter's
+	// signature — not only configured runtimes, since adoption retains
+	// all adapters while configuring one (round 3's residual). Fail
+	// closed: an unprovable invoker refuses too.
+	runtime, isAgent, invErr := lease.DirectAgentInvoker(*root, parent)
+	if invErr != nil {
+		fmt.Fprintln(os.Stderr, "acknowledge refused:", invErr)
+		return 1
+	}
+	if isAgent {
+		fmt.Fprintf(os.Stderr, "acknowledge refused: the direct invoker is an agent process (%s); an agent cannot acknowledge on its own behalf\n", runtime)
+		return 1
+	}
+	authorization, err := fixtureauth.New(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	entry, err := supervise.Acknowledge(*root, *pid, *reason, time.Now(), authorization.Identity())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Printf("acknowledged pid %d (start %d): %s — the end-of-turn report will stay silent about this exact process\n",
+		entry.Pid, entry.PidStartedAt, entry.Reason)
 	return 0
 }
 

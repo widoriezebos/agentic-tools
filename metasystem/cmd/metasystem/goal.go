@@ -26,25 +26,18 @@ import (
 // (the adopt/provisioning path; goal-system GOAL-14's reconcile-only
 // initialization).
 //
-// The authority review's F1 laundering hole: a caller-supplied
-// --genesis-from that is missing or crafted classifies as HUMAN by
-// fallthrough, and HUMAN is admitted — so a delegate could launder
-// itself into genesis. The fix keys genesis on an EFFECTIVE class
-// that no caller-controlled root can forge upward:
-//
-//	effective = MAIN   iff --genesis-from classifies the caller as a
-//	                       positively-ANNOUNCED main (an announcement
-//	                       match, which a missing/crafted root cannot
-//	                       fabricate — it yields HUMAN, not MAIN);
-//	            else   the class against the TARGET being written.
-//
-// The target carries the adapter signatures, so a real delegate
-// classifies DELEGATE there and genesis refuses it; a genuine human
-// classifies HUMAN there and passes; a main agent (misread as a
-// delegate against the target because its own CLI process matches a
-// runtime signature) authenticates by announcement against the
-// source. A laundered missing-root gives effective = target class,
-// which is DELEGATE for a real delegate → refused.
+// The genesis rule (D84, restated honestly per D93's C' ruling and
+// the verification rounds): the effective class is the SOURCE view
+// when it authenticates as an announced MAIN, else the TARGET view.
+// This closes the accidental cases (a missing or malformed source
+// cannot raise; a real delegate against a signature-carrying target
+// reads DELEGATE and is refused) and is explicitly COOPERATIVE, not
+// unforgeable: a deliberately crafted source root with a copied live
+// announcement can read MAIN, and a machinery caller against a
+// signature-free virgin target can read HUMAN — both remain open by
+// the C' decision (unforgeable local genesis is not a product
+// contract; a notEnforced delegate writes the baseline directly
+// regardless).
 func goalCaller(root string, callerPid int64, verb, genesisFrom string) (goal.Caller, error) {
 	if callerPid == 0 {
 		callerPid = int64(os.Getppid())
@@ -92,22 +85,42 @@ func goalCaller(root string, callerPid int64, verb, genesisFrom string) (goal.Ca
 // genesisEffective decides the effective genesis class from the two
 // classifications — pure, so the rule lives in table tests. A
 // positively-announced main against the source is the only way
-// --genesis-from RAISES the effective class; a source HUMAN cannot
-// raise (F1: a missing or crafted root launders to HUMAN, so the
-// target's own view decides); and a POSITIVE machinery classification
-// at the source is DISQUALIFYING, not discardable — discarding it let
-// a correctly-identified adapter supervisor re-classify HUMAN against
-// the virgin target and be admitted (the opus-window re-review's D84
-// regression, plans/opus-window-review-genesis.md finding 3).
+// --genesis-from RAISES the effective class; any other source result
+// (HUMAN, or a machinery class) falls through to the TARGET's own
+// view, which decides.
+//
+// The cooperative posture, recorded plainly (D93 ruled C': unforgeable
+// genesis is NOT a product contract): a machinery-refusal was tried
+// here and REVERTED — it broke legitimate flows. WHO passes genesis is
+// decided by the classifier's nearest-agent-ancestor rule, per node
+// announcements-before-signatures:
+//
+//   - a HUMAN terminal (no agent ancestor) → HUMAN → admitted;
+//   - a command whose nearest agent ancestor IS the announced main
+//     (the orchestrating session running fixtures or the kit gate,
+//     with --genesis-from/METASYSTEM_GENESIS_AUTHORITY_ROOT naming a
+//     root that carries the announcement) → MAIN → admitted;
+//   - a TRUE delegate (its nearest agent ancestor is a delegate CLI,
+//     nearer than any announced main) → DELEGATE at the source, and
+//     the target view decides — which refuses wherever the target
+//     classifies it as machinery. A delegate seeding a control plane
+//     is refused BY DESIGN; the kit gate inside a delegate sandbox
+//     therefore cannot perform genesis itself and relies on the
+//     provisioner having seeded the baseline first.
+//
+// Two cooperative holes REMAIN OPEN by decision, not oversight: a
+// crafted source root carrying a copied live main announcement
+// classifies MAIN and raises, and a machinery caller against a
+// signature-free virgin target can read HUMAN there. Both require
+// deliberate construction — outside the accidental scope C' keeps —
+// and a notEnforced delegate could write the baseline directly
+// regardless, which is why D86/D92 concluded this boundary cannot be
+// load-bearing.
 func genesisEffective(targetView, fromView lease.ClassifyResult) (lease.ClassifyResult, error) {
-	switch fromView.Class {
-	case "MAIN":
+	if fromView.Class == "MAIN" {
 		return fromView, nil
-	case "HUMAN":
-		return targetView, nil
-	default:
-		return lease.ClassifyResult{}, fmt.Errorf("genesis refused: the source root classifies the caller as %s; machinery never seeds a control plane", fromView.Class)
 	}
+	return targetView, nil
 }
 
 // goalMutation is the shared verb spine: flags, classification, the
@@ -265,7 +278,15 @@ func runGoalList(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	out := map[string]any{"problems": problems, "baselinePresent": store.BaselinePresent()}
+	out := map[string]any{
+		"problems":        problems,
+		"baselinePresent": store.BaselinePresent(),
+		// The read-only pair fact (bytes AND digest match the accepted
+		// baseline) — what a second reconcile's "already reconciled"
+		// proves, exposed without a mutating verb so consistency checks
+		// need no write authority (and no python, kill-python doctrine).
+		"baselineMatches": store.BaselineMatches(),
+	}
 	if ledger != nil {
 		out["current"] = ledger.Current
 		out["queued"] = ledger.Queued

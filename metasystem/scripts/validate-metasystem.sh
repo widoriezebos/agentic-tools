@@ -63,13 +63,64 @@ metasystem_here=$(pwd -P)
 # Checks the filesystems the suite actually fills — the repo, TMPDIR,
 # and the Go build cache. Non-fatal for now (the pressure-sweep recovery
 # is a later slice); it warns loudly with the per-filesystem deficit.
+headroom_floor="${METASYSTEM_HEADROOM_FLOOR_GB:-5}"
+# The floor must be a plain non-negative number; anything else falls
+# back to the default LOUDLY rather than feeding awk/the engine garbage.
+if ! [[ "$headroom_floor" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "HEADROOM WARNING: METASYSTEM_HEADROOM_FLOOR_GB='$headroom_floor' is not a non-negative number; using the default floor of 5" >&2
+  headroom_floor=5
+fi
+headroom_bootstrap() {
+  # Plain df arithmetic — the guard's degraded form for a checkout
+  # with no engine (first build) or a STALE engine that predates the
+  # verb (the engine cannot gate its own rebuild). Best-effort and
+  # advisory, but every unmeasurable path is NAMED, never silent.
+  local p out
+  for p in "$root" "${TMPDIR:-/tmp}" "$(go env GOCACHE 2>/dev/null || true)"; do
+    [[ -n "$p" ]] || continue
+    out=$(df -Pk "$p" 2>/dev/null) || out=""
+    if [[ -z "$out" ]]; then
+      echo "HEADROOM WARNING: could not measure $p (df failed); a full disk will masquerade as a build failure" >&2
+      continue
+    fi
+    printf '%s\n' "$out" | awk -v floor="$headroom_floor" -v p="$p" \
+      'NR==2 && $4/1048576 < floor {
+         printf "HEADROOM WARNING: %s has %.1fGiB free, below the %sGiB floor; a full disk will masquerade as a build failure\n", p, $4/1048576, floor > "/dev/stderr"
+       }'
+  done
+}
 if [[ -x "$root/bin/metasystem" ]]; then
+  headroom_rc=0
   headroom_report=$("$root/bin/metasystem" janitor headroom \
     --path "$root" --path "${TMPDIR:-/tmp}" --path "$(go env GOCACHE 2>/dev/null || echo "$root")" \
-    --floor-gb "${METASYSTEM_HEADROOM_FLOOR_GB:-5}" 2>/dev/null) || {
-    echo "HEADROOM WARNING: a filesystem the suite fills is below its floor; a full disk will masquerade as a test failure:" >&2
-    printf '%s\n' "$headroom_report" | grep '"belowFloor":true' >&2 || true
-  }
+    --floor-gb "$headroom_floor" 2>&1) || headroom_rc=$?
+  case $headroom_rc in
+    0) ;;
+    3)
+      # Below floor stays ADVISORY during the migration (the pressure
+      # sweep is a later slice) — loud, named, non-fatal.
+      echo "HEADROOM WARNING: a filesystem the suite fills is below its floor; a full disk will masquerade as a test failure:" >&2
+      printf '%s\n' "$headroom_report" | grep '"belowFloor":true' >&2 || true ;;
+    2)
+      # A usage error from bin/metasystem here almost always means a
+      # STALE binary that predates the verb or a flag change. Refusing
+      # would permanently block the very rebuild that fixes it — so
+      # degrade to the bootstrap check, loudly.
+      echo "HEADROOM WARNING: bin/metasystem did not understand the headroom invocation (stale binary?); using the df bootstrap check instead" >&2
+      headroom_bootstrap ;;
+    *)
+      # Exit 1 means the guard RAN and could not measure — an
+      # unmeasurable filesystem is a refusal, not a pass.
+      echo "metasystem validation failed: the headroom guard could not measure (exit $headroom_rc):" >&2
+      printf '%s\n' "$headroom_report" >&2
+      exit 1 ;;
+  esac
+else
+  # First build: no engine yet, but the expensive build path is about
+  # to run — the guard degrades to plain df arithmetic rather than
+  # silently skipping (a clean checkout was the one shape that ran
+  # with no check at all).
+  headroom_bootstrap
 fi
 
 # Two concurrent suite runs trample each other's shared fixtures, so the

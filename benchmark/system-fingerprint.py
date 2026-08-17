@@ -13,14 +13,20 @@ from pathlib import Path
 
 def cpu_model() -> str:
     if platform.system() == "Darwin":
-        result = subprocess.run(
-            ["sysctl", "-n", "machdep.cpu.brand_string"],
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        if result.returncode == 0 and result.stdout.strip():
+        # Guarded like every other source: a restricted PATH without
+        # sysctl must fall through to the later sources, not crash the
+        # fingerprint before its own fallbacks (verification round 2).
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            result = None
+        if result is not None and result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
     cpuinfo = Path("/proc/cpuinfo")
     if cpuinfo.is_file():
@@ -34,15 +40,24 @@ def cpu_model() -> str:
     # The fingerprint exists to name the machine class a cohort ran on, so
     # synthesize a stable identity from what the platform does publish
     # rather than refusing the whole benchmark on a missing marketing name.
-    result = subprocess.run(
-        ["lscpu"],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
+    # lscpu may be absent (Darwin without it reaches here when sysctl
+    # yields nothing) and its labels are localized — force the C locale
+    # and treat a missing binary as one more absent source rather than
+    # a crash (the verification round ran the unguarded version into
+    # FileNotFoundError, cutting off the platform.processor() fallback).
+    try:
+        result = subprocess.run(
+            ["lscpu"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+    except FileNotFoundError:
+        result = None
     vendor = ""
-    if result.returncode == 0:
+    if result is not None and result.returncode == 0:
         for raw in result.stdout.splitlines():
             match = re.match(r"^Model name:\s*(.+)$", raw)
             if match:

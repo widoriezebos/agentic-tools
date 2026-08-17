@@ -87,13 +87,17 @@ enforcement targets need different machinery and cannot share one:
   human commit is trusted). This matches the human's "forgotten
   under time pressure" framing and is buildable now without a new
   identity system.
-- **ADVERSARIAL model:** stop a misaligned agent from deliberately
-  laundering a design change (raw `git commit`, `--no-verify`,
-  `-a`/pathspec bypasses, forged same-user proof files). r1 shows
-  this cannot be done with local hooks and string trailers: it needs
-  REMOTE enforcement (CI that rejects a push whose commits lack a
-  valid tree-bound attestation), DURABLE agent identity (a signing
-  key, not a same-user file), and it CANNOT coexist with an
+- **ADVERSARIAL model:** stop a misaligned agent from DELIBERATELY
+  laundering a design change (`--no-verify`, hook tampering,
+  `core.hooksPath` games, forged same-user proof files). Note the
+  boundary (r3): raw `git commit` and `-a`/pathspec use BY HABIT are
+  honest-forgetting cases the local hooks DO cover — with hooks
+  active they are classified or refused like any commit; only
+  deliberate hook bypass is adversarial. r1 shows the adversarial
+  tier cannot be built with local hooks and string trailers: it
+  needs REMOTE enforcement (CI that rejects a push whose commits
+  lack a valid tree-bound attestation), DURABLE agent identity (a
+  signing key, not a same-user file), and it CANNOT coexist with an
   unverifiable human exemption — an unverifiable "sovereign human
   commit" is itself the bypass (TB-R1-05).
 
@@ -119,9 +123,11 @@ step, not a surprise.
    remains the orchestrator (it appends canonical trailers from CLI
    flags, TB-R1-07) but is not trusted as the only gate. Adoption
    must COMPOSE an existing pre-commit hook rather than skip
-   installation (TB-R1-02, adopt.sh:369). In the accidental model,
-   `--no-verify` and raw `git` are out of scope (they are the
-   adversarial layer); the design says so plainly.
+   installation (TB-R1-02, adopt.sh:369). Scope, per the r3
+   disposition: raw `git commit` BY HABIT is an honest-forgetting
+   case and IS in scope — with hooks active it must be refused for
+   an agent; only DELIBERATE bypass (`--no-verify`, hook tampering,
+   `core.hooksPath` games) is adversarial and out of scope.
 
 2. **The NEVER-DIRECT-FIX manifest is a conservative FLOOR, read
    from BOTH trees (TB-R1-01).** It is a denylist of path patterns
@@ -159,10 +165,13 @@ step, not a surprise.
    describes HEAD, not a pending staged tree, and can be green while
    later fixtures fail. Sound checks need: the gate witness records
    its OUTCOME (final zero exit) and the CANDIDATE TREE OID it
-   validated; a `direct-fix`'s `Defect-Proof` is the SAME command
-   run against the immutable baseline AND candidate trees with a red
-   THEN green outcome and evidence hashes; `commit.sh`/the hooks
-   locate and bind the witness to the candidate tree OID. For
+   validated; a `direct-fix`'s `Defect-Proof` is ONE REUSABLE
+   ASSERTION evaluated against the immutable baseline AND candidate
+   trees with a red THEN green outcome and evidence hashes (defined
+   to accommodate newly added regression tests, r3); the witness is
+   FINALIZED by the whole owning validator at the end of the full
+   suite (never go-gate mid-run, r3), and `commit.sh`/the hooks
+   locate and bind it to the candidate tree OID. For
    mechanical fixes with no natural failing test (a stray binary,
    unstaged files — the draft's own cases, TB-R1-07), the proof is a
    structured BEFORE/AFTER repository-state assertion, a first-class
@@ -171,9 +180,9 @@ step, not a surprise.
 ## The audit join (TB-R1-05)
 
 "Declared and audited" needs a durable join, not a path that merely
-exists. `Design-Chain` and `Defect-Proof` refs are IMMUTABLE
-`commit:path` or blob identities (plans are task-local and
-deletable, plans/README.md). A validator joins the commit trailer to
+exists. `Design-Chain` and `Defect-Proof` refs are CONTENT-BOUND,
+REACHABLE references (a bare blob OID is not durable unless
+reachable; plans are task-local and deletable, plans/README.md). A validator joins the commit trailer to
 critique CLOSURE (the dispositions table, validate critique-closed)
 and to the decisions-doc / instruction-ledger; the new global rule
 itself gets an instruction-ledger entry with expected effect and a
@@ -183,19 +192,15 @@ classification is indistinguishable from a sovereign human commit
 after the fact, which is exactly why the accidental model does not
 claim to catch a determined bypass.
 
-## Emergency (TB-R1-06)
+## Emergency (TB-R1-06) — CHOSEN (r3): human-personal
 
-Pick ONE, no reusable escape:
-
-- **Human-personal:** a genuine emergency safety fix is committed by
-  the HUMAN personally (already sovereign), with immediate
-  reconciliation (docs/collaboration.md:68). No agent override
-  exists. Simplest; recommended for the accidental model.
-- **One-use authorization:** if an agent must act, the human mints a
-  ONE-USE token bound to the exact candidate tree OID, reason,
-  expiry, the specific checks skipped, and a mandatory
-  receipt/handoff reconciliation. A reusable env var or generic
-  "emergency" trailer is forbidden — it reopens the hatch.
+A genuine emergency safety fix is committed by the HUMAN personally
+(already sovereign), with immediate reconciliation
+(docs/collaboration.md:68). No agent override exists and no agent
+authorization machinery is built. The one-use tree-bound token idea
+is recorded only as a future requirement's option, NOT part of this
+design; a reusable env var or generic "emergency" trailer stays
+forbidden either way.
 
 ## The anti-bureaucracy test (TB-R1-07)
 
@@ -208,24 +213,20 @@ proof. Friction lands only on a change touching a manifest path,
 which SHOULD stop and take the loop, and every refusal names the
 exact path and the one-step reclassification.
 
-## Prototype plan (after the human rules the fork)
+## Prototype plan — SUPERSEDED by the r3 five-step build order
 
-P1: the `change class` verb — parse+validate the trailer set;
-evaluate a candidate-tree file list against the manifest read from
-both trees; aggregate direct-fix scope by defect identity; bind and
-verify a tree-OID gate witness; pure Go, table tests per refusal and
-pass. P2: the composed pre-commit (tree-bound token) + commit-msg
-(final message) hooks, commit.sh trailer-append, adoption hook
-composition, the witness outcome+OID extension in gaterun/go-gate,
-and the audit-join validator; fixtures for a direct-fix refused on a
-manifest path, a direct-fix passing on an ordinary path with a
-before/after proof, a loop passing with an immutable design-chain
-ref, and a split-commit defect-identity fuse blowing.
+The original P1/P2 split is retired: it mixed pure policy with
+witness consumption and assigned witness production to
+gaterun/go-gate, which the r3 disposition corrects (the whole
+validator finalizes the witness). The build follows the five-step
+order in the r3 block at the top of this document, beginning with
+settle-the-contracts and the design-obligation matrix.
 
 ## Loop discipline
 
-Codex xhigh; resumes after the human rules the accidental/adversarial
-fork. If accidental (recommended), the next critique attacks the
-tree-bound witness binding and the composed-hook completeness; if
-adversarial, the design first has to solve durable agent identity
-and remote enforcement, which is a different and larger goal.
+Codex xhigh. The fork is RULED (D90: accidental). The next critique
+runs over the settled contracts (step 1 of the build order) before
+any code: the trailer grammar with Defect-ID, the manifest schema
+and initial set, the proof/witness schemas with whole-validator
+finalization, the audit-chain schema, and the hook-composition
+lifecycle.

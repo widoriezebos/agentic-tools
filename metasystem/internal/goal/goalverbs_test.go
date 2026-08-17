@@ -531,8 +531,10 @@ func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
 	if _, err := s.Reconcile(raced); err == nil || !strings.Contains(err.Error(), "authorized for genesis") {
 		t.Fatalf("a genesis-admitted caller must be refused once a baseline exists: %v", err)
 	}
-	// The same caller WITHOUT the stale genesis admission (a re-run,
-	// which re-authorizes holder-only at the verb layer) is unaffected.
+	// A re-run re-authorizes against the initialized project at the
+	// verb layer — holder-only there. The guard promises re-evaluation,
+	// not success: a HUMAN passes as sovereign, a non-holder MAIN is
+	// refused by authorization, and the HOLDER (here) proceeds.
 	if _, err := s.Reconcile(Caller{Class: "MAIN", Holder: true}); err != nil {
 		t.Fatalf("a holder-authorized re-run must pass: %v", err)
 	}

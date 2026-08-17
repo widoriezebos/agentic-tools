@@ -26,8 +26,7 @@ must not act — an observer that signals, never a second actor.
    existing signal is either a Boolean that collapses
    missing/unreadable/stale/dead (supervise.ArmedNow), prose lines
    for a human (WatchdogReport), or raw records whose
-   reinterpretation would create a second policy owner (ps-r2 #1,
-   #6). The steward's first prerequisite is a typed verdict at an
+   reinterpretation would create a second policy owner (ps-r2 #1). The steward's first prerequisite is a typed verdict at an
    OWNER boundary — outcome + reason + evidence identity — which is
    new instrumentation, not something owners already expose.
 2. **The watchdog LARGELY overlaps the liveness invariant but is
@@ -63,7 +62,7 @@ protocol, a turn-verdict state-machine extension, and arming
 integration — a large build for marginal new coverage. The
 genuinely new invariants wait on owners that do not emit their
 verdicts yet. Building a scanner that reinterprets raw records
-instead would create a competing policy owner, the exact ps-r2 #6
+instead would create a competing policy owner, the exact ps-r2 #1
 failure.
 
 RESUME CONDITION (corrected by the special review): the park lifts

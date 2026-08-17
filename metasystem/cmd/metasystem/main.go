@@ -42,6 +42,7 @@ func families() []family {
 				{"classify", "print live, stale, dead, or unknown for a recorded pid and tag", runProcClassify},
 				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
+				{"acknowledge", "record one exact untracked pid as human-judged-harmless; the end-of-turn report then stays silent about it (KI-23)", runProcAcknowledge},
 			},
 		},
 		{

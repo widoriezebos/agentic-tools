@@ -1,4 +1,4 @@
-- Status: IMPLEMENTATION-FIRST (D81/D85) — r1/r2 folded, r3 (14 findings) is the fixture list; building highest-value slices behind fixtures rather than a 4th prose round. Slice 1: the headroom guard (the ENOSPC fix) — SHIPPED, both hosts green. Slice 2 attempt: a worktree observer (`janitor worktrees`) classifying the dispatch-owned-worktrees row by "job terminal + custody dead" — BUILT then REVERTED (D89). Its mandatory code critique (plans/wt-code-critique-r1.md, 5 structural) proved the verdict UNSOUND for any future reclaimer to trust: it classified as reclaimable three implementer worktrees still holding UNMERGED work (a modified dispatch.sh in caps-census-gate-order), because terminality is NOT a data-release proof — conformance review and merge read the worktree AFTER the job terminates. The corrected worktree-reclaim proof is captured below; the accumulation it surfaced (118 dirs / ~500MB) is recorded in plans/known-issues.md with a SAFE manual cleanup for the human meanwhile.
+- Status: IMPLEMENTATION-FIRST (D81/D85) — r1/r2 folded, r3 (14 findings) is the fixture list; building highest-value slices behind fixtures rather than a 4th prose round. Slice 1: the headroom guard (the ENOSPC fix) — SHIPPED, both hosts green; hardened 2026-08-17 after its retroactive code review (plans/opus-window-review-dh.md part A, D95): fd-pinned measurement, ENOENT-only ascent (every other establish failure refuses), checked arithmetic and floor validation, the suite distinguishing measure-failure (refuse) from below-floor (advisory), a df bootstrap check on clean checkouts, and the documented rule that entries are per-path advisories (APFS volumes share a container pool across distinct device ids — never sum entries). Slice 2 attempt: a worktree observer (`janitor worktrees`) classifying the dispatch-owned-worktrees row by "job terminal + custody dead" — BUILT then REVERTED (D89). Its mandatory code critique (plans/wt-code-critique-r1.md, 5 structural) proved the verdict UNSOUND for any future reclaimer to trust: it classified as reclaimable three implementer worktrees still holding UNMERGED work (a modified dispatch.sh in caps-census-gate-order), because terminality is NOT a data-release proof — conformance review and merge read the worktree AFTER the job terminates. The corrected worktree-reclaim proof is captured below; the accumulation it surfaced (118 dirs / ~500MB) is recorded as KI-35, REPORT-ONLY: the earlier "safe manual cleanup" advice was WITHDRAWN (the dh review F13 — ignored data, committed-but-unmerged branches, and a repository-global prune made it unsafe); no manual bulk cleanup until the journaled reclaim exists.
   Critiques r1 and r2 are folded into this text (12 and 15
   findings). The r3 verdict landed after the park: REVISE, 14
   findings (13 structural), preserved UNFOLDED at
@@ -248,17 +248,24 @@ The slice-2 attempt proved that "job terminal + custody dead" is
 NOT a sound proof that a dispatch worktree is disposable. A sound
 reclaim of `artifacts/agents/worktrees/<job>` must hold ALL of:
 
-1. **Data released, not just terminal (critique F1).** Terminality
-   is a record-state, not a merge/review state: conformance review
-   and the authoritative-diff computation READ the worktree after
-   the implementer terminates, and CloseCheck admits a completed,
-   unreviewed implementer with no computed diff. Reclaim needs an
-   explicit release/merge proof (reviewed AND merged-or-discarded
-   by decision AND no downstream consumer still needs the tree).
-   The cheapest sound proxy is git's own: `git worktree remove`
-   WITHOUT `--force` refuses a worktree with uncommitted or
-   unmerged changes — that refusal IS a data-release check, and a
-   reclaimer should use it rather than re-derive one.
+1. **Data released, not just terminal (critique F1; corrected by
+   the opus-window dh review F8 — git is NOT a release proof).**
+   Terminality is a record-state, not a merge/review state:
+   conformance review and the authoritative-diff computation READ
+   the worktree after the implementer terminates, and CloseCheck
+   admits a completed, unreviewed implementer with no computed
+   diff. Reclaim needs an explicit DURABLE release decision
+   (reviewed AND merged-or-discarded by decision AND no downstream
+   consumer), recorded BEFORE removal begins, with recovery
+   semantics for partial failure. `git worktree remove` without
+   --force is a useful LAST refusal, never the proof: it passes a
+   clean branch holding committed-but-unmerged work, deletes
+   IGNORED data without protest (nine currently-clean delegate
+   worktrees hold ignored artifacts/config/caches), refuses
+   populated submodules (making them unreclaimable rather than
+   handled), leaves detached-HEAD reachability unaddressed, and is
+   not a side-effect-free predicate (its check and recursive
+   deletion are one operation that can continue past a failure).
 2. **Group death, not custody death (F2).** The custody list holds
    the direct CLI child only; grandchildren survive reparenting and
    a failed handshake writes `failed` before a best-effort wind-down
@@ -276,14 +283,48 @@ reclaim of `artifacts/agents/worktrees/<job>` must hold ALL of:
    the record's workspaceRoot, the dir is a registered git worktree,
    and the path is canonical with no symlinked ancestor before any
    RemoveAll-style operation.
-5. **Same-user + procfs trust for Dead (F5).** ENOENT-as-Dead is
-   only sound under same-user scope and non-restrictive procfs; a
-   reclaimer must enforce/prove that, as supervision does.
+5. **Same-user + platform-capability trust for Dead (F5, refined
+   by the dh review F11).** ENOENT-as-Dead is only sound under
+   same-user scope and non-restrictive process visibility, expressed
+   per platform capability (macOS identity inspection is sysctl,
+   not procfs); a reclaimer must enforce/prove that, as supervision
+   does.
+
+Additions the opus-window dh review (plans/opus-window-review-dh.md
+F9–F12) proved necessary beyond the original five:
+
+6. **Records must outlive the proof (F9).** Evidence GC prunes
+   terminal job records after a 5400s grace, yet the proof needs
+   them for lineage, aliases, ownership, and release — already 12
+   of 118 worktrees have no same-named record and four more lack a
+   workspaceRoot. Reclaim needs a durable per-worktree
+   ownership/release record retained UNTIL reclaim, with record
+   pruning serialized against reclamation; missing or malformed
+   records fail closed (report-only).
+7. **A canonical-workspace lease, not just the chain lock (F10).**
+   Fresh dispatch can accept an arbitrary workspace under a
+   DIFFERENT job's lock, and conformance readers take no chain
+   lock — one lineage lock cannot fence all aliases and readers.
+   The resource needs a canonical-workspace lease shared by fresh
+   dispatch, follow-ups, conformance, and the reclaimer.
+8. **A closed consumer set, not group-death (F11).** An empty
+   original process group excludes neither a setsid descendant,
+   another dispatched job, conformance, nor any same-user process
+   with a cwd or open descriptor inside the tree. The proof needs
+   an enforceable closed consumer set or a reclaim-time same-user
+   kernel census tied to the canonical path.
+9. **A child-first descendant inventory (F12).** The candidate
+   being a registered worktree says nothing about registered
+   descendant worktrees, nested repositories, or independently
+   owned resources inside it — a same-device descendant bypasses
+   the mount-crossing check. Unsupported nested cases stay
+   report-only; refusal never falls back to forced removal.
 
 This is the full journaled destructive slice, not a report. Until
-it exists there is no sound automatic worktree reclaim; the human
-cleanup path (git worktree remove, which self-refuses dirty trees)
-is recorded in plans/known-issues.md.
+it exists there is NO sound worktree reclaim, automatic or manual:
+KI-35's earlier "safe manual cleanup" advice was corrected to
+report-only (the dh review F13 — ignored data, unmerged branches,
+and a repository-global prune made it unsafe as written).
 
 ## Boundaries
 

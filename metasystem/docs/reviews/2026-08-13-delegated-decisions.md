@@ -2805,3 +2805,135 @@ refuses a genesis-admitted caller every non-genesis arm under its
 lock — tested for the raced, re-run, and virgin cases). Adopt
 fixtures pass; full gate + mandatory code critique before the
 ship.
+
+## D95 — 2026-08-17: the disk-hygiene window review lands; the unsafe cleanup advice is corrected and the headroom guard hardened
+
+The fifth and final Opus-window re-review
+(plans/opus-window-review-dh.md, 13 findings) closed the sweep.
+Actions, all taken:
+
+(1) KI-35's "safe manual cleanup" advice — which I gave the human
+directly — was WRONG and is corrected to report-only: git worktree
+remove deletes ignored data without protest (nine clean delegate
+worktrees hold ignored artifacts), passes committed-but-unmerged
+branches with no release proof, and the suggested repository-global
+prune would have pruned the human's unrelated wt-flakefix
+scratchpad (verified by dry-run). No manual bulk cleanup until the
+journaled reclaim exists.
+
+(2) The headroom guard is hardened in code: fd-pinned measurement
+(no stat/statfs identity race), ENOENT-only ascent (permission and
+path failures now refuse instead of measuring an ancestor), checked
+arithmetic and floor validation (NaN/Inf/negative refused), the
+suite now refuses on measure-failure while below-floor stays
+advisory, a clean checkout gets a df bootstrap check instead of no
+check, and the per-path-advisory rule is documented (APFS volumes
+share one container pool across distinct device ids — dedup
+suppresses duplicate warnings and licenses nothing else).
+
+(3) The worktree-reclaim proof gains the review's four structural
+additions: durable release records retained until reclaim (evidence
+GC already pruned the records 12 worktrees would need), a
+canonical-workspace lease covering fresh dispatch and conformance
+readers (one chain lock cannot fence aliases), a closed consumer
+set instead of process-group death, and a child-first descendant
+inventory. git worktree remove is demoted from "sound proxy" to a
+last refusal that is not a release proof.
+
+This closes the Opus-window review sweep the human ordered: five
+re-reviews (acp D91, genesis D92, steward+twobars D94, disk-hygiene
+D95), every REVISE folded, two authority defects and one unsafe
+advice corrected, all on Fable.
+
+## D96 — 2026-08-17: verification rounds 1 land; the genesis machinery-refusal is reverted as broken; the suite was red and my green claim was wrong
+
+The human ordered codex verification of everything from the review
+sweep before further action. Round 1 verdicts and what they forced:
+
+(1) THE GENESIS MACHINERY-REFUSAL (e2fb2f5) BROKE THE SUITE. The
+verification proved — from my own preserved fixture evidence — that
+refusing a machinery source classification breaks legitimate
+delegated validation: the adopt fixtures and the kit gate run under
+agent ancestry with announcement-free snapshots, so their source
+view is DELEGATE by signature, and the nested-adoption fixture had
+been failing since the commit. My earlier "adopt fixtures pass" was
+FALSE: I read $? after a pipe (tail's exit, not the script's). The
+refusal is REVERTED (the announced-MAIN raise and the pre-lock race
+guard remain — the race guard was verified complete); the crafted-
+root and virgin-target holes are recorded in code as the C'
+cooperative posture, replacing comments that overclaimed
+unforgeability.
+
+(2) ki-23 round 1: the same-second binding hole (census seconds vs
+live probe) is closed properly — the census now publishes an exact
+birth token (pidStartedAtExactMicro, ADDITIVE beside the
+whole-second join keys) and acknowledgement binds to the token the
+census OBSERVED; the verb no longer accepts --caller-pid (a
+caller-supplied -1 classified HUMAN and laundered holder-only —
+verified live); the record decode is strict (unknown fields
+refused, RFC3339 enforced).
+
+(3) headroom round 1: the raw path walk replaces filepath.Clean
+('file/../.' measured the cwd — verified live); the pinned open is
+O_NONBLOCK (a writerless FIFO hung the guard); the suite treats a
+stale binary's usage error as bootstrap-degrade (refusing there
+would permanently block the rebuild that fixes it) while a real
+measure failure still refuses; the df bootstrap validates its
+floor, includes GOCACHE, and names df failures.
+
+(4) The aarch64 fingerprint crashes when lscpu is absent, cutting
+off its own fallback, and parses localized labels — fixed
+(FileNotFoundError guarded, LC_ALL=C). The spec-identity fix was
+verified CLOSED, as was the ACP fold ("no finding") and, after
+citation and normalization fixes, the steward rewrite; two-bars
+needed five body normalizations plus one fork-section sentence.
+
+Standing lessons recorded: never read $? after a pipeline; a
+"fixture evidence preserved" line means a failure was captured —
+read it.
+
+## D97 — 2026-08-17: verification rounds 2–4 converge; the quiet-machine requirement is retired by the human's ruling
+
+The verification loop the human ordered ran four rounds; this
+closes it. Round 2 found four structural gaps (all folded): the
+same-second census binding — closed by the census publishing a
+kernel-resolution birth token (pidStartedAtExactMicro, additive
+beside the whole-second join keys) that acknowledgement now binds
+to; the --caller-pid laundering — closed by removing the flag; the
+Clean-erasure in the headroom ascent and a FIFO hang — closed by a
+raw-path walk with O_NONBLOCK. Round 2 also exposed that my genesis
+machinery-refusal had broken the suite AND that my green claim came
+from reading $? after a pipe — the refusal was reverted, and the
+truth behind it ran deeper: the adopt fixtures had NEVER passed
+standalone from agent ancestry, because nobody wired
+METASYSTEM_GENESIS_AUTHORITY_ROOT (built for exactly this) into the
+harness. One harness-top export fixed it; the fixture suite then
+ran green end to end from agent ancestry for the first time. A
+mutating consistency probe (goal reconcile as an assertion) was
+replaced by the engine's read-only fact — Store.BaselineMatches
+exposed as goal list's baselineMatches — per the human's
+no-new-python ruling. Round 3 confirmed everything and left one
+residual (the configured-vs-installed signature universe), closed
+with lease.DirectAgentInvoker over every installed adapter. Round 4
+confirmed that and found four mechanical items, all folded: the
+ArgvKnown fail-open (absence of argv evidence now refuses), the
+nested-harness scale validator (raised to the probe's 48 ceiling —
+certified live at 21/48/49), the corrected cap arithmetic, and the
+canonical policy in docs/orchestration.md.
+
+THE QUIET-MACHINE RULING: the human asked whether the suite really
+needs a quiet machine and ruled against requiring one. The fixture
+caps were machine-speed assertions (probe once, ceiling 12x); their
+job is hang detection. The clamp is now [8,48]: converging waits
+return on their condition regardless of ceiling, so passing runs
+are unaffected; a genuine hang names itself within minutes instead
+of seconds; negative fixtures that consume full timeouts stretch by
+seconds, accepted knowingly. Proof: three suite runs had failed at
+exactly the old cap under a neighbor session's JVM; with the new
+clamps the FULL SUITE PASSED on the same machine at load 8.86. Caps
+self-calibrate per machine (the 4-core VM passes the same suite);
+hardware beyond 48x uses the METASYSTEM_FIXTURE_CAP_SCALE override.
+This supersedes the earlier one-suite-per-quiet-machine practice.
+Also recorded: the suite requires a symlink-free invocation path
+(the /tmp alias broke git-archive prefix computation) and a fresh
+clone is not suite-equivalent without the gitignored conf.local.

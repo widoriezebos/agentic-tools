@@ -10,6 +10,15 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$root"
+# Every adoption in this harness runs from a STERILE SNAPSHOT source,
+# which carries no announcements — so from an agent session the source
+# classification is DELEGATE by signature and genesis refuses. The
+# authority root env hook exists for exactly this (a sterile snapshot's
+# genesis authenticates against the LIVE root where the session's main
+# announcement lives); without it these fixtures only passed in
+# environments whose ancestry carried no agent signature — an
+# invocation-shape dependence, the KI-31 class of problem.
+export METASYSTEM_GENESIS_AUTHORITY_ROOT="$root"
 command -v python3 >/dev/null 2>&1 \
   || { echo "${0##*/}: python3 is required by these fixtures (the metasystem itself does not need it)" >&2; exit 1; }
 tmp=$(mktemp -d)
@@ -263,7 +272,16 @@ PYEOF
     || { echo "adopt: plans/ payload must carry the standing ledgers INCLUDING the goal pair (goal-system GOAL-14)" >&2; exit 1; }
   grep -q '^## Goal-free: declared .* over ' "$tgt/plans/goals.md" \
     || { echo "adopt: the seeded goal ledger lacks its digest-pinned Goal-free declaration" >&2; exit 1; }
-  "$tgt/bin/metasystem" goal reconcile --root "$tgt" | grep -q 'already reconciled' \
+  # Read-only pair check via the ENGINE's own fact (goal list's
+  # baselineMatches: bytes and digest equal the accepted baseline) —
+  # the same fact a second reconcile's "already reconciled" proved.
+  # The old probe was a MUTATING verb, so it classified the fixture
+  # caller for holder-only authority and passed or refused depending
+  # on who ran the harness (the KI-31 invocation-shape class); a
+  # consistency assertion needs no write authority — and no python
+  # (the kill-python doctrine: metasystem-coupled decisions live in
+  # the Go engine).
+  "$tgt/bin/metasystem" goal list --root "$tgt" | grep -q '"baselineMatches":true' \
     || { echo "adopt: the seeded goal pair is not reconciled (baseline out of step)" >&2; exit 1; }
   [[ -d "$tgt/artifacts" ]] || { echo "adopt: artifacts directory missing" >&2; exit 1; }
   grep -qxF 'artifacts/' "$tgt/.gitignore" || { echo "adopt: artifacts/ not gitignored" >&2; exit 1; }
