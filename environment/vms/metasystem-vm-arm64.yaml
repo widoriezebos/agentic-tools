@@ -68,8 +68,14 @@ param:
   # Node LTS from nodejs.org: bookworm packages 18.x. Brings npm + npx.
   NODE_VERSION: "24.19.0"
   NODE_SHA256_ARM64: "01443c1e1a29e531ccad5a46fefa6df490d2189c49f7955904aecdbb0fe86fdc"
-  # Codex CLI ships a static musl binary for aarch64 -- no Node runtime needed.
+  # Codex: the `codex-package-*` release asset, NOT the bare `codex-*` binary.
+  # The package is what OpenAI's own installer lays down (bin/codex plus
+  # bin/codex-code-mode-host, codex-package.json, bundled rg/bwrap/zsh). The
+  # bare binary alone starts and chats but cannot execute a single tool call:
+  # Code Mode fails closed without its host helper. Checksum is sha256 of the
+  # tarball; bump both together.
   CODEX_TAG: "rust-v0.147.0"
+  CODEX_SHA256_ARM64: "89cbf79bd5ae6f9c58da47e8079f311c84219350c9c43c070d42f3e9b2a81401"
   # GitHub CLI. Also serves as git's credential helper for HTTPS push/pull.
   GH_VERSION: "2.97.0"
   # Descartes MCP debug proxy, run as a systemd service on this port. Public
@@ -419,20 +425,40 @@ provision:
     chmod 0644 /etc/profile.d/playwright.sh
 
 # --- 9. Agent CLIs: Claude Code, Codex, Devin -------------------------------
-# Codex is a static binary and goes in system-wide. Claude Code and Devin are
-# per-user installers that refuse sudo (they install under $HOME), so they run
-# as the default user via `mode: user` and land in ~/.local/bin.
+# Codex installs system-wide from its release PACKAGE tarball, laid out under
+# /usr/local/lib/codex-<tag> exactly as the official installer does under
+# ~/.codex/packages, with both entrypoints symlinked into /usr/local/bin. Codex
+# resolves its own symlink to find codex-package.json and the bundled
+# resources, so the symlinks are the supported shape, not a shortcut. Claude
+# Code and Devin are per-user installers that refuse sudo (they install under
+# $HOME), so they run as the default user via `mode: user` and land in
+# ~/.local/bin.
 - mode: system
   script: |
     #!/bin/bash
     set -eux -o pipefail
-    if [ ! -x /usr/local/bin/codex ]; then
-      cd "$(mktemp -d)"
-      curl -fsSLO "https://github.com/openai/codex/releases/download/{{.Param.CODEX_TAG}}/codex-aarch64-unknown-linux-musl.tar.gz"
-      tar xzf codex-aarch64-unknown-linux-musl.tar.gz
-      BIN="$(find . -maxdepth 2 -type f -name 'codex*' ! -name '*.tar.gz' | head -1)"
-      install -m 0755 "$BIN" /usr/local/bin/codex
+    TAG="{{.Param.CODEX_TAG}}"
+    LIB="/usr/local/lib/codex-${TAG}"
+    # Idempotent, and self-healing for guests provisioned by the older block
+    # that installed only the bare binary: the helper's absence forces a
+    # reinstall from the package on the next boot.
+    if [ -f "$LIB/codex-package.json" ] && [ -x /usr/local/bin/codex ] \
+       && [ -x /usr/local/bin/codex-code-mode-host ] \
+       && [ "$(readlink -f /usr/local/bin/codex)" = "$LIB/bin/codex" ]; then
+      exit 0
     fi
+    TARBALL="codex-package-aarch64-unknown-linux-musl.tar.gz"
+    cd "$(mktemp -d)"
+    curl -fsSLO "https://github.com/openai/codex/releases/download/${TAG}/${TARBALL}"
+    echo "{{.Param.CODEX_SHA256_ARM64}}  ${TARBALL}" | sha256sum -c -
+    rm -rf "$LIB"
+    mkdir -p "$LIB"
+    tar -C "$LIB" -xzf "$TARBALL"
+    [ -x "$LIB/bin/codex" ] && [ -x "$LIB/bin/codex-code-mode-host" ] \
+      || { echo "codex package is missing an entrypoint" >&2; exit 1; }
+    ln -sfn "$LIB" /usr/local/lib/codex
+    ln -sfn /usr/local/lib/codex/bin/codex                /usr/local/bin/codex
+    ln -sfn /usr/local/lib/codex/bin/codex-code-mode-host /usr/local/bin/codex-code-mode-host
 
 # --- 10. GitHub CLI + git auth plumbing -------------------------------------
 - mode: system
@@ -800,6 +826,21 @@ provision:
     ./mvnw -B -o test        # build here, not three hours into a mission
 
 probes:
+- description: "codex can execute tool calls (code-mode host present)"
+  script: |
+    #!/bin/bash
+    set -eu -o pipefail
+    # Without its host helper codex still starts and chats, so `codex
+    # --version` alone proves nothing: every delegate would fail closed on
+    # its first tool call, and only a mission cycle later would anyone know.
+    [ -x /usr/local/bin/codex ] && [ -x /usr/local/bin/codex-code-mode-host ] \
+      && [ -f /usr/local/lib/codex/codex-package.json ] \
+      || { echo "codex package incomplete: bin/codex-code-mode-host missing" >&2; exit 1; }
+  hint: |
+    Codex was installed from the bare binary, not the release package. Delegates
+    pinned to the codex runtime will park with zero tool calls. Re-run
+    provisioning (block 9 self-heals) or rebuild.
+
 - description: "the bm-1 offline Maven repository is warm"
   script: |
     #!/bin/bash
