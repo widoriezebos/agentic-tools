@@ -28,6 +28,46 @@ def cpu_model() -> str:
             match = re.match(r"^(?:model name|Hardware)\s*:\s*(.+)$", raw)
             if match and match.group(1).strip():
                 return match.group(1).strip()
+    # aarch64 Linux guests (the acceptance VM among them) expose neither
+    # "model name" nor "Hardware": /proc/cpuinfo carries only hex
+    # implementer/part codes and lscpu prints a literal "-" for the model.
+    # The fingerprint exists to name the machine class a cohort ran on, so
+    # synthesize a stable identity from what the platform does publish
+    # rather than refusing the whole benchmark on a missing marketing name.
+    result = subprocess.run(
+        ["lscpu"],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    vendor = ""
+    if result.returncode == 0:
+        for raw in result.stdout.splitlines():
+            match = re.match(r"^Model name:\s*(.+)$", raw)
+            if match:
+                value = match.group(1).strip()
+                if value and value != "-":
+                    return value
+            match = re.match(r"^Vendor ID:\s*(.+)$", raw)
+            if match and match.group(1).strip():
+                vendor = match.group(1).strip()
+    if cpuinfo.is_file():
+        implementer = part = ""
+        for raw in cpuinfo.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = re.match(r"^CPU implementer\s*:\s*(.+)$", raw)
+            if match:
+                implementer = match.group(1).strip()
+            match = re.match(r"^CPU part\s*:\s*(.+)$", raw)
+            if match:
+                part = match.group(1).strip()
+        if implementer:
+            prefix = vendor or "unknown-vendor"
+            machine = platform.machine().strip() or "unknown-arch"
+            synthesized = f"{prefix} {machine} (implementer {implementer}"
+            if part:
+                synthesized += f", part {part}"
+            return synthesized + ")"
     value = platform.processor().strip()
     if value:
         return value
