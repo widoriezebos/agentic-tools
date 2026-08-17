@@ -52,6 +52,10 @@
 - Origin: main
 - Next step: Design over the 3 holes in plans/genesis-authority-review.md; classification-against-caller-root is unsound — the fix is architectural.
 
+## Queued goal: host-implementer-wall — The runner mechanically refuses a host turn that did implementer work: product-code diff without certified delegate attribution is a protocol error, not prose
+- Origin: main
+- Next step: Design loop first (invariant change): specify the workspace-diff attribution check at turn acceptance, its exemptions (plans/, artifacts/, too-small-to-delegate declarations), and the park semantics; then implement behind fixtures.
+
 ## Parked goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main
 - Parked because: Yields the current slot to the human-approved acp-transport implementation (D81); design held at the budget-one boundary, r3 verdict will be folded when it lands
