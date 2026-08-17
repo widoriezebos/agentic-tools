@@ -3,6 +3,7 @@ package missionrunner
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -406,7 +407,7 @@ func TestAdjudicateParkedRequestNeedsReason(t *testing.T) {
 	returned := map[string]any{
 		"dispatched": []any{},
 		"streamUpdatesRequested": []any{
-			map[string]any{"streamId": "s-app", "requestedState": "parked-stop-loss", "reason": ""},
+			map[string]any{"streamId": "s-app", "requestedState": "parked-reserved", "reason": ""},
 		},
 		"askCandidates": []any{},
 	}
@@ -419,5 +420,65 @@ func TestAdjudicateParkedRequestNeedsReason(t *testing.T) {
 	}
 	if verdict.Streams["s-app"].(map[string]any)["state"] != "active" {
 		t.Fatal("rejected update must not change the stream")
+	}
+}
+
+// Issue #3: a parked-stop-loss request from the host is REJECTED with the
+// invariant's reason while the rest of the return applies — it must never
+// reach the state write, whose refusal killed the runner.
+func TestAdjudicateRejectsStopLossRequest(t *testing.T) {
+	root := t.TempDir()
+	mission := "demo"
+	turn := testTurn()
+	os.MkdirAll(asksDirPath(root, mission), 0o755)
+	returned := map[string]any{
+		"dispatched": []any{},
+		"streamUpdatesRequested": []any{
+			map[string]any{"streamId": "s-app", "requestedState": "parked-stop-loss", "reason": "no path to progress"},
+			map[string]any{"streamId": "s-db", "requestedState": "parked-reserved", "reason": "waiting on a decision"},
+		},
+		"askCandidates": []any{
+			map[string]any{"streamId": "s-db", "reasonClass": "red-test", "question": "which way?"},
+		},
+	}
+	state := adjudicationState()
+	verdict, err := Adjudicate(root, mission, turn, state, returned, "2026-08-17T00:00:00Z")
+	if err != nil {
+		t.Fatalf("a rejectable request must not error the adjudication: %v", err)
+	}
+	var rejectedStopLoss map[string]any
+	for _, item := range verdict.Rejected {
+		value, _ := item["value"].(map[string]any)
+		if item["kind"] == "streamUpdate" && value != nil && value["requestedState"] == "parked-stop-loss" {
+			rejectedStopLoss = item
+		}
+	}
+	if rejectedStopLoss == nil {
+		t.Fatalf("stop-loss request not rejected: %v", verdict.Rejected)
+	}
+	if reason, _ := rejectedStopLoss["reason"].(string); !strings.Contains(reason, "reserved for a human answer") {
+		t.Fatalf("rejection reason wrong: %q", reason)
+	}
+	streams, _ := state["streams"].(map[string]any)
+	app, _ := streams["s-app"].(map[string]any)
+	if app["state"] != "active" {
+		t.Fatalf("rejected request mutated the stream: %v", app["state"])
+	}
+	db, _ := streams["s-db"].(map[string]any)
+	if db["state"] != "parked-reserved" {
+		t.Fatalf("the lawful reserved park did not apply: %v", db["state"])
+	}
+	hostAsk := false
+	rejectionAsk := false
+	for _, ask := range verdict.Asks {
+		if ask["question"] == "which way?" {
+			hostAsk = true
+		}
+		if reason, _ := ask["reasonClass"].(string); reason == "host-failure" {
+			rejectionAsk = true
+		}
+	}
+	if !hostAsk || !rejectionAsk {
+		t.Fatalf("expected the host ask AND the auto-surfaced rejection ask: %v", verdict.Asks)
 	}
 }

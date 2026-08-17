@@ -307,6 +307,13 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		switch {
 		case stream == nil:
 			reason = "stream does not exist"
+		// The host may never request parked-stop-loss (issue #3): the
+		// state invariant reserves it for a human answer, so accepting
+		// it here guaranteed a state-write failure that killed the
+		// runner. Rejected like any other unlawful entry — the right
+		// move for a stuck host is parked-reserved plus an ask.
+		case requested == "parked-stop-loss":
+			reason = "parked-stop-loss is reserved for a human answer; request parked-reserved and raise an ask"
 		case !legalStreamTransitions[currentState][requested]:
 			reason = fmt.Sprintf("illegal stream transition %v to %v", stream["state"], entry["requestedState"])
 		case strings.HasPrefix(requested, "parked-") && entryReason == "":

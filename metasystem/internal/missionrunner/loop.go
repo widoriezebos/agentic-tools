@@ -308,6 +308,12 @@ func (e *Engine) writeState(statePath string, proposed map[string]any) (map[stri
 		return nil, err
 	}
 	if err := mission.WriteState(statePath, sourcePath, expected); err != nil {
+		// A proposal-validation refusal keeps its type: the conclude path
+		// parks adjudicated host content instead of dying on it (issue #3).
+		var proposal *mission.ProposalError
+		if errors.As(err, &proposal) {
+			return nil, err
+		}
 		message := strings.TrimSpace(err.Error())
 		if message == "" {
 			message = "mission state update refused"
@@ -923,6 +929,36 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 	}
 	updated, err := e.writeState(statePath, proposed)
 	if err != nil {
+		// A PROPOSAL-validation refusal is a fault in ADJUDICATED HOST
+		// CONTENT (or, rarely, a runner proposal bug — an acceptable
+		// containment trade: a parked mission surfaces an ask, a dead
+		// runner surfaces nothing). The invariant that refused the write
+		// is the mission's protection; the outcome is a parked mission
+		// with the refusal surfaced — never the fail ramp. I/O,
+		// corruption, and compare-and-write misses keep the ramp: those
+		// are the runner's own to fail loudly on (issue #3, critique
+		// round 1: the guard must be reachable, correctly scoped, and
+		// the park must stay ledger-consistent).
+		var proposalRefusal *mission.ProposalError
+		if errors.As(err, &proposalRefusal) {
+			e.emit("turn-proposal-refused", clipSummary(err.Error()), map[string]string{
+				"missionId": e.Mission, "turnId": spec.turnID, "error": err.Error(),
+			})
+			// The cycle's ledger block is already appended, so the park
+			// proposal must carry this cycle's ledger count or the
+			// anchor refuses and the fail ramp fires anyway.
+			outcome, parkErr := ParkProposal(e.Root, e.Mission, state, "host-failure", nowISO())
+			if parkErr != nil {
+				return nil, parkErr
+			}
+			if err := setLedgerCycles(outcome.State, spec.cycle); err != nil {
+				return nil, err
+			}
+			e.emit("mission-parked", clipSummary("host-failure"), map[string]string{
+				"missionId": e.Mission, "parkReason": "host-failure",
+			})
+			return e.applyPark(statePath, ledger, spec.turnID, outcome)
+		}
 		return nil, err
 	}
 	if spec.afterWrite != nil {

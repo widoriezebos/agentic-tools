@@ -706,6 +706,21 @@
           "type": "str"
         }
       }
+    },
+    "turn-proposal-refused": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required",
+        "turnId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        }
+      }
     }
   },
   "schemaVersion": 1

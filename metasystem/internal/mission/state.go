@@ -859,11 +859,11 @@ func WriteState(statePath, sourcePath, expect string) error {
 		return stateErr("mission state compare-and-write hash mismatch")
 	}
 	if err := validateTransition(previous, proposed); err != nil {
-		return err
+		return &ProposalError{Err: err}
 	}
 	finalized, err := finalizeNext(proposed, previous, nil)
 	if err != nil {
-		return err
+		return &ProposalError{Err: err}
 	}
 	return atomicWriteJSON(statePath, finalized)
 }
@@ -1073,3 +1073,13 @@ func ConsumedAuthorizations(state map[string]any) (map[string]string, error) {
 	}
 	return index, nil
 }
+
+// ProposalError marks a WriteState refusal caused by the PROPOSED state —
+// transition rules or shape validation of the proposal itself — as opposed
+// to unreadable current state, corruption, or a compare-and-write miss.
+// The mission runner uses this boundary to park adjudicated host content
+// instead of dying (issue #3): only the proposal's content is host-derived.
+type ProposalError struct{ Err error }
+
+func (e *ProposalError) Error() string { return e.Err.Error() }
+func (e *ProposalError) Unwrap() error { return e.Err }
