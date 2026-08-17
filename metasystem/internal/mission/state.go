@@ -179,7 +179,8 @@ func exactKeys(m map[string]any, keys ...string) bool {
 // resume heal consumes; legacy missions never carry it.
 func stateTopLevelKeys(state map[string]any) bool {
 	required := []string{"schemaVersion", "missionId", "branch", "status", "parkReason",
-		"gatePassed", "streams", "fences", "turnLog", "waitingList", "runnerLease", "ledger", "integrity"}
+		"gatePassed", "streams", "fences", "turnLog", "waitingList", "runnerLease", "ledger", "integrity",
+		"openTurn", "workspaceTaint"}
 	allowed := map[string]bool{"ledgerSemantics": true, "lastDrainStall": true}
 	for _, key := range required {
 		if _, ok := state[key]; !ok {
@@ -221,7 +222,7 @@ func validateShape(state map[string]any) error {
 			return err
 		}
 	}
-	if v, _ := intValue(state["schemaVersion"]); v != 1 {
+	if v, _ := intValue(state["schemaVersion"]); v != 2 {
 		return stateErr("mission state schema version or mission id is invalid")
 	}
 	missionID, ok := state["missionId"].(string)
@@ -283,6 +284,12 @@ func validateShape(state map[string]any) error {
 		return err
 	}
 	if err := validateLogsAndLedger(state); err != nil {
+		return err
+	}
+	if err := validateOpenTurn(state["openTurn"]); err != nil {
+		return err
+	}
+	if err := validateWorkspaceTaint(state["workspaceTaint"]); err != nil {
 		return err
 	}
 	return validateIntegrityShape(state["integrity"])
@@ -366,6 +373,12 @@ func validateLogsAndLedger(state map[string]any) error {
 		if _, ok := item.(map[string]any); !ok {
 			return stateErr("mission turn log must be an array of objects")
 		}
+	}
+	// Acceptance payloads are the consumption index's ONE recovery source
+	// (wall design r4: payload-bearing entries, not hash-only history);
+	// a malformed or duplicated digest refuses the whole state as corrupt.
+	if _, err := ConsumedAuthorizations(state); err != nil {
+		return err
 	}
 	waiting, ok := state["waitingList"].([]any)
 	if !ok {
@@ -506,6 +519,14 @@ func sameHashRef(a, b any) bool {
 }
 
 func validate(state map[string]any) error {
+	// The exact legacy refusal comes BEFORE strict shape validation (wall
+	// design, named contracts): a version-1 state is a pre-wall mission,
+	// and the remedy is re-provisioning, not a shape diagnostic. It is a
+	// SENTINEL so the reconcile path passes it through instead of
+	// classifying it as corruption (slice-4 critique F-2).
+	if v, _ := intValue(state["schemaVersion"]); v == 1 {
+		return ErrLegacyState
+	}
 	if err := validateShape(state); err != nil {
 		return err
 	}
@@ -628,18 +649,20 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 		runnerLease = lease
 	}
 	body := map[string]any{
-		"schemaVersion": 1,
-		"missionId":     match[1],
-		"branch":        branch,
-		"status":        "running",
-		"parkReason":    nil,
-		"gatePassed":    false,
-		"streams":       streams,
-		"fences":        map[string]any{"startedAt": now, "cycles": 0, "jobs": 0, "activeJobs": 0, "usage": []any{}},
-		"turnLog":       []any{},
-		"waitingList":   []any{},
-		"runnerLease":   runnerLease,
-		"ledger":        map[string]any{"path": ledgerPath, "cycles": 0},
+		"schemaVersion":  2,
+		"missionId":      match[1],
+		"openTurn":       nil,
+		"workspaceTaint": map[string]any{"next": 1, "segment": 0, "entries": []any{}},
+		"branch":         branch,
+		"status":         "running",
+		"parkReason":     nil,
+		"gatePassed":     false,
+		"streams":        streams,
+		"fences":         map[string]any{"startedAt": now, "cycles": 0, "jobs": 0, "activeJobs": 0, "usage": []any{}},
+		"turnLog":        []any{},
+		"waitingList":    []any{},
+		"runnerLease":    runnerLease,
+		"ledger":         map[string]any{"path": ledgerPath, "cycles": 0},
 		// The ledger semantics under which this mission's stop-loss verdict
 		// replays, pinned for the mission's whole life: a sealed budget's
 		// meaning never changes mid-mission (docs/design/stop-loss-core.md).
@@ -665,6 +688,71 @@ func validateTransition(previous, next map[string]any) error {
 	for _, key := range []string{"schemaVersion", "missionId", "branch", "ledgerSemantics"} {
 		if !jsonEqual(previous[key], next[key]) {
 			return stateErr("mission state update changes immutable identity")
+		}
+	}
+	// Acceptance history is append-only (slice-4 critique F-1): every
+	// existing turn-log entry survives byte-identical at its position, so
+	// a consumed authorization can never be erased and replayed by a
+	// later otherwise-valid write. Current runner paths only append.
+	prevLog, _ := previous["turnLog"].([]any)
+	nextLog, _ := next["turnLog"].([]any)
+	if len(nextLog) < len(prevLog) {
+		return stateErr("mission turn log must be append-only")
+	}
+	for i, entry := range prevLog {
+		if !jsonEqual(entry, nextLog[i]) {
+			return stateErr("mission turn log entry %d is immutable", i)
+		}
+	}
+	// The taint ledger is monotonic at ENTRY grain (slice-4 critique F-3):
+	// existing facts are immutable except a null resolution becoming a
+	// typed one; a written resolution never changes; appended entries
+	// start unresolved; and the segment ordinal advances by exactly the
+	// number of resolutions this write performs — a resolution starts a
+	// new expected-tree segment, and nothing else does.
+	prevTaint, _ := previous["workspaceTaint"].(map[string]any)
+	nextTaint, _ := next["workspaceTaint"].(map[string]any)
+	if prevTaint != nil && nextTaint != nil {
+		prevNext, _ := intValue(prevTaint["next"])
+		nowNext, _ := intValue(nextTaint["next"])
+		if nowNext < prevNext {
+			return stateErr("mission workspaceTaint must be monotonic")
+		}
+		prevEntries, _ := prevTaint["entries"].([]any)
+		nowEntries, _ := nextTaint["entries"].([]any)
+		if len(nowEntries) < len(prevEntries) {
+			return stateErr("mission workspaceTaint must be monotonic")
+		}
+		resolved := int64(0)
+		for i, rawPrev := range prevEntries {
+			prevEntry, _ := rawPrev.(map[string]any)
+			nowEntry, _ := nowEntries[i].(map[string]any)
+			if prevEntry == nil || nowEntry == nil {
+				return stateErr("mission workspaceTaint entry %d is invalid", i)
+			}
+			for _, field := range []string{"taintId", "turnId", "reason", "setAt"} {
+				if !jsonEqual(prevEntry[field], nowEntry[field]) {
+					return stateErr("mission workspaceTaint entry %d is immutable", i)
+				}
+			}
+			switch {
+			case jsonEqual(prevEntry["resolution"], nowEntry["resolution"]):
+			case prevEntry["resolution"] == nil && nowEntry["resolution"] != nil:
+				resolved++
+			default:
+				return stateErr("mission workspaceTaint resolution %d is immutable", i)
+			}
+		}
+		for _, rawNew := range nowEntries[len(prevEntries):] {
+			newEntry, _ := rawNew.(map[string]any)
+			if newEntry == nil || newEntry["resolution"] != nil {
+				return stateErr("mission workspaceTaint entries are appended unresolved")
+			}
+		}
+		prevSegment, _ := intValue(prevTaint["segment"])
+		nowSegment, _ := intValue(nextTaint["segment"])
+		if nowSegment != prevSegment+resolved {
+			return stateErr("mission workspaceTaint segment must advance exactly with resolutions")
 		}
 	}
 	prevStreams, _ := previous["streams"].(map[string]any)
@@ -793,4 +881,195 @@ func VerifyStateShape(statePath string) (sequence int64, hash string, err error)
 	seq, _ := intValue(integrity["sequence"])
 	h, _ := integrity["hash"].(string)
 	return seq, h, nil
+}
+
+var treeIDRe = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
+
+// ErrLegacyState is the exact named refusal for a pre-wall mission state.
+// Reconciliation must pass it through verbatim — it is a remedy message
+// for the operator, not corruption.
+var ErrLegacyState = stateErr("mission resume refused: state predates the host-implementer wall; re-provision the mission")
+
+// validateOpenTurn checks the runner-owned open-turn marker: null between
+// turns, or the anchored identity of the one turn in flight — the pre-tree
+// and the sequence point it opened under.
+func validateOpenTurn(raw any) error {
+	if raw == nil {
+		return nil
+	}
+	turn, ok := raw.(map[string]any)
+	if !ok || !exactKeys(turn, "turnId", "cycle", "preTree", "sequence", "segment", "openedAt") {
+		return stateErr("mission openTurn has an invalid shape")
+	}
+	if id, _ := turn["turnId"].(string); !idRe.MatchString(id) {
+		return stateErr("mission openTurn turn id is invalid")
+	}
+	if c, ok := intValue(turn["cycle"]); !ok || c < 1 {
+		return stateErr("mission openTurn cycle is invalid")
+	}
+	if tree, _ := turn["preTree"].(string); !treeIDRe.MatchString(tree) {
+		return stateErr("mission openTurn preTree is invalid")
+	}
+	for _, field := range []string{"sequence", "segment"} {
+		if v, ok := intValue(turn[field]); !ok || v < 0 {
+			return stateErr("mission openTurn %s is invalid", field)
+		}
+	}
+	if s, _ := turn["openedAt"].(string); parseISO(s) != nil {
+		return stateErr("mission openTurn openedAt is invalid")
+	}
+	return nil
+}
+
+// validateWorkspaceTaint checks the monotonic taint ledger: the next taint
+// id, the current expected-tree segment ordinal (a resolution starts a new
+// segment), and the ordered taint entries with their optional typed
+// resolutions.
+func validateWorkspaceTaint(raw any) error {
+	taint, ok := raw.(map[string]any)
+	if !ok || !exactKeys(taint, "next", "segment", "entries") {
+		return stateErr("mission workspaceTaint has an invalid shape")
+	}
+	next, ok := intValue(taint["next"])
+	if !ok || next < 1 {
+		return stateErr("mission workspaceTaint next id is invalid")
+	}
+	if v, ok := intValue(taint["segment"]); !ok || v < 0 {
+		return stateErr("mission workspaceTaint segment is invalid")
+	}
+	entries, ok := taint["entries"].([]any)
+	if !ok {
+		return stateErr("mission workspaceTaint entries must be an array")
+	}
+	previous := int64(0)
+	for _, item := range entries {
+		entry, ok := item.(map[string]any)
+		if !ok || !exactKeys(entry, "taintId", "turnId", "reason", "setAt", "resolution") {
+			return stateErr("mission workspaceTaint entry has an invalid shape")
+		}
+		id, ok := intValue(entry["taintId"])
+		if !ok || id <= previous {
+			return stateErr("mission workspaceTaint ids must be strictly increasing")
+		}
+		previous = id
+		if id >= next {
+			return stateErr("mission workspaceTaint next id lags an existing entry")
+		}
+		if turn, _ := entry["turnId"].(string); !idRe.MatchString(turn) {
+			return stateErr("mission workspaceTaint entry turn id is invalid")
+		}
+		if r, _ := entry["reason"].(string); r == "" {
+			return stateErr("mission workspaceTaint entry reason is invalid")
+		}
+		if s, _ := entry["setAt"].(string); parseISO(s) != nil {
+			return stateErr("mission workspaceTaint entry setAt is invalid")
+		}
+		if entry["resolution"] == nil {
+			continue
+		}
+		resolution, ok := entry["resolution"].(map[string]any)
+		if !ok {
+			return stateErr("mission workspaceTaint resolution has an invalid shape")
+		}
+		variant, _ := resolution["variant"].(string)
+		// Both variants are human-reserved acts and record who resolved
+		// and why; adoption additionally records the exact attribution
+		// claims being waived (slice-4 critique F-4).
+		switch variant {
+		case "restore":
+			if !exactKeys(resolution, "variant", "treeId", "resolvedAt", "resolvedBy", "reason") {
+				return stateErr("mission workspaceTaint resolution has an invalid shape")
+			}
+		case "adopt-disputed-tree":
+			if !exactKeys(resolution, "variant", "treeId", "resolvedAt", "resolvedBy", "reason", "waivedClaims") {
+				return stateErr("mission workspaceTaint resolution has an invalid shape")
+			}
+			claims, ok := resolution["waivedClaims"].([]any)
+			if !ok {
+				return stateErr("mission workspaceTaint waived claims must be an array")
+			}
+			for _, claim := range claims {
+				if s, ok := claim.(string); !ok || s == "" {
+					return stateErr("mission workspaceTaint waived claims must be non-empty strings")
+				}
+			}
+		default:
+			return stateErr("mission workspaceTaint resolution variant is invalid")
+		}
+		for _, field := range []string{"resolvedBy", "reason"} {
+			if s, _ := resolution[field].(string); s == "" {
+				return stateErr("mission workspaceTaint resolution %s is invalid", field)
+			}
+		}
+		if tree, _ := resolution["treeId"].(string); !treeIDRe.MatchString(tree) {
+			return stateErr("mission workspaceTaint resolution tree id is invalid")
+		}
+		if s, _ := resolution["resolvedAt"].(string); parseISO(s) != nil {
+			return stateErr("mission workspaceTaint resolution resolvedAt is invalid")
+		}
+	}
+	return nil
+}
+
+// ConsumedAuthorizations derives the consumption index by replaying every
+// acceptance entry's payload: authorizationDigest -> consuming turn id. A
+// turn-log entry carrying consumedAuthorizations must also carry the wall
+// payload; a malformed digest, a duplicate consumption, or a malformed
+// wall payload refuses the state as corrupt — the index is never guessed
+// and never trusted from any cached copy.
+func ConsumedAuthorizations(state map[string]any) (map[string]string, error) {
+	turnLog, _ := state["turnLog"].([]any)
+	index := map[string]string{}
+	for _, item := range turnLog {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		raw, present := entry["consumedAuthorizations"]
+		wallRaw, wallPresent := entry["wall"]
+		if !present && !wallPresent {
+			continue
+		}
+		turnID, _ := entry["turnId"].(string)
+		if !idRe.MatchString(turnID) {
+			return nil, stateErr("mission acceptance entry has an invalid turn id")
+		}
+		if !present || !wallPresent {
+			return nil, stateErr("mission acceptance entry %s must carry both wall and consumedAuthorizations", turnID)
+		}
+		wall, ok := wallRaw.(map[string]any)
+		if !ok || !exactKeys(wall, "verdict", "preTree", "expectedTree", "postTree", "orderedDigests") {
+			return nil, stateErr("mission acceptance entry %s wall payload has an invalid shape", turnID)
+		}
+		if v, _ := wall["verdict"].(string); v != "passed" {
+			return nil, stateErr("mission acceptance entry %s wall verdict is invalid", turnID)
+		}
+		for _, field := range []string{"preTree", "expectedTree", "postTree"} {
+			if tree, _ := wall[field].(string); !treeIDRe.MatchString(tree) {
+				return nil, stateErr("mission acceptance entry %s wall %s is invalid", turnID, field)
+			}
+		}
+		digests, ok := raw.([]any)
+		if !ok {
+			return nil, stateErr("mission acceptance entry %s consumedAuthorizations must be an array", turnID)
+		}
+		ordered, ok := wall["orderedDigests"].([]any)
+		if !ok || len(ordered) != len(digests) {
+			return nil, stateErr("mission acceptance entry %s ordered digests disagree with consumption", turnID)
+		}
+		for position, rawDigest := range digests {
+			digest, ok := rawDigest.(string)
+			if !ok || !hashRe.MatchString(digest) {
+				return nil, stateErr("mission acceptance entry %s has a malformed authorization digest", turnID)
+			}
+			if ordered[position] != rawDigest {
+				return nil, stateErr("mission acceptance entry %s ordered digests disagree with consumption", turnID)
+			}
+			if _, taken := index[digest]; taken {
+				return nil, stateErr("mission state consumes authorization %.12s twice; the state is corrupt", digest)
+			}
+			index[digest] = turnID
+		}
+	}
+	return index, nil
 }

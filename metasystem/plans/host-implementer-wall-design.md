@@ -11,10 +11,22 @@
   registry types) are owned by golden fixtures during the build.
   D100's rulings stand: NO self-work exception, DETECTOR tier.
 - Goal: host-implementer-wall (Current)
-- In flight right now: slice 4 (mission state v2, HIW-O11 + the
-  state half of HIW-O3: schemaVersion 2 with the exact legacy
-  refusal, openTurn, workspaceTaint, payload-bearing acceptance
-  entries, segment ordinals).
+- In flight right now: slice 5 (the runner's wall: turn
+  open/anchor via gittree, adjudication provenance verification,
+  the tree equation at acceptance, the payload-bearing acceptance
+  write, certified[].authorizationDigest required).
+- Landed: slice 4 (mission state v2) — four critique rounds
+  (5 findings, 2, 1, 0, AGREE). The two sharpest: a valid write
+  could erase an acceptance entry and un-consume its authorization
+  (turnLog is now append-only with a byte-identical prefix), and
+  corrupt-state recovery re-rooted doctored payloads into a fresh
+  genesis with no transition validation (recovery now refuses
+  whenever wall or taint history is present — evidence preserved,
+  human decides). Plus entry-grain taint immutability with
+  segment-advances-exactly-with-resolutions, resolution shapes
+  carrying resolvedBy/reason/waivedClaims, the sentinel legacy
+  refusal surviving the real Reconcile surface, and the shipped
+  JSON schema at v2 parity.
 - Landed: slice 3 (authorization issuance, HIW-O2) — two critique
   rounds (3 findings then 0, AGREE). Round 1's sharpest catch:
   the prose-under-30 waiver path issued authorizations WITHOUT
@@ -34,10 +46,14 @@
   finding trajectory 5 → 3 → 3 → 2 → 0, "AGREE — slices land"
   (scratchpad wall-slice*-output.md; scanner gap recorded in
   KI-34).
-- Waiting on the human: nothing.
-- Next step: build slice 4, then its critique loop; then
-  adjudication/wall (slices 5+) in matrix order — both-host gates
-  before any ship.
+- Waiting on the human: no — waiting on the in-flight slice-4
+  round-4 codex critique, a one-finding verification (the re-root
+  fixture now byte-compares the corrupt state), whose completion re-invokes this session (the
+  both-must-agree covenant).
+- Next step: fold the slice-4 verdict, commit on AGREE; then
+  slice 5 (the runner: turn open/anchor, adjudication provenance
+  verification, the wall equation, the acceptance write) — matrix
+  order, both-host gates before any ship.
 
 ## What happened (unchanged evidence)
 

@@ -396,6 +396,12 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 		return 1, err
 	}
 	if err := validate(raw); err != nil {
+		// A pre-wall state is NOT corruption: the named refusal reaches the
+		// operator verbatim, no corrupt-state file is written, and no
+		// recovery is attempted — the remedy is re-provisioning.
+		if errors.Is(err, ErrLegacyState) {
+			return 3, err
+		}
 		return reconcileCorruptState(statePath, raw)
 	}
 	cycles, err := ledgerCycleCount(ledgerPath)
@@ -491,6 +497,30 @@ func reconcileCorruptState(statePath string, raw map[string]any) (int, error) {
 	evidence := filepath.Join(filepath.Dir(statePath), "state.corrupt."+corruptHash+".json")
 	if !fileExists(evidence) {
 		_ = os.WriteFile(evidence, data, 0o644)
+	}
+	// A corrupt state that carries WALL HISTORY — acceptance entries or
+	// taint entries — is never re-rooted (slice-4 critique R2-1): the
+	// re-root builds a fresh genesis with no transition validation, so an
+	// erased or rewritten acceptance entry would launder into a valid
+	// chain and the consumption index would forget it. The evidence is
+	// preserved above; the human repairs or re-provisions.
+	if turnLog, _ := raw["turnLog"].([]any); true {
+		for _, item := range turnLog {
+			entry, _ := item.(map[string]any)
+			if entry == nil {
+				continue
+			}
+			_, hasWall := entry["wall"]
+			_, hasConsumed := entry["consumedAuthorizations"]
+			if hasWall || hasConsumed {
+				return 3, stateErr("mission state is corrupt and carries wall acceptance history; automatic recovery refused — evidence preserved at %s", filepath.Base(evidence))
+			}
+		}
+	}
+	if taint, _ := raw["workspaceTaint"].(map[string]any); taint != nil {
+		if entries, _ := taint["entries"].([]any); len(entries) > 0 {
+			return 3, stateErr("mission state is corrupt and carries taint history; automatic recovery refused — evidence preserved at %s", filepath.Base(evidence))
+		}
 	}
 	integrity, _ := raw["integrity"].(map[string]any)
 	if integrity == nil {

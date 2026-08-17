@@ -1,6 +1,7 @@
 package mission
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -260,4 +261,188 @@ func mustMarshalIndent(t *testing.T, doc map[string]any) string {
 	data, _ := os.ReadFile(tmp)
 	b.Write(data)
 	return b.String()
+}
+
+// State v2 (host-implementer wall): the exact legacy refusal precedes shape
+// validation; the fresh state carries openTurn/workspaceTaint; acceptance
+// payloads derive the consumption index and refuse duplicates; the taint
+// ledger is monotonic across transitions.
+func TestStateV2Wall(t *testing.T) {
+	_, state, _ := initMission(t)
+	doc, _ := readStateDoc(state)
+	if v, _ := intValue(doc["schemaVersion"]); v != 2 {
+		t.Fatalf("fresh state schemaVersion = %v, want 2", doc["schemaVersion"])
+	}
+	if doc["openTurn"] != nil {
+		t.Fatalf("fresh state has an open turn: %v", doc["openTurn"])
+	}
+
+	// A version-1 state gets the exact legacy refusal, not a shape error.
+	legacy := map[string]any{}
+	for k, v := range doc {
+		legacy[k] = v
+	}
+	legacy["schemaVersion"] = 1
+	delete(legacy, "integrity")
+	if err := validate(func() map[string]any {
+		legacy["integrity"] = map[string]any{}
+		return legacy
+	}()); err == nil || !strings.Contains(err.Error(), "state predates the host-implementer wall; re-provision the mission") {
+		t.Fatalf("legacy refusal wrong: %v", err)
+	}
+
+	// Acceptance payloads: consumption replays; a duplicate digest refuses.
+	digest := strings.Repeat("c", 64)
+	tree := strings.Repeat("d", 40)
+	accepted := map[string]any{
+		"turnId": "demo-t1", "consumedAuthorizations": []any{digest},
+		"wall": map[string]any{
+			"verdict": "passed", "preTree": tree, "expectedTree": tree,
+			"postTree": tree, "orderedDigests": []any{digest},
+		},
+	}
+	doc["turnLog"] = []any{accepted}
+	index, err := ConsumedAuthorizations(doc)
+	if err != nil || index[digest] != "demo-t1" {
+		t.Fatalf("consumption index wrong: %v %v", index, err)
+	}
+	second := map[string]any{}
+	for k, v := range accepted {
+		second[k] = v
+	}
+	second["turnId"] = "demo-t2"
+	doc["turnLog"] = []any{accepted, second}
+	if _, err := ConsumedAuthorizations(doc); err == nil || !strings.Contains(err.Error(), "twice") {
+		t.Fatalf("duplicate consumption not refused: %v", err)
+	}
+	// A wall payload without consumption (or the reverse) is corrupt.
+	doc["turnLog"] = []any{map[string]any{"turnId": "demo-t3", "wall": accepted["wall"]}}
+	if _, err := ConsumedAuthorizations(doc); err == nil {
+		t.Fatal("wall-only entry accepted")
+	}
+
+	// Entry-grain immutability (slice-4 F-1/F-3): acceptance entries are
+	// append-only; taint facts freeze; a resolution lands once and bumps
+	// the segment by exactly one; appended taints start unresolved.
+	fresh, _ := readStateDoc(state)
+	withTaint := func(taint map[string]any, log []any) map[string]any {
+		out := map[string]any{}
+		for k, v := range fresh {
+			out[k] = v
+		}
+		out["workspaceTaint"] = taint
+		if log != nil {
+			out["turnLog"] = log
+		}
+		return out
+	}
+	entry := map[string]any{"taintId": 1, "turnId": "demo-t1", "reason": "drift", "setAt": "2026-08-17T00:00:00Z", "resolution": nil}
+	resolution := map[string]any{"variant": "restore", "treeId": tree, "resolvedAt": "2026-08-17T01:00:00Z", "resolvedBy": "Wido", "reason": "restored"}
+	resolvedEntry := map[string]any{"taintId": 1, "turnId": "demo-t1", "reason": "drift", "setAt": "2026-08-17T00:00:00Z", "resolution": resolution}
+	tainted := withTaint(map[string]any{"next": 2, "segment": 0, "entries": []any{entry}}, nil)
+	resolved := withTaint(map[string]any{"next": 2, "segment": 1, "entries": []any{resolvedEntry}}, nil)
+	if err := validateTransition(tainted, resolved); err != nil {
+		t.Fatalf("lawful resolution refused: %v", err)
+	}
+	unbumped := withTaint(map[string]any{"next": 2, "segment": 0, "entries": []any{resolvedEntry}}, nil)
+	if err := validateTransition(tainted, unbumped); err == nil {
+		t.Fatal("resolution without a segment bump accepted")
+	}
+	reopened := withTaint(map[string]any{"next": 2, "segment": 1, "entries": []any{entry}}, nil)
+	if err := validateTransition(resolved, reopened); err == nil {
+		t.Fatal("reopened resolution accepted")
+	}
+	rewritten := map[string]any{"taintId": 1, "turnId": "demo-t1", "reason": "REWRITTEN", "setAt": "2026-08-17T00:00:00Z", "resolution": nil}
+	if err := validateTransition(tainted, withTaint(map[string]any{"next": 2, "segment": 0, "entries": []any{rewritten}}, nil)); err == nil {
+		t.Fatal("rewritten taint fact accepted")
+	}
+	preResolved := map[string]any{"taintId": 2, "turnId": "demo-t2", "reason": "x", "setAt": "2026-08-17T02:00:00Z", "resolution": resolution}
+	if err := validateTransition(tainted, withTaint(map[string]any{"next": 3, "segment": 1, "entries": []any{entry, preResolved}}, nil)); err == nil {
+		t.Fatal("entry appended already-resolved accepted")
+	}
+
+	// Turn-log entries are append-only and immutable in place.
+	logged := withTaint(map[string]any{"next": 1, "segment": 0, "entries": []any{}}, []any{accepted})
+	if err := validateTransition(logged, withTaint(map[string]any{"next": 1, "segment": 0, "entries": []any{}}, []any{})); err == nil {
+		t.Fatal("turn-log erasure accepted")
+	}
+	mutated := map[string]any{}
+	for k, v := range accepted {
+		mutated[k] = v
+	}
+	mutated["consumedAuthorizations"] = []any{}
+	if err := validateTransition(logged, withTaint(map[string]any{"next": 1, "segment": 0, "entries": []any{}}, []any{mutated})); err == nil {
+		t.Fatal("turn-log rewrite accepted")
+	}
+}
+
+// A preserved v1 state reaches the operator as the exact named refusal
+// through the REAL reconcile surface: no corrupt-state file, no recovery
+// (slice-4 critique F-2).
+func TestReconcileRefusesLegacyStateVerbatim(t *testing.T) {
+	root, state, ledger := initMission(t)
+	doc, _ := readStateDoc(state)
+	doc["schemaVersion"] = 1
+	delete(doc, "openTurn")
+	delete(doc, "workspaceTaint")
+	delete(doc, "integrity")
+	finalized := map[string]any{}
+	for k, v := range doc {
+		finalized[k] = v
+	}
+	finalized["integrity"] = map[string]any{}
+	rebuilt, err := finalizeNext(finalized, nil, nil)
+	if err == nil {
+		// finalizeNext validates; a v1 body correctly refuses there, so
+		// write the legacy bytes directly instead.
+		_ = rebuilt
+	}
+	finalized["integrity"] = map[string]any{"sequence": 0, "previousHash": nil,
+		"hash": strings.Repeat("0", 64), "history": []any{}, "recoveryOf": nil}
+	writeText(t, state, mustMarshalIndent(t, finalized))
+
+	code, rerr := Reconcile(state, root, ledger)
+	if code != 3 || rerr == nil || rerr.Error() != "mission resume refused: state predates the host-implementer wall; re-provision the mission" {
+		t.Fatalf("legacy reconcile = %d %v", code, rerr)
+	}
+	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(state), "state.corrupt.*"))
+	if len(matches) != 0 {
+		t.Fatalf("legacy refusal wrote corrupt-state files: %v", matches)
+	}
+}
+
+// Corrupt-state recovery never re-roots wall history (slice-4 R2-1): a
+// tampered state carrying an acceptance entry refuses automatic recovery,
+// preserves evidence, and leaves the corrupt bytes in place for the human.
+func TestReconcileRefusesToRerootWallHistory(t *testing.T) {
+	root, state, ledger := initMission(t)
+	doc, _ := readStateDoc(state)
+	digest := strings.Repeat("e", 64)
+	tree := strings.Repeat("f", 40)
+	doc["turnLog"] = []any{map[string]any{
+		"turnId": "demo-t1", "consumedAuthorizations": []any{digest},
+		"wall": map[string]any{"verdict": "passed", "preTree": tree,
+			"expectedTree": tree, "postTree": tree, "orderedDigests": []any{digest}},
+	}}
+	// The hash is now stale: this is exactly a tampered/corrupt state.
+	writeText(t, state, mustMarshalIndent(t, doc))
+	before, err := os.ReadFile(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, rerr := Reconcile(state, root, ledger)
+	if code != 3 || rerr == nil || !strings.Contains(rerr.Error(), "automatic recovery refused") {
+		t.Fatalf("wall-history re-root not refused: %d %v", code, rerr)
+	}
+	after, err := os.ReadFile(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("recovery rewrote the corrupt state despite the refusal")
+	}
+	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(state), "state.corrupt.*"))
+	if len(matches) != 1 {
+		t.Fatalf("evidence not preserved exactly once: %v", matches)
+	}
 }
