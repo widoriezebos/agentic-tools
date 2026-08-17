@@ -38,31 +38,45 @@
   expectation now reaches the launch (--expected-protocol is
   queried, never re-defaulted), but snapshot identity work is a
   flip prerequisite with the fixture.
-- Remaining before the flip, split by who is blocked (D88):
+- Remaining before the flip — CORRECTED per the Opus-window
+  re-review (plans/opus-window-review-acp.md, D91; the D88/D90
+  reframing made off-Fable is REVERSED on two points):
   - RESOLVED: provision-genesis-authority (1654c85's genesis-mode
     fix; validate-kit.sh green). devin-in-the-guest: CONFIRMED
     (Devin 3000.4.25 authed in the VM; the guest is up).
-  - FIX-FORWARD HARDENING, not a flip blocker: the supervise_acp
-    shell fixture, and the snapshot identity surfaces
-    (single-transport snapshots, protocol/schema pins in selection,
-    the (runtime, transport) admission evidence — P3 critique F4).
-    The delegate path runs live over ACP WITHOUT these (e1ce759),
-    so under D82's flip-and-fix-forward they follow the flip; the
-    design's earlier "flip prerequisite" label is superseded by the
-    live proof plus D82.
-  - THE ONE GATE, waiting on the human (D88): the D82/D83 acceptance
-    benchmark. benchmark/run-cohort.sh stops at a human seal/sign
-    boundary by design, and bm-2d is a 12h full-mission run; the
-    flip is not made on the live proof alone nor by forging the
-    seal. On a human-sealed green benchmark the flip is the one-line
-    dispatch.transport.devin=acp default, fix-forward.
-- Waiting on the human: the D82/D83 acceptance benchmark is the sole
-  gate to the flip and stops at a human seal by design (D88);
-  provisioning and devin-in-guest are confirmed ready. Run
-  benchmark/run-cohort.sh --spec bm-2d (VM-only) when present; it
-  provisions and stops for the seal, then the printed --resume runs
-  it. The flip and its fix-forward hardening follow a green sealed
-  run.
+  - FLIP PREREQUISITES (restored — the review's failure chain:
+    snapshot identity does not key on transport, so a legacy-era
+    snapshot admits an ACP dispatch it never certified): the
+    snapshot identity surfaces — single-transport snapshots,
+    protocol/schema pins in selection, the (runtime, transport)
+    admission evidence (P3 critique F4) — and the supervise_acp
+    shell fixture (success, handshake failure, cancellation,
+    cleanup). The e1ce759 live proof shows one happy execution; it
+    cannot disprove stale/mismatched admission.
+  - THE D82 GATE (restored to the human's dual-host ruling): a
+    bm-2 pair — claude host + devin delegate with
+    dispatch.transport.devin=acp PROVEN in the target — successful
+    on the VM AND on the Mac, judged by the NAMED acceptance
+    contract in plans/opus-window-review-acp.md §4 (acp resolved
+    pre-seal; every devin dispatch records transport=acp + a
+    wire-derived session id + acp outcome artifacts; no legacy
+    fallback or transport-level failure; acp-bound snapshot
+    admission; terminal-state policy declared before the run).
+    "Mechanically successful" without those checks is not a
+    criterion. bm-2d/bm-2dc remain ADDITIONAL VM-only Devin-host
+    coverage (D83), never substitutes for the D82 pair.
+  - OPEN, needs the human: whether "I don't trust Devin on the Mac"
+    (D83) covers Devin DELEGATES too. If yes, D82's Mac half needs
+    the human's re-ruling (the wire probe found no devin mode
+    enforces path containment, which argues delegates share the
+    distrust); if no, the Mac bm-2 rep runs as written.
+- Waiting on the human: the D82/D83 conflict above — may a Devin
+  delegate (over ACP) run on the Mac for the D82 Mac-side rep, or
+  is all Devin execution VM-only, in which case rule what replaces
+  the Mac half of the gate. Also each cohort's seal. The in-flight
+  bm-2d run continues as D83 devin-host coverage (human-approved
+  seal), with transport=acp set in its target before resume so its
+  delegates actually ride ACP.
 
 The human's question that raised this (2026-08-15, on the Devin
 delivery failures): "Is there no way to use ACP to make this more

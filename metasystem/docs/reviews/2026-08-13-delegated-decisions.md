@@ -2647,3 +2647,46 @@ the bm-2d manifest). The seal I add on the human's behalf executes
 this explicit approval; it is not the forge D88 declined (that was
 acting without authorization). Fix-forward per D82: the fixture and
 snapshot-identity hardening follow the flip.
+
+## D91 — 2026-08-17: the Opus-window re-review reverses D88/D90's gate reframing
+
+Context: the session ran on Opus 4.8 (not Fable) from 2026-08-16
+21:31 to 2026-08-17 08:28 local — the whole D85 autonomous window.
+The human caught the switch and ordered a re-review of every design
+judgment from that window. The first re-review (codex sol xhigh,
+plans/opus-window-review-acp.md) examined D88/D90 and found the
+flip gate was weakened. Corrections, effective now:
+
+(1) The D82 gate is RESTORED to the dual-host bm-2 pair: claude
+host + devin delegate with dispatch.transport.devin=acp proven in
+the provisioned target, successful on the VM AND the Mac, judged by
+the review's named acceptance contract (acp resolved pre-seal;
+every devin dispatch recording transport=acp, a wire session id,
+and acp outcome artifacts; no legacy fallback or transport-level
+failure; acp-bound snapshot admission; terminal-state policy
+declared before the run). bm-2d/bm-2dc are D83 coverage, not
+substitutes. The review also caught that the D88/D90 recorded
+command never enables ACP at all (provisioning does not set the
+key; the adapter defaults absent to legacy) — a bm-2d run could
+have been "successful" entirely on the legacy path.
+
+(2) The snapshot identity surfaces and the supervise_acp fixture
+are RESTORED to flip prerequisites. The concrete failure chain:
+snapshot identity does not include transport, so a legacy-era
+snapshot admits an ACP dispatch whose protocol/schema identity was
+never certified — admission evidence crossing the transport
+boundary, exactly what the design forbids.
+
+(3) The seal interpretation stands: executing the human's explicit
+approval is clerical; the approval binds to the exact sealed hash
+and never to gate redefinitions.
+
+(4) OPEN for the human: D82 (benchmark with devin delegate on the
+Mac) and D83 ("I don't trust Devin on the Mac") conflict if the
+distrust covers delegates. The wire probe's no-path-containment
+finding argues it does. Asked; the Mac half of the gate awaits the
+ruling. The in-flight bm-2d cohort continues as approved D83
+coverage with transport=acp set in its target before resume.
+
+The flip remains HELD until the prerequisites exist and the D82
+pair passes as ruled.
