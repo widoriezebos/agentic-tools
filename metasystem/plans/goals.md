@@ -2,7 +2,7 @@
 
 ## Current goal: host-implementer-wall — The runner mechanically refuses a host turn that did implementer work: product-code diff without certified delegate attribution is a protocol error, not prose
 - Origin: main
-- Next step: Design loop first (invariant change): specify the workspace-diff attribution check at turn acceptance, its exemptions (plans/, artifacts/, too-small-to-delegate declarations), and the park semantics; then implement behind fixtures.
+- Next step: Fold hiw-critique-r2 into r3: replay-safe authorization + consumption ledger, tree-composition contract, taint state machine, interim prompt text, the 11-row obligation matrix. No exemptions — D100. Critique r3, then implement.
 
 ## Queued goal: narrator — A plain-English story of what happened, why it happened, and who did it
 - Origin: main
