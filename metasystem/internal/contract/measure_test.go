@@ -30,7 +30,7 @@ func newMeasureRepo(t *testing.T) (repo, contractPath string) {
 	runGitCmd(t, repo, "tag", "instruments")
 
 	contractPath = filepath.Join(repo, "plans", "mission-alpha.contract.md")
-	writeFileMode(t, contractPath, baseContract(), 0o644)
+	writeFileMode(t, contractPath, sealableContract(), 0o644)
 	if _, err := Seal(contractPath); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestContractMeasureGuardUnaffectedByGateMutation(t *testing.T) {
 	runGitCmd(t, repo, "tag", "instruments")
 
 	contractPath := filepath.Join(repo, "plans", "mission-alpha.contract.md")
-	contract := strings.Replace(baseContract(),
+	contract := strings.Replace(sealableContract(),
 		"gate.paths=scripts/gate.sh", "gate.paths=scripts/*.sh", 1)
 	contract = strings.Replace(contract,
 		"guard.audit.command=scripts/gate.sh", "guard.audit.command=scripts/guard.sh", 1)

@@ -288,8 +288,19 @@ func TestStopLossVerdictKeyedBySemantics(t *testing.T) {
 		t.Fatalf("replay verdict: %+v", replay)
 	}
 
+	// Semantics 3 replays with the candidate-aware tuple (issue #4);
+	// markerless lines without candidate tokens fold them as directed
+	// worst, so this ledger's verdict matches semantics 2 exactly.
+	sem3, err := engine.stopLossVerdict(map[string]any{"ledgerSemantics": 3}, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sem3.Tripped != replay.Tripped || sem3.Semantics != 3 || sem3.Stagnant != replay.Stagnant {
+		t.Fatalf("semantics-3 verdict diverged without candidate tokens: %+v vs %+v", sem3, replay)
+	}
+
 	// A semantics this runner does not implement is refused, never guessed.
-	if _, err := engine.stopLossVerdict(map[string]any{"ledgerSemantics": 3}, ledger); err == nil ||
+	if _, err := engine.stopLossVerdict(map[string]any{"ledgerSemantics": 4}, ledger); err == nil ||
 		!strings.Contains(err.Error(), "newer than this runner") {
 		t.Fatalf("unknown semantics must refuse: %v", err)
 	}

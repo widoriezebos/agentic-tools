@@ -17,6 +17,7 @@ package missionrunner
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -68,6 +69,15 @@ type stopLossGate struct {
 	thresholds map[string]string
 	noise      map[string]float64
 	baseline   map[string]float64
+	// candidateAware extends the best tuple with the same metrics
+	// measured on the mission's active CANDIDATE branch (issue #4,
+	// ledgerSemantics 3): a binary gate of record cannot register the
+	// serial pipeline's progress, so a perfect tree awaiting the wall
+	// parked as stagnant. Candidate components fold AFTER every
+	// gate-of-record component, so a candidate pass can never outrank
+	// a real merge — but the first passing candidate is a NEW BEST and
+	// resets stagnation.
+	candidateAware bool
 }
 
 // stopLossGateFromContract builds the gate spec from a sealed contract's
@@ -133,6 +143,13 @@ func (g *stopLossGate) observedValues(observed string) map[string]float64 {
 	for metric, value := range g.baseline {
 		values[metric] = value
 	}
+	if g.candidateAware {
+		// Absent candidate tokens replay as the directed WORST — a
+		// cycle that measured no candidate cannot look like progress.
+		for _, metric := range g.metrics {
+			values["candidate-"+metric] = directedWorst(g.direction)
+		}
+	}
 	for _, pair := range strings.Split(observed, ",") {
 		name, raw, found := strings.Cut(pair, "=")
 		if !found {
@@ -146,6 +163,15 @@ func (g *stopLossGate) observedValues(observed string) map[string]float64 {
 		}
 	}
 	return values
+}
+
+// directedWorst is the identity element for a metric direction: no real
+// measurement can fold below it.
+func directedWorst(direction string) float64 {
+	if direction == "min" {
+		return math.Inf(1)
+	}
+	return math.Inf(-1)
 }
 
 // tuple builds the new-best comparison tuple: the count of declared
@@ -166,6 +192,25 @@ func (g *stopLossGate) tuple(values map[string]float64) []float64 {
 		}
 		tuple = append(tuple, value)
 	}
+	if g.candidateAware {
+		met = 0
+		for _, metric := range g.metrics {
+			if pass, err := contract.ThresholdPasses(g.thresholds[metric], values["candidate-"+metric]); err == nil && pass {
+				met++
+			}
+		}
+		tuple = append(tuple, float64(met))
+		for _, metric := range g.metrics {
+			value := values["candidate-"+metric]
+			if g.direction == "min" && !math.IsInf(value, 1) {
+				value = -value
+			}
+			if math.IsInf(value, 1) {
+				value = math.Inf(-1) // directed worst after min-negation
+			}
+			tuple = append(tuple, value)
+		}
+	}
 	return tuple
 }
 
@@ -182,10 +227,17 @@ func (g *stopLossGate) qualifies(candidate, best []float64) bool {
 		if candidate[i] < best[i] {
 			return false
 		}
-		if i == 0 {
+		// Threshold-count components (position 0 and, candidate-aware,
+		// the position right after the main metrics) are integers: any
+		// strict increase qualifies without a noise gate.
+		if i == 0 || (g.candidateAware && i == len(g.metrics)+1) {
 			return true
 		}
-		return candidate[i]-best[i] > g.noise[g.metrics[i-1]]
+		metricIndex := i - 1
+		if g.candidateAware && i > len(g.metrics)+1 {
+			metricIndex = i - len(g.metrics) - 2
+		}
+		return candidate[i]-best[i] > g.noise[g.metrics[metricIndex]]
 	}
 	return false
 }
@@ -216,7 +268,7 @@ func (g *stopLossGate) lineIsBest(event mission.LedgerEvent, best []float64) (bo
 // budget. An exhausted cycle budget dominates, because a vocal reset must
 // never extend a spent sealed allowance.
 func replayStopLossVerdict(gate *stopLossGate, cycleBudget, noGainBudget int, events []mission.LedgerEvent) StopLossVerdict {
-	best := gate.tuple(gate.baseline)
+	best := gate.tuple(gate.observedValues("")) // seed: baseline + candidate components at directed worst (issue-4 F-2)
 	cycles, stagnant := 0, 0
 	for _, event := range events {
 		if event.Reset {
@@ -336,6 +388,19 @@ func (e *Engine) stopLossVerdict(state map[string]any, ledger string) (*StopLoss
 		}
 		verdict := replayStopLossVerdict(gate, cycleBudget, noGainBudget, events)
 		return &verdict, nil
+	case 3:
+		// Semantics 3 (issue #4): the best tuple extends with the gate
+		// metrics measured on the mission's active candidate branch,
+		// folded after every gate-of-record component. Same fuse, same
+		// budgets, same marker-wins replay.
+		gate, cycleBudget, noGainBudget, err := e.sealedStopLossInputs()
+		if err != nil {
+			return nil, err
+		}
+		gate.candidateAware = true
+		verdict := replayStopLossVerdict(gate, cycleBudget, noGainBudget, events)
+		verdict.Semantics = 3
+		return &verdict, nil
 	default:
 		return nil, failf(3, "mission ledgerSemantics %d is newer than this runner", semantics)
 	}
@@ -379,11 +444,12 @@ func (e *Engine) bestMarker(state map[string]any, ledger, observed string) (stri
 	if err != nil {
 		return "", err
 	}
+	gate.candidateAware = semantics >= 3
 	_, _, events, err := mission.ParseLedgerEvents(ledger)
 	if err != nil {
 		return "", failf(3, "mission stop-loss replay refused: %v", err)
 	}
-	best := gate.tuple(gate.baseline)
+	best := gate.tuple(gate.observedValues("")) // seed: baseline + candidate components at directed worst (issue-4 F-2)
 	for _, event := range events {
 		if event.Reset {
 			continue

@@ -23,7 +23,10 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": 2
+      "enum": [
+        2,
+        3
+      ]
     },
     "missionId": {
       "type": "string",

@@ -50,7 +50,7 @@ func faultedContract() string {
 		"guard.audit.noise=0",
 		"guard.cadence=1",
 		"ledger.cycle-budget=5",
-		"ledger.no-gain-budget=3",
+		"ledger.no-gain-budget=5",
 		"fence.wall-clock-hours=2",
 		"fence.cycles=5",
 		"fence.jobs=4",

@@ -1639,6 +1639,7 @@ guard.score.noise=0
 guard.cadence=1
 ledger.cycle-budget=5
 ledger.no-gain-budget=3
+ledger.accept-binary-gate-fuse=true
 fence.wall-clock-hours=2
 fence.cycles=$cycles
 fence.jobs=4

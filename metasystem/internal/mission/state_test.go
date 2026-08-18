@@ -125,13 +125,13 @@ func TestWriteRefusesDecreasingCounter(t *testing.T) {
 func TestLedgerSemanticsPinnedAtInit(t *testing.T) {
 	_, state, _ := initMission(t)
 	doc, _ := readStateDoc(state)
-	if v, _ := intValue(doc["ledgerSemantics"]); v != 2 {
-		t.Fatalf("init must pin ledgerSemantics 2, got %v", doc["ledgerSemantics"])
+	if v, _ := intValue(doc["ledgerSemantics"]); v != 3 {
+		t.Fatalf("init must pin ledgerSemantics 3, got %v", doc["ledgerSemantics"])
 	}
 
 	// The pin is immutable: a proposal that changes it is refused.
 	_, hash, _ := VerifyStateShape(state)
-	doc["ledgerSemantics"] = 3
+	doc["ledgerSemantics"] = 2
 	source := state + ".src"
 	_ = atomicWriteJSON(source, doc)
 	if err := WriteState(state, source, hash); err == nil ||
@@ -270,8 +270,8 @@ func mustMarshalIndent(t *testing.T, doc map[string]any) string {
 func TestStateV2Wall(t *testing.T) {
 	_, state, _ := initMission(t)
 	doc, _ := readStateDoc(state)
-	if v, _ := intValue(doc["schemaVersion"]); v != 2 {
-		t.Fatalf("fresh state schemaVersion = %v, want 2", doc["schemaVersion"])
+	if v, _ := intValue(doc["schemaVersion"]); v != 3 {
+		t.Fatalf("fresh state schemaVersion = %v, want 3 (the semantics-3 downgrade barrier)", doc["schemaVersion"])
 	}
 	if doc["openTurn"] != nil {
 		t.Fatalf("fresh state has an open turn: %v", doc["openTurn"])
@@ -444,5 +444,37 @@ func TestReconcileRefusesToRerootWallHistory(t *testing.T) {
 	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(state), "state.corrupt.*"))
 	if len(matches) != 1 {
 		t.Fatalf("evidence not preserved exactly once: %v", matches)
+	}
+}
+
+// Issue-4 round 3 (R3-2, the in-tree half of the downgrade claim): a
+// schema-3 state carrying wall history that reaches a reconciler which
+// cannot validate it is NEVER re-rooted — the corrupt-state recovery
+// refusal from slice 4 holds for schema-invalid bytes exactly as for
+// tampered ones, so state.json itself stays byte-identical. (The full
+// cross-version proof needs a pre-semantics-3 binary and is recorded as
+// the accepted residual: an old binary may write its runner record and a
+// spurious corrupt-evidence copy, but can never mutate the state or
+// write best markers.)
+func TestReconcileRefusesRerootOnFutureSchema(t *testing.T) {
+	root, state, ledger := initMission(t)
+	doc, _ := readStateDoc(state)
+	digest := strings.Repeat("d", 64)
+	tree := strings.Repeat("e", 40)
+	doc["schemaVersion"] = 99 // unvalidatable to EVERY binary
+	doc["turnLog"] = []any{map[string]any{
+		"turnId": "demo-t1", "consumedAuthorizations": []any{digest},
+		"wall": map[string]any{"verdict": "passed", "preTree": tree,
+			"expectedTree": tree, "postTree": tree, "orderedDigests": []any{digest}},
+	}}
+	writeText(t, state, mustMarshalIndent(t, doc))
+	before, _ := os.ReadFile(state)
+	code, err := Reconcile(state, root, ledger)
+	if code != 3 || err == nil || !strings.Contains(err.Error(), "automatic recovery refused") {
+		t.Fatalf("future-schema wall history re-rooted: %d %v", code, err)
+	}
+	after, _ := os.ReadFile(state)
+	if !bytes.Equal(before, after) {
+		t.Fatal("reconciliation mutated a future-schema state")
 	}
 }

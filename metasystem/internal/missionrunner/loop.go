@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +28,17 @@ import (
 // runner's recorded identity, then hands off to the loop; the exit code is
 // the process exit code.
 func (e *Engine) RunLoop(mode, tag, startSignal string) int {
+	// The FIRST act of the runner's life: refuse ledger semantics this
+	// binary does not implement — before the runner-started event, the
+	// lease, the runner record, the heartbeat, and every resume healer
+	// (issue-4 round 3: even the failure ramp aggregates usage and
+	// emits, so the guard cannot live behind it). Only the start signal
+	// is written, so a waiting launcher learns the refusal.
+	if err := refuseUnsupportedSemantics(filepath.Join(e.missionDir(), "state.json")); err != nil {
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		fmt.Fprintln(os.Stderr, err.Error())
+		return exitFor(err)
+	}
 	if started, err := processStartedAt(os.Getpid()); err == nil {
 		e.emitter.PidStartedAt = started
 	}
@@ -835,7 +847,95 @@ func (e *Engine) measure(state map[string]any) (classification, observed string,
 		"guards":       result.Guards,
 		"candidateSha": result.CandidateSHA,
 	}
-	return result.Classification, result.Observed, measurement, result.GatePassed
+	observedLine := result.Observed
+	// Semantics 3 (issue #4): the same gate runs a SECOND time on the
+	// mission's active candidate branch, in a scratch worktree the runner
+	// owns. A binary gate of record cannot register the serial pipeline's
+	// progress, so a perfect tree awaiting the wall parked as stagnant;
+	// the candidate tokens let the stop-loss see it without ever letting
+	// it outrank a real merge. A failed candidate measurement is an
+	// absent token — the directed worst — never a dead runner.
+	if semantics, err := stopLossSemantics(state); err == nil && semantics >= 3 {
+		if candidate := e.measureCandidate(state); candidate != "" {
+			observedLine = observedLine + "," + candidate
+			measurement["candidate"] = candidate
+		}
+	}
+	return result.Classification, observedLine, measurement, result.GatePassed
+}
+
+// measureCandidate runs the declared gate on the newest open implementer
+// chain's branch in a disposable worktree, returning candidate-prefixed
+// observed tokens, or "" when there is no candidate or it cannot be
+// measured. Best-effort by design: the gate of record is untouched.
+func (e *Engine) measureCandidate(state map[string]any) string {
+	branch := e.activeCandidateBranch(state)
+	if branch == "" {
+		return ""
+	}
+	sha, err := e.gitRevParse(branch)
+	if err != nil {
+		e.emit("candidate-measure-skipped", clipSummary("candidate branch unreadable: "+branch), map[string]string{
+			"missionId": e.Mission, "error": "candidate branch unreadable: " + branch,
+		})
+		return ""
+	}
+	metrics, err := contract.MeasureCandidate(e.contractPath(), sha)
+	if err != nil {
+		e.emit("candidate-measure-skipped", clipSummary(err.Error()), map[string]string{
+			"missionId": e.Mission, "error": err.Error(),
+		})
+		return ""
+	}
+	tokens := make([]string, 0, len(metrics)+1)
+	for metric, value := range metrics {
+		tokens = append(tokens, "candidate-"+metric+"="+value)
+	}
+	sort.Strings(tokens)
+	tokens = append(tokens, "candidate-ref="+branch+"@"+sha)
+	return strings.Join(tokens, ",")
+}
+
+// activeCandidateBranch resolves the mission's active integration branch:
+// the branch of the newest non-terminal implementer job of this mission,
+// else the newest terminal one whose return has not yet been consumed —
+// read from job records the runner already trusts, never from a claim.
+func (e *Engine) activeCandidateBranch(state map[string]any) string {
+	jobsDir := jobsDirPath(e.Root)
+	entries, err := os.ReadDir(jobsDir)
+	if err != nil {
+		return ""
+	}
+	newest := ""
+	newestStarted := ""
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		record, err := readJSONDoc(filepath.Join(jobsDir, name))
+		if err != nil {
+			continue
+		}
+		if record["role"] != "implementer" || !numericEqual(record["mission"], e.Mission) {
+			continue
+		}
+		branch, _ := record["branch"].(string)
+		jobID, _ := record["jobId"].(string)
+		// EXACTLY the dispatch-produced branch of THIS job, and free of
+		// the observed line's grammar characters (issue-4 F-3: a crafted
+		// branch like agent/x,candidate-score=999 is a valid git ref and
+		// its candidate-ref token would inject a forged metric).
+		if jobID == "" || branch != "agent/"+jobID || strings.ContainsAny(branch, ",=@ \t") {
+			continue
+		}
+		started, _ := record["startedAt"].(string)
+		if started > newestStarted {
+			newestStarted = started
+			newest = branch
+		}
+	}
+	return newest
 }
 
 // stampObservedSession records the session identity the harness itself
@@ -1410,4 +1510,24 @@ func providerErrorSubtype(path string) string {
 	}
 	subtype, _ := doc["subtype"].(string)
 	return subtype
+}
+
+// refuseUnsupportedSemantics raw-reads a mission state's ledgerSemantics
+// and refuses values this runner does not implement, before ANY side
+// effect. An absent state (fresh start) or unreadable file passes — init
+// writes a supported value, and unreadable states fail loudly in the
+// validated read paths that follow.
+func refuseUnsupportedSemantics(statePath string) error {
+	doc, err := readJSONDoc(statePath)
+	if err != nil {
+		return nil
+	}
+	semantics, ok := jsonInt(doc["ledgerSemantics"])
+	if !ok {
+		return nil // legacy semantics-1 states carry no field
+	}
+	if semantics < 1 || semantics > 3 {
+		return failf(3, "mission ledgerSemantics %d is newer than this runner", semantics)
+	}
+	return nil
 }

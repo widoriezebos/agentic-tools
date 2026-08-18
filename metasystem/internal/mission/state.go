@@ -222,8 +222,18 @@ func validateShape(state map[string]any) error {
 			return err
 		}
 	}
-	if v, _ := intValue(state["schemaVersion"]); v != 2 {
+	schemaVersion, _ := intValue(state["schemaVersion"])
+	if schemaVersion != 2 && schemaVersion != 3 {
 		return stateErr("mission state schema version or mission id is invalid")
+	}
+	// The DOWNGRADE BARRIER (issue-4 round 2): a semantics-3 mission is
+	// always schema 3, because post-wall pre-semantics-3 binaries accept
+	// schema 2 with any positive ledgerSemantics and would mutate the
+	// state and write wrong best markers before their verdict-time
+	// refusal. Those binaries refuse schema 3 at every read — the
+	// barrier they already understand.
+	if semantics, ok := intValue(state["ledgerSemantics"]); ok && semantics >= 3 && schemaVersion < 3 {
+		return stateErr("mission state ledgerSemantics %d requires schemaVersion 3", semantics)
 	}
 	missionID, ok := state["missionId"].(string)
 	if !ok || !idRe.MatchString(missionID) {
@@ -649,7 +659,7 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 		runnerLease = lease
 	}
 	body := map[string]any{
-		"schemaVersion":  2,
+		"schemaVersion":  3,
 		"missionId":      match[1],
 		"openTurn":       nil,
 		"workspaceTaint": map[string]any{"next": 1, "segment": 0, "entries": []any{}},
@@ -666,7 +676,10 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 		// The ledger semantics under which this mission's stop-loss verdict
 		// replays, pinned for the mission's whole life: a sealed budget's
 		// meaning never changes mid-mission (docs/design/stop-loss-core.md).
-		"ledgerSemantics": 2,
+		// Semantics 3 (issue #4): candidate-branch gate measurements
+		// extend the stop-loss best tuple; sealed meaning never changes
+		// mid-mission, so only NEW missions carry it.
+		"ledgerSemantics": 3,
 		"integrity":       map[string]any{},
 	}
 	lock, err := lockFile(statePath)

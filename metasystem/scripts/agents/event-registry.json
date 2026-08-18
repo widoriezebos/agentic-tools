@@ -735,6 +735,20 @@
           "type": "str"
         }
       }
+    },
+    "candidate-measure-skipped": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        }
+      }
     }
   },
   "schemaVersion": 1

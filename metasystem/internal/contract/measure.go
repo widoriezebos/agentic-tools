@@ -303,3 +303,22 @@ func measureCommand(commandRoot, command string, capMinutes int) (map[string]str
 	}
 	return metrics, code, false, nil
 }
+
+// MeasureCandidate runs the declared gate against an EXPLICIT commit —
+// the mission's active candidate branch (issue #4, ledgerSemantics 3) —
+// through the same materialization, cap ceiling, and declared-metric
+// validation as the gate of record. It returns the reported metrics
+// alone: classification, guards, and the best fold belong to the caller's
+// gate-of-record measurement.
+func MeasureCandidate(path, sha string) (map[string]string, error) {
+	doc, repo, projectRoot, err := contractLoad(path)
+	if err != nil {
+		return nil, err
+	}
+	_, gateRef, err := doc.resolvePins(repo)
+	if err != nil {
+		return nil, err
+	}
+	metrics, _, err := doc.runGate(repo, projectRoot, sha, gateRef)
+	return metrics, err
+}

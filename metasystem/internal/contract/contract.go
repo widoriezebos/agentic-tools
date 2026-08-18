@@ -90,6 +90,11 @@ var contractScalarSet = func() map[string]bool {
 // shortened the benchmark's stated exposure.
 var contractOptionalScalars = map[string]bool{
 	"host.max-turns": true, "host.max-budget-usd": true,
+	// The EXPLICIT sealed acknowledgment that a binary gate rides a
+	// no-gain budget below the cycle fence (issue #4): fixture beds
+	// legitimately exercise the fuse with tiny budgets, but the
+	// mismatch must never be signable SILENTLY.
+	"ledger.accept-binary-gate-fuse": true,
 }
 
 // contractIntegerKeys are the scalar keys that must be positive integers.
@@ -1097,6 +1102,14 @@ func (d *contractDoc) seal(repo, projectRoot string) (string, error) {
 	if d.approval != nil {
 		return "", stateErr("seal must run before approval is added")
 	}
+	// A BINARY single-metric gate cannot register progress before its
+	// final step, so a no-gain budget shorter than the cycle fence fires
+	// on perfect play (issue #4, vm-smoke-4: full marks parked). Refused
+	// at SEAL — the moment exposure becomes binding — regardless of the
+	// candidate-measurement mitigation, so the mismatch is unsignable.
+	if err := d.refuseBinaryGateShortFuse(); err != nil {
+		return "", err
+	}
 	fields, err := d.expectedSeal(repo, projectRoot, true)
 	if err != nil {
 		return "", err
@@ -1571,6 +1584,47 @@ func contractValidateOptionalScalar(key, value string) error {
 		if !contractPosDecRe.MatchString(value) {
 			return stateErr("mission contract host.max-budget-usd must be a positive decimal")
 		}
+	case "ledger.accept-binary-gate-fuse":
+		if value != "true" {
+			return stateErr("ledger.accept-binary-gate-fuse admits only the literal true; omit the key otherwise")
+		}
+	}
+	return nil
+}
+
+// refuseBinaryGateShortFuse refuses sealing a single-metric binary gate
+// (threshold >=1, noise floor 0) whose no-gain budget is below the cycle
+// fence: for such a gate the cycle fence is the only meaningful budget.
+func (d *contractDoc) refuseBinaryGateShortFuse() error {
+	var metrics []string
+	for key := range d.values {
+		if strings.HasPrefix(key, "gate.threshold.") {
+			metrics = append(metrics, strings.TrimPrefix(key, "gate.threshold."))
+		}
+	}
+	if len(metrics) != 1 {
+		return nil
+	}
+	metric := metrics[0]
+	threshold := d.values["gate.threshold."+metric]
+	if !strings.HasPrefix(threshold, ">=") {
+		return nil
+	}
+	thresholdValue, err := strconv.ParseFloat(strings.TrimPrefix(threshold, ">="), 64)
+	if err != nil || thresholdValue != 1 {
+		return nil
+	}
+	noiseValue, err := strconv.ParseFloat(d.values["gate.noise-floor."+metric], 64)
+	if err != nil || noiseValue != 0 {
+		return nil
+	}
+	noGain, err1 := strconv.Atoi(d.values["ledger.no-gain-budget"])
+	cycles, err2 := strconv.Atoi(d.values["fence.cycles"])
+	if err1 != nil || err2 != nil {
+		return nil // shape validation owns malformed numbers
+	}
+	if noGain < cycles && d.values["ledger.accept-binary-gate-fuse"] != "true" {
+		return stateErr("a single binary gate metric (threshold >=1, noise floor 0) with ledger.no-gain-budget=%d below fence.cycles=%d parks perfect play before its pipeline can merge (issue #4); raise the no-gain budget to at least the cycle fence, or seal ledger.accept-binary-gate-fuse=true to acknowledge it by name", noGain, cycles)
 	}
 	return nil
 }

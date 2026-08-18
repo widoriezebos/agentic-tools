@@ -12,6 +12,13 @@ const contractFence = "```"
 
 // baseContract is a complete, valid mission contract over the fixture repo's
 // frozen instruments.
+// sealableContract is baseContract with the no-gain budget raised to the
+// cycle fence: the binary-gate short-fuse refusal (issue #4) makes the
+// original combination unsignable by design.
+func sealableContract() string {
+	return strings.Replace(baseContract(), "ledger.no-gain-budget=2", "ledger.no-gain-budget=3", 1)
+}
+
 func baseContract() string {
 	return strings.Join([]string{
 		"# Intent", "",
@@ -103,7 +110,7 @@ func newContractRepo(t *testing.T) (repo, contractPath string) {
 	runGitCmd(t, repo, "tag", "instruments")
 
 	contractPath = filepath.Join(repo, "plans", "mission-alpha.contract.md")
-	writeFileMode(t, contractPath, baseContract(), 0o644)
+	writeFileMode(t, contractPath, sealableContract(), 0o644)
 	return repo, contractPath
 }
 
@@ -253,7 +260,7 @@ func TestContractSealWritesBlockAndDigest(t *testing.T) {
 func TestContractSealRefusesAfterApproval(t *testing.T) {
 	_, contractPath := newContractRepo(t)
 	writeFileMode(t, contractPath,
-		baseContract()+"\nApproval: name=Human; date=2026-08-04; contract-sha256="+strings.Repeat("0", 64)+"\n", 0o644)
+		sealableContract()+"\nApproval: name=Human; date=2026-08-04; contract-sha256="+strings.Repeat("0", 64)+"\n", 0o644)
 	if _, err := Seal(contractPath); err == nil || !strings.Contains(err.Error(), "before approval") {
 		t.Fatalf("expected refusal to seal after approval, got %v", err)
 	}
@@ -366,7 +373,7 @@ func removeLine(text, line string) string {
 // pre-feature contract's seal is unchanged by the feature's existence.
 func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
 	_, contractPath := newContractRepo(t)
-	withPatience := strings.Replace(baseContract(), "exposure=EUR:10",
+	withPatience := strings.Replace(sealableContract(), "exposure=EUR:10",
 		"exposure=EUR:10\npatience.rounds.implementer.codex.gpt-5-6-sol=4", 1)
 	writeFileMode(t, contractPath, withPatience, 0o644)
 	if _, _, err := Validate(contractPath); err != nil {
@@ -497,5 +504,21 @@ func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
 				t.Fatalf("a contract with %s=%q validated", key, bad)
 			}
 		})
+	}
+}
+
+// Issue #4 option 3: a single binary gate metric with a no-gain budget
+// below the cycle fence is UNSIGNABLE — refused at seal by name.
+func TestContractSealRefusesBinaryGateShortFuse(t *testing.T) {
+	_, contractPath := newContractRepo(t)
+	writeFileMode(t, contractPath, baseContract(), 0o644)
+	if _, err := Seal(contractPath); err == nil ||
+		!strings.Contains(err.Error(), "parks perfect play") {
+		t.Fatalf("binary-gate short fuse must refuse at seal: %v", err)
+	}
+	// Raising the budget to the fence signs cleanly.
+	writeFileMode(t, contractPath, sealableContract(), 0o644)
+	if _, err := Seal(contractPath); err != nil {
+		t.Fatalf("fuse-compliant contract refused: %v", err)
 	}
 }
