@@ -91,3 +91,77 @@ func TestCompileRejectsInvalidPattern(t *testing.T) {
 		t.Fatal("an invalid ERE must fail compilation")
 	}
 }
+
+// The Devin signature's issue-#12 shapes: the HOST CLI's internal raw
+// `devin acp` helper is excluded (it sits between the announced main and
+// every orchestrator tool shell), while the delegate-side server this
+// repository launches under argv0 devin-delegate-acp still matches — so
+// hosts classify MAIN through the exclusion and delegates stay DELEGATE.
+var (
+	devinMatch = []string{
+		`^([^[:space:]]*/)?devin([[:space:]]|$)`,
+		`^([^[:space:]]*/)?devin-delegate-acp([[:space:]]|$)`,
+	}
+	devinExcl = []string{
+		`^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)`,
+		`supervision-hook\.sh`,
+		`scripts/agents/adapters/devin\.sh`,
+	}
+)
+
+func TestDevinSignatureIssue12Shapes(t *testing.T) {
+	devin, err := CompileSignature("devin", devinMatch, devinExcl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigs := []Signature{devin}
+	cases := []struct {
+		name string
+		argv string
+		want string
+	}{
+		{"host CLI", "devin -p -- do the mission turn", "devin"},
+		{"host CLI by path", "/Users/w/.local/bin/devin -p", "devin"},
+		{"bare devin", "devin", "devin"},
+		// The host's internal ACP helper: EXCLUDED, so the ancestry walk
+		// continues upward to the announced main.
+		{"host acp helper", "devin acp", ""},
+		{"host acp helper by path", "/Users/w/.local/bin/devin acp", ""},
+		// The delegate-side server this adapter launches: argv0-marked,
+		// still a delegate signature.
+		{"delegate acp server", "devin-delegate-acp acp", "devin"},
+		{"delegate acp server by path", "/Users/w/.local/bin/devin-delegate-acp acp", "devin"},
+		{"declared lookalike", "metasystem-devin-lookalike", ""},
+		{"adapter itself", "bash scripts/agents/adapters/devin.sh probe", ""},
+	}
+	for _, row := range cases {
+		t.Run(row.name, func(t *testing.T) {
+			if got := Runtime(row.argv, sigs); got != row.want {
+				t.Fatalf("Runtime(%q) = %q, want %q", row.argv, got, row.want)
+			}
+		})
+	}
+}
+
+// The shipped adapter emits exactly the patterns the test above compiled —
+// drift between the fixture and the adapter fails here, not in the field.
+func TestDevinShippedSignatureMatchesFixture(t *testing.T) {
+	text, err := SignatureText("../../scripts/agents/adapters/devin.sh")
+	if err != nil {
+		t.Skipf("shipped adapter unavailable: %v", err)
+	}
+	matches, excludes := ParseSignatureText(text)
+	if len(matches) != len(devinMatch) || len(excludes) != len(devinExcl) {
+		t.Fatalf("shipped devin signature drifted: %v / %v", matches, excludes)
+	}
+	for i, m := range devinMatch {
+		if matches[i] != m {
+			t.Fatalf("match %d drifted: %q vs %q", i, matches[i], m)
+		}
+	}
+	for i, x := range devinExcl {
+		if excludes[i] != x {
+			t.Fatalf("exclude %d drifted: %q vs %q", i, excludes[i], x)
+		}
+	}
+}

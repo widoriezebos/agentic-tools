@@ -6,8 +6,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // childOf spawns a child whose parent is this test process, so classifying the
@@ -157,5 +160,103 @@ func TestClassifyRefusesLeakedFixture(t *testing.T) {
 	if _, err := Classify(root, int64(os.Getpid())); err == nil ||
 		!strings.Contains(err.Error(), "metasystem.runtimes is not fake") {
 		t.Fatalf("leaked fixture did not refuse classification: %v", err)
+	}
+}
+
+// Issue #12: the Devin HOST CLI's internal raw `devin acp` helper sits
+// between the announced main and every orchestrator tool shell. The
+// signature exclusion lets the ancestry walk continue THROUGH the helper
+// to the announced main — while the delegate-side server (argv0
+// devin-delegate-acp) still stops the walk as a delegate. The ancestry is
+// a real process chain; the intermediate's argv is supplied through the
+// authorized identity fixture (a shebang exec rewrites argv0, so a real
+// process cannot carry the helper's exact command).
+func TestClassifyDevinAcpHelperWalksToAnnouncedMain(t *testing.T) {
+	got := classifyThroughDevinShape(t, "devin acp")
+	if got.Class != ClassMain {
+		t.Fatalf("a tool shell under the host's acp helper must classify MAIN through the exclusion; got %+v", got)
+	}
+}
+
+func TestClassifyDevinDelegateServerStaysDelegate(t *testing.T) {
+	got := classifyThroughDevinShape(t, "devin-delegate-acp acp")
+	if got.Class != ClassDelegate {
+		t.Fatalf("a tool shell under the delegate acp server must stay DELEGATE even with a main announced above; got %+v", got)
+	}
+}
+
+// classifyThroughDevinShape stages: announced main (this test) <-
+// intermediate whose fixture command is the given argv <- tool child, and
+// classifies the child.
+func classifyThroughDevinShape(t *testing.T, intermediateCommand string) Classification {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"),
+		[]byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	self := int64(os.Getpid())
+	if _, err := Announce(root, "sess", self, selfStart(t), "tag", "fake", ""); err != nil {
+		t.Fatalf("announce self: %v", err)
+	}
+	writeDevinAdapter(t, root)
+	intermediate, child := grandchild(t, root)
+	table := fmt.Sprintf(`{"%d":{"pidStartedAt":1,"command":%q}}`, intermediate, intermediateCommand)
+	tablePath := filepath.Join(root, "identity.json")
+	if err := os.WriteFile(tablePath, []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", tablePath)
+	got, err := Classify(root, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// writeDevinAdapter ships the real devin signature lines into a bed.
+func writeDevinAdapter(t *testing.T, root string) {
+	t.Helper()
+	adapterDir := filepath.Join(root, "scripts/agents/adapters")
+	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+[ "$1" = signature ] && printf '%s\n' \
+  'match ^([^[:space:]]*/)?devin([[:space:]]|$)' \
+  'match ^([^[:space:]]*/)?devin-delegate-acp([[:space:]]|$)' \
+  'exclude ^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)'
+`
+	if err := os.WriteFile(filepath.Join(adapterDir, "devin.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// grandchild spawns a real intermediate (a plain shell) and returns both
+// its pid and its child's pid — the ancestry shape the classify walk
+// reads; the intermediate's COMMAND is overridden through the fixture.
+func grandchild(t *testing.T, root string) (int64, int64) {
+	t.Helper()
+	pidFile := filepath.Join(root, "grandchild.pid")
+	cmd := exec.Command("/bin/sh", "-c", "sleep 120 & echo $! > \""+pidFile+"\"; wait")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawn intermediate: %v", err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		data, err := os.ReadFile(pidFile)
+		if err == nil && len(data) > 0 {
+			pid, perr := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+			if perr != nil {
+				t.Fatalf("grandchild pid unreadable: %v", perr)
+			}
+			t.Cleanup(func() { _ = syscall.Kill(int(pid), syscall.SIGKILL) })
+			return int64(cmd.Process.Pid), pid
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("intermediate never published its child pid")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

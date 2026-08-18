@@ -157,7 +157,10 @@ var declarations = []Declaration{
 	{
 		Name: "devin", HasAdapter: true, HasHostLauncher: true,
 		Adoptable: true, TailoringPriority: 2,
-		SignatureVectors:         SignatureVectors{Positive: "devin", Lookalike: "metasystem-devin-lookalike"},
+		// The lookalike IS the host CLI's internal ACP helper (issue
+		// #12): the vector pins the exclusion that keeps a Devin-hosted
+		// orchestrator classified MAIN.
+		SignatureVectors:         SignatureVectors{Positive: "devin", Lookalike: "devin acp"},
 		CommonLifecycleAdapter:   true,
 		CollisionRoots:           []string{".agents", ".devin"},
 		SessionEnv:               "DEVIN_PROJECT_DIR",

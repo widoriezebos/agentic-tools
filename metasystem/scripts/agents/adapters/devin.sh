@@ -321,7 +321,10 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   # Redirection order is the deadlock contract: the server opens
   # stdout FIRST (pairing the client's read-side-first open), then
   # stdin (pairing the client's write side).
-  ( cd "$workspace" && while IFS= read -r a; do export "${a?}"; done < <(job_git_quarantine_env "$workspace"); exec devin acp >"$server_out" <"$server_in" 2>>"$log" ) &
+  # argv0 devin-delegate-acp: the census signature distinguishes THIS
+  # delegate-side server from the host CLI's internal raw `devin acp`
+  # helper (issue #12) — the binary ignores argv0, the classifier reads it.
+  ( cd "$workspace" && while IFS= read -r a; do export "${a?}"; done < <(job_git_quarantine_env "$workspace"); exec -a devin-delegate-acp "$(command -v devin)" acp >"$server_out" <"$server_in" 2>>"$log" ) &
   server_pid=$!
   register_cli_custody "$server_pid" || { terminate_cli_child "$server_pid"; fail_pending custody_registration handshake; return 1; }
 
@@ -760,8 +763,17 @@ case "$command_name" in
     ;;
   signature)
     (($# == 0)) || { usage; exit 2; }
+    # The RAW `devin acp` helper is the HOST CLI's own internal child
+    # (issue #12: `devin -p` spawns it between the announced main and
+    # every tool shell, so the ancestry walk classified the orchestrator
+    # DELEGATE and refused every dispatch). It is excluded; the DELEGATE
+    # ACP server this adapter launches carries the distinguishable argv0
+    # devin-delegate-acp, matched by its own line, so delegate tool
+    # shells still classify DELEGATE.
     printf '%s\n' \
       'match ^([^[:space:]]*/)?devin([[:space:]]|$)' \
+      'match ^([^[:space:]]*/)?devin-delegate-acp([[:space:]]|$)' \
+      'exclude ^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)' \
       'exclude supervision-hook\.sh' \
       'exclude scripts/agents/adapters/devin\.sh'
     ;;
