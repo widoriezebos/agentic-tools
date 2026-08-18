@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -71,6 +72,7 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 		return fail(err)
 	}
 	leaseHeld = true
+	e.unattendedCheckout = !lease.CheckoutForeignToLineage(e.Root, MissionLineage(e.Mission))
 
 	// Publication is lease-serialized (goal-system GOAL-22): only the
 	// winner writes the shared runner record, so a losing contender can
@@ -1330,4 +1332,61 @@ func docFromValue(value any) (map[string]any, error) {
 		return nil, err
 	}
 	return decodeJSONDoc(data)
+}
+
+// reclaimCheckout re-announces the RUN LOOP before an anchor (issue #2,
+// D102, round-3): the loop — not the launcher whose announcement armed
+// the checkout — is the process that anchors, so it announces ITSELF
+// under the mission lineage and the claim ladder does the rest: a dead
+// prior holder (a finished host turn, the exited detached launcher)
+// yields by ordinary same-lineage succession, and a LIVE runner-side
+// holder (the foreground launcher) yields through the ancestry edge,
+// because the loop is its real kernel child. STRICTLY a no-op in the
+// ATTENDED branch: the unattended marker is the checkout lease carrying
+// THIS mission's owner lineage — a human-held or foreign lease means
+// nothing here is ours to reclaim (round-2 F3's shadow stays impossible).
+// The announce passes the FRESHLY probed start second — self-consistent
+// at call time by construction — and reannouncement matching recognizes
+// the loop's earlier announcement by the clock-step-immune pair, so
+// drift cannot desynchronize it (round-3 F2). A FAILED reclaim is
+// returned, not swallowed: anchoring without holdership is exactly the
+// defect the reclaim exists to prevent.
+func (e *Engine) reclaimCheckout() error {
+	if !e.unattendedCheckout {
+		return nil
+	}
+	self := int64(os.Getpid())
+	// Class HOLDER exactly (round-6): RequireHolder answers Holder:true
+	// for HUMAN before reading the lease, and a detached runner whose
+	// launcher ancestor died classifies HUMAN — that must reclaim, not
+	// silently skip and anchor ungated.
+	if view, err := lease.RequireHolder(e.Root, self, nil); err == nil && view.Class == "HOLDER" {
+		return nil
+	}
+	started, ok := lease.StartedAt(self, nil)
+	if !ok {
+		return failf(3, "checkout reclaim cannot read its own identity")
+	}
+	session := fmt.Sprintf("mission-runner-%s-%d", e.Mission, self)
+	_, announceErr := lease.Announce(e.Root, session, self, started,
+		"mission-runner.sh", "metasystem", MissionLineage(e.Mission))
+	// Holdership is PROVEN through the PRODUCTION gate (round-5): the
+	// same RequireHolder every gated verb answers to — holder identity
+	// AND a complete claim stamp; a saved-but-unstamped succession, a
+	// silent live-holder refusal, and the check-to-claim race all fail
+	// this gate and surface here.
+	view, err := lease.RequireHolder(e.Root, self, nil)
+	if err == nil && view.Class == "HOLDER" {
+		return nil
+	}
+	detail := "checkout is held elsewhere"
+	if announceErr != nil {
+		detail = announceErr.Error()
+	} else if err != nil {
+		detail = err.Error()
+	}
+	e.emit("lease-reclaim-skipped", clipSummary(detail), map[string]string{
+		"missionId": e.Mission, "error": detail,
+	})
+	return failf(3, "checkout reclaim refused: %s", detail)
 }

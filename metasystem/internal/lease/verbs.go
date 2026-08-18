@@ -513,3 +513,38 @@ func sortedKeys(m map[string]int) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// AnnouncementsFor lists the valid announcements naming a pid — the
+// runner's reclaim uses it to find its own arming announcement without
+// re-probing a start second a clock step may have moved (issue #2).
+func AnnouncementsFor(root string, pid int64) []Announcement {
+	records, err := readAnnouncements(resolveRoot(root), false)
+	if err != nil {
+		return nil
+	}
+	var out []Announcement
+	for _, rec := range records {
+		if rec.Ann.Pid == pid {
+			out = append(out, rec.Ann)
+		}
+	}
+	return out
+}
+
+// CheckoutForeignToLineage reports whether the checkout lease exists,
+// reads validly, and carries a DIFFERENT owner lineage — the one state
+// that makes a mission runner's checkout reclaim someone else's business
+// (issue #2 round-5): an attended run's human lease, or a foreign main.
+// An absent or unreadable lease is NOT foreign — the runner treats the
+// checkout as its own to prove, and the reclaim's holder gate surfaces
+// any misclassification loudly instead of silently skipping.
+func CheckoutForeignToLineage(root, lineage string) bool {
+	if lineage == "" {
+		return true
+	}
+	current, err := loadLease(resolveRoot(root), true)
+	if err != nil || current == nil {
+		return false
+	}
+	return leaseLineage(current) != lineage
+}

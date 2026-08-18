@@ -274,6 +274,7 @@ func (e *Engine) armAndPreflight(mode string) error {
 	if err != nil {
 		return err
 	}
+
 	args := []string{
 		"--repo", e.Root,
 		"--session", identity.session,

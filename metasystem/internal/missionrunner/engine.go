@@ -52,6 +52,14 @@ type Engine struct {
 	Root    string
 	Mission string
 	emitter events.Emitter
+	// unattendedCheckout is the MISSION-START fact (issue #2 round-4):
+	// true when the checkout lease carried this mission's own lineage as
+	// the loop began — the unattended arming's signature. A live read at
+	// reclaim time cannot distinguish "attended by design" from "foreign
+	// takeover mid-mission"; this start-of-loop fact can, so a foreign
+	// lineage later is a loud refusal, never a silent skip.
+	unattendedCheckout bool
+
 	// anchorFn overrides how a state advance is anchored. Production always
 	// anchors through the binary (anchorState); tests inject it because the
 	// anchor is an external git effect a unit test cannot shell out for.
@@ -73,7 +81,15 @@ func (e *Engine) fixtures() (*fixtureauth.Authorization, error) {
 }
 
 // anchor writes the state's anchor commit through the configured anchorer.
+// EVERY anchor reclaims the checkout first (issue #2 round-2 F2): the
+// failed-turn, drain-stalled, and proposal-refusal paths all anchor after
+// a host turn held the lease, and any of them anchoring without runner
+// holdership either refuses on guarded targets or commits ungated on
+// unguarded ones.
 func (e *Engine) anchor(statePath, ledgerPath, identityName string) error {
+	if err := e.reclaimCheckout(); err != nil {
+		return err
+	}
 	if e.anchorFn != nil {
 		return e.anchorFn(statePath, ledgerPath, identityName)
 	}

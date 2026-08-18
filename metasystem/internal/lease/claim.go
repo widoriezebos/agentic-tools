@@ -85,6 +85,30 @@ func (c *claimer) claim(ann *Announcement) error {
 			// session as OWNED-ELSEWHERE against its own former mainId.
 			return c.reconcileSameProcess(current, ann)
 		}
+		// THE ONE EXCEPTION to "a live holder never yields" (issue #2,
+		// D102): a mission's own HOST TURN succeeds the mission's LIVE
+		// RUNNER. Unattended, the runner is the main that armed the
+		// checkout and holds the lease for the mission's whole life;
+		// without this edge every host turn's dispatch refuses
+		// OWNED-ELSEWHERE and the mission can never spend a job. The
+		// edge is fenced three ways: same mission lineage, the holder's
+		// own announcement carries the runner tag, and the claimant is
+		// NOT itself a runner. A foreign main — different lineage —
+		// stays refused (O-1), and the runner re-announces at turn
+		// conclusion to succeed the then-dead host via the ordinary
+		// dead-holder rule below; the epoch is PRESERVED across every
+		// succession (it is not a seizure), which is what keeps
+		// inherited delegates swept correctly.
+		if leaseLineage(current) == announcementLineage(ann) &&
+			announcementLineage(ann) != "" &&
+			holderIsMissionRunner(c.root, current) &&
+			descendsFrom(ann.Pid, current.Pid) {
+			// Kernel ancestry is the whole fence (round-3): the mission's
+			// host turn AND the runner's own detached loop are both real
+			// children of the runner-side holder; a twin runner or an
+			// impostor session, whatever its tags claim, is not.
+			return c.succeed(current, ann)
+		}
 		// A live holder that is a genuinely different process never loses the
 		// lease, whatever the lineage.
 		c.emitter.Emit(c.root, "lease-refused",
@@ -324,4 +348,52 @@ func sameLeaseProcess(current *Lease, ann *Announcement) bool {
 		return current.PidStartTicks == ann.PidStartTicks && current.BootID == ann.BootID
 	}
 	return current.PidStartedAt == ann.PidStartedAt
+}
+
+// holderIsMissionRunner reports whether the lease holder's own announcement
+// carries the mission-runner tag AND names the same kernel identity the
+// lease holds — a structurally valid announcement file that merely reuses
+// the holder's mainId proves nothing (round-2 F1). Together with the
+// kernel-ancestry check at the call site, the issue-#2 succession edge
+// cannot be reached by forgeable declarations: lineage and tags are text,
+// but parentage and the holder's identity pair are the kernel's.
+func holderIsMissionRunner(root string, current *Lease) bool {
+	records, err := readAnnouncements(root, false)
+	if err != nil {
+		return false
+	}
+	for _, rec := range records {
+		if rec.Ann.MainId != current.HolderMainId {
+			continue
+		}
+		if rec.Ann.InstanceTag != "mission-runner.sh" || rec.Ann.Pid != current.Pid {
+			return false
+		}
+		if rec.Ann.PidStartTicks > 0 && rec.Ann.BootID != "" &&
+			current.PidStartTicks > 0 && current.BootID != "" {
+			return rec.Ann.PidStartTicks == current.PidStartTicks && rec.Ann.BootID == current.BootID
+		}
+		return rec.Ann.PidStartedAt == current.PidStartedAt
+	}
+	return false
+}
+
+// descendsFrom reports whether pid's kernel ancestry reaches ancestor — the
+// unforgeable half of the succession edge: a mission's host turn is spawned
+// BY the runner, so its parent chain includes the runner's pid, and no
+// same-user impostor can fake its own parentage. Bounded walk; a broken
+// chain answers false, and false never yields a live holder's lease.
+func descendsFrom(pid, ancestor int64) bool {
+	current := pid
+	for depth := 0; depth < 64; depth++ {
+		parent, ok := ParentPid(current)
+		if !ok {
+			return false
+		}
+		if parent == ancestor {
+			return true
+		}
+		current = parent
+	}
+	return false
 }
