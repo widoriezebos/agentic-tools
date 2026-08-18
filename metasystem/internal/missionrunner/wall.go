@@ -283,9 +283,7 @@ func inspectWall(root, missionID, preTree string, state map[string]any, certifie
 	if len(declared) > 0 {
 		probe := []string{}
 		for path := range declared {
-			for _, ancestor := range ancestorPaths(path) {
-				probe = append(probe, ancestor)
-			}
+			probe = append(probe, ancestorPaths(path)...)
 			probe = append(probe, path)
 		}
 		entries, err := workspace.Entries(postTree, probe)

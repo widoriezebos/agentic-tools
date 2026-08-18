@@ -118,7 +118,8 @@
         "required": [
           "streamId",
           "reasonClass",
-          "question"
+          "question",
+          "supersedes"
         ],
         "properties": {
           "streamId": {
@@ -134,6 +135,13 @@
           },
           "question": {
             "type": "string"
+          },
+          "supersedes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The earlier ask this candidate replaces and sharpens, or null when it replaces none (issue #11). Always present: the return schema is closed and fully enumerated, so an absent field is a protocol error and null is the way to say none. Must be a bare ask id matching ^[a-z0-9][a-z0-9-]*$ \u2014 the runner's adjudication enforces the grammar BEFORE any path join (the in-house schema engine carries no pattern keyword), then validates the ask is OPEN and on the SAME stream, closes it (supersededBy), and hides it from Open Asks; answering the successor answers the chain."
           }
         }
       }

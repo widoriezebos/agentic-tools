@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // The mission anchor is a local git commit that binds the mission's state hash
@@ -55,27 +54,6 @@ func gitTry(repo string, args ...string) (string, int) {
 		return stdout.String(), exit.ExitCode()
 	}
 	return stdout.String(), 1
-}
-
-// clearIndexLock waits briefly for a live lock holder, then removes a dead
-// holder's leftover .git/index.lock. Waiting on a corpse's lock is how a run
-// can hang forever; git's own advice is to remove a stale one.
-func clearIndexLock(repo string) {
-	lock := filepath.Join(repo, ".git", "index.lock")
-	for i := 0; i < 8; i++ {
-		if _, err := os.Stat(lock); os.IsNotExist(err) {
-			return
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	info, err := os.Stat(lock)
-	if err != nil {
-		return
-	}
-	if age := time.Since(info.ModTime()).Seconds(); age >= 4 {
-		fmt.Fprintf(os.Stderr, "removing stale index.lock (age %.0fs, holder presumed dead)\n", age)
-		_ = os.Remove(lock)
-	}
 }
 
 var classLineRe = regexp.MustCompile(`(?m)^- Classification:[ \t]*`)
@@ -422,11 +400,6 @@ func anchoredLedgerPrefix(repo string, state map[string]any, ledgerPath string) 
 // trusted, never from whatever commit last touched a path.
 func AnchoredLedgerTruth(repo string, state map[string]any, ledgerPath string) (anchored, current string, err error) {
 	return anchoredLedgerPrefix(repo, state, ledgerPath)
-}
-
-func mustBranch(state map[string]any) string {
-	b, _ := state["branch"].(string)
-	return b
 }
 
 func sha256Hex(s string) string {

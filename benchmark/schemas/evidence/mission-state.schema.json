@@ -174,7 +174,8 @@
               "preTree",
               "expectedTree",
               "postTree",
-              "orderedDigests"
+              "orderedDigests",
+              "sequencePoint"
             ],
             "properties": {
               "verdict": {
@@ -197,6 +198,24 @@
                 "items": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "sequencePoint": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sequence",
+                  "segment"
+                ],
+                "properties": {
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "segment": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
                 }
               }
             }

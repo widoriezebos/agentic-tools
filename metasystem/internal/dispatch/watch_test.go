@@ -17,7 +17,20 @@ func TestJobWatchRoundTrip(t *testing.T) {
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	os.MkdirAll(jobs, 0o755)
 	record := filepath.Join(jobs, "j-watch.json")
-	os.WriteFile(record, []byte(`{"jobId":"j-watch","status":"running","startedAt":"2026-08-15T10:00:00Z"}`), 0o644)
+	// Records are rewritten the way the engine writes them: whole, by
+	// rename. os.WriteFile truncates first, and a poll landing in that gap
+	// reads an empty file, which is "no record" (exit 4), not a status.
+	writeRecord := func(status string) {
+		t.Helper()
+		temp := record + ".tmp"
+		if err := os.WriteFile(temp, []byte(`{"jobId":"j-watch","status":"`+status+`","startedAt":"2026-08-15T10:00:00Z"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(temp, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeRecord("running")
 
 	caller := run.Caller{Class: "MAIN", MainId: "main-w", SessionId: "s"}
 	done := make(chan int, 1)
@@ -34,7 +47,7 @@ func TestJobWatchRoundTrip(t *testing.T) {
 		t.Fatal("a foreign owner saw the waiter as its own")
 	}
 
-	os.WriteFile(record, []byte(`{"jobId":"j-watch","status":"completed","startedAt":"2026-08-15T10:00:00Z"}`), 0o644)
+	writeRecord("completed")
 	select {
 	case code := <-done:
 		if code != 0 {
@@ -45,7 +58,7 @@ func TestJobWatchRoundTrip(t *testing.T) {
 	}
 
 	// Failed maps to 1; missing maps to 4.
-	os.WriteFile(record, []byte(`{"jobId":"j-watch","status":"failed","startedAt":"2026-08-15T10:00:00Z"}`), 0o644)
+	writeRecord("failed")
 	if code := JobWatch(root, "j-watch", caller, time.Millisecond); code != 1 {
 		t.Fatalf("failed job watch exit %d", code)
 	}
