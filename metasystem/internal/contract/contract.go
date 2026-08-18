@@ -84,6 +84,14 @@ var contractScalarSet = func() map[string]bool {
 	return set
 }()
 
+// contractOptionalScalars are single-valued keys a contract MAY declare.
+// host.max-turns and host.max-budget-usd seal the host adapter's native
+// caps (issue #6): without them an unsealed adapter default silently
+// shortened the benchmark's stated exposure.
+var contractOptionalScalars = map[string]bool{
+	"host.max-turns": true, "host.max-budget-usd": true,
+}
+
 // contractIntegerKeys are the scalar keys that must be positive integers.
 var contractIntegerKeys = []string{
 	"guard.cadence", "ledger.cycle-budget", "ledger.no-gain-budget", "fence.cycles",
@@ -149,6 +157,14 @@ func (d *contractDoc) calibrationWarnings() []string {
 		warnings = append(warnings, fmt.Sprintf(
 			"ledger.no-gain-budget=%d does not exceed the critique cadence (exhaustion at round 3): a serialized host is fused before its first implementer job (docs/design/stop-loss-core.md)",
 			noGain))
+	}
+	// An unsealed adapter default silently shortens the stated exposure
+	// (issue #6): a design turn died at --max-turns 50 with most of its
+	// sealed time cap unspent. A warning, not a refusal — non-benchmark
+	// missions may accept the default knowingly.
+	if d.values["host.max-turns"] == "" {
+		warnings = append(warnings,
+			"host.max-turns is not sealed; the host adapter's native turn cap defaults outside the contract and can end turns the sealed time cap would have allowed (issue #6)")
 	}
 	return warnings
 }
@@ -343,6 +359,10 @@ func (d *contractDoc) validate(projectRoot string) error {
 		switch {
 		case contractScalarSet[key]:
 			continue
+		case contractOptionalScalars[key]:
+			if err := contractValidateOptionalScalar(key, value); err != nil {
+				return err
+			}
 		case strings.HasPrefix(key, "cap.min."):
 			if err := contractValidatePairCap(key, value); err != nil {
 				return err
@@ -1538,4 +1558,19 @@ func contractIntField(v any) (int64, bool) {
 // in Go would have left the awk silently computing yesterday's algorithm.
 func CanonicalContractHash(text string) string {
 	return sha256Hex(string(contractCanonicalSignedBytes(text)))
+}
+
+// contractValidateOptionalScalar validates the optional sealed host caps.
+func contractValidateOptionalScalar(key, value string) error {
+	switch key {
+	case "host.max-turns":
+		if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(value) {
+			return stateErr("mission contract host.max-turns must be a positive integer")
+		}
+	case "host.max-budget-usd":
+		if !contractPosDecRe.MatchString(value) {
+			return stateErr("mission contract host.max-budget-usd must be a positive decimal")
+		}
+	}
+	return nil
 }

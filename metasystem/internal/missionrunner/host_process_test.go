@@ -1,6 +1,8 @@
 package missionrunner
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"golang.org/x/sys/unix"
 	"os"
@@ -121,6 +123,23 @@ func TestAssembleHostCommandExportsMissionLineage(t *testing.T) {
 	if err := os.WriteFile(adapter, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The sealed-cap pass-through reads the PINNED approved snapshot and
+	// fails the launch without one (issue #6): the fixture pins a minimal
+	// sealed contract exactly as the launcher does.
+	missionDir := filepath.Join(root, "artifacts", "agents", "missions", "mr-lineage")
+	if err := os.MkdirAll(missionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	contract := "```mission\ncandidate.branch=main\nstream.alpha=Do alpha\n```\n\n```mission-seal\nsealed.baseline.score=0\n```\n"
+	if err := os.WriteFile(filepath.Join(missionDir, "mission-mr-lineage.contract.md"), []byte(contract), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(contract))
+	writeJSONFile(t, engine.fencesPath(), map[string]any{
+		"schemaVersion": 1, "missionId": "mr-lineage", "startedAt": "2026-08-18T00:00:00Z",
+		"cycles": 0, "reservations": map[string]any{},
+		"approvedContractSha256": hex.EncodeToString(sum[:]),
+	})
 	launch := &hostLaunch{
 		turnID:    "turn-1",
 		turnDir:   t.TempDir(),

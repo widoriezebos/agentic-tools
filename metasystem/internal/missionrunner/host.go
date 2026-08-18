@@ -260,6 +260,25 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 		"METASYSTEM_HOST_START_GATE="+l.hostGate,
 		"METASYSTEM_HOST_START_GATE_TIMEOUT_SEC="+strconv.Itoa(gateTimeout),
 	)
+	// The SEALED host caps ride into the adapter when the contract
+	// declares them (issue #6): without this, an unsealed adapter
+	// default silently shortened the benchmark's stated exposure — a
+	// design turn died at --max-turns 50 with 12 of its sealed 20
+	// minutes unspent. The values come from the PINNED, hash-verified
+	// approved snapshot, never the mutable contract under plans/, and a
+	// snapshot that cannot be read fails the launch — a fail-open here
+	// would hand cap authority back to inherited environment variables
+	// (critique round 1, finding 1).
+	_, values, _, err := e.parseContract(true)
+	if err != nil {
+		return failf(3, "host launch cannot read the approved contract snapshot: %v", err)
+	}
+	if turns := values["host.max-turns"]; turns != "" {
+		command.Env = append(command.Env, "METASYSTEM_CLAUDE_MAX_TURNS="+turns)
+	}
+	if budget := values["host.max-budget-usd"]; budget != "" {
+		command.Env = append(command.Env, "METASYSTEM_CLAUDE_MAX_BUDGET_USD="+budget)
+	}
 	hostLog, err := os.OpenFile(filepath.Join(l.turnDir, "host.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return err

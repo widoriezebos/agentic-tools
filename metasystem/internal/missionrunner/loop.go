@@ -1216,6 +1216,13 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 		if result != nil {
 			detail = fmt.Sprintf("host exited non-zero (%d)", exitCode)
 		}
+		// A host CUT OFF by its native turn cap is a different fact
+		// than a host that crashed (issue #6): the ledger and the
+		// operator must be able to tell them apart, and the next turn
+		// can be told to continue rather than restart.
+		if subtype := providerErrorSubtype(filepath.Join(c.turnDir, "claude-result.json")); subtype == "error_max_turns" {
+			detail = "host-cap-exhausted: the adapter's native turn cap ended the turn (error_max_turns)"
+		}
 		if _, err := patchTurn(c.turnPath, map[string]any{
 			"status": "failed", "outcome": "failed", "error": "host-failure",
 			"detail": detail, "endedAt": nowISO(),
@@ -1389,4 +1396,18 @@ func (e *Engine) reclaimCheckout() error {
 		"missionId": e.Mission, "error": detail,
 	})
 	return failf(3, "checkout reclaim refused: %s", detail)
+}
+
+// providerErrorSubtype reads the error subtype from a provider result
+// file, empty when absent or not an error.
+func providerErrorSubtype(path string) string {
+	doc, err := readJSONDoc(path)
+	if err != nil {
+		return ""
+	}
+	if isError, _ := doc["is_error"].(bool); !isError {
+		return ""
+	}
+	subtype, _ := doc["subtype"].(string)
+	return subtype
 }

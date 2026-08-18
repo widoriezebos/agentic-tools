@@ -214,7 +214,9 @@ const claudeReadOnlyTools = "Read,Glob,Grep"
 
 // ClaudeBudget validates the native budget policy from the environment:
 // METASYSTEM_CLAUDE_MAX_BUDGET_USD (default 5.00, a positive decimal) and
-// METASYSTEM_CLAUDE_MAX_TURNS (default 50, a positive integer). The two
+// METASYSTEM_CLAUDE_MAX_TURNS (default 150, a positive integer — issue
+// #6: 50 cut off a mission's tool-heavy DESIGN turn before any delegate
+// ran; the sealed time cap is the real bound, this is the guard). The two
 // refusals are distinct so the adapter maps them to its two protocol
 // errors (invalid_native_budget, invalid_native_turn_limit).
 func ClaudeBudget(lookupEnv func(string) (string, bool)) (budget, turns string, err error) {
@@ -222,7 +224,7 @@ func ClaudeBudget(lookupEnv func(string) (string, bool)) (budget, turns string, 
 	if value, ok := lookupEnv("METASYSTEM_CLAUDE_MAX_BUDGET_USD"); ok {
 		budget = value
 	}
-	turns = "50"
+	turns = "150"
 	if value, ok := lookupEnv("METASYSTEM_CLAUDE_MAX_TURNS"); ok {
 		turns = value
 	}

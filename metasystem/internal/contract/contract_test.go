@@ -119,8 +119,9 @@ func TestContractValidateAcceptsBase(t *testing.T) {
 	// no-gain 2 against fence.cycles 3 is not below half the fence, but
 	// it sits under the critique cadence — the base fixture is
 	// fixture-scale on purpose, and the cadence warning is expected.
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "critique cadence") {
-		t.Fatalf("base contract should carry exactly the cadence warning: %v", warnings)
+	if len(warnings) != 2 || !strings.Contains(warnings[0], "critique cadence") ||
+		!strings.Contains(warnings[1], "host.max-turns is not sealed") {
+		t.Fatalf("base contract should carry the cadence and unsealed-cap warnings: %v", warnings)
 	}
 }
 
@@ -132,16 +133,16 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an undersized no-gain budget warns, never refuses: %v", err)
 	}
-	if len(warnings) != 2 || !strings.Contains(warnings[0], "docs/design/stop-loss-core.md") {
-		t.Fatalf("expected the half-fence and cadence warnings, got %v", warnings)
+	if len(warnings) != 3 || !strings.Contains(warnings[0], "docs/design/stop-loss-core.md") {
+		t.Fatalf("expected the half-fence, cadence, and unsealed-cap warnings, got %v", warnings)
 	}
 	// Exactly half the fence is not below half: only the cadence warning
 	// remains (baseContract's budget of 2 is under the critique cadence).
 	atHalf := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=4", 1)
 	writeFileMode(t, contractPath, atHalf, 0o644)
 	if _, warnings, err = Validate(contractPath); err != nil ||
-		len(warnings) != 1 || !strings.Contains(warnings[0], "critique cadence") {
-		t.Fatalf("a budget at half the fence must warn only for the cadence: %v %v", warnings, err)
+		len(warnings) != 2 || !strings.Contains(warnings[0], "critique cadence") {
+		t.Fatalf("a budget at half the fence warns for cadence and unsealed caps: %v %v", warnings, err)
 	}
 	// A budget of 3 sits exactly at the critique cadence: still fused
 	// before a serialized host implements, so it warns; 4 clears it.
@@ -150,15 +151,23 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 		"fence.cycles=3", "fence.cycles=6", 1)
 	writeFileMode(t, contractPath, atCadence, 0o644)
 	if _, warnings, err = Validate(contractPath); err != nil ||
-		len(warnings) != 1 || !strings.Contains(warnings[0], "critique cadence") {
-		t.Fatalf("budget 3 must warn for the cadence alone: %v %v", warnings, err)
+		len(warnings) != 2 || !strings.Contains(warnings[0], "critique cadence") {
+		t.Fatalf("budget 3 warns for cadence and unsealed caps: %v %v", warnings, err)
 	}
 	aboveCadence := strings.Replace(strings.Replace(baseContract(),
 		"ledger.no-gain-budget=2", "ledger.no-gain-budget=4", 1),
 		"fence.cycles=3", "fence.cycles=8", 1)
 	writeFileMode(t, contractPath, aboveCadence, 0o644)
+	if _, warnings, err = Validate(contractPath); err != nil ||
+		len(warnings) != 1 || !strings.Contains(warnings[0], "host.max-turns is not sealed") {
+		t.Fatalf("budget 4 with cycles 8 warns only for unsealed caps: %v %v", warnings, err)
+	}
+	// Sealing the caps clears the last warning entirely.
+	sealed := strings.Replace(aboveCadence, "host.turn-cap-min=",
+		"host.max-turns=150\nhost.max-budget-usd=5.00\nhost.turn-cap-min=", 1)
+	writeFileMode(t, contractPath, sealed, 0o644)
 	if _, warnings, err = Validate(contractPath); err != nil || len(warnings) != 0 {
-		t.Fatalf("budget 4 with cycles 8 must not warn: %v %v", warnings, err)
+		t.Fatalf("sealed caps must clear every warning: %v %v", warnings, err)
 	}
 }
 

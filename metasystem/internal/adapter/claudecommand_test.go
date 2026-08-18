@@ -9,7 +9,7 @@ import (
 
 func TestClaudeBudgetPolicy(t *testing.T) {
 	budget, turns, err := ClaudeBudget(stubEnv(nil))
-	if err != nil || budget != "5.00" || turns != "50" {
+	if err != nil || budget != "5.00" || turns != "150" {
 		t.Fatalf("defaults = (%s,%s,%v)", budget, turns, err)
 	}
 	budget, turns, err = ClaudeBudget(stubEnv(map[string]string{
