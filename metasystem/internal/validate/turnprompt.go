@@ -26,9 +26,11 @@ var turnHeaderKeys = []string{
 	"Mission-Id", "Turn-Id", "Cycle", "Host-Session", "Runtime", "Model", "Reconciliation",
 }
 
-// The seven required section headings, in order.
+// The eight required section headings, in order. Human Answers sits at
+// the top of the dynamic sections (issue #11): a human ruling is THE
+// thing the next turn must act on, never inferable from an id.
 var turnHeadings = []string{
-	"## Mission Contract", "## Ledger Tail", "## Open Asks",
+	"## Mission Contract", "## Ledger Tail", "## Human Answers", "## Open Asks",
 	"## Streams", "## Reconciliation", "## Landed Returns", "## This Turn",
 }
 
@@ -256,6 +258,34 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 		}
 	}
 
+	answers, violation := turnDataRecords(sections, "## Human Answers", 5)
+	if violation != nil {
+		return violation
+	}
+	var answerIds []string
+	for number, record := range answers {
+		askID, streamID, answeredAt, question, answer := record[0], record[1], record[2], record[3], record[4]
+		if !turnIDRe.MatchString(askID) {
+			return &Violation{"records", fmt.Sprintf("Human Answers record %d askId is invalid", number+1)}
+		}
+		if streamID != "none" && !turnIDRe.MatchString(streamID) {
+			return &Violation{"records", fmt.Sprintf("Human Answers record %d streamId must be an id or none", number+1)}
+		}
+		if answeredAt == "none" || answeredAt == "" {
+			return &Violation{"records", fmt.Sprintf("Human Answers record %d carries no answeredAt", number+1)}
+		}
+		if question == "(none)" || answer == "(none)" {
+			return &Violation{"records", fmt.Sprintf("Human Answers record %d uses (none) instead of literal none", number+1)}
+		}
+		if answer == "none" || answer == "" {
+			return &Violation{"records", fmt.Sprintf("Human Answers record %d carries no answer", number+1)}
+		}
+		answerIds = append(answerIds, askID)
+	}
+	if !strictlyIncreasing(answerIds) {
+		return &Violation{"records", "Human Answers records must have unique ask ids in sorted order"}
+	}
+
 	asks, violation := turnDataRecords(sections, "## Open Asks", 4)
 	if violation != nil {
 		return violation
@@ -281,13 +311,16 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 		return &Violation{"records", "Open Asks records must have unique ask ids in sorted order"}
 	}
 
-	streams, violation := turnDataRecords(sections, "## Streams", 4)
+	streams, violation := turnDataRecords(sections, "## Streams", 5)
 	if violation != nil {
 		return violation
 	}
 	var streamIds []string
 	for number, record := range streams {
 		streamID, state, goal, reason := record[0], record[1], record[2], record[3]
+		if answeredAsk := record[4]; answeredAsk != "none" && !turnIDRe.MatchString(answeredAsk) {
+			return &Violation{"records", fmt.Sprintf("Streams record %d answeredAsk must be an id or none", number+1)}
+		}
 		if !turnIDRe.MatchString(streamID) {
 			return &Violation{"records", fmt.Sprintf("Streams record %d streamId is invalid", number+1)}
 		}

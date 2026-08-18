@@ -5,6 +5,7 @@ import (
 	turnvocab "github.com/widoriezebos/agentic-tools/metasystem/internal/turn"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -333,18 +334,59 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		}
 	}
 
+	supersededThisPass := map[string]bool{}
+	supersededOnDisk := supersededAskIDs(asksDir)
 	for index, entry := range askCandidates {
 		streamID, _ := entry["streamId"].(string)
 		reasonClass, _ := entry["reasonClass"].(string)
 		question, _ := entry["question"].(string)
 		reason := ""
+		supersedes := ""
 		if _, exists := streams[streamID]; !exists {
 			reason = "stream does not exist"
 		} else if !turnvocab.OrchestratorMayRaise(reasonClass) {
 			reason = "reason class is unknown"
 		}
+		// A candidate may supersede an earlier ask (issue #11): the named
+		// id must BE an ask id (the grammar check is also the traversal
+		// guard — a path can never reach the join), the ask must exist,
+		// be open, sit on the same stream, and not already be superseded
+		// by an earlier candidate in this same pass.
+		if raw, present := entry["supersedes"]; reason == "" && present && raw != nil {
+			named, _ := raw.(string)
+			switch {
+			case !askIDRe.MatchString(named):
+				reason = "supersedes an unknown ask"
+			case supersededThisPass[named]:
+				reason = "supersedes an ask that was already superseded"
+			// Derived closure counts (round-3): a predecessor whose
+			// successor landed but whose marker write was lost to a crash
+			// is closed — a second supersession would mint two live
+			// successors for one question.
+			case supersededOnDisk[named] != "":
+				reason = "supersedes an ask that was already superseded"
+			default:
+				prior, err := readJSONDoc(filepath.Join(asksDir, named+".json"))
+				switch {
+				case err != nil:
+					reason = "supersedes an unknown ask"
+				case prior["answeredAt"] != nil:
+					reason = "supersedes an already answered ask"
+				case prior["supersededBy"] != nil:
+					reason = "supersedes an ask that was already superseded"
+				case prior["streamId"] != streamID:
+					reason = "supersedes an ask on a different stream"
+				default:
+					supersedes = named
+					supersededThisPass[named] = true
+				}
+			}
+		}
 		if reason == "" {
 			askID := addAsk(fmt.Sprintf("ask-%s-%d", turn.CycleString(), index+1), streamID, reasonClass, question)
+			if supersedes != "" {
+				verdict.Asks[len(verdict.Asks)-1]["supersedes"] = supersedes
+			}
 			verdict.Accepted = append(verdict.Accepted, map[string]any{"kind": "askCandidate", "value": entry, "askId": askID})
 		} else {
 			verdict.Rejected = append(verdict.Rejected, map[string]any{"kind": "askCandidate", "value": entry, "reason": reason})
@@ -382,7 +424,16 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 	}
 
 	verdict.Streams = streams
-	verdict.WaitingList = mergedOpenAskIDs(asksDir, newAskIDs)
+	// The audit artifact must not name asks this very verdict closes
+	// (round-2 F2): the predecessors superseded in this pass leave the
+	// waiting list before it is persisted.
+	waiting := []string{}
+	for _, id := range mergedOpenAskIDs(asksDir, newAskIDs) {
+		if !supersededThisPass[id] {
+			waiting = append(waiting, id)
+		}
+	}
+	verdict.WaitingList = waiting
 	return verdict, nil
 }
 
@@ -422,16 +473,21 @@ func fallbackStream(streams map[string]any) string {
 
 // askRecord shapes one ask exactly as the runner writes it. Newlines in the
 // question flatten to spaces so the record stays one-line greppable.
+// askIDRe is the ask-id grammar — and the traversal guard on supersedes.
+var askIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
 func askRecord(askID, streamID, reasonClass, question, nowISO string) map[string]any {
 	flat := strings.ReplaceAll(strings.ReplaceAll(question, "\r", " "), "\n", " ")
 	return map[string]any{
-		"askId":       askID,
-		"streamId":    streamID,
-		"reasonClass": reasonClass,
-		"question":    flat,
-		"createdAt":   nowISO,
-		"answeredAt":  nil,
-		"answer":      nil,
+		"askId":        askID,
+		"streamId":     streamID,
+		"reasonClass":  reasonClass,
+		"question":     flat,
+		"createdAt":    nowISO,
+		"answeredAt":   nil,
+		"answer":       nil,
+		"supersedes":   nil,
+		"supersededBy": nil,
 	}
 }
 
@@ -453,10 +509,34 @@ func nextAskID(asksDir, prefix string, allocated map[string]bool) string {
 	}
 }
 
-// openAskIDs lists the unanswered asks on disk, sorted and deduplicated.
-// Unreadable ask files are skipped: the waiting list reports what can be
-// answered, and refusing to park over one corrupt ask would be worse.
+// supersededAskIDs derives the closed-by-successor set: an ask is
+// superseded when ANY ask on disk names it in supersedes — not only when
+// its own supersededBy marker landed. The successor is written first, so
+// a crash between the two writes still leaves the predecessor derivably
+// closed (issue #11 round-2 F1/F4: the marker is bookkeeping, the
+// successor's existence is the truth).
+func supersededAskIDs(asksDir string) map[string]string {
+	superseded := map[string]string{}
+	paths, _ := filepath.Glob(filepath.Join(asksDir, "*.json"))
+	for _, path := range paths {
+		doc, err := readJSONDoc(path)
+		if err != nil {
+			continue
+		}
+		successor, _ := doc["askId"].(string)
+		if named, _ := doc["supersedes"].(string); named != "" && successor != "" {
+			superseded[named] = successor
+		}
+	}
+	return superseded
+}
+
+// openAskIDs lists the unanswered, un-superseded asks on disk, sorted and
+// deduplicated. Unreadable ask files are skipped: the waiting list reports
+// what can be answered, and refusing to park over one corrupt ask would be
+// worse.
 func openAskIDs(asksDir string) []string {
+	superseded := supersededAskIDs(asksDir)
 	paths, _ := filepath.Glob(filepath.Join(asksDir, "*.json"))
 	seen := map[string]bool{}
 	for _, path := range paths {
@@ -465,7 +545,10 @@ func openAskIDs(asksDir string) []string {
 			continue
 		}
 		askID, ok := doc["askId"].(string)
-		if ok && doc["answeredAt"] == nil {
+		if ok && doc["answeredAt"] == nil && doc["supersededBy"] == nil {
+			if _, closed := superseded[askID]; closed {
+				continue
+			}
 			seen[askID] = true
 		}
 	}

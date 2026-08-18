@@ -646,8 +646,27 @@ func (e *Engine) writeProposedAsks(asks []map[string]any) error {
 	asksDir := asksDirPath(e.Root, e.Mission)
 	for _, ask := range asks {
 		askID, _ := ask["askId"].(string)
+		// The SUCCESSOR lands first, THEN its predecessor closes (issue
+		// #11 critique F4): a crash between the two leaves a visible
+		// duplicate for one turn — never a hidden ask refusing answers
+		// toward a successor that does not exist.
 		if err := atomicWriteJSON(filepath.Join(asksDir, askID+".json"), ask); err != nil {
 			return err
+		}
+		if named, _ := ask["supersedes"].(string); named != "" {
+			priorPath := filepath.Join(asksDir, named+".json")
+			prior, err := readJSONDoc(priorPath)
+			if err != nil {
+				return failf(3, "superseded ask %s is unreadable: %v", named, err)
+			}
+			prior["supersededBy"] = askID
+			prior["supersededAt"] = nowISO()
+			if err := atomicWriteJSON(priorPath, prior); err != nil {
+				return err
+			}
+			e.emit("ask-superseded", named+" -> "+askID, map[string]string{
+				"missionId": e.Mission, "askId": named, "supersededBy": askID,
+			})
 		}
 	}
 	return nil

@@ -127,6 +127,20 @@ func promptAskRecords(dir string) ([][]string, error) {
 		return nil, nil
 	}
 	paths, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	// Closure is DERIVED from the successor's existence, not only the
+	// predecessor's marker (issue #11 round-2): a crash between the
+	// successor write and the marker write must not resurrect the stale
+	// question.
+	superseded := map[string]bool{}
+	for _, path := range paths {
+		ask, err := readJSONObjectFile(path)
+		if err != nil {
+			continue
+		}
+		if named, _ := ask["supersedes"].(string); named != "" {
+			superseded[named] = true
+		}
+	}
 	var records [][]string
 	for _, path := range paths {
 		ask, err := readJSONObjectFile(path)
@@ -139,9 +153,17 @@ func promptAskRecords(dir string) ([][]string, error) {
 		if ask["answeredAt"] != nil {
 			continue
 		}
+		// A superseded ask is closed by its successor (issue #11): showing
+		// it beside the live question would present a stale duplicate.
+		if ask["supersededBy"] != nil {
+			continue
+		}
 		askID, ok := ask["askId"].(string)
 		if !ok {
 			return nil, fmt.Errorf("mission ask has no askId: %s", path)
+		}
+		if superseded[askID] {
+			continue
 		}
 		records = append(records, []string{
 			promptOneLine(askID),
@@ -154,8 +176,49 @@ func promptAskRecords(dir string) ([][]string, error) {
 	return records, nil
 }
 
-// promptStreamRecords returns each stream as an [id, state, goal, reason] row,
-// ordered by stream id.
+// promptAnswerRecords renders every standing human ruling (issue #11): the
+// asks each stream's answeredAsk names, as [askId, streamId, answeredAt,
+// question, answer] rows ordered by ask id. The answer is THE thing the
+// next turn must act on; a state that names a missing or unanswered ask
+// is an assembly error, never a silent omission.
+func promptAnswerRecords(dir string, state map[string]any) ([][]string, error) {
+	streams, ok := state["streams"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("mission state streams are unreadable")
+	}
+	seen := map[string]bool{}
+	var records [][]string
+	for _, raw := range streams {
+		stream, _ := raw.(map[string]any)
+		if stream == nil {
+			continue
+		}
+		askID, _ := stream["answeredAsk"].(string)
+		if askID == "" || seen[askID] {
+			continue
+		}
+		seen[askID] = true
+		ask, err := readJSONObjectFile(filepath.Join(dir, askID+".json"))
+		if err != nil {
+			return nil, fmt.Errorf("mission stream names answered ask %s but it is unreadable: %v", askID, err)
+		}
+		if ask["answeredAt"] == nil {
+			return nil, fmt.Errorf("mission stream names answered ask %s but it carries no answer", askID)
+		}
+		records = append(records, []string{
+			promptOneLine(askID),
+			promptOneLine(ask["streamId"]),
+			promptOneLine(ask["answeredAt"]),
+			promptOneLine(ask["question"]),
+			promptOneLine(ask["answer"]),
+		})
+	}
+	sort.SliceStable(records, func(i, j int) bool { return records[i][0] < records[j][0] })
+	return records, nil
+}
+
+// promptStreamRecords returns each stream as an [id, state, goal, reason,
+// answeredAsk] row, ordered by stream id.
 func promptStreamRecords(state map[string]any) ([][]string, error) {
 	streams, ok := state["streams"].(map[string]any)
 	if !ok {
@@ -177,6 +240,7 @@ func promptStreamRecords(state map[string]any) ([][]string, error) {
 			promptOneLine(stream["state"]),
 			promptOneLine(stream["goal"]),
 			promptOneLine(stream["reason"]),
+			promptOneLine(stream["answeredAsk"]),
 		})
 	}
 	return records, nil
@@ -482,6 +546,10 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 	if err != nil {
 		return err
 	}
+	answerRecords, err := promptAnswerRecords(filepath.Join(dir, "asks"), state)
+	if err != nil {
+		return err
+	}
 	streamRecords, err := promptStreamRecords(state)
 	if err != nil {
 		return err
@@ -553,6 +621,7 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 		content string
 	}{
 		{"## Ledger Tail", promptDataSection("## Ledger Tail", ledgerRecords)},
+		{"## Human Answers", promptDataSection("## Human Answers", answerRecords)},
 		{"## Open Asks", promptDataSection("## Open Asks", askRecords)},
 		{"## Streams", promptDataSection("## Streams", streamRecords)},
 		{"## Reconciliation", promptDataSection("## Reconciliation", reconRecords)},

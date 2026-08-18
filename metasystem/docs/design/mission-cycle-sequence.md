@@ -191,21 +191,24 @@ and only refused at the *next* cycle's reserve). The prompt is, in order
    (`scripts/agents/roles/orchestrator.md`).
 3. `## Mission Contract` — the contract text.
 4. `## Ledger Tail` — see §5 for exactly what this carries.
-5. `## Open Asks` — every unanswered ask on disk as
-   `[askId, streamId, reasonClass, question]` rows (prompt.go:132-162).
-6. `## Streams` — `[id, state, goal, reason]` rows.
-7. `## Reconciliation` — when `reconciliation=yes`, the single most recent
-   non-completed prior turn as `[turnId, outcome, detail]`
-   (prompt.go:196-226).
-8. `## Landed Returns` — the delegate rounds whose return landed but which
+5. `## Human Answers` — the standing human rulings (issue #11): every ask
+   named by a stream's `answeredAsk`, as
+   `[askId, streamId, answeredAt, question, answer]` rows; a stream
+   naming a missing or unanswered ask fails assembly loudly.
+6. `## Open Asks` — every unanswered, un-superseded ask on disk as
+   `[askId, streamId, reasonClass, question]` rows.
+7. `## Streams` — `[id, state, goal, reason, answeredAsk]` rows.
+8. `## Reconciliation` — when `reconciliation=yes`, the single most recent
+   non-completed prior turn as `[turnId, outcome, detail]`.
+9. `## Landed Returns` — the delegate rounds whose return landed but which
    no concluded turn certified or superseded, one row per owned chain as
    `[chain-root, round-or-marker, return-path-or-none]`, capped at 20 rows
    with an overflow summary (plans/patience-orphan-usage.md, landed.go).
-9. `## This Turn` — the instruction template with cycle number and fence
+10. `## This Turn` — the instruction template with cycle number and fence
    headroom (`cycles=<n>,jobs=<n>` from contract limits minus fence
-   counters, prompt.go:272-304).
+   counters).
 
-Sections 4-8 are framed between `<<<DATA>>>`/`<<<END>>>` markers with
+Sections 4-9 are framed between `<<<DATA>>>`/`<<<END>>>` markers with
 marker-defanging, one row per line, tab-joined (prompt.go:231-248). Total
 size is capped by `mission.max-prompt-kb` (default 256; over-size is a
 refusal naming the widest block, prompt.go:522-533). Assembly failure →
@@ -517,9 +520,18 @@ and CAS-patches `chainClosed`/`runnerClosed` onto the root record).
 
 ## 4. The ask/answer machinery
 
-Ask files live at `missions/<id>/asks/<askId>.json`; shape at
-adjudicate.go:342-353 (plus `stopLossKind` on stop-loss asks,
-cycle.go:214-217). Writers:
+Ask files live at `missions/<id>/asks/<askId>.json`; the record carries
+`askId, streamId, reasonClass, question, createdAt, answeredAt, answer,
+supersedes, supersededBy` (plus `stopLossKind` on stop-loss asks and
+`supersededAt` once closed). SUPERSESSION (issue #11): an orchestrator ask
+candidate may name an open same-stream ask in `supersedes`; adjudication
+validates it (grammar-checked id — also the traversal guard — open, not
+already superseded in this pass or on disk, same stream), the successor
+ask is written FIRST, then the predecessor closes with
+`supersededBy`/`supersededAt` and the `ask-superseded` event. Superseded
+asks leave Open Asks, the waiting list, and the park guarantee's open
+predicate alike; answering one refuses by name toward its successor.
+Writers:
 
 | Creator | When | Ids |
 |---|---|---|
@@ -527,8 +539,12 @@ cycle.go:214-217). Writers:
 | Runner, park proposals | S10 park, S16 park | `host-failure*`, `stop-loss*` (nextAskID suffixing, adjudicate.go:357-371) |
 | Mission fence, any process holding the fence lock | cycle reserve (runner, S1), job authorize (host's dispatch), reap timeout refusal | one batched `fence-bound*` ask, reasons merged into its question (fence.go:274-357) |
 
-The prompt's Open Asks section carries every unanswered ask; the state's
-`waitingList` is refreshed from disk at every conclude and park. The runner
+The prompt's Open Asks section carries every unanswered ask that no
+successor supersedes — closure is DERIVED from a successor naming the ask
+in `supersedes`, so a crash before the predecessor's marker write cannot
+resurrect the stale question; the state's
+`waitingList` is refreshed from disk at every conclude and park under the
+same rule. The runner
 never blocks on an ask mid-cycle; an unanswered ask only matters when a park
 ends the loop.
 

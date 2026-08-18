@@ -134,6 +134,13 @@
           },
           "question": {
             "type": "string"
+          },
+          "supersedes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional earlier ask this candidate replaces and sharpens (issue #11). Must be a bare ask id matching ^[a-z0-9][a-z0-9-]*$ \u2014 the runner's adjudication enforces the grammar BEFORE any path join (the in-house schema engine carries no pattern keyword), then validates the ask is OPEN and on the SAME stream, closes it (supersededBy), and hides it from Open Asks; answering the successor answers the chain."
           }
         }
       }

@@ -1294,6 +1294,11 @@ Signed fixture mission contract.
 2	unresolved	bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb	metric=1
 <<<END>>>
 
+## Human Answers
+<<<DATA>>>
+ask-0	stream-a	2026-08-18T00:00:00Z	May the fixture proceed?	Yes, option A, this mission only.
+<<<END>>>
+
 ## Open Asks
 <<<DATA>>>
 ask-1	stream-a	reserved-decision	Approve the named API contract?
@@ -1301,8 +1306,8 @@ ask-1	stream-a	reserved-decision	Approve the named API contract?
 
 ## Streams
 <<<DATA>>>
-stream-a	active	Make the fixture gate pass	none
-stream-b	parked-reserved	Publish the fixture	Awaiting approval
+stream-a	active	Make the fixture gate pass	none	ask-0
+stream-b	parked-reserved	Publish the fixture	Awaiting approval	none
 <<<END>>>
 
 ## Reconciliation

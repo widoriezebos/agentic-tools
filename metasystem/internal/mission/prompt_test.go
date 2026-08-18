@@ -434,3 +434,64 @@ func (g *goalStoreForTest) accept(t *testing.T, ledger string) {
 		t.Fatal(err)
 	}
 }
+
+// Issue #11's regression: a human's answer reaches the orchestrator. The
+// stream's answeredAsk names an answered ask; the next prompt carries the
+// answer VERBATIM in ## Human Answers, the stream row names the ask, and
+// an ask superseded by a sharper successor is not listed as open.
+func TestAssemblePromptCarriesHumanAnswers(t *testing.T) {
+	repo := promptSandbox(t)
+	base := "artifacts/agents/missions/m1"
+	write := func(rel, content string) {
+		path := filepath.Join(repo, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	answer := "Option A. The code critic is authorized on runtime claude with model claude-opus-5 for this mission only."
+	write(base+"/asks/ask-2-1.json",
+		`{"askId":"ask-2-1","streamId":"s1","reasonClass":"reserved-decision","question":"May the critic run on opus?",`+
+			`"answeredAt":"2026-08-18T14:59:12Z","answer":"`+answer+`","supersedes":"ask-1-1","supersededBy":null}`)
+	write(base+"/asks/ask-1-1.json",
+		`{"askId":"ask-1-1","streamId":"s1","reasonClass":"reserved-decision","question":"The older duplicate question",`+
+			`"answeredAt":null,"answer":null,"supersedes":null,"supersededBy":"ask-2-1"}`)
+	write(base+"/state.json",
+		`{"missionId":"m1","streams":{`+
+			`"s1":{"state":"active","goal":"Do the thing","reason":null,"answeredAsk":"ask-2-1"},`+
+			`"s2":{"state":"parked-stop-loss","goal":"Second goal","reason":"stop-loss"}},`+
+			`"turnLog":[]}`)
+
+	out := filepath.Join(t.TempDir(), "prompt.txt")
+	if err := AssemblePrompt(repo, "m1", "t1", out); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+
+	if !strings.Contains(text, "## Human Answers") {
+		t.Fatalf("prompt lacks the Human Answers section:\n%s", text)
+	}
+	if !strings.Contains(text, answer) {
+		t.Fatal("the human's answer must appear VERBATIM in the prompt")
+	}
+	answers := text[strings.Index(text, "## Human Answers"):strings.Index(text, "## Open Asks")]
+	if !strings.Contains(answers, "ask-2-1\ts1\t2026-08-18T14:59:12Z\tMay the critic run on opus?\t"+answer) {
+		t.Fatalf("the answer row is malformed:\n%s", answers)
+	}
+	openAsks := text[strings.Index(text, "## Open Asks"):strings.Index(text, "## Streams")]
+	if strings.Contains(openAsks, "ask-1-1") {
+		t.Fatal("a superseded ask must not be listed as open")
+	}
+	if strings.Contains(openAsks, "ask-2-1") {
+		t.Fatal("an answered ask must not be listed as open")
+	}
+	if !strings.Contains(text, "s1\tactive\tDo the thing\tnone\task-2-1") {
+		t.Fatalf("the stream row must name its answered ask:\n%s", text)
+	}
+}

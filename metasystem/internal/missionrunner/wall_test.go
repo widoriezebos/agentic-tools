@@ -3,6 +3,7 @@ package missionrunner
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -779,5 +780,37 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 	}
 	if reason, _ := entries[0].(map[string]any)["reason"].(string); !strings.Contains(reason, "ledger") {
 		t.Fatalf("the taint must name the ledger: %v", reason)
+	}
+}
+
+// Answering a superseded ask refuses BY NAME toward its successor
+// (issue #11): the refusal must be the superseded guard, not a
+// coincidental later refusal, so the bed is a real provisioned mission
+// and the stderr text is captured.
+func TestAnswerRefusesSupersededAsk(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	if _, err := seedCrashedMissionState(t, engine); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONFile(t, filepath.Join(asksDirPath(engine.Root, engine.Mission), "ask-1-1.json"),
+		map[string]any{"askId": "ask-1-1", "streamId": "build", "reasonClass": "reserved-decision",
+			"question": "old wording", "answeredAt": nil, "supersededBy": "ask-2-1"})
+
+	saved := os.Stderr
+	read, wr, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = wr
+	code := engine.Answer("ask-1-1", "approve: too late")
+	wr.Close()
+	os.Stderr = saved
+	captured, _ := io.ReadAll(read)
+
+	if code == 0 {
+		t.Fatal("answering a superseded ask must refuse")
+	}
+	if !strings.Contains(string(captured), "superseded; answer ask-2-1 instead") {
+		t.Fatalf("the refusal must name the successor: %q", captured)
 	}
 }

@@ -36,6 +36,14 @@ func (e *Engine) Answer(askID, answer string) int {
 		fmt.Fprintf(os.Stderr, "answer refused: unknown or already answered ask %s\n", askID)
 		return 3
 	}
+	successor, _ := ask["supersededBy"].(string)
+	if successor == "" {
+		successor = supersededAskIDs(filepath.Join(e.missionDir(), "asks"))[askID]
+	}
+	if successor != "" {
+		fmt.Fprintf(os.Stderr, "answer refused: ask %s was superseded; answer %s instead\n", askID, successor)
+		return 3
+	}
 	reason, _ := ask["reasonClass"].(string)
 	if reason == "stop-loss" {
 		return e.answerStopLoss(statePath, state, ask, askPath, askID, answer)

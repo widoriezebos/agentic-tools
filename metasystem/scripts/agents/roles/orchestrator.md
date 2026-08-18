@@ -72,6 +72,8 @@ crashed earlier turn that still lawfully hold their slot.
 
 ## Inheriting landed returns
 
+The prompt's `Human Answers` section carries the standing human rulings: every row is `askId  streamId  answeredAt  question  answer`, one per stream that a human reactivated by answering its ask. The answer is a decision from the mission's human, made under the signed contract's authority — it is THE thing your turn must act on for that stream, senior to your own judgment on the question it settles. Never re-ask a question a row already answers; a stream whose row authorizes an action is authorized, this mission, without further confirmation. When you raise a sharper version of an open ask, set `supersedes` on the ask candidate to the old ask's id so the runner retires the stale wording; the human then answers only your sharpened question.
+
 The prompt's `Landed Returns` section lists delegate work that already landed on disk but that none of your concluded turns has acted on — paid results waiting to be inherited, not new instructions. Each row is `chain-root  round-or-marker  return-path-or-none`: a round number with its return path means the return validated and is ready to consume; `invalid` means a return exists at that path but fails its role check; `unreadable` means the chain's artifacts could not be read; a final `overflow` row carries the count of further qualifying chains beyond the 20-row bound. A row retires only through your own recorded action — certify the round's job in your return's `certified` entries, or dispatch a successor round of its chain. A landed return you neither certify nor supersede keeps appearing, by design.
 
 ## Return contract

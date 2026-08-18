@@ -93,6 +93,24 @@
       "ids": {},
       "payload": {}
     },
+    "ask-superseded": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "askId": {
+          "required": true,
+          "type": "str"
+        },
+        "supersededBy": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "authorization-issued": {
       "emitters": [
         "conformance"

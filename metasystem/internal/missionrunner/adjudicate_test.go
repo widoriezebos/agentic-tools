@@ -487,3 +487,184 @@ func TestAdjudicateRejectsStopLossRequest(t *testing.T) {
 		t.Fatalf("expected the host ask AND the auto-surfaced rejection ask: %v", verdict.Asks)
 	}
 }
+
+// Issue #11's supersede semantics through adjudication: a candidate that
+// names an open same-stream ask closes it in the same pass; unlawful
+// supersede claims reject; the waiting list hides the closed ask.
+func TestAdjudicateSupersedesAsks(t *testing.T) {
+	root := t.TempDir()
+	mission := "demo"
+	turn := testTurn()
+	writeJSONFile(t, filepath.Join(asksDirPath(root, mission), "ask-1-1.json"),
+		map[string]any{"askId": "ask-1-1", "streamId": "s-app", "reasonClass": "reserved-decision",
+			"question": "old wording", "answeredAt": nil, "supersededBy": nil})
+	writeJSONFile(t, filepath.Join(asksDirPath(root, mission), "ask-x.json"),
+		map[string]any{"askId": "ask-x", "streamId": "s-other", "reasonClass": "reserved-decision",
+			"question": "different stream", "answeredAt": nil, "supersededBy": nil})
+	returned := map[string]any{
+		"dispatched": []any{}, "streamUpdatesRequested": []any{}, "certified": []any{},
+		"askCandidates": []any{
+			map[string]any{"streamId": "s-app", "reasonClass": "reserved-decision",
+				"question": "sharpened wording", "supersedes": "ask-1-1"},
+			map[string]any{"streamId": "s-app", "reasonClass": "reserved-decision",
+				"question": "cross-stream grab", "supersedes": "ask-x"},
+			map[string]any{"streamId": "s-app", "reasonClass": "reserved-decision",
+				"question": "phantom", "supersedes": "ask-none"},
+		},
+	}
+	state := map[string]any{"streams": map[string]any{
+		"s-app":   map[string]any{"state": "active", "reason": nil},
+		"s-other": map[string]any{"state": "active", "reason": nil},
+	}, "turnLog": []any{}}
+	verdict, err := Adjudicate(root, mission, turn, state, returned, "2026-08-18T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(verdict.Rejected) != 2 {
+		t.Fatalf("cross-stream and phantom supersedes must reject: %v", verdict.Rejected)
+	}
+	var superseding map[string]any
+	for _, ask := range verdict.Asks {
+		if ask["supersedes"] == "ask-1-1" {
+			superseding = ask
+		}
+	}
+	if superseding == nil {
+		t.Fatalf("the lawful supersede must ride the proposed ask: %v", verdict.Asks)
+	}
+
+	engine := &Engine{Root: root, Mission: mission}
+	if err := engine.writeProposedAsks(verdict.Asks); err != nil {
+		t.Fatal(err)
+	}
+	prior, err := readJSONDoc(filepath.Join(asksDirPath(root, mission), "ask-1-1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newID, _ := superseding["askId"].(string)
+	if prior["supersededBy"] != newID || prior["supersededAt"] == nil {
+		t.Fatalf("the superseded ask must be closed: %v", prior)
+	}
+	open := openAskIDs(asksDirPath(root, mission))
+	for _, id := range open {
+		if id == "ask-1-1" {
+			t.Fatalf("a superseded ask must leave the waiting list: %v", open)
+		}
+	}
+
+}
+
+// Round-2 regression pins for the supersede guards: the path-like id, the
+// duplicate predecessor in one pass, the between-write crash shape, and
+// the superseded-only park case (issue #11 round-2 F4).
+func TestSupersedeGuardEdges(t *testing.T) {
+	root := t.TempDir()
+	mission := "demo"
+	turn := testTurn()
+	writeJSONFile(t, filepath.Join(asksDirPath(root, mission), "ask-1-1.json"),
+		map[string]any{"askId": "ask-1-1", "streamId": "s-app", "reasonClass": "reserved-decision",
+			"question": "old wording", "answeredAt": nil, "supersededBy": nil})
+	returned := map[string]any{
+		"dispatched": []any{}, "streamUpdatesRequested": []any{}, "certified": []any{},
+		"askCandidates": []any{
+			map[string]any{"streamId": "s-app", "reasonClass": "reserved-decision",
+				"question": "traversal", "supersedes": "../../other/asks/ask-1"},
+			map[string]any{"streamId": "s-app", "reasonClass": "reserved-decision",
+				"question": "first sharpening", "supersedes": "ask-1-1"},
+			map[string]any{"streamId": "s-app", "reasonClass": "reserved-decision",
+				"question": "second grab at the same ask", "supersedes": "ask-1-1"},
+		},
+	}
+	state := map[string]any{"streams": map[string]any{
+		"s-app": map[string]any{"state": "active", "reason": nil},
+	}, "turnLog": []any{}}
+	verdict, err := Adjudicate(root, mission, turn, state, returned, "2026-08-18T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(verdict.Rejected) != 2 {
+		t.Fatalf("the traversal id and the duplicate supersede must reject: %v", verdict.Rejected)
+	}
+	for _, item := range verdict.Rejected {
+		reason, _ := item["reason"].(string)
+		if !strings.Contains(reason, "unknown ask") && !strings.Contains(reason, "already superseded") {
+			t.Fatalf("unexpected rejection reason: %v", item)
+		}
+	}
+	// The persisted waiting list never names the predecessor this same
+	// verdict closes (round-2 F2).
+	for _, id := range verdict.WaitingList {
+		if id == "ask-1-1" {
+			t.Fatalf("the waiting list names a superseded predecessor: %v", verdict.WaitingList)
+		}
+	}
+}
+
+func TestSupersedeCrashShapeStaysClosed(t *testing.T) {
+	root := t.TempDir()
+	mission := "demo"
+	asksDir := asksDirPath(root, mission)
+	// The between-write crash: the successor exists with supersedes set,
+	// the predecessor's marker never landed.
+	writeJSONFile(t, filepath.Join(asksDir, "ask-1-1.json"),
+		map[string]any{"askId": "ask-1-1", "streamId": "s-app", "reasonClass": "host-failure",
+			"question": "old wording", "answeredAt": nil, "supersededBy": nil})
+	writeJSONFile(t, filepath.Join(asksDir, "ask-2-1.json"),
+		map[string]any{"askId": "ask-2-1", "streamId": "s-app", "reasonClass": "host-failure",
+			"question": "sharpened", "answeredAt": nil, "supersededBy": nil, "supersedes": "ask-1-1"})
+
+	for _, id := range openAskIDs(asksDir) {
+		if id == "ask-1-1" {
+			t.Fatal("derived closure must hide the predecessor after the crash shape")
+		}
+	}
+	// The park guarantee sees the successor as the open host-failure ask,
+	// so no duplicate is proposed — and if the successor were also gone,
+	// a fresh ask would be (superseded-only park case).
+	if !hasOpenAskWithReason(asksDir, "host-failure") {
+		t.Fatal("the successor must satisfy the park guarantee")
+	}
+	if err := os.Remove(filepath.Join(asksDir, "ask-2-1.json")); err != nil {
+		t.Fatal(err)
+	}
+	writeJSONFile(t, filepath.Join(asksDir, "ask-1-1.json"),
+		map[string]any{"askId": "ask-1-1", "streamId": "s-app", "reasonClass": "host-failure",
+			"question": "old wording", "answeredAt": nil, "supersededBy": "ask-2-1"})
+	if hasOpenAskWithReason(asksDir, "host-failure") {
+		t.Fatal("a superseded-only ask must not satisfy the park guarantee")
+	}
+}
+
+// Round-3: after the between-write crash, a NEW candidate superseding the
+// derivably closed predecessor must reject — two live successors for one
+// question is exactly what supersession exists to prevent.
+func TestSupersedeRejectsDerivablyClosedPredecessor(t *testing.T) {
+	root := t.TempDir()
+	mission := "demo"
+	turn := testTurn()
+	asksDir := asksDirPath(root, mission)
+	writeJSONFile(t, filepath.Join(asksDir, "ask-1-1.json"),
+		map[string]any{"askId": "ask-1-1", "streamId": "s-app", "reasonClass": "reserved-decision",
+			"question": "old wording", "answeredAt": nil, "supersededBy": nil})
+	writeJSONFile(t, filepath.Join(asksDir, "ask-2-1.json"),
+		map[string]any{"askId": "ask-2-1", "streamId": "s-app", "reasonClass": "reserved-decision",
+			"question": "sharpened", "answeredAt": nil, "supersededBy": nil, "supersedes": "ask-1-1"})
+	returned := map[string]any{
+		"dispatched": []any{}, "streamUpdatesRequested": []any{}, "certified": []any{},
+		"askCandidates": []any{map[string]any{"streamId": "s-app", "reasonClass": "reserved-decision",
+			"question": "third wording", "supersedes": "ask-1-1"}},
+	}
+	state := map[string]any{"streams": map[string]any{
+		"s-app": map[string]any{"state": "active", "reason": nil},
+	}, "turnLog": []any{}}
+	verdict, err := Adjudicate(root, mission, turn, state, returned, "2026-08-18T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(verdict.Rejected) != 1 {
+		t.Fatalf("re-superseding a derivably closed ask must reject: %v", verdict.Rejected)
+	}
+	if reason, _ := verdict.Rejected[0]["reason"].(string); !strings.Contains(reason, "already superseded") {
+		t.Fatalf("rejection reason: %v", reason)
+	}
+}

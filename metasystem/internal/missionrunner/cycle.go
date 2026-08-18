@@ -390,14 +390,22 @@ func parkOutcome(root, mission string, state map[string]any, reason, question, s
 
 // hasOpenAskWithReason reports whether any unanswered ask on disk already
 // carries the reason class, so a re-park does not stack duplicate asks.
+// A SUPERSEDED ask does not count (issue #11 critique F2): prompts and the
+// waiting list hide it, so letting it satisfy the park guarantee would
+// leave a parked mission with no visible answer path.
 func hasOpenAskWithReason(asksDir, reason string) bool {
+	superseded := supersededAskIDs(asksDir)
 	paths, _ := filepath.Glob(filepath.Join(asksDir, "*.json"))
 	for _, path := range paths {
 		doc, err := readJSONDoc(path)
 		if err != nil {
 			continue
 		}
-		if doc["answeredAt"] == nil && doc["reasonClass"] == reason {
+		askID, _ := doc["askId"].(string)
+		if _, closed := superseded[askID]; closed {
+			continue
+		}
+		if doc["answeredAt"] == nil && doc["supersededBy"] == nil && doc["reasonClass"] == reason {
 			return true
 		}
 	}
