@@ -199,6 +199,27 @@ for manifest_path in sorted(Path("benchmark/specs").glob("*/manifest.json")):
     # emit metric=X, and each instrument must emit the metric its contract
     # names. The first draft violated both and only a delegate noticed.
     contract = manifest.get("missionContract", {})
+    # fixtureSpec resolution MIRRORS benchmark/provision.sh: an object with one
+    # non-empty relative path naming a SIBLING spec (a directory directly under
+    # the same specs root, carrying its own manifest.json). Anything else is a
+    # seam between what the kit accepts and what provisioning refuses, so it
+    # is reported here rather than silently followed.
+    fixture = manifest.get("fixtureSpec")
+    copy_dir = spec_dir
+    if fixture is not None:
+        raw = fixture.get("path") if isinstance(fixture, dict) else None
+        if not isinstance(fixture, dict) or not isinstance(raw, str) or not raw or "\n" in raw or "\r" in raw:
+            violations.append(f"{manifest_path}: fixtureSpec must be an object with one non-empty relative path")
+        elif Path(raw).is_absolute():
+            violations.append(f"{manifest_path}: fixtureSpec.path must be relative: {raw}")
+        else:
+            resolved = (spec_dir / raw).resolve()
+            if resolved.parent != spec_dir.parent.resolve() or resolved == spec_dir.resolve():
+                violations.append(f"{manifest_path}: fixtureSpec.path must name a sibling spec: {raw}")
+            elif not (resolved / "manifest.json").is_file():
+                violations.append(f"{manifest_path}: fixtureSpec.path is not a spec directory: {resolved}")
+            else:
+                copy_dir = resolved
     for kind in ("gate", "guard"):
         block = contract.get(kind, {})
         metric = block.get("metric")
@@ -212,9 +233,9 @@ for manifest_path in sorted(Path("benchmark/specs").glob("*/manifest.json")):
         command = str(block.get("command", ""))
         scripts = re.findall(r"[\w./-]+\.sh", command)
         for script in scripts:
-            instrument = spec_dir / Path(script).name
+            instrument = copy_dir / Path(script).name
             if not instrument.exists():
-                violations.append(f"{manifest_path}: {kind} instrument {script} not shipped in {spec_dir}")
+                violations.append(f"{manifest_path}: {kind} instrument {script} not shipped in {copy_dir}")
             elif f"metric={metric}=" not in instrument.read_text():
                 violations.append(
                     f"{manifest_path}: {kind} instrument {instrument.name} never emits metric={metric}="
@@ -397,7 +418,10 @@ for raw in Path(sys.argv[3]).read_text(encoding="utf-8").splitlines():
         contract[key] = value
 
 host = manifest["roster"]["host"]
-delegates = manifest["roster"]["delegates"]
+roster = manifest["roster"]
+delegates = roster["delegates"]
+# The per-runtime projection is what provisioning writes for every spec:
+# runtimes host-first, one model slot per runtime, model.tier.1 host-first.
 models = {host["runtime"]: host["model"], **delegates}
 if config.get("metasystem.runtimes", "").split(",") != list(models):
     raise SystemExit("benchmark provision: configured runtimes differ from manifest roster")
@@ -408,6 +432,25 @@ for runtime, model in models.items():
     ]
     if not configured or set(configured) != {model}:
         raise SystemExit(f"benchmark provision: configured {runtime} models differ from manifest")
+tier_pairs = [(host["runtime"], host["model"])]
+for runtime, model in delegates.items():
+    if (runtime, model) not in tier_pairs:
+        tier_pairs.append((runtime, model))
+expected_tier = ",".join(f"{runtime}:{model}" for runtime, model in tier_pairs)
+# Adoption emits no tier row by default; provisioning only rewrites one that
+# exists. When one exists it must be the roster's pairs, host first.
+if "model.tier.1" in config and config["model.tier.1"] != expected_tier:
+    raise SystemExit("benchmark provision: model.tier.1 differs from the roster (host first, then delegates)")
+# The per-role projection, when the manifest declares one, must be written
+# explicitly and agree with the runtime slots -- and role.default.* must be
+# untouched by it (adoption's tailoring owns those).
+for role, resolution in (roster.get("delegateRoles") or {}).items():
+    if config.get(f"role.{role}.runtime") != resolution["runtime"] \
+       or config.get(f"role.{role}.model.{resolution['runtime']}") != resolution["model"]:
+        raise SystemExit(f"benchmark provision: configured {role} resolution differs from manifest delegateRoles")
+independence = roster.get("independence")
+if (config.get("independence") or None) != independence:
+    raise SystemExit("benchmark provision: independence declaration differs from manifest roster")
 if contract.get("host.runtime") != host["runtime"] or contract.get("host.model") != host["model"]:
     raise SystemExit("benchmark provision: contract host differs from manifest roster")
 fences = manifest["fences"]

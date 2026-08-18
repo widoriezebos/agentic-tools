@@ -17,15 +17,37 @@
     "waitingList",
     "runnerLease",
     "ledger",
-    "integrity"
+    "integrity",
+    "openTurn",
+    "workspaceTaint"
   ],
   "properties": {
-    "schemaVersion": {"const": 1},
-    "missionId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-    "branch": {"type": "string", "minLength": 1},
-    "status": {"enum": ["running", "completed", "parked"]},
+    "schemaVersion": {
+      "enum": [
+        2,
+        3
+      ]
+    },
+    "missionId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "running",
+        "completed",
+        "parked"
+      ]
+    },
     "parkReason": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "enum": [
         null,
         "all-streams-parked",
@@ -34,98 +56,467 @@
         "gate-integrity",
         "state-integrity",
         "contract-changed",
-        "host-failure"
+        "host-failure",
+        "drain-stalled"
       ]
     },
-    "gatePassed": {"type": "boolean"},
+    "gatePassed": {
+      "type": "boolean"
+    },
     "streams": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["goal", "state", "reason", "answeredAsk"],
+        "required": [
+          "goal",
+          "state",
+          "reason",
+          "answeredAsk"
+        ],
         "properties": {
-          "goal": {"type": "string", "minLength": 1},
-          "state": {"enum": ["active", "parked-reserved", "parked-stop-loss", "done"]},
-          "reason": {"type": ["string", "null"]},
-          "answeredAsk": {"type": ["string", "null"]}
+          "goal": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "active",
+              "parked-reserved",
+              "parked-stop-loss",
+              "done"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answeredAsk": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       }
     },
     "fences": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["startedAt", "cycles", "jobs", "activeJobs", "usage"],
+      "required": [
+        "startedAt",
+        "cycles",
+        "jobs",
+        "activeJobs",
+        "usage"
+      ],
       "properties": {
-        "startedAt": {"type": "string", "format": "date-time"},
-        "cycles": {"type": "integer", "minimum": 0},
-        "jobs": {"type": "integer", "minimum": 0},
-        "activeJobs": {"type": "integer", "minimum": 0},
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "cycles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "jobs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activeJobs": {
+          "type": "integer",
+          "minimum": 0
+        },
         "usage": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["provider", "unit", "value"],
+            "required": [
+              "provider",
+              "unit",
+              "value"
+            ],
             "properties": {
-              "provider": {"type": "string", "minLength": 1},
-              "unit": {"type": "string", "minLength": 1},
-              "value": {"type": "number", "minimum": 0}
+              "provider": {
+                "type": "string",
+                "minLength": 1
+              },
+              "unit": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0
+              }
             }
           }
         }
       }
     },
-    "turnLog": {"type": "array", "items": {"type": "object"}},
+    "turnLog": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "wall": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "verdict",
+              "preTree",
+              "expectedTree",
+              "postTree",
+              "orderedDigests"
+            ],
+            "properties": {
+              "verdict": {
+                "const": "passed"
+              },
+              "preTree": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40,64}$"
+              },
+              "expectedTree": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40,64}$"
+              },
+              "postTree": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40,64}$"
+              },
+              "orderedDigests": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          },
+          "consumedAuthorizations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "turnId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          }
+        },
+        "dependentRequired": {
+          "wall": [
+            "consumedAuthorizations",
+            "turnId"
+          ],
+          "consumedAuthorizations": [
+            "wall",
+            "turnId"
+          ]
+        },
+        "description": "Acceptance-entry invariants JSON Schema cannot express are Go-enforced (internal/mission ConsumedAuthorizations): orderedDigests position-equal to consumedAuthorizations, and no digest consumed twice across entries."
+      }
+    },
     "waitingList": {
       "type": "array",
       "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      }
     },
-    "runnerLease": {"type": ["string", "null"]},
-    "ledgerSemantics": {"type": "integer", "minimum": 1},
+    "runnerLease": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ledgerSemantics": {
+      "type": "integer",
+      "minimum": 1
+    },
     "lastDrainStall": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cycle", "survivors"],
+      "required": [
+        "cycle",
+        "survivors"
+      ],
       "properties": {
-        "cycle": {"type": "integer", "minimum": 1},
+        "cycle": {
+          "type": "integer",
+          "minimum": 1
+        },
         "survivors": {
           "type": "array",
-          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          }
         }
       }
     },
     "ledger": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "cycles"],
+      "required": [
+        "path",
+        "cycles"
+      ],
       "properties": {
-        "path": {"type": "string", "minLength": 1},
-        "cycles": {"type": "integer", "minimum": 0}
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cycles": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "integrity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sequence", "previousHash", "hash", "history", "recoveryOf"],
+      "required": [
+        "sequence",
+        "previousHash",
+        "hash",
+        "history",
+        "recoveryOf"
+      ],
       "properties": {
-        "sequence": {"type": "integer", "minimum": 0},
-        "previousHash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
-        "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "recoveryOf": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "previousHash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recoveryOf": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "history": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["sequence", "previousHash", "hash"],
+            "required": [
+              "sequence",
+              "previousHash",
+              "hash"
+            ],
             "properties": {
-              "sequence": {"type": "integer", "minimum": 0},
-              "previousHash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
-              "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              "sequence": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "previousHash": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "hash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "openTurn": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "turnId",
+            "cycle",
+            "preTree",
+            "sequence",
+            "segment",
+            "openedAt"
+          ],
+          "properties": {
+            "turnId": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            },
+            "cycle": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "preTree": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "segment": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "openedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+            }
+          }
+        }
+      ]
+    },
+    "workspaceTaint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "next",
+        "segment",
+        "entries"
+      ],
+      "properties": {
+        "next": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "segment": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "taintId",
+              "turnId",
+              "reason",
+              "setAt",
+              "resolution"
+            ],
+            "properties": {
+              "taintId": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "turnId": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "setAt": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+              },
+              "resolution": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "variant",
+                      "treeId",
+                      "resolvedAt",
+                      "resolvedBy",
+                      "reason"
+                    ],
+                    "properties": {
+                      "variant": {
+                        "const": "restore"
+                      },
+                      "treeId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40,64}$"
+                      },
+                      "resolvedAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+                      },
+                      "resolvedBy": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "variant",
+                      "treeId",
+                      "resolvedAt",
+                      "resolvedBy",
+                      "reason",
+                      "waivedClaims"
+                    ],
+                    "properties": {
+                      "variant": {
+                        "const": "adopt-disputed-tree"
+                      },
+                      "treeId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40,64}$"
+                      },
+                      "resolvedAt": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+                      },
+                      "resolvedBy": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "waivedClaims": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
             }
           }
         }

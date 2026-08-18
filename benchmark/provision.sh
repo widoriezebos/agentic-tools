@@ -124,17 +124,46 @@ def text_at(mapping: dict, key: str, label: str) -> str:
         refuse(f"{label} must be one non-empty line")
     return result
 
-def relative_source(raw: object, label: str) -> Path:
+def relative_source(raw: object, label: str, base: Path) -> Path:
     if not isinstance(raw, str) or not raw or "\n" in raw or "\r" in raw:
         refuse(f"{label} must be one non-empty relative path")
     candidate = Path(raw)
     if candidate.is_absolute() or ".." in candidate.parts:
         refuse(f"{label} escapes the spec directory: {raw}")
-    resolved = (spec / candidate).resolve()
+    resolved = (base / candidate).resolve()
     try:
-        resolved.relative_to(spec)
+        resolved.relative_to(base)
     except ValueError:
         refuse(f"{label} escapes the spec directory: {raw}")
+    return resolved
+
+def fixture_spec() -> Path:
+    """The spec whose seed, instruments and grader this manifest reuses.
+
+    A roster sibling may point at another spec, but ONLY a sibling: the
+    resolved directory must sit directly under the same specs directory as
+    this manifest and carry its own manifest.json. Anything else -- an
+    escape via .., a symlink out of the tree, an arbitrary directory that
+    merely exists -- would let a manifest select the code run-cohort later
+    EXECUTES as the held-out grader, so it is refused, not resolved.
+    """
+    block = value.get("fixtureSpec")
+    if block is None:
+        return spec
+    if not isinstance(block, dict):
+        refuse("fixtureSpec must be an object when present")
+    raw = block.get("path")
+    if not isinstance(raw, str) or not raw or "\n" in raw or "\r" in raw:
+        refuse("fixtureSpec.path must be one non-empty relative path")
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        refuse(f"fixtureSpec.path must be relative: {raw}")
+    specs_root = spec.parent.resolve()
+    resolved = (spec / candidate).resolve()
+    if resolved.parent != specs_root or resolved == spec:
+        refuse(f"fixtureSpec.path must name a sibling spec under {specs_root}: {raw}")
+    if not resolved.is_dir() or not (resolved / "manifest.json").is_file():
+        refuse(f"fixtureSpec.path is not a spec directory (no manifest.json): {resolved}")
     return resolved
 
 def overlaps(first: Path, second: Path) -> bool:
@@ -156,10 +185,11 @@ if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", identifier):
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", version):
     refuse("version cannot form an instrument tag")
 
+copy_spec = fixture_spec()
 seed_block = object_at("seed")
 grader_block = object_at("grader")
-seed = relative_source(seed_block.get("path"), "seed.path")
-grader = relative_source(grader_block.get("path"), "grader.path")
+seed = relative_source(seed_block.get("path"), "seed.path", copy_spec)
+grader = relative_source(grader_block.get("path"), "grader.path", copy_spec)
 if grader_block.get("heldOut") is not True:
     refuse("grader.heldOut must be true")
 if not seed.is_dir():
@@ -174,9 +204,9 @@ for directory, names, files in os.walk(seed, followlinks=False):
         source = Path(directory, name)
         resolved = source.resolve()
         try:
-            resolved.relative_to(spec)
+            resolved.relative_to(copy_spec)
         except ValueError:
-            refuse(f"seed path escapes the spec directory: {source}")
+            refuse(f"seed path escapes the fixture spec directory: {source}")
         if overlaps(resolved, grader):
             refuse(f"held-out grader path would be copied through seed: {source}")
 
@@ -186,7 +216,7 @@ if not isinstance(instruments, list) or not instruments:
     refuse("missionContract.instruments must be a non-empty list")
 destinations = set()
 for index, raw in enumerate(instruments):
-    instrument = relative_source(raw, f"missionContract.instruments[{index}]")
+    instrument = relative_source(raw, f"missionContract.instruments[{index}]", copy_spec)
     if not instrument.is_file():
         refuse(f"instrument is not a file: {instrument}")
     if overlaps(instrument, grader):
@@ -273,6 +303,7 @@ if not envelope or any(not re.fullmatch(r"[a-z0-9][a-z0-9-]*", key) or not isins
 
 supported = {"claude", "codex", "devin"}
 runtime_id = re.compile(r"[a-z0-9][a-z0-9-]*")
+role_id = re.compile(r"[a-z0-9][a-z0-9-]*")
 model_id = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]*")
 host_runtime = host["runtime"]
 host_model = host["model"]
@@ -280,14 +311,57 @@ if host_runtime not in supported or not runtime_id.fullmatch(host_runtime) or no
     refuse("roster.host contains an unsupported runtime or invalid model")
 runtimes = [host_runtime]
 models = {host_runtime: host_model}
+DELEGATED_ROLES = ("design-critic", "implementer", "code-critic")
+# The per-runtime model slots (role.*.model.<runtime>) belong to the
+# DELEGATES; the host's model lives in the contract's host.model. So a
+# delegate entry for the host's own runtime overrides the host model in
+# that slot -- one runtime, two model identities, host and delegates
+# distinct -- which is exactly what a Devin-hosted Opus/GPT roster needs.
 for runtime, model in delegates.items():
     if runtime not in supported or not runtime_id.fullmatch(runtime) or not isinstance(model, str) or not model_id.fullmatch(model):
         refuse(f"roster.delegates contains an unsupported runtime or invalid model: {runtime}")
-    if runtime in models and models[runtime] != model:
-        refuse(f"roster assigns two models to runtime: {runtime}")
     models[runtime] = model
     if runtime not in runtimes:
         runtimes.append(runtime)
+delegate_roles = roster.get("delegateRoles")
+if delegate_roles is not None:
+    # Per-role resolution is OPTIONAL and, when present, must be complete and
+    # agree with roster.delegates: every consumer that predates delegateRoles
+    # (the extractor, cohort records, benchmark-identity) still reads
+    # delegates, so the two are one roster in two projections, never two
+    # authorities.
+    if not isinstance(delegate_roles, dict) or set(delegate_roles) != set(DELEGATED_ROLES):
+        refuse(f"roster.delegateRoles must name exactly the delegated roles {list(DELEGATED_ROLES)}")
+    for role in DELEGATED_ROLES:
+        resolution = delegate_roles[role]
+        if not isinstance(resolution, dict):
+            refuse(f"roster.delegateRoles.{role} must be an object")
+        runtime = text_at(resolution, "runtime", f"roster.delegateRoles.{role}.runtime")
+        model = text_at(resolution, "model", f"roster.delegateRoles.{role}.model")
+        if runtime not in supported or not runtime_id.fullmatch(runtime) or not model_id.fullmatch(model):
+            refuse(f"roster.delegateRoles contains an unsupported runtime or invalid model: {role}")
+        if delegates.get(runtime) != model:
+            refuse(f"roster.delegateRoles.{role} ({runtime}:{model}) is not covered by roster.delegates; the two projections must agree")
+        if runtime not in runtimes:
+            runtimes.append(runtime)
+independence = roster.get("independence")
+if independence is not None and independence != "session-only":
+    refuse("roster.independence admits only the literal session-only; omit the key otherwise")
+# The collaboration loop refuses to merge when implementer and code critic
+# share an effective model unless independence=session-only is declared
+# (docs/orchestration.md step 4, validate/conformance.go). Catch that here,
+# where it costs nothing, instead of in cycle 2 of a run.
+if delegate_roles is not None:
+    implementer_pair = (delegate_roles["implementer"]["runtime"], delegate_roles["implementer"]["model"])
+    critic_pair = (delegate_roles["code-critic"]["runtime"], delegate_roles["code-critic"]["model"])
+    same_model = implementer_pair == critic_pair
+    if same_model and independence != "session-only":
+        refuse("roster.delegateRoles puts the implementer and the code critic on one effective model without roster.independence=session-only; the merge check would refuse every critique (docs/orchestration.md step 4)")
+elif len(delegates) == 1 and independence != "session-only":
+    # Legacy single-runtime rosters (bm-1 and siblings) have this defect
+    # today and its remedy is a pending human ruling (issue #7); refusing
+    # here would pre-empt it. Name it loudly instead of silently.
+    print("warning: roster.delegates resolves the implementer and the code critic to one effective model and roster.independence is not declared; unattended certification will park at the merge check (issue #7)", file=sys.stderr)
 network = environment.get("delegateNetwork")
 if network not in {"allowed", "denied"}:
     refuse("environment.delegateNetwork must be allowed or denied")
@@ -296,13 +370,17 @@ print(",".join(runtimes))
 print(f"{identifier}-instruments-v{version}")
 print(identifier)
 print(host_runtime)
+print(copy_spec)
+print(independence or "")
 PY
 )
 runtimes=$(printf '%s\n' "$manifest_facts" | sed -n '1p')
 instrument_tag=$(printf '%s\n' "$manifest_facts" | sed -n '2p')
 mission_id=$(printf '%s\n' "$manifest_facts" | sed -n '3p')
 host_runtime=$(printf '%s\n' "$manifest_facts" | sed -n '4p')
-[[ -n "$runtimes" && -n "$instrument_tag" && -n "$mission_id" && -n "$host_runtime" ]] \
+fixture_spec=$(printf '%s\n' "$manifest_facts" | sed -n '5p')
+roster_independence=$(printf '%s\n' "$manifest_facts" | sed -n '6p')
+[[ -n "$runtimes" && -n "$instrument_tag" && -n "$mission_id" && -n "$host_runtime" && -n "$fixture_spec" ]] \
   || die 1 "provision refused: manifest validation returned incomplete facts"
 
 scratch=$(mktemp -d)
@@ -326,7 +404,7 @@ import json, sys
 print(json.load(open(sys.argv[1], encoding="utf-8"))["seed"]["path"])
 PY
 )
-cp -R "$spec/$seed_path/." "$target/"
+cp -R "$fixture_spec/$seed_path/." "$target/"
 
 if ! "$root/scripts/adopt.sh" "$target" --runtimes "$runtimes" >"$scratch/adopt.log" 2>&1; then
   cat "$scratch/adopt.log" >&2
@@ -346,7 +424,7 @@ provisioner_start=$("$ms" proc started-at --pid $$) \
   || die 1 "provision refused: the provisioner did not become the target's lease holder"
 
 mkdir -p "$evidence_root"
-python3 - "$target/metasystem.conf" "$manifest" "$evidence_root" <<'PY'
+python3 - "$target/metasystem.conf" "$manifest" "$evidence_root" "$roster_independence" <<'PY'
 import json
 import os
 import re
@@ -356,13 +434,39 @@ from pathlib import Path
 path = Path(sys.argv[1])
 manifest = json.load(open(sys.argv[2], encoding="utf-8"))
 evidence = str(Path(sys.argv[3]).resolve())
-host = manifest["roster"]["host"]
-models = {host["runtime"]: host["model"], **manifest["roster"]["delegates"]}
-qualified = ",".join(f"{runtime}:{model}" for runtime, model in models.items())
+independence = sys.argv[4]
+roster = manifest["roster"]
+host = roster["host"]
+# The per-runtime model slots are the roster's FIRST projection and the one
+# every existing spec is provisioned from: host first, then each delegate
+# runtime, exactly as before delegateRoles existed. model.tier.1 keeps the
+# host pair (it always has) so the dispatch cost ranking is unchanged.
+models = {host["runtime"]: host["model"], **roster["delegates"]}
+tier_pairs = [(host["runtime"], host["model"])]
+for runtime, model in roster["delegates"].items():
+    if (runtime, model) not in tier_pairs:
+        tier_pairs.append((runtime, model))
+qualified = ",".join(f"{runtime}:{model}" for runtime, model in tier_pairs)
+# The per-role projection is OPTIONAL. When present it is complete (the
+# manifest validation above refused anything else) and it agrees with the
+# per-runtime slots, so writing role.<role>.runtime / role.<role>.model.<rt>
+# only makes explicit what the runtime slots already imply -- it never
+# touches role.default.*, which stays whatever adoption tailored, exactly
+# as legacy provisioning left it.
+delegate_roles = roster.get("delegateRoles") or {}
+role_resolutions = {
+    role: (resolution["runtime"], resolution["model"])
+    for role, resolution in delegate_roles.items()
+}
 network = {"allowed": "allow", "denied": "deny"}[manifest["environment"]["delegateNetwork"]]
 model_key = re.compile(r"^(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$")
+role_runtime_key = re.compile(r"^role\.([a-z0-9-]+)\.runtime$")
+role_model_key = re.compile(r"^role\.([a-z0-9-]+)\.model\.([a-z0-9-]+)$")
 seen_models = set()
+seen_role_runtimes = set()
+seen_role_models = set()
 seen_network = False
+seen_independence = False
 lines = []
 for raw in path.read_text(encoding="utf-8").splitlines():
     if "=" not in raw or raw.lstrip().startswith("#"):
@@ -375,6 +479,13 @@ for raw in path.read_text(encoding="utf-8").splitlines():
         value = qualified
     elif re.fullmatch(r"model\.tier\.[2-9][0-9]*", key):
         value = ""
+    elif (match := role_runtime_key.fullmatch(key)) and match.group(1) in role_resolutions:
+        value = role_resolutions[match.group(1)][0]
+        seen_role_runtimes.add(match.group(1))
+    elif (match := role_model_key.fullmatch(key)) and match.group(1) in role_resolutions and match.group(2) == role_resolutions[match.group(1)][0]:
+        value = role_resolutions[match.group(1)][1]
+        seen_role_models.add(match.group(1))
+        seen_models.add(match.group(2))
     elif (match := model_key.fullmatch(key)) and match.group(1) in models:
         runtime = match.group(1)
         value = models[runtime]
@@ -382,14 +493,24 @@ for raw in path.read_text(encoding="utf-8").splitlines():
     elif key == "dispatch.permissions.network":
         value = network
         seen_network = True
+    elif key == "independence":
+        value = independence
+        seen_independence = True
     else:
         value = old
     lines.append(f"{key}={value}")
 if set(models) != seen_models:
     missing = ", ".join(sorted(set(models) - seen_models))
     raise SystemExit(f"provision refused: adopted configuration has no model slot for runtime(s): {missing}")
+for role, (runtime, model) in role_resolutions.items():
+    if role not in seen_role_runtimes:
+        lines.append(f"role.{role}.runtime={runtime}")
+    if role not in seen_role_models:
+        lines.append(f"role.{role}.model.{runtime}={model}")
 if not seen_network:
     lines.append(f"dispatch.permissions.network={network}")
+if independence and not seen_independence:
+    lines.append(f"independence={independence}")
 temporary = path.with_name(path.name + ".provision.tmp")
 temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
 os.replace(temporary, path)
@@ -398,7 +519,7 @@ PY
 
 while IFS= read -r instrument; do
   [[ -n "$instrument" ]] || continue
-  cp "$spec/$instrument" "$target/$(basename "$instrument")"
+  cp "$fixture_spec/$instrument" "$target/$(basename "$instrument")"
 done < <(python3 - "$manifest" <<'PY'
 import json, sys
 for path in json.load(open(sys.argv[1], encoding="utf-8"))["missionContract"]["instruments"]:

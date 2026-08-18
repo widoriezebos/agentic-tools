@@ -339,8 +339,28 @@ PY
     (( $(date +%s) < drain_wait_deadline ))       || die 1 "cohort grading refused: drain-stalled park still has $running live job(s) after the wait; resolve the survivors ask first"
     sleep 10
   done
-  grader_rel=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["grader"]["path"])' "$manifest")
-  grader=$spec/$grader_rel/grade.sh
+  grader=$(python3 - "$manifest" "$spec" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+spec = Path(sys.argv[2])
+# The held-out grader is EXECUTED from here, so the fixture rule is the
+# same one provision.sh enforces: a sibling spec directory only. A cohort
+# whose manifest drifted past that rule fails grading loudly, never runs
+# code from wherever the path happens to point.
+fixture = manifest.get("fixtureSpec")
+base = spec.resolve()
+if fixture is not None:
+    raw = fixture.get("path") if isinstance(fixture, dict) else None
+    if not isinstance(raw, str) or not raw or Path(raw).is_absolute():
+        raise SystemExit("cohort grading refused: fixtureSpec.path must be one relative path")
+    base = (spec / raw).resolve()
+    if base.parent != spec.resolve().parent or base == spec.resolve() or not (base / "manifest.json").is_file():
+        raise SystemExit(f"cohort grading refused: fixtureSpec.path must name a sibling spec: {raw}")
+print(base / manifest["grader"]["path"] / "grade.sh")
+PY
+)
   [[ -x "$grader" ]] || die 1 "cohort grading refused: held-out grader is not executable: $grader"
   grader_tmp=$mission_root/.grader.out.$$
   set +e

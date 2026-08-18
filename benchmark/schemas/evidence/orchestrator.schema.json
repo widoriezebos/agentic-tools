@@ -4,21 +4,48 @@
   "title": "Orchestrator return",
   "type": "object",
   "additionalProperties": false,
-  "required": ["turnId", "missionId", "cycle", "dispatched", "certified", "streamUpdatesRequested", "askCandidates", "factsForLedger", "gaps", "identity"],
+  "required": [
+    "turnId",
+    "missionId",
+    "cycle",
+    "dispatched",
+    "certified",
+    "streamUpdatesRequested",
+    "askCandidates",
+    "factsForLedger",
+    "gaps",
+    "identity"
+  ],
   "properties": {
-    "turnId": {"type": "string"},
-    "missionId": {"type": "string"},
-    "cycle": {"type": "integer"},
+    "turnId": {
+      "type": "string"
+    },
+    "missionId": {
+      "type": "string"
+    },
+    "cycle": {
+      "type": "integer"
+    },
     "dispatched": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["jobId", "role", "stream"],
+        "required": [
+          "jobId",
+          "role",
+          "stream"
+        ],
         "properties": {
-          "jobId": {"type": "string"},
-          "role": {"type": "string"},
-          "stream": {"type": "string"}
+          "jobId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "string"
+          }
         }
       }
     },
@@ -27,11 +54,32 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["jobId", "verdict", "evidence"],
+        "required": [
+          "jobId",
+          "verdict",
+          "evidence",
+          "authorizationDigest"
+        ],
         "properties": {
-          "jobId": {"type": "string"},
-          "verdict": {"enum": ["accepted", "rejected"]},
-          "evidence": {"type": "string"}
+          "jobId": {
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "authorizationDigest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The integration authorization this certification consumes (host-implementer wall). Required key; null is lawful ONLY on a rejected verdict. The 64-hex grammar and record existence are enforced by the runner's adjudication, never trusted from this claim."
+          }
         }
       }
     },
@@ -40,11 +88,25 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["streamId", "requestedState", "reason"],
+        "required": [
+          "streamId",
+          "requestedState",
+          "reason"
+        ],
         "properties": {
-          "streamId": {"type": "string"},
-          "requestedState": {"enum": ["active", "parked-reserved", "parked-stop-loss", "done"]},
-          "reason": {"type": "string"}
+          "streamId": {
+            "type": "string"
+          },
+          "requestedState": {
+            "enum": [
+              "active",
+              "parked-reserved",
+              "done"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
         }
       }
     },
@@ -53,26 +115,62 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["streamId", "reasonClass", "question"],
+        "required": [
+          "streamId",
+          "reasonClass",
+          "question"
+        ],
         "properties": {
-          "streamId": {"type": "string"},
-          "reasonClass": {"enum": ["reserved-decision", "red-test", "merge-conflict", "host-failure"]},
-          "question": {"type": "string"}
+          "streamId": {
+            "type": "string"
+          },
+          "reasonClass": {
+            "enum": [
+              "reserved-decision",
+              "red-test",
+              "merge-conflict",
+              "host-failure"
+            ]
+          },
+          "question": {
+            "type": "string"
+          }
         }
       }
     },
-    "factsForLedger": {"type": "array", "items": {"type": "string"}},
-    "gaps": {"type": "array", "items": {"type": "string"}},
+    "factsForLedger": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["runtime", "model", "sessionId"],
+      "required": [
+        "runtime",
+        "model",
+        "sessionId"
+      ],
       "properties": {
-        "runtime": {"type": "string"},
-        "model": {"type": "string"},
+        "runtime": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
         "sessionId": {
-          "type": ["string", "null"],
-          "description": "Echo the prompt's Host-Session header exactly (null when it says none), or report the session id your own runtime shows you — both are accepted. Never invent a session id."
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Echo the prompt's Host-Session header exactly (null when it says none), or report the session id your own runtime shows you \u2014 both are accepted. Never invent a session id."
         }
       }
     }

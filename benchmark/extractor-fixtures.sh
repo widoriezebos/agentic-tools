@@ -74,7 +74,7 @@ base.mkdir(parents=True, exist_ok=True)
 )
 
 state = {
-    "schemaVersion": 1,
+    "schemaVersion": 3,
     "missionId": "fixture",
     "branch": "main",
     "status": "completed",
@@ -85,7 +85,7 @@ state = {
     "turnLog": [{
         "cycle": 1,
         "accepted": [{"kind": "dispatched", "value": {"jobId": "implementer-fixture", "role": "implementer", "stream": "build"}}],
-        "certified": [{"jobId": "implementer-fixture", "verdict": "accepted", "evidence": "fixture"}],
+        "certified": [{"jobId": "implementer-fixture", "verdict": "accepted", "evidence": "fixture", "authorizationDigest": "1" * 64}],
     }],
     "waitingList": [],
     "runnerLease": None,
@@ -97,6 +97,8 @@ state = {
         "history": [],
         "recoveryOf": None,
     },
+    "openTurn": None,
+    "workspaceTaint": {"next": 1, "segment": 0, "entries": []},
 }
 write_json(mission / "state.json", state)
 (mission / "ledger.md").write_text(
@@ -179,7 +181,7 @@ write_json(turn_dir / "return.json", {
     "missionId": "fixture",
     "cycle": 1,
     "dispatched": [{"jobId": "implementer-fixture", "role": "implementer", "stream": "build"}],
-    "certified": [{"jobId": "implementer-fixture", "verdict": "accepted", "evidence": "fixture"}],
+    "certified": [{"jobId": "implementer-fixture", "verdict": "accepted", "evidence": "fixture", "authorizationDigest": "1" * 64}],
     "streamUpdatesRequested": [{"streamId": "build", "requestedState": "done", "reason": "done"}],
     "askCandidates": [],
     "factsForLedger": ["fixture completed"],
