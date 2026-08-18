@@ -302,6 +302,12 @@ func TestAdjudicate(t *testing.T) {
 	if len(verdict.Rejected) != len(wantReasons) {
 		t.Fatalf("rejected: got %d items: %v", len(verdict.Rejected), verdict.Rejected)
 	}
+	// The stale-turn job stays REJECTED here: no earlier accepted
+	// dispatched entry vouches for it (issue #10 round 2 — informational
+	// requires authoritative evidence, covered by its own test).
+	if len(verdict.Ignored) != 0 {
+		t.Fatalf("no evidence, no informational routing: %v", verdict.Ignored)
+	}
 	for i, want := range wantReasons {
 		if verdict.Rejected[i]["reason"] != want {
 			t.Fatalf("rejected[%d]: got %v, want %q", i, verdict.Rejected[i]["reason"], want)
@@ -666,5 +672,71 @@ func TestSupersedeRejectsDerivablyClosedPredecessor(t *testing.T) {
 	}
 	if reason, _ := verdict.Rejected[0]["reason"].(string); !strings.Contains(reason, "already superseded") {
 		t.Fatalf("rejection reason: %v", reason)
+	}
+}
+
+// Issue #10 (2): a dispatched entry naming this mission's own job from an
+// EARLIER turn is informational — no host-failure ask for telling the
+// truth twice; a nonexistent job still rejects with its ask.
+func TestAdjudicateIgnoresPreExistingJobReports(t *testing.T) {
+	root := t.TempDir()
+	mission := "demo"
+	turn := testTurn()
+	writeJSONFile(t, filepath.Join(jobsDirPath(root), "job-early.json"),
+		map[string]any{"jobId": "job-early", "mission": mission, "turnId": "demo-t1-old"})
+	writeJSONFile(t, filepath.Join(jobsDirPath(root), "job-misstamped.json"),
+		map[string]any{"jobId": "job-misstamped", "mission": mission, "turnId": "demo-t9-future"})
+	returned := map[string]any{
+		"dispatched": []any{
+			map[string]any{"jobId": "job-early", "role": "implementer", "stream": "s-app"},
+			map[string]any{"jobId": "job-misstamped", "role": "implementer", "stream": "s-app"},
+			map[string]any{"jobId": "job-ghost", "role": "implementer", "stream": "s-app"},
+		},
+		"streamUpdatesRequested": []any{}, "askCandidates": []any{}, "certified": []any{},
+	}
+	// "Already known" requires AUTHORITATIVE evidence (round 2): the job
+	// appears in an earlier turn's ACCEPTED dispatched entries. The
+	// mis-stamped job has none and must keep its host-failure ask.
+	state := map[string]any{"streams": map[string]any{
+		"s-app": map[string]any{"state": "active", "reason": nil},
+	}, "turnLog": []any{map[string]any{
+		"turnId": "demo-t1-old",
+		"accepted": []any{map[string]any{"kind": "dispatched",
+			"value": map[string]any{"jobId": "job-early", "role": "implementer", "stream": "s-app"}}},
+	}}}
+	verdict, err := Adjudicate(root, mission, turn, state, returned, "2026-08-18T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(verdict.Ignored) != 1 || verdict.Ignored[0]["reason"] != "pre-existing job" {
+		t.Fatalf("the accepted earlier job must be informational: %v", verdict.Ignored)
+	}
+	ignoredValue, _ := verdict.Ignored[0]["value"].(map[string]any)
+	if ignoredValue["jobId"] != "job-early" {
+		t.Fatalf("the vouched job must be the ignored one: %v", verdict.Ignored)
+	}
+	if len(verdict.Rejected) != 2 {
+		t.Fatalf("the mis-stamped and ghost jobs must both reject: %v", verdict.Rejected)
+	}
+	rejectedIDs := map[string]string{}
+	for _, item := range verdict.Rejected {
+		value, _ := item["value"].(map[string]any)
+		jobID, _ := value["jobId"].(string)
+		reason, _ := item["reason"].(string)
+		rejectedIDs[jobID] = reason
+	}
+	if rejectedIDs["job-misstamped"] != "job record was not created during this host turn" {
+		t.Fatalf("the evidence-less job must keep the turn rejection: %v", rejectedIDs)
+	}
+	if rejectedIDs["job-ghost"] != "job record does not exist or is unreadable" {
+		t.Fatalf("the ghost must keep the existence rejection: %v", rejectedIDs)
+	}
+	if len(verdict.Asks) != 2 {
+		t.Fatalf("both rejections must mint asks: %v", verdict.Asks)
+	}
+	for _, ask := range verdict.Asks {
+		if ask["reasonClass"] != "host-failure" {
+			t.Fatalf("rejection asks carry host-failure: %v", ask)
+		}
 	}
 }

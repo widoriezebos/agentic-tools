@@ -155,6 +155,9 @@ func recordLockWait() time.Duration {
 	return 10 * time.Second
 }
 
+// freshRoundSuffixRe captures a round-styled id suffix (-rN).
+var freshRoundSuffixRe = regexp.MustCompile(`-r([0-9]+)$`)
+
 // RecordCreate reserves a job by writing its initial pending-setup record.
 // It refuses if a record already exists, so two dispatchers racing one id
 // cannot both win. The source must already carry the job's own id and the
@@ -172,6 +175,23 @@ func RecordCreate(root, job, sourcePath string) error {
 		}
 		if asString(record["jobId"]) != job || asString(record["status"]) != "pending-setup" {
 			return refuse(1, "invalid initial record identity or status for %s", job)
+		}
+		// A FRESH chain root must not be named like a later round (issue
+		// #10): round identity is the record's, never the id's, and a new
+		// job called <name>-r2 briefs its delegate as round 2 while the
+		// record says 1 — the return then dies on the identity mismatch
+		// after the tokens are spent. Rounds continue by resuming the
+		// chain; only resume records (parentJob set) may carry -rN ids
+		// beyond r1.
+		if record["parentJob"] == nil {
+			if m := freshRoundSuffixRe.FindStringSubmatch(job); m != nil {
+				// Fail CLOSED on an unparseable suffix (round 2: an
+				// overflow literal matched the regex, erred in Atoi, and
+				// walked straight through the guard).
+				if n, err := strconv.Atoi(m[1]); err != nil || n >= 2 {
+					return refuse(1, "a fresh job must not claim round %s in its name (%s); continue the existing chain with a follow-up instead", m[1], job)
+				}
+			}
 		}
 		return writeRecord(recordPath, record)
 	})

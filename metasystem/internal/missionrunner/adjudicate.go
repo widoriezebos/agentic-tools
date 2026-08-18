@@ -224,11 +224,16 @@ func resolveExisting(abs string) string {
 // the original return entries so the turn log records exactly what was
 // claimed.
 type Verdict struct {
-	RawPath     string           `json:"rawPath"`
-	ReturnPath  string           `json:"returnPath"`
-	Accepted    []map[string]any `json:"accepted"`
-	Rejected    []map[string]any `json:"rejected"`
-	Certified   []map[string]any `json:"certified"`
+	RawPath    string           `json:"rawPath"`
+	ReturnPath string           `json:"returnPath"`
+	Accepted   []map[string]any `json:"accepted"`
+	Rejected   []map[string]any `json:"rejected"`
+	Certified  []map[string]any `json:"certified"`
+	// Ignored carries informational claims that are neither applied nor
+	// faulted (issue #10): a dispatched entry naming a job this mission
+	// created in an EARLIER turn is already known — re-reporting it is
+	// noise, not a host failure, and mints no ask.
+	Ignored     []map[string]any `json:"ignored"`
 	Streams     map[string]any   `json:"streams"`
 	WaitingList []string         `json:"waitingList"`
 	Asks        []map[string]any `json:"asks"`
@@ -268,7 +273,8 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		return nil, err
 	}
 
-	verdict := &Verdict{Accepted: []map[string]any{}, Rejected: []map[string]any{}, Certified: []map[string]any{}, Asks: []map[string]any{}}
+	verdict := &Verdict{Accepted: []map[string]any{}, Rejected: []map[string]any{}, Certified: []map[string]any{}, Ignored: []map[string]any{}, Asks: []map[string]any{}}
+	previouslyDispatched := acceptedDispatchIndex(state)
 	asksDir := asksDirPath(root, mission)
 	allocated := map[string]bool{}
 	newAskIDs := []string{}
@@ -290,6 +296,17 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		case !numericEqual(record["mission"], mission):
 			reason = "job record is not stamped for this mission"
 		case !numericEqual(record["turnId"], turn.TurnID):
+			// Informational ONLY on authoritative evidence (issue #10
+			// round 2): the job must appear in an earlier ACCEPTED
+			// dispatched entry of this mission's own turn log — a
+			// mismatched turn id alone also covers mis-stamped, malformed,
+			// and future ids, and those must keep their host-failure ask.
+			if previouslyDispatched[jobID] {
+				verdict.Ignored = append(verdict.Ignored, map[string]any{
+					"kind": "dispatched", "value": entry, "reason": "pre-existing job",
+				})
+				continue
+			}
 			reason = "job record was not created during this host turn"
 		}
 		if reason == "" {
@@ -435,6 +452,32 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 	}
 	verdict.WaitingList = waiting
 	return verdict, nil
+}
+
+// acceptedDispatchIndex collects every job id an EARLIER turn's accepted
+// dispatched entries recorded — the authoritative "already known" set for
+// informational re-reports (issue #10 round 2).
+func acceptedDispatchIndex(state map[string]any) map[string]bool {
+	index := map[string]bool{}
+	turnLog, _ := state["turnLog"].([]any)
+	for _, raw := range turnLog {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		accepted, _ := entry["accepted"].([]any)
+		for _, item := range accepted {
+			claim, _ := item.(map[string]any)
+			if claim == nil || claim["kind"] != "dispatched" {
+				continue
+			}
+			value, _ := claim["value"].(map[string]any)
+			if jobID, _ := value["jobId"].(string); jobID != "" {
+				index[jobID] = true
+			}
+		}
+	}
+	return index
 }
 
 // entryList reads a return's claim list, refusing a return whose list is not

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -425,5 +426,44 @@ func TestRepairClaimExplicitZeroWins(t *testing.T) {
 		map[string]any{"jobId": "job-one", "status": "running", "returnRepairs": 1})
 	if observed, err := RepairClaim(root, "job-one"); err == nil || observed != "observed=returnRepairs-claimed" {
 		t.Fatalf("returnRepairs=1 must lose: observed=%q err=%v", observed, err)
+	}
+}
+
+// Issue #10 (1): a FRESH chain root must not claim a later round in its
+// name; the conventional -r1 root and resume records stay lawful.
+func TestRecordCreateRefusesFreshLaterRoundNames(t *testing.T) {
+	root := t.TempDir()
+	write := func(job string, parent any) string {
+		path := filepath.Join(root, job+".src.json")
+		record := map[string]any{"jobId": job, "status": "pending-setup", "parentJob": parent}
+		data, _ := json.Marshal(record)
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if err := RecordCreate(root, "demo-c1-critique-r2", write("demo-c1-critique-r2", nil)); err == nil {
+		t.Fatal("a fresh job named -r2 must refuse")
+	} else if !strings.Contains(err.Error(), "must not claim round 2") {
+		t.Fatalf("refusal must name the rule: %v", err)
+	}
+	if err := RecordCreate(root, "demo-c1-critique-r1", write("demo-c1-critique-r1", nil)); err != nil {
+		t.Fatalf("the conventional -r1 chain root must stay lawful: %v", err)
+	}
+	if err := RecordCreate(root, "demo-c1-critique-r1-r2", write("demo-c1-critique-r1-r2", "demo-c1-critique-r1")); err != nil {
+		t.Fatalf("a resume record may carry the round it is: %v", err)
+	}
+	// The boundary is numeric N >= 2 exactly (round 2): -r0 is odd but
+	// claims no later round, so it stays lawful.
+	if err := RecordCreate(root, "demo-c1-critique-r0", write("demo-c1-critique-r0", nil)); err != nil {
+		t.Fatalf("-r0 claims no later round and must stay lawful: %v", err)
+	}
+	if err := RecordCreate(root, "demo-c1-critique-r12", write("demo-c1-critique-r12", nil)); err == nil {
+		t.Fatal("a fresh job named -r12 must refuse")
+	}
+	// An overflow suffix fails CLOSED, never through (round 2).
+	overflow := "demo-c1-critique-r9223372036854775808"
+	if err := RecordCreate(root, overflow, write(overflow, nil)); err == nil {
+		t.Fatal("an unparseable round suffix must refuse, not bypass")
 	}
 }

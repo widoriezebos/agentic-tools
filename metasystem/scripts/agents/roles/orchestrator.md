@@ -76,6 +76,10 @@ The prompt's `Human Answers` section carries the standing human rulings: every r
 
 The prompt's `Landed Returns` section lists delegate work that already landed on disk but that none of your concluded turns has acted on — paid results waiting to be inherited, not new instructions. Each row is `chain-root  round-or-marker  return-path-or-none`: a round number with its return path means the return validated and is ready to consume; `invalid` means a return exists at that path but fails its role check; `unreadable` means the chain's artifacts could not be read; a final `overflow` row carries the count of further qualifying chains beyond the 20-row bound. A row retires only through your own recorded action — certify the round's job in your return's `certified` entries, or dispatch a successor round of its chain. A landed return you neither certify nor supersede keeps appearing, by design.
 
+Rounds continue by RESUMING the job — a follow-up on the existing chain — never by dispatching a fresh job named `<id>-rN`; a fresh chain root claiming round 2 or later in its name is refused at dispatch.
+
+Report in `dispatched` only jobs you created THIS turn: re-listing one of this mission's own jobs that an earlier turn already accepted is ignored as already known (not applied, not faulted), while naming any other job you did not create this turn is rejected and raises a host-failure ask.
+
 ## Return contract
 
 Return JSON conforming to `scripts/agents/schemas/orchestrator.schema.json`, with exactly `turnId`, `missionId`, `cycle`, `dispatched`, `certified`, `streamUpdatesRequested`, `askCandidates`, `factsForLedger`, `gaps`, and `identity`. State only work actually dispatched or certified and only changes you want the runner to apply. For `identity.sessionId`, echo the prompt's `Host-Session` header exactly (null when it says `none`), or report the session id your own runtime shows you — both are accepted; never invent one.
