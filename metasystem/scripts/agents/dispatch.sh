@@ -931,6 +931,29 @@ dispatch_job() {
     workspace="$worktrees/$job"
     [[ ! -e "$workspace" ]] || die 1 "job worktree already exists: $workspace"
     git -C "$repo_scope" worktree add -q -b "agent/$job" "$workspace" HEAD || die 1 "could not create job worktree"
+    # QUARANTINE OBJECT STORE (issue #5): the delegate's git writes its
+    # loose objects into a private directory INSIDE the worktree (the
+    # sandbox already grants it) and reads the shared store through the
+    # alternates mechanism — the shared objects/ stays read-only to the
+    # delegate, so a hostile job cannot delete or corrupt the repository's
+    # object database. The engine links the quarantine into the shared
+    # store's alternates so conformance and merge can read the delegate's
+    # commits. This mirrors git's own receive-pack quarantine.
+    # The quarantine lives in the worktree's PRIVATE GIT DIR — already a
+    # delegate write root, and OUTSIDE the shippable projection, so the
+    # conformance snapshot's add -A can never sweep loose objects into
+    # the review (round-2 F1: at the worktree root they appeared
+    # untracked and polluted the tree).
+    worktree_gitdir=$(git -C "$workspace" rev-parse --absolute-git-dir) \
+      || die 1 "could not resolve the worktree git dir"
+    quarantine="$worktree_gitdir/objects-quarantine"
+    mkdir -p "$quarantine" || die 1 "could not create the quarantine object store"
+    common_objects=$(git -C "$repo_scope" rev-parse --git-common-dir)/objects
+    [[ "$common_objects" = /* ]] || common_objects="$repo_scope/$common_objects"
+    mkdir -p "$common_objects/info"
+    grep -qxF "$quarantine" "$common_objects/info/alternates" 2>/dev/null \
+      || echo "$quarantine" >>"$common_objects/info/alternates" \
+      || die 1 "could not link the quarantine into the shared object store"
   else
     workspace=${workspace:-$repo_scope}
     workspace=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"

@@ -2,7 +2,9 @@ package dispatch
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ExpandPermissions turns a permissions envelope into the absolute-rooted
@@ -71,9 +73,85 @@ func ExpandPermissions(sourcePath, repo, workspace string, isWorktree bool, pres
 			return fmt.Errorf("permission write root escapes the job worktree: %s", root)
 		}
 	}
+	// A worktree delegate must be able to COMMIT its own rounds (issue
+	// #5): git keeps the worktree's index and HEAD under the MAIN repo's
+	// .git/worktrees/<name>, writes loose objects into the common
+	// objects/, and updates the branch ref (plus its reflog) under the
+	// common refs/heads — all outside the worktree, all read-only under
+	// the old envelope, so every worktree implementer's commit died with
+	// EROFS and cost its mission a cycle. The roots are DERIVED from the
+	// worktree by the engine, never accepted from the caller, and they
+	// grant exactly: this worktree's git dir, the shared object store
+	// (content-addressed; unreachable garbage at worst), and the agent
+	// branch namespace — never main's ref, never HEAD of the checkout.
+	if isWorktree && len(expandedWrite) > 0 {
+		gitRoots, err := worktreeGitWriteRoots(workspaceResolved)
+		if err != nil {
+			return err
+		}
+		for _, root := range gitRoots {
+			expandedWrite = append(expandedWrite, root)
+		}
+		envelope["writeRoots"] = expandedWrite
+	}
 	if networkFloor == "deny" {
 		envelope["network"] = "deny"
 	}
 	envelope["preset"] = preset
 	return writeRecord(outputPath, envelope)
+}
+
+// worktreeGitWriteRoots derives the git-metadata write roots a worktree
+// delegate needs to commit on its own branch (issue #5), verified against
+// a live probe: the worktree git dir (index, HEAD, COMMIT_EDITMSG, its
+// logs), the common object store, and the branch's ref namespace with its
+// reflog (ref updates create sibling .lock files, so the namespace
+// DIRECTORY must be writable, not just the ref file).
+func worktreeGitWriteRoots(worktree string) ([]string, error) {
+	gitDir, err := gitOutput(worktree, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return nil, fmt.Errorf("worktree git dir unreadable: %v", err)
+	}
+	commonDir, err := gitOutput(worktree, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return nil, fmt.Errorf("worktree common git dir unreadable: %v", err)
+	}
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(worktree, commonDir)
+	}
+	// The files ref backend is the only one these roots model (round-1
+	// F5): a reftable repository writes shared reftable storage instead,
+	// and granting refs/heads there would be meaningless while commits
+	// silently failed elsewhere.
+	if _, err := os.Stat(filepath.Join(commonDir, "reftable")); err == nil {
+		return nil, fmt.Errorf("worktree delegate commits require the files ref backend; this repository uses reftable")
+	}
+	branch, err := gitOutput(worktree, "branch", "--show-current")
+	if err != nil || branch == "" {
+		return nil, fmt.Errorf("worktree delegate must be on its own branch (detached or unreadable HEAD)")
+	}
+	// Only the agent/ namespace is grantable (round-1 F5's bare-branch
+	// hole: a branch named "topic" would have granted ALL of refs/heads,
+	// main included). Dispatch creates agent/<job>; anything else refuses.
+	if !strings.HasPrefix(branch, "agent/") {
+		return nil, fmt.Errorf("worktree delegate must sit on an agent/ branch, not %q", branch)
+	}
+	refDir := filepath.Join(commonDir, "refs", "heads", "agent")
+	logDir := filepath.Join(commonDir, "logs", "refs", "heads", "agent")
+	// Pre-create the reflog namespace so the sandbox root resolves — and
+	// refuse when it cannot be created (round-1 F4: a discarded error
+	// here recreates the lost-cycle failure the fix exists to end).
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return nil, fmt.Errorf("cannot prepare the reflog namespace: %v", err)
+	}
+	// NO shared objects/ grant (round-1 F1): loose objects go to the
+	// worktree's quarantine store (GIT_OBJECT_DIRECTORY, set by the
+	// adapters; alternates-linked by the engine at worktree creation),
+	// which the workspace write root already covers. The shared object
+	// database stays read-only to the delegate.
+	return []string{
+		resolvePath(gitDir),
+		resolvePath(refDir),
+		resolvePath(logDir),
+	}, nil
 }

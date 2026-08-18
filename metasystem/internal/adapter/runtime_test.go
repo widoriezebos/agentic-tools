@@ -86,7 +86,7 @@ func TestCodexUsage(t *testing.T) {
 }
 
 func TestBuildCodexCommand(t *testing.T) {
-	dispatch, err := BuildCodexCommand("dispatch", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "workspace-write", "true", "")
+	dispatch, err := BuildCodexCommand("dispatch", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "workspace-write", "true", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestBuildCodexCommand(t *testing.T) {
 		t.Fatalf("dispatch argv:\n got %q\nwant %q", dispatch, want)
 	}
 
-	resume, err := BuildCodexCommand("follow-up", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "read-only", "false", "sid-7")
+	resume, err := BuildCodexCommand("follow-up", "gpt-5-sol", "/ws", "/schema.json", "/out.json", "read-only", "false", "sid-7", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,10 +110,10 @@ func TestBuildCodexCommand(t *testing.T) {
 			t.Fatalf("resume argv missing %q: %v", needle, resume)
 		}
 	}
-	if _, err := BuildCodexCommand("follow-up", "m", "", "s", "o", "read-only", "false", ""); err == nil {
+	if _, err := BuildCodexCommand("follow-up", "m", "", "s", "o", "read-only", "false", "", nil); err == nil {
 		t.Fatal("a follow-up without a session must be refused")
 	}
-	if _, err := BuildCodexCommand("nonsense", "m", "", "s", "o", "read-only", "false", ""); err == nil {
+	if _, err := BuildCodexCommand("nonsense", "m", "", "s", "o", "read-only", "false", "", nil); err == nil {
 		t.Fatal("an unknown verb must be refused")
 	}
 }
@@ -449,4 +449,29 @@ func hookCommandOf(t *testing.T, settings map[string]any) string {
 	inner := entry["hooks"].([]any)
 	command := inner[0].(map[string]any)
 	return command["command"].(string)
+}
+
+// Issue #5 round-2 F4: the extra write roots actually reach the codex
+// argv — --add-dir per root on dispatch, the writable_roots override on
+// resume — and outside-workspace filtering keeps inside roots out.
+func TestBuildCodexCommandCarriesExtraDirs(t *testing.T) {
+	extra := []string{"/repo/.git/worktrees/j", "/repo/.git/refs/heads/agent"}
+	dispatch, err := BuildCodexCommand("dispatch", "m", "/ws", "/s.json", "/o.json", "workspace-write", "false", "", extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(dispatch, " ")
+	for _, dir := range extra {
+		if !strings.Contains(joined, "--add-dir "+dir) {
+			t.Fatalf("dispatch argv lacks --add-dir %s: %v", dir, dispatch)
+		}
+	}
+	resume, err := BuildCodexCommand("follow-up", "m", "", "/s.json", "/o.json", "workspace-write", "false", "sess", extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined = strings.Join(resume, " ")
+	if !strings.Contains(joined, `sandbox_workspace_write.writable_roots=["/repo/.git/worktrees/j","/repo/.git/refs/heads/agent"]`) {
+		t.Fatalf("resume argv lacks the writable_roots override: %v", resume)
+	}
 }

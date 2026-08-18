@@ -268,8 +268,21 @@ func TestComputeReapFacts(t *testing.T) {
 func TestExpandPermissions(t *testing.T) {
 	dir := t.TempDir()
 	repo := t.TempDir()
+	// A writable workspace is a REAL git worktree since issue #5: the
+	// expansion derives the commit's git-metadata roots from it.
+	gitCmd := func(workdir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", workdir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	gitCmd(repo, "init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(repo, "f.txt"), []byte("x\n"), 0o644)
+	gitCmd(repo, "add", ".")
+	gitCmd(repo, "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "base")
 	workspace := filepath.Join(repo, "wt")
-	os.MkdirAll(workspace, 0o755)
+	gitCmd(repo, "worktree", "add", "-q", "-b", "agent/expand-test", workspace)
 	envelope := writeJSONFile(t, dir, "envelope.json", map[string]any{
 		"readRoots": []any{".", "docs"}, "writeRoots": []any{"<worktree>"},
 		"network": "allow", "approvals": "deny", "tools": "read-only",

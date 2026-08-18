@@ -136,6 +136,7 @@ supervise() { # dispatch|follow-up and supervisor args
     cd "$workspace"
     export METASYSTEM_CLAUDE_SESSION_SIGNAL="$signal_file"
     export METASYSTEM_CLAUDE_EVENTS="$events"
+    while IFS= read -r assignment; do export "${assignment?}"; done < <(job_git_quarantine_env "$workspace")
     exec "${command[@]}" <"$prompt" >"$result_file" 2>>"$log"
   ) &
   cli_pid=$!

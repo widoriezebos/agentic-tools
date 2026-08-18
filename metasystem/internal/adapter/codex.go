@@ -3,6 +3,7 @@ package adapter
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -50,38 +51,63 @@ func CodexUsage(eventsPath, outputPath string) error {
 // the thread inherits its cwd and config and carries the supported per-turn
 // overrides through -c settings instead. network is the bare TOML boolean the
 // sandbox honors.
-func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network, session string) ([]string, error) {
+func BuildCodexCommand(verb, model, workspace, schema, output, sandbox, network, session string, extraDirs []string) ([]string, error) {
+	// Write roots OUTSIDE the workspace — the worktree's git metadata a
+	// commit needs (issue #5) — ride --add-dir on dispatch and the
+	// equivalent writable-roots override on resume (which has no
+	// positional flags). Without this the envelope's derived roots were
+	// silently dropped and every worktree codex implementer's commit
+	// died read-only.
 	switch verb {
 	case "dispatch":
-		return []string{
+		command := []string{
 			"codex", "exec", "--json",
 			"-m", model,
 			"--sandbox", sandbox,
 			"-C", workspace,
 			"-c", `approval_policy="never"`,
 			"-c", "sandbox_workspace_write.network_access=" + network,
+		}
+		for _, dir := range extraDirs {
+			command = append(command, "--add-dir", dir)
+		}
+		return append(command,
 			"--output-schema", schema,
 			"-o", output,
 			"-",
-		}, nil
+		), nil
 	case "follow-up":
 		if session == "" {
 			return nil, fmt.Errorf("a codex follow-up requires a session to resume")
 		}
-		return []string{
+		command := []string{
 			"codex", "exec", "resume", "--json",
 			"-c", "model=" + quoteTOML(model),
 			"-c", "sandbox_mode=" + quoteTOML(sandbox),
 			"-c", `approval_policy="never"`,
 			"-c", "sandbox_workspace_write.network_access=" + network,
+		}
+		if len(extraDirs) > 0 {
+			command = append(command, "-c", "sandbox_workspace_write.writable_roots="+tomlStringArray(extraDirs))
+		}
+		return append(command,
 			"--output-schema", schema,
 			"-o", output,
 			session,
 			"-",
-		}, nil
+		), nil
 	default:
 		return nil, fmt.Errorf("unknown codex verb %q", verb)
 	}
+}
+
+// tomlStringArray renders a TOML array of basic strings for a -c override.
+func tomlStringArray(items []string) string {
+	quoted := make([]string, 0, len(items))
+	for _, item := range items {
+		quoted = append(quoted, quoteTOML(item))
+	}
+	return "[" + strings.Join(quoted, ",") + "]"
 }
 
 // quoteTOML renders a string as a TOML basic string, which a -c override that
@@ -124,4 +150,33 @@ func CodexPermissionSettings(permissionsPath, recordPath string) (sandbox, netwo
 		network = "true"
 	}
 	return sandbox, network, nil
+}
+
+// CodexExtraWriteRoots lists the envelope's write roots that fall OUTSIDE
+// the workspace — the worktree git metadata a commit needs (issue #5) —
+// for explicit sandbox grants. Roots inside the workspace are already
+// covered by workspace-write; an empty workspace grants nothing extra.
+func CodexExtraWriteRoots(permissionsPath, recordPath, workspace string) ([]string, error) {
+	var envelope map[string]any
+	if recordPath != "" {
+		record, err := readObject(recordPath)
+		if err != nil {
+			return nil, err
+		}
+		permissions, _ := record["permissions"].(map[string]any)
+		envelope, _ = permissions["requested"].(map[string]any)
+	} else {
+		value, err := readObject(permissionsPath)
+		if err != nil {
+			return nil, err
+		}
+		envelope = value
+	}
+	var outside []string
+	for _, root := range stringList(envelope["writeRoots"]) {
+		if workspace == "" || !strings.HasPrefix(root+"/", workspace+"/") {
+			outside = append(outside, root)
+		}
+	}
+	return outside, nil
 }

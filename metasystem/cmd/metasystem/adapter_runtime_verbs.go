@@ -94,6 +94,7 @@ func runAdapterCodexCommand(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	var extraDirs []string
 	if *record != "" || *permissions != "" {
 		derivedSandbox, derivedNetwork, err := adapter.CodexPermissionSettings(*permissions, *record)
 		if err != nil {
@@ -101,12 +102,20 @@ func runAdapterCodexCommand(args []string) int {
 			return 1
 		}
 		*sandbox, *network = derivedSandbox, derivedNetwork
+		// Write roots outside the workspace — the worktree's git
+		// metadata (issue #5) — must reach the sandbox explicitly.
+		roots, err := adapter.CodexExtraWriteRoots(*permissions, *record, *workspace)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		extraDirs = roots
 	}
 	if *verb == "" || *model == "" || *schema == "" || *output == "" || *sandbox == "" || *network == "" {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-command --verb V --model M --schema F --output F (--record F | --permissions F | --sandbox M --network B) [--workspace DIR] [--session SID]")
 		return 2
 	}
-	command, err := adapter.BuildCodexCommand(*verb, *model, *workspace, *schema, *output, *sandbox, *network, *session)
+	command, err := adapter.BuildCodexCommand(*verb, *model, *workspace, *schema, *output, *sandbox, *network, *session, extraDirs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

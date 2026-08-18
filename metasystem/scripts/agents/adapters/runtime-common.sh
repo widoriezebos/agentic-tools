@@ -485,3 +485,29 @@ emit_contract_snapshot() { # runtime, enforcement-map JSON
   cat "$contract_dir/$snapshot"
   rm -rf "$contract_dir"
 }
+
+# job_git_quarantine_env prints `env` arguments routing the delegate's git
+# object writes into the worktree's private quarantine store (issue #5):
+# derived statelessly from the workspace so dispatch and follow-up rounds
+# behave identically, empty for non-worktree jobs. The shared object store
+# stays read-only to the delegate; reads fall through the alternates link
+# the engine created at worktree dispatch.
+job_git_quarantine_env() { # workspace
+  local ws=$1 gitdir quarantine common
+  gitdir=$(git -C "$ws" rev-parse --absolute-git-dir 2>/dev/null) || return 0
+  quarantine="$gitdir/objects-quarantine"
+  [[ -d "$quarantine" ]] || return 0
+  common=$(git -C "$ws" rev-parse --git-common-dir 2>/dev/null)/objects
+  [[ "$common" = /* ]] || common="$ws/$common"
+  printf 'GIT_OBJECT_DIRECTORY=%s\n' "$quarantine"
+  printf 'GIT_ALTERNATE_OBJECT_DIRECTORIES=%s\n' "$common"
+  # Automatic maintenance after a delegate commit would run pack-refs and
+  # reflog expiry AGAINST THE SHARED STORE, writing packed-refs and
+  # reflogs outside the granted roots (round-3 F2). The engine owns
+  # maintenance; the delegate's git never triggers it.
+  printf 'GIT_CONFIG_COUNT=2\n'
+  printf 'GIT_CONFIG_KEY_0=maintenance.auto\n'
+  printf 'GIT_CONFIG_VALUE_0=false\n'
+  printf 'GIT_CONFIG_KEY_1=gc.auto\n'
+  printf 'GIT_CONFIG_VALUE_1=0\n'
+}

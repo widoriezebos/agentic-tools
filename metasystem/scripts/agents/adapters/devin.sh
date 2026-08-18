@@ -200,7 +200,7 @@ runtime_repair_invoke() { # prompt file, output file -> provider exit
   local repair_prompt=$1 output=$2 repair_status
   [[ -n "${session_id:-}" && -n "${config_file:-}" ]] || return 1
   set +e
-  ( cd "$workspace" && exec devin -p \
+  ( cd "$workspace" && while IFS= read -r a; do export "${a?}"; done < <(job_git_quarantine_env "$workspace"); exec devin -p \
       --prompt-file "$repair_prompt" \
       --respect-workspace-trust false \
       --model "$requested_model" \
@@ -321,7 +321,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   # Redirection order is the deadlock contract: the server opens
   # stdout FIRST (pairing the client's read-side-first open), then
   # stdin (pairing the client's write side).
-  ( cd "$workspace" && exec devin acp >"$server_out" <"$server_in" 2>>"$log" ) &
+  ( cd "$workspace" && while IFS= read -r a; do export "${a?}"; done < <(job_git_quarantine_env "$workspace"); exec devin acp >"$server_out" <"$server_in" 2>>"$log" ) &
   server_pid=$!
   register_cli_custody "$server_pid" || { terminate_cli_child "$server_pid"; fail_pending custody_registration handshake; return 1; }
 
@@ -552,6 +552,7 @@ supervise() { # dispatch|follow-up and supervisor args
     # payload. The baseline remains `devin list --format json`, because the
     # adapter cannot install repository hooks into a delegate worktree.
     export METASYSTEM_DEVIN_SESSION_SIGNAL="$signal_file"
+    while IFS= read -r a; do export "${a?}"; done < <(job_git_quarantine_env "$workspace")
     exec "${command[@]}" >"$raw" 2>>"$log"
   ) &
   cli_pid=$!
