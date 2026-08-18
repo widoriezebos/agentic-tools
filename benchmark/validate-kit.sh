@@ -353,8 +353,34 @@ PY
     echo "benchmark provision: provisioner crossed the human seal/sign boundary" >&2
     exit 1
   fi
-  "$provision_target/scripts/assert-mission.sh" --file "$provision_contract" >/dev/null \
-    || { echo "benchmark provision: unsigned contract is structurally invalid" >&2; exit 1; }
+  validate_warnings="$tmp/provision-validate-warnings"
+  "$provision_target/scripts/assert-mission.sh" --file "$provision_contract" >/dev/null 2>"$validate_warnings" \
+    || { cat "$validate_warnings" >&2; echo "benchmark provision: unsigned contract is structurally invalid" >&2; exit 1; }
+  # Calibration warnings come from VALIDATION, not the seal (issues #8/#7
+  # round 2: the first gate captured the seal's stderr, which carries only
+  # the hash or an error — the warning check was inert). A provisioned
+  # contract must validate silently, and the sealed cap keys must equal
+  # the manifest's byte for byte, so removing or drifting either cap can
+  # never pass the kit.
+  if grep -q '^warning:' "$validate_warnings"; then
+    cat "$validate_warnings" >&2
+    echo "benchmark provision: provisioned contract validates with warnings; the manifest must carry the policy" >&2
+    exit 1
+  fi
+  manifest_turns=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fences"]["hostMaxTurns"])' "$srcrepo/benchmark/specs/bm-1/manifest.json")
+  manifest_budget=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fences"]["hostMaxBudgetUsd"])' "$srcrepo/benchmark/specs/bm-1/manifest.json")
+  # The caps are asserted INSIDE the fenced mission block — the only bytes
+  # the runtime parses (round 2: a whole-file grep false-passed on an
+  # expected line sitting in prose while the effective block disagreed).
+  # The fence grammar mirrors grammar.go's authoredBlockRe exactly: both
+  # fences tolerate trailing blanks, and extraction EXITS at the block's
+  # close so a spaced closing fence can never spill into later prose
+  # (round 3's witness).
+  contract_mission_block=$(awk '/^\`\`\`mission[[:blank:]]*$/{f=1;next} f && /^\`\`\`[[:blank:]]*$/{exit} f' "$provision_contract")
+  grep -qxF "host.max-turns=$manifest_turns" <<<"$contract_mission_block" \
+    || { echo "benchmark provision: mission block host.max-turns disagrees with the manifest" >&2; exit 1; }
+  grep -qxF "host.max-budget-usd=$manifest_budget" <<<"$contract_mission_block" \
+    || { echo "benchmark provision: mission block host.max-budget-usd disagrees with the manifest" >&2; exit 1; }
 
   # PI-R1-006 (plans/provisioning-identity.md Proof): the wrapper route is
   # PROVEN, not hoped for. With an announced main in the caller's ancestry —
@@ -581,10 +607,19 @@ PY
 
   # Fixture-only human actions: seal, add the byte-attesting approval, commit,
   # and push it so origin provenance can pass. Provisioning itself did none.
+  seal_warnings="$tmp/provision-seal-warnings"
   seal_hash=$("${provision_identity[@]}" "$provision_target/scripts/assert-mission.sh" \
-    --seal --file "$provision_contract")
+    --seal --file "$provision_contract" 2>"$seal_warnings")
   [[ "$seal_hash" =~ ^[0-9a-f]{64}$ ]] \
-    || { echo "benchmark provision: fixture seal did not return a contract hash" >&2; exit 1; }
+    || { cat "$seal_warnings" >&2; echo "benchmark provision: fixture seal did not return a contract hash" >&2; exit 1; }
+  # Manifest/validator drift fails HERE, not at the human's seal (issue
+  # #8): a freshly provisioned contract must seal clean — a warning means
+  # the manifest stopped being the single authority for contract policy.
+  if grep -q '^warning:' "$seal_warnings"; then
+    cat "$seal_warnings" >&2
+    echo "benchmark provision: provisioned contract sealed with warnings; the manifest must carry the policy" >&2
+    exit 1
+  fi
   printf '\nApproval: name=Metasystem Fixture; date=2026-08-05; contract-sha256=%s\n' \
     "$seal_hash" >>"$provision_contract"
   git -C "$provision_target" add plans/mission-bm-1.contract.md

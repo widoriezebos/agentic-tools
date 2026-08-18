@@ -291,7 +291,8 @@
       "swe-1-7": [
         "swe-1-7-max"
       ]
-    }
+    },
+    "independence": "session-only"
   },
   "rosterNote": "Pinned by exact model identifier when a run is prepared, never by a phrase like 'cheap models', because comparability requires two cohorts to share an identical roster. The requested identifier is swe-1-7; Devin reports the display name SWE-1.7, which canonicalises to the same identifier.",
   "seed": {

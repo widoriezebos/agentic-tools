@@ -358,10 +358,11 @@ if delegate_roles is not None:
     if same_model and independence != "session-only":
         refuse("roster.delegateRoles puts the implementer and the code critic on one effective model without roster.independence=session-only; the merge check would refuse every critique (docs/orchestration.md step 4)")
 elif len(delegates) == 1 and independence != "session-only":
-    # Legacy single-runtime rosters (bm-1 and siblings) have this defect
-    # today and its remedy is a pending human ruling (issue #7); refusing
-    # here would pre-empt it. Name it loudly instead of silently.
-    print("warning: roster.delegates resolves the implementer and the code critic to one effective model and roster.independence is not declared; unattended certification will park at the merge check (issue #7)", file=sys.stderr)
+    # The pending ruling landed (issue #7): a single-model roster without
+    # an explicit independence declaration is impossible to provision, not
+    # discovered in cycle 2 of a paid run. Every shipped single-model spec
+    # now declares session-only by name; bm-1 carries a per-role critic.
+    refuse("roster.delegates resolves the implementer and the code critic to one effective model and roster.independence is not declared; give the code critic a distinct model via roster.delegateRoles or declare roster.independence=session-only (docs/orchestration.md step 4, issue #7)")
 network = environment.get("delegateNetwork")
 if network not in {"allowed", "denied"}:
     refuse("environment.delegateNetwork must be allowed or denied")
@@ -599,6 +600,17 @@ lines.extend([
     f"host.model={host['model']}",
     f"host.turn-cap-min={fences['hostTurnCapMin']}",
 ])
+# The sealed host caps (issue #6/#8): the manifest is the single authority
+# for mission-contract policy, so the adapter's native turn and budget
+# caps become sealed values instead of unsealed defaults. The binary-gate
+# fuse acknowledgment rides only when a manifest explicitly declares it —
+# bm-1's ruling raised the no-gain budget to the cycle fence instead.
+if "hostMaxTurns" in fences:
+    lines.append(f"host.max-turns={fences['hostMaxTurns']}")
+if "hostMaxBudgetUsd" in fences:
+    lines.append(f"host.max-budget-usd={fences['hostMaxBudgetUsd']}")
+if fences.get("acceptBinaryGateFuse") is True:
+    lines.append("ledger.accept-binary-gate-fuse=true")
 for stream, goal in contract["streams"].items():
     lines.append(f"stream.{stream}={goal}")
 for category, bound in contract["envelope"].items():
