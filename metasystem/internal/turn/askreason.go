@@ -22,9 +22,10 @@ var orchestratorAskReasons = map[string]bool{
 // runnerAskReasons are the reason classes only the RUNNER raises: a batched
 // fence refusal, the budget park, and the drain-deadline park.
 var runnerAskReasons = map[string]bool{
-	"fence":         true,
-	"stop-loss":     true,
-	"drain-stalled": true,
+	"fence":          true,
+	"stop-loss":      true,
+	"drain-stalled":  true,
+	"wall-violation": true,
 }
 
 // OrchestratorMayRaise reports whether an orchestrator may raise an ask with

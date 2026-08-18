@@ -101,6 +101,9 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 	}
 	git("-c", "init.defaultBranch=main", "init", "-q")
 	git("config", "commit.gpgsign", "false")
+	// The deployment's projection boundary (HIW-O3): runtime state under
+	// artifacts/ stays outside the wall's shippable snapshot.
+	write(".gitignore", "artifacts/\nbin/\nmetasystem.conf\n", 0o644)
 	write("scripts/gate.sh", "#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n", 0o755)
 	write("truth/reference.txt", "certified truth\n", 0o644)
 	write("docs/project-rules.md", faultedProjectRules, 0o644)
@@ -144,6 +147,7 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 	if err := mission.InitState(statePath, engine.approvedContractPath(), ledgerPath, "", "main"); err != nil {
 		t.Fatal(err)
 	}
+	openFixtureTurn(t, root, statePath, "demo-t1-abcd", 1)
 
 	turnDir = filepath.Join(engine.missionDir(), "turns", "demo-t1-abcd")
 	turnPath = filepath.Join(turnDir, "turn.json")
@@ -236,10 +240,12 @@ func TestConcludeFaultedTurnMeasuresAndCompletes(t *testing.T) {
 
 func TestConcludeFaultedTurnUnmeasurableStillBooksUnmeasurable(t *testing.T) {
 	engine, statePath, ledgerPath, turnPath, turnDir := faultedMission(t)
-	// Remove the authored contract: measurement now fails, and the failure
-	// is itself the measurement — an unmeasurable no-progress cycle.
-	if err := os.Remove(engine.contractPath()); err != nil {
-		t.Fatal(err)
+	// Delete the gate's pinned ref: measurement now fails, and the failure
+	// is itself the measurement — an unmeasurable no-progress cycle. Refs
+	// live outside the wall's projection, so the workspace stays clean
+	// (deleting a tracked file mid-turn would be a wall violation now).
+	if out, err := exec.Command("git", "-C", engine.Root, "tag", "-d", "instruments").CombinedOutput(); err != nil {
+		t.Fatalf("delete instruments tag: %v\n%s", err, out)
 	}
 	fault := TurnFault{
 		Outcome:      "failed",

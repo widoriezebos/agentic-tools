@@ -95,6 +95,10 @@ var contractOptionalScalars = map[string]bool{
 	// legitimately exercise the fuse with tiny budgets, but the
 	// mismatch must never be signable SILENTLY.
 	"ledger.accept-binary-gate-fuse": true,
+	// The declared host-artifact files (host-implementer wall, HIW-R2-03):
+	// canonical repository-relative files the host may author, default
+	// deny; the runner's wall inspection enforces the declaration.
+	"wall.host-artifacts": true,
 }
 
 // contractIntegerKeys are the scalar keys that must be positive integers.

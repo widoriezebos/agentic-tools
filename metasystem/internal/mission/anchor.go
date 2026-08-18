@@ -140,121 +140,178 @@ var trailerRe = regexp.MustCompile(`(?m)^(Mission-[A-Za-z0-9-]+): (.+)$`)
 
 // latestAnchor returns the trailers (plus the commit sha) of the most recent
 // anchor commit for a mission.
+// stateAnchorRef is the runner-owned ref carrying a mission's state
+// anchors (slice-5 round-4): anchors OFF the mission branch keep the
+// branch tree free of force-tracked bookkeeping — delegate worktrees
+// inherit no artifacts files, the wall's identity space and the raw
+// commit trees agree, and a host commit on the branch can never become
+// the guard's baseline.
+func stateAnchorRef(mission string) string {
+	return "refs/metasystem/missions/" + mission + "/state-anchors"
+}
+
+// ErrNoAnchor names the one tolerable absence: a mission that has never
+// anchored (fresh unit beds); every OTHER anchor failure is disagreement.
+var ErrNoAnchor = stateErr("mission state has no local anchor commit")
+
 func latestAnchor(repo, mission string) (map[string]string, error) {
-	output, err := gitOutput(repo, "log", "--format=%H%x1f%B%x1e")
+	// Absence must be PROVEN, not inferred from a nonzero exit (round-6:
+	// rev-parse returns 128 for a missing ref AND for a broken
+	// repository): for-each-ref succeeds in any healthy repository and
+	// prints nothing when the ref does not exist.
+	probe, err := gitOutput(repo, "for-each-ref", "--format=%(refname)", stateAnchorRef(mission))
 	if err != nil {
-		return nil, err
+		return nil, stateErr("mission anchor ref probe failed: %v", err)
 	}
-	for _, raw := range strings.Split(output, "\x1e") {
-		if strings.TrimSpace(raw) == "" {
-			continue
-		}
-		commit, message, _ := strings.Cut(raw, "\x1f")
-		trailers := map[string]string{}
-		for _, m := range trailerRe.FindAllStringSubmatch(message, -1) {
-			trailers[m[1]] = m[2]
-		}
-		if trailers["Mission-Id"] == mission {
-			trailers["commit"] = strings.TrimSpace(commit)
-			return trailers, nil
+	if strings.TrimSpace(probe) == "" {
+		return nil, ErrNoAnchor
+	}
+	// ONLY the ref tip is the anchor (round-7): scanning past a
+	// malformed tip to an older matching commit would let a forged child
+	// commit demote the real anchor instead of parking.
+	output, err := gitOutput(repo, "log", "-1", "--format=%H%x1f%B", stateAnchorRef(mission))
+	if err != nil {
+		return nil, stateErr("mission anchor ref is unreadable: %v", err)
+	}
+	commit, message, _ := strings.Cut(output, "\x1f")
+	trailers := map[string]string{}
+	for _, m := range trailerRe.FindAllStringSubmatch(message, -1) {
+		trailers[m[1]] = m[2]
+	}
+	if trailers["Mission-Id"] != mission {
+		return nil, stateErr("mission anchor ref tip does not name %s", mission)
+	}
+	for _, key := range []string{"Mission-State-Hash", "Mission-Ledger-SHA256", "Mission-Ledger-Path", "Mission-Cycle"} {
+		if trailers[key] == "" {
+			return nil, stateErr("mission anchor ref tip lacks the %s trailer", key)
 		}
 	}
-	return nil, stateErr("mission state has no local anchor commit")
+	trailers["commit"] = strings.TrimSpace(commit)
+	return trailers, nil
 }
 
 // Anchor writes the mission's anchor commit and prints the resulting sha.
 func Anchor(statePath, repo, ledgerPath string) error {
-	state, err := readStateDoc(statePath)
+	commit, err := anchorWrite(statePath, repo, ledgerPath)
 	if err != nil {
 		return err
 	}
+	fmt.Println(commit)
+	return nil
+}
+
+// anchorWrite is the printing-free anchor used by reconciliation's
+// retry-safe heal as well as the public verb; it returns the commit sha.
+func anchorWrite(statePath, repo, ledgerPath string) (string, error) {
+	state, err := readStateDoc(statePath)
+	if err != nil {
+		return "", err
+	}
 	if err := validate(state); err != nil {
-		return err
+		return "", err
 	}
 	cycles, err := ledgerCycleCount(ledgerPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	ledger, _ := state["ledger"].(map[string]any)
 	stateCycles, _ := intValue(ledger["cycles"])
 	if int64(cycles) != stateCycles {
-		return stateErr("anchor refused: ledger is truth and its cycle count disagrees with state")
+		return "", stateErr("anchor refused: ledger is truth and its cycle count disagrees with state")
 	}
 	branch, err := gitOutput(repo, "branch", "--show-current")
 	if err != nil {
-		return err
+		return "", err
 	}
 	stateBranch, _ := state["branch"].(string)
 	if strings.TrimSpace(branch) != stateBranch {
-		return stateErr("anchor refused: current branch is not the mission branch")
-	}
-	if _, code := gitTry(repo, "diff", "--cached", "--quiet"); code != 0 {
-		return stateErr("anchor refused: staged changes would be swept into the local anchor commit")
+		return "", stateErr("anchor refused: current branch is not the mission branch")
 	}
 	ledgerRel, err := relUnderRepo(ledgerPath, repo)
 	if err != nil {
-		return stateErr("anchor refused: mission ledger is outside the repository")
-	}
-	clearIndexLock(repo)
-	if _, err := gitOutput(repo, "add", "-f", "--", ledgerRel); err != nil {
-		return err
+		return "", stateErr("anchor refused: mission ledger is outside the repository")
 	}
 	missionID, _ := state["missionId"].(string)
 	integrity, _ := state["integrity"].(map[string]any)
 	stateHashValue, _ := integrity["hash"].(string)
 	lHash, err := ledgerHash(ledgerPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	subject := fmt.Sprintf("mission(%s): anchor cycle %d", missionID, cycles)
 	body := fmt.Sprintf("Mission-Id: %s\nMission-State-Hash: %s\nMission-Ledger-SHA256: %s\nMission-Ledger-Path: %s\nMission-Cycle: %d",
 		missionID, stateHashValue, lHash, ledgerRel, cycles)
 
-	// The anchor is a lease-holder mutation. Where the target carries the
-	// pre-commit guard, a raw commit is refused, so route through the commit
-	// wrapper that establishes the holder token; a target without the guard has
-	// no wrapper requirement and a raw commit is correct.
-	guard := filepath.Join(repo, ".git", "hooks", "pre-commit")
-	wrapper := filepath.Join(repo, "scripts", "agents", "commit.sh")
-	var commitCommand []string
-	if fileExists(guard) && fileExists(wrapper) {
-		commitCommand = []string{wrapper, "--allow-empty", "-m", subject, "-m", body}
-	} else {
-		// The anchor is a machine bookkeeping commit: it carries its own
-		// identity, exactly like the fixture repositories' commits, instead
-		// of borrowing whatever ambient git config the host happens to have
-		// — a pristine host has none, and the first Linux acceptance run
-		// proved this path failed there (go-production-grade Phase 1).
-		commitCommand = []string{"git", "-C", repo,
-			"-c", "user.name=metasystem", "-c", "user.email=metasystem@example.invalid",
-			"commit", "--allow-empty", "-m", subject, "-m", body}
-	}
-	commitLimit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
-	for attempt := 0; attempt < 6; attempt++ {
-		cmd := exec.Command(commitCommand[0], commitCommand[1:]...)
-		var stdout, stderr strings.Builder
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		// Bounded (B4): a wedged commit wrapper must not freeze the anchor
-		// step forever; the timeout lands in the non-index.lock branch below.
-		if boundedexec.Run(cmd, commitLimit, "anchor commit") == nil {
-			break
-		}
-		if !strings.Contains(stderr.String(), "index.lock") || attempt == 5 {
-			out := strings.TrimSpace(stderr.String())
-			if out == "" {
-				out = strings.TrimSpace(stdout.String())
-			}
-			return stateErr("anchor commit failed: %s", out)
-		}
-		clearIndexLock(repo)
-	}
-	head, err := gitOutput(repo, "rev-parse", "HEAD")
+	// The anchor commit is built with plumbing onto the runner-owned ref:
+	// the ledger blob rides in the commit's own tree (the reconciliation
+	// prefix check reads it back), the mission branch and the real index
+	// stay untouched, and the ref advances with compare-and-swap so two
+	// racing anchors cannot silently drop one another.
+	blob, err := gitOutput(repo, "hash-object", "-w", "--no-filters", "--", resolvePath(ledgerPath))
 	if err != nil {
-		return err
+		return "", stateErr("anchor cannot store the ledger blob: %v", err)
 	}
-	fmt.Println(strings.TrimSpace(head))
-	return nil
+	indexDir, err := os.MkdirTemp("", "metasystem-anchor.")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(indexDir)
+	indexEnv := "GIT_INDEX_FILE=" + filepath.Join(indexDir, "index")
+	if _, err := gitEnvOutput(repo, []string{indexEnv}, "read-tree", "--empty"); err != nil {
+		return "", stateErr("anchor cannot build its tree: %v", err)
+	}
+	if _, err := gitEnvOutput(repo, []string{indexEnv}, "update-index", "--add",
+		"--cacheinfo", "100644,"+strings.TrimSpace(blob)+","+ledgerRel); err != nil {
+		return "", stateErr("anchor cannot build its tree: %v", err)
+	}
+	tree, err := gitEnvOutput(repo, []string{indexEnv}, "write-tree")
+	if err != nil {
+		return "", stateErr("anchor cannot build its tree: %v", err)
+	}
+	ref := stateAnchorRef(missionID)
+	parent, _ := gitTry(repo, "rev-parse", "--verify", ref)
+	identity := []string{
+		"GIT_AUTHOR_NAME=metasystem", "GIT_AUTHOR_EMAIL=metasystem@example.invalid",
+		"GIT_COMMITTER_NAME=metasystem", "GIT_COMMITTER_EMAIL=metasystem@example.invalid",
+	}
+	commitArgs := []string{"commit-tree", strings.TrimSpace(tree), "-m", subject + "\n\n" + body}
+	oldValue := strings.TrimSpace(parent)
+	if oldValue != "" {
+		commitArgs = append(commitArgs, "-p", oldValue)
+	}
+	commit, err := gitEnvOutput(repo, identity, commitArgs...)
+	if err != nil {
+		return "", stateErr("anchor commit failed: %v", err)
+	}
+	updateArgs := []string{"update-ref", ref, strings.TrimSpace(commit)}
+	if oldValue != "" {
+		updateArgs = append(updateArgs, oldValue)
+	} else {
+		updateArgs = append(updateArgs, "")
+	}
+	if _, err := gitOutput(repo, updateArgs...); err != nil {
+		return "", stateErr("anchor ref update failed: %v", err)
+	}
+	return strings.TrimSpace(commit), nil
+}
+
+// gitEnvOutput runs git with extra environment, capturing stdout —
+// bounded like every other external call (B4).
+func gitEnvOutput(repo string, extraEnv []string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd.Env = append(os.Environ(), extraEnv...)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
+	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), detail)
+	}
+	return stdout.String(), nil
 }
 
 func fileExists(path string) bool {
@@ -293,8 +350,8 @@ func verifyAnchor(repo string, state map[string]any, ledgerPath string) error {
 			return stateErr("mission anchor disagrees at %s", key)
 		}
 	}
-	if _, code := gitTry(repo, "merge-base", "--is-ancestor", anchor["commit"], mustBranch(state)); code != 0 {
-		return stateErr("mission anchor commit is not on the mission branch")
+	if _, code := gitTry(repo, "merge-base", "--is-ancestor", anchor["commit"], stateAnchorRef(missionID)); code != 0 {
+		return stateErr("mission anchor commit is not on the mission's anchor ref")
 	}
 	anchored, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
 	if code != 0 || sha256Hex(anchored) != anchor["Mission-Ledger-SHA256"] {
@@ -352,10 +409,19 @@ func anchoredLedgerPrefix(repo string, state map[string]any, ledgerPath string) 
 	if !strings.HasPrefix(string(data), anchored) {
 		return "", "", stateErr("mission ledger does not extend the anchored ledger truth")
 	}
-	if _, code := gitTry(repo, "merge-base", "--is-ancestor", anchor["commit"], mustBranch(state)); code != 0 {
-		return "", "", stateErr("mission anchor commit is not on the mission branch")
+	if _, code := gitTry(repo, "merge-base", "--is-ancestor", anchor["commit"], stateAnchorRef(missionID)); code != 0 {
+		return "", "", stateErr("mission anchor commit is not on the mission's anchor ref")
 	}
 	return anchored, string(data), nil
+}
+
+// AnchoredLedgerTruth exposes the authenticated anchored-ledger
+// comparison to the wall's in-turn guard (slice-5 round-4): the anchored
+// bytes come from the runner-owned anchor ref with every cross-check —
+// state hash, cycle count, path, sha — applied before anything is
+// trusted, never from whatever commit last touched a path.
+func AnchoredLedgerTruth(repo string, state map[string]any, ledgerPath string) (anchored, current string, err error) {
+	return anchoredLedgerPrefix(repo, state, ledgerPath)
 }
 
 func mustBranch(state map[string]any) string {
@@ -413,8 +479,20 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 	switch {
 	case int64(cycles) < stateCycles:
 		return 3, parkIntegrity(statePath, raw, nil)
+	case int64(cycles) > stateCycles+1:
+		// The reserve/append machinery books at most ONE cycle between
+		// state writes, so a ledger more than one block ahead is not a
+		// crash window — it is divergence (slice-5 round-5).
+		return 3, parkIntegrity(statePath, raw, nil)
 	case int64(cycles) > stateCycles:
 		if err := verifyStateAnchor(repo, raw, ledgerPath); err != nil {
+			return 3, parkIntegrity(statePath, raw, nil)
+		}
+		// The single tolerated block must be the RESERVED, OPEN cycle
+		// (round-6): the fence counters prove the runner reserved it and
+		// the open-turn marker proves a turn was in flight for exactly
+		// that cycle — contiguity alone proves a number, not authorship.
+		if err := verifyReservedGap(repo, raw, int64(cycles)); err != nil {
 			return 3, parkIntegrity(statePath, raw, nil)
 		}
 		proposed, _ := deepCopyDoc(raw).(map[string]any)
@@ -429,7 +507,16 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 		if err != nil {
 			return 3, parkIntegrity(statePath, raw, nil)
 		}
-		return 0, atomicWriteJSON(statePath, finalized)
+		if err := atomicWriteJSON(statePath, finalized); err != nil {
+			return 1, err
+		}
+		// Retry safety (slice-5 round-5): the healed state anchors NOW —
+		// a crash after this write but before any later anchor must find
+		// hash and anchor in agreement, not park for integrity.
+		if _, err := anchorWrite(statePath, repo, ledgerPath); err != nil {
+			return 3, parkIntegrity(statePath, finalized, nil)
+		}
+		return 0, nil
 	default:
 		if err := verifyAnchor(repo, raw, ledgerPath); err != nil {
 			// One named, checkable exception (docs/design/stop-loss-core.md): a
@@ -439,10 +526,81 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 			if stopLossResetForgivable(statePath, repo, raw, ledgerPath) {
 				return 0, nil
 			}
+			// The heal-crash window (round-6): a crash between the heal's
+			// state write and its anchor leaves the anchor exactly ONE
+			// state-step behind with identical ledger truth. That precise
+			// shape re-anchors and passes; anything looser still parks.
+			if anchorLagHealable(repo, raw, ledgerPath) {
+				if _, aerr := anchorWrite(statePath, repo, ledgerPath); aerr == nil {
+					return 0, nil
+				}
+			}
 			return 3, parkIntegrity(statePath, raw, nil)
 		}
 	}
 	return 0, nil
+}
+
+// verifyReservedGap proves the ledger-ahead block is the runner's own: the
+// mission fences reserved exactly that cycle, and the open-turn marker
+// names it as the turn in flight.
+func verifyReservedGap(repo string, state map[string]any, appended int64) error {
+	missionID, _ := state["missionId"].(string)
+	fencesPath := filepath.Join(repo, "artifacts", "agents", "missions", missionID, "fences.json")
+	fences, err := readStateDoc(fencesPath)
+	if err != nil {
+		return stateErr("ledger-ahead heal cannot read the mission fences: %v", err)
+	}
+	reserved, ok := intValue(fences["cycles"])
+	if !ok || reserved < appended {
+		return stateErr("ledger-ahead block %d was never reserved in the mission fences", appended)
+	}
+	openTurn, ok := state["openTurn"].(map[string]any)
+	if !ok {
+		return stateErr("ledger-ahead block %d has no open turn to answer for it", appended)
+	}
+	if cycle, ok := intValue(openTurn["cycle"]); !ok || cycle != appended {
+		return stateErr("ledger-ahead block %d does not match the open turn's cycle", appended)
+	}
+	return nil
+}
+
+// anchorLagHealable reports the exact heal-crash shape: the latest anchor
+// binds the state's PREVIOUS hash while cycle count and the ledger bytes'
+// hash agree with the present truth.
+func anchorLagHealable(repo string, state map[string]any, ledgerPath string) bool {
+	missionID, _ := state["missionId"].(string)
+	anchor, err := latestAnchor(repo, missionID)
+	if err != nil {
+		return false
+	}
+	integrity, _ := state["integrity"].(map[string]any)
+	previousHash, _ := integrity["previousHash"].(string)
+	if previousHash == "" || anchor["Mission-State-Hash"] != previousHash {
+		return false
+	}
+	ledger, _ := state["ledger"].(map[string]any)
+	stateCycles, _ := intValue(ledger["cycles"])
+	if anchor["Mission-Cycle"] != strconv.FormatInt(stateCycles, 10) {
+		return false
+	}
+	lHash, err := ledgerHash(ledgerPath)
+	if err != nil || anchor["Mission-Ledger-SHA256"] != lHash {
+		return false
+	}
+	// The tip must BE a complete anchor, not merely claim the right
+	// trailers (round-7): its recorded path is this mission's ledger and
+	// its committed blob hashes to the declared sha — which the live
+	// check above then ties to the present bytes.
+	ledgerRel, err := relUnderRepo(ledgerPath, repo)
+	if err != nil || anchor["Mission-Ledger-Path"] != ledgerRel {
+		return false
+	}
+	blob, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
+	if code != 0 || sha256Hex(blob) != anchor["Mission-Ledger-SHA256"] {
+		return false
+	}
+	return true
 }
 
 // stopLossResetForgivable is the exact reconciliation tolerance: (a) the

@@ -44,6 +44,7 @@ func TestCapExhaustedReachesLedger(t *testing.T) {
 	record := engine.runnerRecord(os.Getpid(), os.Getpid(), 1, "fixture")
 	writeJSONFile(t, filepath.Join(runnersDir, "demo.json"), record)
 
+	openFixtureTurn(t, engine.Root, statePath, "demo-t1-cap1", 1)
 	state, err := engine.verifyState(statePath, false)
 	if err != nil {
 		t.Fatal(err)

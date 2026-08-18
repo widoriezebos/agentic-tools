@@ -1596,7 +1596,10 @@ printf '0\n' >"$runner_repo/candidate-score.txt"
 printf 'runner truth\n' >"$runner_repo/truth/reference.txt"
 runner_git config user.name metasystem
 runner_git config user.email metasystem@example.invalid
-runner_git add scripts/gate.sh candidate-score.txt truth/reference.txt
+# The wall's projection boundary (HIW-O3): runtime state stays outside the
+# shippable snapshot exactly as the real repository ignores it.
+printf 'artifacts/\nbin/\nmetasystem.conf\n' >"$runner_repo/.gitignore"
+runner_git add .gitignore scripts/gate.sh candidate-score.txt truth/reference.txt
 runner_git commit -qm 'add mission runner instruments'
 runner_git tag runner-instruments
 git init -q -b main --bare "$runner_origin"
@@ -1918,7 +1921,12 @@ printf '0\n' >"$runner_repo/candidate-score.txt"
 runner_git add candidate-score.txt
 runner_git commit --allow-empty -qm 'reset candidate for codex host mission'
 runner_git push -qu origin "$runner_branch"
-make_runner_contract runner-codex return-ok 5 '' codex gpt-5-fixture
+# The stub codex host writes candidate-score.txt mid-turn to advance the
+# gate — host-authored product bytes the wall outlaws (D100). The leg's
+# subject is the ADAPTER wiring, so the contract declares that one file
+# by name (HIW-R2-03), the same acknowledge-by-name doctrine as the
+# binary-gate fuse key above.
+make_runner_contract runner-codex return-ok 5 '' codex gpt-5-fixture 'wall.host-artifacts=candidate-score.txt'
 run_runner_expect runner-codex-start 0 "${runner_process_env[@]}" \
   PATH="$codex_host_bin:$PATH" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_CODEX_FIXTURE_DIR="$codex_host_fixture" \

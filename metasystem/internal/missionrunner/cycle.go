@@ -89,6 +89,47 @@ type TurnConclusion struct {
 // waiting list from the asks on disk, projects the fences, and decides the
 // mission's next status: completed when the gate passed, parked when no
 // stream is left active, otherwise still running.
+
+// wallEntryPayload reads the turn's wall.json evidence back for the
+// acceptance entry (HIW-O4), FAIL CLOSED (critique F-4): a turn with no
+// evidence, unreadable evidence, or a non-passed verdict never concludes
+// into the log — deleting wall.json must never buy a wall-free acceptance.
+func wallEntryPayload(root, mission, turnID string, state map[string]any) (map[string]any, []any, error) {
+	doc, err := readJSONDoc(filepath.Join(missionDirPath(root, mission), "turns", turnID, "wall.json"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("turn %s has no readable wall evidence; the equation must run before any conclusion: %v", turnID, err)
+	}
+	if verdict, _ := doc["verdict"].(string); verdict != "passed" {
+		return nil, nil, fmt.Errorf("turn %s wall evidence is not a pass; a violated turn never concludes into the log", turnID)
+	}
+	ordered, _ := doc["orderedDigests"].([]any)
+	if ordered == nil {
+		ordered = []any{}
+	}
+	// The payload's occurrence identity names the write that will land
+	// it: this proposal builds on state at sequence S, so acceptance
+	// lands at S+1 under the compare-and-write; the transition validator
+	// refuses anything else (critique F-2).
+	integrity, _ := state["integrity"].(map[string]any)
+	sequence, ok := jsonInt(integrity["sequence"])
+	if !ok {
+		return nil, nil, fmt.Errorf("turn %s conclusion cannot read the state sequence", turnID)
+	}
+	taint, _ := state["workspaceTaint"].(map[string]any)
+	segment, ok := jsonInt(taint["segment"])
+	if !ok {
+		return nil, nil, fmt.Errorf("turn %s conclusion cannot read the taint segment", turnID)
+	}
+	payload := map[string]any{
+		"verdict": "passed", "preTree": doc["preTree"], "expectedTree": doc["expectedTree"],
+		"postTree": doc["postTree"], "orderedDigests": ordered,
+		"sequencePoint": map[string]any{"sequence": sequence + 1, "segment": segment},
+	}
+	consumed := make([]any, len(ordered))
+	copy(consumed, ordered)
+	return payload, consumed, nil
+}
+
 func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclusion TurnConclusion) (map[string]any, error) {
 	proposed := deepCopyDoc(state)
 	entry := map[string]any{
@@ -104,9 +145,19 @@ func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclus
 		"factsForLedger": conclusion.FactsForLedger,
 		"gaps":           conclusion.Gaps,
 	}
+	// The entry carries the wall verdict and its consumptions, and the
+	// open-turn marker dies in the same write: acceptance is ONE write
+	// (HIW-O4), never a second one, and never without evidence.
+	wall, consumed, err := wallEntryPayload(root, mission, turn.TurnID, proposed)
+	if err != nil {
+		return nil, err
+	}
+	entry["wall"] = wall
+	entry["consumedAuthorizations"] = consumed
 	if err := appendTurnLog(proposed, entry); err != nil {
 		return nil, err
 	}
+	proposed["openTurn"] = nil
 	if err := setLedgerCycles(proposed, turn.Cycle); err != nil {
 		return nil, err
 	}
@@ -187,9 +238,19 @@ func ConcludeFaultedTurn(root, mission string, state map[string]any, turn Turn, 
 		"annotations":  fault.Annotations,
 		"feedsBreaker": fault.FeedsBreaker,
 	}
+	// The entry carries the wall verdict and its consumptions, and the
+	// open-turn marker dies in the same write: acceptance is ONE write
+	// (HIW-O4), never a second one, and never without evidence.
+	wall, consumed, err := wallEntryPayload(root, mission, turn.TurnID, proposed)
+	if err != nil {
+		return nil, err
+	}
+	entry["wall"] = wall
+	entry["consumedAuthorizations"] = consumed
 	if err := appendTurnLog(proposed, entry); err != nil {
 		return nil, err
 	}
+	proposed["openTurn"] = nil
 	if err := setLedgerCycles(proposed, turn.Cycle); err != nil {
 		return nil, err
 	}
@@ -230,9 +291,19 @@ func RecordFailureProposal(root, mission string, state map[string]any, turn Turn
 		"sessionId":   nil,
 		"measurement": nil,
 	}
+	// The entry carries the wall verdict and its consumptions, and the
+	// open-turn marker dies in the same write: acceptance is ONE write
+	// (HIW-O4), never a second one, and never without evidence.
+	wall, consumed, err := wallEntryPayload(root, mission, turn.TurnID, proposed)
+	if err != nil {
+		return nil, err
+	}
+	entry["wall"] = wall
+	entry["consumedAuthorizations"] = consumed
 	if err := appendTurnLog(proposed, entry); err != nil {
 		return nil, err
 	}
+	proposed["openTurn"] = nil
 	if err := setLedgerCycles(proposed, turn.Cycle); err != nil {
 		return nil, err
 	}
@@ -267,6 +338,8 @@ func ParkProposal(root, mission string, state map[string]any, reason, nowISO str
 		question = "Acknowledge the host failure before resuming the mission."
 	case "stop-loss":
 		question = "Amend, price, reseal, and sign the mission budget before requesting stop-loss unpark."
+	case "wall-violation":
+		question = "The workspace differs from the pre-tree plus authorized patches. Resolve the taint by name (restore the recorded safe tree, or adopt the disputed tree) before the mission can continue; a free-text answer never clears taint."
 	}
 	return parkOutcome(root, mission, state, reason, question, "", nowISO)
 }

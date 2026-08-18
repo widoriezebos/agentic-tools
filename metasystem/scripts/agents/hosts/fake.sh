@@ -8,7 +8,7 @@ Usage:
       --prompt <file> --result <file> [--resume-session <sid>]
 
 Reads FAKEHOST:<behavior> markers from the assembled prompt. Behaviors:
-return-ok (default), return-malformed, dispatch-ghost, dispatch-terminal,
+return-ok (default), return-malformed, dispatch-ghost, dispatch-terminal, solo-build,
 close-stream, park-request, exit-nonzero, and no-return.
 USAGE
 }
@@ -34,7 +34,7 @@ if (( behavior_count > 1 )); then
 fi
 behavior=${behaviors:-return-ok}
 case "$behavior" in
-  return-ok|return-malformed|dispatch-ghost|dispatch-terminal|close-stream|park-request|exit-nonzero|no-return) ;;
+  return-ok|return-malformed|dispatch-ghost|dispatch-terminal|solo-build|close-stream|park-request|exit-nonzero|no-return) ;;
   *) echo "unknown fake host behavior: $behavior" >&2; exit 3 ;;
 esac
 

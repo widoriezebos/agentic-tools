@@ -112,6 +112,37 @@ func (w Workspace) Snapshot(baseline string) (string, error) {
 	return tree, nil
 }
 
+// FilterTree rewrites a tree with the named paths removed — the wall's
+// identity space excludes the mission's own force-tracked bookkeeping, so
+// runner appends at turn boundaries never masquerade as product drift
+// (slice-5 round-3: tracked-ledger bytes poisoned crash recovery, delayed
+// authorization identity, and the acceptance equation E(i+1)=pre(i+1)).
+func (w Workspace) FilterTree(tree string, paths []string) (string, error) {
+	if len(paths) == 0 {
+		return tree, nil
+	}
+	env, cleanup, err := isolatedIndex()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	if _, err := w.git(env, "read-tree", tree); err != nil {
+		return "", fmt.Errorf("gittree filter: %w", err)
+	}
+	args := append([]string{"update-index", "--force-remove", "--"}, paths...)
+	if _, err := w.git(env, args...); err != nil {
+		return "", fmt.Errorf("gittree filter: %w", err)
+	}
+	filtered, err := w.gitLine(env, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("gittree filter: %w", err)
+	}
+	if !treeID.MatchString(filtered) {
+		return "", fmt.Errorf("gittree filter: write-tree returned %q", filtered)
+	}
+	return filtered, nil
+}
+
 // Diff produces the exact binary patch between two trees, renames
 // represented as delete+add so changed-path sets stay literal. Every
 // driver a config could inject is disabled and the a/ b/ prefixes are

@@ -227,6 +227,7 @@ type Verdict struct {
 	ReturnPath  string           `json:"returnPath"`
 	Accepted    []map[string]any `json:"accepted"`
 	Rejected    []map[string]any `json:"rejected"`
+	Certified   []map[string]any `json:"certified"`
 	Streams     map[string]any   `json:"streams"`
 	WaitingList []string         `json:"waitingList"`
 	Asks        []map[string]any `json:"asks"`
@@ -266,7 +267,7 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		return nil, err
 	}
 
-	verdict := &Verdict{Accepted: []map[string]any{}, Rejected: []map[string]any{}, Asks: []map[string]any{}}
+	verdict := &Verdict{Accepted: []map[string]any{}, Rejected: []map[string]any{}, Certified: []map[string]any{}, Asks: []map[string]any{}}
 	asksDir := asksDirPath(root, mission)
 	allocated := map[string]bool{}
 	newAskIDs := []string{}
@@ -349,6 +350,20 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 			verdict.Rejected = append(verdict.Rejected, map[string]any{"kind": "askCandidate", "value": entry, "reason": reason})
 		}
 	}
+
+	// Certification claims verify against the authorization and job records
+	// (HIW-O5): only adjudicated facts ride toward the turn log, and every
+	// refused claim joins the rejection asks below.
+	certifiedEntries, err := entryList(returned, "certified")
+	if err != nil {
+		return nil, err
+	}
+	verifiedCertified, rejectedCertified, err := adjudicateCertified(root, mission, state, certifiedEntries)
+	if err != nil {
+		return nil, err
+	}
+	verdict.Certified = verifiedCertified
+	verdict.Rejected = append(verdict.Rejected, rejectedCertified...)
 
 	// The fallback lands after stream updates were applied, so a stream this
 	// very return parked no longer attracts the rejection asks.

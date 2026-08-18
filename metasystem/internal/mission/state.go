@@ -34,7 +34,7 @@ var streamStates = map[string]bool{
 var parkReasons = map[string]bool{
 	"all-streams-parked": true, "stop-loss": true, "fence": true, "gate-integrity": true,
 	"state-integrity": true, "contract-changed": true, "host-failure": true,
-	"drain-stalled": true,
+	"drain-stalled": true, "wall-violation": true,
 }
 
 var legalStreamTransitions = map[string]map[string]bool{
@@ -717,6 +717,28 @@ func validateTransition(previous, next map[string]any) error {
 			return stateErr("mission turn log entry %d is immutable", i)
 		}
 	}
+	// Every NEW entry carries the wall payload and its consumption list
+	// (slice-5 critique F-4), and the payload's sequence point names THIS
+	// write (critique F-2): the occurrence identity an authorization will
+	// later bind must be the chain position the acceptance actually landed
+	// at, not a number any proposal chose freely.
+	prevIntegrityDoc, _ := previous["integrity"].(map[string]any)
+	prevSequence, _ := intValue(prevIntegrityDoc["sequence"])
+	nextTaintDoc, _ := next["workspaceTaint"].(map[string]any)
+	nextSegment, _ := intValue(nextTaintDoc["segment"])
+	for _, raw := range nextLog[len(prevLog):] {
+		entry, _ := raw.(map[string]any)
+		if entry == nil || entry["wall"] == nil || entry["consumedAuthorizations"] == nil {
+			return stateErr("mission turn log entries must carry the wall payload and its consumption list")
+		}
+		wall, _ := entry["wall"].(map[string]any)
+		point, _ := wall["sequencePoint"].(map[string]any)
+		sequence, sOK := intValue(point["sequence"])
+		segment, gOK := intValue(point["segment"])
+		if !sOK || !gOK || sequence != prevSequence+1 || segment != nextSegment {
+			return stateErr("mission acceptance sequence point must name the accepting write (%d/%d)", prevSequence+1, nextSegment)
+		}
+	}
 	// The taint ledger is monotonic at ENTRY grain (slice-4 critique F-3):
 	// existing facts are immutable except a null resolution becoming a
 	// typed one; a written resolution never changes; appended entries
@@ -767,6 +789,13 @@ func validateTransition(previous, next map[string]any) error {
 		if nowSegment != prevSegment+resolved {
 			return stateErr("mission workspaceTaint segment must advance exactly with resolutions")
 		}
+	}
+	// The open-turn marker never mutates in flight: a write may open a
+	// turn (null to marker), conclude one (marker to null), or leave the
+	// marker untouched — silently replacing the turn in flight would mask
+	// a missed conclusion.
+	if previous["openTurn"] != nil && next["openTurn"] != nil && !jsonEqual(previous["openTurn"], next["openTurn"]) {
+		return stateErr("mission openTurn is immutable while a turn is in flight")
 	}
 	prevStreams, _ := previous["streams"].(map[string]any)
 	nextStreams, _ := next["streams"].(map[string]any)
@@ -1051,8 +1080,17 @@ func ConsumedAuthorizations(state map[string]any) (map[string]string, error) {
 			return nil, stateErr("mission acceptance entry %s must carry both wall and consumedAuthorizations", turnID)
 		}
 		wall, ok := wallRaw.(map[string]any)
-		if !ok || !exactKeys(wall, "verdict", "preTree", "expectedTree", "postTree", "orderedDigests") {
+		if !ok || !exactKeys(wall, "verdict", "preTree", "expectedTree", "postTree", "orderedDigests", "sequencePoint") {
 			return nil, stateErr("mission acceptance entry %s wall payload has an invalid shape", turnID)
+		}
+		point, ok := wall["sequencePoint"].(map[string]any)
+		if !ok || !exactKeys(point, "sequence", "segment") {
+			return nil, stateErr("mission acceptance entry %s sequence point has an invalid shape", turnID)
+		}
+		for _, field := range []string{"sequence", "segment"} {
+			if v, ok := intValue(point[field]); !ok || v < 0 {
+				return nil, stateErr("mission acceptance entry %s sequence point %s is invalid", turnID, field)
+			}
 		}
 		if v, _ := wall["verdict"].(string); v != "passed" {
 			return nil, stateErr("mission acceptance entry %s wall verdict is invalid", turnID)
@@ -1085,6 +1123,88 @@ func ConsumedAuthorizations(state map[string]any) (map[string]string, error) {
 		}
 	}
 	return index, nil
+}
+
+// CurrentSequencePoint names the occurrence identity of the CURRENT
+// expected tree (host-implementer wall): the sequence point of the last
+// acceptance entry carrying a wall payload, or {0, 0} for a mission whose
+// expected tree is still the initial baseline. This — never the raw chain
+// sequence — is what an open-turn marker records and an authorization
+// binds (slice-5 critique F-2: tree ids repeat; the occurrence decides
+// the intervening-change set).
+func CurrentSequencePoint(state map[string]any) (sequence, segment int64) {
+	// The SEGMENT is always the live taint segment (slice-5 round-3
+	// finding 3): a resolution advances it immediately, before any
+	// new-segment acceptance exists, so an old-segment authorization can
+	// never ride a repeated tree through the k==j comparison.
+	taint, _ := state["workspaceTaint"].(map[string]any)
+	segment, _ = intValue(taint["segment"])
+	turnLog, _ := state["turnLog"].([]any)
+	for i := len(turnLog) - 1; i >= 0; i-- {
+		entry, _ := turnLog[i].(map[string]any)
+		if entry == nil {
+			continue
+		}
+		wall, _ := entry["wall"].(map[string]any)
+		point, _ := wall["sequencePoint"].(map[string]any)
+		if point == nil {
+			continue
+		}
+		if s, ok := intValue(point["sequence"]); ok {
+			return s, segment
+		}
+	}
+	return 0, segment
+}
+
+// ExpectedTreePoints enumerates the mission's named E-sequence points from
+// its acceptance entries: each accepted post-tree with the occurrence it
+// was accepted at, oldest first. The current expected tree (an open turn's
+// pre-tree) is NOT included — its occurrence is CurrentSequencePoint.
+func ExpectedTreePoints(state map[string]any) []ExpectedTreePoint {
+	turnLog, _ := state["turnLog"].([]any)
+	points := []ExpectedTreePoint{}
+	// E0 — the initial baseline — is a named point too (slice-5 round-2
+	// finding 5): a first-turn authorization binds {0, 0}, and its base
+	// must stay resolvable after later turns land. The first payload's
+	// preTree IS E0 by construction.
+	for _, raw := range turnLog {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		wall, _ := entry["wall"].(map[string]any)
+		if tree, _ := wall["preTree"].(string); tree != "" {
+			points = append(points, ExpectedTreePoint{Tree: tree, Sequence: 0, Segment: 0})
+			break
+		}
+	}
+	for _, raw := range turnLog {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		wall, _ := entry["wall"].(map[string]any)
+		point, _ := wall["sequencePoint"].(map[string]any)
+		tree, _ := wall["postTree"].(string)
+		if point == nil || tree == "" {
+			continue
+		}
+		s, sOK := intValue(point["sequence"])
+		g, gOK := intValue(point["segment"])
+		if sOK && gOK {
+			points = append(points, ExpectedTreePoint{Tree: tree, Sequence: s, Segment: g})
+		}
+	}
+	return points
+}
+
+// ExpectedTreePoint is one named E-sequence point: a tree and the
+// occurrence identity it was accepted under.
+type ExpectedTreePoint struct {
+	Tree     string
+	Sequence int64
+	Segment  int64
 }
 
 // ProposalError marks a WriteState refusal caused by the PROPOSED state —

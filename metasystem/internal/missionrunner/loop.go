@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -99,6 +100,14 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 		return fail(err)
 	}
 	recordPath, _, _ := e.runnerPaths()
+	// The taint STOP (HIW-R2-04): an unresolved workspace taint refuses
+	// every run mode before any turn machinery — only a human's typed
+	// RESTORE or ADOPT_DISPUTED_TREE resolution reopens the mission.
+	if doc, derr := readJSONDoc(filepath.Join(e.missionDir(), "state.json")); derr == nil {
+		if reason := unresolvedTaint(doc); reason != "" {
+			return fail(failf(3, "mission workspace is tainted (%s); resolve the taint before any further turn", clipSummary(reason)))
+		}
+	}
 	if err := atomicWriteJSON(recordPath, e.runnerRecord(pid, pgid, started, tag)); err != nil {
 		return fail(err)
 	}
@@ -442,6 +451,34 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 	if state["status"] != "running" {
 		return "", "", nil, failf(3, "mission is %s; answer or amend its park reason before resume", valueString(state["status"]))
 	}
+	// An unfinished open turn is inspected BEFORE healing or any new
+	// baseline (the design's binding order, critique F-1): the crashed
+	// turn's workspace proves the equation before the mission moves.
+	if openTurn, ok := state["openTurn"].(map[string]any); ok {
+		turnID, _ := openTurn["turnId"].(string)
+		cycle, _ := jsonInt(openTurn["cycle"])
+		turnDir := filepath.Join(e.missionDir(), "turns", turnID)
+		if _, violated, werr := e.wallGate(statePath, ledger, turnID, turnDir, cycle, nil, true); werr != nil {
+			return "", "", nil, werr
+		} else if violated {
+			return "", "", nil, failf(3, "mission workspace failed the wall at resume; resolve the taint before any further turn")
+		}
+		// The equation held, so the crashed turn is UNACCEPTED (a
+		// ledger-ahead state and a reserve gap alike: no acceptance
+		// entry, nothing consumed). Close its marker so a fresh turn can
+		// open; the reserved-cycle heal below books any fence gap.
+		closed := deepCopyDoc(state)
+		closed["openTurn"] = nil
+		if _, err := e.writeState(statePath, closed); err != nil {
+			return "", "", nil, err
+		}
+		if err := e.anchor(statePath, ledger, turnID); err != nil {
+			return "", "", nil, err
+		}
+		if state, err = e.verifyState(statePath, false); err != nil {
+			return "", "", nil, err
+		}
+	}
 	if _, err := e.healReservedCycle(statePath, ledger, state); err != nil {
 		return "", "", nil, err
 	}
@@ -754,6 +791,12 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	if !ok {
 		return nil, failf(3, "turn record cycle is invalid")
 	}
+	// Even a turn that failed before or during its host runs the wall
+	// (HIW-O3 "after EVERY host exit"): a failed turn consumed nothing,
+	// so any product-byte drift from the pre-tree is a violation.
+	if final, violated, werr := e.wallGate(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, nil, false); werr != nil || violated {
+		return final, werr
+	}
 	observed := "unmeasurable:" + strings.ReplaceAll(detail, "\n", " ")
 	if err := e.appendLedger(state, ledger, cycle, "no-progress", candidateSHA, observed, nil); err != nil {
 		return nil, err
@@ -974,6 +1017,10 @@ type concludeSpec struct {
 	turnDir           string
 	annotations       []string
 	inflightCertified any
+	// certified is the turn's ADJUDICATED certification list — the wall
+	// inspection derives the consumed patch chain from it (nil on the
+	// faulted paths: a rejected return consumes nothing).
+	certified []map[string]any
 	// propose builds the state proposal from the measurement.
 	propose func(measurementValue any, gatePassed bool) (map[string]any, error)
 	// afterWrite runs between the state write and the anchor (the
@@ -991,6 +1038,14 @@ type concludeSpec struct {
 // build and write the state proposal, then anchor AFTER the state so a
 // crash between the two is heal-forward, and finally judge the stop-loss.
 func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, spec concludeSpec) (map[string]any, error) {
+	// The wall inspects the tree FIRST — before the drain can park the
+	// mission for a lesser reason and before any measurement (HIW-O3,
+	// critique F-5): delegates write their own worktrees, never the
+	// checkout, so the inspection races nothing, and a host that altered
+	// the workspace hides behind neither a stalled drain nor a gate pass.
+	if final, violated, err := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, false); err != nil || violated {
+		return final, err
+	}
 	parked, err := e.drainJobs(statePath, ledger, spec.turnID, spec.cycle)
 	if err != nil {
 		return nil, err
@@ -1192,12 +1247,24 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	if err != nil {
 		return nil, true, err
 	}
+	// The wall's pre-tree: the shippable projection at turn open, anchored
+	// against garbage collection for the mission's life (HIW-O1; the state
+	// openTurn write joins in the acceptance-write step of the build map).
+	workspace := gittree.Workspace{Dir: e.Root}
+	preTree, err := wallSnapshot(workspace, e.Mission)
+	if err != nil {
+		return nil, true, failf(3, "turn open cannot snapshot the workspace: %v", err)
+	}
+	if err := workspace.Anchor(e.Mission, preTree); err != nil {
+		return nil, true, failf(3, "turn open cannot anchor the pre-tree: %v", err)
+	}
 	c.turnID, c.turnDir = turnID, turnDir
 	c.turnPath = filepath.Join(turnDir, "turn.json")
 	c.turn = map[string]any{
 		"missionId": e.Mission,
 		"turnId":    turnID,
 		"cycle":     cycle,
+		"preTree":   preTree,
 		"runtime":   values["host.runtime"],
 		"model":     values["host.model"],
 		// The announced session is what the prompt's Host-Session header will
@@ -1227,6 +1294,41 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	if err := atomicWriteJSON(c.turnPath, c.turn); err != nil {
 		return nil, true, err
 	}
+	// The open-turn marker is the wall's sequence point (HIW-O1): the state
+	// records, before the host launches, WHICH turn is in flight and the
+	// exact chain position and taint segment it opened under — the identity
+	// every authorization issued this turn binds. The pending turn record
+	// is published first: a crash between the two leaves an unopened
+	// pending turn for resume healing, never a marker without its record.
+	diskState, err := readDocLabeled(c.statePath, "mission state", 3)
+	if err != nil {
+		return nil, true, err
+	}
+	// The marker's occurrence identity is the CURRENT SEQUENCE POINT —
+	// the acceptance that produced this expected tree — never the raw
+	// chain position (critique F-2: parks and heals advance the chain
+	// without changing the expected tree, and tree ids repeat).
+	sequence, segment := mission.CurrentSequencePoint(diskState)
+	opened := deepCopyDoc(diskState)
+	opened["openTurn"] = map[string]any{
+		"turnId":   turnID,
+		"cycle":    cycle,
+		"preTree":  preTree,
+		"sequence": sequence,
+		"segment":  segment,
+		"openedAt": nowISO(),
+	}
+	updated, err := e.writeState(c.statePath, opened)
+	if err != nil {
+		return nil, true, err
+	}
+	// The open write anchors like every other state write (critique F-1):
+	// a crash mid-turn must reconcile against THIS state, not park on an
+	// anchor mismatch.
+	if err := e.anchor(c.statePath, c.ledger, turnID); err != nil {
+		return nil, true, err
+	}
+	c.state = updated
 	return nil, false, nil
 }
 
@@ -1388,18 +1490,24 @@ func (e *Engine) cycleAdjudicate(c *cycleContext) (map[string]any, bool, error) 
 // cycleConclude drains the jobs, measures, books the ledger, concludes the
 // state, patches the turn terminal, anchors, and applies the stop-loss.
 func (e *Engine) cycleConclude(c *cycleContext) (map[string]any, bool, error) {
-	// The accepted return's certified entries participate in this booking's
+	// The turn's ADJUDICATED certifications participate in this booking's
 	// patience evaluation before anything is written (r2/P4-016): a job
-	// certified by THIS turn is not booked barren in the same breath.
+	// certified by THIS turn is not booked barren in the same breath —
+	// but only a claim that survived verification counts (HIW-O5).
 	var inflightCertified any
-	if returnDoc, err := readJSONDoc(filepath.Join(c.turnDir, "return.json")); err == nil {
-		inflightCertified = returnDoc["certified"]
+	if c.verdict != nil {
+		entries := make([]any, 0, len(c.verdict.Certified))
+		for _, entry := range c.verdict.Certified {
+			entries = append(entries, entry)
+		}
+		inflightCertified = entries
 	}
 	final, err := e.concludeCycle(c.statePath, c.ledger, c.state, concludeSpec{
 		turnID:            c.turnID,
 		cycle:             c.cycle,
 		turnDir:           c.turnDir,
 		inflightCertified: inflightCertified,
+		certified:         c.verdict.Certified,
 		propose: func(measurementValue any, gatePassed bool) (map[string]any, error) {
 			return ConcludeFiles(e.Root, e.Mission, c.statePath, c.turnPath,
 				c.verdictPath, c.verdict.ReturnPath, filepath.Join(c.turnDir, "result.json"),

@@ -411,12 +411,16 @@ non-decreasing counters; state.go:645-706, 729-762).
 **S15e. Patch the turn to completed** (loop.go:847-853): status/outcome
 `completed`, embedded result, canonical raw/return paths.
 
-**S15f. Anchor.** (loop.go:854, 293-304; anchor.go:157-239): an empty git
-commit on the mission branch, author = the turn id, trailers binding
-`Mission-State-Hash`, `Mission-Ledger-SHA256`, ledger path and cycle count;
-`git add -f` of the ledger. Refuses when: staged changes exist (a host that
-left the index staged kills the runner here), the checkout is not on the
-mission branch, or the ledger count disagrees with the state.
+**S15f. Anchor.** (anchor.go): a plumbing-built commit on the RUNNER-OWNED
+anchor ref `refs/metasystem/missions/<mission>/state-anchors` — never the
+mission branch — whose tree carries exactly the ledger bytes, with
+trailers binding `Mission-State-Hash`, `Mission-Ledger-SHA256`, ledger
+path and cycle count; the ref advances with compare-and-swap. The mission
+branch and the real index are untouched (the wall made the old on-branch
+`git add -f` doctrine untenable: it force-tracked bookkeeping into every
+delegate worktree and split the wall's tree identity from the branch's).
+Refuses when: the checkout is not on the mission branch, or the ledger
+count disagrees with the state.
 
 - On crash between S15d and S15f: the next resume's `Reconcile` sees a
   state hash no anchor certifies → **`state-integrity` park**, human
@@ -686,10 +690,12 @@ so the runner looks dead to `status`-style liveness probes while it is
 lawfully waiting — and wall clock burns against the mission fence the whole
 time.
 
-(k) **Anchor refusals from checkout state.** The anchor refuses on staged
-changes or a checked-out branch other than the mission branch
-(anchor.go:174-184). A host (or any co-located process) leaving the index
-staged or switching branches turns the *runner's* conclude into a hard
+(k) **Anchor refusals from checkout state.** The anchor refuses on a
+checked-out branch other than the mission branch (anchor.go). Staged index
+changes no longer matter: the anchor is plumbing-built onto the
+runner-owned anchor ref through an isolated temporary index, so the real
+index is never read or swept. A host switching branches still turns the
+*runner's* conclude into a hard
 failure after the ledger line already landed — surface (g)'s second window,
 triggered without any crash.
 

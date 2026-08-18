@@ -84,7 +84,11 @@ set -euo pipefail
 printf 'fixture-fingerprint\n'
 ARM
 chmod +x "$repo/scripts/agents/arm-supervision.sh"
-git -C "$repo" add scripts truth docs
+# The fixture mirrors the deployment's projection boundary (HIW-O3): the
+# wall's shippable snapshot must exclude runtime state exactly as the real
+# repository's .gitignore does.
+printf 'artifacts/\nbin/\nmetasystem.conf\n' >"$repo/.gitignore"
+git -C "$repo" add .gitignore scripts truth docs
 git -C "$repo" commit -qm instruments
 git -C "$repo" tag instruments
 git -C "$repo" remote add origin "$remote"
@@ -315,7 +319,9 @@ fi
 ARM
 chmod +x "$repo/scripts/agents/arm-supervision.sh"
 git -C "$repo" rm -q candidate-bad
-git -C "$repo" add scripts metasystem.conf
+# -f: the fixture historically tracks its conf for origin durability; the
+# projection boundary above ignores it exactly as production does.
+git -C "$repo" add -f scripts metasystem.conf
 git -C "$repo" commit -qm 'install mission runner fixtures'
 git -C "$repo" push -qu origin main
 

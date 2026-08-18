@@ -116,12 +116,15 @@ func ConcludeFiles(root, mission, statePath, turnPath, verdictPath, returnPath, 
 	state["streams"] = streams
 	gatePassed, _ := inputs["measurement"]["gatePassed"].(bool)
 	return ConcludeTurn(root, mission, state, turn, TurnConclusion{
-		SessionID:      ConclusionSession(turn, inputs["host result"]["sessionId"]),
-		Measurement:    inputs["measurement"]["measurement"],
-		GatePassed:     gatePassed,
-		Accepted:       verdict["accepted"],
-		Rejected:       verdict["rejected"],
-		Certified:      inputs["orchestrator return"]["certified"],
+		SessionID:   ConclusionSession(turn, inputs["host result"]["sessionId"]),
+		Measurement: inputs["measurement"]["measurement"],
+		GatePassed:  gatePassed,
+		Accepted:    verdict["accepted"],
+		Rejected:    verdict["rejected"],
+		// Adjudicated facts only (HIW-O5): the raw return's certified
+		// claims never reach the turn log; the verdict's verified and
+		// normalized list is what the mission remembers.
+		Certified:      verdict["certified"],
 		FactsForLedger: inputs["orchestrator return"]["factsForLedger"],
 		Gaps:           inputs["orchestrator return"]["gaps"],
 	})

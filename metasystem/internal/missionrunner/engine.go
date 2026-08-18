@@ -83,9 +83,10 @@ func (e *Engine) fixtures() (*fixtureauth.Authorization, error) {
 // anchor writes the state's anchor commit through the configured anchorer.
 // EVERY anchor reclaims the checkout first (issue #2 round-2 F2): the
 // failed-turn, drain-stalled, and proposal-refusal paths all anchor after
-// a host turn held the lease, and any of them anchoring without runner
-// holdership either refuses on guarded targets or commits ungated on
-// unguarded ones.
+// a host turn held the lease, and an anchor without runner holdership
+// would advance the runner-owned anchor ref outside the single-writer
+// discipline the lease exists to guarantee (the anchor is plumbing-built
+// onto refs/metasystem/…/state-anchors; it never commits to the branch).
 func (e *Engine) anchor(statePath, ledgerPath, identityName string) error {
 	if err := e.reclaimCheckout(); err != nil {
 		return err

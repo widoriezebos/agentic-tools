@@ -21,6 +21,7 @@ func TestConcludeCycleParksOnProposalRefusal(t *testing.T) {
 	record, _ := json.Marshal(engine.runnerRecord(os.Getpid(), os.Getpid(), 1, "fixture"))
 	os.WriteFile(filepath.Join(runnersDir, "demo.json"), append(record, byte(10)), 0o644)
 
+	openFixtureTurn(t, engine.Root, statePath, "demo-t1-aaaa", 1)
 	state, err := engine.verifyState(statePath, false)
 	if err != nil {
 		t.Fatal(err)

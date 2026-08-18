@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
@@ -93,6 +94,15 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	if len(bytes.TrimSpace(patch)) == 0 || len(changedPaths) == 0 {
 		return fmt.Errorf("an empty diff cannot be authorized; the chain shipped no reviewable change")
 	}
+	// The trees this record names stay reachable for consumption-time
+	// verification (slice-5 critique F-7): the runner's staleness check
+	// dereferences both long after the delegate's worktree is gone.
+	repoWorkspace := gittree.Workspace{Dir: r.root}
+	for _, tree := range []string{baseTree, finalTree} {
+		if err := repoWorkspace.Anchor(mission, tree); err != nil {
+			return fmt.Errorf("cannot anchor the authorization's %s: %v", tree, err)
+		}
+	}
 	// The atomic issue-time proof: the recorded patch applied to the
 	// recorded base IS the reviewed tree, byte for byte.
 	applied, err := workspace.Apply(baseTree, patch)
@@ -111,7 +121,7 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	if err != nil {
 		return fmt.Errorf("cannot digest the job record identity: %v", err)
 	}
-	sequence, err := missionStateSequence(r.root, mission)
+	baseSequence, baseSegment, err := missionBaseSequencePoint(r.root, mission, baseTree)
 	if err != nil {
 		return err
 	}
@@ -135,10 +145,11 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 		"issuanceTurn":       issuanceTurn,
 		"baseTree":           baseTree,
 		// The sequence point names WHICH occurrence of the base tree this
-		// authorization was issued against (r5 HIW-R5-01: tree ids repeat).
-		// segment is 0 until mission state v2 introduces taint-resolution
-		// segments; consumption treats {sequence, segment} as one identity.
-		"baseSequencePoint": map[string]any{"sequence": sequence, "segment": 0},
+		// authorization was issued against (r5 HIW-R5-01: tree ids
+		// repeat): the E-point whose tree IS the boundary base, found in
+		// the mission's acceptance entries or the open turn — never the
+		// raw chain sequence (slice-5 critique F-2).
+		"baseSequencePoint": map[string]any{"sequence": baseSequence, "segment": baseSegment},
 		"reviewedTree":      finalTree,
 		"patchDigest":       hex.EncodeToString(patchSum[:]),
 		"changedPaths":      changedPaths,
@@ -183,24 +194,39 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	return nil
 }
 
-// missionStateSequence reads the mission state chain's current sequence
-// number — a plain read that BINDS the issuance point; verifying the chain
-// stays mission-owned at consumption.
-func missionStateSequence(root, mission string) (int64, error) {
-	statePath := filepath.Join(root, "artifacts", "agents", "missions", mission, "state.json")
+// missionBaseSequencePoint binds the issuance point: the E-sequence point
+// whose tree IS the boundary base — the open turn's pre-tree under the
+// current sequence point, or an earlier acceptance's post-tree under the
+// occurrence it was accepted at. A base that is no named point refuses
+// issuance outright: consumption could never verify it (slice-5 critique
+// F-2 — the raw chain sequence bound nothing).
+func missionBaseSequencePoint(root, missionID, baseTree string) (int64, int64, error) {
+	statePath := filepath.Join(root, "artifacts", "agents", "missions", missionID, "state.json")
 	data, err := os.ReadFile(statePath)
 	if err != nil {
-		return 0, fmt.Errorf("authorization issuance cannot read the mission state: %v", err)
+		return 0, 0, fmt.Errorf("authorization issuance cannot read the mission state: %v", err)
 	}
-	var state struct {
-		Integrity struct {
-			Sequence *int64 `json:"sequence"`
-		} `json:"integrity"`
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		return 0, 0, fmt.Errorf("authorization issuance cannot parse the mission state: %v", err)
 	}
-	if err := json.Unmarshal(data, &state); err != nil || state.Integrity.Sequence == nil {
-		return 0, fmt.Errorf("authorization issuance cannot read the mission state sequence")
+	// Matching the CURRENT point first is sound because the comparison is
+	// FULL-TREE equality: if the boundary base byte-equals the current
+	// expected tree, every file the review saw is identical to the tree
+	// the patch will land on — relabeling an older occurrence to the
+	// current one changes nothing the staleness predicate could measure.
+	if openTurn, ok := state["openTurn"].(map[string]any); ok {
+		if tree, _ := openTurn["preTree"].(string); tree == baseTree {
+			sequence, segment := mission.CurrentSequencePoint(state)
+			return sequence, segment, nil
+		}
 	}
-	return *state.Integrity.Sequence, nil
+	for _, point := range mission.ExpectedTreePoints(state) {
+		if point.Tree == baseTree {
+			return point.Sequence, point.Segment, nil
+		}
+	}
+	return 0, 0, fmt.Errorf("authorization refused: base tree %s is not a named expected-tree sequence point of mission %s; re-dispatch from the current expected tree", baseTree, missionID)
 }
 
 // priorChainAuthorizations lists the digests of every authorization already
@@ -241,4 +267,32 @@ func priorChainAuthorizations(dir, rootJob string) ([]string, error) {
 		digests = []string{}
 	}
 	return digests, nil
+}
+
+// AuthorizationRecordDigest recomputes the canonical digest of an
+// authorization record — the exact bytes issuance signed, with the
+// embedded authorizationDigest omitted (the r5 digest domain). Every
+// consumer must call this before trusting ANY field: the filename match
+// alone authenticates nothing (slice-5 round-2 finding 1).
+func AuthorizationRecordDigest(record map[string]any) (string, error) {
+	clone := make(map[string]any, len(record))
+	for key, value := range record {
+		if key == "authorizationDigest" {
+			continue
+		}
+		clone[key] = value
+	}
+	return canonicalDigest(clone)
+}
+
+// JobIdentityDigest is the canonical digest of a job record's immutable
+// identity subset — the value an integration authorization binds as
+// jobRecordDigest, exported so the runner's adjudication can verify a
+// certification against the SAME set conformance digested at issuance.
+func JobIdentityDigest(record map[string]any) (string, error) {
+	identity := map[string]any{}
+	for _, key := range jobIdentityKeys {
+		identity[key] = record[key]
+	}
+	return canonicalDigest(identity)
 }

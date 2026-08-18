@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -140,7 +141,11 @@ func buildPreflightRootWithStream(t *testing.T, directive string) *Engine {
 	fixtureGit(t, root, "init", "-q", "-b", "main")
 	fixtureGit(t, root, "config", "user.name", "fixture")
 	fixtureGit(t, root, "config", "user.email", "fixture@example.invalid")
-	fixtureGit(t, root, "add", "scripts", "truth", "docs")
+	// The fixture mirrors the deployment's projection boundary: runtime
+	// state under artifacts/ (and the staged binary) is ignored, so the
+	// wall's shippable snapshot excludes it exactly as in the real repo.
+	os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/\nbin/\nmetasystem.conf\n"), 0o644)
+	fixtureGit(t, root, "add", ".gitignore", "scripts", "truth", "docs")
 	fixtureGit(t, root, "commit", "-qm", "instruments")
 	fixtureGit(t, root, "tag", "instruments")
 	gitInitBare := exec.Command("git", "init", "-q", "-b", "main", "--bare", remote)
@@ -474,6 +479,35 @@ func TestInternalRunCloseStreamCycle(t *testing.T) {
 	if err := engine.launch("resume", false); err == nil {
 		t.Fatal("a terminal mission resumed")
 	}
+
+	// The wall's open-turn lifecycle across the real cycle (HIW-O1): the
+	// concluded mission holds no open turn, the turn record carries the
+	// pre-tree it opened under, and that tree is anchored against garbage
+	// collection under the mission's ref namespace.
+	if state["openTurn"] != nil {
+		t.Fatalf("a concluded mission left a turn open: %v", state["openTurn"])
+	}
+	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
+	if len(turns) == 0 {
+		t.Fatal("no turn record on disk")
+	}
+	turnDoc, err := readJSONDoc(turns[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	preTree, _ := turnDoc["preTree"].(string)
+	if !regexp.MustCompile(`^[0-9a-f]{40,64}$`).MatchString(preTree) {
+		t.Fatalf("turn record preTree is not a tree id: %q", preTree)
+	}
+	anchor := exec.Command("git", "-C", engine.Root, "rev-parse", "--verify",
+		"refs/metasystem/missions/"+engine.Mission+"/"+preTree)
+	anchored, err := anchor.Output()
+	if err != nil {
+		t.Fatalf("the pre-tree anchor ref is missing: %v", err)
+	}
+	if strings.TrimSpace(string(anchored)) != preTree {
+		t.Fatalf("anchor points at %q, not the pre-tree %q", strings.TrimSpace(string(anchored)), preTree)
+	}
 }
 
 // The resume path through a real cycle: a completed mission refuses resume
@@ -647,5 +681,69 @@ func TestStatusRendersEveryClass(t *testing.T) {
 	os.WriteFile(statePath, []byte("{broken"), 0o644)
 	if code := engine.Status(); code != 7 {
 		t.Fatalf("malformed state must be unreadable-class: %d", code)
+	}
+}
+
+// The D99 shape, caught (HIW-O3): the host authors a product file in the
+// checkout and returns a clean empty-dispatch envelope. The wall parks the
+// mission with taint BEFORE any measurement, the violated turn record and
+// the wall.json evidence name the undeclared path, and no further run mode
+// opens a turn until a human resolution clears the taint.
+func TestInternalRunSoloBuildParksWallViolation(t *testing.T) {
+	engine := buildFullCycleRoot(t, "FAKEHOST:solo-build")
+	signal := filepath.Join(t.TempDir(), "start.json")
+	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state["status"] != "parked" || state["parkReason"] != "wall-violation" {
+		t.Fatalf("solo build must park on the wall: status=%v reason=%v", state["status"], state["parkReason"])
+	}
+	taint, _ := state["workspaceTaint"].(map[string]any)
+	entries, _ := taint["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("the violation must taint the workspace: %v", taint)
+	}
+	entry := entries[0].(map[string]any)
+	if entry["resolution"] != nil || !strings.Contains(entry["reason"].(string), "solo.go") {
+		t.Fatalf("taint entry: %v", entry)
+	}
+	if state["openTurn"] == nil {
+		t.Fatal("the violated turn's marker must survive for the resolution")
+	}
+	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "wall.json"))
+	if len(turns) != 1 {
+		t.Fatalf("wall evidence: %v", turns)
+	}
+	evidence, err := readJSONDoc(turns[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence["verdict"] != "violated" || !strings.Contains(evidence["violation"].(string), "solo.go") {
+		t.Fatalf("wall.json: %v", evidence)
+	}
+	// Every tree the evidence names is anchored (critique F-7): the
+	// violation's post tree must survive garbage collection for the
+	// resolution to verify against.
+	postTree, _ := evidence["postTree"].(string)
+	anchorOut, anchorErr := exec.Command("git", "-C", engine.Root, "rev-parse", "--verify",
+		"refs/metasystem/missions/"+engine.Mission+"/"+postTree).Output()
+	if anchorErr != nil || strings.TrimSpace(string(anchorOut)) != postTree {
+		t.Fatalf("violated post tree is not anchored: %v %q", anchorErr, anchorOut)
+	}
+	// No turn-log entry concluded the violated turn, and nothing consumed.
+	if log, _ := state["turnLog"].([]any); len(log) != 0 {
+		t.Fatalf("a violated turn must not conclude into the log: %v", log)
+	}
+
+	// The taint STOP: a fresh run refuses before any turn machinery.
+	code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-2", signal)
+	if code == 0 {
+		t.Fatal("a tainted mission resumed")
+	}
+	turnsAfter, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
+	if len(turnsAfter) != 1 {
+		t.Fatalf("the tainted mission opened another turn: %v", turnsAfter)
 	}
 }

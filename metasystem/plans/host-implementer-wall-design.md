@@ -11,22 +11,126 @@
   registry types) are owned by golden fixtures during the build.
   D100's rulings stand: NO self-work exception, DETECTOR tier.
 - Goal: host-implementer-wall (Current)
-- In flight right now: slice 5 (the runner's wall: turn
-  open/anchor via gittree, adjudication provenance verification,
-  the tree equation at acceptance, the payload-bearing acceptance
-  write, certified[].authorizationDigest required).
-- Landed: slice 4 (mission state v2) — four critique rounds
-  (5 findings, 2, 1, 0, AGREE). The two sharpest: a valid write
-  could erase an acceptance entry and un-consume its authorization
-  (turnLog is now append-only with a byte-identical prefix), and
-  corrupt-state recovery re-rooted doctored payloads into a fresh
-  genesis with no transition validation (recovery now refuses
-  whenever wall or taint history is present — evidence preserved,
-  human decides). Plus entry-grain taint immutability with
-  segment-advances-exactly-with-resolutions, resolution shapes
-  carrying resolvedBy/reason/waivedClaims, the sentinel legacy
-  refusal surviving the real Reconcile surface, and the shipped
-  JSON schema at v2 parity.
+- In flight right now: INTERPOSED AGAIN at Wido's direction —
+  GitHub issues #4/#5/#6 (vm-smoke-4: the agents scored FULL
+  MARKS on the held-out grader and the metasystem refused to
+  bank it). Priority order #6 (sealed host caps), #5 (worktree
+  delegate commits), #4 (stop-loss candidate visibility +
+  ledgerSemantics 3). Wall slice 5 resumes after; its state and
+  build map follow unchanged:
+- Slice-5 state: ALL FOUR BUILD-MAP ITEMS BUILT (2026-08-18);
+  round-1 critique returned SEVEN material findings, ALL FOLDED
+  same day: (1) the open write anchors, and resume inspects an
+  unfinished open turn BEFORE healing — violated parks with
+  taint, clean closes the unaccepted marker; (2) the full
+  sequence-point/staleness predicate: acceptance payloads carry
+  their occurrence ({sequence, segment}, transition-pinned to the
+  landing write), openTurn records the CURRENT sequence point,
+  issuance refuses a base that is no named E-point, and
+  consumption verifies the named point, intervening-change
+  disjointness, byte-exact apply, and reviewed object-id/mode
+  equality; (3) patch bytes authenticate against the issued
+  patchDigest; (4) conclusions fail CLOSED — no wall.json, no
+  entry, and the state transition refuses payload-less appends;
+  (5) the wall runs BEFORE the drain can park for a lesser
+  reason; (6) the design's full protected-path table; (7) pre,
+  expected, post, base, and reviewed trees are all anchored.
+  One NEW decision surfaced by the fold: the state anchor
+  force-tracks the mission's own ledger into history, so exactly
+  that one path (artifacts/agents/missions/<m>/ledger.md) is
+  machine-owned metadata inside the projection and exempt from
+  the equation — nothing else under artifacts/ is, so tracked
+  smuggling stays caught. ROUND 2 overturned that exemption and
+  found five more material defects; all six folded 2026-08-18:
+  (1) authorization records AUTHENTICATE at consumption
+  (validate.AuthorizationRecordDigest recomputed by the index and
+  the wall — a coordinated record+patch rewrite dies at the first
+  read; fixtures now self-digest, proving an attacker who
+  self-digests forged content is caught by the SEMANTIC checks);
+  (2) the ledger exemption is REMOVED — initializeState's anchor
+  tracks the ledger before any turn opens, the wall runs before
+  every append, so no exemption is needed and a host editing the
+  ledger mid-turn (stop-loss reset injection) violates; (3) the
+  resume violation ramp tolerates a ledger-ahead crash (already
+  booked cycle skips the double append; taint and park still
+  land); (4) staleness is a TURN-BY-TURN union of accepted
+  changes, never an endpoint diff — changed-then-reverted paths
+  refuse; issuance's current-point labeling is defended as sound
+  by FULL-TREE equality (identical review context); (5) E0 joins
+  the named-point index (first payload's preTree at {0,0}); (6)
+  declared artifact paths refuse symlinked ancestry in the post
+  tree. ROUNDS 3-5 then chased one legacy doctrine to its root:
+  the state anchor committed the force-tracked ledger ONTO THE
+  MISSION BRANCH, which poisoned crash recovery, delayed
+  authorization identity, the segment fence, conformance
+  inheritance, and the guard baseline. Resolution (2026-08-18):
+  STATE ANCHORS LIVE ON A RUNNER-OWNED REF
+  (refs/metasystem/missions/<m>/state-anchors), plumbing-built
+  (ledger blob in the anchor commit's own tree, CAS ref update,
+  pinned identity, bounded calls, --no-filters), branch and index
+  untouched; the wall's snapshots filter the ledger path (legacy
+  branches) and the in-turn guard compares live ledger bytes to
+  mission.AnchoredLedgerTruth — the authenticated anchor-ref
+  machinery — so a host committing its own alteration can never
+  become its baseline; reconciliation tolerates EXACTLY one
+  ledger-ahead block and re-anchors its heal (retry-safe);
+  ErrNoAnchor means only "ref absent"; the live taint segment
+  fences old-segment authorizations immediately; E0 is a named
+  point; canonical docs rewritten (orchestration.md,
+  mission-cycle-sequence.md S15f). Existing missions with
+  on-branch anchors re-provision — consistent with the schema-3
+  barrier. Awaiting round-6 verification. What landed beyond the map's text:
+  the openTurn marker transition rule (immutable in flight — a
+  write may open, conclude, or leave it, never swap it); the
+  taint STOP in internalRun (an unresolved taint refuses every
+  run mode before any turn machinery); the wall-violation park
+  reason + runner ask class + registered event; the fake host's
+  solo-build behavior and TestInternalRunSoloBuildParksWallViolation
+  (the D99 shape end to end: park, taint naming solo.go, wall.json
+  evidence, no turn-log conclusion, resume refused); every fixture
+  repo now carries the deployment's projection boundary
+  (.gitignore artifacts/ bin/ metasystem.conf — the wall made the
+  divergence visible); the unmeasurable-fixture mechanism swapped
+  from deleting a tracked file (now a wall violation by design) to
+  deleting the gate's pinned ref. Known loose ends for the
+  critique: gittree.DropAnchors has no caller yet (anchor refs
+  accumulate past mission close); the wall payload's exactKeys
+  shape means wall.json carries `violation` beside the five keys
+  and builders strip it; certification adjudication trusts the
+  content-addressed record file (no digest recompute — the
+  filename==embedded-digest check only); resolution verbs
+  (RESTORE / ADOPT_DISPUTED_TREE) are the next slice, so a tainted
+  mission today is stopped but unresolvable by machinery.
+  Original build map, for the record:
+  (1) DONE: openTurn written at
+  reservation (sequence point + anchored preTree, before the host
+  launches), cleared by BOTH conclusion paths;
+  (2) adjudication verification — certified entries pass
+  UNVERIFIED today (turnio.go:124 copies returnDoc["certified"]
+  straight into the turn entry; nothing in Adjudicate touches
+  them — the D99 hole itself). Build: export
+  validate.JobIdentityDigest(record) (wraps jobIdentityKeys +
+  canonicalDigest); new missionrunner verification in Adjudicate:
+  for each certified entry with verdict "accepted" — digest
+  present+64hex; authorizations/<digest>.json exists;
+  record.jobId==entry.jobId; record.mission==mission;
+  record.missionIncarnation==live fences approvedContractSha256;
+  record.jobRecordDigest==JobIdentityDigest(current job record);
+  digest is a supersession HEAD (no record's supersedes[] names
+  it; two heads for one rootJob = fork = reject both);
+  digest not in mission.ConsumedAuthorizations(state).
+  Rejected entries -> verdict.Rejected + the auto-ask machinery;
+  verified entries ride the verdict (new field) and ConcludeFiles
+  stops copying the raw return's certified — only adjudicated
+  facts enter the turn log. Entries with verdict "rejected" need
+  no authorization (null digest lawful).; (3) the tree equation at cycleConclude:
+  postTree snapshot, post == pre + ordered patches (gittree.Apply
+  chain from authorizations/<digest>.patch) + declared
+  hostArtifacts (contract key; protected paths refuse), wall.json
+  in the turn dir, refusal -> taint entry + park BEFORE any
+  completion-gate success; (4) ConcludeTurn acceptance entry
+  gains wall + consumedAuthorizations payloads (state v2 shapes
+  landed in a29f303). Fixtures per HIW-O1/O3; critique per slice.
 - Landed: slice 3 (authorization issuance, HIW-O2) — two critique
   rounds (3 findings then 0, AGREE). Round 1's sharpest catch:
   the prose-under-30 waiver path issued authorizations WITHOUT
@@ -46,14 +150,13 @@
   finding trajectory 5 → 3 → 3 → 2 → 0, "AGREE — slices land"
   (scratchpad wall-slice*-output.md; scanner gap recorded in
   KI-34).
-- Waiting on the human: no — waiting on the in-flight slice-4
-  round-4 codex critique, a one-finding verification (the re-root
-  fixture now byte-compares the corrupt state), whose completion re-invokes this session (the
-  both-must-agree covenant).
-- Next step: fold the slice-4 verdict, commit on AGREE; then
-  slice 5 (the runner: turn open/anchor, adjudication provenance
-  verification, the wall equation, the acceptance write) — matrix
-  order, both-host gates before any ship.
+- Waiting on the human: the session itself is mid-build on
+  slice 5 right now (no human input needed); the build map above
+  is the lossless handoff when the context window compacts.
+- Next step: execute the slice-5 build map above in order, then
+  its critique loop; then the remaining rows (doctrine/prompts,
+  delegation floor, events, detector tier) — both-host gates
+  before any ship.
 
 ## What happened (unchanged evidence)
 

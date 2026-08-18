@@ -93,6 +93,35 @@
       "ids": {},
       "payload": {}
     },
+    "authorization-issued": {
+      "emitters": [
+        "conformance"
+      ],
+      "ids": {
+        "jobId": "required",
+        "missionId": "required"
+      },
+      "payload": {
+        "authorizationDigest": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "candidate-measure-skipped": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "census-untracked": {
       "emitters": [
         "census"
@@ -275,6 +304,20 @@
         }
       }
     },
+    "lease-reclaim-skipped": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "lease-refused": {
       "emitters": [
         "lease"
@@ -374,6 +417,106 @@
             "usable",
             "failed",
             "not-attempted"
+          ]
+        }
+      }
+    },
+    "run-cas-refused": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {
+        "runId": "required"
+      },
+      "payload": {
+        "expected": {
+          "required": true,
+          "type": "str"
+        },
+        "found": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "run-launched": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {
+        "runId": "required"
+      },
+      "payload": {
+        "custody": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "wrapped",
+            "adopted-verified",
+            "adopted-unverified"
+          ]
+        },
+        "kind": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "suite",
+            "cohort",
+            "custom"
+          ]
+        }
+      }
+    },
+    "run-swept": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {
+        "runId": "required"
+      },
+      "payload": {
+        "reason": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "run-transition": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {
+        "runId": "required"
+      },
+      "payload": {
+        "from": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "launching",
+            "running",
+            "draining",
+            "green",
+            "red",
+            "ended-unknown",
+            "launch-failed"
+          ]
+        },
+        "generation": {
+          "required": true,
+          "type": "int"
+        },
+        "to": {
+          "required": true,
+          "type": "enum",
+          "values": [
+            "launching",
+            "running",
+            "draining",
+            "green",
+            "red",
+            "ended-unknown",
+            "launch-failed"
           ]
         }
       }
@@ -517,6 +660,21 @@
       },
       "payload": {}
     },
+    "turn-proposal-refused": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required",
+        "turnId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "turn-result": {
       "emitters": [
         "runner"
@@ -568,6 +726,24 @@
         }
       }
     },
+    "wall-violation": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        },
+        "turnId": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "wind-down": {
       "emitters": [
         "runner"
@@ -588,164 +764,6 @@
         },
         "reason": {
           "required": false,
-          "type": "str"
-        }
-      }
-    },
-    "run-launched": {
-      "emitters": [
-        "run"
-      ],
-      "ids": {
-        "runId": "required"
-      },
-      "payload": {
-        "kind": {
-          "required": true,
-          "type": "enum",
-          "values": [
-            "suite",
-            "cohort",
-            "custom"
-          ]
-        },
-        "custody": {
-          "required": true,
-          "type": "enum",
-          "values": [
-            "wrapped",
-            "adopted-verified",
-            "adopted-unverified"
-          ]
-        }
-      }
-    },
-    "run-transition": {
-      "emitters": [
-        "run"
-      ],
-      "ids": {
-        "runId": "required"
-      },
-      "payload": {
-        "from": {
-          "required": true,
-          "type": "enum",
-          "values": [
-            "launching",
-            "running",
-            "draining",
-            "green",
-            "red",
-            "ended-unknown",
-            "launch-failed"
-          ]
-        },
-        "to": {
-          "required": true,
-          "type": "enum",
-          "values": [
-            "launching",
-            "running",
-            "draining",
-            "green",
-            "red",
-            "ended-unknown",
-            "launch-failed"
-          ]
-        },
-        "generation": {
-          "required": true,
-          "type": "int"
-        }
-      }
-    },
-    "run-swept": {
-      "emitters": [
-        "run"
-      ],
-      "ids": {
-        "runId": "required"
-      },
-      "payload": {
-        "reason": {
-          "required": true,
-          "type": "str"
-        }
-      }
-    },
-    "run-cas-refused": {
-      "emitters": [
-        "run"
-      ],
-      "ids": {
-        "runId": "required"
-      },
-      "payload": {
-        "expected": {
-          "required": true,
-          "type": "str"
-        },
-        "found": {
-          "required": true,
-          "type": "str"
-        }
-      }
-    },
-    "authorization-issued": {
-      "emitters": [
-        "conformance"
-      ],
-      "ids": {
-        "missionId": "required",
-        "jobId": "required"
-      },
-      "payload": {
-        "authorizationDigest": {
-          "required": true,
-          "type": "str"
-        }
-      }
-    },
-    "turn-proposal-refused": {
-      "emitters": [
-        "runner"
-      ],
-      "ids": {
-        "missionId": "required",
-        "turnId": "required"
-      },
-      "payload": {
-        "error": {
-          "required": true,
-          "type": "str"
-        }
-      }
-    },
-    "lease-reclaim-skipped": {
-      "emitters": [
-        "runner"
-      ],
-      "ids": {
-        "missionId": "required"
-      },
-      "payload": {
-        "error": {
-          "required": true,
-          "type": "str"
-        }
-      }
-    },
-    "candidate-measure-skipped": {
-      "emitters": [
-        "runner"
-      ],
-      "ids": {
-        "missionId": "required"
-      },
-      "payload": {
-        "error": {
-          "required": true,
           "type": "str"
         }
       }

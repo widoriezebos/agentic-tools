@@ -299,6 +299,7 @@ func TestStateV2Wall(t *testing.T) {
 		"wall": map[string]any{
 			"verdict": "passed", "preTree": tree, "expectedTree": tree,
 			"postTree": tree, "orderedDigests": []any{digest},
+			"sequencePoint": map[string]any{"sequence": 1, "segment": 0},
 		},
 	}
 	doc["turnLog"] = []any{accepted}
@@ -422,7 +423,8 @@ func TestReconcileRefusesToRerootWallHistory(t *testing.T) {
 	doc["turnLog"] = []any{map[string]any{
 		"turnId": "demo-t1", "consumedAuthorizations": []any{digest},
 		"wall": map[string]any{"verdict": "passed", "preTree": tree,
-			"expectedTree": tree, "postTree": tree, "orderedDigests": []any{digest}},
+			"expectedTree": tree, "postTree": tree, "orderedDigests": []any{digest},
+			"sequencePoint": map[string]any{"sequence": 1, "segment": 0}},
 	}}
 	// The hash is now stale: this is exactly a tampered/corrupt state.
 	writeText(t, state, mustMarshalIndent(t, doc))
@@ -465,7 +467,8 @@ func TestReconcileRefusesRerootOnFutureSchema(t *testing.T) {
 	doc["turnLog"] = []any{map[string]any{
 		"turnId": "demo-t1", "consumedAuthorizations": []any{digest},
 		"wall": map[string]any{"verdict": "passed", "preTree": tree,
-			"expectedTree": tree, "postTree": tree, "orderedDigests": []any{digest}},
+			"expectedTree": tree, "postTree": tree, "orderedDigests": []any{digest},
+			"sequencePoint": map[string]any{"sequence": 1, "segment": 0}},
 	}}
 	writeText(t, state, mustMarshalIndent(t, doc))
 	before, _ := os.ReadFile(state)
@@ -476,5 +479,40 @@ func TestReconcileRefusesRerootOnFutureSchema(t *testing.T) {
 	after, _ := os.ReadFile(state)
 	if !bytes.Equal(before, after) {
 		t.Fatal("reconciliation mutated a future-schema state")
+	}
+}
+
+// The open-turn marker's transition discipline (HIW-O1): a write may open
+// a turn or conclude one, but never silently replace the turn in flight —
+// that would mask a missed conclusion.
+func TestOpenTurnImmutableWhileInFlight(t *testing.T) {
+	_, state, _ := initMission(t)
+	marker := func(turnID string) map[string]any {
+		return map[string]any{
+			"turnId": turnID, "cycle": 1,
+			"preTree":  strings.Repeat("a", 40),
+			"sequence": 0, "segment": 0,
+			"openedAt": "2026-08-18T00:00:00Z",
+		}
+	}
+	propose := func(mutate func(doc map[string]any)) error {
+		_, hash, _ := VerifyStateShape(state)
+		doc, _ := readStateDoc(state)
+		mutate(doc)
+		source := state + ".src"
+		if err := atomicWriteJSON(source, doc); err != nil {
+			t.Fatal(err)
+		}
+		return WriteState(state, source, hash)
+	}
+	if err := propose(func(doc map[string]any) { doc["openTurn"] = marker("turn-one") }); err != nil {
+		t.Fatalf("opening a turn from null must be legal: %v", err)
+	}
+	err := propose(func(doc map[string]any) { doc["openTurn"] = marker("turn-two") })
+	if err == nil || !strings.Contains(err.Error(), "openTurn is immutable") {
+		t.Fatalf("replacing the turn in flight must be refused, got %v", err)
+	}
+	if err := propose(func(doc map[string]any) { doc["openTurn"] = nil }); err != nil {
+		t.Fatalf("concluding the open turn must be legal: %v", err)
 	}
 }

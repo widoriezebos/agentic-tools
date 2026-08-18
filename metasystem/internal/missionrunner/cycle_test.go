@@ -10,14 +10,16 @@ import (
 
 func cycleState(streams map[string]any) map[string]any {
 	return map[string]any{
-		"status":      "running",
-		"parkReason":  nil,
-		"gatePassed":  false,
-		"streams":     streams,
-		"turnLog":     []any{},
-		"ledger":      map[string]any{"cycles": json.Number("2"), "cycleBudget": json.Number("6")},
-		"fences":      map[string]any{"startedAt": "2026-08-09T00:00:00Z", "cycles": json.Number("2"), "jobs": json.Number("0"), "activeJobs": json.Number("0")},
-		"waitingList": []any{},
+		"status":         "running",
+		"parkReason":     nil,
+		"gatePassed":     false,
+		"streams":        streams,
+		"turnLog":        []any{},
+		"ledger":         map[string]any{"cycles": json.Number("2"), "cycleBudget": json.Number("6")},
+		"fences":         map[string]any{"startedAt": "2026-08-09T00:00:00Z", "cycles": json.Number("2"), "jobs": json.Number("0"), "activeJobs": json.Number("0")},
+		"waitingList":    []any{},
+		"integrity":      map[string]any{"sequence": json.Number("4")},
+		"workspaceTaint": map[string]any{"next": json.Number("1"), "segment": json.Number("0"), "entries": []any{}},
 	}
 }
 
@@ -92,6 +94,7 @@ func TestConcludeTurnStatusDecision(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
+			seedWallEvidence(t, root, "demo", turn.TurnID)
 			proposed, err := ConcludeTurn(root, "demo", cycleState(tc.streams), turn, TurnConclusion{GatePassed: tc.gatePassed})
 			if err != nil {
 				t.Fatal(err)
@@ -110,6 +113,7 @@ func TestConcludeTurnRecordsTheTurn(t *testing.T) {
 	seedFences(t, root, mission)
 	writeJSONFile(t, filepath.Join(asksDirPath(root, mission), "open.json"), map[string]any{"askId": "open", "answeredAt": nil})
 	measurement := map[string]any{"metrics": map[string]any{"speed": "1.2"}, "guards": map[string]any{}, "candidateSha": "abc"}
+	seedWallEvidence(t, root, mission, turn.TurnID)
 	proposed, err := ConcludeTurn(root, mission, cycleState(activeStreams()), turn, TurnConclusion{
 		SessionID:      "sess-1",
 		Measurement:    measurement,
@@ -180,6 +184,7 @@ func TestConcludeFaultedTurnEmptyVerdict(t *testing.T) {
 		Annotations:  []string{"Return: rejected:session identity"},
 	}
 	state := cycleState(activeStreams())
+	seedWallEvidence(t, root, mission, turn.TurnID)
 	proposed, err := ConcludeFaultedTurn(root, mission, state, turn, fault, measurement, false, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -239,6 +244,7 @@ func TestConcludeFaultedTurnStatusMatrix(t *testing.T) {
 			root := t.TempDir()
 			fault := TurnFault{Outcome: "failed", Detail: "x", FeedsBreaker: tc.feedsBreaker,
 				Annotations: []string{"Return: rejected:x"}}
+			seedWallEvidence(t, root, "demo", turn.TurnID)
 			proposed, err := ConcludeFaultedTurn(root, "demo", cycleState(tc.streams), turn, fault, nil, tc.gatePassed, tc.failures)
 			if err != nil {
 				t.Fatal(err)
@@ -261,6 +267,7 @@ func TestConcludeFaultedTurnCapped(t *testing.T) {
 	turn := testTurn()
 	fault := TurnFault{Outcome: "capped", Detail: "host turn reached host.turn-cap-min",
 		FeedsBreaker: true, Annotations: []string{"Outcome: capped"}}
+	seedWallEvidence(t, root, "demo", turn.TurnID)
 	proposed, err := ConcludeFaultedTurn(root, "demo", cycleState(activeStreams()), turn, fault, nil, false, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -277,6 +284,7 @@ func TestConcludeFaultedTurnCapped(t *testing.T) {
 func TestRecordFailureProposal(t *testing.T) {
 	root := t.TempDir()
 	turn := testTurn()
+	seedWallEvidence(t, root, "demo", turn.TurnID)
 	proposed, err := RecordFailureProposal(root, "demo", cycleState(activeStreams()), turn, "host exited non-zero (3)", "failed", 1)
 	if err != nil {
 		t.Fatal(err)
@@ -292,6 +300,7 @@ func TestRecordFailureProposal(t *testing.T) {
 		t.Fatalf("a failed turn still spends its cycle: %v", proposed["ledger"])
 	}
 
+	seedWallEvidence(t, root, "demo", turn.TurnID)
 	parked, err := RecordFailureProposal(root, "demo", cycleState(activeStreams()), turn, "start-unverified", "failed", 2)
 	if err != nil {
 		t.Fatal(err)
@@ -360,5 +369,50 @@ func TestParkProposalStopLossAndOtherReasons(t *testing.T) {
 	}
 	if len(fence.Asks) != 0 || fence.State["parkReason"] != "fence" {
 		t.Fatalf("only host-failure and stop-loss parks raise their own ask: %v", fence.Asks)
+	}
+}
+
+// Every conclusion path kills the open-turn marker in the same write that
+// appends the turn-log entry (HIW-O1): accepted, faulted, and failed turns
+// all leave openTurn null — a marker that survives its turn's conclusion
+// would let the next turn open against a stale sequence point.
+func TestConclusionsClearTheOpenTurnMarker(t *testing.T) {
+	turn := testTurn()
+	marker := map[string]any{
+		"turnId": turn.TurnID, "cycle": turn.Cycle,
+		"preTree":  strings.Repeat("a", 40),
+		"sequence": json.Number("4"), "segment": json.Number("0"),
+		"openedAt": "2026-08-18T00:00:00Z",
+	}
+	openState := func() map[string]any {
+		state := cycleState(activeStreams())
+		state["openTurn"] = marker
+		return state
+	}
+	root := t.TempDir()
+	seedWallEvidence(t, root, "demo", turn.TurnID)
+	accepted, err := ConcludeTurn(root, "demo", openState(), turn, TurnConclusion{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted["openTurn"] != nil {
+		t.Fatalf("accepted conclusion left the turn open: %v", accepted["openTurn"])
+	}
+	seedWallEvidence(t, root, "demo", turn.TurnID)
+	faulted, err := ConcludeFaultedTurn(root, "demo", openState(), turn,
+		TurnFault{Outcome: "failed", Detail: "rejected return", FeedsBreaker: true}, nil, false, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if faulted["openTurn"] != nil {
+		t.Fatalf("faulted conclusion left the turn open: %v", faulted["openTurn"])
+	}
+	seedWallEvidence(t, root, "demo", turn.TurnID)
+	failed, err := RecordFailureProposal(root, "demo", openState(), turn, "host exited non-zero (3)", "failed", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed["openTurn"] != nil {
+		t.Fatalf("failure record left the turn open: %v", failed["openTurn"])
 	}
 }

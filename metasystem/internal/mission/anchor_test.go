@@ -80,8 +80,9 @@ func TestAnchorAndVerifyRoundTrip(t *testing.T) {
 	if !hashRe.MatchString(hash) || seq < 1 {
 		t.Fatalf("unexpected verify result: seq=%d hash=%q", seq, hash)
 	}
-	// The anchor commit carries the mission trailers.
-	log := gitCmd(t, repo, "log", "-1", "--format=%B")
+	// The anchor commit carries the mission trailers — on the
+	// runner-owned anchor ref, never the mission branch (slice-5 r4).
+	log := gitCmd(t, repo, "log", "-1", "--format=%B", "refs/metasystem/missions/demo/state-anchors")
 	if !strings.Contains(log, "Mission-Id: demo") || !strings.Contains(log, "Mission-Cycle: 1") {
 		t.Fatalf("anchor commit missing trailers:\n%s", log)
 	}
@@ -251,5 +252,155 @@ func TestReconcileParksOnLedgerBehindState(t *testing.T) {
 	doc, _ := readStateDoc(state)
 	if r, _ := doc["parkReason"].(string); r != "state-integrity" {
 		t.Fatalf("the mission should be parked for state-integrity, got %q", r)
+	}
+}
+
+// advanceStateOneStep performs one legal compare-and-write without
+// anchoring — the exact heal-crash lag shape.
+func advanceStateOneStep(t *testing.T, state string) {
+	t.Helper()
+	_, hash, _ := VerifyStateShape(state)
+	doc, _ := readStateDoc(state)
+	doc["fences"].(map[string]any)["jobs"] = 1
+	src := state + ".lag.src"
+	if err := atomicWriteJSON(src, doc); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteState(state, src, hash); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The heal-crash lag (slice-5 round-6/7): an anchor exactly one state
+// step behind, with identical ledger truth, re-anchors and reconciles.
+func TestReconcileHealsAnchorLag(t *testing.T) {
+	repo, state, ledger := anchoredMission(t)
+	advanceStateOneStep(t, state)
+	code, err := Reconcile(state, repo, ledger)
+	if code != 0 || err != nil {
+		t.Fatalf("a one-step anchor lag must heal: %d %v", code, err)
+	}
+	// The heal re-anchored: verification now passes outright.
+	if _, _, err := VerifyStateWithAnchor(state, repo, ledger); err != nil {
+		t.Fatalf("the healed state must verify: %v", err)
+	}
+}
+
+// A forged child commit on the anchor ref — matching trailers, no ledger
+// blob — must PARK, never launder the evidence (round-7).
+func TestReconcileParksForgedAnchorTip(t *testing.T) {
+	repo, state, ledger := anchoredMission(t)
+	advanceStateOneStep(t, state)
+	doc, _ := readStateDoc(state)
+	integrity, _ := doc["integrity"].(map[string]any)
+	previous, _ := integrity["previousHash"].(string)
+	lHash, err := ledgerHash(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := "refs/metasystem/missions/demo/state-anchors"
+	tip := strings.TrimSpace(gitCmd(t, repo, "rev-parse", ref))
+	tree := strings.TrimSpace(gitCmd(t, repo, "rev-parse", tip+"^{tree}"))
+	message := "mission(demo): forged anchor\n\nMission-Id: demo\nMission-State-Hash: " + previous +
+		"\nMission-Ledger-SHA256: " + lHash + "\nMission-Ledger-Path: forged.md\nMission-Cycle: 1"
+	forged := strings.TrimSpace(gitCmd(t, repo, "commit-tree", tree, "-p", tip, "-m", message))
+	gitCmd(t, repo, "update-ref", ref, forged)
+
+	code, _ := Reconcile(state, repo, ledger)
+	if code != 3 {
+		t.Fatalf("a forged anchor tip must park, got code %d", code)
+	}
+	doc, _ = readStateDoc(state)
+	if doc["parkReason"] != "state-integrity" {
+		t.Fatalf("the forgery must park state-integrity: %v", doc["parkReason"])
+	}
+}
+
+// Every malformed-tip shape over an OLDER VALID anchor parks (round-8):
+// these pin tip-only lookup (no scan-past) and each required trailer
+// independently — the parent commit below the forged tip is a complete,
+// valid anchor that scan-past behavior would wrongly accept.
+func TestReconcileParksMalformedAnchorTips(t *testing.T) {
+	cases := []struct {
+		name    string
+		mission string
+		drop    string
+	}{
+		{"wrong mission id", "other", ""},
+		{"missing state hash", "demo", "Mission-State-Hash"},
+		{"missing ledger sha", "demo", "Mission-Ledger-SHA256"},
+		{"missing ledger path", "demo", "Mission-Ledger-Path"},
+		{"missing cycle", "demo", "Mission-Cycle"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, state, ledger := anchoredMission(t)
+			advanceStateOneStep(t, state)
+			doc, _ := readStateDoc(state)
+			integrity, _ := doc["integrity"].(map[string]any)
+			previous, _ := integrity["previousHash"].(string)
+			lHash, err := ledgerHash(ledger)
+			if err != nil {
+				t.Fatal(err)
+			}
+			trailers := map[string]string{
+				"Mission-Id": tc.mission, "Mission-State-Hash": previous,
+				"Mission-Ledger-SHA256": lHash, "Mission-Ledger-Path": "ledger.md",
+				"Mission-Cycle": "1",
+			}
+			delete(trailers, tc.drop)
+			message := "mission(demo): forged anchor\n"
+			for _, key := range []string{"Mission-Id", "Mission-State-Hash", "Mission-Ledger-SHA256", "Mission-Ledger-Path", "Mission-Cycle"} {
+				if value, ok := trailers[key]; ok {
+					message += "\n" + key + ": " + value
+				}
+			}
+			ref := "refs/metasystem/missions/demo/state-anchors"
+			tip := strings.TrimSpace(gitCmd(t, repo, "rev-parse", ref))
+			tree := strings.TrimSpace(gitCmd(t, repo, "rev-parse", tip+"^{tree}"))
+			forged := strings.TrimSpace(gitCmd(t, repo, "commit-tree", tree, "-p", tip, "-m", message))
+			gitCmd(t, repo, "update-ref", ref, forged)
+
+			code, _ := Reconcile(state, repo, ledger)
+			if code != 3 {
+				t.Fatalf("a malformed tip must park, got code %d", code)
+			}
+			after, _ := readStateDoc(state)
+			if after["parkReason"] != "state-integrity" {
+				t.Fatalf("park reason: %v", after["parkReason"])
+			}
+		})
+	}
+}
+
+// A tip whose trailers are COMPLETE and correct but whose tree lacks the
+// declared blob parks — the committed-blob check exercised alone
+// (round-8: the earlier forged-tip bed died at the path mismatch first).
+func TestReconcileParksAnchorTipWithoutBlob(t *testing.T) {
+	repo, state, ledger := anchoredMission(t)
+	advanceStateOneStep(t, state)
+	doc, _ := readStateDoc(state)
+	integrity, _ := doc["integrity"].(map[string]any)
+	previous, _ := integrity["previousHash"].(string)
+	lHash, err := ledgerHash(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := "mission(demo): forged anchor\n\nMission-Id: demo\nMission-State-Hash: " + previous +
+		"\nMission-Ledger-SHA256: " + lHash + "\nMission-Ledger-Path: ledger.md\nMission-Cycle: 1"
+	ref := "refs/metasystem/missions/demo/state-anchors"
+	tip := strings.TrimSpace(gitCmd(t, repo, "rev-parse", ref))
+	// The well-known empty tree: correct path declared, no blob present.
+	forged := strings.TrimSpace(gitCmd(t, repo, "commit-tree",
+		"4b825dc642cb6eb9a060e54bf8d69288fbee4904", "-p", tip, "-m", message))
+	gitCmd(t, repo, "update-ref", ref, forged)
+
+	code, _ := Reconcile(state, repo, ledger)
+	if code != 3 {
+		t.Fatalf("a blob-less anchor tip must park, got code %d", code)
+	}
+	after, _ := readStateDoc(state)
+	if after["parkReason"] != "state-integrity" {
+		t.Fatalf("park reason: %v", after["parkReason"])
 	}
 }

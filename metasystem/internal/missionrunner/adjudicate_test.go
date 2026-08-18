@@ -274,6 +274,7 @@ func TestAdjudicate(t *testing.T) {
 			map[string]any{"streamId": "s-app", "reasonClass": "red-test", "question": "line one\nline two"},
 			map[string]any{"streamId": "s-app", "reasonClass": "bogus", "question": "?"},
 		},
+		"certified": []any{},
 	}
 	state := adjudicationState()
 	verdict, err := Adjudicate(root, mission, turn, state, returned, "2026-08-10T00:00:00Z")
@@ -369,6 +370,7 @@ func TestAdjudicateAskIDCollision(t *testing.T) {
 		"askCandidates": []any{
 			map[string]any{"streamId": "s-app", "reasonClass": "red-test", "question": "?"},
 		},
+		"certified": []any{},
 	}
 	verdict, err := Adjudicate(root, mission, turn, adjudicationState(), returned, "2026-08-10T00:00:00Z")
 	if err != nil {
@@ -388,6 +390,7 @@ func TestAdjudicateNoOpTransitionIsLegal(t *testing.T) {
 			map[string]any{"streamId": "s-db", "requestedState": "parked-reserved", "reason": "still waiting"},
 		},
 		"askCandidates": []any{},
+		"certified":     []any{},
 	}
 	verdict, err := Adjudicate(root, "demo", turn, adjudicationState(), returned, "2026-08-10T00:00:00Z")
 	if err != nil {
@@ -410,6 +413,7 @@ func TestAdjudicateParkedRequestNeedsReason(t *testing.T) {
 			map[string]any{"streamId": "s-app", "requestedState": "parked-reserved", "reason": ""},
 		},
 		"askCandidates": []any{},
+		"certified":     []any{},
 	}
 	verdict, err := Adjudicate(root, "demo", turn, adjudicationState(), returned, "2026-08-10T00:00:00Z")
 	if err != nil {
@@ -440,6 +444,7 @@ func TestAdjudicateRejectsStopLossRequest(t *testing.T) {
 		"askCandidates": []any{
 			map[string]any{"streamId": "s-db", "reasonClass": "red-test", "question": "which way?"},
 		},
+		"certified": []any{},
 	}
 	state := adjudicationState()
 	verdict, err := Adjudicate(root, mission, turn, state, returned, "2026-08-17T00:00:00Z")

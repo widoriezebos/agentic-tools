@@ -2,6 +2,7 @@ package host
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 )
 
@@ -101,6 +102,14 @@ func FakeReturn(turnPath, statePath, outputPath, behavior, root string) error {
 			"role":   "verifier",
 			"stream": active,
 		}}
+	case "solo-build":
+		// The D99 shape: the host authors a product file in the checkout
+		// and returns a clean empty-dispatch envelope — the wall's whole
+		// reason to exist. The write is TRACKED product content, outside
+		// artifacts/ and any declared host-artifact set.
+		if err := os.WriteFile(filepath.Join(root, "solo.go"), []byte("package solo\n"), 0o644); err != nil {
+			return fmt.Errorf("write solo-build product file: %w", err)
+		}
 	case "close-stream":
 		value["streamUpdatesRequested"] = []any{map[string]any{
 			"streamId":       active,
