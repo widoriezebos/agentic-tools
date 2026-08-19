@@ -342,7 +342,6 @@ git -C "$srcrepo" -c user.name=kit -c user.email=kit@example.invalid commit -qm 
   provision_output="$tmp/provision-bm-1.out"
   provision_identity=(
     env
-    METASYSTEM_GENESIS_AUTHORITY_ROOT="$top/metasystem"
     GIT_AUTHOR_NAME=metasystem-fixture
     GIT_AUTHOR_EMAIL=metasystem-fixture@example.invalid
     GIT_COMMITTER_NAME=metasystem-fixture

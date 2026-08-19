@@ -36,15 +36,23 @@ func Authorize(mode string, classification map[string]any, job string) error {
 	}
 
 	if mode == "genesis" {
-		// Genesis writes seed a control plane that does not exist
-		// yet — a virgin root has no lease anyone could hold, so
-		// holder-only would protect nothing and refuse everything
-		// (the provisioning break, provision-genesis-authority). A
-		// main agent seeds it; machinery classes never do.
-		if class == "MAIN" {
+		// Genesis baselines a ledger in a root with no accepted
+		// baseline. The human and the holder are admitted above.
+		// Anyone else — a main without the lease, a delegate, a
+		// helper — is admitted only when the ledger it would baseline
+		// is adoption-shaped: goal-free, on a checkout whose history
+		// carries no ledger (the verb layer computes the flag from the
+		// root; the store re-judges it under its lock). That is the
+		// whole of what adoption states, and it is what lets every
+		// provisioning caller — a terminal, an announced session, a
+		// session whose announcement lapsed, a fixture under agent
+		// ancestry, the kit gate in a delegate sandbox — seed a new
+		// control plane, while nobody but the holder puts intent into
+		// one that exists.
+		if shaped, _ := classification["adoptionShaped"].(bool); shaped {
 			return nil
 		}
-		return fmt.Errorf("genesis admits only the human or a main agent")
+		return fmt.Errorf("genesis admits a non-holder only for a goal-free ledger on a checkout whose history carries none")
 	}
 
 	if mode == "holder-only" {

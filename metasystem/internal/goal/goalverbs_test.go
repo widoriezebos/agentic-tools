@@ -551,3 +551,55 @@ func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
 		t.Fatalf("genesis admission must still work on a virgin store: %v", err)
 	}
 }
+
+// Genesis is goal-free-only for every non-holder (above) AND, for every
+// non-holder that is not the human, refused outright when the checkout's
+// history carries a ledger: a deleted baseline on an initialized project
+// is the holder's to restore, and rm-then-reconcile must not become a
+// ledger rewrite a merge carries. The human keeps today's rule.
+func TestGenesisRefusesTrackedLedgerForNonHolder(t *testing.T) {
+	s := testStore(t)
+	gitOK(t, s.Root, "init", "-q")
+	if _, err := s.DeclareFree(human); err != nil {
+		t.Fatalf("declare-free: %v", err)
+	}
+	gitOK(t, s.Root, "add", ".")
+	gitOK(t, s.Root, "commit", "-qm", "adopted")
+	if err := os.Remove(BaselinePath(s.Root)); err != nil {
+		t.Fatal(err)
+	}
+	for _, caller := range []Caller{
+		{Class: "MAIN", Holder: false, Genesis: true},
+		{Class: "DELEGATE", Holder: false, Genesis: true},
+		{Class: "ADAPTER-SUPERVISOR", Holder: false, Genesis: true},
+	} {
+		if _, err := s.Reconcile(caller); err == nil || !strings.Contains(err.Error(), "committed history") {
+			t.Fatalf("%s: a tracked ledger must refuse a non-holder genesis: %v", caller.Class, err)
+		}
+	}
+	if _, err := s.Reconcile(Caller{Class: "HUMAN", Genesis: true}); err != nil {
+		t.Fatalf("the human keeps the goal-free genesis path: %v", err)
+	}
+	if err := os.Remove(BaselinePath(s.Root)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reconcile(mainHolder); err != nil {
+		t.Fatalf("the holder restores: %v", err)
+	}
+}
+
+// On a root whose history carries no ledger, a goal-free ledger is
+// adoption-shaped for any class — the provisioning flows under agent
+// ancestry (the adopt fixtures, the kit gate, a session whose
+// announcement lapsed) all seed through here.
+func TestGenesisAdmitsAdoptionShapedLedgerForMachinery(t *testing.T) {
+	s := testStore(t)
+	os.MkdirAll(filepath.Join(s.Root, "plans"), 0o755)
+	os.WriteFile(LedgerPath(s.Root), []byte(goalFreeLedger), 0o644)
+	if _, err := s.Reconcile(Caller{Class: "DELEGATE", Genesis: true}); err != nil {
+		t.Fatalf("a delegate-shaped adopter must seed a goal-free ledger: %v", err)
+	}
+	if !s.BaselineMatches() {
+		t.Fatal("genesis did not write the baseline")
+	}
+}
