@@ -1,12 +1,40 @@
 #!/usr/bin/env bash
-# The Go engine gate (plans/go-migration.md): gofmt, vet, the race-detector
-# unit suite, and the build — run AHEAD of the shell fixtures so a broken
-# binary fails fast and the fixtures that drive it have something to drive.
+# The Go engine gate (plans/go-migration.md), stages ordered cheapest-first
+# by measured cost: gofmt, vet, staticcheck, the linux cross-builds, and
+# govulncheck — all seconds on a warm cache — run before the race-detector
+# suites, the build, and the coverage ratchet, which own the minutes. The
+# whole gate runs AHEAD of the shell fixtures so a broken binary fails fast
+# and the fixtures that drive it have something to drive.
 # Sourced by validate-metasystem.sh; also runnable standalone.
+#
+# Fast mode (go-gate.sh --fast) runs only the static stages — gofmt, vet,
+# staticcheck — plus the engine build: seconds end to end, for tight edit
+# loops. It is not a landing gate: no tests, no cross-builds, no
+# govulncheck, no coverage ratchet, and it refuses the witness protocol
+# outright. The full gate remains the landing requirement. The switch is
+# the explicit flag only, never an environment variable: an exported
+# variable outlives the edit loop it served and would silently weaken the
+# very suites that make this gate a landing requirement.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 cd "$root"
+
+# The fast switch is argument-only (see the header): every caller states
+# fast mode at the call site or gets the full gate.
+gate_fast=0
+if [[ "${1:-}" == --fast ]]; then
+  gate_fast=1
+fi
+
+# Fast mode is an edit-loop tool, not a landing gate: it must neither
+# consume nor produce a witness, so a witness handoff arriving alongside it
+# is a contradiction to refuse loudly — before any branch, including the
+# adopted-checkout skip, can swallow it.
+if [[ "$gate_fast" == 1 && ( -n "${METASYSTEM_GATE_WITNESS:-}" || -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ) ]]; then
+  echo "go gate: fast mode cannot join the witness protocol; run the full gate" >&2
+  exit 1
+fi
 
 # A checkout without a Go module has not adopted the Go engine yet (adopt.sh
 # ships it as a Phase 4 port, plans/go-migration.md). It runs pure
@@ -46,9 +74,13 @@ fi
 # die with their process. Skipped only where no binary exists yet (the
 # bootstrap residual, bounded by this very gate's build step).
 go_gate_marker=
+go_gate_name=go-gate.sh
+if [[ "$gate_fast" == 1 ]]; then
+  go_gate_name="go-gate.sh --fast"
+fi
 if [[ -x "$root/bin/metasystem" ]]; then
   go_gate_marker=$("$root/bin/metasystem" gate register --root "$root" \
-    --gate go-gate.sh --pid $$) || {
+    --gate "$go_gate_name" --pid $$) || {
     echo "go gate: registration failed; refusing to run invisibly" >&2
     exit 1
   }
@@ -150,27 +182,6 @@ if [[ -n "${METASYSTEM_GATE_WITNESS:-}" ]]; then
   echo "go gate: witness not accepted; running the full gate" >&2
 fi
 
-# The snapshot-gated invocation computes its digest up front: the snapshot
-# cannot change, and the build below stamps the binary with this digest
-# (the snapshot has no git history to stamp from).
-witness_digest=
-if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off && ! witness_refusal >/dev/null; then
-  witness_digest=$(gate_input_digest)
-  export METASYSTEM_BUILD_STAMP="witness-${witness_digest:0:12}"
-  # A fresh snapshot has no bin/metasystem yet, and the binary-driven
-  # fixtures (preflight and friends) SKIP without it — the gate builds
-  # only after the tests, so a snapshot would deterministically measure
-  # the skipped-fixture coverage (the 65.7% trap) and refuse its own
-  # ratchet. Build first; the fence exempts this gate's own chain.
-  bash scripts/agents/go-build.sh >/dev/null \
-    || { echo "go gate: snapshot pre-build failed" >&2; exit 1; }
-  # And compile the covered test binaries before the timed tests run:
-  # -cover instrumentation is path-dependent, so a warm plain-race cache
-  # still leaves a fresh snapshot's covered build cold, and compiling
-  # thirty packages during the timing fixtures starves them.
-  go test -race -cover -count=1 -run NoSuchTestEver ./internal/... >/dev/null 2>&1 || true
-fi
-
 # Rebuilding bin/metasystem while a FOREIGN gate run is live would swap the
 # binary under that run mid-flight. The suite that sourced or spawned this
 # gate is its own run — the fence exempts this process's chain — so only a
@@ -205,6 +216,23 @@ fi
 
 go vet ./... || { echo "go gate: go vet failed" >&2; exit 1; }
 
+# staticcheck, pinned (go-production-grade Phase 0d): the frozen version
+# keeps every checkout judging by the same rules, and a tool run that
+# cannot start fails the gate loudly rather than skipping silently. It
+# rides the compile cache vet just filled, so its verdict lands seconds
+# after vet's.
+go run honnef.co/go/tools/cmd/staticcheck@2025.1 ./... \
+  || { echo "go gate: staticcheck 2025.1 refused (or could not run)" >&2; exit 1; }
+
+# Fast mode stops here: the static verdicts are in, and the build proves
+# the engine still compiles while handing the edit loop a fresh binary.
+if [[ "$gate_fast" == 1 ]]; then
+  bash scripts/agents/go-build.sh \
+    || { echo "go gate: build failed" >&2; exit 1; }
+  echo "go gate: fast mode passed (gofmt, vet, staticcheck, build); the full gate remains the landing requirement"
+  exit 0
+fi
+
 # The standing Linux signal (go-production-grade Phase 1, P3): a darwin-only
 # regression is invisible until someone tries, so both Linux architectures
 # cross-compile in every gate run. Seconds of cost, no runner needed (KI-10).
@@ -213,13 +241,33 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./... \
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./... \
   || { echo "go gate: linux/arm64 cross-build failed" >&2; exit 1; }
 
-# staticcheck and govulncheck, pinned (go-production-grade Phase 0d, human
-# decision 2026-08-11). Versions are frozen here; a network-unreachable tool
-# run fails the gate loudly rather than skipping silently.
-go run honnef.co/go/tools/cmd/staticcheck@2025.1 ./... \
-  || { echo "go gate: staticcheck 2025.1 refused (or could not run)" >&2; exit 1; }
+# govulncheck, pinned like staticcheck (Phase 0d) and last of the static
+# stages: its cost belongs to the vulnerability-database fetch, which the
+# network owns, so every deterministic check gets to fail first.
 go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... \
   || { echo "go gate: govulncheck v1.1.4 refused (or could not run)" >&2; exit 1; }
+
+# The snapshot-gated invocation (witness write) prepares here, after the
+# static verdicts and just ahead of the tests this preparation serves: the
+# digest describes bytes nothing above mutates, and the stamp exports
+# before every build that consumes it.
+witness_digest=
+if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off && ! witness_refusal >/dev/null; then
+  witness_digest=$(gate_input_digest)
+  export METASYSTEM_BUILD_STAMP="witness-${witness_digest:0:12}"
+  # A fresh snapshot has no bin/metasystem yet, and the binary-driven
+  # fixtures (preflight and friends) SKIP without it — the gate installs
+  # its binary only after the tests, so a snapshot would deterministically
+  # measure the skipped-fixture coverage and refuse its own ratchet. Build
+  # first; the fence exempts this gate's own chain.
+  bash scripts/agents/go-build.sh >/dev/null \
+    || { echo "go gate: snapshot pre-build failed" >&2; exit 1; }
+  # And compile the covered test binaries before the timed tests run:
+  # -cover instrumentation is path-dependent, so a warm plain-race cache
+  # still leaves a fresh snapshot's covered build cold, and compiling
+  # thirty packages during the timing fixtures starves them.
+  go test -race -cover -count=1 -run NoSuchTestEver ./internal/... >/dev/null 2>&1 || true
+fi
 
 # The coverage floor is executable, not prose (plans/kill-shell.md, the
 # production-grade 0c ratchet pulled forward): the test output feeds the
