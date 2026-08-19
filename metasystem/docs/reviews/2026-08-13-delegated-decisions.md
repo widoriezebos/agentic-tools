@@ -1383,3 +1383,105 @@ landing shipped with, full-suite guest validation deferred with the VM
 seals. Goal kit-authority-reexpress is concluded; branch
 kit-authority-handoff (10022e0) remains as reference until Wido deletes
 it.
+
+## D118 — The backlog sync sheds its history-authentication machinery (2026-08-19)
+
+**The situation in plain English.** The multi-machine backlog design
+(D115) went through seven critique rounds. From round 4 onward the
+critic pushed on one theme: if machines trust each other's ledger
+writes, prove it; if they don't, catch forgery. Each round I answered
+with more machinery — committed proof envelopes with an exact byte
+grammar, per-commit semantic replay of the whole ledger history,
+two-commit genesis anchors, canonical repair checkpoints with anchor
+chains, a nine-phase crash journal. At round 7 the finding count went
+UP (nine to fourteen), and the critic's own lead finding turned the
+question around: D115 asks for git-synced claims, dependencies,
+merge-safe mutation, and migration — none of which needs a history
+interpreter. Show why the smaller design fails, or reduce scope.
+
+**The decision.** Reduce scope. Three reasons, each sufficient:
+
+1. The critic PROVED the heavy machinery cannot deliver its own
+   promise: a fresh clone cannot detect an erased repair checkpoint
+   without external trusted state (round-7 finding 3 — the guarantee
+   is information-theoretically impossible inside git alone).
+2. The goals ledger lives in the same repository as the source code,
+   which has no history authentication at all. An adversary who can
+   forge ledger history can forge code. Guarding the backlog harder
+   than the codebase it steers protects nothing.
+3. Wido's standing rulings (D114 and the AGENTS.md work-contract
+   bullet): strictness guards invariants, never conveniences; where
+   strictness tips into brittleness, recover. Every replay-machinery
+   finding in rounds 5-7 was a defect OF the machinery, not of the
+   backlog. That is the complexity ratchet the rulings name.
+
+**What the reduced design keeps** — everything D115 actually asks
+for: one file per goal (merge safety by granularity), all mutations
+through goal verbs publishing via compare-and-swap on a fetched tip,
+full tree validation before any machine accepts a state (schema,
+integrity digests, dependency graph, claim and arc consistency),
+integrity digests per file as the tamper-evidence layer, the
+pre-commit guard against hand edits, claims with machine quota, arcs,
+the operator park lever, dependency-aware claiming, prune, the
+migration manifest, and the durable local/remote mode with a ledger
+identity check.
+
+**What it sheds** — the parts that authenticated HISTORY rather than
+guarding STATE: per-commit semantic replay, the proof-envelope byte
+grammar (one provenance trailer with the operation id stays), genesis
+anchor chains, the canonical repair-checkpoint protocol (a corrupted
+remote tree is now: refuse with the reason, a human fixes it with
+ordinary git, every clone re-validates the fixed tree), the merge
+rule (tree validation does not care how a tree came to be), and the
+nine-phase journal (collapsed to created / pushed / terminal with the
+same crash-recovery answer: refetch and look for your operation id).
+
+**The honest trust posture, stated once:** the ledger's defenses are
+tamper-EVIDENCE and accident-proofing — the same trust level as the
+repository around it. A cooperating-user fleet is the design point;
+an adversarial force-push is a repository-level event, not a ledger
+event.
+
+Round 8 of the critique reviews the reduced design under the
+both-must-agree covenant. If the critic shows a D115 requirement the
+smaller design fails to carry, the specific machinery that carries it
+returns — piecewise, with the finding as its justification.
+
+## D119 — The backlog-sync design converges at round 10 under the declared failsafe (2026-08-19)
+
+The design loop for the multi-machine backlog (D115, reduced by D118)
+closed today. Rounds 8 and 9 both upheld the reduced architecture and
+returned only executable-contract findings, so round 10 was declared
+the loop's failsafe round IN THE CRITIQUE INPUT ITSELF, with the
+disposition rule pre-committed: fixture-expressible findings become
+obligation-matrix rows and implementation begins; only a demonstrated
+D115-requirement failure or a shape-level defect reopens prose. This
+is the two-tier patience rule (D114 addenda) and the
+implementation-first ruling (D81) applied to a design loop.
+
+Round 10 returned: "no demonstrated D115 failure and no
+non-arbitrable architecture defect. Under the declared failsafe, the
+prose loop should stop," followed by eight fixture-expressible gaps
+and the verdict "CONVERGED — build it." All eight are folded into the
+obligation matrix (reconcile crash-refresh and persisted-base
+maintenance, the runner's full turn-boundary lifecycle, dead-owner
+recovery consistency with a confirmed-late terminal, the last
+merge-wording residue, displacement/acknowledgment closure legs, the
+hand-edit grammar's compound cases, and two manifest schema edges).
+Ten rounds total: 16→14→14→10→9→9→14→11→12→convergence, with the
+D118 scope reduction at round 7 as the turning point.
+
+Implementation now runs against the 16-row obligation matrix
+(BGS-1..16), two-clone fixtures over a local bare origin first, then
+the migration of the real queue asserting the reviewed expected map.
+The landing itself stays under the ordinary covenant: battery green
+and codex AGREE on the code.
+
+One lesson for the covenant-patience arc (critique-stop-rule +
+executable-covenant), recorded here so the mechanization inherits
+it: a design loop's failsafe round must be declared at LOOP START as
+standing policy, not mid-loop by judgment — this loop declared it at
+round 10 only because the operator's rulings existed and were
+remembered. The arc's charter should encode: stop-rule tier 1 = a
+round whose findings are all fixture-expressible closes the loop;
+tier 2 = a numbered failsafe round fixed before round 1.
