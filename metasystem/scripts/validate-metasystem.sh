@@ -444,6 +444,7 @@ for link in \
   scripts/agents/hosts/devin.sh \
   scripts/agents/hosts/fake.sh \
   scripts/agents/schemas/mission-state.schema.json \
+  scripts/agents/schemas/wall-evidence.schema.json \
   scripts/agents/adapters/fake.sh \
   scripts/agents/adapters/runtime-common.sh \
   scripts/agents/adapters/codex-config-filter.v1.json \

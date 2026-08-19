@@ -300,17 +300,36 @@ func (e *Engine) verifyState(statePath string, anchor bool) (map[string]any, err
 	return readDocLabeled(statePath, "mission state", 7)
 }
 
+// writeStateResolution is resolve-taint's writer: the only caller allowed
+// to land a typed resolution or a segment move (mission.WriteStateResolution;
+// slice-6 round-2 finding 1).
+func (e *Engine) writeStateResolution(statePath string, proposed map[string]any, expect string) (map[string]any, error) {
+	return e.writeStateWith(statePath, proposed, expect, mission.WriteStateResolution)
+}
+
 // writeState advances the state through its compare-and-write: the proposal
 // lands only against the hash the runner last read.
 func (e *Engine) writeState(statePath string, proposed map[string]any) (map[string]any, error) {
-	current, err := readDocLabeled(statePath, "mission state", 7)
-	if err != nil {
-		return nil, err
-	}
-	integrity, _ := current["integrity"].(map[string]any)
-	expected, ok := integrity["hash"].(string)
-	if !ok {
-		return nil, failf(7, "mission state integrity hash is unreadable")
+	return e.writeStateWith(statePath, proposed, "", mission.WriteState)
+}
+
+// writeStateWith lands one proposal. A non-empty expect PINS the
+// compare-and-write to a hash the caller VERIFIED (slice-6 round-3
+// finding 2: the resolution's base must be the anchor-verified read, not
+// whatever a reread finds); empty expect derives it from the current
+// file, the ordinary runner behavior.
+func (e *Engine) writeStateWith(statePath string, proposed map[string]any, expected string, write func(string, string, string) error) (map[string]any, error) {
+	if expected == "" {
+		current, err := readDocLabeled(statePath, "mission state", 7)
+		if err != nil {
+			return nil, err
+		}
+		integrity, _ := current["integrity"].(map[string]any)
+		hash, ok := integrity["hash"].(string)
+		if !ok {
+			return nil, failf(7, "mission state integrity hash is unreadable")
+		}
+		expected = hash
 	}
 	source, err := os.CreateTemp("", "mission-state-proposed.*.json")
 	if err != nil {
@@ -330,7 +349,7 @@ func (e *Engine) writeState(statePath string, proposed map[string]any) (map[stri
 	if err := source.Close(); err != nil {
 		return nil, err
 	}
-	if err := mission.WriteState(statePath, sourcePath, expected); err != nil {
+	if err := write(statePath, sourcePath, expected); err != nil {
 		// A proposal-validation refusal keeps its type: the conclude path
 		// parks adjudicated host content instead of dying on it (issue #3).
 		var proposal *mission.ProposalError
@@ -347,18 +366,25 @@ func (e *Engine) writeState(statePath string, proposed map[string]any) (map[stri
 }
 
 // anchorState writes the local anchor commit binding the state hash and
-// ledger. It runs through the binary rather than in-process so the anchor's
-// git author can be pinned to the acting identity per invocation and its
-// printed commit sha stays out of the runner's own output.
+// ledger — IN-PROCESS (slice-6 successor finding 4: the state-anchor CLI
+// verb is human-reserved now, and the runner is not a human); the acting
+// identity pins the git author through AnchorNamed.
 func (e *Engine) anchorState(statePath, ledgerPath, identityName string) error {
-	self, err := os.Executable()
-	if err != nil {
+	if err := mission.AnchorNamed(statePath, e.Root, ledgerPath, identityName, "", ""); err != nil {
+		return failf(3, "mission anchor refused: %s", strings.TrimSpace(err.Error()))
+	}
+	return nil
+}
+
+// anchorStatePinned is the resolution's anchor: it binds EXACTLY the
+// verified position — the state hash the resolution wrote and the ledger
+// bytes its recheck examined (successor finding 2).
+func (e *Engine) anchorStatePinned(statePath, ledgerPath, identityName, stateHash, ledgerSHA string) error {
+	if err := e.reclaimCheckout(); err != nil {
 		return err
 	}
-	stdout, stderr, code := runCaptured(e.Root, gitAuthorEnvironment(identityName), self,
-		"mission", "state-anchor", "--state", statePath, "--repo", e.Root, "--ledger", ledgerPath)
-	if code != 0 {
-		return failf(3, "mission anchor refused: %s", firstDetail(stderr, stdout))
+	if err := mission.AnchorNamed(statePath, e.Root, ledgerPath, identityName, stateHash, ledgerSHA); err != nil {
+		return failf(3, "mission anchor refused: %s", strings.TrimSpace(err.Error()))
 	}
 	return nil
 }
@@ -469,10 +495,27 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 		// open; the reserved-cycle heal below books any fence gap.
 		closed := deepCopyDoc(state)
 		closed["openTurn"] = nil
-		if _, err := e.writeState(statePath, closed); err != nil {
-			return "", "", nil, err
+		closedFinal, cerr := e.writeState(statePath, closed)
+		if cerr != nil {
+			return "", "", nil, cerr
 		}
-		if err := e.anchor(statePath, ledger, turnID); err != nil {
+		closedIntegrity, _ := closedFinal["integrity"].(map[string]any)
+		closedHash, _ := closedIntegrity["hash"].(string)
+		if e.preAnchorHook != nil {
+			// Test seam (round-14 finding 2): the movement must land
+			// BEFORE the pin is acquired, so a reverted post-write
+			// reread would select the moved bytes and anchor them.
+			e.preAnchorHook()
+		}
+		// The pin ORIGINATES at reconciliation's verified position
+		// (round-11 finding 3): the close writes no ledger bytes, so the
+		// lawful ledger sha is the one the anchor tip already certifies —
+		// a fresh reread would self-select any bytes moved since.
+		anchoredSHA, lerr := e.verifiedLedgerPin()
+		if lerr != nil {
+			return "", "", nil, lerr
+		}
+		if err := e.anchorStatePinned(statePath, ledger, turnID, closedHash, anchoredSHA); err != nil {
 			return "", "", nil, err
 		}
 		if state, err = e.verifyState(statePath, false); err != nil {
@@ -485,6 +528,27 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 	state, err = e.verifyState(statePath, true)
 	if err != nil {
 		return "", "", nil, err
+	}
+	// A resolution's crash tail — RESOLVED taint, ask still open —
+	// repairs here, AFTER reconciliation verified the anchor (slice-6
+	// successor finding 6: ask answers must never derive from unverified
+	// state), so a stale ask can never re-enter the waiting list or
+	// suppress the next violation's ask.
+	if err := e.repairResolvedTaintAsks(state); err != nil {
+		return "", "", nil, err
+	}
+	// Sticky evidence outranks the CYCLE FENCE (round-10 finding 2): the
+	// orphan sweep runs here too, before any new reservation can burn the
+	// last allowed cycle into a fence park that buries the violation.
+	if orphanTurn, orphanViolation := e.orphanedViolationEvidence(state); orphanViolation != "" {
+		orphanDir := filepath.Join(e.missionDir(), "turns", orphanTurn)
+		fences, _ := readJSONDoc(e.fencesPath())
+		fenceCycle, _ := jsonInt(fences["cycles"])
+		final, perr := e.parkWallViolation(statePath, ledger, orphanTurn, orphanDir, fenceCycle, orphanViolation, state, false)
+		if perr != nil {
+			return "", "", nil, perr
+		}
+		return statePath, ledger, final, nil
 	}
 	return statePath, ledger, state, nil
 }
@@ -719,7 +783,17 @@ func (e *Engine) applyPark(statePath, ledger, identityName string, outcome *Park
 		return nil, err
 	}
 	if err := e.anchor(statePath, ledger, identityName); err != nil {
-		return nil, err
+		// A park must SURVIVE an unanchorable ledger (round-11 finding
+		// 1): the tainted state is durable and the STOP works from it;
+		// the anchor lag heals once the disputed bytes are restored.
+		// Every other park cause still surfaces the anchor failure.
+		if reason, _ := outcome.State["parkReason"].(string); reason == "wall-violation" {
+			e.emit("wall-violation", "park anchor deferred: "+clipSummary(err.Error()), map[string]string{
+				"missionId": e.Mission, "error": err.Error(),
+			})
+		} else {
+			return nil, err
+		}
 	}
 	return updated, nil
 }
@@ -1322,6 +1396,37 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	diskState, err := readDocLabeled(c.statePath, "mission state", 3)
 	if err != nil {
 		return nil, true, err
+	}
+	// STICKY EVIDENCE without a marker (successor round-2 finding 2): a
+	// violation whose evidence landed but whose park crashed must
+	// re-execute before anything opens — even if the workspace was
+	// cleaned up in between, the detected violation is a fact.
+	if orphanTurn, orphanViolation := e.orphanedViolationEvidence(diskState); orphanViolation != "" {
+		orphanDir := filepath.Join(e.missionDir(), "turns", orphanTurn)
+		final, err := e.parkWallViolation(c.statePath, c.ledger, orphanTurn, orphanDir, cycle, orphanViolation, diskState, false)
+		return final, true, err
+	}
+	// E-CONTINUITY at reservation (slice-6 round-2 finding 3): between
+	// turns the filtered projection must still equal the current
+	// expected tree — the last accepted post-tree, or the resolution
+	// tree E(next) after a ruling. Anything else is drift the tree
+	// equation would silently grandfather as the next baseline, so it
+	// parks as a wall violation BEFORE a marker opens on it. The first
+	// reservation of a mission has no E-point yet: it defines E0.
+	if expectedNow := mission.CurrentExpectedTree(diskState); expectedNow != "" && expectedNow != preTree {
+		violation := fmt.Sprintf("workspace drifted between turns: the filtered projection %s does not equal the expected tree %s", preTree, expectedNow)
+		// The violation writes its wall.json evidence like every other
+		// (round-3 finding 7): the observed projection IS both the pre-
+		// and post-tree of a turn that never launched.
+		evidence := &wallInspection{PreTree: preTree, ExpectedTree: expectedNow, PostTree: preTree, Violation: violation}
+		if changed, derr := workspace.ChangedPaths(expectedNow, preTree); derr == nil {
+			evidence.Unaccounted = changed
+		}
+		if err := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), evidence.document()); err != nil {
+			return nil, true, err
+		}
+		final, err := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, violation, diskState, false)
+		return final, true, err
 	}
 	// The marker's occurrence identity is the CURRENT SEQUENCE POINT —
 	// the acceptance that produced this expected tree — never the raw

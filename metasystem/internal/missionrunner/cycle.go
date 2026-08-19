@@ -363,7 +363,16 @@ func parkOutcome(root, mission string, state map[string]any, reason, question, s
 	asksDir := asksDirPath(root, mission)
 	outcome := &ParkOutcome{Asks: []map[string]any{}}
 	newAskIDs := []string{}
-	if question != "" && !hasOpenAskWithReason(asksDir, reason) {
+	// A wall-violation ask suppresses a new one only while it is STILL
+	// RELEVANT — bound to a taint the state records as unresolved
+	// (slice-6 round-3 finding 6): a stale tail (resolved taint, crash
+	// before its answer landed) or an unbound ask must never strand the
+	// NEXT taint askless.
+	suppressed := hasOpenAskWithReason(asksDir, reason)
+	if reason == "wall-violation" {
+		suppressed = hasOpenWallAskForUnresolvedTaint(asksDir, proposed)
+	}
+	if question != "" && !suppressed {
 		streams, ok := proposed["streams"].(map[string]any)
 		if !ok || len(streams) == 0 {
 			return nil, fmt.Errorf("mission state has no streams")

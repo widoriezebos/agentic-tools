@@ -441,9 +441,16 @@ r1's laundering table, closed only by the unbuilt isolation tier.
 - TREE ANCHORS: `refs/metasystem/missions/<mission>/<treeId>`,
   created at snapshot, deleted at mission close by the runner.
 - TYPED RESOLUTION: a human-reserved verb, `mission resolve-taint
-  --mission M (--restore <treeId> | --adopt --taint <id> --reason
-  R)`, classifying HUMAN-only through the same authority matrix as
-  every reserved operation.
+  --mission M --taint <id> --by <name> --reason R (--restore <treeId>
+  | --adopt --waives <claim> [--waives <claim> ...])`, classifying
+  HUMAN-only through
+  the same authority matrix as every reserved operation. (AMENDED at
+  slice-6 landing, D109: the original sketch — restore without a
+  taint id, adoption without identity or waived claims — contradicted
+  this design's own resolution-record contract, which requires the
+  taint id, the resolver's identity, the reason, and at least one
+  named waived claim on adoption. The record contract is the
+  authority; the sketch now matches it.)
 - EVENTS (observability only; records are the authority):
   authorization-issued, authorization-consumed,
   authorization-refused, wall-passed, wall-violated,
@@ -502,7 +509,7 @@ r1's laundering table, closed only by the unbuilt isolation tier.
 | HIW-O3 | CRITICAL | hiw-critique-r3 §1-2 | Provenance verified (mission incarnation, stream, role, job digest); consumption is one-time via the acceptance write; the staleness predicate admits disjoint delayed returns and refuses the rest | missionrunner adjudication | adjudicate.go verification + acceptance append | cross-mission, replay, superseded, later-turn-disjoint, later-turn-overlap, unknown-base, same-file-drift (object-id mismatch), rename-endpoint, multi-authorization, resolution-induced-staleness fixtures; POSITIVE fixtures: authorization after a no-change turn, and fresh post-resolution work consuming against the new segment | mission fixture with delayed certification across turns | MISSING | implement |
 | HIW-O4 | CRITICAL | hiw-critique-r2 §2 | Exact ordered patch composition over the shared isolated-index primitive equals the accepted tree | shared git-tree primitive (one owner) | new internal/gittree package used by validator + runner | deletion, mode, symlink, binary, gitlink, order, overlap, non-application, crash-after-order-recorded-before-integration fixtures | conformance + wall over one real chain | MISSING | implement |
 | HIW-O5 | CRITICAL | hiw-critique-r1 §5 | Every host-exit path checks the wall; violation taints and parks before measurement or completion, outranking gate success | missionrunner cycle/lifecycle | cycle.go fault path rework | green-gate-after-mutation must park; mutation on capped, nonzero, malformed-return, and recovery exits each checked | scripted-host mission fixture writing product bytes | MISSING | implement |
-| HIW-O6 | CRITICAL | hiw-critique-r2 §4 | No new baseline while tainted; only typed RESTORE (exact equality) or ADOPT_DISPUTED_TREE clears; adoption earns no floor credit | mission resolve-taint verb + state chain | mission.go reserved verb | generic-answer refusal, restore mismatch, exact adoption, crash-recovery fixtures | tainted mission resolved both ways in a fixture | MISSING | implement |
+| HIW-O6 | CRITICAL | hiw-critique-r2 §4 | No new baseline while tainted; only typed RESTORE (exact equality) or ADOPT_DISPUTED_TREE clears; adoption earns no floor credit | internal/missionrunner/resolve.go + internal/mission/state.go | resolve.go verb; state.go custody + transition rules; anchor.go pinned anchors | wall_test.go (TestResolveTaint* incl. TestResolveTaintThroughWrapper both ways), state_test.go custody/transition, missionrunner_verbs_test.go grammar | tainted mission resolved both ways through the wrapper in wall_test.go TestResolveTaintThroughWrapper; live VM run at seal | READY_FOR_RUNTIME | VM seal validation |
 | HIW-O7 | CRITICAL | hiw-critique-r2 §3 | The tree partition is equation-complete and default-deny; protected paths refuse even inside declared locations; machine-path tracking refused at mission start | mission contract parser + wall + preflight | contract.go declaration grammar | protected-path, path-escape, symlink-ancestry, glob-grant, tracked-metadata-refusal, untracked-non-ignored refusal, tracked-and-ignored refusal, preflight-before-any-write (refusal leaves tree unchanged), authorization-vs-host-artifact overlap fixtures | preflight refusal on a tracking repo fixture | MISSING | implement |
 | HIW-O8 | HIGH | hiw-critique-r2 §5 | The interim rule text lands VERBATIM in both live authorities (host-turn-instruction.md, orchestrator.md), the doctrine narrows, and all four bm-2 completionGate.command fields carry the discipline sentence; interactive direct work is unaffected | prompt assembler + role/template + manifests | template/role bytes + manifest diffs | assembled-prompt byte test asserting the verbatim rule; interactive boundary test | a claude-host mission fixture turn showing the new prompt | MISSING | implement |
 | HIW-O9 | HIGH | hiw-critique-r3 fold of r2 §6 | The delegation floor counts only a validated implementer job with a nonempty patch whose unsuperseded authorization was consumed into the accepted post-tree | benchmark extractor + evidence schema | extractor.py floor rule | empty, sham, replayed, unapplied, adopted-tree fixtures | re-extraction of the D99 cohort must stay invalid | MISSING | implement |

@@ -8,6 +8,11 @@ Usage:
   scripts/agents/mission-runner.sh resume --mission <id> [--foreground]
   scripts/agents/mission-runner.sh status --mission <id>
   scripts/agents/mission-runner.sh answer --mission <id> --ask <ask-id> --answer <text>
+  scripts/agents/mission-runner.sh resolve-taint --mission <id> --taint <n> \
+      --restore <safe-tree> --by <name> --reason <text>
+  scripts/agents/mission-runner.sh resolve-taint --mission <id> --taint <n> \
+      --adopt --by <name> --reason <text> \
+      --waives <claim> [--waives <claim> ...]
 USAGE
 }
 

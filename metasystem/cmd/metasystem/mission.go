@@ -7,11 +7,15 @@ import (
 	"os"
 	"regexp"
 
+	"path/filepath"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
 var missionIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+var treeIDRe = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 
 // The mission-ledger family is the atomic owner of the stop-loss ledger
 // (init, append, verify, count).
@@ -68,6 +72,57 @@ func runMissionStateInit(args []string) int {
 	return 0
 }
 
+// stateVerbRoot walks a mission state path back to the repository root
+// (…/artifacts/agents/missions/<id>/state.json). Empty when the layout
+// does not match — classification then runs against the working
+// directory, where an unannounced caller classifies HUMAN.
+func stateVerbRoot(statePath string) string {
+	abs, err := filepath.Abs(statePath)
+	if err != nil {
+		return ""
+	}
+	// Symlinks resolve BEFORE the layout walk (slice-6 successor finding
+	// 4): an alias root symlinked into the real mission directory must
+	// classify against the real repository, not an empty decoy.
+	if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		abs = resolved
+	}
+	dir := filepath.Dir(abs)
+	for i := 0; i < 3; i++ {
+		dir = filepath.Dir(dir)
+	}
+	if filepath.Base(dir) != "artifacts" {
+		return ""
+	}
+	return filepath.Dir(dir)
+}
+
+// requireHumanStateCaller gates the state family's mutating verbs (HIW-O6,
+// slice-6 round-3 finding 1): the lease-holding runner is the only
+// ordinary writer and it writes in-process, so every CLI caller that
+// classifies as an announced agent — MAIN, DELEGATE, supervision,
+// adapter — refuses. The posture stays the design's cooperative
+// tamper-evident tier: classification is ancestry-based, and the human
+// remains the out-of-band authority.
+func requireHumanStateCaller(statePath, verb string) int {
+	root := stateVerbRoot(statePath)
+	if root == "" {
+		if wd, err := os.Getwd(); err == nil {
+			root = wd
+		}
+	}
+	view, err := lease.Classify(root, int64(os.Getpid()))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s refused: caller classification failed: %v\n", verb, err)
+		return 3
+	}
+	if view.Class != lease.ClassHuman {
+		fmt.Fprintf(os.Stderr, "%s refused: mission state is runner-owned; this caller classifies %s\n", verb, view.Class)
+		return 3
+	}
+	return 0
+}
+
 func runMissionStateWrite(args []string) int {
 	flags := flag.NewFlagSet("mission state-write", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
@@ -76,6 +131,12 @@ func runMissionStateWrite(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if code := requireHumanStateCaller(*state, "state-write"); code != 0 {
+		return code
+	}
+	// The writer additionally refuses resolution-shaped transitions
+	// inside WriteState itself (HIW-O6): resolutions and segment moves
+	// land only through resolve-taint's verified path.
 	if err := mission.WriteState(*state, *source, *expect); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -121,6 +182,9 @@ func runMissionStateAnchor(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if code := requireHumanStateCaller(*state, "state-anchor"); code != 0 {
+		return code
+	}
 	if err := mission.Anchor(*state, *repo, *ledger); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -135,6 +199,9 @@ func runMissionStateReconcile(args []string) int {
 	ledger := flags.String("ledger", "", "ledger path")
 	if flags.Parse(args) != nil {
 		return 2
+	}
+	if gate := requireHumanStateCaller(*state, "state-reconcile"); gate != 0 {
+		return gate
 	}
 	code, err := mission.Reconcile(*state, *repo, *ledger)
 	if err != nil {

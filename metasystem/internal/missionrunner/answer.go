@@ -55,6 +55,10 @@ func (e *Engine) Answer(askID, answer string) int {
 		fmt.Fprintln(os.Stderr, "answer refused: a stop-loss park is answered through its stop-loss ask")
 		return 3
 	}
+	if reason == "wall-violation" {
+		fmt.Fprintln(os.Stderr, "answer refused: a generic answer never clears taint; use mission-runner.sh resolve-taint (restore or adopt-disputed-tree)")
+		return 3
+	}
 	if !turnvocab.OrchestratorMayRaise(reason) && reason != "fence" {
 		fmt.Fprintf(os.Stderr, "answer refused: unsupported reason class %s\n", valueString(ask["reasonClass"]))
 		return 3

@@ -969,3 +969,84 @@ Wido delegated the in-flight judgment calls: the agent decides, documents each d
 **Alternative:** acknowledging the short fuse for bm-1 instead of raising the budget. Rejected: the acknowledgment key is a fixture-bed device (D103); a real benchmark should let the stop-loss do its job through candidate visibility.
 
 **Impact:** provision → seal succeeds with no warnings and no hand edits (the post-commit acceptance output is in both issue-close records); the merge path becomes reachable unattended for the first time; drift between manifest and validator dies in the kit gate, not at the human's seal.
+
+## D109 — 2026-08-19: Taint resolution lands, and the critique loop rebuilt the wall's recovery story around it (HIW-O6, slice 6)
+
+**Decided:** The two human-reserved resolution verbs land WITH THE
+COMMIT THAT CARRIES THIS RECORD — RESTORE (a recorded safe tree,
+byte-verified) and ADOPT-DISPUTED-TREE (the observed tree, named
+waived claims). The review ran a three-round primary chain (7 → 9 → 7 findings) and a
+TWENTY-round successor chain (96 findings folded in total) against
+codex gpt-5.6-sol at xhigh, closing at round 20 with "no material
+findings — AGREE"; the covenant lands nothing without that verdict,
+so the commit carrying this record is its proof. The full round trajectory and per-round briefs
+ride the landing receipt and the scratchpad critique series, and
+substantial machinery was rebuilt along the way. What a
+resolution now IS: a named E-sequence point (its own pinned occurrence
+plus the pre-resolution expected tree it replaced), so staleness is
+path-sensitive — a delayed authorization refuses only when it overlaps
+an intervening delta, acceptance or resolution, never because a blanket
+segment fence fired. What custody now IS: the whole mutating state
+family (state-write, state-anchor, state-reconcile) is human-reserved
+at the CLI with symlink-resolved classification; the runner anchors
+in-process; resolution-shaped transitions refuse inside WriteState's
+single locked read; one state-chain write carries at most ONE
+expected-tree event. What recovery now IS: anchors are byte-pinned
+(one ledger read feeds hash, count, and blob; the resolution pins the
+state hash it wrote and the ledger bytes it rechecked); an anchor can
+never re-bind the same state hash to different ledger bytes (the
+mid-turn laundering shape); reconciliation's ledger-ahead tolerance is
+byte-precise (the suffix must open with the appended block's heading)
+and covers the no-marker lost-turn shape; violated wall.json evidence
+is sticky; racing anchors of one position converge; the reservation
+gains an E-continuity check that parks between-turn drift as its own
+taint with wall.json evidence carrying unaccounted paths; a
+resolution's crash tail is completable by re-running the verb and is
+repaired automatically at the runner's next verified start; asks bind
+to their taints at park time and matching fails closed. Both shipped
+schemas (mission-state, new wall-evidence) mirror the Go validators on
+shape, with the Go side the stricter authority on Unicode-category
+questions regex cannot portably express — and the benchmark extractor
+INVOKES that authority (mission state-verify, hash chain and anchor
+included) before trusting any state bytes, failing closed when it is
+absent, via the prepared kit-authority-handoff branch the boundary
+paragraph below records.
+
+**Alternatives rejected:** unforgeability against arbitrary same-user
+processes (the design's rejected isolation tier — the cooperative
+tamper-evident posture is recorded in the design and was restated to
+the critic as a scope ruling); deriving restore safety from on-disk
+wall.json (rewritable by the offender — hash-chained evidence only);
+booking a ledger block at the reservation park (unhealable without a
+marker; the lost-turn heal already owned that shape).
+
+**The measuring-stick boundary (successor round 16):** the benchmark
+kit's half of this work — the extractor's executable authority
+handoff, the pinned schema sync, and the fixture stubs — is NOT in
+this commit. The rule makes every kit change a human-approved commit
+with a shared version bump, so it rides branch kit-authority-handoff
+(kit 0.2.0, every spec version touched) awaiting Wido's approval;
+until he merges it, main's validate-kit fails its schema-drift check
+by design, naming exactly the pending sync.
+
+**Impact:** A tainted mission has exactly two lawful exits, both
+typed, both verified, both recorded in the hash chain; every crash
+window in the park/resolve/anchor path reconciles or parks honestly —
+the ledger crash-tail is byte-precise via the pending-block stamp
+every ledger write records, and each heal carries the sha of exactly
+the bytes it verified into the anchor's own refusal pin;
+the wall's obligation row HIW-O6 moves to READY_FOR_RUNTIME (both resolutions driven through the real wrapper entrypoint in TestResolveTaintThroughWrapper), with runtime proof deferred to the VM seal. Live VM
+validation stays deferred to Wido's seals.
+
+## D110 — 2026-08-19: Two rulings taken at the 10-hour window's open
+
+**Decided (Wido, directly):** (1) Critic-lapse contingency — if codex
+credits run out mid-loop, the critique continues on claude-opus-5 at
+xhigh as a bridge, and the folded end state re-verifies against codex
+gpt-5.6-sol at xhigh before any slice counts as finally landed. (2)
+The parked metasystem review execution is UNBLOCKED: the converged
+report in docs/reviews/ executes under the normal covenant after the
+wall rows; the r10 decision no longer gates it.
+
+**Impact:** the autonomous window cannot stall on a billing lapse, and
+the review work joins tonight's queue behind the wall rows.

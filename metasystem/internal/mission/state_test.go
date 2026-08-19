@@ -2,6 +2,7 @@ package mission
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +86,161 @@ func TestCompareAndWriteAdvancesTheChain(t *testing.T) {
 	if err := WriteState(state, source, hash); err == nil ||
 		!strings.Contains(err.Error(), "compare-and-write hash mismatch") {
 		t.Fatalf("a stale expect hash must be refused, got %v", err)
+	}
+}
+
+// The PUBLIC state writer never lands a resolution (HIW-O6, slice-6
+// round-2 finding 1): the custody check runs INSIDE WriteState on the
+// single parsed proposal — no source swap between check and write — and
+// only WriteStateResolution (resolve-taint's writer) may pass it.
+func TestPublicWriterRefusesResolutionTransitions(t *testing.T) {
+	_, state, _ := initMission(t)
+	_, hash, _ := VerifyStateShape(state)
+	source := state + ".src"
+
+	// Booking an unresolved taint is not resolution-shaped: the public
+	// writer allows it (the design's tamper-evident cooperative tier).
+	doc, _ := readStateDoc(state)
+	taint, _ := doc["workspaceTaint"].(map[string]any)
+	taint["next"] = 2
+	taint["entries"] = []any{map[string]any{
+		"taintId": 1, "turnId": "m-t1", "reason": "drift",
+		"setAt": "2026-08-18T00:00:00Z", "resolution": nil}}
+	if err := atomicWriteJSON(source, doc); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteState(state, source, hash); err != nil {
+		t.Fatalf("an unresolved taint booking must pass the custody gate: %v", err)
+	}
+	_, hash, _ = VerifyStateShape(state)
+
+	// A forged resolution refuses through the public writer...
+	resolved, _ := readStateDoc(state)
+	delete(resolved, "integrity")
+	tree := strings.Repeat("a", 40)
+	resolvedTaint, _ := resolved["workspaceTaint"].(map[string]any)
+	resolvedTaint["segment"] = 1
+	resolvedTaint["entries"] = []any{map[string]any{
+		"taintId": 1, "turnId": "m-t1", "reason": "drift",
+		"setAt": "2026-08-18T00:00:00Z", "resolution": map[string]any{
+			"variant": "restore", "treeId": tree, "previousTree": tree,
+			"sequencePoint": map[string]any{"sequence": 2, "segment": 1},
+			"resolvedAt":    "2026-08-18T00:00:00Z", "resolvedBy": "impostor", "reason": "forged"}}}
+	if err := atomicWriteJSON(source, resolved); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteState(state, source, hash); err == nil ||
+		!strings.Contains(err.Error(), "resolutions land only through resolve-taint") {
+		t.Fatalf("a resolution-shaped proposal must refuse, got %v", err)
+	}
+	// ...and the SAME proposal lands through the resolution writer.
+	if err := WriteStateResolution(state, source, hash); err != nil {
+		t.Fatalf("the resolution writer must land the lawful resolution: %v", err)
+	}
+	_, hash, _ = VerifyStateShape(state)
+
+	// A bare segment move refuses too.
+	moved, _ := readStateDoc(state)
+	delete(moved, "integrity")
+	movedTaint, _ := moved["workspaceTaint"].(map[string]any)
+	movedTaint["segment"] = 2
+	if err := atomicWriteJSON(source, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteState(state, source, hash); err == nil ||
+		!strings.Contains(err.Error(), "segments move only through resolve-taint") {
+		t.Fatalf("a segment move must refuse, got %v", err)
+	}
+}
+
+// One write resolves at most one taint (slice-6 round-2 finding 6): two
+// resolutions sharing a single occurrence would put two trees on one
+// E-point.
+func TestTransitionRefusesTwoResolutionsInOneWrite(t *testing.T) {
+	_, state, _ := initMission(t)
+	fresh, _ := readStateDoc(state)
+	tree := strings.Repeat("d", 40)
+	unresolvedPair := []any{
+		map[string]any{"taintId": 1, "turnId": "m-t1", "reason": "a", "setAt": "2026-08-18T00:00:00Z", "resolution": nil},
+		map[string]any{"taintId": 2, "turnId": "m-t2", "reason": "b", "setAt": "2026-08-18T00:00:00Z", "resolution": nil},
+	}
+	resolve := func(id int64) map[string]any {
+		return map[string]any{"taintId": id, "turnId": fmt.Sprintf("m-t%d", id), "reason": string(rune('a' + id - 1)),
+			"setAt": "2026-08-18T00:00:00Z", "resolution": map[string]any{
+				"variant": "restore", "treeId": tree, "previousTree": tree,
+				"sequencePoint": map[string]any{"sequence": 1, "segment": 2},
+				"resolvedAt":    "2026-08-18T00:00:00Z", "resolvedBy": "Wido", "reason": "r"}}
+	}
+	before := map[string]any{}
+	for k, v := range fresh {
+		before[k] = v
+	}
+	before["workspaceTaint"] = map[string]any{"next": 3, "segment": 0, "entries": unresolvedPair}
+	after := map[string]any{}
+	for k, v := range fresh {
+		after[k] = v
+	}
+	after["workspaceTaint"] = map[string]any{"next": 3, "segment": 2, "entries": []any{resolve(1), resolve(2)}}
+	if err := validateTransition(before, after); err == nil ||
+		!strings.Contains(err.Error(), "more than one expected-tree event") {
+		t.Fatalf("two resolutions in one write must refuse, got %v", err)
+	}
+
+	// An acceptance ALONGSIDE a resolution shares the occurrence the
+	// same way (round-3 finding 5) and refuses.
+	acceptance := map[string]any{
+		"turnId": "m-t3", "consumedAuthorizations": []any{},
+		"wall": map[string]any{
+			"verdict": "passed", "preTree": tree, "expectedTree": tree,
+			"postTree": tree, "orderedDigests": []any{},
+			"sequencePoint": map[string]any{"sequence": 1, "segment": 1},
+		},
+	}
+	mixed := map[string]any{}
+	for k, v := range fresh {
+		mixed[k] = v
+	}
+	mixed["turnLog"] = []any{acceptance}
+	oneResolved := map[string]any{"taintId": 1, "turnId": "m-t1", "reason": "a",
+		"setAt": "2026-08-18T00:00:00Z", "resolution": map[string]any{
+			"variant": "restore", "treeId": tree, "previousTree": tree,
+			"sequencePoint": map[string]any{"sequence": 1, "segment": 1},
+			"resolvedAt":    "2026-08-18T00:00:00Z", "resolvedBy": "Wido", "reason": "r"}}
+	mixed["workspaceTaint"] = map[string]any{"next": 3, "segment": 1, "entries": []any{
+		oneResolved, unresolvedPair[1]}}
+	if err := validateTransition(before, mixed); err == nil ||
+		!strings.Contains(err.Error(), "more than one expected-tree event") {
+		t.Fatalf("an acceptance beside a resolution must refuse, got %v", err)
+	}
+
+	// Two acceptances in one write refuse too — both can satisfy the
+	// occurrence pin {prevSequence+1, segment}, which is exactly the
+	// shared-occurrence hole the event count closes.
+	segmentZero := func(entry map[string]any, turnID string) map[string]any {
+		out := map[string]any{}
+		for k, v := range entry {
+			out[k] = v
+		}
+		wall := map[string]any{}
+		for k, v := range out["wall"].(map[string]any) {
+			wall[k] = v
+		}
+		wall["sequencePoint"] = map[string]any{"sequence": 1, "segment": 0}
+		out["wall"] = wall
+		out["turnId"] = turnID
+		return out
+	}
+	firstAcceptance := segmentZero(acceptance, "m-t3")
+	secondAcceptance := segmentZero(acceptance, "m-t4")
+	double := map[string]any{}
+	for k, v := range fresh {
+		double[k] = v
+	}
+	double["turnLog"] = []any{firstAcceptance, secondAcceptance}
+	double["workspaceTaint"] = map[string]any{"next": 3, "segment": 0, "entries": unresolvedPair}
+	if err := validateTransition(before, double); err == nil ||
+		!strings.Contains(err.Error(), "more than one expected-tree event") {
+		t.Fatalf("two acceptances in one write must refuse, got %v", err)
 	}
 }
 
@@ -338,7 +494,9 @@ func TestStateV2Wall(t *testing.T) {
 		return out
 	}
 	entry := map[string]any{"taintId": 1, "turnId": "demo-t1", "reason": "drift", "setAt": "2026-08-17T00:00:00Z", "resolution": nil}
-	resolution := map[string]any{"variant": "restore", "treeId": tree, "resolvedAt": "2026-08-17T01:00:00Z", "resolvedBy": "Wido", "reason": "restored"}
+	resolution := map[string]any{"variant": "restore", "treeId": tree, "previousTree": tree,
+		"sequencePoint": map[string]any{"sequence": 1, "segment": 1},
+		"resolvedAt":    "2026-08-17T01:00:00Z", "resolvedBy": "Wido", "reason": "restored"}
 	resolvedEntry := map[string]any{"taintId": 1, "turnId": "demo-t1", "reason": "drift", "setAt": "2026-08-17T00:00:00Z", "resolution": resolution}
 	tainted := withTaint(map[string]any{"next": 2, "segment": 0, "entries": []any{entry}}, nil)
 	resolved := withTaint(map[string]any{"next": 2, "segment": 1, "entries": []any{resolvedEntry}}, nil)

@@ -371,6 +371,7 @@ func families() []family {
 				{"resume", "resume a parked or interrupted mission", runMissionRunnerResume},
 				{"status", "print the mission's runner status line", runMissionRunnerStatus},
 				{"answer", "record a human answer to an open ask", runMissionRunnerAnswer},
+				{"resolve-taint", "apply a typed human resolution (--restore <treeId> | --adopt --waives <claim>) to a workspace taint", runMissionRunnerResolveTaint},
 				{"run-loop", "the detached mission loop (internal; spawned by start/resume)", runMissionRunnerRunLoop},
 				{"turn-adjudicate", "validate and adjudicate an orchestrator return into a turn verdict", runMissionTurnAdjudicate},
 				{"turn-conclude", "conclude a turn into the proposed next mission state", runMissionTurnConclude},

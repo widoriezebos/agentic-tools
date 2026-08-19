@@ -643,6 +643,28 @@
         }
       }
     },
+    "taint-resolved": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "resolvedBy": {
+          "required": true,
+          "type": "str"
+        },
+        "taintId": {
+          "required": true,
+          "type": "str"
+        },
+        "variant": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "turn-ended": {
       "emitters": [
         "adapter",

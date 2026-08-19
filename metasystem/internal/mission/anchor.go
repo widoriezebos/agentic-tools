@@ -1,6 +1,7 @@
 package mission
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -66,7 +67,10 @@ func ledgerCycleCount(path string) (int, error) {
 	if err != nil {
 		return 0, stateErr("cannot read mission ledger: %v", err)
 	}
-	text := string(data)
+	return cycleCountOf(string(data))
+}
+
+func cycleCountOf(text string) (int, error) {
 	headings := headingRe.FindAllStringSubmatch(text, -1)
 	for i, h := range headings {
 		n, _ := strconv.Atoi(h[1])
@@ -178,9 +182,42 @@ func Anchor(statePath, repo, ledgerPath string) error {
 	return nil
 }
 
+// AnchorNamed is the runner's in-process anchor (slice-6 successor
+// finding 4: the CLI verb is now human-reserved, so the runner no longer
+// shells out): the git author pins to the acting identity, and the
+// optional expectations pin the anchored position to bytes the caller
+// VERIFIED — a state hash and a ledger sha computed at its own recheck
+// (successor finding 2: the anchor must bind what was ruled on, not
+// whatever a reread finds).
+func AnchorNamed(statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA string) error {
+	_, err := anchorWritePinned(statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA)
+	return err
+}
+
 // anchorWrite is the printing-free anchor used by reconciliation's
 // retry-safe heal as well as the public verb; it returns the commit sha.
 func anchorWrite(statePath, repo, ledgerPath string) (string, error) {
+	return anchorWritePinned(statePath, repo, ledgerPath, "", "", "")
+}
+
+func anchorWritePinned(statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA string) (string, error) {
+	// The STATE LOCK spans the whole publication (slice-6 successor
+	// round-2 finding 1): every state write takes this lock, so the
+	// position read here is still the live position when the ref
+	// updates — a concurrent writer can never make a fresh anchor name
+	// an already-superseded state (the anchor moving BACKWARD).
+	lock, err := lockFile(statePath)
+	if err != nil {
+		return "", err
+	}
+	defer lock.release()
+	return anchorWriteHeld(statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA)
+}
+
+// anchorWriteHeld is the body of the anchor for callers that ALREADY
+// hold the state lock — reconciliation's heal branches, which lock for
+// their whole pass (flock self-deadlocks on a second acquisition).
+func anchorWriteHeld(statePath, repo, ledgerPath, identity, expectStateHash, expectLedgerSHA string) (string, error) {
 	state, err := readStateDoc(statePath)
 	if err != nil {
 		return "", err
@@ -188,7 +225,28 @@ func anchorWrite(statePath, repo, ledgerPath string) (string, error) {
 	if err := validate(state); err != nil {
 		return "", err
 	}
-	cycles, err := ledgerCycleCount(ledgerPath)
+	// ONE read of the ledger under ITS lock, held through the ref
+	// publication (successor round-10 finding 4): the hash, the cycle
+	// count, and the stored blob all derive from the SAME bytes, and no
+	// ledger writer can move them while the anchor publishes.
+	ledgerLock, err := lockFile(ledgerPath)
+	if err != nil {
+		return "", err
+	}
+	defer ledgerLock.release()
+	ledgerBytes, err := os.ReadFile(ledgerPath)
+	if err != nil {
+		return "", stateErr("cannot read mission ledger: %v", err)
+	}
+	// FULL parseability gates the anchor (slice-6 successor round-12
+	// finding 1): an anchor binds bytes as the mission's operational
+	// baseline, and a baseline the ledger machinery cannot read is a
+	// mission nothing can drive. Every lawful writer keeps the ledger
+	// parseable, so only tampered bytes ever refuse here.
+	if _, _, _, perr := parseLedgerText(string(ledgerBytes)); perr != nil {
+		return "", stateErr("anchor refused: mission ledger is unparsable: %v", perr)
+	}
+	cycles, err := cycleCountOf(string(ledgerBytes))
 	if err != nil {
 		return "", err
 	}
@@ -212,8 +270,25 @@ func anchorWrite(statePath, repo, ledgerPath string) (string, error) {
 	missionID, _ := state["missionId"].(string)
 	integrity, _ := state["integrity"].(map[string]any)
 	stateHashValue, _ := integrity["hash"].(string)
-	lHash, err := ledgerHash(ledgerPath)
-	if err != nil {
+	lHash := sha256Hex(string(ledgerBytes))
+	if expectStateHash != "" && expectStateHash != stateHashValue {
+		return "", stateErr("anchor refused: the state moved past the verified position")
+	}
+	if expectLedgerSHA != "" && expectLedgerSHA != lHash {
+		return "", stateErr("anchor refused: the ledger moved past the verified bytes")
+	}
+	// Anchor cadence (slice-6 round-3 finding 1): the anchored LEDGER
+	// truth moves only alongside a state-hash change. Every lawful
+	// anchor follows a state write (new hash) or re-anchors an identical
+	// position (heal retries); an anchor that would re-bind the SAME
+	// state hash to DIFFERENT ledger bytes is the mid-turn laundering
+	// shape — a host rewriting the ledger and re-anchoring to move the
+	// guard's baseline — and refuses.
+	if tip, err := latestAnchor(repo, missionID); err == nil {
+		if tip["Mission-State-Hash"] == stateHashValue && tip["Mission-Ledger-SHA256"] != lHash {
+			return "", stateErr("anchor refused: ledger bytes changed without a state write")
+		}
+	} else if !errors.Is(err, ErrNoAnchor) {
 		return "", err
 	}
 	subject := fmt.Sprintf("mission(%s): anchor cycle %d", missionID, cycles)
@@ -225,7 +300,7 @@ func anchorWrite(statePath, repo, ledgerPath string) (string, error) {
 	// prefix check reads it back), the mission branch and the real index
 	// stay untouched, and the ref advances with compare-and-swap so two
 	// racing anchors cannot silently drop one another.
-	blob, err := gitOutput(repo, "hash-object", "-w", "--no-filters", "--", resolvePath(ledgerPath))
+	blob, err := gitStdinOutput(repo, ledgerBytes, "hash-object", "-w", "--no-filters", "--stdin")
 	if err != nil {
 		return "", stateErr("anchor cannot store the ledger blob: %v", err)
 	}
@@ -248,8 +323,12 @@ func anchorWrite(statePath, repo, ledgerPath string) (string, error) {
 	}
 	ref := stateAnchorRef(missionID)
 	parent, _ := gitTry(repo, "rev-parse", "--verify", ref)
-	identity := []string{
-		"GIT_AUTHOR_NAME=metasystem", "GIT_AUTHOR_EMAIL=metasystem@example.invalid",
+	author := "metasystem"
+	if identity != "" {
+		author = identity
+	}
+	identityEnv := []string{
+		"GIT_AUTHOR_NAME=" + author, "GIT_AUTHOR_EMAIL=" + author + "@example.invalid",
 		"GIT_COMMITTER_NAME=metasystem", "GIT_COMMITTER_EMAIL=metasystem@example.invalid",
 	}
 	commitArgs := []string{"commit-tree", strings.TrimSpace(tree), "-m", subject + "\n\n" + body}
@@ -257,7 +336,7 @@ func anchorWrite(statePath, repo, ledgerPath string) (string, error) {
 	if oldValue != "" {
 		commitArgs = append(commitArgs, "-p", oldValue)
 	}
-	commit, err := gitEnvOutput(repo, identity, commitArgs...)
+	commit, err := gitEnvOutput(repo, identityEnv, commitArgs...)
 	if err != nil {
 		return "", stateErr("anchor commit failed: %v", err)
 	}
@@ -271,6 +350,21 @@ func anchorWrite(statePath, repo, ledgerPath string) (string, error) {
 		return "", stateErr("anchor ref update failed: %v", err)
 	}
 	return strings.TrimSpace(commit), nil
+}
+
+// gitStdinOutput runs git feeding the given bytes on stdin — the anchor
+// stores exactly the bytes it hashed, never a second file read.
+func gitStdinOutput(repo string, stdin []byte, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd.Stdin = bytes.NewReader(stdin)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
+	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
+		return "", stateErr("git %s failed: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
+	}
+	return stdout.String(), nil
 }
 
 // gitEnvOutput runs git with extra environment, capturing stdout —
@@ -338,13 +432,6 @@ func verifyAnchor(repo string, state map[string]any, ledgerPath string) error {
 	return nil
 }
 
-// verifyStateAnchor checks that the current ledger extends the anchored ledger
-// truth (used when reconciling a ledger that has grown since the anchor).
-func verifyStateAnchor(repo string, state map[string]any, ledgerPath string) error {
-	_, _, err := anchoredLedgerPrefix(repo, state, ledgerPath)
-	return err
-}
-
 // anchoredLedgerPrefix verifies every anchor claim except that the ledger is
 // byte-identical: the anchor's state hash, cycle, path, and branch ancestry
 // hold, and the current ledger extends the anchored bytes. It returns the
@@ -391,6 +478,19 @@ func anchoredLedgerPrefix(repo string, state map[string]any, ledgerPath string) 
 		return "", "", stateErr("mission anchor commit is not on the mission's anchor ref")
 	}
 	return anchored, string(data), nil
+}
+
+// AnchoredLedgerSHA returns the ledger sha the mission's anchor tip
+// records — the PIN ORIGIN for anchors of positions whose ledger was
+// verified at entry and untouched since (slice-6 successor round-11
+// findings 2-3): a pin must certify the position the caller VERIFIED,
+// never whatever bytes a post-write reread finds.
+func AnchoredLedgerSHA(repo, missionID string) (string, error) {
+	anchor, err := latestAnchor(repo, missionID)
+	if err != nil {
+		return "", err
+	}
+	return anchor["Mission-Ledger-SHA256"], nil
 }
 
 // AnchoredLedgerTruth exposes the authenticated anchored-ledger
@@ -445,28 +545,58 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 	}
 	cycles, err := ledgerCycleCount(ledgerPath)
 	if err != nil {
-		return 3, parkIntegrity(statePath, raw, nil)
+		return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
 	}
 	ledger, _ := raw["ledger"].(map[string]any)
 	stateCycles, _ := intValue(ledger["cycles"])
 	switch {
 	case int64(cycles) < stateCycles:
-		return 3, parkIntegrity(statePath, raw, nil)
+		return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
 	case int64(cycles) > stateCycles+1:
 		// The reserve/append machinery books at most ONE cycle between
 		// state writes, so a ledger more than one block ahead is not a
 		// crash window — it is divergence (slice-5 round-5).
-		return 3, parkIntegrity(statePath, raw, nil)
+		return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
 	case int64(cycles) > stateCycles:
-		if err := verifyStateAnchor(repo, raw, ledgerPath); err != nil {
-			return 3, parkIntegrity(statePath, raw, nil)
+		// The unanchored suffix must be EXACTLY the one appended block
+		// (slice-6 successor finding 1): "extends the anchored bytes"
+		// alone would let a crash bless host bytes smuggled BETWEEN the
+		// anchored truth and the runner's block — the suffix must open
+		// with the block heading, nothing before it.
+		anchored, current, err := anchoredLedgerPrefix(repo, raw, ledgerPath)
+		if err != nil {
+			return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
 		}
-		// The single tolerated block must be the RESERVED, OPEN cycle
-		// (round-6): the fence counters prove the runner reserved it and
-		// the open-turn marker proves a turn was in flight for exactly
-		// that cycle — contiguity alone proves a number, not authorship.
+		suffix := strings.TrimLeft(current[len(anchored):], "\n")
+		if !strings.HasPrefix(suffix, fmt.Sprintf("### Cycle %d", cycles)) {
+			return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
+		}
+		// BYTE-PRECISE (round-8 finding 3): the whole current file must
+		// hash to exactly what the crashed append wrote — the pending
+		// stamp beside the ledger. A single byte added by anyone else
+		// after that write refuses.
+		if !pendingStampMatches(ledgerPath, int64(cycles), current) {
+			return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
+		}
+		// The single tolerated block must be the RESERVED cycle
+		// (round-6): the fence counters prove the runner reserved it,
+		// and either the open-turn marker names it as the turn in
+		// flight, or the block is the reserve/append heal's own
+		// lost-turn shape (slice-6 successor finding 3) — contiguity
+		// alone proves a number, not authorship.
 		if err := verifyReservedGap(repo, raw, int64(cycles)); err != nil {
-			return 3, parkIntegrity(statePath, raw, nil)
+			if !lostTurnBlock(suffix) {
+				return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
+			}
+			fencesPath := filepath.Join(repo, "artifacts", "agents", "missions",
+				func() string { m, _ := raw["missionId"].(string); return m }(), "fences.json")
+			fences, ferr := readStateDoc(fencesPath)
+			if ferr != nil {
+				return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
+			}
+			if reserved, ok := intValue(fences["cycles"]); !ok || reserved < int64(cycles) {
+				return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
+			}
 		}
 		proposed, _ := deepCopyDoc(raw).(map[string]any)
 		pledger, _ := proposed["ledger"].(map[string]any)
@@ -485,9 +615,24 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 		}
 		// Retry safety (slice-5 round-5): the healed state anchors NOW —
 		// a crash after this write but before any later anchor must find
-		// hash and anchor in agreement, not park for integrity.
-		if _, err := anchorWrite(statePath, repo, ledgerPath); err != nil {
-			return 3, parkIntegrity(statePath, finalized, nil)
+		// hash and anchor in agreement, not park for integrity. A CAS
+		// loss against a RACING anchor of the same position converges
+		// instead of parking (slice-6 successor finding 5).
+		// The anchor pins to the EXACT bytes the stamp check verified
+		// (round-9 finding 1): a byte landing between the check and the
+		// anchor's own read refuses instead of being anchored.
+		healedIntegrity, _ := finalized["integrity"].(map[string]any)
+		healedHash, _ := healedIntegrity["hash"].(string)
+		if _, err := anchorWriteHeld(statePath, repo, ledgerPath, "", healedHash, sha256Hex(current)); err != nil {
+			if verifyAnchor(repo, finalized, ledgerPath) == nil {
+				return 0, nil
+			}
+			// The healed write is durable and the pending stamp still
+			// proves the block, so THIS shape satisfies the one-block
+			// retry heal on the next reconcile (round-16 finding 4) — a
+			// park here would make the anchor a grandparent. Refuse
+			// WITHOUT writing, naming the repairable cause.
+			return 3, stateErr("mission heal anchor failed: %v; repair the repository condition and reconcile again", err)
 		}
 		return 0, nil
 	default:
@@ -503,15 +648,142 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 			// state write and its anchor leaves the anchor exactly ONE
 			// state-step behind with identical ledger truth. That precise
 			// shape re-anchors and passes; anything looser still parks.
-			if anchorLagHealable(repo, raw, ledgerPath) {
-				if _, aerr := anchorWrite(statePath, repo, ledgerPath); aerr == nil {
+			if verifiedLedgerSHA, healable := anchorLagHealable(repo, raw, ledgerPath); healable {
+				lagIntegrity, _ := raw["integrity"].(map[string]any)
+				lagHash, _ := lagIntegrity["hash"].(string)
+				// Same pin discipline as the ledger-ahead heal (round-9
+				// finding 1): the pin is the sha of the EXACT bytes the
+				// healability check verified — never a second read.
+				aerr := func() error {
+					_, err := anchorWriteHeld(statePath, repo, ledgerPath, "", lagHash, verifiedLedgerSHA)
+					return err
+				}()
+				if aerr == nil {
 					return 0, nil
 				}
+				if verifyAnchor(repo, raw, ledgerPath) == nil {
+					return 0, nil
+				}
+				// A HEALABLE position whose publication failed is
+				// retryable (round-17 finding 1): the shape re-heals on
+				// the next reconcile once the repository condition —
+				// e.g. the checked-out branch — is repaired. A park
+				// here would make the anchor a grandparent.
+				return 3, stateErr("mission heal anchor failed: %v; repair the repository condition and reconcile again", aerr)
 			}
-			return 3, parkIntegrity(statePath, raw, nil)
+			return parkUnlessRecoverable(statePath, repo, raw, ledgerPath)
 		}
 	}
 	return 0, nil
+}
+
+// pendingStampMatches verifies the ledger's complete current bytes are
+// exactly the last append's post-write bytes: the pending-block stamp
+// records {cycle, sha256(full file)} at every ledger write (round-8
+// finding 3). Absent or mismatched stamps fail closed.
+func pendingStampMatches(ledgerPath string, cycle int64, current string) bool {
+	doc, err := readStateDoc(filepath.Join(filepath.Dir(ledgerPath), "pending-block.json"))
+	if err != nil {
+		return false
+	}
+	recorded, ok := intValue(doc["cycle"])
+	if !ok || recorded != cycle {
+		return false
+	}
+	sha, _ := doc["ledgerSha256"].(string)
+	return sha != "" && sha == sha256Hex(current)
+}
+
+// parkUnlessRecoverable is every reconciliation park's LAST gate
+// (slice-6 successor rounds 14-15): ONE LAWFUL STEP with a disputed
+// ledger — the state write landed, its authenticated anchor never did —
+// is recoverable by byte restoration, and writing a state-integrity
+// park would make the anchor a grandparent and destroy that recovery.
+// The shape refuses WITHOUT writing, naming the repair; every other
+// divergence parks exactly as before.
+func parkUnlessRecoverable(statePath, repo string, state map[string]any, ledgerPath string) (int, error) {
+	if oneStepDisputedLedger(repo, state, ledgerPath) {
+		return 3, stateErr("mission ledger disputes its anchored truth one step behind the state; restore the ledger bytes to the anchor ref's copy, then reconcile again")
+	}
+	return 3, parkIntegrity(statePath, state, nil)
+}
+
+// oneStepDisputedLedger reports the one recoverable divergence shape:
+// the anchor tip is exactly the state's immediate predecessor (the
+// write landed, its anchor never did) while the live ledger bytes
+// disagree with the tip's recorded truth.
+func oneStepDisputedLedger(repo string, state map[string]any, ledgerPath string) bool {
+	missionID, _ := state["missionId"].(string)
+	anchor, err := latestAnchor(repo, missionID)
+	if err != nil {
+		return false
+	}
+	integrity, _ := state["integrity"].(map[string]any)
+	previousHash, _ := integrity["previousHash"].(string)
+	if previousHash == "" || anchor["Mission-State-Hash"] != previousHash {
+		return false
+	}
+	// The tip must BE a complete, authenticated anchor (successor
+	// round-15 finding 2): its recorded path is this mission's ledger
+	// and its committed blob hashes to the declared sha — the repair
+	// this refusal prescribes must actually exist. A forged or
+	// blob-less tip is NOT recoverable and keeps the established
+	// state-integrity park. A DELETED ledger cannot path-resolve
+	// itself (round-17: the deleted-live-ledger shape is precisely a
+	// dispute), so its parent directory anchors the resolution.
+	ledgerRel, err := relUnderRepo(ledgerPath, repo)
+	if err != nil {
+		dirRel, derr := relUnderRepo(filepath.Dir(ledgerPath), repo)
+		if derr != nil {
+			return false
+		}
+		ledgerRel = filepath.Join(dirRel, filepath.Base(ledgerPath))
+	}
+	if anchor["Mission-Ledger-Path"] != ledgerRel {
+		return false
+	}
+	blob, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
+	if code != 0 || sha256Hex(blob) != anchor["Mission-Ledger-SHA256"] {
+		return false
+	}
+	// The CYCLE relationship authenticates too (round-16 finding 3):
+	// the blob must contain exactly the cycle count the trailer claims,
+	// and restoring it must yield a position the exact-match heal can
+	// bridge — the trailer cycle equals the state's own count. A tip a
+	// cycle behind (or a forged trailer) is NOT prescribed as repair.
+	anchorCycle, err := strconv.ParseInt(anchor["Mission-Cycle"], 10, 64)
+	if err != nil {
+		return false
+	}
+	blobCount, cerr := cycleCountOf(blob)
+	if cerr != nil || int64(blobCount) != anchorCycle {
+		return false
+	}
+	ledgerDoc, _ := state["ledger"].(map[string]any)
+	stateCycles, _ := intValue(ledgerDoc["cycles"])
+	if anchorCycle != stateCycles {
+		return false
+	}
+	data, err := os.ReadFile(ledgerPath)
+	if err != nil {
+		// An unreadable or deleted live ledger IS the dispute in its
+		// starkest form (round-16 finding 2): the authenticated blob
+		// exists and restoring it heals — parking would destroy that.
+		return true
+	}
+	return sha256Hex(string(data)) != anchor["Mission-Ledger-SHA256"]
+}
+
+// lostTurnBlock reports whether a ledger suffix is the reserve/append
+// heal's own booking: a no-progress block observed as a lost turn or a
+// drain stall — the only blocks that lawfully exist without an open-turn
+// marker (their state write crashed).
+func lostTurnBlock(suffix string) bool {
+	if !strings.Contains(suffix, "- Classification: no-progress;") {
+		return false
+	}
+	return strings.Contains(suffix, "observed=unmeasurable:turn-lost") ||
+		strings.Contains(suffix, "observed=unmeasurable:drain-stalled")
 }
 
 // verifyReservedGap proves the ledger-ahead block is the runner's own: the
@@ -541,39 +813,72 @@ func verifyReservedGap(repo string, state map[string]any, appended int64) error 
 // anchorLagHealable reports the exact heal-crash shape: the latest anchor
 // binds the state's PREVIOUS hash while cycle count and the ledger bytes'
 // hash agree with the present truth.
-func anchorLagHealable(repo string, state map[string]any, ledgerPath string) bool {
+func anchorLagHealable(repo string, state map[string]any, ledgerPath string) (string, bool) {
 	missionID, _ := state["missionId"].(string)
 	anchor, err := latestAnchor(repo, missionID)
 	if err != nil {
-		return false
+		return "", false
 	}
 	integrity, _ := state["integrity"].(map[string]any)
 	previousHash, _ := integrity["previousHash"].(string)
 	if previousHash == "" || anchor["Mission-State-Hash"] != previousHash {
-		return false
+		return "", false
 	}
+	// The anchor either matches the state's cycle count exactly (a
+	// ledger-untouched write) or lags it by the ONE block that write
+	// booked (slice-6 successor finding 3) — the byte checks below pin
+	// which shape this is.
 	ledger, _ := state["ledger"].(map[string]any)
 	stateCycles, _ := intValue(ledger["cycles"])
-	if anchor["Mission-Cycle"] != strconv.FormatInt(stateCycles, 10) {
-		return false
-	}
-	lHash, err := ledgerHash(ledgerPath)
-	if err != nil || anchor["Mission-Ledger-SHA256"] != lHash {
-		return false
+	anchorCycle, aerr := strconv.ParseInt(anchor["Mission-Cycle"], 10, 64)
+	if aerr != nil || (anchorCycle != stateCycles && anchorCycle != stateCycles-1) {
+		return "", false
 	}
 	// The tip must BE a complete anchor, not merely claim the right
 	// trailers (round-7): its recorded path is this mission's ledger and
 	// its committed blob hashes to the declared sha — which the live
-	// check above then ties to the present bytes.
+	// check below then ties to the present bytes.
 	ledgerRel, err := relUnderRepo(ledgerPath, repo)
 	if err != nil || anchor["Mission-Ledger-Path"] != ledgerRel {
-		return false
+		return "", false
 	}
 	blob, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
 	if code != 0 || sha256Hex(blob) != anchor["Mission-Ledger-SHA256"] {
-		return false
+		return "", false
 	}
-	return true
+	data, err := os.ReadFile(ledgerPath)
+	if err != nil {
+		return "", false
+	}
+	current := string(data)
+	if sha256Hex(current) == anchor["Mission-Ledger-SHA256"] {
+		if anchorCycle == stateCycles {
+			return sha256Hex(current), true
+		}
+		return "", false
+	}
+	// One step further (slice-6 successor finding 3): the state write
+	// that also BOOKED one ledger block, crashed before its anchor. The
+	// current bytes must be the anchored bytes plus exactly that block —
+	// clean append, correct count, counted by the state itself.
+	if !strings.HasPrefix(current, blob) {
+		return "", false
+	}
+	suffix := strings.TrimLeft(current[len(blob):], "\n")
+	count, cerr := cycleCountOf(current)
+	if cerr != nil {
+		return "", false
+	}
+	if int64(count) != anchorCycle+1 || stateCycles != int64(count) {
+		return "", false
+	}
+	if !pendingStampMatches(ledgerPath, int64(count), current) {
+		return "", false
+	}
+	if !strings.HasPrefix(suffix, fmt.Sprintf("### Cycle %d", count)) {
+		return "", false
+	}
+	return sha256Hex(current), true
 }
 
 // stopLossResetForgivable is the exact reconciliation tolerance: (a) the

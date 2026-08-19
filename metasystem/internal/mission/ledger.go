@@ -8,6 +8,8 @@
 package mission
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -174,7 +176,10 @@ func ParseLedger(file string) (cycleBudget, noGainBudget int, cycles []Cycle, er
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf("cannot read mission ledger: %w", err)
 	}
-	text := string(data)
+	return parseLedgerText(string(data))
+}
+
+func parseLedgerText(text string) (cycleBudget, noGainBudget int, cycles []Cycle, err error) {
 	cb := cycleBudgetRe.FindAllStringSubmatch(text, -1)
 	ngb := noGainBudgetRe.FindAllStringSubmatch(text, -1)
 	if len(cb) != 1 || len(ngb) != 1 {
@@ -226,6 +231,9 @@ func InitLedger(file string, cycleBudget, noGainBudget int) error {
 		return fmt.Errorf("mission ledger already exists")
 	}
 	text := fmt.Sprintf("# Mission Ledger\n\n- Cycle budget: %d\n- No-gain budget: %d\n", cycleBudget, noGainBudget)
+	if err := stampLedgerPending(file, 0, text); err != nil {
+		return err
+	}
 	return atomicWriteText(file, text)
 }
 
@@ -285,7 +293,23 @@ func AppendCycle(file string, cycle int, classification, candidateSHA, observed,
 	for _, annotation := range annotations {
 		entry += "- " + annotation + "\n"
 	}
-	return atomicWriteText(file, existing+entry)
+	content := existing + entry
+	// The pending stamp makes the crash-tail BYTE-PRECISE (slice-6
+	// successor round-8 finding 3): reconciliation's ledger-ahead heal
+	// accepts ONLY a file whose complete bytes hash to what this append
+	// wrote — any line added by anyone else afterward refuses.
+	if err := stampLedgerPending(file, cycle, content); err != nil {
+		return err
+	}
+	return atomicWriteText(file, content)
+}
+
+// stampLedgerPending records, beside the ledger, the exact post-write
+// file hash of the most recent append — the heal's byte-precision proof.
+func stampLedgerPending(file string, cycle int, content string) error {
+	sum := sha256.Sum256([]byte(content))
+	doc := map[string]any{"cycle": cycle, "ledgerSha256": hex.EncodeToString(sum[:])}
+	return atomicWriteJSON(filepath.Join(filepath.Dir(file), "pending-block.json"), doc)
 }
 
 // AppendAnnotations appends annotation lines to an existing cycle's block —
@@ -326,6 +350,11 @@ func AppendAnnotations(file string, cycle int, annotations ...string) error {
 		appended.WriteString("\n- " + annotation)
 	}
 	appended.WriteString("\n")
+	// The annotation append mutates the final block, so the pending
+	// stamp re-records the post-write bytes (round-8 finding 3).
+	if err := stampLedgerPending(file, cycle, appended.String()); err != nil {
+		return err
+	}
 	return atomicWriteText(file, appended.String())
 }
 
@@ -360,7 +389,14 @@ func AppendReset(file, askID, reason string) error {
 	}
 	existing := strings.TrimRightFunc(string(data), unicode.IsSpace)
 	entry := fmt.Sprintf("\n\nStop-loss reset: ask=%s; reason=%s\n", askID, reason)
-	return atomicWriteText(file, existing+entry)
+	content := existing + entry
+	// Every ledger write stamps (slice-6 successor round-10 finding 6):
+	// the reset line rides the same byte-precision proof as the blocks.
+	headings := headingRe.FindAllString(content, -1)
+	if err := stampLedgerPending(file, len(headings), content); err != nil {
+		return err
+	}
+	return atomicWriteText(file, content)
 }
 
 // LedgerEvent is one replay-ordered ledger event: an adjudicated cycle's

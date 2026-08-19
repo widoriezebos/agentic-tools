@@ -2,11 +2,13 @@ package missionrunner
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -258,13 +260,48 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 // permissive prompt checker, the armed pin, and the anchor seam. The
 // behavior directive, when given, rides the contract's stream text into
 // the prompt, which is how the fake host selects its behavior.
+var (
+	freshBinaryOnce sync.Once
+	freshBinaryPath string
+	freshBinaryErr  error
+)
+
+// freshEngineBinary compiles cmd/metasystem from the CURRENT source into
+// a shared temporary location, once per test process.
+func freshEngineBinary(t *testing.T) string {
+	t.Helper()
+	freshBinaryOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "metasystem-test-binary.")
+		if err != nil {
+			freshBinaryErr = err
+			return
+		}
+		freshBinaryPath = filepath.Join(dir, "metasystem")
+		build := exec.Command("go", "build", "-o", freshBinaryPath, "./cmd/metasystem")
+		build.Dir = filepath.Join("..", "..")
+		if out, err := build.CombinedOutput(); err != nil {
+			freshBinaryErr = fmt.Errorf("go build: %v\n%s", err, out)
+		}
+	})
+	if freshBinaryErr != nil {
+		// A proof that silently vanishes is no proof (round-8 finding 4):
+		// the wrapper certification REQUIRES the reviewed binary.
+		t.Fatalf("cannot build the engine binary from source: %v", freshBinaryErr)
+	}
+	return freshBinaryPath
+}
+
 func buildFullCycleRoot(t *testing.T, behavior string) *Engine {
 	t.Helper()
 	engine := buildPreflightRootWithStream(t, behavior)
 	root := engine.Root
-	binary, err := os.ReadFile(filepath.Join("..", "..", "bin", "metasystem"))
+	// The bed binary is COMPILED FROM THE REVIEWED TREE, once per test
+	// process (slice-6 successor round-7 finding 4): a prebuilt
+	// bin/metasystem can be stale, and a wrapper fixture passing against
+	// yesterday's implementation proves nothing about this one.
+	binary, err := os.ReadFile(freshEngineBinary(t))
 	if err != nil {
-		t.Skipf("engine binary not built: %v", err)
+		t.Fatal(err)
 	}
 	os.MkdirAll(filepath.Join(root, "bin"), 0o755)
 	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); err != nil {
@@ -280,6 +317,14 @@ func buildFullCycleRoot(t *testing.T, behavior string) *Engine {
 		}
 		os.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", name), adapter, 0o755)
 	}
+	// The human entrypoint travels too (slice-6 successor round-5
+	// finding 3): the resolution fixtures must drive the REAL wrapper,
+	// not only the in-process engine.
+	wrapper, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "mission-runner.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "scripts", "agents", "mission-runner.sh"), wrapper, 0o755)
 	os.WriteFile(filepath.Join(root, "scripts", "assert-turn-prompt.sh"),
 		[]byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
 	// The prompt authority artifacts, verbatim from the repository: without

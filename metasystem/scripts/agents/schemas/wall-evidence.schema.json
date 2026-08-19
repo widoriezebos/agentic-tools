@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Host-implementer wall turn evidence (wall.json)",
+  "description": "Per-turn wall evidence in the turn directory: the tree equation's inputs and outputs, the consumed authorizations in order, and - on violation - the named violation with the unaccounted path delta.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict",
+        "preTree",
+        "expectedTree",
+        "postTree",
+        "orderedDigests"
+      ],
+      "properties": {
+        "verdict": {
+          "const": "passed"
+        },
+        "preTree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "expectedTree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "postTree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "orderedDigests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict",
+        "preTree",
+        "expectedTree",
+        "postTree",
+        "orderedDigests",
+        "violation",
+        "unaccounted"
+      ],
+      "properties": {
+        "verdict": {
+          "const": "violated"
+        },
+        "preTree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "expectedTree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "postTree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "orderedDigests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "violation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unaccounted": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

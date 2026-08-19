@@ -3,11 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	missionpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
+	"strconv"
 )
 
 // The mission-turn and mission-jobs families are the mission runner's
@@ -208,7 +210,9 @@ func missionRunnerUsage() {
 			"  scripts/agents/mission-runner.sh start --mission <id> [--foreground]\n"+
 			"  scripts/agents/mission-runner.sh resume --mission <id> [--foreground]\n"+
 			"  scripts/agents/mission-runner.sh status --mission <id>\n"+
-			"  scripts/agents/mission-runner.sh answer --mission <id> --ask <ask-id> --answer <text>\n")
+			"  scripts/agents/mission-runner.sh answer --mission <id> --ask <ask-id> --answer <text>\n"+
+			"  scripts/agents/mission-runner.sh resolve-taint --mission <id> --taint <n> --by <name> --reason <text>\n"+
+			"      (--restore <treeId> | --adopt --waives <claim> [--waives <claim> ...])\n")
 }
 
 // parseRunnerArgs reads --key value pairs and bare switches with the
@@ -280,6 +284,73 @@ func runMissionRunnerAnswer(args []string) int {
 		return 2
 	}
 	return missionrunner.NewEngine(root, mission).Answer(askID, answer)
+}
+
+func runMissionRunnerResolveTaint(args []string) int {
+	// ONE strict left-to-right scan over the RAW tokens (successor
+	// round-8 finding 1): every token in flag position must be a known
+	// flag; --adopt is a bare switch; every valued flag consumes exactly
+	// the next token, which must not itself look like a flag; duplicates
+	// refuse (only --waives repeats). No token is lifted, filtered, or
+	// repaired before this scan, so no malformed spelling can collapse
+	// into a lawful one.
+	values := map[string]string{}
+	var waived []string
+	adopt := false
+	for index := 0; index < len(args); {
+		flag := args[index]
+		switch flag {
+		case "--adopt":
+			if adopt {
+				missionRunnerUsage()
+				return 2
+			}
+			adopt = true
+			index++
+		case "--root", "--mission", "--taint", "--restore", "--by", "--reason", "--waives":
+			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+				missionRunnerUsage()
+				return 2
+			}
+			value := args[index+1]
+			if flag == "--waives" {
+				waived = append(waived, value)
+			} else {
+				if _, duplicate := values[flag]; duplicate {
+					missionRunnerUsage()
+					return 2
+				}
+				values[flag] = value
+			}
+			index += 2
+		default:
+			missionRunnerUsage()
+			return 2
+		}
+	}
+	root, mission := values["--root"], values["--mission"]
+	restoreTree, by, reason := values["--restore"], values["--by"], values["--reason"]
+	taintID, err := strconv.ParseInt(values["--taint"], 10, 64)
+	blankWaiver := false
+	for _, claim := range waived {
+		if missionpkg.BlankString(claim) {
+			blankWaiver = true
+		}
+	}
+	if root == "" || !missionIDRe.MatchString(mission) || err != nil || taintID < 1 ||
+		adopt == (restoreTree != "") ||
+		(restoreTree != "" && !treeIDRe.MatchString(restoreTree)) ||
+		missionpkg.BlankString(by) || missionpkg.BlankString(reason) ||
+		(adopt && (len(waived) == 0 || blankWaiver)) ||
+		(!adopt && len(waived) > 0) {
+		missionRunnerUsage()
+		return 2
+	}
+	variant, tree := "restore", restoreTree
+	if adopt {
+		variant, tree = "adopt-disputed-tree", ""
+	}
+	return missionrunner.NewEngine(root, mission).ResolveTaint(taintID, variant, tree, by, reason, waived)
 }
 
 // runMissionRunnerRunLoop is the detached child that start/resume spawn; it

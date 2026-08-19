@@ -11,8 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Mission state is a strictly-shaped, hash-chained JSON document: every write
@@ -585,6 +587,22 @@ func finalizeNext(next map[string]any, previous map[string]any, recoveryOf any) 
 	return value, nil
 }
 
+// BlankString reports whether a string carries NO visible content
+// (slice-6 successor rounds 6-7): a rune counts as content only when it
+// is GRAPHIC and not whitespace — the whole Unicode format category
+// (BOM, zero-width characters, word joiners, function application, and
+// every other Cf/control codepoint) is non-graphic and therefore blank
+// BY CATEGORY, not by blacklist. A resolver identity or reason made of
+// these is no attribution at all.
+func BlankString(s string) bool {
+	for _, r := range s {
+		if unicode.IsGraphic(r) && !unicode.IsSpace(r) {
+			return false
+		}
+	}
+	return true
+}
+
 func parseISO(s string) error {
 	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05"} {
 		if _, err := time.Parse(layout, s); err == nil {
@@ -774,6 +792,17 @@ func validateTransition(previous, next map[string]any) error {
 			case jsonEqual(prevEntry["resolution"], nowEntry["resolution"]):
 			case prevEntry["resolution"] == nil && nowEntry["resolution"] != nil:
 				resolved++
+				// The resolution's occurrence identity names THIS write,
+				// exactly like an acceptance payload's (slice-6 critique
+				// F3): the E-point a later authorization resolves against
+				// is the chain position the resolution actually landed at.
+				resolution, _ := nowEntry["resolution"].(map[string]any)
+				point, _ := resolution["sequencePoint"].(map[string]any)
+				pointSequence, sOK := intValue(point["sequence"])
+				pointSegment, gOK := intValue(point["segment"])
+				if !sOK || !gOK || pointSequence != prevSequence+1 || pointSegment != nextSegment {
+					return stateErr("mission resolution sequence point must name the resolving write (%d/%d)", prevSequence+1, nextSegment)
+				}
 			default:
 				return stateErr("mission workspaceTaint resolution %d is immutable", i)
 			}
@@ -783,6 +812,14 @@ func validateTransition(previous, next map[string]any) error {
 			if newEntry == nil || newEntry["resolution"] != nil {
 				return stateErr("mission workspaceTaint entries are appended unresolved")
 			}
+		}
+		// One E-EVENT per state-chain write (slice-6 round-3 finding 5):
+		// every acceptance and every resolution names the occurrence
+		// {prevSequence+1, segment} of the write that lands it, so a
+		// write carrying two of them would put two trees on one E-point
+		// and the staleness lookup stops at the first match.
+		if int64(len(nextLog)-len(prevLog))+resolved > 1 {
+			return stateErr("mission state write carries more than one expected-tree event")
 		}
 		prevSegment, _ := intValue(prevTaint["segment"])
 		nowSegment, _ := intValue(nextTaint["segment"])
@@ -876,6 +913,19 @@ func jsonEqual(a, b any) bool {
 // still hash to expect, the transition must be legal, and the source's
 // integrity block is recomputed rather than trusted.
 func WriteState(statePath, sourcePath, expect string) error {
+	return writeState(statePath, sourcePath, expect, false)
+}
+
+// WriteStateResolution is the resolve-taint writer: the ONLY entry that
+// may land a typed resolution or move the taint segment. Everything the
+// public writer refuses under runner custody (slice-6 critique F1) is
+// legal here, because the caller has already passed the human-reserved
+// classification and the verified-tree gates.
+func WriteStateResolution(statePath, sourcePath, expect string) error {
+	return writeState(statePath, sourcePath, expect, true)
+}
+
+func writeState(statePath, sourcePath, expect string, allowResolution bool) error {
 	if !hashRe.MatchString(expect) {
 		return stateErr("--expect must be a state hash")
 	}
@@ -899,6 +949,14 @@ func WriteState(statePath, sourcePath, expect string) error {
 	prevIntegrity, _ := previous["integrity"].(map[string]any)
 	if h, _ := prevIntegrity["hash"].(string); h != expect {
 		return stateErr("mission state compare-and-write hash mismatch")
+	}
+	// Resolution custody (HIW-O6, slice-6 round-2 finding 1): the check
+	// runs on the SAME parsed proposal the transition validates — one
+	// read, no swap window — and only the resolution writer may pass.
+	if !allowResolution {
+		if err := refuseResolutionTransition(previous, proposed); err != nil {
+			return &ProposalError{Err: err}
+		}
 	}
 	if err := validateTransition(previous, proposed); err != nil {
 		return &ProposalError{Err: err}
@@ -1019,32 +1077,49 @@ func validateWorkspaceTaint(raw any) error {
 		// claims being waived (slice-4 critique F-4).
 		switch variant {
 		case "restore":
-			if !exactKeys(resolution, "variant", "treeId", "resolvedAt", "resolvedBy", "reason") {
+			if !exactKeys(resolution, "variant", "treeId", "previousTree", "resolvedAt", "resolvedBy", "reason", "sequencePoint") {
 				return stateErr("mission workspaceTaint resolution has an invalid shape")
 			}
 		case "adopt-disputed-tree":
-			if !exactKeys(resolution, "variant", "treeId", "resolvedAt", "resolvedBy", "reason", "waivedClaims") {
+			if !exactKeys(resolution, "variant", "treeId", "previousTree", "resolvedAt", "resolvedBy", "reason", "sequencePoint", "waivedClaims") {
 				return stateErr("mission workspaceTaint resolution has an invalid shape")
 			}
 			claims, ok := resolution["waivedClaims"].([]any)
-			if !ok {
-				return stateErr("mission workspaceTaint waived claims must be an array")
+			if !ok || len(claims) == 0 {
+				return stateErr("mission workspaceTaint waived claims must name at least one claim")
 			}
 			for _, claim := range claims {
-				if s, ok := claim.(string); !ok || s == "" {
-					return stateErr("mission workspaceTaint waived claims must be non-empty strings")
+				if s, ok := claim.(string); !ok || BlankString(s) {
+					return stateErr("mission workspaceTaint waived claims must be non-blank strings")
 				}
 			}
 		default:
 			return stateErr("mission workspaceTaint resolution variant is invalid")
 		}
 		for _, field := range []string{"resolvedBy", "reason"} {
-			if s, _ := resolution[field].(string); s == "" {
+			if s, _ := resolution[field].(string); BlankString(s) {
 				return stateErr("mission workspaceTaint resolution %s is invalid", field)
 			}
 		}
 		if tree, _ := resolution["treeId"].(string); !treeIDRe.MatchString(tree) {
 			return stateErr("mission workspaceTaint resolution tree id is invalid")
+		}
+		// The resolution is a named E-sequence point (slice-6 critique
+		// F3): it records the occurrence it landed at and the expected
+		// tree it replaced, so the staleness predicate can measure the
+		// resolution's own delta instead of fencing whole segments.
+		if tree, _ := resolution["previousTree"].(string); !treeIDRe.MatchString(tree) {
+			return stateErr("mission workspaceTaint resolution previous tree id is invalid")
+		}
+		point, ok := resolution["sequencePoint"].(map[string]any)
+		if !ok || !exactKeys(point, "sequence", "segment") {
+			return stateErr("mission workspaceTaint resolution sequence point is invalid")
+		}
+		if s, ok := intValue(point["sequence"]); !ok || s < 1 {
+			return stateErr("mission workspaceTaint resolution sequence point is invalid")
+		}
+		if g, ok := intValue(point["segment"]); !ok || g < 1 {
+			return stateErr("mission workspaceTaint resolution sequence point is invalid")
 		}
 		if s, _ := resolution["resolvedAt"].(string); parseISO(s) != nil {
 			return stateErr("mission workspaceTaint resolution resolvedAt is invalid")
@@ -1125,6 +1200,38 @@ func ConsumedAuthorizations(state map[string]any) (map[string]string, error) {
 	return index, nil
 }
 
+// refuseResolutionTransition guards every writer except resolve-taint's
+// (HIW-O6): a proposal that types a resolution onto any taint entry or
+// moves the taint segment is refused — those transitions belong to the
+// verified, human-reserved path alone. Runs inside writeState's lock on
+// the already-parsed documents, so no source swap between check and
+// write is possible (slice-6 round-2 finding 1).
+func refuseResolutionTransition(current, proposed map[string]any) error {
+	currentTaint, _ := current["workspaceTaint"].(map[string]any)
+	proposedTaint, _ := proposed["workspaceTaint"].(map[string]any)
+	currentEntries, _ := currentTaint["entries"].([]any)
+	proposedEntries, _ := proposedTaint["entries"].([]any)
+	for index, raw := range proposedEntries {
+		entry, _ := raw.(map[string]any)
+		if entry == nil || entry["resolution"] == nil {
+			continue
+		}
+		if index >= len(currentEntries) {
+			return stateErr("state-write refused: taint resolutions land only through resolve-taint")
+		}
+		prior, _ := currentEntries[index].(map[string]any)
+		if prior == nil || prior["resolution"] == nil {
+			return stateErr("state-write refused: taint resolutions land only through resolve-taint")
+		}
+	}
+	currentSegment, _ := intValue(currentTaint["segment"])
+	proposedSegment, _ := intValue(proposedTaint["segment"])
+	if currentSegment != proposedSegment {
+		return stateErr("state-write refused: taint segments move only through resolve-taint")
+	}
+	return nil
+}
+
 // CurrentSequencePoint names the occurrence identity of the CURRENT
 // expected tree (host-implementer wall): the sequence point of the last
 // acceptance entry carrying a wall payload, or {0, 0} for a mission whose
@@ -1151,10 +1258,30 @@ func CurrentSequencePoint(state map[string]any) (sequence, segment int64) {
 			continue
 		}
 		if s, ok := intValue(point["sequence"]); ok {
-			return s, segment
+			sequence = s
+			break
 		}
 	}
-	return 0, segment
+	// A resolution is an E-transition too (slice-6 critique F3): when one
+	// landed after the last acceptance, ITS occurrence is the current
+	// expected tree's identity — an authorization issued at the
+	// resolution point must bind a point that stays resolvable.
+	entries, _ := taint["entries"].([]any)
+	for _, raw := range entries {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		resolution, _ := entry["resolution"].(map[string]any)
+		if resolution == nil {
+			continue
+		}
+		point, _ := resolution["sequencePoint"].(map[string]any)
+		if s, ok := intValue(point["sequence"]); ok && s > sequence {
+			sequence = s
+		}
+	}
+	return sequence, segment
 }
 
 // ExpectedTreePoints enumerates the mission's named E-sequence points from
@@ -1166,18 +1293,44 @@ func ExpectedTreePoints(state map[string]any) []ExpectedTreePoint {
 	points := []ExpectedTreePoint{}
 	// E0 — the initial baseline — is a named point too (slice-5 round-2
 	// finding 5): a first-turn authorization binds {0, 0}, and its base
-	// must stay resolvable after later turns land. The first payload's
-	// preTree IS E0 by construction.
+	// must stay resolvable after later turns land. E0 is the PRE-side of
+	// the earliest E-event: the first acceptance's preTree, or — when the
+	// first turn violated and was resolved before anything was accepted —
+	// the first resolution's previousTree (slice-6 round-2 finding 5).
+	e0Sequence := int64(-1)
+	e0Tree := ""
 	for _, raw := range turnLog {
 		entry, _ := raw.(map[string]any)
 		if entry == nil {
 			continue
 		}
 		wall, _ := entry["wall"].(map[string]any)
-		if tree, _ := wall["preTree"].(string); tree != "" {
-			points = append(points, ExpectedTreePoint{Tree: tree, Sequence: 0, Segment: 0})
+		point, _ := wall["sequencePoint"].(map[string]any)
+		s, sOK := intValue(point["sequence"])
+		tree, _ := wall["preTree"].(string)
+		if sOK && tree != "" {
+			e0Sequence, e0Tree = s, tree
 			break
 		}
+	}
+	for _, raw := range taintEntriesOf(state) {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		resolution, _ := entry["resolution"].(map[string]any)
+		if resolution == nil {
+			continue
+		}
+		point, _ := resolution["sequencePoint"].(map[string]any)
+		s, sOK := intValue(point["sequence"])
+		tree, _ := resolution["previousTree"].(string)
+		if sOK && tree != "" && (e0Sequence < 0 || s < e0Sequence) {
+			e0Sequence, e0Tree = s, tree
+		}
+	}
+	if e0Tree != "" {
+		points = append(points, ExpectedTreePoint{Tree: e0Tree, Sequence: 0, Segment: 0})
 	}
 	for _, raw := range turnLog {
 		entry, _ := raw.(map[string]any)
@@ -1196,7 +1349,48 @@ func ExpectedTreePoints(state map[string]any) []ExpectedTreePoint {
 			points = append(points, ExpectedTreePoint{Tree: tree, Sequence: s, Segment: g})
 		}
 	}
+	// Resolutions are named E-points (slice-6 critique F3): E(next) after
+	// a ruling is the restored or adopted tree, and fresh work issued
+	// there must stay resolvable after later turns land.
+	taint, _ := state["workspaceTaint"].(map[string]any)
+	entries, _ := taint["entries"].([]any)
+	for _, raw := range entries {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		resolution, _ := entry["resolution"].(map[string]any)
+		if resolution == nil {
+			continue
+		}
+		tree, _ := resolution["treeId"].(string)
+		point, _ := resolution["sequencePoint"].(map[string]any)
+		s, sOK := intValue(point["sequence"])
+		g, gOK := intValue(point["segment"])
+		if tree != "" && sOK && gOK {
+			points = append(points, ExpectedTreePoint{Tree: tree, Sequence: s, Segment: g})
+		}
+	}
+	sort.SliceStable(points, func(i, j int) bool { return points[i].Sequence < points[j].Sequence })
 	return points
+}
+
+func taintEntriesOf(state map[string]any) []any {
+	taint, _ := state["workspaceTaint"].(map[string]any)
+	entries, _ := taint["entries"].([]any)
+	return entries
+}
+
+// CurrentExpectedTree names the tree the workspace's filtered projection
+// MUST equal between turns: the highest-occurrence E-point — the last
+// accepted post-tree or, after a ruling, the resolution tree. Empty for
+// a mission with no E-events yet (the first reservation defines E0).
+func CurrentExpectedTree(state map[string]any) string {
+	points := ExpectedTreePoints(state)
+	if len(points) == 0 {
+		return ""
+	}
+	return points[len(points)-1].Tree
 }
 
 // ExpectedTreePoint is one named E-sequence point: a tree and the

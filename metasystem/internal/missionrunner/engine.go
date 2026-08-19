@@ -64,6 +64,10 @@ type Engine struct {
 	// anchors through the binary (anchorState); tests inject it because the
 	// anchor is an external git effect a unit test cannot shell out for.
 	anchorFn func(statePath, ledgerPath, identityName string) error
+	// preAnchorHook fires between a state write and its PINNED anchor —
+	// a test seam for injecting ledger movement into that window
+	// (slice-6 successor round-13 finding 2). Nil in production.
+	preAnchorHook func()
 	// custodianFn overrides the custodian prover for tests. Production binds
 	// identity.Custodian, the kernel custodian discipline the standing
 	// reaper judges by, so the runner's drain reap can never disagree with

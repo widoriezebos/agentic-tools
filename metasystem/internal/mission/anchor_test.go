@@ -88,6 +88,117 @@ func TestAnchorAndVerifyRoundTrip(t *testing.T) {
 	}
 }
 
+// Anchor cadence (slice-6 round-3 finding 1): re-binding the SAME state
+// hash to DIFFERENT ledger bytes is the mid-turn laundering shape and
+// refuses; re-anchoring an identical position stays allowed (heal retry).
+func TestAnchorRefusesLedgerMoveWithoutStateWrite(t *testing.T) {
+	repo, state, ledger := anchoredMission(t)
+	if _, err := anchorWrite(state, repo, ledger); err != nil {
+		t.Fatalf("an identical re-anchor must stay allowed: %v", err)
+	}
+	// Tamper that keeps the cycle count parseable and identical.
+	writeText(t, ledger, strings.Replace(oneCycleLedger, "observed=score=0.5", "observed=score=0.9", 1))
+	if _, err := anchorWrite(state, repo, ledger); err == nil ||
+		!strings.Contains(err.Error(), "ledger bytes changed without a state write") {
+		t.Fatalf("a ledger move without a state write must refuse, got %v", err)
+	}
+}
+
+// The pinned anchor binds exactly the verified position (slice-6
+// successor finding 2): moved state or moved ledger bytes refuse.
+func TestAnchorPinsRefuseMovedPosition(t *testing.T) {
+	repo, state, ledger := anchoredMission(t)
+	doc, _ := readStateDoc(state)
+	integrity, _ := doc["integrity"].(map[string]any)
+	hash, _ := integrity["hash"].(string)
+	data, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lHash := sha256Hex(string(data))
+	if err := AnchorNamed(state, repo, ledger, "Wido", hash, lHash); err != nil {
+		t.Fatalf("matching pins must anchor: %v", err)
+	}
+	if err := AnchorNamed(state, repo, ledger, "Wido", strings.Repeat("0", 64), lHash); err == nil ||
+		!strings.Contains(err.Error(), "state moved past the verified position") {
+		t.Fatalf("a moved state pin must refuse, got %v", err)
+	}
+	if err := AnchorNamed(state, repo, ledger, "Wido", hash, strings.Repeat("0", 64)); err == nil ||
+		!strings.Contains(err.Error(), "ledger moved past the verified bytes") {
+		t.Fatalf("a moved ledger pin must refuse, got %v", err)
+	}
+}
+
+// The two round-16/17 recovery folds, regression-certified: a deleted
+// live ledger in the one-step gap refuses WITHOUT writing and heals
+// after blob restoration; a healable lag whose publication fails
+// (wrong checked-out branch) refuses WITHOUT writing and heals once
+// the branch is restored.
+func TestOneStepRecoveryShapes(t *testing.T) {
+	t.Run("deleted-ledger", func(t *testing.T) {
+		repo, state, ledger := anchoredMission(t)
+		doc, _ := readStateDoc(state)
+		doc["fences"].(map[string]any)["cycles"] = 1
+		source := state + ".src"
+		if err := atomicWriteJSON(source, doc); err != nil {
+			t.Fatal(err)
+		}
+		_, hash, _ := VerifyStateShape(state)
+		if err := WriteState(state, source, hash); err != nil {
+			t.Fatal(err)
+		}
+		pristine, err := os.ReadFile(ledger)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(ledger); err != nil {
+			t.Fatal(err)
+		}
+		_, beforeHash, _ := VerifyStateShape(state)
+		code, rerr := Reconcile(state, repo, ledger)
+		if code == 0 || rerr == nil || !strings.Contains(rerr.Error(), "restore the ledger bytes") {
+			t.Fatalf("a deleted ledger in the one-step gap must refuse with the repair: code=%d err=%v", code, rerr)
+		}
+		_, afterHash, _ := VerifyStateShape(state)
+		if afterHash != beforeHash {
+			t.Fatal("the refusal must not write")
+		}
+		writeText(t, ledger, string(pristine))
+		if code, rerr := Reconcile(state, repo, ledger); rerr != nil || code != 0 {
+			t.Fatalf("restoration must heal: code=%d err=%v", code, rerr)
+		}
+	})
+	t.Run("failed-lag-publication", func(t *testing.T) {
+		repo, state, ledger := anchoredMission(t)
+		doc, _ := readStateDoc(state)
+		doc["fences"].(map[string]any)["cycles"] = 1
+		source := state + ".src"
+		if err := atomicWriteJSON(source, doc); err != nil {
+			t.Fatal(err)
+		}
+		_, hash, _ := VerifyStateShape(state)
+		if err := WriteState(state, source, hash); err != nil {
+			t.Fatal(err)
+		}
+		// The healable exact-match lag exists; force publication failure
+		// deterministically via the wrong checked-out branch.
+		gitCmd(t, repo, "checkout", "-q", "-b", "not-the-mission-branch")
+		_, beforeHash, _ := VerifyStateShape(state)
+		code, rerr := Reconcile(state, repo, ledger)
+		if code == 0 || rerr == nil || !strings.Contains(rerr.Error(), "heal anchor failed") {
+			t.Fatalf("a failed lag publication must refuse with the cause: code=%d err=%v", code, rerr)
+		}
+		_, afterHash, _ := VerifyStateShape(state)
+		if afterHash != beforeHash {
+			t.Fatal("the refusal must not write")
+		}
+		gitCmd(t, repo, "checkout", "-q", "feature-x")
+		if code, rerr := Reconcile(state, repo, ledger); rerr != nil || code != 0 {
+			t.Fatalf("the repaired branch must heal: code=%d err=%v", code, rerr)
+		}
+	})
+}
+
 func TestVerifyAnchorDetectsLedgerTamper(t *testing.T) {
 	repo, state, ledger := anchoredMission(t)
 	// Tamper the working-tree ledger after anchoring.
@@ -314,6 +425,101 @@ func TestReconcileParksForgedAnchorTip(t *testing.T) {
 	if doc["parkReason"] != "state-integrity" {
 		t.Fatalf("the forgery must park state-integrity: %v", doc["parkReason"])
 	}
+}
+
+// The cycle-authentication arms of the recovery predicate (successor
+// round-18): a complete, blob-carrying tip whose Mission-Cycle is WRONG
+// for its own blob, and a tip lawfully ONE CYCLE BEHIND a state whose
+// ledger then moved — neither is prescribed as repair; both PARK.
+func TestRecoveryPredicateCycleArms(t *testing.T) {
+	t.Run("wrong-cycle-trailer", func(t *testing.T) {
+		repo, state, ledger := anchoredMission(t)
+		// The state LAWFULLY reaches cycle 2 (ledger append + state
+		// write) so the trailer-versus-state check below is SATISFIED —
+		// only the blob-count gate stands between a lying trailer and
+		// the repair prescription (round-19: the earlier construction
+		// let the trailer-versus-state check mask this arm).
+		sha := strings.Repeat("e", 40)
+		if err := AppendCycle(ledger, 2, "no-progress", sha, "score=0", ""); err != nil {
+			t.Fatal(err)
+		}
+		doc, _ := readStateDoc(state)
+		doc["ledger"].(map[string]any)["cycles"] = 2
+		doc["fences"].(map[string]any)["cycles"] = 2
+		source := state + ".src"
+		if err := atomicWriteJSON(source, doc); err != nil {
+			t.Fatal(err)
+		}
+		_, hash, _ := VerifyStateShape(state)
+		if err := WriteState(state, source, hash); err != nil {
+			t.Fatal(err)
+		}
+		doc, _ = readStateDoc(state)
+		integrity, _ := doc["integrity"].(map[string]any)
+		previous, _ := integrity["previousHash"].(string)
+		ref := "refs/metasystem/missions/demo/state-anchors"
+		tip := strings.TrimSpace(gitCmd(t, repo, "rev-parse", ref))
+		tree := strings.TrimSpace(gitCmd(t, repo, "rev-parse", tip+"^{tree}"))
+		blob := gitCmd(t, repo, "show", tip+":ledger.md")
+		blobSHA := sha256Hex(blob)
+		// The tip's tree still carries the ONE-cycle blob; the trailer
+		// claims cycle 2 and matches the state. Only blob-count refuses.
+		message := "mission(demo): forged cycle\n\nMission-Id: demo\nMission-State-Hash: " + previous +
+			"\nMission-Ledger-SHA256: " + blobSHA + "\nMission-Ledger-Path: ledger.md\nMission-Cycle: 2"
+		forged := strings.TrimSpace(gitCmd(t, repo, "commit-tree", tree, "-p", tip, "-m", message))
+		gitCmd(t, repo, "update-ref", ref, forged)
+		// The live bytes moved past the trailer's sha.
+		data, _ := os.ReadFile(ledger)
+		writeText(t, ledger, string(data)+"\n")
+		code, _ := Reconcile(state, repo, ledger)
+		if code != 3 {
+			t.Fatalf("a lying-cycle tip must park, got %d", code)
+		}
+		doc, _ = readStateDoc(state)
+		if doc["parkReason"] != "state-integrity" {
+			t.Fatalf("the lying-cycle tip must park, not prescribe repair: %v", doc["parkReason"])
+		}
+	})
+	t.Run("one-cycle-behind-heals-then-rejects-movement", func(t *testing.T) {
+		repo, state, ledger := anchoredMission(t)
+		// POSITIVE ARM (round-19): anchor at cycle 1, state and the
+		// exactly-stamped ledger at cycle 2 — the lawful one-block lag
+		// must HEAL. Rejecting lawful cycle lag fails here.
+		sha := strings.Repeat("e", 40)
+		if err := AppendCycle(ledger, 2, "no-progress", sha, "score=0", ""); err != nil {
+			t.Fatal(err)
+		}
+		doc, _ := readStateDoc(state)
+		doc["ledger"].(map[string]any)["cycles"] = 2
+		doc["fences"].(map[string]any)["cycles"] = 2
+		source := state + ".src"
+		if err := atomicWriteJSON(source, doc); err != nil {
+			t.Fatal(err)
+		}
+		_, hash, _ := VerifyStateShape(state)
+		if err := WriteState(state, source, hash); err != nil {
+			t.Fatal(err)
+		}
+		if code, rerr := Reconcile(state, repo, ledger); rerr != nil || code != 0 {
+			t.Fatalf("the lawful one-block lag must heal: code=%d err=%v", code, rerr)
+		}
+		if _, _, err := VerifyStateWithAnchor(state, repo, ledger); err != nil {
+			t.Fatalf("the healed position must verify: %v", err)
+		}
+		// NEGATIVE ARM: bytes moved past the now-anchored truth park on
+		// the next divergence beyond the one-step shape... a single
+		// step with movement stays the recoverable refusal.
+		data, _ := os.ReadFile(ledger)
+		writeText(t, ledger, string(data)+"\n")
+		advanceStateOneStep(t, state)
+		code, rerr := Reconcile(state, repo, ledger)
+		if code == 0 {
+			t.Fatal("moved bytes past the anchored truth must not reconcile clean")
+		}
+		if rerr == nil || !strings.Contains(rerr.Error(), "restore the ledger bytes") {
+			t.Fatalf("the one-step movement is the recoverable refusal: %v", rerr)
+		}
+	})
 }
 
 // Every malformed-tip shape over an OLDER VALID anchor parks (round-8):
