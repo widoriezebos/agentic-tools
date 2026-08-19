@@ -648,7 +648,7 @@ assert record["legacyId"] == "bm-1" and record["legacyVersionLabel"] == "0.1"
 assert len(record["caseTree"]) == 40 and len(record["configTree"]) == 40
 assert identity["schemaVersion"] == 2 and identity["caseTree"] == record["caseTree"] and identity["configTree"] == record["configTree"]
 assert identity["legacyId"] == "bm-1"
-assert record["measuringKitVersion"] == kit_version == "0.1.0"
+assert record["measuringKitVersion"] == kit_version == "0.2.0"
 assert record["proposalId"] is None and record["repetitionCount"] == 2
 assert set(record["machineFingerprint"]) == {"os", "cpuModel", "coreCount"}
 assert isinstance(record["roster"], dict) and record["roster"]

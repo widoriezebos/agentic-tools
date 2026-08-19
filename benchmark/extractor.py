@@ -62,6 +62,12 @@ def json_type_matches(value: Any, expected: str) -> bool:
 
 def schema_violations(value: Any, schema: dict[str, Any], path: str = "$") -> list[str]:
     violations: list[str] = []
+    branches = schema.get("oneOf")
+    if isinstance(branches, list):
+        valid = sum(1 for branch in branches if not schema_violations(value, branch, path))
+        if valid != 1:
+            violations.append(f"{path} must match exactly one oneOf branch ({valid} matched)")
+        return violations
     expected = schema.get("type")
     if expected is not None:
         choices = expected if isinstance(expected, list) else [expected]
@@ -106,6 +112,8 @@ def schema_violations(value: Any, schema: dict[str, Any], path: str = "$") -> li
         if "minProperties" in schema and len(value) < schema["minProperties"]:
             violations.append(f"{path} has fewer than {schema['minProperties']} properties")
     if isinstance(value, list):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            violations.append(f"{path} has fewer than {schema['minItems']} items")
         if "items" in schema:
             for index, child in enumerate(value):
                 violations.extend(schema_violations(child, schema["items"], f"{path}[{index}]"))
@@ -333,8 +341,34 @@ class Extractor:
                 return None
         return value
 
+    def verify_state_authority(self, state_path: Path) -> bool:
+        """The Go validator is the AUTHORITY on mission state; the schema is
+        a shape mirror. Scoring must not trust bytes the authority has not
+        verified (hash chain + anchor), so the extractor invokes it and
+        fails CLOSED when it is absent or refuses."""
+        binary = self.target_root / "bin" / "metasystem"
+        if not binary.is_file():
+            self.evidence_error("missionState", "authority binary bin/metasystem is missing; state cannot be verified")
+            return False
+        ledger = state_path.parent / "ledger.md"
+        command = [str(binary), "mission", "state-verify", "--state", str(state_path),
+                   "--repo", str(self.target_root), "--ledger", str(ledger)]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            self.evidence_error("missionState", f"authority verification failed to run: {error}")
+            return False
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip().splitlines()
+            self.evidence_error("missionState", "authority verification refused: " + (detail[0] if detail else "no detail"))
+            return False
+        return True
+
     def load_inputs(self) -> None:
         state_path = self.mission_root / "state.json"
+        if not self.verify_state_authority(state_path):
+            self.state = None
+            return
         self.state = self.load_json(state_path, "missionState", "mission-state.schema.json")
         mission_id = self.state.get("missionId") if self.state else self.mission_root.name
         contract_path = locate_contract(self.mission_root, self.target_root, str(mission_id))

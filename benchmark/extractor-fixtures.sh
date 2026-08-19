@@ -52,6 +52,32 @@ base = fixture / "base"
 mission = base / "artifacts" / "agents" / "missions" / "fixture"
 agents = base / "artifacts" / "agents"
 base.mkdir(parents=True, exist_ok=True)
+# FIXTURE STUB AUTHORITY (slice-6 successor round-9 finding 2): these
+# beds are synthetic end to end — no git repository, no hash chain, no
+# anchor — so the real binary would rightly refuse them. The stub
+# stands in for a PASSING authority so the fixtures certify the
+# extractor's scoring downstream of the verdict; the fail-closed leg
+# below removes the stub and asserts the evidence voids.
+bin_dir = base / "bin"
+bin_dir.mkdir(parents=True, exist_ok=True)
+stub = bin_dir / "metasystem"
+stub.write_text(
+    "#!/usr/bin/env bash\n"
+    "# extractor-fixture stub authority: approves ONLY the exact production\n"
+    "# argv (slice-6 successor rounds 10-11) - verb pair, then\n"
+    "# --state/--repo/--ledger whose VALUES are exactly this bed's own\n"
+    "# mission paths, resolved from the stub's location.\n"
+    'root="$(cd "$(dirname "$0")/.." && pwd -P)"\n'
+    'canon() { [ -e "$1" ] || return 1; echo "$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"; }\n'
+    'if [ "$#" -ne 8 ]; then exit 64; fi\n'
+    'if [ "$1" != "mission" ] || [ "$2" != "state-verify" ]; then exit 64; fi\n'
+    'if [ "$3" != "--state" ] || [ "$(canon "$4")" != "$root/artifacts/agents/missions/fixture/state.json" ]; then exit 64; fi\n'
+    'if [ "$5" != "--repo" ] || [ "$(canon "$6")" != "$root" ]; then exit 64; fi\n'
+    'if [ "$7" != "--ledger" ] || [ "$(canon "$8")" != "$root/artifacts/agents/missions/fixture/ledger.md" ]; then exit 64; fi\n'
+    "exit 0\n",
+    encoding="utf-8",
+)
+stub.chmod(0o755)
 (base / "metasystem.conf").write_text(
     "role.default.runtime=fake\n"
     "role.default.model.fake=gpt-test\n"
@@ -105,6 +131,7 @@ state = {
     },
     "openTurn": None,
     "workspaceTaint": {"next": 1, "segment": 0, "entries": []},
+    "initialBaseline": "a" * 40,
 }
 write_json(mission / "state.json", state)
 (mission / "ledger.md").write_text(
@@ -311,11 +338,71 @@ for name, mutation in variants.items():
         (mission_copy / "ledger.md").unlink()
 PY
 
+# The AUTHORITY fail-closed leg (round-9 finding 2): without the
+# authority binary, the state evidence must VOID with the named error —
+# never score.
+python3 - "$fixture" <<'PY_AUTH'
+import shutil
+import sys
+from pathlib import Path
+
+fixture = Path(sys.argv[1])
+case = fixture / "authorityMissing"
+shutil.copytree(fixture / "base", case)
+(case / "bin" / "metasystem").unlink()
+PY_AUTH
+"$kit/extract.sh" "$fixture/authorityMissing/artifacts/agents/missions/fixture" --spec "$fixture/spec" --out "$fixture/authorityMissing-scorecard.json" >/dev/null
+python3 - "$fixture/authorityMissing-scorecard.json" <<'PY_AUTH'
+import json
+import sys
+from pathlib import Path
+
+scorecard = json.loads(Path(sys.argv[1]).read_text())
+assert scorecard["runValidity"]["valid"] is False, scorecard["runValidity"]
+errors = json.dumps(scorecard)
+assert "authority binary bin/metasystem is missing" in errors, errors[:2000]
+PY_AUTH
+echo "authority fail-closed leg passed"
+
+# The REFUSING-authority leg (round-10 finding 5): a nonzero verdict from
+# the authority must void the evidence with the named refusal, proving
+# the extractor honors the verdict and not merely the binary's presence.
+python3 - "$fixture" <<'PY_AUTH'
+import shutil
+import sys
+from pathlib import Path
+
+fixture = Path(sys.argv[1])
+case = fixture / "authorityRefuses"
+shutil.copytree(fixture / "base", case)
+stub = case / "bin" / "metasystem"
+stub.write_text(
+    "#!/usr/bin/env bash\n"
+    "echo 'mission state hash does not match its recorded chain' >&2\n"
+    "exit 1\n",
+    encoding="utf-8",
+)
+stub.chmod(0o755)
+PY_AUTH
+"$kit/extract.sh" "$fixture/authorityRefuses/artifacts/agents/missions/fixture" --spec "$fixture/spec" --out "$fixture/authorityRefuses-scorecard.json" >/dev/null
+python3 - "$fixture/authorityRefuses-scorecard.json" <<'PY_AUTH'
+import json
+import sys
+from pathlib import Path
+
+scorecard = json.loads(Path(sys.argv[1]).read_text())
+assert scorecard["runValidity"]["valid"] is False, scorecard["runValidity"]
+errors = json.dumps(scorecard)
+assert "authority verification refused" in errors, errors[:2000]
+assert "does not match its recorded chain" in errors, errors[:2000]
+PY_AUTH
+echo "authority refusing leg passed"
+
 for name in valid everyJobTerminal everyChainClosed zeroUntracked fencesEnforced delegationFloorMet rosterPinned evidenceSetComplete; do
   mission="$fixture/$name/artifacts/agents/missions/fixture"
   out="$fixture/$name-scorecard.json"
   "$kit/extract.sh" "$mission" --spec "$fixture/spec" --out "$out" >/dev/null
-  python3 - "$out" "$name" <<'PY'
+  python3 - "$out" "$name" "$kit/kit-version" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -326,7 +413,7 @@ gates = {gate["name"]: gate["passed"] for gate in scorecard["runValidity"]["gate
 if variant == "valid":
     assert scorecard["runValidity"]["valid"] is True, scorecard["runValidity"]
     assert all(value is True for value in gates.values()), gates
-    assert scorecard["identity"]["measuringKitVersion"] == "0.1.0"
+    assert scorecard["identity"]["measuringKitVersion"] == Path(sys.argv[3]).read_text(encoding="utf-8").strip()
     assert scorecard["identity"]["cohortId"] == "extractor-fixture-cohort"
     assert scorecard["identity"]["caseId"] == "extractor-fixture" and scorecard["identity"]["caseVersion"] == "1.0"
     assert scorecard["identity"]["configId"] == "fixturecfg" and scorecard["identity"]["configVersion"] == "1"
@@ -342,6 +429,12 @@ else:
         # The same sole implementer cannot be both non-terminal and satisfy the
         # completed-and-certified delegation floor.
         expected_false.add("delegationFloorMet")
+    if variant == "evidenceSetComplete":
+        # The missing ledger now refuses at the AUTHORITY (state-verify
+        # takes the ledger as an input), voiding state and every
+        # state-derived gate - the correct fail-closed cascade.
+        expected_false.update({"fencesEnforced", "delegationFloorMet", "rosterPinned"})
+        assert any("authority verification refused" in reason for reason in scorecard["runValidity"]["reasons"]), scorecard["runValidity"]
     assert {name for name, value in gates.items() if value is not True} == expected_false, gates
 assert Path(sys.argv[1]).with_suffix(".md").is_file()
 PY

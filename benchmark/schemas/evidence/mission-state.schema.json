@@ -19,7 +19,8 @@
     "ledger",
     "integrity",
     "openTurn",
-    "workspaceTaint"
+    "workspaceTaint",
+    "initialBaseline"
   ],
   "properties": {
     "schemaVersion": {
@@ -511,11 +512,11 @@
                       },
                       "resolvedBy": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s\uFEFF\u200B-\u200D\u2060-\u2064][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                       },
                       "reason": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s\uFEFF\u200B-\u200D\u2060-\u2064][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                       }
                     }
                   },
@@ -568,18 +569,18 @@
                       },
                       "resolvedBy": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s\uFEFF\u200B-\u200D\u2060-\u2064][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                       },
                       "reason": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s\uFEFF\u200B-\u200D\u2060-\u2064][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                       },
                       "waivedClaims": {
                         "type": "array",
                         "minItems": 1,
                         "items": {
                           "type": "string",
-                          "pattern": "^[\\s\\S]*[^\\s\uFEFF\u200B-\u200D\u2060-\u2064][\\s\\S]*$"
+                          "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                         }
                       }
                     }
@@ -590,6 +591,10 @@
           }
         }
       }
+    },
+    "initialBaseline": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
     }
   }
 }
