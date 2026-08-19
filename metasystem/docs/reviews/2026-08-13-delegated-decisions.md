@@ -1493,3 +1493,17 @@ tier 2 = a numbered failsafe round fixed before round 1.
 **Alternative:** Keeping HUMAN/MAIN-only against the target (re-breaks every agent-ancestry provisioning flow until the session hook announces reliably, and never admits the sandboxed kit gate); a per-user authority registry or a holder-minted capability (both re-introduce a caller-influenced authority source; refuted in the design's §7); the round-1 `goal seed` verb (set aside by the Mac session's scope addendum — the ledger seeding and format are being rewritten there; its doctrine point, verb-written skeleton bytes with a digest over the target's actual plans set, is recommended to that rewrite).
 
 **Impact:** Critique chain: three design rounds (codex gpt-5.6-sol, one chain; 5+6+4 material findings, every one dispositioned by join, two rewrites forced — the round-1 premise refutation and the round-3 non-holder-MAIN cut) and one implementation round (Claude opus; 9 findings, 4 material, including a live GIT_DIR bypass of the new guard, all folded with tests) — plans/genesis-authority-design.md and its dispositions files carry the trail. Proof: engine unit battery green; adopt-fixtures.sh and benchmark/validate-kit.sh green end-to-end from an announced agent session, both under METASYSTEM_MAX_ALWAYS_LOADED_WORDS=1500 because the template's always-loaded budget (1400) is exceeded at 1472 words since 86bd66a — a pre-existing blocker in the slice-7 landing's AGENTS.md, left to its owner. The adopt fixtures gain a post-adoption probe pinning that genesis confers no write authority (goal open stays holder-only against the target).
+
+**Addendum to D119 (Wido, 2026-08-19):** Wido directed that D119's
+lesson becomes backlog content with the metasystem treatment — "design
+loops get a declared failsafe round at loop start, not mid-loop" goes
+into the covenant-patience arc's charter so the mechanization
+enforces it, explicitly NOT dependent on any particular agent
+remembering it. Folded into the migration manifest's amend entries
+for both arc members: critique-stop-rule's design must pin the
+failsafe declaration at loop start as harness-enforced standing
+policy, and executable-covenant's critique-round driver must refuse
+to start a loop without a declared failsafe round and must stop the
+loop itself when a tier fires. The live ledger stays untouched until
+migration per the manifest's source-digest binding; the migrated
+backlog carries the charter from cutover.

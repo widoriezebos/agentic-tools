@@ -107,11 +107,11 @@ REVIEWED_SOURCE_SHA256: 266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f
 
 ### amend-goal: critique-stop-rule
 - arc: covenant-patience
-- next: Design the critique-loop stop mechanism adopting plans/patience-attempts.md's two tiers (no-gain rounds + absolute failsafe), per D114's addenda; one patience concept across fixtures, missions, and review loops.
+- next: Design the critique-loop stop mechanism adopting plans/patience-attempts.md's two tiers (no-gain rounds + absolute failsafe), per D114's addenda; one patience concept across fixtures, missions, and review loops. The failsafe round number is DECLARED AT LOOP START as standing policy and enforced by the harness, never set mid-loop by an agent's judgment (Wido's instruction 2026-08-19, from the backlog-git-sync loop where the declaration only happened at round 10 because an agent remembered the rulings — D119 records the lesson).
 
 ### amend-goal: executable-covenant
 - arc: covenant-patience
-- next: Build battery.sh (one entrypoint, verdict file) and the critique-round driver carrying the arc's stop mechanism; designed together with critique-stop-rule (D114).
+- next: Build battery.sh (one entrypoint, verdict file) and the critique-round driver carrying the arc's stop mechanism; designed together with critique-stop-rule (D114). The driver REFUSES to start a critique loop without a declared failsafe round and stops the loop itself when a tier fires — the mechanism runs without any particular agent (Wido's instruction 2026-08-19).
 
 ### amend-goal: runtime-install-execution
 - next: Implementation-first behind fixtures per D81 (the ruling that unblocked it): run the throwaway wire probe, then build against stubs with fixtures pinning each contract; seeds in plans/ric-critique-r1..r6.
