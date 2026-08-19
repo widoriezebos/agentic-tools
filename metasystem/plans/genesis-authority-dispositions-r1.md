@@ -1,0 +1,19 @@
+# Genesis authority design — critique round 1 dispositions
+
+Critic: design-critic, codex gpt-5.6-sol, job `genesis-authority-critique-2`
+round 1 (`artifacts/agents/genesis-authority-critique-2/rounds/1/return.json`).
+Design version attacked: the round-0 draft (rule G: one root, admit
+DELEGATE at reconcile-genesis). Verdict line: 5 material. Body read in
+full; all five are dispositioned below.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| GA-R1-01 | accepted | The premise was wrong as stated. A Goal-free declaration carries a digest that is the turn verdict's all-clear (`internal/goal/turnverdict.go:408-417`), `HasGoals` ignores it (`goal.go:86`), so under G a non-holder could supply or renew the declaration on any ledger without a baseline through the sanctioned edit-then-reconcile path. | Design rewritten (§1–§2): adoption becomes `goal seed` — engine-written skeleton, no caller bytes, only into a root with no ledger, no baseline and no HEAD-tracked ledger; reconcile-genesis keeps today's HUMAN/MAIN rule, classified against the target only. A DELEGATE-shaped caller can neither reconcile a ledger without a baseline nor supply bytes through seed. |
+| GA-R1-02 | accepted | `Store.Open` carries no authority (`goalverbs.go:320-336`, `mutate` at 236-259); the holder-only refusal is the command layer's (`authority.go:50-52` via `goal.go:73`). A store-level test could not prove the boundary. | §5 P2: the boundary test moves to `cmd/metasystem` (goalCaller with the lease package's child-process pattern: DELEGATE + reconcile on a virgin root refused; DELEGATE + open refused holder-only; HUMAN admitted) and the adopt fixture asserts post-adoption `goal open` refusal from agent ancestry. `TestGenesisEffective` is replaced, not merely removed. |
+| GA-R1-03 | accepted | Correct on both counts: against a virgin target the helper classes cannot appear (no custody records), so a class row for them at genesis depended on incidental target history; and the fact sheet mis-described `Classify` (the caller itself is checked for an announcement only, `classify.go:291-293`; the rest is ancestry). | Seed has no class gate at all (§2 R1); the authority matrix is left untouched (reconcile-genesis keeps its existing row, where the helper refusal has the same meaning it has today). Fact sheet corrected. |
+| GA-R1-04 | refuted | True that `Holder` is sampled before the store's lock (`goal.go:82`) and only `Reconcile` consults it in the store (`goalverbs.go:608`; `grep -n Holder internal/goal/goalverbs.go` → lines 30-32, 608 only). But the window is the holder-only posture of EVERY goal verb: open/park/done/... authorize at the command layer and then take the lock with no re-check, so a holder whose lease transfers mid-verb completes any write, not only a re-baseline. This design neither introduces nor widens it (the guard at 608 is unchanged and the populated-ledger case is unreachable for non-holders under R1/R2). Fixing it means carrying the observed claim epoch in `goal.Caller` and re-reading the lease under the goal lock — a change to every goal verb, which is the Mac session's active territory. | No design change. Follow-up named in the report for the Mac session / a goal of its own: "goal verbs re-check the lease epoch under the goal lock". |
+| GA-R1-05 | accepted | `--caller-pid` selects the ancestry (`goal.go:130-142`) and `--root` the registry; "no input steers the class" was false, and removing `genesisEffective` without a replacement left no test that classification uses the target root and the real ancestry. | §2 R4 states exactly what remains steerable and that neither is a second classification root; §5 P2 adds the command-layer goalCaller test. |
+
+Round closed by join: 5 findings, 5 dispositions.
+
+Non-material findings: none reported.

@@ -51,24 +51,40 @@ func TestValidMode(t *testing.T) {
 	}
 }
 
-// Genesis admits the human or a main agent — holder or not, because
-// a virgin root has no lease anyone could hold — and never a
-// machinery class (provision-genesis-authority).
+// Genesis admits the human and the root's lease holder outright, and every
+// other caller — a main without the lease, a delegate, a helper — only when
+// the ledger it would baseline is adoption-shaped (goal-free on a checkout
+// whose history carries none); the verb layer carries that flag in the
+// classification.
 func TestGenesisMode(t *testing.T) {
 	if !ValidMode("genesis") {
 		t.Fatal("genesis must be a known mode")
 	}
-	for class, allowed := range map[string]bool{
-		"HUMAN":              true,
-		"MAIN":               true,
-		"SUPERVISION":        false,
-		"ADAPTER-SUPERVISOR": false,
-		"DELEGATE":           false,
+	for _, tc := range []struct {
+		class   string
+		holder  bool
+		shaped  bool
+		allowed bool
+	}{
+		{"HUMAN", false, false, true},
+		{"MAIN", true, false, true},
+		{"MAIN", false, false, false},
+		{"MAIN", false, true, true},
+		{"DELEGATE", false, false, false},
+		{"DELEGATE", false, true, true},
+		{"SUPERVISION", false, false, false},
+		{"SUPERVISION", false, true, true},
+		{"ADAPTER-SUPERVISOR", false, false, false},
+		{"ADAPTER-SUPERVISOR", false, true, true},
 	} {
-		err := Authorize("genesis", map[string]any{"class": class, "holder": false}, "")
-		if (err == nil) != allowed {
-			t.Fatalf("genesis class %s: err=%v want allowed=%v", class, err, allowed)
+		err := Authorize("genesis", map[string]any{"class": tc.class, "holder": tc.holder, "adoptionShaped": tc.shaped}, "")
+		if (err == nil) != tc.allowed {
+			t.Fatalf("genesis class %s holder=%v shaped=%v: err=%v want allowed=%v", tc.class, tc.holder, tc.shaped, err, tc.allowed)
 		}
+	}
+	// The flag is genesis-only: it never raises a holder-only write.
+	if err := Authorize("holder-only", map[string]any{"class": "DELEGATE", "holder": false, "adoptionShaped": true}, ""); err == nil {
+		t.Fatal("adoptionShaped must not raise a holder-only write")
 	}
 	if err := Authorize("holder-only", map[string]any{"class": "MAIN", "holder": false}, ""); err == nil {
 		t.Fatal("holder-only must still refuse a non-holder main")

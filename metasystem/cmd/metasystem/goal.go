@@ -21,24 +21,28 @@ import (
 
 // goalCaller classifies the invoking process and authorizes a mutation.
 // Reconcile against a root with NO accepted baseline is GENESIS: the
-// control plane being seeded does not exist yet, so the human or a
-// main agent may seed it without holding a lease nobody could hold
-// (the adopt/provisioning path; goal-system GOAL-14's reconcile-only
-// initialization).
+// control plane being seeded does not exist yet, so holder-only would
+// protect nothing and refuse everything (the adopt/provisioning path;
+// goal-system GOAL-14's reconcile-only initialization).
 //
-// The genesis rule (D84, restated honestly per D93's C' ruling and
-// the verification rounds): the effective class is the SOURCE view
-// when it authenticates as an announced MAIN, else the TARGET view.
-// This closes the accidental cases (a missing or malformed source
-// cannot raise; a real delegate against a signature-carrying target
-// reads DELEGATE and is refused) and is explicitly COOPERATIVE, not
-// unforgeable: a deliberately crafted source root with a copied live
-// announcement can read MAIN, and a machinery caller against a
-// signature-free virgin target can read HUMAN — both remain open by
-// the C' decision (unforgeable local genesis is not a product
-// contract; a notEnforced delegate writes the baseline directly
-// regardless).
-func goalCaller(root string, callerPid int64, verb, genesisFrom string) (goal.Caller, error) {
+// The genesis rule: the caller is classified against the root being
+// written — the same root every goal verb classifies against, never a
+// second one the caller names — and the authority matrix admits the
+// human, the root's lease holder, and any other caller whose ledger is
+// adoption-shaped (goal-free, on a checkout whose history carries no
+// ledger; goal.AdoptionShaped). A terminal, an announced session, a
+// session whose announcement lapsed, a fixture under agent ancestry and
+// the kit gate in a delegate sandbox all seed a new control plane that
+// way; nobody but the holder puts intent into one that exists, and the
+// store re-judges the shape under its lock.
+//
+// Posture, stated plainly (D93 ruled C'): this is cooperative, not
+// unforgeable. --caller-pid names the ancestry for every classified verb
+// in the system, a denied process table reads HUMAN for every verb, and a
+// same-user actor can write the control-plane files directly; none of
+// that is widened here, and none of it passes through a root this verb
+// lets the caller choose.
+func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) {
 	if callerPid == 0 {
 		callerPid = int64(os.Getppid())
 	}
@@ -50,77 +54,42 @@ func goalCaller(root string, callerPid int64, verb, genesisFrom string) (goal.Ca
 		}
 	}
 
-	targetView, err := lease.ClassifyVerb(root, callerPid)
+	view, err := lease.ClassifyVerb(root, callerPid)
 	if err != nil {
 		return goal.Caller{}, fmt.Errorf("caller classification failed: %v", err)
 	}
-	effective := targetView
+	classification := map[string]any{"class": view.Class, "holder": view.Holder}
+	var shapeErr error
 	if genesis {
 		mode = "genesis"
-		if genesisFrom != "" {
-			fromView, fromErr := lease.ClassifyVerb(genesisFrom, callerPid)
-			if fromErr != nil {
-				return goal.Caller{}, fmt.Errorf("genesis-from classification failed: %v", fromErr)
-			}
-			effective, err = genesisEffective(targetView, fromView)
-			if err != nil {
-				return goal.Caller{}, err
+		// A probe that cannot read refuses the SHAPE, never the human:
+		// the flag stays false so the matrix refuses a non-holder, while
+		// the human and the holder keep today's rule and the store
+		// surfaces the real read error under its lock.
+		shaped := false
+		ledgerBytes, readErr := os.ReadFile(goal.LedgerPath(root))
+		switch {
+		case readErr != nil && !os.IsNotExist(readErr):
+			shapeErr = readErr
+		default:
+			shaped, _, shapeErr = goal.AdoptionShaped(root, ledgerBytes)
+			if shapeErr != nil {
+				shaped = false
 			}
 		}
+		classification["adoptionShaped"] = shaped
 	}
-
-	classification := map[string]any{"class": effective.Class, "holder": effective.Holder}
 	if err := authority.Authorize(mode, classification, ""); err != nil {
+		if shapeErr != nil {
+			return goal.Caller{}, fmt.Errorf("%v (the adoption-shape probe failed: %v)", err, shapeErr)
+		}
 		return goal.Caller{}, err
 	}
-	// The store's genesis branch re-checks under the lock that a
-	// non-holder only seeds a goal-free ledger (review F2/F3), so the
-	// holder bit carried here is the target's, not the source's. The
-	// Genesis flag makes the authorization MODE travel with the caller:
-	// the store refuses a genesis-admitted caller every non-genesis arm
-	// under its lock (the pre-lock race, re-review finding 4).
-	return goal.Caller{Class: effective.Class, Holder: targetView.Holder, Genesis: mode == "genesis"}, nil
-}
-
-// genesisEffective decides the effective genesis class from the two
-// classifications — pure, so the rule lives in table tests. A
-// positively-announced main against the source is the only way
-// --genesis-from RAISES the effective class; any other source result
-// (HUMAN, or a machinery class) falls through to the TARGET's own
-// view, which decides.
-//
-// The cooperative posture, recorded plainly (D93 ruled C': unforgeable
-// genesis is NOT a product contract): a machinery-refusal was tried
-// here and REVERTED — it broke legitimate flows. WHO passes genesis is
-// decided by the classifier's nearest-agent-ancestor rule, per node
-// announcements-before-signatures:
-//
-//   - a HUMAN terminal (no agent ancestor) → HUMAN → admitted;
-//   - a command whose nearest agent ancestor IS the announced main
-//     (the orchestrating session running fixtures or the kit gate,
-//     with --genesis-from/METASYSTEM_GENESIS_AUTHORITY_ROOT naming a
-//     root that carries the announcement) → MAIN → admitted;
-//   - a TRUE delegate (its nearest agent ancestor is a delegate CLI,
-//     nearer than any announced main) → DELEGATE at the source, and
-//     the target view decides — which refuses wherever the target
-//     classifies it as machinery. A delegate seeding a control plane
-//     is refused BY DESIGN; the kit gate inside a delegate sandbox
-//     therefore cannot perform genesis itself and relies on the
-//     provisioner having seeded the baseline first.
-//
-// Two cooperative holes REMAIN OPEN by decision, not oversight: a
-// crafted source root carrying a copied live main announcement
-// classifies MAIN and raises, and a machinery caller against a
-// signature-free virgin target can read HUMAN there. Both require
-// deliberate construction — outside the accidental scope C' keeps —
-// and a notEnforced delegate could write the baseline directly
-// regardless, which is why D86/D92 concluded this boundary cannot be
-// load-bearing.
-func genesisEffective(targetView, fromView lease.ClassifyResult) (lease.ClassifyResult, error) {
-	if fromView.Class == "MAIN" {
-		return fromView, nil
-	}
-	return targetView, nil
+	// The Genesis flag makes the authorization MODE travel with the
+	// caller: the store refuses a genesis-admitted caller every
+	// non-genesis arm under its lock, and re-judges the adoption shape
+	// there for a non-holder.
+	return goal.Caller{Class: view.Class, Holder: view.Holder, Genesis: mode == "genesis"}, nil
 }
 
 // goalMutation is the shared verb spine: flags, classification, the
@@ -130,7 +99,6 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	flags := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid (defaults to the parent process)")
-	genesisFrom := flags.String("genesis-from", "", "source root whose announcements authenticate a genesis reconcile")
 	var extras []*string
 	if extra != nil {
 		extras = extra(flags)
@@ -138,7 +106,7 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	caller, err := goalCaller(*root, *callerPid, name, *genesisFrom)
+	caller, err := goalCaller(*root, *callerPid, name)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

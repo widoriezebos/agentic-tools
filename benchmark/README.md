@@ -226,7 +226,7 @@ it into the evidence store and delete it. Versions are always pinned on the
 command line; an unpinned reference is refused with the versions available.
 
 ```
-# 1. Stage (from the repository toplevel; a HUMAN shell, not an agent's — genesis is human-reserved)
+# 1. Stage (from the repository toplevel; any shell — genesis admits the provisioner for the goal-free first baseline)
 benchmark/provision.sh --case taskrun@0.1 --config cheap@1 --target <fresh-dir>
 
 # 2. Human: review the contract it printed, then seal and sign

@@ -142,7 +142,7 @@ supervise() { # dispatch|follow-up and supervisor args
   # pid, which custody registration depends on.
   local -a job_git_env=()
   while IFS= read -r assignment; do job_git_env+=("$assignment"); done < <(job_git_quarantine_env "$workspace")
-  ( cd "$workspace" && exec env "${job_git_env[@]}" "${command[@]}" ) <"$prompt" >"$events" 2>>"$log" &
+  ( cd "$workspace" && exec env ${job_git_env[@]+"${job_git_env[@]}"} "${command[@]}" ) <"$prompt" >"$events" 2>>"$log" &
   cli_pid=$!
   register_cli_custody "$cli_pid" || { terminate_cli_child "$cli_pid"; fail_pending custody_registration handshake; return 1; }
   while kill -0 "$cli_pid" 2>/dev/null; do

@@ -10,15 +10,12 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$root"
-# Every adoption in this harness runs from a STERILE SNAPSHOT source,
-# which carries no announcements — so from an agent session the source
-# classification is DELEGATE by signature and genesis refuses. The
-# authority root env hook exists for exactly this (a sterile snapshot's
-# genesis authenticates against the LIVE root where the session's main
-# announcement lives); without it these fixtures only passed in
-# environments whose ancestry carried no agent signature — an
-# invocation-shape dependence, the KI-31 class of problem.
-export METASYSTEM_GENESIS_AUTHORITY_ROOT="$root"
+# Every adoption in this harness runs from a STERILE SNAPSHOT source
+# under whatever ancestry invoked the suite — agent or terminal. Genesis
+# no longer cares which: a non-holder is admitted for exactly the
+# adoption shape (a goal-free ledger on a checkout whose history carries
+# none), judged against the target itself, so these fixtures carry no
+# invocation-shape dependence and no authority-root env hook.
 command -v python3 >/dev/null 2>&1 \
   || { echo "${0##*/}: python3 is required by these fixtures (the metasystem itself does not need it)" >&2; exit 1; }
 tmp=$(mktemp -d)
@@ -283,6 +280,31 @@ PYEOF
   # the Go engine).
   "$tgt/bin/metasystem" goal list --root "$tgt" | grep -q '"baselineMatches":true' \
     || { echo "adopt: the seeded goal pair is not reconciled (baseline out of step)" >&2; exit 1; }
+  # Genesis authorizes seeding, nothing more: once the pair stands, an
+  # intent-bearing write is holder-only against the TARGET. Probe a COPY
+  # of the adopted target so the probe's own write (or refusal) leaves
+  # the real target byte-identical for the re-adoption walk below. When
+  # this harness runs under agent ancestry the copy classifies us as a
+  # delegate and `goal open` must refuse; under a terminal ancestry we
+  # are its human and it must succeed — either way the write authority
+  # is the target's own judgment, never something adoption granted.
+  probe_tgt="$tmp/adopt-authority-probe"
+  rm -rf "$probe_tgt"
+  mkdir -p "$probe_tgt"
+  cp -R "$tgt/." "$probe_tgt"
+  fixture_view=$("$tgt/bin/metasystem" lease classify --root "$probe_tgt" --caller-pid $$ 2>/dev/null || true)
+  fixture_class=$("$tgt/bin/metasystem" json get --value "$fixture_view" --field class 2>/dev/null || true)
+  if open_out=$("$tgt/bin/metasystem" goal open --root "$probe_tgt" --id post-adopt-probe \
+      --intent "authority probe" --next "none" 2>&1); then
+    [[ "$fixture_class" == HUMAN ]] \
+      || { echo "adopt: a $fixture_class caller opened a goal in the adopted target; genesis must not confer write authority" >&2; exit 1; }
+  else
+    [[ "$fixture_class" != HUMAN ]] \
+      || { echo "adopt: the target's own human was refused goal open: $open_out" >&2; exit 1; }
+    echo "$open_out" | grep -q 'lease holder' \
+      || { echo "adopt: post-adoption open refused for the wrong reason: $open_out" >&2; exit 1; }
+  fi
+  rm -rf "$probe_tgt"
   [[ -d "$tgt/artifacts" ]] || { echo "adopt: artifacts directory missing" >&2; exit 1; }
   grep -qxF 'artifacts/' "$tgt/.gitignore" || { echo "adopt: artifacts/ not gitignored" >&2; exit 1; }
   grep -q "$src_sha" "$tgt/docs/project-rules.md" || { echo "adopt: template SHA not recorded" >&2; exit 1; }

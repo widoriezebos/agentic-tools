@@ -602,11 +602,24 @@ func (s *Store) Reconcile(caller Caller) (Result, error) {
 			// appearing between authorization and this write cannot be
 			// bypassed: a populated ledger with no baseline is a
 			// corrupted or attacked INITIALIZED project, not a virgin
-			// genesis. Only its holder may re-baseline it; a genesis
-			// caller (human or main adopting) creates only from a
-			// goal-free skeleton.
+			// genesis. Only its holder may re-baseline it; any other
+			// genesis caller creates only from a goal-free skeleton.
 			if parsed.HasGoals() && !caller.Holder {
 				return Result{}, fmt.Errorf("genesis reconcile refused: the ledger already carries goals but has no accepted baseline; only the lease holder may re-baseline an initialized project (a deleted goals-accepted.json is restored, not re-adopted)")
+			}
+			// A caller that is neither the human nor the holder may
+			// baseline only what adoption would: a goal-free ledger on
+			// a checkout whose history carries none. The verb layer
+			// admitted it on that shape before the lock; the ledger is
+			// judged again as it is now.
+			if caller.Class != "HUMAN" && !(caller.Class == "MAIN" && caller.Holder) {
+				shaped, reason, err := AdoptionShaped(s.Root, state.ledgerBytes)
+				if err != nil {
+					return Result{}, fmt.Errorf("genesis reconcile refused: %v", err)
+				}
+				if !shaped {
+					return Result{}, fmt.Errorf("genesis reconcile refused: %s", reason)
+				}
 			}
 			if err := s.writeBaseline(state.ledgerBytes); err != nil {
 				return Result{}, err

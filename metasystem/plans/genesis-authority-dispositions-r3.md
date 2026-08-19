@@ -1,0 +1,16 @@
+# Genesis authority design — critique round 3 dispositions
+
+Critic: design-critic, codex gpt-5.6-sol, job `genesis-authority-critique-2`
+round 3 (`artifacts/agents/genesis-authority-critique-2/rounds/3/return.json`),
+attacking the authority-path re-expression. Verdict line: 4 material. Body
+read in full; all four dispositioned. Budget spent after this round; the
+design's §9 records the stop judgment.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| GA-R3-01 | refuted | Mechanism: for a contract-following caller the only root without a baseline and without a HEAD-tracked ledger is one it is adopting (a virgin root, or adoption's own skeleton before its baseline); an initialized root reaches that state only by deleting `goals-accepted.json`, which is the direct-file action C' concedes. What such a caller can baseline is goal-free (`HasGoals`, `goalverbs.go:608`) — the same bytes adoption's skeleton is, origin and timestamp included: `adopt.sh:211` writes "by human" whoever runs it, so "shell-seeded" and "caller-authored" bytes are not distinguishable in kind, and there is no negative test to write. The all-clear in a root you created is adoption's all-clear. Claim text corrected: the design now says the declaration is the adopter's words, as it is today, and that the digest buys nothing (anyone can compute it). Whether machinery may adopt at all is the decision reserved for Wido on the first page. | §1 reworded; no mechanism change. |
+| GA-R3-02 | accepted | Correct: `verbs.go:220` reports every authenticated MAIN as holder when no lease exists, so a non-holder MAIN exists only on a root that has a lease — an initialized root — and "a virgin root has no lease" never justified its unconditional admission. Fact sheet corrected. | R2 becomes HUMAN; MAIN holder; everyone else iff adoption-shaped. R3/R4 apply the lock-time re-check to every non-HUMAN non-holder. |
+| GA-R3-03 | accepted | The factual premise is wrong: holder-only mode never consulted the source root (`goal.go:53-67` — `genesisFrom` is read only inside `if genesis`), so a DELEGATE-shaped re-run over a healthy pair was refused before this design too, and adopt.sh reaches that line with a healthy pair only past its same-SHA early exit (`adopt.sh:115-125`). But the design should not leave a non-write to a refusal it can avoid: a healthy pair is not something to reconcile. | R5: adopt.sh asks the engine read-only (`goal list` → `baselineMatches`) and skips reconcile when the pair matches. The round-2 note's "moot" for the adopt skip is superseded by this row. |
+| GA-R3-04 | accepted | Correct, and it exposed that the digest-truthfulness term protected nothing (an attacker computes the current digest from filenames; a stale one only BLOCKS the target's verdict — the safe direction) while refusing adoption into a target carrying other `plans/*.md`. Dropping the term removes the dependency on the seeding rewrite entirely. | R3: adoption-shaped = parse-legal, goal-free, no HEAD-tracked ledger. R5 states the stale-from-birth behaviour (verdict blocks) and hands the digest computation to the seeding rewrite as a recommendation, not a prerequisite. Flow table row added. |
+
+Round closed by join: 4 findings, 4 dispositions.

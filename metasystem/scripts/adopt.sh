@@ -280,14 +280,23 @@ chmod +x "$target/bin/metasystem"
 # The goal baseline is written by the engine's ONE genesis authority path
 # (goal-system GOAL-14: initialization is reconcile-only): the seeded
 # ledger is adopted as the first accepted state, leaving the
-# goals.md + goals-accepted.json pair standing together.
-# The genesis authority root is where the calling session's main
-# announcements LIVE — runtime state, not git state. A fixture or
-# wrapper adopting from a sterile snapshot exports the live root;
-# everyone else authenticates against this source checkout.
-genesis_authority_root=${METASYSTEM_GENESIS_AUTHORITY_ROOT:-$root}
-"$target/bin/metasystem" goal reconcile --root "$target" --genesis-from "$genesis_authority_root" >/dev/null \
-  || die 1 "goal baseline genesis failed in the target"
+# goals.md + goals-accepted.json pair standing together. The caller is
+# classified against the TARGET — the root being written, like every
+# goal verb — and genesis admits any non-holder for exactly this shape:
+# a goal-free ledger on a checkout whose history carries none. A target
+# that already holds a healthy pair (its ledger matches its accepted
+# baseline) needs no write at all, and reconciling it would run
+# holder-only against a target that cannot know this caller — a re-run
+# must not turn a no-op into a refusal.
+pair_state=$("$target/bin/metasystem" goal list --root "$target" 2>/dev/null || true)
+if [[ -n "$pair_state" ]] \
+  && [[ $("$ms" json get --value "$pair_state" --field baselinePresent --default false) == true ]] \
+  && [[ $("$ms" json get --value "$pair_state" --field baselineMatches --default false) == true ]]; then
+  : # the pair is already the accepted state
+else
+  "$target/bin/metasystem" goal reconcile --root "$target" >/dev/null \
+    || die 1 "goal baseline genesis failed in the target"
+fi
 
 mkdir -p "$target/artifacts"
 touch "$target/.gitignore"
