@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The wall preflight demands a CLEAN initial baseline at start:
+# close everything the bed laid down in tracked space, exactly as a real
+# mission repository begins.
+close_bed_baseline() { # repo
+  git -C "$1" add -A . >/dev/null 2>&1 || true
+  if ! git -C "$1" diff --cached --quiet 2>/dev/null; then
+    git -C "$1" -c user.name=fixture -c user.email=fixture@example.invalid \
+      commit -qm 'bed baseline' >/dev/null
+  fi
+}
+
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$root/scripts/agents/fixture-budget.sh"
 harness_fixture_budget_init "$root"
@@ -438,6 +449,7 @@ cat >"$repo/artifacts/agents/jobs/landed-orphan.json" <<'EOF'
 }
 EOF
 printf '{"jobId":"landed-orphan"}\n' >"$repo/artifacts/agents/landed-orphan/rounds/1/return.json"
+close_bed_baseline "$repo"
 METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
   --mission gate-and-close --foreground >/dev/null
 wait_end_state gate-and-close 10
@@ -449,6 +461,7 @@ wait_end_state gate-and-close 10
 # status exit-10 wait above remain the process-level proof.
 
 make_end_state_contract runner-closes-chain dispatch-terminal
+close_bed_baseline "$repo"
 METASYSTEM_AGENT_RUNTIME=fake "$repo/scripts/agents/mission-runner.sh" start \
   --mission runner-closes-chain --foreground >/dev/null
 wait_end_state runner-closes-chain 10

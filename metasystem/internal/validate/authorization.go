@@ -78,11 +78,11 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 		return fmt.Errorf("authorization issuance requires the current mission turn (METASYSTEM_MISSION_TURN); run conformance from inside the mission host turn")
 	}
 
-	baseTree, err := r.git(r.workspace, nil, "rev-parse", r.boundaryBase+"^{tree}")
+	workspace := r.projectWorkspace()
+	baseTree, err := workspace.TreeOf(r.boundaryBase)
 	if err != nil {
 		return fmt.Errorf("cannot resolve the boundary base tree: %v", err)
 	}
-	workspace := gittree.Workspace{Dir: r.workspace}
 	patch, err := workspace.Diff(baseTree, finalTree)
 	if err != nil {
 		return err
@@ -226,6 +226,12 @@ func missionBaseSequencePoint(root, missionID, baseTree string) (int64, int64, e
 			return point.Sequence, point.Segment, nil
 		}
 	}
+	// The refusal stays GENERIC on purpose: a baseline differing from
+	// committed HEAD does not prove a sealed-dirty admission — the same
+	// state arises lawfully mid-turn after a delegate merge advances
+	// HEAD before the turn concludes, and there the remedy is to
+	// conclude the turn, not re-provision. A sharper diagnosis needs
+	// authenticated admission provenance the state does not yet carry.
 	return 0, 0, fmt.Errorf("authorization refused: base tree %s is not a named expected-tree sequence point of mission %s; re-dispatch from the current expected tree", baseTree, missionID)
 }
 

@@ -538,7 +538,7 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 		// A pre-wall state is NOT corruption: the named refusal reaches the
 		// operator verbatim, no corrupt-state file is written, and no
 		// recovery is attempted — the remedy is re-provisioning.
-		if errors.Is(err, ErrLegacyState) {
+		if errors.Is(err, ErrLegacyState) || errors.Is(err, ErrPreWallBaseline) {
 			return 3, err
 		}
 		return reconcileCorruptState(statePath, raw)

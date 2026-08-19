@@ -49,7 +49,7 @@ func anchoredMission(t *testing.T) (repo, state, ledger string) {
 	contract := filepath.Join(repo, "mission-demo.contract.md")
 	writeText(t, contract, "```mission\ncandidate.branch=feature-x\nstream.alpha=Do alpha\n```\n")
 	state = filepath.Join(repo, "state.json")
-	if err := InitState(state, contract, ledger, "", "feature-x"); err != nil {
+	if err := InitStateWithBaseline(state, contract, ledger, "", "feature-x", strings.Repeat("b", 40)); err != nil {
 		t.Fatal(err)
 	}
 

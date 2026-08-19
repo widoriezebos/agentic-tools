@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -13,6 +14,9 @@ import (
 // digest mismatch, and identity checks.
 func TestPinVerifiedContract(t *testing.T) {
 	engine := &Engine{Root: t.TempDir(), Mission: "mr-pin"}
+	// The start ladder proves anchor-namespace emptiness through git;
+	// a bed without a repository cannot prove absence and refuses.
+	fixtureGit(t, engine.Root, "init", "-q", "-b", "main")
 	snapshot := []byte("contract bytes\n")
 	sum := sha256.Sum256(snapshot)
 	sha := hex.EncodeToString(sum[:])
@@ -38,10 +42,17 @@ func TestPinVerifiedContract(t *testing.T) {
 		t.Fatalf("snapshot not pinned: %v %q", err, pinned)
 	}
 
-	// A second start against the pin is refused toward resume.
+	// Before the mission is BORN (no state.json), a pinned-but-stateless
+	// id is a stillborn remnant and a corrected start may re-pin. Once
+	// the state exists, a second start refuses toward resume.
+	if err := engine.pinVerifiedContract("start", snapshot, sha); err != nil {
+		t.Fatalf("a stillborn pin must be re-pinnable: %v", err)
+	}
+	os.MkdirAll(engine.missionDir(), 0o755)
+	writeText(t, filepath.Join(engine.missionDir(), "state.json"), "{}")
 	if err := engine.pinVerifiedContract("start", snapshot, sha); err == nil ||
 		!strings.Contains(err.Error(), "already pinned; use resume") {
-		t.Fatalf("double pin: %v", err)
+		t.Fatalf("double pin after birth: %v", err)
 	}
 
 	// Resume with the fences present succeeds.

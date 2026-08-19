@@ -117,10 +117,19 @@ func FakeReturn(turnPath, statePath, outputPath, behavior, root string) error {
 			"reason":         "done",
 		}}
 	case "park-request":
+		// parked-reserved plus an ask, together: a parked stream with
+		// no ask leaves nobody to answer it, so the park request always
+		// carries the reserved question it stops for.
 		value["streamUpdatesRequested"] = []any{map[string]any{
 			"streamId":       active,
 			"requestedState": "parked-reserved",
 			"reason":         "fake-host-request",
+		}}
+		value["askCandidates"] = []any{map[string]any{
+			"streamId":    active,
+			"reasonClass": "reserved-decision",
+			"question":    "fake host requests a reserved decision",
+			"supersedes":  nil,
 		}}
 	}
 

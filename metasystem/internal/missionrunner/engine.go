@@ -64,6 +64,12 @@ type Engine struct {
 	// anchors through the binary (anchorState); tests inject it because the
 	// anchor is an external git effect a unit test cannot shell out for.
 	anchorFn func(statePath, ledgerPath, identityName string) error
+
+	// afterApprovedParse is a test seam: it runs right after state birth's
+	// single authenticated contract read, so a fixture can mutate the pin
+	// file in that gap and prove admission and state construction still
+	// use the bytes that were authenticated. Production leaves it nil.
+	afterApprovedParse func()
 	// preAnchorHook fires between a state write and its PINNED anchor —
 	// a test seam for injecting ledger movement into that window
 	// (slice-6 successor round-13 finding 2). Nil in production.

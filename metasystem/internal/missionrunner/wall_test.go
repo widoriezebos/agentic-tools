@@ -476,7 +476,7 @@ func seedCrashedMissionState(t *testing.T, engine *Engine) (string, error) {
 	if err := mission.InitLedger(ledgerPath, 5, 3); err != nil {
 		return "", err
 	}
-	if err := mission.InitState(statePath, engine.approvedContractPath(), ledgerPath, "", "main"); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
 		return "", err
 	}
 	// initializeState anchors right after init — onto the runner-owned

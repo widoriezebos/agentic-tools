@@ -397,6 +397,20 @@
         }
       }
     },
+    "mission-stillborn-cleanup": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "repair-attempted": {
       "emitters": [
         "adapter",

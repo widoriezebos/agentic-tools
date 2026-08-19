@@ -24,7 +24,7 @@ func initMission(t *testing.T) (root, state, ledger string) {
 	writeText(t, contract, "```mission\ncandidate.branch=feature-x\nstream.alpha=Do alpha\nstream.beta=Do beta\n```\n")
 	state = filepath.Join(root, "state.json")
 	ledger = filepath.Join(root, "ledger.md")
-	if err := InitState(state, contract, ledger, "", ""); err != nil {
+	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("b", 40)); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	return root, state, ledger
@@ -55,7 +55,7 @@ func TestInitProducesValidChainedState(t *testing.T) {
 func TestInitRefusesExisting(t *testing.T) {
 	root, state, ledger := initMission(t)
 	contract := filepath.Join(root, "mission-demo.contract.md")
-	if err := InitState(state, contract, ledger, "", ""); err == nil {
+	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("b", 40)); err == nil {
 		t.Fatal("init must refuse to overwrite an existing state")
 	}
 }

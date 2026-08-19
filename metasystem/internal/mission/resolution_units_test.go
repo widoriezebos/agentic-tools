@@ -1,6 +1,7 @@
 package mission
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,15 +65,22 @@ func TestLostTurnBlockShapes(t *testing.T) {
 	}
 }
 
-// CurrentExpectedTree walks the E-sequence: empty before any E-event,
-// the accepted post-tree after an acceptance, the resolution tree after
-// a ruling.
+// CurrentExpectedTree walks the E-sequence: the admitted baseline before
+// any E-event, the accepted post-tree after an acceptance, the
+// resolution tree after a ruling. A state with neither baseline nor
+// events — the shape validation refuses and reservation fails closed
+// on — yields empty.
 func TestCurrentExpectedTree(t *testing.T) {
+	tree0 := strings.Repeat("0", 40)
 	tree1 := strings.Repeat("a", 40)
 	tree2 := strings.Repeat("b", 40)
 	state := map[string]any{"turnLog": []any{}, "workspaceTaint": map[string]any{"next": 1, "segment": 0, "entries": []any{}}}
 	if got := CurrentExpectedTree(state); got != "" {
-		t.Fatalf("no E-event yet: %q", got)
+		t.Fatalf("a baseline-less shape must yield empty: %q", got)
+	}
+	state["initialBaseline"] = tree0
+	if got := CurrentExpectedTree(state); got != tree0 {
+		t.Fatalf("before any E-event the admitted baseline is expected: %q", got)
 	}
 	state["turnLog"] = []any{map[string]any{
 		"turnId": "m-t1",
@@ -126,6 +134,74 @@ func TestLedgerWritesStamp(t *testing.T) {
 	}
 	if pendingStampMatches(ledger, 1, string(data)) {
 		t.Fatal("the pre-annotation bytes must no longer match")
+	}
+}
+
+// The ADMITTED initial baseline is E0 from mission birth:
+// with no acceptance and no resolution, the expected tree is the
+// recorded baseline — never empty — and no later write may change it.
+func TestInitialBaselineIsE0(t *testing.T) {
+	root := t.TempDir()
+	contract := filepath.Join(root, "mission-demo.contract.md")
+	writeText(t, contract, "```mission\ncandidate.branch=feature-x\nstream.alpha=Do alpha\n```\n")
+	state := filepath.Join(root, "state.json")
+	ledger := filepath.Join(root, "ledger.md")
+	baseline := strings.Repeat("f", 40)
+	if err := InitStateWithBaseline(state, contract, ledger, "", "", baseline); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	doc, _ := readStateDoc(state)
+	if got := CurrentExpectedTree(doc); got != baseline {
+		t.Fatalf("the admitted baseline must be the expected tree from birth: %q", got)
+	}
+	points := ExpectedTreePoints(doc)
+	if len(points) != 1 || points[0].Tree != baseline || points[0].Sequence != 0 || points[0].Segment != 0 {
+		t.Fatalf("E0 must be the recorded baseline at {0,0}: %+v", points)
+	}
+	mutated, _ := readStateDoc(state)
+	mutated["initialBaseline"] = strings.Repeat("a", 40)
+	source := state + ".src"
+	if err := atomicWriteJSON(source, mutated); err != nil {
+		t.Fatal(err)
+	}
+	_, hash, _ := VerifyStateShape(state)
+	if err := WriteState(state, source, hash); err == nil ||
+		!strings.Contains(err.Error(), "immutable identity") {
+		t.Fatalf("the baseline must be immutable, got %v", err)
+	}
+}
+
+// A state that predates baseline recording reaches reconciliation with
+// its NAMED diagnosis and never enters corrupt-state recovery.
+func TestReconcileNamesThePreBaselineState(t *testing.T) {
+	root := t.TempDir()
+	contract := filepath.Join(root, "mission-demo.contract.md")
+	writeText(t, contract, "```mission\ncandidate.branch=feature-x\nstream.alpha=Do alpha\n```\n")
+	state := filepath.Join(root, "state.json")
+	ledger := filepath.Join(root, "ledger.md")
+	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("f", 40)); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := InitLedger(ledger, 5, 3); err != nil {
+		t.Fatal(err)
+	}
+	// Strip the baseline and rewrite the document, leaving the integrity
+	// hash stale on purpose: the missing-baseline refusal is checked
+	// before any integrity validation, so this state and a genuine
+	// baseline-less state (whose chain never covered the field) are
+	// diagnosed identically.
+	doc, _ := readStateDoc(state)
+	delete(doc, "initialBaseline")
+	if err := atomicWriteJSON(state, doc); err != nil {
+		t.Fatal(err)
+	}
+	code, err := Reconcile(state, root, ledger)
+	if code != 3 || err == nil || !errors.Is(err, ErrPreWallBaseline) {
+		t.Fatalf("reconcile must pass the named refusal verbatim: code=%d err=%v", code, err)
+	}
+	corpses, _ := filepath.Glob(filepath.Join(root, "state.corrupt.*"))
+	if len(corpses) != 0 {
+		t.Fatalf("a baseline-less state must never enter corrupt-state recovery: %v", corpses)
 	}
 }
 

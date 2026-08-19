@@ -387,6 +387,172 @@ func wallSnapshot(workspace gittree.Workspace, missionID string) (string, error)
 	return workspace.FilterTree(tree, []string{missionLedgerRel(missionID)})
 }
 
+// wallPreflight enforces the wall's REPOSITORY PRECONDITIONS before any
+// turn exists: core.fileMode is explicitly pinned true — a
+// fileMode-off repository hides mode-bit drift from the tree equation —
+// and, at mission START, the initial filtered projection is CLEAN
+// (equal to HEAD's filtered tree) or exactly the tree the human sealed
+// as wall.sealed-baseline in the signed contract. Violations refuse
+// before the first turn ever opens.
+// admittedBaseline runs the START baseline admission and returns the
+// admitted filtered tree: clean (equal to HEAD's projection) or exactly
+// the human-sealed wall.sealed-baseline. Shared by the launch preflight
+// and state initialization, which RECORDS what it admits as E0.
+// contractShapeRefusal stats the live contract WITHOUT dereferencing and
+// refuses anything that exists but is not a regular file. A symlink is
+// never the signed contract: hash-object and Stat both dereference, so a
+// link to a sealed copy in ignored space would present the approved
+// bytes while E0 records an unsigned 120000 entry pointing at mutable
+// bytes. Any other non-regular object (a FIFO above all) would HANG the
+// blocking contract read instead of refusing. Honest absence falls
+// through: an absent contract is contract preflight's refusal to name.
+func contractShapeRefusal(contractAbs string) error {
+	info, err := os.Lstat(contractAbs)
+	if err != nil || info.Mode().IsRegular() {
+		return nil
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return failf(3, "wall preflight refused: the mission contract is a symlink; the signed contract must be a regular committed file")
+	}
+	return failf(3, "wall preflight refused: the mission contract path is occupied by a non-regular object (%s); the signed contract must be a regular committed file", info.Mode())
+}
+
+func (e *Engine) checkFileModePinned() error {
+	// The invariant is an explicit REPOSITORY-LOCAL pin normalized to
+	// git's own boolean: any spelling git reads as true satisfies it
+	// (strictness guards the invariant, not a spelling), and a global
+	// or system value satisfies nothing — this repository must carry
+	// the pin itself.
+	stdout, _, code := runCaptured(e.Root, nil, "git", "config", "--local", "--type=bool", "--get", "core.fileMode")
+	if code != 0 || strings.TrimSpace(stdout) != "true" {
+		return failf(3, "wall preflight refused: core.fileMode is not pinned true in this repository; run `git config core.fileMode true` (mode-bit drift must be visible to the tree equation)")
+	}
+	return nil
+}
+
+func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (string, error) {
+	// The pin is re-checked at EVERY admission: the launching parent's
+	// check ran in another process, and the gap between the two
+	// processes is not trusted.
+	if err := e.checkFileModePinned(); err != nil {
+		return "", err
+	}
+	workspace := gittree.Workspace{Dir: e.Root}
+	contractRel := filepath.Join("plans", "mission-"+e.Mission+".contract.md")
+	exclude := []string{missionLedgerRel(e.Mission), contractRel}
+	raw, err := workspace.Snapshot("HEAD")
+	if err != nil {
+		return "", failf(3, "wall preflight cannot snapshot the workspace: %v", err)
+	}
+	observed, err := workspace.FilterTree(raw, exclude)
+	if err != nil {
+		return "", failf(3, "wall preflight cannot project the workspace: %v", err)
+	}
+	// HEAD in the workspace's OWN path space: a raw HEAD^{tree} is the
+	// toplevel tree, whose paths miss every workspace-relative lookup in
+	// a nested checkout.
+	headTree, err := workspace.HeadTree()
+	if err != nil {
+		return "", failf(3, "wall preflight cannot resolve HEAD's tree: %v", err)
+	}
+	committed, err := workspace.FilterTree(headTree, exclude)
+	if err != nil {
+		return "", failf(3, "wall preflight cannot project the committed tree: %v", err)
+	}
+	// The LIVE contract must be exactly the COMMITTED contract — bytes
+	// AND mode. The exclusion below removes it from the dirt decision,
+	// and the recorded E0 includes its live entry, so any divergence
+	// here — an executable-bit flip, an edit in the preflight gap —
+	// would otherwise ride into expected state as bytes nobody signed.
+	// Both sides come from trees of the SAME instant: reading the live
+	// file separately would leave a swap window where the snapshot
+	// captures one contract, the check blesses another, and the
+	// snapshotted one becomes E0.
+	contractEntries, err := workspace.Entries(raw, []string{contractRel})
+	if err != nil {
+		return "", failf(3, "wall preflight cannot read the snapshot's contract entry: %v", err)
+	}
+	committedContract, err := workspace.Entries(headTree, []string{contractRel})
+	if err != nil {
+		return "", failf(3, "wall preflight cannot read the committed contract entry: %v", err)
+	}
+	live, liveExists := contractEntries[contractRel]
+	if !liveExists {
+		return "", failf(3, "wall preflight refused: the mission contract is absent from the workspace snapshot; the signed contract must be a regular committed file")
+	}
+	// A SYMLINK is never the signed contract: the snapshot records it as
+	// a 120000 entry whose blob is the target path, which E0 would then
+	// pin as bytes nobody signed. Named here from the same snapshot the
+	// record uses; the public ladder names it even earlier
+	// (lstatContractRefusingSymlink).
+	if live.Mode == "120000" {
+		return "", failf(3, "wall preflight refused: the mission contract is a symlink; the signed contract must be a regular committed file")
+	}
+	want := committedContract[contractRel]
+	if want.OID != live.OID || want.Mode != live.Mode {
+		return "", failf(3, "wall preflight refused: the mission contract differs from its committed form (bytes or mode); commit the signed contract exactly as approved")
+	}
+	// Local HEAD alone cannot vouch for the contract: a different
+	// contract committed over HEAD after the pin would satisfy the
+	// committed-form check while the mission runs the pinned one, and
+	// E0 would record bytes nobody approved. The snapshot's entry must
+	// BE the approved bytes — the verified snapshot at launch, the
+	// pinned copy at birth.
+	approvedOID, err := blobOID(e.Root, approved)
+	if err != nil {
+		return "", failf(3, "wall preflight cannot hash the approved contract bytes: %v", err)
+	}
+	if live.OID != approvedOID {
+		return "", failf(3, "wall preflight refused: the workspace contract does not match the approved contract bytes; the mission must run exactly the contract that was pinned")
+	}
+	// The DECISION compares contract-excluded projections (the fixpoint
+	// break); the RECORDED baseline is the wall's own identity space —
+	// the ledger-only filter every later E-point lives in — captured
+	// from the SAME snapshot instant.
+	record, err := workspace.FilterTree(raw, []string{missionLedgerRel(e.Mission)})
+	if err != nil {
+		return "", failf(3, "wall preflight cannot project the identity space: %v", err)
+	}
+	if observed == committed {
+		return record, nil
+	}
+	if sealed := values["wall.sealed-baseline"]; sealed == observed {
+		return record, nil
+	}
+	return "", failf(3, "wall preflight refused: the initial baseline is dirty (filtered projection %s does not equal HEAD's %s); commit the difference, or seal wall.sealed-baseline=%s in the signed contract", observed, committed, observed)
+}
+
+func (e *Engine) wallPreflight(mode string, values map[string]string, approved []byte) error {
+	if err := e.checkFileModePinned(); err != nil {
+		return err
+	}
+	if mode != "start" {
+		return nil
+	}
+	_, err := e.admittedBaseline(values, approved)
+	return err
+}
+
+// blobOID names the git blob object a byte sequence would store as, in
+// the repository's own hash algorithm.
+func blobOID(root string, content []byte) (string, error) {
+	tmp, err := os.CreateTemp("", "metasystem-blob-oid.*")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	tmp.Close()
+	stdout, stderr, code := runCaptured(root, nil, "git", "hash-object", "--no-filters", "--", tmp.Name())
+	if code != 0 {
+		return "", fmt.Errorf("git hash-object: %s", firstDetail(stderr, stdout))
+	}
+	return strings.TrimSpace(stdout), nil
+}
+
 // guardLedgerInTurn proves the mission ledger is byte-identical to the
 // AUTHENTICATED anchored truth while a turn is in flight (round-4
 // finding 2): the baseline comes from the runner-owned anchor ref with

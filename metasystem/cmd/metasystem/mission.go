@@ -62,10 +62,11 @@ func runMissionStateInit(args []string) int {
 	ledger := flags.String("ledger", "", "ledger path")
 	lease := flags.String("lease", "", "runner lease reference")
 	branch := flags.String("branch", "", "candidate branch override")
+	baseline := flags.String("baseline", "", "admitted initial baseline tree id (required; every mission is born with its wall baseline)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if err := mission.InitState(*state, *contract, *ledger, *lease, *branch); err != nil {
+	if err := mission.InitStateWithBaseline(*state, *contract, *ledger, *lease, *branch, *baseline); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

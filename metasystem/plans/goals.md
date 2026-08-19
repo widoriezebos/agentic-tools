@@ -2,7 +2,7 @@
 
 ## Current goal: host-implementer-wall — The runner mechanically refuses a host turn that did implementer work: product-code diff without certified delegate attribution is a protocol error, not prose
 - Origin: main
-- Next step: Fold hiw-critique-r2 into r3: replay-safe authorization + consumption ledger, tree-composition contract, taint state machine, interim prompt text, the 11-row obligation matrix. No exemptions — D100. Critique r3, then implement.
+- Next step: Land slice 7 on AGREE (capped loop). Then PARK yielding to backlog-git-sync (D115); O13, O14, O15, O16 and rows O8/O10/O9/O11 resume as claimable work under the parallel backlog.
 
 ## Queued goal: narrator — A plain-English story of what happened, why it happened, and who did it
 - Origin: main
@@ -55,6 +55,42 @@
 ## Queued goal: small-change-lane — The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
 - Next step: Design when picked up: a micro-dispatch shape (single delegate round, tight brief, fast certification) that keeps every product byte delegate-certified under the host-implementer wall's no-exception rule (D100).
+
+## Queued goal: source-comment-standard — Every source comment speaks the application's own language in plain English; the landed codebase is rewritten to that standard
+- Origin: main
+- Next step: Design per Wido's 2026-08-19 ruling: inventory landed offenders (round/slice references, history narration), rewrite in critiqued batches.
+
+## Queued goal: flake-registry — Known flaky fixture legs are repo data with sighting counts and a bounded rerun protocol, not one agent's memory
+- Origin: main
+- Next step: Design the registry file and the one-solo-rerun rule; seed it with the fence job-cap-min ask leg (two sightings). Critique, then implement.
+
+## Queued goal: executable-covenant — The verification covenant is runnable: one battery entrypoint with a verdict file, one critique-round driver any agent can invoke
+- Origin: main
+- Next step: Design: battery.sh wrapping go-gate + both fixture families with a codes file; critique-round.sh building, launching, archiving rounds. Critique, then implement.
+
+## Queued goal: landing-tooling-fixes — Landing tools do what agents remember around: commit.sh survives multi-path pathspecs; landing pushes origin AND transport
+- Origin: main
+- Next step: Reproduce the pathspec mangling as a fixture, fix commit.sh; add the dual-remote push to the landing path. Critique, then implement.
+
+## Queued goal: agent-ease-assessment — A hard look at the metasystem's complexity from the agent seat: it must be intuitive to use; accepted simplifications get executed
+- Origin: main
+- Next step: Wido's ruling 2026-08-19: assess ease of use across surfaces (CLI, scripts, skills, docs), name complexity hotspots and simplification opportunities, take the assessment through critique, then execute what is accepted.
+
+## Queued goal: invariant-consolidation — Stacked defenses on hot artifacts consolidate behind one owner per invariant; first case: the contract's authenticated flow from origin to E0
+- Origin: main
+- Next step: Design per D114: inventory the contract's guard layers, name the single invariant and owner, fold redundant belts into it with their witnesses. Critique, then implement.
+
+## Queued goal: goal-ledger-ergonomics — The goal ledger stops fighting lawful use: byte caps sized to purpose, and a verb to edit a queued goal in place
+- Origin: main
+- Next step: Design per D114: justify or retune the intent/next byte caps; add the missing edit verb under the same integrity chain. Critique, then implement.
+
+## Queued goal: backlog-git-sync — Multiple machines work the backlog in parallel with git as the sync mechanism: claimed goals, merge-safe ledger mutations, surviving baselines
+- Origin: main
+- Next step: D115, picked next after the wall: design the claim verb, a merge-safe ledger format (the whole-file digest cannot merge), and baseline reconciliation across pushes. Critique, then implement.
+
+## Queued goal: lease-acquire-atomicity — Lease acquisition and stale-lease cleanup are mutually exclusive: no second launcher can misclassify a mid-publication lease and mint two runners (KI-38)
+- Origin: main
+- Next step: Small change after the wall lands: one flock over classification-and-removal and marker-and-record publication, plus a two-process witness. Critique, then implement.
 
 ## Parked goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main

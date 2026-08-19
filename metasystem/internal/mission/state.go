@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"math"
@@ -182,7 +183,7 @@ func exactKeys(m map[string]any, keys ...string) bool {
 func stateTopLevelKeys(state map[string]any) bool {
 	required := []string{"schemaVersion", "missionId", "branch", "status", "parkReason",
 		"gatePassed", "streams", "fences", "turnLog", "waitingList", "runnerLease", "ledger", "integrity",
-		"openTurn", "workspaceTaint"}
+		"openTurn", "workspaceTaint", "initialBaseline"}
 	allowed := map[string]bool{"ledgerSemantics": true, "lastDrainStall": true}
 	for _, key := range required {
 		if _, ok := state[key]; !ok {
@@ -206,6 +207,13 @@ func nonEmptyString(v any) (string, bool) {
 // --- validation ---
 
 func validateShape(state map[string]any) error {
+	// A state missing its admitted baseline predates baseline
+	// recording; that NAMED refusal outranks the generic shape error,
+	// so the reader gets the diagnosis, not "invalid top-level
+	// fields".
+	if _, present := state["initialBaseline"]; !present {
+		return fmt.Errorf("%w", ErrPreWallBaseline)
+	}
 	if !stateTopLevelKeys(state) {
 		return stateErr("mission state has missing or unexpected top-level fields")
 	}
@@ -297,6 +305,9 @@ func validateShape(state map[string]any) error {
 	}
 	if err := validateLogsAndLedger(state); err != nil {
 		return err
+	}
+	if s, ok := state["initialBaseline"].(string); !ok || !treeIDRe.MatchString(s) {
+		return stateErr("mission initialBaseline must be a git tree id")
 	}
 	if err := validateOpenTurn(state["openTurn"]); err != nil {
 		return err
@@ -616,13 +627,9 @@ func isFinite(f float64) bool {
 	return !math.IsInf(f, 0) && !math.IsNaN(f)
 }
 
-// authoredContractValues extracts the single authored mission block's
+// contractValuesFromSource extracts the single authored mission block's
 // key=value lines from a contract.
-func authoredContractValues(contractPath string) (map[string]string, error) {
-	data, err := os.ReadFile(contractPath)
-	if err != nil {
-		return nil, stateErr("cannot read mission contract: %v", err)
-	}
+func contractValuesFromSource(data []byte) (map[string]string, error) {
 	blocks := contract.AuthoredBlocks(string(data))
 	if len(blocks) != 1 {
 		return nil, stateErr("mission contract does not have exactly one authored block")
@@ -636,9 +643,32 @@ func authoredContractValues(contractPath string) (map[string]string, error) {
 
 var contractNameRe = regexp.MustCompile(`^mission-([a-z0-9][a-z0-9-]*)\.contract\.md$`)
 
-// InitState creates a mission's initial state from its sealed contract.
-func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) error {
-	values, err := authoredContractValues(contractPath)
+// InitStateWithBaseline creates a mission's initial state from its
+// sealed contract and records the ADMITTED initial baseline — the
+// filtered tree the wall preflight accepted (clean or human-sealed) —
+// as the mission's E0 from birth: a crash between initialization and
+// the first turn must not let the next resume define E0 from whatever
+// the workspace then holds. It reads the contract exactly once and
+// delegates; a caller that already holds authenticated bytes must use
+// InitStateFromSource so no second read can bind different bytes.
+func InitStateWithBaseline(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline string) error {
+	source, err := os.ReadFile(contractPath)
+	if err != nil {
+		return stateErr("cannot read mission contract: %v", err)
+	}
+	return InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline, source)
+}
+
+// InitStateFromSource is state birth from ONE contract byte snapshot:
+// every value, stream, and branch fact comes from the given bytes, so
+// the state can never bind a contract other than the one its caller
+// authenticated — the pin file on disk stays mutable, the snapshot does
+// not.
+func InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline string, source []byte) error {
+	if len(source) == 0 {
+		return stateErr("mission state initialization requires the contract's byte snapshot")
+	}
+	values, err := contractValuesFromSource(source)
 	if err != nil {
 		return err
 	}
@@ -659,8 +689,7 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 		branch = values["candidate.branch"]
 	}
 	if branch == "" {
-		data, _ := os.ReadFile(contractPath)
-		if seal := contract.SealBlock(string(data)); seal != nil {
+		if seal := contract.SealBlock(string(source)); seal != nil {
 			for _, line := range strings.Split(seal[1], "\n") {
 				if strings.HasPrefix(line, "candidate.branch=") {
 					branch = strings.SplitN(line, "=", 2)[1]
@@ -700,12 +729,24 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 		"ledgerSemantics": 3,
 		"integrity":       map[string]any{},
 	}
+	if !treeIDRe.MatchString(initialBaseline) {
+		return stateErr("mission initial baseline must be a git tree id; every mission is born with its admitted baseline")
+	}
+	body["initialBaseline"] = initialBaseline
 	lock, err := lockFile(statePath)
 	if err != nil {
 		return err
 	}
 	defer lock.release()
-	if _, err := os.Stat(statePath); err == nil {
+	// The publication owner enforces the state path's shape itself: a
+	// dereferencing existence check would treat a dangling symlink as
+	// absent and the atomic rename would then REPLACE the symlink —
+	// destroying the one object that says someone tampered with the
+	// path. Nothing but honest absence may be published over.
+	if info, err := os.Lstat(statePath); err == nil {
+		if !info.Mode().IsRegular() {
+			return stateErr("mission state path is occupied by a non-regular object (%s); remove it by hand", info.Mode())
+		}
 		return stateErr("mission state already exists")
 	}
 	finalized, err := finalizeNext(body, nil, nil)
@@ -716,7 +757,7 @@ func InitState(statePath, contractPath, ledgerPath, lease, branchArg string) err
 }
 
 func validateTransition(previous, next map[string]any) error {
-	for _, key := range []string{"schemaVersion", "missionId", "branch", "ledgerSemantics"} {
+	for _, key := range []string{"schemaVersion", "missionId", "branch", "ledgerSemantics", "initialBaseline"} {
 		if !jsonEqual(previous[key], next[key]) {
 			return stateErr("mission state update changes immutable identity")
 		}
@@ -1329,6 +1370,11 @@ func ExpectedTreePoints(state map[string]any) []ExpectedTreePoint {
 			e0Sequence, e0Tree = s, tree
 		}
 	}
+	if e0Tree == "" {
+		if recorded, _ := state["initialBaseline"].(string); recorded != "" {
+			e0Tree = recorded
+		}
+	}
 	if e0Tree != "" {
 		points = append(points, ExpectedTreePoint{Tree: e0Tree, Sequence: 0, Segment: 0})
 	}
@@ -1382,9 +1428,11 @@ func taintEntriesOf(state map[string]any) []any {
 }
 
 // CurrentExpectedTree names the tree the workspace's filtered projection
-// MUST equal between turns: the highest-occurrence E-point — the last
-// accepted post-tree or, after a ruling, the resolution tree. Empty for
-// a mission with no E-events yet (the first reservation defines E0).
+// MUST equal between turns: the highest-occurrence E-point — the
+// admitted baseline at birth, the last accepted post-tree, or, after a
+// ruling, the resolution tree. Empty only for a state carrying neither
+// a baseline nor any E-event — a shape validation refuses and
+// reservation fails closed on.
 func CurrentExpectedTree(state map[string]any) string {
 	points := ExpectedTreePoints(state)
 	if len(points) == 0 {
@@ -1400,6 +1448,12 @@ type ExpectedTreePoint struct {
 	Sequence int64
 	Segment  int64
 }
+
+// ErrPreWallBaseline is the NAMED refusal for a schema-3 state without
+// its admitted baseline: like ErrLegacyState, it reaches the
+// operator verbatim and never enters corrupt-state recovery — the
+// remedy is re-provisioning, not evidence files.
+var ErrPreWallBaseline = errors.New("mission state predates the wall's baseline admission; re-provision the mission")
 
 // ProposalError marks a WriteState refusal caused by the PROPOSED state —
 // transition rules or shape validation of the proposal itself — as opposed

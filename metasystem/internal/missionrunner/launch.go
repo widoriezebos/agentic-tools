@@ -32,6 +32,135 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
+// stateBorn reports whether the mission's birth certificate exists: a
+// regular file at state.json. Nothing else counts as a birth — a
+// directory or other object squatting on the path cannot carry the state
+// hash chain, so treating it as a living mission would both block the
+// corrected retry and shield stillborn artifacts from cleanup.
+func stateBorn(statePath string) bool {
+	info, err := os.Lstat(statePath)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// launchLock serializes the start side of one mission id: the parent's
+// evidence checks and pin writes and the child's birth each hold it
+// exclusively, so a launcher's cached decision can never mutate a
+// mission that was born after the check was made.
+type launchLock struct{ f *os.File }
+
+func (e *Engine) acquireLaunchLock() (*launchLock, error) {
+	path := filepath.Join(e.missionDir(), "launch.lock")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+		f.Close()
+		return nil, failf(3, "cannot acquire the mission launch lock: %v", err)
+	}
+	return &launchLock{f: f}, nil
+}
+
+func (l *launchLock) release() {
+	_ = unix.Flock(int(l.f.Fd()), unix.LOCK_UN)
+	_ = l.f.Close()
+}
+
+// birthRecordPath is the mission's durable birth record: written the
+// moment state is first published and never removed by any cleanup. A
+// missing state file alone is ambiguous — stillborn remnants and a
+// LIVING mission whose state was lost look identical without it — and
+// only honest never-born absence may authorize the stillborn machinery.
+func (e *Engine) birthRecordPath() string {
+	return filepath.Join(e.missionDir(), "born.json")
+}
+
+// bornEvidence reports whether the mission provably lived: the durable
+// birth record, or a ledger that booked at least one cycle (a stillborn
+// ledger never gets past its header). Absence must be PROVEN — a probe
+// that cannot read is an error, never a green light, because the
+// callers authorize destruction on emptiness.
+func (e *Engine) bornEvidence(ledger string) (string, error) {
+	if pathExists(e.birthRecordPath()) {
+		return "its birth record exists", nil
+	}
+	data, err := os.ReadFile(ledger)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", failf(3, "cannot prove the mission never lived: its ledger is unreadable: %v", err)
+	}
+	if strings.Contains(string(data), "\n### Cycle ") {
+		return "its ledger booked cycles", nil
+	}
+	return "", nil
+}
+
+// missionAnchorsExist reports whether ANY anchor survives in the
+// mission's ref namespace. With no state file and no birth evidence,
+// surviving anchors still mean a mission may have lived here — or a
+// birth crashed mid-staging — and both are a human's call, never the
+// stillborn machinery's. The stillborn sweep itself keys on the
+// narrower birth evidence: a same-pass failure drops its own staging
+// anchors, so only honest emptiness reaches a retry.
+func (e *Engine) missionAnchorsExist() (bool, error) {
+	stdout, stderr, code := runCaptured(e.Root, nil, "git", "for-each-ref",
+		"--format=%(refname)", "refs/metasystem/missions/"+e.Mission+"/")
+	if code != 0 {
+		// Only a SUCCESSFUL empty enumeration proves absence; a failed
+		// probe must never authorize what runs on emptiness.
+		return false, failf(3, "cannot prove the mission's anchor namespace is empty: %s", firstDetail(stderr, stdout))
+	}
+	return strings.TrimSpace(stdout) != "", nil
+}
+
+// startAmbiguityRefusal is every start entry's freeze decision when no
+// state file exists: durable birth evidence or surviving anchors refuse
+// the start with the remedy named; only honest emptiness returns nil.
+func (e *Engine) startAmbiguityRefusal(ledger string) error {
+	evidence, err := e.bornEvidence(ledger)
+	if err != nil {
+		return err
+	}
+	if evidence != "" {
+		// The remedy must be PERFORMABLE for the evidence at hand:
+		// telling an operator to remove a birth record that booked
+		// cycles never wrote — or that is already gone — unwedges
+		// nothing.
+		remedy := "restore state.json or remove born.json by hand"
+		if evidence == "its ledger booked cycles" {
+			remedy = "restore state.json, or archive the mission directory (its ledger included) by hand"
+		}
+		return failf(3, "mission start refused: this mission has birth evidence (%s) but no state file; a birth may have been interrupted or the state lost — %s; nothing was touched", evidence, remedy)
+	}
+	anchored, err := e.missionAnchorsExist()
+	if err != nil {
+		return err
+	}
+	if anchored {
+		return failf(3, "mission start refused: this mission's anchor namespace is not empty; a mission may have lived here or a birth crashed mid-staging — inspect refs/metasystem/missions/%s/ and remove the refs by hand; nothing was touched", e.Mission)
+	}
+	return nil
+}
+
+// stateShapeRefusal freezes a mission id whose state path is occupied by
+// anything that exists but is not a regular file. Such an object is
+// neither a birth certificate nor a clean absence: treating it as absent
+// would let a start sweep artifacts that may belong to a living mission
+// behind a symlink, and treating it as born would read bytes the state
+// chain never covered. Nothing is touched until a human removes it.
+func stateShapeRefusal(statePath string) error {
+	info, err := os.Lstat(statePath)
+	if err != nil || info.Mode().IsRegular() {
+		return nil
+	}
+	return failf(3, "mission state path is occupied by a non-regular object (%s); remove %s by hand before any start or resume", info.Mode(), statePath)
+}
+
 // runCaptured runs a command from a working directory, capturing both
 // streams. A command that could not start reports exit -1 with the launch
 // error as its stderr.
@@ -253,8 +382,32 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 	if schema, ok := jsonInt(fences["schemaVersion"]); !ok || schema != 1 || fences["missionId"] != e.Mission {
 		return failf(3, "mission fence counters have an invalid identity")
 	}
-	if mode == "start" && fences["approvedContractSha256"] != nil {
-		return failf(3, "mission start refused: approved contract is already pinned; use resume")
+	if mode == "start" {
+		// Birth evidence outranks EVERYTHING a start could write here:
+		// with the state file gone but the mission provably lived (or a
+		// birth interrupted), no pin, fence, or clock may change.
+		if err := stateShapeRefusal(filepath.Join(e.missionDir(), "state.json")); err != nil {
+			return err
+		}
+		born := stateBorn(filepath.Join(e.missionDir(), "state.json"))
+		if !born {
+			if err := e.startAmbiguityRefusal(filepath.Join(e.missionDir(), "ledger.md")); err != nil {
+				return err
+			}
+		}
+		if fences["approvedContractSha256"] != nil {
+			// A pin WITHOUT a born mission is a stillborn remnant: the
+			// state hash chain is the birth certificate, and until it
+			// exists a corrected start may simply re-pin — no partial
+			// cleanup can wedge the mission id.
+			if born {
+				return failf(3, "mission start refused: approved contract is already pinned; use resume")
+			}
+			// The never-born mission spent none of its sealed budget:
+			// the remnant's clock resets so an interrupted cleanup
+			// cannot eat the first cycle's wall time.
+			fences["startedAt"] = nowISO()
+		}
 	}
 	sum := sha256.Sum256(snapshot)
 	if hex.EncodeToString(sum[:]) != approvedSHA {
@@ -270,6 +423,15 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 // armAndPreflight arms supervision as the resolved identity, preflights the
 // authored contract, and pins the verified snapshot for this mission.
 func (e *Engine) armAndPreflight(mode string) error {
+	// Checks and writes happen under ONE exclusive hold: without it, a
+	// second launcher could pass the birth checks, pause, and overwrite
+	// the pin and clock of a mission the first launcher birthed in the
+	// gap.
+	lock, err := e.acquireLaunchLock()
+	if err != nil {
+		return err
+	}
+	defer lock.release()
 	identity, err := e.resolveArmingIdentity()
 	if err != nil {
 		return err
@@ -300,6 +462,14 @@ func (e *Engine) armAndPreflight(mode string) error {
 	verifiedPath := verified.Name()
 	verified.Close()
 	defer os.Remove(verifiedPath)
+	// The PUBLIC ladder names every non-regular contract shape before
+	// anything dereferences or READS it: a symlinked contract would
+	// otherwise refuse with only the generic origin error, and a FIFO
+	// would hang the blocking read outright. Honest absence falls
+	// through — that is contract preflight's refusal to name.
+	if err := contractShapeRefusal(e.contractPath()); err != nil {
+		return err
+	}
 	_, rawSHA, err := contract.Preflight(e.contractPath(), verifiedPath)
 	if err != nil {
 		return failf(3, "mission start refused by preflight: %v", err)
@@ -307,6 +477,18 @@ func (e *Engine) armAndPreflight(mode string) error {
 	snapshot, err := os.ReadFile(verifiedPath)
 	if err != nil {
 		return failf(3, "mission start refused: verified contract snapshot is unreadable: %v", err)
+	}
+	// The wall's repository preconditions gate every launch mode: a
+	// repository that can hide mode drift, or a start over
+	// unsealed dirt, refuses before the first turn. The values come from
+	// the VERIFIED SNAPSHOT bytes — never a reread of the mutable
+	// authored file, which could change between verification and use.
+	_, values, _, err := e.parseContractAt(verifiedPath, false)
+	if err != nil {
+		return err
+	}
+	if err := e.wallPreflight(mode, values, snapshot); err != nil {
+		return err
 	}
 	return e.pinVerifiedContract(mode, snapshot, rawSHA)
 }
@@ -325,8 +507,19 @@ func (e *Engine) Launch(mode string, foreground bool) int {
 
 func (e *Engine) launch(mode string, foreground bool) error {
 	statePath := filepath.Join(e.missionDir(), "state.json")
-	if mode == "start" && pathExists(statePath) {
+	if err := stateShapeRefusal(statePath); err != nil {
+		return err
+	}
+	if mode == "start" && stateBorn(statePath) {
 		return failf(3, "mission state already exists; use resume")
+	}
+	// Birth evidence is consulted before ANY mutation on the launch
+	// path — the stale-lease cleanup below rewrites lease and turn
+	// records, and a mission that lived must stay untouched.
+	if mode == "start" && !stateBorn(statePath) {
+		if err := e.startAmbiguityRefusal(filepath.Join(e.missionDir(), "ledger.md")); err != nil {
+			return err
+		}
 	}
 	if mode == "resume" {
 		if !pathExists(statePath) {

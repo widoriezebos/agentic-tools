@@ -129,7 +129,7 @@ identity_alive() { # pid, start, optional tag, optional start-ticks, optional bo
   # this live process as dead (KI-37). Absent (owner-lock reads, darwin) it is
   # the seconds comparison, unchanged.
   [[ -n "$ticks" && "$ticks" != 0 && -n "$boot" ]] && pair_args=(--start-ticks "$ticks" --boot-id "$boot")
-  "$ms" proc alive --pid "$pid" --start-time "$start" "${pair_args[@]}" --root "$harness_root" >/dev/null 2>&1 || return 1
+  "$ms" proc alive --pid "$pid" --start-time "$start" "${pair_args[@]+"${pair_args[@]}"}" --root "$harness_root" >/dev/null 2>&1 || return 1
   [[ -z "$tag" ]] && return 0
   # Through the engine's one identity source (script-fixtures-007/D47):
   # the raw ps read here bypassed the fixture table every other reader

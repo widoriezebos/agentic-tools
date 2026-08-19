@@ -99,6 +99,10 @@ var contractOptionalScalars = map[string]bool{
 	// canonical repository-relative files the host may author, default
 	// deny; the runner's wall inspection enforces the declaration.
 	"wall.host-artifacts": true,
+	// The human-sealed initial baseline: a dirty starting
+	// workspace refuses preflight unless the signed contract seals its
+	// exact filtered tree — the human saw and accepted those bytes.
+	"wall.sealed-baseline": true,
 }
 
 // contractIntegerKeys are the scalar keys that must be positive integers.
@@ -1591,6 +1595,10 @@ func contractValidateOptionalScalar(key, value string) error {
 	case "ledger.accept-binary-gate-fuse":
 		if value != "true" {
 			return stateErr("ledger.accept-binary-gate-fuse admits only the literal true; omit the key otherwise")
+		}
+	case "wall.sealed-baseline":
+		if !regexp.MustCompile(`^[0-9a-f]{40,64}$`).MatchString(value) {
+			return stateErr("mission contract wall.sealed-baseline must be a git tree id (40-64 hex)")
 		}
 	}
 	return nil

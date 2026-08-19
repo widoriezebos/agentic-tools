@@ -51,7 +51,24 @@ var configPins = []string{
 // git runs one bounded git invocation in the workspace with the package's
 // config pins applied. Bounded like every other external call (B4).
 func (w Workspace) git(env []string, args ...string) ([]byte, error) {
-	full := append(append([]string{"-C", w.Dir}, configPins...), args...)
+	return w.gitAt(w.Dir, env, args...)
+}
+
+// gitTop runs the invocation from the repository TOPLEVEL. Index- and
+// path-taking commands (update-index, apply --cached) interpret paths
+// relative to the invocation directory: from a nested workspace they would
+// silently prefix the checkout's own prefix onto every path and miss the
+// workspace-relative entries this package's trees carry.
+func (w Workspace) gitTop(env []string, args ...string) ([]byte, error) {
+	top, err := w.topLevel()
+	if err != nil {
+		return nil, err
+	}
+	return w.gitAt(top, env, args...)
+}
+
+func (w Workspace) gitAt(dir string, env []string, args ...string) ([]byte, error) {
+	full := append(append([]string{"-C", dir}, configPins...), args...)
 	cmd := exec.Command("git", full...)
 	if env != nil {
 		cmd.Env = append(os.Environ(), env...)
@@ -75,6 +92,78 @@ func (w Workspace) gitLine(env []string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+// gitPathLine reads a single PATH from git, stripping only the record
+// terminator: a directory name may lawfully begin or end with
+// whitespace, and trimming it would redirect every later lookup.
+func (w Workspace) gitPathLine(env []string, args ...string) (string, error) {
+	out, err := w.git(env, args...)
+	return strings.TrimSuffix(string(out), "\n"), err
+}
+
+// topLevel resolves the git working-tree top of this workspace.
+func (w Workspace) topLevel() (string, error) {
+	top, err := w.gitPathLine(nil, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", fmt.Errorf("gittree toplevel: %w", err)
+	}
+	if top == "" {
+		return "", fmt.Errorf("gittree toplevel: workspace %s is not inside a git worktree", w.Dir)
+	}
+	return top, nil
+}
+
+// treePrefix is the workspace's path under the git toplevel ("" at the
+// toplevel itself, "metasystem/" in the supported nested checkout). Every
+// tree this package RETURNS is scoped to this prefix, so all paths in and
+// out of the API are workspace-relative in every layout. Without the
+// scoping, a nested checkout produces toplevel trees whose
+// toplevel-relative paths silently miss every workspace-relative lookup
+// and exclusion.
+func (w Workspace) treePrefix() (string, error) {
+	prefix, err := w.gitPathLine(nil, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", fmt.Errorf("gittree prefix: %w", err)
+	}
+	return prefix, nil
+}
+
+// subtreeOf peels the workspace's prefix subtree out of a toplevel tree.
+func (w Workspace) subtreeOf(topTree string) (string, error) {
+	prefix, err := w.treePrefix()
+	if err != nil {
+		return "", err
+	}
+	if prefix == "" {
+		return topTree, nil
+	}
+	sub, err := w.gitLine(nil, "rev-parse", topTree+":"+strings.TrimSuffix(prefix, "/"))
+	if err != nil {
+		return "", fmt.Errorf("gittree subtree: the workspace prefix %q is not in tree %s: %w", prefix, topTree, err)
+	}
+	if !treeID.MatchString(sub) {
+		return "", fmt.Errorf("gittree subtree: rev-parse returned %q", sub)
+	}
+	return sub, nil
+}
+
+// TreeOf returns a committish's tree in the workspace's own path space:
+// the prefix subtree in a nested checkout, the commit's tree at the
+// toplevel. Every comparison against a Snapshot must use this, never a
+// raw rev^{tree}, or the two sides speak different path spaces in a
+// nested checkout.
+func (w Workspace) TreeOf(rev string) (string, error) {
+	top, err := w.gitLine(nil, "rev-parse", rev+"^{tree}")
+	if err != nil {
+		return "", fmt.Errorf("gittree tree of %s: %w", rev, err)
+	}
+	return w.subtreeOf(top)
+}
+
+// HeadTree is TreeOf("HEAD") — the committed tree most comparisons need.
+func (w Workspace) HeadTree() (string, error) {
+	return w.TreeOf("HEAD")
+}
+
 // isolatedIndex returns the env for a throwaway index and its cleanup.
 func isolatedIndex() ([]string, func(), error) {
 	dir, err := os.MkdirTemp("", "metasystem-gittree.")
@@ -86,10 +175,14 @@ func isolatedIndex() ([]string, func(), error) {
 }
 
 // Snapshot projects the current worktree into a tree object: the isolated
-// index is seeded from baseline (normally HEAD, so tracked-and-ignored
-// files stay projected), then add -A captures every addition, modification,
-// deletion, mode change, symlink, and gitlink, and write-tree names the
-// result. The worktree and the real index are untouched.
+// index is seeded from baseline (a toplevel committish, normally HEAD, so
+// tracked-and-ignored files stay projected), then add -A captures every
+// addition, modification, deletion, mode change, symlink, and gitlink
+// UNDER THE WORKSPACE, and write-tree names the result. The worktree and
+// the real index are untouched. The returned tree is scoped to the
+// workspace's own prefix, so its paths are workspace-relative in every
+// layout; worktree changes outside a nested workspace are not the
+// workspace's to project.
 func (w Workspace) Snapshot(baseline string) (string, error) {
 	env, cleanup, err := isolatedIndex()
 	if err != nil {
@@ -99,6 +192,8 @@ func (w Workspace) Snapshot(baseline string) (string, error) {
 	if _, err := w.git(env, "read-tree", baseline); err != nil {
 		return "", fmt.Errorf("gittree snapshot: %w", err)
 	}
+	// add runs FROM THE WORKSPACE on purpose: its pathspec scopes the
+	// capture to the workspace's own files.
 	if _, err := w.git(env, "add", "-A", "--", "."); err != nil {
 		return "", fmt.Errorf("gittree snapshot: %w", err)
 	}
@@ -109,7 +204,7 @@ func (w Workspace) Snapshot(baseline string) (string, error) {
 	if !treeID.MatchString(tree) {
 		return "", fmt.Errorf("gittree snapshot: write-tree returned %q", tree)
 	}
-	return tree, nil
+	return w.subtreeOf(tree)
 }
 
 // FilterTree rewrites a tree with the named paths removed — the wall's
@@ -129,8 +224,12 @@ func (w Workspace) FilterTree(tree string, paths []string) (string, error) {
 	if _, err := w.git(env, "read-tree", tree); err != nil {
 		return "", fmt.Errorf("gittree filter: %w", err)
 	}
+	// update-index interprets paths relative to its invocation directory:
+	// from the toplevel they match the tree's own paths verbatim, from a
+	// nested workspace they would gain the checkout prefix and silently
+	// remove nothing.
 	args := append([]string{"update-index", "--force-remove", "--"}, paths...)
-	if _, err := w.git(env, args...); err != nil {
+	if _, err := w.gitTop(env, args...); err != nil {
 		return "", fmt.Errorf("gittree filter: %w", err)
 	}
 	filtered, err := w.gitLine(env, "write-tree")
@@ -191,7 +290,14 @@ func (w Workspace) Apply(baseTree string, patch []byte) (string, error) {
 	if _, err := w.git(env, "read-tree", baseTree); err != nil {
 		return "", fmt.Errorf("gittree apply: %w", err)
 	}
-	full := append(append([]string{"-C", w.Dir}, configPins...),
+	// apply --cached interprets patch paths relative to its invocation
+	// directory; the toplevel keeps them verbatim against the tree's own
+	// paths in every layout.
+	top, err := w.topLevel()
+	if err != nil {
+		return "", fmt.Errorf("gittree apply: %w", err)
+	}
+	full := append(append([]string{"-C", top}, configPins...),
 		"apply", "--cached", "--binary", "--whitespace=nowarn", "-")
 	cmd := exec.Command("git", full...)
 	cmd.Env = append(os.Environ(), env...)

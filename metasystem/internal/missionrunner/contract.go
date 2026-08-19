@@ -61,6 +61,14 @@ func (e *Engine) parseContract(approved bool) (string, map[string]string, map[st
 	if approved {
 		path = e.approvedContractPath()
 	}
+	return e.parseContractAt(path, approved)
+}
+
+// parseContractAt parses a contract at an explicit path — the launch
+// gate reads the PREFLIGHT-VERIFIED snapshot this way, so its values
+// come from the bytes preflight verified, never a reread of the mutable
+// authored file.
+func (e *Engine) parseContractAt(path string, approved bool) (string, map[string]string, map[string]string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "", nil, nil, failf(3, "mission contract is unreadable: %s: %v", path, err)

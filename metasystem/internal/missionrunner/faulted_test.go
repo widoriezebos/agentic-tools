@@ -144,7 +144,7 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 	if err := mission.InitLedger(ledgerPath, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitState(statePath, engine.approvedContractPath(), ledgerPath, "", "main"); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
 		t.Fatal(err)
 	}
 	openFixtureTurn(t, root, statePath, "demo-t1-abcd", 1)

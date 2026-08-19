@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The wall preflight demands a CLEAN initial baseline at start:
+# close everything the bed laid down in tracked space, exactly as a real
+# mission repository begins.
+close_bed_baseline() { # repo
+  git -C "$1" add -A . >/dev/null 2>&1 || true
+  if ! git -C "$1" diff --cached --quiet 2>/dev/null; then
+    git -C "$1" -c user.name=fixture -c user.email=fixture@example.invalid \
+      commit -qm 'bed baseline' >/dev/null
+  fi
+}
+
 # The dispatcher, adapter selftest, and mission-runner E2E fixtures
 # (script-validate-4/D35): extracted verbatim (one dedent) from
 # validate-metasystem.sh's largest inline block into the sub-suite shape
@@ -1751,6 +1762,7 @@ printf '1\n' >"$runner_repo/candidate-score.txt"
 runner_git add candidate-score.txt
 runner_git commit --allow-empty -qm 'improve mission runner candidate'
 runner_git push -qu origin "$runner_branch"
+close_bed_baseline "$runner_repo"
 run_runner_expect runner-cycle-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-cycle
 wait_runner_status runner-cycle 10
 cycle_turn=$(find "$runner_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
@@ -1807,6 +1819,7 @@ cat >"$runner_repo/artifacts/agents/jobs/pat-lost.json" <<EOF
  "effectiveModel": "fake-model", "requestedModel": "fake-model",
  "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "endedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 EOF
+close_bed_baseline "$runner_repo"
 run_runner_expect runner-patience-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-patience
 wait_runner_status runner-patience 11
 patience_ledger="$runner_repo/artifacts/agents/missions/runner-patience/ledger.md"
@@ -1927,6 +1940,7 @@ runner_git push -qu origin "$runner_branch"
 # by name (HIW-R2-03), the same acknowledge-by-name doctrine as the
 # binary-gate fuse key above.
 make_runner_contract runner-codex return-ok 5 '' codex gpt-5-fixture 'wall.host-artifacts=candidate-score.txt'
+close_bed_baseline "$runner_repo"
 run_runner_expect runner-codex-start 0 "${runner_process_env[@]}" \
   PATH="$codex_host_bin:$PATH" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_CODEX_FIXTURE_DIR="$codex_host_fixture" \
@@ -2026,6 +2040,7 @@ grep -Fq 'oversized block' "$agent_fixture/prompt-oversized.out" \
   || { echo "prompt assembler did not name the oversized block" >&2; exit 1; }
 
 make_runner_contract runner-bad-prompt return-ok 5 '## Streams'
+close_bed_baseline "$runner_repo"
 run_runner_expect runner-bad-prompt-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-bad-prompt
 wait_runner_status runner-bad-prompt 11
 bad_turn=$(find "$runner_repo/artifacts/agents/missions/runner-bad-prompt/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
@@ -2034,6 +2049,7 @@ grep -Fq 'prompt-refused' "$bad_turn/turn.json" \
   || { echo "prompt-checker refusal was not recorded on the turn" >&2; exit 1; }
 
 make_runner_contract runner-ghost dispatch-ghost 5
+close_bed_baseline "$runner_repo"
 run_runner_expect runner-ghost-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-ghost
 wait_runner_status runner-ghost 10
 python3 - "$runner_repo/artifacts/agents/missions/runner-ghost" <<'PY'
@@ -2052,6 +2068,7 @@ mkdir -p "$runner_repo/artifacts/agents/missions/runner-fence"
 printf '{"schemaVersion":1,"missionId":"runner-fence","startedAt":"%s","cycles":1,"reservations":{}}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >"$runner_repo/artifacts/agents/missions/runner-fence/fences.json"
+close_bed_baseline "$runner_repo"
 run_runner_expect runner-fence-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-fence
 wait_runner_status runner-fence 11
 python3 - "$runner_repo/artifacts/agents/missions/runner-fence" <<'PY'
@@ -2064,6 +2081,7 @@ assert any(ask["reasonClass"]=="fence" and ask["answeredAt"] is None for ask in 
 PY
 
 make_runner_contract runner-unverified return-ok 5
+close_bed_baseline "$runner_repo"
 run_runner_expect runner-unverified-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_FAKE_HOST_START_UNVERIFIED=1 "$runner" start --mission runner-unverified
 wait_runner_status runner-unverified 11

@@ -35,6 +35,11 @@ func (e *Engine) RunLoop(mode, tag, startSignal string) int {
 	// (issue-4 round 3: even the failure ramp aggregates usage and
 	// emits, so the guard cannot live behind it). Only the start signal
 	// is written, so a waiting launcher learns the refusal.
+	if err := stateShapeRefusal(filepath.Join(e.missionDir(), "state.json")); err != nil {
+		_ = writeStartSignal(startSignal, false, nil, err.Error())
+		fmt.Fprintln(os.Stderr, err.Error())
+		return exitFor(err)
+	}
 	if err := refuseUnsupportedSemantics(filepath.Join(e.missionDir(), "state.json")); err != nil {
 		_ = writeStartSignal(startSignal, false, nil, err.Error())
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -395,12 +400,37 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 	dir := e.missionDir()
 	statePath = filepath.Join(dir, "state.json")
 	ledger = filepath.Join(dir, "ledger.md")
-	if pathExists(statePath) || pathExists(ledger) {
-		return "", "", nil, failf(3, "mission state already exists; use resume")
-	}
-	_, values, _, err := e.parseContract(true)
+	// The child's whole birth holds the launch lock: its evidence
+	// checks, the birth stamp, and state publication are one exclusive
+	// section against any concurrent launcher's check-then-write.
+	launchHold, err := e.acquireLaunchLock()
 	if err != nil {
 		return "", "", nil, err
+	}
+	defer launchHold.release()
+	if err := stateShapeRefusal(statePath); err != nil {
+		return "", "", nil, err
+	}
+	if stateBorn(statePath) {
+		return "", "", nil, failf(3, "mission state already exists; use resume")
+	}
+	if err := e.startAmbiguityRefusal(ledger); err != nil {
+		return "", "", nil, err
+	}
+	if pathExists(ledger) {
+		// A ledger without a state is a stillborn remnant: the
+		// mission was never born, so the remnant is retryable, never
+		// a wedge.
+		if err := os.Remove(ledger); err != nil {
+			return "", "", nil, failf(3, "mission initialization cannot clear a stillborn ledger: %v", err)
+		}
+	}
+	approvedText, values, _, err := e.parseContract(true)
+	if err != nil {
+		return "", "", nil, err
+	}
+	if e.afterApprovedParse != nil {
+		e.afterApprovedParse()
 	}
 	cycleBudget, err := intFromString(values["ledger.cycle-budget"])
 	if err != nil {
@@ -413,7 +443,48 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 	if err := mission.InitLedger(ledger, cycleBudget, noGainBudget); err != nil {
 		return "", "", nil, failf(3, "mission ledger initialization refused: %v", err)
 	}
-	if err := mission.InitState(statePath, e.approvedContractPath(), ledger, leasePath, ""); err != nil {
+	// The CHILD re-admits the baseline at the moment of state birth —
+	// the parent's preflight ran in another process, and the gap
+	// between the two processes is not trusted. What is admitted here
+	// is RECORDED as E0, so continuity holds even if this process dies
+	// before the first turn opens.
+	// ONE authenticated snapshot binds the whole birth: the parse above
+	// verified these bytes against the fence digest, and every later
+	// consumer takes them as given — a pin file replaced after that read
+	// can influence nothing.
+	admitted, err := e.admittedBaseline(values, []byte(approvedText))
+	if err != nil {
+		e.cleanupStillborn(ledger)
+		return "", "", nil, err
+	}
+	workspace := gittree.Workspace{Dir: e.Root}
+	if err := workspace.Anchor(e.Mission, admitted); err != nil {
+		e.cleanupStillborn(ledger)
+		return "", "", nil, failf(3, "mission initialization cannot anchor the admitted baseline: %v", err)
+	}
+	// The birth record lands BEFORE state publication: a crash between
+	// the two writes then leaves evidence that freezes the mission id
+	// for a human, never an unmarked birth a later state-file loss
+	// could mistake for a stillborn remnant. Only this pass's own
+	// PROVEN publication failure may unstamp it — in-process certainty,
+	// not the ambiguity a crash leaves.
+	if err := atomicWriteJSON(e.birthRecordPath(), map[string]any{
+		"missionId": e.Mission, "bornAt": nowISO(),
+	}); err != nil {
+		e.cleanupStillborn(ledger)
+		return "", "", nil, failf(3, "mission birth record cannot be written: %v", err)
+	}
+	if err := mission.InitStateFromSource(statePath, e.approvedContractPath(), ledger, leasePath, "", admitted, []byte(approvedText)); err != nil {
+		// The state write is atomic, so a refusal here means the
+		// mission is provably UNBORN: unstamp the birth record, then
+		// the stillborn sweep applies — without it the ledger, pin,
+		// fences, stamp, and E0 anchor all outlive a failed birth.
+		if rerr := os.Remove(e.birthRecordPath()); rerr != nil && !os.IsNotExist(rerr) {
+			e.emit("mission-stillborn-cleanup", "leftover born.json", map[string]string{
+				"missionId": e.Mission, "error": rerr.Error(),
+			})
+		}
+		e.cleanupStillborn(ledger)
 		return "", "", nil, failf(3, "mission state initialization refused: %v", err)
 	}
 	if err := e.anchor(statePath, ledger, e.Mission); err != nil {
@@ -438,8 +509,21 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 	dir := e.missionDir()
 	statePath = filepath.Join(dir, "state.json")
 	ledger = filepath.Join(dir, "ledger.md")
+	// The shape check runs FIRST: a dereferencing existence check reads
+	// a dangling symlink as honest absence and would misreport the one
+	// object that says someone touched the path.
+	if err := stateShapeRefusal(statePath); err != nil {
+		return "", "", nil, err
+	}
 	if !pathExists(statePath) {
 		return "", "", nil, failf(7, "mission state does not exist")
+	}
+	// The RESUME child re-checks the fileMode pin too: the parent's
+	// preflight ran in another process, and reconciliation below trusts
+	// the tree equation — a gap-time flip to false would hide mode
+	// drift from everything that follows.
+	if err := e.checkFileModePinned(); err != nil {
+		return "", "", nil, err
 	}
 	code, reconcileErr := mission.Reconcile(statePath, e.Root, ledger)
 	if reconcileErr != nil || code != 0 {
@@ -452,6 +536,16 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 	state, err = e.verifyState(statePath, false)
 	if err != nil {
 		return "", "", nil, err
+	}
+	// A verified living state IS birth evidence: stamp the durable
+	// record for any mission born before the record existed, so a later
+	// state-file loss cannot be mistaken for a stillborn remnant.
+	if !pathExists(e.birthRecordPath()) {
+		if err := atomicWriteJSON(e.birthRecordPath(), map[string]any{
+			"missionId": e.Mission, "bornAt": nowISO(),
+		}); err != nil {
+			return "", "", nil, failf(3, "mission birth record cannot be written: %v", err)
+		}
 	}
 	if state["status"] == "parked" && state["parkReason"] == "stop-loss" {
 		applied, err := e.applyPendingReset(statePath, ledger, state)
@@ -551,6 +645,45 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 		return statePath, ledger, final, nil
 	}
 	return statePath, ledger, state, nil
+}
+
+// cleanupStillborn tidies a mission that was never born (state.json
+// absent): the ledger, approved copy, stamp, and fence pin go. BEST
+// EFFORT ONLY, and safely so: birth is keyed on state.json everywhere —
+// the pin check and the init exists-check both tolerate remnants — so a
+// crash or failure mid-cleanup can never wedge the mission id; failures
+// are surfaced as events.
+func (e *Engine) cleanupStillborn(ledger string) {
+	// The birth rule is the belt here too: once state.json exists — or
+	// the durable birth evidence says the mission lived — NOTHING here
+	// may run; these artifacts are the living mission's. A non-regular
+	// object at the path does NOT block the sweep: entry refusals keep
+	// pre-existing objects untouched, so anything swept here is this
+	// attempt's own staging.
+	evidence, evidenceErr := e.bornEvidence(ledger)
+	if stateBorn(filepath.Join(e.missionDir(), "state.json")) || evidence != "" || evidenceErr != nil {
+		// An unreadable probe blocks the sweep the same way evidence
+		// does: destruction needs PROVEN emptiness.
+		return
+	}
+	for _, path := range []string{ledger, e.approvedContractPath(),
+		filepath.Join(e.missionDir(), "pending-block.json"), e.fencesPath()} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			e.emit("mission-stillborn-cleanup", "leftover "+filepath.Base(path), map[string]string{
+				"missionId": e.Mission, "error": err.Error(),
+			})
+		}
+	}
+	// Anchor refs are stillborn artifacts too: a failed initialization
+	// may already have anchored its admitted E0. Before birth there is
+	// no living anchor to protect, so the mission's whole anchor
+	// namespace drops with the rest.
+	workspace := gittree.Workspace{Dir: e.Root}
+	if err := workspace.DropAnchors(e.Mission); err != nil {
+		e.emit("mission-stillborn-cleanup", "leftover anchors", map[string]string{
+			"missionId": e.Mission, "error": err.Error(),
+		})
+	}
 }
 
 // healReservedCycle repairs the reserve/append crash window on resume: a
@@ -1406,14 +1539,23 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 		final, err := e.parkWallViolation(c.statePath, c.ledger, orphanTurn, orphanDir, cycle, orphanViolation, diskState, false)
 		return final, true, err
 	}
-	// E-CONTINUITY at reservation (slice-6 round-2 finding 3): between
-	// turns the filtered projection must still equal the current
-	// expected tree — the last accepted post-tree, or the resolution
-	// tree E(next) after a ruling. Anything else is drift the tree
-	// equation would silently grandfather as the next baseline, so it
-	// parks as a wall violation BEFORE a marker opens on it. The first
-	// reservation of a mission has no E-point yet: it defines E0.
-	if expectedNow := mission.CurrentExpectedTree(diskState); expectedNow != "" && expectedNow != preTree {
+	// E-CONTINUITY at reservation: between turns the filtered
+	// projection must still equal the current expected tree — the
+	// admitted baseline before any turn, the last accepted post-tree
+	// after one, the resolution tree after a ruling. Anything else is
+	// drift the tree equation would silently grandfather as the next
+	// baseline, so it parks as a wall violation BEFORE a marker opens
+	// on it.
+	expectedNow := mission.CurrentExpectedTree(diskState)
+	if expectedNow == "" {
+		// Every state that passes shape validation carries its
+		// baseline, so this branch is a fail-closed belt for shapes
+		// that never should reach reservation: adopting the current
+		// workspace as the expected tree here would silently redefine
+		// the baseline the wall exists to pin.
+		return nil, true, failf(3, "mission state records no initial baseline and no expected-tree event; re-provision the mission under the wall's preflight")
+	}
+	if expectedNow != preTree {
 		violation := fmt.Sprintf("workspace drifted between turns: the filtered projection %s does not equal the expected tree %s", preTree, expectedNow)
 		// The violation writes its wall.json evidence like every other
 		// (round-3 finding 7): the observed projection IS both the pre-

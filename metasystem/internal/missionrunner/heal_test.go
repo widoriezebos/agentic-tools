@@ -86,7 +86,7 @@ func crashedMission(t *testing.T, ledgerCycles, spentCycles int) (engine *Engine
 	if err := mission.InitLedger(ledgerPath, 10, 5); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitState(statePath, contractPath, ledgerPath, "", "main"); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
 		t.Fatal(err)
 	}
 	for cycle := 1; cycle <= ledgerCycles; cycle++ {

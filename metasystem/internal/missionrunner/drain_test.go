@@ -294,7 +294,7 @@ func drainMission(t *testing.T, reserved map[string]any) (engine *Engine, stateP
 	if err := mission.InitLedger(ledgerPath, 8, 4); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitState(statePath, contractPath, ledgerPath, "", "main"); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
 		t.Fatal(err)
 	}
 	return engine, statePath, ledgerPath
@@ -576,7 +576,7 @@ func measurableDrainMission(t *testing.T) (engine *Engine, statePath, ledgerPath
 	if err := mission.InitLedger(ledgerPath, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitState(statePath, engine.approvedContractPath(), ledgerPath, "", "main"); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
 		t.Fatal(err)
 	}
 	return engine, statePath, ledgerPath, git, write

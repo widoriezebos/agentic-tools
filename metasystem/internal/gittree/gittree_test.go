@@ -598,3 +598,102 @@ func TestSnapshotMatchesLegacyProjection(t *testing.T) {
 		t.Fatalf("snapshot %s != legacy projection %s", got, want)
 	}
 }
+
+// A nested checkout (the workspace is a subdirectory of the git toplevel —
+// the supported deployment layout) speaks the SAME workspace-relative path
+// space as a toplevel checkout: trees are scoped to the workspace prefix,
+// lookups and exclusions match, and worktree noise outside the workspace
+// is not the workspace's to project.
+func TestNestedWorkspacePathSpace(t *testing.T) {
+	top := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", top}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	write := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(top, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	write("outside.txt", "outer\n")
+	write("metasystem/plans/contract.md", "signed\n")
+	write("metasystem/truth/a.txt", "a\n")
+	git("add", ".")
+	git("-c", "user.name=f", "-c", "user.email=f@invalid", "commit", "-q", "-m", "first")
+
+	w := Workspace{Dir: filepath.Join(top, "metasystem")}
+	head, err := w.HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := w.Entries(head, []string{"plans/contract.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := entries["plans/contract.md"]; !ok {
+		t.Fatalf("HeadTree must speak workspace-relative paths: %v", entries)
+	}
+
+	// A clean nested workspace snapshots to HEAD's own subtree.
+	clean, err := w.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean != head {
+		t.Fatalf("clean snapshot %s differs from the head subtree %s", clean, head)
+	}
+
+	// Worktree noise OUTSIDE the workspace is invisible to its projection.
+	write("outside-noise.txt", "noise\n")
+	still, err := w.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if still != head {
+		t.Fatal("toplevel noise leaked into the nested projection")
+	}
+
+	// A change INSIDE is captured under its workspace-relative path, and
+	// FilterTree's exclusion matches that same path.
+	write("metasystem/truth/a.txt", "changed\n")
+	dirty, err := w.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dirty == head {
+		t.Fatal("the workspace change was not captured")
+	}
+	dirtyFiltered, err := w.FilterTree(dirty, []string{"truth/a.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	headFiltered, err := w.FilterTree(head, []string{"truth/a.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dirtyFiltered != headFiltered {
+		t.Fatal("the workspace-relative exclusion did not remove the changed path")
+	}
+
+	// Diff and Apply agree in the same path space.
+	patch, err := w.Diff(head, dirty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applied, err := w.Apply(head, patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != dirty {
+		t.Fatalf("apply(head, diff) = %s, want %s", applied, dirty)
+	}
+}

@@ -1097,3 +1097,247 @@ check. Three inherited configurations (`devin-delegate@1`, `devin-host@1`,
 cycles 8, no acknowledgement) and are reported by name until a human rules
 (issue #8's family). `benchmark/README.md` is normative for anyone, on any
 machine, adding a case or configuration.
+
+## D112 — 2026-08-19: Source comments speak the application's language (Wido's ruling)
+
+**Decided (Wido, directly):** Inline source documentation was carrying
+the context of the work session that produced it — review-round
+numbers, finding numbers, slice names — which no fresh reader can
+follow. That is a standards defect, not a style preference. Two
+consequences: (1) the standard changes now — AGENTS.md gains the rule
+that a source comment states its constraint in the application's own
+terms, in plain English, and never in terms of the process that
+produced the change; provenance lives in commit messages and decision
+records only. (2) The landed codebase gets a full inline-documentation
+rewrite to that standard — opened as goal `source-comment-standard`,
+to be designed and critiqued like any other change.
+
+**Applied immediately:** every comment added by the in-flight
+HIW-O12 slice (uncommitted at ruling time) was rewritten to the
+standard before the slice's next critique round, so the slice lands
+clean. The landed offenders across the codebase are the goal's scope,
+not the slice's.
+
+**Impact:** the next reader of any file sees only the system's own
+concepts; the archaeology stays in the decision records where it
+belongs.
+
+## D113 — 2026-08-19: The harness absorbs agent conduct, and the metasystem gets an ease-of-use reckoning (Wido's ruling)
+
+**Decided (Wido, directly):** Behavior that only lives in one agent's
+memory does not exist for the next agent. Four pieces of session
+conduct move into the harness as goals: the runnable verification
+covenant (one battery entrypoint with a verdict file, one
+critique-round driver — goal executable-covenant), the flake registry
+with its bounded rerun protocol (goal flake-registry), and the landing
+tool repairs agents currently remember around (commit.sh pathspec
+survival, dual-remote push — goal landing-tooling-fixes). Separately
+and explicitly: the metasystem must be INTUITIVE for an agent to use —
+across every runtime, not one. Goal agent-ease-assessment takes a hard
+look at the system's complexity from the agent seat, names
+simplification opportunities, and executes what survives critique.
+
+**Impact:** the queue gains four goals behind the current work; the
+standard for every future harness feature is that its discipline is
+enforced by the script, not recalled by the operator.
+
+**Addendum (Wido, same day):** the ease-of-use assessment carries a
+second question with equal weight: whether the system's structure has
+tipped into brittleness anywhere — the balance sought is strong
+guidance and verification of agent behavior WITHOUT clamping every
+technical detail, which introduces brittleness and is against the
+system's philosophy. The assessment must answer both.
+
+## D114 — 2026-08-19: The brittleness findings get designed recovery (Wido's ruling)
+
+**Decided (Wido, directly):** the structure-vs-brittleness assessment
+named four places where strictness tipped into brittleness; each gets a
+proper design and a backlog place, not an ad hoc patch. The mapping:
+(1) the code-critique loop's unbounded witness escalation is owned by
+the already-queued critique-stop-rule goal, now carrying this ruling's
+weight; (2) defense stacking on hot artifacts becomes goal
+invariant-consolidation — one owner per invariant, the contract's
+origin-to-E0 flow as the first case; (3) the goal ledger's byte caps
+and (4) its missing queued-goal edit verb together become goal
+goal-ledger-ergonomics. The agent-ease-assessment goal remains the
+umbrella that may surface more such items.
+
+**Impact:** brittleness recovery is queued work with designs and
+critiques, preserving the philosophy: deepen the strictness that
+guards real invariants, prune the strictness that breaks lawful use.
+
+**Addendum to D114 (Wido, same day):** the general design principle
+behind the recovery is binding for all future work and now lives in
+AGENTS.md's work contract: rules that break on benign variation must
+not be encoded — strictness is reserved for named invariants whose
+violation is a real defect, and benign variation is handled
+intuitively (normalized, allowed, or given its sanctioned verb).
+
+## D115 — 2026-08-19: Backlog work parallelizes across machines, synced through git (Wido's ruling)
+
+**Decided (Wido, directly):** multiple machines work the backlog in
+parallel, with git as the synchronization mechanism for the goal
+queue. This is the NEXT item picked after the current goal
+(host-implementer-wall) closes, because it multiplies throughput on
+everything behind it. The design must cover: a claim mechanism so no
+two machines take the same goal; merge-safe ledger mutations (the
+current single-file ledger with a whole-file digest baseline cannot
+merge concurrent edits); and baseline reconciliation that survives
+concurrent pushes. Goal backlog-git-sync carries it.
+
+**Impact:** after the wall lands, the queue stops being single-file
+in both senses — one machine works a goal while others work theirs,
+and the ledger's own format must make that mergeable.
+
+**Addendum to D115 (Wido, same day):** the distributed backlog must be
+DEPENDENCY-AWARE. The queue is a flat list today and dependencies
+between goals exist only informally (in next-step prose or in agents'
+heads); a machine picking work in parallel can only choose safely if
+the ledger itself records which goals block which. The design adds
+dependencies as first-class ledger data: a goal is claimable only when
+its blockers are done, the claim verb enforces it, and the merge-safe
+format carries it. Robustness of the mechanism includes this — two
+machines must never work a goal and its blocker at the same time.
+
+**Second addendum to D115 (Wido, same day):** landing the mechanism
+includes MIGRATING the existing queue to it. The goal is not done when
+the verbs exist: every standing goal gets its dependency edges
+declared, its claimable state made true (blocked or free), and the
+resulting graph reviewed as part of the goal's acceptance — the first
+parallel pick by a second machine must be safe on the real backlog,
+not on an empty example.
+
+**Third addendum to D114 (Wido's question, 2026-08-19):** the wall
+slice's 19-round critique chain exposed WHY the witness-escalation
+brittleness happens: the patience mechanism exists only in the mission
+runtime, and critique loops carry no instance of it — no measured
+progress, no no-gain budget, no mechanical stop. The critique-stop-rule
+and executable-covenant goals must be designed TOGETHER: the
+critique-round driver carries the mission patience semantics verbatim
+(progress = findings that change what the slice under review builds;
+program-wide discoveries are rows, not slice progress; a no-gain budget
+ends the loop with the rows recorded). Until that lands, the loop
+operator runs the budget by hand: zero regression-class findings in a
+round is the no-gain event, and the slice lands on the evidence rule.
+
+**Fourth addendum to D114 (Wido, same day):** the patience mechanism is
+being revised in parallel on another machine. When that revision lands,
+this machine reviews it against the gap the wall slice exposed (the
+third addendum above): if the revision already gives critique loops a
+patience instance, the critique-stop-rule and executable-covenant goals
+align to it; if it does not, the requirement is factored into it so the
+mechanism addresses the problem that was just experienced. One patience
+design serves both runtimes and review loops — not two mechanisms.
+
+**Fifth addendum to D114 (the patience review, 2026-08-19):** the other
+machine's patience revision (plans/patience-attempts.md, landed 984675b)
+was reviewed against the critique-loop gap per Wido's instruction. It is
+fixture-harness patience — waits counted in the census actor's attempts
+with an honestly-labelled wall-clock failsafe — and does NOT itself
+cover review loops. Its two-tier principle is the pattern the
+critique-stop-rule design must adopt: Tier 1, a no-gain budget counted
+in rounds that produce zero regression-class findings; Tier 2, an
+absolute round failsafe. One patience concept across fixtures,
+missions, and review loops. Applied by hand to the wall slice
+immediately: no-gain budget one round, failsafe two, slice scope frozen
+(new-machinery findings become rows regardless of class).
+
+**Addendum to D115 (Wido, same day):** the sync moves up — it starts
+immediately after the wall's slice 7 lands, NOT after the whole wall
+goal closes. Reason (proposed, agreed): once the multi-machine backlog
+exists, the wall's own remaining rows (O13 and the four smaller rows)
+become work a second machine can claim in parallel, so the sync
+multiplies everything behind it including the wall. Mechanically: on
+the slice-7 landing, host-implementer-wall parks yielding its slot to
+backlog-git-sync (the acp-transport precedent), and resumes as
+claimable work once parallel picking exists.
+
+**Correction to the D115 addendum (round-21 review):** the resume set
+after the park was incomplete — the wall's OPEN rows are O13
+(CRITICAL), O14, O15 (CRITICAL), O16, and the four smaller rows
+O8/O10/O9/O11; ALL of them resume as claimable work under the parallel
+backlog. The goal ledger's handoff now names the full set.
+
+## D116 — 2026-08-19: The wall's launch preconditions land (HIW-O12, slice 7)
+
+**Decided (delegated, both-must-agree):** slice 7 lands on codex
+gpt-5.6-sol AGREE at round 23 of a 23-round critique chain (72 findings:
+folded, refuted with evidence, or recorded as obligation rows). What
+the slice ships:
+
+- **Launch preconditions at every entry (O12):** core.fileMode must be
+  pinned true in the repository itself, normalized to git's own boolean;
+  a mission may only START on a clean baseline or exactly the tree the
+  human sealed as wall.sealed-baseline; the live contract must be
+  byte-and-mode identical to committed HEAD AND byte-identical to the
+  authenticated approved snapshot, all derived from one snapshot
+  instant; every non-regular contract shape refuses by name before
+  anything dereferences or blocks on it.
+- **E0 at birth:** the admitted baseline is recorded as the mission's
+  initial expected tree the moment state publishes, from the same
+  authenticated read that admission judged — one byte snapshot flows
+  from origin verification through admission into state construction.
+- **Birth is durable and rebirth is evidence-gated:** born.json lands
+  before state publication and only a same-pass proven failure
+  unstamps it; every start entry freezes the mission id on birth
+  evidence — the record, booked ledger cycles, or surviving anchors —
+  with remedies matched to the evidence, and probes that cannot read
+  refuse rather than authorize. Interrupted, damaged, or lost-state
+  missions freeze for a human; stillborn retries keep working.
+- **Start decisions are serialized:** a per-mission launch lock spans
+  the parent's checks-and-pins and the child's whole birth, so a
+  launcher's cached decision can never mutate a newborn.
+- **Path-space correctness in nested checkouts:** the tree projection
+  is workspace-scoped at its one owner (gittree), HEAD comparisons and
+  the delegate authorization chain speak the same project space, both
+  conformance stages fence the whole repository against sibling-path
+  smuggling, boundary declarations convert from the implementer's real
+  dialect with mandatory single stripping, and a full nested mission
+  births and runs through the real wrapper as the witness.
+- **Bed honesty:** the Go full-cycle beds carry the real return checker
+  and role schema (their absence had every fixture mission silently
+  failing behind loose assertions); the fake host's park request
+  carries its reserved ask; both shell families close their beds.
+
+Along the way, the operator's rulings reshaped the loop itself: the
+comment standard (D112) applied mid-slice; the brittleness recovery
+(D114) opened; the hand-run patience budget (D114, third addendum)
+capped the chain at a no-gain round or two failsafe rounds, and the
+close-out landed inside that cap. New obligation rows recorded for
+discovered pre-existing gaps: O15 (HEAD-movement accounting, CRITICAL),
+O16 (host-side repository fence), O18 (landed in-slice:
+READY_FOR_RUNTIME), beside O14; O17 (durable birth) landed in-slice.
+KI-38 records the pre-existing lease-acquisition race with goal
+lease-acquire-atomicity queued. Cross-machine repair riding this
+landing: the KI-37 arming fix's empty-array expansion guarded for
+bash 3.2 (arm-supervision.sh:132).
+
+**Impact:** a mission cannot be born on bytes nobody signed, cannot
+lose its identity chain to a crash or a concurrent start, and cannot be
+mistaken for never-lived; the wall's whole program now runs correctly
+in the nested deployment layout it actually ships in. Per D115's
+addendum, host-implementer-wall parks on this landing, yielding to
+backlog-git-sync; rows O13/O14/O15/O16 + O8/O10/O9/O11 resume as
+claimable parallel work. Live VM validation stays deferred to Wido's
+seals.
+
+## D117 — 2026-08-19: The wall recovery ladder (Wido's ruling, recorded for the program)
+
+**Decided (Wido, directly, mid-window):** wall violations must not
+freeze the mission for the human by default — "I first want the main
+agent to figure out how to recover from this. Only if that is not
+possible — because there is ambiguity or there are big implications —
+should the human be asked to unblock things." The ladder amends
+slice-6 doctrine: Tier 1, every violation still records its taint,
+evidence, and anchored disputed tree unchanged; Tier 2, the RUNNER
+auto-restores the mechanical cases (byte-exact safe-tree restore,
+authenticated ledger-blob restore) through ResolveTaint's own engine
+internals under a runner identity, no ask raised; Tier 3, a human is
+asked only for adoption, no verifiable restore, or a repeat offense
+within the lookback window. Design draft:
+scratchpad/recovery-ladder-design-draft.md (to be moved into plans/ when
+picked up). Recorded as obligation row HIW-O19; claimable parallel work
+under the backlog sync like its sibling rows.
+
+**Impact:** the human is the escalation path for judgment and stakes,
+never a mechanical restore's rubber stamp.

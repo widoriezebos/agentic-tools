@@ -102,10 +102,6 @@ func nulSplitPaths(data []byte) []string {
 	return paths
 }
 
-func unprefixMetasystem(value string) string {
-	return strings.TrimPrefix(value, "metasystem/")
-}
-
 // resolveFacts reads the implementer job record and walks its parent chain
 // to the root job, reproducing the fact-resolution program's messages.
 func (r *conformanceRun) resolveFacts() []string {
@@ -205,8 +201,11 @@ func Conformance(root, stage, job string) (out, errs []string, code int) {
 		return r.fail("conformance failure: implementer branch has no merge-base with the current target")
 	}
 	r.boundaryBase = boundaryBase
-	prefix, _ := r.git(root, nil, "rev-parse", "--show-prefix")
-	r.installPrefix = strings.TrimSuffix(prefix, "/")
+	prefix, err := projectInstallPrefix(root)
+	if err != nil {
+		return r.fail("conformance failure: cannot derive the mission project's repository prefix")
+	}
+	r.installPrefix = prefix
 
 	if stage == "review" {
 		return r.reviewStage(diffFile, reviewFile)
@@ -214,24 +213,116 @@ func Conformance(root, stage, job string) (out, errs []string, code int) {
 	return r.mergeStage(recordPath)
 }
 
+// projectInstallPrefix derives the mission project's path under its git
+// toplevel ("" at the toplevel, "metasystem" nested) — the one fact the
+// whole project scoping hangs on, derived in one place so the validator
+// and its witnesses cannot drift apart. Bounded like every other
+// external call, and lossless: only git's record terminator is
+// stripped, never characters a directory name may lawfully carry.
+func projectInstallPrefix(root string) (string, error) {
+	cmd := exec.Command("git", "-C", root, "rev-parse", "--show-prefix")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	limit := boundedexec.Timeout(filepath.Join(root, "metasystem.conf"), boundedexec.Local)
+	if err := boundedexec.Run(cmd, limit, "git rev-parse --show-prefix"); err != nil {
+		return "", fmt.Errorf("rev-parse --show-prefix: %w", err)
+	}
+	prefix := strings.TrimSuffix(stdout.String(), "\n")
+	return strings.TrimSuffix(prefix, "/"), nil
+}
+
+// projectDeclaration converts one boundary declaration from the dialect
+// implementers write — repository-relative, from the worktree top they
+// run in — into the project-relative space every comparison uses. In a
+// nested layout the declaration must carry the project prefix and is
+// stripped EXACTLY ONCE; a prefix-less declaration names a path outside
+// the project and refuses. Mandatory single stripping is also what kills
+// aliasing: a project path that itself begins with the prefix token is
+// declared with both components and survives the one strip intact.
+func (r *conformanceRun) projectDeclaration(item string) (string, string) {
+	if r.installPrefix == "" {
+		return item, ""
+	}
+	prefix := r.installPrefix + "/"
+	if !strings.HasPrefix(item, prefix) {
+		return "", fmt.Sprintf("boundary declaration %q does not name a path inside the project (%s/...)", item, r.installPrefix)
+	}
+	return strings.TrimPrefix(item, prefix), ""
+}
+
+// projectWorkspace scopes tree operations to the mission project inside
+// the implementer worktree. The worktree mirrors the whole repository; the
+// mission's wall, expected-tree points, and boundary declarations all
+// speak project-relative paths, so every tree this validator derives must
+// live in that same space or authorization could never match a nested
+// mission's named points.
+func (r *conformanceRun) projectWorkspace() gittree.Workspace {
+	return gittree.Workspace{Dir: filepath.Join(r.workspace, r.installPrefix)}
+}
+
+// refuseOutsideProjectChanges fences the project scoping at the whole
+// repository: the delegate's worktree is writable everywhere, and a
+// review that inspects only the project subtree would otherwise let one
+// commit carry reviewed project changes AND unreviewed sibling changes
+// into the merge. Any path changed outside the project between the
+// boundary base and the given repository-level tree refuses the stage.
+func (r *conformanceRun) refuseOutsideProjectChanges(repoTree string) []string {
+	if r.installPrefix == "" {
+		return nil
+	}
+	topWorkspace := gittree.Workspace{Dir: r.workspace}
+	baseTree, err := topWorkspace.TreeOf(r.boundaryBase)
+	if err != nil {
+		return []string{"cannot resolve the repository-level boundary base tree"}
+	}
+	paths, err := topWorkspace.ChangedPaths(baseTree, repoTree)
+	if err != nil {
+		return []string{"cannot compare repository-level changes against the boundary base"}
+	}
+	prefix := strings.TrimSuffix(r.installPrefix, "/") + "/"
+	var outside []string
+	for _, path := range paths {
+		if !strings.HasPrefix(path, prefix) {
+			outside = append(outside, path)
+		}
+	}
+	if len(outside) > 0 {
+		return []string{fmt.Sprintf(
+			"delegate changed paths outside the mission project (%s): %s; only the project may change",
+			r.installPrefix, quotedList(outside))}
+	}
+	return nil
+}
+
 // reviewStage snapshots the worktree through the shared gittree primitive
 // (the wall's one projection owner), persists the diff artifact, and checks
 // the changed paths against the cumulative declared boundary. review.json
 // is written only when the boundary holds.
 func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []string, int) {
-	workspace := gittree.Workspace{Dir: r.workspace}
+	workspace := r.projectWorkspace()
 	reviewedTree, err := workspace.Snapshot("HEAD")
 	if err != nil {
 		return r.fail("conformance failure: could not snapshot the implementer worktree")
 	}
-	diff, err := workspace.Diff(r.boundaryBase, reviewedTree)
+	repoSnapshot, err := (gittree.Workspace{Dir: r.workspace}).Snapshot("HEAD")
+	if err != nil {
+		return r.fail("conformance failure: could not snapshot the implementer worktree")
+	}
+	if violations := r.refuseOutsideProjectChanges(repoSnapshot); len(violations) > 0 {
+		return r.fail("conformance failure: " + violations[0])
+	}
+	boundaryBaseTree, err := workspace.TreeOf(r.boundaryBase)
+	if err != nil {
+		return r.fail("conformance failure: could not resolve the boundary base tree")
+	}
+	diff, err := workspace.Diff(boundaryBaseTree, reviewedTree)
 	if err != nil {
 		return r.fail("conformance failure: could not snapshot the implementer worktree")
 	}
 	if err := os.WriteFile(diffFile, diff, 0o644); err != nil {
 		return r.fail(fmt.Sprintf("conformance failure: %v", err))
 	}
-	paths, err := workspace.ChangedPaths(r.boundaryBase, reviewedTree)
+	paths, err := workspace.ChangedPaths(boundaryBaseTree, reviewedTree)
 	if err != nil {
 		return r.fail("conformance failure: could not snapshot the implementer worktree")
 	}
@@ -309,14 +400,23 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 			continue
 		}
 		for _, item := range items {
-			declared[unprefixMetasystem(item)] = true
+			projectItem, dialectViolation := r.projectDeclaration(item)
+			if dialectViolation != "" {
+				violations = append(violations, dialectViolation)
+				continue
+			}
+			declared[projectItem] = true
 		}
 	}
+	// Declarations and observed paths are BOTH project-relative — the
+	// review derives its paths from the project-scoped trees and the
+	// boundary must be declared in the same space. They compare
+	// verbatim: any rewriting would let two distinct project paths
+	// alias onto one declaration.
 	outsideSet := map[string]bool{}
 	for _, path := range paths {
-		normalized := unprefixMetasystem(path)
-		if !declared[normalized] {
-			outsideSet[normalized] = true
+		if !declared[path] {
+			outsideSet[path] = true
 		}
 	}
 	outside := make([]string, 0, len(outsideSet))
@@ -366,9 +466,16 @@ func (r *conformanceRun) configGet(key, def string) string {
 // mergeStage validates either a mechanically valid waiver or a closed,
 // independent code-critic chain over the final committed tree.
 func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int) {
-	finalTree, err := r.git(r.workspace, nil, "rev-parse", "HEAD^{tree}")
+	finalTree, err := r.projectWorkspace().TreeOf("HEAD")
 	if err != nil {
 		return r.fail("conformance failure: implementer branch has no final committed tree")
+	}
+	repoFinal, err := (gittree.Workspace{Dir: r.workspace}).HeadTree()
+	if err != nil {
+		return r.fail("conformance failure: implementer branch has no final committed tree")
+	}
+	if violations := r.refuseOutsideProjectChanges(repoFinal); len(violations) > 0 {
+		return r.fail("conformance failure: " + violations[0])
 	}
 	configuredRuntime := r.configGet("role.code-critic.runtime", "__missing__")
 	independence := r.configGet("independence", "")
@@ -406,14 +513,16 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 		}
 	}
 	isInstructionBearing := func(path string) bool {
-		normalized := r.installationPath(path)
+		// The callers hand PROJECT-relative paths, and the instruction
+		// table is authored in the same space; a prefix strip here
+		// would alias a project path beginning with the prefix token.
 		for _, entry := range instructionPaths {
 			if strings.HasSuffix(entry, "/") {
 				directory := entry[:len(entry)-1]
-				if normalized == directory || strings.HasPrefix(normalized, entry) {
+				if path == directory || strings.HasPrefix(path, entry) {
 					return true
 				}
-			} else if normalized == entry {
+			} else if path == entry {
 				return true
 			}
 		}
@@ -433,9 +542,18 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 		}
 	}
 	if waiver != nil {
+		// These diffs run over the WHOLE worktree, so their paths are
+		// repository-relative; the boundary policy speaks project space.
+		// The conversion happens here, at the one place the two spaces
+		// meet — handing repository paths onward would let a nested
+		// project's own plans/ slip past the protected-path policy.
 		rawPaths, _ := r.gitBytes(r.workspace, nil, "diff", "--name-only", "-z", "--no-renames", r.boundaryBase, "HEAD", "--")
 		numstat, _ := r.gitBytes(r.workspace, nil, "diff", "--numstat", "--no-renames", r.boundaryBase, "HEAD", "--")
-		out, errs, code = r.mergeWaiver(waiver, nulSplitPaths(rawPaths), string(numstat), isInstructionBearing)
+		projectPaths := make([]string, 0)
+		for _, repoPath := range nulSplitPaths(rawPaths) {
+			projectPaths = append(projectPaths, r.installationPath(repoPath))
+		}
+		out, errs, code = r.mergeWaiver(waiver, projectPaths, string(numstat), isInstructionBearing)
 	} else {
 		out, errs, code = r.mergeCritique(recordPath, finalTree, configuredRuntime, independence)
 	}
@@ -467,7 +585,7 @@ func (r *conformanceRun) mergeWaiver(waiver any, paths []string, numstat string,
 	}
 	var nonMarkdown, instructionHits []string
 	for _, path := range paths {
-		if !strings.HasSuffix(r.installationPath(path), ".md") {
+		if !strings.HasSuffix(path, ".md") {
 			nonMarkdown = append(nonMarkdown, path)
 		}
 		if isInstructionBearing(path) {
@@ -567,11 +685,15 @@ func allDigits(value string) bool {
 func (r *conformanceRun) boundaryViolations(paths []string) []string {
 	var violations []string
 	for _, path := range paths {
-		normalized := r.installationPath(path)
-		if normalized == "plans" || strings.HasPrefix(normalized, "plans/") {
+		// The paths arrive PROJECT-relative from the project-scoped
+		// trees, and the protected locations are the project's own —
+		// re-stripping an install prefix here would alias a lawful
+		// project path that merely begins with the prefix token onto a
+		// protected root path.
+		if path == "plans" || strings.HasPrefix(path, "plans/") {
 			violations = append(violations, "trusted plans/ state changed: "+path)
 		}
-		if normalized == "artifacts/agents" || strings.HasPrefix(normalized, "artifacts/agents/") {
+		if path == "artifacts/agents" || strings.HasPrefix(path, "artifacts/agents/") {
 			violations = append(violations, "agent control plane changed: "+path)
 		}
 	}
