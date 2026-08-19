@@ -52,9 +52,9 @@ type ParkRecord struct {
 // HistoryLine is one entry of the append-only History block, exactly
 // the design's grammar:
 //
-//	- <iso8601> <opid> <verb> actor=<...> [targets=<ids>]
-//	  [displaced=<machine>+<lineage>@<at>] [ack] [keep=<n>]
-//	  [reason=<rest of line>]
+//   - <iso8601> <opid> <verb> actor=<...> [targets=<ids>]
+//     [displaced=<machine>+<lineage>@<at>] [ack] [keep=<n>]
+//     [reason=<rest of line>]
 type HistoryLine struct {
 	At        string
 	Opid      string
