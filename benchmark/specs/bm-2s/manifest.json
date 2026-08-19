@@ -308,7 +308,7 @@
     "requirement": 10
   },
   "title": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster (sol delegate roster)",
-  "version": "0.2",
+  "version": "0.3",
   "watches": {
     "grammar": "watch=<name>=<value> lines on standard output beside the metric lines: seed_wrapper_intact 0 or 1, seed_release_level the integer pom.xml declares, seed_files_replaced a count",
     "note": "Observations, never gates and never targets. A scored seed_respected metric for a build-from-scratch case can only encode hidden preferences about legitimate build edits (BA-3-3); grading what a builder does with inherited code is BM-2's business, where the seed is a working system and inheritance is the point. The human's intent to grade seed handling is honoured there, and observed here.",

@@ -577,15 +577,16 @@ PY
   cohort_target=$cohort_trials_root/cohorts/$cohort_id/targets/1
   track_armed_supervision "$cohort_target"
   python3 - "$cohort_record" "$cohort_target/artifacts/agents/benchmark-identity.json" \
-    "$srcrepo/benchmark/kit-version" <<'PY'
+    "$srcrepo/benchmark/kit-version" "$srcrepo/benchmark/specs/bm-1/manifest.json" <<'PY'
 import json
 import sys
 record = json.load(open(sys.argv[1], encoding="utf-8"))
 identity = json.load(open(sys.argv[2], encoding="utf-8"))
 kit_version = open(sys.argv[3], encoding="utf-8").read().strip()
+spec_version = json.load(open(sys.argv[4], encoding="utf-8"))["version"]
 assert record["benchmarkSpecId"] == "bm-1"
-assert record["benchmarkSpecVersion"] == "0.1"
-assert record["measuringKitVersion"] == kit_version == "0.1.0"
+assert record["benchmarkSpecVersion"] == spec_version
+assert record["measuringKitVersion"] == kit_version
 assert record["proposalId"] is None and record["repetitionCount"] == 2
 assert set(record["machineFingerprint"]) == {"os", "cpuModel", "coreCount"}
 assert isinstance(record["roster"], dict) and record["roster"]

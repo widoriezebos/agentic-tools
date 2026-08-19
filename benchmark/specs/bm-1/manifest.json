@@ -1,6 +1,6 @@
 {
   "id": "bm-1",
-  "version": "0.1",
+  "version": "0.2",
   "title": "taskrun: a dependency-aware task runner (Java, Maven, command line)",
   "comparisonEligible": false,
   "comparisonEligibleNote": "Version 0.x is a trial spec. benchmark-compare refuses any cohort below 1.0. Promotion to 1.0 happens once trial runs have set the fences from observed use, per the promotion rule in plans/benchmark-spec-bm1-design.md section S-6.",
