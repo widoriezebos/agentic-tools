@@ -494,11 +494,30 @@ func verifySupervisionSnapshot(ids map[string]identityRecord, probe identity.Fix
 // python checked pid_exists first for exactly this reason: supervision stop
 // verification must be able to observe a stopped process).
 func identityAlive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
+	return alivePair(pid, expectedStart, 0, "", probe)
+}
+
+// alivePair reports whether pid is alive AND its identity matches the
+// expected one, preferring the clock-step-immune pair (StartTicks+BootID,
+// issue #1 sweep 3) over the btime-derived second when BOTH the caller and
+// the live process carry it. A caller with only a second (expectedTicks==0
+// and expectedBootID=="") gets the legacy seconds comparison verbatim, so
+// darwin (no pair) and old records are unchanged. The fixture identity file
+// carries no pair, so when it answers, its second is the only signal.
+func alivePair(pid, expectedStart, expectedTicks int64, expectedBootID string, probe identity.FixtureProbe) bool {
 	if _, state, err := kernelProbe(pid); err == nil && state == probeDead {
 		return false
 	}
 	if entry, ok := probeFixture(probe, pid); ok {
 		return entry.StartedAt == expectedStart
+	}
+	if expectedTicks > 0 && expectedBootID != "" {
+		// The pair decides; a btime step between recording expectedStart
+		// and this check no longer reads a live process as dead.
+		return identity.AliveRef(identity.KernelProber{}, identity.Ref{
+			Pid: pid, StartedAtSec: expectedStart,
+			StartTicks: expectedTicks, BootID: expectedBootID,
+		}) == identity.Alive
 	}
 	exact, state, err := kernelProbe(pid)
 	if err != nil || state != probeAlive {

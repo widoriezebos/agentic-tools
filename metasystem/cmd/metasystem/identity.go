@@ -14,6 +14,7 @@ import (
 func runIdentityStartedAt(args []string) int {
 	flags := flag.NewFlagSet("proc started-at", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
+	emit := flags.String("emit", "seconds", "output form: 'seconds' (default) or 'pair' (SECONDS TICKS BOOTID)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -21,7 +22,22 @@ func runIdentityStartedAt(args []string) int {
 	if err != nil || state != identity.Alive {
 		return 1
 	}
-	fmt.Println(exact.StartedAt.Unix())
+	switch *emit {
+	case "seconds":
+		fmt.Println(exact.StartedAt.Unix())
+	case "pair":
+		// SECONDS TICKS BOOTID on one line; TICKS=0 BOOTID="-" on darwin,
+		// where the second is already clock-step stable. A "-" boot id is
+		// the explicit empty marker so the shell can read three fields.
+		boot := exact.BootID
+		if boot == "" {
+			boot = "-"
+		}
+		fmt.Printf("%d %d %s\n", exact.StartedAt.Unix(), exact.StartTicks, boot)
+	default:
+		fmt.Fprintln(os.Stderr, "proc started-at: --emit must be seconds or pair")
+		return 2
+	}
 	return 0
 }
 
@@ -42,6 +58,8 @@ func runIdentityProbe(args []string) int {
 		result["startedAt"] = exact.StartedAt.Format("2006-01-02T15:04:05.000000Z07:00")
 		result["startedAtUnix"] = exact.StartedAt.Unix()
 		result["startedAtUnixMicro"] = exact.StartedAt.UnixMicro()
+		result["startTicks"] = exact.StartTicks
+		result["bootId"] = exact.BootID
 		result["argv"] = exact.Argv
 	}
 	encoded, marshalErr := json.Marshal(result)

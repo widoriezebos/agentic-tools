@@ -122,9 +122,14 @@ json_field() { # file, dotted field
   "$ms" json get --file "$1" --field "$2"
 }
 
-identity_alive() { # pid, start, optional tag
-  local pid=$1 start=$2 tag=${3:-} command
-  "$ms" proc alive --pid "$pid" --start-time "$start" --root "$harness_root" >/dev/null 2>&1 || return 1
+identity_alive() { # pid, start, optional tag, optional start-ticks, optional boot-id
+  local pid=$1 start=$2 tag=${3:-} ticks=${4:-} boot=${5:-} command pair_args=()
+  # The clock-step-immune pair (issue #1 sweep 3): when present, proc alive
+  # compares ticks+bootId, so a btime step on a time-synced guest cannot read
+  # this live process as dead (KI-37). Absent (owner-lock reads, darwin) it is
+  # the seconds comparison, unchanged.
+  [[ -n "$ticks" && "$ticks" != 0 && -n "$boot" ]] && pair_args=(--start-ticks "$ticks" --boot-id "$boot")
+  "$ms" proc alive --pid "$pid" --start-time "$start" "${pair_args[@]}" --root "$harness_root" >/dev/null 2>&1 || return 1
   [[ -z "$tag" ]] && return 0
   # Through the engine's one identity source (script-fixtures-007/D47):
   # the raw ps read here bypassed the fixture table every other reader
@@ -160,13 +165,16 @@ rotate_event_stream() { # harness root -- only on the ESTABLISHING path (D-4)
   METASYSTEM_HARNESS_ROOT="$1" emit_event arming stream-rotated "previousPath=${name#"$1"/}" "summary=rotated at arming"
 }
 
-write_announcement() { # repo, session, pid, start, tag, runtime, optional lineage
+write_announcement() { # repo, session, pid, start, tag, runtime, optional lineage, optional ticks, optional boot
   if [[ -n "${7:-}" ]]; then
     "$ms" lease announce --root "$1" --session "$2" --pid "$3" \
-      --start "$4" --tag "$5" --runtime "$6" --owner-lineage "$7"
+      --start "$4" --tag "$5" --runtime "$6" \
+      $( [[ -n "${8:-}" && "${8:-}" != 0 && -n "${9:-}" ]] && printf -- '--start-ticks %s --boot-id %s' "$8" "$9" ) --owner-lineage "$7" \
+      $( [[ -n "${8:-}" && "${8:-}" != 0 && -n "${9:-}" ]] && printf -- '--start-ticks %s --boot-id %s' "$8" "$9" )
   else
     "$ms" lease announce --root "$1" --session "$2" --pid "$3" \
-      --start "$4" --tag "$5" --runtime "$6"
+      --start "$4" --tag "$5" --runtime "$6" \
+      $( [[ -n "${8:-}" && "${8:-}" != 0 && -n "${9:-}" ]] && printf -- '--start-ticks %s --boot-id %s' "$8" "$9" )
   fi
 }
 
@@ -356,9 +364,16 @@ arm_repository() {
     [[ -n "$runtime" ]] || runtime=$("$ms" json get --value "$ancestor" --field runtime)
   fi
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || die 2 "--pid must be a positive integer"
-  start=${start:-$("$ms" proc started-at --pid "$pid")} || die 1 "cannot read pid start time"
+  # ONE read of the live pid gives the second AND the clock-step-immune pair,
+  # so no btime step can land between reading the start and verifying it
+  # (KI-37 / issue #1 sweep 3). A supplied --start-time is kept as the recorded
+  # second; the pair is always this fresh probe's.
+  pair_line=$("$ms" proc started-at --emit pair --pid "$pid") || die 1 "cannot read pid start identity"
+  read -r probe_start start_ticks boot_id <<<"$pair_line"
+  [[ "$boot_id" == "-" ]] && boot_id=""
+  start=${start:-$probe_start}
   [[ "$start" =~ ^[1-9][0-9]*$ ]] || die 2 "--start-time must be epoch seconds"
-  identity_alive "$pid" "$start" || die 1 "announcement pid identity is not live"
+  identity_alive "$pid" "$start" "" "$start_ticks" "$boot_id" || die 1 "announcement pid identity is not live"
   session=${session:-${METASYSTEM_SESSION_ID:-session-$pid}}
   runtime=${runtime:-unknown}
   safe=$(sanitize "$session")
@@ -376,7 +391,7 @@ arm_repository() {
     || die 1 "could not compute the supervision fingerprint"
 
   # Fixed arming step 1: registry write precedes lock acquisition and census.
-  announcement=$(write_announcement "$harness_root" "$session" "$pid" "$start" "$tag" "$runtime" "$owner_lineage")
+  announcement=$(write_announcement "$harness_root" "$session" "$pid" "$start" "$tag" "$runtime" "$owner_lineage" "$start_ticks" "$boot_id")
   "$ms" lease require-holder --root "$harness_root" --caller-pid "$pid" >/dev/null
   supervision=$agents/supervision
   mkdir -p "$supervision"

@@ -18,6 +18,15 @@ func Alive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
 	return identityAlive(pid, expectedStart, probe)
 }
 
+// AlivePair is Alive with the clock-step-immune pair (issue #1 sweep 3): when
+// expectedTicks>0 and expectedBootID!="" and the live process carries them,
+// the pair decides and a btime step cannot false-death the process; otherwise
+// the seconds comparison stands (darwin, legacy records). The pair is
+// both-or-neither — callers reject exactly-one before reaching here.
+func AlivePair(pid, expectedStart, expectedTicks int64, expectedBootID string, probe identity.FixtureProbe) bool {
+	return alivePair(pid, expectedStart, expectedTicks, expectedBootID, probe)
+}
+
 // ProcIdentity is a live process's identity from the one authoritative
 // source: its start second and command line. Command is never empty on
 // success, so a caller's error check is its only absence check.

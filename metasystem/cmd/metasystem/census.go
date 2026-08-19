@@ -155,12 +155,18 @@ func runCensusAlive(args []string) int {
 	flags := flag.NewFlagSet("proc alive", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
 	start := flags.Int64("start-time", 0, "expected start epoch seconds")
+	startTicks := flags.Int64("start-ticks", 0, "expected start ticks (clock-step-immune pair; 0 = seconds only)")
+	bootID := flags.String("boot-id", "", "expected boot id (clock-step-immune pair)")
 	root := flags.String("root", "", "checkout root (required; the fixture authority binds to it)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem proc alive --pid P --start-time S --root R")
+		fmt.Fprintln(os.Stderr, "usage: metasystem proc alive --pid P --start-time S [--start-ticks T --boot-id B] --root R")
+		return 2
+	}
+	if (*startTicks > 0) != (*bootID != "") {
+		fmt.Fprintln(os.Stderr, "proc alive: --start-ticks and --boot-id are both-or-neither")
 		return 2
 	}
 	authorization, err := fixtureauth.New(*root)
@@ -168,7 +174,7 @@ func runCensusAlive(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	if census.Alive(*pid, *start, authorization.Identity()) {
+	if census.AlivePair(*pid, *start, *startTicks, *bootID, authorization.Identity()) {
 		return 0
 	}
 	return 1

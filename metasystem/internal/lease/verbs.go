@@ -34,18 +34,41 @@ func registryLockPath(root string) string {
 // Announce records this process as a main and claims (or reconciles) the
 // checkout lease for it. It returns the path of the announcement file.
 func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage string) (string, error) {
+	return AnnounceWithPair(root, session, pid, start, 0, "", tag, runtime, ownerLineage)
+}
+
+// AnnounceWithPair is Announce carrying the clock-step-immune pair
+// (StartTicks+BootID, issue #1 sweep 3). It reads the live process ONCE (one
+// authoritative probe) and records that identity. Identity verification: when
+// the caller supplies the pair AND the live process carries it, the pair must
+// match (drift-immune, and it catches a genuinely wrong pid); a seconds-only
+// caller is accepted as the live process it just handed us, because the
+// btime-derived second it read a moment ago drifts on a time-synced guest and
+// gating on it was the KI-37 false-death. The RECORDED second stays the
+// caller's `start` (so the announcement's second matches whatever the caller
+// stored elsewhere, e.g. the owner lock), while the recorded pair is the fresh
+// probe's — one process, one identity.
+func AnnounceWithPair(root, session string, pid, start, startTicks int64, bootID, tag, runtime, ownerLineage string) (string, error) {
 	root = resolveRoot(root)
 	if ownerLineage != "" && !validLineage(ownerLineage) {
 		return "", fmt.Errorf("owner lineage must match [A-Za-z0-9._-]{1,128}")
+	}
+	if (startTicks > 0) != (bootID != "") {
+		return "", fmt.Errorf("announcement identity pair is partial: startTicks and bootId are both-or-neither")
 	}
 	probe, probeErr := fixtureProbe(root)
 	if probeErr != nil {
 		return "", probeErr
 	}
-	actualStart, startOK := StartedAt(pid, probe)
-	command, commandOK := ProcessCommand(pid, probe)
-	if !startOK || !commandOK || actualStart != start {
+	liveID, liveOK := ProcessIdentity(pid, probe)
+	if !liveOK || liveID.Command == "" {
 		return "", fmt.Errorf("announcement identity is not a live, readable process")
+	}
+	command := liveID.Command
+	if startTicks > 0 && bootID != "" && liveID.StartTicks > 0 && liveID.BootID != "" {
+		if liveID.StartTicks != startTicks || liveID.BootID != bootID {
+			return "", fmt.Errorf("announcement identity is not a live, readable process")
+		}
 	}
 	dir := filepath.Join(root, "artifacts/agents/mains")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -65,10 +88,7 @@ func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage
 	if err != nil {
 		return "", err
 	}
-	selfTicks, selfBootID := int64(0), ""
-	if id, ok := ProcessIdentity(pid, probe); ok {
-		selfTicks, selfBootID = id.StartTicks, id.BootID
-	}
+	selfTicks, selfBootID := liveID.StartTicks, liveID.BootID
 	for _, rec := range records {
 		if rec.Ann.Pid != pid {
 			continue
@@ -117,18 +137,13 @@ func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage
 		return "", err
 	}
 	mainID := fmt.Sprintf("main-%d-%d-%s", start, pid, suffix)
-	var startTicks int64
-	var bootID string
-	if id, ok := ProcessIdentity(pid, probe); ok {
-		startTicks, bootID = id.StartTicks, id.BootID
-	}
 	ann := Announcement{
 		SessionId:     session,
 		MainId:        mainID,
 		Pid:           pid,
 		PidStartedAt:  start,
-		PidStartTicks: startTicks,
-		BootID:        bootID,
+		PidStartTicks: liveID.StartTicks,
+		BootID:        liveID.BootID,
 		Pgid:          int64(pgid),
 		Runtime:       runtime,
 		InstanceTag:   tag,

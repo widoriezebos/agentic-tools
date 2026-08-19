@@ -35,10 +35,12 @@ func runLeaseAnnounce(args []string) int {
 	tag := flags.String("tag", "", "instance tag")
 	runtime := flags.String("runtime", "", "runtime name")
 	lineage := flags.String("owner-lineage", "", "logical owner lineage (optional)")
+	startTicks := flags.Int64("start-ticks", 0, "start ticks (clock-step-immune pair; 0 = seconds only)")
+	bootID := flags.String("boot-id", "", "boot id (clock-step-immune pair)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	path, err := lease.Announce(*root, *session, *pid, *start, *tag, *runtime, *lineage)
+	path, err := lease.AnnounceWithPair(*root, *session, *pid, *start, *startTicks, *bootID, *tag, *runtime, *lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
