@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Benchmark aliases (retired spec ids)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "aliases"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "aliases": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case",
+          "caseVersion",
+          "config",
+          "configVersion",
+          "legacyVersionLabel"
+        ],
+        "properties": {
+          "case": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+          },
+          "caseVersion": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+){0,3}$",
+            "maxLength": 16
+          },
+          "config": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+          },
+          "configVersion": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+){0,3}$",
+            "maxLength": 16
+          },
+          "legacyVersionLabel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "legacyTitle": {
+            "type": "string"
+          },
+          "legacyComparisonEligibleNote": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

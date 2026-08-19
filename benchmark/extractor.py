@@ -34,10 +34,13 @@ class ExtractionError(RuntimeError):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="benchmark/extract.sh",
-        usage="benchmark/extract.sh <run-evidence-root> --spec <spec-dir> --out <scorecard.json>",
+        usage="benchmark/extract.sh <run-evidence-root> (--case <id>@<v> --config <id>@<v> | --spec <manifest-dir-or-alias>) --out <scorecard.json>",
     )
     parser.add_argument("run_evidence_root", type=Path)
-    parser.add_argument("--spec", required=True, type=Path)
+    parser.add_argument("--spec", type=str, default=None,
+                        help="a directory holding the run's manifest.json (a cohort's materialized case dir), or a legacy alias id")
+    parser.add_argument("--case", type=str, default=None, help="pinned case reference, e.g. taskrun@0.1 (with --config)")
+    parser.add_argument("--config", type=str, default=None, help="pinned configuration reference, e.g. cheap@1 (with --case)")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     if args.out.suffix != ".json":
@@ -282,6 +285,28 @@ class Extractor:
         if message not in self.gaps:
             self.gaps.append(message)
 
+    def translate_legacy_identity(self, stamped: dict[str, Any]) -> dict[str, Any]:
+        """A schema-1 identity names benchmarkSpecId/Version. Resolve it to the
+        pair through benchmark/aliases.json; the legacy id and version label
+        stay on the record as legacyId/legacyVersionLabel. Object pins do not
+        exist for such a run and are reported as gaps, not guessed."""
+        value = dict(stamped)
+        legacy = stamped.get("benchmarkSpecId")
+        try:
+            table = json.loads((BENCHMARK_DIR / "aliases.json").read_text(encoding="utf-8")).get("aliases", {})
+        except (OSError, json.JSONDecodeError):
+            table = {}
+        entry = table.get(legacy) if isinstance(legacy, str) else None
+        value["legacyId"] = legacy
+        value["legacyVersionLabel"] = stamped.get("benchmarkSpecVersion")
+        if entry:
+            value["caseId"] = entry["case"]; value["caseVersion"] = entry["caseVersion"]
+            value["configId"] = entry["config"]; value["configVersion"] = entry["configVersion"]
+        else:
+            self.gap("identity.benchmarkPair", f"the legacy spec id {legacy!r} has no alias; the case and configuration it ran are unknown")
+        value["caseTree"] = None; value["configTree"] = None
+        return value
+
     def evidence_error(self, label: str, reason: str) -> None:
         message = f"{label}: {reason}"
         if message not in self.evidence_errors:
@@ -336,13 +361,18 @@ class Extractor:
         identity_path = self.agents_root / "benchmark-identity.json"
         self.benchmark_identity = self.load_json(identity_path, "benchmarkIdentity")
         if self.benchmark_identity is not None:
-            violations = schema_violations(
-                self.benchmark_identity,
-                read_schema("benchmark-identity.schema.json"),
-            )
+            # schemaVersion 2 carries the pair (case/configuration versions and
+            # their pinned object ids); schemaVersion 1 predates the pair and
+            # names a retired spec id, which the alias table resolves — the
+            # legacy id and label are reported as such, never rewritten.
+            version = self.benchmark_identity.get("schemaVersion")
+            schema_name = "benchmark-identity.schema.json" if version == 2 else "benchmark-identity-v1.schema.json"
+            violations = schema_violations(self.benchmark_identity, read_schema(schema_name))
             if violations:
                 self.evidence_error("benchmarkIdentity", "; ".join(violations[:8]))
                 self.benchmark_identity = None
+            elif version != 2:
+                self.benchmark_identity = self.translate_legacy_identity(self.benchmark_identity)
 
         turns_dir = self.mission_root / "turns"
         if not turns_dir.is_dir():
@@ -479,11 +509,18 @@ class Extractor:
             self.evidence_error("measuringKitVersion", f"kit-version is unreadable: {error}")
 
         if stamped:
-            expected = {
-                "benchmarkSpecId": self.manifest.get("id") if self.manifest else None,
-                "benchmarkSpecVersion": self.manifest.get("version") if self.manifest else None,
-                "measuringKitVersion": kit_version,
-            }
+            pair = (self.manifest or {}).get("benchmarkPair") or {}
+            expected = {"measuringKitVersion": kit_version}
+            if pair:
+                for name in ("caseId", "caseVersion", "configId", "configVersion"):
+                    expected[name] = pair.get(name)
+                if stamped.get("caseTree") is not None:
+                    expected["caseTree"] = pair.get("caseTree")
+                if stamped.get("configTree") is not None:
+                    expected["configTree"] = pair.get("configTree")
+            elif self.manifest and stamped.get("legacyId"):
+                expected["legacyId"] = self.manifest.get("id")
+                expected["legacyVersionLabel"] = self.manifest.get("version")
             for name, value in expected.items():
                 if stamped.get(name) != value:
                     self.evidence_error(
@@ -532,8 +569,14 @@ class Extractor:
 
         identity = {
             "missionId": mission_id,
-            "benchmarkSpecId": self.manifest.get("id") if self.manifest else None,
-            "benchmarkSpecVersion": self.manifest.get("version") if self.manifest else None,
+            "caseId": stamped.get("caseId"),
+            "caseVersion": stamped.get("caseVersion"),
+            "caseTree": stamped.get("caseTree"),
+            "configId": stamped.get("configId"),
+            "configVersion": stamped.get("configVersion"),
+            "configTree": stamped.get("configTree"),
+            "legacyId": stamped.get("legacyId"),
+            "legacyVersionLabel": stamped.get("legacyVersionLabel"),
             "measuringKitVersion": stamped.get("measuringKitVersion"),
             "candidateSha": stamped.get("candidateSha"),
             "cohortId": stamped.get("cohortId"),
@@ -553,8 +596,14 @@ class Extractor:
         ):
             if identity[name] is None:
                 self.gap(f"identity.{name}", "the benchmark identity evidence does not record this fact")
+        for name in ("caseId", "caseVersion", "configId", "configVersion"):
+            if identity[name] is None:
+                self.gap(f"identity.{name}", "the run's benchmark identity does not record this fact")
+        for name in ("caseTree", "configTree"):
+            if identity[name] is None:
+                self.gap(f"identity.{name}", "this run predates pinned object ids; its exact case and configuration bytes cannot be re-derived from the identity")
         if self.manifest is None:
-            self.gap("identity.benchmarkSpec", "benchmark spec id and version are unavailable")
+            self.gap("identity.benchmark", "the benchmark manifest (case and configuration) is unavailable")
 
         machine = stamped.get("machineFingerprint")
         if machine is None:
@@ -1181,8 +1230,8 @@ def markdown_projection(scorecard: dict[str, Any]) -> str:
         "| Field | Value |",
         "| --- | --- |",
     ]
-    for name in ("benchmarkSpecId", "benchmarkSpecVersion", "measuringKitVersion", "candidateSha", "cohortId", "repetitionIndex", "repetitionCount", "measuringMetasystemSha"):
-        lines.append(f"| {name} | {format_cell(identity[name])} |")
+    for name in ("caseId", "caseVersion", "caseTree", "configId", "configVersion", "configTree", "legacyId", "legacyVersionLabel", "measuringKitVersion", "candidateSha", "cohortId", "repetitionIndex", "repetitionCount", "measuringMetasystemSha"):
+        lines.append(f"| {name} | {format_cell(identity.get(name))} |")
     lines += ["", "## Run-validity gates", "", "| Gate | Passed | Source owner | Detail |", "| --- | --- | --- | --- |"]
     for gate in scorecard["runValidity"]["gates"]:
         lines.append(f"| {gate['name']} | {format_cell(gate['passed'])} | {gate['sourceOwner']} | {format_cell(gate['detail'])} |")
@@ -1225,6 +1274,37 @@ def atomic_write(path: Path, text: str) -> None:
         raise
 
 
+def materialize_manifest_dir(args: argparse.Namespace) -> Path:
+    """The extractor needs the run's merged manifest (metrics, noise floors,
+    roster aliases). Callers give it a directory that already holds one (a
+    cohort's materialized case dir), or a pinned pair / legacy alias which is
+    resolved through benchmark/pairs.py into a temporary directory."""
+    import subprocess, tempfile
+    if args.case or args.config:
+        if args.spec:
+            raise ExtractionError("--spec cannot be combined with --case/--config")
+        if not (args.case and args.config):
+            raise ExtractionError("both --case <id>@<version> and --config <id>@<version> are required")
+        target = Path(tempfile.mkdtemp(prefix="extract-pair-"))
+        proc = subprocess.run([sys.executable, str(BENCHMARK_DIR / "pairs.py"), "resolve", "--kit", str(BENCHMARK_DIR),
+                               "--case", args.case, "--config", args.config, "--out", str(target / "manifest.json")],
+                              capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise ExtractionError(proc.stderr.strip() or "pair resolution failed")
+        return target
+    if not args.spec:
+        raise ExtractionError("one of --spec <manifest-dir-or-alias> or --case/--config is required")
+    candidate = Path(args.spec)
+    if candidate.is_dir():
+        return candidate
+    target = Path(tempfile.mkdtemp(prefix="extract-alias-"))
+    proc = subprocess.run([sys.executable, str(BENCHMARK_DIR / "pairs.py"), "resolve", "--kit", str(BENCHMARK_DIR),
+                           "--spec", args.spec, "--out", str(target / "manifest.json")], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise ExtractionError(proc.stderr.strip() or f"unknown benchmark {args.spec!r}")
+    return target
+
+
 def main() -> int:
     args = parse_args()
     run_root = args.run_evidence_root.resolve()
@@ -1232,7 +1312,7 @@ def main() -> int:
         print(f"extractor error: run evidence root is not a directory: {run_root}", file=sys.stderr)
         return 2
     try:
-        scorecard = Extractor(run_root, args.spec).build()
+        scorecard = Extractor(run_root, materialize_manifest_dir(args)).build()
         violations = schema_violations(scorecard, read_schema("scorecard.schema.json"))
         if violations:
             raise ExtractionError("generated scorecard violates its schema: " + "; ".join(violations[:12]))

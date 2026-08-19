@@ -31,6 +31,10 @@ def write_json(path, value):
 
 
 spec = fixture / "spec"
+# The merged manifest a cohort materializes: the task half plus the pair
+# record naming the case version and configuration version it ran, pinned.
+FAKE_TREE = "1" * 40
+FAKE_BLOB = "2" * 40
 write_json(spec / "manifest.json", {
     "id": "extractor-fixture",
     "version": "1.0",
@@ -38,6 +42,8 @@ write_json(spec / "manifest.json", {
         "acceptance": {"domain": [0, 1], "direction": "max", "bound": 1}
     },
     "noiseFloors": {"acceptance": 0},
+    "benchmarkPair": {"schemaVersion": 1, "caseId": "extractor-fixture", "caseVersion": "1.0", "caseTree": FAKE_TREE,
+                      "configId": "fixturecfg", "configVersion": "1", "configTree": FAKE_BLOB, "mode": "pair"},
 })
 
 kit_version = (root / "kit-version").read_text(encoding="utf-8").strip()
@@ -109,9 +115,13 @@ write_json(mission / "state.json", state)
 write_json(mission / "fences.json", {"schemaVersion": 1, "missionId": "fixture", "cycles": 1, "startedAt": "2026-08-05T00:00:00Z", "reservations": {}})
 (mission / "grader.out").write_text("metric=acceptance=1\n", encoding="utf-8")
 write_json(agents / "benchmark-identity.json", {
-    "schemaVersion": 1,
-    "benchmarkSpecId": "extractor-fixture",
-    "benchmarkSpecVersion": "1.0",
+    "schemaVersion": 2,
+    "caseId": "extractor-fixture",
+    "caseVersion": "1.0",
+    "caseTree": FAKE_TREE,
+    "configId": "fixturecfg",
+    "configVersion": "1",
+    "configTree": FAKE_BLOB,
     "measuringKitVersion": kit_version,
     "candidateSha": head,
     "cohortId": "extractor-fixture-cohort",
@@ -318,6 +328,10 @@ if variant == "valid":
     assert all(value is True for value in gates.values()), gates
     assert scorecard["identity"]["measuringKitVersion"] == "0.1.0"
     assert scorecard["identity"]["cohortId"] == "extractor-fixture-cohort"
+    assert scorecard["identity"]["caseId"] == "extractor-fixture" and scorecard["identity"]["caseVersion"] == "1.0"
+    assert scorecard["identity"]["configId"] == "fixturecfg" and scorecard["identity"]["configVersion"] == "1"
+    assert scorecard["identity"]["caseTree"] == "1" * 40 and scorecard["identity"]["configTree"] == "2" * 40
+    assert scorecard["identity"]["legacyId"] is None
     assert scorecard["identity"]["candidateSha"] is not None
     assert scorecard["machineFingerprint"]["cpuModel"] == "fixture-cpu"
 else:

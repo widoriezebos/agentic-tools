@@ -9,7 +9,8 @@
       "configVersion": "1",
       "legacyVersionLabel": "0.1",
       "note": "manifest label matches the instruments",
-      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line)"
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line)",
+      "legacyComparisonEligibleNote": "Version 0.x is a trial spec. benchmark-compare refuses any cohort below 1.0. Promotion to 1.0 happens once trial runs have set the fences from observed use, per the promotion rule in plans/benchmark-spec-bm1-design.md section S-6."
     },
     "bm-2": {
       "case": "taskrun",
@@ -18,7 +19,8 @@
       "configVersion": "1",
       "legacyVersionLabel": "0.2",
       "note": "manifest label 0.2 over v0.1 instruments (the boolean gate); relabelled to the version the instruments actually are",
-      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster"
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster",
+      "legacyComparisonEligibleNote": "Version 0.x is a trial spec; benchmark-compare refuses any cohort below 1.0. This spec is also not comparable to bm-1 even after promotion: it is a separate benchmark identity with its own roster, and comparing cohorts across identities is exactly what the roster note forbids."
     },
     "bm-2d": {
       "case": "taskrun",
@@ -27,7 +29,8 @@
       "configVersion": "1",
       "legacyVersionLabel": "0.2",
       "note": "manifest label 0.2 over v0.1 instruments (the boolean gate); relabelled to the version the instruments actually are",
-      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster"
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster",
+      "legacyComparisonEligibleNote": "Never comparison-eligible: this spec is an orchestration-health probe, not a capability measurement. Its acceptance question is whether devin-as-host mechanically works; its score is expected to be poor and is not the point."
     },
     "bm-2dc": {
       "case": "taskrun",
@@ -36,7 +39,8 @@
       "configVersion": "1",
       "legacyVersionLabel": "0.2",
       "note": "manifest label 0.2 over v0.1 instruments (the boolean gate); relabelled to the version the instruments actually are",
-      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster"
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster",
+      "legacyComparisonEligibleNote": "Never comparison-eligible: a devin-adapter acceptance probe, not a capability measurement. Its question is whether a devin host can carry opus-5 delegates through the full mission mechanics."
     },
     "bm-2s": {
       "case": "taskrun",
@@ -45,7 +49,8 @@
       "configVersion": "1",
       "legacyVersionLabel": "0.2",
       "note": "manifest label matches the instruments",
-      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster (sol delegate roster)"
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster (sol delegate roster)",
+      "legacyComparisonEligibleNote": "Version 0.x is a trial spec; benchmark-compare refuses any cohort below 1.0. This spec is also not comparable to bm-1 even after promotion: it is a separate benchmark identity with its own roster, and comparing cohorts across identities is exactly what the roster note forbids."
     },
     "bm-2d-og": {
       "case": "taskrun",
@@ -54,7 +59,8 @@
       "configVersion": "1",
       "legacyVersionLabel": "0.2",
       "note": "manifest label 0.2 over v0.1 instruments (the boolean gate); relabelled to the version the instruments actually are",
-      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin Opus host / GPT-5.5 delegate roster"
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin Opus host / GPT-5.5 delegate roster",
+      "legacyComparisonEligibleNote": "Never comparison-eligible: this spec is an orchestration-health probe, not a capability measurement. Its acceptance question is whether devin-as-host mechanically works with a strong host model and a distinct Devin delegate model; its score is not the point."
     }
   }
 }

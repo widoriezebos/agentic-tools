@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evolution proposal (schema 2)",
+  "description": "A candidate metasystem change to be measured. schemaVersion 1 proposals named bare spec ids in `specs`; schemaVersion 2 names pairs in `benchmarks`. compare.py reads both (v1 through aliases.json).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "proposalId",
+    "benchmarks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "proposalId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "benchmarks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case",
+          "caseVersion",
+          "config",
+          "configVersion"
+        ],
+        "properties": {
+          "case": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+          },
+          "caseVersion": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+){0,3}$",
+            "maxLength": 16
+          },
+          "config": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+          },
+          "configVersion": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+){0,3}$",
+            "maxLength": 16
+          }
+        }
+      }
+    }
+  }
+}

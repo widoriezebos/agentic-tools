@@ -1,16 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Benchmark run identity facts (schema 2: one case version under one configuration version, pinned by git object id)",
+  "title": "Benchmark run identity facts (schema 1, legacy: names a retired spec id; read through benchmark/aliases.json)",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
-    "caseId",
-    "caseVersion",
-    "caseTree",
-    "configId",
-    "configVersion",
-    "configTree",
+    "benchmarkSpecId",
+    "benchmarkSpecVersion",
     "measuringKitVersion",
     "candidateSha",
     "cohortId",
@@ -23,39 +19,13 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": 2
+      "const": 1
     },
-    "caseId": {
+    "benchmarkSpecId": {
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+      "minLength": 1
     },
-    "caseVersion": {
-      "type": "string",
-      "pattern": "^[0-9]+(\\.[0-9]+){0,3}$",
-      "maxLength": 16
-    },
-    "caseTree": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{40}$"
-    },
-    "configId": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
-    },
-    "configVersion": {
-      "type": "string",
-      "pattern": "^[0-9]+(\\.[0-9]+){0,3}$",
-      "maxLength": 16
-    },
-    "configTree": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{40}$"
-    },
-    "legacyId": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9-]*$"
-    },
-    "legacyVersionLabel": {
+    "benchmarkSpecVersion": {
       "type": "string",
       "minLength": 1
     },
@@ -116,6 +86,5 @@
       "type": "string",
       "format": "date-time"
     }
-  },
-  "description": "Written by run-cohort.sh into <target>/artifacts/agents/benchmark-identity.json for every repetition. legacyId/legacyVersionLabel are present only for runs provisioned through an alias (a retired spec id) and record what the run was called; they never replace the pair."
+  }
 }

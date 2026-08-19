@@ -222,6 +222,8 @@ def merged_manifest(case, config, mode, alias=None):
         m["id"] = c["id"]; m["version"] = c["version"]; m["title"] = f"{c['title']} — {k['title']}"
     for key in ("comparisonEligible", "comparisonEligibleNote", "product", "seededGap", "metrics", "metricsNote", "noiseFloors", "noiseFloorsNote"):
         if key in c: m[key] = c[key]
+    if mode == "alias" and alias.get("legacyComparisonEligibleNote"):
+        m["comparisonEligibleNote"] = alias["legacyComparisonEligibleNote"]
     if "acceptanceOnly" in k: m["acceptanceOnly"] = k["acceptanceOnly"]
     if "machineConstraint" in k: m["machineConstraint"] = k["machineConstraint"]
     fences = dict(k["fences"])
@@ -262,7 +264,7 @@ def cmd_resolve(args):
             refuse("--spec (alias mode) cannot be combined with --case/--config")
         legacy = args.spec
         a = resolve_alias(kit, legacy)
-        alias = {"legacyId": legacy, "legacyVersionLabel": a["legacyVersionLabel"], "legacyTitle": a.get("legacyTitle")}
+        alias = {"legacyId": legacy, "legacyVersionLabel": a["legacyVersionLabel"], "legacyTitle": a.get("legacyTitle"), "legacyComparisonEligibleNote": a.get("legacyComparisonEligibleNote")}
         case = resolve_case(kit, a["case"], a["caseVersion"]); config = resolve_config(kit, a["config"], a["configVersion"])
         mode = "alias"
         print(f"benchmark pairs: {legacy} is an alias for {case['id']}@{case['version']} under {config['id']}@{config['version']} (legacy naming kept); use --case/--config for new work", file=sys.stderr)

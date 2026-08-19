@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Benchmark version registry (versions.lock)",
+  "description": "Append-only: case:<id>@<v> -> tree object id, configuration:<id>@<v> -> blob object id. validate-kit refuses HEAD when any current object differs from its registered id, or when any id ever registered maps to a different object at HEAD.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "note": {
+      "type": "string"
+    },
+    "entries": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{40}$"
+      }
+    }
+  }
+}

@@ -1,6 +1,0 @@
-{
-  "name": "alternating-order",
-  "target": "determinism",
-  "mustNotDisturb": ["cache_correctness", "failure_propagation"],
-  "flaw": "A counter beside the cache reverses reported order on every alternate invocation."
-}

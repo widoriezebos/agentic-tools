@@ -13,8 +13,8 @@ cleanup() {
 trap cleanup EXIT
 
 repo=$fixture/repo
-mkdir -p "$repo/benchmark/specs/fixture" "$repo/benchmark/schemas" "$repo/metasystem/scripts"
-cp "$kit/compare.sh" "$kit/compare.py" "$kit/extractor.py" "$kit/attest.sh" \
+mkdir -p "$repo/benchmark/cases/fixture/1.0" "$repo/benchmark/cases/fixture/0.1" "$repo/benchmark/configurations/fixturecfg" "$repo/benchmark/configurations/probe" "$repo/benchmark/schemas" "$repo/metasystem/scripts"
+cp "$kit/compare.sh" "$kit/compare.py" "$kit/extractor.py" "$kit/attest.sh" "$kit/pairs.py" \
   "$kit/system-fingerprint.py" "$repo/benchmark/"
 cp -R "$kit/schemas/." "$repo/benchmark/schemas/"
 chmod +x "$repo/benchmark/compare.sh" "$repo/benchmark/attest.sh" \
@@ -26,14 +26,21 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-(root / "benchmark" / "specs" / "fixture" / "manifest.json").write_text(
-    json.dumps({
-        "id": "fixture",
-        "version": "1.0",
-        "comparisonEligible": True,
-    }, indent=2) + "\n",
-    encoding="utf-8",
-)
+# The pair-shaped mini kit: one case in two versions (1.0 eligible, 0.1 not),
+# two configurations (a capability measurement and an orchestration-health
+# probe), and an alias table so a schema-1 record can still be read.
+def dump(path, value):
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+dump(root / "benchmark" / "cases" / "fixture" / "1.0" / "case.json",
+     {"id": "fixture", "version": "1.0", "comparisonEligible": True})
+dump(root / "benchmark" / "cases" / "fixture" / "0.1" / "case.json",
+     {"id": "fixture", "version": "0.1", "comparisonEligible": False, "comparisonEligibleNote": "fixture 0.x is descriptive only"})
+dump(root / "benchmark" / "configurations" / "fixturecfg" / "1.json",
+     {"id": "fixturecfg", "version": "1", "purpose": "capability"})
+dump(root / "benchmark" / "configurations" / "probe" / "1.json",
+     {"id": "probe", "version": "1", "purpose": "orchestration-health"})
+dump(root / "benchmark" / "aliases.json",
+     {"schemaVersion": 1, "aliases": {"legacy": {"case": "fixture", "caseVersion": "1.0", "config": "fixturecfg", "configVersion": "1", "legacyVersionLabel": "1.0"}}})
 (root / "metasystem" / "scripts" / "validate-metasystem.sh").write_text(
     "#!/usr/bin/env bash\nexit 0\n",
     encoding="utf-8",
@@ -46,6 +53,11 @@ git -C "$repo" add .
 env GIT_AUTHOR_DATE=2026-08-01T00:00:00Z GIT_COMMITTER_DATE=2026-08-01T00:00:00Z \
   git -C "$repo" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm baseline
 baseline_sha=$(git -C "$repo" rev-parse HEAD)
+# The pins every record carries: the case version's tree, the configuration's blob.
+case_tree=$(git -C "$repo" rev-parse HEAD:benchmark/cases/fixture/1.0)
+case_tree_01=$(git -C "$repo" rev-parse HEAD:benchmark/cases/fixture/0.1)
+config_blob=$(git -C "$repo" rev-parse HEAD:benchmark/configurations/fixturecfg/1.json)
+probe_blob=$(git -C "$repo" rev-parse HEAD:benchmark/configurations/probe/1.json)
 
 mkdir -p "$repo/benchmark/results/proposals"
 python3 - "$repo/benchmark/results/proposals/proposal-1.json" <<'PY'
@@ -54,10 +66,16 @@ import sys
 from pathlib import Path
 
 Path(sys.argv[1]).write_text(json.dumps({
+    "schemaVersion": 2,
     "id": "proposal-1",
+    "proposalId": "proposal-1",
     "targetMetric": "acceptance",
     "direction": "max",
-    "specs": ["fixture"],
+    "benchmarks": [
+        {"case": "fixture", "caseVersion": "1.0", "config": "fixturecfg", "configVersion": "1"},
+        {"case": "fixture", "caseVersion": "0.1", "config": "fixturecfg", "configVersion": "1"},
+        {"case": "fixture", "caseVersion": "1.0", "config": "probe", "configVersion": "1"},
+    ],
     "candidateBranch": "main",
     "author": "fixture",
     "date": "2026-08-02",
@@ -76,7 +94,7 @@ env GIT_AUTHOR_DATE=2026-08-03T00:00:00Z GIT_COMMITTER_DATE=2026-08-03T00:00:00Z
   git -C "$repo" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm candidate
 candidate_sha=$(git -C "$repo" rev-parse HEAD)
 
-python3 - "$repo" "$baseline_sha" "$candidate_sha" <<'PY'
+python3 - "$repo" "$baseline_sha" "$candidate_sha" "$case_tree" "$config_blob" "$case_tree_01" "$probe_blob" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -84,6 +102,7 @@ from pathlib import Path
 root = Path(sys.argv[1])
 baseline_sha = sys.argv[2]
 candidate_sha = sys.argv[3]
+case_tree, config_blob, case_tree_01, probe_blob = sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7]
 results = root / "benchmark" / "results"
 machine = {"os": "fixture-os", "cpuModel": "fixture-cpu", "coreCount": 4}
 roster = {"host": {"runtime": "fake", "model": "host"}, "delegates": []}
@@ -100,12 +119,16 @@ def write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-def record(cohort, sha, proposal):
+def record(cohort, sha, proposal, case_version="1.0", tree=case_tree, config="fixturecfg", blob=config_blob):
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "cohortId": cohort,
-        "benchmarkSpecId": "fixture",
-        "benchmarkSpecVersion": "1.0",
+        "caseId": "fixture",
+        "caseVersion": case_version,
+        "caseTree": tree,
+        "configId": config,
+        "configVersion": "1",
+        "configTree": blob,
         "measuringKitVersion": "0.1.0",
         "proposalId": proposal,
         "repetitionCount": 3,
@@ -117,13 +140,19 @@ def record(cohort, sha, proposal):
         "createdAt": "2026-08-06T00:00:00Z",
     }
 
-def card(cohort, sha, index, acceptance, latency):
+def card(cohort, sha, index, acceptance, latency, case_version="1.0", tree=case_tree, config="fixturecfg", blob=config_blob):
     return {
         "schemaVersion": 1,
         "identity": {
             "missionId": "fixture",
-            "benchmarkSpecId": "fixture",
-            "benchmarkSpecVersion": "1.0",
+            "caseId": "fixture",
+            "caseVersion": case_version,
+            "caseTree": tree,
+            "configId": config,
+            "configVersion": "1",
+            "configTree": blob,
+            "legacyId": None,
+            "legacyVersionLabel": None,
             "measuringKitVersion": "0.1.0",
             "candidateSha": sha,
             "cohortId": cohort,
@@ -177,6 +206,35 @@ for index, value in enumerate((0.80, 0.82, 0.81), 1):
     write(results / baseline_sha / "baseline" / f"{index}.json", card("baseline", baseline_sha, index, value, (8, 9, 7)[index - 1]))
 for index, value in enumerate((0.90, 0.92, 0.91), 1):
     write(results / candidate_sha / "candidate" / f"{index}.json", card("candidate", candidate_sha, index, value, (7, 8, 6)[index - 1]))
+# A 0.x case version (comparison-ineligible by maturity) and a health-probe
+# configuration (never verdict-eligible), each as its own cohort pair.
+write(results / "cohorts" / "baseline0.json", record("baseline0", baseline_sha, None, "0.1", case_tree_01))
+write(results / "cohorts" / "candidate0.json", record("candidate0", candidate_sha, "proposal-1", "0.1", case_tree_01))
+write(results / "cohorts" / "baselineh.json", record("baselineh", baseline_sha, None, "1.0", case_tree, "probe", probe_blob))
+write(results / "cohorts" / "candidateh.json", record("candidateh", candidate_sha, "proposal-1", "1.0", case_tree, "probe", probe_blob))
+for index, value in enumerate((0.80, 0.82, 0.81), 1):
+    write(results / baseline_sha / "baseline0" / f"{index}.json", card("baseline0", baseline_sha, index, value, (8, 9, 7)[index - 1], "0.1", case_tree_01))
+    write(results / baseline_sha / "baselineh" / f"{index}.json", card("baselineh", baseline_sha, index, value, (8, 9, 7)[index - 1], "1.0", case_tree, "probe", probe_blob))
+for index, value in enumerate((0.90, 0.92, 0.91), 1):
+    write(results / candidate_sha / "candidate0" / f"{index}.json", card("candidate0", candidate_sha, index, value, (7, 8, 6)[index - 1], "0.1", case_tree_01))
+    write(results / candidate_sha / "candidateh" / f"{index}.json", card("candidateh", candidate_sha, index, value, (7, 8, 6)[index - 1], "1.0", case_tree, "probe", probe_blob))
+# A schema-1 (legacy) record pair naming the retired spec id "legacy".
+def legacy_record(cohort, sha, proposal):
+    value = record(cohort, sha, proposal)
+    for key in ("caseId", "caseVersion", "caseTree", "configId", "configVersion", "configTree"):
+        value.pop(key)
+    value.update({"schemaVersion": 1, "benchmarkSpecId": "legacy", "benchmarkSpecVersion": "1.0"})
+    return value
+def legacy_card(cohort, sha, index, acceptance, latency):
+    value = card(cohort, sha, index, acceptance, latency)
+    value["identity"].update({"caseTree": None, "configTree": None, "legacyId": "legacy", "legacyVersionLabel": "1.0"})
+    return value
+write(results / "cohorts" / "baselinel.json", legacy_record("baselinel", baseline_sha, None))
+write(results / "cohorts" / "candidatel.json", legacy_record("candidatel", candidate_sha, "proposal-1"))
+for index, value in enumerate((0.80, 0.82, 0.81), 1):
+    write(results / baseline_sha / "baselinel" / f"{index}.json", legacy_card("baselinel", baseline_sha, index, value, (8, 9, 7)[index - 1]))
+for index, value in enumerate((0.90, 0.92, 0.91), 1):
+    write(results / candidate_sha / "candidatel" / f"{index}.json", legacy_card("candidatel", candidate_sha, index, value, (7, 8, 6)[index - 1]))
 write(results / "attestations" / f"{candidate_sha}.json", {
     "schemaVersion": 1,
     "source": "local",
@@ -321,43 +379,65 @@ for path in directory.glob("*.json"):
     path.write_text(json.dumps(card, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
-# A 0.x spec remains descriptive even with complete scalar data and floors.
-python3 - "$repo/benchmark/specs/fixture/manifest.json" "$repo/benchmark/results" "$baseline_sha" "$candidate_sha" <<'PY'
-import json
-import sys
-from pathlib import Path
-manifest = Path(sys.argv[1])
-results = Path(sys.argv[2])
-value = json.loads(manifest.read_text(encoding="utf-8"))
-value.update({
-    "version": "0.1",
-    "comparisonEligible": False,
-    "comparisonEligibleNote": "fixture 0.x is descriptive only",
-})
-manifest.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-for path in [
-    results / "cohorts" / "baseline.json",
-    results / "cohorts" / "candidate.json",
-    *sorted((results / sys.argv[3] / "baseline").glob("*.json")),
-    *sorted((results / sys.argv[4] / "candidate").glob("*.json")),
-]:
-    item = json.loads(path.read_text(encoding="utf-8"))
-    if "identity" in item:
-        item["identity"]["benchmarkSpecVersion"] = "0.1"
-    else:
-        item["benchmarkSpecVersion"] = "0.1"
-    path.write_text(json.dumps(item, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
-"$compare" baseline candidate >/dev/null
-python3 - "$verdict" <<'PY'
+# A 0.x case version remains descriptive even with complete scalar data and
+# floors: no verdict, the case's own note as the reason.
+"$compare" baseline0 candidate0 >/dev/null
+python3 - "$repo/benchmark/results/compares/baseline0-vs-candidate0.json" <<'PY'
 import json
 import sys
 value = json.load(open(sys.argv[1], encoding="utf-8"))
 assert value["comparisonEligible"] is False
 assert value["verdict"] == "no-verdict"
-assert value["eligibilityReasons"] == ["fixture 0.x is descriptive only"]
+assert value["eligibilityReasons"] == ["fixture 0.x is descriptive only"], value["eligibilityReasons"]
 assert all(item["verdict"] == "no-verdict" for item in value["metrics"])
+assert value["benchmark"] == {"caseId": "fixture", "caseVersion": "0.1", "configId": "fixturecfg", "configVersion": "1"}
 PY
+
+# An orchestration-health configuration is never verdict-eligible, whatever
+# the case's maturity (design §3).
+"$compare" baselineh candidateh >/dev/null
+python3 - "$repo/benchmark/results/compares/baselineh-vs-candidateh.json" <<'PY'
+import json
+import sys
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+assert value["comparisonEligible"] is False
+assert value["verdict"] == "no-verdict"
+assert any("orchestration-health" in reason for reason in value["eligibilityReasons"]), value["eligibilityReasons"]
+PY
+
+# A schema-1 (legacy) record pair still compares: the retired id resolves
+# through aliases.json, the tuple carries no pins, and the report says so.
+"$compare" baselinel candidatel >/dev/null
+python3 - "$repo/benchmark/results/compares/baselinel-vs-candidatel.json" <<'PY'
+import json
+import sys
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+assert value["verdict"] == "improved", value["verdict"]
+assert value["cohorts"]["baseline"]["record"]["legacyId"] == "legacy"
+assert value["comparabilityTuple"]["caseTree"] is None
+assert any("legacy cohort" in reason for reason in value["eligibilityReasons"]), value["eligibilityReasons"]
+PY
+
+# A legacy record can never be verdict-compared against a pinned one: the
+# tuple's pins differ.
+if "$compare" baseline candidatel >"$fixture/mixed.out" 2>"$fixture/mixed.err"; then
+  echo "compare fixture: legacy-vs-pinned comparison was accepted" >&2
+  exit 1
+fi
+grep -q 'comparability tuple mismatch' "$fixture/mixed.err" \
+  || { echo "compare fixture: legacy-vs-pinned refusal was not specific" >&2; exit 1; }
+
+# The configuration report: same case, different configurations, no verdict.
+"$compare" --configurations baseline baselineh >"$fixture/configurations.out" 2>"$fixture/configurations.err" \
+  || { cat "$fixture/configurations.err" >&2; echo "compare fixture: configuration report failed" >&2; exit 1; }
+grep -q 'No verdict' "$fixture/configurations.out" \
+  || { echo "compare fixture: configuration report has no no-verdict line" >&2; exit 1; }
+if "$compare" --configurations baseline baseline0 >/dev/null 2>"$fixture/configurations-mismatch.err"; then
+  echo "compare fixture: configuration report accepted differing case versions" >&2
+  exit 1
+fi
+grep -q 'do not share caseVersion' "$fixture/configurations-mismatch.err" \
+  || { echo "compare fixture: configuration report refusal was not specific" >&2; exit 1; }
 
 red_repo=$fixture/red-repo
 mkdir -p "$red_repo/benchmark" "$red_repo/metasystem/scripts"

@@ -3,7 +3,16 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE' >&2
-Usage: benchmark/provision.sh --spec <spec-dir> --target <dir-or-name>
+Usage: benchmark/provision.sh --case <caseId>@<caseVersion> --config <configId>@<configVersion> --target <dir-or-name>
+       benchmark/provision.sh --spec <legacy-id> --target <dir-or-name>      (alias mode)
+
+A benchmark RUN is one benchmark CASE version (what is built and judged:
+benchmark/cases/<id>/<version>/) under one benchmark CONFIGURATION version (who
+builds it and under what limits: benchmark/configurations/<id>/<version>.json).
+Both are pinned by version; the kit refuses an unpinned reference. `--spec` names
+a retired spec id from benchmark/aliases.json and provisions the same pair with
+the legacy naming (mission id, contract, tag) kept, so cohorts begun before the
+migration stay uniform. See benchmark/README.md.
 
 A bare NAME (no slash) resolves under the trials root: $METASYSTEM_TRIALS_ROOT
 if set, else the first line of benchmark/trials-root.local if present, else
@@ -35,22 +44,57 @@ if [[ ! -x "$ms" ]]; then
   ms="$root/bin/metasystem"
 fi
 spec_arg=
+case_arg=
+config_arg=
 target_arg=
 
 while (($#)); do
   case "$1" in
     --spec) [[ $# -ge 2 ]] || { usage; exit 2; }; spec_arg=$2; shift 2 ;;
+    --case) [[ $# -ge 2 ]] || { usage; exit 2; }; case_arg=$2; shift 2 ;;
+    --config) [[ $# -ge 2 ]] || { usage; exit 2; }; config_arg=$2; shift 2 ;;
     --target) [[ $# -ge 2 ]] || { usage; exit 2; }; target_arg=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
 done
 
-[[ -n "$spec_arg" && -n "$target_arg" ]] || { usage; exit 2; }
-[[ -d "$spec_arg" ]] || die 2 "provision refused: spec directory does not exist: $spec_arg"
-spec=$(cd "$spec_arg" && pwd -P)
-manifest=$spec/manifest.json
-[[ -f "$manifest" ]] || die 2 "provision refused: spec manifest is missing: $manifest"
+[[ -n "$target_arg" ]] || { usage; exit 2; }
+if [[ -n "$case_arg" || -n "$config_arg" ]]; then
+  [[ -z "$spec_arg" ]] || die 2 "provision refused: --spec cannot be combined with --case/--config"
+  [[ -n "$case_arg" && -n "$config_arg" ]] || die 2 "provision refused: both --case <id>@<version> and --config <id>@<version> are required"
+else
+  [[ -n "$spec_arg" ]] || { usage; exit 2; }
+fi
+
+# Resolve WHAT runs. The one resolver (benchmark/pairs.py) turns a pinned
+# case version + configuration version — or a legacy alias — into a merged
+# manifest of exactly the shape this script has always consumed, plus the
+# pair record (ids, versions, and the git object ids that pin the bytes).
+# The case's files are extracted from the pinned tree object, never read from
+# the working directory, so an ignored or uncommitted file can neither ride
+# along nor evade the pin.
+pair_scratch=$(mktemp -d)
+trap 'rm -rf -- "$pair_scratch"' EXIT
+if true; then
+  [[ -z "$spec_arg" || ! -d "$spec_arg" ]] \
+    || die 2 "provision refused: --spec names a retired spec id (an alias), not a directory; benchmark/specs no longer exists — use --case <id>@<version> --config <id>@<version>"
+  if [[ -n "$spec_arg" ]]; then
+    resolve_out=$(python3 "$kit/pairs.py" resolve --kit "$kit" --spec "$spec_arg" --out "$pair_scratch/manifest.json") || exit 2
+  else
+    resolve_out=$(python3 "$kit/pairs.py" resolve --kit "$kit" --case "$case_arg" --config "$config_arg" --out "$pair_scratch/manifest.json") || exit 2
+  fi
+  case_tree=$(printf '%s' "$resolve_out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["pair"]["caseTree"])')
+  pair_record=$(printf '%s' "$resolve_out" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["pair"]))')
+  mkdir -p "$pair_scratch/case"
+  # git archive of a bare tree object must run from the repository toplevel;
+  # from a subdirectory it treats the cwd as a subtree path and refuses.
+  kit_top=$(git -C "$kit" rev-parse --show-toplevel)
+  git -C "$kit_top" archive "$case_tree" | tar -x -C "$pair_scratch/case" \
+    || die 1 "provision refused: could not extract the pinned case tree $case_tree from the kit repository"
+  spec=$pair_scratch/case
+  manifest=$pair_scratch/manifest.json
+fi
 
 # Where trials live. A BARE NAME (no slash) resolves under the trials root;
 # an explicit path (absolute or containing a slash) is honored verbatim, so
@@ -138,33 +182,13 @@ def relative_source(raw: object, label: str, base: Path) -> Path:
     return resolved
 
 def fixture_spec() -> Path:
-    """The spec whose seed, instruments and grader this manifest reuses.
-
-    A roster sibling may point at another spec, but ONLY a sibling: the
-    resolved directory must sit directly under the same specs directory as
-    this manifest and carry its own manifest.json. Anything else -- an
-    escape via .., a symlink out of the tree, an arbitrary directory that
-    merely exists -- would let a manifest select the code run-cohort later
-    EXECUTES as the held-out grader, so it is refused, not resolved.
-    """
-    block = value.get("fixtureSpec")
-    if block is None:
-        return spec
-    if not isinstance(block, dict):
-        refuse("fixtureSpec must be an object when present")
-    raw = block.get("path")
-    if not isinstance(raw, str) or not raw or "\n" in raw or "\r" in raw:
-        refuse("fixtureSpec.path must be one non-empty relative path")
-    candidate = Path(raw)
-    if candidate.is_absolute():
-        refuse(f"fixtureSpec.path must be relative: {raw}")
-    specs_root = spec.parent.resolve()
-    resolved = (spec / candidate).resolve()
-    if resolved.parent != specs_root or resolved == spec:
-        refuse(f"fixtureSpec.path must name a sibling spec under {specs_root}: {raw}")
-    if not resolved.is_dir() or not (resolved / "manifest.json").is_file():
-        refuse(f"fixtureSpec.path is not a spec directory (no manifest.json): {resolved}")
-    return resolved
+    """The directory the seed, instruments and grader are copied from: the
+    case version tree, extracted from its pinned object by the resolver.
+    (A case version is self-contained by design; the old fixtureSpec
+    indirection between spec directories is gone with benchmark/specs.)"""
+    if value.get("fixtureSpec") is not None:
+        refuse("fixtureSpec is not a manifest key any more: a case version is self-contained (benchmark/cases/<id>/<version>)")
+    return spec
 
 def overlaps(first: Path, second: Path) -> bool:
     try:
@@ -385,7 +409,7 @@ roster_independence=$(printf '%s\n' "$manifest_facts" | sed -n '6p')
   || die 1 "provision refused: manifest validation returned incomplete facts"
 
 scratch=$(mktemp -d)
-trap 'rm -rf "$scratch"' EXIT
+trap 'rm -rf "$scratch" "$pair_scratch"' EXIT
 
 # PI-R1-004 (plans/provisioning-identity.md D-P1.1): a target that already
 # exists and carries a lease record is residue of a dead provisioning; the
@@ -410,6 +434,15 @@ cp -R "$fixture_spec/$seed_path/." "$target/"
 if ! "$root/scripts/adopt.sh" "$target" --runtimes "$runtimes" >"$scratch/adopt.log" 2>&1; then
   cat "$scratch/adopt.log" >&2
   die 1 "provision failed while adopting the metasystem"
+fi
+
+# The run's benchmark identity: which case version under which configuration
+# version, pinned by git object id, and the legacy id when provisioned
+# through an alias. run-cohort folds it into benchmark-identity.json and the
+# extractor reads it; a legacy directory-mode provision writes none.
+if [[ -n "${pair_record:-}" ]]; then
+  mkdir -p "$target/artifacts/agents"
+  printf '%s\n' "$pair_record" | python3 -c 'import json,sys; d=json.load(sys.stdin); json.dump(d, open(sys.argv[1],"w"), indent=2, sort_keys=True); open(sys.argv[1],"a").write("\n")' "$target/artifacts/agents/benchmark-pair.json"
 fi
 
 # D-P1.2 (plans/provisioning-identity.md): the provisioner is the target's

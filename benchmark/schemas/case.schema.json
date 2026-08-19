@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Benchmark case version (case.json)",
+  "description": "WHAT is built and how it is judged. One immutable directory per version at benchmark/cases/<id>/<version>/, holding this file, spec.md, seed/, grader/ and the instruments. Task policy only: nothing here says who runs it or under what limits (that is a configuration). See benchmark/README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "version",
+    "title",
+    "comparisonEligible",
+    "seed",
+    "grader",
+    "metrics",
+    "noiseFloors",
+    "needs",
+    "mission",
+    "completionGate"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+){0,3}$",
+      "maxLength": 16
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "comparisonEligible": {
+      "type": "boolean",
+      "description": "Task maturity: below 1.0 a case yields scores, not verdicts. Verdict eligibility of a RUN is this AND the configuration's purpose == capability."
+    },
+    "comparisonEligibleNote": {
+      "type": "string"
+    },
+    "product": {
+      "type": "object"
+    },
+    "seededGap": {
+      "type": "object"
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Declared metrics with direction/floors; the extractor never estimates."
+    },
+    "metricsNote": {
+      "type": "string"
+    },
+    "noiseFloors": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Per-metric noise floors; null while the case is below 1.0 and floors are unset."
+    },
+    "noiseFloorsNote": {
+      "type": "string"
+    },
+    "seed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[^/].*/?$"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "grader": {
+      "type": "object",
+      "required": [
+        "path",
+        "heldOut"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "heldOut": {
+          "const": true
+        },
+        "heldOutNote": {
+          "type": "string"
+        },
+        "mutation": {},
+        "calibration": {
+          "type": "object"
+        },
+        "outsideOnlyException": {},
+        "v01Scope": {}
+      },
+      "additionalProperties": true
+    },
+    "language": {
+      "type": "object"
+    },
+    "deferredMetrics": {
+      "type": "object"
+    },
+    "watches": {
+      "type": "object"
+    },
+    "completionGate": {
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "needs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the TASK requires of any configuration (design \u00a75/\u00a76).",
+      "required": [
+        "dependencies",
+        "network"
+      ],
+      "properties": {
+        "dependencies": {
+          "type": "string",
+          "minLength": 1,
+          "description": "-> contract envelope.dependencies (comma-separated allowlist)"
+        },
+        "network": {
+          "enum": [
+            "required",
+            "forbidden",
+            "either"
+          ],
+          "description": "required x denied -> refuse; forbidden x allowed -> refuse; either -> the configuration's allowance applies"
+        },
+        "networkNote": {
+          "type": "string"
+        },
+        "os": {
+          "enum": [
+            "linux",
+            "darwin",
+            "any"
+          ]
+        },
+        "minFences": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cycles": {
+              "type": "number",
+              "minimum": 0
+            },
+            "jobs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "jobCapMin": {
+              "type": "number",
+              "minimum": 0
+            },
+            "hostTurnCapMin": {
+              "type": "number",
+              "minimum": 0
+            },
+            "wallClockHours": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "environmentNotes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "mission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gate",
+        "instruments",
+        "streams"
+      ],
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "instruments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "instrumentsNote": {
+          "type": "string"
+        },
+        "gate": {
+          "type": "object",
+          "required": [
+            "command",
+            "metric",
+            "direction",
+            "threshold",
+            "noiseFloor",
+            "paths"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "metric": {
+              "type": "string"
+            },
+            "direction": {
+              "enum": [
+                "max",
+                "min"
+              ]
+            },
+            "threshold": {
+              "type": "string"
+            },
+            "noiseFloor": {
+              "type": "number"
+            },
+            "paths": {
+              "type": "string"
+            },
+            "refKind": {
+              "type": "string"
+            },
+            "refKindNote": {
+              "type": "string"
+            }
+          }
+        },
+        "guard": {
+          "type": "object"
+        },
+        "truth": {
+          "type": "object"
+        },
+        "streams": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

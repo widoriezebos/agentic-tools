@@ -140,8 +140,76 @@ echo "kit: extractor fixtures passed"
 "$kit/evolution-fixtures.sh" >/dev/null
 echo "kit: evolution fixtures passed"
 
-# 2. Cross-artifact seam checks: manifest against spec against instruments.
+# 2. Cross-artifact seam checks: case against spec against instruments, plus
+# the object model itself — every shipped case version, configuration version
+# and the alias table validate against their schemas; the version registry
+# matches HEAD and is append-only across history; every alias pair is
+# compatible (design §6); each case's stream text names the gate it runs.
 cd "$kit/.."
+python3 - "$kit" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+kit = Path(sys.argv[1])
+sys.path.insert(0, str(kit))
+from extractor import schema_violations, read_schema  # the kit's own checker
+problems = []
+def check(path, schema):
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        problems.append(f"{path}: unreadable: {error}"); return
+    for violation in schema_violations(doc, read_schema(schema)):
+        problems.append(f"{path}: {violation}")
+cases = sorted(kit.glob("cases/*/*/case.json"))
+configs = sorted(kit.glob("configurations/*/*.json"))
+if not cases: problems.append("no benchmark cases under benchmark/cases")
+if not configs: problems.append("no benchmark configurations under benchmark/configurations")
+for c in cases:
+    check(c, "case.schema.json")
+    doc = json.loads(c.read_text(encoding="utf-8"))
+    if (doc.get("id"), doc.get("version")) != (c.parent.parent.name, c.parent.name):
+        problems.append(f"{c}: names {doc.get('id')}@{doc.get('version')} but lives at cases/{c.parent.parent.name}/{c.parent.name}")
+    for name in ("spec.md", doc.get("seed", {}).get("path", "seed/"), doc.get("grader", {}).get("path", "grader/")):
+        if not (c.parent / name).exists(): problems.append(f"{c.parent}: missing {name}")
+    for instrument in doc.get("mission", {}).get("instruments", []):
+        if not (c.parent / instrument).is_file(): problems.append(f"{c.parent}: instrument {instrument} is not shipped")
+    gate = doc.get("mission", {}).get("gate", {})
+    metric, threshold = gate.get("metric", ""), str(gate.get("threshold", "")).replace(" ", "")
+    for stream, text in doc.get("mission", {}).get("streams", {}).items():
+        wanted = f"{metric}{threshold}" if threshold.startswith((">=", "<=", "=")) else f"{metric}={threshold}"
+        if wanted.replace(">=1", "=1") not in text.replace(" ", "") and wanted not in text.replace(" ", ""):
+            problems.append(f"{c}: stream {stream!r} does not name the gate it runs ({metric} {threshold}); builders would be told the wrong target")
+for k in configs:
+    check(k, "configuration.schema.json")
+    doc = json.loads(k.read_text(encoding="utf-8"))
+    if (doc.get("id"), doc.get("version")) != (k.parent.name, k.stem):
+        problems.append(f"{k}: names {doc.get('id')}@{doc.get('version')} but lives at configurations/{k.parent.name}/{k.stem}.json")
+check(kit / "aliases.json", "aliases.schema.json")
+check(kit / "versions.lock", "versions-lock.schema.json")
+lock = json.loads((kit / "versions.lock").read_text(encoding="utf-8")).get("entries", {})
+for c in cases:
+    if f"case:{c.parent.parent.name}@{c.parent.name}" not in lock: problems.append(f"{c.parent}: not registered in versions.lock (benchmark/pairs.py register)")
+for k in configs:
+    if f"configuration:{k.parent.name}@{k.stem}" not in lock: problems.append(f"{k}: not registered in versions.lock (benchmark/pairs.py register)")
+reg = subprocess.run([sys.executable, str(kit / "pairs.py"), "registry-check", "--kit", str(kit), "--history"], capture_output=True, text=True)
+if reg.returncode != 0:
+    problems.append("version registry: " + reg.stderr.strip().replace("\n", " | "))
+aliases = json.loads((kit / "aliases.json").read_text(encoding="utf-8")).get("aliases", {})
+for legacy in sorted(aliases):
+    res = subprocess.run([sys.executable, str(kit / "pairs.py"), "resolve", "--kit", str(kit), "--spec", legacy], capture_output=True, text=True)
+    if res.returncode != 0:
+        problems.append(f"alias {legacy}: " + res.stderr.strip().replace("\n", " | "))
+    for line in res.stderr.splitlines():
+        if line.startswith("warning:"):
+            print(f"benchmark consistency: {line}", file=sys.stderr)
+if problems:
+    print("benchmark consistency: the object model is inconsistent", file=sys.stderr)
+    for item in problems: print(f"  {item}", file=sys.stderr)
+    raise SystemExit(1)
+print(f"benchmark consistency: {len(cases)} case version(s), {len(configs)} configuration version(s), {len(aliases)} alias(es): schemas, registry, compatibility, stream/gate agreement OK")
+PY
 
 # IL-15: the same drift class the plan check covers, but across the benchmark
 # artifacts, where round 4 of the artifact critique found three seam findings
@@ -154,10 +222,13 @@ import sys
 from pathlib import Path
 
 violations = []
-for manifest_path in sorted(Path("benchmark/specs").glob("*/manifest.json")):
+for manifest_path in sorted(Path("benchmark/cases").glob("*/*/case.json")):
     spec_dir = manifest_path.parent
     try:
         manifest = json.loads(manifest_path.read_text())
+        # The seam checks below were written against the old manifest shape;
+        # a case version carries the same task policy under `mission`.
+        manifest["missionContract"] = manifest.get("mission", {})
     except ValueError as error:
         violations.append(f"{manifest_path}: unparseable: {error}")
         continue
@@ -169,10 +240,8 @@ for manifest_path in sorted(Path("benchmark/specs").glob("*/manifest.json")):
     # and the first acceptance cohort provisioned under the wrong identity
     # before anything refused (2026-08-17).
     spec_id = manifest.get("id")
-    if spec_id != spec_dir.name:
-        violations.append(
-            f"{manifest_path}: id {spec_id!r} must equal the spec directory name {spec_dir.name!r}"
-        )
+    if manifest.get("id") != spec_dir.parent.name or manifest.get("version") != spec_dir.name:
+        violations.append(f"{manifest_path}: {manifest.get('id')}@{manifest.get('version')} must live at cases/{manifest.get('id')}/{manifest.get('version')} (found cases/{spec_dir.parent.name}/{spec_dir.name})")
 
     metrics = set(manifest.get("metrics", {}))
     deferred = set(manifest.get("deferredMetrics", {}))
@@ -199,27 +268,7 @@ for manifest_path in sorted(Path("benchmark/specs").glob("*/manifest.json")):
     # emit metric=X, and each instrument must emit the metric its contract
     # names. The first draft violated both and only a delegate noticed.
     contract = manifest.get("missionContract", {})
-    # fixtureSpec resolution MIRRORS benchmark/provision.sh: an object with one
-    # non-empty relative path naming a SIBLING spec (a directory directly under
-    # the same specs root, carrying its own manifest.json). Anything else is a
-    # seam between what the kit accepts and what provisioning refuses, so it
-    # is reported here rather than silently followed.
-    fixture = manifest.get("fixtureSpec")
     copy_dir = spec_dir
-    if fixture is not None:
-        raw = fixture.get("path") if isinstance(fixture, dict) else None
-        if not isinstance(fixture, dict) or not isinstance(raw, str) or not raw or "\n" in raw or "\r" in raw:
-            violations.append(f"{manifest_path}: fixtureSpec must be an object with one non-empty relative path")
-        elif Path(raw).is_absolute():
-            violations.append(f"{manifest_path}: fixtureSpec.path must be relative: {raw}")
-        else:
-            resolved = (spec_dir / raw).resolve()
-            if resolved.parent != spec_dir.parent.resolve() or resolved == spec_dir.resolve():
-                violations.append(f"{manifest_path}: fixtureSpec.path must name a sibling spec: {raw}")
-            elif not (resolved / "manifest.json").is_file():
-                violations.append(f"{manifest_path}: fixtureSpec.path is not a spec directory: {resolved}")
-            else:
-                copy_dir = resolved
     for kind in ("gate", "guard"):
         block = contract.get(kind, {})
         metric = block.get("metric")
@@ -261,8 +310,8 @@ if violations:
         print(f"  {item}", file=sys.stderr)
     raise SystemExit(1)
 
-count = len(list(Path("benchmark/specs").glob("*/manifest.json")))
-print(f"benchmark consistency: {count} spec(s), no seams")
+count = len(list(Path("benchmark/cases").glob("*/*/case.json")))
+print(f"benchmark consistency: {count} case version(s), no seams")
 PY
 
 # 3. Provisioning, end to end against a committed snapshot of the working
@@ -289,7 +338,7 @@ git -C "$srcrepo" -c user.name=kit -c user.email=kit@example.invalid commit -qm 
   # to the human seal/sign boundary. Exercise the real BM-1 manifest through a
   # clean source snapshot because adopt.sh correctly refuses a dirty source.
   provision_target="$tmp/provision-bm-1"
-  provision_contract="$provision_target/plans/mission-bm-1.contract.md"
+  provision_contract="$provision_target/plans/mission-taskrun.contract.md"
   provision_output="$tmp/provision-bm-1.out"
   provision_identity=(
     env
@@ -301,21 +350,27 @@ git -C "$srcrepo" -c user.name=kit -c user.email=kit@example.invalid commit -qm 
   )
 
   # Defence in depth must fail before target creation if any declared copy
-  # source crosses the held-out grader boundary.
-  grader_spec="$tmp/provision-grader-spec"
-  cp -R "$srcrepo/benchmark/specs/bm-1" "$grader_spec"
-  python3 - "$grader_spec/manifest.json" <<'PY'
+  # source crosses the held-out grader boundary. The bad case version is
+  # committed and registered in the snapshot so provisioning reaches it
+  # through the real pinned path.
+  cp -R "$srcrepo/benchmark/cases/taskrun/0.1" "$srcrepo/benchmark/cases/taskrun/9.9"
+  python3 - "$srcrepo/benchmark/cases/taskrun/9.9/case.json" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
 value = json.loads(path.read_text(encoding="utf-8"))
+value["version"] = "9.9"
 value["seed"]["path"] = value["grader"]["path"]
 path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 PY
+  git -C "$srcrepo" add benchmark/cases/taskrun/9.9
+  python3 "$srcrepo/benchmark/pairs.py" register --kit "$srcrepo/benchmark" --case taskrun@9.9 >/dev/null
+  git -C "$srcrepo" add benchmark/versions.lock
+  git -C "$srcrepo" -c user.name=kit -c user.email=kit@example.invalid commit -qm "bad case version for the grader-boundary refusal"
   if "${provision_identity[@]}" "$srcrepo/benchmark/provision.sh" \
-      --spec "$grader_spec" --target "$tmp/provision-must-refuse" \
+      --case taskrun@9.9 --config cheap@1 --target "$tmp/provision-must-refuse" \
       >"$tmp/provision-grader.out" 2>"$tmp/provision-grader.err"; then
     echo "benchmark provision: accepted a grader path as a copy source" >&2
     exit 1
@@ -326,9 +381,9 @@ PY
     || { echo "benchmark provision: grader refusal created the target" >&2; exit 1; }
 
   if ! "${provision_identity[@]}" "$srcrepo/benchmark/provision.sh" \
-      --spec "$srcrepo/benchmark/specs/bm-1" --target "$provision_target" \
+      --case taskrun@0.1 --config cheap@1 --target "$provision_target" \
       >"$provision_output" 2>"$tmp/provision-bm-1.err"; then
-    echo "benchmark provision: BM-1 provisioning failed" >&2
+    echo "benchmark provision: taskrun@0.1 under cheap@1 provisioning failed" >&2
     cat "$tmp/provision-bm-1.err" >&2
     exit 1
   fi
@@ -367,8 +422,8 @@ PY
     echo "benchmark provision: provisioned contract validates with warnings; the manifest must carry the policy" >&2
     exit 1
   fi
-  manifest_turns=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fences"]["hostMaxTurns"])' "$srcrepo/benchmark/specs/bm-1/manifest.json")
-  manifest_budget=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fences"]["hostMaxBudgetUsd"])' "$srcrepo/benchmark/specs/bm-1/manifest.json")
+  manifest_turns=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hostCaps"]["maxTurns"])' "$srcrepo/benchmark/configurations/cheap/1.json")
+  manifest_budget=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hostCaps"]["maxBudgetUsd"])' "$srcrepo/benchmark/configurations/cheap/1.json")
   # The caps are asserted INSIDE the fenced mission block — the only bytes
   # the runtime parses (round 2: a whole-file grep false-passed on an
   # expected line sitting in prose while the effective block disagreed).
@@ -419,7 +474,9 @@ PY
 
   # Configuration is manifest-derived: compare the live target to the manifest
   # instead of restating either model identifier in the fixture.
-  python3 - "$srcrepo/benchmark/specs/bm-1/manifest.json" \
+  python3 "$srcrepo/benchmark/pairs.py" resolve --kit "$srcrepo/benchmark" --case taskrun@0.1 --config cheap@1 --out "$tmp/merged-manifest.json" >/dev/null 2>&1 \
+    || { echo "benchmark provision: pair resolution failed in the snapshot" >&2; exit 1; }
+  python3 - "$tmp/merged-manifest.json" \
     "$provision_target/metasystem.conf" "$provision_contract" <<'PY'
 import json
 import re
@@ -509,9 +566,9 @@ PY
     echo "benchmark provision: gate.ref also names a branch" >&2
     exit 1
   fi
-  cmp "$srcrepo/benchmark/specs/bm-1/gate.sh" "$provision_target/gate.sh" >/dev/null \
-    && cmp "$srcrepo/benchmark/specs/bm-1/guard-deps.sh" "$provision_target/guard-deps.sh" >/dev/null \
-    || { echo "benchmark provision: copied instruments differ from the spec" >&2; exit 1; }
+  cmp "$srcrepo/benchmark/cases/taskrun/0.1/gate.sh" "$provision_target/gate.sh" >/dev/null \
+    && cmp "$srcrepo/benchmark/cases/taskrun/0.1/guard-deps.sh" "$provision_target/guard-deps.sh" >/dev/null \
+    || { echo "benchmark provision: copied instruments differ from the case version" >&2; exit 1; }
   git -C "$provision_target" cat-file -e "$provision_ref:gate.sh" \
     && git -C "$provision_target" cat-file -e "$provision_ref:guard-deps.sh" \
     || { echo "benchmark provision: instrument tag does not contain both instruments" >&2; exit 1; }
@@ -531,7 +588,7 @@ PY
 
   before_rerun=$(git -C "$provision_target" status --porcelain=v1)
   if "${provision_identity[@]}" "$srcrepo/benchmark/provision.sh" \
-      --spec "$srcrepo/benchmark/specs/bm-1" --target "$provision_target" \
+      --case taskrun@0.1 --config cheap@1 --target "$provision_target" \
       >"$tmp/provision-rerun.out" 2>"$tmp/provision-rerun.err"; then
     echo "benchmark provision: rerun accepted an existing target" >&2
     exit 1
@@ -583,8 +640,14 @@ import sys
 record = json.load(open(sys.argv[1], encoding="utf-8"))
 identity = json.load(open(sys.argv[2], encoding="utf-8"))
 kit_version = open(sys.argv[3], encoding="utf-8").read().strip()
-assert record["benchmarkSpecId"] == "bm-1"
-assert record["benchmarkSpecVersion"] == "0.1"
+# Alias mode (--spec bm-1): the pair is recorded and pinned; the legacy id
+# and label ride along; the cohort id and mission keep the legacy naming.
+assert record["schemaVersion"] == 2
+assert (record["caseId"], record["caseVersion"], record["configId"], record["configVersion"]) == ("taskrun", "0.1", "cheap", "1")
+assert record["legacyId"] == "bm-1" and record["legacyVersionLabel"] == "0.1"
+assert len(record["caseTree"]) == 40 and len(record["configTree"]) == 40
+assert identity["schemaVersion"] == 2 and identity["caseTree"] == record["caseTree"] and identity["configTree"] == record["configTree"]
+assert identity["legacyId"] == "bm-1"
 assert record["measuringKitVersion"] == kit_version == "0.1.0"
 assert record["proposalId"] is None and record["repetitionCount"] == 2
 assert set(record["machineFingerprint"]) == {"os", "cpuModel", "coreCount"}
@@ -622,7 +685,7 @@ PY
   fi
   printf '\nApproval: name=Metasystem Fixture; date=2026-08-05; contract-sha256=%s\n' \
     "$seal_hash" >>"$provision_contract"
-  git -C "$provision_target" add plans/mission-bm-1.contract.md
+  git -C "$provision_target" add plans/mission-taskrun.contract.md
   # The gate SIMULATES THE HUMAN here: sealing and signing are the human's
   # own acts by design, and a human commit is sovereign under the guard. The
   # gate cannot be a human, so this one simulated-human commit skips hooks
@@ -632,12 +695,12 @@ PY
   "${provision_identity[@]}" git -C "$provision_target" commit -q --no-verify -m "Seal and sign fixture mission"
   git -C "$provision_target" push -q origin main
   preflight_output=$("$provision_target/scripts/assert-mission.sh" --preflight --file "$provision_contract") \
-    || { echo "benchmark provision: provisioned BM-1 failed preflight" >&2; exit 1; }
+    || { echo "benchmark provision: provisioned taskrun@0.1 under cheap@1 failed preflight" >&2; exit 1; }
   # The caps work extended the success line with the contract pin; assert
   # the pin AGAINST THE BYTES rather than pattern-matching the sentence.
   expected_pin=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$provision_contract")
-  [[ "$preflight_output" == "mission preflight passed: bm-1 approvedContractSha256=$expected_pin" ]] \
-    || { echo "benchmark provision: preflight did not report BM-1 success with the contract's own pin; it said:" >&2; printf '%s\n' "$preflight_output" >&2; exit 1; }
+  [[ "$preflight_output" == "mission preflight passed: taskrun approvedContractSha256=$expected_pin" ]] \
+    || { echo "benchmark provision: preflight did not report taskrun success with the contract's own pin; it said:" >&2; printf '%s\n' "$preflight_output" >&2; exit 1; }
 
 echo "kit: provisioning bridge passed"
 echo "kit validation passed"

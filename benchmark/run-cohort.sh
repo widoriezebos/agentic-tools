@@ -4,10 +4,14 @@ set -euo pipefail
 usage() {
   cat <<'USAGE' >&2
 Usage:
-  benchmark/run-cohort.sh --spec <spec-id-or-dir> --repetitions <N> [--proposal <id>]
+  benchmark/run-cohort.sh --case <caseId>@<caseVersion> --config <configId>@<configVersion> --repetitions <N> [--proposal <id>]
+  benchmark/run-cohort.sh --spec <legacy-id> --repetitions <N> [--proposal <id>]      (alias mode)
   benchmark/run-cohort.sh --resume <cohort-id>
 
-The first form creates a cohort and provisions its first fresh target. Each
+A cohort is N repetitions of one benchmark CASE version under one benchmark
+CONFIGURATION version (see benchmark/README.md). Both are pinned by version.
+`--spec` names a retired spec id from benchmark/aliases.json and runs the same
+pair with the legacy naming kept. The first form creates a cohort and provisions its first fresh target. Each
 invocation stops at one human seal/sign boundary. After the printed contract
 has an Approval line, invoke the printed --resume command. A resumed cohort
 runs that repetition through grading and extraction, then either provisions
@@ -40,6 +44,8 @@ else:
 PY
 )
 spec_arg=
+case_arg=
+config_arg=
 proposal_id=
 repetitions=
 resume_id=
@@ -47,6 +53,8 @@ resume_id=
 while (($#)); do
   case "$1" in
     --spec) [[ $# -ge 2 ]] || { usage; exit 2; }; spec_arg=$2; shift 2 ;;
+    --case) [[ $# -ge 2 ]] || { usage; exit 2; }; case_arg=$2; shift 2 ;;
+    --config) [[ $# -ge 2 ]] || { usage; exit 2; }; config_arg=$2; shift 2 ;;
     --proposal) [[ $# -ge 2 ]] || { usage; exit 2; }; proposal_id=$2; shift 2 ;;
     --repetitions) [[ $# -ge 2 ]] || { usage; exit 2; }; repetitions=$2; shift 2 ;;
     --resume) [[ $# -ge 2 ]] || { usage; exit 2; }; resume_id=$2; shift 2 ;;
@@ -56,10 +64,16 @@ while (($#)); do
 done
 
 if [[ -n "$resume_id" ]]; then
-  [[ -z "$spec_arg" && -z "$proposal_id" && -z "$repetitions" ]] || { usage; exit 2; }
+  [[ -z "$spec_arg" && -z "$case_arg" && -z "$config_arg" && -z "$proposal_id" && -z "$repetitions" ]] || { usage; exit 2; }
   [[ "$resume_id" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die 2 "cohort resume refused: invalid cohort id"
 else
-  [[ -n "$spec_arg" && -n "$repetitions" ]] || { usage; exit 2; }
+  [[ -n "$repetitions" ]] || { usage; exit 2; }
+  if [[ -n "$case_arg" || -n "$config_arg" ]]; then
+    [[ -z "$spec_arg" ]] || die 2 "cohort start refused: --spec cannot be combined with --case/--config"
+    [[ -n "$case_arg" && -n "$config_arg" ]] || die 2 "cohort start refused: both --case <id>@<version> and --config <id>@<version> are required"
+  else
+    [[ -n "$spec_arg" ]] || { usage; exit 2; }
+  fi
   [[ "$repetitions" =~ ^[1-9][0-9]*$ ]] || die 2 "cohort start refused: repetitions must be a positive integer"
   [[ -z "$proposal_id" || "$proposal_id" =~ ^[a-z0-9][a-z0-9-]*$ ]] \
     || die 2 "cohort start refused: invalid proposal id"
@@ -101,6 +115,28 @@ PY
   METASYSTEM_HARNESS_ROOT="${METASYSTEM_HARNESS_ROOT:-$top/metasystem}" emit_event driver driver-phase "cohortId=${cohort_id:-unknown}" "phase=$witness_phase" "repetitionIndex=${3:-0}" "summary=phase $witness_phase"
 }
 
+# resolve_pair materializes WHAT a cohort runs into $runs/<cohort>/case: the
+# pinned case tree (git archive of the object id, never the working tree),
+# the merged manifest of the shape every downstream tool consumes, and the
+# pair record. Everything after start reads from there, so a resume never
+# re-resolves against a moved HEAD, and grading and extraction find the
+# case's grader and metrics beside its manifest. Arguments: run dir, then
+# either --case/--config refs or --spec alias.
+resolve_pair() { # run dir, mode ("pair"|"alias"), a, [b]
+  local run_dir=$1 mode=$2 a=$3 b=${4:-} out kit_top tree
+  mkdir -p "$run_dir/case"
+  if [[ "$mode" == alias ]]; then
+    out=$(python3 "$kit/pairs.py" resolve --kit "$kit" --spec "$a" --out "$run_dir/case/manifest.json") || die 2 "cohort refused: could not resolve alias $a"
+  else
+    out=$(python3 "$kit/pairs.py" resolve --kit "$kit" --case "$a" --config "$b" --out "$run_dir/case/manifest.json") || die 2 "cohort refused: could not resolve $a under $b"
+  fi
+  printf '%s\n' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); json.dump(d["pair"], open(sys.argv[1],"w"), indent=2, sort_keys=True); open(sys.argv[1],"a").write("\n")' "$run_dir/case/pair.json"
+  tree=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["caseTree"])' "$run_dir/case/pair.json")
+  kit_top=$(git -C "$kit" rev-parse --show-toplevel)
+  git -C "$kit_top" archive "$tree" | tar -x -C "$run_dir/case" \
+    || die 1 "cohort refused: could not extract the pinned case tree $tree"
+}
+
 prepare_repetition() { # cohort id, spec dir, repetition, state path
   local cohort_id=$1 spec=$2 repetition=$3 state_path=$4
   local run_dir=$runs/$cohort_id target=$runs/$cohort_id/targets/$repetition
@@ -108,8 +144,22 @@ prepare_repetition() { # cohort id, spec dir, repetition, state path
   [[ ! -e "$target" && ! -L "$target" ]] \
     || die 1 "cohort provision refused: target already exists: $target"
   mkdir -p "$run_dir/targets"
-  if ! "$kit/provision.sh" --spec "$spec" --target "$target" >"$provision_log"; then
-    die 1 "cohort provision failed: see $provision_log"
+  # $spec is the cohort's materialized case directory ($run_dir/case) whose
+  # pair.json says how to provision: by pair, or through the legacy alias so
+  # every repetition of a pre-migration cohort keeps the same naming.
+  local pair_mode legacy_id case_ref config_ref
+  pair_mode=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mode"])' "$spec/pair.json")
+  if [[ "$pair_mode" == alias ]]; then
+    legacy_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["legacyId"])' "$spec/pair.json")
+    if ! "$kit/provision.sh" --spec "$legacy_id" --target "$target" >"$provision_log" 2>&1; then
+      die 1 "cohort provision failed: see $provision_log"
+    fi
+  else
+    case_ref=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["caseId"]+"@"+d["caseVersion"])' "$spec/pair.json")
+    config_ref=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["configId"]+"@"+d["configVersion"])' "$spec/pair.json")
+    if ! "$kit/provision.sh" --case "$case_ref" --config "$config_ref" --target "$target" >"$provision_log" 2>&1; then
+      die 1 "cohort provision failed: see $provision_log"
+    fi
   fi
 
   mkdir -p "$target/artifacts/agents"
@@ -124,9 +174,13 @@ from pathlib import Path
 cohort = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 output = Path(sys.argv[2])
 value = {
-    "schemaVersion": 1,
-    "benchmarkSpecId": cohort["benchmarkSpecId"],
-    "benchmarkSpecVersion": cohort["benchmarkSpecVersion"],
+    "schemaVersion": 2,
+    "caseId": cohort["caseId"],
+    "caseVersion": cohort["caseVersion"],
+    "caseTree": cohort["caseTree"],
+    "configId": cohort["configId"],
+    "configVersion": cohort["configVersion"],
+    "configTree": cohort["configTree"],
     "measuringKitVersion": cohort["measuringKitVersion"],
     "candidateSha": cohort["candidateSha"],
     "cohortId": cohort["cohortId"],
@@ -137,6 +191,9 @@ value = {
     "proposalId": cohort["proposalId"],
     "createdAt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }
+if cohort.get("legacyId"):
+    value["legacyId"] = cohort["legacyId"]
+    value["legacyVersionLabel"] = cohort.get("legacyVersionLabel")
 descriptor, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
 with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
     json.dump(value, handle, indent=2, sort_keys=True)
@@ -158,19 +215,17 @@ PY
 }
 
 if [[ -z "$resume_id" ]]; then
-  if [[ -d "$spec_arg" ]]; then
-    spec=$(cd "$spec_arg" && pwd -P)
+  # Materialize the pair into a scratch run dir first: the cohort id is
+  # derived from it, then the dir is renamed into place.
+  staging=$runs/.staging-$$
+  rm -rf "$staging"; mkdir -p "$staging"
+  if [[ -n "$spec_arg" ]]; then
+    resolve_pair "$staging" alias "$spec_arg"
   else
-    spec=$kit/specs/$spec_arg
-    [[ -d "$spec" ]] || die 2 "cohort start refused: unknown spec: $spec_arg"
-    spec=$(cd "$spec" && pwd -P)
+    resolve_pair "$staging" pair "$case_arg" "$config_arg"
   fi
-  case "$spec" in
-    "$kit"/specs/*) ;;
-    *) die 2 "cohort start refused: spec must be under $kit/specs" ;;
-  esac
+  spec=$staging/case
   manifest=$spec/manifest.json
-  [[ -f "$manifest" ]] || die 2 "cohort start refused: spec manifest is missing: $manifest"
   kit_version=$(tr -d '\r\n' <"$kit/kit-version")
   [[ -n "$kit_version" && $(wc -l <"$kit/kit-version" | tr -d ' ') == 1 ]] \
     || die 1 "cohort start refused: kit-version must contain one non-empty line"
@@ -184,14 +239,20 @@ if [[ -z "$resume_id" ]]; then
     [[ -f "$results/proposals/$proposal_id.json" ]] \
       || die 2 "cohort start refused: proposal does not exist: $proposal_id"
   fi
-  cohort_id=$spec_id-$(date -u +%Y%m%dt%H%M%Sz)-$$
+  # Cohort id: <caseId>-<configId>-<stamp>-<pid> for a pair; the legacy
+  # <specId>-<stamp>-<pid> in alias mode (design §7).
+  cohort_prefix=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["legacyId"] if d["mode"]=="alias" else d["caseId"]+"-"+d["configId"])' "$spec/pair.json")
+  cohort_id=$cohort_prefix-$(date -u +%Y%m%dt%H%M%Sz)-$$
   export METASYSTEM_EXECUTION_ID="$cohort_id"  # FRCC-007: every invocation
   record=$results/cohorts/$cohort_id.json
   state_path=$runs/$cohort_id/state.json
-  [[ ! -e "$record" && ! -e "$state_path" ]] || die 1 "cohort start refused: generated cohort id already exists"
-  mkdir -p "$results/cohorts" "$runs/$cohort_id"
+  [[ ! -e "$record" && ! -e "$state_path" && ! -e "$runs/$cohort_id" ]] || die 1 "cohort start refused: generated cohort id already exists"
+  mkdir -p "$results/cohorts"
+  mv "$staging" "$runs/$cohort_id"
+  spec=$runs/$cohort_id/case
+  manifest=$spec/manifest.json
   python3 - "$manifest" "$record" "$state_path" "$cohort_id" "$kit_version" \
-    "$candidate_sha" "$proposal_id" "$repetitions" "$machine" "$created_at" <<'PY'
+    "$candidate_sha" "$proposal_id" "$repetitions" "$machine" "$created_at" "$spec/pair.json" <<'PY'
 import json
 import os
 import sys
@@ -202,11 +263,16 @@ manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 record_path = Path(sys.argv[2])
 state_path = Path(sys.argv[3])
 proposal = sys.argv[7] or None
+pair = json.loads(Path(sys.argv[11]).read_text(encoding="utf-8"))
 record = {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "cohortId": sys.argv[4],
-    "benchmarkSpecId": manifest["id"],
-    "benchmarkSpecVersion": manifest["version"],
+    "caseId": pair["caseId"],
+    "caseVersion": pair["caseVersion"],
+    "caseTree": pair["caseTree"],
+    "configId": pair["configId"],
+    "configVersion": pair["configVersion"],
+    "configTree": pair["configTree"],
     "measuringKitVersion": sys.argv[5],
     "proposalId": proposal,
     "repetitionCount": int(sys.argv[8]),
@@ -217,10 +283,18 @@ record = {
     "measuringMetasystemSha": sys.argv[6],
     "createdAt": sys.argv[10],
 }
+if pair.get("mode") == "alias":
+    record["legacyId"] = pair["legacyId"]
+    record["legacyVersionLabel"] = pair["legacyVersionLabel"]
 state = {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "cohortId": record["cohortId"],
-    "specId": record["benchmarkSpecId"],
+    "specId": manifest["id"],
+    "caseId": pair["caseId"],
+    "caseVersion": pair["caseVersion"],
+    "configId": pair["configId"],
+    "configVersion": pair["configVersion"],
+    "mode": pair.get("mode", "pair"),
     "proposalId": proposal,
     "repetitionCount": record["repetitionCount"],
     "candidateSha": record["candidateSha"],
@@ -262,9 +336,15 @@ phase=$(printf '%s\n' "$state_facts" | sed -n '2p')
 repetition=$(printf '%s\n' "$state_facts" | sed -n '3p')
 repetition_count=$(printf '%s\n' "$state_facts" | sed -n '4p')
 candidate_sha=$(printf '%s\n' "$state_facts" | sed -n '5p')
-spec=$kit/specs/$spec_id
+spec=$runs/$cohort_id/case
+if [[ ! -f "$spec/manifest.json" ]]; then
+  # A cohort begun before the migration recorded only specId. It resolves
+  # through the alias table to the pair it actually ran; naming stays as
+  # the state and its targets already record it (design §7).
+  resolve_pair "$runs/$cohort_id" alias "$spec_id"
+fi
 manifest=$spec/manifest.json
-[[ -f "$manifest" ]] || die 1 "cohort resume refused: recorded spec is unavailable: $spec_id"
+[[ -f "$manifest" ]] || die 1 "cohort resume refused: recorded benchmark is unavailable: $spec_id"
 target=$runs/$cohort_id/targets/$repetition
 mission_id=$spec_id
 contract=$target/plans/mission-$mission_id.contract.md
@@ -339,26 +419,15 @@ PY
     (( $(date +%s) < drain_wait_deadline ))       || die 1 "cohort grading refused: drain-stalled park still has $running live job(s) after the wait; resolve the survivors ask first"
     sleep 10
   done
+  # The held-out grader is EXECUTED from here: it comes from the cohort's
+  # materialized case tree (the pinned object), never from a path resolved
+  # against a moved HEAD.
   grader=$(python3 - "$manifest" "$spec" <<'PY'
 import json
 import sys
 from pathlib import Path
 manifest = json.load(open(sys.argv[1], encoding="utf-8"))
-spec = Path(sys.argv[2])
-# The held-out grader is EXECUTED from here, so the fixture rule is the
-# same one provision.sh enforces: a sibling spec directory only. A cohort
-# whose manifest drifted past that rule fails grading loudly, never runs
-# code from wherever the path happens to point.
-fixture = manifest.get("fixtureSpec")
-base = spec.resolve()
-if fixture is not None:
-    raw = fixture.get("path") if isinstance(fixture, dict) else None
-    if not isinstance(raw, str) or not raw or Path(raw).is_absolute():
-        raise SystemExit("cohort grading refused: fixtureSpec.path must be one relative path")
-    base = (spec / raw).resolve()
-    if base.parent != spec.resolve().parent or base == spec.resolve() or not (base / "manifest.json").is_file():
-        raise SystemExit(f"cohort grading refused: fixtureSpec.path must name a sibling spec: {raw}")
-print(base / manifest["grader"]["path"] / "grade.sh")
+print(Path(sys.argv[2]).resolve() / manifest["grader"]["path"] / "grade.sh")
 PY
 )
   [[ -x "$grader" ]] || die 1 "cohort grading refused: held-out grader is not executable: $grader"

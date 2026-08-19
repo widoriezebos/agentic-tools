@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Benchmark configuration version",
+  "description": "WHO builds a case and under WHAT limits: roster, fences, host caps, network allowance, machine constraint, exposure, purpose. One immutable file per version at benchmark/configurations/<id>/<version>.json. Reusable across cases. See benchmark/README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "version",
+    "title",
+    "purpose",
+    "roster",
+    "fences",
+    "environment",
+    "exposure"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+){0,3}$",
+      "maxLength": 16
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The way of running, in one line; the contract's intent line is <case.title> \u2014 <this>."
+    },
+    "purpose": {
+      "enum": [
+        "capability",
+        "orchestration-health"
+      ],
+      "description": "capability: a measurement (verdict-eligible when the case is). orchestration-health: a probe of whether the orchestration mechanically works; its runs are never verdict-eligible."
+    },
+    "acceptanceOnly": {
+      "type": "object",
+      "description": "Launch cadence only: this configuration is run when its trigger is under test, never on a standing cadence."
+    },
+    "machineConstraint": {
+      "type": "object",
+      "required": [
+        "os"
+      ],
+      "properties": {
+        "os": {
+          "enum": [
+            "linux",
+            "darwin"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "roster": {
+      "type": "object",
+      "required": [
+        "host",
+        "delegates"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "host": {
+          "type": "object",
+          "required": [
+            "runtime",
+            "model"
+          ],
+          "properties": {
+            "runtime": {
+              "enum": [
+                "claude",
+                "codex",
+                "devin"
+              ]
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "delegates": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "delegateRoles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "runtime",
+              "model"
+            ],
+            "properties": {
+              "runtime": {
+                "enum": [
+                  "claude",
+                  "codex",
+                  "devin"
+                ]
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "independence": {
+          "const": "session-only"
+        },
+        "independenceReason": {
+          "type": "string"
+        },
+        "acceptableEffective": {
+          "type": "object"
+        },
+        "ruling": {
+          "type": "string"
+        }
+      }
+    },
+    "fences": {
+      "type": "object",
+      "required": [
+        "cycles",
+        "jobs",
+        "concurrency",
+        "jobCapMin",
+        "hostTurnCapMin",
+        "wallClockHours",
+        "ledgerCycleBudget",
+        "ledgerNoGainBudget"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "cycles": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "jobs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "jobCapMin": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hostTurnCapMin": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "wallClockHours": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "ledgerCycleBudget": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ledgerNoGainBudget": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "acceptBinaryGateFuse": {
+          "const": true
+        },
+        "approved": {
+          "type": "string"
+        }
+      }
+    },
+    "hostCaps": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional; when present sealed into the contract as host.max-turns / host.max-budget-usd (issue #6). Nothing is synthesized when absent.",
+      "properties": {
+        "maxTurns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxBudgetUsd": {
+          "type": "string",
+          "pattern": "^[0-9]+([.][0-9]+)?$"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "delegateNetwork"
+      ],
+      "properties": {
+        "delegateNetwork": {
+          "enum": [
+            "allowed",
+            "denied"
+          ],
+          "description": "The ALLOWANCE; the case's needs.network says what the task requires."
+        }
+      }
+    },
+    "exposure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statement"
+      ],
+      "properties": {
+        "statement": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}:[0-9]+([.][0-9]+)?$"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "notes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Where this configuration came from (e.g. the retired spec it was split from). Informational.",
+      "additionalProperties": true
+    }
+  }
+}

@@ -17,48 +17,175 @@
     "gaps"
   ],
   "properties": {
-    "schemaVersion": {"const": 1},
+    "schemaVersion": {
+      "const": 1
+    },
     "identity": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "missionId", "benchmarkSpecId", "benchmarkSpecVersion",
-        "measuringKitVersion", "candidateSha", "cohortId",
-        "repetitionIndex", "repetitionCount", "roster", "fences",
+        "missionId",
+        "caseId",
+        "caseVersion",
+        "caseTree",
+        "configId",
+        "configVersion",
+        "configTree",
+        "legacyId",
+        "legacyVersionLabel",
+        "measuringKitVersion",
+        "candidateSha",
+        "cohortId",
+        "repetitionIndex",
+        "repetitionCount",
+        "roster",
+        "fences",
         "measuringMetasystemSha"
       ],
       "properties": {
-        "missionId": {"type": "string"},
-        "benchmarkSpecId": {"type": ["string", "null"]},
-        "benchmarkSpecVersion": {"type": ["string", "null"]},
-        "measuringKitVersion": {"type": ["string", "null"]},
-        "candidateSha": {"type": ["string", "null"]},
-        "cohortId": {"type": ["string", "null"]},
-        "repetitionIndex": {"type": ["integer", "null"]},
-        "repetitionCount": {"type": ["integer", "null"]},
-        "roster": {"type": "object"},
-        "fences": {"type": "object"},
-        "measuringMetasystemSha": {"type": ["string", "null"]}
+        "missionId": {
+          "type": "string"
+        },
+        "caseId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "caseVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "caseTree": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "configId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "configVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "configTree": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "legacyId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "legacyVersionLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "measuringKitVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidateSha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cohortId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repetitionIndex": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "repetitionCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "roster": {
+          "type": "object"
+        },
+        "fences": {
+          "type": "object"
+        },
+        "measuringMetasystemSha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "runValidity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["valid", "reasons", "gates"],
+      "required": [
+        "valid",
+        "reasons",
+        "gates"
+      ],
       "properties": {
-        "valid": {"type": "boolean"},
-        "reasons": {"type": "array", "items": {"type": "string"}},
+        "valid": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "gates": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "passed", "sourceOwner", "detail"],
+            "required": [
+              "name",
+              "passed",
+              "sourceOwner",
+              "detail"
+            ],
             "properties": {
-              "name": {"type": "string"},
-              "passed": {"type": ["boolean", "null"]},
-              "sourceOwner": {"enum": ["candidate", "kit"]},
-              "detail": {"type": "string"}
+              "name": {
+                "type": "string"
+              },
+              "passed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "sourceOwner": {
+                "enum": [
+                  "candidate",
+                  "kit"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
             }
           }
         }
@@ -70,21 +197,76 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "name", "rawName", "measurementClass", "sourceOwner", "value",
-          "unit", "direction", "floor", "ceiling", "noiseFloor", "verdict"
+          "name",
+          "rawName",
+          "measurementClass",
+          "sourceOwner",
+          "value",
+          "unit",
+          "direction",
+          "floor",
+          "ceiling",
+          "noiseFloor",
+          "verdict"
         ],
         "properties": {
-          "name": {"type": "string"},
-          "rawName": {"type": "string"},
-          "measurementClass": {"const": "constraint"},
-          "sourceOwner": {"const": "kit"},
-          "value": {"type": ["number", "null"]},
-          "unit": {"type": "string"},
-          "direction": {"type": ["string", "null"], "enum": ["min", "max", null]},
-          "floor": {"type": ["number", "null"]},
-          "ceiling": {"type": ["number", "null"]},
-          "noiseFloor": {"type": ["number", "null"]},
-          "verdict": {"enum": ["pass", "fail", "no-verdict"]}
+          "name": {
+            "type": "string"
+          },
+          "rawName": {
+            "type": "string"
+          },
+          "measurementClass": {
+            "const": "constraint"
+          },
+          "sourceOwner": {
+            "const": "kit"
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "direction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "min",
+              "max",
+              null
+            ]
+          },
+          "floor": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ceiling": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "noiseFloor": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "fail",
+              "no-verdict"
+            ]
+          }
         }
       }
     },
@@ -92,52 +274,134 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "measurementClass", "sourceOwner"],
+        "required": [
+          "name",
+          "measurementClass",
+          "sourceOwner"
+        ],
         "properties": {
-          "name": {"type": "string"},
-          "measurementClass": {"enum": ["validity", "constraint", "watch"]},
-          "sourceOwner": {"enum": ["candidate", "kit"]}
+          "name": {
+            "type": "string"
+          },
+          "measurementClass": {
+            "enum": [
+              "validity",
+              "constraint",
+              "watch"
+            ]
+          },
+          "sourceOwner": {
+            "enum": [
+              "candidate",
+              "kit"
+            ]
+          }
         }
       }
     },
-    "judgedScores": {"type": "array"},
-    "judge": {"type": ["object", "null"]},
+    "judgedScores": {
+      "type": "array"
+    },
+    "judge": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "costPerProvider": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "provider", "role", "measurementClass", "sourceOwner", "amounts",
-          "tokens", "providerUnits", "direction", "ceiling", "noiseFloor"
+          "provider",
+          "role",
+          "measurementClass",
+          "sourceOwner",
+          "amounts",
+          "tokens",
+          "providerUnits",
+          "direction",
+          "ceiling",
+          "noiseFloor"
         ],
         "properties": {
-          "provider": {"type": "string"},
-          "role": {"type": "string"},
-          "measurementClass": {"const": "constraint"},
-          "sourceOwner": {"const": "candidate"},
-          "amounts": {"type": "array"},
-          "tokens": {"type": "object"},
-          "providerUnits": {"type": "array"},
-          "direction": {"const": "min"},
-          "ceiling": {"type": ["number", "null"]},
-          "noiseFloor": {"type": ["number", "null"]}
+          "provider": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "measurementClass": {
+            "const": "constraint"
+          },
+          "sourceOwner": {
+            "const": "candidate"
+          },
+          "amounts": {
+            "type": "array"
+          },
+          "tokens": {
+            "type": "object"
+          },
+          "providerUnits": {
+            "type": "array"
+          },
+          "direction": {
+            "const": "min"
+          },
+          "ceiling": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "noiseFloor": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
         }
       }
     },
-    "machineFingerprint": {"type": ["object", "null"]},
+    "machineFingerprint": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "watches": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "measurementClass", "sourceOwner"],
+        "required": [
+          "name",
+          "measurementClass",
+          "sourceOwner"
+        ],
         "properties": {
-          "name": {"type": "string"},
-          "measurementClass": {"const": "watch"},
-          "sourceOwner": {"enum": ["candidate", "kit"]}
+          "name": {
+            "type": "string"
+          },
+          "measurementClass": {
+            "const": "watch"
+          },
+          "sourceOwner": {
+            "enum": [
+              "candidate",
+              "kit"
+            ]
+          }
         }
       }
     },
-    "gaps": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
   }
 }

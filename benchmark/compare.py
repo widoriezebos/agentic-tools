@@ -34,14 +34,23 @@ class CompareError(RuntimeError):
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="benchmark/compare.sh",
-        usage="benchmark/compare.sh <baseline-cohort-id> <candidate-cohort-id>",
+        usage="benchmark/compare.sh <baseline-cohort-id> <candidate-cohort-id>\n"
+              "       benchmark/compare.sh --configurations <cohort-id> <cohort-id> [...]   (report, no verdict)",
     )
-    parser.add_argument("baseline_cohort_id")
-    parser.add_argument("candidate_cohort_id")
+    parser.add_argument("--configurations", action="store_true",
+                        help="report several cohorts of the SAME case version under DIFFERENT configurations side by side; never a verdict")
+    parser.add_argument("cohort_ids", nargs="+")
     parsed = parser.parse_args()
-    for value in (parsed.baseline_cohort_id, parsed.candidate_cohort_id):
+    for value in parsed.cohort_ids:
         if ID_RE.fullmatch(value) is None:
             parser.error(f"invalid cohort id: {value}")
+    if parsed.configurations:
+        if len(parsed.cohort_ids) < 2:
+            parser.error("--configurations needs at least two cohort ids")
+        return parsed
+    if len(parsed.cohort_ids) != 2:
+        parser.error("exactly two cohort ids: <baseline-cohort-id> <candidate-cohort-id>")
+    parsed.baseline_cohort_id, parsed.candidate_cohort_id = parsed.cohort_ids
     if parsed.baseline_cohort_id == parsed.candidate_cohort_id:
         parser.error("baseline and candidate cohort ids must differ")
     return parsed
@@ -120,25 +129,48 @@ def atomic_text(path: Path, value: str) -> None:
         raise
 
 
+PAIR_FIELDS = ("caseId", "caseVersion", "caseTree", "configId", "configVersion", "configTree")
+
+
+def aliases() -> dict[str, Any]:
+    try:
+        return json.loads((KIT / "aliases.json").read_text(encoding="utf-8")).get("aliases", {})
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def normalize_pair(value: dict[str, Any], side: str) -> dict[str, Any]:
+    """A schema-2 record names the pair and its pins. A schema-1 record names
+    a retired spec id: it is resolved through aliases.json to the pair it ran,
+    keeps legacyId/legacyVersionLabel, and has no pins (None) — such a record
+    can never be verdict-compared against a pinned one, only against another
+    legacy record of the same alias (the tuple carries the None pins)."""
+    if value.get("schemaVersion") == 2:
+        return value
+    legacy = value.get("benchmarkSpecId")
+    entry = aliases().get(legacy)
+    if entry is None:
+        raise CompareError(f"{side} cohort record names an unknown legacy spec id {legacy!r}: no alias resolves it")
+    value = dict(value)
+    value.update({"caseId": entry["case"], "caseVersion": entry["caseVersion"], "caseTree": None,
+                  "configId": entry["config"], "configVersion": entry["configVersion"], "configTree": None,
+                  "legacyId": legacy, "legacyVersionLabel": value.get("benchmarkSpecVersion")})
+    return value
+
+
 def cohort_record(cohort_id: str, side: str) -> dict[str, Any]:
     value = load_object(RESULTS / "cohorts" / f"{cohort_id}.json", f"{side} cohort record")
-    required = {
-        "schemaVersion",
-        "cohortId",
-        "benchmarkSpecId",
-        "benchmarkSpecVersion",
-        "measuringKitVersion",
-        "proposalId",
-        "repetitionCount",
-        "machineFingerprint",
-        "roster",
-        "createdAt",
-    }
+    version = value.get("schemaVersion")
+    if version == 2:
+        required = {"schemaVersion", "cohortId", *PAIR_FIELDS, "measuringKitVersion", "proposalId", "repetitionCount", "machineFingerprint", "roster", "createdAt"}
+    else:
+        required = {"schemaVersion", "cohortId", "benchmarkSpecId", "benchmarkSpecVersion", "measuringKitVersion", "proposalId", "repetitionCount", "machineFingerprint", "roster", "createdAt"}
     missing = sorted(required - set(value))
     if missing:
         raise CompareError(f"{side} cohort record is missing: {', '.join(missing)}")
-    if value.get("schemaVersion") != 1 or value.get("cohortId") != cohort_id:
+    if version not in (1, 2) or value.get("cohortId") != cohort_id:
         raise CompareError(f"{side} cohort record identity is invalid")
+    value = normalize_pair(value, side)
     count = value.get("repetitionCount")
     if not isinstance(count, int) or isinstance(count, bool) or count < 1:
         raise CompareError(f"{side} cohort repetitionCount is invalid")
@@ -162,10 +194,17 @@ def scorecard_directory(cohort_id: str, side: str) -> tuple[str, Path]:
 
 
 def comparability_tuple(card: dict[str, Any]) -> dict[str, Any]:
+    """Design §3: the pair (case and configuration versions) and their pinned
+    object ids, plus everything the tuple always carried. Equal tuples are
+    necessary for a metasystem verdict; nothing here loosens the old checks."""
     identity = card["identity"]
     return {
-        "benchmarkSpecId": identity["benchmarkSpecId"],
-        "benchmarkSpecVersion": identity["benchmarkSpecVersion"],
+        "caseId": identity.get("caseId"),
+        "caseVersion": identity.get("caseVersion"),
+        "caseTree": identity.get("caseTree"),
+        "configId": identity.get("configId"),
+        "configVersion": identity.get("configVersion"),
+        "configTree": identity.get("configTree"),
         "measuringKitVersion": identity["measuringKitVersion"],
         "roster": identity["roster"],
         "fences": identity["fences"],
@@ -199,8 +238,12 @@ def scorecards(record: dict[str, Any], side: str) -> tuple[str, list[dict[str, A
             )
         identity = card["identity"]
         expected_identity = {
-            "benchmarkSpecId": record["benchmarkSpecId"],
-            "benchmarkSpecVersion": record["benchmarkSpecVersion"],
+            "caseId": record["caseId"],
+            "caseVersion": record["caseVersion"],
+            "caseTree": record["caseTree"],
+            "configId": record["configId"],
+            "configVersion": record["configVersion"],
+            "configTree": record["configTree"],
             "measuringKitVersion": record["measuringKitVersion"],
             "candidateSha": directory_sha,
             "cohortId": cohort_id,
@@ -268,9 +311,25 @@ def proposal(record: dict[str, Any], candidate_sha: str) -> tuple[dict[str, Any]
         raise CompareError("candidate proposal targetMetric is missing")
     if value.get("direction") not in {"min", "max"}:
         raise CompareError("candidate proposal direction is invalid")
-    specs = value.get("specs")
-    if not isinstance(specs, list) or not specs or not all(isinstance(item, str) for item in specs):
-        raise CompareError("candidate proposal specs are invalid")
+    if value.get("schemaVersion", 1) == 2:
+        pairs = value.get("benchmarks")
+        if not isinstance(pairs, list) or not pairs or not all(
+            isinstance(item, dict) and all(isinstance(item.get(k), str) and item[k] for k in ("case", "caseVersion", "config", "configVersion")) for item in pairs
+        ):
+            raise CompareError("candidate proposal benchmarks are invalid: each names case, caseVersion, config, configVersion")
+    else:
+        specs = value.get("specs")
+        if not isinstance(specs, list) or not specs or not all(isinstance(item, str) for item in specs):
+            raise CompareError("candidate proposal specs are invalid")
+        table = aliases()
+        unknown = [item for item in specs if item not in table]
+        if unknown:
+            raise CompareError(f"candidate proposal (schema 1) names spec ids with no alias: {', '.join(unknown)}")
+        value = dict(value)
+        value["benchmarks"] = [
+            {"case": table[item]["case"], "caseVersion": table[item]["caseVersion"], "config": table[item]["config"], "configVersion": table[item]["configVersion"], "legacyId": item}
+            for item in specs
+        ]
     for name in ("candidateBranch", "author"):
         if not isinstance(value.get(name), str) or not value[name]:
             raise CompareError(f"candidate proposal {name} is missing")
@@ -298,6 +357,27 @@ def proposal(record: dict[str, Any], candidate_sha: str) -> tuple[dict[str, Any]
     if committed_at >= timestamp(record["createdAt"], "candidate cohort createdAt"):
         raise CompareError("candidate proposal commit does not predate the cohort record")
     return value, commit
+
+
+def pinned_documents(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """The case.json and configuration a cohort ran, read from the git objects
+    its record pins. Without pins (a legacy record) the alias's current
+    versions are read and the caller is told so."""
+    if record.get("caseTree") and record.get("configTree"):
+        case_blob = git("cat-file", "-p", f"{record['caseTree']}:case.json", check=False)
+        config_blob = git("cat-file", "-p", record["configTree"], check=False)
+        if case_blob.returncode != 0 or config_blob.returncode != 0:
+            raise CompareError(
+                "the cohort's pinned case or configuration object is unreachable in this clone; "
+                f"fetch its measuring commit ({record.get('measuringMetasystemSha')}) and retry"
+            )
+        try:
+            return json.loads(case_blob.stdout), json.loads(config_blob.stdout), True
+        except json.JSONDecodeError as error:
+            raise CompareError(f"pinned case or configuration document is not valid JSON: {error}") from error
+    case_path = KIT / "cases" / str(record["caseId"]) / str(record["caseVersion"]) / "case.json"
+    config_path = KIT / "configurations" / str(record["configId"]) / f"{record['configVersion']}.json"
+    return load_object(case_path, "case document"), load_object(config_path, "configuration document"), False
 
 
 def metric_map(card: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -415,7 +495,7 @@ def compare_metrics(
         ceiling = reference.get("ceiling")
         noise = reference.get("noiseFloor")
         if not eligible:
-            reasons.append("the spec is comparison-ineligible")
+            reasons.append("the benchmark is comparison-ineligible")
         if not values_complete:
             reasons.append("one or more repetitions have no scalar measurement")
         if direction not in {"min", "max"}:
@@ -480,6 +560,47 @@ def compare_metrics(
     return output
 
 
+def configurations_report(cohort_ids: list[str]) -> int:
+    """Design §3, second axis: the same case version under different
+    configurations, side by side, as a REPORT — it never emits a verdict.
+    Every cohort must name the same caseId@caseVersion (and caseTree when
+    pinned), kit version, machine fingerprint and measuring sha; the
+    configurations may (and should) differ."""
+    rows = []
+    for cohort_id in cohort_ids:
+        record = cohort_record(cohort_id, cohort_id)
+        _, cards, _ = scorecards(record, cohort_id)
+        rows.append((record, cards))
+    keys = ("caseId", "caseVersion", "caseTree")
+    first = rows[0][0]
+    for record, _ in rows[1:]:
+        for key in keys:
+            if record.get(key) != first.get(key):
+                raise CompareError(f"cohorts do not share {key}: {first.get(key)} vs {record.get(key)} — a configuration report holds the case constant")
+        for key in ("measuringKitVersion", "measuringMetasystemSha"):
+            if record.get(key) != first.get(key):
+                raise CompareError(f"cohorts do not share {key}; the report holds it constant")
+        if record.get("machineFingerprint") != first.get("machineFingerprint"):
+            raise CompareError("cohorts do not share a machine fingerprint; the report holds it constant")
+    metric_names: list[str] = []
+    for _, cards in rows:
+        for metric in cards[0]["productMetrics"]:
+            if metric["name"] not in metric_names:
+                metric_names.append(metric["name"])
+    lines = [f"# Configuration report: {first['caseId']}@{first['caseVersion']}", "",
+             f"Kit {first['measuringKitVersion']}, measuring sha {first['measuringMetasystemSha']}. No verdict: configurations are the independent variable.", "",
+             "| Metric | " + " | ".join(f"{r['configId']}@{r['configVersion']} ({r['cohortId']})" for r, _ in rows) + " |",
+             "| --- | " + " | ".join("---:" for _ in rows) + " |"]
+    for name in metric_names:
+        cells = []
+        for _, cards in rows:
+            values = [metric_map(card).get(name, {}).get("value") for card in cards]
+            cells.append(str(median(values)) if all(number(v) for v in values) else "n/a")
+        lines.append(f"| {name} | " + " | ".join(cells) + " |")
+    print("\n".join(lines))
+    return 0
+
+
 def markdown(document: dict[str, Any]) -> str:
     lines = [
         f"# Benchmark comparison: {document['baselineCohortId']} vs {document['candidateCohortId']}",
@@ -513,6 +634,12 @@ def markdown(document: dict[str, Any]) -> str:
 
 def main() -> int:
     args = arguments()
+    if args.configurations:
+        try:
+            return configurations_report(args.cohort_ids)
+        except (CompareError, OSError, ValueError) as error:
+            print(f"compare error: {error}", file=sys.stderr)
+            return 1
     try:
         baseline_record = cohort_record(args.baseline_cohort_id, "baseline")
         candidate_record = cohort_record(args.candidate_cohort_id, "candidate")
@@ -527,20 +654,30 @@ def main() -> int:
             raise CompareError("cohort comparability tuple mismatch: " + ", ".join(differing))
         candidate_attestation = attest(candidate_sha)
         proposal_value, proposal_commit = proposal(candidate_record, candidate_sha)
-        if baseline_record["benchmarkSpecId"] not in proposal_value["specs"]:
-            raise CompareError("candidate proposal does not name the compared spec")
+        compared = {k: baseline_record[k] for k in ("caseId", "caseVersion", "configId", "configVersion")}
+        named = any(
+            (item["case"], item["caseVersion"], item["config"], item["configVersion"]) == (compared["caseId"], compared["caseVersion"], compared["configId"], compared["configVersion"])
+            for item in proposal_value["benchmarks"]
+        )
+        if not named:
+            raise CompareError("candidate proposal does not name the compared benchmark (case version under configuration version)")
 
-        spec_path = KIT / "specs" / str(baseline_record["benchmarkSpecId"]) / "manifest.json"
-        manifest = load_object(spec_path, "benchmark spec manifest")
-        if manifest.get("version") != baseline_record["benchmarkSpecVersion"]:
-            raise CompareError("cohort spec version differs from the installed manifest")
-        major = str(manifest.get("version", "")).split(".", 1)[0]
-        eligible = manifest.get("comparisonEligible") is True and major != "0"
+        # Eligibility is judged from the RUN's pinned objects, never from
+        # current paths (design §7, r6 J-2): the case document from the
+        # pinned tree, the configuration from the pinned blob. A legacy
+        # (schema-1) cohort has no pins and is read through the alias's
+        # current objects, reported as such.
+        case_doc, config_doc, pinned = pinned_documents(baseline_record)
+        major = str(case_doc.get("version", "")).split(".", 1)[0]
+        eligible = case_doc.get("comparisonEligible") is True and major != "0" and config_doc.get("purpose") == "capability"
         eligibility_reasons: list[str] = []
         if not eligible:
-            eligibility_reasons.append(
-                str(manifest.get("comparisonEligibleNote") or "the installed spec is comparison-ineligible")
-            )
+            if config_doc.get("purpose") != "capability":
+                eligibility_reasons.append(f"configuration {compared['configId']}@{compared['configVersion']} is an orchestration-health probe; its runs are never verdict-eligible")
+            else:
+                eligibility_reasons.append(str(case_doc.get("comparisonEligibleNote") or "the case is comparison-ineligible"))
+        if not pinned:
+            eligibility_reasons.append("legacy cohort without pinned object ids: eligibility read from the alias's current objects")
         metrics = compare_metrics(baseline_cards, candidate_cards, eligible)
         target_name = proposal_value["targetMetric"]
         target_matches = [
@@ -566,7 +703,7 @@ def main() -> int:
             else:
                 overall = "no-verdict"
         document = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "createdAt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "baselineCohortId": args.baseline_cohort_id,
             "candidateCohortId": args.candidate_cohort_id,
@@ -575,7 +712,7 @@ def main() -> int:
             "proposalId": candidate_record["proposalId"],
             "proposalCommit": proposal_commit,
             "targetMetric": target_metric,
-            "specs": [baseline_record["benchmarkSpecId"]],
+            "benchmark": compared,
             "comparisonEligible": eligible,
             "eligibilityReasons": eligibility_reasons,
             "comparabilityTuple": baseline_tuple,
