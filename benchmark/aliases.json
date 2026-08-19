@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "note": "Retired spec ids. Read-only history: each resolves to the case version and configuration version it actually ran, and records the version label its manifest carried (four labels said 0.2 over v0.1 instruments). Alias mode preserves legacy naming end to end (mission id, contract name, instrument tag, legacyId) so pre-migration cohorts stay uniform.",
+  "aliases": {
+    "bm-1": {
+      "case": "taskrun",
+      "caseVersion": "0.1",
+      "config": "cheap",
+      "configVersion": "1",
+      "legacyVersionLabel": "0.1",
+      "note": "manifest label matches the instruments",
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line)"
+    },
+    "bm-2": {
+      "case": "taskrun",
+      "caseVersion": "0.1",
+      "config": "devin-delegate",
+      "configVersion": "1",
+      "legacyVersionLabel": "0.2",
+      "note": "manifest label 0.2 over v0.1 instruments (the boolean gate); relabelled to the version the instruments actually are",
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster"
+    },
+    "bm-2d": {
+      "case": "taskrun",
+      "caseVersion": "0.1",
+      "config": "devin-host",
+      "configVersion": "1",
+      "legacyVersionLabel": "0.2",
+      "note": "manifest label 0.2 over v0.1 instruments (the boolean gate); relabelled to the version the instruments actually are",
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster"
+    },
+    "bm-2dc": {
+      "case": "taskrun",
+      "caseVersion": "0.1",
+      "config": "devin-host-claude-delegate",
+      "configVersion": "1",
+      "legacyVersionLabel": "0.2",
+      "note": "manifest label 0.2 over v0.1 instruments (the boolean gate); relabelled to the version the instruments actually are",
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster"
+    },
+    "bm-2s": {
+      "case": "taskrun",
+      "caseVersion": "0.2",
+      "config": "sol",
+      "configVersion": "1",
+      "legacyVersionLabel": "0.2",
+      "note": "manifest label matches the instruments",
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster (sol delegate roster)"
+    },
+    "bm-2d-og": {
+      "case": "taskrun",
+      "caseVersion": "0.1",
+      "config": "devin-opus-gpt55",
+      "configVersion": "1",
+      "legacyVersionLabel": "0.2",
+      "note": "manifest label 0.2 over v0.1 instruments (the boolean gate); relabelled to the version the instruments actually are",
+      "legacyTitle": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin Opus host / GPT-5.5 delegate roster"
+    }
+  }
+}

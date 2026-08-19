@@ -1,0 +1,73 @@
+{
+  "id": "devin-opus-gpt55",
+  "version": "1",
+  "schemaVersion": 1,
+  "title": "Devin host on claude-opus-5-high, Devin gpt-5-5-high delegates \u2014 orchestration-health probe, Linux only, 12 h fences",
+  "purpose": "orchestration-health",
+  "acceptanceOnly": {
+    "reason": "The human, 2026-08-16: 'I don't want them to run every time so these ones we should only use when testing Devin specifically.' Not part of any standing cadence; a cohort of this spec is started only when devin integration is the thing under test.",
+    "trigger": "devin adapter acceptance (the ACP work and future devin adapter changes)"
+  },
+  "machineConstraint": {
+    "os": "linux",
+    "reason": "VM-only by the human's D83 ruling for Devin-hosted orchestration: the wire probe proved no Devin mode enforces path containment, so an untrusted orchestrator runs only inside the guest. The provisioner refuses this spec on any other operating system."
+  },
+  "roster": {
+    "acceptableEffective": {
+      "gpt-5-5-high": [
+        "gpt-5-5-high-thinking"
+      ]
+    },
+    "delegateRoles": {
+      "code-critic": {
+        "model": "gpt-5-5-high",
+        "runtime": "devin"
+      },
+      "design-critic": {
+        "model": "gpt-5-5-high",
+        "runtime": "devin"
+      },
+      "implementer": {
+        "model": "gpt-5-5-high",
+        "runtime": "devin"
+      }
+    },
+    "delegates": {
+      "devin": "gpt-5-5-high"
+    },
+    "host": {
+      "model": "claude-opus-5-high",
+      "runtime": "devin"
+    },
+    "ruling": "Devin as the orchestrator on Claude Opus 5 High, with every delegated benchmark role also running through Devin but pinned to GPT-5.5 High. This sibling exists because a single-runtime roster can now carry separate host and delegate model identities; it does not amend bm-2d's same-model Devin probe.",
+    "independence": "session-only",
+    "independenceReason": "Declared on purpose, not by omission: every delegated role runs devin/gpt-5-5-high by the human's request, so the code critic shares the implementer's effective model. The collaboration loop (docs/orchestration.md step 4) then requires independence=session-only, which provisioning writes into metasystem.conf and the merge check records in gate evidence. This spec is an orchestration-health probe (see comparisonEligibleNote), so session-level independence is the honest choice; a capability spec must instead give the code critic a different effective model via delegateRoles."
+  },
+  "fences": {
+    "approved": "Structural fences as bm-2d EXCEPT ledgerNoGainBudget=8 (bm-2d: 5): raised to the cycle fence so the contract seals under the binary-gate fuse rule (issue #4); this changes when an unproductive mission parks and is a deliberate control difference, recorded here. jobCapMin/hostTurnCapMin/wallClockHours revised 2026-08-10 by the human's direct ruling in session ('change the caps for Devin in such a way that you will think it will complete the mission'); the 2026-08-05 blanket approval covers the untouched fences; this sibling roster uses the human-requested Opus host and GPT-5.5 Devin delegates.",
+    "concurrency": 2,
+    "cycles": 8,
+    "hostTurnCapMin": 240,
+    "jobCapMin": 180,
+    "jobs": 12,
+    "ledgerCycleBudget": 8,
+    "ledgerNoGainBudget": 8,
+    "wallClockHours": 12
+  },
+  "environment": {
+    "delegateNetwork": "allowed"
+  },
+  "exposure": {
+    "statement": "EUR:40",
+    "note": "This roster uses Devin's Claude Opus 5 High host model and GPT-5.5 High delegate model by explicit human request; EUR:40 remains a pre-run exposure note, with the mission fences as the operative runaway protection until recorded usage replaces the estimate."
+  },
+  "notes": {
+    "roster": "Pinned to exact Devin CLI model identifiers listed by `devin models list --format json` on 2026-08-18: claude-opus-5-high for the host and gpt-5-5-high for delegated roles. Devin reports GPT-5.5 High Thinking in transcripts, which canonicalizes to gpt-5-5-high-thinking; the acceptableEffective entry records that explicit display variant.",
+    "fences": "Revised 2026-08-10 by the human's ruling, made while reviewing five repetitions across two delegate models that all scored acceptance 0.018868 under jobCapMin=15: caps exist to protect against a stuck loop burning money, NOT to define the experiment \u2014 an agent must get the chance to COMPLETE its mission, because completion (and its time and cost) is itself a reported result and a capped run measures the fence rather than the agent. Evidence for the sizes: a 15-minute timeout killed an implementer worktree holding 1,322 compiling lines (the 2026-08-09 post-mortem), and Devin single inference calls measure ~5 minutes, so substantive jobs get a 180-minute circuit breaker, host turns 240 minutes (a turn waits on its longest job), and the mission 12 wall-clock hours. Previous fences (jobCapMin 15, hostTurnCapMin 20, wallClockHours 3) produced the flat-floor cohorts recorded under version 0.1. The other fences stay: cycles, jobs, concurrency, and the ledger budgets are loop protection, not time pressure; this roster sibling sets ledgerNoGainBudget equal to cycles because the current contract validator rejects a binary gate whose no-gain budget can park perfect play before all cycles are available. Cost exposure rises with the wall-clock ceiling; the fences still stop a runaway long before the exposure does."
+  },
+  "provenance": {
+    "legacyId": "bm-2d-og",
+    "legacyVersionLabel": "0.2",
+    "case": "taskrun@0.1"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "devin-host-claude-delegate",
+  "version": "1",
+  "schemaVersion": 1,
+  "title": "Devin swe-1-7 host, Claude Opus delegates \u2014 orchestration-health probe, Linux only, 12 h fences",
+  "purpose": "orchestration-health",
+  "acceptanceOnly": {
+    "reason": "The human, 2026-08-16: 'I don't want them to run every time so these ones we should only use when testing Devin specifically.' Not part of any standing cadence; a cohort of this spec is started only when devin integration is the thing under test.",
+    "trigger": "devin adapter acceptance (the ACP work and future devin adapter changes)"
+  },
+  "machineConstraint": {
+    "os": "linux",
+    "reason": "VM-only by the human's D83 ruling ('And both should run only inside the virtual machine'): the wire probe proved no devin mode enforces path containment, so an untrusted orchestrator runs only inside the guest. The provisioner refuses this spec on any other OS."
+  },
+  "roster": {
+    "delegates": {
+      "claude": "claude-opus-5"
+    },
+    "host": {
+      "model": "swe-1-7",
+      "runtime": "devin"
+    },
+    "ruling": "Devin as the orchestrator; every delegate role \u2014 implementer and critique alike \u2014 runs claude on opus 5. Ruled by the human 2026-08-16 (D83) as the fourth ACP acceptance benchmark: 'So only the orchestrator is Devin, the rest is Claude in opus 5.' Together with bm-2d this isolates the orchestration variable: bm-2d asks whether devin-hosted orchestration works at all, and bm-2dc asks whether a devin host can carry strong delegates.",
+    "independence": "session-only"
+  },
+  "fences": {
+    "approved": "jobCapMin/hostTurnCapMin/wallClockHours revised 2026-08-10 by the human's direct ruling in session ('change the caps for Devin in such a way that you will think it will complete the mission'); the 2026-08-05 blanket approval covers the untouched fences; still an experiment per the promotion rule",
+    "concurrency": 2,
+    "cycles": 8,
+    "hostTurnCapMin": 240,
+    "jobCapMin": 180,
+    "jobs": 12,
+    "ledgerCycleBudget": 8,
+    "ledgerNoGainBudget": 5,
+    "wallClockHours": 12
+  },
+  "environment": {
+    "delegateNetwork": "allowed"
+  },
+  "exposure": {
+    "statement": "EUR:40",
+    "note": "An estimate on the cheap roster (Opus host, gpt-5.6-luna delegates), revised down from EUR:75 when the human capped cost. No BM-1 run has happened, so this is a guess the first trial's recorded usage replaces; the fences stop the run long before the exposure does."
+  },
+  "notes": {
+    "roster": "Pinned by exact model identifier when a run is prepared, never by a phrase like 'cheap models', because comparability requires two cohorts to share an identical roster. The requested identifier is swe-1-7; Devin reports the display name SWE-1.7, which canonicalises to the same identifier.",
+    "fences": "Revised 2026-08-10 by the human's ruling, made while reviewing five repetitions across two delegate models that all scored acceptance 0.018868 under jobCapMin=15: caps exist to protect against a stuck loop burning money, NOT to define the experiment \u2014 an agent must get the chance to COMPLETE its mission, because completion (and its time and cost) is itself a reported result and a capped run measures the fence rather than the agent. Evidence for the sizes: a 15-minute timeout killed an implementer worktree holding 1,322 compiling lines (the 2026-08-09 post-mortem), and Devin single inference calls measure ~5 minutes, so substantive jobs get a 180-minute circuit breaker, host turns 240 minutes (a turn waits on its longest job), and the mission 12 wall-clock hours. Previous fences (jobCapMin 15, hostTurnCapMin 20, wallClockHours 3) produced the flat-floor cohorts recorded under version 0.1. The other fences stay: cycles, jobs, concurrency, and the ledger budgets are loop protection, not time pressure. Cost exposure rises with the wall-clock ceiling; the fences still stop a runaway long before the exposure does."
+  },
+  "provenance": {
+    "legacyId": "bm-2dc",
+    "legacyVersionLabel": "0.2",
+    "case": "taskrun@0.1"
+  }
+}

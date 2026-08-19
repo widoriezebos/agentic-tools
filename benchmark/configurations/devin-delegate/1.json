@@ -1,0 +1,50 @@
+{
+  "id": "devin-delegate",
+  "version": "1",
+  "schemaVersion": 1,
+  "title": "Opus host, Devin swe-1-7 delegates, 12 h fences",
+  "purpose": "capability",
+  "roster": {
+    "delegates": {
+      "devin": "swe-1-7"
+    },
+    "host": {
+      "model": "claude-opus-5",
+      "runtime": "claude"
+    },
+    "ruling": "Delegates run devin swe-1-7. This spec exists because bm-1's roster carries the human's cost ruling of 2026-08-05 (luna, not sol) and that ruling stays untouched; on 2026-08-08 the human chose a separate spec over amending bm-1. Two facts a reader needs. First, swe-1-7 is free and in beta, so the cost reasoning that chose luna for bm-1 does not transfer and is not claimed to. Second, Devin runs UNCONTAINED: --sandbox is refused by organisation policy, and a shell command demonstrably writes outside the declared write root, so no boundary this system enforces applies to a Devin delegate. The human accepted that globally on 2026-08-08, stating they intend to run this work inside a VM. The acceptance is not specific to this benchmark and this manifest does not claim it is; a disposable target supplies no containment against a shell escape.",
+    "acceptableEffective": {
+      "swe-1-7": [
+        "swe-1-7-max"
+      ]
+    },
+    "independence": "session-only"
+  },
+  "fences": {
+    "approved": "jobCapMin/hostTurnCapMin/wallClockHours revised 2026-08-10 by the human's direct ruling in session ('change the caps for Devin in such a way that you will think it will complete the mission'); the 2026-08-05 blanket approval covers the untouched fences; still an experiment per the promotion rule",
+    "concurrency": 2,
+    "cycles": 8,
+    "hostTurnCapMin": 240,
+    "jobCapMin": 180,
+    "jobs": 12,
+    "ledgerCycleBudget": 8,
+    "ledgerNoGainBudget": 5,
+    "wallClockHours": 12
+  },
+  "environment": {
+    "delegateNetwork": "allowed"
+  },
+  "exposure": {
+    "statement": "EUR:40",
+    "note": "An estimate on the cheap roster (Opus host, gpt-5.6-luna delegates), revised down from EUR:75 when the human capped cost. No BM-1 run has happened, so this is a guess the first trial's recorded usage replaces; the fences stop the run long before the exposure does."
+  },
+  "notes": {
+    "roster": "Pinned by exact model identifier when a run is prepared, never by a phrase like 'cheap models', because comparability requires two cohorts to share an identical roster. The requested identifier is swe-1-7; Devin reports the display name SWE-1.7, which canonicalises to the same identifier.",
+    "fences": "Revised 2026-08-10 by the human's ruling, made while reviewing five repetitions across two delegate models that all scored acceptance 0.018868 under jobCapMin=15: caps exist to protect against a stuck loop burning money, NOT to define the experiment \u2014 an agent must get the chance to COMPLETE its mission, because completion (and its time and cost) is itself a reported result and a capped run measures the fence rather than the agent. Evidence for the sizes: a 15-minute timeout killed an implementer worktree holding 1,322 compiling lines (the 2026-08-09 post-mortem), and Devin single inference calls measure ~5 minutes, so substantive jobs get a 180-minute circuit breaker, host turns 240 minutes (a turn waits on its longest job), and the mission 12 wall-clock hours. Previous fences (jobCapMin 15, hostTurnCapMin 20, wallClockHours 3) produced the flat-floor cohorts recorded under version 0.1. The other fences stay: cycles, jobs, concurrency, and the ledger budgets are loop protection, not time pressure. Cost exposure rises with the wall-clock ceiling; the fences still stop a runaway long before the exposure does."
+  },
+  "provenance": {
+    "legacyId": "bm-2",
+    "legacyVersionLabel": "0.2",
+    "case": "taskrun@0.1"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "cheap",
+  "version": "1",
+  "schemaVersion": 1,
+  "title": "Opus host, gpt-5.6-luna delegates (Claude Opus code critic), 3 h fences",
+  "purpose": "capability",
+  "roster": {
+    "host": {
+      "runtime": "claude",
+      "model": "claude-opus-5"
+    },
+    "delegates": {
+      "codex": "gpt-5.6-luna",
+      "claude": "claude-opus-5"
+    },
+    "ruling": "Benchmark missions run their host on Opus, never Fable (human, 2026-08-05). Delegates run gpt-5.6-luna, not gpt-5.6-sol: the human capped cost explicitly on the same day, before any benchmark had ever run, and an unmeasured per-run cost is not a thing to discover with the expensive model. | 2026-08-18: Wido ruled the code critic runs on claude/claude-opus-5 as bm-1's STANDING roster \u2014 a fresh ruling this date (his mission-scoped vm-smoke-5 option-A answer inspired it but authorized one mission only, per the issue-8/7 critique); implementer and design critic stay on gpt-5.6-luna under the 2026-08-05 cost ruling.",
+    "delegateRoles": {
+      "design-critic": {
+        "runtime": "codex",
+        "model": "gpt-5.6-luna"
+      },
+      "implementer": {
+        "runtime": "codex",
+        "model": "gpt-5.6-luna"
+      },
+      "code-critic": {
+        "runtime": "claude",
+        "model": "claude-opus-5"
+      }
+    }
+  },
+  "fences": {
+    "cycles": 8,
+    "jobs": 12,
+    "concurrency": 2,
+    "jobCapMin": 15,
+    "wallClockHours": 3,
+    "hostTurnCapMin": 20,
+    "ledgerCycleBudget": 8,
+    "ledgerNoGainBudget": 8,
+    "approved": "2026-08-05, under the human's blanket approval; still an experiment per the promotion rule"
+  },
+  "hostCaps": {
+    "maxTurns": 150,
+    "maxBudgetUsd": "5.00"
+  },
+  "environment": {
+    "delegateNetwork": "allowed"
+  },
+  "exposure": {
+    "statement": "EUR:40",
+    "note": "EUR:40 is the TOTAL run ceiling Wido re-confirmed on 2026-08-18 for the MIXED roster: Opus host, gpt-5.6-luna design/implementation delegates, and the claude-opus-5 code critic all spend under this one figure; the sealed host.max-budget-usd=5.00 bounds host spend per turn only, not the total. Revised down from EUR:75 when the human first capped cost; the first trial's recorded usage recalibrates it."
+  },
+  "notes": {
+    "roster": "Pinned by exact model identifier when a run is prepared, never by a phrase like 'cheap models', because comparability requires two cohorts to share an identical roster.",
+    "fences": "Provisional and unapproved. These are an experiment, not a belief: trial runs record what they consume and each fence becomes ceil(observed_max * 1.5), excluding trials that parked at that fence. A human must approve them before any run spends money."
+  },
+  "provenance": {
+    "legacyId": "bm-1",
+    "legacyVersionLabel": "0.1",
+    "case": "taskrun@0.1"
+  }
+}
