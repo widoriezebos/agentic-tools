@@ -37,6 +37,114 @@ wait_until() { # name, shell predicate...
   done
 }
 
+# --- Attempt-based patience for census waits (plans/patience-attempts.md) ------
+# `wait_until` above is wall-clock: correct for OS-event waits (a PID dying),
+# but load-fragile for waits on a CENSUS PASS's effect (KI-37). `wait_for_census`
+# measures patience in the census actor's ATTEMPTS (published scan passes,
+# counted by the monotonic `scanSeq` the watcher stamps) instead of seconds:
+#  - Tier 1 (semantic): succeed when the predicate holds on a PROVABLY-FRESH pass
+#    (scanSeq >= base+2, which — the watcher loop being single-flight — proves the
+#    pass read input written after `base` was sampled). Fail once K fresh passes
+#    (base+2 .. base+1+K) have completed still-false: a genuine defect, not a slow
+#    box. Load-independent for the cumulative wait.
+#  - Tier 2 (failsafe): if NO pass has COMPLETED for a generous silence window
+#    (derived from the verdict's own intervalSec, never an env guess), abort so a
+#    wedged census can't hang CI. Coarse and honestly labelled.
+# Predicates are LEVEL-TRIGGERED: the fixture plants state that persists across
+# passes, so once true it stays true until observed (what makes freshness and
+# skipped-publication safe). Each poll snapshots last-census.json ONCE so the
+# marker and the predicate bind to the SAME verdict.
+CENSUS_ATTEMPT_BUDGET=${METASYSTEM_CENSUS_ATTEMPT_BUDGET:-2}   # K: fresh passes allowed
+CENSUS_SILENCE_FLOOR_SEC=${METASYSTEM_CENSUS_SILENCE_FLOOR_SEC:-60}
+CENSUS_SILENCE_MULT=${METASYSTEM_CENSUS_SILENCE_MULT:-30}
+
+census_field() { # snapshot-file, field -> value or empty (never fails the caller)
+  "$ms" json get --file "$1" --field "$2" 2>/dev/null || true
+}
+
+wait_for_census() { # name, predicate-fn, [predicate-args...]
+  local name=$1 predicate=$2; shift 2
+  local snap="$tmp/wait-census-snapshot.json"
+  local base m interval t_silence last_marker last_adv rebaselines=0
+  local max_rebaselines=${METASYSTEM_CENSUS_MAX_REBASELINES:-5}
+  cp "$last" "$snap" 2>/dev/null || : >"$snap"
+  base=$(census_field "$snap" scanSeq); [[ "$base" =~ ^[0-9]+$ ]] || base=0
+  last_marker=$base; last_adv=$SECONDS
+  while :; do
+    cp "$last" "$snap" 2>/dev/null || : >"$snap"   # atomic-rename source => a consistent snapshot
+    m=$(census_field "$snap" scanSeq)
+    if [[ "$m" =~ ^[0-9]+$ ]]; then
+      if (( m < last_marker )); then
+        # A fresh writer took over (seed-from-file normally prevents this);
+        # re-baseline so the new writer earns its own K fresh passes. Bound it:
+        # a writer that OSCILLATES scanSeq would otherwise reset both tiers
+        # forever, so repeated regressions are themselves a failure (an unstable
+        # writer), not something to wait out indefinitely.
+        rebaselines=$((rebaselines + 1))
+        if (( rebaselines > max_rebaselines )); then
+          echo "$name: census scanSeq regressed $rebaselines times (writer unstable; last $last_marker -> $m)" >&2
+          return 1
+        fi
+        base=$m; last_marker=$m; last_adv=$SECONDS
+      elif (( m > last_marker )); then
+        last_marker=$m; last_adv=$SECONDS
+      fi
+      if (( m >= base + 2 )) && "$predicate" "$snap" "$@"; then
+        return 0
+      fi
+      if (( m >= base + 1 + CENSUS_ATTEMPT_BUDGET )) && ! "$predicate" "$snap" "$@"; then
+        echo "$name: still wrong after $CENSUS_ATTEMPT_BUDGET fresh census passes (scanSeq $base -> $m)" >&2
+        return 1
+      fi
+    fi
+    interval=$(census_field "$snap" intervalSec)
+    [[ "$interval" =~ ^[1-9][0-9]*$ ]] || interval=1
+    t_silence=$(( CENSUS_SILENCE_MULT * interval ))
+    (( t_silence < CENSUS_SILENCE_FLOOR_SEC )) && t_silence=$CENSUS_SILENCE_FLOOR_SEC
+    if (( SECONDS - last_adv >= t_silence )); then
+      echo "$name: no completed census pass for ${t_silence}s (census wedged, or one pass exceeded it; scanSeq stuck at $last_marker)" >&2
+      return 1
+    fi
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+}
+
+# Level-triggered census predicates. Each takes the snapshot file as $1; the
+# planted fixture state makes them stay true until observed. `inventory_has`
+# (defined below) is already file-first, so it is used directly as a predicate.
+pred_any() { # snapshot (ignored): satisfied by any fresh pass — "the census ran again"
+  return 0
+}
+pred_verdict_is() { # snapshot, expected-verdict
+  [[ "$(census_field "$1" verdict)" == "$2" ]]
+}
+pred_error_contains() { # snapshot, substring
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+v = json.load(open(sys.argv[1]))
+raise SystemExit(0 if any(sys.argv[2] in e for e in v.get("errors", [])) else 1)
+PY
+}
+pred_verdict_and_error_prefix() { # snapshot, verdict, error-prefix
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+v = json.load(open(sys.argv[1]))
+raise SystemExit(0 if v.get("verdict") == sys.argv[2]
+                 and any(e.startswith(sys.argv[3]) for e in v.get("errors", [])) else 1)
+PY
+}
+pred_raced_exit() { # snapshot: a RACED-EXIT diagnostic is present (freshness via scanSeq)
+  python3 - "$1" <<'PY'
+import json, sys
+v = json.load(open(sys.argv[1]))
+raise SystemExit(0 if any(str(x).startswith("RACED-EXIT") for x in v.get("diagnostics", [])) else 1)
+PY
+}
+pred_path_absent() { # snapshot (ignored), path
+  [[ ! -e "$2" ]]
+}
+# -----------------------------------------------------------------------------
+
 stop_owned_pid() { # name, pid, start
   local name=$1 pid=$2 start=$3 started deadline elapsed
   process_identity_alive "$pid" "$start" || return 0
@@ -562,7 +670,7 @@ value[pid] = {"pidStartedAt": started,
               "command": "fixture-supervisor metasystem-job-owned"}
 path.write_text(json.dumps(value) + "\n")
 PY
-wait_until "three-class census" inventory_has "$last" ANNOUNCED "$announced_pid"
+wait_for_census "three-class census" inventory_has ANNOUNCED "$announced_pid"
 inventory_has "$last" UNTRACKED "$raw_pid"
 inventory_has "$last" UNTRACKED "$custody_pid"
 inventory_has "$last" UNTRACKED "$worktree_pid"
@@ -591,56 +699,44 @@ python3 - "$repo/artifacts/agents/jobs/owned.json" "$custody_start" <<'PY'
 import json, sys
 p=sys.argv[1]; v=json.load(open(p)); v["custodyProcesses"][0]["pidStartedAt"]=int(sys.argv[2]); v["custodyProcesses"][0]["instanceTag"]="wrong-tag"; json.dump(v,open(p,"w"))
 PY
-previous_epoch=$(json_field "$last" completedAtEpoch)
-wait_until "S4-2 wrong-tag census pass" bash -c '[[ $(python3 -c '\''import json,sys; print(json.load(open(sys.argv[1]))["completedAtEpoch"])'\'' "$1") -gt "$2" ]]' _ "$last" "$previous_epoch"
+wait_for_census "S4-2 wrong-tag census pass" pred_any
 inventory_has "$last" UNTRACKED "$custody_pid" \
   || { echo "S4-2: wrong instanceTag gained custody" >&2; exit 1; }
 python3 - "$repo/artifacts/agents/jobs/owned.json" <<'PY'
 import json, sys
 p=sys.argv[1]; v=json.load(open(p)); v["custodyProcesses"][0]["instanceTag"]=v["instanceTag"]; json.dump(v,open(p,"w"))
 PY
-wait_until "S4-2 child custody exact join" inventory_has "$last" CUSTODY "$custody_pid"
+wait_for_census "S4-2 child custody exact join" inventory_has CUSTODY "$custody_pid"
 
 # CENSUS-FAILED covers total enumeration failure and unresolved scope, while a
 # process-table race that has already exited is a named exclusion (S4-6).
 printf '{broken\n' >"$process_fixture"
-wait_until "S4-6 enumeration failure" bash -c '[[ $(python3 -c '\''import json,sys; print(json.load(open(sys.argv[1]))["verdict"])'\'' "$1" 2>/dev/null) == CENSUS-FAILED ]]' _ "$last"
+wait_for_census "S4-6 enumeration failure" pred_verdict_is CENSUS-FAILED
 # The engine surfaces the enumeration failure in the verdict's errors
 # (the shell watcher's census.log transcript retired with it).
-wait_until "S4-6 enumeration surfaced" bash -c \
-  '[[ -n $(python3 -c '\''import json,sys; print("".join(e for e in json.load(open(sys.argv[1])).get("errors",[]) if "enumeration" in e))'\'' "$1" 2>/dev/null) ]]' _ "$last"
+wait_for_census "S4-6 enumeration surfaced" pred_error_contains enumeration
 printf '[]\n' >"$process_fixture"
-wait_until "census recovery" bash -c '[[ $(python3 -c '\''import json,sys; print(json.load(open(sys.argv[1]))["verdict"])'\'' "$1") == SUCCESS ]]' _ "$last"
+wait_for_census "census recovery" pred_verdict_is SUCCESS
 
 race_pid=41009
-previous_epoch=$(json_field "$last" completedAtEpoch)
 write_process_fixture "$process_fixture" "$race_pid|1|$race_pid|$now|metasystem-fake-agent raced|$repo"
 python3 - "$process_fixture" <<'PY'
 import json,sys
 p=sys.argv[1]; v=json.load(open(p)); v[0]["alive"]=False; json.dump(v,open(p,"w"))
 PY
-wait_until "S4-6 raced-exit census" bash -c 'python3 - "$1" "$2" <<'\''PY'\''
-import json,sys
-v=json.load(open(sys.argv[1])); raise SystemExit(0 if v["completedAtEpoch"] > int(sys.argv[2]) and any(x.startswith("RACED-EXIT") for x in v["diagnostics"]) else 1)
-PY' _ "$last" "$previous_epoch"
+wait_for_census "S4-6 raced-exit census" pred_raced_exit
 [[ "$(json_field "$last" verdict)" == SUCCESS ]] \
   || { echo "S4-6: exited process race failed the census" >&2; exit 1; }
 
 bad_argv_pid=41010
 write_process_fixture "$process_fixture" "$bad_argv_pid|1|$bad_argv_pid|$now|metasystem-fake-agent --workspace='|$repo"
-wait_until "S4-6 unreadable argv" bash -c 'python3 - "$1" <<'\''PY'\''
-import json,sys
-v=json.load(open(sys.argv[1])); raise SystemExit(0 if v["verdict"]=="CENSUS-FAILED" and any(x.startswith("argv-unreadable:") for x in v["errors"]) else 1)
-PY' _ "$last"
+wait_for_census "S4-6 unreadable argv" pred_verdict_and_error_prefix CENSUS-FAILED argv-unreadable:
 
 bad_start_pid=41011
 write_process_fixture "$process_fixture" "$bad_start_pid|1|$bad_start_pid|-1|metasystem-fake-agent bad-start|$repo"
-wait_until "S4-6 unreadable start time" bash -c 'python3 - "$1" <<'\''PY'\''
-import json,sys
-v=json.load(open(sys.argv[1])); raise SystemExit(0 if v["verdict"]=="CENSUS-FAILED" and any(x.startswith("start-time-unreadable:") for x in v["errors"]) else 1)
-PY' _ "$last"
+wait_for_census "S4-6 unreadable start time" pred_verdict_and_error_prefix CENSUS-FAILED start-time-unreadable:
 printf '[]\n' >"$process_fixture"
-wait_until "S4-6 partial-failure recovery" bash -c '[[ $(python3 -c '\''import json,sys; print(json.load(open(sys.argv[1]))["verdict"])'\'' "$1") == SUCCESS ]]' _ "$last"
+wait_for_census "S4-6 partial-failure recovery" pred_verdict_is SUCCESS
 
 # Fingerprint includes scripts, signatures, and relevant config. Mutating a
 # static identity owner invalidates the old verdict (S4-3).
@@ -841,10 +937,10 @@ owned_pids+=("$dead_pid:$dead_start")
 release_checkout "$repo"
 "$arm" --repo "$repo" --session dead-main --pid "$dead_pid" --start-time "$dead_start" --tag dead-main >/dev/null
 stop_owned_pid "dead announcement" "$dead_pid" "$dead_start"
-wait_until "dead announcement pruning" test ! -e "$repo/artifacts/agents/mains/dead-main-$dead_pid.json"
+wait_for_census "dead announcement pruning" pred_path_absent "$repo/artifacts/agents/mains/dead-main-$dead_pid.json"
 
 write_process_fixture "$process_fixture" "$raw_pid|1|$raw_pid|$raw_start|metasystem-fake-agent raw|$repo"
-wait_until "UNTRACKED end-turn source" inventory_has "$last" UNTRACKED "$raw_pid"
+wait_for_census "UNTRACKED end-turn source" inventory_has UNTRACKED "$raw_pid"
 # The main that armed this checkout last was the dead one this phase buried, so
 # this shell takes the checkout back before ending a turn in it: an end-of-turn
 # report belongs to the main that holds the checkout.

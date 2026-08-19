@@ -192,3 +192,113 @@ func TestWatcherPassWarnsWhenScanExceedsInterval(t *testing.T) {
 		t.Fatalf("warning %q lacks %q", warnings[0], want)
 	}
 }
+
+// scanSeq is the census actor's monotonic "attempt" marker for attempt-based
+// fixture patience (plans/patience-attempts.md). It must (a) advance by one per
+// successful publish, (b) stay monotonic across FRESH WatcherConfigs — the
+// fixtures drive census as repeated one-shot watcher-pass processes, so the
+// counter cannot live in the process; it is seeded from the published file —
+// and (c) be present on all three verdict paths (success, census-error,
+// fingerprint-failure), whose stamping is centralised in publish().
+func TestWatcherPassScanSeqMonotonicAcrossFreshConfigs(t *testing.T) {
+	root := stageCheckout(t)
+	verdictPath := filepath.Join(SupervisionDir(root), censusVerdictFile)
+	readSeq := func() int64 {
+		data, err := os.ReadFile(verdictPath)
+		if err != nil {
+			t.Fatalf("no verdict: %v", err)
+		}
+		var v census.Verdict
+		if err := json.Unmarshal(data, &v); err != nil {
+			t.Fatalf("verdict not json: %v", err)
+		}
+		return v.ScanSeq
+	}
+	// Each pass rebuilds the config, standing in for a fresh one-shot process.
+	for want := int64(1); want <= 3; want++ {
+		if err := productionWatcher(t, root).WatcherPass(); err != nil {
+			t.Fatalf("pass %d: %v", want, err)
+		}
+		if got := readSeq(); got != want {
+			t.Fatalf("scanSeq did not advance monotonically across fresh configs: pass %d got %d want %d", want, got, want)
+		}
+	}
+}
+
+func TestWatcherPassScanSeqOnAllVerdictPaths(t *testing.T) {
+	root := stageCheckout(t)
+	verdictPath := filepath.Join(SupervisionDir(root), censusVerdictFile)
+	readVerdict := func() census.Verdict {
+		data, err := os.ReadFile(verdictPath)
+		if err != nil {
+			t.Fatalf("no verdict: %v", err)
+		}
+		var v census.Verdict
+		if err := json.Unmarshal(data, &v); err != nil {
+			t.Fatalf("verdict not json: %v", err)
+		}
+		return v
+	}
+	base := productionWatcher(t, root)
+
+	// Path 1: the normal path — Census returns without error (the verdict LABEL
+	// depends on what the staged checkout scans; the code path is what matters).
+	if err := base.WatcherPass(); err != nil {
+		t.Fatalf("normal pass: %v", err)
+	}
+	if v := readVerdict(); v.ScanSeq != 1 {
+		t.Fatalf("normal path: scanSeq=%d (want 1)", v.ScanSeq)
+	}
+
+	// Path 2: census scan error -> CENSUS-FAILED, seq continues from the file.
+	censusErr := base
+	censusErr.Census = func(string, time.Time) (census.Verdict, error) {
+		return census.Verdict{}, fmt.Errorf("scan blew up")
+	}
+	if err := censusErr.WatcherPass(); err != nil {
+		t.Fatalf("census-error pass: %v", err)
+	}
+	if v := readVerdict(); v.Verdict != "CENSUS-FAILED" || v.ScanSeq != 2 {
+		t.Fatalf("census-error path: verdict=%s scanSeq=%d (want CENSUS-FAILED, 2)", v.Verdict, v.ScanSeq)
+	}
+
+	// Path 3: fingerprint error -> FINGERPRINT-FAILED (the early-return path).
+	fpErr := base
+	fpErr.Fingerprint = func() (string, error) { return "", fmt.Errorf("fingerprint blew up") }
+	if err := fpErr.WatcherPass(); err != nil {
+		t.Fatalf("fingerprint-error pass: %v", err)
+	}
+	// The fingerprint-failure early-return path stamps "FINGERPRINT-FAILED" into
+	// the Fingerprint field (the label stays CENSUS-FAILED); scanSeq==3 proves
+	// publish() stamped it even on this path that returns before the common block.
+	if v := readVerdict(); v.Fingerprint != "FINGERPRINT-FAILED" || v.ScanSeq != 3 {
+		t.Fatalf("fingerprint-error path (early return): fingerprint=%s scanSeq=%d (want FINGERPRINT-FAILED, 3)", v.Fingerprint, v.ScanSeq)
+	}
+}
+
+func TestLastPublishedScanSeqFallback(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "last-census.json")
+	if got := lastPublishedScanSeq(path); got != 0 {
+		t.Fatalf("absent file: got %d want 0", got)
+	}
+	if err := os.WriteFile(path, []byte("{ not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastPublishedScanSeq(path); got != 0 {
+		t.Fatalf("garbage file: got %d want 0", got)
+	}
+	if err := os.WriteFile(path, []byte(`{"scanSeq":41}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastPublishedScanSeq(path); got != 41 {
+		t.Fatalf("valid file: got %d want 41", got)
+	}
+	// A negative (corrupt) marker is garbage, not a count: restart from 0.
+	if err := os.WriteFile(path, []byte(`{"scanSeq":-100}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastPublishedScanSeq(path); got != 0 {
+		t.Fatalf("negative file: got %d want 0", got)
+	}
+}

@@ -3,6 +3,7 @@ package supervise
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -75,11 +76,40 @@ func (cfg WatcherConfig) WatcherPass() error {
 }
 
 func (cfg WatcherConfig) publish(verdict census.Verdict) error {
+	path := filepath.Join(cfg.SupervisionDir, censusVerdictFile)
+	// The scanSeq counter lives in the published file, not in this process, so
+	// it stays monotonic across watcher relaunches and the repeated one-shot
+	// watcher-pass invocations the fixtures drive: seed from the prior verdict
+	// and stamp prior+1. It advances only when the atomicWrite below succeeds —
+	// a failed publish leaves the old file in place, so the next pass reads the
+	// same prior value and retries the same next value (no gap a stale in-flight
+	// pass could exploit). This is the census actor's "attempt" marker for
+	// attempt-based fixture patience (plans/patience-attempts.md). Single-writer
+	// is guaranteed by the census-writer lock the watcher-pass verb holds.
+	verdict.ScanSeq = lastPublishedScanSeq(path) + 1
 	encoded, err := json.MarshalIndent(verdict, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode census verdict: %w", err)
 	}
-	return atomicWrite(filepath.Join(cfg.SupervisionDir, censusVerdictFile), append(encoded, '\n'))
+	return atomicWrite(path, append(encoded, '\n'))
+}
+
+// lastPublishedScanSeq returns the scanSeq of the verdict currently at path, or
+// 0 when the file is absent or unreadable (the first publish then stamps 1).
+func lastPublishedScanSeq(path string) int64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var prev struct {
+		ScanSeq int64 `json:"scanSeq"`
+	}
+	if err := json.Unmarshal(data, &prev); err != nil || prev.ScanSeq < 0 {
+		// A negative (corrupt) marker is garbage, not a count: restart from 0 so
+		// the sequence climbs back into the positive integers readers expect.
+		return 0
+	}
+	return prev.ScanSeq
 }
 
 // warnIfSlow emits the CENSUS-SLOW warning the census budget defines: a scan

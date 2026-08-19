@@ -65,20 +65,29 @@ type InventoryItem struct {
 
 // Verdict is the census output (schemaVersion 2).
 type Verdict struct {
-	SchemaVersion    int             `json:"schemaVersion"`
-	Writer           string          `json:"writer"`
-	Verdict          string          `json:"verdict"`
-	CompletedAt      string          `json:"completedAt"`
-	CompletedAtEpoch int64           `json:"completedAtEpoch"`
-	DurationMs       int64           `json:"durationMs"`
-	IntervalSec      int             `json:"intervalSec"`
-	Fingerprint      string          `json:"fingerprint"`
-	Generation       *int64          `json:"generation"`
-	StateDigest      *string         `json:"stateDigest"`
-	Counts           map[string]int  `json:"counts"`
-	Inventory        []InventoryItem `json:"inventory"`
-	Diagnostics      []string        `json:"diagnostics"`
-	Errors           []string        `json:"errors"`
+	SchemaVersion    int    `json:"schemaVersion"`
+	Writer           string `json:"writer"`
+	Verdict          string `json:"verdict"`
+	CompletedAt      string `json:"completedAt"`
+	CompletedAtEpoch int64  `json:"completedAtEpoch"`
+	DurationMs       int64  `json:"durationMs"`
+	// ScanSeq is a monotonic per-published-pass counter, owned at the publish
+	// boundary (internal/supervise/watcher.go publish): it is seeded from the
+	// prior published verdict and advances only on a successful publish, so it
+	// stays monotonic across watcher relaunches and repeated one-shot passes.
+	// It is additive telemetry under schemaVersion 2 (dispatch's CensusFresh
+	// gate requires schema == 2 exactly), so it is omitempty and no consumer
+	// needs a version discriminator. Fixtures count it as the census actor's
+	// "attempt" for attempt-based patience (plans/patience-attempts.md).
+	ScanSeq     int64           `json:"scanSeq,omitempty"`
+	IntervalSec int             `json:"intervalSec"`
+	Fingerprint string          `json:"fingerprint"`
+	Generation  *int64          `json:"generation"`
+	StateDigest *string         `json:"stateDigest"`
+	Counts      map[string]int  `json:"counts"`
+	Inventory   []InventoryItem `json:"inventory"`
+	Diagnostics []string        `json:"diagnostics"`
+	Errors      []string        `json:"errors"`
 }
 
 var liveStatuses = map[string]bool{
