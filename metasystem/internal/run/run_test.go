@@ -44,6 +44,7 @@ func testStore(t *testing.T) *Store {
 		// Synthetic pids are their own group leaders unless a test
 		// overrides with the real kernel.
 		Getpgid: func(pid int64) (int64, error) { return pid, nil },
+		AllPids: func() ([]int64, error) { return []int64{}, nil },
 	}
 }
 
@@ -160,15 +161,11 @@ func TestConcludeEvidenceTable(t *testing.T) {
 	prober.verdicts[105] = identity.Dead
 	prober.verdicts[106] = identity.Alive
 	prober.starts[106] = 6000
-	// Adopt binds to OUR process group? Adopt probes pid 106 via the fake
-	// prober but reads the real pgid — use our own pid's group so
-	// Getpgid succeeds.
 	self := int64(os.Getpid())
 	prober.verdicts[self] = identity.Alive
 	prober.starts[self] = 7000
-	// The old group must be provably empty: pgid 105 has no live member
-	// in the real process table (guaranteed — 105 is not a live pgid we
-	// created), so adoption may proceed.
+	// The old synthetic group is empty in the synthetic process table,
+	// so adoption may proceed.
 	if err := s.Adopt(mainCaller, "adopted-run", self); err != nil {
 		t.Fatalf("adopt refused: %v", err)
 	}
@@ -186,11 +183,46 @@ func TestConcludeEvidenceTable(t *testing.T) {
 	}
 }
 
+// TestAssessUsesSyntheticProcessTable proves a synthetic member drains the run while an empty table concludes it.
+func TestAssessUsesSyntheticProcessTable(t *testing.T) {
+	assess := func(t *testing.T, members []int64) AssessResult {
+		t.Helper()
+		s := testStore(t)
+		s.AllPids = func() ([]int64, error) { return members, nil }
+		prober := fakeProber{
+			verdicts: map[int64]identity.Liveness{701: identity.Alive},
+			starts:   map[int64]int64{701: 5000},
+		}
+		s.Prober = prober
+		nonce := launchOne(t, s, "table-run")
+		if err := s.Bind("table-run", nonce, 701, 701); err != nil {
+			t.Fatal(err)
+		}
+		prober.verdicts[701] = identity.Dead
+		result, err := s.Assess("table-run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	if result := assess(t, []int64{701}); result.To != StatusDraining {
+		t.Fatalf("synthetic group member did not drain: %+v", result)
+	}
+	if result := assess(t, []int64{}); result.To != StatusEndedUnknown {
+		t.Fatalf("empty synthetic table did not conclude: %+v", result)
+	}
+}
+
 // Draining: a dead leader with survivors drains with a frozen provisional
 // verdict; the wind-down clock runs from endedAt; finalization keeps the
 // frozen verdict (MON-02's freeze + MON-03's window).
 func TestDrainingFreezesVerdict(t *testing.T) {
 	s := testStore(t)
+	// This test creates a real process group and must scan the real table.
+	// The group reader stays synthetic through Bind because Bind checks the
+	// synthetic pid's group; no group-emptiness question is asked before rebind.
+	s.AllPids = nil
 	prober := fakeProber{verdicts: map[int64]identity.Liveness{}, starts: map[int64]int64{}}
 	s.Prober = prober
 
@@ -223,6 +255,7 @@ func TestDrainingFreezesVerdict(t *testing.T) {
 	}
 	s.WriteSidecar("drain-run", record.Generation, record.LaunchNonce, 0)
 	prober.verdicts[201] = identity.Dead
+	s.Getpgid = nil
 
 	result, err := s.Assess("drain-run")
 	if err != nil || result.To != StatusDraining {
@@ -372,6 +405,8 @@ func TestVerbRefusalsAndHelpers(t *testing.T) {
 // match and ended-unknown otherwise.
 func TestHungFlagAndRegisterPattern(t *testing.T) {
 	s := testStore(t)
+	// This test registers real processes and must scan their real groups.
+	s.AllPids, s.Getpgid = nil, nil
 	prober := fakeProber{verdicts: map[int64]identity.Liveness{}, starts: map[int64]int64{}}
 	s.Prober = prober
 
@@ -601,6 +636,8 @@ func TestEpochSeamRefusesStale(t *testing.T) {
 // refused as ended-unknown, never read through to a green.
 func TestPatternEvidenceSymlinkSwap(t *testing.T) {
 	s := testStore(t)
+	// This test registers a real subprocess and must scan its real group.
+	s.AllPids, s.Getpgid = nil, nil
 	prober := fakeProber{verdicts: map[int64]identity.Liveness{}, starts: map[int64]int64{}}
 	s.Prober = prober
 

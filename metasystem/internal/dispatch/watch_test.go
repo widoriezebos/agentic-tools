@@ -37,11 +37,16 @@ func TestJobWatchRoundTrip(t *testing.T) {
 	go func() { done <- JobWatch(root, "j-watch", caller, 20*time.Millisecond) }()
 
 	// While waiting, the waiter record is live (our own process, so the
-	// kernel prober verifies it) and owner-correlated.
-	time.Sleep(80 * time.Millisecond)
+	// kernel prober verifies it) and owner-correlated. Wait for it rather
+	// than sleeping a fixed slice: under a loaded -race suite the watcher
+	// goroutine can take longer than any constant to write its record.
 	target := run.WaiterTarget{StartedAt: "2026-08-15T10:00:00Z"}
-	if !run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-w", target) {
-		t.Fatal("the waiting watch holds no live waiter record")
+	deadline := time.Now().Add(5 * time.Second)
+	for !run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-w", target) {
+		if time.Now().After(deadline) {
+			t.Fatal("the waiting watch holds no live waiter record")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-other", target) {
 		t.Fatal("a foreign owner saw the waiter as its own")

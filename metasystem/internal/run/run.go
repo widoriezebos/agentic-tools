@@ -148,6 +148,10 @@ type Store struct {
 	// Getpgid is the kernel process-group reader, a seam for tests
 	// whose recorded pids are synthetic.
 	Getpgid func(pid int64) (int64, error)
+	// AllPids is the kernel process-table reader, a seam for tests whose
+	// recorded pids are synthetic; production leaves it nil. The table and
+	// group reader describe one world, so tests override both or neither.
+	AllPids func() ([]int64, error)
 }
 
 func (s *Store) getpgid(pid int64) (int64, error) {
@@ -156,6 +160,13 @@ func (s *Store) getpgid(pid int64) (int64, error) {
 	}
 	pg, err := unix.Getpgid(int(pid))
 	return int64(pg), err
+}
+
+func (s *Store) allPids() ([]int64, error) {
+	if s.AllPids != nil {
+		return s.AllPids()
+	}
+	return identity.AllPids()
 }
 
 // checkEpoch refuses a stale-epoch mutation; callers hold the runs lock.

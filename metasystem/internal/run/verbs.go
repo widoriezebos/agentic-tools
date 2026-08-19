@@ -210,7 +210,7 @@ func (s *Store) kinship(targetPgid int64) bool {
 	}
 	// Ancestor of the caller inside the group?
 	for pid := range ancestors {
-		if pg, err := unix.Getpgid(int(pid)); err == nil && int64(pg) == targetPgid {
+		if pg, err := s.getpgid(pid); err == nil && pg == targetPgid {
 			return true
 		}
 	}
@@ -423,19 +423,19 @@ func parentOf(pid int64) (int64, error) {
 // groupEmpty reports whether no live process remains in the group. A
 // group whose membership cannot be read is NOT provably empty.
 func (s *Store) groupEmpty(pgid int64) bool {
-	pids, err := identity.AllPids()
+	pids, err := s.allPids()
 	if err != nil {
 		return false
 	}
 	for _, pid := range pids {
-		pg, err := unix.Getpgid(int(pid))
+		pg, err := s.getpgid(pid)
 		if err != nil {
 			if err == unix.ESRCH {
 				continue // raced an exit: provably absent
 			}
 			return false // unreadable membership is NOT provably empty
 		}
-		if int64(pg) == pgid {
+		if pg == pgid {
 			return false
 		}
 	}
