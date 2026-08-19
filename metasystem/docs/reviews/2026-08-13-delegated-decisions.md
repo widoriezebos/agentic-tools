@@ -1355,3 +1355,31 @@ schema sync (now including slice 7's fields) — as a FRESH human-approved
 kit change built on the new cases structure, with the old branch as
 reference; either machine can build it under the parallel backlog. Goal
 kit-authority-reexpress carries it.
+
+**Second addendum to D116 (Wido, same day):** Wido accepts the kit
+authority handoff IN PRINCIPLE — the benchmark invoking the engine's
+own verifier as the authority on record validity, with the pinned
+schema kept as the kit's shallow independent check. The acceptance
+applies to the re-expressed change (goal kit-authority-reexpress); his
+signature goes on that rebuilt commit itself, as every kit change
+requires.
+
+**Third addendum to D116 (the kit change lands, same day):** Wido
+instructed the integration directly ("this is approved and accepted —
+go ahead and make it happen now"), satisfying the kit's human-approval
+rule. The re-expression landed at 2af908b as a kit-only commit: the
+extractor invokes the engine's verifier as the record authority
+(fail-closed), the pinned mission-state schema is byte-identical to the
+engine's (the designed drift check now PASSES), kit version 0.2.0 with
+main's pair assertions updated, the fixture evidence carries the new
+field, and the obsolete per-spec version bumps were dropped per the
+content-addressed registry's append-only rule. Kit-gate evidence: the
+engine drift guard, extractor fixtures (including the authority
+handoff's fail-closed legs), and evolution fixtures all pass on this
+machine; the provisioning leg fails on the PRE-EXISTING
+genesis-under-agent blocker (goal provision-genesis-authority), which
+this diff does not touch — the same disclosure this week's other kit
+landing shipped with, full-suite guest validation deferred with the VM
+seals. Goal kit-authority-reexpress is concluded; branch
+kit-authority-handoff (10022e0) remains as reference until Wido deletes
+it.

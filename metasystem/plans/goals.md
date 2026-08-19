@@ -88,10 +88,6 @@
 - Origin: main
 - Next step: Small change after the wall lands: one flock over classification-and-removal and marker-and-record publication, plus a two-process witness. Critique, then implement.
 
-## Queued goal: kit-authority-reexpress — The kit's authority handoff and pinned schema sync are re-expressed on the cases/configurations structure as one human-approved kit change
-- Origin: main
-- Next step: Rebuild kit-authority-handoff's intent (extractor state-verify handoff, pinned mission-state schema incl. slice-7 fields, kit version bump) on the new registry; old branch is reference. Critique, then Wido approves.
-
 ## Parked goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main
 - Parked because: Yields the current slot to the human-approved acp-transport implementation (D81); design held at the budget-one boundary, r3 verdict will be folded when it lands
@@ -127,3 +123,7 @@
 ## Done goal: runtime-file-placement — Runtime code lives in its runtime's file within the adapter seam
 - Origin: main
 - Concluded: Every runtime symbol home (the original stray was D25 copy-drift, fixed by D61). The parser-based placement check pins the convention; its critique-driven rebuild caught two more strays. Both hosts green 2f42ec7.
+
+## Done goal: kit-authority-reexpress — The kit's authority handoff and pinned schema sync are re-expressed on the cases/configurations structure as one human-approved kit change
+- Origin: main
+- Concluded: Landed at 2af908b under Wido's direct approval (D116 third addendum). Drift guard, extractor, and evolution fixtures pass; the genesis leg is blocked only by the pre-existing provision-genesis-authority issue.
