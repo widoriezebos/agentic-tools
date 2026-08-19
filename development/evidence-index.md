@@ -36,3 +36,10 @@ is the tracked memory of what exists. Maintained when evidence-gc collects.
 Mission targets are single-use by design (each run provisions fresh, and
 comparability demands it), so the working repositories were scrapped once
 archived — upgrade-in-place is for long-lived project repos, not these.
+
+Naming note (2026-08-19, D111): archived runs before this date were labelled by
+retired spec ids; read them through `benchmark/aliases.json` — `bm-1` = taskrun@0.1
+under cheap@1, `bm-2` = taskrun@0.1 under devin-delegate@1, `bm-2d` = taskrun@0.1
+under devin-host@1, `bm-2dc` = taskrun@0.1 under devin-host-claude-delegate@1,
+`bm-2s` = taskrun@0.2 under sol@1, `bm-2d-og` = taskrun@0.1 under devin-opus-gpt55@1.
+New archives are named by the pair.

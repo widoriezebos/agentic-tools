@@ -24,6 +24,17 @@
 #   4. Clone your working repos into ~/work. Git is the transport by design --
 #      no host repo tree is mounted.
 #
+# KNOWN GUEST FLAKE (metasystem KI-37 / GitHub issue #13): this guest's clock
+# is stepped continuously (the Lima guest agent SyncTime plus systemd-timesyncd
+# both correct it, ~every 20s), which moves /proc/stat btime. The metasystem's
+# shell identity path (arm-supervision.sh: proc started-at then proc alive)
+# compares btime-derived start seconds, so `scripts/validate-metasystem.sh`
+# occasionally dies "announcement pid identity is not live" at the supervision
+# fixtures — a transient false-death, not a real defect. Re-run the suite (a
+# quiescent guest passes), or gate a change unrelated to identity on a Mac.
+# The permanent fix (carry the clock-step-immune startTicks+bootId pair through
+# the live-check verbs) is tracked as issue #13.
+#
 # `./check-template.sh` validates this file properly: limactl validate only
 # parses YAML and will happily accept a provision script that is broken bash.
 #

@@ -1050,3 +1050,50 @@ wall rows; the r10 decision no longer gates it.
 
 **Impact:** the autonomous window cannot stall on a billing lapse, and
 the review work joins tonight's queue behind the wall rows.
+
+## D111 — 2026-08-19: One benchmark case, many configurations — the kit's object model (Wido's ruling, designed, critiqued, implemented)
+
+**Decided (Wido, directly):** "we don't have multiple benchmarks, we have a
+single benchmark case with multiple benchmark configurations… this needs a
+better design and good language around it so that it is clear what it means…
+designed, critiqued and then implemented… also update the documentation so
+there is no confusion by anybody including agents working on other machines".
+The kit now has three nouns and one verb: a **case** (what is built and
+judged; immutable per version under `benchmark/cases/<id>/<version>/`), a
+**configuration** (who builds it and under what limits; immutable per version
+at `benchmark/configurations/<id>/<version>.json`), a **run** (one case
+version under one configuration version, pinned by both git object ids), and
+"run CASE under CONFIG". The six former specs were one task in two instrument
+versions (`taskrun@0.1` boolean gate; `taskrun@0.2` count gate — four
+manifests had said 0.2 over v0.1 instruments) under six configurations
+(`cheap`, `sol`, `devin-delegate`, `devin-host`, `devin-host-claude-delegate`,
+`devin-opus-gpt55`); they are aliases now, read-only, keeping their legacy
+naming for pre-migration cohorts. Comparability = the pair + pins + the old
+tuple; verdict eligibility = case maturity AND configuration purpose
+`capability`; a separate `--configurations` report holds the case constant
+and never emits a verdict. Provisioning copies from the pinned tree object,
+refuses uncommitted case directories, and every later reader of a run reads
+the pinned objects. `versions.lock` is the append-only registry, checked at
+HEAD and across history (shallow/grafted clones refused). Design:
+`plans/benchmark-case-configuration-design.md`, ten adversarial critique
+rounds against codex gpt-5.6-sol (11→8→5→6→3→3→2→1→1→ACCEPT), outputs
+beside it. Landed in three gated commits (objects+registry, kit wiring +
+specs/ removal, documentation); `benchmark/validate-kit.sh` green on the
+Linux guest at each, including the provisioning bridge; provisioning
+equivalence legacy vs pair vs alias verified byte-for-byte modulo the design's
+one permitted-difference list.
+
+**Alternative:** a third "profile" object for fences, and a self-referential
+content digest inside `case.json` for immutability. Both rejected in critique:
+fences vary with rosters today (add a profile only when they vary
+independently); a digest inside the object it digests cannot be satisfied,
+and git tree ids pinned in the run identity plus an external registry give
+the same guarantee honestly.
+
+**Impact:** adding a task is one directory; adding a way of running is one
+file; the same task under two rosters is now a sentence the kit can say and
+check. Three inherited configurations (`devin-delegate@1`, `devin-host@1`,
+`devin-host-claude-delegate@1`) remain unsealable as inherited (no-gain 5 <
+cycles 8, no acknowledgement) and are reported by name until a human rules
+(issue #8's family). `benchmark/README.md` is normative for anyone, on any
+machine, adding a case or configuration.

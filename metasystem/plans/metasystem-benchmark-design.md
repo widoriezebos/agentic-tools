@@ -1,5 +1,15 @@
 # Plan: The Metasystem Benchmark
 
+> **Object model since 2026-08-19 (D111):** the kit's "specs" are gone. A
+> benchmark is a **case version** (what is built and judged,
+> `benchmark/cases/<id>/<version>/`) run **under** a **configuration
+> version** (who builds it and under what limits,
+> `benchmark/configurations/<id>/<version>.json`); `bm-1` and its siblings are
+> read-only aliases to such pairs. This plan predates that split and keeps its
+> original wording as history; the current contract is `benchmark/README.md`
+> and `plans/benchmark-case-configuration-design.md`.
+
+
 - Owner: unclaimed (design written 2026-08-04, single session, nothing built)
 - Goal and current status: a benchmark where a coordinator and sub-agents build software to a fixed spec, producing two things we grade: the software itself and the logged behavior of the agents that built it. The scorecard from both becomes the metasystem's own fitness function, so agents can later evolve the metasystem inside constraints expressed in software. Status: critique CLOSED by join at round 5 (2026-08-04): 45 material findings adjudicated across rounds 1-4, round 5 returned zero material findings with the critic's recorded agreement that the design is ready for implementation under the B-0 condition
 - In flight right now: nothing
