@@ -1,8 +1,8 @@
 # Goals
 
-## Current goal: host-implementer-wall — The runner mechanically refuses a host turn that did implementer work: product-code diff without certified delegate attribution is a protocol error, not prose
+## Current goal: backlog-git-sync — Multiple machines work the backlog in parallel with git as the sync mechanism: claimed goals, merge-safe ledger mutations, surviving baselines
 - Origin: main
-- Next step: Land slice 7 on AGREE (capped loop). Then PARK yielding to backlog-git-sync (D115); O13, O14, O15, O16 and rows O8/O10/O9/O11 resume as claimable work under the parallel backlog.
+- Next step: D115, picked next after the wall: design the claim verb, a merge-safe ledger format (the whole-file digest cannot merge), and baseline reconciliation across pushes. Critique, then implement.
 
 ## Queued goal: narrator — A plain-English story of what happened, why it happened, and who did it
 - Origin: main
@@ -84,13 +84,13 @@
 - Origin: main
 - Next step: Design per D114: justify or retune the intent/next byte caps; add the missing edit verb under the same integrity chain. Critique, then implement.
 
-## Queued goal: backlog-git-sync — Multiple machines work the backlog in parallel with git as the sync mechanism: claimed goals, merge-safe ledger mutations, surviving baselines
-- Origin: main
-- Next step: D115, picked next after the wall: design the claim verb, a merge-safe ledger format (the whole-file digest cannot merge), and baseline reconciliation across pushes. Critique, then implement.
-
 ## Queued goal: lease-acquire-atomicity — Lease acquisition and stale-lease cleanup are mutually exclusive: no second launcher can misclassify a mid-publication lease and mint two runners (KI-38)
 - Origin: main
 - Next step: Small change after the wall lands: one flock over classification-and-removal and marker-and-record publication, plus a two-process witness. Critique, then implement.
+
+## Queued goal: kit-authority-reexpress — The kit's authority handoff and pinned schema sync are re-expressed on the cases/configurations structure as one human-approved kit change
+- Origin: main
+- Next step: Rebuild kit-authority-handoff's intent (extractor state-verify handoff, pinned mission-state schema incl. slice-7 fields, kit version bump) on the new registry; old branch is reference. Critique, then Wido approves.
 
 ## Parked goal: disk-hygiene — Every byte the metasystem writes gets a declared lifecycle with janitor enforcement
 - Origin: main
@@ -106,6 +106,11 @@
 - Origin: main
 - Parked because: Yields the slot to host-implementer-wall per Wido's ruling (D99): the enforcement failure outranks the flip. Remaining here: snapshot identity surfaces + supervise_acp fixture, then the D82 pair on Wido's seals.
 - Next step: READY, blocked on the human-sealed benchmark (D88): delegate path proven, provisioning unblocked, VM+Devin ready. Run bm-2d (run-cohort.sh, VM-only, stops for seal). Do not flip without it (D82).
+
+## Parked goal: host-implementer-wall — The runner mechanically refuses a host turn that did implementer work: product-code diff without certified delegate attribution is a protocol error, not prose
+- Origin: main
+- Parked because: Slice 7 landed (86bd66a, D116); yields the slot to backlog-git-sync per Wido's D115 addendum. Rows O13/O14/O15/O16 + O8/O10/O9/O11 + O19 resume as claimable work under the parallel backlog.
+- Next step: Land slice 7 on AGREE (capped loop). Then PARK yielding to backlog-git-sync (D115); O13, O14, O15, O16 and rows O8/O10/O9/O11 resume as claimable work under the parallel backlog.
 
 ## Done goal: monitor-facility — Tracked long-running work with terminal-state watching as metasystem behavior
 - Origin: main

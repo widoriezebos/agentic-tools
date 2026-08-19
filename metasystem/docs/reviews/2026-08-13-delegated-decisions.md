@@ -1341,3 +1341,17 @@ under the backlog sync like its sibling rows.
 
 **Impact:** the human is the escalation path for judgment and stakes,
 never a mechanical restore's rubber stamp.
+
+**Addendum to D116 (the kit branch, same day):** the landing sequence's
+final step — amending kit-authority-handoff once with the slice's final
+engine schema bytes — is BLOCKED on real kit work, not mechanics: the
+branch (10022e0) predates the benchmark cases/configurations
+restructuring (D111's kit rework, 400+ files, specs/ deleted), and the
+rebase conflicts semantically in the case registry and validate-kit.
+The branch is untouched; main's validate-kit stays red on the designed
+schema-drift check. Recommendation for Wido: re-express the branch's
+intent — the extractor's executable authority handoff plus the pinned
+schema sync (now including slice 7's fields) — as a FRESH human-approved
+kit change built on the new cases structure, with the old branch as
+reference; either machine can build it under the parallel backlog. Goal
+kit-authority-reexpress carries it.
