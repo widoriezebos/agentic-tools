@@ -134,6 +134,16 @@ func (cfg ReaperConfig) reapOne(path string) error {
 		"phase":              "supervision",
 		"groupDeathProvenAt": now.UTC().Format(isoSecond),
 	}
+	// A cancel marks the record BEFORE it kills (visible before
+	// action); a dead group carrying the marker is that cancel's
+	// outcome, not a process loss — however this pass and the
+	// cancel's own concluding swap interleave, the record reads
+	// cancelled. The marker outranks the budget: the operator's
+	// explicit stop is the truer cause of this death.
+	if phase, _ := record["phase"].(string); phase == "cancelling" {
+		patch["error"] = nil
+		return cfg.transition(path, record, status, "cancelled", "cancel-honored", patch)
+	}
 	// Among dead-custodian records the budget still outranks loss, so this
 	// reaper and the dispatch ladder read the same verdict from one expired
 	// record.

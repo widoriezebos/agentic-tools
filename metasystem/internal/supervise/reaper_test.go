@@ -352,3 +352,56 @@ func TestReaperPassEmitsTheDeclineItCannotAct(t *testing.T) {
 		t.Fatalf("budgeted job must stay running, got %v", got["status"])
 	}
 }
+
+func TestReaperHonorsTheCancellingMarker(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Unix(1786000000, 0).UTC()
+
+	// A cancel marks the record BEFORE it kills: a dead group with
+	// the marker is that cancel's outcome, never a process loss —
+	// the kill-before-mark window this closes turned cancelled into
+	// failed under an unlucky reaper pass (three sightings,
+	// 2026-08-20).
+	marked := writeJobRecord(t, dir, "marked", map[string]any{
+		"jobId": "marked", "status": "running", "phase": "cancelling",
+		"pid": 555, "pidStartedAt": 9, "instanceTag": "job-marked",
+		"startedAt": now.Add(-1 * time.Minute).Format(isoSecond), "capMin": 60,
+	})
+	// The marker outranks even the budget: the operator's explicit
+	// stop is the truer cause of this death.
+	markedOver := writeJobRecord(t, dir, "marked-over", map[string]any{
+		"jobId": "marked-over", "status": "running", "phase": "cancelling",
+		"pid": 556, "pidStartedAt": 9, "instanceTag": "job-marked-over",
+		"startedAt": now.Add(-2 * time.Hour).Format(isoSecond), "capMin": 60,
+	})
+	// A LIVE custodian with the marker: the reaper still has no kill
+	// authority — the cancel path owns the kill.
+	markedLive := writeJobRecord(t, dir, "marked-live", map[string]any{
+		"jobId": "marked-live", "status": "running", "phase": "cancelling",
+		"pid": 557, "pidStartedAt": 9, "instanceTag": "job-marked-live",
+		"startedAt": now.Add(-1 * time.Minute).Format(isoSecond), "capMin": 60,
+	})
+
+	custody := fakeCustody{
+		557: {start: 9, tag: "job-marked-live"}, // live; 555/556 dead
+	}
+	cfg := ReaperConfig{
+		JobsDir:   dir,
+		Now:       func() time.Time { return now },
+		Custodian: custody.liveness,
+		Apply:     casApplier(t, dir),
+	}
+	if err := cfg.ReaperPass(); err != nil {
+		t.Fatalf("reaper pass: %v", err)
+	}
+
+	if got := readStatus(t, marked); got["status"] != "cancelled" {
+		t.Fatalf("a dead group with the cancelling marker concludes cancelled, got %v", got["status"])
+	}
+	if got := readStatus(t, markedOver); got["status"] != "cancelled" {
+		t.Fatalf("the marker outranks the budget verdict, got %v", got["status"])
+	}
+	if got := readStatus(t, markedLive); got["status"] != "running" {
+		t.Fatalf("a live marked custodian stays with the cancel path, got %v", got["status"])
+	}
+}
