@@ -1026,6 +1026,13 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 			if !ok || recPgid <= 1 {
 				continue
 			}
+			// EVERY valid recorded group joins the bounded wait —
+			// the host leader is reaped early while descendants
+			// linger, so a dead-leader group is exactly the one
+			// that must still be waited out. Waiting is
+			// identity-free; only the SIGNAL needs the live
+			// identity proof.
+			groups = append(groups, recPgid)
 			tag, _ := doc["instanceTag"].(string)
 			recPid, pidOK := jsonInt(doc["pid"])
 			if tag == "" || !pidOK || !pidExists(int(recPid)) ||
@@ -1033,7 +1040,6 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 				continue
 			}
 			_ = syscall.Kill(-int(recPgid), syscall.SIGKILL)
-			groups = append(groups, recPgid)
 		}
 		capSeconds, scaleErr := ScaledSeconds(15)
 		if scaleErr != nil {
