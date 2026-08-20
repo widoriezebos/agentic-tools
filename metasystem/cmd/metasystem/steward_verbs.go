@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -226,6 +227,10 @@ func runStewardRevive(args []string) int {
 			cmd := exec.Command(filepath.Join(*repo, "scripts", "agents", "dispatch.sh"),
 				"--steward-intent", it.Nonce)
 			cmd.Dir = *repo
+			// Its own session, no controlling terminal: the chain
+			// classifies STEWARD identically whether the tick came
+			// from the runner, a cron, or an operator's shell.
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("dispatch: %v (%s)", err, strings.TrimSpace(string(out)))

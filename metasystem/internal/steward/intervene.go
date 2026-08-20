@@ -148,15 +148,19 @@ func ConsumeIntent(repoRoot, nonce string) (Intent, error) {
 	if err := os.MkdirAll(consumedDir(repoRoot), 0o755); err != nil {
 		return Intent{}, err
 	}
+	// The reaper's setup grace measures from the record's mtime, and
+	// a rename would keep the mint time — restamp BEFORE the
+	// irreversible move, so a restamp that cannot happen refuses
+	// consumption instead of launching behind a grace an outage may
+	// already have spent.
+	now := time.Now()
+	if err := os.Chtimes(live, now, now); err != nil {
+		return Intent{}, fmt.Errorf("intent %s: the setup grace could not anchor at consumption; launch refused: %w", nonce, err)
+	}
 	consumed := filepath.Join(consumedDir(repoRoot), nonce+".json")
 	if err := os.Rename(live, consumed); err != nil {
 		return Intent{}, fmt.Errorf("intent %s already consumed or gone: %w", nonce, err)
 	}
-	// The reaper's setup grace measures from this file's mtime; the
-	// rename kept the mint time, so restamp — the grace starts at
-	// consumption, not at mint.
-	now := time.Now()
-	_ = os.Chtimes(consumed, now, now)
 	return it, nil
 }
 

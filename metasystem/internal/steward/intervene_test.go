@@ -171,3 +171,31 @@ func TestConsumptionRestampsTheSetupGrace(t *testing.T) {
 		t.Fatalf("consumption must restamp the grace anchor: %v", fi.ModTime())
 	}
 }
+
+func TestConsumptionFailureLeavesTheIntentLive(t *testing.T) {
+	root := t.TempDir()
+	it := testIntent("fc-4")
+	it.Notified = true
+	if err := MintIntent(root, it); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(consumedDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(consumedDir(root), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(consumedDir(root), 0o755)
+	if _, err := ConsumeIntent(root, "fc-4"); err == nil {
+		t.Fatal("a consumption that cannot complete must refuse")
+	}
+	// Fail-closed: the authorization is still live for the next
+	// tick, and nothing half-consumed can launch.
+	live, err := LiveIntents(root)
+	if err != nil || len(live) != 1 || live[0].Nonce != "fc-4" {
+		t.Fatalf("a refused consumption leaves the intent live: %v %v", live, err)
+	}
+	if consumed, _ := ConsumedActive(root); len(consumed) != 0 {
+		t.Fatalf("nothing may appear consumed after a refusal: %v", consumed)
+	}
+}

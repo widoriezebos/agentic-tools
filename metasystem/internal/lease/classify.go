@@ -281,14 +281,15 @@ type supervisedProc struct {
 // itself authenticates a main, then walks its ancestry: a MAIN ancestor makes
 // the caller that main's work, a delegate-signed ancestor makes it a
 // DELEGATE, a supervision or adapter-supervisor ancestor names it as such,
-// and a process running this repository's installed steward binary — proven
-// by the installation identity record — is the STEWARD. A caller with no
-// recognised ancestor is a HUMAN exactly when it has a controlling
-// terminal — the positive fact that a person is at a shell — and that
-// fact outranks the caller's own executable: arming the watchdog
-// must never reclassify a person or a main's work as STEWARD. Only a
-// caller nothing else recognises is tested against the installed
-// binary; unrecognised HEADLESS callers (a stray cron job, an
+// and an ancestor running the installed binary's STEWARD FAMILY —
+// proven by the installation identity record plus the family token —
+// makes the caller the steward's own work. Any OTHER invocation of
+// the same binary (lease run-held, a mission verb) is transparent:
+// the walk continues to whoever really owns the work, so arming the
+// watchdog never reclassifies a main's dispatch or a person's shell.
+// A caller with no recognised ancestor is a HUMAN exactly when it
+// has a controlling terminal — the positive fact that a person is at
+// a shell; unrecognised HEADLESS callers (a stray cron job, an
 // unenrolled scheduler) are UNTRUSTED and refused by the authority
 // gates, closing the accidental-privilege fall-through.
 func Classify(root string, caller int64) (Classification, error) {
@@ -323,7 +324,13 @@ func Classify(root string, caller int64) (Classification, error) {
 			if census.Runtime(command, signatures) != "" {
 				return Classification{Class: ClassDelegate, Pid: current}, nil
 			}
-			if stewardBinary != "" && sameExecutable(commandExecutable(command), stewardBinary) {
+			if stewardBinary != "" && stewardPlumbing(command, stewardBinary) {
+				// Only the steward FAMILY of the installed binary is
+				// the steward's own plumbing (steward run/tick/
+				// revive spawn the continuation chain). Any other
+				// invocation — lease run-held between a job child
+				// and its MAIN, a mission verb — is transparent: the
+				// walk continues to whoever really owns the work.
 				return Classification{Class: ClassSteward, Pid: current}, nil
 			}
 		}
@@ -350,15 +357,14 @@ func Classify(root string, caller int64) (Classification, error) {
 			return Classification{Class: ClassHuman}, nil
 		}
 	}
-	// The installed binary itself, headless and otherwise
-	// unrecognised, is the STEWARD: the runner detaches from every
-	// session, so nothing above matched it. This test runs LAST on
-	// purpose — a MAIN's work stays MAIN's and a person at a terminal
-	// stays HUMAN even when they invoke the very same binary; arming
-	// the watchdog must never reclassify them and disable the
-	// human-reserved verbs.
+	// The caller itself running the installed binary's steward
+	// family — the detached runner is the one real shape — is the
+	// STEWARD when nothing else claimed it. This test runs after
+	// the HUMAN checks on purpose: a person at a terminal stays a
+	// person whatever binary they typed; arming the watchdog must
+	// never reclassify them and disable the human-reserved verbs.
 	if stewardBinary != "" {
-		if command, cok := ProcessCommand(caller, probe); cok && sameExecutable(commandExecutable(command), stewardBinary) {
+		if command, cok := ProcessCommand(caller, probe); cok && stewardPlumbing(command, stewardBinary) {
 			return Classification{Class: ClassSteward, Pid: caller}, nil
 		}
 	}
@@ -375,6 +381,17 @@ func probeFixtureTerminal(pid int64, probe identity.FixtureProbe) (bool, bool) {
 		return entry.Terminal, true
 	}
 	return false, false
+}
+
+// stewardPlumbing reports whether a command line is the installed
+// binary invoking its steward family — the only invocations that
+// ARE the watchdog rather than plumbing some other actor ran.
+func stewardPlumbing(command, stewardBinary string) bool {
+	if !sameExecutable(commandExecutable(command), stewardBinary) {
+		return false
+	}
+	fields := strings.Fields(command)
+	return len(fields) >= 2 && fields[1] == "steward"
 }
 
 // verifiedStewardBinary authenticates this repository's steward

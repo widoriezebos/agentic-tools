@@ -305,7 +305,7 @@ func stageStewardInstall(t *testing.T, root string) string {
 	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("/bin/sleep", bin); err != nil {
+	if err := os.Symlink("/usr/bin/yes", bin); err != nil {
 		t.Fatal(err)
 	}
 	idPath := steward.RepoIdentityPath(top)
@@ -324,7 +324,10 @@ func stageStewardInstall(t *testing.T, root string) string {
 // its argv — probing mid-exec reads an empty command.
 func spawnAndSettle(t *testing.T, bin string) int64 {
 	t.Helper()
-	cmd := exec.Command(bin, "120")
+	// The argv carries the steward family token: classification is
+	// scoped to "<installed binary> steward …", never the bare
+	// executable.
+	cmd := exec.Command(bin, "steward")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -483,5 +486,113 @@ func TestTerminalBearingCallerOfInstalledBinaryStaysHuman(t *testing.T) {
 	// verb — taint resolution included — the moment the watchdog arms.
 	if got.Class != ClassHuman {
 		t.Fatalf("a terminal-bearing caller of the installed binary must stay HUMAN, got %+v", got)
+	}
+}
+
+func TestBinaryAncestorDoesNotPreemptTheAnnouncedMain(t *testing.T) {
+	root := t.TempDir()
+	self := int64(os.Getpid())
+	if _, err := Announce(root, "sess", self, selfStart(t), "tag", "fake", ""); err != nil {
+		t.Fatalf("announce self: %v", err)
+	}
+	bin := stageStewardInstall(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	intermediate, child := grandchild(t, root)
+	// The intermediate "is" the installed binary mid-dispatch — the
+	// exact shape lease run-held puts between a job child and its
+	// MAIN. The walk must reach the MAIN above it: STEWARD here
+	// would refuse every holder-only write of ordinary dispatch the
+	// moment the watchdog arms.
+	table := fmt.Sprintf(`{"%d": {"pidStartedAt": 1, "command": %q}}`, intermediate, bin+" lease run-held --root .")
+	tablePath := filepath.Join(root, "identity.json")
+	if err := os.WriteFile(tablePath, []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", tablePath)
+	got, err := Classify(root, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Class != ClassMain {
+		t.Fatalf("a job child under run-held under an announced main is that main's work, got %+v", got)
+	}
+}
+
+func TestHeadlessChildOfStewardChainClassifiesSteward(t *testing.T) {
+	root := t.TempDir()
+	bin := stageStewardInstall(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	intermediate, child := grandchild(t, root)
+	table := fmt.Sprintf(`{"%d": {"pidStartedAt": 1, "command": %q}, "%d": {"terminal": false}}`, intermediate, bin+" steward revive --repo .", child)
+	tablePath := filepath.Join(root, "identity.json")
+	if err := os.WriteFile(tablePath, []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", tablePath)
+	got, err := Classify(root, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Class != ClassSteward {
+		t.Fatalf("the runner's own headless chain is the steward, got %+v", got)
+	}
+}
+
+func TestTerminalCallerUnderPlumbingAncestorStaysHuman(t *testing.T) {
+	root := t.TempDir()
+	bin := stageStewardInstall(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	intermediate, child := grandchild(t, root)
+	// A NON-steward invocation of the installed binary (run-held) is
+	// transparent, so the terminal decides: pre-arming parity for a
+	// person's direct dispatch with no enrolled main.
+	table := fmt.Sprintf(`{"%d": {"pidStartedAt": 1, "command": %q}, "%d": {"terminal": true}}`, intermediate, bin+" lease run-held --root .", child)
+	tablePath := filepath.Join(root, "identity.json")
+	if err := os.WriteFile(tablePath, []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", tablePath)
+	got, err := Classify(root, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Class != ClassHuman {
+		t.Fatalf("a terminal-bearing caller under transparent plumbing is a person, got %+v", got)
+	}
+}
+
+func TestDelegateAncestorAboveStewardChainDoesNotPreempt(t *testing.T) {
+	root := t.TempDir()
+	bin := stageStewardInstall(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A runtime process above the tick (a fixture suite inside an
+	// agent session, an agent-invoked manual tick): the NEAREST
+	// recognised ancestor — the steward plumbing — owns the chain.
+	writeDevinAdapter(t, root)
+	intermediate, child := grandchild(t, root)
+	// The test process itself wears a delegate's command: the walk
+	// WOULD reach it two hops above the child if the steward
+	// plumbing did not return first.
+	table := fmt.Sprintf(`{"%d": {"pidStartedAt": 1, "command": %q}, "%d": {"pidStartedAt": 1, "command": "devin-delegate-acp session"}, "%d": {"terminal": false}}`,
+		intermediate, bin+" steward revive --repo .", int64(os.Getpid()), child)
+	tablePath := filepath.Join(root, "identity.json")
+	if err := os.WriteFile(tablePath, []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", tablePath)
+	got, err := Classify(root, child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Class != ClassSteward {
+		t.Fatalf("the steward plumbing is the nearest recognised ancestor, got %+v", got)
 	}
 }
