@@ -1507,3 +1507,57 @@ to start a loop without a declared failsafe round and must stop the
 loop itself when a tier fires. The live ledger stays untouched until
 migration per the manifest's source-digest binding; the migrated
 backlog carries the charter from cutover.
+
+## D121 — A silent stall must be impossible: the idle watchdog (2026-08-20, Wido's ruling)
+
+**What happened, in plain English.** The operator left for ten hours
+after delegating continuous implementation work. The working agent
+answered his last question, ended its turn with a prose promise to
+keep going — and a prose promise arms nothing. The agent runtime is
+event-driven: a turn ends and nothing runs again until a user
+message, a tracked background task completion, or a scheduled wakeup
+arrives. None was armed. The machine sat idle all night with open
+delegated work. The operator had to wake it himself, which his
+standing rule says must never happen.
+
+**Why the existing rule failed.** The rule existed — as agent memory
+("no unleashed open work: ending a turn with open work requires an
+armed wakeup"). Memory is advice, and turn-end is exactly where
+agent attention is weakest: the reply is finished, the frame is
+"done answering," and the open-work check is the thing that gets
+skipped. Any safety property that depends on agent discipline at
+turn-end will eventually fail. This is the same failure class the
+harness-absorbs-conduct ruling (D113) and the patience mechanization
+(D114) name: conduct carried by an agent instead of machinery.
+
+**Wido's ruling.** Inexcusable; design something that makes it
+impossible to ever happen again — the metasystem treatment, not any
+particular agent's behavior.
+
+**The design, two layers:**
+
+1. INTERIM, armed immediately in the working session: a session-level
+   scheduled guard that fires every twenty minutes while the session
+   is idle. If open delegated work exists and nothing is in flight,
+   it resumes the work; otherwise it reports healthy and stops. A
+   silent stall is bounded at roughly one period instead of ten
+   hours, and the guard runs regardless of what the agent remembered
+   at turn-end — that is the property that matters. Its honest
+   limits: it lives only as long as the session process, so it
+   cannot survive a crash or reboot. Hence layer two.
+
+2. DURABLE, goal idle-watchdog (added to the migration manifest):
+   an OS-scheduled steward, independent of any agent session. Its
+   open-work predicate reads the goal ledger and the transaction
+   journal; worker liveness comes from the shipped clock-step-immune
+   process identity; when it finds open work and no live worker it
+   revives the configured agent runtime through the adapter seam
+   (agent-agnostic per the standing ruling), writes a receipt, and
+   notifies the operator. Every revival is visible — a stall can
+   still BEGIN (an agent can always end a turn), but it can no
+   longer PERSIST silently, and its detection no longer depends on
+   any mind remembering anything.
+
+The conduct rule (keep the next tracked step in flight before going
+quiet) remains as an optimization — a session that arms its own next
+step never needs reviving — but nothing depends on it anymore.

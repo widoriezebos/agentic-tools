@@ -125,6 +125,11 @@ REVIEWED_SOURCE_SHA256: 266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f
 - parked-at: EPOCH
 - parked-because: Superseded-as-park — the backlog-git-sync format delivers its core (edit verb, direct conclusion, prose caps removed); the residue (cap policy audit) folds into agent-ease-assessment.
 
+### add-goal: idle-watchdog
+- Intent: A machine with open delegated work is never silently idle: an OS-scheduled steward detects open-work-with-no-live-worker and revives the configured agent runtime, receipting and notifying the operator every time (D121)
+- Origin: main
+- Next: Design per D121's charter: the open-work predicate reads the goal ledger and transaction journal; worker liveness uses the shipped process identity (ticks+bootId); revival launches through the adapter seam so it is agent-agnostic (Claude, codex, Devin alike); every revival writes a receipt and notifies the operator; the interim session-level cron guard from D121 retires when this lands. Wido's ruling 2026-08-20: a ten-hour silent stall is inexcusable — this must be machinery, never agent discipline.
+
 ### add-goal: backlog-local-promotion
 - Intent: A local-mode (remote-less) goal ledger can join a fleet: the promotion protocol with its full case table (absent, equal, remote-ancestor, local-ancestor, divergent), crash ordering, and fixtures
 - Origin: main
