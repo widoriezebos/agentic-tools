@@ -90,3 +90,30 @@ func TestGenesisMode(t *testing.T) {
 		t.Fatal("holder-only must still refuse a non-holder main")
 	}
 }
+
+func TestStewardIsAdmittedToExactlyItsOwnContinuationJob(t *testing.T) {
+	own := map[string]any{"class": "STEWARD", "stewardJob": "job-7"}
+	if err := Authorize("holder-only", own, "job-7"); err != nil {
+		t.Fatalf("the steward launches the job its authorization names: %v", err)
+	}
+	if err := Authorize("holder-only", own, "job-8"); err == nil {
+		t.Fatal("another job must refuse")
+	}
+	if err := Authorize("holder-only", map[string]any{"class": "STEWARD"}, "job-7"); err == nil {
+		t.Fatal("a steward without a named continuation job must refuse")
+	}
+	for _, mode := range []string{"record-writer", "adapter-writer", "supervision-only", "genesis"} {
+		if err := Authorize(mode, own, "job-7"); err == nil {
+			t.Fatalf("mode %s must refuse the steward", mode)
+		}
+	}
+}
+
+func TestUntrustedRefusesEveryMode(t *testing.T) {
+	caller := map[string]any{"class": "UNTRUSTED"}
+	for _, mode := range []string{"holder-only", "record-writer", "adapter-writer", "supervision-only", "genesis"} {
+		if err := Authorize(mode, caller, ""); err == nil {
+			t.Fatalf("mode %s must refuse an untrusted caller", mode)
+		}
+	}
+}

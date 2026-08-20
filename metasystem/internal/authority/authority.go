@@ -56,6 +56,16 @@ func Authorize(mode string, classification map[string]any, job string) error {
 	}
 
 	if mode == "holder-only" {
+		// The steward's one admission: launching the unattended
+		// continuation job its consumed authorization names. A dead
+		// worker holds no lease, and the steward's authority extends
+		// to exactly this job — every other holder-only write refuses.
+		if class == "STEWARD" {
+			if stewardJob, _ := classification["stewardJob"].(string); stewardJob != "" && job != "" && stewardJob == job {
+				return nil
+			}
+			return fmt.Errorf("the steward may launch only the continuation job its consumed authorization names")
+		}
 		return fmt.Errorf("control-plane write requires the authenticated lease holder")
 	}
 

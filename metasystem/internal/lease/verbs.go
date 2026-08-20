@@ -212,6 +212,7 @@ type ClassifyResult struct {
 	MainId       string        `json:"mainId,omitempty"`
 	Pid          int64         `json:"pid,omitempty"`
 	Revision     *int64        `json:"revision,omitempty"`
+	StewardJob   string        `json:"stewardJob,omitempty"`
 }
 
 // ClassifyVerb resolves and reports who a caller is, plus whether it holds
@@ -231,6 +232,17 @@ func ClassifyVerb(root string, callerPid int64) (ClassifyResult, error) {
 	if lease != nil {
 		out.ClaimEpoch = &lease.ClaimEpoch
 		out.Revision = &lease.Revision
+	}
+	if identity.Class == ClassSteward {
+		// The steward's authority extends to exactly the continuation
+		// job its consumed, not-yet-launched authorization names.
+		job, ok, err := steward.ConsumedUnstampedJob(root)
+		if err != nil {
+			return ClassifyResult{}, err
+		}
+		if ok {
+			out.StewardJob = job
+		}
 	}
 	return out, nil
 }

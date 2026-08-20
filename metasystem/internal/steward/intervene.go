@@ -147,6 +147,36 @@ func StampLaunch(repoRoot, nonce string) error {
 	return os.Rename(tmp, path)
 }
 
+// ConsumedUnstampedJob names the job of the one consumed intent
+// whose launch has not returned — the steward's live authorization.
+// The one-active-continuation guard makes more than one a defect,
+// reported rather than picked from.
+func ConsumedUnstampedJob(repoRoot string) (string, bool, error) {
+	paths, err := filepath.Glob(filepath.Join(consumedDir(repoRoot), "*.json"))
+	if err != nil {
+		return "", false, err
+	}
+	job := ""
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return "", false, err
+		}
+		var it Intent
+		if err := json.Unmarshal(data, &it); err != nil {
+			return "", false, fmt.Errorf("consumed intent %s malformed: %w", filepath.Base(p), err)
+		}
+		if it.LaunchStamped {
+			continue
+		}
+		if job != "" {
+			return "", false, fmt.Errorf("two consumed intents await launch (%s and %s); the one-active-continuation guard was bypassed", job, it.JobId)
+		}
+		job = it.JobId
+	}
+	return job, job != "", nil
+}
+
 // LiveIntents lists unconsumed records — the next tick's
 // reconciliation input and the one-active-continuation guard.
 func LiveIntents(repoRoot string) ([]Intent, error) {
