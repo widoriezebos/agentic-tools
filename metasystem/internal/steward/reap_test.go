@@ -92,3 +92,37 @@ func TestStampedWithoutRecordIsAnIncidentNotAGuess(t *testing.T) {
 		t.Fatalf("a traceless launch is named, not guessed at: %+v %v", reports, err)
 	}
 }
+
+func TestReapClosesTheChainAndValidatesTheReturn(t *testing.T) {
+	root := t.TempDir()
+	it := testIntent("rp-5")
+	it.Notified, it.LaunchStamped = true, true
+	consumedIntentOnDisk(t, root, it)
+	jobRecordOnDisk(t, root, it.JobId, "completed", "2026-08-20T15:30:00Z")
+	// A return exists but the standing checker will find the record
+	// incomplete (no chain fields): the outcome names the protocol
+	// error instead of blessing the bytes.
+	dir := filepath.Join(root, "artifacts", "agents", it.JobId, "rounds", "1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "return.json"), []byte(`{"jobId":"job-1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reports, err := ReapContinuations(root)
+	if err != nil || len(reports) != 1 || !strings.Contains(reports[0].Outcome, "PROTOCOL-ERROR") {
+		t.Fatalf("an invalid return is named a protocol error: %+v %v", reports, err)
+	}
+	// The chain is closed regardless: no permanently open chain.
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", it.JobId+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if closed, _ := record["chainClosed"].(bool); !closed {
+		t.Fatalf("the reaper closes the chain it reaps: %+v", record)
+	}
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "metasystem.version=1",
+  "title": "Steward continuation return",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobId", "round", "runtime", "sessionId", "model", "goal", "outcome", "landed", "remaining", "receipts"],
+  "properties": {
+    "jobId": {"type": "string", "minLength": 1},
+    "round": {"type": "integer", "minimum": 1},
+    "runtime": {"type": "string", "minLength": 1},
+    "sessionId": {"type": "string", "minLength": 1},
+    "model": {"type": "string", "minLength": 1},
+    "goal": {"type": "string", "minLength": 1,
+      "description": "the open goal this continuation served"},
+    "outcome": {"type": "string",
+      "enum": ["continued", "yielded-to-live-worker", "blocked"],
+      "description": "continued = work advanced; yielded = fresh progress by another worker was found and respected; blocked = a named blocker stops the goal"},
+    "landed": {"type": "array", "items": {"type": "string"},
+      "description": "commits or milestones landed, empty when none"},
+    "remaining": {"type": "string",
+      "description": "what still stands, or a named blocker; empty only with a concluded goal"},
+    "receipts": {"type": "integer", "minimum": 0,
+      "description": "receipt lines this continuation wrote"}
+  }
+}

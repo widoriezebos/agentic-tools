@@ -14,7 +14,8 @@ import (
 // Roles are the role schemas this materializer knows.
 var Roles = map[string]bool{
 	"behavior-judge": true, "code-critic": true, "design-critic": true,
-	"implementer": true, "investigator": true, "verifier": true,
+	"implementer": true, "investigator": true, "steward-continuation": true,
+	"verifier": true,
 }
 
 // VersionTwo returns the v2 form of a v1 schema: a version marker, the

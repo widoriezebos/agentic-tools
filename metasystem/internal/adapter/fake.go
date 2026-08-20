@@ -92,6 +92,12 @@ func WriteFakeReturn(recordPath, promptPath, outputPath string) error {
 		value["riskiestPart"] = "fake boundary"
 		value["diffBoundary"] = []any{}
 		value["whatWasDone"] = "simulated implementation"
+	case "steward-continuation":
+		value["goal"] = "fake-goal"
+		value["outcome"] = "continued"
+		value["landed"] = []any{}
+		value["remaining"] = "simulated continuation"
+		value["receipts"] = 0
 	case "verifier":
 		value["riskiestPart"] = "fake boundary"
 		value["whatWasDone"] = "simulated verification"
