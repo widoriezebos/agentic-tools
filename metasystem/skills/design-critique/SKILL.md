@@ -29,6 +29,10 @@ Require the critic's verdict line to count only material findings.
 3. **Read the findings body, never just the verdict line.** A summary that says "no blocking findings" above a body that lists one is itself a finding; the body governs.
 4. Stop the loop the first round that produces no material finding. Do not run another round for prose consistency.
 
+## Declare the Failsafe Round at Loop Start
+
+The loop's stop rule is fixed before round 1, never improvised mid-loop: the brief names a numbered failsafe round, and the loop also closes early the first round whose material findings are all fixture-expressible — those findings become obligation-matrix rows and implementation begins. After the failsafe round, only a demonstrated requirement failure or a shape-level defect reopens prose. A stop rule that depends on someone remembering the right ruling at the right round fails at exactly the rounds it exists for: the backlog-sync loop declared its failsafe only at round 10 because the operator's rulings happened to be remembered (D119), while the idle-watchdog loop declared it at start and closed in five rounds with the failsafe firing at round 3.
+
 ## Round Budget and Exhaustion
 
 The shipped round budget is three focused rounds; record it in the brief. If
@@ -58,6 +62,8 @@ Refutations carry the same burden of proof as the findings they answer. Record t
 ## Fix the Generating Cause Once
 
 When the same class of finding recurs across rounds ("section X contradicts row Y", again and again), stop patching instances. Rewrite the accreted artifact in a single pass and let the next round attack the rewrite. A long design patched in place accumulates contradictions faster than a loop can remove them, and the loop degenerates into finding the previous round's patch seams.
+
+The same discipline applies to machinery grown under critique pressure: when successive rounds add mechanism to satisfy the critic and the material count still rises, stop answering with machinery and invert the question — name the requirement the smaller design fails. Every mechanism added to appease a finding is itself new attack surface, so the loop can climb its own ladder indefinitely: the backlog-sync design accreted proof envelopes, semantic replay, and anchor chains across three rounds while findings rose from nine to fourteen, and converged three rounds after the scope reduction put the smaller design on the table (D118).
 
 ## Expect the Returns to Diminish
 
