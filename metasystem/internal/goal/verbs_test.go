@@ -650,3 +650,92 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 		}
 	}
 }
+
+func TestDetachReleasesWithoutSplittingTheQuota(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	for i, id := range []string{"det-one", "det-two"} {
+		if res, err := Open(verbReq(a, fmt.Sprintf("01J5X00000000000000000D0%d0", i), "mac-a"), id, "Det "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		if res, err := SetArc(verbReq(a, fmt.Sprintf("01J5X00000000000000000D1%d0", i), "mac-a"), id, "det-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("set-arc %s: %+v %v", id, res, err)
+		}
+	}
+	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000D200", "mac-a"), "det-one"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim arc: %+v %v", res, err)
+	}
+	// Detaching a claimed member releases it: the quota never
+	// splits one claim into two independent ones.
+	res, err := Detach(verbReq(a, "01J5X00000000000000000D210", "mac-a"), "det-two")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("detach: %+v %v", res, err)
+	}
+	t2, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freed := t2.Live["det-two"]
+	if freed.Arc != "" || freed.State != StateQueued || freed.Claimed != nil {
+		t.Fatalf("the departing member releases arcless: %+v", freed)
+	}
+	kept := t2.Live["det-one"]
+	if kept.State != StateClaimed || kept.Claimed == nil {
+		t.Fatalf("the remaining member keeps the claim: %+v", kept)
+	}
+	if problems := ValidateTree(t2); len(problems) != 0 {
+		t.Fatalf("the tree stays lawful after the detach: %v", problems)
+	}
+}
+
+func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000D300", "mac-a"), "anchor", "The anchor.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --claim anchor: %+v %v", res, err)
+	}
+	if res, err := SetArc(verbReq(a, "01J5X00000000000000000D310", "mac-a"), "anchor", "join-arc"); err == nil && res.Outcome == OutcomeConfirmed {
+		t.Fatalf("set-arc on a CLAIMED goal must refuse (queued moves only): %+v", res)
+	}
+	// Release the standing claim first — the validator refuses a
+	// second independent claim (the quota is one per machine), which
+	// the first draft of this test proved by accident.
+	if res, err := Release(verbReq(a, "01J5X00000000000000000D315", "mac-a"), "anchor"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("release anchor: %+v %v", res, err)
+	}
+	// Re-anchor properly: open a queued member, arc it, claim the arc.
+	if res, err := Open(verbReq(a, "01J5X00000000000000000D320", "mac-a"), "anchor2", "Anchor two.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open anchor2: %+v %v", res, err)
+	}
+	if res, err := SetArc(verbReq(a, "01J5X00000000000000000D330", "mac-a"), "anchor2", "join-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("set-arc anchor2: %+v %v", res, err)
+	}
+	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000D340", "mac-a"), "anchor2"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim join-arc: %+v %v", res, err)
+	}
+	// A stranger cannot move a queued goal into the claimed arc.
+	if res, err := Open(verbReq(b, "01J5X00000000000000000D350", "mac-b"), "joiner", "Wants in.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open joiner: %+v %v", res, err)
+	}
+	res, err := SetArc(verbReq(b, "01J5X00000000000000000D360", "mac-b"), "joiner", "join-arc")
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "stranger") {
+		t.Fatalf("a stranger's move into a claimed arc rejects: %+v %v", res, err)
+	}
+	// The claimant's own move auto-claims the joiner under the
+	// standing claim — the arc stays one unit.
+	res, err = SetArc(verbReq(a, "01J5X00000000000000000D370", "mac-a"), "joiner", "join-arc")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the claimant's move proceeds: %+v %v", res, err)
+	}
+	t2, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := t2.Live["joiner"]
+	if joined.Arc != "join-arc" || joined.State != StateClaimed || joined.Claimed == nil || joined.Claimed.Machine != "mac-a" {
+		t.Fatalf("the joiner auto-claims under the standing claimant: %+v", joined)
+	}
+	if problems := ValidateTree(t2); len(problems) != 0 {
+		t.Fatalf("the joined arc stays lawful: %v", problems)
+	}
+}

@@ -962,3 +962,100 @@ func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
 }
+
+// Detach removes one member from its arc. A member claimed under
+// the arc's claimant RELEASES on the way out — the quota never
+// splits one claim into two (R4-08's no-quota-split leg).
+func Detach(r VerbRequest, id string) (PublishResult, error) {
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "detach", Targets: []string{id}},
+		Message: "goal detach " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f, exists := t.Live[id]
+			if !exists {
+				return nil, fmt.Errorf("goal %s is not live; nothing to detach", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.Arc == "" {
+				return nil, AlreadyApplied{}
+			}
+			if f.State == StateClaimed && f.Claimed != nil {
+				if f.Claimed.Machine != r.Actor.Machine && r.Actor.Human == "" {
+					return nil, fmt.Errorf("goal %s is claimed by %s; detaching another's claimed member is a human act", id, f.Claimed.Machine)
+				}
+				// The departing member releases: one claim, one arc.
+				f.State = StateQueued
+				f.Claimed = nil
+			}
+			f.Arc = ""
+			touch(f, r, "detach", []string{id})
+			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
+
+// SetArc moves a queued goal into an arc. Moving into an arc whose
+// members are CLAIMED auto-claims the goal under that claimant —
+// but only when the actor IS that claimant and the goal's blockers
+// are done; a stranger and an unfinished blocker refuse by name.
+func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
+	if arc == "" {
+		return PublishResult{}, fmt.Errorf("set-arc names its arc; detach removes membership")
+	}
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "set-arc", Targets: []string{id}, Args: map[string]string{"arc": arc}},
+		Message: "goal set-arc " + id + " -> " + arc,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f, exists := t.Live[id]
+			if !exists {
+				return nil, fmt.Errorf("goal %s is not live", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.State != StateQueued {
+				return nil, fmt.Errorf("goal %s is %s; arc membership moves queued goals (a claimed source releases through detach)", id, f.State)
+			}
+			// The destination arc's standing claim, if any.
+			var claimant *ClaimRecord
+			for _, liveId := range sortedGoalIds(t.Live) {
+				m := t.Live[liveId]
+				if m.Arc == arc && m.State == StateClaimed && m.Claimed != nil {
+					claimant = m.Claimed
+					break
+				}
+			}
+			if claimant != nil {
+				if claimant.Machine != r.Actor.Machine {
+					return nil, fmt.Errorf("arc %s is claimed by %s; a stranger cannot move goals into a claimed arc", arc, claimant.Machine)
+				}
+				for _, dep := range f.Blocked {
+					if depState(t, dep) != StateDone {
+						return nil, fmt.Errorf("goal %s is blocked by %s, which is not done; it cannot join the claimed arc unclaimed-late", id, dep)
+					}
+				}
+				// The join auto-claims under the standing claimant:
+				// the arc stays one unit under one pair.
+				f.State = StateClaimed
+				f.Claimed = &ClaimRecord{Machine: claimant.Machine, Lineage: claimant.Lineage, At: r.stamp()}
+			}
+			f.Arc = arc
+			touch(f, r, "set-arc", []string{id})
+			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
