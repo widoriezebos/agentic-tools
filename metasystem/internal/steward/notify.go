@@ -71,13 +71,14 @@ func DeliverPending(repoRoot string) (int, error) {
 		if err := Deliver(repoRoot, n.Message); err != nil {
 			return delivered, err
 		}
-		if err := MarkDelivered(repoRoot, n.Nonce); err != nil {
+		// The intent acknowledges FIRST: a crash between these two
+		// writes then repeats a delivery (benign) instead of
+		// stranding an undelivered-looking intent with no pending
+		// message (a permanent suppression).
+		if err := markIntentNotified(repoRoot, n.Nonce); err != nil {
 			return delivered, err
 		}
-		// A delivered revival message completes that intent's gate:
-		// stranding Notified=false here would suppress the revival
-		// forever behind its own successful delivery.
-		if err := markIntentNotified(repoRoot, n.Nonce); err != nil {
+		if err := MarkDelivered(repoRoot, n.Nonce); err != nil {
 			return delivered, err
 		}
 		delivered++

@@ -176,6 +176,13 @@ $protocol_message"
   exit 0
 fi
 
+# The second visibility channel runs before EVERY exit from here on:
+# a session's start names anything the steward could not deliver,
+# and the unidentified-agent branch is the degraded case that needs
+# it most.
+pending_line=$("$ms" steward pending --repo "$repo" 2>/dev/null || true)
+[[ -n "$pending_line" ]] && surface_json "Steward incidents pending: $pending_line"
+
 if [[ -z "$identity" ]]; then
   surface_json "Metasystem supervision could not identify the immediate $runtime agent process; arming was refused."
   exit 0
@@ -190,12 +197,6 @@ if [[ "$event" == end ]]; then
   METASYSTEM_AGENT_RUNTIME="$runtime" "$arm" --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" --tag "$tag" --retire >/dev/null 2>&1 || true
   exit 0
 fi
-
-# The second visibility channel runs UNCONDITIONALLY: a session's
-# start names anything the steward could not deliver, whatever
-# becomes of this session's own arming below.
-pending_line=$("$ms" steward pending --repo "$repo" 2>/dev/null || true)
-[[ -n "$pending_line" ]] && surface_json "Steward incidents pending: $pending_line"
 
 if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$arm" --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" --tag "$tag" 2>&1); then
   # The watchdog revives with the first metasystem activity on this

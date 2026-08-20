@@ -35,10 +35,11 @@ func runnerLogPath(repoRoot string) string  { return filepath.Join(runnerDir(rep
 
 // RunnerRecord names the live runner for status and disarm.
 type RunnerRecord struct {
-	Pid        int64  `json:"pid"`
-	StartTicks int64  `json:"startTicks"`
-	BootID     string `json:"bootId"`
-	StartedAt  string `json:"startedAt"`
+	Pid          int64  `json:"pid"`
+	StartTicks   int64  `json:"startTicks"`
+	BootID       string `json:"bootId"`
+	PidStartedAt int64  `json:"pidStartedAt"` // seconds identity: darwin has no ticks pair
+	StartedAt    string `json:"startedAt"`
 }
 
 func runnerRecordPath(repoRoot string) string {
@@ -82,7 +83,8 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 	}
 	if err := writeJSONAtomic(runnerRecordPath(repoRoot), RunnerRecord{
 		Pid: int64(os.Getpid()), StartTicks: self.StartTicks, BootID: self.BootID,
-		StartedAt: time.Now().UTC().Format(time.RFC3339),
+		PidStartedAt: self.StartedAt.Unix(),
+		StartedAt:    time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
 		return err
 	}
@@ -241,7 +243,15 @@ func liveRunner(repoRoot string) (RunnerRecord, bool) {
 	if rec.StartTicks > 0 && rec.BootID != "" && live.StartTicks > 0 && live.BootID != "" {
 		return rec, live.StartTicks == rec.StartTicks && live.BootID == rec.BootID
 	}
-	return rec, true
+	if rec.PidStartedAt > 0 {
+		// The seconds identity decides where no ticks pair exists: a
+		// pid reused by an unrelated process is not our runner, and
+		// neither arm nor disarm may treat it as one.
+		return rec, live.StartedAt.Unix() == rec.PidStartedAt
+	}
+	// A record with no identity at all proves nothing: treat the
+	// runner as absent rather than adopt a stranger.
+	return rec, false
 }
 
 // writeJSONAtomic and readJSON are the runner record's disk shape.

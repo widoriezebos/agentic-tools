@@ -52,12 +52,19 @@ func PrepareIntent(repoRoot string, it Intent) error {
 		Skills: "steward", Verify: "skipped", Corrections: "0", StopLoss: "no",
 		Note: fmt.Sprintf("steward revival: intent %s revives %s via job %s", it.Nonce, it.Goal, it.JobId),
 	}); res.Code != 0 {
+		// A half-prepared intent must not survive: it would suppress
+		// the runner and let a manual retry skip preparation.
+		_ = CancelIntent(repoRoot, it.Nonce, "preparation failed at the receipt")
 		return fmt.Errorf("the revival receipt did not write: %v", res.Err)
 	}
-	return QueueNotification(repoRoot, PendingNotification{
+	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce:   it.Nonce,
 		Message: fmt.Sprintf("steward: reviving %s (worker provably dead); job %s", it.Goal, it.JobId),
-	})
+	}); err != nil {
+		_ = CancelIntent(repoRoot, it.Nonce, "preparation failed at the notification queue")
+		return err
+	}
+	return nil
 }
 
 // CompleteRevival runs the delivery gate and the critical section
@@ -83,11 +90,11 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		if err := Deliver(repoRoot, fmt.Sprintf("steward: reviving %s (worker provably dead); job %s", it.Goal, it.JobId)); err != nil {
 			return ReviveOutcome{Reason: "notification not delivered; launch stays gated: " + err.Error()}, nil
 		}
-		_ = MarkDelivered(repoRoot, it.Nonce)
 		it.Notified = true
 		if err := UpdateIntent(repoRoot, *it); err != nil {
 			return ReviveOutcome{}, err
 		}
+		_ = MarkDelivered(repoRoot, it.Nonce)
 	}
 
 	// The critical section: fence, verdict, consume, launch, stamp.

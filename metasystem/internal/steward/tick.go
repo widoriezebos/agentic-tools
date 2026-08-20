@@ -58,18 +58,18 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	// not suppress this same tick's decision.
 	reaped, err := ReapContinuations(repoRoot)
 	if err != nil {
-		return degradedTick(repoRoot, "reaping failed: "+err.Error()), nil
+		return degradedTick(repoRoot, "reaping failed: "+err.Error())
 	}
 
 	evPath := EvidencePath(repoRoot)
 	prev, err := LoadEvidence(evPath)
 	if err != nil {
 		// A torn store degrades honestly: report, do not guess ages.
-		return degradedTick(repoRoot, err.Error()), nil
+		return degradedTick(repoRoot, err.Error())
 	}
 	marks, err := CurrentMarks(repoRoot)
 	if err != nil {
-		return degradedTick(repoRoot, err.Error()), nil
+		return degradedTick(repoRoot, err.Error())
 	}
 	ev := Observe(prev, marks)
 
@@ -98,13 +98,17 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 // degradedTick is every degraded early exit's one shape: the
 // incident reaches the durable queue BEFORE the tick returns, so a
 // broken store or unreadable repository is never a silent verdict.
-func degradedTick(repoRoot, reason string) TickResult {
+func degradedTick(repoRoot, reason string) (TickResult, error) {
 	d := Decision{VerdictDegraded, ActNotify, reason}
-	_ = QueueNotification(repoRoot, PendingNotification{
+	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce:   "verdict-" + string(VerdictDegraded),
 		Message: fmt.Sprintf("steward: %s — %s", d.Verdict, d.Reason),
-	})
-	return TickResult{Decision: d}
+	}); err != nil {
+		// Neither queued nor silent: the caller surfaces a tick that
+		// could not even record its own degradation.
+		return TickResult{Decision: d}, fmt.Errorf("degraded (%s) and the incident could not queue: %v", reason, err)
+	}
+	return TickResult{Decision: d}, nil
 }
 
 // decideNow assembles one snapshot over the given evidence and

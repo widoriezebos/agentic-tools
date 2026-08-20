@@ -103,10 +103,28 @@ func closeContinuationChain(repoRoot, jobId string) error {
 // and how. Still-running is the only not-done answer.
 func continuationOutcome(repoRoot string, it Intent) (string, bool) {
 	if !it.LaunchStamped {
-		// Consumed but never stamped: the crash boundary between
-		// dispatch and stamp. The launch outcome is unknowable from
-		// here — reconcile visibly rather than guess.
-		return "consumed but launch never stamped; outcome unknown — inspect the job record and receipts", true
+		// Consumed but never stamped: either the crash boundary
+		// between dispatch and stamp, or a dispatcher child still
+		// mid-flight after its Go parent died. The job record
+		// decides: a non-terminal record is a LIVE launch — leave it
+		// and the guard alone; a terminal one, or a long absence,
+		// reconciles visibly rather than guessing.
+		recordPath := filepath.Join(repoRoot, "artifacts", "agents", "jobs", it.JobId+".json")
+		if data, err := os.ReadFile(recordPath); err == nil {
+			var rec struct {
+				EndedAt string `json:"endedAt"`
+			}
+			if json.Unmarshal(data, &rec) == nil && rec.EndedAt == "" {
+				return "", false
+			}
+			return "consumed but launch never stamped; its job ended — outcome unknown, inspect the record and receipts", true
+		}
+		info, err := os.Stat(filepath.Join(consumedDir(repoRoot), it.Nonce+".json"))
+		if err == nil && time.Since(info.ModTime()) < 10*time.Minute {
+			// The pending/setup window: the record may not exist yet.
+			return "", false
+		}
+		return "consumed but launch never stamped and no job record appeared; outcome unknown — inspect receipts", true
 	}
 	recordPath := filepath.Join(repoRoot, "artifacts", "agents", "jobs", it.JobId+".json")
 	data, err := os.ReadFile(recordPath)

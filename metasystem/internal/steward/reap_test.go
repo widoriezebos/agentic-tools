@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func consumedIntentOnDisk(t *testing.T, root string, it Intent) {
@@ -76,9 +77,37 @@ func TestUnstampedConsumedReconcilesAsNotifiedUnknown(t *testing.T) {
 	it := testIntent("rp-3")
 	it.Notified = true // consumed after delivery, crashed before stamp
 	consumedIntentOnDisk(t, root, it)
+	// Inside the pending/setup grace the launch may still be live:
+	// nothing reconciles yet.
+	if reports, err := ReapContinuations(root); err != nil || len(reports) != 0 {
+		t.Fatalf("the setup window is respected: %+v %v", reports, err)
+	}
+	// Past the grace with no record, the boundary reconciles visibly.
+	old := time.Now().Add(-11 * time.Minute)
+	if err := os.Chtimes(filepath.Join(consumedDir(root), "rp-3.json"), old, old); err != nil {
+		t.Fatal(err)
+	}
 	reports, err := ReapContinuations(root)
 	if err != nil || len(reports) != 1 || !strings.Contains(reports[0].Outcome, "outcome unknown") {
 		t.Fatalf("the crash boundary reconciles visibly: %+v %v", reports, err)
+	}
+}
+
+func TestUnstampedWithALiveJobIsLeftAlone(t *testing.T) {
+	root := t.TempDir()
+	it := testIntent("rp-6")
+	it.Notified = true
+	consumedIntentOnDisk(t, root, it)
+	jobRecordOnDisk(t, root, it.JobId, "running", "")
+	old := time.Now().Add(-11 * time.Minute)
+	if err := os.Chtimes(filepath.Join(consumedDir(root), "rp-6.json"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if reports, err := ReapContinuations(root); err != nil || len(reports) != 0 {
+		t.Fatalf("a dispatcher child still mid-flight owns its launch: %+v %v", reports, err)
+	}
+	if active, _ := ConsumedActive(root); len(active) != 1 {
+		t.Fatal("the guard holds while the launch lives")
 	}
 }
 
