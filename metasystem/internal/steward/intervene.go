@@ -110,6 +110,41 @@ func ConsumeIntent(repoRoot, nonce string) (Intent, error) {
 	return it, nil
 }
 
+// ConsumedIntent reads one consumed record — the dispatch
+// authorization's source of staged values.
+func ConsumedIntent(repoRoot, nonce string) (Intent, error) {
+	data, err := os.ReadFile(filepath.Join(consumedDir(repoRoot), nonce+".json"))
+	if err != nil {
+		return Intent{}, fmt.Errorf("no consumed intent %s: %w", nonce, err)
+	}
+	var it Intent
+	if err := json.Unmarshal(data, &it); err != nil {
+		return Intent{}, fmt.Errorf("consumed intent %s malformed: %w", nonce, err)
+	}
+	return it, nil
+}
+
+// StampLaunch marks a consumed intent's dispatch as returned — the
+// crash boundary the next tick reconciles against: consumed without
+// a stamp is a notified unknown outcome.
+func StampLaunch(repoRoot, nonce string) error {
+	path := filepath.Join(consumedDir(repoRoot), nonce+".json")
+	it, err := ConsumedIntent(repoRoot, nonce)
+	if err != nil {
+		return err
+	}
+	it.LaunchStamped = true
+	data, err := json.MarshalIndent(it, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // LiveIntents lists unconsumed records — the next tick's
 // reconciliation input and the one-active-continuation guard.
 func LiveIntents(repoRoot string) ([]Intent, error) {

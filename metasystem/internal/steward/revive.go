@@ -113,6 +113,9 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 	if err := launch(consumed); err != nil {
 		return ReviveOutcome{Reason: "dispatch failed after consumption; next tick reconciles: " + err.Error()}, nil
 	}
+	if err := StampLaunch(repoRoot, consumed.Nonce); err != nil {
+		return ReviveOutcome{}, err
+	}
 	ev = RecordRevival(ev)
 	if err := SaveEvidence(EvidencePath(repoRoot), ev); err != nil {
 		return ReviveOutcome{}, err

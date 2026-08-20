@@ -1,0 +1,12 @@
+{
+ "required": [],
+ "optional": {},
+ "waivers": {
+  "readRoots": [
+   "devin-read-roots-unenforced"
+  ],
+  "writeRoots": [
+   "devin-write-roots-unenforced"
+  ]
+ }
+}
