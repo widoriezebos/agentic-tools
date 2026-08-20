@@ -236,7 +236,7 @@ func ClassifyVerb(root string, callerPid int64) (ClassifyResult, error) {
 	if identity.Class == ClassSteward {
 		// The steward's authority extends to exactly the continuation
 		// job its consumed, not-yet-launched authorization names.
-		job, ok, err := steward.ConsumedUnstampedJob(root)
+		job, ok, err := steward.ConsumedActiveJob(root)
 		if err != nil {
 			return ClassifyResult{}, err
 		}

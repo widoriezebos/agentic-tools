@@ -32,6 +32,8 @@ type Intent struct {
 	Notified      bool   `json:"notified"`      // delivery confirmed
 	DispatchedAt  int    `json:"dispatchedAt"`  // tick; zero = never
 	LaunchStamped bool   `json:"launchStamped"` // dispatch returned
+	ReapedAt      string `json:"reapedAt,omitempty"`
+	Outcome       string `json:"outcome,omitempty"`
 }
 
 // Paths under the steward's own artifact directory.
@@ -147,34 +149,45 @@ func StampLaunch(repoRoot, nonce string) error {
 	return os.Rename(tmp, path)
 }
 
-// ConsumedUnstampedJob names the job of the one consumed intent
-// whose launch has not returned — the steward's live authorization.
-// The one-active-continuation guard makes more than one a defect,
-// reported rather than picked from.
-func ConsumedUnstampedJob(repoRoot string) (string, bool, error) {
+// ConsumedActive lists consumed intents not yet reaped — the window
+// of the steward's authority over its continuation, from consumption
+// through the reaper's close.
+func ConsumedActive(repoRoot string) ([]Intent, error) {
 	paths, err := filepath.Glob(filepath.Join(consumedDir(repoRoot), "*.json"))
 	if err != nil {
-		return "", false, err
+		return nil, err
 	}
-	job := ""
+	var out []Intent
 	for _, p := range paths {
 		data, err := os.ReadFile(p)
 		if err != nil {
-			return "", false, err
+			return nil, err
 		}
 		var it Intent
 		if err := json.Unmarshal(data, &it); err != nil {
-			return "", false, fmt.Errorf("consumed intent %s malformed: %w", filepath.Base(p), err)
+			return nil, fmt.Errorf("consumed intent %s malformed: %w", filepath.Base(p), err)
 		}
-		if it.LaunchStamped {
-			continue
+		if it.ReapedAt == "" {
+			out = append(out, it)
 		}
-		if job != "" {
-			return "", false, fmt.Errorf("two consumed intents await launch (%s and %s); the one-active-continuation guard was bypassed", job, it.JobId)
-		}
-		job = it.JobId
 	}
-	return job, job != "", nil
+	return out, nil
+}
+
+// ConsumedActiveJob names the one active continuation's job. More
+// than one is the guard bypass it would be, reported not picked from.
+func ConsumedActiveJob(repoRoot string) (string, bool, error) {
+	active, err := ConsumedActive(repoRoot)
+	if err != nil {
+		return "", false, err
+	}
+	if len(active) > 1 {
+		return "", false, fmt.Errorf("two consumed intents are active (%s and %s); the one-active-continuation guard was bypassed", active[0].JobId, active[1].JobId)
+	}
+	if len(active) == 0 {
+		return "", false, nil
+	}
+	return active[0].JobId, true, nil
 }
 
 // LiveIntents lists unconsumed records — the next tick's

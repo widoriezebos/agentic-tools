@@ -32,7 +32,8 @@ func (c TickConfig) withDefaults() TickConfig {
 type TickResult struct {
 	Decision Decision
 	Evidence Evidence
-	OpenWork string // the open-work reason, for the report
+	OpenWork string       // the open-work reason, for the report
+	Reaped   []ReapReport // continuations this tick closed
 }
 
 // RunTick folds one observation into the persisted evidence and
@@ -40,6 +41,13 @@ type TickResult struct {
 // returning, so a crash after the tick never replays its aging.
 func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, error) {
 	cfg = cfg.withDefaults()
+
+	// Close finished continuations first: the guard a reap frees must
+	// not suppress this same tick's decision.
+	reaped, err := ReapContinuations(repoRoot)
+	if err != nil {
+		return TickResult{Decision: Decision{VerdictDegraded, ActNotify, err.Error()}}, nil
+	}
 
 	evPath := EvidencePath(repoRoot)
 	prev, err := LoadEvidence(evPath)
@@ -60,7 +68,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	if err := SaveEvidence(evPath, ev); err != nil {
 		return TickResult{}, err
 	}
-	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason}, nil
+	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason, Reaped: reaped}, nil
 }
 
 // decideNow assembles one snapshot over the given evidence and
@@ -88,6 +96,10 @@ func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, workReason, nil
 	}
+	activeConsumed, err := ConsumedActive(repoRoot)
+	if err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, workReason, nil
+	}
 
 	return Decide(Snapshot{
 		Work:               work,
@@ -96,6 +108,6 @@ func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence
 		StaleTicks:         cfg.StaleTicks,
 		DryRevivals:        ev.DryRevivals,
 		MaxRevivals:        cfg.MaxRevivals,
-		ActiveContinuation: len(live) > 0,
+		ActiveContinuation: len(live) > 0 || len(activeConsumed) > 0,
 	}), workReason, nil
 }

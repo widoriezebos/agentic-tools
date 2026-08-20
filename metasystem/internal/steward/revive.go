@@ -143,7 +143,11 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, workReason, nil
 	}
-	others := 0
+	activeConsumed, err := ConsumedActive(repoRoot)
+	if err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, workReason, nil
+	}
+	others := len(activeConsumed)
 	for _, l := range live {
 		if l.Nonce != excludeNonce {
 			others++
