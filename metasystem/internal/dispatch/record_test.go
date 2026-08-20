@@ -467,3 +467,57 @@ func TestRecordCreateRefusesFreshLaterRoundNames(t *testing.T) {
 		t.Fatal("an unparseable round suffix must refuse, not bypass")
 	}
 }
+
+func TestLossVerdictVoidsDuringCancellation(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	setupPending(t, root, "job-a")
+
+	run := writeJSON(t, filepath.Join(t.TempDir(), "run.json"), map[string]any{
+		"sessionId": "sess-1", "phase": "running", "error": nil,
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "running", run); err != nil {
+		t.Fatalf("cas pending->running: %v", err)
+	}
+
+	// The F-1 interleave: a reaper read the record BEFORE the
+	// cancel's marker landed, then tries its stale failed verdict on
+	// a status-only compare. The marker must void it — every verdict
+	// owner (Go reaper, shell reaper, mission drain) converges on
+	// this one locked compare.
+	mark := writeJSON(t, filepath.Join(t.TempDir(), "mark.json"), map[string]any{
+		"phase": "cancelling",
+	})
+	if _, err := RecordCAS(root, "job-a", "running", "running", mark); err != nil {
+		t.Fatalf("marker metadata update: %v", err)
+	}
+	stale := writeJSON(t, filepath.Join(t.TempDir(), "stale.json"), map[string]any{
+		"phase": "supervision", "error": "process-lost",
+	})
+	observed, err := RecordCAS(root, "job-a", "running", "failed", stale)
+	if err == nil {
+		t.Fatal("a loss verdict during cancellation must void, not land")
+	}
+	if observed != "observed=cancelling" {
+		t.Fatalf("the void names what the compare saw: %q", observed)
+	}
+	record := readRecord(t, root, "job-a")
+	if record["status"] != "running" || record["phase"] != "cancelling" {
+		t.Fatalf("the marked record is untouched by the stale verdict: %v/%v", record["status"], record["phase"])
+	}
+	// A timeout verdict voids the same way.
+	if observed, err := RecordCAS(root, "job-a", "running", "timeout", stale); err == nil || observed != "observed=cancelling" {
+		t.Fatalf("timeout must void during cancellation: %q %v", observed, err)
+	}
+	// The cancel's own concluding swap still lands.
+	conclude := writeJSON(t, filepath.Join(t.TempDir(), "conclude.json"), map[string]any{
+		"phase": "cancelled", "error": nil,
+	})
+	if _, err := RecordCAS(root, "job-a", "running", "cancelled", conclude); err != nil {
+		t.Fatalf("the cancel's swap concludes the marked record: %v", err)
+	}
+	record = readRecord(t, root, "job-a")
+	if record["status"] != "cancelled" {
+		t.Fatalf("the record concludes cancelled: %v", record["status"])
+	}
+}

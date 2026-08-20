@@ -1433,9 +1433,18 @@ internal_cancel() {
   case "$status" in pending|running) ;; *) release_lifecycle_lock "$job"; exit 0 ;; esac
   # The marker lands BEFORE the kill: a reaper pass that concludes the
   # dead group before our own swap below still reads the cancel and
-  # concludes cancelled — the kill-before-mark window is closed.
+  # concludes cancelled — the kill-before-mark window is closed. An
+  # unmarked kill would reopen it, so a marker that cannot land stops
+  # the cancel: a lost compare means the job went terminal under us
+  # (nothing left to cancel); any other failure refuses by name.
   patch=$(mktemp "$record_locks/cancelling.XXXXXX"); printf '{"phase":"cancelling"}\n' >"$patch"
-  record_cas "$job" "$status" "$status" "$patch" || true
+  if ! record_cas "$job" "$status" "$status" "$patch"; then
+    status=$(json_field "$record" status)
+    case "$status" in
+      pending|running) release_lifecycle_lock "$job"; die 1 "cancel could not mark $job; refusing to kill an unmarked job" ;;
+      *) release_lifecycle_lock "$job"; exit 0 ;;
+    esac
+  fi
   wind_down_group "$record" || { release_lifecycle_lock "$job"; exit 1; }
   patch=$(mktemp "$record_locks/cancel.XXXXXX"); printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
   record_cas "$job" "$status" cancelled "$patch" || true

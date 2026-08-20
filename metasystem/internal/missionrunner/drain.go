@@ -223,6 +223,16 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 		if e.custodian(pid, start, tag) != identity.Dead {
 			return
 		}
+		// A cancel marks the record before it kills: a dead marked
+		// group is that cancel's outcome here exactly as in the
+		// supervision reaper — the marker outranks the budget.
+		if phase, _ := doc["phase"].(string); phase == "cancelling" {
+			e.reapCAS(job, facts.Status, "cancelled", map[string]any{
+				"error": nil, "phase": "supervision",
+				"groupDeathProvenAt": nowISO(),
+			})
+			return
+		}
 		if facts.Status == "running" && facts.BudgetExpired {
 			e.reapCAS(job, "running", "timeout", map[string]any{
 				"error": "budget-cap", "phase": "supervision",

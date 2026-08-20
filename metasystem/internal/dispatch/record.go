@@ -289,6 +289,17 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 			observed = "observed=" + current
 			return silentRefusal(3)
 		}
+		// A cancellation in progress voids any loss verdict, HERE —
+		// the one lock every verdict owner passes through. A reaper
+		// (Go, shell, or mission drain) that read the record before
+		// the cancel's marker landed would otherwise conclude the
+		// TERMed group failed on a status-only compare, and the
+		// cancel's own swap would silently lose. The voided owner
+		// retries or defers; the marked record concludes cancelled.
+		if (target == "failed" || target == "timeout") && asString(record["phase"]) == "cancelling" {
+			observed = "observed=cancelling"
+			return silentRefusal(3)
+		}
 		metadataUpdate := current == target
 		if !metadataUpdate && !statusTransitions[current][target] {
 			return refuse(1, "illegal job transition: %s to %s", current, target)
