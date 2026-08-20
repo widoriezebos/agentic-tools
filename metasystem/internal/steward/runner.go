@@ -157,6 +157,20 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 		return "", err
 	}
 	defer logFile.Close()
+	// One arm at a time: overlapping arms serialize here, and the
+	// second finds the first's live runner instead of spawning a
+	// duplicate process.
+	armLock, err := os.OpenFile(filepath.Join(runnerDir(top), "arm.flock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return "", err
+	}
+	defer armLock.Close()
+	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
+		return "", err
+	}
+	if rec, alive := liveRunner(top); alive {
+		return fmt.Sprintf("already armed (runner pid %d)", rec.Pid), nil
+	}
 	cmd := exec.Command(bin, "steward", "run", "--repo", top)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -165,7 +179,20 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 	}
 	// The runner is detached on purpose: it must outlive this arm.
 	go func() { _ = cmd.Wait() }()
-	return fmt.Sprintf("armed (runner pid %d)", cmd.Process.Pid), nil
+	// Arm's promise is a GUARDED repository, not a spawned child:
+	// return only once the runner holds the lock and its record —
+	// or say plainly that it died trying.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if rec, alive := liveRunner(top); alive {
+			return fmt.Sprintf("armed (runner pid %d)", rec.Pid), nil
+		}
+		if _, probeState, _ := (identity.KernelProber{}).Probe(int64(cmd.Process.Pid)); probeState == identity.Dead {
+			return "", fmt.Errorf("the runner died before guarding the repository; see %s", runnerLogPath(top))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return "", fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(top))
 }
 
 // Disarm stops the runner: the stop file ends the loop at its next

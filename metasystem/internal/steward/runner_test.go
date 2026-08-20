@@ -76,28 +76,44 @@ func TestArmRefusesWithoutANotifier(t *testing.T) {
 	}
 }
 
-func TestArmSpawnsADetachedRunnerAndDisarmEndsIt(t *testing.T) {
+func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 	root := reviveRepo(t) // notify-command configured
-	msg, err := Arm(root, "/bin/sleep")
-	// /bin/sleep will not understand the steward arguments and die
-	// instantly — which is exactly what this leg wants to observe:
-	// arm's spawn machinery works, and disarm handles a dead runner.
+	bin, err := filepath.Abs("../../bin/metasystem")
 	if err != nil {
-		t.Fatalf("arm: %v (%s)", err, msg)
+		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, alive := liveRunner(root); !alive {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
+	if _, statErr := os.Stat(bin); statErr != nil {
+		t.Skipf("engine binary not built at %s", bin)
 	}
-	if out, err := Disarm(root); err != nil || out == "" {
-		t.Fatalf("disarm reports its outcome: %q %v", out, err)
+	t.Cleanup(func() { _, _ = Disarm(root) })
+	msg, err := Arm(root, bin)
+	if err != nil || !strings.Contains(msg, "armed") {
+		t.Fatalf("arm returns only once the repository is guarded: %q %v", msg, err)
+	}
+	if _, alive := liveRunner(root); !alive {
+		t.Fatal("the confirmed runner is provably live")
+	}
+	// Idempotency: a second arm finds the guard, never a duplicate.
+	again, err := Arm(root, bin)
+	if err != nil || !strings.Contains(again, "already armed") {
+		t.Fatalf("a second arm collapses onto the live runner: %q %v", again, err)
+	}
+	if out, err := Disarm(root); err != nil || !strings.Contains(out, "disarmed") {
+		t.Fatalf("disarm ends it: %q %v", out, err)
+	}
+	if _, alive := liveRunner(root); alive {
+		t.Fatal("a disarmed repository has no runner")
 	}
 	id, err := VerifyIdentity(RepoIdentityPath(root), mustAbs(t, root))
 	if err != nil || id.Generation < 1 {
 		t.Fatalf("arm mints the identity: %+v %v", id, err)
+	}
+}
+
+func TestArmReportsARunnerThatDiedTrying(t *testing.T) {
+	root := reviveRepo(t)
+	if _, err := Arm(root, "/bin/sleep"); err == nil || !strings.Contains(err.Error(), "died before guarding") {
+		t.Fatalf("a runner that cannot run is a named failure, not a claimed guard: %v", err)
 	}
 }
 

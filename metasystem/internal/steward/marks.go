@@ -10,6 +10,7 @@ package steward
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,13 +23,22 @@ import (
 func CurrentMarks(repoRoot string) (Marks, error) {
 	head := "no-head"
 	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "HEAD")
-	if out, err := cmd.Output(); err == nil {
+	out, headErr := cmd.Output()
+	if headErr == nil {
 		head = strings.TrimSpace(string(out))
+	} else if _, statErr := os.Stat(filepath.Join(repoRoot, ".git")); statErr == nil {
+		// The repository exists but HEAD is unreadable: a sentinel
+		// here would differ from the stored mark and read as
+		// PROGRESS, resetting the aging and the dry cap on the
+		// strength of a read failure. Refuse instead.
+		return Marks{}, fmt.Errorf("HEAD unreadable in an existing repository: %v", headErr)
 	}
 	ledger := "no-ledger"
 	if data, err := os.ReadFile(filepath.Join(repoRoot, "plans", "goals.md")); err == nil {
 		sum := sha256.Sum256(data)
 		ledger = hex.EncodeToString(sum[:])
+	} else if !os.IsNotExist(err) {
+		return Marks{}, fmt.Errorf("goal ledger unreadable: %v", err)
 	}
 	return Marks{HeadOid: head, OpidDigest: ledger}, nil
 }

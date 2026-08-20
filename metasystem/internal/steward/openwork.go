@@ -21,8 +21,11 @@ func LegacyOpenWork(repoRoot string) (OpenWork, string, error) {
 	path := goal.LedgerPath(repoRoot)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		// No ledger at all: nothing was ever delegated here.
-		return WorkNone, "no goal ledger exists", nil
+		// The converged design is degraded-honest: only a valid
+		// explicit declaration is no-work. An absent ledger might be
+		// a half-deleted checkout mid-incident — exactly when a
+		// wrong "nothing to do" would be most costly.
+		return WorkDegraded, "no goal ledger exists; refusing to conclude no-work from absence", nil
 	}
 	if err != nil {
 		return WorkDegraded, fmt.Sprintf("goal ledger unreadable: %v", err), nil

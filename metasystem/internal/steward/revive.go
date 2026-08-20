@@ -110,14 +110,17 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 	if err != nil {
 		return ReviveOutcome{}, err
 	}
+	// The attempt counts against the dry cap the moment it is
+	// irreversible — before dispatch, so no crash window between
+	// launch and bookkeeping can spend attempts the cap never saw.
+	ev = RecordRevival(ev)
+	if err := SaveEvidence(EvidencePath(repoRoot), ev); err != nil {
+		return ReviveOutcome{}, err
+	}
 	if err := launch(consumed); err != nil {
 		return ReviveOutcome{Reason: "dispatch failed after consumption; next tick reconciles: " + err.Error()}, nil
 	}
 	if err := StampLaunch(repoRoot, consumed.Nonce); err != nil {
-		return ReviveOutcome{}, err
-	}
-	ev = RecordRevival(ev)
-	if err := SaveEvidence(EvidencePath(repoRoot), ev); err != nil {
 		return ReviveOutcome{}, err
 	}
 	return ReviveOutcome{Launched: true, Reason: "continuation dispatched for " + consumed.Goal}, nil

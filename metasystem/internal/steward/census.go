@@ -30,7 +30,13 @@ func (c LiveWorkerCensus) Workers(repoRoot string) (Workers, error) {
 	if err != nil {
 		return Workers{Unprovable: 1}, nil
 	}
-	return workersFromVerdict(verdict), nil
+	w := workersFromVerdict(verdict)
+	// The runtime census sees runtime-shaped processes; runners,
+	// monitored runs, and gates keep records it never reads.
+	extraLive, extraUnprovable := supplementWorkers(repoRoot)
+	w.Live += extraLive
+	w.Unprovable += extraUnprovable
+	return w, nil
 }
 
 // workersFromVerdict maps a census verdict into the steward's worker
@@ -39,6 +45,10 @@ func (c LiveWorkerCensus) Workers(repoRoot string) (Workers, error) {
 // incomplete scan.
 func workersFromVerdict(v census.Verdict) Workers {
 	w := Workers{CensusComplete: v.Verdict == "SUCCESS"}
+	// A diagnostic is a process the census could not fully account
+	// for (a failed per-pid probe, an unreadable custody record);
+	// silence would let a death proof stand on a partial scan.
+	w.Unprovable += len(v.Diagnostics)
 	for _, item := range v.Inventory {
 		switch item.Class {
 		case "CUSTODY", "ANNOUNCED":

@@ -26,10 +26,10 @@ func TestCurrentGoalIsOwnedWork(t *testing.T) {
 	}
 }
 
-func TestMissingLedgerIsNoWork(t *testing.T) {
-	w, _, err := LegacyOpenWork(t.TempDir())
-	if err != nil || w != WorkNone {
-		t.Fatalf("no ledger means nothing delegated: %v %v", w, err)
+func TestMissingLedgerIsDegradedNeverNoWork(t *testing.T) {
+	w, reason, err := LegacyOpenWork(t.TempDir())
+	if err != nil || w != WorkDegraded {
+		t.Fatalf("absence proves nothing — a half-deleted checkout must not read as no-work: %v %q %v", w, reason, err)
 	}
 }
 

@@ -4,7 +4,11 @@ import (
 	"os/exec"
 	"testing"
 
+	"encoding/json"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"os"
+	"path/filepath"
 )
 
 func TestOwnedLiveProcessesCountAsLive(t *testing.T) {
@@ -44,4 +48,50 @@ func TestUnknownInventoryClassIsUnprovable(t *testing.T) {
 // gitConfig sets a repo-local key for fixtures.
 func gitConfig(root, key, value string) ([]byte, error) {
 	return exec.Command("git", "-C", root, "config", key, value).CombinedOutput()
+}
+
+func TestDiagnosticsBlockADeathProof(t *testing.T) {
+	v := census.Verdict{Verdict: "SUCCESS", Diagnostics: []string{"pid 123: probe failed"}}
+	w := workersFromVerdict(v)
+	if w.Unprovable == 0 {
+		t.Fatalf("an unaccounted process cannot be silently dropped: %+v", w)
+	}
+}
+
+func TestRecordedRunnersAndRunsCountAsWorkers(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel string, body map[string]any) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.Marshal(body)
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A live monitored run: this test process itself.
+	self := int64(os.Getpid())
+	exact, _, err := identity.KernelProber{}.Probe(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write("artifacts/agents/runs/live-run.json", map[string]any{
+		"pid": self, "pidStartedAt": exact.StartedAt.Unix(),
+	})
+	// A gate whose pid was reused: recorded start disagrees.
+	write("artifacts/agents/supervision/gate-runs/stale.json", map[string]any{
+		"pid": self, "pidStartedAt": exact.StartedAt.Unix() - 9999,
+	})
+	// A malformed record blocks the proof rather than vanishing.
+	if err := os.WriteFile(filepath.Join(root, "artifacts/agents/runs/torn.json"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	live, unprovable := supplementWorkers(root)
+	if live != 1 {
+		t.Fatalf("the live monitored run must count as a worker: live=%d", live)
+	}
+	if unprovable != 1 {
+		t.Fatalf("the torn record must block the proof: unprovable=%d", unprovable)
+	}
 }
