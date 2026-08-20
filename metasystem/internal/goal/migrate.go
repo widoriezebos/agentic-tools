@@ -245,3 +245,10 @@ func sha256HexBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
+
+// SourceDigestOf exposes the migration's digest computation to the
+// CLI so the rehearsal computes the reviewed literal with the same
+// bytes-in, hex-out rule the precondition checks.
+func SourceDigestOf(data []byte) string {
+	return sha256HexBytes(data)
+}

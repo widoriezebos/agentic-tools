@@ -311,6 +311,9 @@ func families() []family {
 				{"list", "print the parsed ledger as JSON (read-only)", runGoalList},
 				{"next", "print the one orientation line (read-only, the universal fallback)", runGoalNext},
 				{"reconcile", "adopt, restore, or authority-replay bytes the verbs did not write", runGoalReconcile},
+				{"migrate", "the cutover: one commit turns the legacy ledger into the multi-machine tree (human act, reviewed bytes)", runGoalMigrate},
+				{"fetch", "the read-side advance: validate the canonical tip and move the accepted ref", runGoalFetch},
+				{"source-digest", "print goals.md's sha256 — the reviewed literal the migration demands", runGoalSourceDigest},
 			},
 		},
 		{
