@@ -990,27 +990,54 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 				}
 			}
 		}
-		// endedAt describes the LEADER, not the group: a draining
-		// descendant can still be writing .git objects when TempDir
-		// removal starts, and the cleanup then races it (two go-gate
-		// reds, 2026-08-20). Waiting needs no identity — a reused
-		// group costs at most the ceiling — so wait for the whole
-		// group to vanish before the directory dies, under the
-		// fixture contract's scaled ceiling, failing LOUDLY instead
-		// of returning into the race.
+		// The runner's group is not the whole story: adapters launch
+		// DETACHED in their own sessions, so their git children write
+		// .git objects from groups the runner record never names —
+		// the third sighting of this cleanup race proved the single
+		// group wait insufficient. The bed's own job records name
+		// every group there is: sweep each identity-proven group,
+		// then wait them all out under the scaled ceiling, failing
+		// LOUDLY instead of returning into the TempDir race.
+		groups := []int64{}
 		if pgidOK && pgid > 1 {
-			capSeconds, scaleErr := ScaledSeconds(15)
-			if scaleErr != nil {
-				capSeconds = 15
+			groups = append(groups, pgid)
+		}
+		if entries, dirErr := os.ReadDir(filepath.Join(engine.Root, "artifacts", "agents", "jobs")); dirErr == nil {
+			for _, entry := range entries {
+				if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+					continue
+				}
+				doc, docErr := readJSONDoc(filepath.Join(engine.Root, "artifacts", "agents", "jobs", entry.Name()))
+				if docErr != nil {
+					continue
+				}
+				jobPgid, ok := jsonInt(doc["pgid"])
+				if !ok || jobPgid <= 1 {
+					continue
+				}
+				tag, _ := doc["instanceTag"].(string)
+				jobPid, pidOK := jsonInt(doc["pid"])
+				if tag == "" || !pidOK || !pidExists(int(jobPid)) ||
+					!strings.Contains(processCommand(int(jobPid), fixtureauth.CommandProbe{}), tag) {
+					continue
+				}
+				_ = syscall.Kill(-int(jobPgid), syscall.SIGKILL)
+				groups = append(groups, jobPgid)
 			}
-			deadline := time.Now().Add(time.Duration(capSeconds) * time.Second)
+		}
+		capSeconds, scaleErr := ScaledSeconds(15)
+		if scaleErr != nil {
+			capSeconds = 15
+		}
+		deadline := time.Now().Add(time.Duration(capSeconds) * time.Second)
+		for _, g := range groups {
 			for {
-				if err := syscall.Kill(-int(pgid), 0); err != nil {
-					return
+				if err := syscall.Kill(-int(g), 0); err != nil {
+					break
 				}
 				if time.Now().After(deadline) {
-					t.Errorf("mission-birth teardown: process group %d still alive after the %ds scaled ceiling; TempDir removal would race it", pgid, capSeconds)
-					return
+					t.Errorf("mission-birth teardown: process group %d still alive after the %ds scaled ceiling; TempDir removal would race it", g, capSeconds)
+					break
 				}
 				time.Sleep(50 * time.Millisecond)
 			}
