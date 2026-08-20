@@ -352,3 +352,97 @@ func TestEditAcceptsAMultiKilobyteIntent(t *testing.T) {
 		t.Fatalf("the intent round-trips whole: %d bytes", len(t2.Live["verbose"].Intent))
 	}
 }
+
+func TestStealNeedsItsHumanAndRecordsIt(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	if res, err := OpenClaim(verbReq(a, "01J5X0000000000000000000F6", "mac-a"), "wanted", "Wanted work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --claim: %+v %v", res, err)
+	}
+	// Steal without a human refuses before anything happens.
+	if _, err := Steal(verbReq(b, "01J5X0000000000000000000F7", "mac-b"), "wanted"); err == nil ||
+		!strings.Contains(err.Error(), "--by") {
+		t.Fatalf("steal without --by refuses: %v", err)
+	}
+	humanReq := verbReq(b, "01J5X0000000000000000000F8", "mac-b")
+	humanReq.Actor.Human = "wido"
+	res, err := Steal(humanReq, "wanted")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the attributed steal proceeds: %+v %v", res, err)
+	}
+	t2, err := loadTree(b, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stolen := t2.Live["wanted"]
+	if stolen.Claimed == nil || stolen.Claimed.Machine != "mac-b" {
+		t.Fatalf("the claim moved to the stealing pair: %+v", stolen.Claimed)
+	}
+	last := stolen.History[len(stolen.History)-1]
+	if last.Verb != "steal" || last.Actor != "human:wido" {
+		t.Fatalf("the history line records the human authority (R7-08): %+v", last)
+	}
+}
+
+func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	// Three archived goals of increasing age: ancient (chained under
+	// a live blocker edge), middle, fresh. One live goal depends on
+	// a done goal that itself depends on ancient — the done-to-done
+	// chain the closure must follow.
+	mk := func(ulid, id, opened string, blocked []string) {
+		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Work "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		if blocked != nil {
+			if res, err := Edit(verbReq(a, ulid[:len(ulid)-1]+"E", "mac-a"), id, EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
+				t.Fatalf("edge %s: %+v %v", id, res, err)
+			}
+		}
+		if res, err := Done(verbReq(a, ulid[:len(ulid)-1]+"D", "mac-a"), id, "Done "+id); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("done %s: %+v %v", id, res, err)
+		}
+	}
+	mk("01J5X00000000000000000A000", "ancient", "", nil)
+	mk("01J5X00000000000000000A010", "middle", "", []string{"ancient"})
+	mk("01J5X00000000000000000A020", "fresh", "", nil)
+	// The live goal depends on middle: closure = middle + ancient.
+	if res, err := Open(verbReq(a, "01J5X00000000000000000A030", "mac-a"), "alive", "Live work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open alive: %+v %v", res, err)
+	}
+	edge := []string{"middle"}
+	if res, err := Edit(verbReq(a, "01J5X00000000000000000A040", "mac-a"), "alive", EditFields{Blocked: &edge}); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("edge alive: %+v %v", res, err)
+	}
+
+	// keep=0: only the closure survives — fresh dies, ancient and
+	// middle stay reachable, nothing dangles by construction.
+	res, err := Prune(verbReq(a, "01J5X00000000000000000A050", "mac-a"), 0)
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("prune: %+v %v", res, err)
+	}
+	t2, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, kept := t2.Done["ancient"]; !kept {
+		t.Fatal("the closure follows done-to-done edges: ancient stays")
+	}
+	if _, kept := t2.Done["middle"]; !kept {
+		t.Fatal("the live blocker's target stays")
+	}
+	if _, gone := t2.Done["fresh"]; gone {
+		t.Fatal("outside the closure with keep=0, fresh dies")
+	}
+	// The root record carries the opid line with the literal keep.
+	last := t2.Root.History[len(t2.Root.History)-1]
+	if last.Verb != "prune" || last.Keep != 0 {
+		t.Fatalf("the root history carries prune keep=0: %+v", last)
+	}
+	// A prune replay is idempotent on the rebuilt tip.
+	res2, err := Prune(verbReq(a, "01J5X00000000000000000A050", "mac-a"), 0)
+	if err != nil || res2.Outcome != OutcomeConfirmed || res2.Detail != "idempotent" {
+		t.Fatalf("the prune replay classifies idempotent: %+v %v", res2, err)
+	}
+}

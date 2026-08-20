@@ -532,3 +532,184 @@ func DeclareFree(r VerbRequest, origin, digest string) (PublishResult, error) {
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
 }
+
+// Steal reassigns another machine's claim under a human's name —
+// steal without its human refuses up front (BGS-10), and the
+// history line carries the human authority (R7-08).
+func Steal(r VerbRequest, id string) (PublishResult, error) {
+	if r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("steal is a human act and names its human (--by)")
+	}
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "steal", Targets: []string{id}, Args: map[string]string{
+			"by": r.Actor.Human,
+		}},
+		Message: "goal steal " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f, exists := t.Live[id]
+			if !exists {
+				return nil, fmt.Errorf("goal %s is not live; nothing to steal", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.State != StateClaimed || f.Claimed == nil {
+				return nil, fmt.Errorf("goal %s is %s; steal reassigns a standing claim (claim takes a queued goal)", id, f.State)
+			}
+			if f.Claimed.Machine == r.Actor.Machine {
+				return nil, AlreadyApplied{}
+			}
+			f.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
+			touch(f, r, "steal", []string{id})
+			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
+
+// OpenClaim opens a goal already claimed by the actor — one commit,
+// the claim guards holding trivially on a goal with no blockers.
+func OpenClaim(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, error) {
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: map[string]string{
+			"intent": intent, "origin": origin, "next": nextStep,
+		}},
+		Message: "goal open --claim " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			if f, exists := t.Live[id]; exists {
+				if opidLanded(f, r) {
+					return nil, AlreadyApplied{}
+				}
+				return nil, LostToCompetitor{Winner: lastOpid(f)}
+			}
+			if _, archived := t.Done[id]; archived {
+				return nil, fmt.Errorf("goal %s is in the archive; reopen is the explicit exception", id)
+			}
+			f := &GoalFile{
+				Id: id, State: StateClaimed, Intent: intent, Origin: origin,
+				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0,
+				Claimed: &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()},
+			}
+			touch(f, r, "open-claim", []string{id})
+			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
+			if t.Root != nil && t.Root.Free != nil {
+				t.Root.Free = nil
+				t.Root.Revision++
+				t.Root.History = append(t.Root.History, HistoryLine{
+					At: r.stamp(), Opid: r.opid(), Verb: "open-claim",
+					Actor: r.Actor.historyActor(), Targets: []string{id}, Keep: -1,
+				})
+				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
+			}
+			return changes, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
+
+// Prune deletes archived goals outside the retention closure: every
+// done goal reachable from a LIVE goal's blocker edges (following
+// done-to-done edges — no dangling reference by construction) stays,
+// the newest keep-count done goals by OpenedAt stay, the rest die.
+// The opid and the literal keep=<n> land in the root record's
+// History, since the target files themselves are gone.
+func Prune(r VerbRequest, keep int) (PublishResult, error) {
+	if keep < 0 {
+		return PublishResult{}, fmt.Errorf("prune keeps a non-negative count")
+	}
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "prune", Args: map[string]string{
+			"keep": fmt.Sprintf("%d", keep),
+		}},
+		Message: "goal prune",
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			if t.Root == nil {
+				return nil, fmt.Errorf("no root record; the ledger is not adopted")
+			}
+			if rootOpidLanded(t.Root, r) {
+				return nil, AlreadyApplied{}
+			}
+			// The closure: done goals reachable from live blockers,
+			// walked through done-to-done edges.
+			keepSet := map[string]bool{}
+			var walk func(id string)
+			walk = func(id string) {
+				f, done := t.Done[id]
+				if !done || keepSet[id] {
+					return
+				}
+				keepSet[id] = true
+				for _, dep := range f.Blocked {
+					walk(dep)
+				}
+			}
+			for _, id := range sortedGoalIds(t.Live) {
+				for _, dep := range t.Live[id].Blocked {
+					walk(dep)
+				}
+			}
+			// The keep-count retains the NEWEST by (OpenedAt, id);
+			// deletion prefers the oldest.
+			ids := sortedGoalIds(t.Done)
+			byAge := append([]string(nil), ids...)
+			sortDoneNewestFirst(t, byAge)
+			for i := 0; i < keep && i < len(byAge); i++ {
+				keepSet[byAge[i]] = true
+			}
+			var changes []Change
+			for _, id := range ids {
+				if !keepSet[id] {
+					changes = append(changes, Change{Path: donePath(id), Delete: true})
+				}
+			}
+			t.Root.Revision++
+			t.Root.History = append(t.Root.History, HistoryLine{
+				At: r.stamp(), Opid: r.opid(), Verb: "prune",
+				Actor: r.Actor.historyActor(), Keep: keep,
+			})
+			changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
+			return changes, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
+
+func rootOpidLanded(root *RootRecord, r VerbRequest) bool {
+	for _, h := range root.History {
+		if h.Opid == r.opid() {
+			return true
+		}
+	}
+	return false
+}
+
+// sortDoneNewestFirst orders done goal ids newest-first by
+// (OpenedAt, id) — the retention order the design pins.
+func sortDoneNewestFirst(t *TreeGoals, ids []string) {
+	for i := 1; i < len(ids); i++ {
+		for j := i; j > 0; j-- {
+			a, b := t.Done[ids[j-1]], t.Done[ids[j]]
+			older := a.OpenedAt < b.OpenedAt || (a.OpenedAt == b.OpenedAt && a.Id < b.Id)
+			if older {
+				ids[j-1], ids[j] = ids[j], ids[j-1]
+			} else {
+				break
+			}
+		}
+	}
+}

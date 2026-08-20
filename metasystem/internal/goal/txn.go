@@ -324,6 +324,34 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 	} else if isBlocked && blocking.Opid != req.Opid {
 		return PublishResult{}, fmt.Errorf("journal entry %s is pushed with its outcome unknown; this clone mutates nothing until it is classified", blocking.Opid)
 	}
+	// A REPLAY of an opid this clone already journaled: a terminal
+	// confirmed entry re-verifies its postcondition on a fresh
+	// capture — the opid is the truth, not the belief — and returns
+	// idempotent success; a non-terminal entry belongs to the
+	// recovery rule, never to a second publish.
+	if existing, readErr := ReadEntry(e.Root, req.Opid); readErr == nil {
+		if existing.Phase == PhaseTerminal &&
+			(existing.Outcome == OutcomeConfirmed || existing.Outcome == OutcomeConfirmedLate) {
+			nonce, nErr := readNonce()
+			if nErr != nil {
+				return PublishResult{}, nErr
+			}
+			tip, capErr := CaptureTip(e, nonce)
+			CleanupRefs(e, nonce)
+			if capErr != nil {
+				return PublishResult{}, capErr
+			}
+			present, trErr := TrailerPresent(e, tip, req.Opid)
+			if trErr != nil {
+				return PublishResult{}, trErr
+			}
+			if present {
+				return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: "idempotent"}, nil
+			}
+			return PublishResult{}, fmt.Errorf("journal entry %s says confirmed but its opid is not in canonical history; branch surgery needs the repair path", req.Opid)
+		}
+		return PublishResult{}, fmt.Errorf("journal entry %s exists and is %s; the recovery rule owns it, not a second publish", req.Opid, existing.Phase)
+	}
 	if _, err := CreateEntry(e.Root, req.Opid, req.Machine, req.Lineage, req.Intent); err != nil {
 		return PublishResult{}, err
 	}
