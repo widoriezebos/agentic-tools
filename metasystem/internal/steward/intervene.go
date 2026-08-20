@@ -19,6 +19,8 @@ type Intent struct {
 	RepoIdentity  string `json:"repoIdentity"`
 	InstallGen    int    `json:"installGeneration"`
 	Goal          string `json:"goal"` // the claim being continued
+	Role          string `json:"role"` // always steward-continuation; recorded, never chosen
+	Permissions   string `json:"permissions"` // the preset name whose expansion PermsDigest pins
 	RoleDigest    string `json:"roleDigest"`
 	BriefDigest   string `json:"briefDigest"`
 	PermsDigest   string `json:"permsDigest"`

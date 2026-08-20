@@ -1,0 +1,58 @@
+package steward
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// stagedRepo carries the role and permissions files staging digests.
+func stagedRepo(t *testing.T) string {
+	root := gitRepoWithCurrentGoal(t)
+	write := func(rel, body string) {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("scripts/agents/roles/steward-continuation.md", "# Role: steward-continuation\ncontract\n")
+	write("scripts/agents/permissions/workspace.json", `{"write":["workspace"]}`)
+	return root
+}
+
+func TestStagingBindsTheBytesThatWillRun(t *testing.T) {
+	root := stagedRepo(t)
+	it, err := StageIntent(root, "st-1", "fix-it", "job-9", "fake", "fixture", "worker provably dead")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if it.Role != "steward-continuation" || it.Permissions != "workspace" {
+		t.Fatalf("the role and preset are fixed, never chosen: %+v", it)
+	}
+	if err := VerifyStagedDigests(root, it); err != nil {
+		t.Fatalf("unchanged bytes must verify: %v", err)
+	}
+	brief, err := os.ReadFile(BriefPath(root, "st-1"))
+	if err != nil || !strings.Contains(string(brief), `"fix-it"`) {
+		t.Fatalf("the brief names the goal: %q %v", brief, err)
+	}
+}
+
+func TestDriftBetweenMintAndLaunchRefusesByField(t *testing.T) {
+	root := stagedRepo(t)
+	it, err := StageIntent(root, "st-2", "fix-it", "job-9", "fake", "fixture", "dead")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rolePath := filepath.Join(root, "scripts", "agents", "roles", "steward-continuation.md")
+	if err := os.WriteFile(rolePath, []byte("# tampered\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyStagedDigests(root, it); err == nil || !strings.Contains(err.Error(), "role contract drifted") {
+		t.Fatalf("role drift must refuse by field: %v", err)
+	}
+}
