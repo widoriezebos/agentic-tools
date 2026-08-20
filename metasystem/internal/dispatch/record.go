@@ -530,6 +530,13 @@ func RepairClaim(root, job string) (observed string, err error) {
 			observed = "observed=status=" + status
 			return silentRefusal(3)
 		}
+		// No writer advances a marked record except the conclude: a
+		// repair claim after the mark would authorize paid repair
+		// work for a job the operator already stopped.
+		if asString(record["phase"]) == "cancelling" {
+			observed = "observed=cancelling"
+			return silentRefusal(3)
+		}
 		repairs, has := record["returnRepairs"]
 		if has && !isZeroNumber(repairs) {
 			observed = "observed=returnRepairs-claimed"

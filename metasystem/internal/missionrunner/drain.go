@@ -222,6 +222,14 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 	case "pending", "running":
 		pid, ok := jsonInt(doc["pid"])
 		if !ok || pid < 1 {
+			// A marked record with no recorded process mirrors the
+			// supervision reaper's exception: nothing else will ever
+			// conclude it, and no death is claimed.
+			if phase, _ := doc["phase"].(string); phase == "cancelling" {
+				e.reapCAS(job, facts.Status, "cancelled", map[string]any{
+					"error": nil, "phase": "supervision",
+				})
+			}
 			return
 		}
 		start, _ := jsonInt(doc["pidStartedAt"])

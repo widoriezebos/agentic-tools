@@ -15,6 +15,13 @@ func CustodyAdd(root, job string, pid, pidStartedAt int64) error {
 		if status != "pending" && status != "running" {
 			return silentRefusal(1)
 		}
+		// The uniform marked-record rule: registration defers during
+		// a cancellation — the group kill owns every process the
+		// registering child belongs to, and no writer but the
+		// conclude advances a marked record.
+		if asString(record["phase"]) == "cancelling" {
+			return silentRefusal(1)
+		}
 		tag := asString(record["instanceTag"])
 		if tag == "" {
 			return refuse(1, "job record %s has no instance tag", job)

@@ -632,3 +632,50 @@ func TestOwnershipWriteVoidsDuringCancellation(t *testing.T) {
 		t.Fatalf("cancelled-before-launch claims no death: %v/%v", record["status"], record["groupDeathProvenAt"])
 	}
 }
+
+func TestRepairClaimDefersDuringCancellation(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	setupPending(t, root, "job-a")
+	run := writeJSON(t, filepath.Join(t.TempDir(), "run.json"), map[string]any{
+		"sessionId": "sess-1", "phase": "running", "error": nil,
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "running", run); err != nil {
+		t.Fatalf("cas: %v", err)
+	}
+	mark := writeJSON(t, filepath.Join(t.TempDir(), "mark.json"), map[string]any{
+		"phase": "cancelling",
+	})
+	if _, err := RecordCAS(root, "job-a", "running", "running", mark); err != nil {
+		t.Fatalf("marker: %v", err)
+	}
+	// A repair claim after the mark would authorize paid repair work
+	// for a job the operator already stopped.
+	observed, err := RepairClaim(root, "job-a")
+	if err == nil || observed != "observed=cancelling" {
+		t.Fatalf("the repair claim must defer on a marked record: %q %v", observed, err)
+	}
+	record := readRecord(t, root, "job-a")
+	if record["returnRepairs"] != nil {
+		t.Fatalf("no repair may be claimed on a marked record: %v", record["returnRepairs"])
+	}
+}
+
+func TestCustodyAddDefersDuringCancellation(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	setupPending(t, root, "job-a")
+	mark := writeJSON(t, filepath.Join(t.TempDir(), "mark.json"), map[string]any{
+		"phase": "cancelling",
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "pending", mark); err != nil {
+		t.Fatalf("marker: %v", err)
+	}
+	if err := CustodyAdd(root, "job-a", 4242, 99); err == nil {
+		t.Fatal("custody registration must defer on a marked record")
+	}
+	record := readRecord(t, root, "job-a")
+	if record["custodyProcesses"] != nil {
+		t.Fatalf("no custody may register on a marked record: %v", record["custodyProcesses"])
+	}
+}

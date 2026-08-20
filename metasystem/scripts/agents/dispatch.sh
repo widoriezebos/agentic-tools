@@ -1474,7 +1474,14 @@ internal_cancel() {
         if [[ "$(json_field "$record" phase 2>/dev/null || true)" == cancelling ]]; then
           :
         else
-          release_lifecycle_lock "$job"; die 1 "cancel could not mark $job; refusing to kill an unmarked job"
+          # Between the two reads above a reaper can conclude the
+          # record cancelled; one fresh status read separates "the
+          # cancel already succeeded" from a genuine mark failure.
+          status=$(json_field "$record" status)
+          case "$status" in
+            pending|running) release_lifecycle_lock "$job"; die 1 "cancel could not mark $job; refusing to kill an unmarked job" ;;
+            *) release_lifecycle_lock "$job"; exit 0 ;;
+          esac
         fi ;;
       *) release_lifecycle_lock "$job"; exit 0 ;;
     esac

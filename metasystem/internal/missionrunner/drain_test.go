@@ -675,3 +675,36 @@ func TestSecondDrainStallParksWithAFreshAsk(t *testing.T) {
 		t.Fatalf("the fresh ask snapshots the new cycle: %v", stall)
 	}
 }
+
+func TestRunnerReapConcludesAMarkedPidlessRecord(t *testing.T) {
+	now := time.Now()
+	// The supervision reaper's pidless-mark exception, mirrored: a
+	// cancel marked a record whose launch never recorded a group,
+	// and the drain's own pass — not a scheduling race with the
+	// standing reaper — concludes it, claiming no death.
+	engine := reapFixture(t, "job-a")
+	engine.custodianFn = fixedCustodian(identity.Dead)
+	path := writeJob(t, engine, "job-a", map[string]any{
+		"status": "pending", "phase": "cancelling", "instanceTag": "job-tag",
+	})
+	engine.reapReservedRecords(now)
+	after := readTestDoc(t, path)
+	if after["status"] != "cancelled" {
+		t.Fatalf("the drain concludes a marked pidless record: %v", after)
+	}
+	if _, claimed := after["groupDeathProvenAt"]; claimed {
+		t.Fatalf("no death may be claimed for a group that never existed: %v", after)
+	}
+
+	// The unmarked pidless record still defers — launch handshake.
+	engine2 := reapFixture(t, "job-b")
+	engine2.custodianFn = fixedCustodian(identity.Dead)
+	path2 := writeJob(t, engine2, "job-b", map[string]any{
+		"status": "pending", "instanceTag": "job-tag-b",
+	})
+	engine2.reapReservedRecords(now)
+	after2 := readTestDoc(t, path2)
+	if after2["status"] != "pending" {
+		t.Fatalf("an unmarked pidless record is deferred: %v", after2)
+	}
+}
