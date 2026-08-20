@@ -106,6 +106,12 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 			for _, record := range live {
 				e.dispatchReap(dispatchScript, jobRecordID(record))
 			}
+			// The marker-aware Go reap gets the same fresh pass: a
+			// shell verdict voided by an in-progress cancellation
+			// must not park the drain while this branch — the one
+			// that concludes a marked dead group cancelled — never
+			// saw the record's current phase.
+			e.reapReservedRecords(time.Now())
 			lastReap = time.Now()
 			live = activeJobRecords(e.Root, e.Mission)
 			if len(live) == 0 {

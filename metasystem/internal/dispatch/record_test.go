@@ -521,3 +521,39 @@ func TestLossVerdictVoidsDuringCancellation(t *testing.T) {
 		t.Fatalf("the record concludes cancelled: %v", record["status"])
 	}
 }
+
+func TestHandshakeCannotEraseTheCancellingMarker(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	setupPending(t, root, "job-a")
+
+	// The F-5 interleave: cancel marks the PENDING record, the
+	// concurrent handshake then tries pending→running — its patch
+	// carries phase=running and would erase the marker, handing the
+	// next reaper pass an unmarked dead group. Once cancelling, the
+	// only forward path is cancelled.
+	mark := writeJSON(t, filepath.Join(t.TempDir(), "mark.json"), map[string]any{
+		"phase": "cancelling",
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "pending", mark); err != nil {
+		t.Fatalf("marker metadata update: %v", err)
+	}
+	run := writeJSON(t, filepath.Join(t.TempDir(), "run.json"), map[string]any{
+		"sessionId": "sess-1", "phase": "running", "error": nil,
+	})
+	observed, err := RecordCAS(root, "job-a", "pending", "running", run)
+	if err == nil || observed != "observed=cancelling" {
+		t.Fatalf("the handshake must defer on a marked record: %q %v", observed, err)
+	}
+	record := readRecord(t, root, "job-a")
+	if record["status"] != "pending" || record["phase"] != "cancelling" {
+		t.Fatalf("the marker survives the handshake attempt: %v/%v", record["status"], record["phase"])
+	}
+	// The cancel's conclude lands from the UNMOVED status.
+	conclude := writeJSON(t, filepath.Join(t.TempDir(), "conclude.json"), map[string]any{
+		"phase": "cancelled", "error": nil,
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "cancelled", conclude); err != nil {
+		t.Fatalf("the cancel concludes the pending marked record: %v", err)
+	}
+}

@@ -994,13 +994,23 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 		// descendant can still be writing .git objects when TempDir
 		// removal starts, and the cleanup then races it (two go-gate
 		// reds, 2026-08-20). Waiting needs no identity — a reused
-		// group costs at most the bound — so wait for the whole
-		// group to vanish before the directory dies.
+		// group costs at most the ceiling — so wait for the whole
+		// group to vanish before the directory dies, under the
+		// fixture contract's scaled ceiling, failing LOUDLY instead
+		// of returning into the race.
 		if pgidOK && pgid > 1 {
-			deadline := time.Now().Add(5 * time.Second)
-			for time.Now().Before(deadline) {
+			capSeconds, scaleErr := ScaledSeconds(15)
+			if scaleErr != nil {
+				capSeconds = 15
+			}
+			deadline := time.Now().Add(time.Duration(capSeconds) * time.Second)
+			for {
 				if err := syscall.Kill(-int(pgid), 0); err != nil {
-					break
+					return
+				}
+				if time.Now().After(deadline) {
+					t.Errorf("mission-birth teardown: process group %d still alive after the %ds scaled ceiling; TempDir removal would race it", pgid, capSeconds)
+					return
 				}
 				time.Sleep(50 * time.Millisecond)
 			}
