@@ -53,9 +53,25 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	}
 	ev := Observe(prev, marks)
 
-	work, workReason, err := LegacyOpenWork(repoRoot)
+	d, workReason, err := decideNow(repoRoot, cfg, census, ev)
 	if err != nil {
 		return TickResult{}, err
+	}
+	if err := SaveEvidence(evPath, ev); err != nil {
+		return TickResult{}, err
+	}
+	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason}, nil
+}
+
+// decideNow assembles one snapshot over the given evidence and
+// decides — without aging or persisting anything. The tick ages
+// first and calls this; revive's re-arbitration calls it directly,
+// so a re-check can never advance the clock it is checking.
+func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence) (Decision, string, error) {
+	cfg = cfg.withDefaults()
+	work, workReason, err := LegacyOpenWork(repoRoot)
+	if err != nil {
+		return Decision{}, "", err
 	}
 
 	workers := Workers{}
@@ -70,10 +86,10 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 
 	live, err := LiveIntents(repoRoot)
 	if err != nil {
-		return TickResult{Decision: Decision{VerdictDegraded, ActNotify, err.Error()}}, nil
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, workReason, nil
 	}
 
-	d := Decide(Snapshot{
+	return Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
 		TicksSinceProgress: ev.TicksSinceAdvance,
@@ -81,9 +97,5 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 		DryRevivals:        ev.DryRevivals,
 		MaxRevivals:        cfg.MaxRevivals,
 		ActiveContinuation: len(live) > 0,
-	})
-	if err := SaveEvidence(evPath, ev); err != nil {
-		return TickResult{}, err
-	}
-	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason}, nil
+	}), workReason, nil
 }

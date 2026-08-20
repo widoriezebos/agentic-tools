@@ -26,6 +26,7 @@ type Intent struct {
 	Model         string `json:"model"`
 	JobId         string `json:"jobId"`
 	MintedAtTick  int    `json:"mintedAtTick"`
+	FenceAtMint   int64  `json:"fenceAtMint"`
 	Notified      bool   `json:"notified"`      // delivery confirmed
 	DispatchedAt  int    `json:"dispatchedAt"`  // tick; zero = never
 	LaunchStamped bool   `json:"launchStamped"` // dispatch returned

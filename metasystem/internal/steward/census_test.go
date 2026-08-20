@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"os/exec"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
@@ -38,4 +39,9 @@ func TestUnknownInventoryClassIsUnprovable(t *testing.T) {
 	if w.Unprovable != 1 {
 		t.Fatalf("an unrecognized class must not silently vanish: %+v", w)
 	}
+}
+
+// gitConfig sets a repo-local key for fixtures.
+func gitConfig(root, key, value string) ([]byte, error) {
+	return exec.Command("git", "-C", root, "config", key, value).CombinedOutput()
 }
