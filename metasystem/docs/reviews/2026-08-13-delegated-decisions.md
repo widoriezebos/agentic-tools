@@ -1561,3 +1561,22 @@ particular agent's behavior.
 The conduct rule (keep the next tracked step in flight before going
 quiet) remains as an optimization — a session that arms its own next
 step never needs reviving — but nothing depends on it anymore.
+
+**Second addendum to D121 (design converged, 2026-08-20):** the
+idle-watchdog design converged at critique round 5 with no material
+findings (rounds: 9, 6, 5, 5, 0 — the loop-start failsafe fired at
+round 3 and froze scope to invariants, exactly as the D119 lesson
+prescribes). Final shape: two-tier visibility (dead/unknown/degraded
+notified within one tick; live-idle within the noise threshold, ~50
+minutes), dual visibility channels (delivery-gated notifier plus
+session-start incident surfacing), revive only on proven-dead with
+the whole launch a single critical section under the shared
+arbitration lock, one-shot authorizations staging the exact launch
+bytes, durable high-water evidence that nothing steward-made can
+reset, and installed bytes for tick robustness. The same-user
+tamper-proofing demand was refuted on the record and the critic
+accepted: isolation against malicious same-user code belongs to
+containers, VMs, or separate OS users — the steward guards accidents
+and makes stalls visible, at the repository's own trust level. Build
+proceeds against the nine-row obligation matrix, fake-adapter
+fixtures first; landing under the ordinary covenant.
