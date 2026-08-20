@@ -7,11 +7,17 @@ package main
 // itself lands with the dispatch continuation mode.
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 
+	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -91,11 +97,96 @@ func runStewardAuthorizeDispatch(args []string) int {
 		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: intent %s was never delivered to the operator\n", *nonce)
 		return 1
 	}
+	if err := steward.VerifyStagedDigests(*repo, it); err != nil {
+		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", err)
+		return 1
+	}
 	out, _ := json.MarshalIndent(map[string]any{
 		"goal": it.Goal, "jobId": it.JobId, "runtime": it.Runtime, "model": it.Model,
-		"roleDigest": it.RoleDigest, "briefDigest": it.BriefDigest, "permsDigest": it.PermsDigest,
+		"role": it.Role, "permissions": it.Permissions, "brief": steward.BriefPath(*repo, it.Nonce),
 	}, "", "  ")
 	fmt.Println(string(out))
+	return 0
+}
+
+// runStewardRevive drives one revival end to end: stage the exact
+// launch bytes, mint the intent under the lock, deliver the
+// notification, then complete through the critical section with the
+// real dispatcher as the launch. Safe to re-run: an undelivered
+// intent resumes at its gate, a consumed one refuses.
+func runStewardRevive(args []string) int {
+	flags := flag.NewFlagSet("steward revive", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "steward revive: --repo is required")
+		return 2
+	}
+
+	// Resume an already-minted intent before minting another: the
+	// one-active-continuation guard would otherwise refuse forever.
+	live, err := steward.LiveIntents(*repo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+		return 1
+	}
+	var nonce string
+	if len(live) > 0 {
+		nonce = live[0].Nonce
+	} else {
+		work, reason, err := steward.LegacyOpenWork(*repo)
+		if err != nil || work != steward.WorkOwned {
+			fmt.Fprintf(os.Stderr, "steward revive: no owned open work (%s)\n", reason)
+			return 1
+		}
+		goalName := strings.TrimPrefix(reason, "current goal: ")
+		roster, err := dispatchpkg.ResolveRoster(dispatchpkg.RosterParams{
+			ConfPath: filepath.Join(*repo, "metasystem.conf"),
+			Role:     "steward-continuation", Mode: "build",
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "steward revive: roster: %v\n", err)
+			return 1
+		}
+		raw := make([]byte, 8)
+		if _, err := rand.Read(raw); err != nil {
+			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+			return 1
+		}
+		nonce = hex.EncodeToString(raw)
+		it, err := steward.StageIntent(*repo, nonce, goalName, "steward-"+nonce,
+			roster.Runtime, roster.Model, "worker provably dead with open work")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+			return 1
+		}
+		if err := steward.PrepareIntent(*repo, it); err != nil {
+			fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+			return 1
+		}
+	}
+
+	outcome, err := steward.CompleteRevival(*repo, steward.TickConfig{}, stewardCensusFor(*repo), nonce,
+		func(it steward.Intent) error {
+			cmd := exec.Command(filepath.Join(*repo, "scripts", "agents", "dispatch.sh"),
+				"--steward-intent", it.Nonce)
+			cmd.Dir = *repo
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("dispatch: %v (%s)", err, strings.TrimSpace(string(out)))
+			}
+			return nil
+		})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward revive: %v\n", err)
+		return 1
+	}
+	fmt.Printf("launched=%v reason=%s\n", outcome.Launched, outcome.Reason)
+	if !outcome.Launched {
+		return 3
+	}
 	return 0
 }
 

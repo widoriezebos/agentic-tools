@@ -193,6 +193,12 @@ lease_entry_check() {
 lease_run_held() { # expected epoch (empty for human), command...
   local expected=$1
   shift
+  if [[ "${current_caller_class:-}" == STEWARD ]]; then
+    # A dead worker holds no lease; the steward's authority is
+    # enforced per-write by the internal entries' checks.
+    "$@"
+    return
+  fi
   if [[ -n "$expected" ]]; then
     "$ms" lease run-held --root "$root" --caller-pid "$entry_caller_pid" \
       --expected-epoch "$expected" -- "$@"
@@ -793,7 +799,7 @@ reap_one() { # job
 }
 
 dispatch_job() {
-  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream=
+  local role= brief= mode_override= runtime_override= model_override= job= reviews= workspace= permissions_override= mission_override= cap_override= serving_goal=0 stream= steward_intent= steward_mode=0 steward_tuple=
   local use_worktree=0 wait=0 approve_escalation=0 mode runtime model requested_model roster_runtime roster_model roster_pair requested_pair
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= roster_json=
@@ -815,10 +821,27 @@ dispatch_job() {
       --cap-min) [[ $# -ge 2 ]] || { usage; exit 2; }; cap_override=$2; shift 2 ;;
       --approve-escalation) approve_escalation=1; shift ;;
       --serving-goal) serving_goal=1; shift ;;
+      --steward-intent) [[ $# -ge 2 ]] || { usage; exit 2; }; steward_intent=$2; shift 2 ;;
       --wait) wait=1; shift ;;
       *) usage; exit 2 ;;
     esac
   done
+  if [[ -n "$steward_intent" ]]; then
+    # The unattended continuation: every launch input comes from the
+    # consumed authorization; nothing here is caller-selectable.
+    [[ -z "$role$brief$runtime_override$model_override$job$permissions_override$mission_override$workspace$reviews" && $use_worktree -eq 0 && $serving_goal -eq 0 ]] \
+      || die 2 "--steward-intent admits no other selection flags; the authorization decides"
+    steward_tuple=$("$ms" steward authorize-dispatch --repo "$root" \
+      --caller-pid "$entry_caller_pid" --intent "$steward_intent") \
+      || die 1 "steward continuation refused: the authorization did not verify"
+    role=$(json_value "$steward_tuple" role)
+    brief=$(json_value "$steward_tuple" brief)
+    job=$(json_value "$steward_tuple" jobId)
+    runtime_override=$(json_value "$steward_tuple" runtime)
+    model_override=$(json_value "$steward_tuple" model)
+    permissions_override=$(json_value "$steward_tuple" permissions)
+    steward_mode=1
+  fi
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
   if [[ "$role" == code-critic ]]; then
@@ -844,7 +867,15 @@ dispatch_job() {
     goal_section=$("$ms" job serving-goal --root "$root") \
       || die 3 "no current goal to project (--serving-goal)"
   fi
-  lease_entry_check
+  if [[ $steward_mode -eq 1 ]]; then
+    # No lease exists to hold — the worker is provably dead; the
+    # internal entries enforce the steward's one-job authority.
+    current_caller_class=STEWARD
+    current_claim_epoch=
+    current_main_id=
+  else
+    lease_entry_check
+  fi
 
   # The roster, tier, and escalation DECISIONS live in the engine
   # (script-orchestration-02); this block relays the verb's result and

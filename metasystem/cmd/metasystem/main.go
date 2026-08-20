@@ -320,6 +320,7 @@ func families() []family {
 				{"tick", "one scheduled observation: decide, age the evidence, report the action", runStewardTick},
 				{"status", "the operator's view: evidence age, live intents, pending notifications", runStewardStatus},
 				{"authorize-dispatch", "gate the unattended continuation: steward caller, consumed unstamped intent, staged tuple out", runStewardAuthorizeDispatch},
+				{"revive", "one revival end to end: stage, mint, deliver, arbitrate, dispatch once", runStewardRevive},
 			},
 		},
 		{
