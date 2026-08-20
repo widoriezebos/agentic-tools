@@ -63,7 +63,10 @@ func (w *wallInspection) document() map[string]any {
 // The protected-path table (design HIW: denied always, even inside
 // otherwise host-declared locations): the instruction machinery the wall
 // rides on, the signed mission contracts, and the instruction ledgers.
-var protectedArtifactPrefixes = []string{"scripts/agents/"}
+// plans/goals/ covers the multi-machine ledger whole — the live
+// set AND the done/ archive (BGS-12): goal files change only
+// through goal verbs, never through a mission's host artifacts.
+var protectedArtifactPrefixes = []string{"scripts/agents/", "plans/goals/"}
 
 var protectedArtifactFiles = map[string]bool{
 	"plans/goals.md":              true,

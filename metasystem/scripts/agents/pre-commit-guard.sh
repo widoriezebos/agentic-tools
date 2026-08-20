@@ -47,6 +47,20 @@ fi
 # it broke provisioning the first time the two mechanisms met.
 git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
 
+# The goal ledger changes only through goal verbs (BGS-7): the verbs
+# publish via plumbing that never runs this hook, so ANY staged
+# change under plans/goals/ in an ordinary commit is a hand edit —
+# and hand edits go through goal reconcile, which republishes them
+# lawfully. This is the accidental-edit fence, not the authority
+# boundary (the read-side validator is that).
+ledger=$(git diff --cached --name-only | grep -E '(^|/)plans/goals/' || true)
+if [[ -n "$ledger" ]]; then
+  echo "pre-commit guard: goal files change only through goal verbs; hand edits go through goal reconcile:" >&2
+  printf '  %s
+' $ledger >&2
+  exit 1
+fi
+
 added=$(git diff --cached --name-status --diff-filter=A | cut -f2- \
   | grep -E '(^|/)plans/[^/]+\.md$' || true)
 [[ -z "$added" ]] && exit 0
