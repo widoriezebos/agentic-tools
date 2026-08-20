@@ -74,7 +74,30 @@ func DeliverPending(repoRoot string) (int, error) {
 		if err := MarkDelivered(repoRoot, n.Nonce); err != nil {
 			return delivered, err
 		}
+		// A delivered revival message completes that intent's gate:
+		// stranding Notified=false here would suppress the revival
+		// forever behind its own successful delivery.
+		if err := markIntentNotified(repoRoot, n.Nonce); err != nil {
+			return delivered, err
+		}
 		delivered++
 	}
 	return delivered, nil
+}
+
+// markIntentNotified flips the live intent matching a delivered
+// message; a nonce with no live intent is ordinary (verdict and reap
+// messages have none).
+func markIntentNotified(repoRoot, nonce string) error {
+	live, err := LiveIntents(repoRoot)
+	if err != nil {
+		return err
+	}
+	for _, it := range live {
+		if it.Nonce == nonce && !it.Notified {
+			it.Notified = true
+			return UpdateIntent(repoRoot, it)
+		}
+	}
+	return nil
 }

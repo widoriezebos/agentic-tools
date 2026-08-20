@@ -1,6 +1,9 @@
 package steward
 
-// One tick: read the world, fold the evidence, decide. The tick
+import "fmt"
+
+// One tick: read the world, fold the evidence, decide, and put
+// every notify verdict on the durable queue. The tick
 // itself performs no action — the verb that calls it notifies,
 // revives, or stays quiet per the decision, so every rule stays
 // testable without a scheduler or a dispatcher.
@@ -64,6 +67,18 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	d, workReason, err := decideNow(repoRoot, cfg, census, ev)
 	if err != nil {
 		return TickResult{}, err
+	}
+	if d.Action == ActNotify {
+		// A notify verdict IS the visibility the invariant promises:
+		// it goes to the queue, keyed by its verdict so the standing
+		// condition holds one pending message (redelivered after each
+		// successful delivery, held durably through an outage).
+		if err := QueueNotification(repoRoot, PendingNotification{
+			Nonce:   "verdict-" + string(d.Verdict),
+			Message: fmt.Sprintf("steward: %s — %s", d.Verdict, d.Reason),
+		}); err != nil {
+			return TickResult{}, err
+		}
 	}
 	if err := SaveEvidence(evPath, ev); err != nil {
 		return TickResult{}, err

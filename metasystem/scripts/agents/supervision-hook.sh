@@ -196,6 +196,11 @@ if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$arm" --repo "$repo" --session 
   # machine: arming is idempotent and best-effort — a session must
   # never fail because the steward could not start.
   { "$ms" steward arm --repo "$repo" >/dev/null 2>&1 || true; } 2>/dev/null
+  # The second visibility channel: a session's start names anything
+  # the steward could not deliver, so a notifier outage is never the
+  # only witness.
+  pending_line=$("$ms" steward pending --repo "$repo" 2>/dev/null || true)
+  [[ -n "$pending_line" ]] && surface_json "Steward incidents pending: $pending_line"
   exit 0
 fi
 surface_json "Metasystem supervision arming failed: $(printf '%s' "$output" | tail -1)"

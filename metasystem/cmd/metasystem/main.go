@@ -324,6 +324,7 @@ func families() []family {
 				{"run", "the runner's body: tick until disarmed (spawned by arm; callable by any external ticker)", runStewardRun},
 				{"arm", "guard this repository: mint the identity, verify the notifier, spawn the detached runner", runStewardArm},
 				{"disarm", "end the runner", runStewardDisarm},
+				{"pending", "one line naming undelivered incidents; empty means none", runStewardPending},
 			},
 		},
 		{

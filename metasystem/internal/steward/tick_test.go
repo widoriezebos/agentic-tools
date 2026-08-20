@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -126,5 +127,59 @@ func TestGoalFreeRepositoryTicksQuietly(t *testing.T) {
 	r := tickN(t, root, TickConfig{}, fakeCensus{}, 1)
 	if r.Decision.Verdict != VerdictNoWork || r.Decision.Action != ActNone {
 		t.Fatalf("goal-free needs nothing: %+v", r.Decision)
+	}
+}
+
+func TestNotifyVerdictsReachTheQueue(t *testing.T) {
+	root := gitRepoWithCurrentGoal(t)
+	live := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
+	tickN(t, root, TickConfig{StaleTicks: 1}, live, 2) // ages past the threshold
+	pending, err := PendingNotifications(root)
+	if err != nil || len(pending) == 0 {
+		t.Fatalf("a live-idle verdict is an incident the operator hears about: %v %v", pending, err)
+	}
+	found := false
+	for _, n := range pending {
+		if strings.Contains(n.Message, "stalled-idle") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the incident names its verdict: %v", pending)
+	}
+	// The standing condition holds ONE pending message per verdict.
+	before := len(pending)
+	tickN(t, root, TickConfig{StaleTicks: 1}, live, 3)
+	after, _ := PendingNotifications(root)
+	if len(after) != before {
+		t.Fatalf("a repeating verdict overwrites its one message: %d -> %d", before, len(after))
+	}
+}
+
+func TestDeliveredRevivalMessageCompletesTheGate(t *testing.T) {
+	root := reviveRepo(t)
+	if out, err := gitConfig(root, "metasystem.steward.notify-command", "exit 1"); err != nil {
+		t.Fatalf("config: %v\n%s", err, out)
+	}
+	if err := PrepareIntent(root, testIntent("dg-1")); err != nil {
+		t.Fatal(err)
+	}
+	// The channel returns; the runner's ordinary drain delivers the
+	// queued revival message — the intent's gate must complete here,
+	// not strand behind its own successful delivery.
+	if out, err := gitConfig(root, "metasystem.steward.notify-command", "true"); err != nil {
+		t.Fatalf("config: %v\n%s", err, out)
+	}
+	if _, err := DeliverPending(root); err != nil {
+		t.Fatal(err)
+	}
+	live, _ := LiveIntents(root)
+	if len(live) != 1 || !live[0].Notified {
+		t.Fatalf("the drained delivery completes the intent's gate: %+v", live)
+	}
+	launched := 0
+	out, err := CompleteRevival(root, TickConfig{}, deadCensus(), "dg-1", func(Intent) error { launched++; return nil })
+	if err != nil || !out.Launched || launched != 1 {
+		t.Fatalf("the gate-complete intent launches exactly once: %+v %d %v", out, launched, err)
 	}
 }

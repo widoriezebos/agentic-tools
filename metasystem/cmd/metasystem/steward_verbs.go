@@ -262,6 +262,30 @@ func runStewardDisarm(args []string) int {
 	return 0
 }
 
+// runStewardPending prints one line naming undelivered incidents —
+// empty output means none, so shell callers can gate on it.
+func runStewardPending(args []string) int {
+	flags := flag.NewFlagSet("steward pending", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "steward pending: --repo is required")
+		return 2
+	}
+	pending, err := steward.PendingNotifications(*repo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward pending: %v\n", err)
+		return 1
+	}
+	if len(pending) == 0 {
+		return 0
+	}
+	fmt.Printf("%d undelivered; newest: %s\n", len(pending), pending[len(pending)-1].Message)
+	return 0
+}
+
 // runStewardStatus is the operator's view: the last evidence state,
 // live intents, and pending notifications — the second visibility
 // channel the design pins.
