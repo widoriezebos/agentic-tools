@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -187,6 +188,77 @@ func runStewardRevive(args []string) int {
 	if !outcome.Launched {
 		return 3
 	}
+	return 0
+}
+
+// runStewardRun is the runner's body — normally spawned by arm,
+// callable directly by any external ticker the operator provides.
+func runStewardRun(args []string) int {
+	flags := flag.NewFlagSet("steward run", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "steward run: --repo is required")
+		return 2
+	}
+	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
+	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
+		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%v (%s)", err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}, interval)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward run: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runStewardArm(args []string) int {
+	flags := flag.NewFlagSet("steward arm", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "steward arm: --repo is required")
+		return 2
+	}
+	bin, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
+		return 1
+	}
+	msg, err := steward.Arm(*repo, bin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward arm: %v\n", err)
+		return 1
+	}
+	fmt.Println(msg)
+	return 0
+}
+
+func runStewardDisarm(args []string) int {
+	flags := flag.NewFlagSet("steward disarm", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *repo == "" {
+		fmt.Fprintln(os.Stderr, "steward disarm: --repo is required")
+		return 2
+	}
+	msg, err := steward.Disarm(*repo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "steward disarm: %v\n", err)
+		return 1
+	}
+	fmt.Println(msg)
 	return 0
 }
 
