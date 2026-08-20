@@ -832,3 +832,133 @@ func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
 }
+
+// ParkArc pauses a whole arc as one unit. Parking a foreign claim
+// anywhere in the cascade is a human act, and the design pins ONE
+// acknowledgment for the displaced pair across the whole cascade
+// (R10-M06): the displaced= field rides every touched history line,
+// but the pair is recorded once per claimant, not once per member.
+func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
+	if strings.TrimSpace(because) == "" {
+		return PublishResult{}, fmt.Errorf("park needs its reason — a pause without a why is a stall in disguise")
+	}
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "park", Targets: []string{id}, Args: map[string]string{
+			"because": because, "cascade": "arc",
+		}},
+		Message: "goal park " + id + " (arc cascade)",
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			members := arcMembers(t, id)
+			if members == nil {
+				return nil, fmt.Errorf("goal %s is not live; nothing to park", id)
+			}
+			targets := make([]string, 0, len(members))
+			for _, m := range members {
+				targets = append(targets, m.Id)
+			}
+			// One acknowledgment per displaced PAIR: collect the
+			// foreign claimants once before touching anything.
+			displacedPair := ""
+			for _, m := range members {
+				if m.State == StateClaimed && m.Claimed != nil && m.Claimed.Machine != r.Actor.Machine {
+					if r.Actor.Human == "" {
+						return nil, fmt.Errorf("arc member %s is claimed by %s; parking another's claim is a human act", m.Id, m.Claimed.Machine)
+					}
+					pair := m.Claimed.Machine + "+" + m.Claimed.Lineage + "@" + m.Claimed.At
+					if displacedPair == "" {
+						displacedPair = pair
+					}
+				}
+			}
+			var changes []Change
+			for _, m := range members {
+				if opidLanded(m, r) {
+					return nil, AlreadyApplied{}
+				}
+				if m.State == StateParked {
+					continue // already parked members ride along
+				}
+				if m.State != StateQueued && m.State != StateClaimed {
+					return nil, fmt.Errorf("arc member %s is %s; only queued or claimed goals park", m.Id, m.State)
+				}
+				memberDisplaced := ""
+				if m.State == StateClaimed && m.Claimed != nil && m.Claimed.Machine != r.Actor.Machine {
+					memberDisplaced = displacedPair
+				}
+				m.State = StateParked
+				m.Parked = &ParkRecord{
+					By: r.Actor.historyActor(), At: r.stamp(),
+					Because: because, Displaced: memberDisplaced,
+				}
+				m.Claimed = nil
+				m.Revision++
+				m.History = append(m.History, HistoryLine{
+					At: r.stamp(), Opid: r.opid(), Verb: "park",
+					Actor: r.Actor.historyActor(), Targets: targets,
+					Displaced: memberDisplaced, Keep: -1, Reason: because,
+				})
+				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
+			}
+			if len(changes) == 0 {
+				return nil, AlreadyApplied{}
+			}
+			return changes, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
+
+// UnparkArc restores a whole parked arc to the queue as one unit.
+func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
+		Message: "goal unpark " + id + " (arc cascade)",
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			members := arcMembers(t, id)
+			if members == nil {
+				return nil, fmt.Errorf("goal %s is not live; nothing to unpark", id)
+			}
+			targets := make([]string, 0, len(members))
+			for _, m := range members {
+				targets = append(targets, m.Id)
+			}
+			var changes []Change
+			for _, m := range members {
+				if opidLanded(m, r) {
+					return nil, AlreadyApplied{}
+				}
+				if m.State != StateParked {
+					continue
+				}
+				m.State = StateQueued
+				m.Parked = nil
+				touch(m, r, "unpark", targets)
+				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
+			}
+			if len(changes) == 0 {
+				return nil, AlreadyApplied{}
+			}
+			if t.Root != nil && t.Root.Free != nil {
+				t.Root.Free = nil
+				t.Root.Revision++
+				t.Root.History = append(t.Root.History, HistoryLine{
+					At: r.stamp(), Opid: r.opid(), Verb: "unpark",
+					Actor: r.Actor.historyActor(), Targets: targets, Keep: -1,
+				})
+				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
+			}
+			return changes, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}

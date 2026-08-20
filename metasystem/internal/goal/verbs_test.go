@@ -579,3 +579,74 @@ func TestMemberDoneLeavesSiblingClaimed(t *testing.T) {
 		t.Fatalf("the sibling stays claimed; the arc survives: %+v", sibling)
 	}
 }
+
+func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	for i, id := range []string{"casc-one", "casc-two"} {
+		if res, err := Open(verbReq(a, fmt.Sprintf("01J5X00000000000000000C0%d0", i), "mac-a"), id, "Cascade "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		res, err := Publish(endpointFor(a), PublishRequest{
+			Opid:    Opid(fmt.Sprintf("01J5X00000000000000000C1%d0", i), "mac-a", "lin-1"),
+			Machine: "mac-a", Lineage: "lin-1",
+			Intent: testIntentFor("edit"), Message: "wire " + id,
+			Mutate: func(tip string) ([]Change, error) {
+				t2, err := loadTree(a, tip)
+				if err != nil {
+					return nil, err
+				}
+				f := t2.Live[id]
+				f.Arc = "the-cascade"
+				f.Revision++
+				return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			},
+			Validate: func(commit string) error { return ValidateCommit(a, commit) },
+		})
+		if err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("wire %s: %+v %v", id, res, err)
+		}
+	}
+	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000C200", "mac-a"), "casc-one"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim arc: %+v %v", res, err)
+	}
+	// The human parks A's whole claimed arc from machine B: the
+	// displaced pair is recorded ONCE and rides each touched line.
+	humanReq := verbReq(b, "01J5X00000000000000000C210", "mac-b")
+	humanReq.Actor.Human = "wido"
+	res, err := ParkArc(humanReq, "casc-one", "operator hold")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("human park cascade: %+v %v", res, err)
+	}
+	t2, err := loadTree(b, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := map[string]bool{}
+	for _, id := range []string{"casc-one", "casc-two"} {
+		m := t2.Live[id]
+		if m.State != StateParked {
+			t.Fatalf("the cascade parks every member: %s is %s", id, m.State)
+		}
+		if m.Parked.Displaced != "" {
+			pairs[m.Parked.Displaced] = true
+		}
+	}
+	if len(pairs) != 1 {
+		t.Fatalf("ONE displaced pair across the cascade (R10-M06): %v", pairs)
+	}
+	// Unpark restores the whole arc.
+	res, err = UnparkArc(verbReq(a, "01J5X00000000000000000C220", "mac-a"), "casc-one")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("unpark cascade: %+v %v", res, err)
+	}
+	t3, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"casc-one", "casc-two"} {
+		if t3.Live[id].State != StateQueued {
+			t.Fatalf("unpark restores the whole arc: %s is %s", id, t3.Live[id].State)
+		}
+	}
+}
