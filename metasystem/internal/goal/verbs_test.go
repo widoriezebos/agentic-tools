@@ -203,3 +203,152 @@ func TestOpenClearsGoalFreeInTheSameCommit(t *testing.T) {
 		t.Fatal("the opened goal is live")
 	}
 }
+
+func TestParkUnparkCycle(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X0000000000000000000E0", "mac-a"), "pausable", "Pausable work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	// Park without a reason refuses up front.
+	if _, err := Park(verbReq(a, "01J5X0000000000000000000E1", "mac-a"), "pausable", " "); err == nil {
+		t.Fatal("park needs its reason")
+	}
+	res, err := Park(verbReq(a, "01J5X0000000000000000000E2", "mac-a"), "pausable", "waiting on the vendor")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("park: %+v %v", res, err)
+	}
+	t2, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parked := t2.Live["pausable"]
+	if parked.State != StateParked || parked.Parked == nil || parked.Parked.Because != "waiting on the vendor" {
+		t.Fatalf("the park carries its reason: %+v", parked.Parked)
+	}
+
+	// An agent parking ANOTHER machine's claim rejects; a human
+	// park records the displaced claimant.
+	if res, err := Unpark(verbReq(a, "01J5X0000000000000000000E3", "mac-a"), "pausable"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("unpark: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X0000000000000000000E4", "mac-a"), "pausable"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", res, err)
+	}
+	resB, err := Park(verbReq(b, "01J5X0000000000000000000E5", "mac-b"), "pausable", "b wants it stopped")
+	if err != nil || resB.Outcome != OutcomeRejected || !strings.Contains(resB.Detail, "human act") {
+		t.Fatalf("an agent parking another's claim rejects: %+v %v", resB, err)
+	}
+	humanReq := verbReq(b, "01J5X0000000000000000000E6", "mac-b")
+	humanReq.Actor.Human = "wido"
+	resH, err := Park(humanReq, "pausable", "operator stop")
+	if err != nil || resH.Outcome != OutcomeConfirmed {
+		t.Fatalf("the human park proceeds: %+v %v", resH, err)
+	}
+	t3, err := loadTree(b, resH.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	displaced := t3.Live["pausable"]
+	if displaced.Parked == nil || !strings.HasPrefix(displaced.Parked.Displaced, "mac-a+lin-1@") {
+		t.Fatalf("the displaced claimant is recorded: %+v", displaced.Parked)
+	}
+	last := displaced.History[len(displaced.History)-1]
+	if last.Displaced == "" || last.Actor != "human:wido" {
+		t.Fatalf("the history line carries displaced= under the human: %+v", last)
+	}
+}
+
+func TestReopenGuardsClaimedDependents(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X0000000000000000000E7", "mac-a"), "base", "The base.", "main", "First."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open base: %+v %v", res, err)
+	}
+	if res, err := Done(verbReq(a, "01J5X0000000000000000000E8", "mac-a"), "base", "Base shipped."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("done base: %+v %v", res, err)
+	}
+	if res, err := Open(verbReq(a, "01J5X0000000000000000000E9", "mac-a"), "tower", "On the base.", "main", "Second."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open tower: %+v %v", res, err)
+	}
+	blocked := []string{"base"}
+	if res, err := Edit(verbReq(a, "01J5X0000000000000000000EA", "mac-a"), "tower", EditFields{Blocked: &blocked}); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("edit edge: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X0000000000000000000EB", "mac-a"), "tower"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim tower: %+v %v", res, err)
+	}
+	// Reopening the base under the claimed dependent refuses.
+	res, err := Reopen(verbReq(a, "01J5X0000000000000000000EC", "mac-a"), "base")
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "tower") {
+		t.Fatalf("reopen under a claimed dependent rejects naming it: %+v %v", res, err)
+	}
+	// Release the dependent; the reopen proceeds and the archive
+	// entry moves back queued.
+	if res, err := Release(verbReq(a, "01J5X0000000000000000000ED", "mac-a"), "tower"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("release: %+v %v", res, err)
+	}
+	res, err = Reopen(verbReq(a, "01J5X0000000000000000000EE", "mac-a"), "base")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("reopen: %+v %v", res, err)
+	}
+	t2, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, archived := t2.Done["base"]; archived {
+		t.Fatal("reopen removes the archive entry")
+	}
+	back := t2.Live["base"]
+	if back == nil || back.State != StateQueued || back.Conclude != "" {
+		t.Fatalf("the reopened goal is queued without its old conclusion: %+v", back)
+	}
+}
+
+func TestDeclareFreeExclusivityAndRenewal(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X0000000000000000000EF", "mac-a"), "open-one", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	// Declaring over a queued goal rejects by name.
+	res, err := DeclareFree(verbReq(a, "01J5X0000000000000000000F0", "mac-a"), "main", strings.Repeat("ef", 32))
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "open-one") {
+		t.Fatalf("declare-free over queued rejects: %+v %v", res, err)
+	}
+	// Park it; the declaration coexists with parked.
+	if res, err := Park(verbReq(a, "01J5X0000000000000000000F1", "mac-a"), "open-one", "later"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("park: %+v %v", res, err)
+	}
+	res, err = DeclareFree(verbReq(a, "01J5X0000000000000000000F2", "mac-a"), "main", strings.Repeat("ef", 32))
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("declare-free over parked: %+v %v", res, err)
+	}
+	// Renewal with the same digest is idempotent.
+	res, err = DeclareFree(verbReq(a, "01J5X0000000000000000000F3", "mac-a"), "main", strings.Repeat("ef", 32))
+	if err != nil || res.Outcome != OutcomeConfirmed || res.Detail != "idempotent" {
+		t.Fatalf("renewal is idempotent: %+v %v", res, err)
+	}
+}
+
+func TestEditAcceptsAMultiKilobyteIntent(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X0000000000000000000F4", "mac-a"), "verbose", "Short.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	// Prose caps are REMOVED (D113/D114): witnessed by a
+	// multi-kilobyte intent, not a 500-byte one (BGS-14).
+	big := strings.Repeat("A thorough paragraph of intent. ", 150) // ~4.8KB
+	res, err := Edit(verbReq(a, "01J5X0000000000000000000F5", "mac-a"), "verbose", EditFields{Intent: &big})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a multi-kilobyte intent is lawful: %+v %v", res, err)
+	}
+	t2, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(t2.Live["verbose"].Intent) < 4000 {
+		t.Fatalf("the intent round-trips whole: %d bytes", len(t2.Live["verbose"].Intent))
+	}
+}
