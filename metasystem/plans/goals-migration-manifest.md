@@ -134,6 +134,12 @@ REVIEWED_SOURCE_SHA256: 266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f
 - next: Wido's expanded charter (2026-08-20, D122): real-time self-awareness, not after-the-fact stories. The narrator narrates CONTINUOUSLY what the system is doing; it is WIRED INTO the idle-watchdog steward (the always-running tick is its heartbeat and its actuation path); and when its narration notices something off — a stall, a loop, a drift from the delegated intent — it ACTS: names the anomaly, notifies, and corrects course through the steward's intervention machinery rather than only describing. Reaching the HUMAN is a first-class capability (Wido's addendum, same day): anything out of the ordinary that the narrator cannot or should not correct alone goes to the operator through the steward's delivery-gated channels — the narrator judges what is ordinary, the human hears about what is not. Design the observation surface (receipts, ticks, verdicts, dispatch events), the narration channel, the anomaly-to-action contract, and the reach-the-human contract together with the steward's fixtures.
 - blockedBy: idle-watchdog
 
+### add-goal: stop-message-truth
+- Intent: The stop message reflects the actual state of the system: the live ledger projection (claims, real next steps) plus whether work is in flight right now — a stale snapshot that says nothing about activity must be impossible (Wido, 2026-08-20)
+- Origin: main
+- Next: After cutover retargets the verdict to the new projection (that half is a backlog-git-sync cutover obligation), fold in the steward's status surface: the stop message names any live worker, in-flight continuation, or pending steward incident, so silence is never ambiguous; acceptance = the frozen-ledger staleness observed 2026-08-20 cannot recur.
+- BlockedBy: backlog-git-sync, idle-watchdog
+
 ### add-goal: backlog-local-promotion
 - Intent: A local-mode (remote-less) goal ledger can join a fleet: the promotion protocol with its full case table (absent, equal, remote-ancestor, local-ancestor, divergent), crash ordering, and fixtures
 - Origin: main

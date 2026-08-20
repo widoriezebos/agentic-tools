@@ -1605,3 +1605,13 @@ is a first-class capability riding the steward's delivery-gated
 notification channels — the narrator judges what is ordinary, the
 operator hears about what is not, and correction-versus-escalation is
 part of the anomaly-to-action contract its design must pin.
+
+**Second addendum to D122 (Wido, same day):** Wido observed the stop
+message rendering a stale snapshot — the frozen pre-cutover ledger —
+with nothing about whether work is in flight, and asked for a backlog
+guarantee that this gets fixed rather than forgotten. Added to the
+migration manifest as add-goal stop-message-truth, blocked by
+backlog-git-sync (cutover retargets the verdict to the live
+projection) and idle-watchdog (whose status surface supplies the
+is-anything-running half). Acceptance is written into the goal: the
+staleness observed today cannot recur.
