@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -121,6 +122,15 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return "", err
+	}
+	if config.ConfValue(filepath.Join(top, "metasystem.conf"), "metasystem.runtimes", "") == "fake" {
+		// A fake-runtimes repository is a fixture world: sessions come
+		// and go by the thousand and their repositories are deleted
+		// minutes later. A leaked runner ticking a dead directory is
+		// exactly the leak class the suite hygiene rules name, so the
+		// ambient arming path stays out; a fixture that wants a runner
+		// arms it deliberately.
+		return "not armed: fake-runtimes repository (fixtures arm deliberately)", nil
 	}
 	if _, ok := NotifyCommand(top); !ok {
 		return "", fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")

@@ -385,3 +385,82 @@ func TestStewardOfAnotherRepositoryIsNotThisSteward(t *testing.T) {
 		t.Fatalf("another repository's steward must not classify here: %+v", got)
 	}
 }
+
+func TestExecutableComparisonHandlesTokensAndSymlinks(t *testing.T) {
+	if commandExecutable("/bin/tool --flag value") != "/bin/tool" {
+		t.Fatal("the executable is the command's first token")
+	}
+	if commandExecutable("/bin/bare") != "/bin/bare" {
+		t.Fatal("a bare command is its own token")
+	}
+	dir := t.TempDir()
+	link := filepath.Join(dir, "alias")
+	if err := os.Symlink("/bin/sleep", link); err != nil {
+		t.Fatal(err)
+	}
+	if !sameExecutable(link, "/bin/sleep") {
+		t.Fatal("symlink-resolved paths compare equal")
+	}
+	if sameExecutable(filepath.Join(dir, "missing-a"), filepath.Join(dir, "missing-b")) {
+		t.Fatal("two unresolvable different paths are not equal")
+	}
+}
+
+func TestFixtureTerminalReadsFixtureOnly(t *testing.T) {
+	if has, present := probeFixtureTerminal(int64(os.Getpid()), nil); present || has {
+		t.Fatal("a nil probe stages nothing, and the kernel is never consulted here")
+	}
+}
+
+func TestNoStewardInstallationMeansNoStewardBinary(t *testing.T) {
+	if got := verifiedStewardBinary(t.TempDir()); got != "" {
+		t.Fatalf("no identity record, no recognized binary: %q", got)
+	}
+}
+
+func TestClassifyStewardJobRidesTheActiveIntent(t *testing.T) {
+	root := t.TempDir()
+	out, err := ClassifyVerb(root, int64(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.StewardJob != "" {
+		t.Fatalf("no consumed intent, no steward job: %+v", out)
+	}
+}
+
+func TestClassifyVerbReportsAnAnnouncedHolder(t *testing.T) {
+	root := t.TempDir()
+	self := int64(os.Getpid())
+	if _, err := Announce(root, "cov sess", self, selfStart(t), "tag", "fake", ""); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ClassifyVerb(root, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Class != ClassMain || !out.Holder || out.MainId == "" || out.ClaimEpoch == nil {
+		t.Fatalf("an announced self is the holding main with lease coordinates: %+v", out)
+	}
+	view, err := RequireHolder(root, self, nil)
+	if err != nil || !view.Holder {
+		t.Fatalf("require-holder agrees: %+v %v", view, err)
+	}
+}
+
+func TestAnnouncementsForFindsExactlyOurRecords(t *testing.T) {
+	root := t.TempDir()
+	self := int64(os.Getpid())
+	if _, err := Announce(root, "af sess", self, selfStart(t), "tag", "fake", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := AnnouncementsFor(root, self); len(got) != 1 || got[0].Pid != self {
+		t.Fatalf("our one announcement: %+v", got)
+	}
+	if got := AnnouncementsFor(root, self+999999); len(got) != 0 {
+		t.Fatalf("a stranger pid has none: %+v", got)
+	}
+	if got := AnnouncementsFor(t.TempDir(), self); got != nil {
+		t.Fatalf("an empty root has none: %+v", got)
+	}
+}

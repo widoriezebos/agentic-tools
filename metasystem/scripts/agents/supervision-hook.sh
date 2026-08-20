@@ -192,11 +192,10 @@ if [[ "$event" == end ]]; then
 fi
 
 if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$arm" --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" --tag "$tag" 2>&1); then
+  # The watchdog revives with the first metasystem activity on this
+  # machine: arming is idempotent and best-effort — a session must
+  # never fail because the steward could not start.
+  { "$ms" steward arm --repo "$repo" >/dev/null 2>&1 || true; } 2>/dev/null
   exit 0
 fi
 surface_json "Metasystem supervision arming failed: $(printf '%s' "$output" | tail -1)"
-
-# The watchdog revives with the first metasystem activity on this
-# machine: arming is idempotent and best-effort — a session must
-# never fail because the steward could not start.
-"$ms" steward arm --repo "$root" >/dev/null 2>&1 || true

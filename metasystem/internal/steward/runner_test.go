@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -107,4 +108,18 @@ func mustAbs(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return a
+}
+
+func TestArmStaysOutOfFixtureWorlds(t *testing.T) {
+	root := reviveRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := Arm(root, "/bin/sleep")
+	if err != nil || !strings.Contains(msg, "not armed") {
+		t.Fatalf("ambient arming must stay out of fake-runtimes repositories: %q %v", msg, err)
+	}
+	if _, alive := liveRunner(root); alive {
+		t.Fatal("no runner may leak into a fixture world")
+	}
 }

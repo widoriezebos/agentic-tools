@@ -18,8 +18,8 @@ type Intent struct {
 	Nonce         string `json:"nonce"` // also the record's filename
 	RepoIdentity  string `json:"repoIdentity"`
 	InstallGen    int    `json:"installGeneration"`
-	Goal          string `json:"goal"` // the claim being continued
-	Role          string `json:"role"` // always steward-continuation; recorded, never chosen
+	Goal          string `json:"goal"`        // the claim being continued
+	Role          string `json:"role"`        // always steward-continuation; recorded, never chosen
 	Permissions   string `json:"permissions"` // the preset name whose expansion PermsDigest pins
 	RoleDigest    string `json:"roleDigest"`
 	BriefDigest   string `json:"briefDigest"`
