@@ -48,12 +48,12 @@ REVIEWED_SOURCE_SHA256: 266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f
 ### add-goal: wall-o15-head-accounting
 - Intent: HEAD movement during a turn is accounted: only certified integrations advance committed HEAD; staged bytes cannot ship unseen (HIW-O15, CRITICAL)
 - Origin: main
-- Next: Design the HEAD-accounting obligation; predates slice 7 (recorded at its round-15 review).
+- Next: Implement per plans/wall-snapshot-scope-design.md (converged 2026-08-20 under D123's bounded-window ruling; all 13 rows read implement — wall-slice-sized: gittree primitives, state schema 4, the fence and censuses, every row's fixtures).
 
 ### add-goal: wall-o16-host-repo-fence
 - Intent: The host is fenced at the whole repository in nested checkouts exactly as delegates are (HIW-O16)
 - Origin: main
-- Next: Design the host-side repository fence together with wall-o15 (one snapshot-scope design owns both).
+- Next: Implement per plans/wall-snapshot-scope-design.md, together with wall-o15 (one converged design owns both; D123).
 - BlockedBy: wall-o15-head-accounting
 
 ### add-goal: wall-o19-recovery-ladder
@@ -139,6 +139,11 @@ REVIEWED_SOURCE_SHA256: 266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f
 - Origin: main
 - Next: After cutover retargets the verdict to the new projection (that half is a backlog-git-sync cutover obligation), fold in the steward's status surface: the stop message names any live worker, in-flight continuation, or pending steward incident, so silence is never ambiguous; acceptance = the frozen-ledger staleness observed 2026-08-20 cannot recur.
 - BlockedBy: backlog-git-sync, idle-watchdog
+
+### add-goal: il-28-static-reproof
+- Intent: No landing goes red on a static check: the landing boundary re-proves formatting, vet, staticcheck, and build via the fast gate before any commit concludes (IL-28, adopted at the 2026-08-20 retro)
+- Origin: main
+- Next: Build the pre-commit or landing-boundary hook invoking go-gate.sh --fast; the retro's expected effect is zero landings red on a static check, due at the next retro — unbuilt by then, the row reverts.
 
 ### add-goal: backlog-local-promotion
 - Intent: A local-mode (remote-less) goal ledger can join a fleet: the promotion protocol with its full case table (absent, equal, remote-ancestor, local-ancestor, divergent), crash ordering, and fixtures
