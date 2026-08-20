@@ -22,6 +22,8 @@ type Intent struct {
 	Role          string `json:"role"`        // always steward-continuation; recorded, never chosen
 	Permissions   string `json:"permissions"` // the preset name whose expansion PermsDigest pins
 	RoleDigest    string `json:"roleDigest"`
+	ReqDigest     string `json:"reqDigest"`
+	SchemaDigest  string `json:"schemaDigest"`
 	BriefDigest   string `json:"briefDigest"`
 	PermsDigest   string `json:"permsDigest"`
 	Runtime       string `json:"runtime"` // roster-resolved, recorded not chosen

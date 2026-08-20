@@ -9,7 +9,12 @@ package steward
 // unknown; a fence bump or a changed verdict cancels with the reason
 // on record.
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
+)
 
 // LaunchSeam performs the dispatch. The shell glue supplies the real
 // dispatcher; fixtures supply an observable fake.
@@ -37,6 +42,17 @@ func PrepareIntent(repoRoot string, it Intent) error {
 	it.FenceAtMint = fence
 	if err := MintIntent(repoRoot, it); err != nil {
 		return err
+	}
+	// The per-attempt receipt is its own durable record, distinct
+	// from the intent: the repository's ordinary evidence stream
+	// carries every intervention the steward ever attempts.
+	if res := receipt.Add(receipt.Options{
+		Root: repoRoot, File: filepath.Join(repoRoot, "plans", "receipts.log"),
+		Type: "other", Outcome: "shipped",
+		Skills: "steward", Verify: "skipped", Corrections: "0", StopLoss: "no",
+		Note: fmt.Sprintf("steward revival: intent %s revives %s via job %s", it.Nonce, it.Goal, it.JobId),
+	}); res.Code != 0 {
+		return fmt.Errorf("the revival receipt did not write: %v", res.Err)
 	}
 	return QueueNotification(repoRoot, PendingNotification{
 		Nonce:   it.Nonce,

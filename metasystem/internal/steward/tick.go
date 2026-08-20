@@ -45,22 +45,31 @@ type TickResult struct {
 func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, error) {
 	cfg = cfg.withDefaults()
 
+	// One tick at a time per repository: the CLI seam and the
+	// resident runner share the evidence store and the pending
+	// queue, and neither may age or drain it under the other.
+	tickLock, err := AcquireArbitration(repoRoot)
+	if err != nil {
+		return TickResult{}, err
+	}
+	defer tickLock.Release()
+
 	// Close finished continuations first: the guard a reap frees must
 	// not suppress this same tick's decision.
 	reaped, err := ReapContinuations(repoRoot)
 	if err != nil {
-		return TickResult{Decision: Decision{VerdictDegraded, ActNotify, err.Error()}}, nil
+		return degradedTick(repoRoot, "reaping failed: "+err.Error()), nil
 	}
 
 	evPath := EvidencePath(repoRoot)
 	prev, err := LoadEvidence(evPath)
 	if err != nil {
 		// A torn store degrades honestly: report, do not guess ages.
-		return TickResult{Decision: Decision{VerdictDegraded, ActNotify, err.Error()}}, nil
+		return degradedTick(repoRoot, err.Error()), nil
 	}
 	marks, err := CurrentMarks(repoRoot)
 	if err != nil {
-		return TickResult{}, err
+		return degradedTick(repoRoot, err.Error()), nil
 	}
 	ev := Observe(prev, marks)
 
@@ -84,6 +93,18 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 		return TickResult{}, err
 	}
 	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason, Reaped: reaped}, nil
+}
+
+// degradedTick is every degraded early exit's one shape: the
+// incident reaches the durable queue BEFORE the tick returns, so a
+// broken store or unreadable repository is never a silent verdict.
+func degradedTick(repoRoot, reason string) TickResult {
+	d := Decision{VerdictDegraded, ActNotify, reason}
+	_ = QueueNotification(repoRoot, PendingNotification{
+		Nonce:   "verdict-" + string(VerdictDegraded),
+		Message: fmt.Sprintf("steward: %s — %s", d.Verdict, d.Reason),
+	})
+	return TickResult{Decision: d}
 }
 
 // decideNow assembles one snapshot over the given evidence and

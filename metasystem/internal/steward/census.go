@@ -7,6 +7,7 @@ package steward
 // unknown dominates dead.
 
 import (
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
@@ -45,10 +46,16 @@ func (c LiveWorkerCensus) Workers(repoRoot string) (Workers, error) {
 // incomplete scan.
 func workersFromVerdict(v census.Verdict) Workers {
 	w := Workers{CensusComplete: v.Verdict == "SUCCESS"}
-	// A diagnostic is a process the census could not fully account
-	// for (a failed per-pid probe, an unreadable custody record);
-	// silence would let a death proof stand on a partial scan.
-	w.Unprovable += len(v.Diagnostics)
+	// A diagnostic the census could not fully account for (an
+	// unresolved cwd, an unreadable run record, an unknown leader)
+	// blocks a death proof. RACED-EXIT alone is benign: the process
+	// PROVABLY exited during the scan, which is evidence of death,
+	// not doubt about it.
+	for _, d := range v.Diagnostics {
+		if !strings.HasPrefix(d, "RACED-EXIT") {
+			w.Unprovable++
+		}
+	}
 	for _, item := range v.Inventory {
 		switch item.Class {
 		case "CUSTODY", "ANNOUNCED":

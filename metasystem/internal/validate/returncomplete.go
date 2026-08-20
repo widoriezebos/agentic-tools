@@ -22,11 +22,13 @@ var returnJobIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 var returnAllowedRoles = map[string]bool{
 	"orchestrator": true, "design-critic": true, "implementer": true,
 	"code-critic": true, "verifier": true, "investigator": true, "behavior-judge": true,
+	"steward-continuation": true,
 }
 
 var returnVersionedRoles = map[string]bool{
 	"design-critic": true, "implementer": true, "code-critic": true,
 	"verifier": true, "investigator": true, "behavior-judge": true,
+	"steward-continuation": true,
 }
 
 type returnChecker struct {

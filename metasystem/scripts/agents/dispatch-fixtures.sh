@@ -2232,6 +2232,11 @@ grep -q '"jobId": "'"$steward_job"'"' <<<"$steward_tick" \
 steward_closed=$("$steward_repo/bin/metasystem" json get --file "$steward_repo/artifacts/agents/jobs/$steward_job.json" --field chainClosed)
 [[ "$steward_closed" == true ]] \
   || { echo "steward end-to-end: chain not closed: $steward_closed" >&2; exit 1; }
+steward_status=$("$steward_repo/bin/metasystem" json get --file "$steward_repo/artifacts/agents/jobs/$steward_job.json" --field status)
+[[ "$steward_status" == completed ]] \
+  || { echo "steward end-to-end: job must complete, got $steward_status" >&2; exit 1; }
+grep -q "with a valid return" <<<"$steward_tick" \
+  || { echo "steward end-to-end: the reap must certify a VALID return, got: $steward_tick" >&2; exit 1; }
 
 # A replayed authorization launches nothing.
 steward_nonce=$(ls "$steward_repo/artifacts/agents/steward/consumed/" | sed -n 's/\.json$//p' | head -1)

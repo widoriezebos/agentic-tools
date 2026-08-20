@@ -21,6 +21,7 @@ var recordStores = []string{
 	"artifacts/agents/runs",
 	"artifacts/agents/supervision/gate-runs",
 	"artifacts/agents/mains",
+	"artifacts/agents/missions/runners",
 }
 
 // The supervision directory itself stays OUT: the watcher is
@@ -46,15 +47,25 @@ func supplementWorkers(repoRoot string) (live, unprovable int) {
 				continue
 			}
 			var record struct {
-				Pid          *int64 `json:"pid"`
-				PidStartedAt *int64 `json:"pidStartedAt"`
+				Pid          *int64  `json:"pid"`
+				PidStartedAt *int64  `json:"pidStartedAt"`
+				EndedAt      *string `json:"endedAt"`
+				ExitCode     *int64  `json:"exitCode"`
 			}
 			if err := json.Unmarshal(data, &record); err != nil {
 				unprovable++
 				continue
 			}
 			if record.Pid == nil || *record.Pid <= 0 {
-				continue // not a process record; nothing to prove
+				// Only a RUN can be busy without a pid (launching, or
+				// draining after its leader died): a non-terminal run
+				// record blocks the proof. Every other store also
+				// keeps pid-less bookkeeping — cursors, lease
+				// markers — which proves nothing either way.
+				if store == "artifacts/agents/runs" && record.EndedAt == nil && record.ExitCode == nil {
+					unprovable++
+				}
+				continue
 			}
 			exact, state, err := identity.KernelProber{}.Probe(*record.Pid)
 			if err != nil || state == identity.Unknown {

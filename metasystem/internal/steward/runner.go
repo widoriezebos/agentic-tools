@@ -95,14 +95,15 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		result, err := RunTick(repoRoot, TickConfig{}, census)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
-		} else {
-			if _, err := DeliverPending(repoRoot); err != nil {
-				fmt.Fprintf(os.Stderr, "notifications pending: %v\n", err)
-			}
-			if result.Decision.Action == ActRevive && revive != nil {
-				if err := revive(); err != nil {
-					fmt.Fprintf(os.Stderr, "revival failed: %v\n", err)
-				}
+		}
+		// Pending incidents deliver on EVERY pass — a failed tick is
+		// exactly when the operator most needs what is queued.
+		if _, deliverErr := DeliverPending(repoRoot); deliverErr != nil {
+			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
+		}
+		if err == nil && result.Decision.Action == ActRevive && revive != nil {
+			if reviveErr := revive(); reviveErr != nil {
+				fmt.Fprintf(os.Stderr, "revival failed: %v\n", reviveErr)
 			}
 		}
 		deadline := time.Now().Add(interval)
@@ -123,6 +124,15 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if commonDir, err := exec.Command("git", "-C", top, "rev-parse", "--git-common-dir").Output(); err == nil {
+		if gitDir, dirErr := exec.Command("git", "-C", top, "rev-parse", "--git-dir").Output(); dirErr == nil &&
+			strings.TrimSpace(string(commonDir)) != strings.TrimSpace(string(gitDir)) {
+			// A linked worktree is a delegate's disposable copy: a
+			// watchdog armed there would outlive the job and guard a
+			// directory built to be deleted.
+			return "not armed: linked worktree (the primary checkout owns the watchdog)", nil
+		}
+	}
 	if config.ConfValue(filepath.Join(top, "metasystem.conf"), "metasystem.runtimes", "") == "fake" {
 		// A fake-runtimes repository is a fixture world: sessions come
 		// and go by the thousand and their repositories are deleted
@@ -135,13 +145,24 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 	if _, ok := NotifyCommand(top); !ok {
 		return "", fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
 	}
+	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
+		return "", err
+	}
+	// One arm at a time, and EVERYTHING an arm changes happens inside
+	// the lock: identity generations cannot be superseded by a racing
+	// arm, and the second contender finds the first's live runner.
+	armLock, err := os.OpenFile(filepath.Join(runnerDir(top), "arm.flock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return "", err
+	}
+	defer armLock.Close()
+	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
+		return "", err
+	}
 	if rec, alive := liveRunner(top); alive {
 		return fmt.Sprintf("already armed (runner pid %d)", rec.Pid), nil
 	}
 	prior, _ := VerifyIdentity(RepoIdentityPath(top), top)
-	if err := os.MkdirAll(runnerDir(top), 0o755); err != nil {
-		return "", err
-	}
 	bin, err := filepath.Abs(binaryPath)
 	if err != nil {
 		return "", err
@@ -157,20 +178,6 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 		return "", err
 	}
 	defer logFile.Close()
-	// One arm at a time: overlapping arms serialize here, and the
-	// second finds the first's live runner instead of spawning a
-	// duplicate process.
-	armLock, err := os.OpenFile(filepath.Join(runnerDir(top), "arm.flock"), os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return "", err
-	}
-	defer armLock.Close()
-	if err := unix.Flock(int(armLock.Fd()), unix.LOCK_EX); err != nil {
-		return "", err
-	}
-	if rec, alive := liveRunner(top); alive {
-		return fmt.Sprintf("already armed (runner pid %d)", rec.Pid), nil
-	}
 	cmd := exec.Command(bin, "steward", "run", "--repo", top)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

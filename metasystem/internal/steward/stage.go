@@ -43,6 +43,14 @@ func StageIntent(repoRoot, nonce, goal, jobId, runtime, model, reason string) (I
 	if err != nil {
 		return Intent{}, fmt.Errorf("the continuation role contract is unreadable: %w", err)
 	}
+	reqDigest, err := digestFile(filepath.Join(repoRoot, "scripts", "agents", "roles", continuationRole+".requirements.json"))
+	if err != nil {
+		return Intent{}, fmt.Errorf("the continuation requirements are unreadable: %w", err)
+	}
+	schemaDigest, err := digestFile(filepath.Join(repoRoot, "scripts", "agents", "schemas", continuationRole+".schema.json"))
+	if err != nil {
+		return Intent{}, fmt.Errorf("the continuation return schema is unreadable: %w", err)
+	}
 	permsPath := filepath.Join(repoRoot, "scripts", "agents", "permissions", continuationPermissions+".json")
 	permsDigest, err := digestFile(permsPath)
 	if err != nil {
@@ -83,6 +91,7 @@ anything; yield if a live worker shows fresh progress.
 		Role: continuationRole, Permissions: continuationPermissions,
 		Runtime: runtime, Model: model,
 		RoleDigest: roleDigest, BriefDigest: briefDigest, PermsDigest: permsDigest,
+		ReqDigest: reqDigest, SchemaDigest: schemaDigest,
 	}, nil
 }
 
@@ -99,6 +108,14 @@ func VerifyStagedDigests(repoRoot string, it Intent) error {
 	permsPath := filepath.Join(repoRoot, "scripts", "agents", "permissions", it.Permissions+".json")
 	if got, err := digestFile(permsPath); err != nil || got != it.PermsDigest {
 		return fmt.Errorf("permissions preset drifted since the authorization was minted (%s)", it.Permissions)
+	}
+	reqPath := filepath.Join(repoRoot, "scripts", "agents", "roles", it.Role+".requirements.json")
+	if got, err := digestFile(reqPath); err != nil || got != it.ReqDigest {
+		return fmt.Errorf("role requirements drifted since the authorization was minted (%s)", it.Role)
+	}
+	schemaPath := filepath.Join(repoRoot, "scripts", "agents", "schemas", it.Role+".schema.json")
+	if got, err := digestFile(schemaPath); err != nil || got != it.SchemaDigest {
+		return fmt.Errorf("return schema drifted since the authorization was minted (%s)", it.Role)
 	}
 	return nil
 }
