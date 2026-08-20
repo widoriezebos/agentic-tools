@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -444,5 +445,137 @@ func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 	res2, err := Prune(verbReq(a, "01J5X00000000000000000A050", "mac-a"), 0)
 	if err != nil || res2.Outcome != OutcomeConfirmed || res2.Detail != "idempotent" {
 		t.Fatalf("the prune replay classifies idempotent: %+v %v", res2, err)
+	}
+}
+
+func TestArcClaimsAsOneUnit(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	// Two members of one arc, plus a bystander.
+	for i, id := range []string{"arc-one", "arc-two", "solo"} {
+		ulid := fmt.Sprintf("01J5X00000000000000000B0%d0", i)
+		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Work "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+	}
+	arc := "covenant-patience"
+	for i, id := range []string{"arc-one", "arc-two"} {
+		ulid := fmt.Sprintf("01J5X00000000000000000B1%d0", i)
+		res, err := Publish(endpointFor(a), PublishRequest{
+			Opid: Opid(ulid, "mac-a", "lin-1"), Machine: "mac-a", Lineage: "lin-1",
+			Intent: testIntentFor("edit"), Message: "wire arc " + id,
+			Mutate: func(tip string) ([]Change, error) {
+				t2, err := loadTree(a, tip)
+				if err != nil {
+					return nil, err
+				}
+				f := t2.Live[id]
+				f.Arc = arc
+				f.Revision++
+				return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			},
+			Validate: func(commit string) error { return ValidateCommit(a, commit) },
+		})
+		if err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("wire arc %s: %+v %v", id, res, err)
+		}
+	}
+
+	// The covenant-patience two-clone race: one winner takes BOTH
+	// members; the loser names the winner.
+	resA, err := ClaimArc(verbReq(a, "01J5X00000000000000000B200", "mac-a"), "arc-one")
+	if err != nil || resA.Outcome != OutcomeConfirmed {
+		t.Fatalf("A claims the arc: %+v %v", resA, err)
+	}
+	resB, err := ClaimArc(verbReq(b, "01J5X00000000000000000B210", "mac-b"), "arc-two")
+	if err != nil || resB.Outcome != OutcomeLost {
+		t.Fatalf("B loses the whole cascade: %+v %v", resB, err)
+	}
+	t2, err := loadTree(a, resA.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"arc-one", "arc-two"} {
+		m := t2.Live[id]
+		if m.State != StateClaimed || m.Claimed == nil || m.Claimed.Machine != "mac-a" {
+			t.Fatalf("one claimant holds every member: %s %+v", id, m.Claimed)
+		}
+		last := m.History[len(m.History)-1]
+		if len(last.Targets) != 2 {
+			t.Fatalf("the cascade's history line names the whole set: %+v", last)
+		}
+	}
+	if t2.Live["solo"].State != StateQueued {
+		t.Fatal("the bystander is untouched")
+	}
+	// The quota holds: two claimed members, one arc, one machine —
+	// the tree validates (arc counts once).
+	if problems := ValidateTree(t2); len(problems) != 0 {
+		t.Fatalf("one arc under one claimant counts once against the quota: %v", problems)
+	}
+
+	// Release cascades back as one unit.
+	resR, err := ReleaseArc(verbReq(a, "01J5X00000000000000000B220", "mac-a"), "arc-one")
+	if err != nil || resR.Outcome != OutcomeConfirmed {
+		t.Fatalf("release cascade: %+v %v", resR, err)
+	}
+	t3, err := loadTree(a, resR.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"arc-one", "arc-two"} {
+		if t3.Live[id].State != StateQueued || t3.Live[id].Claimed != nil {
+			t.Fatalf("the release returns every member: %s %+v", id, t3.Live[id])
+		}
+	}
+}
+
+func TestMemberDoneLeavesSiblingClaimed(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	for i, id := range []string{"pair-one", "pair-two"} {
+		ulid := fmt.Sprintf("01J5X00000000000000000B3%d0", i)
+		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Paired "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		res, err := Publish(endpointFor(a), PublishRequest{
+			Opid:    Opid(fmt.Sprintf("01J5X00000000000000000B4%d0", i), "mac-a", "lin-1"),
+			Machine: "mac-a", Lineage: "lin-1",
+			Intent: testIntentFor("edit"), Message: "wire pair " + id,
+			Mutate: func(tip string) ([]Change, error) {
+				t2, err := loadTree(a, tip)
+				if err != nil {
+					return nil, err
+				}
+				f := t2.Live[id]
+				f.Arc = "the-pair"
+				f.Revision++
+				return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			},
+			Validate: func(commit string) error { return ValidateCommit(a, commit) },
+		})
+		if err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("wire %s: %+v %v", id, res, err)
+		}
+	}
+	if res, err := ClaimArc(verbReq(a, "01J5X00000000000000000B500", "mac-a"), "pair-one"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim arc: %+v %v", res, err)
+	}
+	// Concluding ONE member archives it and leaves the sibling
+	// claimed — the arc survives.
+	res, err := Done(verbReq(a, "01J5X00000000000000000B510", "mac-a"), "pair-one", "First member shipped.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("done member: %+v %v", res, err)
+	}
+	t2, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, archived := t2.Done["pair-one"]; !archived {
+		t.Fatal("the concluded member is archived")
+	}
+	sibling := t2.Live["pair-two"]
+	if sibling.State != StateClaimed || sibling.Claimed == nil || sibling.Claimed.Machine != "mac-a" {
+		t.Fatalf("the sibling stays claimed; the arc survives: %+v", sibling)
 	}
 }

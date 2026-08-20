@@ -713,3 +713,122 @@ func sortDoneNewestFirst(t *TreeGoals, ids []string) {
 		}
 	}
 }
+
+// arcMembers collects the LIVE members of a goal's arc, the asked
+// goal included — the cascade set claim/release/park/unpark move as
+// one atomic unit (R4-08). A goal with no arc is its own cascade.
+func arcMembers(t *TreeGoals, id string) []*GoalFile {
+	f := t.Live[id]
+	if f == nil {
+		return nil
+	}
+	if f.Arc == "" {
+		return []*GoalFile{f}
+	}
+	var members []*GoalFile
+	for _, liveId := range sortedGoalIds(t.Live) {
+		if t.Live[liveId].Arc == f.Arc {
+			members = append(members, t.Live[liveId])
+		}
+	}
+	return members
+}
+
+// ClaimArc claims a goal AND its arc's live members as one unit
+// under one claimant counting once against the quota. Every
+// member's blockers must be done; a standing foreign claim on any
+// member loses the whole cascade.
+func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
+		Message: "goal claim " + id + " (arc cascade)",
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			members := arcMembers(t, id)
+			if members == nil {
+				return nil, fmt.Errorf("goal %s is not live; nothing to claim", id)
+			}
+			targets := make([]string, 0, len(members))
+			for _, m := range members {
+				targets = append(targets, m.Id)
+			}
+			var changes []Change
+			for _, m := range members {
+				if opidLanded(m, r) {
+					return nil, AlreadyApplied{}
+				}
+				if m.State == StateClaimed {
+					if m.Claimed != nil && m.Claimed.Machine == r.Actor.Machine {
+						continue // already ours; the cascade completes the set
+					}
+					return nil, LostToCompetitor{Winner: lastOpid(m)}
+				}
+				if m.State != StateQueued {
+					return nil, fmt.Errorf("arc member %s is %s; the cascade claims queued members only", m.Id, m.State)
+				}
+				for _, dep := range m.Blocked {
+					if depState(t, dep) != StateDone {
+						return nil, fmt.Errorf("arc member %s is blocked by %s, which is not done", m.Id, dep)
+					}
+				}
+				m.State = StateClaimed
+				m.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
+				touch(m, r, "claim", targets)
+				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
+			}
+			if len(changes) == 0 {
+				return nil, AlreadyApplied{}
+			}
+			return changes, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
+
+// ReleaseArc releases the actor's whole claimed arc as one unit.
+func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
+		Message: "goal release " + id + " (arc cascade)",
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			members := arcMembers(t, id)
+			if members == nil {
+				return nil, fmt.Errorf("goal %s is not live; nothing to release", id)
+			}
+			targets := make([]string, 0, len(members))
+			for _, m := range members {
+				targets = append(targets, m.Id)
+			}
+			var changes []Change
+			for _, m := range members {
+				if opidLanded(m, r) {
+					return nil, AlreadyApplied{}
+				}
+				if m.State != StateClaimed || m.Claimed == nil {
+					continue // queued or parked members ride along untouched
+				}
+				if m.Claimed.Machine != r.Actor.Machine && r.Actor.Human == "" {
+					return nil, fmt.Errorf("arc member %s is claimed by %s; a foreign release is a human act", m.Id, m.Claimed.Machine)
+				}
+				m.State = StateQueued
+				m.Claimed = nil
+				touch(m, r, "release", targets)
+				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
+			}
+			if len(changes) == 0 {
+				return nil, AlreadyApplied{}
+			}
+			return changes, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
