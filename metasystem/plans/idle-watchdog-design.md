@@ -188,7 +188,15 @@ that armed it — the original incident (a live but idle session)
 stays covered — and dies with the host. HONEST LIMIT, stated
 plainly: a rebooted or never-visited machine is silent until the
 metasystem next runs there; firing at host boot is the operator's
-own domain, never the metasystem's. linux with no configured
+own domain, never the metasystem's. THE EXTENSION SEAM, stated once
+(Wido, same day): `steward tick` is an ordinary verb, and the runner
+is merely its first caller — an operator-provided ticker (cron, a
+boot hook, anything outside the fence) calls the same verb and every
+gate holds identically, because the guarantees ride the intent,
+arbitration, and delivery machinery, never the caller's schedule.
+The steward's identity record lives INSIDE the repository
+(artifacts/agents/steward/identity.json), minted at arm, so nothing
+about recognition depends on host paths either. linux with no configured
 notifier: ARM refuses (a watchdog that cannot reach the operator
 does not pretend to guard); darwin defaults to the platform
 notifier.

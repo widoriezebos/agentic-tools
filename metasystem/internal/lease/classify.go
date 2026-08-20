@@ -376,11 +376,7 @@ func verifiedStewardBinary(root string) string {
 	if err != nil {
 		return ""
 	}
-	idPath, err := steward.IdentityPath(top)
-	if err != nil {
-		return ""
-	}
-	id, err := steward.VerifyIdentity(idPath, top)
+	id, err := steward.VerifyIdentity(steward.RepoIdentityPath(top), top)
 	if err != nil {
 		return ""
 	}

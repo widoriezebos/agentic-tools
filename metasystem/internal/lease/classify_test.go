@@ -297,25 +297,19 @@ func grandchild(t *testing.T, root string) (int64, int64) {
 // executable we can spawn, so a live process runs "the installed steward".
 func stageStewardInstall(t *testing.T, root string) string {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("METASYSTEM_STEWARD_HOME", home)
 	top, err := filepath.Abs(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir, err := steward.InstallDir(top)
-	if err != nil {
+	bin := filepath.Join(top, "bin", "metasystem-steward")
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	bin := filepath.Join(dir, "metasystem-steward")
 	if err := os.Symlink("/bin/sleep", bin); err != nil {
 		t.Fatal(err)
 	}
-	idPath, err := steward.IdentityPath(top)
-	if err != nil {
+	idPath := steward.RepoIdentityPath(top)
+	if err := os.MkdirAll(filepath.Dir(idPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := steward.MintIdentity(idPath, steward.InstallIdentity{
@@ -364,7 +358,7 @@ func TestForgedStewardIdentityDoesNotClassifySteward(t *testing.T) {
 	root := t.TempDir()
 	bin := stageStewardInstall(t, root)
 	top, _ := filepath.Abs(root)
-	idPath, _ := steward.IdentityPath(top)
+	idPath := steward.RepoIdentityPath(top)
 	if err := os.Chmod(idPath, 0o644); err != nil { // group/world readable = forged shape
 		t.Fatal(err)
 	}
