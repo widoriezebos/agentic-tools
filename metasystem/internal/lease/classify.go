@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // Announcement is a main's identity record under artifacts/agents/mains. The
@@ -52,6 +53,7 @@ const (
 	ClassDelegate          = "DELEGATE"
 	ClassSupervision       = "SUPERVISION"
 	ClassAdapterSupervisor = "ADAPTER-SUPERVISOR"
+	ClassSteward           = "STEWARD"
 	ClassHuman             = "HUMAN"
 )
 
@@ -277,8 +279,10 @@ type supervisedProc struct {
 // Classify resolves who the caller is. It first checks whether the caller
 // itself authenticates a main, then walks its ancestry: a MAIN ancestor makes
 // the caller that main's work, a delegate-signed ancestor makes it a
-// DELEGATE, and a supervision or adapter-supervisor ancestor names it as
-// such. A caller with no recognised ancestor is a HUMAN.
+// DELEGATE, a supervision or adapter-supervisor ancestor names it as such,
+// and a process running this repository's installed steward binary — proven
+// by the installation identity record — is the STEWARD. A caller with no
+// recognised ancestor is a HUMAN.
 func Classify(root string, caller int64) (Classification, error) {
 	probe, err := fixtureProbe(root)
 	if err != nil {
@@ -299,6 +303,12 @@ func Classify(root string, caller int64) (Classification, error) {
 	if err != nil {
 		return Classification{}, err
 	}
+	stewardBinary := verifiedStewardBinary(root)
+	if stewardBinary != "" {
+		if command, cok := ProcessCommand(caller, probe); cok && sameExecutable(commandExecutable(command), stewardBinary) {
+			return Classification{Class: ClassSteward, Pid: caller}, nil
+		}
+	}
 	seen := map[int64]bool{caller: true}
 	current, ok := ParentPid(caller)
 	for ok && !seen[current] {
@@ -306,8 +316,13 @@ func Classify(root string, caller int64) (Classification, error) {
 		if ann := authenticatedAnnouncement(current, records, probe); ann != nil {
 			return Classification{Class: ClassMain, MainId: ann.MainId, Announcement: ann}, nil
 		}
-		if command, cok := ProcessCommand(current, probe); cok && census.Runtime(command, signatures) != "" {
-			return Classification{Class: ClassDelegate, Pid: current}, nil
+		if command, cok := ProcessCommand(current, probe); cok {
+			if census.Runtime(command, signatures) != "" {
+				return Classification{Class: ClassDelegate, Pid: current}, nil
+			}
+			if stewardBinary != "" && sameExecutable(commandExecutable(command), stewardBinary) {
+				return Classification{Class: ClassSteward, Pid: current}, nil
+			}
 		}
 		if start, sok := StartedAt(current, probe); sok {
 			key := procKey{current, start}
@@ -321,4 +336,46 @@ func Classify(root string, caller int64) (Classification, error) {
 		current, ok = ParentPid(current)
 	}
 	return Classification{Class: ClassHuman}, nil
+}
+
+// verifiedStewardBinary authenticates this repository's steward
+// installation and returns its binary path, or empty when no valid
+// installation exists. Verification failures mean "not the steward" —
+// the caller keeps walking toward its other classifications.
+func verifiedStewardBinary(root string) string {
+	top, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	idPath, err := steward.IdentityPath(top)
+	if err != nil {
+		return ""
+	}
+	id, err := steward.VerifyIdentity(idPath, top)
+	if err != nil {
+		return ""
+	}
+	return id.InstallPath
+}
+
+// sameExecutable compares two executable paths with symlinks
+// resolved on both sides — the process table reports resolved paths
+// (on darwin, /var is /private/var) while the installation records
+// the path as given.
+func sameExecutable(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
+}
+
+// commandExecutable is the command line's first token — the
+// executable a process was launched as.
+func commandExecutable(command string) string {
+	if i := strings.IndexAny(command, " \t"); i >= 0 {
+		return command[:i]
+	}
+	return command
 }

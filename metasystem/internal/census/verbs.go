@@ -46,11 +46,12 @@ func AuthIdentity(pid int64, probe identity.FixtureProbe) (ProcIdentity, error) 
 	if entry, ok := probeFixture(probe, pid); ok && entry.HasStartedAt && entry.HasCommand && entry.Command != "" {
 		return ProcIdentity{Pid: pid, PidStartedAt: entry.StartedAt, Command: entry.Command}, nil
 	}
-	return psIdentity(pid)
+	return kernelIdentity(pid)
 }
 
-func psIdentity(pid int64) (ProcIdentity, error) {
-	// Native: the kernel prober gives the start time (whole seconds) and argv.
+func kernelIdentity(pid int64) (ProcIdentity, error) {
+	// The kernel prober reads natively — sysctl on darwin, /proc on
+	// linux; no subprocess is involved.
 	exact, state, err := identity.KernelProber{}.Probe(pid)
 	if err != nil || state != identity.Alive {
 		return ProcIdentity{}, fmt.Errorf("no such process: %d", pid)

@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // childOf spawns a child whose parent is this test process, so classifying the
@@ -258,5 +260,104 @@ func grandchild(t *testing.T, root string) (int64, int64) {
 			t.Fatal("intermediate never published its child pid")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// stageStewardInstall mints a valid installation whose binary is a real
+// executable we can spawn, so a live process runs "the installed steward".
+func stageStewardInstall(t *testing.T, root string) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("METASYSTEM_STEWARD_HOME", home)
+	top, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := steward.InstallDir(top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "metasystem-steward")
+	if err := os.Symlink("/bin/sleep", bin); err != nil {
+		t.Fatal(err)
+	}
+	idPath, err := steward.IdentityPath(top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := steward.MintIdentity(idPath, steward.InstallIdentity{
+		RepoIdentity: top, Generation: 1, InstallPath: bin, MintedAt: "2026-08-20T10:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+// spawnAndSettle starts the binary and waits until the kernel reports
+// its argv — probing mid-exec reads an empty command.
+func spawnAndSettle(t *testing.T, bin string) int64 {
+	t.Helper()
+	cmd := exec.Command(bin, "120")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	pid := int64(cmd.Process.Pid)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if command, ok := ProcessCommand(pid, nil); ok && command != "" {
+			return pid
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("spawned steward never became readable")
+	return 0
+}
+
+func TestClassifyStewardByInstalledBinaryAndIdentity(t *testing.T) {
+	root := t.TempDir()
+	bin := stageStewardInstall(t, root)
+	pid := spawnAndSettle(t, bin)
+	got, err := Classify(root, pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Class != ClassSteward {
+		t.Fatalf("the installed steward binary with a valid identity must classify STEWARD, got %+v", got)
+	}
+}
+
+func TestForgedStewardIdentityDoesNotClassifySteward(t *testing.T) {
+	root := t.TempDir()
+	bin := stageStewardInstall(t, root)
+	top, _ := filepath.Abs(root)
+	idPath, _ := steward.IdentityPath(top)
+	if err := os.Chmod(idPath, 0o644); err != nil { // group/world readable = forged shape
+		t.Fatal(err)
+	}
+	pid := spawnAndSettle(t, bin)
+	got, err := Classify(root, pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Class == ClassSteward {
+		t.Fatalf("a loose-permission identity must not authenticate the steward: %+v", got)
+	}
+}
+
+func TestStewardOfAnotherRepositoryIsNotThisSteward(t *testing.T) {
+	root := t.TempDir()
+	other := t.TempDir()
+	bin := stageStewardInstall(t, other) // installed for a different repo
+	pid := spawnAndSettle(t, bin)
+	got, err := Classify(root, pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Class == ClassSteward {
+		t.Fatalf("another repository's steward must not classify here: %+v", got)
 	}
 }
