@@ -1615,3 +1615,20 @@ backlog-git-sync (cutover retargets the verdict to the live
 projection) and idle-watchdog (whose status surface supplies the
 is-anything-running half). Acceptance is written into the goal: the
 staleness observed today cannot recur.
+
+**Third addendum to D121 (Wido, 2026-08-20): no host dependency, at
+all.** The steward may not touch the host system — no launchd entry,
+no crontab line, no bytes installed outside the repository. It starts
+and ends with the metasystem. If that forfeits reboot survival, that
+is accepted: something that fires at host boot is explicitly NOT the
+metasystem's responsibility and belongs to the operator's own domain
+if ever wanted. The converged design's scheduler-glue section and its
+installed-bytes rule are DELETED, replaced by a metasystem-owned
+runner: `steward run` is a Go loop ticking on the steward's cadence,
+launched as a tracked detached process through the standing run
+facility — one per repository under a lock — armed by any session's
+start (the session-start hook ensures it) and ended by `steward
+disarm` or host shutdown. A rebooted machine is silent until the
+metasystem next runs there, and the design says so plainly. The
+obligation matrix row IW-8 is re-pointed from scheduler lifecycle to
+runner lifecycle before the covenant review.

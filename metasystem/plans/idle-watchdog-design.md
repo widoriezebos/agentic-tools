@@ -169,33 +169,29 @@ an enrollment injected before reservation means no job record.
 
 ## The schedule glue (unchanged from round 2)
 
-INSTALLED BYTES, for ROBUSTNESS, with the trust posture stated
-(IW-R3-04, refuting IW-R4-04/05 on the record): the metasystem's
-threat model is D118's, repo-wide — accident-proofing and a
-cooperative fleet; same-user MALICIOUS code is out of scope
-everywhere, because a process running as the user already owns the
-account's crontab, LaunchAgents, shell profile, and every binary in
-the home directory, steward or no steward. The steward therefore
-does NOT claim tamper-proof bytes (no same-user mechanism short of
-a second OS principal could deliver that, and none is built); it
-claims TICK ROBUSTNESS: the install copies the steward binary and
-tick script outside the checkout so a broken checkout — mid-rebase,
-half-deleted, wedged — can still tick, go DEGRADED, and notify.
-Decisions and checks run from those installed bytes; the dispatch
-of a continuation runs the checkout's own machinery, exactly as
-every session on this machine does, because the checkout is the
-product being operated. Upgrades are a human-run reinstall.
+NO HOST DEPENDENCY (D121 third addendum, Wido's ruling): the
+steward touches nothing outside the repository — no launchd entry,
+no crontab line, no installed bytes. It starts and ends with the
+metasystem. The trust posture stands unchanged (D118, repo-wide:
+accident-proofing for a cooperative fleet; same-user malicious code
+out of scope everywhere).
 
-scripts/steward.sh install|uninstall|status|tick, bash 3.2, all
-decisions in Go verbs. darwin: LaunchAgent, StartCalendarInterval
-minute lists (the documented catch-up variant), RunAtLoad. linux:
-marker-fenced crontab entry preserving unrelated lines
-byte-for-byte; no missed-tick replay exists and none is claimed;
-install REFUSES without a configured notifier on linux (darwin
-defaults to the platform notifier). Relocation: the entry pins
-path AND identity; mismatch → DEGRADED + notify, never operate on
-whatever now lives there. Idempotent reinstall; quoted paths; two
-repositories isolated.
+THE RUNNER replaces the scheduler: `steward run` is a Go loop that
+ticks on the steward's cadence (steward.tick-seconds, default 600)
+until stopped. It launches as a tracked detached process through
+the standing run facility — one per repository, serialized by a
+lock; a second arm finds the live runner and leaves it. ARMING:
+`steward arm` starts it; the session-start hook ensures it is
+armed, so any metasystem activity on the repository revives its
+watchdog; `steward disarm` ends it. The runner outlives the session
+that armed it — the original incident (a live but idle session)
+stays covered — and dies with the host. HONEST LIMIT, stated
+plainly: a rebooted or never-visited machine is silent until the
+metasystem next runs there; firing at host boot is the operator's
+own domain, never the metasystem's. linux with no configured
+notifier: ARM refuses (a watchdog that cannot reach the operator
+does not pretend to guard); darwin defaults to the platform
+notifier.
 
 ## Honest limits
 
@@ -216,5 +212,5 @@ remains a belt inside live sessions.
 | IW-5 | CRITICAL | IW-R1-05, IW-R2-04 | Arbitration inside the ONE shared lock (enrollment + reservation): live-between-check-and-reserve means no job record | steward + dispatch | internal/steward/revive.go | fixtures: live-between-check-and-reserve-aborts; enrollment-injected-before-reservation-no-record; the three enrollment interleavings (before section = cancel; during = blocks then sees the job; after = lease-arbitrated coexistence); lease-generation invalidation on takeover | fake adapter | MISSING | implement |
 | IW-6 | CRITICAL | IW-R1-06, IW-R2-04, IW-R2-05 | Authenticated installation identity granting exactly unattended-continuation dispatch; forged/stale identities refuse; HUMAN positive-only, unknown non-interactive → UNTRUSTED; no-wait dispatch with formal return schema; steward tick reaps/mirrors/closes; fake adapter registers the role | dispatch + authority | internal/authority + scripts/agents/dispatch.sh | fixtures: genuine/forged/stale identity; cron-untrusted; interactive-HUMAN-preserved; steward-refused-other-verbs; pre-delivery and fence-invalid intent consumption refused; staged-input drift caught by digest; tuple mismatch refused by field; consumed-intent replay refused; schema-materialization; success+protocol-error returns; mirror-retry; auto-closure; no-open-chain | fake adapter | MISSING | implement |
 | IW-7 | HIGH | IW-R1-07, IW-R2-03 | Visible before action: intent+receipt then DELIVERED notification gates launch; notifier failure = no launch, durable pending, retry without redispatch; crash-after-dispatch reconciles to notified unknown; linux install refuses without notifier | steward core + glue | internal/steward/intervene.go | fixtures: notifier-failure-no-launch; delayed-delivery-single-launch-after-rearbitration; intent-before-launch; crash-reconciled; linux-install-refusal | darwin + linux | MISSING | implement |
-| IW-8 | HIGH | IW-R1-08 | Scheduler lifecycle: StartCalendarInterval; marker-fenced crontab preserving unrelated lines; relocation → degraded; idempotent reinstall; spaces; two repos isolated | glue | scripts/steward.sh | install fixtures: two-repos, reinstall, spaces, foreign-crontab-preserved, moved-repo-degraded | real macOS + Debian VM | MISSING | implement |
+| IW-8 | HIGH | D121 third addendum | Runner lifecycle, zero host footprint: steward run ticks until stopped; one runner per repository under a lock (second arm is a no-op finding the live one); session-start arming ensures it; disarm ends it; the runner outlives its arming session; arm refuses without a reachable notifier; nothing is written outside the repository | runner | internal/steward/runner.go + `steward arm/disarm/run` | fixtures: tick loop advances evidence; double-arm single-runner; runner survives arming-process exit; disarm ends it; no-notifier arm refusal; a filesystem sweep proves zero writes outside the repo | steward on this repo | MISSING | implement |
 | IW-9 | HIGH | IW-R1-09 | Matrix gate-conformant; every finding family owns a row and named fixtures | design | this file | the gate parses every row without format errors now, and exits 0 when the rows above turn DONE | gate run | MISSING | verify at landing |
