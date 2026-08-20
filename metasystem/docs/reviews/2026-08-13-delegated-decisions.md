@@ -1597,3 +1597,11 @@ claims the goal after cutover: observation surface (receipts,
 ticks, verdicts, dispatch events), narration channel, and the
 anomaly-to-action contract, designed together with the steward's
 fixtures.
+
+**Addendum to D122 (Wido, same day):** the narrator must also be
+capable of reaching out to the human when something out of the
+ordinary happens. Folded into the narrator amendment: reach-the-human
+is a first-class capability riding the steward's delivery-gated
+notification channels — the narrator judges what is ordinary, the
+operator hears about what is not, and correction-versus-escalation is
+part of the anomaly-to-action contract its design must pin.
