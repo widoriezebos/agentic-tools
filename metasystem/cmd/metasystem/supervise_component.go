@@ -279,7 +279,11 @@ func recordCASApplier(repo string) func(job, expect, target string, patch map[st
 		if err != nil {
 			return false, err
 		}
-		patchFile, err := os.CreateTemp(supervise.JobsDir(repo), "reap-patch-*.json")
+		// The suffix must NOT be .json: this temp file lives in the
+		// jobs directory, and a concurrent classification strict-reads
+		// every jobs/*.json — a half-written patch would refuse the
+		// whole classification as a corrupt job record.
+		patchFile, err := os.CreateTemp(supervise.JobsDir(repo), "reap-patch-*.tmp")
 		if err != nil {
 			return false, err
 		}
