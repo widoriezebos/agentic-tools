@@ -35,4 +35,15 @@ started=$("$ms" proc started-at --pid $$) || {
 nonce=$("$ms" util token-hex --bytes 16)
 "$ms" lease commit-token --path "$token" --pid "$$" --start "$started" --nonce "$nonce"
 trap 'rm -f -- "$token"' EXIT
+# A malformed session trailer has slipped through four times
+# (claude.ac for claude.ai) and costs an amend plus a forced update
+# on both remotes every time: refuse it at the door. The message
+# arguments are scanned, not the repository — the wrapper stays a
+# wrapper.
+for arg in "$@"; do
+  if [[ "$arg" == *"claude.ac/"* ]]; then
+    echo "commit refused: the session trailer says claude.ac — the domain is claude.ai" >&2
+    exit 2
+  fi
+done
 git -C "$root" commit "$@"
