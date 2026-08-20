@@ -186,3 +186,114 @@ func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
 		t.Fatalf("a partial-arc hand-park refuses: %v", err)
 	}
 }
+
+func TestHandGrammarRefusalArms(t *testing.T) {
+	a, tip := reconcileBed(t)
+
+	// Root-record hand edits have no grammar.
+	rootPath := filepath.Join(a, "plans", "goals", "backlog.md")
+	data, err := os.ReadFile(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rootPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MapDeltas(a, tip, snap); err == nil || !strings.Contains(err.Error(), "declare-free and prune are verbs") {
+		t.Fatalf("the root record refuses toward its verbs: %v", err)
+	}
+	if err := os.WriteFile(rootPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// OpenedAt is generated; Claimed is generated; Arc moves through
+	// verbs; Concluded belongs to done — each refuses by field.
+	for _, leg := range []struct {
+		name      string
+		transform func(*GoalFile)
+		fragment  string
+	}{
+		{"openedat", func(f *GoalFile) { f.OpenedAt = "1999-01-01T00:00:00Z" }, "OpenedAt"},
+		{"claimed", func(f *GoalFile) {
+			f.Claimed = &ClaimRecord{Machine: "mac-x", Lineage: "l9", At: "2026-08-21T00:00:00Z"}
+		}, "Claimed"},
+		{"arc", func(f *GoalFile) { f.Arc = "smuggled-arc" }, "set-arc and detach"},
+		{"conclude", func(f *GoalFile) { f.Conclude = "edited in place" }, "Concluded belongs to done"},
+	} {
+		editFile(t, a, goalsPrefix+"editable.md", leg.transform)
+		snap, err := CaptureSnapshot(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = MapDeltas(a, tip, snap)
+		if err == nil || !strings.Contains(err.Error(), leg.fragment) {
+			t.Fatalf("%s: refusal names the field: %v", leg.name, err)
+		}
+		// Restore for the next leg.
+		published, _ := ReadCommitGoals(a, tip)
+		if err := os.WriteFile(filepath.Join(a, "plans", "goals", "editable.md"), published[goalsPrefix+"editable.md"], 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A hand-done maps; a hand-done without its conclusion refuses.
+	// Raw bytes here: the fixture helper's own strict parse would
+	// refuse the invalid intermediate before the mapper could.
+	published, _ := ReadCommitGoals(a, tip)
+	raw := strings.Replace(string(published[goalsPrefix+"editable.md"]), "- State: queued", "- State: done", 1)
+	if err := os.WriteFile(filepath.Join(a, "plans", "goals", "editable.md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap3, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MapDeltas(a, tip, snap3); err == nil || !strings.Contains(err.Error(), "Concluded") {
+		t.Fatalf("a hand-done needs its conclusion: %v", err)
+	}
+	withConclude := strings.Replace(raw, "- State: done", "- State: done\n- Concluded: Hand-concluded.", 1)
+	if err := os.WriteFile(filepath.Join(a, "plans", "goals", "editable.md"), []byte(withConclude), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap4, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := MapDeltas(a, tip, snap4)
+	if err != nil || len(rows) != 1 || rows[0].Verb != "done" || rows[0].Conclude != "Hand-concluded." {
+		t.Fatalf("a hand-done with its conclusion maps: %+v %v", rows, err)
+	}
+}
+
+func TestUnparkAndLenientDisplacedRoundTrip(t *testing.T) {
+	a, _ := reconcileBed(t)
+	// Park through the verb so the base carries a parked state, then
+	// re-materialize and hand-unpark.
+	res, err := Park(verbReq(a, "01J5X00000000000000000H100", "mac-a"), "editable", "pausing")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("park: %+v %v", res, err)
+	}
+	materialize(t, a, res.Tip)
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
+		f.State = StateQueued
+		f.Parked = nil
+	})
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := MapDeltas(a, res.Tip, snap)
+	if err != nil || len(rows) != 1 || rows[0].Verb != "unpark" {
+		t.Fatalf("a hand-unpark maps: %+v %v", rows, err)
+	}
+	// handLenient's displaced extraction survives a rebuild.
+	line := handLenient([]byte("- Parked: by= at= displaced=mac-b+l1@2026-08-21T00:00:00Z because=held\n"))
+	if !strings.Contains(string(line), "displaced=mac-b+l1@2026-08-21T00:00:00Z") ||
+		!strings.Contains(string(line), "because=held") {
+		t.Fatalf("the lenient rebuild keeps displaced and because: %s", line)
+	}
+}
