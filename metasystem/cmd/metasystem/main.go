@@ -314,6 +314,14 @@ func families() []family {
 			},
 		},
 		{
+			name:    "steward",
+			summary: "the idle watchdog: open delegated work is never silently idle (D121)",
+			verbs: []verb{
+				{"tick", "one scheduled observation: decide, age the evidence, report the action", runStewardTick},
+				{"status", "the operator's view: evidence age, live intents, pending notifications", runStewardStatus},
+			},
+		},
+		{
 			name:    "run",
 			summary: "tracked long-running work: launch, watch, conclude (the monitor facility)",
 			verbs: []verb{
