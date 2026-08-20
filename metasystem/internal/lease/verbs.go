@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // resolveRoot canonicalises the checkout root (absolute, symlinks resolved) so
@@ -72,6 +74,14 @@ func AnnounceWithPair(root, session string, pid, start, startTicks int64, bootID
 	}
 	dir := filepath.Join(root, "artifacts/agents/mains")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	arb, err := steward.AcquireArbitration(root)
+	if err != nil {
+		return "", err
+	}
+	defer arb.Release()
+	if err := steward.BumpEnrollmentFence(root); err != nil {
 		return "", err
 	}
 	lock, err := acquireBounded(registryLockPath(root), "lease")
