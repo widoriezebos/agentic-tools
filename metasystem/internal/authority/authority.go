@@ -76,6 +76,18 @@ func Authorize(mode string, classification map[string]any, job string) error {
 	}
 
 	switch class {
+	case "STEWARD":
+		// The continuation's record follows the same per-job rule as
+		// its launch: the steward reads and patches exactly the job
+		// its consumed authorization names, and nothing else.
+		if mode != "record-writer" {
+			return fmt.Errorf("the steward's authority is its continuation job's record and launch, nothing wider")
+		}
+		stewardJob, _ := classification["stewardJob"].(string)
+		if stewardJob == "" || job == "" || stewardJob != job {
+			return fmt.Errorf("the steward may write only the continuation job its consumed authorization names")
+		}
+		return nil
 	case "SUPERVISION":
 		if mode != "record-writer" && mode != "supervision-only" {
 			return fmt.Errorf("supervision may write only its state, census, and standing-reaper transitions")

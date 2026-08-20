@@ -1585,7 +1585,12 @@ case "$command" in
     internal_authority holder-only "$rc_job"
     "$ms" job record-create --root "$root" "$@"
     ;;
-  __record-setup) internal_authority holder-only; "$ms" job record-setup --root "$root" "$@" ;;
+  __record-setup)
+    rs_job=
+    if [[ ${1:-} == --job && $# -ge 2 ]]; then rs_job=$2; fi
+    internal_authority holder-only "$rs_job"
+    "$ms" job record-setup --root "$root" "$@"
+    ;;
   __record-cas)
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
     internal_authority record-writer "$2"

@@ -102,7 +102,13 @@ func TestStewardIsAdmittedToExactlyItsOwnContinuationJob(t *testing.T) {
 	if err := Authorize("holder-only", map[string]any{"class": "STEWARD"}, "job-7"); err == nil {
 		t.Fatal("a steward without a named continuation job must refuse")
 	}
-	for _, mode := range []string{"record-writer", "adapter-writer", "supervision-only", "genesis"} {
+	if err := Authorize("record-writer", own, "job-7"); err != nil {
+		t.Fatalf("the steward patches its own continuation's record: %v", err)
+	}
+	if err := Authorize("record-writer", own, "job-8"); err == nil {
+		t.Fatal("another job's record must refuse")
+	}
+	for _, mode := range []string{"adapter-writer", "supervision-only", "genesis"} {
 		if err := Authorize(mode, own, "job-7"); err == nil {
 			t.Fatalf("mode %s must refuse the steward", mode)
 		}

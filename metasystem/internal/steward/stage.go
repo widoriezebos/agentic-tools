@@ -54,7 +54,7 @@ func StageIntent(repoRoot, nonce, goal, jobId, runtime, model, reason string) (I
 	}
 	brief := fmt.Sprintf(`# Steward continuation
 
-## Working Mode: build
+Working Mode: build
 
 The idle watchdog launched you: %s
 

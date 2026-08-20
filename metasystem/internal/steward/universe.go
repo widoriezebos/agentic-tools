@@ -20,9 +20,14 @@ import (
 var recordStores = []string{
 	"artifacts/agents/runs",
 	"artifacts/agents/supervision/gate-runs",
-	"artifacts/agents/supervision",
 	"artifacts/agents/mains",
 }
+
+// The supervision directory itself stays OUT: the watcher is
+// infrastructure that ticks whether or not anyone works — counting
+// it as a worker would block every death proof on every armed
+// repository, the same churn-versus-work confusion the evidence
+// rules already settled.
 
 // supplementWorkers probes every recorded pid the runtime census
 // cannot see. Live adds workers; malformed records and failed

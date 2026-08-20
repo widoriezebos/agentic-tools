@@ -2156,4 +2156,110 @@ unset METASYSTEM_CENSUS_PROCESS_FILE METASYSTEM_FAKE_PROCESS_IDENTITY_FILE \
   METASYSTEM_MISSION_PROCESS_IDENTITY_FILE
 export METASYSTEM_SKIP_AGENT_FIXTURES=1
 
+# ---------------------------------------------------------------------------
+# The steward's continuation path, end to end: a provably dead worker's
+# revival flows through the real dispatcher into the fake adapter, returns
+# on the role's schema, and the reaper closes the chain. Companion legs
+# pin the refusals: extra selection flags, a replayed authorization, a
+# staged-bytes drift, and a superseded installation generation.
+steward_repo="$agent_fixture/steward-repo"
+cp -R "$agent_repo" "$steward_repo"
+steward_repo=$(cd "$steward_repo" && pwd -P)
+rm -rf "$steward_repo/artifacts"
+"$steward_repo/bin/metasystem" config tailor --conf "$steward_repo/metasystem.conf" --runtimes fake \
+  --set role.steward-continuation.runtime=fake
+git -C "$steward_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid add -A
+git -C "$steward_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm steward-base
+git -C "$steward_repo" config metasystem.steward.notify-command true
+mkdir -p "$steward_repo/plans"
+printf '# Goals\n\n## Current goal: fix-it \xe2\x80\x94 Repair the thing\n- Origin: main\n- Next step: Repair it.\n' > "$steward_repo/plans/goals.md"
+mkdir -p "$steward_repo/artifacts/agents/steward"
+printf '{"repoIdentity":"%s","generation":1,"installPath":"%s/bin/metasystem","mintedAt":"2026-08-20T15:00:00Z"}\n' \
+  "$steward_repo" "$steward_repo" > "$steward_repo/artifacts/agents/steward/identity.json"
+chmod 600 "$steward_repo/artifacts/agents/steward/identity.json"
+
+# A death proof needs a completed supervision census: arm the steward
+# repository's supervision like every other fixture repository, so
+# the empty worker set is PROVEN rather than unknown.
+track_armed_supervision "$steward_repo"
+# The announced main is a child that DIES: the census then proves an
+# empty worker set (a live announced main would be a live worker,
+# and the steward would rightly refuse to revive beside it).
+"$steward_repo/bin/metasystem" util hold --tag steward-dead-main >/dev/null 2>&1 &
+steward_dead_pid=$!
+steward_dead_start=$("$steward_repo/bin/metasystem" proc started-at --pid "$steward_dead_pid")
+METASYSTEM_AGENT_RUNTIME=fake "$steward_repo/scripts/agents/arm-supervision.sh" \
+  --repo "$steward_repo" --session steward-fixture --pid "$steward_dead_pid" \
+  --start-time "$steward_dead_start" --tag steward-fixture-main >/dev/null 2>&1 \
+  || { echo "steward end-to-end: supervision arming failed" >&2; exit 1; }
+kill "$steward_dead_pid" 2>/dev/null || true
+wait "$steward_dead_pid" 2>/dev/null || true
+# The dispatch pipeline requires a fresh capability snapshot for the
+# runtime it launches; probe the fake adapter like every dispatching
+# fixture repository does.
+"$steward_repo/scripts/agents/adapters/fake.sh" probe >/dev/null \
+  || { echo "steward end-to-end: fake adapter probe failed" >&2; exit 1; }
+
+# The full path: revive launches exactly once through dispatch and the
+# fake adapter; the tick then reaps and closes.
+steward_out=$("$steward_repo/bin/metasystem" steward revive --repo "$steward_repo" 2>&1) \
+  || { echo "steward end-to-end: revive failed: $steward_out" >&2; exit 1; }
+grep -q "launched=true" <<<"$steward_out" \
+  || { echo "steward end-to-end: expected a launch, got: $steward_out" >&2; exit 1; }
+steward_job=$(ls "$steward_repo/artifacts/agents/jobs/" | sed -n 's/\.json$//p' | head -1)
+[[ -n "$steward_job" ]] || { echo "steward end-to-end: no job record" >&2; exit 1; }
+steward_role=$("$steward_repo/bin/metasystem" json get --file "$steward_repo/artifacts/agents/jobs/$steward_job.json" --field role)
+[[ "$steward_role" == steward-continuation ]] \
+  || { echo "steward end-to-end: record role is $steward_role" >&2; exit 1; }
+# No-wait dispatch returns before the fake worker finishes: the
+# return and the record's end arrive within the harness cap.
+steward_wait_cap=$(harness_fixture_cap agent-command)
+steward_deadline=$((SECONDS + steward_wait_cap))
+until [[ -f "$steward_repo/artifacts/agents/$steward_job/rounds/1/return.json" ]]; do
+  (( SECONDS < steward_deadline )) \
+    || { echo "steward end-to-end: no return within ${steward_wait_cap}s" >&2; exit 1; }
+  sleep 0.2
+done
+until [[ -n "$("$steward_repo/bin/metasystem" json get --file "$steward_repo/artifacts/agents/jobs/$steward_job.json" --field endedAt --default "")" ]]; do
+  (( SECONDS < steward_deadline )) \
+    || { echo "steward end-to-end: the job never ended within ${steward_wait_cap}s" >&2; exit 1; }
+  sleep 0.2
+done
+steward_tick=$("$steward_repo/bin/metasystem" steward tick --repo "$steward_repo") \
+  || { echo "steward end-to-end: tick failed" >&2; exit 1; }
+grep -q '"jobId": "'"$steward_job"'"' <<<"$steward_tick" \
+  || { echo "steward end-to-end: the tick did not reap the continuation: $steward_tick" >&2; exit 1; }
+steward_closed=$("$steward_repo/bin/metasystem" json get --file "$steward_repo/artifacts/agents/jobs/$steward_job.json" --field chainClosed)
+[[ "$steward_closed" == true ]] \
+  || { echo "steward end-to-end: chain not closed: $steward_closed" >&2; exit 1; }
+
+# A replayed authorization launches nothing.
+steward_nonce=$(ls "$steward_repo/artifacts/agents/steward/consumed/" | sed -n 's/\.json$//p' | head -1)
+if "$steward_repo/scripts/agents/dispatch.sh" --steward-intent "$steward_nonce" >/dev/null 2>&1; then
+  echo "steward replay: a consumed authorization must launch nothing" >&2; exit 1
+fi
+
+# Companion selection flags refuse before anything exists.
+if "$steward_repo/scripts/agents/dispatch.sh" --steward-intent "$steward_nonce" --wait >/dev/null 2>&1; then
+  echo "steward flags: --wait beside --steward-intent must refuse" >&2; exit 1
+fi
+if "$steward_repo/scripts/agents/dispatch.sh" --steward-intent "$steward_nonce" --role implementer >/dev/null 2>&1; then
+  echo "steward flags: --role beside --steward-intent must refuse" >&2; exit 1
+fi
+
+# Staged-bytes drift: gate an intent behind a dead notifier, drift the
+# role contract, restore the channel — the resumed revival must refuse
+# at the drift check, never launch.
+git -C "$steward_repo" config metasystem.steward.notify-command "exit 1"
+if "$steward_repo/bin/metasystem" steward revive --repo "$steward_repo" >/dev/null 2>&1; then
+  echo "steward drift: a gated revival must not report a launch" >&2; exit 1
+fi
+printf '\n# drifted\n' >> "$steward_repo/scripts/agents/roles/steward-continuation.md"
+git -C "$steward_repo" config metasystem.steward.notify-command true
+steward_drift=$("$steward_repo/bin/metasystem" steward revive --repo "$steward_repo" 2>&1 || true)
+grep -q "launched=false" <<<"$steward_drift" \
+  || { echo "steward drift: drifted bytes must refuse the launch: $steward_drift" >&2; exit 1; }
+
+echo "steward continuation fixtures passed"
+
 echo "dispatch, adapter selftest, and mission-runner fixtures passed"
