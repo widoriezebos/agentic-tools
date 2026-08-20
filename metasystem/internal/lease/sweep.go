@@ -112,6 +112,13 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 	// stricter first cut of this refusing legitimate null-epoch records).
 	rawEpoch, present := job["claimEpoch"]
 	if !present || rawEpoch == nil {
+		// One exception owns the null: a steward continuation was
+		// launched precisely because NO holder was alive, so a new
+		// generation must not inherit it — the arriving holder's
+		// sweep clears it like any stale job.
+		if role, _ := job["role"].(string); role == "steward-continuation" && !terminalStatuses[status] {
+			return true, c.concludeStaleJob(path, stem, job)
+		}
 		return false, nil
 	}
 	recordEpoch, ok := jsonInt(rawEpoch)
@@ -121,8 +128,15 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 	if recordEpoch >= epoch || terminalStatuses[status] {
 		return false, nil
 	}
+	return true, c.concludeStaleJob(path, stem, job)
+}
+
+// concludeStaleJob stops a stale job's group and fails its record —
+// the one conclusion both the epoch sweep and the steward-null
+// exception share.
+func (c *claimer) concludeStaleJob(path, stem string, job map[string]any) error {
 	if err := c.stopStaleGroup(job, stem); err != nil {
-		return false, err
+		return err
 	}
 	job["status"] = "failed"
 	job["phase"] = "claim-sweep"
@@ -131,13 +145,13 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 		job["endedAt"] = nowStamp()
 	}
 	if err := atomicJSON(path, job); err != nil {
-		return false, err
+		return err
 	}
 	mission, _ := job["mission"].(string)
 	c.emitter.Emit(c.root, "job-verdict", "stale-claim-epoch sweep", map[string]string{
 		"jobId": stem, "verdict": "failed", "reason": "stale-claim-epoch", "missionId": mission,
 	})
-	return true, nil
+	return nil
 }
 
 // stopStaleGroup SIGTERMs a stale job's process group, but only after proving

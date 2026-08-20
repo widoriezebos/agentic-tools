@@ -1,6 +1,7 @@
 package lease
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
@@ -388,5 +389,54 @@ func TestSweepStopVerdictRows(t *testing.T) {
 	record, _ = os.ReadFile(recordPath)
 	if !strings.Contains(string(record), `"stale-claim-epoch"`) {
 		t.Fatalf("the swept record was not stamped: %s", record)
+	}
+}
+
+// A steward continuation was launched precisely because no holder
+// was alive: an arriving holder's sweep must clear it even though it
+// carries no lease generation, while every other generationless job
+// stays out of the sweep's scope.
+func TestTakeoverSweepsTheStewardContinuation(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c, err := newClaimer(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(jobs, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("steward-live.json", `{"jobId":"steward-live","status":"running","role":"steward-continuation","claimEpoch":null}`)
+	write("steward-done.json", `{"jobId":"steward-done","status":"completed","role":"steward-continuation","claimEpoch":null,"endedAt":"2026-08-20T15:00:00Z"}`)
+	write("human-live.json", `{"jobId":"human-live","status":"running","claimEpoch":null}`)
+	if err := c.cleanupStaleJobs(7); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	read := func(name string) map[string]any {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(jobs, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	if got := read("steward-live.json"); got["status"] != "failed" {
+		t.Fatalf("the new generation must not inherit a live continuation: %+v", got)
+	}
+	if got := read("steward-done.json"); got["status"] != "completed" {
+		t.Fatalf("a finished continuation stays finished: %+v", got)
+	}
+	if got := read("human-live.json"); got["status"] != "running" {
+		t.Fatalf("a human-dispatched generationless job stays out of scope: %+v", got)
 	}
 }
