@@ -140,6 +140,11 @@ REVIEWED_SOURCE_SHA256: 266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f
 - Next: After cutover retargets the verdict to the new projection (that half is a backlog-git-sync cutover obligation), fold in the steward's status surface: the stop message names any live worker, in-flight continuation, or pending steward incident, so silence is never ambiguous; acceptance = the frozen-ledger staleness observed 2026-08-20 cannot recur.
 - BlockedBy: backlog-git-sync, idle-watchdog
 
+### add-goal: cancel-pending-setup-husk
+- Intent: An operator's cancel of a pending-setup reservation husk must stick — today the internal cancellation gate exits zero and the reservation later completes setup and launches, silently outrunning the human's stop; the public cancel verb separately fails while resolving the husk's absent runtime (codex contract ruling, cancellation delta review round 6, 2026-08-20)
+- Origin: main
+- Next: Per the review ruling: public cancel routing that works before a runtime exists on the record; a lawful pending-setup-to-cancelled transition; atomic arbitration with RecordSetup so a marked husk cannot complete setup (the same only-forward-path-is-cancelled rule every live-record writer now enforces); fence cleanup for the cancelled reservation; and a create-cancel-setup/launch ordering test.
+
 ### add-goal: il-28-static-reproof
 - Intent: No landing goes red on a static check: the landing boundary re-proves formatting, vet, staticcheck, and build via the fast gate before any commit concludes (IL-28, adopted at the 2026-08-20 retro)
 - Origin: main

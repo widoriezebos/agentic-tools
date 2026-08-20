@@ -138,6 +138,29 @@ func (c *claimer) concludeStaleJob(path, stem string, job map[string]any) error 
 	if err := c.stopStaleGroup(job, stem); err != nil {
 		return err
 	}
+	// A marked record's only lawful conclusions are cancelled and a
+	// genuine completion — the rule every dispatch writer enforces,
+	// honored here too: the predecessor's cancel was in flight when
+	// its holder died, and this takeover FINISHES that cancel while
+	// still clearing the work. The stale-claim evidence stays on
+	// the record.
+	if phase, _ := job["phase"].(string); phase == "cancelling" {
+		job["status"] = "cancelled"
+		job["phase"] = "claim-sweep"
+		job["error"] = nil
+		job["staleClaimEpoch"] = true
+		if _, present := job["endedAt"].(string); !present || job["endedAt"] == "" {
+			job["endedAt"] = nowStamp()
+		}
+		if err := atomicJSON(path, job); err != nil {
+			return err
+		}
+		mission, _ := job["mission"].(string)
+		c.emitter.Emit(c.root, "job-verdict", "stale-claim-epoch sweep", map[string]string{
+			"jobId": stem, "verdict": "cancelled", "reason": "cancel-honored", "missionId": mission,
+		})
+		return nil
+	}
 	job["status"] = "failed"
 	job["phase"] = "claim-sweep"
 	job["error"] = "stale-claim-epoch"

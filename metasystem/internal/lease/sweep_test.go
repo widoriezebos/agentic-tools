@@ -100,3 +100,38 @@ func TestStopStaleGroupSkipsWithoutPgidOrTag(t *testing.T) {
 		t.Fatalf("pgid 1 should be skipped: %v", err)
 	}
 }
+
+func TestCleanupStaleJobsHonorsTheCancellingMarker(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "artifacts/agents/jobs")
+	// A cancel marked this record, then its holder died before the
+	// conclude; the takeover's sweep must FINISH that cancel — a
+	// marked record's only lawful conclusions are cancelled and a
+	// genuine completion — while still clearing the work for the new
+	// generation.
+	writeJSON(t, filepath.Join(jobs, "job-marked.json"),
+		`{"jobId":"job-marked","claimEpoch":4,"status":"running","phase":"cancelling","pgid":999999,"instanceTag":"tag-m"}`)
+	// The unmarked stale sibling still fails exactly as before.
+	writeJSON(t, filepath.Join(jobs, "job-plain.json"),
+		`{"jobId":"job-plain","claimEpoch":4,"status":"running","pgid":999999,"instanceTag":"tag-p"}`)
+
+	sweepClaimer, _ := newClaimer(root)
+	if err := sweepClaimer.cleanupStaleJobs(6); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+
+	m, _ := readObject(filepath.Join(jobs, "job-marked.json"))
+	if m["status"] != "cancelled" || m["error"] != nil {
+		t.Fatalf("the takeover finishes the predecessor's cancel: %v", m)
+	}
+	if m["staleClaimEpoch"] != true {
+		t.Fatalf("the stale-claim evidence stays on the record: %v", m)
+	}
+	if m["endedAt"] == nil || m["endedAt"] == "" {
+		t.Fatalf("the conclusion is stamped: %v", m)
+	}
+	p, _ := readObject(filepath.Join(jobs, "job-plain.json"))
+	if p["status"] != "failed" || p["error"] != "stale-claim-epoch" {
+		t.Fatalf("an unmarked stale job still fails: %v", p)
+	}
+}
