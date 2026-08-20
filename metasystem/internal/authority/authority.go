@@ -49,6 +49,12 @@ func Authorize(mode string, classification map[string]any, job string) error {
 		// ancestry, the kit gate in a delegate sandbox — seed a new
 		// control plane, while nobody but the holder puts intent into
 		// one that exists.
+		if class == "UNTRUSTED" || class == "STEWARD" {
+			// The adoption shape widens genesis to every WORKING
+			// caller class; an unrecognized headless process and the
+			// steward's one-action authority are not that.
+			return fmt.Errorf("genesis refuses %s callers regardless of adoption shape", class)
+		}
 		if shaped, _ := classification["adoptionShaped"].(bool); shaped {
 			return nil
 		}

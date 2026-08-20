@@ -840,6 +840,7 @@ dispatch_job() {
     runtime_override=$(json_value "$steward_tuple" runtime)
     model_override=$(json_value "$steward_tuple" model)
     permissions_override=$(json_value "$steward_tuple" permissions)
+    use_worktree=1
     steward_mode=1
   fi
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
@@ -1573,7 +1574,14 @@ case "$command" in
   cancel) cancel_job "$@" ;;
   close) close_chain "$@" ;;
   reap) reap_jobs "$@" ;;
-  __record-create) internal_authority holder-only; "$ms" job record-create --root "$root" "$@" ;;
+  __record-create)
+    # The steward's admission is per-job: the authority check must
+    # see which job this record creates.
+    rc_job=
+    if [[ ${1:-} == --job && $# -ge 2 ]]; then rc_job=$2; fi
+    internal_authority holder-only "$rc_job"
+    "$ms" job record-create --root "$root" "$@"
+    ;;
   __record-setup) internal_authority holder-only; "$ms" job record-setup --root "$root" "$@" ;;
   __record-cas)
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2

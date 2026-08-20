@@ -116,4 +116,15 @@ func TestUntrustedRefusesEveryMode(t *testing.T) {
 			t.Fatalf("mode %s must refuse an untrusted caller", mode)
 		}
 	}
+	// The adoption shape widens genesis to working callers only: an
+	// unrecognized headless process stays out even when the ledger
+	// it would baseline looks adoptable.
+	shaped := map[string]any{"class": "UNTRUSTED", "adoptionShaped": true}
+	if err := Authorize("genesis", shaped, ""); err == nil {
+		t.Fatal("adoption shape must not admit an untrusted caller to genesis")
+	}
+	stewardShaped := map[string]any{"class": "STEWARD", "adoptionShaped": true, "stewardJob": "job-1"}
+	if err := Authorize("genesis", stewardShaped, ""); err == nil {
+		t.Fatal("the steward's one action is continuation dispatch, never genesis")
+	}
 }
