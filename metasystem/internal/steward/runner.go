@@ -150,10 +150,14 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 	}
 	if commonDir, err := exec.Command("git", "-C", top, "rev-parse", "--git-common-dir").Output(); err == nil {
 		if gitDir, dirErr := exec.Command("git", "-C", top, "rev-parse", "--git-dir").Output(); dirErr == nil &&
-			strings.TrimSpace(string(commonDir)) != strings.TrimSpace(string(gitDir)) {
+			canonicalGitPath(top, string(commonDir)) != canonicalGitPath(top, string(gitDir)) {
 			// A linked worktree is a delegate's disposable copy: a
 			// watchdog armed there would outlive the job and guard a
-			// directory built to be deleted.
+			// directory built to be deleted. The comparison is on
+			// CANONICAL paths: git answers relative from one flag and
+			// absolute from the other inside a subdirectory checkout,
+			// and a raw string mismatch would refuse every primary
+			// checkout that is not the repository root.
 			return "not armed: linked worktree (the primary checkout owns the watchdog)", nil
 		}
 	}
@@ -224,6 +228,23 @@ func Arm(repoRoot, binaryPath string) (string, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return "", fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(top))
+}
+
+// canonicalGitPath resolves one git rev-parse answer to a canonical
+// absolute path: relative answers are relative to the queried
+// directory, and symlinks (darwin's /var vs /private/var) resolve.
+func canonicalGitPath(base, answer string) string {
+	p := strings.TrimSpace(answer)
+	if p == "" {
+		return p
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(base, p)
+	}
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return filepath.Clean(p)
 }
 
 // Disarm stops the runner: the stop file ends the loop at its next

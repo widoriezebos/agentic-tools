@@ -2,6 +2,7 @@ package steward
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -137,5 +138,55 @@ func TestArmStaysOutOfFixtureWorlds(t *testing.T) {
 	}
 	if _, alive := liveRunner(root); alive {
 		t.Fatal("no runner may leak into a fixture world")
+	}
+}
+
+func TestArmAcceptsASubdirectoryCheckout(t *testing.T) {
+	top := t.TempDir()
+	sub := filepath.Join(top, "metasystem")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"commit", "-q", "--allow-empty", "-m", "x"}} {
+		cmd := exec.Command("git", append([]string{"-C", top, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	// The fake-runtimes refusal PROVES the worktree fence passed: git
+	// answers --git-common-dir relative and --git-dir absolute from a
+	// subdirectory, and a raw comparison would call this a linked
+	// worktree and refuse to guard the primary checkout.
+	if err := os.WriteFile(filepath.Join(sub, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := Arm(sub, "/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "fake-runtimes") {
+		t.Fatalf("a subdirectory of the primary checkout must pass the worktree fence, got %q", msg)
+	}
+}
+
+func TestArmRefusesALinkedWorktree(t *testing.T) {
+	top := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"commit", "-q", "--allow-empty", "-m", "x"}} {
+		cmd := exec.Command("git", append([]string{"-C", top, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	linked := filepath.Join(t.TempDir(), "wt")
+	cmd := exec.Command("git", "-C", top, "worktree", "add", "-q", linked)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("worktree add: %v\n%s", err, out)
+	}
+	msg, err := Arm(linked, "/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "linked worktree") {
+		t.Fatalf("a linked worktree must refuse to arm, got %q", msg)
 	}
 }
