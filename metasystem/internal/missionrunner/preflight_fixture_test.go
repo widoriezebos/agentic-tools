@@ -1002,28 +1002,38 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 		if pgidOK && pgid > 1 {
 			groups = append(groups, pgid)
 		}
+		// Two record families name detached groups: delegate JOB
+		// records, and the mission's TURN records — the detached
+		// HOST's identity lives only in turns/*/turn.json, and this
+		// bed (FAKEHOST) creates hosts without any delegate job.
+		recordPaths := []string{}
 		if entries, dirErr := os.ReadDir(filepath.Join(engine.Root, "artifacts", "agents", "jobs")); dirErr == nil {
 			for _, entry := range entries {
-				if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-					continue
+				if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+					recordPaths = append(recordPaths, filepath.Join(engine.Root, "artifacts", "agents", "jobs", entry.Name()))
 				}
-				doc, docErr := readJSONDoc(filepath.Join(engine.Root, "artifacts", "agents", "jobs", entry.Name()))
-				if docErr != nil {
-					continue
-				}
-				jobPgid, ok := jsonInt(doc["pgid"])
-				if !ok || jobPgid <= 1 {
-					continue
-				}
-				tag, _ := doc["instanceTag"].(string)
-				jobPid, pidOK := jsonInt(doc["pid"])
-				if tag == "" || !pidOK || !pidExists(int(jobPid)) ||
-					!strings.Contains(processCommand(int(jobPid), fixtureauth.CommandProbe{}), tag) {
-					continue
-				}
-				_ = syscall.Kill(-int(jobPgid), syscall.SIGKILL)
-				groups = append(groups, jobPgid)
 			}
+		}
+		if turnPaths, globErr := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json")); globErr == nil {
+			recordPaths = append(recordPaths, turnPaths...)
+		}
+		for _, recPath := range recordPaths {
+			doc, docErr := readJSONDoc(recPath)
+			if docErr != nil {
+				continue
+			}
+			recPgid, ok := jsonInt(doc["pgid"])
+			if !ok || recPgid <= 1 {
+				continue
+			}
+			tag, _ := doc["instanceTag"].(string)
+			recPid, pidOK := jsonInt(doc["pid"])
+			if tag == "" || !pidOK || !pidExists(int(recPid)) ||
+				!strings.Contains(processCommand(int(recPid), fixtureauth.CommandProbe{}), tag) {
+				continue
+			}
+			_ = syscall.Kill(-int(recPgid), syscall.SIGKILL)
+			groups = append(groups, recPgid)
 		}
 		capSeconds, scaleErr := ScaledSeconds(15)
 		if scaleErr != nil {

@@ -109,11 +109,15 @@ func TestCleanupStaleJobsHonorsTheCancellingMarker(t *testing.T) {
 	// marked record's only lawful conclusions are cancelled and a
 	// genuine completion — while still clearing the work for the new
 	// generation.
+	// No pgid on either record: stopStaleGroup no-ops below 2 by
+	// contract, so this fixture proves the CONCLUSION rule without
+	// ever touching the host's process table — no seam rebinding,
+	// no group/tag collision risk, no transient scan refusal.
 	writeJSON(t, filepath.Join(jobs, "job-marked.json"),
-		`{"jobId":"job-marked","claimEpoch":4,"status":"running","phase":"cancelling","pgid":999999,"instanceTag":"tag-m"}`)
+		`{"jobId":"job-marked","claimEpoch":4,"status":"running","phase":"cancelling","instanceTag":"tag-m"}`)
 	// The unmarked stale sibling still fails exactly as before.
 	writeJSON(t, filepath.Join(jobs, "job-plain.json"),
-		`{"jobId":"job-plain","claimEpoch":4,"status":"running","pgid":999999,"instanceTag":"tag-p"}`)
+		`{"jobId":"job-plain","claimEpoch":4,"status":"running","instanceTag":"tag-p"}`)
 
 	sweepClaimer, _ := newClaimer(root)
 	if err := sweepClaimer.cleanupStaleJobs(6); err != nil {
