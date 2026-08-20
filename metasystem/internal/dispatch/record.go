@@ -250,6 +250,14 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 		if asString(record["status"]) != expect || (expect != "pending" && expect != "running") {
 			return silentRefusal(3)
 		}
+		// The cancellation guard has no back door: a marked record's
+		// only forward path is cancelled, and the protocol-error
+		// stamp would both flip it failed and erase the marker. The
+		// violation evidence is already durable on disk; the stamp
+		// defers exactly like a lost compare.
+		if asString(record["phase"]) == "cancelling" {
+			return silentRefusal(3)
+		}
 		now := nowISO()
 		record["status"] = "failed"
 		record["error"] = "protocol_error"

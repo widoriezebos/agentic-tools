@@ -544,6 +544,11 @@ launch_adapter() { # runtime verb job tag
   local runtime=$1 verb=$2 job=$3 tag=$4 gate="$heartbeats/$job.start" adapter="$root/scripts/agents/adapters/$runtime.sh" pid pid_started patch cap started deadline elapsed poll_sleep handshake_budget handshake_deadline proven_at
   poll_sleep=$(milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20}")
   mkdir -p "$heartbeats"
+  # No spawn for a record that already left pending (a cancel can
+  # land between setup and launch); the authoritative close is the
+  # ownership CAS below, but not starting at all is cheaper than
+  # starting and killing.
+  [[ "$(json_field "$jobs/$job.json" status)" == pending ]] || return 1
   pid=$("$ms" supervise launch-detached --cwd "$root" \
     --env "GIT_AUTHOR_NAME=$job" --env "GIT_AUTHOR_EMAIL=$job@metasystem.invalid" -- \
     "$adapter" "$verb" --job "$job" --start-gate "$gate" --instance-tag "$tag") || return 1
@@ -576,7 +581,17 @@ launch_adapter() { # runtime verb job tag
     [[ -z "$handshake_deadline" ]] || printf ',"handshakeDeadline":%s' "$handshake_deadline"
     printf '}\n'
   } >"$patch"
-  record_cas "$job" pending pending "$patch" || return 1
+  # A lost ownership CAS means the record moved on under us (a
+  # cancel concluded it mid-launch): the process this launch just
+  # started must die NOW, not linger until its start-gate timeout —
+  # the record must never claim an outcome while an unrecorded
+  # group lives on.
+  if ! record_cas "$job" pending pending "$patch"; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    sleep 0.1
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    return 1
+  fi
   touch "$gate"
 }
 
@@ -1446,7 +1461,15 @@ internal_cancel() {
     esac
   fi
   wind_down_group "$record" || { release_lifecycle_lock "$job"; exit 1; }
-  patch=$(mktemp "$record_locks/cancel.XXXXXX"); printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
+  patch=$(mktemp "$record_locks/cancel.XXXXXX")
+  if [[ -n "$(json_field "$record" pgid 2>/dev/null || true)" ]]; then
+    printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
+  else
+    # No group was ever recorded: the record must not claim a death
+    # that never happened — cancelled-before-launch is its own
+    # honest shape.
+    printf '{"error":null,"phase":"cancelled"}\n' >"$patch"
+  fi
   record_cas "$job" "$status" cancelled "$patch" || true
   mirror_record "$job" || true
   release_lifecycle_lock "$job"

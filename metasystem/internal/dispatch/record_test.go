@@ -557,3 +557,38 @@ func TestHandshakeCannotEraseTheCancellingMarker(t *testing.T) {
 		t.Fatalf("the cancel concludes the pending marked record: %v", err)
 	}
 }
+
+func TestProtocolErrorDefersDuringCancellation(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	setupPending(t, root, "job-a")
+	run := writeJSON(t, filepath.Join(t.TempDir(), "run.json"), map[string]any{
+		"sessionId": "sess-1", "phase": "running", "error": nil,
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "running", run); err != nil {
+		t.Fatalf("cas pending->running: %v", err)
+	}
+	mark := writeJSON(t, filepath.Join(t.TempDir(), "mark.json"), map[string]any{
+		"phase": "cancelling",
+	})
+	if _, err := RecordCAS(root, "job-a", "running", "running", mark); err != nil {
+		t.Fatalf("marker: %v", err)
+	}
+	// The F-8 back door: the adapter records a protocol violation
+	// concurrently with the cancel. The stamp must defer — it would
+	// otherwise flip the record failed AND erase the marker.
+	err := RecordProtocolError(root, "job-a", "running", "malformed return", "")
+	if err == nil {
+		t.Fatal("the protocol-error stamp must defer on a marked record")
+	}
+	record := readRecord(t, root, "job-a")
+	if record["status"] != "running" || record["phase"] != "cancelling" {
+		t.Fatalf("the marked record survives the stamp attempt: %v/%v", record["status"], record["phase"])
+	}
+	conclude := writeJSON(t, filepath.Join(t.TempDir(), "conclude.json"), map[string]any{
+		"phase": "cancelled", "error": nil,
+	})
+	if _, err := RecordCAS(root, "job-a", "running", "cancelled", conclude); err != nil {
+		t.Fatalf("the cancel concludes: %v", err)
+	}
+}
