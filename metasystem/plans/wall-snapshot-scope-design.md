@@ -8,24 +8,16 @@ repository has three ways to carry bytes (worktree, index, committed
 history) and, in a nested checkout, a whole repository around the
 workspace. Design only; no implementation in this pass.
 
-- Status: PARKED AT CRITIQUE EXHAUSTION — waiting on the human. Six
-  rounds ran (trajectory 12, 13, 10, 5, 5, 6 material findings; the
-  declared failsafe at round 4 held; rounds 4-6 were the second
-  focused budget). Round 6 returned six material findings, none
-  fixture-expressible, and the skill's exhaustion rule stops the
-  loop: a human decision recorded here is the only remedy. The six
-  open findings are WSS-R6-01..06
-  (`plans/wall-snapshot-scope-critique-r6.md` records each with an
-  assessed remedy sketch, deliberately NOT folded — the loop is
-  closed). The decision the cluster actually needs, stated plainly:
-  WSS-R6-01 proves any finite probe chain has a last probe, so
-  either the wall accepts a BOUNDED-AND-RECORDED detection window as
-  its posture (each verification records its capture instant; later
-  motion lands in the next probe or the next admission — consistent
-  with the detector tier) or it gets repository-wide custody during
-  acceptance, which is isolation-tier machinery this design was told
-  not to build. The other five findings are mechanical folds once
-  that ruling lands.
+- Status: CONVERGED — build against the WSS matrix. Seven rounds
+  (trajectory 12, 13, 10, 5, 5, 6, 2 material; the declared failsafe
+  at round 4 held; the second-budget exhaustion at round 6 parked
+  the loop until Wido's D123 ruling — the wall's detection posture
+  is a bounded, recorded window, repository-wide custody ruled out
+  as isolation-tier — and the round-7 verification found the six
+  resolutions faithful with two fixture-expressible row fixes, both
+  folded). Implementation runs against WSS-1..13; the landing stays
+  under the ordinary covenant: battery green and codex AGREE on the
+  code.
 - Loop discipline, declared AT LOOP START (D119, IL-25): codex
   gpt-5.6-sol, reasoning xhigh, read-only sandbox, both-must-agree.
   THE FAILSAFE ROUND IS ROUND 4. Early close: the first round whose
@@ -148,10 +140,10 @@ surfaces as a violation or refusal, never invisibly.
   checkouts), the origin for staged sibling motion.
 - At MISSION BIRTH the initialize-state write records the same
   origins beside E0 — initial `headCommit`, `topTree`,
-  `topStagedTree`, and `refMap` — so turn-1 continuity (a
-  detached-HEAD switch before the first open included) and a crash
-  between admission and first open have a durable authority, not a
-  silent adoption.
+  `topStagedTree`, `refMap`, and the worktree census with postures —
+  so turn-1 continuity (a detached-HEAD switch before the first open
+  included) and a crash between admission and first open have a
+  durable authority, not a silent adoption.
 - Staged admission: at turn open the staged projection must equal
   `headTree` or `preTree`. Anything else is unaccounted staged bytes
   from between turns — the same class as the existing worktree drift
@@ -228,9 +220,15 @@ resume re-runs the post-publication verification deterministically
 against the recorded posture — a crash between the two writes can
 therefore never leave a completed mission over unprobed motion, and
 consumption is never double-spent because the commit point already
-landed. Motion after the post-verification entry of a CONCLUDED
-mission is post-mission by timestamp and belongs to interactive
-custody, outside the wall's boundary as ruled. A changed capture re-runs the inspection; after a
+landed. THE RESIDUAL WINDOW IS THE POSTURE, NOT A HOLE (D123): any
+finite probe chain has a last probe, and the wall's answer is the
+detector tier applied to time — every capture records its instant,
+motion after a turn's last probe lands in the next probe or the next
+admission, and motion after the post-verification entry of a
+CONCLUDED mission is post-mission by timestamp, belonging to
+interactive custody outside the wall's boundary. Repository-wide
+custody during acceptance was considered and ruled out as
+isolation-tier machinery. A changed capture re-runs the inspection; after a
 bounded number of retries the turn is a violation — "repository
 would not hold still during inspection".
 
@@ -283,10 +281,17 @@ reading, and the row now says so).
    commit fails here by its tip. Interior side-branch commits below
    an accounted-or-reviewed tip remain the stated detector-tier
    boundary, bounded by their tip.
-4. PER-COMMIT REPOSITORY SCOPE (nested checkouts). Each first-parent
-   commit and each side tip changes only workspace-prefixed paths
-   against its first parent, judged at toplevel. Vacuous at a
-   toplevel install, exactly like the delegate fence.
+4. REPOSITORY SCOPE (nested checkouts). Each first-parent commit
+   changes only workspace-prefixed paths against its first parent,
+   judged at toplevel — and each SIDE CHAIN is judged by its
+   ACCUMULATED tree, not per-commit deltas: the side tip's whole
+   toplevel tree against the merge base with the first-parent line
+   must differ only at workspace-prefixed paths, because a sibling
+   payload buried in an interior side commit under an empty
+   accounted tip has empty immediate deltas everywhere it is probed.
+   Vacuous at a toplevel install, exactly like the delegate fence,
+   and now genuinely at parity with it (the delegate fence judges
+   accumulated boundary-base-to-snapshot change the same way).
 5. THE REF TRANSITION FENCE — exact, record-bound, no semantic tip
    judging. Against `openTurn.refMap`, the only lawful ref
    transitions during a turn are enumerable:
@@ -329,15 +334,21 @@ reading, and the row now says so).
    LINKED WORKTREES are carriers too, and join the transition fence
    as a census WITH POSTURE: each capture enumerates the worktrees
    (`git worktree list --porcelain`) and records, per admitted
-   worktree, its HEAD OID and the content digest of its private
-   index file — the porcelain listing alone exposes no index, and a
-   worktree's private HEAD and index are exactly the carriers that
-   moved unobserved in the round-4 shape. Each worktree must be the
+   worktree, its HEAD OID, its private PSEUDOREF census (the same
+   *_HEAD-family scan run against THAT worktree's git directory — a
+   linked worktree resolves its own ORIG_HEAD, distinct from the
+   main checkout's, so a single-directory scan misses a whole
+   retention lane), and its staged posture as the LOGICAL `ls-files
+   --stage` serialization read through that worktree's index — never
+   a byte digest of the index file, whose stat cache (ctime, mtime,
+   inode) churns without any staged byte changing and would falsely
+   park lawful missions. Each worktree must be the
    mission workspace itself or one the runner's records name: the
    runner's own detached measurement worktrees (`measure.go:251`)
    at their recorded tips, and dispatch-record delegate worktrees,
    free until their chain's consumption like their branches and
-   STATIONARY in posture (HEAD and index digest) from consumption
+   STATIONARY in posture (HEAD, private pseudoref census, and the
+   logical staged serialization) from consumption
    on, judged from the posture the acceptance payload recorded. An
    UNRECORDED worktree created, moved, or carrying a HEAD/index
    posture of its own is a violation outright: a detached worktree
@@ -366,8 +377,9 @@ reading, and the row now says so).
 
 Turn open and mission resume run the SAME accounting with the
 PREVIOUS acceptance's recorded posture as the origin: headCommitPost,
-refMapPost, topTreePost, topStagedPost from the hash-chained
-acceptance payload (turn 1 uses the birth record). Between-turns
+refMapPost, stagedTreePost, topTreePost, topStagedPost, and
+worktreeCensusPost from the hash-chained acceptance payload (turn 1
+uses the birth record). Between-turns
 motion is judged with the previous turn's accepted state as the
 accounted set — no host or peer motion between turns escapes: an
 illicit commit made after one acceptance and before the next open is
@@ -449,14 +461,25 @@ construction, delegate-fence style).
 ## Evidence, authority, and events
 
 AUTHORITY: the hash-chained acceptance-entry payload gains
-`headCommitPost`, `refMapPost`, `stagedTreePost`, `topTreePost` and
-`topStagedPost` (nested), beside the trees it already carries, and
-the birth record carries the admission origins. ONE SCOPED
-EXCLUSION, forced by causality: `refMapPost` omits the runner's
-self-owned publication refs (the state-anchors ref above all — its
-post-acceptance tip is a commit containing the very state hash the
-payload would freeze, `anchor.go:271/:343`, so recording it is a
-content-addressed self-reference). Those refs are not less guarded
+`headCommitPost`, `refMapPost`, `stagedTreePost`, `topTreePost`,
+`topStagedPost` (nested), and `worktreeCensusPost` — the admitted
+worktrees with their recorded postures, without which a consumed
+delegate worktree's stationarity has no authoritative origin across
+a crash or turn boundary — beside the trees it already carries, and
+the birth record carries the admission origins, its own worktree
+census included. Every acceptance and post-verification entry
+carries `capturedAt` — the capture instant D123's bounded window is
+measured from — as an authoritative payload field, not narrative
+(the post-mission boundary is an auditable timestamp or it is
+nothing). ONE SCOPED EXCLUSION, forced by causality and
+applied to EVERY recorded ref map — birth, openTurn, and acceptance
+alike: the runner's self-owned publication refs are omitted (the
+state-anchors ref above all — its tip after any state write is a
+commit containing the very state hash the record would freeze,
+`anchor.go:271/:343`, so recording it anywhere is a
+content-addressed self-reference; a birth or open record carrying
+the old tip would reject the runner's own lawful publication at the
+first inspection). Those refs are not less guarded
 for it: the fence judges them at every capture against the anchor
 machinery's own independent authentication (the anchored
 ledger/state truth the runner already verifies), which is stronger
@@ -542,19 +565,19 @@ refuse resume with a named error, exactly the HIW-O11 legacy posture
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| WSS-1 | CRITICAL | this design §O15 | openTurn records and ref-anchors headCommit, headTree, topTree, topStagedTree (nested), and the full-namespace refMap before host launch, immutable in flight; the acceptance payload carries headCommitPost, refMapPost, stagedTreePost, topTreePost, topStagedPost under state schemaVersion 4 (exact keys; pre-4 refuses resume); the birth record carries the admission origins — headCommit included — beside E0 | `internal/missionrunner/loop.go` turn open + `internal/gittree` AnchorCommit + mission state schema 4 | none yet | crash-at-every-boundary fixture; anchored-commit survives reset fixture; chain-not-wall.json fixture; pre-4-state-refuses fixture; birth-record-origins fixture | forced kill between anchor and launch on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-2 | CRITICAL | this design §O15 rules 1-3 | Every host-exit inspection resolves HEAD and the ref map once, judges the resolved values (first-parent reachability, subset-decomposition accounting with content-free declared paths, side-tip accounting, --no-ff integration contract), and re-verifies stability at the end (moved repository re-runs, bounded, then violates); typed probes split repository-state violations from environment errors | `internal/missionrunner/wall.go` inspection + `internal/gittree` typed probes | none yet | retreat, amend, foreign-branch, unaccounted-commit, ours-merge-buried-commit, side-tip-reviewed-lawful (O14), ff-integration-refuses-with-remedy, artifact-draft-commit-lawful, subset-state-commit-lawful, no-commit-lawful, unborn-HEAD-violates, moved-during-inspection fixtures | scripted host commits smuggled staged bytes mid-turn on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-3 | CRITICAL | this design §O15 rule 6 + admissions | The workspace staged projection is ACCOUNTED (decomposition membership — lawful subsets pass) at every inspection; toplevel staged posture is the ls-files --stage serialization judged by motion only (preexisting sibling conflicts refuse nothing); StagedTree reconstructs a workspace-only isolated index from ls-files --stage (sibling conflicts never enter; observer-only); mission start admits HEAD's tree or the admitted clean-or-sealed baseline; a conflicted WORKSPACE index refuses toward the wall | `internal/missionrunner/wall.go` + `internal/gittree` StagedTree (reconstructed workspace-only index) | none yet | staged-smuggle-then-revert, staged-lawful-subset-passes-and-recorded, staged-sibling-motion, preexisting-sibling-conflict-not-blamed-even-in-workspace-projection, index-not-mutated-by-projection, dirty-index-at-start, sealed-index-at-start-lawful, conflicted-workspace-index fixtures | host stages bytes it never commits across a turn boundary on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-4 | HIGH | this design §O15 rule 3 | Each first-parent commit changes only workspace-prefixed paths at repository scope; a commit with an accounted workspace subtree but sibling payload refuses | `internal/missionrunner/wall.go` per-commit toplevel diff | none yet | sibling-payload-commit fixture in a nested repo; toplevel-install vacuity fixture | host commit touching a sibling path on a nested VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-5 | HIGH | this design §O16 | Worktree sibling motion is fenced at open, every inspection, and between turns in nested checkouts, machine filters translated, refusals attribution-honest | `internal/missionrunner/wall.go` toplevel fence | none yet | sibling-edit mid-turn, sibling-drift between turns, machine-path-translated, toplevel-vacuous fixtures | host edits a sibling path mid-turn on a nested VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-6 | HIGH | this design §projection stability | In-turn snapshots seed from the comparison target with declared paths as forced-membership inputs (SnapshotSeeded(expectedTree, declaredPaths)), so tracked-and-ignored membership follows the comparison's right-hand side and a committed ignored declared artifact cannot vanish from the projection | `internal/gittree` SnapshotSeeded + `internal/missionrunner/wall.go` call sites | none yet | ignored-tracked-path-projects-at-subset-HEAD passes; absent-expected-file-refuses; committed-ignored-declared-artifact-projects; graft-in-nested-path-space fixture | mid-turn HEAD move with tracked-and-ignored files on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-7 | MEDIUM | this design §evidence | wall.json carries the new observables and per-item verdicts; the registered wall-violation event's payload extends (this design adds no pass event; HIW-O10 remains parent-owned); the acceptance chain, not evidence files, answers every forward-looking comparison | `internal/missionrunner/wall.go` evidence writer + event registry | none yet | wall.json schema fixture; wall-violation payload fixture | violation evidence readback on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-8 | HIGH | this design §acceptance non-requirement + O14 | Lawful lanes stay lawful, proven positively: no-commit turn, single post-tree commit, subset-state commits, empty and E-point commits, the merge-integration lane, and the sealed-index mission start all accept with the new rules active | `internal/missionrunner/wall.go` fixtures | none yet | positive-lane fixtures beside the violation fixtures, one per lane | a real implementer chain integrated by merge on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-9 | MEDIUM | this design §crash and resume | An openTurn predating the new anchors refuses resume with a named error; no migration machinery | `internal/missionrunner` state loader | none yet | preserved pre-schema openTurn resume fixture asserting the exact error | resume attempt on a preserved pre-schema state | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-10 | HIGH | critique r1/r3/r5 (WSS-R1-04, WSS-R3-09, WSS-R5-01) | Every runner git surface runs with core.useReplaceRefs=false and the WHOLE repository-steering environment stripped (GIT_DIR, GIT_WORK_TREE, GIT_COMMON_DIR, foreign GIT_INDEX_FILE, object-directory/alternates, namespaces, GIT_REPLACE_REF_BASE — the D120 posture); admission refuses a nonempty EFFECTIVE replacement namespace | `internal/gittree/gittree.go` env scrub + config pins + every runner exec surface | none yet | replace-ref-cannot-alter-accounting; replace-base-redirect-refused; git-dir-redirect-cannot-steer-probes; anchor-and-measure-surfaces-pinned fixtures | replace ref planted mid-turn on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-11 | HIGH | critique r1-r4 (WSS-R1-03, WSS-R2-03/04/05, WSS-R3-01/09, WSS-R4-01/02/05) | The exact ref transition fence: runner-record refs equal their recorded values (motion or deletion violates); dispatch-record agent/* branches move freely until consumption then hold; the checked-out candidate branch equals the capture's resolved HEAD (content is rules 1-4's business); every other ref in every namespace is unchanged; the pseudoref census covers the whole *_HEAD family plus AUTO_MERGE, multi-OID formats parsed, each OID accounted-or-reviewed or absent; the worktree census records per-worktree posture (HEAD OID, index digest) and admits only the workspace and runner-recorded worktrees (measurement at recorded tips; delegate free-until-consumption then stationary in posture), unrecorded worktrees violating outright | `internal/missionrunner/wall.go` ref fence + worktree census | none yet | retain-under-branch/tag/custom-namespace, rebase-head-retention-violates, multi-oid-fetch-head-parsed, no-ff-merge-pseudorefs-lawful, anchor-ref-deletion-violates, delegate-branch-free-then-held, active-branch-tracks-lawful-commit, same-tip-detach-violates, unrecorded-worktree-violates, measurement-worktree-lawful, consumed-delegate-worktree-posture-motion-violates fixtures | commit-tag-reset shape on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-12 | CRITICAL | critique r2-r3 (WSS-R2-01/02, WSS-R3-02/03/04) | The whole observable posture (HEAD, refs, staged both scopes, worktree, toplevel, worktree census) is captured once, judged, and re-verified whole at the verdict; the acceptance append stays HIW-O13's single commit point but no longer concludes the turn: a separate post-verification entry re-captures and concludes on a clean match (mismatch taints over the acceptance), and an acceptance without its verification entry is the defined consumed-but-unconcluded state that resume completes deterministically; the pseudoref and worktree censuses are inside the capture the verification compares; turn open and resume run the full accounting from the previous acceptance's recorded posture, turn 1 from the birth record including its headCommit; refMapPost omits the runner's self-owned publication refs, which the fence authenticates through the anchor machinery instead | `internal/missionrunner/wall.go` + `internal/missionrunner/loop.go` continuity | none yet | moved-during-inspection re-runs then violates; gate-mutates-after-inspection caught by post-publication probe; peer-motion-during-state-lock-wait caught; peer-index-mutation-caught-by-whole-capture; illicit-commit-between-turns refuses next open; detached-switch-before-first-open refuses via birth headCommit; state-anchors-self-move-lawful; crash-between-acceptance-and-verification-resumes-deterministically; pseudoref-written-after-rules-caught-by-final-capture fixtures | commit between acceptance and next open on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
-| WSS-13 | HIGH | critique r3 (WSS-R3-10) | Resolution entries record the full carrier posture as the next origin; RESTORE verifies worktree and staged equal the named tree and refuses while any other carrier fails accounting; ADOPT adopts the observed posture wholesale under named waived claims | `internal/missionrunner/resolve.go` + mission state resolution entries | none yet | restore-refused-while-HEAD-unaccounted, restore-verifies-staged, adopt-records-carrier-posture, post-resolution-continuity fixtures | resolve an O15 violation both ways on a VM target | MISSING | await the WSS-R6-01 ruling, fold WSS-R6-02..06, then implement |
+| WSS-1 | CRITICAL | this design §O15 | openTurn records and ref-anchors headCommit, headTree, topTree, topStagedTree (nested), and the full-namespace refMap before host launch, immutable in flight; the acceptance payload carries headCommitPost, refMapPost, stagedTreePost, topTreePost, topStagedPost, worktreeCensusPost, and capturedAt — the post-verification entry carrying its own capturedAt as well — under state schemaVersion 4 (exact keys; pre-4 refuses resume); the birth record carries the admission origins — headCommit and the worktree census included — beside E0 | `internal/missionrunner/loop.go` turn open + `internal/gittree` AnchorCommit + mission state schema 4 | none yet | crash-at-every-boundary fixture; anchored-commit survives reset fixture; chain-not-wall.json fixture; pre-4-state-refuses fixture; birth-record-origins fixture | forced kill between anchor and launch on a VM target | MISSING | implement |
+| WSS-2 | CRITICAL | this design §O15 rules 1-3 | Every host-exit inspection resolves HEAD and the ref map once, judges the resolved values (first-parent reachability, subset-decomposition accounting with content-free declared paths, side-tip accounting, --no-ff integration contract), and re-verifies stability at the end (moved repository re-runs, bounded, then violates); typed probes split repository-state violations from environment errors | `internal/missionrunner/wall.go` inspection + `internal/gittree` typed probes | none yet | retreat, amend, foreign-branch, unaccounted-commit, ours-merge-buried-commit, side-tip-reviewed-lawful (O14), ff-integration-refuses-with-remedy, artifact-draft-commit-lawful, subset-state-commit-lawful, no-commit-lawful, unborn-HEAD-violates, moved-during-inspection fixtures | scripted host commits smuggled staged bytes mid-turn on a VM target | MISSING | implement |
+| WSS-3 | CRITICAL | this design §O15 rule 6 + admissions | The workspace staged projection is ACCOUNTED (decomposition membership — lawful subsets pass) at every inspection; toplevel staged posture is the ls-files --stage serialization judged by motion only (preexisting sibling conflicts refuse nothing); StagedTree reconstructs a workspace-only isolated index from ls-files --stage (sibling conflicts never enter; observer-only); mission start admits HEAD's tree or the admitted clean-or-sealed baseline; a conflicted WORKSPACE index refuses toward the wall | `internal/missionrunner/wall.go` + `internal/gittree` StagedTree (reconstructed workspace-only index) | none yet | staged-smuggle-then-revert, staged-lawful-subset-passes-and-recorded, staged-sibling-motion, preexisting-sibling-conflict-not-blamed-even-in-workspace-projection, index-not-mutated-by-projection, dirty-index-at-start, sealed-index-at-start-lawful, conflicted-workspace-index fixtures | host stages bytes it never commits across a turn boundary on a VM target | MISSING | implement |
+| WSS-4 | HIGH | this design §O15 rule 4 | Each first-parent commit changes only workspace-prefixed paths at repository scope, and each side chain's ACCUMULATED tree (side tip against the merge base with the first-parent line) differs only at workspace-prefixed paths; a commit or side chain with an accounted workspace subtree but sibling payload refuses | `internal/missionrunner/wall.go` per-commit and side-chain toplevel diff | none yet | sibling-payload-commit fixture in a nested repo; sibling-payload-buried-under-accounted-side-tip-violates; toplevel-install vacuity fixture | host commit touching a sibling path on a nested VM target | MISSING | implement |
+| WSS-5 | HIGH | this design §O16 | Worktree sibling motion is fenced at open, every inspection, and between turns in nested checkouts, machine filters translated, refusals attribution-honest | `internal/missionrunner/wall.go` toplevel fence | none yet | sibling-edit mid-turn, sibling-drift between turns, machine-path-translated, toplevel-vacuous fixtures | host edits a sibling path mid-turn on a nested VM target | MISSING | implement |
+| WSS-6 | HIGH | this design §projection stability | In-turn snapshots seed from the comparison target with declared paths as forced-membership inputs (SnapshotSeeded(expectedTree, declaredPaths)), so tracked-and-ignored membership follows the comparison's right-hand side and a committed ignored declared artifact cannot vanish from the projection | `internal/gittree` SnapshotSeeded + `internal/missionrunner/wall.go` call sites | none yet | ignored-tracked-path-projects-at-subset-HEAD passes; absent-expected-file-refuses; committed-ignored-declared-artifact-projects; graft-in-nested-path-space fixture | mid-turn HEAD move with tracked-and-ignored files on a VM target | MISSING | implement |
+| WSS-7 | MEDIUM | this design §evidence | wall.json carries the new observables and per-item verdicts; the registered wall-violation event's payload extends (this design adds no pass event; HIW-O10 remains parent-owned); the acceptance chain, not evidence files, answers every forward-looking comparison | `internal/missionrunner/wall.go` evidence writer + event registry | none yet | wall.json schema fixture; wall-violation payload fixture | violation evidence readback on a VM target | MISSING | implement |
+| WSS-8 | HIGH | this design §acceptance non-requirement + O14 | Lawful lanes stay lawful, proven positively: no-commit turn, single post-tree commit, subset-state commits, empty and E-point commits, the merge-integration lane, and the sealed-index mission start all accept with the new rules active | `internal/missionrunner/wall.go` fixtures | none yet | positive-lane fixtures beside the violation fixtures, one per lane | a real implementer chain integrated by merge on a VM target | MISSING | implement |
+| WSS-9 | MEDIUM | this design §crash and resume | An openTurn predating the new anchors refuses resume with a named error; no migration machinery | `internal/missionrunner` state loader | none yet | preserved pre-schema openTurn resume fixture asserting the exact error | resume attempt on a preserved pre-schema state | MISSING | implement |
+| WSS-10 | HIGH | critique r1/r3/r5 (WSS-R1-04, WSS-R3-09, WSS-R5-01) | Every runner git surface runs with core.useReplaceRefs=false and the WHOLE repository-steering environment stripped (GIT_DIR, GIT_WORK_TREE, GIT_COMMON_DIR, foreign GIT_INDEX_FILE, object-directory/alternates, namespaces, GIT_REPLACE_REF_BASE — the D120 posture); admission refuses a nonempty EFFECTIVE replacement namespace | `internal/gittree/gittree.go` env scrub + config pins + every runner exec surface | none yet | replace-ref-cannot-alter-accounting; replace-base-redirect-refused; git-dir-redirect-cannot-steer-probes; anchor-and-measure-surfaces-pinned fixtures | replace ref planted mid-turn on a VM target | MISSING | implement |
+| WSS-11 | HIGH | critique r1-r4 (WSS-R1-03, WSS-R2-03/04/05, WSS-R3-01/09, WSS-R4-01/02/05) | The exact ref transition fence: runner-record refs equal their recorded values (motion or deletion violates); dispatch-record agent/* branches move freely until consumption then hold; the checked-out candidate branch equals the capture's resolved HEAD (content is rules 1-4's business); every other ref in every namespace is unchanged; the pseudoref census covers the whole *_HEAD family plus AUTO_MERGE, multi-OID formats parsed, each OID accounted-or-reviewed or absent; the worktree census records per-worktree posture (HEAD OID, the private pseudoref census, the logical ls-files --stage serialization) and admits only the workspace and runner-recorded worktrees (measurement at recorded tips; delegate free-until-consumption then stationary in posture), unrecorded worktrees violating outright | `internal/missionrunner/wall.go` ref fence + worktree census | none yet | retain-under-branch/tag/custom-namespace, rebase-head-retention-violates, multi-oid-fetch-head-parsed, no-ff-merge-pseudorefs-lawful, anchor-ref-deletion-violates, delegate-branch-free-then-held, active-branch-tracks-lawful-commit, same-tip-detach-violates, unrecorded-worktree-violates, measurement-worktree-lawful, consumed-delegate-worktree-posture-motion-violates, worktree-private-orig-head-retention-violates, stat-refresh-does-not-change-staged-posture fixtures | commit-tag-reset shape on a VM target | MISSING | implement |
+| WSS-12 | CRITICAL | critique r2-r3 (WSS-R2-01/02, WSS-R3-02/03/04) | The whole observable posture (HEAD, refs, staged both scopes, worktree, toplevel, worktree census) is captured once, judged, and re-verified whole at the verdict; the acceptance append stays HIW-O13's single commit point but no longer concludes the turn: a separate post-verification entry re-captures and concludes on a clean match (mismatch taints over the acceptance), and an acceptance without its verification entry is the defined consumed-but-unconcluded state that resume completes deterministically; the pseudoref and worktree censuses are inside the capture the verification compares; turn open and resume run the full accounting from the previous acceptance's recorded posture, turn 1 from the birth record including its headCommit; refMapPost omits the runner's self-owned publication refs, which the fence authenticates through the anchor machinery instead | `internal/missionrunner/wall.go` + `internal/missionrunner/loop.go` continuity | none yet | moved-during-inspection re-runs then violates; gate-mutates-after-inspection caught by post-publication probe; peer-motion-during-state-lock-wait caught; peer-index-mutation-caught-by-whole-capture; illicit-commit-between-turns refuses next open; detached-switch-before-first-open refuses via birth headCommit; state-anchors-self-move-lawful-at-birth-open-and-acceptance; crash-between-acceptance-and-verification-resumes-deterministically; pseudoref-written-after-rules-caught-by-final-capture; worktree-census-posture-survives-crash; capturedAt-recorded-on-both-acceptance-and-verification-entries fixtures | commit between acceptance and next open on a VM target | MISSING | implement |
+| WSS-13 | HIGH | critique r3 (WSS-R3-10) | Resolution entries record the full carrier posture as the next origin; RESTORE verifies worktree and staged equal the named tree and refuses while any other carrier fails accounting; ADOPT adopts the observed posture wholesale under named waived claims | `internal/missionrunner/resolve.go` + mission state resolution entries | none yet | restore-refused-while-HEAD-unaccounted, restore-verifies-staged, adopt-records-carrier-posture-including-worktree-census, post-resolution-continuity fixtures | resolve an O15 violation both ways on a VM target | MISSING | implement |
 
 ## Interactions, stated
 
@@ -566,7 +589,8 @@ refuse resume with a named error, exactly the HIW-O11 legacy posture
   accounted — a post-resolution commit of the ruled tree is lawful by
   rule 2. THE RESOLUTION POSTURE EXTENDS TO EVERY CARRIER: a
   resolution entry records the full observed posture (headCommit,
-  refMap, staged both scopes, topTree) as the next origin. RESTORE
+  refMap, staged both scopes, topTree, and the worktree census with
+  postures) as the next origin. RESTORE
   verifies the worktree and staged carriers equal the named tree AND
   refuses while any other carrier still fails accounting ("restore
   refused: committed HEAD still carries unaccounted commits") —

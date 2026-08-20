@@ -1632,3 +1632,30 @@ disarm` or host shutdown. A rebooted machine is silent until the
 metasystem next runs there, and the design says so plainly. The
 obligation matrix row IW-8 is re-pointed from scheduler lifecycle to
 runner lifecycle before the covenant review.
+
+## D123 — The wall's detection posture is a bounded, recorded window (2026-08-20, Wido's ruling)
+
+**The question**, from the snapshot-scope design's critique exhaustion
+(WSS-R6-01, `plans/wall-snapshot-scope-critique-r6.md`): any finite chain
+of verification probes has a last probe, so a repository carrier can
+in principle move after it — should the wall close that window with
+repository-wide custody during acceptance, or accept it?
+
+**Wido's ruling:** the bounded-and-recorded detection window is the
+wall's posture. Each verification records its capture instant; motion
+after a turn's last probe lands in the next probe or the next
+admission, and a concluded mission's post-verification timestamp is
+the boundary after which motion is post-mission by definition. This
+is the detector tier (D100) applied to time exactly as it is applied
+to forgery: every accidental and naive shape is caught, the
+cooperative posture is stated rather than pretended away, and
+repository-wide custody remains isolation-tier machinery that would
+need its own design if it is ever wanted.
+
+**Impact:** the snapshot-scope design unparks; WSS-R6-01 resolves by
+this ruling and WSS-R6-02..06 fold mechanically (schema census
+posture, per-worktree pseudorefs, logical staged serialization, the
+ref-map exclusion generalized, side-tip merge-base scope); a
+verification round on the same critic chain judges the folds. In the
+same session Wido kept all four retro-2026-08-20 ledger rows
+(IL-25..IL-28) as adopted.
