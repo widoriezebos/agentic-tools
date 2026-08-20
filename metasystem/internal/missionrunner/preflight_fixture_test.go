@@ -970,25 +970,40 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 	engine := equipFullCycleBed(t, buildPreflightBed(t, "FAKEHOST:close-stream", true))
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	t.Cleanup(func() {
+		recordPath, _, _ := engine.runnerPaths()
+		record, err := readJSONDoc(recordPath)
+		if err != nil {
+			return
+		}
+		pgid, pgidOK := jsonInt(record["pgid"])
 		// Killing needs IDENTITY, never a number: a signal goes out
 		// only when the recorded pid still runs under the recorded
 		// instance tag — the same proof the stale-lease cleanup
 		// demands — so a reused pid or group id can never be hit.
-		recordPath, _, _ := engine.runnerPaths()
-		record, err := readJSONDoc(recordPath)
-		if err != nil || record["endedAt"] != nil {
-			return
+		if record["endedAt"] == nil {
+			pid, pidOK := jsonInt(record["pid"])
+			tag, tagOK := record["instanceTag"].(string)
+			if pidOK && tagOK && tag != "" &&
+				pidExists(int(pid)) && strings.Contains(processCommand(int(pid), fixtureauth.CommandProbe{}), tag) {
+				if pgidOK && pgid > 1 {
+					_ = syscall.Kill(-int(pgid), syscall.SIGKILL)
+				}
+			}
 		}
-		pid, pidOK := jsonInt(record["pid"])
-		tag, tagOK := record["instanceTag"].(string)
-		if !pidOK || !tagOK || tag == "" {
-			return
-		}
-		if !pidExists(int(pid)) || !strings.Contains(processCommand(int(pid), fixtureauth.CommandProbe{}), tag) {
-			return
-		}
-		if pgid, ok := jsonInt(record["pgid"]); ok && pgid > 1 {
-			_ = syscall.Kill(-int(pgid), syscall.SIGKILL)
+		// endedAt describes the LEADER, not the group: a draining
+		// descendant can still be writing .git objects when TempDir
+		// removal starts, and the cleanup then races it (two go-gate
+		// reds, 2026-08-20). Waiting needs no identity — a reused
+		// group costs at most the bound — so wait for the whole
+		// group to vanish before the directory dies.
+		if pgidOK && pgid > 1 {
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) {
+				if err := syscall.Kill(-int(pgid), 0); err != nil {
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
 		}
 	})
 	cmd := exec.Command(filepath.Join(engine.Root, "scripts", "agents", "mission-runner.sh"),
