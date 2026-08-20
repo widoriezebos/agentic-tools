@@ -1580,3 +1580,20 @@ containers, VMs, or separate OS users — the steward guards accidents
 and makes stalls visible, at the repository's own trust level. Build
 proceeds against the nine-row obligation matrix, fake-adapter
 fixtures first; landing under the ordinary covenant.
+
+## D122 — The narrator becomes real-time self-awareness, wired into the steward (2026-08-20, Wido's directive)
+
+Wido's instruction, recorded: the narrator must not be an
+after-the-fact storyteller. It narrates continuously about what the
+system is doing; it is wired into the idle-watchdog mechanism —
+because that is the part that keeps running regardless of any
+session — and when its narration notices something off, it must be
+CAPABLE OF ACTING: naming the anomaly, notifying, and correcting
+course through the steward's intervention machinery, whatever the
+anomaly is. Folded into the migration manifest as an amendment to
+the queued narrator goal, blocked by idle-watchdog (the actuation
+path it rides must exist first). The design belongs to whoever
+claims the goal after cutover: observation surface (receipts,
+ticks, verdicts, dispatch events), narration channel, and the
+anomaly-to-action contract, designed together with the steward's
+fixtures.
