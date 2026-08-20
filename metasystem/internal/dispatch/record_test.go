@@ -578,8 +578,9 @@ func TestProtocolErrorDefersDuringCancellation(t *testing.T) {
 	// concurrently with the cancel. The stamp must defer — it would
 	// otherwise flip the record failed AND erase the marker.
 	err := RecordProtocolError(root, "job-a", "running", "malformed return", "")
-	if err == nil {
-		t.Fatal("the protocol-error stamp must defer on a marked record")
+	var op *OpError
+	if err == nil || !errors.As(err, &op) || op.Code != 3 {
+		t.Fatalf("the stamp must defer with the silent-refusal shape (exit 3) the adapter treats as lawful: %v", err)
 	}
 	record := readRecord(t, root, "job-a")
 	if record["status"] != "running" || record["phase"] != "cancelling" {
@@ -590,5 +591,44 @@ func TestProtocolErrorDefersDuringCancellation(t *testing.T) {
 	})
 	if _, err := RecordCAS(root, "job-a", "running", "cancelled", conclude); err != nil {
 		t.Fatalf("the cancel concludes: %v", err)
+	}
+}
+
+func TestOwnershipWriteVoidsDuringCancellation(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	setupPending(t, root, "job-a")
+
+	// The F-10 interleave: cancel marks the pending record, then the
+	// launch tries to record its group and open the start gate via
+	// the ownership pending→pending write. Once cancelling, only
+	// cancelled and a genuine completion proceed — cancelled work
+	// must never start executing.
+	mark := writeJSON(t, filepath.Join(t.TempDir(), "mark.json"), map[string]any{
+		"phase": "cancelling",
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "pending", mark); err != nil {
+		t.Fatalf("marker: %v", err)
+	}
+	ownership := writeJSON(t, filepath.Join(t.TempDir(), "own.json"), map[string]any{
+		"pid": 4242, "pidStartedAt": 99, "pgid": 4242,
+	})
+	observed, err := RecordCAS(root, "job-a", "pending", "pending", ownership)
+	if err == nil || observed != "observed=cancelling" {
+		t.Fatalf("the ownership write must void on a marked record: %q %v", observed, err)
+	}
+	record := readRecord(t, root, "job-a")
+	if record["pid"] != nil {
+		t.Fatalf("no group may be recorded on a marked record: %v", record["pid"])
+	}
+	conclude := writeJSON(t, filepath.Join(t.TempDir(), "conclude.json"), map[string]any{
+		"phase": "cancelled", "error": nil,
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "cancelled", conclude); err != nil {
+		t.Fatalf("the cancel concludes the never-launched record: %v", err)
+	}
+	record = readRecord(t, root, "job-a")
+	if record["status"] != "cancelled" || record["groupDeathProvenAt"] != nil {
+		t.Fatalf("cancelled-before-launch claims no death: %v/%v", record["status"], record["groupDeathProvenAt"])
 	}
 }

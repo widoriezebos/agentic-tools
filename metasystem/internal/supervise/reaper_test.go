@@ -405,3 +405,39 @@ func TestReaperHonorsTheCancellingMarker(t *testing.T) {
 		t.Fatalf("a live marked custodian stays with the cancel path, got %v", got["status"])
 	}
 }
+
+func TestReaperConcludesAMarkedRecordWithNoProcess(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Unix(1786000000, 0).UTC()
+	// A cancel marked a pending record whose launch never recorded a
+	// group (the ownership write voids on the marker): no custodian
+	// exists to prove dead, and nothing but this pass will ever
+	// conclude it. No death is claimed.
+	marked := writeJobRecord(t, dir, "marked-pidless", map[string]any{
+		"jobId": "marked-pidless", "status": "pending", "phase": "cancelling",
+		"pid": nil, "instanceTag": "job-mp",
+		"startedAt": now.Add(-1 * time.Minute).Format(isoSecond),
+	})
+	// An UNMARKED pidless pending record still defers — it may be
+	// inside its launch handshake.
+	handshaking := writeJobRecord(t, dir, "handshaking", map[string]any{
+		"jobId": "handshaking", "status": "pending",
+		"pid": nil, "instanceTag": "job-hs",
+		"startedAt": now.Add(-1 * time.Minute).Format(isoSecond),
+	})
+	cfg := ReaperConfig{
+		JobsDir:   dir,
+		Now:       func() time.Time { return now },
+		Custodian: fakeCustody{}.liveness,
+		Apply:     casApplier(t, dir),
+	}
+	if err := cfg.ReaperPass(); err != nil {
+		t.Fatalf("reaper pass: %v", err)
+	}
+	if got := readStatus(t, marked); got["status"] != "cancelled" || got["groupDeathProvenAt"] != nil {
+		t.Fatalf("a marked pidless record concludes cancelled with no death claim: %v/%v", got["status"], got["groupDeathProvenAt"])
+	}
+	if got := readStatus(t, handshaking); got["status"] != "pending" {
+		t.Fatalf("an unmarked handshaking record is deferred: %v", got["status"])
+	}
+}

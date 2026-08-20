@@ -115,6 +115,15 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	// when its budget has expired.
 	pid, hasPid := recordInt(record["pid"])
 	if !hasPid || pid < 1 {
+		// A marked record with NO recorded process has no group to
+		// prove dead and no launch that can still record one (the
+		// ownership write voids on the marker and kills its child):
+		// nothing but this pass will ever conclude it. No death is
+		// claimed — cancelled-before-launch is its own honest shape.
+		if phase, _ := record["phase"].(string); phase == "cancelling" {
+			return cfg.transition(path, record, status, "cancelled", "cancel-honored",
+				map[string]any{"error": nil, "phase": "supervision"})
+		}
 		return nil
 	}
 	start, _ := recordInt(record["pidStartedAt"])

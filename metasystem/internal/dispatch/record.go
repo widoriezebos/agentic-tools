@@ -299,15 +299,17 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		}
 		// A cancellation in progress voids any competing advance,
 		// HERE — the one lock every writer passes through. A loss
-		// verdict (a reaper that read the record before the marker
-		// landed) would conclude the TERMed group failed; a
-		// handshake's pending→running would ERASE the marker and
-		// hand the reaper the same stale world one write later. Once
-		// cancelling, the only forward path is cancelled — a genuine
-		// completion that beat the kill stays lawful, everything
-		// else defers like a lost compare.
+		// verdict would conclude the TERMed group failed; a
+		// handshake would erase the marker; a launch's ownership
+		// write (pending→pending) would record a fresh group and
+		// open the start gate for work the operator already stopped.
+		// Once cancelling, the ONLY writes that proceed are the
+		// conclude to cancelled and a genuine completion that beat
+		// the kill; everything else — loss verdicts, the handshake,
+		// same-status metadata, ownership — defers like a lost
+		// compare.
 		if asString(record["phase"]) == "cancelling" &&
-			(target == "failed" || target == "timeout" || target == "running") {
+			target != "cancelled" && target != "completed" {
 			observed = "observed=cancelling"
 			return silentRefusal(3)
 		}

@@ -585,11 +585,20 @@ launch_adapter() { # runtime verb job tag
   # cancel concluded it mid-launch): the process this launch just
   # started must die NOW, not linger until its start-gate timeout —
   # the record must never claim an outcome while an unrecorded
-  # group lives on.
+  # group lives on. Killing needs IDENTITY, never a number: the CAS
+  # can wait long enough for the gated adapter to time out and the
+  # pid to be reused, so every signal re-proves the launch-captured
+  # start identity first, the same ladder wind_down_group climbs.
   if ! record_cas "$job" pending pending "$patch"; then
-    kill -TERM -- "-$pid" 2>/dev/null || true
-    sleep 0.1
-    kill -KILL -- "-$pid" 2>/dev/null || true
+    if [[ "$("$ms" proc started-at --pid "$pid" 2>/dev/null || true)" == "$pid_started" ]]; then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      local lost_until=$(( $(date +%s) + 2 ))
+      while [[ "$("$ms" proc started-at --pid "$pid" 2>/dev/null || true)" == "$pid_started" ]] \
+        && (( $(date +%s) < lost_until )); do sleep 0.05; done
+      if [[ "$("$ms" proc started-at --pid "$pid" 2>/dev/null || true)" == "$pid_started" ]]; then
+        kill -KILL -- "-$pid" 2>/dev/null || true
+      fi
+    fi
     return 1
   fi
   touch "$gate"
@@ -1456,13 +1465,26 @@ internal_cancel() {
   if ! record_cas "$job" "$status" "$status" "$patch"; then
     status=$(json_field "$record" status)
     case "$status" in
-      pending|running) release_lifecycle_lock "$job"; die 1 "cancel could not mark $job; refusing to kill an unmarked job" ;;
+      pending|running)
+        # An already-marked record is a PRIOR cancel's footprint (a
+        # crash between mark and conclude, or a concurrent retry):
+        # the mark is in place, so this cancel proceeds to finish
+        # the job the earlier one started. Anything else refuses —
+        # killing an unmarked job reopens the window.
+        if [[ "$(json_field "$record" phase 2>/dev/null || true)" == cancelling ]]; then
+          :
+        else
+          release_lifecycle_lock "$job"; die 1 "cancel could not mark $job; refusing to kill an unmarked job"
+        fi ;;
       *) release_lifecycle_lock "$job"; exit 0 ;;
     esac
   fi
   wind_down_group "$record" || { release_lifecycle_lock "$job"; exit 1; }
   patch=$(mktemp "$record_locks/cancel.XXXXXX")
-  if [[ -n "$(json_field "$record" pgid 2>/dev/null || true)" ]]; then
+  # json_field renders a JSON null as the string "null": the death
+  # proof needs a REAL group id, so the predicate is numeric.
+  cancel_pgid=$(json_field "$record" pgid 2>/dev/null || true)
+  if [[ "$cancel_pgid" =~ ^[0-9]+$ ]]; then
     printf '{"error":null,"phase":"cancelled","groupDeathProvenAt":"%s"}\n' "$(now_iso)" >"$patch"
   else
     # No group was ever recorded: the record must not claim a death
