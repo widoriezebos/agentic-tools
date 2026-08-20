@@ -73,10 +73,19 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{}, err
 	}
 
+	// The rollback DISCRIMINATION (R8-11): a descendant revert
+	// restoring an older valid state is accepted — the tree is the
+	// truth — with the prefix diagnosis REPORTED, never gating.
+	detail := "accepted " + short(fetched)
+	if acceptedErr == nil {
+		if diagnosed, diagErr := PrefixDiagnosis(e.Root, accepted, fetched); diagErr == nil && len(diagnosed) > 0 {
+			detail += "; " + strings.Join(diagnosed, "; ")
+		}
+	}
 	if err := AdvanceAccepted(e.Root, fetched); err != nil {
 		return AdvanceResult{}, err
 	}
-	return AdvanceResult{Tip: fetched, Advanced: true, Detail: "accepted " + short(fetched)}, nil
+	return AdvanceResult{Tip: fetched, Advanced: true, Detail: detail}, nil
 }
 
 // treeIdentity reads the root record's adoption identity at a
