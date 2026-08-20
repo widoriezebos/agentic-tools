@@ -2,8 +2,10 @@ package steward
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeFileRaw(path, content string) error {
@@ -89,5 +91,83 @@ func TestMalformedIntentSurfacesByName(t *testing.T) {
 	}
 	if _, err := LiveIntents(root); err == nil || !strings.Contains(err.Error(), "malformed") {
 		t.Fatalf("a torn intent must surface, never be skipped: %v", err)
+	}
+}
+
+func TestUnreadableStoresFailClosed(t *testing.T) {
+	root := t.TempDir()
+	if err := MintIntent(root, testIntent("fc-1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(intentsDir(root), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(intentsDir(root), 0o755)
+	if _, err := LiveIntents(root); err == nil {
+		t.Fatal("an unreadable intent store must fail the read, not look empty")
+	}
+	if err := QueueNotification(root, PendingNotification{Nonce: "fc-p", Message: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(pendingDir(root), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(pendingDir(root), 0o755)
+	if _, err := PendingNotifications(root); err == nil {
+		t.Fatal("an unreadable pending store must fail the read, not look empty")
+	}
+	if err := os.MkdirAll(consumedDir(root), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(consumedDir(root), 0o755)
+	if _, err := ConsumedActive(root); err == nil {
+		t.Fatal("an unreadable consumed store must fail the read, not look empty")
+	}
+}
+
+func TestFailedCancelStillRetiresTheAuthorization(t *testing.T) {
+	root := t.TempDir()
+	if err := MintIntent(root, testIntent("fc-2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cancelledDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(cancelledDir(root), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(cancelledDir(root), 0o755)
+	if err := CancelIntent(root, "fc-2", "test"); err == nil {
+		t.Fatal("an unwritable tombstone store must surface as an error")
+	}
+	// The safe direction: the live authorization died before the
+	// tombstone failed — a retry cannot resume a half-preparation.
+	if live, _ := LiveIntents(root); len(live) != 0 {
+		t.Fatalf("the live authorization must be gone even when the tombstone fails: %v", live)
+	}
+}
+
+func TestConsumptionRestampsTheSetupGrace(t *testing.T) {
+	root := t.TempDir()
+	it := testIntent("fc-3")
+	it.Notified = true
+	if err := MintIntent(root, it); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(filepath.Join(intentsDir(root), "fc-3.json"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ConsumeIntent(root, "fc-3"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(consumedDir(root), "fc-3.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The reaper's grace measures from this mtime: an intent that sat
+	// through a notifier outage must still get its full setup window.
+	if time.Since(fi.ModTime()) > time.Minute {
+		t.Fatalf("consumption must restamp the grace anchor: %v", fi.ModTime())
 	}
 }

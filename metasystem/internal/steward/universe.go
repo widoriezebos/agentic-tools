@@ -59,6 +59,7 @@ func supplementWorkers(repoRoot string) (live, unprovable int) {
 				PidStartedAt  *int64  `json:"pidStartedAt"`
 				PidStartTicks *int64  `json:"pidStartTicks"`
 				BootID        string  `json:"bootId"`
+				Status        string  `json:"status"`
 				EndedAt       *string `json:"endedAt"`
 				ExitCode      *int64  `json:"exitCode"`
 			}
@@ -66,7 +67,17 @@ func supplementWorkers(repoRoot string) (live, unprovable int) {
 				unprovable++
 				continue
 			}
+			// A run is terminal by its STATUS: draining stamps endedAt
+			// while descendants still work, so timestamps prove
+			// nothing. Records without a status field keep the
+			// timestamp reading.
 			terminal := record.EndedAt != nil || record.ExitCode != nil
+			switch record.Status {
+			case "green", "red", "ended-unknown", "launch-failed":
+				terminal = true
+			case "launching", "running", "draining":
+				terminal = false
+			}
 			if record.Pid == nil || *record.Pid <= 0 {
 				// Only a RUN can be busy without a pid (launching):
 				// a non-terminal run record blocks the proof. Other

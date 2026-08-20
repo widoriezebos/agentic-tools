@@ -117,3 +117,25 @@ func TestAWorldThatTurnedLiveCancelsBeforeLaunch(t *testing.T) {
 		t.Fatalf("a live worker at re-arbitration must cancel: %+v launched=%d", out, launched)
 	}
 }
+
+func TestResumableIntentNamesADeliveredUnlaunchedRevival(t *testing.T) {
+	root := t.TempDir()
+	if _, ok, err := ResumableIntent(root); err != nil || ok {
+		t.Fatalf("an empty store resumes nothing: %v %v", ok, err)
+	}
+	if err := MintIntent(root, testIntent("rs-1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := ResumableIntent(root); ok {
+		t.Fatal("an undelivered intent must not resume — the delivery gate comes first")
+	}
+	delivered := testIntent("rs-2")
+	delivered.Notified = true
+	if err := MintIntent(root, delivered); err != nil {
+		t.Fatal(err)
+	}
+	nonce, ok, err := ResumableIntent(root)
+	if err != nil || !ok || nonce != "rs-2" {
+		t.Fatalf("the delivered-but-unlaunched intent is the one to resume: %q %v %v", nonce, ok, err)
+	}
+}

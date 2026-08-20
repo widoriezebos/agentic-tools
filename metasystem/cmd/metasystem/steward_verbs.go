@@ -53,10 +53,27 @@ func runStewardTick(args []string) int {
 	// notifications drain, and a revive verdict drives the revival.
 	delivered, deliverErr := steward.DeliverPending(*repo)
 	revived := false
-	if result.Decision.Action == steward.ActRevive {
+	resume := result.Decision.Action == steward.ActRevive
+	if !resume {
+		// A delivered intent that never launched resumes here too —
+		// the external-ticker seam must not strand what the resident
+		// runner would have completed.
+		if _, ok, resumeErr := steward.ResumableIntent(*repo); resumeErr == nil && ok {
+			resume = true
+		}
+	}
+	if resume {
 		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "steward tick: revive: %v (%s)\n", err, strings.TrimSpace(string(out)))
+			// Durable, not just printed: a failed revival must reach
+			// the operator even when nobody reads this output.
+			if qErr := steward.QueueNotification(*repo, steward.PendingNotification{
+				Nonce:   "revive-failure",
+				Message: "steward: revival failed — " + strings.TrimSpace(string(out)),
+			}); qErr != nil {
+				fmt.Fprintf(os.Stderr, "steward tick: revive-failure incident could not queue: %v\n", qErr)
+			}
 		} else {
 			revived = true
 		}

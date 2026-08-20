@@ -77,11 +77,15 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	if err != nil {
 		return TickResult{}, err
 	}
-	if d.Action == ActNotify {
+	if d.Action == ActNotify || d.Action == ActRevive {
 		// A notify verdict IS the visibility the invariant promises:
 		// it goes to the queue, keyed by its verdict so the standing
 		// condition holds one pending message (redelivered after each
-		// successful delivery, held durably through an outage).
+		// successful delivery, held durably through an outage). The
+		// revive verdict queues too — the invariant says DEAD is
+		// notified within one tick, and the revival's own gated
+		// message must not be the only channel: a revival that fails
+		// before minting would otherwise loop in silence forever.
 		if err := QueueNotification(repoRoot, PendingNotification{
 			Nonce:   "verdict-" + string(d.Verdict),
 			Message: fmt.Sprintf("steward: %s — %s", d.Verdict, d.Reason),

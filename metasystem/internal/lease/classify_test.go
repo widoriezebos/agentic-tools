@@ -345,6 +345,7 @@ func TestClassifyStewardByInstalledBinaryAndIdentity(t *testing.T) {
 	root := t.TempDir()
 	bin := stageStewardInstall(t, root)
 	pid := spawnAndSettle(t, bin)
+	stageTerminalFact(t, root, pid, false)
 	got, err := Classify(root, pid)
 	if err != nil {
 		t.Fatal(err)
@@ -363,6 +364,7 @@ func TestForgedStewardIdentityDoesNotClassifySteward(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid := spawnAndSettle(t, bin)
+	stageTerminalFact(t, root, pid, false)
 	got, err := Classify(root, pid)
 	if err != nil {
 		t.Fatal(err)
@@ -377,6 +379,7 @@ func TestStewardOfAnotherRepositoryIsNotThisSteward(t *testing.T) {
 	other := t.TempDir()
 	bin := stageStewardInstall(t, other) // installed for a different repo
 	pid := spawnAndSettle(t, bin)
+	stageTerminalFact(t, root, pid, false)
 	got, err := Classify(root, pid)
 	if err != nil {
 		t.Fatal(err)
@@ -462,5 +465,23 @@ func TestAnnouncementsForFindsExactlyOurRecords(t *testing.T) {
 	}
 	if got := AnnouncementsFor(t.TempDir(), self); got != nil {
 		t.Fatalf("an empty root has none: %+v", got)
+	}
+}
+
+func TestTerminalBearingCallerOfInstalledBinaryStaysHuman(t *testing.T) {
+	root := t.TempDir()
+	bin := stageStewardInstall(t, root)
+	pid := spawnAndSettle(t, bin)
+	stageTerminalFact(t, root, pid, true)
+	got, err := Classify(root, pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Arming installs the identity for the same binary every verb
+	// runs. A person at a terminal invoking it is a person: STEWARD
+	// classification here would silently disable every human-reserved
+	// verb — taint resolution included — the moment the watchdog arms.
+	if got.Class != ClassHuman {
+		t.Fatalf("a terminal-bearing caller of the installed binary must stay HUMAN, got %+v", got)
 	}
 }

@@ -284,10 +284,13 @@ type supervisedProc struct {
 // and a process running this repository's installed steward binary — proven
 // by the installation identity record — is the STEWARD. A caller with no
 // recognised ancestor is a HUMAN exactly when it has a controlling
-// terminal — the positive fact that a person is at a shell;
-// unrecognised HEADLESS callers (a stray cron job, an unenrolled
-// scheduler) are UNTRUSTED and refused by the authority gates,
-// closing the accidental-privilege fall-through.
+// terminal — the positive fact that a person is at a shell — and that
+// fact outranks the caller's own executable: arming the watchdog
+// must never reclassify a person or a main's work as STEWARD. Only a
+// caller nothing else recognises is tested against the installed
+// binary; unrecognised HEADLESS callers (a stray cron job, an
+// unenrolled scheduler) are UNTRUSTED and refused by the authority
+// gates, closing the accidental-privilege fall-through.
 func Classify(root string, caller int64) (Classification, error) {
 	probe, err := fixtureProbe(root)
 	if err != nil {
@@ -309,11 +312,6 @@ func Classify(root string, caller int64) (Classification, error) {
 		return Classification{}, err
 	}
 	stewardBinary := verifiedStewardBinary(root)
-	if stewardBinary != "" {
-		if command, cok := ProcessCommand(caller, probe); cok && sameExecutable(commandExecutable(command), stewardBinary) {
-			return Classification{Class: ClassSteward, Pid: caller}, nil
-		}
-	}
 	seen := map[int64]bool{caller: true}
 	current, ok := ParentPid(caller)
 	for ok && !seen[current] {
@@ -350,6 +348,18 @@ func Classify(root string, caller int64) (Classification, error) {
 	for pid := range seen {
 		if entry, present := probeFixtureTerminal(pid, probe); present && entry {
 			return Classification{Class: ClassHuman}, nil
+		}
+	}
+	// The installed binary itself, headless and otherwise
+	// unrecognised, is the STEWARD: the runner detaches from every
+	// session, so nothing above matched it. This test runs LAST on
+	// purpose — a MAIN's work stays MAIN's and a person at a terminal
+	// stays HUMAN even when they invoke the very same binary; arming
+	// the watchdog must never reclassify them and disable the
+	// human-reserved verbs.
+	if stewardBinary != "" {
+		if command, cok := ProcessCommand(caller, probe); cok && sameExecutable(commandExecutable(command), stewardBinary) {
+			return Classification{Class: ClassSteward, Pid: caller}, nil
 		}
 	}
 	return Classification{Class: ClassUntrusted}, nil

@@ -2161,7 +2161,8 @@ export METASYSTEM_SKIP_AGENT_FIXTURES=1
 # revival flows through the real dispatcher into the fake adapter, returns
 # on the role's schema, and the reaper closes the chain. Companion legs
 # pin the refusals: extra selection flags, a replayed authorization, a
-# staged-bytes drift, and a superseded installation generation.
+# and staged-bytes drift (the superseded-generation refusal is
+# pinned in the Go tests).
 steward_repo="$agent_fixture/steward-repo"
 cp -R "$agent_repo" "$steward_repo"
 steward_repo=$(cd "$steward_repo" && pwd -P)

@@ -183,3 +183,28 @@ func TestDeliveredRevivalMessageCompletesTheGate(t *testing.T) {
 		t.Fatalf("the gate-complete intent launches exactly once: %+v %d %v", out, launched, err)
 	}
 }
+
+func TestReviveVerdictQueuesTheIncidentToo(t *testing.T) {
+	root := gitRepoWithCurrentGoal(t)
+	census := fakeCensus{workers: Workers{CensusComplete: true}}
+	r := tickN(t, root, TickConfig{}, census, 1)
+	if r.Decision.Action != ActRevive {
+		t.Fatalf("this world revives: %+v", r.Decision)
+	}
+	// The invariant says DEAD with open work is notified within one
+	// tick. The revival's own gated message must not be the only
+	// channel — a revival failing before its mint would loop silently.
+	pending, err := PendingNotifications(root)
+	if err != nil || len(pending) == 0 {
+		t.Fatalf("the revive verdict is an incident the operator hears about: %v %v", pending, err)
+	}
+	found := false
+	for _, n := range pending {
+		if strings.Contains(n.Message, "stalled-dead") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the incident names its verdict: %v", pending)
+	}
+}

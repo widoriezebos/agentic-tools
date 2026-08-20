@@ -103,9 +103,31 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		if _, deliverErr := DeliverPending(repoRoot); deliverErr != nil {
 			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
 		}
-		if err == nil && result.Decision.Action == ActRevive && revive != nil {
+		resume := err == nil && result.Decision.Action == ActRevive
+		if !resume {
+			// A delivered intent whose launch never happened (a
+			// notifier outage that recovered, a crashed revive) holds
+			// the active-continuation guard and would otherwise never
+			// complete: the verdict stays notify-only forever. Resume
+			// it — CompleteRevival re-arbitrates and launches or
+			// cancels on the current world.
+			if _, ok, resumeErr := ResumableIntent(repoRoot); resumeErr == nil && ok {
+				resume = true
+			}
+		}
+		if resume && revive != nil {
 			if reviveErr := revive(); reviveErr != nil {
 				fmt.Fprintf(os.Stderr, "revival failed: %v\n", reviveErr)
+				// The failure is an incident, not a log line: a revival
+				// that dies before minting its intent would otherwise
+				// retry silently every tick — armed, dead worker, open
+				// goal, and both visibility channels quiet.
+				if qErr := QueueNotification(repoRoot, PendingNotification{
+					Nonce:   "revive-failure",
+					Message: "steward: revival failed — " + reviveErr.Error(),
+				}); qErr != nil {
+					fmt.Fprintf(os.Stderr, "revive-failure incident could not queue: %v\n", qErr)
+				}
 			}
 		}
 		deadline := time.Now().Add(interval)
@@ -225,8 +247,13 @@ func Disarm(repoRoot string) (string, error) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	_ = syscall.Kill(int(rec.Pid), syscall.SIGTERM)
-	return "disarmed (signalled)", nil
+	// Revalidate beside the signal: five seconds passed since the
+	// last look, and a freed pid may already belong to a stranger.
+	if recNow, still := liveRunner(top); still && recNow.Pid == rec.Pid {
+		_ = syscall.Kill(int(rec.Pid), syscall.SIGTERM)
+		return "disarmed (signalled)", nil
+	}
+	return "disarmed", nil
 }
 
 // liveRunner reads the record and proves the process by the

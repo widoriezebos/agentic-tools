@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Intent is one intervention's durable record.
@@ -71,14 +72,17 @@ func CancelIntent(repoRoot, nonce, reason string) error {
 	if err := os.MkdirAll(cancelledDir(repoRoot), 0o755); err != nil {
 		return err
 	}
+	// The live authorization dies FIRST: a crash between the remove
+	// and the tombstone loses only bookkeeping, never leaves a live
+	// half-prepared intent a retry could resume.
+	if err := os.Remove(live); err != nil {
+		return err
+	}
 	target := filepath.Join(cancelledDir(repoRoot), nonce+".json")
 	if err := os.WriteFile(target+".tmp", out, 0o644); err != nil {
 		return err
 	}
-	if err := os.Rename(target+".tmp", target); err != nil {
-		return err
-	}
-	return os.Remove(live)
+	return os.Rename(target+".tmp", target)
 }
 
 // MintIntent writes the record durably. Nothing may launch before
@@ -148,6 +152,11 @@ func ConsumeIntent(repoRoot, nonce string) (Intent, error) {
 	if err := os.Rename(live, consumed); err != nil {
 		return Intent{}, fmt.Errorf("intent %s already consumed or gone: %w", nonce, err)
 	}
+	// The reaper's setup grace measures from this file's mtime; the
+	// rename kept the mint time, so restamp — the grace starts at
+	// consumption, not at mint.
+	now := time.Now()
+	_ = os.Chtimes(consumed, now, now)
 	return it, nil
 }
 
@@ -190,9 +199,18 @@ func StampLaunch(repoRoot, nonce string) error {
 // of the steward's authority over its continuation, from consumption
 // through the reaper's close.
 func ConsumedActive(repoRoot string) ([]Intent, error) {
-	paths, err := filepath.Glob(filepath.Join(consumedDir(repoRoot), "*.json"))
-	if err != nil {
+	entries, err := os.ReadDir(consumedDir(repoRoot))
+	if err != nil && !os.IsNotExist(err) {
+		// An unreadable store must fail the read, not look empty:
+		// a hidden authorization would bypass the one-continuation
+		// guard, and hidden incidents would go silent.
 		return nil, err
+	}
+	var paths []string
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+			paths = append(paths, filepath.Join(consumedDir(repoRoot), entry.Name()))
+		}
 	}
 	var out []Intent
 	for _, p := range paths {
@@ -230,9 +248,18 @@ func ConsumedActiveJob(repoRoot string) (string, bool, error) {
 // LiveIntents lists unconsumed records — the next tick's
 // reconciliation input and the one-active-continuation guard.
 func LiveIntents(repoRoot string) ([]Intent, error) {
-	paths, err := filepath.Glob(filepath.Join(intentsDir(repoRoot), "*.json"))
-	if err != nil {
+	entries, err := os.ReadDir(intentsDir(repoRoot))
+	if err != nil && !os.IsNotExist(err) {
+		// An unreadable store must fail the read, not look empty:
+		// a hidden authorization would bypass the one-continuation
+		// guard, and hidden incidents would go silent.
 		return nil, err
+	}
+	var paths []string
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+			paths = append(paths, filepath.Join(intentsDir(repoRoot), entry.Name()))
+		}
 	}
 	var out []Intent
 	for _, p := range paths {
@@ -281,9 +308,18 @@ func QueueNotification(repoRoot string, n PendingNotification) error {
 
 // PendingNotifications lists what still awaits delivery.
 func PendingNotifications(repoRoot string) ([]PendingNotification, error) {
-	paths, err := filepath.Glob(filepath.Join(pendingDir(repoRoot), "*.json"))
-	if err != nil {
+	entries, err := os.ReadDir(pendingDir(repoRoot))
+	if err != nil && !os.IsNotExist(err) {
+		// An unreadable store must fail the read, not look empty:
+		// a hidden authorization would bypass the one-continuation
+		// guard, and hidden incidents would go silent.
 		return nil, err
+	}
+	var paths []string
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+			paths = append(paths, filepath.Join(pendingDir(repoRoot), entry.Name()))
+		}
 	}
 	var out []PendingNotification
 	for _, p := range paths {

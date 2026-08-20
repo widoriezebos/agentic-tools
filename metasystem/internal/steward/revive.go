@@ -53,15 +53,20 @@ func PrepareIntent(repoRoot string, it Intent) error {
 		Note: fmt.Sprintf("steward revival: intent %s revives %s via job %s", it.Nonce, it.Goal, it.JobId),
 	}); res.Code != 0 {
 		// A half-prepared intent must not survive: it would suppress
-		// the runner and let a manual retry skip preparation.
-		_ = CancelIntent(repoRoot, it.Nonce, "preparation failed at the receipt")
+		// the runner and let a manual retry skip preparation. A
+		// cancel that ALSO fails leaves a live intent — say so.
+		if cancelErr := CancelIntent(repoRoot, it.Nonce, "preparation failed at the receipt"); cancelErr != nil {
+			return fmt.Errorf("the revival receipt did not write (%v) AND the intent could not cancel (%v): a live half-prepared authorization remains — operator attention needed", res.Err, cancelErr)
+		}
 		return fmt.Errorf("the revival receipt did not write: %v", res.Err)
 	}
 	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce:   it.Nonce,
 		Message: fmt.Sprintf("steward: reviving %s (worker provably dead); job %s", it.Goal, it.JobId),
 	}); err != nil {
-		_ = CancelIntent(repoRoot, it.Nonce, "preparation failed at the notification queue")
+		if cancelErr := CancelIntent(repoRoot, it.Nonce, "preparation failed at the notification queue"); cancelErr != nil {
+			return fmt.Errorf("the notification could not queue (%v) AND the intent could not cancel (%v): a live half-prepared authorization remains — operator attention needed", err, cancelErr)
+		}
 		return err
 	}
 	return nil
@@ -188,4 +193,23 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 		MaxRevivals:        cfg.MaxRevivals,
 		ActiveContinuation: others > 0,
 	}), workReason, nil
+}
+
+// ResumableIntent names a live intent whose notification already
+// delivered — a revival stopped between its gate and its critical
+// section (a notifier outage recovered, a crashed revive). Both
+// schedulers resume it; without this, a recovered outage would
+// strand the revival forever behind its own active-continuation
+// guard.
+func ResumableIntent(repoRoot string) (string, bool, error) {
+	live, err := LiveIntents(repoRoot)
+	if err != nil {
+		return "", false, err
+	}
+	for _, it := range live {
+		if it.Notified {
+			return it.Nonce, true, nil
+		}
+	}
+	return "", false, nil
 }
