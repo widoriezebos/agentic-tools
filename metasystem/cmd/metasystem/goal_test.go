@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,6 +65,21 @@ func writeLedger(t *testing.T, root, body string) {
 	}
 }
 
+// stageHumanTerminal pins the caller's controlling-terminal fact:
+// HUMAN is positive-only, and a headless test runner must not decide
+// these legs differently from a person's desk.
+func stageHumanTerminal(t *testing.T, root string, pid int64) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	table := filepath.Join(t.TempDir(), "terminal-table.json")
+	if err := os.WriteFile(table, []byte(fmt.Sprintf(`{"%d": {"terminal": true}}`, pid)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+}
+
 func TestGoalCallerGenesisBoundary(t *testing.T) {
 	goalFree := "# Goals\n\n## Goal-free: declared 2026-08-15T12:00:00Z by human over abc\n"
 	withGoals := "# Goals\n\n## Current goal: solo — One goal\n- Origin: main\n- Next step: Do.\n"
@@ -98,16 +114,18 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 	})
 
 	t.Run("human passes genesis and holder-only alike", func(t *testing.T) {
-		root := t.TempDir() // no adapters: the ancestry reads HUMAN
+		root := t.TempDir()
 		writeLedger(t, root, goalFree)
-		caller, err := goalCaller(root, childPid(t), "reconcile")
+		pid := childPid(t)
+		stageHumanTerminal(t, root, pid)
+		caller, err := goalCaller(root, pid, "reconcile")
 		if err != nil {
 			t.Fatalf("human genesis: %v", err)
 		}
 		if caller.Class != "HUMAN" || !caller.Genesis {
 			t.Fatalf("want a HUMAN genesis caller, got %+v", caller)
 		}
-		if _, err := goalCaller(root, childPid(t), "open"); err != nil {
+		if _, err := goalCaller(root, pid, "open"); err != nil {
 			t.Fatalf("human open: %v", err)
 		}
 	})
@@ -115,8 +133,10 @@ func TestGoalCallerGenesisBoundary(t *testing.T) {
 	t.Run("a broken shape probe refuses the shape, never the human", func(t *testing.T) {
 		root := t.TempDir()
 		writeLedger(t, root, goalFree)
+		pid := childPid(t)
+		stageHumanTerminal(t, root, pid)
 		t.Setenv("PATH", t.TempDir()) // no git anywhere
-		caller, err := goalCaller(root, childPid(t), "reconcile")
+		caller, err := goalCaller(root, pid, "reconcile")
 		if err != nil {
 			t.Fatalf("the human must keep genesis when the probe cannot run: %v", err)
 		}

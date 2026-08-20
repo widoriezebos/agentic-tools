@@ -46,14 +46,44 @@ func writeJSON(t *testing.T, path string, body string) {
 	}
 }
 
-func TestClassifyHumanWhenNoAncestorRecognised(t *testing.T) {
+// stageTerminalFact pins the caller's controlling-terminal fact so
+// these tests decide identically at a desk and on a headless runner.
+func stageTerminalFact(t *testing.T, root string, pid int64, terminal bool) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	table := filepath.Join(t.TempDir(), "table.json")
+	body := fmt.Sprintf(`{"%d": {"terminal": %v}}`, pid, terminal)
+	if err := os.WriteFile(table, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+}
+
+func TestClassifyHumanWhenNoAncestorRecognisedAtATerminal(t *testing.T) {
 	root := t.TempDir()
-	got, err := Classify(root, childOf(t))
+	caller := childOf(t)
+	stageTerminalFact(t, root, caller, true)
+	got, err := Classify(root, caller)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Class != ClassHuman {
 		t.Fatalf("want HUMAN, got %+v", got)
+	}
+}
+
+func TestClassifyHeadlessUnrecognisedIsUntrusted(t *testing.T) {
+	root := t.TempDir()
+	caller := childOf(t)
+	stageTerminalFact(t, root, caller, false)
+	got, err := Classify(root, caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Class != ClassUntrusted {
+		t.Fatalf("a headless unrecognised caller must be UNTRUSTED, got %+v", got)
 	}
 }
 

@@ -78,6 +78,7 @@ func (a *Authorization) entryFor(pid int64) (identity.FixtureEntry, bool) {
 		Started      *int64  `json:"started"`
 		Command      *string `json:"command"`
 		Pgid         *int64  `json:"pgid"`
+		Terminal     *bool   `json:"terminal"`
 	}
 	if json.Unmarshal(data, &table) != nil {
 		return identity.FixtureEntry{}, false
@@ -97,6 +98,9 @@ func (a *Authorization) entryFor(pid int64) (identity.FixtureEntry, bool) {
 	}
 	if raw.Pgid != nil {
 		entry.Pgid, entry.HasPgid = *raw.Pgid, true
+	}
+	if raw.Terminal != nil {
+		entry.Terminal, entry.HasTerminal = *raw.Terminal, true
 	}
 	return entry, true
 }

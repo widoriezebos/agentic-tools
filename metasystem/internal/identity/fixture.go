@@ -14,6 +14,8 @@ type FixtureEntry struct {
 	HasCommand   bool
 	Pgid         int64
 	HasPgid      bool
+	Terminal     bool
+	HasTerminal  bool
 }
 
 // FixtureProbe is the neutral seam fixture-capable identity decisions

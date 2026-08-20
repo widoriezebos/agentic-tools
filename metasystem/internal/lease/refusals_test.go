@@ -98,7 +98,9 @@ func TestRenewRefusesNonHolder(t *testing.T) {
 
 func TestRunHeldRunsUngatedForHuman(t *testing.T) {
 	root := t.TempDir() // empty: a fresh child has no recognised ancestry
-	code, err := RunHeld(root, childOf(t), nil, []string{"/bin/sh", "-c", "exit 3"})
+	caller := childOf(t)
+	stageTerminalFact(t, root, caller, true)
+	code, err := RunHeld(root, caller, nil, []string{"/bin/sh", "-c", "exit 3"})
 	if err != nil {
 		t.Fatalf("human run-held errored: %v", err)
 	}

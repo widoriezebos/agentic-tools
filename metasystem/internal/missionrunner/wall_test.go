@@ -3,6 +3,7 @@ package missionrunner
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -33,6 +34,7 @@ func wallRepo(t *testing.T) string {
 	run("init", "-q")
 	writeText(t, filepath.Join(root, ".gitignore"), "artifacts/\n")
 	writeText(t, filepath.Join(root, "main.go"), "package main\n")
+	writeText(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=fake\n")
 	run("add", "-A")
 	run("commit", "-qm", "baseline")
 	return root
@@ -1736,6 +1738,7 @@ func ledgerTamperPark(t *testing.T, tamper func(string) string) (*Engine, string
 			t.Fatal(err)
 		}
 	}
+	stageHumanShell(t)
 	entries, _ := state["workspaceTaint"].(map[string]any)["entries"].([]any)
 	lastEntry, _ := entries[len(entries)-1].(map[string]any)
 	taintID, _ := jsonInt(lastEntry["taintId"])
@@ -1839,15 +1842,31 @@ func parkedSoloBuildMission(t *testing.T) *Engine {
 	}
 	// The in-process run announced THIS test pid as the checkout main; a
 	// real resolution runs from the human's own shell with no announced
-	// ancestry. Clearing the dead run's announcements simulates exactly
-	// that, so the human-reserved gate sees ClassHuman.
+	// ancestry. Clearing the dead run's announcements — and pinning the
+	// person-at-a-terminal fact, now that HUMAN is positive-only —
+	// simulates exactly that, so the human-reserved gate sees ClassHuman.
 	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
 	for _, path := range announcements {
 		if err := os.Remove(path); err != nil {
 			t.Fatal(err)
 		}
 	}
+	stageHumanShell(t)
 	return engine
+}
+
+// stageHumanShell pins this test process's person-at-a-terminal fact:
+// HUMAN is positive-only, and the human-reserved resolution gates must
+// decide identically at a desk and on a headless runner. The fixture
+// repositories declare fake runtimes in their committed baseline, which
+// authorizes the staged table.
+func stageHumanShell(t *testing.T) {
+	t.Helper()
+	table := filepath.Join(t.TempDir(), "terminal-table.json")
+	if err := os.WriteFile(table, []byte(fmt.Sprintf(`{"%d": {"terminal": true}}`, os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
 }
 
 // The O3 positive after a resolution: FRESH work issued at the new

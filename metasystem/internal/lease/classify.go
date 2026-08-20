@@ -55,6 +55,7 @@ const (
 	ClassAdapterSupervisor = "ADAPTER-SUPERVISOR"
 	ClassSteward           = "STEWARD"
 	ClassHuman             = "HUMAN"
+	ClassUntrusted         = "UNTRUSTED"
 )
 
 // Classification is who a caller is relative to this checkout.
@@ -282,7 +283,11 @@ type supervisedProc struct {
 // DELEGATE, a supervision or adapter-supervisor ancestor names it as such,
 // and a process running this repository's installed steward binary — proven
 // by the installation identity record — is the STEWARD. A caller with no
-// recognised ancestor is a HUMAN.
+// recognised ancestor is a HUMAN exactly when it has a controlling
+// terminal — the positive fact that a person is at a shell;
+// unrecognised HEADLESS callers (a stray cron job, an unenrolled
+// scheduler) are UNTRUSTED and refused by the authority gates,
+// closing the accidental-privilege fall-through.
 func Classify(root string, caller int64) (Classification, error) {
 	probe, err := fixtureProbe(root)
 	if err != nil {
@@ -335,7 +340,31 @@ func Classify(root string, caller int64) (Classification, error) {
 		}
 		current, ok = ParentPid(current)
 	}
-	return Classification{Class: ClassHuman}, nil
+	if has, tok := identity.ControllingTerminal(caller, probe); tok && has {
+		return Classification{Class: ClassHuman}, nil
+	}
+	// A person's subprocess can lose the terminal (setsid, some
+	// wrappers); fixture-staged ancestor facts cover it. Only the
+	// FIXTURE answers for ancestors — kernel ancestry would make the
+	// verdict depend on where the test suite happens to run.
+	for pid := range seen {
+		if entry, present := probeFixtureTerminal(pid, probe); present && entry {
+			return Classification{Class: ClassHuman}, nil
+		}
+	}
+	return Classification{Class: ClassUntrusted}, nil
+}
+
+// probeFixtureTerminal reads a pid's staged terminal fact, fixture
+// only — never the kernel.
+func probeFixtureTerminal(pid int64, probe identity.FixtureProbe) (bool, bool) {
+	if probe == nil {
+		return false, false
+	}
+	if entry, ok := probe.FixtureEntry(pid); ok && entry.HasTerminal {
+		return entry.Terminal, true
+	}
+	return false, false
 }
 
 // verifiedStewardBinary authenticates this repository's steward
