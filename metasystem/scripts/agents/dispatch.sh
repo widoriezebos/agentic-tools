@@ -829,8 +829,11 @@ dispatch_job() {
   if [[ -n "$steward_intent" ]]; then
     # The unattended continuation: every launch input comes from the
     # consumed authorization; nothing here is caller-selectable.
-    [[ -z "$role$brief$runtime_override$model_override$job$permissions_override$mission_override$workspace$reviews" && $use_worktree -eq 0 && $serving_goal -eq 0 ]] \
+    [[ -z "$role$brief$runtime_override$model_override$job$permissions_override$mission_override$workspace$reviews$mode_override$stream$cap_override" && $use_worktree -eq 0 && $serving_goal -eq 0 && $wait -eq 0 && $approve_escalation -eq 0 ]] \
       || die 2 "--steward-intent admits no other selection flags; the authorization decides"
+    # An inherited mission scope would refuse or rescope the detached
+    # continuation; the authorization is the whole context.
+    unset "${!METASYSTEM_MISSION_@}"
     steward_tuple=$("$ms" steward authorize-dispatch --repo "$root" \
       --caller-pid "$entry_caller_pid" --intent "$steward_intent") \
       || die 1 "steward continuation refused: the authorization did not verify"

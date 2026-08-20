@@ -21,6 +21,17 @@ func stagedRepo(t *testing.T) string {
 	}
 	write("scripts/agents/roles/steward-continuation.md", "# Role: steward-continuation\ncontract\n")
 	write("scripts/agents/permissions/workspace.json", `{"write":["workspace"]}`)
+	top, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idPath := RepoIdentityPath(top)
+	if err := os.MkdirAll(filepath.Dir(idPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := MintIdentity(idPath, InstallIdentity{RepoIdentity: top, Generation: 1, InstallPath: "/bin/true", MintedAt: "2026-08-20T15:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
 	return root
 }
 

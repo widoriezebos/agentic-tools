@@ -69,8 +69,17 @@ anything; yield if a live worker shows fresh progress.
 	if err != nil {
 		return Intent{}, err
 	}
+	top, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return Intent{}, err
+	}
+	id, err := VerifyIdentity(RepoIdentityPath(top), top)
+	if err != nil {
+		return Intent{}, fmt.Errorf("staging requires the armed installation identity: %w", err)
+	}
 	return Intent{
 		Nonce: nonce, Goal: goal, JobId: jobId,
+		RepoIdentity: id.RepoIdentity, InstallGen: id.Generation,
 		Role: continuationRole, Permissions: continuationPermissions,
 		Runtime: runtime, Model: model,
 		RoleDigest: roleDigest, BriefDigest: briefDigest, PermsDigest: permsDigest,

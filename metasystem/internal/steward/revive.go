@@ -86,7 +86,7 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		return ReviveOutcome{}, err
 	}
 	if fence != it.FenceAtMint {
-		if _, err := ConsumeIntent(repoRoot, it.Nonce); err != nil {
+		if err := CancelIntent(repoRoot, it.Nonce, "a worker enrolled after the reservation"); err != nil {
 			return ReviveOutcome{}, err
 		}
 		return ReviveOutcome{Reason: "a worker enrolled after the reservation; revival cancelled"}, nil
@@ -101,7 +101,7 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		return ReviveOutcome{}, err
 	}
 	if d.Action != ActRevive {
-		if _, err := ConsumeIntent(repoRoot, it.Nonce); err != nil {
+		if err := CancelIntent(repoRoot, it.Nonce, "the world changed before launch: "+d.Reason); err != nil {
 			return ReviveOutcome{}, err
 		}
 		return ReviveOutcome{Reason: "the world changed before launch: " + d.Reason}, nil

@@ -48,13 +48,33 @@ func runStewardTick(args []string) int {
 		fmt.Fprintf(os.Stderr, "steward tick: %v\n", err)
 		return 1
 	}
-	out, _ := json.MarshalIndent(map[string]any{
-		"verdict":  result.Decision.Verdict,
-		"action":   result.Decision.Action,
-		"reason":   result.Decision.Reason,
-		"openWork": result.OpenWork,
-		"evidence": result.Evidence,
-	}, "", "  ")
+	// The tick is a FUNCTIONAL seam — an external ticker calling this
+	// verb gets the runner's whole pass, not a printout: pending
+	// notifications drain, and a revive verdict drives the revival.
+	delivered, deliverErr := steward.DeliverPending(*repo)
+	revived := false
+	if result.Decision.Action == steward.ActRevive {
+		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "steward tick: revive: %v (%s)\n", err, strings.TrimSpace(string(out)))
+		} else {
+			revived = true
+		}
+	}
+	report := map[string]any{
+		"verdict":   result.Decision.Verdict,
+		"action":    result.Decision.Action,
+		"reason":    result.Decision.Reason,
+		"openWork":  result.OpenWork,
+		"evidence":  result.Evidence,
+		"reaped":    result.Reaped,
+		"delivered": delivered,
+		"revived":   revived,
+	}
+	if deliverErr != nil {
+		report["deliveryProblem"] = deliverErr.Error()
+	}
+	out, _ := json.MarshalIndent(report, "", "  ")
 	fmt.Println(string(out))
 	return 0
 }
@@ -100,6 +120,21 @@ func runStewardAuthorizeDispatch(args []string) int {
 	}
 	if err := steward.VerifyStagedDigests(*repo, it); err != nil {
 		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", err)
+		return 1
+	}
+	top, absErr := filepath.Abs(*repo)
+	if absErr != nil {
+		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", absErr)
+		return 1
+	}
+	installed, idErr := steward.VerifyIdentity(steward.RepoIdentityPath(top), top)
+	if idErr != nil {
+		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: %v\n", idErr)
+		return 1
+	}
+	if it.RepoIdentity != installed.RepoIdentity || it.InstallGen != installed.Generation {
+		fmt.Fprintf(os.Stderr, "steward authorize-dispatch: the authorization was minted under installation generation %d of %q; the current installation is generation %d of %q — a superseded authorization launches nothing\n",
+			it.InstallGen, it.RepoIdentity, installed.Generation, installed.RepoIdentity)
 		return 1
 	}
 	out, _ := json.MarshalIndent(map[string]any{

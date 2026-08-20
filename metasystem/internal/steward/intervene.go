@@ -43,6 +43,41 @@ func intentsDir(repoRoot string) string {
 func consumedDir(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "consumed")
 }
+func cancelledDir(repoRoot string) string {
+	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "cancelled")
+}
+
+// CancelIntent retires a live intent WITHOUT authorizing anything:
+// the record moves to the cancelled store, which no authorization
+// path reads — a cancelled reservation can never be replayed into a
+// launch.
+func CancelIntent(repoRoot, nonce, reason string) error {
+	live := filepath.Join(intentsDir(repoRoot), nonce+".json")
+	data, err := os.ReadFile(live)
+	if err != nil {
+		return fmt.Errorf("intent %s cannot cancel: %w", nonce, err)
+	}
+	var it Intent
+	if err := json.Unmarshal(data, &it); err != nil {
+		return fmt.Errorf("intent %s malformed: %w", nonce, err)
+	}
+	it.Outcome = "cancelled: " + reason
+	out, err := json.MarshalIndent(it, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(cancelledDir(repoRoot), 0o755); err != nil {
+		return err
+	}
+	target := filepath.Join(cancelledDir(repoRoot), nonce+".json")
+	if err := os.WriteFile(target+".tmp", out, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(target+".tmp", target); err != nil {
+		return err
+	}
+	return os.Remove(live)
+}
 
 // MintIntent writes the record durably. Nothing may launch before
 // this exists; the receipt and notification reference its nonce.
