@@ -120,10 +120,17 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 
 // tipCarriesLedger reports whether the tip has a ledger root at
 // all — the pre-migration discriminator the mutation-side
-// validation and the sync-mode gate share.
+// validation and the sync-mode gate share. Absence and FAILURE are
+// different facts (round 3 finding 10): ls-tree answers absence
+// with empty output and success, while an execution failure returns
+// the error — a probe that cannot answer must never read as
+// "pre-migration, skip validation".
 func tipCarriesLedger(e Endpoint, tip string) (bool, error) {
-	_, err := gitIn(e.Root, "cat-file", "-e", tip+":"+goalsPrefix+"backlog.md")
-	return err == nil, nil
+	out, err := gitIn(e.Root, "ls-tree", "--name-only", tip, "--", goalsPrefix+"backlog.md")
+	if err != nil {
+		return false, fmt.Errorf("the tip's ledger presence cannot be proven: %w", err)
+	}
+	return strings.TrimSpace(out) != "", nil
 }
 
 // SyncModeGate refuses the durable/declared mode mismatch at EVERY
@@ -504,7 +511,13 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		// verb ran next, publishing a repair nobody reviewed. A tree
 		// that carries no ledger yet (pre-migration) validates
 		// nothing — migration owns that world.
-		if hasLedger, ledgerErr := tipCarriesLedger(e, tip); ledgerErr == nil && hasLedger {
+		hasLedger, ledgerErr := tipCarriesLedger(e, tip)
+		if ledgerErr != nil {
+			_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "ledger probe failed: "+ledgerErr.Error())
+			CleanupRefs(e, req.Opid)
+			return PublishResult{}, ledgerErr
+		}
+		if hasLedger {
 			if valErr := ValidateCommit(e.Root, tip); valErr != nil {
 				_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "captured tip refused: "+valErr.Error())
 				CleanupRefs(e, req.Opid)

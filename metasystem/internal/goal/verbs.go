@@ -190,6 +190,22 @@ func ackDisplacements(t *TreeGoals, r VerbRequest, changes []Change) []Change {
 	return append(changes, rendered)
 }
 
+// intentArgs stamps the directing human into every journaled intent
+// (round 3 finding 2): recovery reconstructs authority from the
+// stored args, and a live human-directed verb that omitted by= was
+// replayed as an AGENT — refused by its own gates or written with
+// machine attribution.
+func intentArgs(r VerbRequest, args map[string]string) map[string]string {
+	if r.Actor.Human == "" {
+		return args
+	}
+	if args == nil {
+		args = map[string]string{}
+	}
+	args["by"] = r.Actor.Human
+	return args
+}
+
 // opidLanded reports whether this operation's opid is already in
 // the file's History — the idempotent-success half of the
 // postcondition, per touched file.
@@ -218,9 +234,9 @@ func Open(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, er
 func openRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "open", Targets: []string{id}, Args: map[string]string{
+		Intent: Intent{Verb: "open", Targets: []string{id}, Args: intentArgs(r, map[string]string{
 			"intent": intent, "origin": origin, "next": nextStep,
-		}},
+		})},
 		Message: "goal open " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -274,7 +290,7 @@ func Claim(r VerbRequest, id string) (PublishResult, error) {
 func claimRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "claim", Targets: []string{id}},
+		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -325,7 +341,7 @@ func Release(r VerbRequest, id string) (PublishResult, error) {
 func releaseRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "release", Targets: []string{id}},
+		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal release " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -373,9 +389,9 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "done", Targets: []string{id}, Args: map[string]string{
+		Intent: Intent{Verb: "done", Targets: []string{id}, Args: intentArgs(r, map[string]string{
 			"conclusion": conclusion,
-		}},
+		})},
 		Message: "goal done " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -466,9 +482,9 @@ func Park(r VerbRequest, id, because string) (PublishResult, error) {
 func parkRequest(r VerbRequest, id, because string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "park", Targets: []string{id}, Args: map[string]string{
+		Intent: Intent{Verb: "park", Targets: []string{id}, Args: intentArgs(r, map[string]string{
 			"because": because,
-		}},
+		})},
 		Message: "goal park " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -530,7 +546,7 @@ func Unpark(r VerbRequest, id string) (PublishResult, error) {
 func unparkRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "unpark", Targets: []string{id}},
+		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal unpark " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -583,7 +599,7 @@ func Reopen(r VerbRequest, id string) (PublishResult, error) {
 func reopenRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "reopen", Targets: []string{id}},
+		Intent:  Intent{Verb: "reopen", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal reopen " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -761,9 +777,9 @@ func DeclareFree(r VerbRequest, origin, digest string) (PublishResult, error) {
 func declareFreeRequest(r VerbRequest, origin, digest string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "declare-free", Args: map[string]string{
+		Intent: Intent{Verb: "declare-free", Args: intentArgs(r, map[string]string{
 			"origin": origin, "digest": digest,
-		}},
+		})},
 		Message: "goal declare-free",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -813,9 +829,9 @@ func Steal(r VerbRequest, id string) (PublishResult, error) {
 func stealRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "steal", Targets: []string{id}, Args: map[string]string{
+		Intent: Intent{Verb: "steal", Targets: []string{id}, Args: intentArgs(r, map[string]string{
 			"by": r.Actor.Human,
-		}},
+		})},
 		Message: "goal steal " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -877,9 +893,9 @@ func OpenClaim(r VerbRequest, id, intent, origin, nextStep string) (PublishResul
 func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: map[string]string{
+		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: intentArgs(r, map[string]string{
 			"intent": intent, "origin": origin, "next": nextStep,
-		}},
+		})},
 		Message: "goal open --claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -936,9 +952,9 @@ func Prune(r VerbRequest, keep int) (PublishResult, error) {
 func pruneRequest(r VerbRequest, keep int) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "prune", Args: map[string]string{
+		Intent: Intent{Verb: "prune", Args: intentArgs(r, map[string]string{
 			"keep": fmt.Sprintf("%d", keep),
-		}},
+		})},
 		Message: "goal prune",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1062,7 +1078,7 @@ func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
 func claimArcRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
+		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: intentArgs(r, map[string]string{"cascade": "arc"})},
 		Message: "goal claim " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1124,7 +1140,7 @@ func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
+		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: intentArgs(r, map[string]string{"cascade": "arc"})},
 		Message: "goal release " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1186,9 +1202,9 @@ func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "park", Targets: []string{id}, Args: map[string]string{
+		Intent: Intent{Verb: "park", Targets: []string{id}, Args: intentArgs(r, map[string]string{
 			"because": because, "cascade": "arc",
-		}},
+		})},
 		Message: "goal park " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1269,7 +1285,7 @@ func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 func unparkArcRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
+		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: intentArgs(r, map[string]string{"cascade": "arc"})},
 		Message: "goal unpark " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1331,7 +1347,7 @@ func Detach(r VerbRequest, id string) (PublishResult, error) {
 func detachRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "detach", Targets: []string{id}},
+		Intent:  Intent{Verb: "detach", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal detach " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1393,7 +1409,7 @@ func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "set-arc", Targets: []string{id}, Args: map[string]string{"arc": arc}},
+		Intent:  Intent{Verb: "set-arc", Targets: []string{id}, Args: intentArgs(r, map[string]string{"arc": arc})},
 		Message: "goal set-arc " + id + " -> " + arc,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)

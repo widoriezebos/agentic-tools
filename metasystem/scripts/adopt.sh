@@ -396,13 +396,14 @@ exit 0
   if [[ -e "$hook_dir/pre-commit" ]] && grep -q "pre-commit-guard.sh" "$hook_dir/pre-commit"; then
     echo "pre-commit guard already enrolled in the target's hook; left as is"
   else
-    if [[ -e "$hook_dir/pre-commit" && -e "$hook_dir/pre-commit.local" ]]; then
-      # Never clobber (R2-15): a repository already carrying both
-      # files composed them itself once; overwriting the .local
-      # would destroy a hook this adoption never made. The goal
-      # CLI's own enrollment refuses the same shape, so mutations
-      # stay fenced until a human composes them.
-      echo "pre-commit and pre-commit.local both exist; the guard was NOT enrolled — compose them by hand" >&2
+    if [[ -e "$hook_dir/pre-commit" && -e "$hook_dir/pre-commit.local" ]] \
+      && ! grep -q "pre-commit-guard.sh" "$hook_dir/pre-commit"; then
+      # Never clobber (R2-15) — and never limp on either: adoption
+      # itself performs goal mutations (genesis), and the CLI's
+      # enrollment refuses this exact shape, so a warn-and-continue
+      # would fail later with a worse name. Refuse up front; both
+      # files stay untouched.
+      die 1 "target carries both pre-commit and pre-commit.local and neither enrolls the guard; compose them by hand, then re-run adoption"
     else
       if [[ -e "$hook_dir/pre-commit" ]]; then
         mv "$hook_dir/pre-commit" "$hook_dir/pre-commit.local"

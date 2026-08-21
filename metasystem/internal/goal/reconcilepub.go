@@ -112,9 +112,21 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		// An unknown outcome (a pushed-but-unconfirmed crash window,
 		// a failed confirming refetch) KEEPS the record and its
 		// snapshot — --refresh-only resolves it by the opid's trailer
-		// (R2-1: the old clear here deleted the only snapshot).
+		// (R2-1). The JOURNAL decides definitiveness, not the returned
+		// outcome (round 3 finding 12): pre-push failures mark the
+		// entry abandoned but return an empty result, and leaving the
+		// pending record then blocks ordinary reconcile spuriously.
+		definitive := false
 		switch res.Outcome {
 		case OutcomeRejected, OutcomeLost, OutcomeAbandoned:
+			definitive = true
+		default:
+			if entry, readErr := ReadEntry(r.Endpoint.Root, r.opid()); readErr == nil &&
+				entry.Phase == PhaseTerminal && entry.Outcome != OutcomeConfirmed && entry.Outcome != OutcomeConfirmedLate {
+				definitive = true
+			}
+		}
+		if definitive {
 			if rec, exists, _ := ReadBase(r.Endpoint.Root); exists && rec.RefreshDue {
 				_ = WriteBase(r.Endpoint.Root, BaseRecord{Commit: rec.Commit, WrittenAt: rec.WrittenAt})
 			}
@@ -258,6 +270,15 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		}
 		if !exists {
 			return nil, conflict("state", "not live on the fetched tip")
+		}
+		// The state before-value binds for edits too (round 3
+		// finding 5): a hand edit captured against queued must not
+		// publish over a concurrently landed claim as if displacement
+		// were consent. The compose case is exempt — this session's
+		// own done row already moved the goal, and ITS BaseState
+		// bound at that row.
+		if !archived && row.BaseState != "" && f.State != row.BaseState {
+			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
 		}
 		// The BASE comparison per field (F9): a concurrent edit that
 		// moved a field past the base conflicts by name — the hand

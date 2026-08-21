@@ -224,28 +224,36 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 		t.Fatal("the resolved window clears the pending flag")
 	}
 
-	// Arm two: the publish LANDED (a real confirmed opid) — the
-	// completion refreshes onto the tip that carries its trailer.
-	res, err := Open(verbReq(a, "01J5X00000000000000000GH10", "mac-a"), "landed-goal", "Landed work.", "main", "Go.")
-	if err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("open: %+v %v", res, err)
+	// Arm two: the publish LANDED — proven with the RECONCILE's OWN
+	// opid, not a bystander's (round 3 finding 4 called the old
+	// unrelated-trailer shape unproven). A real reconcile publishes
+	// the hand edit; the crash is reconstructed as the publishing-
+	// shaped record with that reconcile's opid, and the completion
+	// must materialize the tree CARRYING the hand edit.
+	req := verbReq(a, "01J5X00000000000000000GH10", "mac-a")
+	req.Actor.Human = "wido"
+	recRes, err := Reconcile(req)
+	if err != nil || recRes.Publish.Outcome != OutcomeConfirmed {
+		t.Fatalf("the real reconcile lands the hand edit: %+v %v", recRes.Publish, err)
 	}
-	landedOpid := Opid("01J5X00000000000000000GH10", "mac-a", "lin-1")
+	reconcileOpid := Opid("01J5X00000000000000000GH10", "mac-a", "lin-1")
 	if err := WriteBase(a, BaseRecord{Commit: tip, WrittenAt: "2026-08-21T09:00:00Z",
-		RefreshDue: true, Publishing: true, Opid: landedOpid, Snapshot: snap.Files}); err != nil {
+		RefreshDue: true, Publishing: true, Opid: reconcileOpid, Snapshot: snap.Files}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(editablePath); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := RefreshOnly(a); err != nil {
-		t.Fatalf("a landed publish completes from the trailer: %v", err)
+		t.Fatalf("a landed publish completes from its own trailer: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(a, "plans", "goals", "landed-goal.md")); err != nil {
-		t.Fatal("the completion materialized the landed tree")
+	materialized, err := os.ReadFile(editablePath)
+	if err != nil {
+		t.Fatal("the completion materialized the reconciled file")
 	}
-	// The pre-capture hand bytes were IN the snapshot: when the
-	// trailer is present the landed publish carried them, so the
-	// worktree lawfully becomes the published rendering. Only a
-	// POST-capture edit is preserved — the other refresh tests own
-	// that leg.
+	if !strings.Contains(string(materialized), "Hand-edited intent.") {
+		t.Fatalf("the completion carries the HAND EDIT the crashed reconcile published: %s", materialized)
+	}
 	if rec, _, _ := ReadBase(a); rec.RefreshDue {
 		t.Fatal("the completed refresh clears the pending flag")
 	}

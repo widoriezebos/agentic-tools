@@ -295,12 +295,29 @@ func parseKVRecord(s string, required, optional []string, freeTail string) (map[
 
 // splitParkTail extracts because= (rest of value, after any displaced=).
 func splitParkTail(s string) (because, displaced string) {
-	if i := strings.Index(s, "displaced="); i >= 0 {
-		rest := s[i+len("displaced="):]
-		displaced, _, _ = strings.Cut(rest, " ")
-	}
-	if i := strings.Index(s, "because="); i >= 0 {
-		because = s[i+len("because="):]
+	// TOKEN boundaries, never substrings (round 3 finding 13): a
+	// because= or displaced= buried inside another value must not
+	// fabricate a reason or displacement state.
+	rest := s
+	for rest != "" {
+		token := rest
+		if sp := strings.IndexAny(rest, " \t"); sp >= 0 {
+			token = rest[:sp]
+			rest = strings.TrimLeft(rest[sp:], " \t")
+		} else {
+			rest = ""
+		}
+		if strings.HasPrefix(token, "displaced=") && because == "" {
+			displaced = strings.TrimPrefix(token, "displaced=")
+			continue
+		}
+		if strings.HasPrefix(token, "because=") {
+			because = strings.TrimPrefix(token, "because=")
+			if rest != "" {
+				because += " " + rest
+			}
+			return because, displaced
+		}
 	}
 	return because, displaced
 }

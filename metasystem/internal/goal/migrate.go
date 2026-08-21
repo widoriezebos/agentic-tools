@@ -38,10 +38,13 @@ type MigrateOptions struct {
 }
 
 // Migrate synthesizes and publishes the new ledger.
-// migrationComplete reports whether the tip already carries this
-// migration's root record — identity AND mode both matching. A
-// mismatched completed migration is the named confusion.
-func migrationComplete(root, tip, identity, mode string) (bool, error) {
+// migrationComplete reports whether the tip already carries EXACTLY
+// this migration's root record — identity, mode, sync mode, and the
+// manifest digest all matching (round 3 finding 6: identity+mode
+// alone let a rerun requesting the opposite sync mode or a different
+// manifest read as idempotent although that cutover never landed).
+// Any mismatch on a completed migration is the named confusion.
+func migrationComplete(root, tip, identity, mode, syncMode, manifestDigest string) (bool, error) {
 	existing, err := gitIn(root, "cat-file", "-p", tip+":"+goalsPrefix+"backlog.md")
 	if err != nil {
 		return false, nil
@@ -50,10 +53,13 @@ func migrationComplete(root, tip, identity, mode string) (bool, error) {
 	if len(problems) != 0 {
 		return false, nil
 	}
-	if record.Identity == identity && record.MigrationMode == mode {
+	if record.Identity == identity && record.MigrationMode == mode &&
+		record.SyncMode == syncMode && record.ManifestDigest == manifestDigest {
 		return true, nil
 	}
-	return false, fmt.Errorf("a migration already completed with identity %s mode %s; rerunning with mode %s is a confusion, not a repair", record.Identity, record.MigrationMode, mode)
+	return false, fmt.Errorf("a migration already completed with identity %s mode %s sync %s manifest %s; rerunning with mode %s sync %s manifest %s is a confusion, not a repair",
+		record.Identity, record.MigrationMode, record.SyncMode, short(record.ManifestDigest),
+		mode, syncMode, short(manifestDigest))
 }
 
 func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
@@ -102,7 +108,13 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		}
 	}
 	for _, cleanPath := range cleanPaths {
-		if out, stErr := gitIn(r.Endpoint.Root, "status", "--porcelain", "--", cleanPath); stErr == nil && strings.TrimSpace(out) != "" {
+		out, stErr := gitIn(r.Endpoint.Root, "status", "--porcelain", "--untracked-files=all", "--", cleanPath)
+		if stErr != nil {
+			// A probe that cannot answer proves nothing (round 3
+			// finding 9): refusing beats reading failure as clean.
+			return PublishResult{}, fmt.Errorf("migration precondition refused: the cleanliness of %s cannot be proven: %v", cleanPath, stErr)
+		}
+		if strings.TrimSpace(out) != "" {
 			return PublishResult{}, fmt.Errorf("migration precondition refused: %s has uncommitted or untracked changes", cleanPath)
 		}
 	}
@@ -131,7 +143,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 	// re-runs inside the transaction for the racing case.
 	if preNonce, nonceErr := readNonce(); nonceErr == nil {
 		if preTip, capErr := CaptureTip(r.Endpoint, preNonce); capErr == nil {
-			done, doneErr := migrationComplete(r.Endpoint.Root, preTip, opts.Identity, mode)
+			done, doneErr := migrationComplete(r.Endpoint.Root, preTip, opts.Identity, mode, opts.SyncMode, manifestDigest)
 			CleanupRefs(r.Endpoint, preNonce)
 			if doneErr != nil {
 				return PublishResult{}, doneErr
@@ -157,18 +169,15 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 			// completed migration — never re-synthesized. A DIFFERENT
 			// identity or mode on the tip is a confusion refused by
 			// name (--manifest after bare included).
-			if existing, catErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":"+goalsPrefix+"backlog.md"); catErr == nil {
-				root, rootProblems := ParseRoot([]byte(existing))
-				if len(rootProblems) == 0 {
-					if root.Identity == opts.Identity && root.MigrationMode == mode {
-						// A racing migrator completed between the
-						// pre-journal check and this capture: the
-						// desired state holds WITHOUT this opid (R2-7)
-						// — abandoned, never a manufactured confirm.
-						return nil, NothingToDo{Reason: "the migration already completed under this identity and mode"}
-					}
-					return nil, fmt.Errorf("a migration already completed with identity %s mode %s; rerunning with mode %s is a confusion, not a repair", root.Identity, root.MigrationMode, mode)
-				}
+			if done, doneErr := migrationComplete(r.Endpoint.Root, tip, opts.Identity, mode, opts.SyncMode, manifestDigest); doneErr != nil {
+				return nil, doneErr
+			} else if done {
+				// A racing migrator completed between the pre-journal
+				// check and this capture: the desired state holds
+				// WITHOUT this opid (R2-7) — abandoned, never a
+				// manufactured confirm. The SAME four-way comparison
+				// as the pre-journal check (round 3 finding 6).
+				return nil, NothingToDo{Reason: "the migration already completed under this identity, mode, sync mode, and manifest"}
 			}
 
 			// The AUTHORITATIVE source is the TIP's ledger (F2): a
@@ -186,12 +195,21 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 				return nil, fmt.Errorf("migration precondition refused: the tip carries no goals-accepted.json baseline")
 			} else {
 				var accepted struct {
-					Sha256 string `json:"sha256"`
+					SchemaVersion int    `json:"schemaVersion"`
+					Ledger        string `json:"ledger"`
+					Sha256        string `json:"sha256"`
 				}
 				if jsonErr := json.Unmarshal([]byte(accJSON), &accepted); jsonErr != nil || accepted.Sha256 == "" {
 					return nil, fmt.Errorf("migration precondition refused: the accepted baseline does not parse (schemaVersion/ledger/sha256)")
 				}
-				if accepted.Sha256 != sha256HexBytes([]byte(tipSource)) {
+				// The WHOLE baseline certifies (round 3 finding 8):
+				// its schema version, its digest, AND its full ledger
+				// bytes must all agree with the tip's goals.md — a
+				// crafted digest over foreign bytes proves nothing.
+				if accepted.SchemaVersion != 1 {
+					return nil, fmt.Errorf("migration precondition refused: the accepted baseline's schemaVersion %d is not 1", accepted.SchemaVersion)
+				}
+				if accepted.Sha256 != sha256HexBytes([]byte(tipSource)) || accepted.Ledger != tipSource {
 					return nil, fmt.Errorf("migration precondition refused: goals.md diverges from its accepted baseline — run the legacy reconcile first")
 				}
 			}
@@ -257,6 +275,10 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 		for _, ev := range g.Evidence {
 			f.Legacy = append(f.Legacy, "Evidence: "+ev)
 		}
+		// EVERY tolerated prose line survives (R2-5, restored by
+		// round 3 finding 1 — the append was lost in an edit-pipeline
+		// slip and the reviewer caught the deletion risk it recreated).
+		f.Legacy = append(f.Legacy, g.Prose...)
 	}
 
 	if legacy.Current != nil {

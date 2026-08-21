@@ -33,19 +33,33 @@ import (
 // absolute path: hooks are per-clone by nature, and the vendored
 // layout keeps the guard below the git toplevel.
 func ensureGuardEnrolled(root string) error {
-	guard := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
-	if _, err := os.Stat(guard); err != nil {
-		return nil // no guard ships here; nothing to enroll
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return err
 	}
-	out, err := exec.Command("git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	guard := filepath.Join(absRoot, "scripts", "agents", "pre-commit-guard.sh")
+	info, statErr := os.Stat(guard)
+	if statErr != nil || info.Mode()&0o111 == 0 {
+		// Fail closed (round 3 finding 3): a checkout without an
+		// EXECUTABLE guard cannot claim the fence exists, and a
+		// mutation without the fence is exactly what R2-11 forbids.
+		return fmt.Errorf("this checkout ships no executable pre-commit guard at %s; the ledger fence cannot be enrolled, so the mutation refuses", guard)
+	}
+	// --git-path hooks honors core.hooksPath (round 3 finding 3):
+	// writing under .git/hooks while git reads a configured hooks
+	// path elsewhere would enroll a hook git never invokes.
+	out, err := exec.Command("git", "-C", absRoot, "rev-parse", "--path-format=absolute", "--git-path", "hooks").Output()
 	if err != nil {
 		return nil // not a git repository; the verbs refuse on their own terms
 	}
-	hookDir := filepath.Join(strings.TrimSpace(string(out)), "hooks")
+	hookDir := strings.TrimSpace(string(out))
 	hookPath := filepath.Join(hookDir, "pre-commit")
 	existing, readErr := os.ReadFile(hookPath)
 	if readErr == nil && strings.Contains(string(existing), "pre-commit-guard.sh") {
-		return nil
+		if hookInfo, hookStatErr := os.Stat(hookPath); hookStatErr == nil && hookInfo.Mode()&0o111 != 0 {
+			return nil
+		}
+		return fmt.Errorf("the pre-commit hook references the guard but is not executable; fix its mode before mutating the ledger")
 	}
 	if err := os.MkdirAll(hookDir, 0o755); err != nil {
 		return err

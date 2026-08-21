@@ -85,7 +85,11 @@ func RepairAcceptRemote(e Endpoint, by string) (AdvanceResult, error) {
 // silently overwriting a concurrent advance.
 func setAcceptedTo(root, newTip, oldTip string) error {
 	if oldTip == "" {
-		_, err := goalGit(root, nil, "update-ref", AcceptedRef, newTip)
+		// Creation IS the compare (round 3 finding 7): the empty
+		// old-value refuses a concurrent creator, so a repair that
+		// validated tip A can never overwrite another creator's
+		// descendant B with B's own ancestor.
+		_, err := goalGit(root, nil, "update-ref", AcceptedRef, newTip, "")
 		return err
 	}
 	_, err := goalGit(root, nil, "update-ref", AcceptedRef, newTip, oldTip)

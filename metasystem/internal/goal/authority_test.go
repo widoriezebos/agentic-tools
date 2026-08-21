@@ -398,3 +398,30 @@ func TestValidatorProvesArcUniformity(t *testing.T) {
 		}
 	}
 }
+
+func TestClaimedArcToClaimedArcTradeRefusesOnBothSurfaces(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	arcBed(t, a, "trade-src", "ts", "TS")
+	// A second claimed arc under ANOTHER machine (the quota admits
+	// one claim per machine, so the destination claimant differs).
+	for i, id := range []string{"td-one", "td-two"} {
+		ulid := fmt.Sprintf("01J5X00000000000000000TD%d0", i)
+		if res, err := Open(verbReq(b, ulid, "mac-b"), id, "Dest "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		if res, err := SetArc(verbReq(b, ulid[:len(ulid)-1]+"1", "mac-b"), id, "trade-dst"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("set-arc %s: %+v %v", id, res, err)
+		}
+	}
+	if res, err := ClaimArc(verbReq(b, "01J5X00000000000000000TD90", "mac-b"), "td-one"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim dest arc: %+v %v", res, err)
+	}
+	// The VERB refuses the one-move trade even under a human.
+	humanMove := verbReq(a, "01J5X00000000000000000TD95", "mac-a")
+	humanMove.Actor.Human = "wido"
+	res, err := SetArc(humanMove, "ts-two", "trade-dst")
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "release it first") {
+		t.Fatalf("the two-claimant trade refuses on the verb (R2-14): %+v %v", res, err)
+	}
+}

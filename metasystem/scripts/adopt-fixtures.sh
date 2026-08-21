@@ -241,10 +241,13 @@ if true; then  # template-gated by the orchestrator
   printf '#!/bin/sh\necho main-hook\n' >"$both_tgt/.git/hooks/pre-commit"
   printf '#!/bin/sh\necho local-hook\n' >"$both_tgt/.git/hooks/pre-commit.local"
   chmod +x "$both_tgt/.git/hooks/pre-commit" "$both_tgt/.git/hooks/pre-commit.local"
-  "$nested_src/vendored/scripts/adopt.sh" "$both_tgt" --runtimes claude >"$tmp/adopt-both.out" 2>&1 \
-    || { echo "adoption over the both-hooks target failed" >&2; cat "$tmp/adopt-both.out" >&2; exit 1; }
+  if "$nested_src/vendored/scripts/adopt.sh" "$both_tgt" --runtimes claude >"$tmp/adopt-both.out" 2>&1; then
+    echo "adoption accepted a both-hooks target it cannot enroll (R2-15/R2-11)" >&2
+    cat "$tmp/adopt-both.out" >&2
+    exit 1
+  fi
   grep -q "compose them by hand" "$tmp/adopt-both.out" \
-    || { echo "the both-hooks shape did not warn by name" >&2; cat "$tmp/adopt-both.out" >&2; exit 1; }
+    || { echo "the both-hooks refusal did not name the fix" >&2; cat "$tmp/adopt-both.out" >&2; exit 1; }
   grep -q "main-hook" "$both_tgt/.git/hooks/pre-commit" \
     || { echo "the existing pre-commit was clobbered (R2-15)" >&2; exit 1; }
   grep -q "local-hook" "$both_tgt/.git/hooks/pre-commit.local" \

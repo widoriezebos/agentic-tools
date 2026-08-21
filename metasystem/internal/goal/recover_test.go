@@ -172,9 +172,10 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 	// A dead owner's edit, deltas in the stored intent (the F7
 	// completeness fix feeding recovery).
 	// The park above was a HUMAN act, so lifting it is one too — the
-	// rebuild now runs the REAL verb (R2-2), and the real verb
-	// enforces exactly that; an agent's stranded unpark of a human
-	// park would refuse, which is the fold's point.
+	// rebuild runs the REAL verb (R2-2), which enforces exactly that.
+	// The by= arg here is what a live human-directed unpark NOW
+	// journals itself (round 3 finding 2: intentArgs stamps it), so
+	// this stranded shape is the real crash shape, not a fabrication.
 	unparkOpid := Opid("01J5X00000000000000000Q120", "mac-a", "lin-1")
 	strandEntry(t, a, unparkOpid, PhaseCreated, Intent{Verb: "unpark", Targets: []string{"target"},
 		Args: map[string]string{"by": "wido"}})
@@ -370,5 +371,37 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	last := stolen.History[len(stolen.History)-1]
 	if last.Actor != "human:wido" || !strings.HasPrefix(last.Displaced, "mac-a+lin-1@") {
 		t.Fatalf("the recovered steal carries the human authority and the displaced pair: %+v", last)
+	}
+}
+
+func TestRecoveryRefusesAStrandedOriginRewrite(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X00000000000000000Q200", "mac-a"), "prov", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	// A pre-fold journal's origin delta: recovery must refuse it by
+	// name, never replay it (R2-8 through recovery — round 3
+	// finding 14 asked for the focused proof).
+	opid := Opid("01J5X00000000000000000Q210", "mac-a", "lin-1")
+	strandEntry(t, a, opid, PhaseCreated, Intent{
+		Verb: "edit", Targets: []string{"prov"},
+		Deltas: []FieldDelta{{Target: "prov", Field: "origin", New: "main"}},
+	})
+	reports, err := Recover(endpointFor(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, rep := range reports {
+		if rep.Opid == opid {
+			found = true
+			if !strings.Contains(rep.Detail, "Origin") || !strings.Contains(rep.Detail, "immutable") {
+				t.Fatalf("the origin rewrite refuses by name: %+v", rep)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("recovery visits the stranded origin rewrite: %+v", reports)
 	}
 }

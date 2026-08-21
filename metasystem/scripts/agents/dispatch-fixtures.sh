@@ -148,7 +148,10 @@ except OSError:
   pass
 LOCK
   fi
-  git -C "$runner_repo" "$@"
+  # Harness acts, not agent ledger commits: the mission flow's own
+  # goal mutations ENROLL the pre-commit guard (R2-11), and these
+  # fixture-driven trunk/candidate movements bypass it by name.
+  git -C "$runner_repo" -c core.hooksPath=/dev/null "$@"
 }
 
 perl -0pi -e 's|^evidence\.root=.*$|evidence.root='"$runner_evidence"'|m' \
@@ -983,7 +986,11 @@ make_agent_brief "$stale_brief" implement
 run_agent_fixture stale-wt stale-wt "$agent_dispatch" dispatch --role implementer --brief "$stale_brief" --job-id stale-wt --worktree --wait
 printf 'advance\n' >>"$agent_repo/trunk-advance.txt"
 git -C "$agent_repo" add trunk-advance.txt
-git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm trunk-advance
+# core.hooksPath=/dev/null: the goal open above ENROLLED the real
+# pre-commit guard (R2-11), and this is a harness commit simulating
+# trunk movement, not an agent's ledger commit — bypassing hooks
+# here is the fixture's own act, said out loud.
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm trunk-advance
 "$agent_dispatch" follow-up --job stale-wt --message "$follow_message" --wait >"$tmp/stale-wt.out" 2>"$tmp/stale-wt.err" \
   || { echo "stale-worktree follow-up itself failed" >&2; cat "$tmp/stale-wt.err" >&2; exit 1; }
 grep -q 'WORKTREE-BEHIND' "$tmp/stale-wt.err" \
@@ -1099,7 +1106,10 @@ path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBound
 PY
 agent_fails untracked-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
 git -C "$conformance_workspace" add source.txt plans/delegate.md
-git -C "$conformance_workspace" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm delegate-checkpoint
+# The workspace is a WORKTREE of the enrolled repo (shared hooks);
+# this harness checkpoint bypasses them for the same stated reason
+# as trunk-advance.
+git -C "$conformance_workspace" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm delegate-checkpoint
 agent_fails committed-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
 printf 'uncommitted change\n' >>"$conformance_workspace/plans/delegate.md"
 agent_fails uncommitted-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
@@ -1344,7 +1354,7 @@ dispatch_origin="$agent_fixture/dispatch-origin.git"
 git init -q -b main --bare "$dispatch_origin"
 git -C "$agent_repo" remote add origin "$dispatch_origin"
 git -C "$agent_repo" add metasystem.conf plans/mission-mission-alpha.contract.md
-git -C "$agent_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'sign dispatch envelope fixture'
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'sign dispatch envelope fixture'
 git -C "$agent_repo" push -qu origin main
 git -C "$dispatch_origin" symbolic-ref HEAD refs/heads/main
 git -C "$agent_repo" remote set-head origin -a >/dev/null
@@ -1902,7 +1912,9 @@ git add candidate-score.txt
 # What the classification needs is the candidate SHA advancing with score 1,
 # not a content change: whether 1 is already committed here depends on how
 # the earlier missions interleaved, and requiring a diff made this a flake.
-git commit --allow-empty -qm 'improve candidate from codex host fixture'
+# hooksPath bypass: a simulated host act in the harness, not a real
+# agent commit — the enrolled guard (R2-11) is for the real thing.
+git -c core.hooksPath=/dev/null commit --allow-empty -qm 'improve candidate from codex host fixture'
 fi
 python3 - "$prompt" "$output" "$sequence" <<'PY'
 import json, sys
@@ -2185,7 +2197,7 @@ rm -rf "$steward_repo/artifacts"
 "$steward_repo/bin/metasystem" config tailor --conf "$steward_repo/metasystem.conf" --runtimes fake \
   --set role.steward-continuation.runtime=fake
 git -C "$steward_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid add -A
-git -C "$steward_repo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm steward-base
+git -C "$steward_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm steward-base
 git -C "$steward_repo" config metasystem.steward.notify-command true
 mkdir -p "$steward_repo/plans"
 printf '# Goals\n\n## Current goal: fix-it \xe2\x80\x94 Repair the thing\n- Origin: main\n- Next step: Repair it.\n' > "$steward_repo/plans/goals.md"

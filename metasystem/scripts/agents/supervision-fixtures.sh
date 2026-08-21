@@ -1092,7 +1092,8 @@ stop_owned_pid "foreign owner" "$foreign_sleep_pid" "$foreign_start" >/dev/null 
 stop_root=$tmp/stop-hook
 mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
 cp "$source_root/scripts/agents/supervision-hook.sh" \
-   "$source_root/scripts/agents/arm-supervision.sh" "$stop_root/scripts/agents/"
+   "$source_root/scripts/agents/arm-supervision.sh" \
+   "$source_root/scripts/agents/pre-commit-guard.sh" "$stop_root/scripts/agents/"
 # The hook (and the announcement step below) derive the caller's
 # main through the runtime-signature ancestor walk, and that walk
 # reads the adapters from THIS root — without them find-ancestor

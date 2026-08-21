@@ -112,3 +112,14 @@ func withFreshIntegrity(doc string) string {
 	body := strings.Join(lines[:len(lines)-1], "\n") + "\n"
 	return body + "Integrity: sha256=" + sha256HexBytes([]byte(body)) + "\n"
 }
+
+func TestOriginDomainAndImmutabilityAreProven(t *testing.T) {
+	// The parser's Origin domain (round 3 finding 14): out-of-domain
+	// provenance refuses by name.
+	f := vGoal("origin-probe", StateQueued)
+	f.Origin = "elsewhere"
+	_, problems := ParseFile(RenderFile(f))
+	if !problemsContain(problems, "not human|main") {
+		t.Fatalf("an out-of-domain Origin refuses by name: %v", problems)
+	}
+}

@@ -325,6 +325,14 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 			}
 			return nil, fmt.Errorf("the crashed reconcile never published; the hand edits are untouched in the worktree — re-run goal reconcile")
 		}
+		// The tip the completion materializes must pass the SAME
+		// boundary the read side enforces (round 3 finding 4): a
+		// malformed descendant that followed the reconcile commit
+		// must not become this checkout's files just because our
+		// trailer sits below it.
+		if valErr := ValidateCommit(repoRoot, tip); valErr != nil {
+			return nil, fmt.Errorf("the reconcile published, but the canonical tip does not validate; repair the branch, then re-run --refresh-only: %w", valErr)
+		}
 		return Refresh(repoRoot, tip, &Snapshot{Files: rec.Snapshot})
 	}
 	// The DURABLE snapshot restores the live session's exact

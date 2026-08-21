@@ -181,12 +181,25 @@ func Parse(data []byte) (*Ledger, []Problem) {
 	seen := map[string]int{}
 
 	i := 0
+	seenTitle := false
+	afterFree := false
 	retain := func(line string) {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(line, "# ") {
-			return // structure, not content
+		if trimmed == "" {
+			return
 		}
-		if len(sections) > 0 {
+		if strings.HasPrefix(line, "# ") {
+			// Only the FIRST document title is structure; a later
+			// accepted "# " heading is content the migration must
+			// carry (round 3 finding 1).
+			if !seenTitle {
+				seenTitle = true
+				return
+			}
+		}
+		// Prose after the Goal-free declaration belongs to the ROOT,
+		// not to whatever goal happened to parse last.
+		if len(sections) > 0 && !afterFree {
 			sections[len(sections)-1].goal.Prose = append(sections[len(sections)-1].goal.Prose, line)
 			return
 		}
@@ -211,6 +224,7 @@ func Parse(data []byte) (*Ledger, []Problem) {
 			} else {
 				ledger.Free = &free
 			}
+			afterFree = true
 			i++
 		case strings.HasPrefix(heading, "Current goal: "),
 			strings.HasPrefix(heading, "Queued goal: "),

@@ -106,6 +106,10 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if err := ensureGuardEnrolled(*root); err != nil {
+		fmt.Fprintf(os.Stderr, "goal %s: %v\n", name, err)
+		return 1
+	}
 	caller, err := goalCaller(*root, *callerPid, name)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
