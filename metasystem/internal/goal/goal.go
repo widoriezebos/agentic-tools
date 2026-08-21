@@ -371,7 +371,10 @@ func boundGoal(goal *Goal, kind string, addProblem func(string, ...any)) {
 }
 
 func validId(id string) bool {
-	if id == "" {
+	// Lowercase kebab, max 100 characters: the named invariant is
+	// portable-filesystem safety (255-byte component bound with
+	// headroom for suffixes and copies), not taste.
+	if id == "" || len(id) > 100 {
 		return false
 	}
 	for _, r := range id {

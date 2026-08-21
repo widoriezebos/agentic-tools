@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // GoalFile is one parsed goal file.
@@ -101,6 +102,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	f := &GoalFile{}
 	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
 	section := ""
+	seen := map[string]bool{}
 	for i, raw := range lines {
 		line := strings.TrimRight(raw, " \t")
 		switch {
@@ -127,7 +129,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		case section == "legacy" && line != "":
 			f.Legacy = append(f.Legacy, line)
 		case strings.HasPrefix(line, "- "):
-			parseFileField(f, strings.TrimPrefix(line, "- "), addProblem)
+			parseFileField(f, strings.TrimPrefix(line, "- "), seen, addProblem)
 		case strings.TrimSpace(line) == "":
 			// blank lines end no section; History and LegacyNotes run to
 			// the next section heading or end of body
@@ -150,14 +152,31 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if len(f.History) == 0 {
 		addProblem("empty History — every goal file carries its opid lines")
 	}
+	if f.Intent == "" {
+		addProblem("missing Intent — a goal without its why is unreadable")
+	}
+	if f.OpenedAt == "" {
+		addProblem("missing OpenedAt")
+	} else if !validStamp(f.OpenedAt) {
+		addProblem("OpenedAt %q is not an RFC3339 timestamp", f.OpenedAt)
+	}
 	if f.State == StateClaimed && f.Claimed == nil {
 		addProblem("claimed without a Claimed record")
 	}
 	if f.State != StateClaimed && f.Claimed != nil {
 		addProblem("Claimed record on a %s goal", f.State)
 	}
+	if f.Claimed != nil && !validStamp(f.Claimed.At) {
+		addProblem("Claimed at=%q is not an RFC3339 timestamp", f.Claimed.At)
+	}
 	if f.State == StateParked && f.Parked == nil {
 		addProblem("parked without a Parked record")
+	}
+	if f.State != StateParked && f.Parked != nil {
+		addProblem("Parked record on a %s goal", f.State)
+	}
+	if f.Parked != nil && !validStamp(f.Parked.At) {
+		addProblem("Parked at=%q is not an RFC3339 timestamp", f.Parked.At)
 	}
 	if f.State == StateDone && f.Conclude == "" {
 		addProblem("done without Concluded")
@@ -165,12 +184,23 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	return f, problems
 }
 
-func parseFileField(f *GoalFile, field string, addProblem func(string, ...any)) {
+// validStamp is the one timestamp form the grammar admits.
+func validStamp(s string) bool {
+	_, err := time.Parse(time.RFC3339, s)
+	return err == nil
+}
+
+func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem func(string, ...any)) {
 	key, value, found := strings.Cut(field, ":")
 	if !found {
 		addProblem("field without colon: %q", field)
 		return
 	}
+	if seen[key] {
+		addProblem("duplicate field %q — the last write would silently win", key)
+		return
+	}
+	seen[key] = true
 	value = strings.TrimSpace(value)
 	switch key {
 	case "State":
@@ -201,14 +231,14 @@ func parseFileField(f *GoalFile, field string, addProblem func(string, ...any)) 
 	case "Arc":
 		f.Arc = value
 	case "Claimed":
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"})
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, nil)
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
 		}
 		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"]}
 	case "Parked":
-		rec, err := parseKVRecord(value, []string{"by", "at"})
+		rec, err := parseKVRecord(value, []string{"by", "at"}, []string{"displaced"})
 		if err != nil {
 			addProblem("Parked: %v", err)
 			return
@@ -220,17 +250,29 @@ func parseFileField(f *GoalFile, field string, addProblem func(string, ...any)) 
 	}
 }
 
-// parseKVRecord reads space-separated key=value pairs, requiring the
-// listed keys. Free-text keys (because=) are handled by the caller.
-func parseKVRecord(s string, required []string) (map[string]string, error) {
+// parseKVRecord reads space-separated key=value pairs against a
+// CLOSED key set: required keys must appear, optional keys may, and
+// anything else refuses — a key the grammar does not know is a tree
+// nobody reviewed. Free text (because=) is handled by the caller.
+func parseKVRecord(s string, required, optional []string) (map[string]string, error) {
+	allowed := map[string]bool{}
+	for _, k := range required {
+		allowed[k] = true
+	}
+	for _, k := range optional {
+		allowed[k] = true
+	}
 	out := map[string]string{}
 	for _, tok := range strings.Fields(s) {
 		k, v, found := strings.Cut(tok, "=")
 		if !found {
-			continue // free-text tail token
+			return nil, fmt.Errorf("stray token %q — the record grammar is key=value", tok)
 		}
 		if k == "because" {
 			break // because= consumes the rest; caller extracts it
+		}
+		if !allowed[k] {
+			return nil, fmt.Errorf("unknown key %q — the record grammar is closed", k)
 		}
 		if _, dup := out[k]; dup {
 			return nil, fmt.Errorf("duplicate key %q", k)
@@ -364,6 +406,9 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	}
 	if h.Actor == "" {
 		return h, fmt.Errorf("missing actor= in %q", line)
+	}
+	if !validStamp(h.At) {
+		return h, fmt.Errorf("timestamp %q is not RFC3339", h.At)
 	}
 	return h, nil
 }

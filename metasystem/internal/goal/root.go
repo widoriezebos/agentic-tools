@@ -57,6 +57,7 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 	r := &RootRecord{}
 	section := ""
 	sawHeading := false
+	seen := map[string]bool{}
 	for i, raw := range strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n") {
 		line := strings.TrimRight(raw, " \t")
 		switch {
@@ -76,7 +77,7 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 		case section == "legacy" && line != "":
 			r.Legacy = append(r.Legacy, line)
 		case strings.HasPrefix(line, "- "):
-			parseRootField(r, strings.TrimPrefix(line, "- "), addProblem)
+			parseRootField(r, strings.TrimPrefix(line, "- "), seen, addProblem)
 		case strings.TrimSpace(line) == "":
 		default:
 			if section == "" {
@@ -90,25 +91,73 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 	}
 	if r.Identity == "" {
 		addProblem("missing Identity — the ledger identity is minted once and never rewritten")
+	} else if !ulidShaped(r.Identity) {
+		addProblem("Identity %q is not ULID-shaped (26 Crockford base32 characters)", r.Identity)
 	}
 	if r.SyncMode != SyncRemote && r.SyncMode != SyncLocal {
 		addProblem("SyncMode %q is not remote|local", r.SyncMode)
 	}
-	if r.FormatVersion == "" {
-		addProblem("missing FormatVersion")
+	if r.FormatVersion != "1" {
+		// A version this reader does not know is a tree it must not
+		// trust — refusal is the forward-compatibility story.
+		addProblem("FormatVersion %q is not 1", r.FormatVersion)
 	}
 	if r.Revision == 0 {
 		addProblem("missing or zero Revision")
 	}
+	if r.MigrationEpoch != "" && !validStamp(r.MigrationEpoch) {
+		addProblem("MigrationEpoch %q is not an RFC3339 timestamp", r.MigrationEpoch)
+	}
+	if r.ManifestDigest != "" && !hexDigest(r.ManifestDigest) {
+		addProblem("ManifestDigest %q is not a sha256 hex digest", r.ManifestDigest)
+	}
+	if r.MigrationMode != "" && r.MigrationMode != "manifest" && r.MigrationMode != "bare" {
+		addProblem("MigrationMode %q is not manifest|bare", r.MigrationMode)
+	}
+	if r.Free != nil && !validStamp(r.Free.Declared) {
+		addProblem("Goal-free declared=%q is not an RFC3339 timestamp", r.Free.Declared)
+	}
 	return r, problems
 }
 
-func parseRootField(r *RootRecord, field string, addProblem func(string, ...any)) {
+// ulidShaped admits exactly the 26-character Crockford base32 form
+// the identity mint produces.
+func ulidShaped(s string) bool {
+	if len(s) != 26 {
+		return false
+	}
+	for _, r := range s {
+		if !strings.ContainsRune("0123456789ABCDEFGHJKMNPQRSTVWXYZ", r) {
+			return false
+		}
+	}
+	return true
+}
+
+// hexDigest admits a 64-character lowercase sha256 hex literal.
+func hexDigest(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func parseRootField(r *RootRecord, field string, seen map[string]bool, addProblem func(string, ...any)) {
 	key, value, found := strings.Cut(field, ":")
 	if !found {
 		addProblem("field without colon: %q", field)
 		return
 	}
+	if seen[key] {
+		addProblem("duplicate field %q — the last write would silently win", key)
+		return
+	}
+	seen[key] = true
 	value = strings.TrimSpace(value)
 	switch key {
 	case "Identity":
@@ -131,7 +180,7 @@ func parseRootField(r *RootRecord, field string, addProblem func(string, ...any)
 		}
 		r.Revision = n
 	case "Goal-free":
-		rec, err := parseKVRecord(value, []string{"declared", "origin", "digest"})
+		rec, err := parseKVRecord(value, []string{"declared", "origin", "digest"}, nil)
 		if err != nil {
 			addProblem("Goal-free: %v", err)
 			return
