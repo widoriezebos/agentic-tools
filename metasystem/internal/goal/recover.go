@@ -115,7 +115,7 @@ func completeFromIntent(e Endpoint, entry Entry) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	mutate, rebuildErr := rebuildMutate(e, taken)
+	req, rebuildErr := requestForEntry(e, taken)
 	if rebuildErr != nil {
 		// A verb recovery cannot rebuild generically terminalizes
 		// toward its own re-runnable entry point, named — never a
@@ -126,204 +126,118 @@ func completeFromIntent(e Endpoint, entry Entry) (string, error) {
 		CleanupRefs(e, entry.Opid)
 		return "not rebuildable: " + rebuildErr.Error(), nil
 	}
-	res, err := runTransaction(e, PublishRequest{
-		Opid: taken.Opid, Machine: taken.Machine, Lineage: taken.Lineage,
-		Intent:  taken.Intent,
-		Message: "goal " + taken.Intent.Verb + " (recovered)",
-		Mutate:  mutate,
-		Validate: func(commit string) error {
-			return ValidateCommit(e.Root, commit)
-		},
-	})
+	res, err := runTransaction(e, req)
 	if err != nil {
 		return "", err
 	}
 	return "completed from the stored intent: " + string(res.Outcome), nil
 }
 
-// rebuildMutate reconstructs a verb's mutation from its stored
-// intent. The recovered actor is the ENTRY's — the opid already
-// binds machine and lineage, and the rebuilt commit must resolve
-// the same postcondition.
-func rebuildMutate(e Endpoint, entry Entry) (func(tip string) ([]Change, error), error) {
-	in := entry.Intent
+// requestForEntry rebuilds the COMPLETE verb request from the
+// entry's stored intent through the SAME constructors the live
+// verbs run (R2-2): cascades, Goal-free clears, authority checks,
+// displacement markers, and acknowledgment piggybacks all replay
+// identically, and the derived opid — the entry's ulid under the
+// entry's pair — IS the entry's opid, so every rebuilt history
+// line carries the original operation with no injection seam.
+func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
+	if len(entry.Opid) < 27 {
+		return PublishRequest{}, fmt.Errorf("the entry's opid %q is not <ulid>-<machine>-<hash>; close it by hand", entry.Opid)
+	}
 	r := VerbRequest{
 		Endpoint: e,
 		Actor:    actorFromEntry(entry),
-		Ulid:     "recovered", // unused: the opid comes from the entry
+		Ulid:     entry.Opid[:26],
 		Now:      timeNowUTC(),
 	}
-	// The opid must be the ENTRY's, not derived: recovery's history
-	// lines carry the original operation.
-	opid := entry.Opid
-
-	target := func() (string, error) {
-		if len(in.Targets) != 1 {
-			return "", fmt.Errorf("the stored intent names %d targets; this verb rebuilds one", len(in.Targets))
-		}
-		return in.Targets[0], nil
+	if r.opid() != entry.Opid {
+		return PublishRequest{}, fmt.Errorf("the entry's opid %s does not derive from its recorded identity; close it by hand", entry.Opid)
 	}
-
+	in := entry.Intent
+	target := ""
+	if len(in.Targets) > 0 {
+		target = in.Targets[0]
+	}
+	cascade := in.Args["cascade"] == "arc"
 	switch in.Verb {
 	case "open":
-		id, err := target()
-		if err != nil {
-			return nil, err
-		}
-		return func(tip string) ([]Change, error) {
-			t, err := loadTree(e.Root, tip)
-			if err != nil {
-				return nil, err
-			}
-			if f, exists := t.Live[id]; exists {
-				if hasOpid(f, opid) {
-					return nil, AlreadyApplied{}
-				}
-				return nil, LostToCompetitor{Winner: lastOpid(f)}
-			}
-			f := &GoalFile{
-				Id: id, State: StateQueued, Intent: in.Args["intent"],
-				Origin: in.Args["origin"], NextStep: in.Args["next"],
-				OpenedAt: r.stamp(), Revision: 0,
-			}
-			touchWithOpid(f, r, opid, "open", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
-		}, nil
+		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"]), nil
+	case "open-claim":
+		return openClaimRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"]), nil
 	case "claim":
-		id, err := target()
-		if err != nil {
-			return nil, err
+		if cascade {
+			return claimArcRequest(r, target), nil
 		}
-		return func(tip string) ([]Change, error) {
-			t, err := loadTree(e.Root, tip)
-			if err != nil {
-				return nil, err
-			}
-			f, exists := t.Live[id]
-			if !exists {
-				return nil, fmt.Errorf("goal %s is not live; the recovered claim has nothing to take", id)
-			}
-			if hasOpid(f, opid) {
-				return nil, AlreadyApplied{}
-			}
-			if f.State != StateQueued {
-				return nil, LostToCompetitor{Winner: lastOpid(f)}
-			}
-			for _, dep := range f.Blocked {
-				if depState(t, dep) != StateDone {
-					return nil, fmt.Errorf("goal %s is blocked by %s on the rebuilt tip", id, dep)
-				}
-			}
-			f.State = StateClaimed
-			f.Claimed = &ClaimRecord{Machine: entry.Machine, Lineage: entry.Lineage, At: r.stamp()}
-			touchWithOpid(f, r, opid, "claim", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
-		}, nil
-	case "release", "done", "park", "unpark", "edit":
-		id, err := target()
-		if err != nil {
-			return nil, err
+		return claimRequest(r, target), nil
+	case "release":
+		if cascade {
+			return releaseArcRequest(r, target), nil
 		}
-		return func(tip string) ([]Change, error) {
-			t, err := loadTree(e.Root, tip)
-			if err != nil {
-				return nil, err
-			}
-			f, exists := t.Live[id]
-			if !exists {
-				if in.Verb == "done" {
-					if df, archived := t.Done[id]; archived && hasOpid(df, opid) {
-						return nil, AlreadyApplied{}
-					}
-				}
-				return nil, fmt.Errorf("goal %s is not live on the rebuilt tip; the recovered %s refuses", id, in.Verb)
-			}
-			if hasOpid(f, opid) {
-				return nil, AlreadyApplied{}
-			}
-			switch in.Verb {
-			case "release":
-				if f.State != StateClaimed {
-					return nil, LostToCompetitor{Winner: lastOpid(f)}
-				}
-				f.State = StateQueued
-				f.Claimed = nil
-			case "done":
-				f.State = StateDone
-				f.Conclude = in.Args["conclusion"]
-				f.Claimed = nil
-				f.Parked = nil
-				touchWithOpid(f, r, opid, "done", []string{id})
-				delete(t.Live, id)
-				t.Done[id] = f
-				return []Change{
-					{Path: livePath(id), Delete: true},
-					{Path: donePath(id), Content: RenderFile(f)},
-				}, nil
-			case "park":
-				if f.State != StateQueued && f.State != StateClaimed {
-					return nil, LostToCompetitor{Winner: lastOpid(f)}
-				}
-				f.State = StateParked
-				f.Parked = &ParkRecord{By: actorFromEntry(entry).historyActor(), At: r.stamp(), Because: in.Args["because"]}
-				f.Claimed = nil
-			case "unpark":
-				if f.State != StateParked {
-					return nil, LostToCompetitor{Winner: lastOpid(f)}
-				}
-				f.State = StateQueued
-				f.Parked = nil
-			case "edit":
-				for _, d := range in.Deltas {
-					switch d.Field {
-					case "intent":
-						f.Intent = d.New
-					case "next":
-						f.NextStep = d.New
-					case "origin":
-						// Origin is immutable provenance (R2-8): a
-						// stored origin delta is a pre-fold journal's
-						// residue and is refused, never replayed.
-						return nil, fmt.Errorf("the stored intent rewrites Origin, which is immutable; close this entry by hand")
-					case "blockedBy":
-						f.Blocked = nil
-						for _, dep := range strings.Split(d.New, ",") {
-							if dep = strings.TrimSpace(dep); dep != "" {
-								f.Blocked = append(f.Blocked, dep)
-							}
+		return releaseRequest(r, target), nil
+	case "done":
+		return doneRequest(r, target, in.Args["conclusion"]), nil
+	case "park":
+		if cascade {
+			return parkArcRequest(r, target, in.Args["because"]), nil
+		}
+		return parkRequest(r, target, in.Args["because"]), nil
+	case "unpark":
+		if cascade {
+			return unparkArcRequest(r, target), nil
+		}
+		return unparkRequest(r, target), nil
+	case "reopen":
+		return reopenRequest(r, target), nil
+	case "edit":
+		fields := EditFields{}
+		for _, d := range in.Deltas {
+			value := d.New
+			switch d.Field {
+			case "intent":
+				fields.Intent = &value
+			case "next":
+				fields.NextStep = &value
+			case "origin":
+				// Origin is immutable provenance (R2-8): a stored
+				// origin delta is a pre-fold journal's residue.
+				return PublishRequest{}, fmt.Errorf("the stored intent rewrites Origin, which is immutable; close this entry by hand")
+			case "blockedBy":
+				var blocked []string
+				if value != "" {
+					for _, dep := range strings.Split(value, ",") {
+						if trimmed := strings.TrimSpace(dep); trimmed != "" {
+							blocked = append(blocked, trimmed)
 						}
 					}
 				}
+				fields.Blocked = &blocked
 			}
-			touchWithOpid(f, r, opid, in.Verb, []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
-		}, nil
+		}
+		return editRequest(r, target, fields), nil
+	case "steal":
+		if r.Actor.Human == "" {
+			return PublishRequest{}, fmt.Errorf("the stored steal carries no human (--by); it cannot be replayed")
+		}
+		return stealRequest(r, target), nil
+	case "detach":
+		return detachRequest(r, target), nil
+	case "set-arc":
+		return setArcRequest(r, target, in.Args["arc"]), nil
+	case "prune":
+		keep := 0
+		if _, scanErr := fmt.Sscanf(in.Args["keep"], "%d", &keep); scanErr != nil {
+			return PublishRequest{}, fmt.Errorf("the stored prune carries no keep count; close it by hand")
+		}
+		return pruneRequest(r, keep), nil
+	case "declare-free":
+		return declareFreeRequest(r, in.Args["origin"], in.Args["digest"]), nil
 	}
-	return nil, fmt.Errorf("verb %q rebuilds through its own entry point (reconcile re-runs from the checkout, migrate from its reviewed inputs); this entry is closed and the operation re-runs by hand", in.Verb)
+	return PublishRequest{}, fmt.Errorf("verb %q re-runs from its own entry point (reconcile from the checkout it captures, migrate from its reviewed inputs); this entry closes toward that path", in.Verb)
 }
 
 func actorFromEntry(entry Entry) Actor {
 	by := entry.Intent.Args["by"]
 	return Actor{Machine: entry.Machine, Lineage: entry.Lineage, Human: by}
-}
-
-// touchWithOpid is touch with the ENTRY's opid instead of a derived
-// one — the recovered history line carries the original operation.
-func touchWithOpid(f *GoalFile, r VerbRequest, opid, verb string, targets []string) {
-	f.Revision++
-	f.History = append(f.History, HistoryLine{
-		At: r.stamp(), Opid: opid, Verb: verb,
-		Actor: r.Actor.historyActor(), Targets: targets, Keep: -1,
-	})
-}
-
-func hasOpid(f *GoalFile, opid string) bool {
-	for _, h := range f.History {
-		if h.Opid == opid {
-			return true
-		}
-	}
-	return false
 }
 
 func timeNowUTC() time.Time { return time.Now().UTC() }

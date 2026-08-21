@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +10,15 @@ import (
 // strandEntry journals an operation as a dead foreign owner left it.
 func strandEntry(t *testing.T, root string, opid string, phase Phase, intent Intent) {
 	t.Helper()
-	if _, err := CreateEntry(root, opid, "mac-a", "lin-1", intent); err != nil {
+	strandEntryAt(t, root, opid, "mac-a", phase, intent)
+}
+
+// strandEntryAt strands an entry under an explicit machine — the
+// cross-clone recovery legs need the entry's identity to be the
+// OTHER clone's.
+func strandEntryAt(t *testing.T, root, opid, machine string, phase Phase, intent Intent) {
+	t.Helper()
+	if _, err := CreateEntry(root, opid, machine, "lin-1", intent); err != nil {
 		t.Fatal(err)
 	}
 	if phase == PhasePushed {
@@ -162,8 +171,13 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 
 	// A dead owner's edit, deltas in the stored intent (the F7
 	// completeness fix feeding recovery).
+	// The park above was a HUMAN act, so lifting it is one too — the
+	// rebuild now runs the REAL verb (R2-2), and the real verb
+	// enforces exactly that; an agent's stranded unpark of a human
+	// park would refuse, which is the fold's point.
 	unparkOpid := Opid("01J5X00000000000000000Q120", "mac-a", "lin-1")
-	strandEntry(t, a, unparkOpid, PhaseCreated, Intent{Verb: "unpark", Targets: []string{"target"}})
+	strandEntry(t, a, unparkOpid, PhaseCreated, Intent{Verb: "unpark", Targets: []string{"target"},
+		Args: map[string]string{"by": "wido"}})
 	if _, err := Recover(endpointFor(a)); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +200,15 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 	if edited.State != StateQueued || edited.NextStep != "Recovered next step." {
 		t.Fatalf("the recovered unpark and edit landed in order: %+v", edited)
 	}
-	if !hasOpid(edited, editOpid) || !hasOpid(edited, unparkOpid) {
+	carries := func(f *GoalFile, opid string) bool {
+		for _, h := range f.History {
+			if h.Opid == opid {
+				return true
+			}
+		}
+		return false
+	}
+	if !carries(edited, editOpid) || !carries(edited, unparkOpid) {
 		t.Fatal("each recovery carries its original opid")
 	}
 }
@@ -286,5 +308,67 @@ func TestRecoveryHandlesOwnEntriesAndDoneRebuild(t *testing.T) {
 	archived := p.Tree.Done["finish-me"]
 	if archived == nil || archived.Conclude != "Recovered conclusion." {
 		t.Fatalf("the recovered done archived with its conclusion: %+v", archived)
+	}
+}
+
+func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	for i, id := range []string{"rv-one", "rv-two"} {
+		ulid := fmt.Sprintf("01J5X00000000000000000Q%d40", i)
+		if res, err := Open(verbReq(a, ulid, "mac-a"), id, "Arc "+id, "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, res, err)
+		}
+		if res, err := SetArc(verbReq(a, ulid[:len(ulid)-1]+"5", "mac-a"), id, "rv-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("set-arc %s: %+v %v", id, res, err)
+		}
+	}
+	// A dead owner's CASCADE claim: the rebuilt transaction must
+	// claim BOTH members — the old hand-copy split the arc (R2-2).
+	claimOpid := Opid("01J5X00000000000000000Q160", "mac-a", "lin-1")
+	strandEntry(t, a, claimOpid, PhaseCreated, Intent{
+		Verb: "claim", Targets: []string{"rv-one"},
+		Args: map[string]string{"cascade": "arc"},
+	})
+	if _, err := Recover(endpointFor(a)); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Project(endpointFor(a), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"rv-one", "rv-two"} {
+		f := p.Tree.Live[id]
+		if f.State != StateClaimed || f.Claimed == nil || f.Claimed.Machine != "mac-a" {
+			t.Fatalf("the recovered claim cascades across the arc: %s %+v", id, f.Claimed)
+		}
+		if f.History[len(f.History)-1].Opid != claimOpid {
+			t.Fatalf("the cascade carries the ENTRY's opid: %s", f.History[len(f.History)-1].Opid)
+		}
+	}
+
+	// A dead owner's STEAL from the other machine, human-directed:
+	// recovery replays the cascade reassignment WITH the displaced
+	// markers and the human authority — none of which the old
+	// hand-copies could express.
+	stealOpid := Opid("01J5X00000000000000000Q170", "mac-b", "lin-1")
+	strandEntryAt(t, b, stealOpid, "mac-b", PhaseCreated, Intent{
+		Verb: "steal", Targets: []string{"rv-one"},
+		Args: map[string]string{"by": "wido"},
+	})
+	if _, err := Recover(endpointFor(b)); err != nil {
+		t.Fatal(err)
+	}
+	p, err = Project(endpointFor(b), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stolen := p.Tree.Live["rv-one"]
+	if stolen.Claimed == nil || stolen.Claimed.Machine != "mac-b" {
+		t.Fatalf("the recovered steal reassigns the claim: %+v", stolen.Claimed)
+	}
+	last := stolen.History[len(stolen.History)-1]
+	if last.Actor != "human:wido" || !strings.HasPrefix(last.Displaced, "mac-a+lin-1@") {
+		t.Fatalf("the recovered steal carries the human authority and the displaced pair: %+v", last)
 	}
 }

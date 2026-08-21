@@ -209,7 +209,14 @@ func donePath(id string) string { return goalsPrefix + "done/" + id + ".md" }
 // Open adds a queued goal. Goal-free clears in the same commit when
 // it was declared.
 func Open(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, error) {
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, openRequest(r, id, intent, origin, nextStep))
+}
+
+// openRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func openRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "open", Targets: []string{id}, Args: map[string]string{
 			"intent": intent, "origin": origin, "next": nextStep,
@@ -248,7 +255,7 @@ func Open(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, er
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // Claim takes ownership of a queued goal for the actor's pair.
@@ -258,7 +265,14 @@ func Claim(r VerbRequest, id string) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only (R3-06): humans direct agents; steal reassigns a standing claim under --by")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, claimRequest(r, id))
+}
+
+// claimRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func claimRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "claim", Targets: []string{id}},
 		Message: "goal claim " + id,
@@ -297,12 +311,19 @@ func Claim(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // Release returns the actor's claimed goal to the queue.
 func Release(r VerbRequest, id string) (PublishResult, error) {
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, releaseRequest(r, id))
+}
+
+// releaseRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func releaseRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "release", Targets: []string{id}},
 		Message: "goal release " + id,
@@ -334,7 +355,7 @@ func Release(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // Done concludes one goal and moves it to the archive — the one
@@ -343,7 +364,14 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	if strings.TrimSpace(conclusion) == "" {
 		return PublishResult{}, fmt.Errorf("done needs its conclusion — the archive is the record")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, doneRequest(r, id, conclusion))
+}
+
+// doneRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "done", Targets: []string{id}, Args: map[string]string{
 			"conclusion": conclusion,
@@ -398,7 +426,7 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 			}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 func depState(t *TreeGoals, id string) string {
@@ -429,7 +457,14 @@ func Park(r VerbRequest, id, because string) (PublishResult, error) {
 	if strings.TrimSpace(because) == "" {
 		return PublishResult{}, fmt.Errorf("park needs its reason — a pause without a why is a stall in disguise")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, parkRequest(r, id, because))
+}
+
+// parkRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func parkRequest(r VerbRequest, id, because string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "park", Targets: []string{id}, Args: map[string]string{
 			"because": because,
@@ -480,13 +515,20 @@ func Park(r VerbRequest, id, because string) (PublishResult, error) {
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // Unpark returns a parked goal to the queue. The park's records
 // stay in the history; Goal-free clears when it was declared.
 func Unpark(r VerbRequest, id string) (PublishResult, error) {
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, unparkRequest(r, id))
+}
+
+// unparkRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func unparkRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "unpark", Targets: []string{id}},
 		Message: "goal unpark " + id,
@@ -526,13 +568,20 @@ func Unpark(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // Reopen is done's explicit exception: the archived file moves back
 // to the live set as queued. Goal-free clears when it was declared.
 func Reopen(r VerbRequest, id string) (PublishResult, error) {
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, reopenRequest(r, id))
+}
+
+// reopenRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func reopenRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "reopen", Targets: []string{id}},
 		Message: "goal reopen " + id,
@@ -620,7 +669,7 @@ func Reopen(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // EditFields is the edit verb's delta set: nil-able fields change
@@ -636,10 +685,16 @@ type EditFields struct {
 
 // Edit applies field deltas to one live goal.
 func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
-	deltas := editDeltas(id, fields)
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, editRequest(r, id, fields))
+}
+
+// editRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func editRequest(r VerbRequest, id string, fields EditFields) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: deltas},
+		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: editDeltas(id, fields)},
 		Message: "goal edit " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -690,14 +745,21 @@ func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // DeclareFree declares the absence of intent: no queued or claimed
 // goals may exist, parked coexistence is lawful, renewal is
 // idempotent.
 func DeclareFree(r VerbRequest, origin, digest string) (PublishResult, error) {
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, declareFreeRequest(r, origin, digest))
+}
+
+// declareFreeRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func declareFreeRequest(r VerbRequest, origin, digest string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "declare-free", Args: map[string]string{
 			"origin": origin, "digest": digest,
@@ -732,7 +794,7 @@ func DeclareFree(r VerbRequest, origin, digest string) (PublishResult, error) {
 			return ackDisplacements(t, r, []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // Steal reassigns another machine's claim under a human's name —
@@ -742,7 +804,14 @@ func Steal(r VerbRequest, id string) (PublishResult, error) {
 	if r.Actor.Human == "" {
 		return PublishResult{}, fmt.Errorf("steal is a human act and names its human (--by)")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, stealRequest(r, id))
+}
+
+// stealRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func stealRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "steal", Targets: []string{id}, Args: map[string]string{
 			"by": r.Actor.Human,
@@ -790,7 +859,7 @@ func Steal(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // OpenClaim opens a goal already claimed by the actor — one commit,
@@ -799,7 +868,14 @@ func OpenClaim(r VerbRequest, id, intent, origin, nextStep string) (PublishResul
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("open --claim is agent-only (R3-06): humans direct agents; bare open leaves the goal queued")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, openClaimRequest(r, id, intent, origin, nextStep))
+}
+
+// openClaimRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: map[string]string{
 			"intent": intent, "origin": origin, "next": nextStep,
@@ -838,7 +914,7 @@ func OpenClaim(r VerbRequest, id, intent, origin, nextStep string) (PublishResul
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // Prune deletes archived goals outside the retention closure: every
@@ -851,7 +927,14 @@ func Prune(r VerbRequest, keep int) (PublishResult, error) {
 	if keep < 0 {
 		return PublishResult{}, fmt.Errorf("prune keeps a non-negative count")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, pruneRequest(r, keep))
+}
+
+// pruneRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func pruneRequest(r VerbRequest, keep int) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "prune", Args: map[string]string{
 			"keep": fmt.Sprintf("%d", keep),
@@ -914,7 +997,7 @@ func Prune(r VerbRequest, keep int) (PublishResult, error) {
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 func rootOpidLanded(root *RootRecord, r VerbRequest) bool {
@@ -970,7 +1053,14 @@ func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
 	if r.Actor.Human != "" {
 		return PublishResult{}, fmt.Errorf("claim is agent-only (R3-06): humans direct agents; steal reassigns a standing claim under --by")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, claimArcRequest(r, id))
+}
+
+// claimArcRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func claimArcRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
 		Message: "goal claim " + id + " (arc cascade)",
@@ -1020,12 +1110,19 @@ func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // ReleaseArc releases the actor's whole claimed arc as one unit.
 func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, releaseArcRequest(r, id))
+}
+
+// releaseArcRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func releaseArcRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
 		Message: "goal release " + id + " (arc cascade)",
@@ -1068,7 +1165,7 @@ func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // ParkArc pauses a whole arc as one unit. Parking a foreign claim
@@ -1080,7 +1177,14 @@ func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 	if strings.TrimSpace(because) == "" {
 		return PublishResult{}, fmt.Errorf("park needs its reason — a pause without a why is a stall in disguise")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, parkArcRequest(r, id, because))
+}
+
+// parkArcRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "park", Targets: []string{id}, Args: map[string]string{
 			"because": because, "cascade": "arc",
@@ -1151,12 +1255,19 @@ func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // UnparkArc restores a whole parked arc to the queue as one unit.
 func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, unparkArcRequest(r, id))
+}
+
+// unparkArcRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func unparkArcRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
 		Message: "goal unpark " + id + " (arc cascade)",
@@ -1204,14 +1315,21 @@ func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // Detach removes one member from its arc. A member claimed under
 // the arc's claimant RELEASES on the way out — the quota never
 // splits one claim into two (R4-08's no-quota-split leg).
 func Detach(r VerbRequest, id string) (PublishResult, error) {
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, detachRequest(r, id))
+}
+
+// detachRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func detachRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "detach", Targets: []string{id}},
 		Message: "goal detach " + id,
@@ -1250,7 +1368,7 @@ func Detach(r VerbRequest, id string) (PublishResult, error) {
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // SetArc moves a goal into an arc under the membership matrix
@@ -1266,7 +1384,14 @@ func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 	if arc == "" {
 		return PublishResult{}, fmt.Errorf("set-arc names its arc; detach removes membership")
 	}
-	return Publish(r.Endpoint, PublishRequest{
+	return Publish(r.Endpoint, setArcRequest(r, id, arc))
+}
+
+// setArcRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (R2-2: recovery rebuilds through the real verb paths).
+func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
+	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "set-arc", Targets: []string{id}, Args: map[string]string{"arc": arc}},
 		Message: "goal set-arc " + id + " -> " + arc,
@@ -1372,7 +1497,7 @@ func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-	})
+	}
 }
 
 // editDeltas serializes an edit's field changes into the journal's
