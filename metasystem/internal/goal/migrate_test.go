@@ -7,9 +7,15 @@ import (
 	"testing"
 )
 
-const migrateManifest = `# Queue amendments
+// migrateManifestFor binds the REAL schema's required headers to
+// the bed's actual source digest.
+func migrateManifestFor(digest string) string {
+	return `# Queue amendments
 
 Commentary between entries is ignored.
+
+MIGRATION_EPOCH: 2026-08-20T00:00:00Z
+REVIEWED_SOURCE_SHA256: ` + digest + `
 
 ### add-goal: new-work
 - Intent: Fresh work the manifest queued while the ledger was frozen
@@ -20,6 +26,7 @@ Commentary between entries is ignored.
 ### amend-goal: fix-docs
 - next: The amended next step.
 `
+}
 
 // migrateBed writes the canonical legacy ledger into a clone.
 func migrateBed(t *testing.T, root string) string {
@@ -43,7 +50,7 @@ func migrateBed(t *testing.T, root string) string {
 func migrateOpts(t *testing.T, root, digest string) MigrateOptions {
 	t.Helper()
 	manifestPath := filepath.Join(t.TempDir(), "manifest.md")
-	if err := os.WriteFile(manifestPath, []byte(migrateManifest), 0o644); err != nil {
+	if err := os.WriteFile(manifestPath, []byte(migrateManifestFor(digest)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return MigrateOptions{
@@ -121,9 +128,17 @@ func TestMigrateRefusalsComeBeforeAnyMutation(t *testing.T) {
 	_, a, _ := twoClones(t)
 	digest := migrateBed(t, a)
 
-	// A source-digest mismatch refuses before anything happens.
-	badOpts := migrateOpts(t, a, strings.Repeat("00", 32))
+	// A caller digest disagreeing with the MANIFEST's bound literal
+	// refuses at the binding gate; a manifest whose literal does not
+	// match the worktree refuses at the source gate.
+	badOpts := migrateOpts(t, a, digest)
+	badOpts.SourceDigest = strings.Repeat("00", 32)
 	_, err := Migrate(verbReq(a, "01J5XM0000000000000000M020", "mac-a"), badOpts)
+	if err == nil || !strings.Contains(err.Error(), "the manifest is the authority") {
+		t.Fatalf("the manifest binds the reviewed literal: %v", err)
+	}
+	staleOpts := migrateOpts(t, a, strings.Repeat("00", 32))
+	_, err = Migrate(verbReq(a, "01J5XM0000000000000000M021", "mac-a"), staleOpts)
 	if err == nil || !strings.Contains(err.Error(), "source digest mismatch") {
 		t.Fatalf("the reviewed-source literal gates everything: %v", err)
 	}
@@ -182,5 +197,39 @@ func TestMigrateIsDeterministicUnderInjection(t *testing.T) {
 		if string(contentA) != string(filesB[p]) {
 			t.Fatalf("byte-identical synthesis under injection: %s differs", p)
 		}
+	}
+}
+
+func TestTheCheckedInManifestParses(t *testing.T) {
+	// The PRODUCTION manifest must parse under the closed schema —
+	// the review's F1: a toy fixture proved nothing about the file
+	// the real cutover will consume.
+	data, err := os.ReadFile(filepath.Join("..", "..", "plans", "goals-migration-manifest.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := ParseManifest(data)
+	if err != nil {
+		t.Fatalf("the checked-in manifest must parse: %v", err)
+	}
+	if m.Epoch != "2026-08-20T00:00:00Z" {
+		t.Fatalf("the epoch header binds: %s", m.Epoch)
+	}
+	if m.ReviewedSHA256 != "266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f35e11a94" {
+		t.Fatalf("the reviewed literal binds: %s", m.ReviewedSHA256)
+	}
+	adds, amends := 0, 0
+	for _, e := range m.Entries {
+		if e.Kind == "add-goal" {
+			adds++
+			if e.Intent == "" || e.Origin == "" || !e.HasNext {
+				t.Fatalf("add-goal %s carries its required keys", e.Id)
+			}
+		} else {
+			amends++
+		}
+	}
+	if adds < 10 || amends < 5 {
+		t.Fatalf("the real manifest's entries all parse: %d adds, %d amends", adds, amends)
 	}
 }
