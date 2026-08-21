@@ -281,7 +281,10 @@ func rebuildMutate(e Endpoint, entry Entry) (func(tip string) ([]Change, error),
 					case "next":
 						f.NextStep = d.New
 					case "origin":
-						f.Origin = d.New
+						// Origin is immutable provenance (R2-8): a
+						// stored origin delta is a pre-fold journal's
+						// residue and is refused, never replayed.
+						return nil, fmt.Errorf("the stored intent rewrites Origin, which is immutable; close this entry by hand")
 					case "blockedBy":
 						f.Blocked = nil
 						for _, dep := range strings.Split(d.New, ",") {

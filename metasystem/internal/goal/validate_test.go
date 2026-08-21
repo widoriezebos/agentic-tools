@@ -23,7 +23,7 @@ func vRoot() *RootRecord {
 func vGoal(id, state string) *GoalFile {
 	f := &GoalFile{
 		Id: id, State: state, Intent: "Do the thing called " + id,
-		OpenedAt: "2026-08-20T10:00:00Z", Revision: 1,
+		Origin: "main", OpenedAt: "2026-08-20T10:00:00Z", Revision: 1,
 		History: []HistoryLine{{
 			At: "2026-08-20T10:00:00Z", Opid: "01J5X0000000000000000000B0-mac-a-1a2b3c4d",
 			Verb: "open", Actor: "mac-a+lin-1", Targets: []string{id}, Keep: -1,

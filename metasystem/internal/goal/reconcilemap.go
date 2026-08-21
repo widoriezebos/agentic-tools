@@ -33,6 +33,7 @@ type MappedVerb struct {
 	Base      EditFields // the base's values for every changed field
 	BaseState string     // the base's state, for state rows
 	Arc       string     // set-arc: the destination arc
+	Origin    string     // open rows only: creation provenance, never an edit
 	BaseArc   string     // the base's arc, compared at replay
 	ArcIds    []string   // cascade park: every live member
 	// ArcBaseStates carries each cascade member's own before-state
@@ -94,8 +95,8 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if edited.State != "" && edited.State != StateQueued {
 				return nil, fmt.Errorf("%s: a hand-created goal opens queued; %s is unmappable", d.Path, edited.State)
 			}
-			mapped = append(mapped, MappedVerb{Verb: "open", Id: id, Fields: EditFields{
-				Intent: &edited.Intent, NextStep: &edited.NextStep, Origin: &edited.Origin,
+			mapped = append(mapped, MappedVerb{Verb: "open", Id: id, Origin: edited.Origin, Fields: EditFields{
+				Intent: &edited.Intent, NextStep: &edited.NextStep,
 				Blocked: &edited.Blocked,
 			}})
 		case "removed":

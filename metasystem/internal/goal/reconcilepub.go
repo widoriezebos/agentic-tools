@@ -150,9 +150,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		if row.Fields.NextStep != nil {
 			f.NextStep = *row.Fields.NextStep
 		}
-		if row.Fields.Origin != nil {
-			f.Origin = *row.Fields.Origin
-		}
+		f.Origin = row.Origin
 		if row.Fields.Blocked != nil {
 			f.Blocked = append([]string(nil), (*row.Fields.Blocked)...)
 		}
@@ -334,9 +332,11 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		// the verb, all rows actor H (R2-13: the replay was stricter
 		// than the table and refused lawful human joins).
 		setArcDisplaced := ""
+		handSourceWasClaimed := false
 		switch f.State {
 		case StateQueued:
 		case StateClaimed:
+			handSourceWasClaimed = true
 			if row.BaseArc == "" {
 				return nil, conflict("state", "a claimed standalone goal joins no arc; release first")
 			}
@@ -366,6 +366,11 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 				return nil, conflict("state", "a parked member joins a queued arc after unpark")
 			}
 		case standing.State == StateClaimed && standing.Claimed != nil:
+			if handSourceWasClaimed {
+				// Two displaced pairs in one hand move refuses exactly
+				// as the verb refuses it (R2-14): release first.
+				return nil, conflict("state", "the member moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first")
+			}
 			if f.State == StateParked {
 				return nil, conflict("state", "a claimed arc admits queued members with done blockers only")
 			}
@@ -421,8 +426,8 @@ func reconcileIntent(human string, targets []string, rows []MappedVerb) Intent {
 		if row.Fields.NextStep != nil {
 			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "next", New: *row.Fields.NextStep})
 		}
-		if row.Fields.Origin != nil {
-			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "origin", New: *row.Fields.Origin})
+		if row.Origin != "" {
+			in.Args[fmt.Sprintf("row%d.origin", i)] = row.Origin
 		}
 		if row.Fields.Blocked != nil {
 			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "blockedBy", New: strings.Join(*row.Fields.Blocked, ",")})

@@ -49,6 +49,7 @@ func TestGoldenArchivedFileCarriesExplicitDoneState(t *testing.T) {
 		Id:       "custody-death-proof",
 		State:    StateDone,
 		Intent:   "Prove custody death is detected",
+		Origin:   "main",
 		Conclude: "Landed with the supervision chain; witness in the suite",
 		OpenedAt: "2026-08-20T00:40:00Z",
 		Revision: 2,

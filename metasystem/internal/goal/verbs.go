@@ -625,11 +625,12 @@ func Reopen(r VerbRequest, id string) (PublishResult, error) {
 
 // EditFields is the edit verb's delta set: nil-able fields change
 // only when set. Prose caps are REMOVED by design (D113/D114) — a
-// multi-kilobyte intent is lawful.
+// multi-kilobyte intent is lawful. Origin is NOT here (R2-8):
+// provenance is immutable authority-bearing fact, refused on every
+// surface — hand edit, verb, and recovery alike.
 type EditFields struct {
 	Intent   *string
 	NextStep *string
-	Origin   *string
 	Blocked  *[]string
 }
 
@@ -681,9 +682,6 @@ func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
 			}
 			if fields.NextStep != nil {
 				f.NextStep = *fields.NextStep
-			}
-			if fields.Origin != nil {
-				f.Origin = *fields.Origin
 			}
 			if fields.Blocked != nil {
 				f.Blocked = append([]string(nil), (*fields.Blocked)...)
@@ -1288,11 +1286,13 @@ func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 				return nil, NothingToDo{Reason: "already a member of that arc"}
 			}
 			displaced := ""
+			sourceWasClaimed := false
 			// The source side: leaving an arc under its row's rule;
 			// the detach result feeds the join (R9-10).
 			switch f.State {
 			case StateQueued:
 			case StateClaimed:
+				sourceWasClaimed = true
 				if f.Arc == "" {
 					return nil, fmt.Errorf("goal %s is claimed and in no arc; a claimed member cannot join an arc — release first", id)
 				}
@@ -1328,6 +1328,14 @@ func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 					return nil, fmt.Errorf("goal %s is parked; a parked member joins a queued arc after unpark", id)
 				}
 			case standing.State == StateClaimed && standing.Claimed != nil:
+				if sourceWasClaimed {
+					// TWO displaced pairs in one move — the source
+					// claimant losing a member and the destination
+					// claimant gaining one — is the composed-move row
+					// the design explicitly refuses (R2-14/BGS-15):
+					// release first, then join.
+					return nil, fmt.Errorf("goal %s moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first", id)
+				}
 				if f.State == StateParked {
 					return nil, fmt.Errorf("goal %s is parked; a claimed arc admits queued members with done blockers only", id)
 				}
@@ -1377,9 +1385,6 @@ func editDeltas(id string, fields EditFields) []FieldDelta {
 	}
 	if fields.NextStep != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "next", New: *fields.NextStep})
-	}
-	if fields.Origin != nil {
-		deltas = append(deltas, FieldDelta{Target: id, Field: "origin", New: *fields.Origin})
 	}
 	if fields.Blocked != nil {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "blockedBy", New: strings.Join(*fields.Blocked, ",")})
