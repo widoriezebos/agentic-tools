@@ -245,13 +245,39 @@ func TrailerPresent(e Endpoint, tip, opid string) (bool, error) {
 // AdvanceAccepted CAS-advances the accepted ref onto a tip this
 // process just validated and confirmed. An absent ref bootstraps.
 func AdvanceAccepted(root, newTip string) error {
-	old, err := goalGit(root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
-	if err != nil {
-		_, createErr := goalGit(root, nil, "update-ref", AcceptedRef, newTip)
-		return createErr
+	return advanceAcceptedForward(root, newTip)
+}
+
+// advanceAcceptedForward moves the accepted ref FORWARD only (F6):
+// the CAS asserts the value read here, and a lost CAS re-reads —
+// if the ref already descends to (or past) the new tip, someone
+// else carried it and this pass is done; a ref that does NOT
+// descend retries the CAS. The ref can never move backward through
+// this path.
+func advanceAcceptedForward(root, newTip string) error {
+	for attempt := 0; attempt < 5; attempt++ {
+		old, err := goalGit(root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
+		if err != nil {
+			if _, createErr := goalGit(root, nil, "update-ref", AcceptedRef, newTip); createErr == nil {
+				return nil
+			}
+			continue
+		}
+		oldTip := strings.TrimSpace(old)
+		// Already at or PAST the new tip: forward means done.
+		if _, ancErr := goalGit(root, nil, "merge-base", "--is-ancestor", newTip, oldTip); ancErr == nil {
+			return nil
+		}
+		// The new tip must descend from the current value, or this
+		// pass has a stale world and someone else owns the move.
+		if _, ancErr := goalGit(root, nil, "merge-base", "--is-ancestor", oldTip, newTip); ancErr != nil {
+			return fmt.Errorf("the accepted ref at %s and the tip %s have diverged; the read-side validator owns this move", short(oldTip), short(newTip))
+		}
+		if _, err := goalGit(root, nil, "update-ref", AcceptedRef, newTip, oldTip); err == nil {
+			return nil
+		}
 	}
-	_, err = goalGit(root, nil, "update-ref", AcceptedRef, newTip, strings.TrimSpace(old))
-	return err
+	return fmt.Errorf("the accepted ref CAS lost five times; a later pass advances it")
 }
 
 // CleanupRefs deletes the operation's temporary refs at its
@@ -271,12 +297,21 @@ func (l LostToCompetitor) Error() string {
 }
 
 // AlreadyApplied is the mutation callback's idempotent-success
-// classification: the rebuilt tip already carries this operation's
-// effect (this clone's own opid landed — a resumed recovery, a
-// delayed push).
+// classification, lawful ONLY when the callback FOUND THIS
+// OPERATION'S OWN OPID on the rebuilt tip (a resumed recovery, a
+// delayed push). A semantic no-op without that proof is
+// NothingToDo — the journal's truth predicate is the opid, and a
+// confirmed entry whose opid is nowhere would be a lie.
 type AlreadyApplied struct{}
 
 func (AlreadyApplied) Error() string { return "already applied" }
+
+// NothingToDo classifies a fresh operation whose desired state
+// already holds without this opid's involvement: abandoned by its
+// own reading of the world, never confirmed.
+type NothingToDo struct{ Reason string }
+
+func (n NothingToDo) Error() string { return "nothing to do: " + n.Reason }
 
 // PublishRequest drives one full transaction.
 type PublishRequest struct {
@@ -408,15 +443,35 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 		outcome, pushErr := PublishCAS(e, tip, commit)
 		switch outcome {
 		case CASLanded:
-			if err := MarkTerminal(e.Root, req.Opid, OutcomeConfirmed, "opid landed on "+commit); err != nil {
+			// The postcondition, not the push's exit code, is the
+			// truth (F6): refetch and find OUR trailer before
+			// anything terminalizes.
+			verifyNonce, nErr := readNonce()
+			if nErr != nil {
+				return PublishResult{}, nErr
+			}
+			newTip, capErr := CaptureTip(e, verifyNonce)
+			CleanupRefs(e, verifyNonce)
+			if capErr != nil {
+				return PublishResult{Outcome: "", Tip: tip, Commit: commit,
+						Detail: "pushed; the confirming refetch failed and the journal entry stays pushed"},
+					fmt.Errorf("confirming refetch failed: %v", capErr)
+			}
+			present, trErr := TrailerPresent(e, newTip, req.Opid)
+			if trErr != nil || !present {
+				return PublishResult{Outcome: "", Tip: newTip, Commit: commit,
+						Detail: "pushed; the opid is not visible on the refetched tip and the journal entry stays pushed"},
+					fmt.Errorf("postcondition unresolved after a landed push (present=%v err=%v)", present, trErr)
+			}
+			if err := MarkTerminal(e.Root, req.Opid, OutcomeConfirmed, "opid verified on "+short(newTip)); err != nil {
 				return PublishResult{}, err
 			}
-			if err := AdvanceAccepted(e.Root, commit); err != nil {
-				return PublishResult{Outcome: OutcomeConfirmed, Tip: commit, Commit: commit,
+			if err := advanceAcceptedForward(e.Root, newTip); err != nil {
+				return PublishResult{Outcome: OutcomeConfirmed, Tip: newTip, Commit: commit,
 					Detail: "confirmed; accepted ref did not advance: " + err.Error()}, nil
 			}
 			CleanupRefs(e, req.Opid)
-			return PublishResult{Outcome: OutcomeConfirmed, Tip: commit, Commit: commit}, nil
+			return PublishResult{Outcome: OutcomeConfirmed, Tip: newTip, Commit: commit}, nil
 
 		case CASRefused:
 			// Someone advanced the branch. The rebuilt world decides:
@@ -453,6 +508,12 @@ func terminalFromMutate(e Endpoint, opid, tip string, err error) (PublishResult,
 		}
 		CleanupRefs(e, opid)
 		return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: "idempotent"}, nil
+	case NothingToDo:
+		if mErr := MarkTerminal(e.Root, opid, OutcomeAbandoned, v.Reason); mErr != nil {
+			return PublishResult{}, mErr
+		}
+		CleanupRefs(e, opid)
+		return PublishResult{Outcome: OutcomeAbandoned, Tip: tip, Detail: v.Reason}, nil
 	case LostToCompetitor:
 		if mErr := MarkTerminal(e.Root, opid, OutcomeLost, "winner: "+v.Winner); mErr != nil {
 			return PublishResult{}, mErr

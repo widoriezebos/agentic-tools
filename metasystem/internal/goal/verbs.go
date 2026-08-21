@@ -159,7 +159,7 @@ func Claim(r VerbRequest, id string) (PublishResult, error) {
 			}
 			if f.State == StateClaimed {
 				if f.Claimed != nil && f.Claimed.Machine == r.Actor.Machine {
-					return nil, AlreadyApplied{}
+					return nil, NothingToDo{Reason: "already claimed by this machine (not by this operation)"}
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
@@ -519,7 +519,10 @@ func DeclareFree(r VerbRequest, origin, digest string) (PublishResult, error) {
 				}
 			}
 			if t.Root.Free != nil && t.Root.Free.Digest == digest {
-				return nil, AlreadyApplied{}
+				if rootOpidLanded(t.Root, r) {
+					return nil, AlreadyApplied{}
+				}
+				return nil, NothingToDo{Reason: "the declaration already stands at this digest"}
 			}
 			t.Root.Free = &FreeRecord{Declared: r.stamp(), Origin: origin, Digest: digest}
 			t.Root.Revision++
@@ -562,7 +565,7 @@ func Steal(r VerbRequest, id string) (PublishResult, error) {
 				return nil, fmt.Errorf("goal %s is %s; steal reassigns a standing claim (claim takes a queued goal)", id, f.State)
 			}
 			if f.Claimed.Machine == r.Actor.Machine {
-				return nil, AlreadyApplied{}
+				return nil, NothingToDo{Reason: "already claimed by this machine (not by this operation)"}
 			}
 			f.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
 			touch(f, r, "steal", []string{id})
@@ -781,7 +784,7 @@ func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
-				return nil, AlreadyApplied{}
+				return nil, NothingToDo{Reason: "the cascade found nothing to move"}
 			}
 			return changes, nil
 		},
@@ -825,7 +828,7 @@ func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
-				return nil, AlreadyApplied{}
+				return nil, NothingToDo{Reason: "the cascade found nothing to move"}
 			}
 			return changes, nil
 		},
@@ -905,7 +908,7 @@ func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
-				return nil, AlreadyApplied{}
+				return nil, NothingToDo{Reason: "the cascade found nothing to move"}
 			}
 			return changes, nil
 		},
@@ -946,7 +949,7 @@ func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
-				return nil, AlreadyApplied{}
+				return nil, NothingToDo{Reason: "the cascade found nothing to move"}
 			}
 			if t.Root != nil && t.Root.Free != nil {
 				t.Root.Free = nil
@@ -984,7 +987,7 @@ func Detach(r VerbRequest, id string) (PublishResult, error) {
 				return nil, AlreadyApplied{}
 			}
 			if f.Arc == "" {
-				return nil, AlreadyApplied{}
+				return nil, NothingToDo{Reason: "the goal is not in an arc"}
 			}
 			if f.State == StateClaimed && f.Claimed != nil {
 				if f.Claimed.Machine != r.Actor.Machine && r.Actor.Human == "" {

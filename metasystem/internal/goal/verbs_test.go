@@ -325,10 +325,13 @@ func TestDeclareFreeExclusivityAndRenewal(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("declare-free over parked: %+v %v", res, err)
 	}
-	// Renewal with the same digest is idempotent.
+	// Renewal with the same digest is idempotent IN EFFECT: the
+	// fresh operation finds the declaration standing and abandons —
+	// never a confirmed entry whose opid is nowhere (F8: the opid
+	// is the journal's truth).
 	res, err = DeclareFree(verbReq(a, "01J5X0000000000000000000F3", "mac-a"), "main", strings.Repeat("ef", 32))
-	if err != nil || res.Outcome != OutcomeConfirmed || res.Detail != "idempotent" {
-		t.Fatalf("renewal is idempotent: %+v %v", res, err)
+	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already stands") {
+		t.Fatalf("a fresh renewal abandons honestly: %+v %v", res, err)
 	}
 }
 
