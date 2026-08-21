@@ -127,13 +127,17 @@ func environWithoutGitSteering() []string {
 		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true,
 		"GIT_INDEX_FILE": true, "GIT_CEILING_DIRECTORIES": true,
 		"GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+		"GIT_CONFIG": true, "GIT_CONFIG_PARAMETERS": true,
+		"GIT_CONFIG_COUNT": true, "GIT_CONFIG_GLOBAL": true,
+		"GIT_CONFIG_SYSTEM": true, "GIT_CONFIG_NOSYSTEM": true,
 	}
 	var out []string
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if !steering[name] {
-			out = append(out, entry)
+		if steering[name] || strings.HasPrefix(name, "GIT_CONFIG_KEY_") || strings.HasPrefix(name, "GIT_CONFIG_VALUE_") {
+			continue
 		}
+		out = append(out, entry)
 	}
 	return out
 }

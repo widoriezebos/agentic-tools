@@ -361,7 +361,7 @@ func ReadCommitGoals(root, commit string) (map[string][]byte, error) {
 		if p == "" {
 			continue
 		}
-		content, err := gitIn(root, "cat-file", "-p", commit+":"+p)
+		content, err := gitIn(root, "cat-file", "-p", commit+":./"+p)
 		if err != nil {
 			return nil, fmt.Errorf("cannot read %s at %s: %w", p, commit, err)
 		}

@@ -54,7 +54,7 @@ func ExistingLedgerIdentity(root string) string {
 	if err != nil {
 		return ""
 	}
-	content, err := gitIn(root, "cat-file", "-p", strings.TrimSpace(out)+":"+goalsPrefix+"backlog.md")
+	content, err := gitIn(root, "cat-file", "-p", strings.TrimSpace(out)+":./"+goalsPrefix+"backlog.md")
 	if err != nil {
 		return ""
 	}
@@ -70,6 +70,6 @@ func NewWorld(root string) bool {
 	if err != nil {
 		return false
 	}
-	_, err = gitIn(root, "cat-file", "-e", strings.TrimSpace(out)+":"+goalsPrefix+"backlog.md")
+	_, err = gitIn(root, "cat-file", "-e", strings.TrimSpace(out)+":./"+goalsPrefix+"backlog.md")
 	return err == nil
 }

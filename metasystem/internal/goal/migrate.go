@@ -57,7 +57,7 @@ func migrationComplete(root, tip, identity, mode, syncMode, manifestDigest strin
 	if strings.TrimSpace(probe) == "" {
 		return false, nil
 	}
-	existing, err := gitIn(root, "cat-file", "-p", tip+":"+goalsPrefix+"backlog.md")
+	existing, err := gitIn(root, "cat-file", "-p", tip+":./"+goalsPrefix+"backlog.md")
 	if err != nil {
 		return false, fmt.Errorf("the tip's root record cannot be read: %w", err)
 	}
@@ -96,7 +96,11 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 	if opts.ManifestPath != "" {
 		if abs, absErr := filepath.Abs(opts.ManifestPath); absErr == nil {
 			if rootAbs, rootErr := filepath.Abs(r.Endpoint.Root); rootErr == nil {
-				if rel, relErr := filepath.Rel(rootAbs, abs); relErr == nil && !strings.HasPrefix(rel, "..") {
+				// IsLocal, not a ".." prefix test: a lawful in-root
+				// name like "..review/manifest.md" must not be
+				// misread as external and skip the cleanliness and
+				// tip-side proofs.
+				if rel, relErr := filepath.Rel(rootAbs, abs); relErr == nil && filepath.IsLocal(rel) {
 					manifestRel = filepath.ToSlash(rel)
 					cleanPaths = append(cleanPaths, rel)
 				}
@@ -214,14 +218,14 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 			// concurrent legacy advance since the review makes the
 			// tip's bytes differ from the reviewed literal, and the
 			// migration refuses rather than silently discarding it.
-			tipSource, catErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":plans/goals.md")
+			tipSource, catErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":./plans/goals.md")
 			if catErr != nil {
 				return nil, fmt.Errorf("the canonical tip carries no plans/goals.md; a completed migration reruns idempotently, anything else is a confusion: %v", catErr)
 			}
 			if got := sha256HexBytes([]byte(tipSource)); got != opts.SourceDigest {
 				return nil, fmt.Errorf("the canonical ledger advanced past the review: the tip's goals.md is %s, the reviewed literal is %s — re-review before migrating", got, opts.SourceDigest)
 			}
-			if accJSON, accErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":plans/goals-accepted.json"); accErr != nil {
+			if accJSON, accErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":./plans/goals-accepted.json"); accErr != nil {
 				return nil, fmt.Errorf("migration precondition refused: the tip carries no goals-accepted.json baseline")
 			} else {
 				var accepted struct {
@@ -252,7 +256,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 				// are separate moments, and a swap between them
 				// would publish amendments nobody reviewed under a
 				// digest the committed artifact does not carry.
-				tipManifest, mErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":"+manifestRel)
+				tipManifest, mErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":./"+manifestRel)
 				if mErr != nil {
 					return nil, fmt.Errorf("migration precondition refused: the manifest is not committed at the canonical tip: %v", mErr)
 				}
@@ -317,7 +321,7 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 	// review read disappears.
 	carryNotes := func(f *GoalFile, g Goal) {
 		for _, ev := range g.Evidence {
-			f.Legacy = append(f.Legacy, "Evidence: "+ev)
+			f.Legacy = append(f.Legacy, strings.TrimRight("Evidence: "+ev, " \t"))
 		}
 		// EVERY tolerated prose line survives: migration deletes
 		// goals.md afterwards, so a line dropped here is gone

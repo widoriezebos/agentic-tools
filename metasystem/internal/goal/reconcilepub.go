@@ -139,7 +139,10 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 			}
 		}
 		if definitive {
-			if rec, exists, _ := ReadBase(r.Endpoint.Root); exists && rec.RefreshDue {
+			// Only THIS session's record clears: another session's
+			// pending record (ours failed before writing, theirs is
+			// mid-publish) carries the snapshot ITS recovery needs.
+			if rec, exists, _ := ReadBase(r.Endpoint.Root); exists && rec.RefreshDue && rec.Opid == r.opid() {
 				_ = WriteBase(r.Endpoint.Root, BaseRecord{Commit: rec.Commit, WrittenAt: rec.WrittenAt})
 			}
 		}

@@ -250,10 +250,23 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 		abs := filepath.Join(repoRoot, filepath.FromSlash(p))
 		current, readErr := os.ReadFile(abs)
 		captured, wasCaptured := snap.Files[p]
-		if readErr == nil && wasCaptured && string(current) != string(captured) {
+		switch {
+		case readErr == nil && wasCaptured && string(current) != string(captured):
 			// Edited since capture: preserved and named.
 			skipped = append(skipped, p)
 			continue
+		case readErr == nil && !wasCaptured && string(current) != string(published[p]):
+			// CREATED since capture: the human's new file is theirs,
+			// not the published tree's to overwrite.
+			skipped = append(skipped, p)
+			continue
+		case readErr != nil && os.IsNotExist(readErr) && wasCaptured:
+			// DELETED since capture: recreating it would undo a hand
+			// act the capture never saw.
+			skipped = append(skipped, p)
+			continue
+		case readErr != nil && !os.IsNotExist(readErr):
+			return skipped, fmt.Errorf("the refresh cannot prove the state of %s: %v", p, readErr)
 		}
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			return skipped, err
@@ -263,18 +276,28 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 		}
 	}
 	// Captured files the published tree no longer carries die with
-	// the same edited-since-capture protection.
+	// the same edited-since-capture protection. A removal that FAILS
+	// keeps RefreshDue standing — clearing it over an unremoved file
+	// would record a refresh that did not happen.
 	for _, p := range sortedKeys(snap.Files) {
 		if _, still := published[p]; still {
 			continue
 		}
 		abs := filepath.Join(repoRoot, filepath.FromSlash(p))
 		current, readErr := os.ReadFile(abs)
-		if readErr == nil && string(current) != string(snap.Files[p]) {
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				continue
+			}
+			return skipped, fmt.Errorf("the refresh cannot prove the state of %s: %v", p, readErr)
+		}
+		if string(current) != string(snap.Files[p]) {
 			skipped = append(skipped, p)
 			continue
 		}
-		_ = os.Remove(abs)
+		if err := os.Remove(abs); err != nil {
+			return skipped, fmt.Errorf("the refresh could not remove %s: %v", p, err)
+		}
 	}
 	return skipped, WriteBase(repoRoot, BaseRecord{Commit: publishedCommit, WrittenAt: nowISO8601()})
 }
@@ -332,8 +355,12 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 		// sync mode, or a rewound tip behind the accepted ref, must
 		// not become this checkout's files just because our trailer
 		// sits below it.
-		if acceptedOut, accErr := gitIn(repoRoot, "rev-parse", "--verify", "--quiet", AcceptedRef); accErr == nil {
-			if gateErr := AcceptanceGates(repoRoot, strings.TrimSpace(acceptedOut), tip); gateErr != nil {
+		acceptedTip, hasAccepted, accErr := acceptedTipForGates(repoRoot)
+		if accErr != nil {
+			return nil, accErr
+		}
+		if hasAccepted {
+			if gateErr := AcceptanceGates(repoRoot, acceptedTip, tip); gateErr != nil {
 				return nil, fmt.Errorf("the reconcile published, but the canonical tip fails the acceptance gates; repair the branch, then re-run --refresh-only: %w", gateErr)
 			}
 		}

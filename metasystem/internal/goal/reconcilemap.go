@@ -150,6 +150,7 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 	// Cascade recognition: identical park deltas across ALL of an
 	// arc's live members map to ONE cascade park; a partial arc
 	// refuses — cascades are all-or-none.
+	var parkRows []MappedVerb
 	for because, ids := range parks {
 		byArc := map[string][]string{}
 		for _, id := range ids {
@@ -158,7 +159,7 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 		for arc, members := range byArc {
 			if arc == "" {
 				for _, id := range members {
-					mapped = append(mapped, MappedVerb{Verb: "park", Id: id, Because: because, BaseState: parkStates[id]})
+					parkRows = append(parkRows, MappedVerb{Verb: "park", Id: id, Because: because, BaseState: parkStates[id]})
 				}
 				continue
 			}
@@ -175,10 +176,14 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			for _, id := range allLive {
 				memberStates[id] = parkStates[id]
 			}
-			mapped = append(mapped, MappedVerb{Verb: "park", Id: members[0], Because: because, ArcIds: allLive, ArcBaseStates: memberStates})
+			parkRows = append(parkRows, MappedVerb{Verb: "park", Id: members[0], Because: because, ArcIds: allLive, ArcBaseStates: memberStates})
 		}
 	}
-	return mapped, nil
+	// State verbs run FIRST: cascade recognition deferred the park
+	// rows past the ordinary rows, so a park+edit on one goal would
+	// otherwise execute — and journal — the edit against the unparked
+	// state, including a displacement the park itself owns.
+	return append(parkRows, mapped...), nil
 }
 
 // mapOneChange decomposes one changed file into its smallest verb
@@ -299,7 +304,7 @@ func handLenient(data []byte) []byte {
 		// nor donate a fabricated value to one.
 		tail := strings.TrimPrefix(line, "- Parked: ")
 		by, at := "", ""
-		byFound, atFound, becauseFound := false, false, false
+		byFound, atFound, becauseFound, foreignToken := false, false, false, false
 		j := 0
 		for j < len(tail) {
 			for j < len(tail) && (tail[j] == ' ' || tail[j] == '\t') {
@@ -322,12 +327,18 @@ func handLenient(data []byte) []byte {
 				by, byFound = strings.TrimPrefix(token, "by="), true
 			case strings.HasPrefix(token, "at="):
 				at, atFound = strings.TrimPrefix(token, "at="), true
+			case strings.HasPrefix(token, "displaced="):
+				// lawful; splitParkTail carries it into the rebuild
+			default:
+				foreignToken = true
 			}
 		}
-		if !becauseFound || (byFound && by != "" && atFound && at != "") {
-			// No reason to synthesize anything: either the line is
-			// fully specified, or it carries no because and the
-			// strict parse refuses it as itself.
+		if foreignToken || !becauseFound || (byFound && by != "" && atFound && at != "") {
+			// No rebuild: a fully specified line stands as written, a
+			// line with no because refuses as itself, and a line
+			// carrying a token the grammar does not know must reach
+			// the strict parser INTACT — rebuilding would silently
+			// discard what the human typed.
 			continue
 		}
 		// Rebuild the line whole from its because (and displaced)

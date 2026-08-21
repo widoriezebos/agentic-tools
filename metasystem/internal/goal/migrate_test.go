@@ -248,3 +248,24 @@ func TestTheCheckedInManifestParses(t *testing.T) {
 		t.Fatalf("the real manifest's entries all parse: %d adds, %d amends", adds, amends)
 	}
 }
+
+func TestMigrationCompleteRefusesAnUnparseableRootRecord(t *testing.T) {
+	_, a, _ := twoClones(t)
+	res, err := Publish(endpointFor(a), PublishRequest{
+		Opid: "op-torn-root-000000000000", Machine: "mac-a", Lineage: "l1",
+		Intent: testIntentFor("migrate"), Message: "torn root",
+		Mutate: func(tip string) ([]Change, error) {
+			return []Change{{Path: goalsPrefix + "backlog.md", Content: []byte("not a root record at all\n")}}, nil
+		},
+	})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("seed torn root: %+v %v", res, err)
+	}
+	// A root record that EXISTS but does not parse is a broken world,
+	// never "not migrated yet": reading it as absence would journal a
+	// second migration on top of the wreck.
+	if _, doneErr := migrationComplete(a, res.Tip, "01JIDENT", "bare", SyncRemote, ""); doneErr == nil ||
+		!strings.Contains(doneErr.Error(), "does not parse") {
+		t.Fatalf("a torn root refuses by name: %v", doneErr)
+	}
+}

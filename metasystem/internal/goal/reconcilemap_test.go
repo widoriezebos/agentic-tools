@@ -298,3 +298,29 @@ func TestUnparkAndLenientDisplacedRoundTrip(t *testing.T) {
 		t.Fatalf("the lenient rebuild keeps displaced and because: %s", line)
 	}
 }
+
+func TestHandParkWithAForeignTokenRefusesUnrewritten(t *testing.T) {
+	a, tip := reconcileBed(t)
+	// The human typed a token the park grammar does not know. The
+	// lenient path must NOT rebuild the line into a clean placeholder
+	// park — that silently discards what they wrote; the strict
+	// parser refuses it by diagnostic instead.
+	abs := filepath.Join(a, "plans", "goals", "editable.md")
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "- State: queued",
+		"- State: parked\n- Parked: by= at= unexpected=value because=held", 1)
+	if err := os.WriteFile(abs, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, mapErr := MapDeltas(a, tip, snap)
+	if mapErr == nil || !strings.Contains(mapErr.Error(), "diagnostic") {
+		t.Fatalf("a foreign park token refuses by diagnostic, never a cleaned rewrite: %v", mapErr)
+	}
+}

@@ -9,7 +9,6 @@ package main
 import (
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -53,12 +52,15 @@ func ensureGuardEnrolled(root string) error {
 	// no fence to enroll (adoption installs it when git init lands).
 	probe := exec.Command("git", "-C", absRoot, "rev-parse", "--is-inside-work-tree")
 	probe.Env = environWithoutGitSteeringCLI()
-	if probeErr := probe.Run(); probeErr != nil {
-		var exit *exec.ExitError
-		if errors.As(probeErr, &exit) && exit.ExitCode() == 128 {
+	probeOut, probeErr := probe.CombinedOutput()
+	if probeErr != nil {
+		// Exit 128 alone is not proof: a malformed configuration in a
+		// VALID repository exits 128 too, and reading that as "no
+		// repository" would skip the fence while goal writes proceed.
+		if strings.Contains(string(probeOut), "not a git repository") {
 			return nil
 		}
-		return fmt.Errorf("the target's repository shape cannot be proven: %v", probeErr)
+		return fmt.Errorf("the target's repository shape cannot be proven: %v (%s)", probeErr, strings.TrimSpace(string(probeOut)))
 	}
 	// --git-path hooks honors core.hooksPath: writing under
 	// .git/hooks while git reads a configured hooks path elsewhere
@@ -78,11 +80,11 @@ func ensureGuardEnrolled(root string) error {
 		// would overwrite a file whose content was never seen.
 		return fmt.Errorf("the existing pre-commit hook cannot be read: %v", readErr)
 	}
-	// Enrollment means THIS checkout's guard: after resolving the
-	// composer's dynamic toplevel reference, the hook must name the
-	// current absolute guard path. A mere mention of the guard's
-	// basename — a stale path from before a checkout move, or an
-	// inert comment — leaves git running no fence at all.
+	// Enrollment means THIS checkout's guard on an EXECUTING line:
+	// after resolving the composer's dynamic toplevel reference, some
+	// non-comment line must name the current absolute guard path. A
+	// mention in a comment, a stale path from before a checkout move,
+	// or an inert basename leaves git running no fence at all.
 	enrolled := false
 	if readErr == nil {
 		resolved := string(existing)
@@ -91,9 +93,23 @@ func ensureGuardEnrolled(root string) error {
 		if topOut, topErr := topCmd.Output(); topErr == nil {
 			resolved = strings.ReplaceAll(resolved, "$(git rev-parse --show-toplevel)", strings.TrimSpace(string(topOut)))
 		}
-		enrolled = strings.Contains(resolved, guard)
+		for _, line := range strings.Split(resolved, "\n") {
+			trimmed := strings.TrimLeft(line, " \t")
+			if strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			if strings.Contains(line, guard) {
+				enrolled = true
+				break
+			}
+		}
 	}
-	if enrolled {
+	// An enrolled hook of OUR OWN shape still carrying the fail-open
+	// body upgrades in place: a missing guard must block the commit,
+	// not silently wave it through.
+	upgradeOurs := readErr == nil && isOurComposer(string(existing)) &&
+		!strings.Contains(string(existing), "if [[ ! -x \"$guard\" ]]")
+	if enrolled && !upgradeOurs {
 		hookInfo, hookStatErr := os.Stat(hookPath)
 		if hookStatErr != nil {
 			return fmt.Errorf("the pre-commit hook's mode cannot be proven: %v", hookStatErr)
@@ -115,18 +131,22 @@ func ensureGuardEnrolled(root string) error {
 			return err
 		}
 	}
-	// A hook WE wrote earlier (recognized by its own shape) carries a
-	// stale guard path after a checkout move; rewriting our own
-	// composer is not a clobber — the local dispatch stays intact.
-	composer := "#!/usr/bin/env bash\nguard=" + shellSingleQuote(guard) + "\n" + `if [[ -x "$guard" ]]; then
-  "$guard" || exit $?
-fi
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-if [[ -x "$here/pre-commit.local" ]]; then
-  exec "$here/pre-commit.local" "$@"
-fi
-exit 0
-`
+	// A hook WE wrote earlier (recognized by its own shape) upgrades
+	// or recomposes in place — the local dispatch stays intact. The
+	// guard path is resolved dynamically per invocation: hooks live
+	// in the COMMON git directory shared by every linked worktree,
+	// and a pinned absolute path from one worktree leaves every
+	// sibling unfenced the day that worktree moves. The composer
+	// FAILS CLOSED when the resolved guard is missing — a fence that
+	// silently steps aside is no fence.
+	prefixCmd := exec.Command("git", "-C", absRoot, "rev-parse", "--show-prefix")
+	prefixCmd.Env = environWithoutGitSteeringCLI()
+	prefixOut, prefixErr := prefixCmd.Output()
+	if prefixErr != nil {
+		return fmt.Errorf("the checkout's toplevel prefix cannot be resolved: %v", prefixErr)
+	}
+	guardRel := strings.TrimSpace(string(prefixOut)) + "scripts/agents/pre-commit-guard.sh"
+	composer := "#!/usr/bin/env bash\nguard=\"$(git rev-parse --show-toplevel)/" + guardRel + "\"\n" + composerBodyFailClosed
 	if err := os.WriteFile(hookPath, []byte(composer), 0o755); err != nil {
 		return err
 	}
@@ -142,27 +162,47 @@ exit 0
 	return nil
 }
 
-// isOurComposer recognizes the enrollment composer this program (and
-// adopt.sh) writes: a guard= assignment on its own line plus the
-// pre-commit.local dispatch. Only a hook of that shape may be
-// rewritten in place; anything else is a human's file.
-func isOurComposer(hook string) bool {
-	hasAssign := false
-	for _, line := range strings.Split(hook, "\n") {
-		if strings.HasPrefix(line, "guard=") && strings.Contains(line, "pre-commit-guard.sh") {
-			hasAssign = true
-			break
-		}
-	}
-	return hasAssign && strings.Contains(hook, `exec "$here/pre-commit.local"`)
-}
+// The composer bodies, byte-exact below the guard= line: the current
+// fail-closed body, and the retired fail-open body still present in
+// hooks enrolled by earlier versions (recognized so they upgrade in
+// place instead of stacking).
+const composerBodyFailClosed = `if [[ ! -x "$guard" ]]; then
+  echo "pre-commit: the metasystem ledger guard is missing at $guard; refusing to commit without the fence" >&2
+  exit 1
+fi
+"$guard" || exit $?
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -x "$here/pre-commit.local" ]]; then
+  exec "$here/pre-commit.local" "$@"
+fi
+exit 0
+`
 
-// shellSingleQuote renders s as one single-quoted shell word: inside
-// single quotes the shell expands nothing, so paths carrying $,
-// backticks, or spaces survive verbatim. A Go strconv.Quote here
-// would hand bash a double-quoted string it expands.
-func shellSingleQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+const composerBodyFailOpen = `if [[ -x "$guard" ]]; then
+  "$guard" || exit $?
+fi
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -x "$here/pre-commit.local" ]]; then
+  exec "$here/pre-commit.local" "$@"
+fi
+exit 0
+`
+
+// isOurComposer recognizes the enrollment composer this program (and
+// adopt.sh) writes by its EXACT shape: the shebang, one guard=
+// assignment, and one of the two known bodies byte-for-byte. A
+// foreign or locally extended hook that merely contains similar
+// fragments is a human's file — rewriting it would delete their
+// checks (R2-15).
+func isOurComposer(hook string) bool {
+	lines := strings.SplitN(hook, "\n", 3)
+	if len(lines) < 3 || lines[0] != "#!/usr/bin/env bash" {
+		return false
+	}
+	if !strings.HasPrefix(lines[1], "guard=") || !strings.Contains(lines[1], "pre-commit-guard.sh") {
+		return false
+	}
+	return lines[2] == composerBodyFailClosed || lines[2] == composerBodyFailOpen
 }
 
 // environWithoutGitSteeringCLI mirrors the goal package's scrub: the
@@ -173,13 +213,17 @@ func environWithoutGitSteeringCLI() []string {
 		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true,
 		"GIT_INDEX_FILE": true, "GIT_CEILING_DIRECTORIES": true,
 		"GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+		"GIT_CONFIG": true, "GIT_CONFIG_PARAMETERS": true,
+		"GIT_CONFIG_COUNT": true, "GIT_CONFIG_GLOBAL": true,
+		"GIT_CONFIG_SYSTEM": true, "GIT_CONFIG_NOSYSTEM": true,
 	}
 	var out []string
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if !steering[name] {
-			out = append(out, entry)
+		if steering[name] || strings.HasPrefix(name, "GIT_CONFIG_KEY_") || strings.HasPrefix(name, "GIT_CONFIG_VALUE_") {
+			continue
 		}
+		out = append(out, entry)
 	}
 	return out
 }

@@ -118,6 +118,22 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// acceptedTipForGates resolves the accepted ref for gating: a ref
+// that provably does not exist gates nothing (pre-bootstrap), but a
+// ref that EXISTS and cannot resolve to a commit is a broken world
+// that refuses — reading breakage as absence would skip identity and
+// descent exactly when they matter most.
+func acceptedTipForGates(root string) (string, bool, error) {
+	out, err := gitIn(root, "rev-parse", "--verify", "--quiet", AcceptedRef+"^{commit}")
+	if err == nil {
+		return strings.TrimSpace(out), true, nil
+	}
+	if _, refErr := gitIn(root, "show-ref", "--verify", "--quiet", AcceptedRef); refErr != nil {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf("the accepted ref exists but does not resolve to a commit; repair %s before continuing", AcceptedRef)
+}
+
 // tipCarriesLedger reports whether the tip has a ledger root at
 // all — the pre-migration discriminator the mutation-side
 // validation and the sync-mode gate share. Absence and FAILURE are
@@ -139,7 +155,7 @@ func tipCarriesLedger(e Endpoint, tip string) (bool, error) {
 // this clone's config. A tip with no root record is pre-migration
 // and gates nothing; a torn record is the validator's to refuse.
 func SyncModeGate(e Endpoint, tip string) error {
-	content, err := gitIn(e.Root, "cat-file", "-p", tip+":"+goalsPrefix+"backlog.md")
+	content, err := gitIn(e.Root, "cat-file", "-p", tip+":./"+goalsPrefix+"backlog.md")
 	if err != nil {
 		return nil
 	}
@@ -186,6 +202,15 @@ func BuildCommit(e Endpoint, opid, tip string, changes []Change, message string)
 	if _, err := goalGit(e.Root, env, "read-tree", tip+"^{tree}"); err != nil {
 		return "", err
 	}
+	// A root below the git toplevel (the real repository's shape)
+	// addresses tree entries under its prefix: --cacheinfo takes RAW
+	// toplevel-rooted index paths — unlike the pathspec form, which
+	// git prefixes with the working directory itself.
+	prefixOut, err := goalGit(e.Root, nil, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", err
+	}
+	treePrefix := strings.TrimSpace(prefixOut)
 	for _, c := range changes {
 		if c.Delete {
 			if _, err := goalGit(e.Root, env, "update-index", "--force-remove", "--", c.Path); err != nil {
@@ -198,7 +223,7 @@ func BuildCommit(e Endpoint, opid, tip string, changes []Change, message string)
 			return "", err
 		}
 		if _, err := goalGit(e.Root, env, "update-index", "--add",
-			"--cacheinfo", "100644,"+oid+","+c.Path); err != nil {
+			"--cacheinfo", "100644,"+oid+","+treePrefix+c.Path); err != nil {
 			return "", err
 		}
 	}
@@ -493,8 +518,14 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		// refused here exactly as the read side refuses it — a
 		// mutation must never build on a world this clone would not
 		// accept.
-		if acceptedOut, accErr := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef); accErr == nil {
-			if gateErr := AcceptanceGates(e.Root, strings.TrimSpace(acceptedOut), tip); gateErr != nil {
+		acceptedTip, hasAccepted, accErr := acceptedTipForGates(e.Root)
+		if accErr != nil {
+			_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "accepted ref unreadable: "+accErr.Error())
+			CleanupRefs(e, req.Opid)
+			return PublishResult{}, accErr
+		}
+		if hasAccepted {
+			if gateErr := AcceptanceGates(e.Root, acceptedTip, tip); gateErr != nil {
 				_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "acceptance gates refused: "+gateErr.Error())
 				CleanupRefs(e, req.Opid)
 				return PublishResult{}, gateErr

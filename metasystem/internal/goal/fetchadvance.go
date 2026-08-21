@@ -106,7 +106,7 @@ func AcceptanceGates(root, accepted, fetched string) error {
 // treeIdentity reads the root record's adoption identity at a
 // commit — the one fact that means "same ledger".
 func treeIdentity(root, commit string) (string, error) {
-	out, err := gitIn(root, "cat-file", "-p", commit+":"+goalsPrefix+"backlog.md")
+	out, err := gitIn(root, "cat-file", "-p", commit+":./"+goalsPrefix+"backlog.md")
 	if err != nil {
 		return "", fmt.Errorf("no root record at %s: %w", short(commit), err)
 	}

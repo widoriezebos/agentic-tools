@@ -241,7 +241,10 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 		RefreshDue: true, Publishing: true, Opid: reconcileOpid, Snapshot: snap.Files}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(editablePath); err != nil {
+	// The crash window's worktree truth: the publish left, the
+	// refresh never ran, so the file still carries the CAPTURED hand
+	// bytes — that is what the completion lawfully overwrites.
+	if err := os.WriteFile(editablePath, handBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := RefreshOnly(a); err != nil {
@@ -256,5 +259,68 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 	}
 	if rec, _, _ := ReadBase(a); rec.RefreshDue {
 		t.Fatal("the completed refresh clears the pending flag")
+	}
+
+	// A file DELETED after capture is a hand act the completion
+	// preserves: named, never resurrected.
+	if err := WriteBase(a, BaseRecord{Commit: tip, WrittenAt: "2026-08-21T09:30:00Z",
+		RefreshDue: true, Publishing: true, Opid: reconcileOpid, Snapshot: snap.Files}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(editablePath); err != nil {
+		t.Fatal(err)
+	}
+	skipped, err := RefreshOnly(a)
+	if err != nil {
+		t.Fatalf("the deletion-preserving completion still completes: %v", err)
+	}
+	if _, statErr := os.Stat(editablePath); !os.IsNotExist(statErr) {
+		t.Fatal("a file deleted after capture stays deleted")
+	}
+	named := false
+	for _, p := range skipped {
+		if strings.Contains(p, "editable") {
+			named = true
+		}
+	}
+	if !named {
+		t.Fatalf("the preserved deletion is NAMED: %v", skipped)
+	}
+}
+
+func TestRefreshPreservesAPostCaptureCreation(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	res, err := Open(verbReq(a, "01J5X00000000000000000RC00", "mac-a"), "fresh-row", "Row.", "main", "Go.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	// The published tree carries fresh-row.md; the capture does NOT
+	// (the file appeared locally after capture, bytes of its own).
+	p := goalsPrefix + "fresh-row.md"
+	abs := filepath.Join(a, filepath.FromSlash(p))
+	mine := []byte("# fresh-row\n\nmine, written after capture\n")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(abs, mine, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skipped, err := Refresh(a, res.Tip, &Snapshot{Files: map[string][]byte{}})
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	named := false
+	for _, s := range skipped {
+		if s == p {
+			named = true
+		}
+	}
+	if !named {
+		t.Fatalf("the post-capture creation is preserved and NAMED: %v", skipped)
+	}
+	got, _ := os.ReadFile(abs)
+	if string(got) != string(mine) {
+		t.Fatalf("the post-capture creation was overwritten: %s", got)
 	}
 }

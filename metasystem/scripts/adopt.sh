@@ -47,15 +47,28 @@ USAGE
 
 die() { echo "$2" >&2; exit "$1"; }
 
-# A hook enrolls the guard only if it references the EFFECTIVE guard:
-# after resolving the composer's dynamic toplevel reference, the hook
-# must name the target's current absolute guard path. A bare mention
-# of the basename — a stale path from a moved checkout, an inert
-# comment — is a hook git runs WITHOUT the fence.
+# Every probe of the TARGET's repository runs with git's steering env
+# scrubbed: an inherited GIT_DIR or config override must not make the
+# probe answer for some other repository.
+git_target() {
+  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE \
+    -u GIT_CEILING_DIRECTORIES -u GIT_OBJECT_DIRECTORY \
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_CONFIG \
+    -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT -u GIT_CONFIG_GLOBAL \
+    -u GIT_CONFIG_SYSTEM -u GIT_CONFIG_NOSYSTEM git "$@"
+}
+
+# A hook enrolls the guard only if a NON-COMMENT line references the
+# EFFECTIVE guard: after resolving the composer's dynamic toplevel
+# reference, some executing line must name the target's current
+# absolute guard path. A mention in a comment, a stale path from a
+# moved checkout, or a bare basename is a hook git runs WITHOUT the
+# fence.
 enrolls_guard() {
   local hook_text toplevel
-  hook_text=$(cat "$1" 2>/dev/null) || return 1
-  toplevel=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null) || toplevel="$target"
+  hook_text=$(grep -v '^[[:space:]]*#' "$1" 2>/dev/null) || true
+  [[ -n "$hook_text" ]] || return 1
+  toplevel=$(git_target -C "$target" rev-parse --show-toplevel 2>/dev/null) || toplevel="$target"
   hook_text=${hook_text//'$(git rev-parse --show-toplevel)'/$toplevel}
   [[ "$hook_text" == *"$target/scripts/agents/pre-commit-guard.sh"* ]]
 }
@@ -155,12 +168,18 @@ echo "note: only file-shaped instruction assets are detectable. Confirm by hand 
 # without the guard — discovering that AFTER the payload landed would
 # leave a half-adopted repository behind the same refusal. Same
 # message, zero writes.
-if git -C "$target" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  pre_hook_dir=$(git -C "$target" rev-parse --path-format=absolute --git-path hooks)
+if probe_out=$(git_target -C "$target" rev-parse --is-inside-work-tree 2>&1); then
+  pre_hook_dir=$(git_target -C "$target" rev-parse --path-format=absolute --git-path hooks)
   if [[ -e "$pre_hook_dir/pre-commit" && -e "$pre_hook_dir/pre-commit.local" ]] \
     && ! enrolls_guard "$pre_hook_dir/pre-commit"; then
     die 1 "target carries both pre-commit and pre-commit.local and neither enrolls the guard; compose them by hand, then re-run adoption"
   fi
+elif [[ "$probe_out" != *"not a git repository"* ]]; then
+  # Exit 128 alone is not proof of a missing repository: a malformed
+  # configuration in a VALID repository fails the same way, and
+  # adopting through that would strand a half-adoption behind the
+  # goal CLI's own refusal later.
+  die 1 "target's repository shape cannot be proven: $probe_out"
 fi
 
 # Stage the payload from the tracked HEAD.
@@ -411,9 +430,11 @@ if hook_common=$(cd "$target" && git rev-parse --path-format=absolute --git-comm
   # in exactly the repositories that care about their hooks (F15).
   composer='#!/usr/bin/env bash
 guard="$(git rev-parse --show-toplevel)/scripts/agents/pre-commit-guard.sh"
-if [[ -x "$guard" ]]; then
-  "$guard" || exit $?
+if [[ ! -x "$guard" ]]; then
+  echo "pre-commit: the metasystem ledger guard is missing at $guard; refusing to commit without the fence" >&2
+  exit 1
 fi
+"$guard" || exit $?
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -x "$here/pre-commit.local" ]]; then
   exec "$here/pre-commit.local" "$@"

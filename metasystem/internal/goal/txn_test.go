@@ -341,3 +341,52 @@ func TestPushFailureClassifierSeparatesLeaseFromTransport(t *testing.T) {
 		}
 	}
 }
+
+func TestTransactionsAddressTheTreeUnderASubdirectoryRoot(t *testing.T) {
+	// The REAL repository's shape: the goal root sits one level below
+	// the git toplevel. Every rev:path read and raw index write must
+	// address the tree under that prefix — the toplevel-rooted forms
+	// pass every toplevel-rooted fixture and then refuse (or worse,
+	// write beside the ledger) on the deployment layout itself.
+	origin, a, _ := twoClones(t)
+	_ = origin
+	sub := filepath.Join(a, "nested")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seedLedger(t, sub)
+	res, err := Open(verbReq(sub, "01J5X00000000000000000SD00", "mac-a"), "deep-goal", "Prefixed world.", "main", "Go.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open under a subdirectory root: %+v %v", res, err)
+	}
+	// The write landed under the PREFIX at the toplevel view.
+	out := mustGit(t, a, "ls-tree", "-r", "--name-only", res.Tip)
+	if !strings.Contains(out, "nested/plans/goals/deep-goal.md") {
+		t.Fatalf("the tree entry is not under the root's prefix:\n%s", out)
+	}
+	// The read side resolves the same world back.
+	tree, err := loadTree(sub, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Live["deep-goal"] == nil {
+		t.Fatalf("the prefixed ledger does not read back: %+v", tree.Live)
+	}
+}
+
+func TestABrokenAcceptedRefRefusesMutations(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	// The accepted ref EXISTS but points at a blob: identity and
+	// descent cannot be gated, and skipping them because the ref
+	// "did not resolve" is exactly the fail-open the gates forbid.
+	oid, err := hashObject(a, []byte("not a commit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, a, "update-ref", AcceptedRef, oid)
+	_, openErr := Open(verbReq(a, "01J5X00000000000000000BA00", "mac-a"), "gated-out", "Blocked.", "main", "Go.")
+	if openErr == nil || !strings.Contains(openErr.Error(), "does not resolve to a commit") {
+		t.Fatalf("a broken accepted ref refuses the mutation by name: %v", openErr)
+	}
+}
