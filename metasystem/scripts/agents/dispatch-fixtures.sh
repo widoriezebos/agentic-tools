@@ -254,6 +254,18 @@ stop_timed_out_agent_fixture() { # fixture name, job id or -, driver pid, wait s
   exit 1
 }
 
+wait_for_agent_child_stopped() { # stopped-file path, failure message
+  # The reaper's TERM and the held child's acknowledgement are two
+  # processes: --wait returns on the terminal record, the child's
+  # signal handler writes the file a beat later. Poll to the cap —
+  # a missing acknowledgement still fails, an in-flight one never.
+  local stopped_file=$1 message=$2 deadline=$(( SECONDS + agent_fixture_cap_sec ))
+  while [[ ! -f "$stopped_file" ]]; do
+    (( SECONDS < deadline )) || { echo "$message" >&2; exit 1; }
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+}
+
 wait_for_agent_fixture_process() { # fixture name, job id or -, exact child pid
   local name=$1 job=$2 child_pid=$3 started=$SECONDS deadline=$(( SECONDS + agent_fixture_cap_sec )) result
   while kill -0 "$child_pid" 2>/dev/null; do
@@ -840,8 +852,8 @@ set -e
 [[ $process_loss_status -eq 3 ]] || { echo "process loss mapped to $process_loss_status instead of 3" >&2; exit 1; }
 grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/process-loss.json" \
   || { echo "reap did not name process-lost" >&2; exit 1; }
-[[ -f "$agent_repo/artifacts/agents/process-loss/rounds/1/child.stopped" ]] \
-  || { echo "reap did not TERM the orphaned process-loss child" >&2; exit 1; }
+wait_for_agent_child_stopped "$agent_repo/artifacts/agents/process-loss/rounds/1/child.stopped" \
+  "reap did not TERM the orphaned process-loss child"
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/process-loss.json" \
   || { echo "process-loss terminal record lacks group-death proof" >&2; exit 1; }
 
@@ -884,8 +896,8 @@ wait_for_agent_fixture_process timed-driver timed "$timeout_driver"
   exit 1; }
 grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/timed.json" \
   || { echo "absolute cap did not record budget-cap" >&2; exit 1; }
-[[ -f "$agent_repo/artifacts/agents/timed/rounds/1/child.stopped" ]] \
-  || { echo "timeout did not TERM the whole owned group" >&2; exit 1; }
+wait_for_agent_child_stopped "$agent_repo/artifacts/agents/timed/rounds/1/child.stopped" \
+  "timeout did not TERM the whole owned group"
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/timed.json" \
   || { echo "timeout terminal record lacks group-death proof" >&2; exit 1; }
 
@@ -902,8 +914,8 @@ wait_for_agent_status cancelled running
 run_agent_fixture cancelled-cancel cancelled "$agent_dispatch" cancel --job cancelled
 wait_for_agent_fixture_process cancelled-driver cancelled "$cancel_driver"
 [[ "$(cat "$cancel_result")" == 8 ]] || { echo "cancelled did not map to wait exit 8" >&2; exit 1; }
-[[ -f "$agent_repo/artifacts/agents/cancelled/rounds/1/child.stopped" ]] \
-  || { echo "cancel did not TERM the whole owned group" >&2; exit 1; }
+wait_for_agent_child_stopped "$agent_repo/artifacts/agents/cancelled/rounds/1/child.stopped" \
+  "cancel did not TERM the whole owned group"
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/cancelled.json" \
   || { echo "cancelled terminal record lacks group-death proof" >&2; exit 1; }
 

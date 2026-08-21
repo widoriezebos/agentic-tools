@@ -149,9 +149,13 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	// The crash shape: publication landed, the base says refreshDue,
-	// no files were written.
-	if err := WriteBase(a, BaseRecord{Commit: res.Tip, WrittenAt: "2026-08-21T00:00:00Z", RefreshDue: true}); err != nil {
+	// The crash shape: publication landed, the base says refreshDue
+	// with the DURABLY captured snapshot, no files were written.
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteBase(a, BaseRecord{Commit: res.Tip, WrittenAt: "2026-08-21T00:00:00Z", RefreshDue: true, Snapshot: snap.Files}); err != nil {
 		t.Fatal(err)
 	}
 	// An ordinary session refuses while the refresh is pending.
@@ -175,5 +179,13 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 	// Idempotent: a second completion finds nothing to do.
 	if _, err := RefreshOnly(a); err == nil {
 		t.Fatal("a clean base has no pending refresh to complete")
+	}
+	// A pending record WITHOUT its snapshot refuses by name (the
+	// pre-durable shape completes by hand, never by guessing).
+	if err := WriteBase(a, BaseRecord{Commit: res.Tip, WrittenAt: "2026-08-21T00:00:00Z", RefreshDue: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RefreshOnly(a); err == nil || !strings.Contains(err.Error(), "no snapshot") {
+		t.Fatalf("a snapshotless pending record refuses by name: %v", err)
 	}
 }

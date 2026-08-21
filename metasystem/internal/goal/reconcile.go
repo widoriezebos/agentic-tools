@@ -34,6 +34,10 @@ type BaseRecord struct {
 	Commit     string `json:"commit"`
 	WrittenAt  string `json:"writtenAt"`
 	RefreshDue bool   `json:"refreshDue"` // a publish landed; the refresh has not completed
+	// Snapshot carries the captured bytes DURABLY (F10): a refresh
+	// completing after a crash distinguishes post-capture edits,
+	// creations, and deletions exactly as the live session would.
+	Snapshot map[string][]byte `json:"snapshot,omitempty"`
 }
 
 // ReadBase loads the record; absent is not an error (the fallback
@@ -141,6 +145,39 @@ func BaseTip(repoRoot string) (string, error) {
 // rewind repair and git gc (R10-M02).
 const baseAnchorRef = "refs/metasystem/goals/materialized-base"
 
+// MaintainBase advances the materialized base when the checkout's
+// goal files exactly match HEAD's goal tree and the record lags —
+// the ordinary pull/checkout path (F9): no hook needed, the next
+// session's read does the bookkeeping.
+func MaintainBase(repoRoot string) {
+	rec, exists, err := ReadBase(repoRoot)
+	if err != nil || (exists && rec.RefreshDue) {
+		return
+	}
+	headOut, err := gitIn(repoRoot, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return
+	}
+	head := strings.TrimSpace(headOut)
+	if exists && rec.Commit == head {
+		return
+	}
+	headFiles, err := ReadCommitGoals(repoRoot, head)
+	if err != nil {
+		return
+	}
+	snap, err := CaptureSnapshot(repoRoot)
+	if err != nil || len(snap.Files) != len(headFiles) {
+		return
+	}
+	for p, content := range headFiles {
+		if string(snap.Files[p]) != string(content) {
+			return
+		}
+	}
+	_ = RecordMaterialized(repoRoot, head)
+}
+
 // RecordMaterialized stamps the base after a refresh or a checkout
 // update of goal paths, anchoring the commit against gc.
 func RecordMaterialized(repoRoot, commit string) error {
@@ -192,6 +229,7 @@ func DiffAgainstBase(repoRoot string, baseCommit string, snap *Snapshot) ([]Snap
 func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string, err error) {
 	if err := WriteBase(repoRoot, BaseRecord{
 		Commit: publishedCommit, WrittenAt: nowISO8601(), RefreshDue: true,
+		Snapshot: snap.Files,
 	}); err != nil {
 		return nil, err
 	}
@@ -248,36 +286,14 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 	if !exists || !rec.RefreshDue {
 		return nil, fmt.Errorf("no refresh is pending; ordinary reconcile owns the next session")
 	}
-	published, err := ReadCommitGoals(repoRoot, rec.Commit)
-	if err != nil {
-		return nil, err
+	if rec.Snapshot == nil {
+		return nil, fmt.Errorf("the pending record carries no snapshot; this refresh predates the durable capture and completes by hand")
 	}
-	for _, p := range sortedKeys(published) {
-		abs := filepath.Join(repoRoot, filepath.FromSlash(p))
-		if current, readErr := os.ReadFile(abs); readErr == nil && string(current) == string(published[p]) {
-			continue
-		} else if readErr == nil {
-			// A user edit made between the crash and this completion
-			// is preserved and named — never overwritten blind.
-			var parsedCurrent, parsedPublished *GoalFile
-			var curProblems, pubProblems []Problem
-			parsedCurrent, curProblems = ParseFile(current)
-			parsedPublished, pubProblems = ParseFile(published[p])
-			same := len(curProblems) == 0 && len(pubProblems) == 0 &&
-				string(RenderFile(parsedCurrent)) == string(RenderFile(parsedPublished))
-			if !same {
-				skipped = append(skipped, p)
-				continue
-			}
-		}
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-			return skipped, err
-		}
-		if err := os.WriteFile(abs, published[p], 0o644); err != nil {
-			return skipped, err
-		}
-	}
-	return skipped, WriteBase(repoRoot, BaseRecord{Commit: rec.Commit, WrittenAt: nowISO8601()})
+	// The DURABLE snapshot restores the live session's exact
+	// protection (F10): the completion runs the same refresh the
+	// crash interrupted, post-capture edits, creations, and
+	// deletions all distinguished.
+	return Refresh(repoRoot, rec.Commit, &Snapshot{Files: rec.Snapshot})
 }
 
 func nowISO8601() string {

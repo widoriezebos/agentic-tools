@@ -183,3 +183,75 @@ func TestReconcileOpenConflictOnExistingGoal(t *testing.T) {
 		t.Fatalf("the open conflict rejects naming the goal: %+v %v", res, err)
 	}
 }
+
+func TestConcurrentFieldEditConflictsInsteadOfOverwriting(t *testing.T) {
+	a, _ := reconcileBed(t)
+	// The hand edit changes intent A→B; a competitor lands A→C on
+	// the canonical branch first. The replay must CONFLICT naming
+	// the field — never overwrite C with B (F9).
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
+		f.Intent = "Hand version B."
+	})
+	competitor := "Competitor version C."
+	if res, err := Edit(verbReq(a, "01J5X00000000000000000P200", "mac-a"), "editable", EditFields{Intent: &competitor}); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("competitor edit: %+v %v", res, err)
+	}
+	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P210"))
+	if err != nil || res.Publish.Outcome != OutcomeRejected {
+		t.Fatalf("the concurrent edit conflicts: %+v %v", res, err)
+	}
+	if !strings.Contains(res.Publish.Detail, "intent") || !strings.Contains(res.Publish.Detail, "Competitor version C.") {
+		t.Fatalf("the conflict names the field and the fetched value: %s", res.Publish.Detail)
+	}
+	// The competitor's value survives untouched.
+	p, err := Project(endpointFor(a), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Tree.Live["editable"].Intent != competitor {
+		t.Fatal("the fetched value is never overwritten")
+	}
+}
+
+func TestHandArcMoveMapsToItsVerbs(t *testing.T) {
+	a, _ := reconcileBed(t)
+	// A hand-set arc maps to set-arc and replays with the base-arc
+	// comparison (F11: arc IS on the closed surface).
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
+		f.Arc = "hand-formed-arc"
+	})
+	res, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000P220"))
+	if err != nil || res.Publish.Outcome != OutcomeConfirmed || res.Rows[0].Verb != "set-arc" {
+		t.Fatalf("the arc move maps and publishes: %+v %v", res, err)
+	}
+	p, err := Project(endpointFor(a), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Tree.Live["editable"].Arc != "hand-formed-arc" {
+		t.Fatalf("the arc landed: %+v", p.Tree.Live["editable"])
+	}
+	// A hand-cleared arc maps to detach.
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
+		f.Arc = ""
+	})
+	res, err = Reconcile(humanReconcileReq(a, "01J5X00000000000000000P230"))
+	if err != nil || res.Publish.Outcome != OutcomeConfirmed || res.Rows[0].Verb != "detach" {
+		t.Fatalf("the arc clear maps to detach: %+v %v", res, err)
+	}
+}
+
+func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
+	a, tip := reconcileBed(t)
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
+		f.Origin = "rewritten-provenance"
+	})
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = MapDeltas(a, tip, snap)
+	if err == nil || !strings.Contains(err.Error(), "Origin") {
+		t.Fatalf("Origin is outside the closed edit surface: %v", err)
+	}
+}

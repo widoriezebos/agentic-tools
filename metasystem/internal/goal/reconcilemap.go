@@ -20,14 +20,21 @@ import (
 	"strings"
 )
 
-// MappedVerb is one lawful row delta the hand edit decomposed into.
+// MappedVerb is one lawful row delta the hand edit decomposed
+// into, carrying the BASE-side values its replay compares against
+// (F9): a concurrent edit that moved a field past the base is a
+// conflict, never an overwrite.
 type MappedVerb struct {
-	Verb     string // open | park | unpark | done | reopen | edit
-	Id       string
-	Because  string // park
-	Conclude string // done
-	Fields   EditFields
-	ArcIds   []string // cascade park: every live member
+	Verb      string // open | park | unpark | done | reopen | edit
+	Id        string
+	Because   string // park
+	Conclude  string // done
+	Fields    EditFields
+	Base      EditFields // the base's values for every changed field
+	BaseState string     // the base's state, for state rows
+	Arc       string     // set-arc: the destination arc
+	BaseArc   string     // the base's arc, compared at replay
+	ArcIds    []string   // cascade park: every live member
 }
 
 // MapDeltas decomposes the snapshot-vs-base delta into lawful verb
@@ -143,7 +150,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	if edited.Revision != base.Revision {
 		return nil, fmt.Errorf("%s: Revision is a generated field; the engine synthesizes it", p)
 	}
-	if len(edited.History) != len(base.History) {
+	if renderHistory(edited.History) != renderHistory(base.History) {
 		return nil, fmt.Errorf("%s: History is a generated field; the engine synthesizes it", p)
 	}
 	if edited.OpenedAt != base.OpenedAt {
@@ -162,14 +169,14 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 			if edited.Parked == nil || edited.Parked.Because == "" {
 				return nil, fmt.Errorf("%s: a hand-park needs its Parked because", p)
 			}
-			rows = append(rows, MappedVerb{Verb: "park", Id: base.Id, Because: edited.Parked.Because})
+			rows = append(rows, MappedVerb{Verb: "park", Id: base.Id, Because: edited.Parked.Because, BaseState: base.State})
 		case base.State == StateParked && edited.State == StateQueued:
-			rows = append(rows, MappedVerb{Verb: "unpark", Id: base.Id})
+			rows = append(rows, MappedVerb{Verb: "unpark", Id: base.Id, BaseState: base.State})
 		case edited.State == StateDone:
 			if edited.Conclude == "" {
 				return nil, fmt.Errorf("%s: a hand-done needs its Concluded", p)
 			}
-			rows = append(rows, MappedVerb{Verb: "done", Id: base.Id, Conclude: edited.Conclude})
+			rows = append(rows, MappedVerb{Verb: "done", Id: base.Id, Conclude: edited.Conclude, BaseState: base.State})
 		default:
 			return nil, fmt.Errorf("%s: the state change %s to %s has no hand-edit grammar", p, base.State, edited.State)
 		}
@@ -179,32 +186,45 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 
 	// One edit for the field remainder, over the CLOSED surface.
 	fields := EditFields{}
+	baseFields := EditFields{}
 	editNeeded := false
 	if edited.Intent != base.Intent {
 		fields.Intent = &edited.Intent
+		baseFields.Intent = &base.Intent
 		editNeeded = true
 	}
 	if edited.NextStep != base.NextStep {
 		fields.NextStep = &edited.NextStep
+		baseFields.NextStep = &base.NextStep
 		editNeeded = true
 	}
 	if edited.Origin != base.Origin {
-		fields.Origin = &edited.Origin
-		editNeeded = true
+		// Origin is OUTSIDE the closed edit surface (F11): the
+		// provenance of a goal is not a hand-editable fact.
+		return nil, fmt.Errorf("%s: Origin is not on the closed edit surface", p)
 	}
 	if strings.Join(edited.Blocked, ",") != strings.Join(base.Blocked, ",") {
 		blocked := append([]string(nil), edited.Blocked...)
+		baseBlocked := append([]string(nil), base.Blocked...)
 		fields.Blocked = &blocked
+		baseFields.Blocked = &baseBlocked
 		editNeeded = true
 	}
+	// Arc IS on the closed surface (F11): a membership change maps
+	// to its verbs — set-arc for a join or move, detach for a clear.
 	if edited.Arc != base.Arc {
-		return nil, fmt.Errorf("%s: Arc membership moves through set-arc and detach, not hand edits", p)
+		if edited.Arc == "" {
+			rows = append(rows, MappedVerb{Verb: "detach", Id: base.Id, BaseState: base.State, BaseArc: base.Arc})
+		} else {
+			rows = append(rows, MappedVerb{Verb: "set-arc", Id: base.Id, BaseState: base.State,
+				Arc: edited.Arc, BaseArc: base.Arc})
+		}
 	}
 	if edited.Conclude != base.Conclude && edited.State == base.State {
 		return nil, fmt.Errorf("%s: Concluded belongs to done; editing it in place has no grammar", p)
 	}
 	if editNeeded {
-		rows = append(rows, MappedVerb{Verb: "edit", Id: base.Id, Fields: fields})
+		rows = append(rows, MappedVerb{Verb: "edit", Id: base.Id, Fields: fields, Base: baseFields, BaseState: base.State})
 	}
 	if len(rows) == 0 {
 		// Bytes differ but no mapped field does: whitespace or an
@@ -259,4 +279,15 @@ func parkReasonChanged(base, edited *GoalFile) bool {
 		return false
 	}
 	return base.Parked.Because != edited.Parked.Because
+}
+
+// renderHistory serializes a history for content comparison — a
+// same-length alteration must not slip past a length check.
+func renderHistory(lines []HistoryLine) string {
+	var b strings.Builder
+	for _, h := range lines {
+		b.WriteString(RenderHistoryLine(h))
+		b.WriteString("\n")
+	}
+	return b.String()
 }

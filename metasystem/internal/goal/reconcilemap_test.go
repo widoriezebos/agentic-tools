@@ -210,8 +210,9 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// OpenedAt is generated; Claimed is generated; Arc moves through
-	// verbs; Concluded belongs to done — each refuses by field.
+	// OpenedAt is generated; Claimed is generated; Origin is off the
+	// surface; Concluded belongs to done — each refuses by field. (An
+	// arc change MAPS — TestHandArcMoveMapsToItsVerbs owns that leg.)
 	for _, leg := range []struct {
 		name      string
 		transform func(*GoalFile)
@@ -221,7 +222,7 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 		{"claimed", func(f *GoalFile) {
 			f.Claimed = &ClaimRecord{Machine: "mac-x", Lineage: "l9", At: "2026-08-21T00:00:00Z"}
 		}, "Claimed"},
-		{"arc", func(f *GoalFile) { f.Arc = "smuggled-arc" }, "set-arc and detach"},
+		{"origin", func(f *GoalFile) { f.Origin = "smuggled-origin" }, "not on the closed edit surface"},
 		{"conclude", func(f *GoalFile) { f.Conclude = "edited in place" }, "Concluded belongs to done"},
 	} {
 		editFile(t, a, goalsPrefix+"editable.md", leg.transform)

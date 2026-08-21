@@ -28,6 +28,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	if r.Actor.Human == "" {
 		return ReconcileResult{}, fmt.Errorf("reconcile republishes hand edits and names its human (--by)")
 	}
+	MaintainBase(r.Endpoint.Root)
 	base, err := BaseTip(r.Endpoint.Root)
 	if err != nil {
 		return ReconcileResult{}, err
@@ -47,6 +48,16 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	targets := make([]string, 0, len(rows))
 	for _, row := range rows {
 		targets = append(targets, row.Id)
+	}
+	// The pending record — snapshot included — lands durably BEFORE
+	// the publish leaves this process (F10): a crash at ANY point
+	// after publication finds the snapshot on disk and
+	// --refresh-only completes exactly what the live session would
+	// have done. The commit field is stamped after confirmation.
+	if err := WriteBase(r.Endpoint.Root, BaseRecord{
+		Commit: base, WrittenAt: nowISO8601(), RefreshDue: true, Snapshot: snap.Files,
+	}); err != nil {
+		return ReconcileResult{}, err
 	}
 	res, err := Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -93,6 +104,10 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
 	if err != nil || res.Outcome != OutcomeConfirmed {
+		// A refused or failed publish leaves no pending refresh.
+		if rec, exists, _ := ReadBase(r.Endpoint.Root); exists && rec.RefreshDue {
+			_ = WriteBase(r.Endpoint.Root, BaseRecord{Commit: rec.Commit, WrittenAt: rec.WrittenAt})
+		}
 		return ReconcileResult{Publish: res, Rows: rows}, err
 	}
 	skipped, err := Refresh(r.Endpoint.Root, res.Commit, snap)
@@ -132,7 +147,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		}
 		touch(f, r, "open", []string{row.Id})
 		t.Live[row.Id] = f
-		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
+		changes := []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}
+		changes = append(changes, clearFreeIfDeclared(t, r, row.Id)...)
+		return changes, nil
 
 	case "park":
 		ids := row.ArcIds
@@ -179,7 +196,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		f.State = StateQueued
 		f.Parked = nil
 		touch(f, r, "unpark", []string{row.Id})
-		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
+		changes := []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}
+		changes = append(changes, clearFreeIfDeclared(t, r, row.Id)...)
+		return changes, nil
 
 	case "done":
 		f, exists := t.Live[row.Id]
@@ -204,9 +223,29 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		}, nil
 
 	case "edit":
+		// done+edit compose (F11): the edited goal may already have
+		// moved to the archive by an earlier row in this session.
 		f, exists := t.Live[row.Id]
+		archived := false
+		if !exists {
+			if df, inDone := t.Done[row.Id]; inDone {
+				f, exists, archived = df, true, true
+			}
+		}
 		if !exists {
 			return nil, conflict("state", "not live on the fetched tip")
+		}
+		// The BASE comparison per field (F9): a concurrent edit that
+		// moved a field past the base conflicts by name — the hand
+		// edit never overwrites what it never saw.
+		if row.Base.Intent != nil && f.Intent != *row.Base.Intent {
+			return nil, conflict("intent", "the fetched tip carries %q, the hand edit was made against %q", f.Intent, *row.Base.Intent)
+		}
+		if row.Base.NextStep != nil && f.NextStep != *row.Base.NextStep {
+			return nil, conflict("next", "the fetched tip carries %q, the hand edit was made against %q", f.NextStep, *row.Base.NextStep)
+		}
+		if row.Base.Blocked != nil && strings.Join(f.Blocked, ",") != strings.Join(*row.Base.Blocked, ",") {
+			return nil, conflict("blockedBy", "the fetched tip's edges moved past the hand edit's base")
 		}
 		if row.Fields.Intent != nil {
 			f.Intent = *row.Fields.Intent
@@ -214,13 +253,51 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		if row.Fields.NextStep != nil {
 			f.NextStep = *row.Fields.NextStep
 		}
-		if row.Fields.Origin != nil {
-			f.Origin = *row.Fields.Origin
-		}
 		if row.Fields.Blocked != nil {
 			f.Blocked = append([]string(nil), (*row.Fields.Blocked)...)
 		}
 		touch(f, r, "edit", []string{row.Id})
+		path := livePath(row.Id)
+		if archived {
+			path = donePath(row.Id)
+		}
+		return []Change{{Path: path, Content: RenderFile(f)}}, nil
+
+	case "detach":
+		f, exists := t.Live[row.Id]
+		if !exists {
+			return nil, conflict("state", "not live on the fetched tip")
+		}
+		if f.Arc != row.BaseArc {
+			return nil, conflict("arc", "the fetched tip carries arc %q, the hand edit was made against %q", f.Arc, row.BaseArc)
+		}
+		if f.State == StateClaimed && f.Claimed != nil {
+			f.State = StateQueued
+			f.Claimed = nil
+		}
+		f.Arc = ""
+		touch(f, r, "detach", []string{row.Id})
+		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
+
+	case "set-arc":
+		f, exists := t.Live[row.Id]
+		if !exists {
+			return nil, conflict("state", "not live on the fetched tip")
+		}
+		if f.Arc != row.BaseArc {
+			return nil, conflict("arc", "the fetched tip carries arc %q, the hand edit was made against %q", f.Arc, row.BaseArc)
+		}
+		if f.State != StateQueued {
+			return nil, conflict("state", "arc membership moves queued goals; %s is %s on the fetched tip", row.Id, f.State)
+		}
+		for _, liveId := range sortedGoalIds(t.Live) {
+			m := t.Live[liveId]
+			if m.Arc == row.Arc && m.State == StateClaimed && m.Claimed != nil {
+				return nil, conflict("arc", "arc %s is claimed by %s on the fetched tip; a hand move into a claimed arc is a stranger's move", row.Arc, m.Claimed.Machine)
+			}
+		}
+		f.Arc = row.Arc
+		touch(f, r, "set-arc", []string{row.Id})
 		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
 	}
 	return nil, fmt.Errorf("reconcile has no application for verb %q", row.Verb)
@@ -260,4 +337,20 @@ func reconcileIntent(human string, targets []string, rows []MappedVerb) Intent {
 		}
 	}
 	return in
+}
+
+// clearFreeIfDeclared applies the verbs' Goal-free clearing rule to
+// a mapped row (F11): an open or unpark under a declared Goal-free
+// clears it in the same commit, exactly as the verb does.
+func clearFreeIfDeclared(t *TreeGoals, r VerbRequest, target string) []Change {
+	if t.Root == nil || t.Root.Free == nil {
+		return nil
+	}
+	t.Root.Free = nil
+	t.Root.Revision++
+	t.Root.History = append(t.Root.History, HistoryLine{
+		At: r.stamp(), Opid: r.opid(), Verb: "reconcile",
+		Actor: r.Actor.historyActor(), Targets: []string{target}, Keep: -1,
+	})
+	return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}
 }
