@@ -101,7 +101,13 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 		}
 		return strings.TrimSpace(out), nil
 	}
-	if _, err := goalGit(e.Root, nil, "fetch", "--no-tags", e.Remote,
+	// --refmap= keeps this fetch to EXACTLY the per-op refspec: git
+	// otherwise opportunistically updates the remote-tracking ref
+	// too, and two concurrent operations then collide on that ONE
+	// shared ref's lock ("cannot lock ref 'refs/remotes/...'") — the
+	// exact contention the per-op refs exist to prevent. The F17
+	// race certification caught it on its first true-concurrency run.
+	if _, err := goalGit(e.Root, nil, "fetch", "--no-tags", "--refmap=", e.Remote,
 		"+"+e.Branch+":"+fetchRefFor(opid)); err != nil {
 		return "", err
 	}
@@ -226,7 +232,16 @@ const (
 // lawful) from transport-unknown (definite nothing).
 func classifyPushFailure(output string) CASOutcome {
 	lower := strings.ToLower(output)
-	for _, marker := range []string{"stale info", "[rejected]", "fetch first", "non-fast-forward"} {
+	// The lost-lease shapes differ by transport: a smart-protocol
+	// remote says "stale info", while receive-pack on a file-path
+	// remote says "cannot lock ref ... but expected" with "[remote
+	// rejected] ... (failed to update ref)". Both ARE the lost
+	// compare — the F17 race certification hit the second shape as
+	// "unknown" on its first concurrent same-ref push.
+	for _, marker := range []string{
+		"stale info", "[rejected]", "fetch first", "non-fast-forward",
+		"[remote rejected]", "but expected",
+	} {
 		if strings.Contains(lower, marker) {
 			return CASRefused
 		}

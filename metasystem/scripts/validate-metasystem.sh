@@ -500,6 +500,7 @@ bash -n scripts/adopt-fixtures.sh
 bash -n scripts/agents/dispatch-fixtures.sh
 bash -n scripts/agents/mission-runner.sh
 bash -n scripts/agents/conformance-fixtures.sh
+bash -n scripts/agents/goal-cli-fixtures.sh
 bash -n scripts/agents/hosts/claude.sh
 bash -n scripts/agents/hosts/codex.sh
 bash -n scripts/agents/hosts/devin.sh
@@ -511,6 +512,7 @@ bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
 delivery_contract_skip conformance-fixtures || bash scripts/agents/conformance-fixtures.sh
+delivery_contract_skip goal-cli-fixtures || bash scripts/agents/goal-cli-fixtures.sh
 delivery_contract_skip telemetry-census-fixtures || bash scripts/agents/telemetry-census-fixtures.sh
 delivery_contract_skip return-schema-fixtures || bash scripts/agents/return-schema-fixtures.sh
 bash scripts/agents/config-identity-fixtures.sh
