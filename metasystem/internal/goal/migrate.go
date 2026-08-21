@@ -14,6 +14,7 @@ package goal
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,12 +86,24 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		manifest = &Manifest{Epoch: r.stamp()}
 	}
 
-	// The worktree preconditions, before ANY mutation (F3): the
+	// The worktree preconditions, before ANY mutation (F3/R2-6): the
 	// clean-path set must match HEAD — an uncommitted hand edit to
-	// the ledger or its baseline dies here, not inside the commit.
-	for _, cleanPath := range []string{"plans/goals.md", "plans/goals-accepted.json"} {
-		if out, diffErr := gitIn(r.Endpoint.Root, "diff", "HEAD", "--", cleanPath); diffErr == nil && strings.TrimSpace(out) != "" {
-			return PublishResult{}, fmt.Errorf("migration precondition refused: %s has uncommitted changes", cleanPath)
+	// the ledger, its baseline, the destination directory, or an
+	// in-repo manifest dies here, not inside the commit. Porcelain
+	// status covers modified AND untracked alike.
+	cleanPaths := []string{"plans/goals.md", "plans/goals-accepted.json", "plans/goals"}
+	if opts.ManifestPath != "" {
+		if abs, absErr := filepath.Abs(opts.ManifestPath); absErr == nil {
+			if rootAbs, rootErr := filepath.Abs(r.Endpoint.Root); rootErr == nil {
+				if rel, relErr := filepath.Rel(rootAbs, abs); relErr == nil && !strings.HasPrefix(rel, "..") {
+					cleanPaths = append(cleanPaths, rel)
+				}
+			}
+		}
+	}
+	for _, cleanPath := range cleanPaths {
+		if out, stErr := gitIn(r.Endpoint.Root, "status", "--porcelain", "--", cleanPath); stErr == nil && strings.TrimSpace(out) != "" {
+			return PublishResult{}, fmt.Errorf("migration precondition refused: %s has uncommitted or untracked changes", cleanPath)
 		}
 	}
 	// The fast digest gate on the worktree copy — the authoritative
@@ -169,8 +182,18 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 			if got := sha256HexBytes([]byte(tipSource)); got != opts.SourceDigest {
 				return nil, fmt.Errorf("the canonical ledger advanced past the review: the tip's goals.md is %s, the reviewed literal is %s — re-review before migrating", got, opts.SourceDigest)
 			}
-			if _, accErr := gitIn(r.Endpoint.Root, "cat-file", "-e", tip+":plans/goals-accepted.json"); accErr != nil {
+			if accJSON, accErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":plans/goals-accepted.json"); accErr != nil {
 				return nil, fmt.Errorf("migration precondition refused: the tip carries no goals-accepted.json baseline")
+			} else {
+				var accepted struct {
+					Sha256 string `json:"sha256"`
+				}
+				if jsonErr := json.Unmarshal([]byte(accJSON), &accepted); jsonErr != nil || accepted.Sha256 == "" {
+					return nil, fmt.Errorf("migration precondition refused: the accepted baseline does not parse (schemaVersion/ledger/sha256)")
+				}
+				if accepted.Sha256 != sha256HexBytes([]byte(tipSource)) {
+					return nil, fmt.Errorf("migration precondition refused: goals.md diverges from its accepted baseline — run the legacy reconcile first")
+				}
 			}
 			if lsOut, lsErr := gitIn(r.Endpoint.Root, "ls-tree", "--name-only", tip, "--", goalsPrefix); lsErr == nil && strings.TrimSpace(lsOut) != "" {
 				return nil, fmt.Errorf("migration precondition refused: %s already exists on the tip without a root record — not all-legacy: a confusion", goalsPrefix)
@@ -351,6 +374,9 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 		Identity: opts.Identity, FormatVersion: "1", SyncMode: opts.SyncMode,
 		MigrationEpoch: manifest.Epoch, ManifestDigest: manifestDigest,
 		MigrationMode: mode, Revision: 1,
+		// Root-level tolerated prose survives on the root record
+		// (R2-5) exactly as per-goal prose survives on its goal.
+		Legacy: append([]string(nil), legacy.RootProse...),
 	}
 	if legacy.Free != nil {
 		root.Free = &FreeRecord{Declared: legacy.Free.Declared, Origin: legacy.Free.Origin, Digest: legacy.Free.Digest}

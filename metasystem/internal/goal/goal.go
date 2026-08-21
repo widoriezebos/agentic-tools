@@ -53,6 +53,11 @@ type Goal struct {
 	Evidence []string // Current only, optional
 	Parked   string   // Parked: the required "Parked because"
 	Conclude string   // Done: the required "Concluded"
+	// Prose retains every tolerated non-field line following this
+	// goal's section (R2-5): migration must carry it into
+	// LegacyNotes — a line the parser accepted and then dropped
+	// would be deleted forever with goals.md.
+	Prose []string
 }
 
 // Free is the Goal-free declaration: declared absence of intent, pinned to
@@ -70,6 +75,10 @@ type Ledger struct {
 	Parked  []Goal
 	Done    []Goal
 	Free    *Free
+	// RootProse retains tolerated prose lines preceding any goal
+	// section (R2-5): they migrate into the root record's
+	// LegacyNotes.
+	RootProse []string
 
 	// CurrentBlock is the Current goal's exact bytes, heading through its
 	// last field line — the revision hashes these and nothing else.
@@ -172,9 +181,21 @@ func Parse(data []byte) (*Ledger, []Problem) {
 	seen := map[string]int{}
 
 	i := 0
+	retain := func(line string) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(line, "# ") {
+			return // structure, not content
+		}
+		if len(sections) > 0 {
+			sections[len(sections)-1].goal.Prose = append(sections[len(sections)-1].goal.Prose, line)
+			return
+		}
+		ledger.RootProse = append(ledger.RootProse, line)
+	}
 	for i < len(lines) {
 		line := lines[i]
 		if !strings.HasPrefix(line, "## ") {
+			retain(line)
 			i++
 			continue
 		}

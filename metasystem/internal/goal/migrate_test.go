@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,7 +39,13 @@ func migrateBed(t *testing.T, root string) string {
 	if err := os.WriteFile(filepath.Join(plans, "goals.md"), []byte(canonical), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(plans, "goals-accepted.json"), []byte(`{"baseline":"x"}`), 0o644); err != nil {
+	baseline, err := json.Marshal(map[string]any{
+		"schemaVersion": 1, "ledger": canonical, "sha256": sha256HexBytes([]byte(canonical)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plans, "goals-accepted.json"), baseline, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	mustGit(t, root, "add", "plans")

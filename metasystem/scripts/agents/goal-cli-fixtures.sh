@@ -42,7 +42,14 @@ cat >"$clone/plans/goals.md" <<'LEDGER'
 - Origin: human
 - Concluded: Landed and gated on both hosts.
 LEDGER
-printf '{"baseline":"x"}\n' >"$clone/plans/goals-accepted.json"
+# The REAL baseline shape: the accepted ledger's bytes and digest —
+# the migration precondition proves the digest matches goals.md.
+python3 - "$clone/plans/goals.md" "$clone/plans/goals-accepted.json" <<'PY'
+import hashlib, json, sys
+ledger = open(sys.argv[1]).read()
+json.dump({"schemaVersion": 1, "ledger": ledger,
+           "sha256": hashlib.sha256(ledger.encode()).hexdigest()}, open(sys.argv[2], "w"))
+PY
 git -C "$clone" add plans
 git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm "legacy ledger"
 git -C "$clone" push -q origin main
