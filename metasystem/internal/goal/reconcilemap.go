@@ -35,6 +35,21 @@ type MappedVerb struct {
 	Arc       string     // set-arc: the destination arc
 	BaseArc   string     // the base's arc, compared at replay
 	ArcIds    []string   // cascade park: every live member
+	// ArcBaseStates carries each cascade member's own before-state
+	// (R2-10): the cascade is one row, the conflicts are per member.
+	ArcBaseStates map[string]string
+}
+
+// baseStateFor answers the before-state the replay compares for one
+// member: the cascade map when present, the row's own otherwise.
+func (v MappedVerb) baseStateFor(id string) string {
+	if v.ArcBaseStates != nil {
+		return v.ArcBaseStates[id]
+	}
+	if id == v.Id {
+		return v.BaseState
+	}
+	return ""
 }
 
 // MapDeltas decomposes the snapshot-vs-base delta into lawful verb
@@ -52,6 +67,7 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 	var mapped []MappedVerb
 	parks := map[string][]string{} // because -> member ids, for cascade recognition
 	parkArcs := map[string]string{}
+	parkStates := map[string]string{}
 
 	for _, d := range deltas {
 		id := strings.TrimSuffix(path.Base(d.Path), ".md")
@@ -104,6 +120,7 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 				if row.Verb == "park" {
 					parks[row.Because] = append(parks[row.Because], row.Id)
 					parkArcs[row.Id] = baseFile.Arc
+					parkStates[row.Id] = row.BaseState
 					continue
 				}
 				mapped = append(mapped, row)
@@ -122,7 +139,7 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 		for arc, members := range byArc {
 			if arc == "" {
 				for _, id := range members {
-					mapped = append(mapped, MappedVerb{Verb: "park", Id: id, Because: because})
+					mapped = append(mapped, MappedVerb{Verb: "park", Id: id, Because: because, BaseState: parkStates[id]})
 				}
 				continue
 			}
@@ -135,7 +152,11 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if len(members) != len(allLive) {
 				return nil, fmt.Errorf("a partial-arc hand-park refuses: arc %s has %d live members, the edit parks %d — cascades are all-or-none", arc, len(allLive), len(members))
 			}
-			mapped = append(mapped, MappedVerb{Verb: "park", Id: members[0], Because: because, ArcIds: allLive})
+			memberStates := map[string]string{}
+			for _, id := range allLive {
+				memberStates[id] = parkStates[id]
+			}
+			mapped = append(mapped, MappedVerb{Verb: "park", Id: members[0], Because: because, ArcIds: allLive, ArcBaseStates: memberStates})
 		}
 	}
 	return mapped, nil
@@ -156,8 +177,13 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	if edited.OpenedAt != base.OpenedAt {
 		return nil, fmt.Errorf("%s: OpenedAt is a generated field; the engine synthesizes it", p)
 	}
-	if (edited.Claimed == nil) != (base.Claimed == nil) ||
-		(edited.Claimed != nil && *edited.Claimed != *base.Claimed) {
+	// A hand park of a CLAIMED goal lawfully clears the Claimed line
+	// — that is the park's own effect, synthesized either way at
+	// replay (R2-13). Every other Claimed alteration stays refused.
+	claimClearedByPark := base.Claimed != nil && edited.Claimed == nil &&
+		base.State == StateClaimed && edited.State == StateParked
+	if !claimClearedByPark && ((edited.Claimed == nil) != (base.Claimed == nil) ||
+		(edited.Claimed != nil && *edited.Claimed != *base.Claimed)) {
 		return nil, fmt.Errorf("%s: Claimed is a generated field; claim and release are verbs", p)
 	}
 
@@ -165,7 +191,10 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	// The state verb, in pinned precedence.
 	if edited.State != base.State {
 		switch {
-		case base.State == StateQueued && edited.State == StateParked:
+		case (base.State == StateQueued || base.State == StateClaimed) && edited.State == StateParked:
+			// A hand park is lawful from queued AND from claimed — the
+			// pause lever's own predicate, all rows actor H (R2-13);
+			// the replay records displacement for a foreign claim.
 			if edited.Parked == nil || edited.Parked.Because == "" {
 				return nil, fmt.Errorf("%s: a hand-park needs its Parked because", p)
 			}

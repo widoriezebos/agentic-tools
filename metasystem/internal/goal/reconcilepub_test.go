@@ -255,3 +255,111 @@ func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
 		t.Fatalf("Origin is outside the closed edit surface: %v", err)
 	}
 }
+
+// The round-2 reconcile cluster: state before-values bind, foreign
+// claims hear every hand override, and the hand path speaks the
+// same membership matrix as the verbs.
+
+func TestHandParkOfAClaimedGoalDisplacesThePair(t *testing.T) {
+	a, tip := reconcileBed(t)
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000RP00", "mac-b"), "editable"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("foreign claim: %+v %v", res, err)
+	}
+	adv, err := FetchAdvance(endpointFor(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	materialize(t, a, adv.Tip)
+	_ = tip
+	// The hand edit: State claimed -> parked with its because.
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
+		f.State = StateParked
+		f.Claimed = nil
+		f.Parked = &ParkRecord{By: "human:wido", At: "2026-08-21T09:00:00Z", Because: "operator hold"}
+	})
+	req := verbReq(a, "01J5X00000000000000000RP10", "mac-a")
+	req.Actor.Human = "wido"
+	res, err := Reconcile(req)
+	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
+		t.Fatalf("the claimed hand-park is a lawful human act (R2-13): %+v %v", res.Publish, err)
+	}
+	tree, err := loadTree(a, res.Publish.Commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parked := tree.Live["editable"]
+	if parked.State != StateParked || !strings.HasPrefix(parked.Parked.Displaced, "mac-b+lin-1@") {
+		t.Fatalf("the displaced pair is recorded in full (R2-12): %+v", parked.Parked)
+	}
+}
+
+func TestHandParkAgainstQueuedConflictsWithALandedClaim(t *testing.T) {
+	a, _ := reconcileBed(t)
+	// The hand park is made against QUEUED...
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
+		f.State = StateParked
+		f.Parked = &ParkRecord{By: "human:wido", At: "2026-08-21T09:00:00Z", Because: "pausing it"}
+	})
+	// ...and a claim lands meanwhile.
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000RQ00", "mac-b"), "editable"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("competing claim: %+v %v", res, err)
+	}
+	req := verbReq(a, "01J5X00000000000000000RQ10", "mac-a")
+	req.Actor.Human = "wido"
+	res, err := Reconcile(req)
+	if err != nil || res.Publish.Outcome != OutcomeRejected || !strings.Contains(res.Publish.Detail, "made against queued") {
+		t.Fatalf("the state before-value binds (R2-10): %+v %v", res.Publish, err)
+	}
+	// The competitor's claim survives.
+	adv, err := FetchAdvance(endpointFor(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := loadTree(a, adv.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Live["editable"].State != StateClaimed {
+		t.Fatalf("the landed claim is preserved: %+v", tree.Live["editable"])
+	}
+}
+
+func TestHandJoinIntoAClaimedArcAutoClaimsAndDisplaces(t *testing.T) {
+	a, _ := reconcileBed(t)
+	// A foreign pair claims an arc; the hand moves a fresh queued
+	// goal into it.
+	if res, err := Open(verbReq(a, "01J5X00000000000000000RJ00", "mac-b"), "arc-seed", "Seed.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open seed: %+v %v", res, err)
+	}
+	if res, err := SetArc(verbReq(a, "01J5X00000000000000000RJ10", "mac-b"), "arc-seed", "held-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("set-arc seed: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000RJ20", "mac-b"), "arc-seed"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim seed: %+v %v", res, err)
+	}
+	adv, err := FetchAdvance(endpointFor(a))
+	if err != nil {
+		t.Fatal(err)
+	}
+	materialize(t, a, adv.Tip)
+	// The hand edit: the QUEUED editable goal joins the claimed arc.
+	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) { f.Arc = "held-arc" })
+	req := verbReq(a, "01J5X00000000000000000RJ30", "mac-a")
+	req.Actor.Human = "wido"
+	res, err := Reconcile(req)
+	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
+		t.Fatalf("the human join into a claimed arc is the matrix's own row (R2-13): %+v %v", res.Publish, err)
+	}
+	tree, err := loadTree(a, res.Publish.Commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := tree.Live["editable"]
+	if joined.State != StateClaimed || joined.Claimed == nil || joined.Claimed.Machine != "mac-b" {
+		t.Fatalf("the join auto-claims under the STANDING pair: %+v", joined)
+	}
+	last := joined.History[len(joined.History)-1]
+	if !strings.HasPrefix(last.Displaced, "mac-b+lin-1@") {
+		t.Fatalf("the injection is displacement-bearing (R9-05): %+v", last)
+	}
+}

@@ -189,3 +189,64 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 		t.Fatalf("a snapshotless pending record refuses by name: %v", err)
 	}
 }
+
+func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
+	a, tip := reconcileBed(t)
+	// The hand edit stands in the worktree; the crash fell INSIDE the
+	// publish window (Publishing=true, Commit still the BASE).
+	editablePath := filepath.Join(a, "plans", "goals", "editable.md")
+	edited, err := os.ReadFile(editablePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handBytes := []byte(strings.Replace(string(edited), "Original intent.", "Hand-edited intent.", 1))
+	if err := os.WriteFile(editablePath, handBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Arm one: the publish NEVER landed (the opid is on no branch).
+	ghost := Opid("01J5X00000000000000000GH00", "mac-a", "lin-1")
+	if err := WriteBase(a, BaseRecord{Commit: tip, WrittenAt: "2026-08-21T09:00:00Z",
+		RefreshDue: true, Publishing: true, Opid: ghost, Snapshot: snap.Files}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RefreshOnly(a); err == nil || !strings.Contains(err.Error(), "never published") {
+		t.Fatalf("an unlanded publish resolves by name (R2-1): %v", err)
+	}
+	if data, _ := os.ReadFile(editablePath); string(data) != string(handBytes) {
+		t.Fatal("the hand edit is UNTOUCHED when the publish never landed — completing from the base would have erased it")
+	}
+	if rec, _, _ := ReadBase(a); rec.RefreshDue {
+		t.Fatal("the resolved window clears the pending flag")
+	}
+
+	// Arm two: the publish LANDED (a real confirmed opid) — the
+	// completion refreshes onto the tip that carries its trailer.
+	res, err := Open(verbReq(a, "01J5X00000000000000000GH10", "mac-a"), "landed-goal", "Landed work.", "main", "Go.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	landedOpid := Opid("01J5X00000000000000000GH10", "mac-a", "lin-1")
+	if err := WriteBase(a, BaseRecord{Commit: tip, WrittenAt: "2026-08-21T09:00:00Z",
+		RefreshDue: true, Publishing: true, Opid: landedOpid, Snapshot: snap.Files}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RefreshOnly(a); err != nil {
+		t.Fatalf("a landed publish completes from the trailer: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(a, "plans", "goals", "landed-goal.md")); err != nil {
+		t.Fatal("the completion materialized the landed tree")
+	}
+	// The pre-capture hand bytes were IN the snapshot: when the
+	// trailer is present the landed publish carried them, so the
+	// worktree lawfully becomes the published rendering. Only a
+	// POST-capture edit is preserved — the other refresh tests own
+	// that leg.
+	if rec, _, _ := ReadBase(a); rec.RefreshDue {
+		t.Fatal("the completed refresh clears the pending flag")
+	}
+}

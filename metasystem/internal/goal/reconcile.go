@@ -33,7 +33,13 @@ func baseRecordPath(repoRoot string) string {
 type BaseRecord struct {
 	Commit     string `json:"commit"`
 	WrittenAt  string `json:"writtenAt"`
-	RefreshDue bool   `json:"refreshDue"` // a publish landed; the refresh has not completed
+	RefreshDue bool   `json:"refreshDue"` // a publish is in flight or landed; the refresh has not completed
+	// Publishing marks the window where the publish's OUTCOME is not
+	// yet known (R2-1): Commit still names the BASE, and completing
+	// "from" it would erase the hand edits — resolution goes through
+	// the opid's trailer on a fresh capture instead.
+	Publishing bool   `json:"publishing,omitempty"`
+	Opid       string `json:"opid,omitempty"`
 	// Snapshot carries the captured bytes DURABLY (F10): a refresh
 	// completing after a crash distinguishes post-capture edits,
 	// creations, and deletions exactly as the live session would.
@@ -288,6 +294,38 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 	}
 	if rec.Snapshot == nil {
 		return nil, fmt.Errorf("the pending record carries no snapshot; this refresh predates the durable capture and completes by hand")
+	}
+	if rec.Publishing {
+		// The crash fell inside the publish window (R2-1): whether
+		// the commit landed is a fact about the canonical branch, and
+		// the opid's trailer answers it. Landed → refresh onto the
+		// tip that carries it. Never landed → the hand edits are
+		// still the worktree's truth; clear the pending flag and say
+		// so — completing "from" the old base would erase them.
+		e, resolveErr := ResolveEndpoint(repoRoot)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		nonce, nonceErr := readNonce()
+		if nonceErr != nil {
+			return nil, nonceErr
+		}
+		tip, capErr := CaptureTip(e, nonce)
+		CleanupRefs(e, nonce)
+		if capErr != nil {
+			return nil, fmt.Errorf("the crashed publish cannot be resolved offline; retry with the remote reachable: %w", capErr)
+		}
+		present, trErr := TrailerPresent(e, tip, rec.Opid)
+		if trErr != nil {
+			return nil, trErr
+		}
+		if !present {
+			if err := WriteBase(repoRoot, BaseRecord{Commit: rec.Commit, WrittenAt: nowISO8601()}); err != nil {
+				return nil, err
+			}
+			return nil, fmt.Errorf("the crashed reconcile never published; the hand edits are untouched in the worktree — re-run goal reconcile")
+		}
+		return Refresh(repoRoot, tip, &Snapshot{Files: rec.Snapshot})
 	}
 	// The DURABLE snapshot restores the live session's exact
 	// protection (F10): the completion runs the same refresh the

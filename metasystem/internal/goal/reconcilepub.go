@@ -55,7 +55,8 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	// --refresh-only completes exactly what the live session would
 	// have done. The commit field is stamped after confirmation.
 	if err := WriteBase(r.Endpoint.Root, BaseRecord{
-		Commit: base, WrittenAt: nowISO8601(), RefreshDue: true, Snapshot: snap.Files,
+		Commit: base, WrittenAt: nowISO8601(), RefreshDue: true,
+		Publishing: true, Opid: r.opid(), Snapshot: snap.Files,
 	}); err != nil {
 		return ReconcileResult{}, err
 	}
@@ -106,9 +107,17 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
 	if err != nil || res.Outcome != OutcomeConfirmed {
-		// A refused or failed publish leaves no pending refresh.
-		if rec, exists, _ := ReadBase(r.Endpoint.Root); exists && rec.RefreshDue {
-			_ = WriteBase(r.Endpoint.Root, BaseRecord{Commit: rec.Commit, WrittenAt: rec.WrittenAt})
+		// Only a DEFINITIVE non-landing clears the pending record: a
+		// rejected, lost, or abandoned publish provably wrote nothing.
+		// An unknown outcome (a pushed-but-unconfirmed crash window,
+		// a failed confirming refetch) KEEPS the record and its
+		// snapshot — --refresh-only resolves it by the opid's trailer
+		// (R2-1: the old clear here deleted the only snapshot).
+		switch res.Outcome {
+		case OutcomeRejected, OutcomeLost, OutcomeAbandoned:
+			if rec, exists, _ := ReadBase(r.Endpoint.Root); exists && rec.RefreshDue {
+				_ = WriteBase(r.Endpoint.Root, BaseRecord{Commit: rec.Commit, WrittenAt: rec.WrittenAt})
+			}
 		}
 		return ReconcileResult{Publish: res, Rows: rows}, err
 	}
@@ -164,14 +173,22 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 			if !exists {
 				return nil, conflict("state", "%s is not live on the fetched tip", id)
 			}
+			// The state before-value binds (R2-10): a hand park made
+			// against queued must not swallow a claim that landed
+			// meanwhile — the competitor's work is preserved and the
+			// conflict named.
+			if expected := row.baseStateFor(id); expected != "" && f.State != expected {
+				return nil, conflict("state", "%s is %s on the fetched tip, the hand edit was made against %s", id, f.State, expected)
+			}
 			if f.State != StateQueued && f.State != StateClaimed {
 				return nil, conflict("state", "%s is %s on the fetched tip", id, f.State)
 			}
-			if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine != r.Actor.Machine {
+			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
 				// The human parks a foreign claim lawfully; the
-				// displaced pair is recorded.
+				// displaced PAIR is recorded (R2-12: the full
+				// ownership key, never the machine alone).
 				f.Parked = &ParkRecord{By: r.Actor.historyActor(), At: r.stamp(), Because: row.Because,
-					Displaced: f.Claimed.Machine + "+" + f.Claimed.Lineage + "@" + f.Claimed.At}
+					Displaced: pairMarker(f.Claimed)}
 			} else {
 				f.Parked = &ParkRecord{By: r.Actor.historyActor(), At: r.stamp(), Because: row.Because}
 			}
@@ -207,16 +224,23 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		if !exists {
 			return nil, conflict("state", "not live on the fetched tip")
 		}
+		if row.BaseState != "" && f.State != row.BaseState {
+			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
+		}
 		for _, dep := range f.Blocked {
 			if depState(t, dep) != StateDone {
 				return nil, conflict("blockedBy", "blocker %s is not done on the fetched tip", dep)
 			}
 		}
+		displaced := ""
+		if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+			displaced = pairMarker(f.Claimed)
+		}
 		f.State = StateDone
 		f.Conclude = row.Conclude
 		f.Claimed = nil
 		f.Parked = nil
-		touch(f, r, "done", []string{row.Id})
+		touchDisplaced(f, r, "done", []string{row.Id}, displaced)
 		delete(t.Live, row.Id)
 		t.Done[row.Id] = f
 		return []Change{
@@ -258,7 +282,13 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		if row.Fields.Blocked != nil {
 			f.Blocked = append([]string(nil), (*row.Fields.Blocked)...)
 		}
-		touch(f, r, "edit", []string{row.Id})
+		editDisplaced := ""
+		if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+			// A hand edit of another pair's claim is lawful under the
+			// human, and displacement-bearing (R2-12/R9-05).
+			editDisplaced = pairMarker(f.Claimed)
+		}
+		touchDisplaced(f, r, "edit", []string{row.Id}, editDisplaced)
 		path := livePath(row.Id)
 		if archived {
 			path = donePath(row.Id)
@@ -273,12 +303,20 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		if f.Arc != row.BaseArc {
 			return nil, conflict("arc", "the fetched tip carries arc %q, the hand edit was made against %q", f.Arc, row.BaseArc)
 		}
+		if row.BaseState != "" && f.State != row.BaseState {
+			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
+		}
+		detachDisplaced := ""
 		if f.State == StateClaimed && f.Claimed != nil {
+			if !ownPair(f.Claimed, r.Actor) {
+				// The released foreign pair hears it (R2-12/R9-05).
+				detachDisplaced = pairMarker(f.Claimed)
+			}
 			f.State = StateQueued
 			f.Claimed = nil
 		}
 		f.Arc = ""
-		touch(f, r, "detach", []string{row.Id})
+		touchDisplaced(f, r, "detach", []string{row.Id}, detachDisplaced)
 		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
 
 	case "set-arc":
@@ -289,17 +327,69 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		if f.Arc != row.BaseArc {
 			return nil, conflict("arc", "the fetched tip carries arc %q, the hand edit was made against %q", f.Arc, row.BaseArc)
 		}
-		if f.State != StateQueued {
-			return nil, conflict("state", "arc membership moves queued goals; %s is %s on the fetched tip", row.Id, f.State)
+		if row.BaseState != "" && f.State != row.BaseState {
+			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
 		}
+		// The hand move composes under the SAME membership matrix as
+		// the verb, all rows actor H (R2-13: the replay was stricter
+		// than the table and refused lawful human joins).
+		setArcDisplaced := ""
+		switch f.State {
+		case StateQueued:
+		case StateClaimed:
+			if row.BaseArc == "" {
+				return nil, conflict("state", "a claimed standalone goal joins no arc; release first")
+			}
+			if f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+				setArcDisplaced = pairMarker(f.Claimed)
+			}
+			// Released as it detaches — the claim never splits.
+			f.State = StateQueued
+			f.Claimed = nil
+		case StateParked:
+			// A parked member moves under the human; the destination
+			// decides its landing below.
+		default:
+			return nil, conflict("state", "arc membership moves live goals; %s is %s", row.Id, f.State)
+		}
+		var standing *GoalFile
 		for _, liveId := range sortedGoalIds(t.Live) {
 			m := t.Live[liveId]
-			if m.Arc == row.Arc && m.State == StateClaimed && m.Claimed != nil {
-				return nil, conflict("arc", "arc %s is claimed by %s on the fetched tip; a hand move into a claimed arc is a stranger's move", row.Arc, m.Claimed.Machine)
+			if m.Arc == row.Arc && m.Id != row.Id {
+				standing = m
+				break
 			}
 		}
+		switch {
+		case standing == nil || standing.State == StateQueued:
+			if f.State == StateParked {
+				return nil, conflict("state", "a parked member joins a queued arc after unpark")
+			}
+		case standing.State == StateClaimed && standing.Claimed != nil:
+			if f.State == StateParked {
+				return nil, conflict("state", "a claimed arc admits queued members with done blockers only")
+			}
+			for _, dep := range f.Blocked {
+				if depState(t, dep) != StateDone {
+					return nil, conflict("blockedBy", "blocker %s is not done; it cannot join the claimed arc unclaimed-late", dep)
+				}
+			}
+			if !ownPair(standing.Claimed, r.Actor) {
+				// A human injection into another pair's claim is
+				// displacement-bearing: the runner hears its scope
+				// changed (R9-05).
+				setArcDisplaced = pairMarker(standing.Claimed)
+			}
+			f.State = StateClaimed
+			f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
+		case standing.State == StateParked && standing.Parked != nil:
+			// A queued or parked incoming member parks with the arc's
+			// record — a human act, which a reconcile always is.
+			f.State = StateParked
+			f.Parked = &ParkRecord{By: standing.Parked.By, At: standing.Parked.At, Because: standing.Parked.Because}
+		}
 		f.Arc = row.Arc
-		touch(f, r, "set-arc", []string{row.Id})
+		touchDisplaced(f, r, "set-arc", []string{row.Id}, setArcDisplaced)
 		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
 	}
 	return nil, fmt.Errorf("reconcile has no application for verb %q", row.Verb)
