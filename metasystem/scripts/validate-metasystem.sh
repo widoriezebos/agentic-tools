@@ -426,6 +426,7 @@ for link in \
   scripts/agents/config-identity-fixtures.sh \
   scripts/agents/authority-regression-fixtures.sh \
   scripts/agents/pre-commit-guard-fixtures.sh \
+  scripts/agents/static-reproof-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
   scripts/agents/evidence-segment-fixtures.sh \
   scripts/agents/second-session-fixtures.sh \
@@ -493,6 +494,7 @@ bash -n scripts/agents/flight-recorder-fixtures.sh
 bash -n scripts/agents/acp-fixtures.sh
 bash -n scripts/agents/emit-event.sh
 bash -n scripts/agents/pre-commit-guard-fixtures.sh
+bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/mission-fixtures.sh
 bash -n scripts/agents/delegate-caps-fixtures.sh
 bash -n scripts/agents/adapter-deadline-fixtures.sh
@@ -524,6 +526,7 @@ bash scripts/agents/config-identity-fixtures.sh
 # lives in scripts/agents/lease-succession-fixtures.sh below.
 delivery_contract_skip authority-regression-fixtures || bash scripts/agents/authority-regression-fixtures.sh
 delivery_contract_skip pre-commit-guard-fixtures || bash scripts/agents/pre-commit-guard-fixtures.sh
+delivery_contract_skip static-reproof-fixtures || bash scripts/agents/static-reproof-fixtures.sh
 delivery_contract_skip record-protocol-fixtures || bash scripts/agents/record-protocol-fixtures.sh
 delivery_contract_skip evidence-segment-fixtures || bash scripts/agents/evidence-segment-fixtures.sh
 bash scripts/agents/second-session-fixtures.sh

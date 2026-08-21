@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+# IL-28 fixtures: the landing boundary re-proves the static checks via
+# go-gate.sh --fast before any commit concludes. Leg 1 proves the SHAPE
+# (the re-proof sits in commit.sh between the wrapper token and the
+# commit, with no environment escape). Legs 2 and 3 prove the BEHAVIOR
+# on a stubbed boundary: a red fast gate refuses the commit and names
+# the re-proof; a green fast gate lets the commit conclude.
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+
+# Leg 1: shape. The re-proof invokes the fast gate before the commit and
+# carries no environment switch that could outlive an edit loop.
+wrapper="$root/scripts/agents/commit.sh"
+tail_body=$(awk '/IL-28 static re-proof/{flag=1} flag' "$wrapper")
+[[ -n "$tail_body" ]] \
+  || { echo "static re-proof fixture: commit.sh lost its IL-28 stanza" >&2; exit 1; }
+grep -Fq 'go-gate.sh" --fast' <<<"$tail_body" \
+  || { echo "static re-proof fixture: the boundary does not invoke go-gate.sh --fast" >&2; exit 1; }
+gate_line=$(grep -n 'go-gate.sh" --fast' "$wrapper" | head -1 | cut -d: -f1)
+commit_line=$(grep -n 'git -C "$root" commit "$@"' "$wrapper" | head -1 | cut -d: -f1)
+[[ -n "$gate_line" && -n "$commit_line" && "$gate_line" -lt "$commit_line" ]] \
+  || { echo "static re-proof fixture: the re-proof does not precede the commit" >&2; exit 1; }
+escape_scan() {
+  grep -Eq 'METASYSTEM[A-Z_]*(SKIP|FAST|REPROOF)' "$1"
+}
+if escape_scan "$wrapper"; then
+  echo "static re-proof fixture: an environment escape appeared in the wrapper" >&2
+  exit 1
+fi
+
+# Legs 2 and 3: behavior, on a stubbed boundary. The copied wrapper
+# resolves its engine and gate inside the fixture root, so a stub engine
+# answers the lease verbs and a stub gate flips the verdict.
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-static-reproof.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+fixture_root="$tmp/metasystem"
+mkdir -p "$fixture_root/scripts/agents" "$fixture_root/bin" "$fixture_root/artifacts/agents/mains"
+cp "$wrapper" "$fixture_root/scripts/agents/commit.sh"
+# A permissive audit stub: the audit legs belong to the real suite; these
+# legs prove the gate coupling.
+cat >"$fixture_root/scripts/audit-metasystem.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$fixture_root/scripts/audit-metasystem.sh"
+cat >"$fixture_root/bin/metasystem" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "lease require-holder") echo '{}' ;;
+  "proc started-at") echo 1 ;;
+  "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
+  "lease commit-token") : ;;
+  *) : ;;
+esac
+exit 0
+SH
+chmod +x "$fixture_root/bin/metasystem"
+
+git -C "$fixture_root" init -q -b main
+# Repo-local identity: the wrapper's own `git commit` (leg 3) must not
+# depend on ambient user configuration on a clean runner (IL28-R1-2).
+git -C "$fixture_root" config user.name fixture
+git -C "$fixture_root" config user.email fixture@example.invalid
+printf 'seed\n' >"$fixture_root/README"
+# The whole fixture scaffold is TRACKED at the seed: the boundary's own
+# input closure refuses untracked files under scripts/, and the scaffold
+# must not trip the very check it exists to prove.
+printf 'bin/\nartifacts/\n' >"$fixture_root/.gitignore"
+git -C "$fixture_root" add -A
+git -C "$fixture_root" commit -qm seed
+printf 'change\n' >"$fixture_root/README"
+git -C "$fixture_root" add README
+
+# Leg 2: a red fast gate refuses the commit and names the re-proof. The
+# stub is STAGED each time it changes: the boundary's own input closure
+# (untracked and diverged gate inputs refuse) would otherwise fire first.
+cat >"$fixture_root/scripts/agents/go-gate.sh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$fixture_root/scripts/agents/go-gate.sh"
+git -C "$fixture_root" add scripts/agents/go-gate.sh
+set +e
+refusal=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse" 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] \
+  || { echo "static re-proof fixture: a red fast gate did not refuse the commit" >&2; exit 1; }
+grep -Fq "static re-proof failed" <<<"$refusal" \
+  || { echo "static re-proof fixture: the refusal did not name the re-proof: $refusal" >&2; exit 1; }
+git -C "$fixture_root" diff --cached --quiet && {
+  echo "static re-proof fixture: the refused commit concluded anyway" >&2; exit 1; }
+
+# Leg 3: a green fast gate lets the commit conclude.
+cat >"$fixture_root/scripts/agents/go-gate.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$fixture_root/scripts/agents/go-gate.sh"
+git -C "$fixture_root" add scripts/agents/go-gate.sh
+"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "concludes green" \
+  || { echo "static re-proof fixture: a green fast gate blocked the commit" >&2; exit 1; }
+[[ "$(git -C "$fixture_root" log --format=%s -1)" == "concludes green" ]] \
+  || { echo "static re-proof fixture: the green-gate commit did not land" >&2; exit 1; }
+
+# Leg 4 (IL28-R1-1): a gate input differing between index and worktree
+# refuses — the proof must bind the bytes the commit records, and a
+# staged-red/worktree-repaired divergence is exactly what it cannot bind.
+mkdir -p "$fixture_root/internal/red"
+printf 'package red\n' >"$fixture_root/internal/red/red.go"
+git -C "$fixture_root" add internal/red/red.go
+printf 'package repaired\n' >"$fixture_root/internal/red/red.go"
+set +e
+diverged=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse divergence" 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] \
+  || { echo "static re-proof fixture: a diverged gate input did not refuse the commit" >&2; exit 1; }
+grep -Fq "not what the commit would record" <<<"$diverged" \
+  || { echo "static re-proof fixture: the divergence refusal did not name the remedy: $diverged" >&2; exit 1; }
+git -C "$fixture_root" add internal/red/red.go
+"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "converged concludes" \
+  || { echo "static re-proof fixture: a converged gate input blocked the commit" >&2; exit 1; }
+
+# Leg 5 (IL28-R1-3, mutation): an environment guard placed BEFORE the
+# IL-28 marker must still be caught by the escape scan — the scan reads
+# the whole wrapper, never just the stanza.
+mutated="$tmp/mutated-commit.sh"
+{ head -5 "$wrapper"; echo '[[ -n "${METASYSTEM_SKIP_REPROOF:-}" ]] && exec git commit "$@"'; tail -n +6 "$wrapper"; } >"$mutated"
+if ! escape_scan "$mutated"; then
+  echo "static re-proof fixture: the escape scan missed a pre-marker environment guard" >&2
+  exit 1
+fi
+
+# Leg 6 (IL28-R2-1): an UNTRACKED gate input refuses — the gate would
+# build it while the commit omits it.
+printf 'package stray\n' >"$fixture_root/internal/red/stray.go"
+printf 'tick\n' >>"$fixture_root/README"
+git -C "$fixture_root" add README
+set +e
+stray=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse stray" 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] \
+  || { echo "static re-proof fixture: an untracked gate input did not refuse the commit" >&2; exit 1; }
+grep -Fq "stray.go" <<<"$stray" \
+  || { echo "static re-proof fixture: the untracked refusal did not name the file: $stray" >&2; exit 1; }
+rm "$fixture_root/internal/red/stray.go"
+
+# Leg 7 (IL28-R2-2/R3-2/R4-1/R4-5, postcondition form): content
+# selection in ANY spelling lands a tree the proof never judged; the
+# boundary detects the tree mismatch after the fact, rolls the commit
+# back softly, and refuses. Two files staged, a positional pathspec
+# commits one — the wrapper must undo it and leave the stage intact.
+printf 'alpha\n' >"$fixture_root/internal/red/alpha.txt"
+printf 'beta\n' >"$fixture_root/internal/red/beta.txt"
+git -C "$fixture_root" add internal/red/alpha.txt internal/red/beta.txt
+before_head=$(git -C "$fixture_root" rev-parse HEAD)
+staged_tree=$(git -C "$fixture_root" write-tree)
+set +e
+selected=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must roll back" internal/red/alpha.txt 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] \
+  || { echo "static re-proof fixture: a pathspec commit was not refused" >&2; exit 1; }
+grep -Fq "never judged" <<<"$selected" \
+  || { echo "static re-proof fixture: the postcondition refusal did not explain itself: $selected" >&2; exit 1; }
+[[ "$(git -C "$fixture_root" rev-parse HEAD)" == "$before_head" ]] \
+  || { echo "static re-proof fixture: the pathspec commit was not rolled back" >&2; exit 1; }
+# The rollback preserves the EXACT proved index (IL28-R5-7): the same
+# write-tree, not merely "some cached change".
+[[ "$(git -C "$fixture_root" write-tree)" == "$staged_tree" ]] \
+  || { echo "static re-proof fixture: the rollback did not preserve the proved index tree" >&2; exit 1; }
+"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "plain message concludes" \
+  || { echo "static re-proof fixture: a plain -m commit was blocked" >&2; exit 1; }
+[[ "$(git -C "$fixture_root" rev-parse 'HEAD^{tree}')" == "$staged_tree" ]] \
+  || { echo "static re-proof fixture: the concluding commit did not record the proved tree" >&2; exit 1; }
+
+# Leg 8 (IL28-R3-1/R4-2): a red audit refuses the commit by its OWN
+# exact message. The red shim is STAGED so the closure passes and the
+# audit actually executes — an unstaged red shim would trip the
+# divergence refusal instead and falsely certify this leg (IL28-R6-5).
+printf 'gamma\n' >"$fixture_root/internal/red/alpha.txt"
+git -C "$fixture_root" add internal/red/alpha.txt
+cat >"$fixture_root/scripts/audit-metasystem.sh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+git -C "$fixture_root" add scripts/audit-metasystem.sh
+set +e
+audited=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse audit" 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] \
+  || { echo "static re-proof fixture: a red audit did not refuse the commit" >&2; exit 1; }
+grep -Fq "the static re-proof failed (audit-metasystem.sh)" <<<"$audited" \
+  || { echo "static re-proof fixture: the audit refusal did not carry the audit's own message: $audited" >&2; exit 1; }
+cat >"$fixture_root/scripts/audit-metasystem.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+git -C "$fixture_root" add scripts/audit-metasystem.sh
+
+# Leg 9 (IL28-R3-3): an IGNORED gate input refuses — the toolchain would
+# consume it while the commit omits it forever.
+printf 'internal/red/generated.go\n' >>"$fixture_root/.gitignore"
+git -C "$fixture_root" add .gitignore
+printf 'package red\n' >"$fixture_root/internal/red/generated.go"
+set +e
+shadowed=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse ignored" 2>&1)
+status=$?
+set -e
+[[ $status -ne 0 ]] \
+  || { echo "static re-proof fixture: an ignored gate input did not refuse the commit" >&2; exit 1; }
+grep -Fq "generated.go" <<<"$shadowed" \
+  || { echo "static re-proof fixture: the ignored refusal did not name the file: $shadowed" >&2; exit 1; }
+rm "$fixture_root/internal/red/generated.go"
+"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "audit and stage converge" \
+  || { echo "static re-proof fixture: the converged tail commit was blocked" >&2; exit 1; }
+
+echo "static re-proof fixtures: PASSED"
