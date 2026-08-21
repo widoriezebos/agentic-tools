@@ -177,6 +177,35 @@ func TestRunnerReapVerdicts(t *testing.T) {
 		}
 	})
 
+	t.Run("a dead custodian with a tagged survivor defers to the kill-capable path", func(t *testing.T) {
+		engine := reapFixture(t, "job-a")
+		engine.custodianFn = fixedCustodian(identity.Dead)
+		engine.survivorsFn = func(tag string, exclude int64) (bool, bool) { return true, true }
+		path := writeJob(t, engine, "job-a", map[string]any{
+			"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
+			"capDeadline": isoAt(now.Add(time.Hour)),
+		})
+		engine.reapReservedRecords(now)
+		after := readTestDoc(t, path)
+		if after["status"] != "running" || after["groupDeathProvenAt"] != nil {
+			t.Fatalf("the group is not proven dead; the drain reap concludes nothing: %v", after)
+		}
+	})
+
+	t.Run("an unenumerable process table defers the drain reap", func(t *testing.T) {
+		engine := reapFixture(t, "job-a")
+		engine.custodianFn = fixedCustodian(identity.Dead)
+		engine.survivorsFn = func(tag string, exclude int64) (bool, bool) { return false, false }
+		path := writeJob(t, engine, "job-a", map[string]any{
+			"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
+		})
+		engine.reapReservedRecords(now)
+		after := readTestDoc(t, path)
+		if after["status"] != "running" {
+			t.Fatalf("indeterminacy never acts: %v", after)
+		}
+	})
+
 	t.Run("a pending record with a dead custodian books failed process-lost", func(t *testing.T) {
 		engine := reapFixture(t, "job-a")
 		engine.custodianFn = fixedCustodian(identity.Dead)

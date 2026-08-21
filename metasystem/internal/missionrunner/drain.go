@@ -237,6 +237,13 @@ func (e *Engine) applyReapVerdict(job string, doc map[string]any, facts dispatch
 		if e.custodian(pid, start, tag) != identity.Dead {
 			return
 		}
+		// A dead custodian is only HALF the proof groupDeathProvenAt
+		// claims: a tagged survivor means the group lives, and this
+		// kill-less reap must defer to the kill-capable dispatch path
+		// that can wind it down. Indeterminacy defers the same way.
+		if alive, certain := e.taggedSurvivors(tag, pid); !certain || alive {
+			return
+		}
 		// A cancel marks the record before it kills: a dead marked
 		// group is that cancel's outcome here exactly as in the
 		// supervision reaper — the marker outranks the budget.
@@ -281,6 +288,16 @@ func (e *Engine) reapCAS(job, expect, target string, patch map[string]any) {
 			"missionId": e.Mission, "jobId": job, "verdict": verdict,
 		})
 	}
+}
+
+// taggedSurvivors runs the group-death half of the reap proof through
+// the engine's bound scanner: identity.TaggedSurvivors in production,
+// a fake in tests.
+func (e *Engine) taggedSurvivors(tag string, exclude int64) (bool, bool) {
+	if e.survivorsFn != nil {
+		return e.survivorsFn(tag, exclude)
+	}
+	return identity.TaggedSurvivors(tag, exclude)
 }
 
 // custodian proves a recorded custodian through the engine's bound prober:

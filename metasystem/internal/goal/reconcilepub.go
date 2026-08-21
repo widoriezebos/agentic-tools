@@ -99,7 +99,9 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 					changes[i].Content = RenderFile(f)
 				}
 			}
-			return changes, nil
+			// A reconcile is a publication like any other: standing
+			// displacement addressed to this pair acks here (R9-06).
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})

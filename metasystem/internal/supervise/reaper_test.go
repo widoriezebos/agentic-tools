@@ -253,6 +253,88 @@ func TestReaperPassDefersOnUnknownCustodian(t *testing.T) {
 	}
 }
 
+// A dead custodian is only half the proof: while a tagged survivor
+// lives, groupDeathProvenAt would be a lie, and this kill-less reaper
+// defers to the kill-capable dispatch path — the exact race the
+// process-loss fixture caught (evidence 20260821T020035Z: the standing
+// reaper concluded first, the orphaned child ran on unswept).
+func TestReaperPassDefersWhileTaggedSurvivorsLive(t *testing.T) {
+	now := time.Unix(1786000000, 0).UTC()
+	deadCustodian := func(pid, start int64, tag string) identity.Liveness {
+		return identity.Dead
+	}
+	for _, leg := range []struct {
+		name  string
+		alive bool
+		sure  bool
+	}{
+		{"a live tagged survivor defers", true, true},
+		{"an unenumerable process table defers", false, false},
+	} {
+		t.Run(leg.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var emitted []string
+			job := writeJobRecord(t, dir, "orphaned", map[string]any{
+				"jobId": "orphaned", "status": "running",
+				"pid": 999, "pidStartedAt": 3, "instanceTag": "job-orphaned",
+				"startedAt": now.Add(-1 * time.Minute).Format(isoSecond), "capMin": 60,
+			})
+			cfg := ReaperConfig{
+				JobsDir:   dir,
+				Now:       func() time.Time { return now },
+				Custodian: deadCustodian,
+				Survivors: func(tag string, exclude int64) (bool, bool) {
+					if tag != "job-orphaned" || exclude != 999 {
+						t.Fatalf("the scan runs on the record's tag minus its custodian: %s %d", tag, exclude)
+					}
+					return leg.alive, leg.sure
+				},
+				Apply: casApplier(t, dir),
+				Emit:  func(line string) { emitted = append(emitted, line) },
+			}
+			if err := cfg.ReaperPass(); err != nil {
+				t.Fatalf("reaper pass: %v", err)
+			}
+			got := readStatus(t, job)
+			if got["status"] != "running" || got["groupDeathProvenAt"] != nil {
+				t.Fatalf("the group is not proven dead; nothing concludes: %v/%v", got["status"], got["groupDeathProvenAt"])
+			}
+			if leg.alive {
+				found := false
+				for _, line := range emitted {
+					if strings.Contains(line, "REAP-DEFERRED") {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("the deferral is said out loud: %v", emitted)
+				}
+			}
+		})
+	}
+	// The gate lifts with the last survivor: same record, no
+	// survivors, and the loss concludes with an honest proof.
+	dir := t.TempDir()
+	job := writeJobRecord(t, dir, "orphaned", map[string]any{
+		"jobId": "orphaned", "status": "running",
+		"pid": 999, "pidStartedAt": 3, "instanceTag": "job-orphaned",
+		"startedAt": now.Add(-1 * time.Minute).Format(isoSecond), "capMin": 60,
+	})
+	cfg := ReaperConfig{
+		JobsDir:   dir,
+		Now:       func() time.Time { return now },
+		Custodian: deadCustodian,
+		Survivors: func(tag string, exclude int64) (bool, bool) { return false, true },
+		Apply:     casApplier(t, dir),
+	}
+	if err := cfg.ReaperPass(); err != nil {
+		t.Fatalf("reaper pass: %v", err)
+	}
+	if got := readStatus(t, job); got["status"] != "failed" || got["error"] != "process-lost" {
+		t.Fatalf("with the group provably dead the loss concludes: %v/%v", got["status"], got["error"])
+	}
+}
+
 // A capDeadline in the past expires the budget — but only a DEAD custodian
 // lets this reaper act on it.
 func TestReaperPassHonorsCapDeadline(t *testing.T) {

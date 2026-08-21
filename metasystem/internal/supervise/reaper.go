@@ -44,6 +44,11 @@ type ReaperConfig struct {
 	// Dead when provably gone (or a stranger on a recycled pid), Unknown when
 	// unreadable. Only Dead reaps.
 	Custodian func(pid, start int64, tag string) identity.Liveness
+	// Survivors reports live tagged processes besides the custodian —
+	// the group-death half of the proof (a dead custodian with tagged
+	// survivors is a live group). nil binds identity.TaggedSurvivors;
+	// tests bind a fake. certain=false defers like Unknown does.
+	Survivors func(tag string, exclude int64) (alive bool, certain bool)
 	// Apply lands one terminal verdict through the locked job-record
 	// compare-and-swap owner: the transition happens only if the record still
 	// carries the expected status, so a completion landing after this
@@ -136,6 +141,23 @@ func (cfg ReaperConfig) reapOne(path string) error {
 		if cfg.Emit != nil && status == "running" && dispatch.CapExpired(record, now) {
 			cfg.Emit(fmt.Sprintf("REAP-DECLINED job=%s cap expired, custodian %s; kill authority stays with dispatch",
 				jobIDFor(record, path), verdict))
+		}
+		return nil
+	}
+	// The custodian is dead, but groupDeathProvenAt claims the GROUP
+	// died — and this reaper has no kill authority to make that true.
+	// A tagged survivor (an orphaned child still carrying the
+	// instance tag) means the group lives: the verdict belongs to the
+	// kill-capable dispatch path, which winds the group down before
+	// it stamps. Indeterminacy defers the same way.
+	survivors := cfg.Survivors
+	if survivors == nil {
+		survivors = identity.TaggedSurvivors
+	}
+	if alive, certain := survivors(tag, pid); !certain || alive {
+		if cfg.Emit != nil {
+			cfg.Emit(fmt.Sprintf("REAP-DEFERRED job=%s custodian dead but the tagged group is not proven dead; kill authority stays with dispatch",
+				jobIDFor(record, path)))
 		}
 		return nil
 	}

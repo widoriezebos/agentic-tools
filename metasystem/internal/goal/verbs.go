@@ -78,6 +78,118 @@ func touch(f *GoalFile, r VerbRequest, verb string, targets []string) {
 	})
 }
 
+// ownPair reports whether a claim names the actor's machine AND
+// lineage — the pair is the ownership key (BGS-10), never the
+// machine alone: a second lineage on the machine is a stranger.
+func ownPair(c *ClaimRecord, a Actor) bool {
+	return c != nil && c.Machine == a.Machine && c.Lineage == a.Lineage
+}
+
+// pairMarker renders a claim as the displaced= marker the design
+// pins: <machine>+<lineage>@<claimedAt>.
+func pairMarker(c *ClaimRecord) string {
+	return c.Machine + "+" + c.Lineage + "@" + c.At
+}
+
+// touchDisplaced is touch with the displacement marker (R9-05):
+// every foreign-human mutation of a claimed goal records displaced=
+// uniformly, so no lawful override changes a claim's scope without
+// leaving the signal.
+func touchDisplaced(f *GoalFile, r VerbRequest, verb string, targets []string, displaced string) {
+	f.Revision++
+	f.History = append(f.History, HistoryLine{
+		At: r.stamp(), Opid: r.opid(), Verb: verb,
+		Actor: r.Actor.historyActor(), Targets: targets,
+		Displaced: displaced, Keep: -1,
+	})
+}
+
+// ackDisplacements answers displacement addressed to this actor's
+// pair (R9-06): the displaced pair's next History-appending
+// publication piggybacks one automatic root-record line per
+// unanswered displacement — the published verb with ack,
+// targets=<the displaced goal>, and the displaced=<pair>@<at> it
+// answers — in the same commit. The root record needs no goal
+// authority, which is exactly why the ack lives there and not on
+// the (now foreign or parked) goal file.
+func ackDisplacements(t *TreeGoals, r VerbRequest, changes []Change) []Change {
+	if t.Root == nil {
+		return changes
+	}
+	me := r.Actor.Machine + "+" + r.Actor.Lineage + "@"
+	answered := map[string]bool{}
+	for _, h := range t.Root.History {
+		if h.Ack && h.Displaced != "" {
+			for _, target := range h.Targets {
+				answered[target+" "+h.Displaced] = true
+			}
+		}
+	}
+	// One acknowledgment per displaced pair (R10-M06): goals group
+	// under their marker, one line per marker.
+	pending := map[string][]string{}
+	var markers []string
+	collect := func(f *GoalFile) {
+		note := func(marker string) {
+			if marker == "" || !strings.HasPrefix(marker, me) {
+				return
+			}
+			key := f.Id + " " + marker
+			if answered[key] {
+				return
+			}
+			answered[key] = true
+			if len(pending[marker]) == 0 {
+				markers = append(markers, marker)
+			}
+			pending[marker] = append(pending[marker], f.Id)
+		}
+		if f.Parked != nil {
+			note(f.Parked.Displaced)
+		}
+		for _, h := range f.History {
+			note(h.Displaced)
+		}
+	}
+	for _, id := range sortedGoalIds(t.Live) {
+		collect(t.Live[id])
+	}
+	for _, id := range sortedGoalIds(t.Done) {
+		collect(t.Done[id])
+	}
+	if len(markers) == 0 {
+		return changes
+	}
+	rootIncluded := false
+	for _, c := range changes {
+		if c.Path == goalsPrefix+"backlog.md" {
+			rootIncluded = true
+		}
+	}
+	// One commit is one write of the root file: bump only when the
+	// verb has not already written it this transaction.
+	if !rootIncluded {
+		t.Root.Revision++
+	}
+	for _, marker := range markers {
+		t.Root.History = append(t.Root.History, HistoryLine{
+			At: r.stamp(), Opid: r.opid(), Verb: "ack",
+			Actor: r.Actor.historyActor(), Targets: pending[marker],
+			Displaced: marker, Ack: true, Keep: -1,
+		})
+	}
+	rendered := Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}
+	if rootIncluded {
+		for i := range changes {
+			if changes[i].Path == goalsPrefix+"backlog.md" {
+				changes[i] = rendered
+			}
+		}
+		return changes
+	}
+	return append(changes, rendered)
+}
+
 // opidLanded reports whether this operation's opid is already in
 // the file's History — the idempotent-success half of the
 // postcondition, per touched file.
@@ -133,14 +245,19 @@ func Open(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, er
 				})
 				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			}
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
 }
 
-// Claim takes ownership of a queued goal for the actor's machine.
+// Claim takes ownership of a queued goal for the actor's pair.
+// Claim is AGENT-ONLY (R3-06): humans direct agents; no human
+// lineage exists, so no human claim row.
 func Claim(r VerbRequest, id string) (PublishResult, error) {
+	if r.Actor.Human != "" {
+		return PublishResult{}, fmt.Errorf("claim is agent-only (R3-06): humans direct agents; steal reassigns a standing claim under --by")
+	}
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "claim", Targets: []string{id}},
@@ -158,8 +275,11 @@ func Claim(r VerbRequest, id string) (PublishResult, error) {
 				return nil, AlreadyApplied{}
 			}
 			if f.State == StateClaimed {
+				if ownPair(f.Claimed, r.Actor) {
+					return nil, NothingToDo{Reason: "already claimed by this pair (not by this operation)"}
+				}
 				if f.Claimed != nil && f.Claimed.Machine == r.Actor.Machine {
-					return nil, NothingToDo{Reason: "already claimed by this machine (not by this operation)"}
+					return nil, fmt.Errorf("goal %s is claimed by this machine's lineage %s; the pair is the ownership key and a second lineage is refused by name", id, f.Claimed.Lineage)
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
@@ -174,7 +294,7 @@ func Claim(r VerbRequest, id string) (PublishResult, error) {
 			f.State = StateClaimed
 			f.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
 			touch(f, r, "claim", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -201,13 +321,17 @@ func Release(r VerbRequest, id string) (PublishResult, error) {
 			if f.State != StateClaimed || f.Claimed == nil {
 				return nil, fmt.Errorf("goal %s is %s, not claimed", id, f.State)
 			}
-			if f.Claimed.Machine != r.Actor.Machine && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s is claimed by %s; a foreign release is a human act (steal has its own verb)", id, f.Claimed.Machine)
+			if !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s is claimed by %s+%s; a foreign release is a human act (steal has its own verb)", id, f.Claimed.Machine, f.Claimed.Lineage)
+			}
+			displaced := ""
+			if !ownPair(f.Claimed, r.Actor) {
+				displaced = pairMarker(f.Claimed)
 			}
 			f.State = StateQueued
 			f.Claimed = nil
-			touch(f, r, "release", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			touchDisplaced(f, r, "release", []string{id}, displaced)
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -241,28 +365,37 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 				return nil, fmt.Errorf("goal %s is not live; nothing to conclude", id)
 			}
 			// Queued concludes directly (D113 ergonomics); a foreign
-			// claim concludes only under a human.
-			if f.State == StateClaimed && f.Claimed != nil &&
-				f.Claimed.Machine != r.Actor.Machine && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s is claimed by %s; concluding another's work is a human act", id, f.Claimed.Machine)
+			// claim concludes only under a human, and the override
+			// leaves the displacement signal (R9-05).
+			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s is claimed by %s+%s; concluding another's work is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
 			}
 			if f.State == StateParked && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s is parked; concluding it is a human act", id)
+			}
+			if f.Origin == OriginHuman && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s was opened by the human; concluding it is a human act", id)
 			}
 			for _, dep := range f.Blocked {
 				if depState(t, dep) != StateDone {
 					return nil, fmt.Errorf("goal %s is blocked by %s, which is not done", id, dep)
 				}
 			}
+			displaced := ""
+			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+				displaced = pairMarker(f.Claimed)
+			}
 			f.State = StateDone
 			f.Conclude = conclusion
 			f.Claimed = nil
 			f.Parked = nil
-			touch(f, r, "done", []string{id})
-			return []Change{
+			touchDisplaced(f, r, "done", []string{id}, displaced)
+			t.Done[id] = f
+			delete(t.Live, id)
+			return ackDisplacements(t, r, []Change{
 				{Path: livePath(id), Delete: true},
 				{Path: donePath(id), Content: RenderFile(f)},
-			}, nil
+			}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -320,13 +453,16 @@ func Park(r VerbRequest, id, because string) (PublishResult, error) {
 			if f.State != StateQueued && f.State != StateClaimed {
 				return nil, fmt.Errorf("goal %s is %s; only queued or claimed goals park", id, f.State)
 			}
+			if f.Origin == OriginHuman && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", id)
+			}
 			displaced := ""
 			if f.State == StateClaimed && f.Claimed != nil {
-				if f.Claimed.Machine != r.Actor.Machine && r.Actor.Human == "" {
-					return nil, fmt.Errorf("goal %s is claimed by %s; parking another's claim is a human act", id, f.Claimed.Machine)
+				if !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
+					return nil, fmt.Errorf("goal %s is claimed by %s+%s; parking another's claim is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
 				}
-				if f.Claimed.Machine != r.Actor.Machine {
-					displaced = f.Claimed.Machine + "+" + f.Claimed.Lineage + "@" + f.Claimed.At
+				if !ownPair(f.Claimed, r.Actor) {
+					displaced = pairMarker(f.Claimed)
 				}
 			}
 			f.State = StateParked
@@ -341,7 +477,7 @@ func Park(r VerbRequest, id, because string) (PublishResult, error) {
 				Actor: r.Actor.historyActor(), Targets: []string{id},
 				Displaced: displaced, Keep: -1, Reason: because,
 			})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -369,6 +505,11 @@ func Unpark(r VerbRequest, id string) (PublishResult, error) {
 			if f.State != StateParked {
 				return nil, fmt.Errorf("goal %s is %s, not parked", id, f.State)
 			}
+			// A human's park is a standing reservation an agent cannot
+			// silently lift (the table's human-origin-park row).
+			if f.Parked != nil && strings.HasPrefix(f.Parked.By, "human:") && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s was parked by %s; lifting a human's pause is a human act", id, f.Parked.By)
+			}
 			f.State = StateQueued
 			f.Parked = nil
 			touch(f, r, "unpark", []string{id})
@@ -382,7 +523,7 @@ func Unpark(r VerbRequest, id string) (PublishResult, error) {
 				})
 				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			}
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -424,8 +565,44 @@ func Reopen(r VerbRequest, id string) (PublishResult, error) {
 					}
 				}
 			}
+			// The member rejoins its arc under the arc's STANDING state
+			// (R7-08): a claimed arc adopts it under the standing
+			// claimant (claimant or human only — an outside agent
+			// cannot inject work into someone's claim; the member's
+			// blockers must be done, R8-02); a parked arc is human-only
+			// and the member lands parked with the arc's record.
 			f.State = StateQueued
 			f.Conclude = ""
+			if f.Arc != "" {
+				var standing *GoalFile
+				for _, liveId := range sortedGoalIds(t.Live) {
+					if t.Live[liveId].Arc == f.Arc {
+						standing = t.Live[liveId]
+						break
+					}
+				}
+				switch {
+				case standing == nil:
+					// The arc has no live members; the reopen re-founds it queued.
+				case standing.State == StateClaimed && standing.Claimed != nil:
+					if !ownPair(standing.Claimed, r.Actor) && r.Actor.Human == "" {
+						return nil, fmt.Errorf("goal %s rejoins arc %s, which %s+%s holds; an outside agent cannot inject work into someone's claim", id, f.Arc, standing.Claimed.Machine, standing.Claimed.Lineage)
+					}
+					for _, dep := range f.Blocked {
+						if depState(t, dep) != StateDone {
+							return nil, fmt.Errorf("goal %s rejoins a claimed arc but is blocked by %s, which is not done", id, dep)
+						}
+					}
+					f.State = StateClaimed
+					f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
+				case standing.State == StateParked && standing.Parked != nil:
+					if r.Actor.Human == "" {
+						return nil, fmt.Errorf("goal %s rejoins arc %s, which is parked; reopening into a parked arc is a human act", id, f.Arc)
+					}
+					f.State = StateParked
+					f.Parked = &ParkRecord{By: standing.Parked.By, At: standing.Parked.At, Because: standing.Parked.Because}
+				}
+			}
 			touch(f, r, "reopen", []string{id})
 			changes := []Change{
 				{Path: donePath(id), Delete: true},
@@ -440,7 +617,7 @@ func Reopen(r VerbRequest, id string) (PublishResult, error) {
 				})
 				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			}
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -475,6 +652,30 @@ func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
+			// The table's edit rows: queued is open to all, claimed is
+			// the claimant's or a human's (the foreign-human override
+			// leaves the displacement signal, R9-05), parked has no
+			// agent row — the pause stands until a human moves it.
+			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s is claimed by %s+%s; editing another's claimed goal is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+			}
+			if f.State == StateParked && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s is parked; editing a parked goal is a human act", id)
+			}
+			// D115's invariant: a claimed goal is never blocked — a new
+			// blocker must be DONE for EVERY actor (a human who wants
+			// the edge parks or releases first).
+			if f.State == StateClaimed && fields.Blocked != nil {
+				for _, dep := range *fields.Blocked {
+					if depState(t, dep) != StateDone {
+						return nil, fmt.Errorf("goal %s is claimed and never blocked (D115): %s is not done — park or release first", id, dep)
+					}
+				}
+			}
+			displaced := ""
+			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+				displaced = pairMarker(f.Claimed)
+			}
 			if fields.Intent != nil {
 				f.Intent = *fields.Intent
 			}
@@ -487,8 +688,8 @@ func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
 			if fields.Blocked != nil {
 				f.Blocked = append([]string(nil), (*fields.Blocked)...)
 			}
-			touch(f, r, "edit", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			touchDisplaced(f, r, "edit", []string{id}, displaced)
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -530,7 +731,7 @@ func DeclareFree(r VerbRequest, origin, digest string) (PublishResult, error) {
 				At: r.stamp(), Opid: r.opid(), Verb: "declare-free",
 				Actor: r.Actor.historyActor(), Keep: -1,
 			})
-			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
+			return ackDisplacements(t, r, []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -564,12 +765,31 @@ func Steal(r VerbRequest, id string) (PublishResult, error) {
 			if f.State != StateClaimed || f.Claimed == nil {
 				return nil, fmt.Errorf("goal %s is %s; steal reassigns a standing claim (claim takes a queued goal)", id, f.State)
 			}
-			if f.Claimed.Machine == r.Actor.Machine {
-				return nil, NothingToDo{Reason: "already claimed by this machine (not by this operation)"}
+			if ownPair(f.Claimed, r.Actor) {
+				return nil, NothingToDo{Reason: "already claimed by this pair (not by this operation)"}
 			}
-			f.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
-			touch(f, r, "steal", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			// The claim binds the ARC (R4-08): stealing any member
+			// reassigns every live member the standing pair holds, one
+			// transaction, one quota slot — a partial steal would split
+			// the arc's ownership. Every touched line carries the
+			// displaced marker (R9-05).
+			oldPair := f.Claimed
+			members := arcMembers(t, id)
+			targets := make([]string, 0, len(members))
+			for _, m := range members {
+				targets = append(targets, m.Id)
+			}
+			var changes []Change
+			for _, m := range members {
+				if m.State != StateClaimed || !ownPair(m.Claimed, Actor{Machine: oldPair.Machine, Lineage: oldPair.Lineage}) {
+					continue // uniformity is validated; ride over strays defensively
+				}
+				displaced := pairMarker(m.Claimed)
+				m.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
+				touchDisplaced(m, r, "steal", targets, displaced)
+				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
+			}
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -578,6 +798,9 @@ func Steal(r VerbRequest, id string) (PublishResult, error) {
 // OpenClaim opens a goal already claimed by the actor — one commit,
 // the claim guards holding trivially on a goal with no blockers.
 func OpenClaim(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, error) {
+	if r.Actor.Human != "" {
+		return PublishResult{}, fmt.Errorf("open --claim is agent-only (R3-06): humans direct agents; bare open leaves the goal queued")
+	}
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "open-claim", Targets: []string{id}, Args: map[string]string{
@@ -614,7 +837,7 @@ func OpenClaim(r VerbRequest, id, intent, origin, nextStep string) (PublishResul
 				})
 				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			}
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -647,8 +870,11 @@ func Prune(r VerbRequest, keep int) (PublishResult, error) {
 			if rootOpidLanded(t.Root, r) {
 				return nil, AlreadyApplied{}
 			}
-			// The closure: done goals reachable from live blockers,
-			// walked through done-to-done edges.
+			// Selection first, closure second (R4-09): retained =
+			// closure(live goals ∪ the keep-count newest done goals),
+			// walked through done-to-done edges — a keep-count
+			// survivor's own older done blocker is retained WITH it,
+			// so no edge can dangle by construction.
 			keepSet := map[string]bool{}
 			var walk func(id string)
 			walk = func(id string) {
@@ -666,13 +892,14 @@ func Prune(r VerbRequest, keep int) (PublishResult, error) {
 					walk(dep)
 				}
 			}
-			// The keep-count retains the NEWEST by (OpenedAt, id);
-			// deletion prefers the oldest.
+			// The keep-count selects the NEWEST by (OpenedAt, id) and
+			// each survivor seeds the same closure walk; deletion
+			// prefers the oldest.
 			ids := sortedGoalIds(t.Done)
 			byAge := append([]string(nil), ids...)
 			sortDoneNewestFirst(t, byAge)
 			for i := 0; i < keep && i < len(byAge); i++ {
-				keepSet[byAge[i]] = true
+				walk(byAge[i])
 			}
 			var changes []Change
 			for _, id := range ids {
@@ -686,7 +913,7 @@ func Prune(r VerbRequest, keep int) (PublishResult, error) {
 				Actor: r.Actor.historyActor(), Keep: keep,
 			})
 			changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -742,6 +969,9 @@ func arcMembers(t *TreeGoals, id string) []*GoalFile {
 // member's blockers must be done; a standing foreign claim on any
 // member loses the whole cascade.
 func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
+	if r.Actor.Human != "" {
+		return PublishResult{}, fmt.Errorf("claim is agent-only (R3-06): humans direct agents; steal reassigns a standing claim under --by")
+	}
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: map[string]string{"cascade": "arc"}},
@@ -765,8 +995,11 @@ func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
 					return nil, AlreadyApplied{}
 				}
 				if m.State == StateClaimed {
-					if m.Claimed != nil && m.Claimed.Machine == r.Actor.Machine {
+					if ownPair(m.Claimed, r.Actor) {
 						continue // already ours; the cascade completes the set
+					}
+					if m.Claimed != nil && m.Claimed.Machine == r.Actor.Machine {
+						return nil, fmt.Errorf("arc member %s is claimed by this machine's lineage %s; the pair is the ownership key and a second lineage is refused by name", m.Id, m.Claimed.Lineage)
 					}
 					return nil, LostToCompetitor{Winner: lastOpid(m)}
 				}
@@ -786,7 +1019,7 @@ func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
 			if len(changes) == 0 {
 				return nil, NothingToDo{Reason: "the cascade found nothing to move"}
 			}
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -819,18 +1052,22 @@ func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 				if m.State != StateClaimed || m.Claimed == nil {
 					continue // queued or parked members ride along untouched
 				}
-				if m.Claimed.Machine != r.Actor.Machine && r.Actor.Human == "" {
-					return nil, fmt.Errorf("arc member %s is claimed by %s; a foreign release is a human act", m.Id, m.Claimed.Machine)
+				if !ownPair(m.Claimed, r.Actor) && r.Actor.Human == "" {
+					return nil, fmt.Errorf("arc member %s is claimed by %s+%s; a foreign release is a human act", m.Id, m.Claimed.Machine, m.Claimed.Lineage)
+				}
+				displaced := ""
+				if !ownPair(m.Claimed, r.Actor) {
+					displaced = pairMarker(m.Claimed)
 				}
 				m.State = StateQueued
 				m.Claimed = nil
-				touch(m, r, "release", targets)
+				touchDisplaced(m, r, "release", targets, displaced)
 				changes = append(changes, Change{Path: livePath(m.Id), Content: RenderFile(m)})
 			}
 			if len(changes) == 0 {
 				return nil, NothingToDo{Reason: "the cascade found nothing to move"}
 			}
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -868,11 +1105,14 @@ func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 			// foreign claimants once before touching anything.
 			displacedPair := ""
 			for _, m := range members {
-				if m.State == StateClaimed && m.Claimed != nil && m.Claimed.Machine != r.Actor.Machine {
+				if m.Origin == OriginHuman && r.Actor.Human == "" {
+					return nil, fmt.Errorf("arc member %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", m.Id)
+				}
+				if m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
 					if r.Actor.Human == "" {
-						return nil, fmt.Errorf("arc member %s is claimed by %s; parking another's claim is a human act", m.Id, m.Claimed.Machine)
+						return nil, fmt.Errorf("arc member %s is claimed by %s+%s; parking another's claim is a human act", m.Id, m.Claimed.Machine, m.Claimed.Lineage)
 					}
-					pair := m.Claimed.Machine + "+" + m.Claimed.Lineage + "@" + m.Claimed.At
+					pair := pairMarker(m.Claimed)
 					if displacedPair == "" {
 						displacedPair = pair
 					}
@@ -890,7 +1130,7 @@ func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 					return nil, fmt.Errorf("arc member %s is %s; only queued or claimed goals park", m.Id, m.State)
 				}
 				memberDisplaced := ""
-				if m.State == StateClaimed && m.Claimed != nil && m.Claimed.Machine != r.Actor.Machine {
+				if m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
 					memberDisplaced = displacedPair
 				}
 				m.State = StateParked
@@ -910,7 +1150,7 @@ func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 			if len(changes) == 0 {
 				return nil, NothingToDo{Reason: "the cascade found nothing to move"}
 			}
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -943,6 +1183,9 @@ func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 				if m.State != StateParked {
 					continue
 				}
+				if m.Parked != nil && strings.HasPrefix(m.Parked.By, "human:") && r.Actor.Human == "" {
+					return nil, fmt.Errorf("arc member %s was parked by %s; lifting a human's pause is a human act", m.Id, m.Parked.By)
+				}
 				m.State = StateQueued
 				m.Parked = nil
 				touch(m, r, "unpark", targets)
@@ -960,7 +1203,7 @@ func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 				})
 				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			}
-			return changes, nil
+			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
@@ -989,26 +1232,38 @@ func Detach(r VerbRequest, id string) (PublishResult, error) {
 			if f.Arc == "" {
 				return nil, NothingToDo{Reason: "the goal is not in an arc"}
 			}
+			if f.State == StateParked && r.Actor.Human == "" {
+				return nil, fmt.Errorf("goal %s is parked; a parked arc's membership edits are human acts", id)
+			}
+			displaced := ""
 			if f.State == StateClaimed && f.Claimed != nil {
-				if f.Claimed.Machine != r.Actor.Machine && r.Actor.Human == "" {
-					return nil, fmt.Errorf("goal %s is claimed by %s; detaching another's claimed member is a human act", id, f.Claimed.Machine)
+				if !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
+					return nil, fmt.Errorf("goal %s is claimed by %s+%s; detaching another's claimed member is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+				}
+				if !ownPair(f.Claimed, r.Actor) {
+					displaced = pairMarker(f.Claimed)
 				}
 				// The departing member releases: one claim, one arc.
 				f.State = StateQueued
 				f.Claimed = nil
 			}
 			f.Arc = ""
-			touch(f, r, "detach", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			touchDisplaced(f, r, "detach", []string{id}, displaced)
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
 }
 
-// SetArc moves a queued goal into an arc. Moving into an arc whose
-// members are CLAIMED auto-claims the goal under that claimant —
-// but only when the actor IS that claimant and the goal's blockers
-// are done; a stranger and an unfinished blocker refuse by name.
+// SetArc moves a goal into an arc under the membership matrix
+// (R8-07/R9-10): a move between arcs composes detach-then-join in
+// ONE transaction under the stricter of the two rules. Leaving a
+// claimed arc releases the member on the way out (never a quota
+// split); a parked source or a parked destination is human-only; a
+// claimed destination auto-claims a queued member with done
+// blockers under the STANDING claimant — a stranger refuses, and a
+// human injecting into another machine's claim leaves the
+// displacement signal (R9-05).
 func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 	if arc == "" {
 		return PublishResult{}, fmt.Errorf("set-arc names its arc; detach removes membership")
@@ -1029,35 +1284,84 @@ func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
-			if f.State != StateQueued {
-				return nil, fmt.Errorf("goal %s is %s; arc membership moves queued goals (a claimed source releases through detach)", id, f.State)
+			if f.Arc == arc {
+				return nil, NothingToDo{Reason: "already a member of that arc"}
 			}
-			// The destination arc's standing claim, if any.
-			var claimant *ClaimRecord
+			displaced := ""
+			// The source side: leaving an arc under its row's rule;
+			// the detach result feeds the join (R9-10).
+			switch f.State {
+			case StateQueued:
+			case StateClaimed:
+				if f.Arc == "" {
+					return nil, fmt.Errorf("goal %s is claimed and in no arc; a claimed member cannot join an arc — release first", id)
+				}
+				if !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
+					return nil, fmt.Errorf("goal %s is claimed by %s+%s; moving another's claimed member is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+				}
+				if f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+					displaced = pairMarker(f.Claimed)
+				}
+				// Released as it detaches — the claim never splits.
+				f.State = StateQueued
+				f.Claimed = nil
+			case StateParked:
+				if r.Actor.Human == "" {
+					return nil, fmt.Errorf("goal %s is parked; a parked member moves under a human", id)
+				}
+			default:
+				return nil, fmt.Errorf("goal %s is %s; arc membership moves live goals", id, f.State)
+			}
+			// The destination side: the arc's standing state rules the
+			// join (an empty destination founds a queued arc).
+			var standing *GoalFile
 			for _, liveId := range sortedGoalIds(t.Live) {
 				m := t.Live[liveId]
-				if m.Arc == arc && m.State == StateClaimed && m.Claimed != nil {
-					claimant = m.Claimed
+				if m.Arc == arc && m.Id != id {
+					standing = m
 					break
 				}
 			}
-			if claimant != nil {
-				if claimant.Machine != r.Actor.Machine {
-					return nil, fmt.Errorf("arc %s is claimed by %s; a stranger cannot move goals into a claimed arc", arc, claimant.Machine)
+			switch {
+			case standing == nil || standing.State == StateQueued:
+				if f.State == StateParked {
+					return nil, fmt.Errorf("goal %s is parked; a parked member joins a queued arc after unpark", id)
+				}
+			case standing.State == StateClaimed && standing.Claimed != nil:
+				if f.State == StateParked {
+					return nil, fmt.Errorf("goal %s is parked; a claimed arc admits queued members with done blockers only", id)
+				}
+				if !ownPair(standing.Claimed, r.Actor) && r.Actor.Human == "" {
+					return nil, fmt.Errorf("arc %s is claimed by %s+%s; a stranger cannot move goals into a claimed arc", arc, standing.Claimed.Machine, standing.Claimed.Lineage)
 				}
 				for _, dep := range f.Blocked {
 					if depState(t, dep) != StateDone {
 						return nil, fmt.Errorf("goal %s is blocked by %s, which is not done; it cannot join the claimed arc unclaimed-late", id, dep)
 					}
 				}
-				// The join auto-claims under the standing claimant:
-				// the arc stays one unit under one pair.
+				if !ownPair(standing.Claimed, r.Actor) {
+					// A human injection into another machine's claim is
+					// displacement-bearing: the runner hears its scope
+					// changed.
+					displaced = pairMarker(standing.Claimed)
+				}
+				// The join auto-claims under the standing claimant: the
+				// arc stays one unit under one pair.
 				f.State = StateClaimed
-				f.Claimed = &ClaimRecord{Machine: claimant.Machine, Lineage: claimant.Lineage, At: r.stamp()}
+				f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
+			case standing.State == StateParked && standing.Parked != nil:
+				if r.Actor.Human == "" {
+					return nil, fmt.Errorf("arc %s is parked; a parked arc's membership edits are human acts", arc)
+				}
+				// A queued or parked incoming member parks with the
+				// arc's record; the released-on-detach path lands here
+				// queued and parks the same way.
+				f.State = StateParked
+				f.Parked = &ParkRecord{By: standing.Parked.By, At: standing.Parked.At, Because: standing.Parked.Because}
 			}
 			f.Arc = arc
-			touch(f, r, "set-arc", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			touchDisplaced(f, r, "set-arc", []string{id}, displaced)
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})

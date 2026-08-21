@@ -215,6 +215,47 @@ func ValidateTree(t *TreeGoals) []Problem {
 		}
 	}
 
+	// Arc uniformity (R6-06): an arc moves whole — after ANY
+	// transaction every live member of an arc shares one state, and
+	// a claimed arc has exactly one claimant pair. A split arc is a
+	// split claim, the exact ownership confusion the arc exists to
+	// prevent.
+	arcs := map[string][]*GoalFile{}
+	arcOrder := []string{}
+	for _, id := range sortedGoalIds(t.Live) {
+		f := t.Live[id]
+		if f.Arc == "" {
+			continue
+		}
+		if len(arcs[f.Arc]) == 0 {
+			arcOrder = append(arcOrder, f.Arc)
+		}
+		arcs[f.Arc] = append(arcs[f.Arc], f)
+	}
+	sort.Strings(arcOrder)
+	for _, arc := range arcOrder {
+		members := arcs[arc]
+		first := members[0]
+		for _, m := range members[1:] {
+			if m.State != first.State {
+				addf("arc %s mixes states: %s is %s while %s is %s — an arc moves whole", arc, first.Id, first.State, m.Id, m.State)
+			}
+		}
+		if first.State != StateClaimed {
+			continue
+		}
+		for _, m := range members[1:] {
+			if m.Claimed == nil || first.Claimed == nil {
+				continue // claimed-without-record is already named above
+			}
+			if m.Claimed.Machine != first.Claimed.Machine || m.Claimed.Lineage != first.Claimed.Lineage {
+				addf("arc %s has two claimant pairs: %s under %s+%s, %s under %s+%s — one arc, one claimant", arc,
+					first.Id, first.Claimed.Machine, first.Claimed.Lineage,
+					m.Id, m.Claimed.Machine, m.Claimed.Lineage)
+			}
+		}
+	}
+
 	// Goal-free exclusivity: the declaration coexists with parked
 	// and done, never with queued or claimed.
 	if t.Root != nil && t.Root.Free != nil {

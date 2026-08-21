@@ -638,8 +638,55 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 	if len(pairs) != 1 {
 		t.Fatalf("ONE displaced pair across the cascade (R10-M06): %v", pairs)
 	}
-	// Unpark restores the whole arc.
-	res, err = UnparkArc(verbReq(a, "01J5X00000000000000000C220", "mac-a"), "casc-one")
+	// The displaced agent cannot lift the human's pause itself.
+	res, err = UnparkArc(verbReq(a, "01J5X00000000000000000C215", "mac-a"), "casc-one")
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "human's pause") {
+		t.Fatalf("an agent lifting a human's park refuses by name: %+v %v", res, err)
+	}
+	// The displaced pair's next History-appending publication
+	// piggybacks ONE automatic root-record ack line answering the
+	// displacement (R9-06) — both goals on the one line.
+	res, err = Open(verbReq(a, "01J5X00000000000000000C218", "mac-a"), "casc-after", "Displaced pair keeps working.", "main", "Go.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the displaced pair's next publication: %+v %v", res, err)
+	}
+	tAck, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var acks []HistoryLine
+	for _, h := range tAck.Root.History {
+		if h.Ack {
+			acks = append(acks, h)
+		}
+	}
+	if len(acks) != 1 || len(acks[0].Targets) != 2 || acks[0].Displaced == "" ||
+		!strings.HasPrefix(acks[0].Displaced, "mac-a+lin-1@") {
+		t.Fatalf("one ack line answers the pair's displacement across the cascade: %+v", acks)
+	}
+	// Acknowledged once: the pair's NEXT publication does not re-ack.
+	stillGoing := "Still going."
+	res, err = Edit(verbReq(a, "01J5X00000000000000000C219", "mac-a"), "casc-after", EditFields{NextStep: &stillGoing})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("edit after ack: %+v %v", res, err)
+	}
+	tAgain, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ackCount := 0
+	for _, h := range tAgain.Root.History {
+		if h.Ack {
+			ackCount++
+		}
+	}
+	if ackCount != 1 {
+		t.Fatalf("an answered displacement never re-acks: %d lines", ackCount)
+	}
+	// The human lifts the pause; the whole arc restores.
+	humanUnpark := verbReq(a, "01J5X00000000000000000C220", "mac-a")
+	humanUnpark.Actor.Human = "wido"
+	res, err = UnparkArc(humanUnpark, "casc-one")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark cascade: %+v %v", res, err)
 	}

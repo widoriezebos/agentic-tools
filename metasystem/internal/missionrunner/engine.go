@@ -79,6 +79,10 @@ type Engine struct {
 	// reaper judges by, so the runner's drain reap can never disagree with
 	// it about one record.
 	custodianFn func(pid, start int64, tag string) identity.Liveness
+	// survivorsFn overrides the tagged-survivor scan for tests.
+	// Production binds identity.TaggedSurvivors — the group-death half
+	// of the kill-less reap proof, shared with the standing reaper.
+	survivorsFn func(tag string, exclude int64) (alive bool, certain bool)
 }
 
 // fixtures is the engine's root-checked fixture authority (agnosticism
