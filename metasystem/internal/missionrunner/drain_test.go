@@ -46,6 +46,9 @@ func isoAt(at time.Time) string {
 func reapFixture(t *testing.T, reserved ...string) *Engine {
 	t.Helper()
 	engine := NewEngine(t.TempDir(), "demo")
+	// The verdict legs certify the MAPPING; the machine's own process
+	// table must not leak in through the default kernel scan.
+	engine.survivorsFn = func(tag string, exclude, pgid int64) (bool, bool) { return false, true }
 	reservations := map[string]any{}
 	for _, job := range reserved {
 		reservations[job] = map[string]any{}
@@ -180,7 +183,7 @@ func TestRunnerReapVerdicts(t *testing.T) {
 	t.Run("a dead custodian with a tagged survivor defers to the kill-capable path", func(t *testing.T) {
 		engine := reapFixture(t, "job-a")
 		engine.custodianFn = fixedCustodian(identity.Dead)
-		engine.survivorsFn = func(tag string, exclude int64) (bool, bool) { return true, true }
+		engine.survivorsFn = func(tag string, exclude, pgid int64) (bool, bool) { return true, true }
 		path := writeJob(t, engine, "job-a", map[string]any{
 			"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
 			"capDeadline": isoAt(now.Add(time.Hour)),
@@ -195,7 +198,7 @@ func TestRunnerReapVerdicts(t *testing.T) {
 	t.Run("an unenumerable process table defers the drain reap", func(t *testing.T) {
 		engine := reapFixture(t, "job-a")
 		engine.custodianFn = fixedCustodian(identity.Dead)
-		engine.survivorsFn = func(tag string, exclude int64) (bool, bool) { return false, false }
+		engine.survivorsFn = func(tag string, exclude, pgid int64) (bool, bool) { return false, false }
 		path := writeJob(t, engine, "job-a", map[string]any{
 			"status": "running", "pid": 4242, "pidStartedAt": 100, "instanceTag": "job-tag",
 		})

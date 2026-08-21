@@ -118,6 +118,14 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// tipCarriesLedger reports whether the tip has a ledger root at
+// all — the pre-migration discriminator the mutation-side
+// validation and the sync-mode gate share.
+func tipCarriesLedger(e Endpoint, tip string) (bool, error) {
+	_, err := gitIn(e.Root, "cat-file", "-e", tip+":"+goalsPrefix+"backlog.md")
+	return err == nil, nil
+}
+
 // SyncModeGate refuses the durable/declared mode mismatch at EVERY
 // operational boundary (F16: the projection alone checked it): the
 // fetched tip's root record speaks for the ledger, the endpoint for
@@ -314,7 +322,10 @@ func advanceAcceptedForward(root, newTip string) error {
 	for attempt := 0; attempt < 5; attempt++ {
 		old, err := goalGit(root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
 		if err != nil {
-			if _, createErr := goalGit(root, nil, "update-ref", AcceptedRef, newTip); createErr == nil {
+			// Creation IS the compare (R2-3): the empty old-value
+			// refuses a concurrent creator, so a later bootstrap can
+			// never replace a descendant with its ancestor.
+			if _, createErr := goalGit(root, nil, "update-ref", AcceptedRef, newTip, ""); createErr == nil {
 				return nil
 			}
 			continue
@@ -487,6 +498,19 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			CleanupRefs(e, req.Opid)
 			return PublishResult{}, gateErr
 		}
+		// The captured tip must pass the SAME whole-tree validation
+		// the read side runs (R2-4): identity and descent alone let a
+		// malformed descendant be "healed" incidentally by whatever
+		// verb ran next, publishing a repair nobody reviewed. A tree
+		// that carries no ledger yet (pre-migration) validates
+		// nothing — migration owns that world.
+		if hasLedger, ledgerErr := tipCarriesLedger(e, tip); ledgerErr == nil && hasLedger {
+			if valErr := ValidateCommit(e.Root, tip); valErr != nil {
+				_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "captured tip refused: "+valErr.Error())
+				CleanupRefs(e, req.Opid)
+				return PublishResult{}, fmt.Errorf("the captured tip does not validate; repair the canonical branch deliberately: %w", valErr)
+			}
+		}
 		if err := RecordSteps(e.Root, req.Opid, tip, ""); err != nil {
 			return PublishResult{}, err
 		}
@@ -548,7 +572,17 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			if err := MarkTerminal(e.Root, req.Opid, OutcomeConfirmed, "opid verified on "+short(newTip)); err != nil {
 				return PublishResult{}, err
 			}
-			if err := advanceAcceptedForward(e.Root, newTip); err != nil {
+			// The refetched tip may already be a DESCENDANT someone
+			// else pushed after ours: accepted advances only onto a
+			// tree this clone validated (R2-3) — never incidentally
+			// onto a stranger's unvalidated descendant.
+			advanceTarget := newTip
+			if newTip != commit {
+				if valErr := ValidateCommit(e.Root, newTip); valErr != nil {
+					advanceTarget = commit
+				}
+			}
+			if err := advanceAcceptedForward(e.Root, advanceTarget); err != nil {
 				return PublishResult{Outcome: OutcomeConfirmed, Tip: newTip, Commit: commit,
 					Detail: "confirmed; accepted ref did not advance: " + err.Error()}, nil
 			}

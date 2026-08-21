@@ -37,6 +37,24 @@ type MigrateOptions struct {
 }
 
 // Migrate synthesizes and publishes the new ledger.
+// migrationComplete reports whether the tip already carries this
+// migration's root record — identity AND mode both matching. A
+// mismatched completed migration is the named confusion.
+func migrationComplete(root, tip, identity, mode string) (bool, error) {
+	existing, err := gitIn(root, "cat-file", "-p", tip+":"+goalsPrefix+"backlog.md")
+	if err != nil {
+		return false, nil
+	}
+	record, problems := ParseRoot([]byte(existing))
+	if len(problems) != 0 {
+		return false, nil
+	}
+	if record.Identity == identity && record.MigrationMode == mode {
+		return true, nil
+	}
+	return false, fmt.Errorf("a migration already completed with identity %s mode %s; rerunning with mode %s is a confusion, not a repair", record.Identity, record.MigrationMode, mode)
+}
+
 func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 	if opts.Identity == "" {
 		return PublishResult{}, fmt.Errorf("migration needs its adoption identity — minted once, injected for determinism")
@@ -92,6 +110,27 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("source digest mismatch refused: goals.md is %s, the reviewed literal is %s — the migration runs on exactly the reviewed bytes or not at all", got, opts.SourceDigest)
 	}
 
+	// The rerun is answered BEFORE any journal write (R2-7): a
+	// completed migration is a fact about the canonical tip, and a
+	// freshly minted opid journaled "confirmed" against it would be
+	// a confirmation with no History line and no trailer — a lie the
+	// replay path then reads as branch surgery. The same check
+	// re-runs inside the transaction for the racing case.
+	if preNonce, nonceErr := readNonce(); nonceErr == nil {
+		if preTip, capErr := CaptureTip(r.Endpoint, preNonce); capErr == nil {
+			done, doneErr := migrationComplete(r.Endpoint.Root, preTip, opts.Identity, mode)
+			CleanupRefs(r.Endpoint, preNonce)
+			if doneErr != nil {
+				return PublishResult{}, doneErr
+			}
+			if done {
+				return PublishResult{Outcome: OutcomeConfirmed, Tip: preTip, Detail: "idempotent"}, nil
+			}
+		} else {
+			CleanupRefs(r.Endpoint, preNonce)
+		}
+	}
+
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "migrate", Args: map[string]string{
@@ -109,7 +148,11 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 				root, rootProblems := ParseRoot([]byte(existing))
 				if len(rootProblems) == 0 {
 					if root.Identity == opts.Identity && root.MigrationMode == mode {
-						return nil, AlreadyApplied{}
+						// A racing migrator completed between the
+						// pre-journal check and this capture: the
+						// desired state holds WITHOUT this opid (R2-7)
+						// — abandoned, never a manufactured confirm.
+						return nil, NothingToDo{Reason: "the migration already completed under this identity and mode"}
 					}
 					return nil, fmt.Errorf("a migration already completed with identity %s mode %s; rerunning with mode %s is a confusion, not a repair", root.Identity, root.MigrationMode, mode)
 				}

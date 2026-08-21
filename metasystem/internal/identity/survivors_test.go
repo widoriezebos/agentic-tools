@@ -4,13 +4,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
 
 func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 	// No tag recorded: nothing to scan for, no claim either way.
-	if alive, certain := TaggedSurvivors("", 0); alive || !certain {
+	if alive, certain := TaggedSurvivors("", 0, 0); alive || !certain {
 		t.Fatalf("an empty tag scans nothing: %v %v", alive, certain)
 	}
 
@@ -26,16 +27,22 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := exec.Command(link, "30")
+	// Its own process group: the indeterminacy scope the reapers
+	// pass is the recorded group, and the test's assertions must not
+	// depend on whatever else this machine runs under go test's
+	// group.
+	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
+	childGroup := int64(child.Process.Pid)
 	defer func() {
 		_ = child.Process.Kill()
 		_, _ = child.Process.Wait()
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		alive, certain := TaggedSurvivors(tag, 0)
+		alive, certain := TaggedSurvivors(tag, 0, childGroup)
 		if alive && certain {
 			break
 		}
@@ -47,7 +54,7 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 
 	// The recorded custodian itself is excluded: a scan that counted
 	// the dead-but-probed custodian would defer forever.
-	if alive, certain := TaggedSurvivors(tag, int64(child.Process.Pid)); alive || !certain {
+	if alive, certain := TaggedSurvivors(tag, int64(child.Process.Pid), childGroup); alive || !certain {
 		t.Fatalf("the custodian pid is not its own survivor: %v %v", alive, certain)
 	}
 
@@ -57,7 +64,7 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 	_, _ = child.Process.Wait()
 	deadline = time.Now().Add(5 * time.Second)
 	for {
-		alive, certain := TaggedSurvivors(tag, 0)
+		alive, certain := TaggedSurvivors(tag, 0, childGroup)
 		if !alive && certain {
 			break
 		}

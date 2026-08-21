@@ -152,10 +152,12 @@ func TestMigrateRefusalsComeBeforeAnyMutation(t *testing.T) {
 	if res, err := Migrate(verbReq(a, "01J5XM0000000000000000M030", "mac-a"), good); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("migrate: %+v %v", res, err)
 	}
+	// The confusion refuses BEFORE any journal write (R2-7): a
+	// doomed rerun never mints an entry.
 	bare := MigrateOptions{SourceDigest: digest, Identity: good.Identity, SyncMode: SyncRemote}
-	res, err := Migrate(verbReq(a, "01J5XM0000000000000000M040", "mac-a"), bare)
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "confusion") {
-		t.Fatalf("mode confusion rejects by name: %+v %v", res, err)
+	_, err = Migrate(verbReq(a, "01J5XM0000000000000000M040", "mac-a"), bare)
+	if err == nil || !strings.Contains(err.Error(), "confusion") {
+		t.Fatalf("mode confusion refuses by name pre-journal: %v", err)
 	}
 }
 

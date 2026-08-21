@@ -62,9 +62,17 @@ func Recover(e Endpoint) ([]RecoveryReport, error) {
 			if err := MarkTerminal(e.Root, entry.Opid, OutcomeConfirmed, "opid found on "+short(tip)+" by recovery"); err != nil {
 				return reports, err
 			}
-			_ = advanceAcceptedForward(e.Root, tip)
+			// Accepted advances only onto a VALIDATED tip, recovery
+			// included (R2-3), and a refused advance is said in the
+			// report — never discarded.
+			if valErr := ValidateCommit(e.Root, tip); valErr != nil {
+				report.Detail = "confirmed on the canonical tip; accepted NOT advanced (the tip does not validate): " + valErr.Error()
+			} else if advErr := advanceAcceptedForward(e.Root, tip); advErr != nil {
+				report.Detail = "confirmed on the canonical tip; accepted NOT advanced: " + advErr.Error()
+			} else {
+				report.Detail = "confirmed on the canonical tip"
+			}
 			CleanupRefs(e, entry.Opid)
-			report.Detail = "confirmed on the canonical tip"
 		case ActionConfirmLate:
 			if err := CorrectLate(e.Root, entry.Opid, "opid found on "+short(tip)+" by recovery"); err != nil {
 				return reports, err

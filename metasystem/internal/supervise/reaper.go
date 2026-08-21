@@ -48,7 +48,7 @@ type ReaperConfig struct {
 	// the group-death half of the proof (a dead custodian with tagged
 	// survivors is a live group). nil binds identity.TaggedSurvivors;
 	// tests bind a fake. certain=false defers like Unknown does.
-	Survivors func(tag string, exclude int64) (alive bool, certain bool)
+	Survivors func(tag string, exclude, pgid int64) (alive bool, certain bool)
 	// Apply lands one terminal verdict through the locked job-record
 	// compare-and-swap owner: the transition happens only if the record still
 	// carries the expected status, so a completion landing after this
@@ -154,7 +154,8 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	if survivors == nil {
 		survivors = identity.TaggedSurvivors
 	}
-	if alive, certain := survivors(tag, pid); !certain || alive {
+	recPgid, _ := recordInt(record["pgid"])
+	if alive, certain := survivors(tag, pid, recPgid); !certain || alive {
 		if cfg.Emit != nil {
 			cfg.Emit(fmt.Sprintf("REAP-DEFERRED job=%s custodian dead but the tagged group is not proven dead; kill authority stays with dispatch",
 				jobIDFor(record, path)))

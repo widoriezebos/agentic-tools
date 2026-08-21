@@ -134,6 +134,7 @@ func TestReaperPassCoreTransitions(t *testing.T) {
 	}
 	var emitted []string
 	cfg := ReaperConfig{
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
 		JobsDir:   dir,
 		Now:       func() time.Time { return now },
 		Custodian: custody.liveness,
@@ -201,6 +202,7 @@ func TestReaperPassVoidsVerdictWhenRecordMovesOn(t *testing.T) {
 	var emitted []string
 	apply := casApplier(t, dir)
 	cfg := ReaperConfig{
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
 		JobsDir:   dir,
 		Now:       func() time.Time { return now },
 		Custodian: func(int64, int64, string) identity.Liveness { return identity.Dead },
@@ -238,8 +240,9 @@ func TestReaperPassDefersOnUnknownCustodian(t *testing.T) {
 		"startedAt": now.Add(-1 * time.Minute).Format(isoSecond), "capMin": 60,
 	})
 	cfg := ReaperConfig{
-		JobsDir: dir,
-		Now:     func() time.Time { return now },
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
+		JobsDir:   dir,
+		Now:       func() time.Time { return now },
 		Custodian: func(pid, start int64, tag string) identity.Liveness {
 			return identity.Unknown
 		},
@@ -283,7 +286,7 @@ func TestReaperPassDefersWhileTaggedSurvivorsLive(t *testing.T) {
 				JobsDir:   dir,
 				Now:       func() time.Time { return now },
 				Custodian: deadCustodian,
-				Survivors: func(tag string, exclude int64) (bool, bool) {
+				Survivors: func(tag string, exclude, pgid int64) (bool, bool) {
 					if tag != "job-orphaned" || exclude != 999 {
 						t.Fatalf("the scan runs on the record's tag minus its custodian: %s %d", tag, exclude)
 					}
@@ -324,7 +327,7 @@ func TestReaperPassDefersWhileTaggedSurvivorsLive(t *testing.T) {
 		JobsDir:   dir,
 		Now:       func() time.Time { return now },
 		Custodian: deadCustodian,
-		Survivors: func(tag string, exclude int64) (bool, bool) { return false, true },
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
 		Apply:     casApplier(t, dir),
 	}
 	if err := cfg.ReaperPass(); err != nil {
@@ -346,8 +349,9 @@ func TestReaperPassHonorsCapDeadline(t *testing.T) {
 		"capDeadline": now.Add(-1 * time.Minute).Format(isoSecond),
 	})
 	cfg := ReaperConfig{
-		JobsDir: dir,
-		Now:     func() time.Time { return now },
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
+		JobsDir:   dir,
+		Now:       func() time.Time { return now },
 		Custodian: func(pid, start int64, tag string) identity.Liveness {
 			return identity.Dead
 		},
@@ -373,6 +377,7 @@ func TestReaperPassClearsAbandonedSetupHusks(t *testing.T) {
 		"createdAt": now.Add(-1 * time.Minute).Format(time.RFC3339),
 	})
 	cfg := ReaperConfig{
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
 		JobsDir:   dir,
 		Now:       func() time.Time { return now },
 		Custodian: func(int64, int64, string) identity.Liveness { return identity.Unknown },
@@ -412,6 +417,7 @@ func TestReaperPassEmitsTheDeclineItCannotAct(t *testing.T) {
 	})
 	var emitted []string
 	cfg := ReaperConfig{
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
 		JobsDir:   dir,
 		Now:       func() time.Time { return now },
 		Custodian: func(int64, int64, string) identity.Liveness { return identity.Alive },
@@ -468,6 +474,7 @@ func TestReaperHonorsTheCancellingMarker(t *testing.T) {
 		557: {start: 9, tag: "job-marked-live"}, // live; 555/556 dead
 	}
 	cfg := ReaperConfig{
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
 		JobsDir:   dir,
 		Now:       func() time.Time { return now },
 		Custodian: custody.liveness,
@@ -508,6 +515,7 @@ func TestReaperConcludesAMarkedRecordWithNoProcess(t *testing.T) {
 		"startedAt": now.Add(-1 * time.Minute).Format(isoSecond),
 	})
 	cfg := ReaperConfig{
+		Survivors: func(tag string, exclude, pgid int64) (bool, bool) { return false, true },
 		JobsDir:   dir,
 		Now:       func() time.Time { return now },
 		Custodian: fakeCustody{}.liveness,

@@ -82,7 +82,7 @@ type Engine struct {
 	// survivorsFn overrides the tagged-survivor scan for tests.
 	// Production binds identity.TaggedSurvivors — the group-death half
 	// of the kill-less reap proof, shared with the standing reaper.
-	survivorsFn func(tag string, exclude int64) (alive bool, certain bool)
+	survivorsFn func(tag string, exclude, pgid int64) (alive bool, certain bool)
 }
 
 // fixtures is the engine's root-checked fixture authority (agnosticism
