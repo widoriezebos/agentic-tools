@@ -377,12 +377,31 @@ echo "  2. Fill metasystem.conf with verified models, tiers, and the durable evi
 # killing the adoption.
 if hook_common=$(cd "$target" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
   hook_dir="$hook_common/hooks"
-  if [[ ! -e "$hook_dir/pre-commit" ]]; then
-    mkdir -p "$hook_dir"
-    printf '#!/usr/bin/env bash\nguard="$(git rev-parse --show-toplevel)/scripts/agents/pre-commit-guard.sh"\n[[ -x "$guard" ]] && exec "$guard"\nexit 0\n' >"$hook_dir/pre-commit"
-    chmod +x "$hook_dir/pre-commit"
+  mkdir -p "$hook_dir"
+  # The composer runs the guard FIRST, then hands off to whatever hook
+  # the project already had (preserved as pre-commit.local). Declining
+  # to enroll because a hook existed left the ledger fence unenforced
+  # in exactly the repositories that care about their hooks (F15).
+  composer='#!/usr/bin/env bash
+guard="$(git rev-parse --show-toplevel)/scripts/agents/pre-commit-guard.sh"
+if [[ -x "$guard" ]]; then
+  "$guard" || exit $?
+fi
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -x "$here/pre-commit.local" ]]; then
+  exec "$here/pre-commit.local" "$@"
+fi
+exit 0
+'
+  if [[ -e "$hook_dir/pre-commit" ]] && grep -q "pre-commit-guard.sh" "$hook_dir/pre-commit"; then
+    echo "pre-commit guard already enrolled in the target's hook; left as is"
   else
-    echo "pre-commit hook already present in the target; the new-plan guard was NOT installed over it" >&2
+    if [[ -e "$hook_dir/pre-commit" ]]; then
+      mv "$hook_dir/pre-commit" "$hook_dir/pre-commit.local"
+      echo "existing pre-commit hook preserved as pre-commit.local; the guard now runs first"
+    fi
+    printf '%s' "$composer" >"$hook_dir/pre-commit"
+    chmod +x "$hook_dir/pre-commit"
   fi
 else
   echo "target is not a git repository; the new-plan guard hook was not installed (install it when git init happens)" >&2

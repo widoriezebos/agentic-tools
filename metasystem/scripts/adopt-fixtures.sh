@@ -201,6 +201,37 @@ if true; then  # template-gated by the orchestrator
   [[ -x "$nested_tgt/.git/hooks/pre-commit" ]] \
     || { echo "adoption did not install the pre-commit guard hook" >&2; exit 1; }
 
+  # F15: a target with its OWN pre-commit hook gets the guard COMPOSED
+  # in front of it, not declined — the old hook is preserved as
+  # pre-commit.local and still runs; re-adoption never stacks.
+  compose_tgt="$tmp/compose-target"
+  mkdir -p "$compose_tgt"
+  git -C "$compose_tgt" init -q -b main
+  mkdir -p "$compose_tgt/.git/hooks"
+  printf '#!/usr/bin/env bash\ntouch "$(git rev-parse --show-toplevel)/.project-hook-ran"\nexit 0\n' \
+    >"$compose_tgt/.git/hooks/pre-commit"
+  chmod +x "$compose_tgt/.git/hooks/pre-commit"
+  "$nested_src/vendored/scripts/adopt.sh" "$compose_tgt" --runtimes claude >"$tmp/adopt-compose.out" 2>&1 \
+    || { echo "adoption over a hooked target failed" >&2; cat "$tmp/adopt-compose.out" >&2; exit 1; }
+  grep -q "pre-commit-guard.sh" "$compose_tgt/.git/hooks/pre-commit" \
+    || { echo "adoption did not enroll the guard over an existing hook" >&2; exit 1; }
+  [[ -x "$compose_tgt/.git/hooks/pre-commit.local" ]] \
+    || { echo "adoption did not preserve the existing hook as pre-commit.local" >&2; exit 1; }
+  # KI-31 again: the composed hook must prove COMPOSITION, not the
+  # wrapper-token rule — the refusing engine stub takes the guard
+  # down its fail-open HUMAN path regardless of this suite's own
+  # ancestry.
+  (cd "$compose_tgt" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" .git/hooks/pre-commit) \
+    || { echo "the composed hook refused a clean tree" >&2; exit 1; }
+  [[ -f "$compose_tgt/.project-hook-ran" ]] \
+    || { echo "the preserved project hook no longer runs" >&2; exit 1; }
+  "$nested_src/vendored/scripts/adopt.sh" "$compose_tgt" --runtimes claude >"$tmp/adopt-recompose.out" 2>&1 \
+    || { echo "re-adoption over the composed hook failed" >&2; cat "$tmp/adopt-recompose.out" >&2; exit 1; }
+  grep -q "pre-commit-guard.sh" "$compose_tgt/.git/hooks/pre-commit.local" \
+    && { echo "re-adoption stacked the composer into pre-commit.local" >&2; exit 1; }
+  grep -q "touch" "$compose_tgt/.git/hooks/pre-commit.local" \
+    || { echo "re-adoption clobbered the preserved project hook" >&2; exit 1; }
+
   # IL-16: an open chain counts as current for a plan's in-flight claim, within
   # a bounded window; a closed or aged chain does not. jobs_in_flight stays
   # strict on purpose, so the stop hook still refuses abandoning an open chain.

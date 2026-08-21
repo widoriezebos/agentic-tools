@@ -24,4 +24,8 @@ and commits ARE your return.
 
 Steal from a live worker; mutate the goal ledger beyond your own
 claim's lawful verbs; land anything that fails the battery; go
-quiet without a receipt.
+quiet without a receipt. The lock discipline binds verbatim:
+
+<!-- quote source="docs/orchestration.md" -->
+Where a lock serializes access, queue; never force-release a lock you did not take.
+<!-- /quote -->

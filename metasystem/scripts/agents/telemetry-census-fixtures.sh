@@ -22,6 +22,15 @@ git -C "$cas_repository" init -q -b main
 cp "$root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/"
 cp "$root/bin/metasystem" "$fixture_root/bin/metasystem"
 dispatch="$fixture_root/scripts/agents/dispatch.sh"
+# The record CAS is a control-plane write. Under an agent-run suite
+# the ambient ancestry classifies UNTRUSTED in this sandbox, so this
+# shell announces itself as the sandbox's main — what a starting
+# main does; a terminal run passed as HUMAN and still does.
+printf 'metasystem.runtimes=fake\n' > "$fixture_root/metasystem.conf"
+"$fixture_root/bin/metasystem" lease announce --root "$fixture_root" \
+  --session telemetry-census --pid $$ \
+  --start "$("$fixture_root/bin/metasystem" proc started-at --pid $$)" \
+  --tag fixture-telemetry-census --runtime fake >/dev/null
 
 run_model_case() { # case name, expected model, modelUsage JSON
   local name=$1 expected=$2 model_usage=$3 case_dir="$tmp/$1"

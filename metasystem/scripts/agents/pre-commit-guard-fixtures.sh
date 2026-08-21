@@ -41,4 +41,52 @@ if (cd "$repository" && "$fixture_root/scripts/agents/pre-commit-guard.sh" \
 fi
 grep -Fq 'refusing to commit NEW plan' "$tmp/new-plan.err"
 
+# The ledger fence outranks the new-plan acknowledgment (F15): the
+# ALLOW_NEW_PLAN escape acknowledges new plan files, and says nothing
+# about the goal ledger — a staged plans/goals/ change refuses even
+# under the acknowledgment.
+git -C "$repository" reset -q
+mkdir -p "$repository/plans/goals"
+printf '# smuggled\n' >"$repository/plans/goals/smuggled.md"
+git -C "$repository" add plans/goals/smuggled.md
+if (cd "$repository" && METASYSTEM_ALLOW_NEW_PLAN=1 "$fixture_root/scripts/agents/pre-commit-guard.sh" \
+  >"$tmp/ledger-ack.out" 2>"$tmp/ledger-ack.err"); then
+  echo "pre-commit guard fixture: ALLOW_NEW_PLAN bypassed the goal-ledger fence" >&2
+  exit 1
+fi
+grep -Fq 'goal files change only through goal verbs' "$tmp/ledger-ack.err"
+# The acknowledgment keeps its own meaning: a NEW plan outside the
+# ledger still passes under it.
+git -C "$repository" reset -q
+git -C "$repository" add plans/new.md
+(cd "$repository" && METASYSTEM_ALLOW_NEW_PLAN=1 "$fixture_root/scripts/agents/pre-commit-guard.sh") || {
+  echo "pre-commit guard fixture: the acknowledgment no longer admits an acknowledged new plan" >&2
+  exit 1
+}
+
+# The ledger fence outranks the unborn-HEAD exception too: an initial
+# payload never lawfully hand-writes the ledger.
+unborn="$tmp/unborn"
+mkdir -p "$unborn/plans/goals"
+git -C "$unborn" init -q -b main
+printf '# smuggled\n' >"$unborn/plans/goals/smuggled.md"
+git -C "$unborn" add plans/goals/smuggled.md
+if (cd "$unborn" && "$fixture_root/scripts/agents/pre-commit-guard.sh" \
+  >"$tmp/ledger-unborn.out" 2>"$tmp/ledger-unborn.err"); then
+  echo "pre-commit guard fixture: the unborn-HEAD exception bypassed the goal-ledger fence" >&2
+  exit 1
+fi
+grep -Fq 'goal files change only through goal verbs' "$tmp/ledger-unborn.err"
+# The exception keeps its own meaning: an unborn initial payload
+# without ledger files still passes.
+git -C "$unborn" reset -q
+printf 'payload\n' >"$unborn/payload.txt"
+printf 'plan\n' >"$unborn/plans/initial.md"
+mkdir -p "$unborn/plans"
+git -C "$unborn" add payload.txt plans/initial.md
+(cd "$unborn" && "$fixture_root/scripts/agents/pre-commit-guard.sh") || {
+  echo "pre-commit guard fixture: the unborn-HEAD exception no longer admits an initial payload" >&2
+  exit 1
+}
+
 echo "pre-commit guard fixtures: PASSED"

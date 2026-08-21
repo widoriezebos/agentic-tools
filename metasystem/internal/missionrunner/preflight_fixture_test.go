@@ -1058,6 +1058,35 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 				time.Sleep(50 * time.Millisecond)
 			}
 		}
+		// FOURTH sighting of this race: a writer in an UNRECORDED
+		// group — a detached descendant's git child — outlived every
+		// record-named sweep above. The checkout directory is the one
+		// truth every writer shares, and nothing else lawfully works
+		// inside this test's private TempDir: sweep by cwd, then wait
+		// the directory quiet before TempDir removal runs.
+		checkout := filepath.Dir(engine.Root)
+		sweepDeadline := time.Now().Add(time.Duration(capSeconds) * time.Second)
+		for {
+			live := 0
+			if pids, pidErr := identity.AllPids(); pidErr == nil {
+				for _, pid := range pids {
+					cwd, ok := identity.ProcessCwd(pid)
+					if !ok || (cwd != checkout && !strings.HasPrefix(cwd, checkout+string(os.PathSeparator))) {
+						continue
+					}
+					live++
+					_ = syscall.Kill(int(pid), syscall.SIGKILL)
+				}
+			}
+			if live == 0 {
+				break
+			}
+			if time.Now().After(sweepDeadline) {
+				t.Errorf("mission-birth teardown: %d process(es) still working under %s after the %ds scaled ceiling; TempDir removal would race them", live, checkout, capSeconds)
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 	})
 	cmd := exec.Command(filepath.Join(engine.Root, "scripts", "agents", "mission-runner.sh"),
 		"start", "--mission", engine.Mission)

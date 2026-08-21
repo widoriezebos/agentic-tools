@@ -18,7 +18,15 @@ mirror_checkout() { # checkout directory
   mkdir -p "$fixture_root/bin"
   cp "$source_root/bin/metasystem" "$fixture_root/bin/metasystem"
   cp "$source_root/scripts/metasystem-config.sh" "$fixture_root/scripts/metasystem-config.sh"
-  printf 'evidence.root=%s\n' "$evidence" >"$fixture_root/metasystem.conf"
+  printf 'evidence.root=%s\nmetasystem.runtimes=fake\n' "$evidence" >"$fixture_root/metasystem.conf"
+  # The held reap is a control-plane write. Under an agent-run suite
+  # the ambient ancestry classifies UNTRUSTED in this sandbox, so
+  # this shell announces itself as the sandbox's main — what a
+  # starting main does; a terminal run passed as HUMAN and still does.
+  "$fixture_root/bin/metasystem" lease announce --root "$fixture_root" \
+    --session evidence-segment --pid $$ \
+    --start "$("$fixture_root/bin/metasystem" proc started-at --pid $$)" \
+    --tag fixture-evidence-segment --runtime fake >/dev/null
   cat >"$fixture_root/artifacts/agents/jobs/segment-chain.json" <<'JSON'
 {
   "jobId": "segment-chain",
@@ -63,7 +71,14 @@ cp "$source_root/scripts/agents/evidence-gc.sh" "$legacy_root/scripts/agents/evi
 mkdir -p "$legacy_root/bin"
 cp "$source_root/bin/metasystem" "$legacy_root/bin/metasystem"
 cp "$source_root/scripts/metasystem-config.sh" "$legacy_root/scripts/metasystem-config.sh"
-printf 'evidence.root=%s\n' "$evidence" >"$legacy_root/metasystem.conf"
+printf 'evidence.root=%s\nmetasystem.runtimes=fake\n' "$evidence" >"$legacy_root/metasystem.conf"
+# Same announcement as mirror_checkout: the held GC is a
+# control-plane write and ambient ancestry classifies UNTRUSTED
+# under an agent-run suite.
+"$legacy_root/bin/metasystem" lease announce --root "$legacy_root" \
+  --session evidence-legacy --pid $$ \
+  --start "$("$legacy_root/bin/metasystem" proc started-at --pid $$)" \
+  --tag fixture-evidence-legacy --runtime fake >/dev/null
 cat >"$legacy_root/artifacts/agents/jobs/legacy-chain.json" <<JSON
 {
   "jobId": "legacy-chain",

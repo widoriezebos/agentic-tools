@@ -40,19 +40,16 @@ if [[ -x "$ms" ]]; then
   fi
 fi
 
-[[ "${METASYSTEM_ALLOW_NEW_PLAN:-}" == "1" ]] && exit 0
-
-# An unborn branch has no peer work to capture: the initial commit stages the
-# entire payload by design (adoption and provisioning both do), and refusing
-# it broke provisioning the first time the two mechanisms met.
-git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
-
 # The goal ledger changes only through goal verbs (BGS-7): the verbs
 # publish via plumbing that never runs this hook, so ANY staged
 # change under plans/goals/ in an ordinary commit is a hand edit —
 # and hand edits go through goal reconcile, which republishes them
 # lawfully. This is the accidental-edit fence, not the authority
-# boundary (the read-side validator is that).
+# boundary (the read-side validator is that). It runs BEFORE the
+# new-plan acknowledgment and the unborn-HEAD exception: those two
+# exits acknowledge NEW PLAN FILES and INITIAL PAYLOADS, and neither
+# acknowledgment says anything about the ledger (review F15 — the
+# fence was bypassable through both).
 ledger=$(git diff --cached --name-only | grep -E '(^|/)plans/goals/' || true)
 if [[ -n "$ledger" ]]; then
   echo "pre-commit guard: goal files change only through goal verbs; hand edits go through goal reconcile:" >&2
@@ -60,6 +57,13 @@ if [[ -n "$ledger" ]]; then
 ' $ledger >&2
   exit 1
 fi
+
+[[ "${METASYSTEM_ALLOW_NEW_PLAN:-}" == "1" ]] && exit 0
+
+# An unborn branch has no peer work to capture: the initial commit stages the
+# entire payload by design (adoption and provisioning both do), and refusing
+# it broke provisioning the first time the two mechanisms met.
+git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
 
 added=$(git diff --cached --name-status --diff-filter=A | cut -f2- \
   | grep -E '(^|/)plans/[^/]+\.md$' || true)

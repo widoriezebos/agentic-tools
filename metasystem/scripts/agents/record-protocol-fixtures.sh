@@ -16,6 +16,15 @@ cp "$source_root/scripts/agents/dispatch.sh" "$fixture_root/scripts/agents/dispa
 mkdir -p "$fixture_root/bin"
 cp "$source_root/bin/metasystem" "$fixture_root/bin/metasystem"
 dispatch="$fixture_root/scripts/agents/dispatch.sh"
+# The record create is a control-plane write. Under an agent-run
+# suite the ambient ancestry classifies UNTRUSTED in this sandbox,
+# so this shell announces itself as the sandbox's main — what a
+# starting main does; a terminal run passed as HUMAN and still does.
+printf 'metasystem.runtimes=fake\n' > "$fixture_root/metasystem.conf"
+"$fixture_root/bin/metasystem" lease announce --root "$fixture_root" \
+  --session record-protocol --pid $$ \
+  --start "$("$fixture_root/bin/metasystem" proc started-at --pid $$)" \
+  --tag fixture-record-protocol --runtime fake >/dev/null
 
 # Dispatch setup persists the epoch-tagged pending-setup identity first. The
 # setup completion may fill the record only when main identity and claim epoch

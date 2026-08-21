@@ -203,8 +203,14 @@ func TestMigrateIsDeterministicUnderInjection(t *testing.T) {
 func TestTheCheckedInManifestParses(t *testing.T) {
 	// The PRODUCTION manifest must parse under the closed schema —
 	// the review's F1: a toy fixture proved nothing about the file
-	// the real cutover will consume.
+	// the real cutover will consume. An ADOPTED repository ships no
+	// migration manifest (the cutover artifact belongs to the
+	// template repo alone), so absence skips; any other read error
+	// still fails.
 	data, err := os.ReadFile(filepath.Join("..", "..", "plans", "goals-migration-manifest.md"))
+	if os.IsNotExist(err) {
+		t.Skip("no checked-in migration manifest here; adopted repositories carry none")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

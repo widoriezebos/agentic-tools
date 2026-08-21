@@ -1053,6 +1053,11 @@ cp "$ms" "$foreign/repo/metasystem/bin/metasystem"
 # leaked-fixture fence) and the foreign-owner rule below would never
 # be exercised.
 printf 'metasystem.runtimes=fake\n' > "$foreign/repo/metasystem/metasystem.conf"
+# Third wrong-reason refusal, same lesson as the two above: the
+# caller must BE this sandbox's announced main. Ambient ancestry
+# answers agent under an agent-run suite, and require-holder then
+# refuses UNTRUSTED before the foreign-owner rule is ever reached.
+become_main "$foreign/repo/metasystem" foreign-owner-shutdown
 foreign_sleep_pid=$(
   bash -c '"$1" util hold --tag metasystem-foreign-owner >/dev/null 2>&1 & echo $!' _ "$ms"
 )
@@ -1088,6 +1093,11 @@ stop_root=$tmp/stop-hook
 mkdir -p "$stop_root/plans" "$stop_root/artifacts/agents/jobs" "$stop_root/artifacts/agents/supervision" "$stop_root/scripts/agents"
 cp "$source_root/scripts/agents/supervision-hook.sh" \
    "$source_root/scripts/agents/arm-supervision.sh" "$stop_root/scripts/agents/"
+# The hook (and the announcement step below) derive the caller's
+# main through the runtime-signature ancestor walk, and that walk
+# reads the adapters from THIS root — without them find-ancestor
+# refuses and every derived main is empty.
+cp -R "$source_root/scripts/agents/adapters" "$stop_root/scripts/agents/adapters"
 # The hook resolves its engine as <root>/bin/metasystem; the open-work,
 # stop-block, identity, and lease helpers it used to need as .py files all
 # live inside it now.
@@ -1129,6 +1139,25 @@ printf '%s' "$first" | grep -Fq 'OPEN WORK (1)' \
 # (b) End to end, unseeded: with work settled, opening a goal makes the
 # NEXT turn end block once pointing at the goal's next step — the
 # incident's fix observed through the real hook.
+# goal open and run launch below are holder-only control-plane
+# writes, and the hook matches run ownership against the main IT
+# derives — the nearest runtime-signature ancestor. Production
+# truth: the announced main IS the runtime process. So when this
+# suite runs under an agent, announce THAT ancestor as the
+# sandbox's main (the writes authenticate through it and the run's
+# recorded owner equals the hook's derived main). From a terminal
+# there is no runtime ancestor and no announcement: the writes pass
+# as HUMAN and the run's null coordinates match the hook's empty
+# main — the shape this leg always had.
+stop_main_identity=$("$stop_root/bin/metasystem" proc find-ancestor \
+  --repo "$stop_root" --pid $$ --runtime claude 2>/dev/null || true)
+if [[ -n "$stop_main_identity" ]]; then
+  stop_main_pid=$("$ms" json get --value "$stop_main_identity" --field pid)
+  "$stop_root/bin/metasystem" lease announce --root "$stop_root" \
+    --session stop-hook-main --pid "$stop_main_pid" \
+    --start "$(process_started_at "$stop_main_pid")" \
+    --tag fixture-stop-hook --runtime claude >/dev/null
+fi
 "$stop_root/bin/metasystem" goal open --root "$stop_root" \
   --id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." >/dev/null
 goal_block=$(printf '%s' "$stop_payload" | bash "$stop_root/scripts/agents/supervision-hook.sh" claude stop)
