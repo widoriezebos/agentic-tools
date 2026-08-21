@@ -20,6 +20,14 @@
   coverage ratchet with the missionrunner floor re-seeded at 74.9 per
   the ratchet's composition-change procedure; mission-fixtures and
   dispatch-fixtures standalone both passed).
-- Next step: il-28-static-reproof (landing-boundary go-gate.sh --fast
-  hook) under the same covenant → STOP (Wido's instruction: no further
-  work).
+- il-28-static-reproof: DONE, landed 2026-08-21 (commit 3a0dece "The
+  landing boundary re-proves its statics"): commit.sh runs
+  go-gate.sh --fast plus the env-scrubbed word audit before any commit
+  concludes, binds the committed bytes (inverted input closure,
+  gitlink/symlink/hidden-entry fences, index-tree capture and recheck,
+  landed-tree==proved-tree postcondition with soft rollback), with the
+  nine-leg fixture suite wired into validate-metasystem.sh; six
+  covenant rounds closed at the declared round-6 failsafe, residue in
+  the goal row (plans/goals-migration-manifest.md).
+- THIS HANDOFF IS CLOSED: both streams landed and pushed; no open
+  work remains here (Wido's instruction: stop after il-28).
