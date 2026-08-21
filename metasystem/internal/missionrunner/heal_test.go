@@ -86,11 +86,11 @@ func crashedMission(t *testing.T, ledgerCycles, spentCycles int) (engine *Engine
 	if err := mission.InitLedger(ledgerPath, 10, 5); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatal(err)
 	}
 	for cycle := 1; cycle <= ledgerCycles; cycle++ {
-		if err := mission.AppendCycle(ledgerPath, cycle, "unresolved", testSHA, "score=5", "no"); err != nil {
+		if _, err := mission.AppendCycle(ledgerPath, cycle, "unresolved", testSHA, "score=5", "no"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -131,7 +131,7 @@ func TestHealReservedCycleRecordsLostTurn(t *testing.T) {
 	if _, _, cycles, err := mission.ParseLedger(ledgerPath); err != nil || len(cycles) != 3 {
 		t.Fatalf("healed ledger must parse with 3 cycles: %v (%d)", err, len(cycles))
 	}
-	if err := mission.AppendCycle(ledgerPath, 4, "unresolved", testSHA, "score=5", "no"); err != nil {
+	if _, err := mission.AppendCycle(ledgerPath, 4, "unresolved", testSHA, "score=5", "no"); err != nil {
 		t.Fatalf("the next cycle must append contiguously after the heal: %v", err)
 	}
 }
@@ -201,7 +201,7 @@ func TestHealReservedCycleConsumesDrainStall(t *testing.T) {
 	if _, _, cycles, err := mission.ParseLedger(ledgerPath); err != nil || len(cycles) != 3 {
 		t.Fatalf("healed ledger must parse with 3 cycles: %v (%d)", err, len(cycles))
 	}
-	if err := mission.AppendCycle(ledgerPath, 4, "unresolved", testSHA, "score=5", "no"); err != nil {
+	if _, err := mission.AppendCycle(ledgerPath, 4, "unresolved", testSHA, "score=5", "no"); err != nil {
 		t.Fatalf("the next cycle must append contiguously after the heal: %v", err)
 	}
 }

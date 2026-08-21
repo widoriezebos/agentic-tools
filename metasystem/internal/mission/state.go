@@ -183,7 +183,7 @@ func exactKeys(m map[string]any, keys ...string) bool {
 func stateTopLevelKeys(state map[string]any) bool {
 	required := []string{"schemaVersion", "missionId", "branch", "status", "parkReason",
 		"gatePassed", "streams", "fences", "turnLog", "waitingList", "runnerLease", "ledger", "integrity",
-		"openTurn", "workspaceTaint", "initialBaseline"}
+		"openTurn", "workspaceTaint", "initialBaseline", "admissionOrigins"}
 	allowed := map[string]bool{"ledgerSemantics": true, "lastDrainStall": true}
 	for _, key := range required {
 		if _, ok := state[key]; !ok {
@@ -233,7 +233,7 @@ func validateShape(state map[string]any) error {
 		}
 	}
 	schemaVersion, _ := intValue(state["schemaVersion"])
-	if schemaVersion != 2 && schemaVersion != 3 {
+	if schemaVersion != 4 {
 		return stateErr("mission state schema version or mission id is invalid")
 	}
 	// The DOWNGRADE BARRIER (issue-4 round 2): a semantics-3 mission is
@@ -244,6 +244,9 @@ func validateShape(state map[string]any) error {
 	// barrier they already understand.
 	if semantics, ok := intValue(state["ledgerSemantics"]); ok && semantics >= 3 && schemaVersion < 3 {
 		return stateErr("mission state ledgerSemantics %d requires schemaVersion 3", semantics)
+	}
+	if err := validateAdmissionOrigins(state["admissionOrigins"]); err != nil {
+		return err
 	}
 	missionID, ok := state["missionId"].(string)
 	if !ok || !idRe.MatchString(missionID) {
@@ -393,8 +396,14 @@ func validateLogsAndLedger(state map[string]any) error {
 		return stateErr("mission turn log must be an array of objects")
 	}
 	for _, item := range turnLog {
-		if _, ok := item.(map[string]any); !ok {
+		entry, ok := item.(map[string]any)
+		if !ok {
 			return stateErr("mission turn log must be an array of objects")
+		}
+		if isVerificationEntry(entry) {
+			if err := validateVerificationEntry(entry); err != nil {
+				return err
+			}
 		}
 	}
 	// Acceptance payloads are the consumption index's ONE recovery source
@@ -476,7 +485,11 @@ func validateAggregation(state map[string]any) error {
 			return stateErr("completed mission state requires a passed gate and no park reason")
 		}
 	case "running":
-		if gatePassed || parked || !active {
+		// The consumed-but-unconcluded interval is a DEFINED state: an
+		// acceptance landed, its post-verification entry has not, and the
+		// stream map may already be terminal — the verification write
+		// resolves it either way.
+		if gatePassed || parked || (!active && UnverifiedAcceptance(state) == "") {
 			return stateErr("running mission state requires an active stream, no park reason, and an unpassed gate")
 		}
 	default:
@@ -549,6 +562,13 @@ func validate(state map[string]any) error {
 	// classifying it as corruption (slice-4 critique F-2).
 	if v, _ := intValue(state["schemaVersion"]); v == 1 {
 		return ErrLegacyState
+	}
+	// A schema-2/3 state predates the snapshot-scope anchors: its open
+	// turns carry no HEAD, ref, or staged origins, so nothing after a
+	// resume could be accounted. Same posture as the legacy barrier —
+	// missions are short-lived cohort artifacts; re-provision.
+	if v, _ := intValue(state["schemaVersion"]); v == 2 || v == 3 {
+		return ErrPreSnapshotScopeState
 	}
 	if err := validateShape(state); err != nil {
 		return err
@@ -651,12 +671,12 @@ var contractNameRe = regexp.MustCompile(`^mission-([a-z0-9][a-z0-9-]*)\.contract
 // the workspace then holds. It reads the contract exactly once and
 // delegates; a caller that already holds authenticated bytes must use
 // InitStateFromSource so no second read can bind different bytes.
-func InitStateWithBaseline(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline string) error {
+func InitStateWithBaseline(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline string, origins map[string]any) error {
 	source, err := os.ReadFile(contractPath)
 	if err != nil {
 		return stateErr("cannot read mission contract: %v", err)
 	}
-	return InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline, source)
+	return InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline, source, origins)
 }
 
 // InitStateFromSource is state birth from ONE contract byte snapshot:
@@ -664,9 +684,16 @@ func InitStateWithBaseline(statePath, contractPath, ledgerPath, lease, branchArg
 // the state can never bind a contract other than the one its caller
 // authenticated — the pin file on disk stays mutable, the snapshot does
 // not.
-func InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline string, source []byte) error {
+func InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, initialBaseline string, source []byte, origins map[string]any) error {
 	if len(source) == 0 {
 		return stateErr("mission state initialization requires the contract's byte snapshot")
+	}
+	// The admission origins are part of the birth certificate: a crash
+	// between admission and the first open must find a durable
+	// accounting authority, never adopt whatever the repository then
+	// holds.
+	if err := validateAdmissionOrigins(origins); err != nil {
+		return err
 	}
 	values, err := contractValuesFromSource(source)
 	if err != nil {
@@ -706,7 +733,7 @@ func InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, 
 		runnerLease = lease
 	}
 	body := map[string]any{
-		"schemaVersion":  3,
+		"schemaVersion":  4,
 		"missionId":      match[1],
 		"openTurn":       nil,
 		"workspaceTaint": map[string]any{"next": 1, "segment": 0, "entries": []any{}},
@@ -733,6 +760,7 @@ func InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, 
 		return stateErr("mission initial baseline must be a git tree id; every mission is born with its admitted baseline")
 	}
 	body["initialBaseline"] = initialBaseline
+	body["admissionOrigins"] = origins
 	lock, err := lockFile(statePath)
 	if err != nil {
 		return err
@@ -757,7 +785,7 @@ func InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, 
 }
 
 func validateTransition(previous, next map[string]any) error {
-	for _, key := range []string{"schemaVersion", "missionId", "branch", "ledgerSemantics", "initialBaseline"} {
+	for _, key := range []string{"schemaVersion", "missionId", "branch", "ledgerSemantics", "initialBaseline", "admissionOrigins"} {
 		if !jsonEqual(previous[key], next[key]) {
 			return stateErr("mission state update changes immutable identity")
 		}
@@ -785,10 +813,65 @@ func validateTransition(previous, next map[string]any) error {
 	prevSequence, _ := intValue(prevIntegrityDoc["sequence"])
 	nextTaintDoc, _ := next["workspaceTaint"].(map[string]any)
 	nextSegment, _ := intValue(nextTaintDoc["segment"])
+	appendedAcceptances := int64(0)
+	appendedVerifications := int64(0)
 	for _, raw := range nextLog[len(prevLog):] {
 		entry, _ := raw.(map[string]any)
-		if entry == nil || entry["wall"] == nil || entry["consumedAuthorizations"] == nil {
+		if entry == nil {
 			return stateErr("mission turn log entries must carry the wall payload and its consumption list")
+		}
+		if isVerificationEntry(entry) {
+			// The post-verification entry concludes exactly the turn whose
+			// acceptance is pending: it names the open turn, that turn's
+			// acceptance exists and is unverified, and the marker dies in
+			// the same write — the interval is a DEFINED state, never a
+			// silently reopenable one.
+			if err := validateVerificationAppend(previous, next, entry); err != nil {
+				return err
+			}
+			appendedVerifications++
+			continue
+		}
+		if entry["wall"] == nil || entry["consumedAuthorizations"] == nil {
+			return stateErr("mission turn log entries must carry the wall payload and its consumption list")
+		}
+		appendedAcceptances++
+		entryTurn, _ := entry["turnId"].(string)
+		// The acceptance BINDS to the already-open turn (WSS I11-1): the
+		// previous state must carry the marker, and the entry must name
+		// that marker's turn and cycle — a write can never open a turn
+		// and accept it in the same breath, nor accept a turn other than
+		// the one in flight, so a forged well-shaped acceptance cannot
+		// become chain-authoritative outside the open interval.
+		prevOpen, _ := previous["openTurn"].(map[string]any)
+		if prevOpen == nil {
+			return stateErr("mission acceptance requires a turn opened by an earlier write")
+		}
+		if openID, _ := prevOpen["turnId"].(string); openID != entryTurn {
+			return stateErr("mission acceptance must name the open turn (%s)", openID)
+		}
+		entryCycle, cycleOK := intValue(entry["cycle"])
+		openCycle, _ := intValue(prevOpen["cycle"])
+		if !cycleOK || entryCycle != openCycle {
+			return stateErr("mission acceptance cycle must match the open turn (%d)", openCycle)
+		}
+		// ONE acceptance per turn, ever: a second acceptance naming an
+		// already-accepted turn would ride behind that turn's verification
+		// and read as verified without one.
+		for _, prior := range prevLog {
+			logged, _ := prior.(map[string]any)
+			if logged == nil || isVerificationEntry(logged) {
+				continue
+			}
+			if id, _ := logged["turnId"].(string); id == entryTurn && logged["wall"] != nil {
+				return stateErr("mission turn %s already carries an acceptance", entryTurn)
+			}
+		}
+		// The acceptance append is the commit point but never the
+		// conclusion: success may surface only through the verification
+		// write (WSS-12).
+		if gate, _ := next["gatePassed"].(bool); gate || next["status"] == "completed" {
+			return stateErr("mission acceptance write cannot surface success before its verification")
 		}
 		wall, _ := entry["wall"].(map[string]any)
 		point, _ := wall["sequencePoint"].(map[string]any)
@@ -796,6 +879,54 @@ func validateTransition(previous, next map[string]any) error {
 		segment, gOK := intValue(point["segment"])
 		if !sOK || !gOK || sequence != prevSequence+1 || segment != nextSegment {
 			return stateErr("mission acceptance sequence point must name the accepting write (%d/%d)", prevSequence+1, nextSegment)
+		}
+	}
+	// SUCCESS surfaces only through a verification-appending write: the
+	// gate flag and completion may flip true in no other transition, so
+	// no legal write can conjure a completed mission out of an open turn
+	// without concluding a committed acceptance.
+	prevGate, _ := previous["gatePassed"].(bool)
+	nextGate, _ := next["gatePassed"].(bool)
+	if (!prevGate && nextGate) || (previous["status"] != "completed" && next["status"] == "completed") {
+		if appendedVerifications != 1 {
+			return stateErr("mission success surfaces only through a post-verification write")
+		}
+		// And only for an acceptance whose OWN recorded verdict passed:
+		// the flip is bound to the concluded acceptance's gatePassed
+		// field, so a verification of a gate-failed turn cannot carry a
+		// forged completion.
+		for _, raw := range nextLog[len(prevLog):] {
+			entry, _ := raw.(map[string]any)
+			if entry == nil || !isVerificationEntry(entry) {
+				continue
+			}
+			verifiedTurn, _ := entry["turnId"].(string)
+			for _, prior := range prevLog {
+				logged, _ := prior.(map[string]any)
+				if logged == nil || isVerificationEntry(logged) {
+					continue
+				}
+				if id, _ := logged["turnId"].(string); id == verifiedTurn && logged["wall"] != nil {
+					if passed, _ := logged["gatePassed"].(bool); !passed {
+						return stateErr("mission success cannot surface from a gate-failed acceptance")
+					}
+				}
+			}
+		}
+	}
+	// A marker may close without a verification entry ONLY while no
+	// acceptance is pending on it — the resume path closing a crashed
+	// UNACCEPTED turn. Closing over an unverified acceptance would let a
+	// completed mission surface over unprobed motion.
+	if previous["openTurn"] != nil && next["openTurn"] == nil {
+		prevTurnDoc, _ := previous["openTurn"].(map[string]any)
+		openTurnID, _ := prevTurnDoc["turnId"].(string)
+		if pending := UnverifiedAcceptance(next); pending != "" && pending == openTurnID && !landsResolution(previous, next) {
+			// A human RESOLUTION concludes the turn by ruling — the one
+			// lawful close over an unverified acceptance (a
+			// post-verification mismatch parks with the acceptance
+			// pending, and the ruling is its only exit).
+			return stateErr("mission openTurn cannot close over an unverified acceptance")
 		}
 	}
 	// The taint ledger is monotonic at ENTRY grain (slice-4 critique F-3):
@@ -859,7 +990,7 @@ func validateTransition(previous, next map[string]any) error {
 		// {prevSequence+1, segment} of the write that lands it, so a
 		// write carrying two of them would put two trees on one E-point
 		// and the staleness lookup stops at the first match.
-		if int64(len(nextLog)-len(prevLog))+resolved > 1 {
+		if appendedAcceptances+resolved > 1 {
 			return stateErr("mission state write carries more than one expected-tree event")
 		}
 		prevSegment, _ := intValue(prevTaint["segment"])
@@ -930,6 +1061,29 @@ func validateTransition(previous, next map[string]any) error {
 		return stateErr("mission ledger cycle count cannot decrease")
 	}
 	return nil
+}
+
+// landsResolution reports whether this write types a resolution onto a
+// previously unresolved taint entry.
+func landsResolution(previous, next map[string]any) bool {
+	prevTaint, _ := previous["workspaceTaint"].(map[string]any)
+	nextTaint, _ := next["workspaceTaint"].(map[string]any)
+	prevEntries, _ := prevTaint["entries"].([]any)
+	nextEntries, _ := nextTaint["entries"].([]any)
+	for i, raw := range prevEntries {
+		if i >= len(nextEntries) {
+			return false
+		}
+		prevEntry, _ := raw.(map[string]any)
+		nextEntry, _ := nextEntries[i].(map[string]any)
+		if prevEntry == nil || nextEntry == nil {
+			continue
+		}
+		if prevEntry["resolution"] == nil && nextEntry["resolution"] != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func sameKeySet(a, b map[string]any) bool {
@@ -1031,6 +1185,11 @@ var treeIDRe = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 // for the operator, not corruption.
 var ErrLegacyState = stateErr("mission resume refused: state predates the host-implementer wall; re-provision the mission")
 
+// ErrPreSnapshotScopeState is the same posture for a schema-2/3 state:
+// it predates the wall's snapshot-scope anchors (HEAD, ref map, staged
+// origins), so its open turns are unaccountable by construction.
+var ErrPreSnapshotScopeState = stateErr("mission resume refused: state predates the wall's snapshot scope; re-provision the mission")
+
 // validateOpenTurn checks the runner-owned open-turn marker: null between
 // turns, or the anchored identity of the one turn in flight — the pre-tree
 // and the sequence point it opened under.
@@ -1039,8 +1198,26 @@ func validateOpenTurn(raw any) error {
 		return nil
 	}
 	turn, ok := raw.(map[string]any)
-	if !ok || !exactKeys(turn, "turnId", "cycle", "preTree", "sequence", "segment", "openedAt") {
+	if !ok || !exactKeys(turn, "turnId", "cycle", "preTree", "sequence", "segment", "openedAt",
+		"headCommit", "headTree", "topTree", "refMap", "topStaged") {
 		return stateErr("mission openTurn has an invalid shape")
+	}
+	if oid, _ := turn["headCommit"].(string); !treeIDRe.MatchString(oid) {
+		return stateErr("mission openTurn headCommit is invalid")
+	}
+	if tree, _ := turn["headTree"].(string); !treeIDRe.MatchString(tree) {
+		return stateErr("mission openTurn headTree is invalid")
+	}
+	if turn["topTree"] != nil {
+		if tree, _ := turn["topTree"].(string); !treeIDRe.MatchString(tree) {
+			return stateErr("mission openTurn topTree is invalid")
+		}
+	}
+	if err := ValidateRefMap(turn["refMap"]); err != nil {
+		return err
+	}
+	if err := ValidateStagedPosture(turn["topStaged"]); err != nil {
+		return err
 	}
 	if id, _ := turn["turnId"].(string); !idRe.MatchString(id) {
 		return stateErr("mission openTurn turn id is invalid")
@@ -1118,11 +1295,11 @@ func validateWorkspaceTaint(raw any) error {
 		// claims being waived (slice-4 critique F-4).
 		switch variant {
 		case "restore":
-			if !exactKeys(resolution, "variant", "treeId", "previousTree", "resolvedAt", "resolvedBy", "reason", "sequencePoint") {
+			if !exactKeys(resolution, "variant", "treeId", "previousTree", "resolvedAt", "resolvedBy", "reason", "sequencePoint", "posture") {
 				return stateErr("mission workspaceTaint resolution has an invalid shape")
 			}
 		case "adopt-disputed-tree":
-			if !exactKeys(resolution, "variant", "treeId", "previousTree", "resolvedAt", "resolvedBy", "reason", "sequencePoint", "waivedClaims") {
+			if !exactKeys(resolution, "variant", "treeId", "previousTree", "resolvedAt", "resolvedBy", "reason", "sequencePoint", "waivedClaims", "posture") {
 				return stateErr("mission workspaceTaint resolution has an invalid shape")
 			}
 			claims, ok := resolution["waivedClaims"].([]any)
@@ -1165,6 +1342,14 @@ func validateWorkspaceTaint(raw any) error {
 		if s, _ := resolution["resolvedAt"].(string); parseISO(s) != nil {
 			return stateErr("mission workspaceTaint resolution resolvedAt is invalid")
 		}
+		// The resolution records the FULL carrier posture as the next
+		// accounting origin: restoring a worktree never un-ships committed
+		// bytes, and adoption of a violation is adoption of its carriers,
+		// stated in the record.
+		posture, _ := resolution["posture"].(map[string]any)
+		if err := ValidateRecordedPosture(posture, "mission workspaceTaint resolution"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1196,8 +1381,16 @@ func ConsumedAuthorizations(state map[string]any) (map[string]string, error) {
 			return nil, stateErr("mission acceptance entry %s must carry both wall and consumedAuthorizations", turnID)
 		}
 		wall, ok := wallRaw.(map[string]any)
-		if !ok || !exactKeys(wall, "verdict", "preTree", "expectedTree", "postTree", "orderedDigests", "sequencePoint") {
+		if !ok || !exactKeys(wall, "verdict", "preTree", "expectedTree", "postTree", "orderedDigests", "sequencePoint",
+			"headCommitPost", "refMapPost", "stagedTreePost", "topTreePost", "topStagedPost", "worktreeCensusPost", "capturedAt") {
 			return nil, stateErr("mission acceptance entry %s wall payload has an invalid shape", turnID)
+		}
+		posture := map[string]any{}
+		for _, key := range []string{"headCommitPost", "refMapPost", "stagedTreePost", "topTreePost", "topStagedPost", "worktreeCensusPost", "capturedAt"} {
+			posture[key] = wall[key]
+		}
+		if err := ValidateRecordedPosture(posture, "mission acceptance entry "+turnID); err != nil {
+			return nil, err
 		}
 		point, ok := wall["sequencePoint"].(map[string]any)
 		if !ok || !exactKeys(point, "sequence", "segment") {

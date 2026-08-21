@@ -86,8 +86,10 @@ func TestConcludeTurnStatusDecision(t *testing.T) {
 		status     string
 		parkReason any
 	}{
-		{"gate passed", activeStreams(), true, "completed", nil},
-		{"gate passed while parked", parkedStreams(), true, "completed", nil},
+		// Completion is the one success outcome and defers to the
+		// post-verification write; the acceptance append keeps running.
+		{"gate passed", activeStreams(), true, "running", nil},
+		{"gate passed while parked", parkedStreams(), true, "running", nil},
 		{"no active streams", parkedStreams(), false, "parked", "all-streams-parked"},
 		{"still working", activeStreams(), false, "running", nil},
 	}
@@ -99,8 +101,16 @@ func TestConcludeTurnStatusDecision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if proposed["status"] != tc.status || proposed["parkReason"] != tc.parkReason || proposed["gatePassed"] != tc.gatePassed {
-				t.Fatalf("decision: status=%v parkReason=%v gatePassed=%v", proposed["status"], proposed["parkReason"], proposed["gatePassed"])
+			if proposed["status"] != tc.status || proposed["parkReason"] != tc.parkReason {
+				t.Fatalf("decision: status=%v parkReason=%v", proposed["status"], proposed["parkReason"])
+			}
+			if gate, _ := proposed["gatePassed"].(bool); gate {
+				t.Fatalf("top-level gatePassed must stay false until the verification write")
+			}
+			log, _ := proposed["turnLog"].([]any)
+			entry, _ := log[len(log)-1].(map[string]any)
+			if recorded, _ := entry["gatePassed"].(bool); recorded != tc.gatePassed {
+				t.Fatalf("entry gatePassed=%v, want %v", recorded, tc.gatePassed)
 			}
 		})
 	}
@@ -232,9 +242,13 @@ func TestConcludeFaultedTurnStatusMatrix(t *testing.T) {
 		status       string
 		parkReason   any
 	}{
-		{"gate pass completes", activeStreams(), true, true, 1, "completed", nil},
-		{"gate pass completes even on the second consecutive failure", activeStreams(), true, true, 2, "completed", nil},
-		{"gate pass completes with every stream parked", parkedStreams(), true, true, 1, "completed", nil},
+		// Measured gate truth still completes from any stream
+		// configuration, but completion is the ONE success outcome and
+		// defers to the post-verification write: the acceptance append
+		// records gatePassed on the entry and keeps the mission running.
+		{"gate pass defers completion to verification", activeStreams(), true, true, 1, "running", nil},
+		{"gate pass defers on the second consecutive failure too", activeStreams(), true, true, 2, "running", nil},
+		{"gate pass defers with every stream parked", parkedStreams(), true, true, 1, "running", nil},
 		{"witnessed second failure parks", activeStreams(), false, true, 2, "parked", "host-failure"},
 		{"witnessed first failure keeps running", activeStreams(), false, true, 1, "running", nil},
 		{"no witness never parks", activeStreams(), false, false, 5, "running", nil},
@@ -252,8 +266,15 @@ func TestConcludeFaultedTurnStatusMatrix(t *testing.T) {
 			if proposed["status"] != tc.status || proposed["parkReason"] != tc.parkReason {
 				t.Fatalf("status=%v parkReason=%v, want %v/%v", proposed["status"], proposed["parkReason"], tc.status, tc.parkReason)
 			}
-			if gate, _ := proposed["gatePassed"].(bool); gate != tc.gatePassed {
-				t.Fatalf("gatePassed=%v, want %v", gate, tc.gatePassed)
+			// Top-level gatePassed flips only at the verification write;
+			// the acceptance entry carries the measured truth.
+			if gate, _ := proposed["gatePassed"].(bool); gate {
+				t.Fatalf("top-level gatePassed must stay false until verification")
+			}
+			log, _ := proposed["turnLog"].([]any)
+			entry, _ := log[len(log)-1].(map[string]any)
+			if recorded, _ := entry["gatePassed"].(bool); recorded != tc.gatePassed {
+				t.Fatalf("entry gatePassed=%v, want %v", recorded, tc.gatePassed)
 			}
 		})
 	}
@@ -372,10 +393,10 @@ func TestParkProposalStopLossAndOtherReasons(t *testing.T) {
 	}
 }
 
-// Every conclusion path kills the open-turn marker in the same write that
-// appends the turn-log entry (HIW-O1): accepted, faulted, and failed turns
-// all leave openTurn null — a marker that survives its turn's conclusion
-// would let the next turn open against a stale sequence point.
+// The acceptance append no longer concludes the turn (WSS-12): every
+// conclusion path KEEPS the open-turn marker — the defined
+// consumed-but-unconcluded state — and the post-verification write is
+// the one place the marker dies.
 func TestConclusionsClearTheOpenTurnMarker(t *testing.T) {
 	turn := testTurn()
 	marker := map[string]any{
@@ -395,8 +416,8 @@ func TestConclusionsClearTheOpenTurnMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if accepted["openTurn"] != nil {
-		t.Fatalf("accepted conclusion left the turn open: %v", accepted["openTurn"])
+	if accepted["openTurn"] == nil {
+		t.Fatalf("the acceptance append must keep the marker for the verification write")
 	}
 	seedWallEvidence(t, root, "demo", turn.TurnID)
 	faulted, err := ConcludeFaultedTurn(root, "demo", openState(), turn,
@@ -404,15 +425,15 @@ func TestConclusionsClearTheOpenTurnMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if faulted["openTurn"] != nil {
-		t.Fatalf("faulted conclusion left the turn open: %v", faulted["openTurn"])
+	if faulted["openTurn"] == nil {
+		t.Fatalf("the faulted append must keep the marker for the verification write")
 	}
 	seedWallEvidence(t, root, "demo", turn.TurnID)
 	failed, err := RecordFailureProposal(root, "demo", openState(), turn, "host exited non-zero (3)", "failed", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if failed["openTurn"] != nil {
-		t.Fatalf("failure record left the turn open: %v", failed["openTurn"])
+	if failed["openTurn"] == nil {
+		t.Fatalf("the failure append must keep the marker for the verification write")
 	}
 }

@@ -87,7 +87,7 @@ func TestCandidateTokenResetsStagnationInReplay(t *testing.T) {
 		"score=5,candidate-score=12",
 		"score=5",
 	} {
-		if err := mission.AppendCycle(ledgerPath, cycle+1, "unresolved", testSHA, observed, ""); err != nil {
+		if _, err := mission.AppendCycle(ledgerPath, cycle+1, "unresolved", testSHA, observed, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

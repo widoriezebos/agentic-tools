@@ -324,6 +324,59 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		fmt.Fprintf(os.Stderr, "resolve refused: the workspace changed during resolution (%s -> %s); re-run\n", observed, recheck)
 		return 3
 	}
+	// THE RESOLUTION POSTURE EXTENDS TO EVERY CARRIER: the entry records
+	// the full observed posture as the next accounting origin. RESTORE
+	// additionally verifies the staged carrier equals the named tree and
+	// refuses while any other carrier still fails accounting — restoring
+	// a worktree never un-ships committed bytes; those need adoption or
+	// human git surgery first. ADOPT records the observed posture
+	// wholesale under the named waived claims.
+	capture, cerr := e.captureWallPostureStable(observed, nil)
+	if cerr != nil {
+		fmt.Fprintf(os.Stderr, "resolve refused: cannot capture the carrier posture: %v\n", cerr)
+		return 3
+	}
+	// The ruled tree and the recorded posture come from ONE capture: the
+	// worktree projection inside the capture must BE the observed tree,
+	// or the ruling would pair a stale treeId with a different posture.
+	if capture.Post != observed {
+		fmt.Fprintf(os.Stderr, "resolve refused: the workspace changed during resolution (%s -> %s); re-run\n", observed, capture.Post)
+		return 3
+	}
+	if variant == "restore" {
+		if capture.StagedConflict != "" {
+			fmt.Fprintf(os.Stderr, "resolve refused: the workspace index is conflicted (%s); reset it before restore\n", capture.StagedConflict)
+			return 3
+		}
+		if capture.StagedTree != tree {
+			fmt.Fprintf(os.Stderr, "resolve refused: the staged projection (%s) does not equal the named safe tree (%s); restore the index too\n", capture.StagedTree, tree)
+			return 3
+		}
+		restoreOrigin := lastAcceptancePosture(state)
+		if openTurn, _ := state["openTurn"].(map[string]any); openTurn != nil {
+			restoreOrigin = scopeOriginFromOpenTurn(openTurn, state)
+		}
+		if restoreOrigin == nil {
+			fmt.Fprintln(os.Stderr, "resolve refused: the mission records no accounting origin for restore")
+			return 3
+		}
+		acct, aerr := e.newWallAccountant(previousTree, state, nil, nil)
+		if aerr != nil {
+			fmt.Fprintf(os.Stderr, "resolve refused: %v\n", aerr)
+			return 3
+		}
+		acct.noteExpected(tree)
+		carrierViolation, jerr := e.judgeScope(restoreOrigin, capture, acct, state)
+		if jerr != nil {
+			fmt.Fprintf(os.Stderr, "resolve refused: %v\n", jerr)
+			return 3
+		}
+		if carrierViolation != "" {
+			fmt.Fprintf(os.Stderr, "restore refused: a carrier still fails accounting (%s); adopt the disputed tree or repair the carrier by hand first\n", carrierViolation)
+			return 3
+		}
+	}
+	resolution["posture"] = capture.postureDoc(e.Mission)
 	// The LEDGER is outside that projection and gets its own recheck
 	// (round-3 finding 3): late ledger bytes must never ride the
 	// resolution's anchor into the guard's baseline. The one exception
@@ -353,6 +406,30 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		}
 	}
 
+	// The whole posture is re-taken and compared immediately before the
+	// resolution commits: any carrier that moved since the ruling was
+	// captured refuses rather than becoming the next origin.
+	finalCheck, cerr := e.captureWallPostureStable(observed, nil)
+	if cerr != nil {
+		fmt.Fprintf(os.Stderr, "resolve refused: cannot re-capture the carrier posture: %v\n", cerr)
+		return 3
+	}
+	if !finalCheck.equalTo(capture) {
+		fmt.Fprintln(os.Stderr, "resolve refused: a carrier moved during resolution; re-run")
+		return 3
+	}
+	resolveAnchor := ""
+	if openTurn, _ := state["openTurn"].(map[string]any); openTurn != nil {
+		resolveAnchor, _ = openTurn["headCommit"].(string)
+	}
+	if violation, jerr := e.judgeCaptureIntegrity(finalCheck, resolveAnchor, state); jerr != nil || violation != "" {
+		if jerr != nil {
+			fmt.Fprintf(os.Stderr, "resolve refused: %v\n", jerr)
+			return 3
+		}
+		fmt.Fprintf(os.Stderr, "resolve refused: %s; repair the carrier by hand first\n", violation)
+		return 3
+	}
 	proposed := deepCopyDoc(state)
 	pTaint, _ := proposed["workspaceTaint"].(map[string]any)
 	pEntries, _ := pTaint["entries"].([]any)
@@ -386,6 +463,10 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return exitFor(err)
+	}
+	if remaining == 0 {
+		// The open-commit anchor retires only after the ruling is durable.
+		e.dropTurnOpenHead()
 	}
 	writtenIntegrity, _ := written["integrity"].(map[string]any)
 	writtenHash, _ := writtenIntegrity["hash"].(string)

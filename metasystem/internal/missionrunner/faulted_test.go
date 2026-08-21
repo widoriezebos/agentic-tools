@@ -113,7 +113,10 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 	git("checkout", "-q", "-B", "main")
 
 	engine = NewEngine(root, "demo")
-	engine.anchorFn = func(string, string, string) error { return nil }
+	// The bed anchors for REAL (no stub): the wall's snapshot-scope fence
+	// authenticates the state-anchors ref against the anchored truth at
+	// every capture, which the production runner keeps current by
+	// anchoring after each state write.
 	// The drain beats the runner heartbeat every pass, which reads the
 	// runner's own record; a real runner writes it before its first cycle.
 	seedRunnerRecord(t, engine)
@@ -144,7 +147,7 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 	if err := mission.InitLedger(ledgerPath, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatal(err)
 	}
 	openFixtureTurn(t, root, statePath, "demo-t1-abcd", 1)
@@ -241,12 +244,27 @@ func TestConcludeFaultedTurnMeasuresAndCompletes(t *testing.T) {
 func TestConcludeFaultedTurnUnmeasurableStillBooksUnmeasurable(t *testing.T) {
 	engine, statePath, ledgerPath, turnPath, turnDir := faultedMission(t)
 	// Delete the gate's pinned ref: measurement now fails, and the failure
-	// is itself the measurement — an unmeasurable no-progress cycle. Refs
-	// live outside the wall's projection, so the workspace stays clean
-	// (deleting a tracked file mid-turn would be a wall violation now).
+	// is itself the measurement — an unmeasurable no-progress cycle. The
+	// ref transition fence forbids mid-turn ref deletion, so the deletion
+	// happens BEFORE the judged turn opens: close the fixture marker,
+	// delete, and open a fresh turn whose recorded origin never saw the
+	// tag.
+	closed := readTestDoc(t, statePath)
+	_, hash, err := mission.VerifyStateShape(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed["openTurn"] = nil
+	delete(closed, "integrity")
+	closedSource := statePath + ".close.src"
+	writeJSONFile(t, closedSource, closed)
+	if err := mission.WriteState(statePath, closedSource, hash); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := exec.Command("git", "-C", engine.Root, "tag", "-d", "instruments").CombinedOutput(); err != nil {
 		t.Fatalf("delete instruments tag: %v\n%s", err, out)
 	}
+	openFixtureTurn(t, engine.Root, statePath, "demo-t1-abcd", 1)
 	fault := TurnFault{
 		Outcome:      "failed",
 		Detail:       "orchestrator return is invalid: schema violation",

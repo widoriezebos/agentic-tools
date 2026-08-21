@@ -112,7 +112,7 @@ func TestLedgerWritesStamp(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := strings.Repeat("c", 40)
-	if err := AppendCycle(ledger, 1, "no-progress", sha, "score=0", ""); err != nil {
+	if _, err := AppendCycle(ledger, 1, "no-progress", sha, "score=0", ""); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(ledger)
@@ -122,7 +122,7 @@ func TestLedgerWritesStamp(t *testing.T) {
 	if !pendingStampMatches(ledger, 1, string(data)) {
 		t.Fatal("AppendCycle must stamp its post-write bytes")
 	}
-	if err := AppendAnnotations(ledger, 1, CappedAnnotation); err != nil {
+	if _, err := AppendAnnotations(ledger, 1, "", CappedAnnotation); err != nil {
 		t.Fatal(err)
 	}
 	mutated, err := os.ReadFile(ledger)
@@ -147,7 +147,7 @@ func TestInitialBaselineIsE0(t *testing.T) {
 	state := filepath.Join(root, "state.json")
 	ledger := filepath.Join(root, "ledger.md")
 	baseline := strings.Repeat("f", 40)
-	if err := InitStateWithBaseline(state, contract, ledger, "", "", baseline); err != nil {
+	if err := InitStateWithBaseline(state, contract, ledger, "", "", baseline, testAdmissionOrigins()); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	doc, _ := readStateDoc(state)
@@ -179,7 +179,7 @@ func TestReconcileNamesThePreBaselineState(t *testing.T) {
 	writeText(t, contract, "```mission\ncandidate.branch=feature-x\nstream.alpha=Do alpha\n```\n")
 	state := filepath.Join(root, "state.json")
 	ledger := filepath.Join(root, "ledger.md")
-	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("f", 40)); err != nil {
+	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("f", 40), testAdmissionOrigins()); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	if err := InitLedger(ledger, 5, 3); err != nil {
@@ -219,7 +219,7 @@ func TestInitAndResetWritesStamp(t *testing.T) {
 	if !pendingStampMatches(ledger, 0, string(initial)) {
 		t.Fatal("InitLedger must stamp its initial bytes")
 	}
-	if err := AppendCycle(ledger, 1, "no-progress", strings.Repeat("d", 40), "score=0", ""); err != nil {
+	if _, err := AppendCycle(ledger, 1, "no-progress", strings.Repeat("d", 40), "score=0", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := AppendReset(ledger, "ask-1", "human reset for the stamp witness"); err != nil {

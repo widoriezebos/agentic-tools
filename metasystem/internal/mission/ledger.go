@@ -244,44 +244,47 @@ func InitLedger(file string, cycleBudget, noGainBudget int) error {
 // token, "" writes a marker-less legacy line. Annotations land as their own
 // lines under the classification line, one atomic append with it, so a cycle
 // block always carries both facts or neither.
-func AppendCycle(file string, cycle int, classification, candidateSHA, observed, best string, annotations ...string) error {
+// AppendCycle returns the sha256 of the complete post-append ledger
+// bytes — the caller's PROOF of exactly what it wrote, for pinning the
+// concluding anchor to the verified position (WSS I11-2).
+func AppendCycle(file string, cycle int, classification, candidateSHA, observed, best string, annotations ...string) (string, error) {
 	lock, err := lockFile(file)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer lock.release()
 	_, _, cycles, err := ParseLedger(file)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if expected := len(cycles) + 1; cycle != expected {
-		return fmt.Errorf("next mission ledger cycle must be %d", expected)
+		return "", fmt.Errorf("next mission ledger cycle must be %d", expected)
 	}
 	if !Classifications[classification] {
-		return fmt.Errorf("unknown mission classification")
+		return "", fmt.Errorf("unknown mission classification")
 	}
 	sha, err := oneLine(candidateSHA, "candidate sha")
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !shaRe.MatchString(sha) {
-		return fmt.Errorf("candidate sha must be a resolved git sha")
+		return "", fmt.Errorf("candidate sha must be a resolved git sha")
 	}
 	observedLine, err := oneLine(observed, "observed measurement")
 	if err != nil {
-		return err
+		return "", err
 	}
 	if best != "" && best != "yes" && best != "no" {
-		return fmt.Errorf("new-best marker must be yes, no, or absent")
+		return "", fmt.Errorf("new-best marker must be yes, no, or absent")
 	}
 	for _, annotation := range annotations {
 		if !annotationWriteRe.MatchString(annotation) {
-			return fmt.Errorf("unknown mission ledger annotation kind: %q", annotation)
+			return "", fmt.Errorf("unknown mission ledger annotation kind: %q", annotation)
 		}
 	}
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return fmt.Errorf("cannot read mission ledger: %w", err)
+		return "", fmt.Errorf("cannot read mission ledger: %w", err)
 	}
 	existing := strings.TrimRightFunc(string(data), unicode.IsSpace)
 	marker := ""
@@ -299,9 +302,12 @@ func AppendCycle(file string, cycle int, classification, candidateSHA, observed,
 	// accepts ONLY a file whose complete bytes hash to what this append
 	// wrote — any line added by anyone else afterward refuses.
 	if err := stampLedgerPending(file, cycle, content); err != nil {
-		return err
+		return "", err
 	}
-	return atomicWriteText(file, content)
+	if err := atomicWriteText(file, content); err != nil {
+		return "", err
+	}
+	return sha256Hex(content), nil
 }
 
 // stampLedgerPending records, beside the ledger, the exact post-write
@@ -318,44 +324,72 @@ func stampLedgerPending(file string, cycle int, content string) error {
 // (plans/patience-orphan-usage.md). Only the FINAL cycle accepts the append:
 // any earlier block is closed history, and history is never rewritten. The
 // annotations must match the strict write grammar, and the append is one
-// atomic write under the ledger lock.
-func AppendAnnotations(file string, cycle int, annotations ...string) error {
-	if len(annotations) == 0 {
-		return nil
-	}
+// atomic write under the ledger lock. It returns the sha256 of the
+// complete post-write ledger bytes; a non-empty expectSHA pins the
+// pre-append bytes to a position the caller verified, and annotations
+// already present in the final block are skipped (idempotent delivery).
+func AppendAnnotations(file string, cycle int, expectSHA string, annotations ...string) (string, error) {
 	lock, err := lockFile(file)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer lock.release()
-	_, _, cycles, err := ParseLedger(file)
-	if err != nil {
-		return err
-	}
-	if len(cycles) == 0 || cycle != len(cycles) {
-		return fmt.Errorf("annotations append only to the final ledger cycle (%d)", len(cycles))
-	}
-	for _, annotation := range annotations {
-		if !annotationWriteRe.MatchString(annotation) {
-			return fmt.Errorf("unknown mission ledger annotation kind: %q", annotation)
-		}
-	}
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return fmt.Errorf("cannot read mission ledger: %w", err)
+		return "", fmt.Errorf("cannot read mission ledger: %w", err)
+	}
+	// The append EXTENDS only the position the caller verified (WSS
+	// I11-2/I11-5): bytes that moved past the proof refuse under the
+	// lock, so a peer rewrite can never be annotated into authenticity.
+	if expectSHA != "" && sha256Hex(string(data)) != expectSHA {
+		return "", fmt.Errorf("mission ledger moved past the verified bytes")
+	}
+	if _, _, cycles, err := ParseLedger(file); err != nil {
+		return "", err
+	} else if len(cycles) == 0 || cycle != len(cycles) {
+		return "", fmt.Errorf("annotations append only to the final ledger cycle (%d)", len(cycles))
+	}
+	// IDEMPOTENT at line grain (WSS I11-5): a crash between delivery and
+	// the write that owns it re-runs delivery at resume, and an
+	// annotation already present in the final block must not double.
+	final := finalCycleBlock(string(data))
+	fresh := []string{}
+	for _, annotation := range annotations {
+		if !annotationWriteRe.MatchString(annotation) {
+			return "", fmt.Errorf("unknown mission ledger annotation kind: %q", annotation)
+		}
+		if !strings.Contains(final, "\n- "+annotation) {
+			fresh = append(fresh, annotation)
+		}
+	}
+	if len(fresh) == 0 {
+		return sha256Hex(string(data)), nil
 	}
 	var appended strings.Builder
 	appended.WriteString(strings.TrimRightFunc(string(data), unicode.IsSpace))
-	for _, annotation := range annotations {
+	for _, annotation := range fresh {
 		appended.WriteString("\n- " + annotation)
 	}
 	appended.WriteString("\n")
 	// The annotation append mutates the final block, so the pending
 	// stamp re-records the post-write bytes (round-8 finding 3).
 	if err := stampLedgerPending(file, cycle, appended.String()); err != nil {
-		return err
+		return "", err
 	}
-	return atomicWriteText(file, appended.String())
+	if err := atomicWriteText(file, appended.String()); err != nil {
+		return "", err
+	}
+	return sha256Hex(appended.String()), nil
+}
+
+// finalCycleBlock returns the text from the last "### Cycle" heading to
+// the end of the ledger — the only block annotations may land in, and
+// the idempotence scope for re-delivered lines.
+func finalCycleBlock(text string) string {
+	if at := strings.LastIndex(text, "### Cycle "); at >= 0 {
+		return text[at:]
+	}
+	return text
 }
 
 // AppendReset appends the vocal stop-loss reset line naming the answered ask.

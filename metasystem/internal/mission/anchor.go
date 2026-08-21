@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,10 +22,26 @@ import (
 // state against its ledger and anchor. Git is the source of truth here, so
 // these operations invoke it directly.
 
+// couldNotRun types a git probe that never ran (gitTry code -1): the
+// runner's own failure, kept off every repository-verdict ramp (WSS
+// I11-12).
+func couldNotRun(op string) error {
+	return fmt.Errorf("mission anchor: %w", &gittree.RunFailure{Op: op, Err: errors.New("spawn failure or timeout")})
+}
+
+// anchorGitArgs builds every anchor-side git invocation on the runner's
+// own surface: object replacement disabled, so a planted replace ref can
+// never re-route what the anchor machinery reads or writes (the same pin
+// every gittree invocation carries).
+func anchorGitArgs(repo string, args []string) []string {
+	return append([]string{"-C", repo, "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
+}
+
 // gitOutput runs a git command and returns its stdout, failing on a nonzero
 // exit.
 func gitOutput(repo string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd := exec.Command("git", anchorGitArgs(repo, args)...)
+	cmd.Env = gittree.ScrubbedEnviron()
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -32,6 +49,13 @@ func gitOutput(repo string, args ...string) (string, error) {
 	// returns must not hang the caller.
 	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
+		// A spawn failure or timeout is the runner's could-not-run, kept
+		// TYPED so callers can route it off the verdict ramps (WSS
+		// I11-12); only ran-and-refused git becomes a state error.
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) {
+			return stdout.String(), fmt.Errorf("git %s: %w", strings.Join(args, " "), &gittree.RunFailure{Op: args[0], Err: err})
+		}
 		return stdout.String(), stateErr("git %s failed: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
@@ -40,7 +64,8 @@ func gitOutput(repo string, args ...string) (string, error) {
 // gitTry runs a git command and returns its stdout and exit code without
 // treating a nonzero exit as an error.
 func gitTry(repo string, args ...string) (string, int) {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd := exec.Command("git", anchorGitArgs(repo, args)...)
+	cmd.Env = gittree.ScrubbedEnviron()
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
 	// Bounded like every other external call (B4); a timeout is a failure
@@ -54,7 +79,9 @@ func gitTry(repo string, args ...string) (string, int) {
 	if errors.As(err, &exit) {
 		return stdout.String(), exit.ExitCode()
 	}
-	return stdout.String(), 1
+	// Could-not-run (spawn failure or timeout) is -1 — a runner outcome
+	// callers must keep off the repository-verdict ramps (WSS I11-12).
+	return stdout.String(), -1
 }
 
 var classLineRe = regexp.MustCompile(`(?m)^- Classification:[ \t]*`)
@@ -143,7 +170,7 @@ func latestAnchor(repo, mission string) (map[string]string, error) {
 	// prints nothing when the ref does not exist.
 	probe, err := gitOutput(repo, "for-each-ref", "--format=%(refname)", stateAnchorRef(mission))
 	if err != nil {
-		return nil, stateErr("mission anchor ref probe failed: %v", err)
+		return nil, fmt.Errorf("mission anchor ref probe failed: %w", err)
 	}
 	if strings.TrimSpace(probe) == "" {
 		return nil, ErrNoAnchor
@@ -153,7 +180,7 @@ func latestAnchor(repo, mission string) (map[string]string, error) {
 	// commit demote the real anchor instead of parking.
 	output, err := gitOutput(repo, "log", "-1", "--format=%H%x1f%B", stateAnchorRef(mission))
 	if err != nil {
-		return nil, stateErr("mission anchor ref is unreadable: %v", err)
+		return nil, fmt.Errorf("mission anchor ref is unreadable: %w", err)
 	}
 	commit, message, _ := strings.Cut(output, "\x1f")
 	trailers := map[string]string{}
@@ -322,7 +349,10 @@ func anchorWriteHeld(statePath, repo, ledgerPath, identity, expectStateHash, exp
 		return "", stateErr("anchor cannot build its tree: %v", err)
 	}
 	ref := stateAnchorRef(missionID)
-	parent, _ := gitTry(repo, "rev-parse", "--verify", ref)
+	parent, parentCode := gitTry(repo, "rev-parse", "--verify", ref)
+	if parentCode == -1 {
+		return "", couldNotRun("rev-parse")
+	}
 	author := "metasystem"
 	if identity != "" {
 		author = identity
@@ -355,7 +385,8 @@ func anchorWriteHeld(statePath, repo, ledgerPath, identity, expectStateHash, exp
 // gitStdinOutput runs git feeding the given bytes on stdin — the anchor
 // stores exactly the bytes it hashed, never a second file read.
 func gitStdinOutput(repo string, stdin []byte, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd := exec.Command("git", anchorGitArgs(repo, args)...)
+	cmd.Env = gittree.ScrubbedEnviron()
 	cmd.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -370,8 +401,8 @@ func gitStdinOutput(repo string, stdin []byte, args ...string) (string, error) {
 // gitEnvOutput runs git with extra environment, capturing stdout —
 // bounded like every other external call (B4).
 func gitEnvOutput(repo string, extraEnv []string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
-	cmd.Env = append(os.Environ(), extraEnv...)
+	cmd := exec.Command("git", anchorGitArgs(repo, args)...)
+	cmd.Env = gittree.ScrubbedEnviron(extraEnv...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -423,11 +454,21 @@ func verifyAnchor(repo string, state map[string]any, ledgerPath string) error {
 		}
 	}
 	if _, code := gitTry(repo, "merge-base", "--is-ancestor", anchor["commit"], stateAnchorRef(missionID)); code != 0 {
+		if code == -1 {
+			return couldNotRun("merge-base")
+		}
 		return stateErr("mission anchor commit is not on the mission's anchor ref")
 	}
 	anchored, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
+	if code == -1 {
+		return couldNotRun("show")
+	}
 	if code != 0 || sha256Hex(anchored) != anchor["Mission-Ledger-SHA256"] {
 		return stateErr("mission anchor commit does not contain the declared ledger bytes")
+	}
+	// The anchor commit's tree carries the ledger blob and NOTHING else.
+	if err := anchorTreeIsLedgerOnly(repo, anchor["commit"], ledgerRel); err != nil {
+		return err
 	}
 	return nil
 }
@@ -461,6 +502,9 @@ func anchoredLedgerPrefix(repo string, state map[string]any, ledgerPath string) 
 		return "", "", stateErr("mission anchor disagrees at Mission-Ledger-Path")
 	}
 	anchored, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
+	if code == -1 {
+		return "", "", couldNotRun("show")
+	}
 	if code != 0 {
 		return "", "", stateErr("mission anchor commit does not contain the prior ledger")
 	}
@@ -475,9 +519,95 @@ func anchoredLedgerPrefix(repo string, state map[string]any, ledgerPath string) 
 		return "", "", stateErr("mission ledger does not extend the anchored ledger truth")
 	}
 	if _, code := gitTry(repo, "merge-base", "--is-ancestor", anchor["commit"], stateAnchorRef(missionID)); code != 0 {
+		if code == -1 {
+			return "", "", couldNotRun("merge-base")
+		}
 		return "", "", stateErr("mission anchor commit is not on the mission's anchor ref")
 	}
+	// The anchor commit's WHOLE tree is exactly the ledger path and
+	// nothing else (anchorWriteHeld builds it from an empty index plus the
+	// one ledger blob): a forged tip with the right trailers and ledger
+	// bytes but an extra tree path authenticates on the ledger alone
+	// otherwise, and a later clean child would preserve it as an ancestor.
+	if err := anchorTreeIsLedgerOnly(repo, anchor["commit"], ledgerRel); err != nil {
+		return "", "", err
+	}
 	return anchored, string(data), nil
+}
+
+// anchorTreeIsLedgerOnly pins an anchor commit's SHAPE: its tree is
+// exactly one blob — the mission ledger, whose sha is authenticated
+// separately — and it carries at most one parent (the predecessor
+// anchor). --full-tree ignores the invocation cwd so a nested
+// workspace-rooted anchor tree is scoped whole, not to the checkout
+// prefix; entries split on the NUL record terminator only, so a
+// whitespace-only filename still counts.
+func anchorTreeIsLedgerOnly(repo, commit, ledgerRel string) error {
+	entryIsLedgerBlob := func(listing, scope string) error {
+		entries := []string{}
+		for _, entry := range strings.Split(listing, "\x00") {
+			if entry != "" {
+				entries = append(entries, entry)
+			}
+		}
+		if len(entries) != 1 {
+			return stateErr("mission anchor %s carries content beyond the ledger blob", scope)
+		}
+		// One ls-tree record: "<mode> <type> <oid>\t<path>" — the path is
+		// everything after the FIRST TAB (paths may contain spaces). The
+		// single entry must be the regular-file (100644) ledger blob at
+		// EXACTLY the anchored ledger path: a gitlink (160000) retains
+		// history under the authenticated namespace, an executable or
+		// symlink mode ships a different object kind, and a one-blob tree
+		// at any other path is not the ledger (WSS I11-8, I11-9).
+		head, path, found := strings.Cut(entries[0], "\t")
+		fields := strings.Fields(head)
+		if !found || len(fields) != 3 || fields[0] != "100644" || fields[1] != "blob" || path != ledgerRel {
+			return stateErr("mission anchor %s's single entry is not the 100644 ledger blob at %s", scope, ledgerRel)
+		}
+		return nil
+	}
+	listing, code := gitTry(repo, "ls-tree", "-r", "--full-tree", "-z", commit)
+	if code == -1 {
+		return couldNotRun("ls-tree")
+	}
+	if code != 0 {
+		return stateErr("mission anchor commit tree is unreadable")
+	}
+	if err := entryIsLedgerBlob(listing, "commit"); err != nil {
+		return err
+	}
+	// The anchor is a single chain: at most one parent, and a present
+	// parent must ITSELF be anchor-shaped (a ledger-only single-blob
+	// tree at the ledger path), so a payload commit cannot ride as the
+	// tip's parent. Deeper ancestry is walked by nobody — a forged
+	// anchor-shaped chain retains only ledger-blob trees at every judged
+	// level, and unreachable retention beyond that is the isolation
+	// tier's stated boundary.
+	parents, pcode := gitTry(repo, "rev-list", "--parents", "-n", "1", commit)
+	if pcode == -1 {
+		return couldNotRun("rev-list")
+	}
+	if pcode != 0 {
+		return stateErr("mission anchor commit parents are unreadable")
+	}
+	parentFields := strings.Fields(parents)
+	if len(parentFields) > 2 {
+		return stateErr("mission anchor commit carries more than one parent")
+	}
+	if len(parentFields) == 2 {
+		parentListing, ppcode := gitTry(repo, "ls-tree", "-r", "--full-tree", "-z", parentFields[1])
+		if ppcode == -1 {
+			return couldNotRun("ls-tree")
+		}
+		if ppcode != 0 {
+			return stateErr("mission anchor parent tree is unreadable")
+		}
+		if err := entryIsLedgerBlob(parentListing, "parent"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AnchoredLedgerSHA returns the ledger sha the mission's anchor tip
@@ -500,6 +630,65 @@ func AnchoredLedgerSHA(repo, missionID string) (string, error) {
 // trusted, never from whatever commit last touched a path.
 func AnchoredLedgerTruth(repo string, state map[string]any, ledgerPath string) (anchored, current string, err error) {
 	return anchoredLedgerPrefix(repo, state, ledgerPath)
+}
+
+// AuthenticateLiveLedger proves the live ledger is the runner's own
+// truth even mid-conclusion: either it equals the anchored bytes
+// exactly, or its ONE lawful extension — the cycle the runner just
+// appended, bound whole to the pending-block stamp (sha256 of the full
+// file recorded at every append). A peer altering the appended cycle
+// changes that sha and refuses here, so the prefix window can never
+// bless foreign suffix bytes.
+func AuthenticateLiveLedger(repo string, state map[string]any, ledgerPath string) error {
+	anchored, current, err := anchoredLedgerPrefix(repo, state, ledgerPath)
+	if err != nil {
+		return err
+	}
+	if anchored == current {
+		return nil
+	}
+	// ONE lawful extension only: the live ledger is the anchored bytes
+	// plus exactly the single cycle the runner appended this turn. The
+	// anchored count plus one bounds it, the pending stamp binds the whole
+	// file, and the suffix must open with that cycle's heading — nothing
+	// before it.
+	anchoredCount, aerr := cycleCountOf(anchored)
+	if aerr != nil {
+		return aerr
+	}
+	count, cerr := cycleCountOf(current)
+	if cerr != nil {
+		return cerr
+	}
+	if int64(count) != int64(anchoredCount)+1 {
+		return stateErr("the live ledger extends the anchor by more than one cycle")
+	}
+	if !strings.HasPrefix(current, anchored) {
+		return stateErr("the live ledger does not extend the anchored bytes")
+	}
+	suffix := strings.TrimLeft(current[len(anchored):], "\n")
+	if !strings.HasPrefix(suffix, fmt.Sprintf("### Cycle %d", count)) {
+		return stateErr("the live ledger suffix is not the runner's appended cycle")
+	}
+	if !pendingStampMatches(ledgerPath, int64(count), current) {
+		return stateErr("the live ledger extends the anchor with bytes the runner never stamped")
+	}
+	return nil
+}
+
+// AnchoredLedgerBlobOID returns the git blob object id of the anchored
+// ledger truth — the value a committed or staged ledger carrier must
+// carry if it carries the ledger at all.
+func AnchoredLedgerBlobOID(repo string, state map[string]any, ledgerPath string) (string, error) {
+	anchored, _, err := anchoredLedgerPrefix(repo, state, ledgerPath)
+	if err != nil {
+		return "", err
+	}
+	oid, herr := gitStdinOutput(repo, []byte(anchored), "hash-object", "--stdin")
+	if herr != nil {
+		return "", herr
+	}
+	return strings.TrimSpace(oid), nil
 }
 
 func sha256Hex(s string) string {
@@ -538,7 +727,7 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 		// A pre-wall state is NOT corruption: the named refusal reaches the
 		// operator verbatim, no corrupt-state file is written, and no
 		// recovery is attempted — the remedy is re-provisioning.
-		if errors.Is(err, ErrLegacyState) || errors.Is(err, ErrPreWallBaseline) {
+		if errors.Is(err, ErrLegacyState) || errors.Is(err, ErrPreWallBaseline) || errors.Is(err, ErrPreSnapshotScopeState) {
 			return 3, err
 		}
 		return reconcileCorruptState(statePath, raw)
@@ -637,18 +826,34 @@ func Reconcile(statePath, repo, ledgerPath string) (int, error) {
 		return 0, nil
 	default:
 		if err := verifyAnchor(repo, raw, ledgerPath); err != nil {
+			// A git that COULD NOT RUN proves nothing about the mission
+			// (WSS I12-7): reconciliation refuses retryably instead of
+			// letting boolean recovery probes collapse a transient spawn
+			// failure or timeout into a durable state-integrity park.
+			var runFailure *gittree.RunFailure
+			if errors.As(err, &runFailure) {
+				return 3, stateErr("mission reconciliation could not run git: %v; repair the runner environment and reconcile again", err)
+			}
 			// One named, checkable exception (docs/design/stop-loss-core.md): a
 			// stagnation-parked mission whose unanchored ledger suffix is
 			// solely vocal stop-loss reset lines is replayable state — a
 			// crash between the reset append and its anchor — not divergence.
-			if stopLossResetForgivable(statePath, repo, raw, ledgerPath) {
+			forgivable, ferr := stopLossResetForgivable(statePath, repo, raw, ledgerPath)
+			if ferr != nil {
+				return 3, stateErr("mission reconciliation could not run git: %v; repair the runner environment and reconcile again", ferr)
+			}
+			if forgivable {
 				return 0, nil
 			}
 			// The heal-crash window (round-6): a crash between the heal's
 			// state write and its anchor leaves the anchor exactly ONE
 			// state-step behind with identical ledger truth. That precise
 			// shape re-anchors and passes; anything looser still parks.
-			if verifiedLedgerSHA, healable := anchorLagHealable(repo, raw, ledgerPath); healable {
+			verifiedLedgerSHA, healable, herr := anchorLagHealable(repo, raw, ledgerPath)
+			if herr != nil {
+				return 3, stateErr("mission reconciliation could not run git: %v; repair the runner environment and reconcile again", herr)
+			}
+			if healable {
 				lagIntegrity, _ := raw["integrity"].(map[string]any)
 				lagHash, _ := lagIntegrity["hash"].(string)
 				// Same pin discipline as the ledger-ahead heal (round-9
@@ -702,7 +907,22 @@ func pendingStampMatches(ledgerPath string, cycle int64, current string) bool {
 // The shape refuses WITHOUT writing, naming the repair; every other
 // divergence parks exactly as before.
 func parkUnlessRecoverable(statePath, repo string, state map[string]any, ledgerPath string) (int, error) {
-	if oneStepDisputedLedger(repo, state, ledgerPath) {
+	// The park is a DURABLE ruling on repository truth; a git that could
+	// not run at all (spawn failure, timeout) proves no divergence, and
+	// the boolean recovery probes above it collapse that outcome to
+	// "not recoverable" (WSS I12-7). One health probe fails closed to a
+	// retryable refusal instead.
+	if _, err := gitOutput(repo, "rev-parse", "--git-dir"); err != nil {
+		var runFailure *gittree.RunFailure
+		if errors.As(err, &runFailure) {
+			return 3, stateErr("mission reconciliation could not run git: %v; repair the runner environment and reconcile again", err)
+		}
+	}
+	disputed, derr := oneStepDisputedLedger(repo, state, ledgerPath)
+	if derr != nil {
+		return 3, stateErr("mission reconciliation could not run git: %v; repair the runner environment and reconcile again", derr)
+	}
+	if disputed {
 		return 3, stateErr("mission ledger disputes its anchored truth one step behind the state; restore the ledger bytes to the anchor ref's copy, then reconcile again")
 	}
 	return 3, parkIntegrity(statePath, state, nil)
@@ -712,16 +932,23 @@ func parkUnlessRecoverable(statePath, repo string, state map[string]any, ledgerP
 // the anchor tip is exactly the state's immediate predecessor (the
 // write landed, its anchor never did) while the live ledger bytes
 // disagree with the tip's recorded truth.
-func oneStepDisputedLedger(repo string, state map[string]any, ledgerPath string) bool {
+// The error return carries ONLY could-not-run outcomes (WSS I13-5): a
+// git that never ran proves nothing, and the caller must refuse
+// retryably instead of letting a collapsed false reach a durable park.
+func oneStepDisputedLedger(repo string, state map[string]any, ledgerPath string) (bool, error) {
 	missionID, _ := state["missionId"].(string)
 	anchor, err := latestAnchor(repo, missionID)
 	if err != nil {
-		return false
+		var runFailure *gittree.RunFailure
+		if errors.As(err, &runFailure) {
+			return false, err
+		}
+		return false, nil
 	}
 	integrity, _ := state["integrity"].(map[string]any)
 	previousHash, _ := integrity["previousHash"].(string)
 	if previousHash == "" || anchor["Mission-State-Hash"] != previousHash {
-		return false
+		return false, nil
 	}
 	// The tip must BE a complete, authenticated anchor (successor
 	// round-15 finding 2): its recorded path is this mission's ledger
@@ -735,16 +962,19 @@ func oneStepDisputedLedger(repo string, state map[string]any, ledgerPath string)
 	if err != nil {
 		dirRel, derr := relUnderRepo(filepath.Dir(ledgerPath), repo)
 		if derr != nil {
-			return false
+			return false, nil
 		}
 		ledgerRel = filepath.Join(dirRel, filepath.Base(ledgerPath))
 	}
 	if anchor["Mission-Ledger-Path"] != ledgerRel {
-		return false
+		return false, nil
 	}
 	blob, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
+	if code == -1 {
+		return false, couldNotRun("show")
+	}
 	if code != 0 || sha256Hex(blob) != anchor["Mission-Ledger-SHA256"] {
-		return false
+		return false, nil
 	}
 	// The CYCLE relationship authenticates too (round-16 finding 3):
 	// the blob must contain exactly the cycle count the trailer claims,
@@ -753,25 +983,25 @@ func oneStepDisputedLedger(repo string, state map[string]any, ledgerPath string)
 	// cycle behind (or a forged trailer) is NOT prescribed as repair.
 	anchorCycle, err := strconv.ParseInt(anchor["Mission-Cycle"], 10, 64)
 	if err != nil {
-		return false
+		return false, nil
 	}
 	blobCount, cerr := cycleCountOf(blob)
 	if cerr != nil || int64(blobCount) != anchorCycle {
-		return false
+		return false, nil
 	}
 	ledgerDoc, _ := state["ledger"].(map[string]any)
 	stateCycles, _ := intValue(ledgerDoc["cycles"])
 	if anchorCycle != stateCycles {
-		return false
+		return false, nil
 	}
 	data, err := os.ReadFile(ledgerPath)
 	if err != nil {
 		// An unreadable or deleted live ledger IS the dispute in its
 		// starkest form (round-16 finding 2): the authenticated blob
 		// exists and restoring it heals — parking would destroy that.
-		return true
+		return true, nil
 	}
-	return sha256Hex(string(data)) != anchor["Mission-Ledger-SHA256"]
+	return sha256Hex(string(data)) != anchor["Mission-Ledger-SHA256"], nil
 }
 
 // lostTurnBlock reports whether a ledger suffix is the reserve/append
@@ -813,16 +1043,21 @@ func verifyReservedGap(repo string, state map[string]any, appended int64) error 
 // anchorLagHealable reports the exact heal-crash shape: the latest anchor
 // binds the state's PREVIOUS hash while cycle count and the ledger bytes'
 // hash agree with the present truth.
-func anchorLagHealable(repo string, state map[string]any, ledgerPath string) (string, bool) {
+// The error return carries ONLY could-not-run outcomes (WSS I13-5).
+func anchorLagHealable(repo string, state map[string]any, ledgerPath string) (string, bool, error) {
 	missionID, _ := state["missionId"].(string)
 	anchor, err := latestAnchor(repo, missionID)
 	if err != nil {
-		return "", false
+		var runFailure *gittree.RunFailure
+		if errors.As(err, &runFailure) {
+			return "", false, err
+		}
+		return "", false, nil
 	}
 	integrity, _ := state["integrity"].(map[string]any)
 	previousHash, _ := integrity["previousHash"].(string)
 	if previousHash == "" || anchor["Mission-State-Hash"] != previousHash {
-		return "", false
+		return "", false, nil
 	}
 	// The anchor either matches the state's cycle count exactly (a
 	// ledger-untouched write) or lags it by the ONE block that write
@@ -832,7 +1067,7 @@ func anchorLagHealable(repo string, state map[string]any, ledgerPath string) (st
 	stateCycles, _ := intValue(ledger["cycles"])
 	anchorCycle, aerr := strconv.ParseInt(anchor["Mission-Cycle"], 10, 64)
 	if aerr != nil || (anchorCycle != stateCycles && anchorCycle != stateCycles-1) {
-		return "", false
+		return "", false, nil
 	}
 	// The tip must BE a complete anchor, not merely claim the right
 	// trailers (round-7): its recorded path is this mission's ledger and
@@ -840,45 +1075,81 @@ func anchorLagHealable(repo string, state map[string]any, ledgerPath string) (st
 	// check below then ties to the present bytes.
 	ledgerRel, err := relUnderRepo(ledgerPath, repo)
 	if err != nil || anchor["Mission-Ledger-Path"] != ledgerRel {
-		return "", false
+		return "", false, nil
 	}
 	blob, code := gitTry(repo, "show", anchor["commit"]+":"+ledgerRel)
+	if code == -1 {
+		return "", false, couldNotRun("show")
+	}
 	if code != 0 || sha256Hex(blob) != anchor["Mission-Ledger-SHA256"] {
-		return "", false
+		return "", false, nil
 	}
 	data, err := os.ReadFile(ledgerPath)
 	if err != nil {
-		return "", false
+		return "", false, nil
 	}
 	current := string(data)
 	if sha256Hex(current) == anchor["Mission-Ledger-SHA256"] {
 		if anchorCycle == stateCycles {
-			return sha256Hex(current), true
+			return sha256Hex(current), true, nil
 		}
-		return "", false
+		return "", false, nil
+	}
+	// Terminal-delivery lag (WSS I12-4): the completion conclude can
+	// crash AFTER delivery appended annotation lines to the final block
+	// but BEFORE the closing anchor. Same cycle count, the anchored
+	// bytes as an exact prefix, a suffix of NOTHING but write-grammar
+	// annotation lines, and the pending stamp binding the whole file —
+	// that precise idempotent-delivery shape re-anchors; anything looser
+	// still parks.
+	if anchorCycle == stateCycles && strings.HasPrefix(current, blob) {
+		if count, cerr := cycleCountOf(current); cerr == nil && int64(count) == anchorCycle {
+			if annotationOnlySuffix(current[len(blob):]) && pendingStampMatches(ledgerPath, anchorCycle, current) {
+				return sha256Hex(current), true, nil
+			}
+		}
 	}
 	// One step further (slice-6 successor finding 3): the state write
 	// that also BOOKED one ledger block, crashed before its anchor. The
 	// current bytes must be the anchored bytes plus exactly that block —
 	// clean append, correct count, counted by the state itself.
 	if !strings.HasPrefix(current, blob) {
-		return "", false
+		return "", false, nil
 	}
 	suffix := strings.TrimLeft(current[len(blob):], "\n")
 	count, cerr := cycleCountOf(current)
 	if cerr != nil {
-		return "", false
+		return "", false, nil
 	}
 	if int64(count) != anchorCycle+1 || stateCycles != int64(count) {
-		return "", false
+		return "", false, nil
 	}
 	if !pendingStampMatches(ledgerPath, int64(count), current) {
-		return "", false
+		return "", false, nil
 	}
 	if !strings.HasPrefix(suffix, fmt.Sprintf("### Cycle %d", count)) {
-		return "", false
+		return "", false, nil
 	}
-	return sha256Hex(current), true
+	return sha256Hex(current), true, nil
+}
+
+// annotationOnlySuffix reports whether a ledger suffix consists solely
+// of write-grammar annotation lines — the only bytes terminal delivery
+// may add to an already-anchored final block (WSS I12-4).
+func annotationOnlySuffix(suffix string) bool {
+	seen := false
+	for _, line := range strings.Split(suffix, "\n") {
+		trimmed := strings.TrimRight(line, "\r")
+		if strings.TrimSpace(trimmed) == "" {
+			continue
+		}
+		body, ok := strings.CutPrefix(trimmed, "- ")
+		if !ok || !annotationWriteRe.MatchString(body) {
+			return false
+		}
+		seen = true
+	}
+	return seen
 }
 
 // stopLossResetForgivable is the exact reconciliation tolerance: (a) the
@@ -886,13 +1157,18 @@ func anchorLagHealable(repo string, state map[string]any, ledgerPath string) (st
 // ledger's unanchored suffix consists solely of `Stop-loss reset:` lines each
 // naming an ask that exists on disk as a stagnation stop-loss ask. Anything
 // else parks on disagreement as today.
-func stopLossResetForgivable(statePath, repo string, state map[string]any, ledgerPath string) bool {
+// The error return carries ONLY could-not-run outcomes (WSS I13-5).
+func stopLossResetForgivable(statePath, repo string, state map[string]any, ledgerPath string) (bool, error) {
 	if state["status"] != "parked" || state["parkReason"] != "stop-loss" {
-		return false
+		return false, nil
 	}
 	anchored, current, err := anchoredLedgerPrefix(repo, state, ledgerPath)
 	if err != nil {
-		return false
+		var runFailure *gittree.RunFailure
+		if errors.As(err, &runFailure) {
+			return false, err
+		}
+		return false, nil
 	}
 	suffix := current[len(anchored):]
 	asksDir := filepath.Join(filepath.Dir(statePath), "asks")
@@ -903,11 +1179,11 @@ func stopLossResetForgivable(statePath, repo string, state map[string]any, ledge
 		}
 		m := resetLineRe.FindStringSubmatch(line)
 		if m == nil || !isStagnationStopLossAsk(filepath.Join(asksDir, m[1]+".json"), m[1]) {
-			return false
+			return false, nil
 		}
 		sawReset = true
 	}
-	return sawReset
+	return sawReset, nil
 }
 
 // isStagnationStopLossAsk reports whether the file holds the named ask and

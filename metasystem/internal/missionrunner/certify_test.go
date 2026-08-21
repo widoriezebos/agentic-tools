@@ -157,7 +157,10 @@ func TestCertifiedClaimRejections(t *testing.T) {
 				"turnId": "demo-t0", "consumedAuthorizations": []any{digest},
 				"wall": map[string]any{"verdict": "passed", "preTree": tree,
 					"expectedTree": tree, "postTree": tree, "orderedDigests": []any{digest},
-					"sequencePoint": map[string]any{"sequence": 1, "segment": 0}},
+					"sequencePoint":  map[string]any{"sequence": 1, "segment": 0},
+					"headCommitPost": strings.Repeat("c", 40), "refMapPost": map[string]any{},
+					"stagedTreePost": tree, "topTreePost": nil, "topStagedPost": nil,
+					"worktreeCensusPost": []any{}, "capturedAt": "2026-01-01T00:00:00Z"},
 			}}
 			return digest
 		}, "already consumed by turn demo-t0"},
@@ -243,7 +246,11 @@ func TestConcludeFilesShipsAdjudicatedCertifiedOnly(t *testing.T) {
 	writeJSONFile(t, filepath.Join(missionDirPath(root, missionID), "turns", "demo-t3-ab12", "wall.json"),
 		map[string]any{"verdict": "passed", "preTree": certDigest("b")[:40],
 			"expectedTree": certDigest("c")[:40], "postTree": certDigest("c")[:40],
-			"orderedDigests": []any{certDigest("a")}})
+			"orderedDigests": []any{certDigest("a")},
+			"posture": map[string]any{
+				"headCommitPost": strings.Repeat("c", 40), "refMapPost": map[string]any{},
+				"stagedTreePost": certDigest("c")[:40], "topTreePost": nil, "topStagedPost": nil,
+				"worktreeCensusPost": []any{}, "capturedAt": "2026-01-01T00:00:00Z"}})
 	proposed, err := ConcludeFiles(root, missionID, filepath.Join(dir, "state.json"),
 		filepath.Join(dir, "turn.json"), filepath.Join(dir, "verdict.json"),
 		filepath.Join(dir, "return.json"), filepath.Join(dir, "result.json"),

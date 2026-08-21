@@ -120,10 +120,21 @@ func wallEntryPayload(root, mission, turnID string, state map[string]any) (map[s
 	if !ok {
 		return nil, nil, fmt.Errorf("turn %s conclusion cannot read the taint segment", turnID)
 	}
+	// The recorded posture rides the acceptance into the CHAIN (fail
+	// closed): every between-turns comparison reads the chain, never
+	// wall.json — evidence files are rewritable and prove nothing
+	// forward.
+	posture, _ := doc["posture"].(map[string]any)
+	if posture == nil {
+		return nil, nil, fmt.Errorf("turn %s wall evidence carries no recorded posture; the snapshot-scope inspection must run before any conclusion", turnID)
+	}
 	payload := map[string]any{
 		"verdict": "passed", "preTree": doc["preTree"], "expectedTree": doc["expectedTree"],
 		"postTree": doc["postTree"], "orderedDigests": ordered,
 		"sequencePoint": map[string]any{"sequence": sequence + 1, "segment": segment},
+	}
+	for _, field := range []string{"headCommitPost", "refMapPost", "stagedTreePost", "topTreePost", "topStagedPost", "worktreeCensusPost", "capturedAt"} {
+		payload[field] = posture[field]
 	}
 	consumed := make([]any, len(ordered))
 	copy(consumed, ordered)
@@ -154,10 +165,15 @@ func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclus
 	}
 	entry["wall"] = wall
 	entry["consumedAuthorizations"] = consumed
+	entry["gatePassed"] = conclusion.GatePassed
 	if err := appendTurnLog(proposed, entry); err != nil {
 		return nil, err
 	}
-	proposed["openTurn"] = nil
+	// The acceptance append stays THE single commit point (HIW-O13) but
+	// no longer concludes the turn: openTurn survives it, and the
+	// post-verification entry concludes on a clean re-capture — so
+	// COMPLETION (the one success outcome) defers to that write, while
+	// non-success parks land here as before.
 	if err := setLedgerCycles(proposed, turn.Cycle); err != nil {
 		return nil, err
 	}
@@ -168,9 +184,9 @@ func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclus
 	}
 	switch {
 	case conclusion.GatePassed:
-		proposed["status"] = "completed"
+		proposed["status"] = "running"
 		proposed["parkReason"] = nil
-		proposed["gatePassed"] = true
+		proposed["gatePassed"] = false
 	case !anyActiveStream(proposed):
 		proposed["status"] = "parked"
 		proposed["parkReason"] = "all-streams-parked"
@@ -247,10 +263,12 @@ func ConcludeFaultedTurn(root, mission string, state map[string]any, turn Turn, 
 	}
 	entry["wall"] = wall
 	entry["consumedAuthorizations"] = consumed
+	entry["gatePassed"] = gatePassed
 	if err := appendTurnLog(proposed, entry); err != nil {
 		return nil, err
 	}
-	proposed["openTurn"] = nil
+	// openTurn survives the append; the post-verification entry concludes
+	// the turn, and completion — the one success outcome — defers there.
 	if err := setLedgerCycles(proposed, turn.Cycle); err != nil {
 		return nil, err
 	}
@@ -261,9 +279,9 @@ func ConcludeFaultedTurn(root, mission string, state map[string]any, turn Turn, 
 	}
 	switch {
 	case gatePassed:
-		proposed["status"] = "completed"
+		proposed["status"] = "running"
 		proposed["parkReason"] = nil
-		proposed["gatePassed"] = true
+		proposed["gatePassed"] = false
 	case fault.FeedsBreaker && consecutiveFailures >= 2:
 		proposed["status"] = "parked"
 		proposed["parkReason"] = "host-failure"
@@ -303,7 +321,7 @@ func RecordFailureProposal(root, mission string, state map[string]any, turn Turn
 	if err := appendTurnLog(proposed, entry); err != nil {
 		return nil, err
 	}
-	proposed["openTurn"] = nil
+	// openTurn survives the append; the post-verification entry concludes.
 	if err := setLedgerCycles(proposed, turn.Cycle); err != nil {
 		return nil, err
 	}

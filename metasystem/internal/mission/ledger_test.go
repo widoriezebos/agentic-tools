@@ -38,10 +38,10 @@ func TestAppendCyclesInOrder(t *testing.T) {
 	if err := InitLedger(file, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 1, "contract-improved", goodSHA, "score=0.5", ""); err != nil {
+	if _, err := AppendCycle(file, 1, "contract-improved", goodSHA, "score=0.5", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 2, "no-progress", goodSHA, "score=0.5", ""); err != nil {
+	if _, err := AppendCycle(file, 2, "no-progress", goodSHA, "score=0.5", ""); err != nil {
 		t.Fatal(err)
 	}
 	_, _, cycles, err := ParseLedger(file)
@@ -52,7 +52,7 @@ func TestAppendCyclesInOrder(t *testing.T) {
 		t.Fatalf("expected two contiguous cycles: %+v", cycles)
 	}
 	// The next cycle must be 3.
-	if err := AppendCycle(file, 2, "no-progress", goodSHA, "x", ""); err == nil ||
+	if _, err := AppendCycle(file, 2, "no-progress", goodSHA, "x", ""); err == nil ||
 		!strings.Contains(err.Error(), "must be 3") {
 		t.Fatalf("appending a wrong cycle number must be refused, got %v", err)
 	}
@@ -61,13 +61,13 @@ func TestAppendCyclesInOrder(t *testing.T) {
 func TestAppendValidatesShaAndClassification(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "ledger.md")
 	_ = InitLedger(file, 5, 3)
-	if err := AppendCycle(file, 1, "bogus-class", goodSHA, "x", ""); err == nil {
+	if _, err := AppendCycle(file, 1, "bogus-class", goodSHA, "x", ""); err == nil {
 		t.Fatal("unknown classification must be refused")
 	}
-	if err := AppendCycle(file, 1, "contract-improved", "not-a-sha", "x", ""); err == nil {
+	if _, err := AppendCycle(file, 1, "contract-improved", "not-a-sha", "x", ""); err == nil {
 		t.Fatal("a non-sha candidate must be refused")
 	}
-	if err := AppendCycle(file, 1, "contract-improved", goodSHA, "", ""); err == nil {
+	if _, err := AppendCycle(file, 1, "contract-improved", goodSHA, "", ""); err == nil {
 		t.Fatal("an empty observed measurement must be refused")
 	}
 }
@@ -87,7 +87,7 @@ func TestAppendCycleBestMarker(t *testing.T) {
 	if err := InitLedger(file, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 1, "contract-improved", goodSHA, "score=0.6", "yes"); err != nil {
+	if _, err := AppendCycle(file, 1, "contract-improved", goodSHA, "score=0.6", "yes"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(file)
@@ -97,7 +97,7 @@ func TestAppendCycleBestMarker(t *testing.T) {
 	if !strings.Contains(string(data), "observed=score=0.6; best=yes\n") {
 		t.Fatalf("best marker missing from the measurement line:\n%s", data)
 	}
-	if err := AppendCycle(file, 2, "unresolved", goodSHA, "score=0.6", "maybe"); err == nil {
+	if _, err := AppendCycle(file, 2, "unresolved", goodSHA, "score=0.6", "maybe"); err == nil {
 		t.Fatal("an unknown best marker must be refused")
 	}
 }
@@ -107,7 +107,7 @@ func TestAppendResetGrammarAndSanitization(t *testing.T) {
 	if err := InitLedger(file, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 1, "no-progress", goodSHA, "score=0.5", "no"); err != nil {
+	if _, err := AppendCycle(file, 1, "no-progress", goodSHA, "score=0.5", "no"); err != nil {
 		t.Fatal(err)
 	}
 	if err := AppendReset(file, "stop-loss", "tail work justifies more of the sealed fences"); err != nil {
@@ -149,7 +149,7 @@ func TestAppendCycleAnnotations(t *testing.T) {
 	if err := InitLedger(file, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 1, "contract-improved", goodSHA, "score=1", "yes",
+	if _, err := AppendCycle(file, 1, "contract-improved", goodSHA, "score=1", "yes",
 		"Return: rejected:orchestrator return session identity mismatch", CappedAnnotation); err != nil {
 		t.Fatal(err)
 	}
@@ -182,14 +182,14 @@ func TestAppendCycleAnnotations(t *testing.T) {
 		t.Fatalf("event misread beside annotations: %+v", events[0])
 	}
 	// The next append stays contiguous: annotations never count as cycles.
-	if err := AppendCycle(file, 2, "unresolved", goodSHA, "score=1", "no"); err != nil {
+	if _, err := AppendCycle(file, 2, "unresolved", goodSHA, "score=1", "no"); err != nil {
 		t.Fatalf("append after annotations: %v", err)
 	}
 	// Only the two named annotation kinds may be written.
-	if err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", "Note: freeform"); err == nil {
+	if _, err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", "Note: freeform"); err == nil {
 		t.Fatal("an unknown annotation kind must be refused")
 	}
-	if err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", "Return: rejected:a\nb"); err == nil {
+	if _, err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", "Return: rejected:a\nb"); err == nil {
 		t.Fatal("a multi-line annotation must be refused")
 	}
 }
@@ -202,10 +202,10 @@ func TestAppendAnnotationsToFinalBlock(t *testing.T) {
 	if err := InitLedger(file, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 1, "unresolved", goodSHA, "score=1", "no"); err != nil {
+	if _, err := AppendCycle(file, 1, "unresolved", goodSHA, "score=1", "no"); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 2, "contract-improved", goodSHA, "score=2", "yes"); err != nil {
+	if _, err := AppendCycle(file, 2, "contract-improved", goodSHA, "score=2", "yes"); err != nil {
 		t.Fatal(err)
 	}
 	rows := []string{
@@ -214,14 +214,14 @@ func TestAppendAnnotationsToFinalBlock(t *testing.T) {
 		LandedUnconsumedAnnotation("chain-c", "unreadable", "none"),
 		LandedUnconsumedAnnotation("overflow", "3", "none"),
 	}
-	if err := AppendAnnotations(file, 2, rows...); err != nil {
+	if _, err := AppendAnnotations(file, 2, "", rows...); err != nil {
 		t.Fatalf("terminal delivery append refused: %v", err)
 	}
 	// Only the final block accepts the append; unknown kinds are refused.
-	if err := AppendAnnotations(file, 1, rows[0]); err == nil {
+	if _, err := AppendAnnotations(file, 1, "", rows[0]); err == nil {
 		t.Fatal("an append to a closed history block must be refused")
 	}
-	if err := AppendAnnotations(file, 2, "Landed unconsumed: chain=UPPER round=x path="); err == nil {
+	if _, err := AppendAnnotations(file, 2, "", "Landed unconsumed: chain=UPPER round=x path="); err == nil {
 		t.Fatal("an annotation outside the write grammar must be refused")
 	}
 	_, _, cycles, err := ParseLedger(file)
@@ -239,8 +239,43 @@ func TestAppendAnnotationsToFinalBlock(t *testing.T) {
 	if err != nil || len(events) != 2 || len(events[1].Annotations) != 4 {
 		t.Fatalf("events misread beside landed annotations: %v %+v", err, events)
 	}
-	if err := AppendCycle(file, 3, "no-progress", goodSHA, "score=2", "no"); err != nil {
+	if _, err := AppendCycle(file, 3, "no-progress", goodSHA, "score=2", "no"); err != nil {
 		t.Fatalf("append after landed annotations: %v", err)
+	}
+}
+
+// Terminal delivery is idempotent at line grain and pinned to the bytes
+// the caller verified (WSS I11-2, I11-5): a re-delivered annotation must
+// not double, and an append over bytes that moved past the expectSHA
+// proof must refuse under the lock.
+func TestAppendAnnotationsIdempotentAndPinned(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "ledger.md")
+	if err := InitLedger(file, 5, 3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AppendCycle(file, 1, "contract-improved", goodSHA, "score=1", "yes"); err != nil {
+		t.Fatal(err)
+	}
+	row := LandedUnconsumedAnnotation("chain-a", "1", "artifacts/agents/chain-a/rounds/1/return.json")
+	first, err := AppendAnnotations(file, 1, "", row)
+	if err != nil {
+		t.Fatalf("first delivery refused: %v", err)
+	}
+	again, err := AppendAnnotations(file, 1, first, row)
+	if err != nil {
+		t.Fatalf("re-delivery must be idempotent, got %v", err)
+	}
+	if again != first {
+		t.Fatal("an already-present annotation must not change the ledger bytes")
+	}
+	if _, _, cycles, err := ParseLedger(file); err != nil || len(cycles[0].Annotations) != 1 {
+		t.Fatalf("the annotation must appear exactly once: %v %+v", err, cycles)
+	}
+	// A stale pin — bytes moved past the caller's proof — refuses.
+	fresh := LandedUnconsumedAnnotation("chain-b", "1", "none")
+	if _, err := AppendAnnotations(file, 1, strings.Repeat("0", 64), fresh); err == nil ||
+		!strings.Contains(err.Error(), "moved past the verified bytes") {
+		t.Fatalf("a stale expectSHA must refuse: %v", err)
 	}
 }
 
@@ -249,7 +284,7 @@ func TestDrainStalledAnnotationGrammar(t *testing.T) {
 	if err := InitLedger(file, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 1, "no-progress", goodSHA, DrainStalledObserved, "no", DrainStalledAnnotation(3)); err != nil {
+	if _, err := AppendCycle(file, 1, "no-progress", goodSHA, DrainStalledObserved, "no", DrainStalledAnnotation(3)); err != nil {
 		t.Fatalf("the drain-stalled annotation must be writable: %v", err)
 	}
 	_, _, cycles, err := ParseLedger(file)
@@ -261,7 +296,7 @@ func TestDrainStalledAnnotationGrammar(t *testing.T) {
 	}
 	// The strict write grammar admits only a whole survivor count.
 	for _, bad := range []string{"Drain: stalled:", "Drain: stalled:x", "Drain: stalled:-1", "Drain: stalled:03", "Drain: stalled"} {
-		if err := AppendCycle(file, 2, "no-progress", goodSHA, DrainStalledObserved, "no", bad); err == nil {
+		if _, err := AppendCycle(file, 2, "no-progress", goodSHA, DrainStalledObserved, "no", bad); err == nil {
 			t.Fatalf("%q must be refused", bad)
 		}
 	}
@@ -307,13 +342,13 @@ func TestParseLedgerEventsOrderAndTokens(t *testing.T) {
 	if err := InitLedger(file, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 1, "no-progress", goodSHA, "score=0.5", "no"); err != nil {
+	if _, err := AppendCycle(file, 1, "no-progress", goodSHA, "score=0.5", "no"); err != nil {
 		t.Fatal(err)
 	}
 	if err := AppendReset(file, "stop-loss", "keep going"); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(file, 2, "contract-improved", goodSHA, "score=0.9", "yes"); err != nil {
+	if _, err := AppendCycle(file, 2, "contract-improved", goodSHA, "score=0.9", "yes"); err != nil {
 		t.Fatal(err)
 	}
 	cycleBudget, noGainBudget, events, err := ParseLedgerEvents(file)
@@ -374,7 +409,7 @@ func TestPatienceAnnotationsRoundTrip(t *testing.T) {
 		PatienceExcludedAnnotation(3),
 		PatienceOverflowAnnotation(7),
 	}
-	if err := AppendCycle(file, 1, "no-progress", goodSHA, "score=0", "", forms...); err != nil {
+	if _, err := AppendCycle(file, 1, "no-progress", goodSHA, "score=0", "", forms...); err != nil {
 		t.Fatalf("patience annotations refused by the write grammar: %v", err)
 	}
 	_, _, cycles, err := ParseLedger(file)
@@ -391,7 +426,7 @@ func TestPatienceAnnotationsRoundTrip(t *testing.T) {
 	}
 	// The fuse replay never reads them: the replay must still see one plain
 	// no-progress cycle and nothing else.
-	if err := AppendCycle(file, 2, "contract-improved", goodSHA, "score=1", "yes"); err != nil {
+	if _, err := AppendCycle(file, 2, "contract-improved", goodSHA, "score=1", "yes"); err != nil {
 		t.Fatalf("append after patience annotations: %v", err)
 	}
 	// Malformed patience lines are refused: zero rounds, orphan with a floor,
@@ -403,7 +438,7 @@ func TestPatienceAnnotationsRoundTrip(t *testing.T) {
 		"Patience: excluded=0",
 		"Patience overflow: chains=0",
 	} {
-		if err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", bad); err == nil {
+		if _, err := AppendCycle(file, 3, "unresolved", goodSHA, "score=1", "no", bad); err == nil {
 			t.Fatalf("malformed patience annotation accepted: %q", bad)
 		}
 	}

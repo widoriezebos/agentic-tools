@@ -19,7 +19,9 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
 // The launch side of the runner: what happens in the caller's process before
@@ -108,7 +110,7 @@ func (e *Engine) bornEvidence(ledger string) (string, error) {
 // narrower birth evidence: a same-pass failure drops its own staging
 // anchors, so only honest emptiness reaches a retry.
 func (e *Engine) missionAnchorsExist() (bool, error) {
-	stdout, stderr, code := runCaptured(e.Root, nil, "git", "for-each-ref",
+	stdout, stderr, code := gitCaptured(e.Root, "for-each-ref",
 		"--format=%(refname)", "refs/metasystem/missions/"+e.Mission+"/")
 	if code != 0 {
 		// Only a SUCCESSFUL empty enumeration proves absence; a failed
@@ -161,6 +163,16 @@ func stateShapeRefusal(statePath string) error {
 	return failf(3, "mission state path is occupied by a non-regular object (%s); remove %s by hand before any start or resume", info.Mode(), statePath)
 }
 
+// gitCaptured runs one git command on the runner's own surface: the
+// repository-steering environment stripped and object replacement
+// disabled, so an inherited GIT_DIR or a planted replace ref can never
+// steer what the runner reads (the D120 posture, applied to every runner
+// git surface).
+func gitCaptured(dir string, args ...string) (stdout, stderr string, code int) {
+	full := append([]string{"-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
+	return runCaptured(dir, gittree.ScrubbedEnviron(), "git", full...)
+}
+
 // runCaptured runs a command from a working directory, capturing both
 // streams. A command that could not start reports exit -1 with the launch
 // error as its stderr.
@@ -169,6 +181,11 @@ func runCaptured(dir string, env []string, name string, args ...string) (stdout,
 	command.Dir = dir
 	if env != nil {
 		command.Env = env
+	} else {
+		// Runner-owned scripts inherit the SCRUBBED environment: none of
+		// them lawfully needs a repository-steering variable, and any git
+		// they spawn must judge the checkout it runs in.
+		command.Env = gittree.ScrubbedEnviron()
 	}
 	var outBuf, errBuf bytes.Buffer
 	command.Stdout = &outBuf
@@ -539,8 +556,45 @@ func (e *Engine) launch(mode string, foreground bool) error {
 				return err
 			}
 		}
+		// A crash between the verification write and the turn record's
+		// terminal patch leaves a completed mission with a non-terminal
+		// record; the projection is idempotently derivable from the
+		// durable state, so it repairs here before any refusal.
+		if err := e.repairTerminalTurnRecords(state); err != nil {
+			return err
+		}
 		if state["status"] != "running" {
-			return failf(3, "mission is %s; answer its park reason before resume", valueString(state["status"]))
+			// A consumed-but-unconcluded acceptance is admitted through to
+			// the resume path, which completes its verification first —
+			// except under a wall-violation park, whose exit is the
+			// human's resolution. Without this lane, a park written at the
+			// acceptance would strand its turn unconcluded forever.
+			pendingVerification := false
+			if openTurn, _ := state["openTurn"].(map[string]any); openTurn != nil && state["parkReason"] != "wall-violation" {
+				if turnID, _ := openTurn["turnId"].(string); turnID != "" && mission.UnverifiedAcceptance(state) == turnID {
+					pendingVerification = true
+				}
+			}
+			if !pendingVerification {
+				// A completed mission may still owe its terminal delivery
+				// or anchor (crash after the verification write): heal
+				// idempotently BEFORE the refusal, so the terminal-lag
+				// case is never stranded behind it (WSS I11-6).
+				if state["status"] == "completed" {
+					// The LIVE-runner refusal comes first (WSS I14-2): a
+					// runner mid-conclusion still owes its delivery and
+					// closing anchor, and reconciling under it would
+					// anchor the completed hash to pre-delivery bytes —
+					// the one shape no later heal admits.
+					if err := e.cleanupStaleLease(); err != nil {
+						return err
+					}
+					if err := e.healTerminalPublication(statePath, state); err != nil {
+						return err
+					}
+				}
+				return failf(3, "mission is %s; answer its park reason before resume", valueString(state["status"]))
+			}
 		}
 	}
 	if err := e.cleanupStaleLease(); err != nil {

@@ -112,7 +112,7 @@ func TestWallPassesUntouchedWorkspace(t *testing.T) {
 	pre := snapshotTree(t, root)
 	// Machine metadata under artifacts/ is outside the projection.
 	writeText(t, filepath.Join(root, "artifacts", "agents", "x.json"), "{}\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestWallPassesConsumedAuthorizedPatch(t *testing.T) {
 	post := snapshotTree(t, root)
 	digest := wallAuthorization(t, root, "demo", pre, post, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestWallRefusesUndeclaredHostBytes(t *testing.T) {
 	root := wallRepo(t)
 	pre := snapshotTree(t, root)
 	writeText(t, filepath.Join(root, "main.go"), "package main // host-authored drift\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 	root := wallRepo(t)
 	pre := snapshotTree(t, root)
 	writeText(t, filepath.Join(root, "docs", "note.md"), "design note\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, "")
+	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
 	writeText(t, filepath.Join(root, "docs", "note.md"), "host overwrote the review\n")
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{"docs/note.md": true}, "")
+	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{"docs/note.md": true}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestWallRefusesOverlappingAuthorizations(t *testing.T) {
 		{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": first},
 		{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": second},
 	}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestWallRefusesMissingPatchBytes(t *testing.T) {
 	record["authorizationDigest"] = digest
 	writeJSONFile(t, filepath.Join(missionDirPath(root, "demo"), "authorizations", digest+".json"), record)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,10 +276,35 @@ func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
 	}
 	taint, _ := doc["workspaceTaint"].(map[string]any)
 	segment, _ := jsonInt(taint["segment"])
+	missionID := filepath.Base(filepath.Dir(statePath))
+	workspace := gittree.Workspace{Dir: root}
+	head, _, herr := workspace.HeadCommit()
+	if herr != nil {
+		t.Fatalf("open fixture turn: %v", herr)
+	}
+	headTreeRaw, herr := workspace.TreeOf(head)
+	if herr != nil {
+		t.Fatalf("open fixture turn: %v", herr)
+	}
+	headTree, herr := workspace.FilterTree(headTreeRaw, []string{missionLedgerRel(missionID)})
+	if herr != nil {
+		t.Fatalf("open fixture turn: %v", herr)
+	}
+	refs, herr := workspace.RefMap()
+	if herr != nil {
+		t.Fatalf("open fixture turn: %v", herr)
+	}
+	// The production open anchors the open commit before the host
+	// launches; the bed mirrors it so the ref fence sees the runner ref.
+	if herr := workspace.AnchorCommit(missionID, "turn-open-head", head); herr != nil {
+		t.Fatalf("open fixture turn: %v", herr)
+	}
 	doc["openTurn"] = map[string]any{
 		"turnId": turnID, "cycle": cycle, "preTree": tree,
 		"sequence": sequence, "segment": segment,
-		"openedAt": "2026-08-18T00:00:00Z",
+		"openedAt":   "2026-08-18T00:00:00Z",
+		"headCommit": head, "headTree": headTree,
+		"topTree": nil, "refMap": mission.RecordableRefMap(refs, missionID), "topStaged": nil,
 	}
 	delete(doc, "integrity")
 	source := statePath + ".open-turn.src"
@@ -288,6 +313,18 @@ func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
 	}
 	if err := mission.WriteState(statePath, source, hash); err != nil {
 		t.Fatalf("open fixture turn: %v", err)
+	}
+	// Production anchors the admitted baseline at init and a real state
+	// anchor at every write; the bed mirrors that so the ref fence sees
+	// the runner refs it requires.
+	if baseline, _ := readJSONDoc(statePath); baseline != nil {
+		if b0, _ := baseline["initialBaseline"].(string); b0 != "" {
+			_ = workspace.Anchor(missionID, b0)
+		}
+	}
+	_ = workspace.Anchor(missionID, tree)
+	if err := mission.AnchorNamed(statePath, root, filepath.Join(filepath.Dir(statePath), "ledger.md"), "fixture", "", ""); err != nil {
+		t.Fatalf("open fixture turn cannot anchor: %v", err)
 	}
 }
 
@@ -299,7 +336,12 @@ func seedWallEvidence(t *testing.T, root, mission, turnID string) {
 	tree := strings.Repeat("a", 40)
 	writeJSONFile(t, filepath.Join(missionDirPath(root, mission), "turns", turnID, "wall.json"),
 		map[string]any{"verdict": "passed", "preTree": tree, "expectedTree": tree,
-			"postTree": tree, "orderedDigests": []any{}})
+			"postTree": tree, "orderedDigests": []any{},
+			"posture": map[string]any{
+				"headCommitPost": strings.Repeat("c", 40), "refMapPost": map[string]any{},
+				"stagedTreePost": tree, "topTreePost": nil, "topStagedPost": nil,
+				"worktreeCensusPost": []any{}, "capturedAt": "2026-01-01T00:00:00Z",
+			}})
 }
 
 // The resume binding order (critique F-1): an unfinished open turn is
@@ -385,7 +427,7 @@ func TestWallStalenessPredicate(t *testing.T) {
 	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
 	stale := wallAuthorization(t, root, "demo", base, overlapping, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": stale}}
-	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +446,7 @@ func TestWallStalenessPredicate(t *testing.T) {
 	// delegate bytes — exactly expected + the consumed patch.
 	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": disjoint}}
-	inspection, err = inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "")
+	inspection, err = inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +467,7 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	// not produce — authenticates fine and dies on object-id equality.
 	forged := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["reviewedTree"] = pre })
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": forged}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +479,7 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	honest := wallAuthorization(t, root, "demo", pre, post, nil)
 	writeText(t, filepath.Join(missionDirPath(root, "demo"), "authorizations", honest+".patch"), "not the issued bytes\n")
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": honest}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "")
+	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +491,7 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	rewritten := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["jobId"] = "job-w3" })
 	patchRecord(t, root, "demo", rewritten, map[string]any{"changedPaths": []any{"free-pass.go"}})
 	certified = []map[string]any{{"jobId": "job-w3", "verdict": "accepted", "authorizationDigest": rewritten}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "")
+	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +522,14 @@ func seedCrashedMissionState(t *testing.T, engine *Engine) (string, error) {
 	if err := mission.InitLedger(ledgerPath, 5, 3); err != nil {
 		return "", err
 	}
-	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
+	// REAL origins from the bed repository: the between-turns continuity
+	// judgment walks first-parent chains from the recorded headCommit, so
+	// a synthetic origin would read as rewritten history.
+	origins, err := mission.CaptureAdmissionOrigins(engine.Root, engine.Mission)
+	if err != nil {
+		return "", err
+	}
+	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40), origins); err != nil {
 		return "", err
 	}
 	// initializeState anchors right after init — onto the runner-owned
@@ -536,7 +585,7 @@ func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
 				"sequencePoint": map[string]any{"sequence": 2, "segment": 0}}},
 	}}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", preJ, state, certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", preJ, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +603,7 @@ func TestWallRefusesSymlinkedArtifactAncestry(t *testing.T) {
 		t.Fatal(err)
 	}
 	pre := snapshotTree(t, root)
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, "")
+	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +628,7 @@ func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
 	if err := mission.ReserveCycle(engine.Root, engine.Mission); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.AppendCycle(ledgerPath, 1, "no-progress", strings.Repeat("a", 40), "score=0", ""); err != nil {
+	if _, err := mission.AppendCycle(ledgerPath, 1, "no-progress", strings.Repeat("a", 40), "score=0", ""); err != nil {
 		t.Fatal(err)
 	}
 	doc, _ := readJSONDoc(statePath)
@@ -641,7 +690,7 @@ func TestResumeCleanLedgerAheadHeals(t *testing.T) {
 	if err := mission.ReserveCycle(engine.Root, engine.Mission); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.AppendCycle(ledgerPath, 1, "no-progress", strings.Repeat("a", 40), "score=0", ""); err != nil {
+	if _, err := mission.AppendCycle(ledgerPath, 1, "no-progress", strings.Repeat("a", 40), "score=0", ""); err != nil {
 		t.Fatal(err)
 	}
 	os.MkdirAll(filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead"), 0o755)
@@ -717,7 +766,7 @@ func TestWallResolutionDeltaStalenessOverlap(t *testing.T) {
 
 	state := resolvedFixtureState(pre, adopted)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -742,7 +791,7 @@ func TestWallResolutionDeltaStalenessDisjoint(t *testing.T) {
 
 	state := resolvedFixtureState(pre, adopted)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -773,7 +822,7 @@ func TestWallFirstTurnResolutionKeepsE0(t *testing.T) {
 	state := resolvedFixtureState(pre, adopted)
 	state["turnLog"] = []any{}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -847,7 +896,7 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 	run("add", "-f", "--", "artifacts/agents/missions/alpha/ledger.md")
 	run("commit", "-qm", "host launders its ledger edit")
 
-	final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false)
+	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1723,7 +1772,7 @@ func ledgerTamperPark(t *testing.T, tamper func(string) string) (*Engine, string
 	}
 	writeText(t, ledgerPath, tamper(string(pristine)))
 
-	final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false)
+	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1893,7 +1942,7 @@ func TestWallConsumesFreshWorkAfterResolution(t *testing.T) {
 		}},
 	}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "")
+	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1902,5 +1951,24 @@ func TestWallConsumesFreshWorkAfterResolution(t *testing.T) {
 	}
 	if len(inspection.OrderedDigests) != 1 {
 		t.Fatalf("consumption: %v", inspection.OrderedDigests)
+	}
+}
+
+// testAdmissionOrigins is a minimal valid admission-origins record for
+// states born outside a live repository.
+func testAdmissionOrigins() map[string]any {
+	return map[string]any{
+		"headCommit": strings.Repeat("c", 40), "topTree": nil, "topStaged": nil,
+		"refMap": map[string]any{}, "worktreeCensus": []any{},
+		"capturedAt": "2026-01-01T00:00:00Z",
+	}
+}
+
+// legacySnapshot is the HEAD-seeded projection the tree-equation tests
+// exercise rule 7 with; the seeded-projection behavior has its own
+// engine-level tests.
+func legacySnapshot(root, missionID string) func(string) (string, error) {
+	return func(string) (string, error) {
+		return wallSnapshot(gittree.Workspace{Dir: root}, missionID)
 	}
 }

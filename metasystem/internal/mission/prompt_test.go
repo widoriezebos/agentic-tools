@@ -309,7 +309,7 @@ func TestPatiencePromptLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := strings.Repeat("a", 40)
-	if err := AppendCycle(ledger, 1, "no-progress", sha, "score=0", "",
+	if _, err := AppendCycle(ledger, 1, "no-progress", sha, "score=0", "",
 		PatienceChainAnnotation("chain-open", 4, 2),
 		PatienceChainAnnotation("chain-shut", 5, 2),
 		PatienceOrphanAnnotation("orphan-x", 1),
@@ -345,7 +345,7 @@ func TestPatiencePromptLines(t *testing.T) {
 		}
 	}
 	// Only the FINAL cycle projects; an unannotated later cycle silences all.
-	if err := AppendCycle(ledger, 2, "contract-improved", sha, "score=1", "yes"); err != nil {
+	if _, err := AppendCycle(ledger, 2, "contract-improved", sha, "score=1", "yes"); err != nil {
 		t.Fatal(err)
 	}
 	if lines := patiencePromptLines(ledger, jobs); len(lines) != 0 {

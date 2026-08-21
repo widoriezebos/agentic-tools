@@ -792,6 +792,10 @@
           "required": true,
           "type": "str"
         },
+        "headCommit": {
+          "required": false,
+          "type": "str"
+        },
         "turnId": {
           "required": true,
           "type": "str"

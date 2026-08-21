@@ -49,7 +49,7 @@ func anchoredMission(t *testing.T) (repo, state, ledger string) {
 	contract := filepath.Join(repo, "mission-demo.contract.md")
 	writeText(t, contract, "```mission\ncandidate.branch=feature-x\nstream.alpha=Do alpha\n```\n")
 	state = filepath.Join(repo, "state.json")
-	if err := InitStateWithBaseline(state, contract, ledger, "", "feature-x", strings.Repeat("b", 40)); err != nil {
+	if err := InitStateWithBaseline(state, contract, ledger, "", "feature-x", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -397,6 +397,39 @@ func TestReconcileHealsAnchorLag(t *testing.T) {
 	}
 }
 
+// Terminal-delivery lag (WSS I12-4): a crash between the completion
+// conclude's annotation delivery and its closing anchor leaves the
+// anchor one state step behind with SAME-cycle bytes extended by
+// write-grammar annotation lines only — that exact stamped shape heals;
+// a suffix with any other line still parks.
+func TestReconcileHealsTerminalDeliveryLag(t *testing.T) {
+	repo, state, ledger := anchoredMission(t)
+	advanceStateOneStep(t, state)
+	if _, err := AppendAnnotations(ledger, 1, "", LandedUnconsumedAnnotation("chain-a", "1", "none")); err != nil {
+		t.Fatal(err)
+	}
+	code, err := Reconcile(state, repo, ledger)
+	if code != 0 || err != nil {
+		t.Fatalf("terminal-delivery lag must heal: %d %v", code, err)
+	}
+	if _, _, err := VerifyStateWithAnchor(state, repo, ledger); err != nil {
+		t.Fatalf("the healed state must verify: %v", err)
+	}
+	// A suffix line outside the annotation grammar is NOT the delivery
+	// shape: it parks instead of re-anchoring.
+	advanceStateOneStep(t, state)
+	data, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ledger, append(data, []byte("- Sneaky line: not an annotation\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := Reconcile(state, repo, ledger); code != 3 {
+		t.Fatalf("a non-delivery suffix must park, got %d", code)
+	}
+}
+
 // A forged child commit on the anchor ref — matching trailers, no ledger
 // blob — must PARK, never launder the evidence (round-7).
 func TestReconcileParksForgedAnchorTip(t *testing.T) {
@@ -440,7 +473,7 @@ func TestRecoveryPredicateCycleArms(t *testing.T) {
 		// the repair prescription (round-19: the earlier construction
 		// let the trailer-versus-state check mask this arm).
 		sha := strings.Repeat("e", 40)
-		if err := AppendCycle(ledger, 2, "no-progress", sha, "score=0", ""); err != nil {
+		if _, err := AppendCycle(ledger, 2, "no-progress", sha, "score=0", ""); err != nil {
 			t.Fatal(err)
 		}
 		doc, _ := readStateDoc(state)
@@ -486,7 +519,7 @@ func TestRecoveryPredicateCycleArms(t *testing.T) {
 		// exactly-stamped ledger at cycle 2 — the lawful one-block lag
 		// must HEAL. Rejecting lawful cycle lag fails here.
 		sha := strings.Repeat("e", 40)
-		if err := AppendCycle(ledger, 2, "no-progress", sha, "score=0", ""); err != nil {
+		if _, err := AppendCycle(ledger, 2, "no-progress", sha, "score=0", ""); err != nil {
 			t.Fatal(err)
 		}
 		doc, _ := readStateDoc(state)

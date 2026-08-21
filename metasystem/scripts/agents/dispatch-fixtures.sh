@@ -2068,7 +2068,10 @@ python3 - "$runner_repo/artifacts/agents/missions/runner-ghost" <<'PY'
 import json,sys
 from pathlib import Path
 mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
-rejected=state["turnLog"][-1]["rejected"]
+# The newest HOST-TURN entry: post-verification entries conclude turns
+# but carry no adjudication.
+turns=[e for e in state["turnLog"] if e.get("kind")!="wall-verification"]
+rejected=turns[-1]["rejected"]
 assert len(rejected)==1 and rejected[0]["kind"]=="dispatched"
 assert "does not exist" in rejected[0]["reason"]
 ask=json.loads((mission/"asks"/f"{rejected[0]['askId']}.json").read_text())

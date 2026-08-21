@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
 // Contract reading and the pure per-turn context decisions: which prior
@@ -108,6 +109,18 @@ func (e *Engine) fencesPath() string {
 // a no-witness session mismatch convicts nobody): both are skipped without
 // resetting the count.
 func PriorContext(turnLog []any) (hostSession any, reconciliation bool, failures int) {
+	// Post-verification entries conclude turns but ARE no turns: they
+	// carry no outcome and no session, so the launch context reads the
+	// host-turn entries only.
+	hostTurns := make([]any, 0, len(turnLog))
+	for _, raw := range turnLog {
+		entry, _ := raw.(map[string]any)
+		if entry == nil || entry["kind"] == mission.WallVerificationKind {
+			continue
+		}
+		hostTurns = append(hostTurns, raw)
+	}
+	turnLog = hostTurns
 	if len(turnLog) == 0 {
 		return nil, false, 0
 	}

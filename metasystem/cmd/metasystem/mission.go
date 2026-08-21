@@ -46,7 +46,7 @@ func runMissionLedgerAppend(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if err := mission.AppendCycle(*file, *cycle, *classification, *sha, *observed, *best); err != nil {
+	if _, err := mission.AppendCycle(*file, *cycle, *classification, *sha, *observed, *best); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -66,7 +66,29 @@ func runMissionStateInit(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if err := mission.InitStateWithBaseline(*state, *contract, *ledger, *lease, *branch, *baseline); err != nil {
+	root := stateVerbRoot(*state)
+	if root == "" {
+		fmt.Fprintln(os.Stderr, "mission state-init refused: the state path is not inside a mission layout, so the admission origins cannot be captured")
+		return 1
+	}
+	match := regexp.MustCompile(`^mission-([a-z0-9][a-z0-9-]*)\.contract\.md$`).FindStringSubmatch(filepath.Base(*contract))
+	if match == nil {
+		fmt.Fprintln(os.Stderr, "mission state-init refused: contract filename is invalid")
+		return 1
+	}
+	origins, err := mission.CaptureAdmissionOrigins(root, match[1])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	// The supplied baseline must BE the live filtered projection at this
+	// instant — clean and human-sealed baselines both satisfy it, and a
+	// freely invented tree cannot become E0.
+	if err := mission.VerifyBaselineIsLive(root, match[1], *baseline); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := mission.InitStateWithBaseline(*state, *contract, *ledger, *lease, *branch, *baseline, origins); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

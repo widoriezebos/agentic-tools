@@ -22,7 +22,7 @@ func TestWriteStatePreservesProposalRefusal(t *testing.T) {
 	stateDir := filepath.Join(root, "artifacts", "agents", "missions", "mr-prop")
 	os.MkdirAll(stateDir, 0o755)
 	statePath := filepath.Join(stateDir, "state.json")
-	if err := mission.InitStateWithBaseline(statePath, contract, filepath.Join(stateDir, "ledger.md"), "", "", strings.Repeat("b", 40)); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, contract, filepath.Join(stateDir, "ledger.md"), "", "", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatal(err)
 	}
 	engine := &Engine{Root: root, Mission: "mr-prop"}

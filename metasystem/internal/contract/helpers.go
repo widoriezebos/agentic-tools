@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
 // The contract package's own small foundations. The three pure helpers are
@@ -71,12 +72,21 @@ var (
 	positiveIntRe = regexp.MustCompile(`^[1-9][0-9]*$`)
 )
 
+// contractGitArgs builds every contract-side git invocation on the
+// runner's own surface: object replacement disabled and (via the caller
+// setting ScrubbedEnviron) the repository-steering environment stripped,
+// so measurement and gate pins read the objects themselves.
+func contractGitArgs(repo string, args []string) []string {
+	return append([]string{"-C", repo, "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
+}
+
 // gitOutput runs a git subcommand in a checkout, returning its stdout and
 // carrying git's own stderr into the failure. Contract preflight reads the
 // repository this way (freshness, provenance); mission keeps its own copy
 // because its errors are mission errors.
 func gitOutput(repo string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd := exec.Command("git", contractGitArgs(repo, args)...)
+	cmd.Env = gittree.ScrubbedEnviron()
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -93,7 +103,8 @@ func gitOutput(repo string, args ...string) (string, error) {
 // error, for the checks that treat a nonzero status as an answer rather
 // than a failure.
 func gitTry(repo string, args ...string) (string, int) {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd := exec.Command("git", contractGitArgs(repo, args)...)
+	cmd.Env = gittree.ScrubbedEnviron()
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
 	// Bounded like every other external call (B4); a timeout is a failure

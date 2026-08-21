@@ -326,7 +326,7 @@ func drainMission(t *testing.T, reserved map[string]any) (engine *Engine, stateP
 	if err := mission.InitLedger(ledgerPath, 8, 4); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatal(err)
 	}
 	return engine, statePath, ledgerPath
@@ -608,7 +608,7 @@ func measurableDrainMission(t *testing.T) (engine *Engine, statePath, ledgerPath
 	if err := mission.InitLedger(ledgerPath, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatal(err)
 	}
 	return engine, statePath, ledgerPath, git, write
@@ -664,7 +664,7 @@ func TestDrainStallEndToEnd(t *testing.T) {
 		t.Fatalf("the next cycle must measure the committed tree: %s %s gate=%v", classification, observed, gatePassed)
 	}
 	candidateSHA, _ := measurement["candidateSha"].(string)
-	if err := engine.appendLedger(state, ledgerPath, 2, classification, candidateSHA, observed, nil); err != nil {
+	if _, err := engine.appendLedger(state, ledgerPath, 2, classification, candidateSHA, observed, nil); err != nil {
 		t.Fatal(err)
 	}
 	ledger, _ = os.ReadFile(ledgerPath)

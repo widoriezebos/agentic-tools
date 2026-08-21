@@ -12,10 +12,10 @@ func TestPromptLedgerRecordsSurviveTrailingResetLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
-	if err := AppendCycle(ledger, 1, "unresolved", sha, "self-assessment=0", "no"); err != nil {
+	if _, err := AppendCycle(ledger, 1, "unresolved", sha, "self-assessment=0", "no"); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(ledger, 2, "no-progress", sha, "unmeasurable:capped", "no"); err != nil {
+	if _, err := AppendCycle(ledger, 2, "no-progress", sha, "unmeasurable:capped", "no"); err != nil {
 		t.Fatal(err)
 	}
 	if err := AppendReset(ledger, "stop-loss", "human judged the tail worth more of the sealed fences"); err != nil {
@@ -41,11 +41,11 @@ func TestPromptLedgerRecordsSurviveAnnotationLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
-	if err := AppendCycle(ledger, 1, "contract-improved", sha, "score=2", "yes",
+	if _, err := AppendCycle(ledger, 1, "contract-improved", sha, "score=2", "yes",
 		ReturnRejectedAnnotation("orchestrator return session identity matches neither the announced nor the observed session")); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(ledger, 2, "unresolved", sha, "score=2", "no", CappedAnnotation); err != nil {
+	if _, err := AppendCycle(ledger, 2, "unresolved", sha, "score=2", "no", CappedAnnotation); err != nil {
 		t.Fatal(err)
 	}
 	records, err := promptLedgerRecords(ledger, 8)
@@ -73,10 +73,10 @@ func TestPromptLedgerRecordsSurviveLandedUnconsumedAnnotations(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
-	if err := AppendCycle(ledger, 1, "contract-improved", sha, "score=3", "yes"); err != nil {
+	if _, err := AppendCycle(ledger, 1, "contract-improved", sha, "score=3", "yes"); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendAnnotations(ledger, 1,
+	if _, err := AppendAnnotations(ledger, 1, "",
 		LandedUnconsumedAnnotation("chain-a", "2", "artifacts/agents/chain-a/rounds/2/return.json"),
 		LandedUnconsumedAnnotation("overflow", "4", "none")); err != nil {
 		t.Fatalf("terminal delivery append refused: %v", err)
@@ -104,10 +104,10 @@ func TestHealedDrainStalledLineParsesAndSurvivesPromptAssembly(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
-	if err := AppendCycle(ledger, 1, "unresolved", sha, "score=1", "no"); err != nil {
+	if _, err := AppendCycle(ledger, 1, "unresolved", sha, "score=1", "no"); err != nil {
 		t.Fatal(err)
 	}
-	if err := AppendCycle(ledger, 2, "no-progress", sha, DrainStalledObserved, "no", DrainStalledAnnotation(2)); err != nil {
+	if _, err := AppendCycle(ledger, 2, "no-progress", sha, DrainStalledObserved, "no", DrainStalledAnnotation(2)); err != nil {
 		t.Fatalf("healed drain-stalled line refused: %v", err)
 	}
 	_, _, cycles, err := ParseLedger(ledger)
@@ -137,12 +137,12 @@ func TestHealedTurnLostLineParsesAndSurvivesPromptAssembly(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
-	if err := AppendCycle(ledger, 1, "unresolved", sha, "self-assessment=0", "no"); err != nil {
+	if _, err := AppendCycle(ledger, 1, "unresolved", sha, "self-assessment=0", "no"); err != nil {
 		t.Fatal(err)
 	}
 	// The resume heal records a reserved-but-never-appended cycle exactly
 	// like this: a lost turn with no measurement.
-	if err := AppendCycle(ledger, 2, "no-progress", sha, "unmeasurable:turn-lost", "no"); err != nil {
+	if _, err := AppendCycle(ledger, 2, "no-progress", sha, "unmeasurable:turn-lost", "no"); err != nil {
 		t.Fatalf("healed lost-turn line refused: %v", err)
 	}
 	if _, _, cycles, err := ParseLedger(ledger); err != nil || len(cycles) != 2 {

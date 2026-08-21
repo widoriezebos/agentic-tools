@@ -15,6 +15,7 @@ package gittree
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -39,13 +40,63 @@ var treeID = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
 // core.fileMode so "mode" means git mode; prefix and driver settings so
 // patch bytes are identical everywhere Diff runs; apply.ignoreWhitespace
 // so "exact" admits no whitespace fuzz; logAllRefUpdates so anchor refs
-// never grow reflogs that keep a dropped tree GC-reachable.
+// never grow reflogs that keep a dropped tree GC-reachable;
+// useReplaceRefs off so a planted replace mapping can never re-route what
+// a tree or commit comparison sees — the wall judges the objects
+// themselves, never a replacement's view of them.
 var configPins = []string{
 	"-c", "core.fileMode=true",
 	"-c", "diff.noprefix=false",
 	"-c", "diff.mnemonicPrefix=false",
 	"-c", "apply.ignoreWhitespace=no",
 	"-c", "core.logAllRefUpdates=false",
+	"-c", "core.useReplaceRefs=false",
+	// Background maintenance never rides a runner invocation: a detached
+	// auto-gc spawned mid-inspection keeps writing objects while captures
+	// compare and beds clean up.
+	"-c", "gc.auto=0",
+	"-c", "maintenance.auto=false",
+}
+
+// steeringEnv is every environment variable that redirects git away from
+// the repository containing the invocation directory: an inherited
+// GIT_DIR (exported inside every git hook and by rebase/bisect
+// subprocesses) would let the wall inspect a repository the mission does
+// not live in, a foreign GIT_INDEX_FILE would swap the staged projection,
+// and GIT_REPLACE_REF_BASE relocates the replacement namespace the config
+// pin disables. Every runner git surface strips the whole set.
+var steeringEnv = map[string]bool{
+	"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true,
+	"GIT_INDEX_FILE": true, "GIT_CEILING_DIRECTORIES": true,
+	"GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+	"GIT_NAMESPACE": true, "GIT_REPLACE_REF_BASE": true,
+	"GIT_GRAFT_FILE": true, "GIT_SHALLOW_FILE": true,
+	"BASH_ENV": true, "ENV": true,
+}
+
+// ScrubbedEnviron is the process environment with the whole
+// repository-steering set removed, plus the caller's own additions (an
+// isolated GIT_INDEX_FILE above all). Every git invocation in this
+// package — and every other runner git surface — builds its environment
+// here, so the repository judged is always the one containing the
+// invocation directory.
+func ScrubbedEnviron(extra ...string) []string {
+	base := os.Environ()
+	out := make([]string, 0, len(base)+len(extra))
+	for _, entry := range base {
+		name, _, _ := strings.Cut(entry, "=")
+		// git's config-injection channels (GIT_CONFIG_PARAMETERS and the
+		// GIT_CONFIG_COUNT/KEY_n/VALUE_n family) can re-enable object
+		// replacement or any other steering config even past a
+		// command-line -c pin, so the WHOLE family is stripped from the
+		// inherited environment; the caller re-adds only its own pin
+		// through extra, which is appended after this scrub.
+		if steeringEnv[name] || strings.HasPrefix(name, "GIT_CONFIG") {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return append(out, extra...)
 }
 
 // git runs one bounded git invocation in the workspace with the package's
@@ -70,9 +121,7 @@ func (w Workspace) gitTop(env []string, args ...string) ([]byte, error) {
 func (w Workspace) gitAt(dir string, env []string, args ...string) ([]byte, error) {
 	full := append(append([]string{"-C", dir}, configPins...), args...)
 	cmd := exec.Command("git", full...)
-	if env != nil {
-		cmd.Env = append(os.Environ(), env...)
-	}
+	cmd.Env = ScrubbedEnviron(env...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -81,6 +130,13 @@ func (w Workspace) gitAt(dir string, env []string, args ...string) ([]byte, erro
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {
 			detail = err.Error()
+		}
+		// The could-not-run split survives this wrapper: a spawn refusal
+		// or timeout is the runner's own failure, never a repository
+		// answer for the wall to judge.
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) {
+			return nil, &RunFailure{Op: args[0], Err: fmt.Errorf("%s", detail)}
 		}
 		return nil, fmt.Errorf("git %s: %s", args[0], detail)
 	}
@@ -125,6 +181,19 @@ func (w Workspace) treePrefix() (string, error) {
 		return "", fmt.Errorf("gittree prefix: %w", err)
 	}
 	return prefix, nil
+}
+
+// TopLevel is the exported toplevel resolution for callers that need a
+// toplevel-scoped Workspace (the nested checkout's repository fence).
+func (w Workspace) TopLevel() (string, error) {
+	return w.topLevel()
+}
+
+// Prefix is the exported workspace prefix — "" at the toplevel, the
+// path-with-trailing-slash of a nested workspace. It is the one fact
+// that decides whether the repository-scope rules apply at all.
+func (w Workspace) Prefix() (string, error) {
+	return w.treePrefix()
 }
 
 // subtreeOf peels the workspace's prefix subtree out of a toplevel tree.
@@ -300,12 +369,19 @@ func (w Workspace) Apply(baseTree string, patch []byte) (string, error) {
 	full := append(append([]string{"-C", top}, configPins...),
 		"apply", "--cached", "--binary", "--whitespace=nowarn", "-")
 	cmd := exec.Command("git", full...)
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = ScrubbedEnviron(env...)
 	cmd.Stdin = bytes.NewReader(patch)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	limit := boundedexec.Timeout(filepath.Join(w.Dir, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(cmd, limit, "git apply --cached"); err != nil {
+		// A spawn failure or timeout is the RUNNER's could-not-run, never
+		// a verdict on the patch (WSS I11-14): only ran-and-refused git
+		// may become "does not apply exactly".
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) {
+			return "", fmt.Errorf("gittree apply: %w", &RunFailure{Op: "apply --cached", Err: err})
+		}
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {
 			detail = err.Error()

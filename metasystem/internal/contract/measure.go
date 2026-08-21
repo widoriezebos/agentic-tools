@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -10,7 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
 // Measuring a candidate is the per-cycle reading the mission runner records: run
@@ -248,6 +252,14 @@ func (d *contractDoc) materializeCandidate(repo, projectRoot, candidateSHA, gate
 		gitTry(repo, "worktree", "remove", "--force", worktree)
 		os.RemoveAll(scratch)
 	}
+	// The registry entry lands BEFORE the worktree exists: the wall's
+	// worktree census admits only runner-recorded worktrees, and a crash
+	// mid-measurement must leave a recorded artifact, never a private
+	// carrier. FAIL CLOSED: an unrecordable worktree never materializes.
+	if err := recordMeasureWorktree(projectRoot, worktree, candidateSHA, gateRef); err != nil {
+		os.RemoveAll(scratch)
+		return "", nil, stateErr("measurement cannot record its worktree: %v", err)
+	}
 	if _, err := gitOutput(repo, "worktree", "add", "--detach", "--quiet", worktree, candidateSHA); err != nil {
 		cleanup()
 		return "", nil, err
@@ -268,13 +280,97 @@ func (d *contractDoc) materializeCandidate(repo, projectRoot, candidateSHA, gate
 	return commandRoot, cleanup, nil
 }
 
+// recordMeasureWorktree registers a measurement worktree in the
+// runner's registry (artifacts/agents/measure-worktrees.jsonl under the
+// project root — the same file the wall's census reads), pruning
+// entries whose worktrees are gone. Best-effort: measurement never
+// fails over its own bookkeeping.
+func recordMeasureWorktree(projectRoot, path, sha, gateRef string) error {
+	dir := filepath.Join(projectRoot, "artifacts", "agents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	registry := filepath.Join(dir, "measure-worktrees.jsonl")
+	// The read-prune-rewrite is SERIALIZED under an exclusive flock and
+	// published atomically (WSS I11-11): two concurrent missions can
+	// otherwise clobber each other's records, and a pending record — a
+	// path registered fail-closed BEFORE its worktree exists — must
+	// never be pruned by a peer in that window, so absence prunes only
+	// past a grace no measurement setup can outlive.
+	lock, err := os.OpenFile(registry+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
+		return err
+	}
+	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	kept := []string{}
+	if data, err := os.ReadFile(registry); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			var doc map[string]any
+			if json.Unmarshal([]byte(line), &doc) != nil {
+				continue
+			}
+			prior, _ := doc["path"].(string)
+			if _, err := os.Stat(prior); err == nil {
+				kept = append(kept, line)
+				continue
+			}
+			if recorded, ok := doc["recordedAt"].(string); ok {
+				if at, perr := time.Parse(time.RFC3339, recorded); perr == nil && time.Since(at) < time.Hour {
+					kept = append(kept, line)
+				}
+			}
+		}
+	}
+	entry, err := json.Marshal(map[string]string{
+		"path": path, "sha": sha, "gateRef": gateRef,
+		"recordedAt": time.Now().UTC().Format(time.RFC3339)})
+	if err != nil {
+		return err
+	}
+	kept = append(kept, string(entry))
+	tmp, err := os.CreateTemp(dir, "measure-worktrees.")
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.WriteString(strings.Join(kept, "\n") + "\n"); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return os.Rename(tmp.Name(), registry)
+}
+
 // measureCommand runs one measurement command under the named per-job ceiling
 // and returns the metric values it emitted, its exit code, and whether it hit
 // the ceiling. Only a failure to run the command at all is returned as an error;
 // a nonzero exit or a timeout is reported for the caller to interpret.
 func measureCommand(commandRoot, command string, capMinutes int) (map[string]string, int, bool, error) {
-	cmd := exec.Command("bash", "-lc", command)
+	// --noprofile --norc: a login shell would read /etc/profile and the
+	// user profile, either of which could re-export GIT_DIR, GIT_CONFIG*,
+	// or replacement steering AFTER the scrub and before child git runs.
+	cmd := exec.Command("bash", "--noprofile", "--norc", "-c", command)
 	cmd.Dir = commandRoot
+	// Gate and guard commands are arbitrary bash: the repository-steering
+	// environment is stripped and any git THEY spawn inherits the
+	// replacement pin through git's environment-config channel, so a
+	// measurement can never read a foreign or replacement view while the
+	// wall judged the real checkout.
+	cmd.Env = gittree.ScrubbedEnviron(
+		"GIT_CONFIG_COUNT=3",
+		"GIT_CONFIG_KEY_0=core.useReplaceRefs", "GIT_CONFIG_VALUE_0=false",
+		"GIT_CONFIG_KEY_1=gc.auto", "GIT_CONFIG_VALUE_1=0",
+		"GIT_CONFIG_KEY_2=maintenance.auto", "GIT_CONFIG_VALUE_2=false")
 	var output strings.Builder
 	cmd.Stdout = &output
 	cmd.Stderr = &output

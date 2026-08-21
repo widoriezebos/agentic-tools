@@ -48,12 +48,12 @@ REVIEWED_SOURCE_SHA256: 266f3dc6a7c3c2cbb884349e54fca0c1f0f33db9b188a6d39ddd245f
 ### add-goal: wall-o15-head-accounting
 - Intent: HEAD movement during a turn is accounted: only certified integrations advance committed HEAD; staged bytes cannot ship unseen (HIW-O15, CRITICAL)
 - Origin: main
-- Next: Implement per plans/wall-snapshot-scope-design.md (converged 2026-08-20 under D123's bounded-window ruling; all 13 rows read implement — wall-slice-sized: gittree primitives, state schema 4, the fence and censuses, every row's fixtures).
+- Next: IMPLEMENTED 2026-08-21 (all 13 WSS rows: gittree primitives, state schema 4, the fence and censuses, two-phase acceptance; codex both-must-agree review folded 22 round-1 findings). Remaining before conclusion: the named crash-window fixtures (crash-at-every-boundary, moved-during-inspection re-run, peer-motion-during-state-lock-wait, worktree-census-crash persistence) and each row's runtime proof on a VM target.
 
 ### add-goal: wall-o16-host-repo-fence
 - Intent: The host is fenced at the whole repository in nested checkouts exactly as delegates are (HIW-O16)
 - Origin: main
-- Next: Implement per plans/wall-snapshot-scope-design.md, together with wall-o15 (one converged design owns both; D123).
+- Next: IMPLEMENTED 2026-08-21 with wall-o15 (one converged design owns both; D123): the toplevel fence, staged sibling motion, accumulated side-chain scope, and between-turns toplevel drift all land with nested-bed fixtures. Remaining before conclusion: the nested VM runtime proofs.
 - BlockedBy: wall-o15-head-accounting
 
 ### add-goal: wall-o19-recovery-ladder

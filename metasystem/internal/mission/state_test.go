@@ -24,7 +24,7 @@ func initMission(t *testing.T) (root, state, ledger string) {
 	writeText(t, contract, "```mission\ncandidate.branch=feature-x\nstream.alpha=Do alpha\nstream.beta=Do beta\n```\n")
 	state = filepath.Join(root, "state.json")
 	ledger = filepath.Join(root, "ledger.md")
-	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("b", 40)); err != nil {
+	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	return root, state, ledger
@@ -55,7 +55,7 @@ func TestInitProducesValidChainedState(t *testing.T) {
 func TestInitRefusesExisting(t *testing.T) {
 	root, state, ledger := initMission(t)
 	contract := filepath.Join(root, "mission-demo.contract.md")
-	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("b", 40)); err == nil {
+	if err := InitStateWithBaseline(state, contract, ledger, "", "", strings.Repeat("b", 40), testAdmissionOrigins()); err == nil {
 		t.Fatal("init must refuse to overwrite an existing state")
 	}
 }
@@ -125,7 +125,8 @@ func TestPublicWriterRefusesResolutionTransitions(t *testing.T) {
 		"setAt": "2026-08-18T00:00:00Z", "resolution": map[string]any{
 			"variant": "restore", "treeId": tree, "previousTree": tree,
 			"sequencePoint": map[string]any{"sequence": 2, "segment": 1},
-			"resolvedAt":    "2026-08-18T00:00:00Z", "resolvedBy": "impostor", "reason": "forged"}}}
+			"resolvedAt":    "2026-08-18T00:00:00Z", "resolvedBy": "impostor", "reason": "forged",
+			"posture": testRecordedPosture()}}}
 	if err := atomicWriteJSON(source, resolved); err != nil {
 		t.Fatal(err)
 	}
@@ -187,9 +188,17 @@ func TestTransitionRefusesTwoResolutionsInOneWrite(t *testing.T) {
 	}
 
 	// An acceptance ALONGSIDE a resolution shares the occurrence the
-	// same way (round-3 finding 5) and refuses.
+	// same way (round-3 finding 5) and refuses. The acceptance binds to
+	// an open marker (WSS I11-1), so the beds open m-t3 first.
+	openMarker := map[string]any{
+		"turnId": "m-t3", "cycle": 1, "preTree": tree,
+		"sequence": 0, "segment": 0, "openedAt": "2026-08-18T00:00:00Z",
+		"headCommit": strings.Repeat("c", 40), "headTree": tree,
+		"topTree": nil, "refMap": map[string]any{}, "topStaged": nil,
+	}
+	before["openTurn"] = openMarker
 	acceptance := map[string]any{
-		"turnId": "m-t3", "consumedAuthorizations": []any{},
+		"turnId": "m-t3", "cycle": 1, "consumedAuthorizations": []any{},
 		"wall": map[string]any{
 			"verdict": "passed", "preTree": tree, "expectedTree": tree,
 			"postTree": tree, "orderedDigests": []any{},
@@ -200,6 +209,7 @@ func TestTransitionRefusesTwoResolutionsInOneWrite(t *testing.T) {
 	for k, v := range fresh {
 		mixed[k] = v
 	}
+	mixed["openTurn"] = openMarker
 	mixed["turnLog"] = []any{acceptance}
 	oneResolved := map[string]any{"taintId": 1, "turnId": "m-t1", "reason": "a",
 		"setAt": "2026-08-18T00:00:00Z", "resolution": map[string]any{
@@ -231,11 +241,12 @@ func TestTransitionRefusesTwoResolutionsInOneWrite(t *testing.T) {
 		return out
 	}
 	firstAcceptance := segmentZero(acceptance, "m-t3")
-	secondAcceptance := segmentZero(acceptance, "m-t4")
+	secondAcceptance := segmentZero(acceptance, "m-t3")
 	double := map[string]any{}
 	for k, v := range fresh {
 		double[k] = v
 	}
+	double["openTurn"] = openMarker
 	double["turnLog"] = []any{firstAcceptance, secondAcceptance}
 	double["workspaceTaint"] = map[string]any{"next": 3, "segment": 0, "entries": unresolvedPair}
 	if err := validateTransition(before, double); err == nil ||
@@ -426,8 +437,8 @@ func mustMarshalIndent(t *testing.T, doc map[string]any) string {
 func TestStateV2Wall(t *testing.T) {
 	_, state, _ := initMission(t)
 	doc, _ := readStateDoc(state)
-	if v, _ := intValue(doc["schemaVersion"]); v != 3 {
-		t.Fatalf("fresh state schemaVersion = %v, want 3 (the semantics-3 downgrade barrier)", doc["schemaVersion"])
+	if v, _ := intValue(doc["schemaVersion"]); v != 4 {
+		t.Fatalf("fresh state schemaVersion = %v, want 4 (the snapshot-scope schema)", doc["schemaVersion"])
 	}
 	if doc["openTurn"] != nil {
 		t.Fatalf("fresh state has an open turn: %v", doc["openTurn"])
@@ -455,7 +466,10 @@ func TestStateV2Wall(t *testing.T) {
 		"wall": map[string]any{
 			"verdict": "passed", "preTree": tree, "expectedTree": tree,
 			"postTree": tree, "orderedDigests": []any{digest},
-			"sequencePoint": map[string]any{"sequence": 1, "segment": 0},
+			"sequencePoint":  map[string]any{"sequence": 1, "segment": 0},
+			"headCommitPost": strings.Repeat("c", 40), "refMapPost": map[string]any{},
+			"stagedTreePost": tree, "topTreePost": nil, "topStagedPost": nil,
+			"worktreeCensusPost": []any{}, "capturedAt": "2026-01-01T00:00:00Z",
 		},
 	}
 	doc["turnLog"] = []any{accepted}
@@ -496,7 +510,8 @@ func TestStateV2Wall(t *testing.T) {
 	entry := map[string]any{"taintId": 1, "turnId": "demo-t1", "reason": "drift", "setAt": "2026-08-17T00:00:00Z", "resolution": nil}
 	resolution := map[string]any{"variant": "restore", "treeId": tree, "previousTree": tree,
 		"sequencePoint": map[string]any{"sequence": 1, "segment": 1},
-		"resolvedAt":    "2026-08-17T01:00:00Z", "resolvedBy": "Wido", "reason": "restored"}
+		"resolvedAt":    "2026-08-17T01:00:00Z", "resolvedBy": "Wido", "reason": "restored",
+		"posture": testRecordedPosture()}
 	resolvedEntry := map[string]any{"taintId": 1, "turnId": "demo-t1", "reason": "drift", "setAt": "2026-08-17T00:00:00Z", "resolution": resolution}
 	tainted := withTaint(map[string]any{"next": 2, "segment": 0, "entries": []any{entry}}, nil)
 	resolved := withTaint(map[string]any{"next": 2, "segment": 1, "entries": []any{resolvedEntry}}, nil)
@@ -650,7 +665,10 @@ func TestOpenTurnImmutableWhileInFlight(t *testing.T) {
 			"turnId": turnID, "cycle": 1,
 			"preTree":  strings.Repeat("a", 40),
 			"sequence": 0, "segment": 0,
-			"openedAt": "2026-08-18T00:00:00Z",
+			"openedAt":   "2026-08-18T00:00:00Z",
+			"headCommit": strings.Repeat("c", 40),
+			"headTree":   strings.Repeat("a", 40),
+			"topTree":    nil, "refMap": map[string]any{}, "topStaged": nil,
 		}
 	}
 	propose := func(mutate func(doc map[string]any)) error {
@@ -672,5 +690,173 @@ func TestOpenTurnImmutableWhileInFlight(t *testing.T) {
 	}
 	if err := propose(func(doc map[string]any) { doc["openTurn"] = nil }); err != nil {
 		t.Fatalf("concluding the open turn must be legal: %v", err)
+	}
+}
+
+// testAdmissionOrigins is a minimal valid admission-origins record for
+// states born outside a live repository.
+func testAdmissionOrigins() map[string]any {
+	return map[string]any{
+		"headCommit": strings.Repeat("c", 40), "topTree": nil, "topStaged": nil,
+		"refMap": map[string]any{}, "worktreeCensus": []any{},
+		"capturedAt": "2026-01-01T00:00:00Z",
+	}
+}
+
+// testRecordedPosture is a minimal valid recorded carrier posture.
+func testRecordedPosture() map[string]any {
+	return map[string]any{
+		"headCommitPost": strings.Repeat("c", 40), "refMapPost": map[string]any{},
+		"stagedTreePost": strings.Repeat("a", 40), "topTreePost": nil, "topStagedPost": nil,
+		"worktreeCensusPost": []any{}, "capturedAt": "2026-01-01T00:00:00Z",
+	}
+}
+
+// WSS-9: a schema-2/3 state predates the snapshot-scope anchors and
+// refuses resume with the named error — no migration machinery.
+func TestPreSnapshotScopeStateRefusesByName(t *testing.T) {
+	_, state, _ := initMission(t)
+	doc, _ := readStateDoc(state)
+	for _, version := range []int{2, 3} {
+		doc["schemaVersion"] = version
+		if err := validate(doc); err == nil || !strings.Contains(err.Error(), "predates the wall's snapshot scope") {
+			t.Fatalf("schema %d must refuse by name, got %v", version, err)
+		}
+	}
+}
+
+// WSS-12 (two-phase enforcement): an acceptance write can neither
+// surface success nor carry its own verification, and the admission
+// origins are immutable identity.
+func TestTwoPhaseAcceptanceSchema(t *testing.T) {
+	_, state, _ := initMission(t)
+	base, _ := readStateDoc(state)
+	digest := strings.Repeat("c", 64)
+	tree := strings.Repeat("d", 40)
+	acceptance := map[string]any{
+		"turnId": "demo-t1", "cycle": 1, "consumedAuthorizations": []any{digest},
+		"wall": map[string]any{
+			"verdict": "passed", "preTree": tree, "expectedTree": tree,
+			"postTree": tree, "orderedDigests": []any{digest},
+			"sequencePoint":  map[string]any{"sequence": 1, "segment": 0},
+			"headCommitPost": strings.Repeat("c", 40), "refMapPost": map[string]any{},
+			"stagedTreePost": tree, "topTreePost": nil, "topStagedPost": nil,
+			"worktreeCensusPost": []any{}, "capturedAt": "2026-01-01T00:00:00Z"},
+		"gatePassed": true,
+	}
+	marker := map[string]any{
+		"turnId": "demo-t1", "cycle": 1, "preTree": tree,
+		"sequence": 0, "segment": 0, "openedAt": "2026-01-01T00:00:00Z",
+		"headCommit": strings.Repeat("c", 40), "headTree": tree,
+		"topTree": nil, "refMap": map[string]any{}, "topStaged": nil,
+	}
+	verification := map[string]any{
+		"turnId": "demo-t1", "kind": "wall-verification",
+		"capturedAt": "2026-01-01T00:00:01Z", "verdict": "clean",
+	}
+	propose := func(mutate func(doc map[string]any)) error {
+		doc, _ := deepCopyDoc(base).(map[string]any)
+		mutate(doc)
+		return validateTransition(base, doc)
+	}
+	// Success in the acceptance write refuses (previous already open,
+	// so the binding rule is not what refuses here).
+	openBase, _ := deepCopyDoc(base).(map[string]any)
+	openBase["openTurn"] = marker
+	successWrite, _ := deepCopyDoc(openBase).(map[string]any)
+	successWrite["turnLog"] = []any{acceptance}
+	successWrite["status"] = "completed"
+	successWrite["gatePassed"] = true
+	successWrite["parkReason"] = nil
+	if err := validateTransition(openBase, successWrite); err == nil || !strings.Contains(err.Error(), "cannot surface success") {
+		t.Fatalf("acceptance+completed in one write must refuse: %v", err)
+	}
+	// The acceptance BINDS to the already-open turn (WSS I11-1): no
+	// marker, a foreign marker, and a cycle mismatch all refuse.
+	if err := propose(func(doc map[string]any) {
+		doc["openTurn"] = marker
+		doc["turnLog"] = []any{acceptance}
+	}); err == nil || !strings.Contains(err.Error(), "opened by an earlier write") {
+		t.Fatalf("acceptance without a prior open turn must refuse: %v", err)
+	}
+	foreignBase, _ := deepCopyDoc(base).(map[string]any)
+	foreignMarker, _ := deepCopyDoc(marker).(map[string]any)
+	foreignMarker["turnId"] = "demo-t9"
+	foreignBase["openTurn"] = foreignMarker
+	foreignWrite, _ := deepCopyDoc(foreignBase).(map[string]any)
+	foreignWrite["turnLog"] = []any{acceptance}
+	if err := validateTransition(foreignBase, foreignWrite); err == nil || !strings.Contains(err.Error(), "must name the open turn") {
+		t.Fatalf("acceptance naming a foreign turn must refuse: %v", err)
+	}
+	staleBase, _ := deepCopyDoc(base).(map[string]any)
+	staleMarker, _ := deepCopyDoc(marker).(map[string]any)
+	staleMarker["cycle"] = 2
+	staleBase["openTurn"] = staleMarker
+	staleWrite, _ := deepCopyDoc(staleBase).(map[string]any)
+	staleWrite["turnLog"] = []any{acceptance}
+	if err := validateTransition(staleBase, staleWrite); err == nil || !strings.Contains(err.Error(), "cycle must match") {
+		t.Fatalf("acceptance with a stale cycle must refuse: %v", err)
+	}
+	// Acceptance and verification in ONE write refuses even with the
+	// marker open and dying in the same write.
+	if err := propose(func(doc map[string]any) {
+		doc["turnLog"] = []any{acceptance, verification}
+	}); err == nil {
+		t.Fatal("same-write acceptance+verification must refuse")
+	}
+	withOpen, _ := deepCopyDoc(base).(map[string]any)
+	withOpen["openTurn"] = marker
+	sameWrite, _ := deepCopyDoc(withOpen).(map[string]any)
+	sameWrite["openTurn"] = nil
+	sameWrite["turnLog"] = []any{acceptance, verification}
+	if err := validateTransition(withOpen, sameWrite); err == nil || !strings.Contains(err.Error(), "no committed acceptance") {
+		t.Fatalf("same-write acceptance+verification must refuse by name: %v", err)
+	}
+	// A second acceptance for an already-accepted turn refuses.
+	acceptedBase, _ := deepCopyDoc(base).(map[string]any)
+	acceptedBase["openTurn"] = marker
+	acceptedBase["turnLog"] = []any{acceptance}
+	second, _ := deepCopyDoc(acceptedBase).(map[string]any)
+	dup, _ := deepCopyDoc(acceptance).(map[string]any)
+	dupWall, _ := dup["wall"].(map[string]any)
+	dupWall["sequencePoint"] = map[string]any{"sequence": 1, "segment": 0}
+	secondLog, _ := second["turnLog"].([]any)
+	second["turnLog"] = append(secondLog, dup)
+	if err := validateTransition(acceptedBase, second); err == nil || !strings.Contains(err.Error(), "already carries an acceptance") {
+		t.Fatalf("a second acceptance for one turn must refuse: %v", err)
+	}
+	// Success without a verification write refuses even with no appended
+	// acceptance: closing the marker and flipping completed in one bare
+	// write is not a lawful transition.
+	bare, _ := deepCopyDoc(acceptedBase).(map[string]any)
+	bare["openTurn"] = nil
+	bare["status"] = "completed"
+	bare["gatePassed"] = true
+	bare["parkReason"] = nil
+	if err := validateTransition(acceptedBase, bare); err == nil || !strings.Contains(err.Error(), "post-verification write") {
+		t.Fatalf("bare completion must refuse: %v", err)
+	}
+	// A verification of a gate-FAILED acceptance cannot carry completion.
+	failedAcceptance, _ := deepCopyDoc(acceptance).(map[string]any)
+	failedAcceptance["gatePassed"] = false
+	withFailed, _ := deepCopyDoc(base).(map[string]any)
+	withFailed["openTurn"] = marker
+	withFailed["turnLog"] = []any{failedAcceptance}
+	forged, _ := deepCopyDoc(withFailed).(map[string]any)
+	forged["openTurn"] = nil
+	forgedLog, _ := forged["turnLog"].([]any)
+	forged["turnLog"] = append(forgedLog, verification)
+	forged["status"] = "completed"
+	forged["gatePassed"] = true
+	forged["parkReason"] = nil
+	if err := validateTransition(withFailed, forged); err == nil || !strings.Contains(err.Error(), "gate-failed acceptance") {
+		t.Fatalf("completion over a gate-failed acceptance must refuse: %v", err)
+	}
+	// admissionOrigins is immutable identity.
+	if err := propose(func(doc map[string]any) {
+		origins, _ := doc["admissionOrigins"].(map[string]any)
+		origins["headCommit"] = strings.Repeat("e", 40)
+	}); err == nil || !strings.Contains(err.Error(), "immutable identity") {
+		t.Fatalf("admissionOrigins rewrite must refuse: %v", err)
 	}
 }

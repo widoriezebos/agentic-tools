@@ -263,7 +263,7 @@ const testSHA = "abcdef0123456789abcdef0123456789abcdef01"
 func TestStopLossVerdictKeyedBySemantics(t *testing.T) {
 	engine, ledger := stopLossEngine(t)
 	for cycle, class := range []string{"no-progress", "no-progress"} {
-		if err := mission.AppendCycle(ledger, cycle+1, class, testSHA, "score=5", ""); err != nil {
+		if _, err := mission.AppendCycle(ledger, cycle+1, class, testSHA, "score=5", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -320,7 +320,7 @@ func TestBestMarkerComputedAtAppend(t *testing.T) {
 	}
 
 	// Once a best is on the ledger, the fold measures against it.
-	if err := mission.AppendCycle(ledger, 1, "contract-improved", testSHA, "score=6", "yes"); err != nil {
+	if _, err := mission.AppendCycle(ledger, 1, "contract-improved", testSHA, "score=6", "yes"); err != nil {
 		t.Fatal(err)
 	}
 	if marker, err := engine.bestMarker(replayState, ledger, "score=6.4"); err != nil || marker != "no" {
@@ -354,21 +354,21 @@ func TestAnnotationsNeverChangeAReplayVerdict(t *testing.T) {
 			}
 			return nil
 		}
-		if err := mission.AppendCycle(ledger, 1, "no-progress", testSHA, "score=5", "no",
+		if _, err := mission.AppendCycle(ledger, 1, "no-progress", testSHA, "score=5", "no",
 			annotations(mission.ReturnRejectedAnnotation("session identity"))...); err != nil {
 			t.Fatal(err)
 		}
 		if err := mission.AppendReset(ledger, "stop-loss", "keep going"); err != nil {
 			t.Fatal(err)
 		}
-		if err := mission.AppendCycle(ledger, 2, "unresolved", testSHA, "score=5", "no",
+		if _, err := mission.AppendCycle(ledger, 2, "unresolved", testSHA, "score=5", "no",
 			annotations(mission.CappedAnnotation)...); err != nil {
 			t.Fatal(err)
 		}
 		if annotated {
 			// Terminal delivery appends its list to the final block; the
 			// replay must not read it as fuse input.
-			if err := mission.AppendAnnotations(ledger, 2,
+			if _, err := mission.AppendAnnotations(ledger, 2, "",
 				mission.LandedUnconsumedAnnotation("chain-a", "2", "artifacts/agents/chain-a/rounds/2/return.json"),
 				mission.LandedUnconsumedAnnotation("overflow", "3", "none")); err != nil {
 				t.Fatal(err)
@@ -407,7 +407,7 @@ func TestReplayCountsHealedDrainStalledLineOnce(t *testing.T) {
 		if annotated {
 			annotations = []string{mission.DrainStalledAnnotation(2)}
 		}
-		if err := mission.AppendCycle(ledger, 1, "no-progress", testSHA, mission.DrainStalledObserved, "no", annotations...); err != nil {
+		if _, err := mission.AppendCycle(ledger, 1, "no-progress", testSHA, mission.DrainStalledObserved, "no", annotations...); err != nil {
 			t.Fatal(err)
 		}
 		return ledger

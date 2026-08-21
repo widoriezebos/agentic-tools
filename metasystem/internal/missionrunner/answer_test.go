@@ -35,7 +35,7 @@ func parkedResetMission(t *testing.T, kind string) (engine *Engine, statePath, l
 	if err := mission.InitLedger(ledgerPath, 8, 2); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40)); err != nil {
+	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatal(err)
 	}
 

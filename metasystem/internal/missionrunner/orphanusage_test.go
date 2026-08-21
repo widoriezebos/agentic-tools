@@ -45,12 +45,12 @@ func TestDeliverLandedUnconsumedWritesFinalBlock(t *testing.T) {
 	if err := mission.InitLedger(ledger, 8, 6); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.AppendCycle(ledger, 1, "contract-improved", orphanTestSHA, "score=1", "yes"); err != nil {
+	if _, err := mission.AppendCycle(ledger, 1, "contract-improved", orphanTestSHA, "score=1", "yes"); err != nil {
 		t.Fatal(err)
 	}
 	seedLandedChain(t, root, "m1", "job-landed")
 
-	engine.deliverLandedUnconsumed(ledger, 1, map[string]any{"turnLog": []any{}})
+	engine.deliverLandedUnconsumed(ledger, 1, map[string]any{"turnLog": []any{}}, "")
 
 	_, _, cycles, err := mission.ParseLedger(ledger)
 	if err != nil {
@@ -66,7 +66,7 @@ func TestDeliverLandedUnconsumedWritesFinalBlock(t *testing.T) {
 	acted := map[string]any{"turnLog": []any{map[string]any{
 		"certified": []any{map[string]any{"jobId": "job-landed"}},
 	}}}
-	engine.deliverLandedUnconsumed(ledger, 1, acted)
+	engine.deliverLandedUnconsumed(ledger, 1, acted, "")
 	_, _, cycles, err = mission.ParseLedger(ledger)
 	if err != nil || len(cycles[0].Annotations) != 1 {
 		t.Fatalf("a certified round must not re-deliver: %v %+v", err, cycles)

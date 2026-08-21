@@ -33,6 +33,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -1266,7 +1267,12 @@ func (d *contractDoc) verifyApproval() error {
 // present verbatim on the origin default branch — a launch can only trust what
 // the shared remote agrees to.
 func (d *contractDoc) verifyOrigin(repo string) error {
-	fetch := exec.Command("git", "-C", repo, "fetch", "--quiet", "origin")
+	// The fetch is a direct auto-maintenance trigger: the gc pins keep a
+	// detached maintenance process from writing objects while later wall
+	// captures compare (WSS I11-10).
+	fetch := exec.Command("git", "-C", repo, "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false", "fetch", "--quiet", "origin")
+	fetch.Env = gittree.ScrubbedEnviron()
 	var stderr strings.Builder
 	fetch.Stderr = &stderr
 	// Network work is bounded (B4): an unreachable remote must fail the
@@ -1467,6 +1473,10 @@ func contractFixtureIdentityMatches(projectRoot string, pid, started int64, tag 
 func contractRunFingerprint(projectRoot string) (string, int) {
 	script := filepath.Join(projectRoot, "scripts", "agents", "arm-supervision.sh")
 	command := exec.Command(script, "fingerprint", "--repo", projectRoot)
+	// The fingerprint script runs raw `git -C`; the scrubbed environment
+	// keeps an inherited GIT_DIR (or its steering siblings) from
+	// redirecting repository resolution and falsely refusing admission.
+	command.Env = gittree.ScrubbedEnviron()
 	var out strings.Builder
 	command.Stdout = &out
 	// A fingerprint script that hangs must not hang the preflight (B4).

@@ -32,6 +32,13 @@ type wallInspection struct {
 	OrderedDigests []string
 	Violation      string
 	Unaccounted    []string
+	// Auths carries the authenticated consumed-authorization facts for
+	// the snapshot-scope accountant (decomposition membership).
+	Auths []scopeAuth
+	// Scope carries the snapshot-scope observables for wall.json, and
+	// Posture the recorded acceptance posture block.
+	Scope   map[string]any
+	Posture map[string]any
 }
 
 // document renders the inspection for wall.json — the turn-dir evidence —
@@ -48,6 +55,12 @@ func (w *wallInspection) document() map[string]any {
 	doc := map[string]any{
 		"verdict": verdict, "preTree": w.PreTree, "expectedTree": w.ExpectedTree,
 		"postTree": w.PostTree, "orderedDigests": digests,
+	}
+	if w.Scope != nil {
+		doc["scope"] = w.Scope
+	}
+	if w.Posture != nil {
+		doc["posture"] = w.Posture
 	}
 	if w.Violation != "" {
 		doc["violation"] = w.Violation
@@ -124,14 +137,9 @@ func parseHostArtifacts(value string) (map[string]bool, string) {
 // only declared host-artifact files that no consumed patch touched. Any
 // failure to PROVE is a violation; an error is the runner's own (git
 // unavailable, unreadable workspace), never a judgment.
-func inspectWall(root, missionID, preTree string, state map[string]any, certified []map[string]any, declared map[string]bool, declarationViolation string) (*wallInspection, error) {
+func inspectWall(root, missionID, preTree string, state map[string]any, certified []map[string]any, declared map[string]bool, declarationViolation string, snapshot func(expected string) (string, error)) (*wallInspection, error) {
 	workspace := gittree.Workspace{Dir: root}
 	inspection := &wallInspection{PreTree: preTree, ExpectedTree: preTree, OrderedDigests: []string{}}
-	postTree, err := wallSnapshot(workspace, missionID)
-	if err != nil {
-		return nil, failf(3, "wall inspection cannot snapshot the workspace: %v", err)
-	}
-	inspection.PostTree = postTree
 	if declarationViolation != "" {
 		inspection.Violation = declarationViolation
 		return inspection, nil
@@ -285,6 +293,12 @@ func inspectWall(root, missionID, preTree string, state map[string]any, certifie
 		}
 		applied, err := workspace.Apply(expected, patch)
 		if err != nil {
+			// Could-not-run is the runner's own (WSS I11-14): only git's
+			// ran-and-refused answer indicts the authorization evidence.
+			var runFailure *gittree.RunFailure
+			if errors.As(err, &runFailure) {
+				return nil, failf(3, "wall inspection could not run the authorization patch: %v", err)
+			}
 			inspection.Violation = fmt.Sprintf("authorized patch %.12s does not apply cleanly to the expected tree: %v", digest, err)
 			return inspection, nil
 		}
@@ -295,6 +309,10 @@ func inspectWall(root, missionID, preTree string, state map[string]any, certifie
 		reviewedTree, _ := record["reviewedTree"].(string)
 		wantEntries, err := workspace.Entries(reviewedTree, changedPaths)
 		if err != nil {
+			var runFailure *gittree.RunFailure
+			if errors.As(err, &runFailure) {
+				return nil, failf(3, "wall inspection could not read the reviewed tree: %v", err)
+			}
 			inspection.Violation = fmt.Sprintf("authorization %.12s reviewed tree is unreadable: %v", digest, err)
 			return inspection, nil
 		}
@@ -311,7 +329,23 @@ func inspectWall(root, missionID, preTree string, state map[string]any, certifie
 		expected = applied
 		inspection.ExpectedTree = expected
 		inspection.OrderedDigests = append(inspection.OrderedDigests, digest)
+		inspection.Auths = append(inspection.Auths, scopeAuth{
+			digest: digest, changedPaths: changedPaths,
+			reviewedTree: reviewedTree, reviewedEntries: wantEntries,
+		})
 	}
+
+	// The worktree projection seeds FROM THE COMPARISON TARGET (the fully
+	// composed expected tree), so tracked-and-ignored membership follows
+	// the comparison's own right-hand side.
+	// The callback's error passes through UNWRAPPED: the caller types it
+	// (a repository answer parks; a could-not-run failure stays the
+	// runner's).
+	postTree, err := snapshot(expected)
+	if err != nil {
+		return nil, err
+	}
+	inspection.PostTree = postTree
 
 	// A declared artifact path must be reachable without traversing a
 	// symlink (round-2 finding 6): a declared path beneath a symlinked
@@ -426,7 +460,7 @@ func (e *Engine) checkFileModePinned() error {
 	// (strictness guards the invariant, not a spelling), and a global
 	// or system value satisfies nothing — this repository must carry
 	// the pin itself.
-	stdout, _, code := runCaptured(e.Root, nil, "git", "config", "--local", "--type=bool", "--get", "core.fileMode")
+	stdout, _, code := gitCaptured(e.Root, "config", "--local", "--type=bool", "--get", "core.fileMode")
 	if code != 0 || strings.TrimSpace(stdout) != "true" {
 		return failf(3, "wall preflight refused: core.fileMode is not pinned true in this repository; run `git config core.fileMode true` (mode-bit drift must be visible to the tree equation)")
 	}
@@ -508,6 +542,21 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 	if live.OID != approvedOID {
 		return "", failf(3, "wall preflight refused: the workspace contract does not match the approved contract bytes; the mission must run exactly the contract that was pinned")
 	}
+	// The EFFECTIVE replacement namespace must be empty at admission and
+	// stay empty: an active mapping re-routes later unpinned git
+	// operations — the completion gate above all — to bytes the wall
+	// never judged. Every runner surface pins useReplaceRefs off and
+	// strips GIT_REPLACE_REF_BASE, so the effective namespace is
+	// refs/replace.
+	refs, err := workspace.RefMap()
+	if err != nil {
+		return "", failf(3, "wall preflight cannot enumerate refs: %v", err)
+	}
+	for name := range refs {
+		if strings.HasPrefix(name, "refs/replace/") {
+			return "", failf(3, "wall preflight refused: the replacement namespace is not empty (%s); remove the replace refs before any mission runs", name)
+		}
+	}
 	// The DECISION compares contract-excluded projections (the fixpoint
 	// break); the RECORDED baseline is the wall's own identity space —
 	// the ledger-only filter every later E-point lives in — captured
@@ -515,6 +564,30 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 	record, err := workspace.FilterTree(raw, []string{missionLedgerRel(e.Mission)})
 	if err != nil {
 		return "", failf(3, "wall preflight cannot project the identity space: %v", err)
+	}
+	// Staged admission at mission start: the staged projection must
+	// equal HEAD's filtered tree OR the admitted baseline itself — a
+	// sealed mission whose index mirrors the sealed state is lawful (the
+	// sealed tree is reviewable by equality); anything else is refused
+	// like a dirty worktree, and a conflicted workspace index refuses
+	// toward the wall.
+	staged, serr := workspace.StagedTree()
+	if serr != nil {
+		if errors.Is(serr, gittree.ErrUnmergedWorkspaceIndex) {
+			return "", failf(3, "wall preflight refused: %v; resolve or reset the index before any mission runs", serr)
+		}
+		return "", failf(3, "wall preflight cannot project the staged workspace: %v", serr)
+	}
+	stagedIdentity, err := workspace.FilterTree(staged, []string{missionLedgerRel(e.Mission)})
+	if err != nil {
+		return "", failf(3, "wall preflight cannot project the staged identity: %v", err)
+	}
+	committedIdentity, err := workspace.FilterTree(headTree, []string{missionLedgerRel(e.Mission)})
+	if err != nil {
+		return "", failf(3, "wall preflight cannot project the committed identity: %v", err)
+	}
+	if stagedIdentity != committedIdentity && stagedIdentity != record {
+		return "", failf(3, "wall preflight refused: the staged projection %s equals neither HEAD's tree nor the admitted baseline; commit or reset the index", stagedIdentity)
 	}
 	if observed == committed {
 		return record, nil
@@ -549,7 +622,7 @@ func blobOID(root string, content []byte) (string, error) {
 		return "", err
 	}
 	tmp.Close()
-	stdout, stderr, code := runCaptured(root, nil, "git", "hash-object", "--no-filters", "--", tmp.Name())
+	stdout, stderr, code := gitCaptured(root, "hash-object", "--no-filters", "--", tmp.Name())
 	if code != 0 {
 		return "", fmt.Errorf("git hash-object: %s", firstDetail(stderr, stdout))
 	}
@@ -578,6 +651,13 @@ func (e *Engine) guardLedgerInTurn(state map[string]any, ledgerPath string) (str
 		return "", nil
 	}
 	if err != nil {
+		// A git invocation that could not run is the RUNNER's failure
+		// (WSS I11-12) — only a ran-and-answered anchor disagreement is
+		// the host's violation.
+		var runFailure *gittree.RunFailure
+		if errors.As(err, &runFailure) {
+			return "", failf(3, "mission ledger guard could not run: %v", err)
+		}
 		return ledgerViolationPrefix + " disagrees with the anchored truth: " + err.Error(), nil
 	}
 	if anchored != current {
@@ -597,15 +677,29 @@ func consumedPathOf(changedPaths []string, path string) (string, bool) {
 	return "", false
 }
 
+// wallScopeContext hands a passed inspection's identity to the
+// acceptance path: the composed expected tree, the declared paths, and
+// the capture the payload records — so the write can re-verify that
+// exactly what was judged is what publishes.
+type wallScopeContext struct {
+	PreTree        string
+	Expected       string
+	OrderedDigests []string
+	Declared       map[string]bool
+	Capture        *wallCapture
+	OpenAnchor     string
+}
+
 // wallGate runs the inspection for a concluding turn and, on violation,
 // executes the refusal in the binding order: evidence, ledger booking for
 // the reserved cycle, then ONE state write carrying the taint entry and
 // the park — before any measurement or completion-gate path can run. The
-// bool reports whether the turn was intercepted.
-func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64, certified []map[string]any, atResume bool) (map[string]any, bool, error) {
+// bool reports whether the turn was intercepted; on a pass, the returned
+// context carries the verified capture for the acceptance write.
+func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64, certified []map[string]any, atResume bool) (*wallScopeContext, map[string]any, bool, error) {
 	diskState, err := readDocLabeled(statePath, "mission state", 3)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	// Detected evidence is STICKY (slice-6 successor finding 1): a
 	// wall.json already recording a violation is never re-inspected
@@ -614,17 +708,17 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 	if prior, perr := readJSONDoc(filepath.Join(turnDir, "wall.json")); perr == nil {
 		if recorded, _ := prior["violation"].(string); recorded != "" {
 			final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, diskState, true)
-			return final, true, ferr
+			return nil, final, true, ferr
 		}
 	}
 	openTurn, ok := diskState["openTurn"].(map[string]any)
 	if !ok {
-		return nil, false, failf(3, "wall inspection needs the open-turn marker; this turn was opened by a pre-wall runner — conclude it with that runner or re-provision the mission")
+		return nil, nil, false, failf(3, "wall inspection needs the open-turn marker; this turn was opened by a pre-wall runner — conclude it with that runner or re-provision the mission")
 	}
 	preTree, _ := openTurn["preTree"].(string)
 	_, values, _, err := e.parseContract(true)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	declared, declarationViolation := parseHostArtifacts(values["wall.host-artifacts"])
 	// The ledger guard replaces the tree identity the filter removed
@@ -633,26 +727,136 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 	if declarationViolation == "" && !atResume {
 		guardViolation, err := e.guardLedgerInTurn(diskState, ledger)
 		if err != nil {
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		if guardViolation != "" {
 			declarationViolation = guardViolation
 		}
 	}
-	inspection, err := inspectWall(e.Root, e.Mission, preTree, diskState, certified, declared, declarationViolation)
-	if err != nil {
-		return nil, false, err
+	origin := scopeOriginFromOpenTurn(openTurn, diskState)
+	workspace := gittree.Workspace{Dir: e.Root}
+	// ONE RESOLUTION PER INSPECTION, RE-VERIFIED: the posture is captured
+	// once, every rule judges that capture, and the same capture is
+	// re-taken and compared whole before the verdict is acted on. A
+	// changed capture re-runs the inspection; a repository that will not
+	// hold still is itself a violation.
+	var inspection *wallInspection
+	var capture *wallCapture
+	stable := false
+	for attempt := 0; attempt < 3 && !stable; attempt++ {
+		capture = nil
+		inspection, err = inspectWall(e.Root, e.Mission, preTree, diskState, certified, declared, declarationViolation,
+			func(expected string) (string, error) {
+				snapped, cerr := e.captureWallPostureStable(expected, declared)
+				if cerr != nil {
+					return "", cerr
+				}
+				capture = snapped
+				return snapped.Post, nil
+			})
+		if err != nil {
+			// A repository ANSWER that defeats capture is a violation —
+			// the host had custody — while could-not-run failures keep
+			// the runner's error ramp.
+			if answer := stateAnswerOf(err); answer != "" {
+				inspection = &wallInspection{PreTree: preTree, ExpectedTree: preTree, OrderedDigests: []string{}, Violation: answer}
+				break
+			}
+			return nil, nil, false, err
+		}
+		if inspection.Violation == "" && capture != nil {
+			acct, aerr := e.newWallAccountant(preTree, diskState, inspection.Auths, declared)
+			if aerr != nil {
+				return nil, nil, false, aerr
+			}
+			acct.noteExpected(inspection.ExpectedTree)
+			violation, jerr := e.judgeScope(origin, capture, acct, diskState)
+			if jerr != nil {
+				// A ran-and-answered probe defeat inside the judgment is
+				// a wall answer (WSS I13-6), not the runner's error.
+				if answer := stateAnswerOf(jerr); answer != "" {
+					violation = answer
+				} else {
+					return nil, nil, false, jerr
+				}
+			}
+			inspection.Violation = violation
+		}
+		if capture != nil {
+			inspection.Scope = scopeEvidence(origin, capture)
+			inspection.Posture = capture.postureDoc(e.Mission)
+		}
+		if inspection.Violation != "" {
+			if capture == nil {
+				break
+			}
+			// A VIOLATING verdict is acted on only over a stable capture
+			// (WSS I12-10): the capture is many probes, not one atomic
+			// read, and lawful motion mid-capture can tear the snapshot
+			// into an internally inconsistent posture whose violation is
+			// an artifact. The verdict stands only if it was judged over
+			// bytes that hold still; a torn capture re-runs the whole
+			// inspection, and exhaustion is the bounded
+			// would-not-hold-still verdict, never a sticky false park.
+			recheck, cerr := e.captureWallPostureStable(inspection.ExpectedTree, declared)
+			if cerr != nil {
+				if answer := stateAnswerOf(cerr); answer != "" {
+					inspection.Violation = answer
+					break
+				}
+				return nil, nil, false, cerr
+			}
+			if recheck.equalTo(capture) {
+				break
+			}
+			inspection.Violation = ""
+			continue
+		}
+		if capture == nil {
+			break
+		}
+		recheck, cerr := e.captureWallPostureStable(inspection.ExpectedTree, declared)
+		if cerr != nil {
+			if answer := stateAnswerOf(cerr); answer != "" {
+				inspection.Violation = answer
+				break
+			}
+			return nil, nil, false, cerr
+		}
+		// The re-taken capture is re-judged for steering and namespace
+		// integrity: those live outside the whole-capture equality on
+		// purpose (the runner's own publications move the namespace), so
+		// a carrier planted between captures must fail HERE.
+		if violation, jerr := e.judgeCaptureIntegrity(recheck, origin.OpenAnchor, diskState); jerr != nil && stateAnswerOf(jerr) == "" {
+			return nil, nil, false, jerr
+		} else if violation != "" || jerr != nil {
+			if violation == "" {
+				violation = stateAnswerOf(jerr)
+			}
+			inspection.Violation = violation
+			break
+		}
+		stable = recheck.equalTo(capture)
+	}
+	if inspection.Violation == "" && capture != nil && !stable {
+		inspection.Violation = "repository would not hold still during inspection"
 	}
 	// Every tree the evidence names stays reachable (critique F-7):
 	// garbage collection must never eat a tree that acceptance entries,
 	// violation evidence, or a later staleness check will dereference.
-	workspace := gittree.Workspace{Dir: e.Root}
-	for _, tree := range []string{inspection.ExpectedTree, inspection.PostTree} {
+	anchored := []string{inspection.ExpectedTree, inspection.PostTree}
+	if capture != nil {
+		anchored = append(anchored, capture.StagedTree)
+		if capture.Nested {
+			anchored = append(anchored, capture.TopTree, capture.TopStaged.Tree)
+		}
+	}
+	for _, tree := range anchored {
 		if tree == "" || tree == preTree {
 			continue
 		}
 		if err := workspace.Anchor(e.Mission, tree); err != nil {
-			return nil, false, failf(3, "wall inspection cannot anchor %s: %v", tree, err)
+			return nil, nil, false, failf(3, "wall inspection cannot anchor %s: %v", tree, err)
 		}
 	}
 	// Unaccounted paths ride the violation evidence (design: wall.json
@@ -670,14 +874,55 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 		}
 	}
 	if err := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), inspection.document()); err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	if inspection.Violation == "" {
-		return nil, false, nil
+		return &wallScopeContext{
+			PreTree: preTree, Expected: inspection.ExpectedTree,
+			OrderedDigests: inspection.OrderedDigests,
+			Declared:       declared, Capture: capture, OpenAnchor: origin.OpenAnchor,
+		}, nil, false, nil
 	}
 
 	final, err := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, inspection.Violation, diskState, true)
-	return final, true, err
+	return nil, final, true, err
+}
+
+// scopeEvidence renders the snapshot-scope observables for wall.json.
+func scopeEvidence(origin *scopeOrigin, capture *wallCapture) map[string]any {
+	scope := map[string]any{
+		"headCommitOpen": origin.Head,
+		"headCommitNow":  capture.Head,
+		"stagedTree":     capture.StagedTree,
+	}
+	if capture.Nested {
+		scope["topTreeOpen"] = origin.TopTree
+		scope["topTreeNow"] = capture.TopTree
+	}
+	deltas := []any{}
+	names := map[string]bool{}
+	for name := range capture.RefMap {
+		names[name] = true
+	}
+	for name := range origin.RefMap {
+		names[name] = true
+	}
+	for name := range names {
+		live, liveExists := capture.RefMap[name]
+		recorded, recordedExists := origin.RefMap[name]
+		switch {
+		case liveExists && recordedExists && live == recorded:
+		case !recordedExists:
+			deltas = append(deltas, fmt.Sprintf("created %s %s", name, live))
+		case !liveExists:
+			deltas = append(deltas, fmt.Sprintf("deleted %s (was %s)", name, recorded))
+		default:
+			deltas = append(deltas, fmt.Sprintf("moved %s %s -> %s", name, recorded, live))
+		}
+	}
+	sort.Slice(deltas, func(i, j int) bool { return deltas[i].(string) < deltas[j].(string) })
+	scope["refDeltas"] = deltas
+	return scope
 }
 
 // parkWallViolation executes the wall refusal ramp for one violation:
@@ -690,9 +935,15 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 // died before the state write; the reserved cycle instead heals as a
 // lost turn through the existing reserve/append machinery).
 func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cycle int64, violation string, diskState map[string]any, bookLedger bool) (map[string]any, error) {
-	e.emit("wall-violation", clipSummary(violation), map[string]string{
+	payload := map[string]string{
 		"missionId": e.Mission, "turnId": turnID, "error": violation,
-	})
+	}
+	// The event payload carries the committed-HEAD observable beside the
+	// violation (records stay the authority, events stay observability).
+	if head, _, code := gitCaptured(e.Root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"); code == 0 {
+		payload["headCommit"] = strings.TrimSpace(head)
+	}
+	e.emit("wall-violation", clipSummary(violation), payload)
 	if _, err := patchTurn(filepath.Join(turnDir, "turn.json"), map[string]any{
 		"status": "failed", "outcome": "wall-violation", "error": "wall-violation",
 		"detail": violation, "endedAt": nowISO(),
@@ -704,29 +955,40 @@ func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cy
 		branch, _ := diskState["branch"].(string)
 		candidateSHA, err := e.gitRevParse(branch)
 		if err != nil {
-			return nil, err
+			// The TAINT outranks the narrative here too (WSS I14-1): a
+			// host that deleted the mission branch must not stop the
+			// detected violation from parking — the booking is skipped
+			// and named, like every other unbookable ledger.
+			e.emit("wall-violation", "ledger booking skipped: "+clipSummary(err.Error()), map[string]string{
+				"missionId": e.Mission, "turnId": turnID, "error": err.Error(),
+			})
+			candidateSHA = ""
 		}
-		// A ledger-ahead crash already booked this cycle (round-2 finding
-		// 3): the block is the narrative truth and appending it twice
-		// would refuse on contiguity BEFORE the taint and park could land.
-		alreadyBooked := false
-		if _, _, cycles, perr := mission.ParseLedger(ledger); perr == nil && int64(len(cycles)) >= cycle {
-			alreadyBooked = true
-		}
-		booked = alreadyBooked
-		if !alreadyBooked {
-			observed := "unmeasurable:" + strings.ReplaceAll("wall violation: "+violation, "\n", " ")
-			if err := e.appendLedger(diskState, ledger, cycle, "no-progress", candidateSHA, observed, nil); err != nil {
-				// The TAINT outranks the narrative (round-10 finding 1): a
-				// host edit that made the ledger unparsable must not stop
-				// the violation from becoming a resolvable taint — the
-				// booking is skipped, named in the event, and the reserved
-				// cycle heals once the ledger is ruled back to health.
-				e.emit("wall-violation", "ledger booking skipped: "+clipSummary(err.Error()), map[string]string{
-					"missionId": e.Mission, "turnId": turnID, "error": err.Error(),
-				})
-			} else {
-				booked = true
+		if candidateSHA != "" {
+			// A ledger-ahead crash already booked this cycle (round-2
+			// finding 3): the block is the narrative truth and appending
+			// it twice would refuse on contiguity BEFORE the taint and
+			// park could land.
+			alreadyBooked := false
+			if _, _, cycles, perr := mission.ParseLedger(ledger); perr == nil && int64(len(cycles)) >= cycle {
+				alreadyBooked = true
+			}
+			booked = alreadyBooked
+			if !alreadyBooked {
+				observed := "unmeasurable:" + strings.ReplaceAll("wall violation: "+violation, "\n", " ")
+				if _, err := e.appendLedger(diskState, ledger, cycle, "no-progress", candidateSHA, observed, nil); err != nil {
+					// The TAINT outranks the narrative (round-10 finding
+					// 1): a host edit that made the ledger unparsable must
+					// not stop the violation from becoming a resolvable
+					// taint — the booking is skipped, named in the event,
+					// and the reserved cycle heals once the ledger is
+					// ruled back to health.
+					e.emit("wall-violation", "ledger booking skipped: "+clipSummary(err.Error()), map[string]string{
+						"missionId": e.Mission, "turnId": turnID, "error": err.Error(),
+					})
+				} else {
+					booked = true
+				}
 			}
 		}
 	}
@@ -862,14 +1124,19 @@ func (e *Engine) orphanedViolationEvidence(state map[string]any) (turnID, violat
 			booked[turn] = true
 		}
 	}
+	pending := mission.UnverifiedAcceptance(state)
 	for _, raw := range turnLogOf(state) {
 		entry, _ := raw.(map[string]any)
 		if entry == nil {
 			continue
 		}
-		if turn, _ := entry["turnId"].(string); turn != "" {
-			booked[turn] = true
+		turn, _ := entry["turnId"].(string)
+		if turn == "" || turn == pending {
+			// A consumed-but-unconcluded acceptance books nothing: its
+			// sticky post-verification evidence must still re-park.
+			continue
 		}
+		booked[turn] = true
 	}
 	paths, _ := filepath.Glob(filepath.Join(missionDirPath(e.Root, e.Mission), "turns", "*", "wall.json"))
 	for _, path := range paths {

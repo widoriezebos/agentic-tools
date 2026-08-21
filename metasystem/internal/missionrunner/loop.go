@@ -394,6 +394,27 @@ func (e *Engine) anchorStatePinned(statePath, ledgerPath, identityName, stateHas
 	return nil
 }
 
+// anchorPinnedTo routes a CONCLUDING write's anchor through the verified
+// position (WSS I11-2): the stubbed-anchor beds keep their stub, and the
+// real path refuses if state or ledger moved past the caller's proof.
+func (e *Engine) anchorPinnedTo(statePath, ledgerPath, identityName, stateHash, ledgerSHA string) error {
+	if e.anchorFn != nil {
+		if err := e.reclaimCheckout(); err != nil {
+			return err
+		}
+		return e.anchorFn(statePath, ledgerPath, identityName)
+	}
+	return e.anchorStatePinned(statePath, ledgerPath, identityName, stateHash, ledgerSHA)
+}
+
+// stateIntegrityHash reads the written state's own integrity hash — the
+// pin origin for the anchors of writes this process just performed.
+func stateIntegrityHash(state map[string]any) string {
+	integrity, _ := state["integrity"].(map[string]any)
+	hash, _ := integrity["hash"].(string)
+	return hash
+}
+
 // initializeState creates the mission's ledger and state from the pinned
 // contract and anchors the opening position.
 func (e *Engine) initializeState(leasePath string) (statePath, ledger string, state map[string]any, err error) {
@@ -452,10 +473,39 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 	// verified these bytes against the fence digest, and every later
 	// consumer takes them as given — a pin file replaced after that read
 	// can influence nothing.
-	admitted, err := e.admittedBaseline(values, []byte(approvedText))
-	if err != nil {
+	// E0 and the accounting origins derive from ONE STABLE observation
+	// (WSS-1): admission and origin capture re-run until two consecutive
+	// passes agree, so a repository moving during birth can never leave
+	// origins that disagree with the admitted baseline.
+	var admitted string
+	var origins map[string]any
+	birthStable := false
+	for attempt := 0; attempt < 3 && !birthStable; attempt++ {
+		admitted, err = e.admittedBaseline(values, []byte(approvedText))
+		if err != nil {
+			e.cleanupStillborn(ledger)
+			return "", "", nil, err
+		}
+		origins, err = mission.CaptureAdmissionOrigins(e.Root, e.Mission)
+		if err != nil {
+			e.cleanupStillborn(ledger)
+			return "", "", nil, failf(3, "mission initialization cannot capture the admission origins: %v", err)
+		}
+		admittedAgain, aerr := e.admittedBaseline(values, []byte(approvedText))
+		if aerr != nil {
+			e.cleanupStillborn(ledger)
+			return "", "", nil, aerr
+		}
+		originsAgain, oerr := mission.CaptureAdmissionOrigins(e.Root, e.Mission)
+		if oerr != nil {
+			e.cleanupStillborn(ledger)
+			return "", "", nil, failf(3, "mission initialization cannot capture the admission origins: %v", oerr)
+		}
+		birthStable = admitted == admittedAgain && admissionOriginsStable(origins, originsAgain)
+	}
+	if !birthStable {
 		e.cleanupStillborn(ledger)
-		return "", "", nil, err
+		return "", "", nil, failf(3, "mission initialization refused: the repository would not hold still during admission")
 	}
 	workspace := gittree.Workspace{Dir: e.Root}
 	if err := workspace.Anchor(e.Mission, admitted); err != nil {
@@ -474,7 +524,7 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 		e.cleanupStillborn(ledger)
 		return "", "", nil, failf(3, "mission birth record cannot be written: %v", err)
 	}
-	if err := mission.InitStateFromSource(statePath, e.approvedContractPath(), ledger, leasePath, "", admitted, []byte(approvedText)); err != nil {
+	if err := mission.InitStateFromSource(statePath, e.approvedContractPath(), ledger, leasePath, "", admitted, []byte(approvedText), origins); err != nil {
 		// The state write is atomic, so a refusal here means the
 		// mission is provably UNBORN: unstamp the birth record, then
 		// the stillborn sweep applies — without it the ledger, pin,
@@ -495,6 +545,20 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 		return "", "", nil, err
 	}
 	return statePath, ledger, state, nil
+}
+
+// admissionOriginsStable compares two origin captures whole, the capture
+// instants excluded.
+func admissionOriginsStable(a, b map[string]any) bool {
+	for key, value := range a {
+		if key == "capturedAt" {
+			continue
+		}
+		if !jsonDocEqual(value, b[key]) {
+			return false
+		}
+	}
+	return len(a) == len(b)
 }
 
 // resumeState reconciles an existing mission's state against its ledger and
@@ -568,6 +632,26 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 			return "", "", nil, err
 		}
 	}
+	// A consumed-but-unconcluded acceptance completes BEFORE the
+	// terminal-status refusal: a park written at the acceptance (breaker,
+	// all-streams) must not strand its turn unconcluded — but a
+	// wall-violation park with a pending acceptance stays exactly where
+	// the human's resolution left to rule on it.
+	if openTurn, ok := state["openTurn"].(map[string]any); ok && state["parkReason"] != "wall-violation" {
+		if turnID, _ := openTurn["turnId"].(string); turnID != "" && mission.UnverifiedAcceptance(state) == turnID {
+			final, parked, verr := e.completePendingVerification(statePath, ledger, state, turnID)
+			if verr != nil {
+				return "", "", nil, verr
+			}
+			if parked {
+				_ = final
+				return "", "", nil, failf(3, "mission workspace failed the wall at resume; resolve the taint before any further turn")
+			}
+			if state, err = e.verifyState(statePath, false); err != nil {
+				return "", "", nil, err
+			}
+		}
+	}
 	if state["status"] != "running" {
 		return "", "", nil, failf(3, "mission is %s; answer or amend its park reason before resume", valueString(state["status"]))
 	}
@@ -578,42 +662,51 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 		turnID, _ := openTurn["turnId"].(string)
 		cycle, _ := jsonInt(openTurn["cycle"])
 		turnDir := filepath.Join(e.missionDir(), "turns", turnID)
-		if _, violated, werr := e.wallGate(statePath, ledger, turnID, turnDir, cycle, nil, true); werr != nil {
-			return "", "", nil, werr
-		} else if violated {
+		if mission.UnverifiedAcceptance(state) == turnID {
+			// Completed above before the terminal-status check; a state
+			// still carrying the pending acceptance here is a
+			// wall-violation park a human must rule on first.
 			return "", "", nil, failf(3, "mission workspace failed the wall at resume; resolve the taint before any further turn")
-		}
-		// The equation held, so the crashed turn is UNACCEPTED (a
-		// ledger-ahead state and a reserve gap alike: no acceptance
-		// entry, nothing consumed). Close its marker so a fresh turn can
-		// open; the reserved-cycle heal below books any fence gap.
-		closed := deepCopyDoc(state)
-		closed["openTurn"] = nil
-		closedFinal, cerr := e.writeState(statePath, closed)
-		if cerr != nil {
-			return "", "", nil, cerr
-		}
-		closedIntegrity, _ := closedFinal["integrity"].(map[string]any)
-		closedHash, _ := closedIntegrity["hash"].(string)
-		if e.preAnchorHook != nil {
-			// Test seam (round-14 finding 2): the movement must land
-			// BEFORE the pin is acquired, so a reverted post-write
-			// reread would select the moved bytes and anchor them.
-			e.preAnchorHook()
-		}
-		// The pin ORIGINATES at reconciliation's verified position
-		// (round-11 finding 3): the close writes no ledger bytes, so the
-		// lawful ledger sha is the one the anchor tip already certifies —
-		// a fresh reread would self-select any bytes moved since.
-		anchoredSHA, lerr := e.verifiedLedgerPin()
-		if lerr != nil {
-			return "", "", nil, lerr
-		}
-		if err := e.anchorStatePinned(statePath, ledger, turnID, closedHash, anchoredSHA); err != nil {
-			return "", "", nil, err
-		}
-		if state, err = e.verifyState(statePath, false); err != nil {
-			return "", "", nil, err
+		} else {
+			if _, _, violated, werr := e.wallGate(statePath, ledger, turnID, turnDir, cycle, nil, true); werr != nil {
+				return "", "", nil, werr
+			} else if violated {
+				return "", "", nil, failf(3, "mission workspace failed the wall at resume; resolve the taint before any further turn")
+			}
+			// The equation held, so the crashed turn is UNACCEPTED (a
+			// ledger-ahead state and a reserve gap alike: no acceptance
+			// entry, nothing consumed). Close its marker so a fresh turn can
+			// open; the reserved-cycle heal below books any fence gap.
+			closed := deepCopyDoc(state)
+			closed["openTurn"] = nil
+			closedFinal, cerr := e.writeState(statePath, closed)
+			if cerr != nil {
+				return "", "", nil, cerr
+			}
+			// The open-commit anchor retires only after the close is durable.
+			e.dropTurnOpenHead()
+			closedIntegrity, _ := closedFinal["integrity"].(map[string]any)
+			closedHash, _ := closedIntegrity["hash"].(string)
+			if e.preAnchorHook != nil {
+				// Test seam (round-14 finding 2): the movement must land
+				// BEFORE the pin is acquired, so a reverted post-write
+				// reread would select the moved bytes and anchor them.
+				e.preAnchorHook()
+			}
+			// The pin ORIGINATES at reconciliation's verified position
+			// (round-11 finding 3): the close writes no ledger bytes, so the
+			// lawful ledger sha is the one the anchor tip already certifies —
+			// a fresh reread would self-select any bytes moved since.
+			anchoredSHA, lerr := e.verifiedLedgerPin()
+			if lerr != nil {
+				return "", "", nil, lerr
+			}
+			if err := e.anchorStatePinned(statePath, ledger, turnID, closedHash, anchoredSHA); err != nil {
+				return "", "", nil, err
+			}
+			if state, err = e.verifyState(statePath, false); err != nil {
+				return "", "", nil, err
+			}
 		}
 	}
 	if _, err := e.healReservedCycle(statePath, ledger, state); err != nil {
@@ -743,7 +836,8 @@ func (e *Engine) healReservedCycle(statePath, ledger string, state map[string]an
 			drainStalled = true
 		}
 	}
-	if err := e.appendLedger(state, ledger, spent, "no-progress", candidateSHA, observed, nil, annotations...); err != nil {
+	ledgerSHA, err := e.appendLedger(state, ledger, spent, "no-progress", candidateSHA, observed, nil, annotations...)
+	if err != nil {
 		return false, err
 	}
 	proposed := deepCopyDoc(state)
@@ -760,10 +854,13 @@ func (e *Engine) healReservedCycle(statePath, ledger string, state map[string]an
 			fencesRef["cycles"] = spent
 		}
 	}
-	if _, err := e.writeState(statePath, proposed); err != nil {
+	updated, err := e.writeState(statePath, proposed)
+	if err != nil {
 		return false, err
 	}
-	if err := e.anchor(statePath, ledger, e.Mission); err != nil {
+	// The heal's anchor pins the written hash and the healed booking's
+	// own bytes (WSS I12-3) — the same discipline as every conclusion.
+	if err := e.anchorPinnedTo(statePath, ledger, e.Mission, stateIntegrityHash(updated), ledgerSHA); err != nil {
 		return false, err
 	}
 	summary := fmt.Sprintf("resume recorded reserved cycle %d as a lost turn", spent)
@@ -933,7 +1030,7 @@ func (e *Engine) applyPark(statePath, ledger, identityName string, outcome *Park
 
 // gitRevParse resolves a ref in the mission's repository.
 func (e *Engine) gitRevParse(ref string) (string, error) {
-	stdout, stderr, code := runCaptured(e.Root, nil, "git", "-C", e.Root, "rev-parse", ref)
+	stdout, stderr, code := gitCaptured(e.Root, "-C", e.Root, "rev-parse", ref)
 	if code != 0 {
 		return "", failf(3, "cannot resolve candidate sha: %s", firstDetail(stderr, stdout))
 	}
@@ -945,20 +1042,23 @@ func (e *Engine) gitRevParse(ref string) (string, error) {
 // legacy-semantics mission keeps marker-less lines so it finishes under the
 // rules it started with. Annotations land in the same atomic append, as
 // separate lines beside the classification line.
-func (e *Engine) appendLedger(state map[string]any, ledger string, cycle int64, classification, candidateSHA, observed string, inflightCertified any, annotations ...string) error {
+// It returns the sha256 of the complete post-append ledger bytes — the
+// verified position the concluding anchor pins to (WSS I11-2).
+func (e *Engine) appendLedger(state map[string]any, ledger string, cycle int64, classification, candidateSHA, observed string, inflightCertified any, annotations ...string) (string, error) {
 	best, err := e.bestMarker(state, ledger, observed)
 	if err != nil {
-		return err
+		return "", err
 	}
 	// Patience rides the SAME atomic append as the cycle line, on every
 	// booking path (plans/patience-satellite-4.md): the shared function is
 	// what makes ordinary, faulted, failed, and heal bookings all evaluate.
 	annotations = append(append([]string(nil), annotations...),
 		e.patienceBookingAnnotations(state, inflightCertified)...)
-	if err := mission.AppendCycle(ledger, int(cycle), classification, candidateSHA, observed, best, annotations...); err != nil {
-		return failf(3, "mission ledger append refused: %v", err)
+	sha, err := mission.AppendCycle(ledger, int(cycle), classification, candidateSHA, observed, best, annotations...)
+	if err != nil {
+		return "", failf(3, "mission ledger append refused: %v", err)
 	}
-	return nil
+	return sha, nil
 }
 
 // patienceBookingAnnotations derives this booking's Patience lines from the
@@ -1000,11 +1100,6 @@ func (e *Engine) continueOrParkStopLoss(statePath, ledger, identityName string, 
 // failure proposal, and follows the proposal's park decision (including the
 // stop-loss check when the mission keeps running).
 func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any, turnPath, detail, outcome string, consecutiveFailures int) (map[string]any, error) {
-	branch, _ := state["branch"].(string)
-	candidateSHA, err := e.gitRevParse(branch)
-	if err != nil {
-		return nil, err
-	}
 	turnDoc, err := readDocLabeled(turnPath, "turn record", 3)
 	if err != nil {
 		return nil, err
@@ -1019,12 +1114,23 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	}
 	// Even a turn that failed before or during its host runs the wall
 	// (HIW-O3 "after EVERY host exit"): a failed turn consumed nothing,
-	// so any product-byte drift from the pre-tree is a violation.
-	if final, violated, werr := e.wallGate(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, nil, false); werr != nil || violated {
+	// so any product-byte drift from the pre-tree is a violation. The
+	// wall runs BEFORE any ledger-narration identity is resolved (WSS
+	// I14-1): a host that deleted the candidate branch must meet the
+	// inspection — which names that deletion — not a runner error that
+	// skips it.
+	ctx, final, violated, werr := e.wallGate(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, nil, false)
+	if werr != nil || violated {
 		return final, werr
 	}
+	branch, _ := state["branch"].(string)
+	candidateSHA, err := e.gitRevParse(branch)
+	if err != nil {
+		return nil, err
+	}
 	observed := "unmeasurable:" + strings.ReplaceAll(detail, "\n", " ")
-	if err := e.appendLedger(state, ledger, cycle, "no-progress", candidateSHA, observed, nil); err != nil {
+	ledgerSHA, err := e.appendLedger(state, ledger, cycle, "no-progress", candidateSHA, observed, nil)
+	if err != nil {
 		return nil, err
 	}
 	diskState, err := readDocLabeled(statePath, "mission state", 3)
@@ -1035,17 +1141,45 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	if err != nil {
 		return nil, err
 	}
+	// The VERIFIED CAPTURE is the failure acceptance's authority exactly
+	// as at the ordinary conclude (WSS I13-2): the proposal transports
+	// wall.json's rewritable evidence, and a payload differing from what
+	// this process judged was built over tampered evidence.
+	if violation := acceptancePayloadMismatch(proposed, turn.TurnID, ctx, false, nil); violation != "" {
+		parkState, derr := readDocLabeled(statePath, "mission state", 3)
+		if derr != nil {
+			return nil, derr
+		}
+		final, ferr := e.parkWallViolation(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, violation, parkState, true)
+		if ferr != nil {
+			return nil, ferr
+		}
+		return final, nil
+	}
 	updated, err := e.writeState(statePath, proposed)
 	if err != nil {
 		return nil, err
 	}
-	if err := e.anchor(statePath, ledger, turn.TurnID); err != nil {
+	// The failure acceptance pins its anchor exactly as the ordinary
+	// conclude does (WSS I12-3): the written state hash and the runner's
+	// own appended bytes, so a peer rewrite before publication refuses
+	// instead of authenticating.
+	if err := e.anchorPinnedTo(statePath, ledger, turn.TurnID, stateIntegrityHash(updated), ledgerSHA); err != nil {
 		return nil, err
 	}
-	if updated["status"] == "parked" && updated["parkReason"] == "host-failure" {
+	// The failure record concludes through the same post-verification
+	// entry as every other acceptance append.
+	verified, wasParked, err := e.verifyAcceptance(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, ctx.Declared)
+	if err != nil {
+		return nil, err
+	}
+	if wasParked {
+		return verified, nil
+	}
+	if verified["status"] == "parked" && verified["parkReason"] == "host-failure" {
 		return e.parkState(statePath, ledger, "host-failure", turn.TurnID)
 	}
-	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, updated)
+	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, verified)
 }
 
 // deliverLandedUnconsumed is terminal delivery (plans/patience-orphan-usage.md
@@ -1053,11 +1187,17 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 // list is appended to the final cycle's ledger block as Landed unconsumed
 // annotations — the place a terminal mission is read. It runs ONLY at the
 // completion conclude, where a ledger block for the final cycle exists and
-// is safely writable, and it runs before the state write so the closing
-// anchor binds the annotated ledger bytes. Best-effort: a mission that
+// is safely writable, and it runs AFTER the state write that owns the
+// transition and BEFORE the closing anchor, which therefore still binds
+// the annotated bytes (WSS I11-5). Best-effort: a mission that
 // passed its gate is never failed over its reminder list, so a refused
 // append is reported on stderr and the returns stay recoverable in the tree.
-func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[string]any) {
+// It returns the sha256 of the post-delivery ledger bytes (expectSHA on
+// a delivery that appended nothing), so the concluding anchor can pin
+// the exact position (WSS I11-2); a non-empty expectSHA makes the append
+// refuse if the ledger moved past the caller's proof, and re-delivered
+// annotations are skipped line-idempotently (WSS I11-5).
+func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[string]any, expectSHA string) string {
 	turnLog, _ := state["turnLog"].([]any)
 	annotations := []string{}
 	for _, row := range mission.LandedReturns(e.Root, e.Mission, turnLog) {
@@ -1067,11 +1207,14 @@ func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[s
 		annotations = append(annotations, mission.LandedUnconsumedAnnotation(row[0], row[1], row[2]))
 	}
 	if len(annotations) == 0 {
-		return
+		return expectSHA
 	}
-	if err := mission.AppendAnnotations(ledger, int(cycle), annotations...); err != nil {
+	sha, err := mission.AppendAnnotations(ledger, int(cycle), expectSHA, annotations...)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "landed-return terminal delivery refused: %v\n", err)
+		return expectSHA
 	}
+	return sha
 }
 
 // closeTerminalChains reaps and closes each fully-terminal delegation chain
@@ -1269,7 +1412,8 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 	// critique F-5): delegates write their own worktrees, never the
 	// checkout, so the inspection races nothing, and a host that altered
 	// the workspace hides behind neither a stalled drain nor a gate pass.
-	if final, violated, err := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, false); err != nil || violated {
+	ctx, final, violated, err := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, false)
+	if err != nil || violated {
 		return final, err
 	}
 	parked, err := e.drainJobs(statePath, ledger, spec.turnID, spec.cycle)
@@ -1291,7 +1435,8 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 			return nil, err
 		}
 	}
-	if err := e.appendLedger(state, ledger, spec.cycle, classification, candidateSHA, observed, spec.inflightCertified, spec.annotations...); err != nil {
+	ledgerSHA, err := e.appendLedger(state, ledger, spec.cycle, classification, candidateSHA, observed, spec.inflightCertified, spec.annotations...)
+	if err != nil {
 		return nil, err
 	}
 	var measurementValue any
@@ -1303,12 +1448,100 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 	}); err != nil {
 		return nil, err
 	}
+	// The judged posture is re-taken and compared whole around the
+	// ACCEPTANCE WRITE, which happens after the drain and the
+	// arbitrary-bash measurement: a changed capture re-runs the
+	// inspection; a repository that will not hold still is a violation.
+	for attempt := 0; ; attempt++ {
+		recheck, cerr := e.captureWallPostureStable(ctx.Expected, ctx.Declared)
+		if cerr != nil {
+			if answer := stateAnswerOf(cerr); answer != "" {
+				diskState, derr := readDocLabeled(statePath, "mission state", 3)
+				if derr != nil {
+					return nil, derr
+				}
+				final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, answer, diskState, true)
+				if ferr != nil {
+					return nil, ferr
+				}
+				return final, nil
+			}
+			return nil, cerr
+		}
+		if violation, jerr := e.judgeCaptureIntegrity(recheck, ctx.OpenAnchor, state); jerr != nil && stateAnswerOf(jerr) == "" {
+			return nil, jerr
+		} else if violation != "" || jerr != nil {
+			if violation == "" {
+				violation = stateAnswerOf(jerr)
+			}
+			diskState, derr := readDocLabeled(statePath, "mission state", 3)
+			if derr != nil {
+				return nil, derr
+			}
+			final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, violation, diskState, true)
+			if ferr != nil {
+				return nil, ferr
+			}
+			return final, nil
+		}
+		if recheck.equalTo(ctx.Capture) {
+			break
+		}
+		if attempt >= 2 {
+			diskState, derr := readDocLabeled(statePath, "mission state", 3)
+			if derr != nil {
+				return nil, derr
+			}
+			final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle,
+				"repository would not hold still during inspection", diskState, true)
+			if ferr != nil {
+				return nil, ferr
+			}
+			return final, nil
+		}
+		// The ledger was lawfully appended by this conclusion, so the
+		// re-run skips the in-turn ledger guard exactly as resume does.
+		rerun, final, violated, rerr := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, true)
+		if rerr != nil || violated {
+			return final, rerr
+		}
+		ctx = rerun
+	}
+	// The MEASURED CANDIDATE is the concluded tip (WSS I13-1): the
+	// stability loop lawfully re-admits accounted HEAD motion, but the
+	// measurement's success evidence was produced for candidateSHA — a
+	// gate command that moves the branch to any other accounted commit
+	// must not complete the mission on evidence measured elsewhere.
+	if candidateSHA != "" && !ctx.Capture.Unborn && ctx.Capture.Head != candidateSHA {
+		diskState, derr := readDocLabeled(statePath, "mission state", 3)
+		if derr != nil {
+			return nil, derr
+		}
+		final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle,
+			fmt.Sprintf("the concluded tip %s is not the measured candidate %s", ctx.Capture.Head, candidateSHA), diskState, true)
+		if ferr != nil {
+			return nil, ferr
+		}
+		return final, nil
+	}
 	proposed, err := spec.propose(measurementValue, gatePassed)
 	if err != nil {
 		return nil, err
 	}
-	if proposed["status"] == "completed" {
-		e.deliverLandedUnconsumed(ledger, spec.cycle, proposed)
+	// The VERIFIED CAPTURE is the acceptance's authority (never
+	// wall.json, which is rewritable evidence): a proposal whose payload
+	// posture differs from what this process judged was built over
+	// tampered evidence and parks before it can commit.
+	if violation := acceptancePayloadMismatch(proposed, spec.turnID, ctx, gatePassed, measurementValue); violation != "" {
+		diskState, derr := readDocLabeled(statePath, "mission state", 3)
+		if derr != nil {
+			return nil, derr
+		}
+		final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, violation, diskState, true)
+		if ferr != nil {
+			return nil, ferr
+		}
+		return final, nil
 	}
 	updated, err := e.writeState(statePath, proposed)
 	if err != nil {
@@ -1349,13 +1582,29 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 			return nil, err
 		}
 	}
-	if err := e.anchor(statePath, ledger, spec.turnID); err != nil {
+	// The acceptance anchor binds EXACTLY the position this conclusion
+	// proved — the state hash the write produced and the ledger bytes
+	// the runner's own append wrote (WSS I11-2): a peer that rewrites
+	// the appended cycle into different parseable bytes before
+	// publication makes the anchor REFUSE, never re-authenticate the
+	// reread.
+	if err := e.anchorPinnedTo(statePath, ledger, spec.turnID, stateIntegrityHash(updated), ledgerSHA); err != nil {
 		return nil, err
 	}
-	if spec.parkHostFailure && updated["status"] == "parked" && updated["parkReason"] == "host-failure" {
+	// The acceptance append is the commit point but not the conclusion:
+	// the post-verification entry re-captures the posture after
+	// publication and concludes the turn only on a clean match.
+	verified, wasParked, err := e.verifyAcceptance(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, ctx.Declared)
+	if err != nil {
+		return nil, err
+	}
+	if wasParked {
+		return verified, nil
+	}
+	if spec.parkHostFailure && verified["status"] == "parked" && verified["parkReason"] == "host-failure" {
 		return e.parkState(statePath, ledger, "host-failure", spec.turnID)
 	}
-	return e.continueOrParkStopLoss(statePath, ledger, spec.turnID, updated)
+	return e.continueOrParkStopLoss(statePath, ledger, spec.turnID, verified)
 }
 
 // concludeFaultedTurn drives the cycle's remaining duties for a turn whose
@@ -1570,6 +1819,84 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 		final, err := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, violation, diskState, false)
 		return final, true, err
 	}
+	// Between-turns continuity beyond the worktree: HEAD, the ref map,
+	// both staged scopes, the toplevel, and the worktree census are
+	// judged from the PREVIOUS acceptance's recorded posture (turn one:
+	// the birth record's admission origins) — no host or peer motion
+	// between turns escapes; an illicit commit made after one acceptance
+	// refuses the next open exactly like mid-turn motion.
+	origin := lastAcceptancePosture(diskState)
+	if origin == nil {
+		return nil, true, failf(3, "mission state records no accounting origin; re-provision the mission under the wall's preflight")
+	}
+	// The open capture skips the seeded worktree projection: the E-continuity
+	// equality above already judged the worktree, and the continuity rules
+	// judge only the other carriers.
+	capture, err := e.captureWallPostureStable("", nil)
+	if err != nil {
+		if answer := stateAnswerOf(err); answer != "" {
+			evidence := &wallInspection{PreTree: preTree, ExpectedTree: expectedNow, PostTree: preTree, Violation: answer}
+			if werr := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), evidence.document()); werr != nil {
+				return nil, true, werr
+			}
+			final, ferr := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, answer, diskState, false)
+			return final, true, ferr
+		}
+		return nil, true, err
+	}
+	acct, err := e.newWallAccountant(expectedNow, diskState, nil, nil)
+	if err != nil {
+		return nil, true, err
+	}
+	continuityViolation, err := e.judgeScope(origin, capture, acct, diskState)
+	if err != nil {
+		// A ran-and-answered probe defeat inside the judgment is a wall
+		// answer (WSS I13-6), the same as one raised during capture.
+		if answer := stateAnswerOf(err); answer != "" {
+			continuityViolation = answer
+		} else {
+			return nil, true, err
+		}
+	}
+	if continuityViolation != "" {
+		evidence := &wallInspection{PreTree: preTree, ExpectedTree: expectedNow, PostTree: preTree, Violation: continuityViolation}
+		evidence.Scope = scopeEvidence(origin, capture)
+		if err := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), evidence.document()); err != nil {
+			return nil, true, err
+		}
+		final, err := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, continuityViolation, diskState, false)
+		return final, true, err
+	}
+	// The open origins anchor BEFORE the host launches: the open commit
+	// stays reachable through a runner-owned CAS ref so a mid-turn reset
+	// cannot orphan the accounting origin, and the recorded toplevel
+	// trees anchor against garbage collection.
+	if err := workspace.AnchorCommit(e.Mission, "turn-open-head", capture.Head); err != nil {
+		return nil, true, failf(3, "turn open cannot anchor the open commit: %v", err)
+	}
+	headTreeRaw, err := workspace.TreeOf(capture.Head)
+	if err != nil {
+		return nil, true, failf(3, "turn open cannot read the open commit's tree: %v", err)
+	}
+	headTree, err := workspace.FilterTree(headTreeRaw, []string{missionLedgerRel(e.Mission)})
+	if err != nil {
+		return nil, true, failf(3, "turn open cannot project the open commit's tree: %v", err)
+	}
+	var openTopTree any
+	var openTopStaged any
+	if capture.Nested {
+		for _, tree := range []string{capture.TopTree, capture.TopStaged.Tree} {
+			if err := workspace.Anchor(e.Mission, tree); err != nil {
+				return nil, true, failf(3, "turn open cannot anchor %s: %v", tree, err)
+			}
+		}
+		openTopTree = capture.TopTree
+		openTopStaged = mission.StagedPostureDoc(capture.TopStaged)
+	}
+	openRefMap := map[string]any{}
+	for name, oid := range capture.RefMap {
+		openRefMap[name] = oid
+	}
 	// The marker's occurrence identity is the CURRENT SEQUENCE POINT —
 	// the acceptance that produced this expected tree — never the raw
 	// chain position (critique F-2: parks and heals advance the chain
@@ -1577,12 +1904,17 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	sequence, segment := mission.CurrentSequencePoint(diskState)
 	opened := deepCopyDoc(diskState)
 	opened["openTurn"] = map[string]any{
-		"turnId":   turnID,
-		"cycle":    cycle,
-		"preTree":  preTree,
-		"sequence": sequence,
-		"segment":  segment,
-		"openedAt": nowISO(),
+		"turnId":     turnID,
+		"cycle":      cycle,
+		"preTree":    preTree,
+		"sequence":   sequence,
+		"segment":    segment,
+		"openedAt":   nowISO(),
+		"headCommit": capture.Head,
+		"headTree":   headTree,
+		"topTree":    openTopTree,
+		"refMap":     openRefMap,
+		"topStaged":  openTopStaged,
 	}
 	updated, err := e.writeState(c.statePath, opened)
 	if err != nil {
@@ -1780,9 +2112,12 @@ func (e *Engine) cycleConclude(c *cycleContext) (map[string]any, bool, error) {
 				filepath.Join(c.turnDir, "measurement.json"))
 		},
 		afterWrite: func(map[string]any) error {
+			// The record carries the artifacts, never the SUCCESS: the
+			// terminal completed outcome lands only after the
+			// post-verification (a crash in between leaves a non-terminal
+			// record that verification completes at resume).
 			_, err := patchTurn(c.turnPath, map[string]any{
-				"status": "completed", "outcome": "completed", "error": nil,
-				"detail": "host return accepted", "result": c.result, "endedAt": nowISO(),
+				"result":  c.result,
 				"rawPath": c.verdict.RawPath, "returnPath": c.verdict.ReturnPath,
 			})
 			return err
