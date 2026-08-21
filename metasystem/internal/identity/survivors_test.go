@@ -1,7 +1,9 @@
 package identity
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -14,9 +16,16 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 
 	// A real child carrying the tag in its argv IS a survivor —
 	// exactly the orphaned `util hold` shape the kill-less reapers
-	// must defer on.
+	// must defer on. The tag rides argv[0] via a symlink: a shell
+	// wrapper's trailing argument is NOT durable (bash exec-optimizes
+	// `-c 'sleep 30'` into a bare sleep and the tag vanishes — this
+	// leg went red exactly that way inside an adopted target's gate).
 	tag := "metasystem-survivor-scan-fixture"
-	child := exec.Command("/bin/sh", "-c", "sleep 30", tag)
+	link := filepath.Join(t.TempDir(), tag)
+	if err := os.Symlink("/bin/sleep", link); err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(link, "30")
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}

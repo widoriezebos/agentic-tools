@@ -38,6 +38,13 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 	}
 	defer CleanupRefs(e, nonce)
 
+	// The sync-mode identity holds BEFORE the already-current
+	// short-circuit (F16): a flipped config must refuse on the very
+	// next fetch, not only when the tip happens to move.
+	if err := SyncModeGate(e, fetched); err != nil {
+		return AdvanceResult{}, err
+	}
+
 	acceptedOut, acceptedErr := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
 	accepted := strings.TrimSpace(acceptedOut)
 

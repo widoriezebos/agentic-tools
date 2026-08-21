@@ -22,7 +22,10 @@ func goalActor(root string, human string) (goal.Actor, error) {
 	if err != nil {
 		return goal.Actor{}, err
 	}
-	lineage := os.Getenv("METASYSTEM_LINEAGE")
+	// METASYSTEM_OWNER_LINEAGE is the runner's real export (the same
+	// variable arming and succession read); a second spelling here
+	// collapsed every real session to the literal "session" (F16).
+	lineage := os.Getenv("METASYSTEM_OWNER_LINEAGE")
 	if lineage == "" {
 		lineage = "session"
 	}
@@ -63,12 +66,18 @@ func runGoalMigrate(args []string) int {
 	}
 	adoption := *identity
 	if adoption == "" {
-		minted, err := goalUlid()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
-			return 1
+		// A rerun never mints a second identity: the ledger's own
+		// standing identity is adopted when one exists (F4 residue).
+		if existing := goal.ExistingLedgerIdentity(*root); existing != "" {
+			adoption = existing
+		} else {
+			minted, err := goalUlid()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+				return 1
+			}
+			adoption = minted
 		}
-		adoption = minted
 	}
 	actor, err := goalActor(*root, *by)
 	if err != nil {

@@ -79,10 +79,16 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 	// read happens tip-side inside the transaction (F2).
 	sourcePath := filepath.Join(r.Endpoint.Root, "plans", "goals.md")
 	sourceBytes, err := os.ReadFile(sourcePath)
-	if err != nil {
+	if os.IsNotExist(err) {
+		// A completed cutover deleted goals.md; the RERUN must still
+		// classify idempotently (F4 residue). The fast worktree gate
+		// has nothing to read, and the tip-side authoritative checks
+		// inside the transaction own the verdict.
+		sourceBytes = nil
+	} else if err != nil {
 		return PublishResult{}, fmt.Errorf("the legacy ledger cannot be read: %w", err)
 	}
-	if got := sha256HexBytes(sourceBytes); got != opts.SourceDigest {
+	if got := sha256HexBytes(sourceBytes); sourceBytes != nil && got != opts.SourceDigest {
 		return PublishResult{}, fmt.Errorf("source digest mismatch refused: goals.md is %s, the reviewed literal is %s — the migration runs on exactly the reviewed bytes or not at all", got, opts.SourceDigest)
 	}
 

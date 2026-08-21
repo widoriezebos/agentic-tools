@@ -88,7 +88,16 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 	if e.LocalMode() {
 		out, err := goalGit(e.Root, nil, "rev-parse", "--verify", LocalLedgerBranch)
 		if err != nil {
-			return "", fmt.Errorf("no local ledger branch %s; migration or adoption creates it: %v", LocalLedgerBranch, err)
+			// The branch is BORN by the first publication (F16: local
+			// migration bootstraps it): until then the checkout HEAD
+			// is the world the transaction reads — it carries the
+			// legacy sources and no ledger, so ordinary verbs still
+			// refuse on their own terms while the migration proceeds.
+			headOut, headErr := goalGit(e.Root, nil, "rev-parse", "--verify", "HEAD")
+			if headErr != nil {
+				return "", fmt.Errorf("no local ledger branch %s and no HEAD to bootstrap from: %v", LocalLedgerBranch, headErr)
+			}
+			return strings.TrimSpace(headOut), nil
 		}
 		return strings.TrimSpace(out), nil
 	}
@@ -101,6 +110,29 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// SyncModeGate refuses the durable/declared mode mismatch at EVERY
+// operational boundary (F16: the projection alone checked it): the
+// fetched tip's root record speaks for the ledger, the endpoint for
+// this clone's config. A tip with no root record is pre-migration
+// and gates nothing; a torn record is the validator's to refuse.
+func SyncModeGate(e Endpoint, tip string) error {
+	content, err := gitIn(e.Root, "cat-file", "-p", tip+":"+goalsPrefix+"backlog.md")
+	if err != nil {
+		return nil
+	}
+	record, _ := ParseRoot([]byte(content))
+	if record == nil {
+		return nil
+	}
+	if record.SyncMode == SyncLocal && !e.LocalMode() {
+		return fmt.Errorf("sync-mode mismatch refused: the ledger is committed local, the config says remote %q — promotion is the backlog-local-promotion goal, not a config flip", e.Remote)
+	}
+	if record.SyncMode == SyncRemote && e.LocalMode() {
+		return fmt.Errorf("sync-mode mismatch refused: the ledger is committed remote, the config says local — a split brain is not a mode")
+	}
+	return nil
 }
 
 // Change is one path's mutation relative to the fetched tree.
@@ -208,6 +240,15 @@ func classifyPushFailure(output string) CASOutcome {
 // mode.
 func PublishCAS(e Endpoint, tip, commit string) (CASOutcome, error) {
 	if e.LocalMode() {
+		if _, err := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", LocalLedgerBranch); err != nil {
+			// The first publication CREATES the branch, and creation
+			// IS the compare: the empty old-value makes update-ref
+			// refuse a concurrent creator atomically (F16).
+			if out, cErr := goalGit(e.Root, nil, "update-ref", LocalLedgerBranch, commit, ""); cErr != nil {
+				return CASRefused, fmt.Errorf("local CAS refused: %s", strings.TrimSpace(out))
+			}
+			return CASLanded, nil
+		}
 		if out, err := goalGit(e.Root, nil, "update-ref", LocalLedgerBranch, commit, tip); err != nil {
 			// No transport exists locally: a failed old-value
 			// assertion is always a lost compare.
@@ -425,6 +466,11 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 				CleanupRefs(e, req.Opid)
 				return PublishResult{}, gateErr
 			}
+		}
+		if gateErr := SyncModeGate(e, tip); gateErr != nil {
+			_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "sync-mode gate refused: "+gateErr.Error())
+			CleanupRefs(e, req.Opid)
+			return PublishResult{}, gateErr
 		}
 		if err := RecordSteps(e.Root, req.Opid, tip, ""); err != nil {
 			return PublishResult{}, err
