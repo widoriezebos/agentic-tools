@@ -405,6 +405,18 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 			CleanupRefs(e, req.Opid)
 			return PublishResult{}, err
 		}
+		// The acceptance gates stand between EVERY mutation and the
+		// fetched tip (F5): a foreign or rewound canonical branch is
+		// refused here exactly as the read side refuses it — a
+		// mutation must never build on a world this clone would not
+		// accept.
+		if acceptedOut, accErr := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef); accErr == nil {
+			if gateErr := AcceptanceGates(e.Root, strings.TrimSpace(acceptedOut), tip); gateErr != nil {
+				_ = MarkTerminal(e.Root, req.Opid, OutcomeAbandoned, "acceptance gates refused: "+gateErr.Error())
+				CleanupRefs(e, req.Opid)
+				return PublishResult{}, gateErr
+			}
+		}
 		if err := RecordSteps(e.Root, req.Opid, tip, ""); err != nil {
 			return PublishResult{}, err
 		}

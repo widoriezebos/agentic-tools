@@ -173,3 +173,25 @@ func writeInWorktree(t *testing.T, root, rel, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestMutationsRunTheAcceptanceGates(t *testing.T) {
+	origin, a, _ := twoClones(t)
+	publishGoal(t, a, "op-gate", "gated", nil)
+	if _, err := FetchAdvance(endpointFor(a)); err != nil {
+		t.Fatal(err)
+	}
+	seed := mustGit(t, origin, "rev-list", "--max-parents=0", "refs/heads/main")
+	// Branch surgery rewinds the canonical branch; a MUTATION must
+	// refuse exactly as the read side does — never build on a world
+	// this clone would not accept (F5).
+	mustGit(t, origin, "update-ref", "refs/heads/main", seed)
+	_, err := Open(verbReq(a, "01J5X00000000000000000G000", "mac-a"), "onto-rewind", "Must refuse.", "main", "No.")
+	if err == nil || !strings.Contains(err.Error(), "rewound") {
+		t.Fatalf("a mutation onto a rewound branch refuses by name: %v", err)
+	}
+	// The journal closed the attempt honestly.
+	entry, readErr := ReadEntry(a, Opid("01J5X00000000000000000G000", "mac-a", "lin-1"))
+	if readErr != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeAbandoned {
+		t.Fatalf("the refused mutation abandons its entry: %+v %v", entry, readErr)
+	}
+}

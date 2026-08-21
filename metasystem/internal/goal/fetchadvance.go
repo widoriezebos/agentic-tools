@@ -49,22 +49,8 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 	// re-pointing config at a different remote or branch cannot
 	// silently select another ledger, whatever the strings say.
 	if acceptedErr == nil {
-		acceptedIdentity, idErr := treeIdentity(e.Root, accepted)
-		if idErr != nil {
-			return AdvanceResult{}, fmt.Errorf("the accepted tree's identity cannot be read: %w", idErr)
-		}
-		// Both facts first, strongest name wins: a READABLE foreign
-		// identity is a foreign ledger whatever its ancestry; a tip
-		// that does not descend (a rewound branch, or a tip with no
-		// ledger at all) is a rewind; a descendant whose root record
-		// is torn falls through to the validator, which names the
-		// file and rule.
-		fetchedIdentity, _ := treeIdentity(e.Root, fetched)
-		if fetchedIdentity != "" && fetchedIdentity != acceptedIdentity {
-			return AdvanceResult{}, fmt.Errorf("foreign ledger refused: the fetched tree's identity %s is not this ledger's %s — config cannot silently change what the ledger is", fetchedIdentity, acceptedIdentity)
-		}
-		if _, ancErr := goalGit(e.Root, nil, "merge-base", "--is-ancestor", accepted, fetched); ancErr != nil {
-			return AdvanceResult{}, fmt.Errorf("rewound canonical branch refused: %s does not descend from the accepted tip %s; the projection stays pinned — repair --accept-remote is the deliberate path", short(fetched), short(accepted))
+		if err := AcceptanceGates(e.Root, accepted, fetched); err != nil {
+			return AdvanceResult{}, err
 		}
 	}
 
@@ -86,6 +72,28 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{}, err
 	}
 	return AdvanceResult{Tip: fetched, Advanced: true, Detail: detail}, nil
+}
+
+// AcceptanceGates are the rules that stand between ANY operation
+// and a fetched tip (F5: the read side had them, mutations bypassed
+// them). Both facts first, strongest name wins: a READABLE foreign
+// identity is a foreign ledger whatever its ancestry; a tip that
+// does not descend (a rewound branch, or a tip with no ledger at
+// all) is a rewind; a descendant whose root record is torn falls
+// through to the tree validator, which names the file and rule.
+func AcceptanceGates(root, accepted, fetched string) error {
+	acceptedIdentity, idErr := treeIdentity(root, accepted)
+	if idErr != nil {
+		return fmt.Errorf("the accepted tree's identity cannot be read: %w", idErr)
+	}
+	fetchedIdentity, _ := treeIdentity(root, fetched)
+	if fetchedIdentity != "" && fetchedIdentity != acceptedIdentity {
+		return fmt.Errorf("foreign ledger refused: the fetched tree's identity %s is not this ledger's %s — config cannot silently change what the ledger is", fetchedIdentity, acceptedIdentity)
+	}
+	if _, ancErr := goalGit(root, nil, "merge-base", "--is-ancestor", accepted, fetched); ancErr != nil {
+		return fmt.Errorf("rewound canonical branch refused: %s does not descend from the accepted tip %s; the projection stays pinned — repair --accept-remote is the deliberate path", short(fetched), short(accepted))
+	}
+	return nil
 }
 
 // treeIdentity reads the root record's adoption identity at a
