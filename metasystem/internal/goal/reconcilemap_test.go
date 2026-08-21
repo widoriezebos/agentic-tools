@@ -222,7 +222,7 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 		{"claimed", func(f *GoalFile) {
 			f.Claimed = &ClaimRecord{Machine: "mac-x", Lineage: "l9", At: "2026-08-21T00:00:00Z"}
 		}, "Claimed"},
-		{"origin", func(f *GoalFile) { f.Origin = "smuggled-origin" }, "not on the closed edit surface"},
+		{"origin", func(f *GoalFile) { f.Origin = "smuggled-origin" }, "provenance is immutable"},
 		{"conclude", func(f *GoalFile) { f.Conclude = "edited in place" }, "Concluded belongs to done"},
 	} {
 		editFile(t, a, goalsPrefix+"editable.md", leg.transform)

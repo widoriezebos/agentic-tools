@@ -109,9 +109,27 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if baseFile == nil {
 				return nil, fmt.Errorf("%s: changed against a base that does not carry it", d.Path)
 			}
-			edited, _ := ParseFile(handLenient(snap.Files[d.Path]))
+			edited, problems := ParseFile(handLenient(snap.Files[d.Path]))
 			if edited == nil {
 				return nil, fmt.Errorf("%s: the edited file does not parse", d.Path)
+			}
+			// Integrity diagnostics are the hand edit's OWN signature
+			// — the human changed bytes under a machine digest, and
+			// publication re-renders both. Every OTHER diagnostic
+			// (an unknown field, a duplicate key, a malformed value)
+			// refuses: silently publishing a cleaned-up version of
+			// what the human wrote rewrites their edit.
+			for _, problem := range problems {
+				if strings.HasPrefix(string(problem), "Integrity mismatch") || string(problem) == "missing Integrity line" {
+					continue
+				}
+				// handLenient's own placeholders provoke shape
+				// diagnostics by construction; publication
+				// synthesizes the real human and stamp.
+				if strings.Contains(string(problem), "pending-human") || strings.Contains(string(problem), "pending-stamp") {
+					continue
+				}
+				return nil, fmt.Errorf("%s: the hand edit carries a diagnostic the surface refuses: %s", d.Path, problem)
 			}
 			rows, err := mapOneChange(d.Path, baseFile, edited)
 			if err != nil {
@@ -275,25 +293,47 @@ func handLenient(data []byte) []byte {
 		if !strings.HasPrefix(line, "- Parked: ") {
 			continue
 		}
-		emptyBy := strings.Contains(line, "by= ") || strings.Contains(line, "by=at=")
-		emptyAt := strings.Contains(line, "at= ") || strings.HasSuffix(strings.TrimSpace(line), "at=")
-		if !emptyBy && !emptyAt {
+		// TOKEN boundaries, exactly as the strict parser reads the
+		// line: a "by= " or "at=" buried inside the because's free
+		// text must neither trigger a rebuild of a well-formed line
+		// nor donate a fabricated value to one.
+		tail := strings.TrimPrefix(line, "- Parked: ")
+		by, at := "", ""
+		byFound, atFound, becauseFound := false, false, false
+		j := 0
+		for j < len(tail) {
+			for j < len(tail) && (tail[j] == ' ' || tail[j] == '\t') {
+				j++
+			}
+			if j >= len(tail) {
+				break
+			}
+			start := j
+			for j < len(tail) && tail[j] != ' ' && tail[j] != '\t' {
+				j++
+			}
+			token := tail[start:j]
+			if strings.HasPrefix(token, "because=") {
+				becauseFound = true
+				break // free text; nothing past here is a key
+			}
+			switch {
+			case strings.HasPrefix(token, "by="):
+				by, byFound = strings.TrimPrefix(token, "by="), true
+			case strings.HasPrefix(token, "at="):
+				at, atFound = strings.TrimPrefix(token, "at="), true
+			}
+		}
+		if !becauseFound || (byFound && by != "" && atFound && at != "") {
+			// No reason to synthesize anything: either the line is
+			// fully specified, or it carries no because and the
+			// strict parse refuses it as itself.
 			continue
 		}
 		// Rebuild the line whole from its because (and displaced)
 		// tail: the human typed only the reason; publication owns
 		// the rest.
-		because := ""
-		if idx := strings.Index(line, "because="); idx >= 0 {
-			because = line[idx+len("because="):]
-		}
-		displaced := ""
-		if idx := strings.Index(line, "displaced="); idx >= 0 {
-			tail := line[idx+len("displaced="):]
-			if fields := strings.Fields(tail); len(fields) > 0 {
-				displaced = fields[0]
-			}
-		}
+		because, displaced := splitParkTail(tail)
 		rebuilt := "- Parked: by=pending-human at=pending-stamp"
 		if displaced != "" {
 			rebuilt += " displaced=" + displaced

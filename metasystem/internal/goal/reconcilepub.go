@@ -11,7 +11,9 @@ package goal
 // post-capture-edit protection stage one built.
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -71,8 +73,9 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 			}
 			var changes []Change
 			touched := map[string]bool{}
+			session := newReplaySession()
 			for _, row := range rows {
-				rowChanges, err := applyRow(t, r, row)
+				rowChanges, err := applyRow(t, r, row, session)
 				if err != nil {
 					return nil, err
 				}
@@ -121,8 +124,17 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		case OutcomeRejected, OutcomeLost, OutcomeAbandoned:
 			definitive = true
 		default:
-			if entry, readErr := ReadEntry(r.Endpoint.Root, r.opid()); readErr == nil &&
-				entry.Phase == PhaseTerminal && entry.Outcome != OutcomeConfirmed && entry.Outcome != OutcomeConfirmedLate {
+			if entry, readErr := ReadEntry(r.Endpoint.Root, r.opid()); readErr == nil {
+				if entry.Phase == PhaseTerminal && entry.Outcome != OutcomeConfirmed && entry.Outcome != OutcomeConfirmedLate {
+					definitive = true
+				}
+			} else if errors.Is(readErr, os.ErrNotExist) {
+				// No entry at all is as definitive as an abandoned
+				// one: entries are created before anything pushes, so
+				// a publish refused pre-journal (an older pushed
+				// entry blocking, a duplicate opid) provably wrote
+				// nothing — leaving the pending record would block
+				// ordinary reconcile behind a ghost.
 				definitive = true
 			}
 		}
@@ -140,10 +152,22 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	return ReconcileResult{Publish: res, Rows: rows, Skipped: skipped}, nil
 }
 
+// replaySession remembers what THIS reconcile's earlier rows already
+// did to the tree: a later row for the same goal composes with those
+// moves instead of re-litigating a base the session itself outdated.
+type replaySession struct {
+	archived map[string]bool
+	moved    map[string]bool
+}
+
+func newReplaySession() *replaySession {
+	return &replaySession{archived: map[string]bool{}, moved: map[string]bool{}}
+}
+
 // applyRow applies one mapped verb's complete effects onto the
 // fetched tree, with the row's before-predicate as the conflict
 // gate.
-func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
+func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySession) ([]Change, error) {
 	conflict := func(field, format string, args ...any) error {
 		return fmt.Errorf("reconcile conflict on %s (%s): %s", row.Id, field, fmt.Sprintf(format, args...))
 	}
@@ -204,6 +228,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 			}
 			f.State = StateParked
 			f.Claimed = nil
+			session.moved[id] = true
 			f.Revision++
 			f.History = append(f.History, HistoryLine{
 				At: r.stamp(), Opid: r.opid(), Verb: "park",
@@ -224,6 +249,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		}
 		f.State = StateQueued
 		f.Parked = nil
+		session.moved[row.Id] = true
 		touch(f, r, "unpark", []string{row.Id})
 		changes := []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}
 		changes = append(changes, clearFreeIfDeclared(t, r, row.Id)...)
@@ -253,6 +279,8 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		touchDisplaced(f, r, "done", []string{row.Id}, displaced)
 		delete(t.Live, row.Id)
 		t.Done[row.Id] = f
+		session.archived[row.Id] = true
+		session.moved[row.Id] = true
 		return []Change{
 			{Path: livePath(row.Id), Delete: true},
 			{Path: donePath(row.Id), Content: RenderFile(f)},
@@ -260,11 +288,19 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 
 	case "edit":
 		// done+edit compose (F11): the edited goal may already have
-		// moved to the archive by an earlier row in this session.
+		// moved to the archive by an earlier row in THIS session —
+		// only that archive is lawful to keep editing. An archive
+		// already on the fetched tip means another transaction
+		// completed the goal while the hand edit was captured
+		// against a live state: writing into it would rewrite a
+		// finished record, so it conflicts like any other raced row.
 		f, exists := t.Live[row.Id]
 		archived := false
 		if !exists {
 			if df, inDone := t.Done[row.Id]; inDone {
+				if !session.archived[row.Id] {
+					return nil, conflict("state", "archived on the fetched tip; the hand edit was made against a live goal")
+				}
 				f, exists, archived = df, true, true
 			}
 		}
@@ -272,12 +308,15 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 			return nil, conflict("state", "not live on the fetched tip")
 		}
 		// The state before-value binds for edits too: a hand edit
-		// captured against queued must not
-		// publish over a concurrently landed claim as if displacement
-		// were consent. The compose case is exempt — this session's
-		// own done row already moved the goal, and ITS BaseState
-		// bound at that row.
-		if !archived && row.BaseState != "" && f.State != row.BaseState {
+		// captured against queued must not publish over a
+		// concurrently landed claim as if displacement were consent.
+		// The compose case is exempt — this session's own state row
+		// already moved the goal, and ITS BaseState bound there.
+		// An earlier row in THIS session lawfully moved the state
+		// (unpark, detach, an arc join) and ITS BaseState bound at
+		// that row — the edit that follows composes with the move
+		// rather than rejecting it as a phantom race.
+		if !archived && !session.moved[row.Id] && row.BaseState != "" && f.State != row.BaseState {
 			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
 		}
 		// The BASE comparison per field (F9): a concurrent edit that
@@ -335,6 +374,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 			f.Claimed = nil
 		}
 		f.Arc = ""
+		session.moved[row.Id] = true
 		touchDisplaced(f, r, "detach", []string{row.Id}, detachDisplaced)
 		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
 
@@ -415,6 +455,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 			f.Parked = &ParkRecord{By: standing.Parked.By, At: standing.Parked.At, Because: standing.Parked.Because}
 		}
 		f.Arc = row.Arc
+		session.moved[row.Id] = true
 		touchDisplaced(f, r, "set-arc", []string{row.Id}, setArcDisplaced)
 		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
 	}

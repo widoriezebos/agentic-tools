@@ -414,8 +414,9 @@ func TestClaimedArcToClaimedArcTradeRefusesOnBothSurfaces(t *testing.T) {
 			t.Fatalf("set-arc %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := ClaimArc(verbReq(b, "01J5X00000000000000000TD90", "mac-b"), "td-one"); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("claim dest arc: %+v %v", res, err)
+	claimRes, err := ClaimArc(verbReq(b, "01J5X00000000000000000TD90", "mac-b"), "td-one")
+	if err != nil || claimRes.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim dest arc: %+v %v", claimRes, err)
 	}
 	// The VERB refuses the one-move trade even under a human.
 	humanMove := verbReq(a, "01J5X00000000000000000TD95", "mac-a")
@@ -423,5 +424,22 @@ func TestClaimedArcToClaimedArcTradeRefusesOnBothSurfaces(t *testing.T) {
 	res, err := SetArc(humanMove, "ts-two", "trade-dst")
 	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "release it first") {
 		t.Fatalf("the two-claimant trade refuses on the verb (R2-14): %+v %v", res, err)
+	}
+	// The HAND surface refuses the same trade: a reconcile set-arc
+	// row moving a member out of one claimant's arc into another
+	// claimant's arc conflicts instead of trading — removing the
+	// replay-side guard alone must turn this red.
+	tree, err := loadTree(b, claimRes.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hand := verbReq(b, "01J5X00000000000000000TD97", "mac-b")
+	hand.Actor.Human = "wido"
+	_, handErr := applyRow(tree, hand, MappedVerb{
+		Verb: "set-arc", Id: "ts-two", Arc: "trade-dst",
+		BaseArc: "trade-src", BaseState: StateClaimed,
+	}, newReplaySession())
+	if handErr == nil || !strings.Contains(handErr.Error(), "release it first") {
+		t.Fatalf("the two-claimant trade must refuse on the hand replay too: %v", handErr)
 	}
 }

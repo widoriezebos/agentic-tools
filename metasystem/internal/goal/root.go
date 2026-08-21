@@ -76,7 +76,7 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 			}
 			r.History = append(r.History, h)
 		case section == "legacy" && line != "":
-			r.Legacy = append(r.Legacy, line)
+			r.Legacy = append(r.Legacy, strings.TrimPrefix(line, "  "))
 		case strings.HasPrefix(line, "- "):
 			parseRootField(r, strings.TrimPrefix(line, "- "), seen, addProblem)
 		case strings.TrimSpace(line) == "":
@@ -215,7 +215,9 @@ func RenderRoot(r *RootRecord) []byte {
 	if len(r.Legacy) > 0 {
 		b.WriteString("\nLegacyNotes:\n")
 		for _, l := range r.Legacy {
-			b.WriteString(l + "\n")
+			// Indented for the same reason as the goal files': the
+			// carried prose stays opaque to the structural parser.
+			b.WriteString("  " + l + "\n")
 		}
 	}
 	b.WriteString("\nHistory:\n")

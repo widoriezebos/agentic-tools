@@ -405,3 +405,41 @@ func TestRecoveryRefusesAStrandedOriginRewrite(t *testing.T) {
 		t.Fatalf("recovery visits the stranded origin rewrite: %+v", reports)
 	}
 }
+
+func TestRecoveryReplaysALiveHumanEditsJournaledIntent(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X00000000000000000Q300", "mac-a"), "hand-held", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	parkReq := verbReq(a, "01J5X00000000000000000Q310", "mac-a")
+	parkReq.Actor.Human = "wido"
+	if res, err := Park(parkReq, "hand-held", "waiting on review"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("park: %+v %v", res, err)
+	}
+	// The stranded intent is EXACTLY what the live verb journals: the
+	// real constructor builds it, nothing is typed by hand. A parked
+	// goal admits only a human edit, so a replay that lost the human
+	// would refuse — the round trip proves attribution survives the
+	// journal.
+	editReq := verbReq(a, "01J5X00000000000000000Q320", "mac-a")
+	editReq.Actor.Human = "wido"
+	next := "Recovered by the human's own hand."
+	liveReq := editRequest(editReq, "hand-held", EditFields{NextStep: &next})
+	strandEntryAt(t, a, liveReq.Opid, "mac-a", PhaseCreated, liveReq.Intent)
+	if _, err := Recover(endpointFor(a)); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Project(endpointFor(a), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := p.Tree.Live["hand-held"]
+	if f == nil || f.NextStep != next {
+		t.Fatalf("the recovered live edit landed its field: %+v", f)
+	}
+	last := f.History[len(f.History)-1]
+	if last.Verb != "edit" || last.Actor != "human:wido" {
+		t.Fatalf("the recovered edit carries the directing human, not the machine: %+v", last)
+	}
+}

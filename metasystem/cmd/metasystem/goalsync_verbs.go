@@ -9,6 +9,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -18,7 +19,6 @@ import (
 
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -45,27 +45,69 @@ func ensureGuardEnrolled(root string) error {
 		// mutation without the fence is exactly what R2-11 forbids.
 		return fmt.Errorf("this checkout ships no executable pre-commit guard at %s; the ledger fence cannot be enrolled, so the mutation refuses", guard)
 	}
-	// --git-path hooks honors core.hooksPath:
-	// writing under .git/hooks while git reads a configured hooks
-	// path elsewhere would enroll a hook git never invokes.
-	out, err := exec.Command("git", "-C", absRoot, "rev-parse", "--path-format=absolute", "--git-path", "hooks").Output()
+	// The probes run with git's steering env scrubbed (GIT_DIR and
+	// friends): an inherited broken GIT_DIR must neither read as
+	// "nothing to enroll" nor answer for some OTHER repository. With
+	// the scrub, "not a repository" is a true fact about the root —
+	// and a target with no git has nothing that commits, so there is
+	// no fence to enroll (adoption installs it when git init lands).
+	probe := exec.Command("git", "-C", absRoot, "rev-parse", "--is-inside-work-tree")
+	probe.Env = environWithoutGitSteeringCLI()
+	if probeErr := probe.Run(); probeErr != nil {
+		var exit *exec.ExitError
+		if errors.As(probeErr, &exit) && exit.ExitCode() == 128 {
+			return nil
+		}
+		return fmt.Errorf("the target's repository shape cannot be proven: %v", probeErr)
+	}
+	// --git-path hooks honors core.hooksPath: writing under
+	// .git/hooks while git reads a configured hooks path elsewhere
+	// would enroll a hook git never invokes. A probe that cannot
+	// answer refuses.
+	hooksCmd := exec.Command("git", "-C", absRoot, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+	hooksCmd.Env = environWithoutGitSteeringCLI()
+	out, err := hooksCmd.Output()
 	if err != nil {
-		return nil // not a git repository; the verbs refuse on their own terms
+		return fmt.Errorf("the hooks directory cannot be resolved for %s: %v", absRoot, err)
 	}
 	hookDir := strings.TrimSpace(string(out))
 	hookPath := filepath.Join(hookDir, "pre-commit")
 	existing, readErr := os.ReadFile(hookPath)
-	if readErr == nil && strings.Contains(string(existing), "pre-commit-guard.sh") {
-		if hookInfo, hookStatErr := os.Stat(hookPath); hookStatErr == nil && hookInfo.Mode()&0o111 != 0 {
-			return nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		// An unreadable hook is not an absent hook: falling through
+		// would overwrite a file whose content was never seen.
+		return fmt.Errorf("the existing pre-commit hook cannot be read: %v", readErr)
+	}
+	// Enrollment means THIS checkout's guard: after resolving the
+	// composer's dynamic toplevel reference, the hook must name the
+	// current absolute guard path. A mere mention of the guard's
+	// basename — a stale path from before a checkout move, or an
+	// inert comment — leaves git running no fence at all.
+	enrolled := false
+	if readErr == nil {
+		resolved := string(existing)
+		topCmd := exec.Command("git", "-C", absRoot, "rev-parse", "--show-toplevel")
+		topCmd.Env = environWithoutGitSteeringCLI()
+		if topOut, topErr := topCmd.Output(); topErr == nil {
+			resolved = strings.ReplaceAll(resolved, "$(git rev-parse --show-toplevel)", strings.TrimSpace(string(topOut)))
 		}
-		return fmt.Errorf("the pre-commit hook references the guard but is not executable; fix its mode before mutating the ledger")
+		enrolled = strings.Contains(resolved, guard)
+	}
+	if enrolled {
+		hookInfo, hookStatErr := os.Stat(hookPath)
+		if hookStatErr != nil {
+			return fmt.Errorf("the pre-commit hook's mode cannot be proven: %v", hookStatErr)
+		}
+		if hookInfo.Mode()&0o111 == 0 {
+			return fmt.Errorf("the pre-commit hook references the guard but is not executable; fix its mode before mutating the ledger")
+		}
+		return nil
 	}
 	if err := os.MkdirAll(hookDir, 0o755); err != nil {
 		return err
 	}
 	localPath := filepath.Join(hookDir, "pre-commit.local")
-	if readErr == nil {
+	if readErr == nil && !isOurComposer(string(existing)) {
 		if _, localErr := os.Stat(localPath); localErr == nil {
 			return fmt.Errorf("pre-commit and pre-commit.local both exist and neither enrolls the guard; compose them by hand before mutating the ledger")
 		}
@@ -73,7 +115,10 @@ func ensureGuardEnrolled(root string) error {
 			return err
 		}
 	}
-	composer := "#!/usr/bin/env bash\nguard=" + strconv.Quote(guard) + "\n" + `if [[ -x "$guard" ]]; then
+	// A hook WE wrote earlier (recognized by its own shape) carries a
+	// stale guard path after a checkout move; rewriting our own
+	// composer is not a clobber — the local dispatch stays intact.
+	composer := "#!/usr/bin/env bash\nguard=" + shellSingleQuote(guard) + "\n" + `if [[ -x "$guard" ]]; then
   "$guard" || exit $?
 fi
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -82,7 +127,61 @@ if [[ -x "$here/pre-commit.local" ]]; then
 fi
 exit 0
 `
-	return os.WriteFile(hookPath, []byte(composer), 0o755)
+	if err := os.WriteFile(hookPath, []byte(composer), 0o755); err != nil {
+		return err
+	}
+	// WriteFile's mode is umask-filtered; the fence exists only if
+	// git can actually execute the hook, so set and re-verify.
+	if err := os.Chmod(hookPath, 0o755); err != nil {
+		return err
+	}
+	hookInfo, hookStatErr := os.Stat(hookPath)
+	if hookStatErr != nil || hookInfo.Mode()&0o111 == 0 {
+		return fmt.Errorf("the enrolled pre-commit hook did not come out executable; fix the filesystem before mutating the ledger")
+	}
+	return nil
+}
+
+// isOurComposer recognizes the enrollment composer this program (and
+// adopt.sh) writes: a guard= assignment on its own line plus the
+// pre-commit.local dispatch. Only a hook of that shape may be
+// rewritten in place; anything else is a human's file.
+func isOurComposer(hook string) bool {
+	hasAssign := false
+	for _, line := range strings.Split(hook, "\n") {
+		if strings.HasPrefix(line, "guard=") && strings.Contains(line, "pre-commit-guard.sh") {
+			hasAssign = true
+			break
+		}
+	}
+	return hasAssign && strings.Contains(hook, `exec "$here/pre-commit.local"`)
+}
+
+// shellSingleQuote renders s as one single-quoted shell word: inside
+// single quotes the shell expands nothing, so paths carrying $,
+// backticks, or spaces survive verbatim. A Go strconv.Quote here
+// would hand bash a double-quoted string it expands.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// environWithoutGitSteeringCLI mirrors the goal package's scrub: the
+// enrollment probes must answer about the ROOT, never about whatever
+// repository an inherited GIT_DIR happens to point at.
+func environWithoutGitSteeringCLI() []string {
+	steering := map[string]bool{
+		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true,
+		"GIT_INDEX_FILE": true, "GIT_CEILING_DIRECTORIES": true,
+		"GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+	}
+	var out []string
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if !steering[name] {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 func goalActor(root string, human string) (goal.Actor, error) {

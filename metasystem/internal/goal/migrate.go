@@ -45,13 +45,25 @@ type MigrateOptions struct {
 // manifest read as idempotent although that cutover never landed).
 // Any mismatch on a completed migration is the named confusion.
 func migrationComplete(root, tip, identity, mode, syncMode, manifestDigest string) (bool, error) {
+	// Absence and failure are different facts here exactly as they
+	// are for the ledger probe: only a tip PROVABLY carrying no root
+	// record reads as "not migrated"; a probe that cannot answer, or
+	// an existing record that does not parse, refuses — falling
+	// through would journal a migration against a world nobody read.
+	probe, err := gitIn(root, "ls-tree", "--name-only", tip, "--", goalsPrefix+"backlog.md")
+	if err != nil {
+		return false, fmt.Errorf("the tip's root record cannot be probed: %w", err)
+	}
+	if strings.TrimSpace(probe) == "" {
+		return false, nil
+	}
 	existing, err := gitIn(root, "cat-file", "-p", tip+":"+goalsPrefix+"backlog.md")
 	if err != nil {
-		return false, nil
+		return false, fmt.Errorf("the tip's root record cannot be read: %w", err)
 	}
 	record, problems := ParseRoot([]byte(existing))
 	if len(problems) != 0 {
-		return false, nil
+		return false, fmt.Errorf("the tip carries a root record that does not parse; the ledger needs repair, not a migration: %v", problems)
 	}
 	if record.Identity == identity && record.MigrationMode == mode &&
 		record.SyncMode == syncMode && record.ManifestDigest == manifestDigest {
@@ -70,10 +82,47 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("migration commits a sync mode: remote or local")
 	}
 	mode := "bare"
+	if opts.ManifestPath != "" {
+		mode = "manifest"
+	}
+
+	// The worktree preconditions, before ANY mutation (F3/R2-6): the
+	// clean-path set must match HEAD — an uncommitted hand edit to
+	// the ledger, its baseline, the destination directory, or an
+	// in-repo manifest dies here, not inside the commit. Porcelain
+	// status covers modified AND untracked alike.
+	cleanPaths := []string{"plans/goals.md", "plans/goals-accepted.json", "plans/goals"}
+	manifestRel := ""
+	if opts.ManifestPath != "" {
+		if abs, absErr := filepath.Abs(opts.ManifestPath); absErr == nil {
+			if rootAbs, rootErr := filepath.Abs(r.Endpoint.Root); rootErr == nil {
+				if rel, relErr := filepath.Rel(rootAbs, abs); relErr == nil && !strings.HasPrefix(rel, "..") {
+					manifestRel = filepath.ToSlash(rel)
+					cleanPaths = append(cleanPaths, rel)
+				}
+			}
+		}
+	}
+	for _, cleanPath := range cleanPaths {
+		out, stErr := gitIn(r.Endpoint.Root, "status", "--porcelain", "--untracked-files=all", "--", cleanPath)
+		if stErr != nil {
+			// A probe that cannot answer proves nothing: refusing
+			// beats reading failure as clean.
+			return PublishResult{}, fmt.Errorf("migration precondition refused: the cleanliness of %s cannot be proven: %v", cleanPath, stErr)
+		}
+		if strings.TrimSpace(out) != "" {
+			return PublishResult{}, fmt.Errorf("migration precondition refused: %s has uncommitted or untracked changes", cleanPath)
+		}
+	}
+
+	// The manifest is read AFTER its cleanliness is proven, and the
+	// bytes read here are the bytes digested and synthesized — an
+	// in-repo manifest is additionally proven byte-identical at the
+	// captured tip inside the transaction, so the published root
+	// record can never bind a digest the committed artifact lacks.
 	var manifest *Manifest
 	manifestDigest := ""
 	if opts.ManifestPath != "" {
-		mode = "manifest"
 		manifestBytes, err := os.ReadFile(opts.ManifestPath)
 		if err != nil {
 			return PublishResult{}, fmt.Errorf("the manifest cannot be read: %w", err)
@@ -90,33 +139,6 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		}
 	} else {
 		manifest = &Manifest{Epoch: r.stamp()}
-	}
-
-	// The worktree preconditions, before ANY mutation (F3/R2-6): the
-	// clean-path set must match HEAD — an uncommitted hand edit to
-	// the ledger, its baseline, the destination directory, or an
-	// in-repo manifest dies here, not inside the commit. Porcelain
-	// status covers modified AND untracked alike.
-	cleanPaths := []string{"plans/goals.md", "plans/goals-accepted.json", "plans/goals"}
-	if opts.ManifestPath != "" {
-		if abs, absErr := filepath.Abs(opts.ManifestPath); absErr == nil {
-			if rootAbs, rootErr := filepath.Abs(r.Endpoint.Root); rootErr == nil {
-				if rel, relErr := filepath.Rel(rootAbs, abs); relErr == nil && !strings.HasPrefix(rel, "..") {
-					cleanPaths = append(cleanPaths, rel)
-				}
-			}
-		}
-	}
-	for _, cleanPath := range cleanPaths {
-		out, stErr := gitIn(r.Endpoint.Root, "status", "--porcelain", "--untracked-files=all", "--", cleanPath)
-		if stErr != nil {
-			// A probe that cannot answer proves nothing: refusing
-			// beats reading failure as clean.
-			return PublishResult{}, fmt.Errorf("migration precondition refused: the cleanliness of %s cannot be proven: %v", cleanPath, stErr)
-		}
-		if strings.TrimSpace(out) != "" {
-			return PublishResult{}, fmt.Errorf("migration precondition refused: %s has uncommitted or untracked changes", cleanPath)
-		}
 	}
 	// The fast digest gate on the worktree copy — the authoritative
 	// read happens tip-side inside the transaction (F2).
@@ -224,6 +246,20 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 			if lsOut, lsErr := gitIn(r.Endpoint.Root, "ls-tree", "--name-only", tip, "--", goalsPrefix); lsErr == nil && strings.TrimSpace(lsOut) != "" {
 				return nil, fmt.Errorf("migration precondition refused: %s already exists on the tip without a root record — not all-legacy: a confusion", goalsPrefix)
 			}
+			if manifestRel != "" {
+				// An in-repo manifest must be byte-identical at the
+				// captured tip: the worktree probe and the file read
+				// are separate moments, and a swap between them
+				// would publish amendments nobody reviewed under a
+				// digest the committed artifact does not carry.
+				tipManifest, mErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":"+manifestRel)
+				if mErr != nil {
+					return nil, fmt.Errorf("migration precondition refused: the manifest is not committed at the canonical tip: %v", mErr)
+				}
+				if sha256HexBytes([]byte(tipManifest)) != manifestDigest {
+					return nil, fmt.Errorf("migration precondition refused: the manifest read for this migration differs from the one committed at the canonical tip")
+				}
+			}
 			legacy, problems := Parse([]byte(tipSource))
 			if len(problems) > 0 {
 				lines := make([]string, len(problems))
@@ -285,8 +321,10 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 		}
 		// EVERY tolerated prose line survives: migration deletes
 		// goals.md afterwards, so a line dropped here is gone
-		// irreversibly.
-		f.Legacy = append(f.Legacy, g.Prose...)
+		// irreversibly. Trailing whitespace is trimmed at carry —
+		// the destination parser right-trims every line, and a
+		// carried line must read back as exactly what was stored.
+		f.Legacy = append(f.Legacy, trimRightAll(g.Prose)...)
 	}
 
 	if legacy.Current != nil {
@@ -406,7 +444,7 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 		MigrationMode: mode, Revision: 1,
 		// Root-level tolerated prose survives on the root record
 		// (R2-5) exactly as per-goal prose survives on its goal.
-		Legacy: append([]string(nil), legacy.RootProse...),
+		Legacy: trimRightAll(legacy.RootProse),
 	}
 	if legacy.Free != nil {
 		root.Free = &FreeRecord{Declared: legacy.Free.Declared, Origin: legacy.Free.Origin, Digest: legacy.Free.Digest}
@@ -417,6 +455,17 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 	})
 	files[goalsPrefix+"backlog.md"] = RenderRoot(root)
 	return files, nil
+}
+
+// trimRightAll right-trims every carried prose line: the destination
+// parser right-trims on read, so only right-trimmed lines survive a
+// render/parse round trip unchanged.
+func trimRightAll(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, strings.TrimRight(l, " \t"))
+	}
+	return out
 }
 
 func sha256HexBytes(data []byte) string {

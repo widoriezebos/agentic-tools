@@ -47,6 +47,19 @@ USAGE
 
 die() { echo "$2" >&2; exit "$1"; }
 
+# A hook enrolls the guard only if it references the EFFECTIVE guard:
+# after resolving the composer's dynamic toplevel reference, the hook
+# must name the target's current absolute guard path. A bare mention
+# of the basename — a stale path from a moved checkout, an inert
+# comment — is a hook git runs WITHOUT the fence.
+enrolls_guard() {
+  local hook_text toplevel
+  hook_text=$(cat "$1" 2>/dev/null) || return 1
+  toplevel=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null) || toplevel="$target"
+  hook_text=${hook_text//'$(git rev-parse --show-toplevel)'/$toplevel}
+  [[ "$hook_text" == *"$target/scripts/agents/pre-commit-guard.sh"* ]]
+}
+
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 target=
@@ -135,6 +148,20 @@ done
   && die 1 "target already has .github/workflows/metasystem.yml; follow docs/metasystem-reconciliation.md instead"
 
 echo "note: only file-shaped instruction assets are detectable. Confirm by hand that no agent-directed prose, prompt directories, or agent-encoding hooks/CI exist before treating this repository as fresh."
+
+# Enrollment feasibility is proven BEFORE any target mutation:
+# adoption itself performs goal mutations (genesis), whose enrollment
+# refuses a target carrying both pre-commit and pre-commit.local
+# without the guard — discovering that AFTER the payload landed would
+# leave a half-adopted repository behind the same refusal. Same
+# message, zero writes.
+if git -C "$target" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  pre_hook_dir=$(git -C "$target" rev-parse --path-format=absolute --git-path hooks)
+  if [[ -e "$pre_hook_dir/pre-commit" && -e "$pre_hook_dir/pre-commit.local" ]] \
+    && ! enrolls_guard "$pre_hook_dir/pre-commit"; then
+    die 1 "target carries both pre-commit and pre-commit.local and neither enrolls the guard; compose them by hand, then re-run adoption"
+  fi
+fi
 
 # Stage the payload from the tracked HEAD.
 stage=$(mktemp -d)
@@ -393,11 +420,11 @@ if [[ -x "$here/pre-commit.local" ]]; then
 fi
 exit 0
 '
-  if [[ -e "$hook_dir/pre-commit" ]] && grep -q "pre-commit-guard.sh" "$hook_dir/pre-commit"; then
+  if [[ -e "$hook_dir/pre-commit" ]] && enrolls_guard "$hook_dir/pre-commit"; then
     echo "pre-commit guard already enrolled in the target's hook; left as is"
   else
     if [[ -e "$hook_dir/pre-commit" && -e "$hook_dir/pre-commit.local" ]] \
-      && ! grep -q "pre-commit-guard.sh" "$hook_dir/pre-commit"; then
+      && ! enrolls_guard "$hook_dir/pre-commit"; then
       # Never clobber (R2-15) — and never limp on either: adoption
       # itself performs goal mutations (genesis), and the CLI's
       # enrollment refuses this exact shape, so a warn-and-continue

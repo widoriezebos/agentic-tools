@@ -710,7 +710,7 @@ func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
 func editRequest(r VerbRequest, id string, fields EditFields) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: editDeltas(id, fields)},
+		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: editDeltas(id, fields), Args: intentArgs(r, nil)},
 		Message: "goal edit " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)

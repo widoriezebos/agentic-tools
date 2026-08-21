@@ -325,11 +325,21 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 			}
 			return nil, fmt.Errorf("the crashed reconcile never published; the hand edits are untouched in the worktree — re-run goal reconcile")
 		}
-		// The tip the completion materializes must pass the SAME
-		// boundary the read side enforces: a
-		// malformed descendant that followed the reconcile commit
-		// must not become this checkout's files just because our
-		// trailer sits below it.
+		// The tip the completion materializes must pass EVERY
+		// boundary the read side enforces — acceptance (identity and
+		// descent), sync mode, and whole-tree validation. A
+		// descendant that validates but swaps ledger identity or
+		// sync mode, or a rewound tip behind the accepted ref, must
+		// not become this checkout's files just because our trailer
+		// sits below it.
+		if acceptedOut, accErr := gitIn(repoRoot, "rev-parse", "--verify", "--quiet", AcceptedRef); accErr == nil {
+			if gateErr := AcceptanceGates(repoRoot, strings.TrimSpace(acceptedOut), tip); gateErr != nil {
+				return nil, fmt.Errorf("the reconcile published, but the canonical tip fails the acceptance gates; repair the branch, then re-run --refresh-only: %w", gateErr)
+			}
+		}
+		if gateErr := SyncModeGate(e, tip); gateErr != nil {
+			return nil, fmt.Errorf("the reconcile published, but the canonical tip fails the sync-mode gate; repair the branch, then re-run --refresh-only: %w", gateErr)
+		}
 		if valErr := ValidateCommit(repoRoot, tip); valErr != nil {
 			return nil, fmt.Errorf("the reconcile published, but the canonical tip does not validate; repair the branch, then re-run --refresh-only: %w", valErr)
 		}

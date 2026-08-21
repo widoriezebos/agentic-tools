@@ -254,6 +254,13 @@ if true; then  # template-gated by the orchestrator
     || { echo "the existing pre-commit is not byte-identical after the refusal (R2-15)" >&2; exit 1; }
   cmp -s "$tmp/both-pre-commit-local.snap" "$both_tgt/.git/hooks/pre-commit.local" \
     || { echo "the existing pre-commit.local is not byte-identical after the refusal (R2-15)" >&2; exit 1; }
+  # The refusal must land BEFORE any target mutation: no payload, no
+  # binary, no genesis commit — an empty worktree and an unborn HEAD.
+  stray=$(find "$both_tgt" -mindepth 1 -not -path "$both_tgt/.git" -not -path "$both_tgt/.git/*" | head -5)
+  [[ -z "$stray" ]] \
+    || { echo "the refused adoption mutated the target worktree:" >&2; echo "$stray" >&2; exit 1; }
+  git -C "$both_tgt" rev-parse --verify HEAD >/dev/null 2>&1 \
+    && { echo "the refused adoption created a commit in the target" >&2; exit 1; }
 
   # IL-16: an open chain counts as current for a plan's in-flight claim, within
   # a bounded window; a closed or aged chain does not. jobs_in_flight stays

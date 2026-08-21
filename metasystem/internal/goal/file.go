@@ -127,7 +127,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			}
 			f.History = append(f.History, h)
 		case section == "legacy" && line != "":
-			f.Legacy = append(f.Legacy, line)
+			f.Legacy = append(f.Legacy, strings.TrimPrefix(line, "  "))
 		case strings.HasPrefix(line, "- "):
 			parseFileField(f, strings.TrimPrefix(line, "- "), seen, addProblem)
 		case strings.TrimSpace(line) == "":
@@ -295,31 +295,32 @@ func parseKVRecord(s string, required, optional []string, freeTail string) (map[
 
 // splitParkTail extracts because= (rest of value, after any displaced=).
 func splitParkTail(s string) (because, displaced string) {
-	// TOKEN boundaries, never substrings: a
-	// because= or displaced= buried inside another value must not
-	// fabricate a reason or displacement state.
-	rest := s
-	for rest != "" {
-		token := rest
-		if sp := strings.IndexAny(rest, " \t"); sp >= 0 {
-			token = rest[:sp]
-			rest = strings.TrimLeft(rest[sp:], " \t")
-		} else {
-			rest = ""
+	// TOKEN boundaries, never substrings: a because= or displaced=
+	// buried inside another value must not fabricate a reason or
+	// displacement state. because= takes the raw remainder
+	// BYTE-EXACT — the reason is free text, and a render/parse
+	// round trip must never rewrite its interior whitespace.
+	i := 0
+	for i < len(s) {
+		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+			i++
 		}
-		if strings.HasPrefix(token, "displaced=") && because == "" {
-			displaced = strings.TrimPrefix(token, "displaced=")
-			continue
+		if i >= len(s) {
+			break
 		}
+		start := i
+		for i < len(s) && s[i] != ' ' && s[i] != '\t' {
+			i++
+		}
+		token := s[start:i]
 		if strings.HasPrefix(token, "because=") {
-			because = strings.TrimPrefix(token, "because=")
-			if rest != "" {
-				because += " " + rest
-			}
-			return because, displaced
+			return s[start+len("because="):], displaced
+		}
+		if strings.HasPrefix(token, "displaced=") {
+			displaced = strings.TrimPrefix(token, "displaced=")
 		}
 	}
-	return because, displaced
+	return "", displaced
 }
 
 // RenderFile writes the canonical bytes of a goal file, Integrity
@@ -360,7 +361,10 @@ func RenderFile(f *GoalFile) []byte {
 	if len(f.Legacy) > 0 {
 		b.WriteString("\nLegacyNotes:\n")
 		for _, l := range f.Legacy {
-			b.WriteString(l + "\n")
+			// The indent makes carried prose OPAQUE to the parser: a
+			// legacy line shaped like a heading or a section marker
+			// must never be re-read as structure.
+			b.WriteString("  " + l + "\n")
 		}
 	}
 	b.WriteString("\nHistory:\n")
