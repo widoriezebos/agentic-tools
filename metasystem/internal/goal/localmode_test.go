@@ -52,7 +52,7 @@ func TestLocalMigrationBootstrapsItsBranch(t *testing.T) {
 	opts := MigrateOptions{
 		SourceDigest: digest, Identity: "01J5XK00000000000000000000", SyncMode: SyncLocal,
 	}
-	res, err := Migrate(localReq(r, "01J5X00000000000000000LM00"), opts)
+	res, err := Migrate(localReq(r, "01J5X00000000000000000KM00"), opts)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("local migrate: %+v %v", res, err)
 	}
@@ -73,12 +73,12 @@ func TestLocalMigrationBootstrapsItsBranch(t *testing.T) {
 		t.Fatalf("the root record commits the local mode: %+v", tree.Root)
 	}
 	// The rerun is idempotent on the same identity and mode.
-	res2, err := Migrate(localReq(r, "01J5X00000000000000000LM10"), opts)
+	res2, err := Migrate(localReq(r, "01J5X00000000000000000KM10"), opts)
 	if err != nil || res2.Outcome != OutcomeConfirmed || res2.Detail != "idempotent" {
 		t.Fatalf("the local rerun classifies idempotent: %+v %v", res2, err)
 	}
 	// Ordinary verbs work against the born branch.
-	res3, err := Open(localReq(r, "01J5X00000000000000000LM20"), "solo-work", "Single-machine work.", "main", "Go.")
+	res3, err := Open(localReq(r, "01J5X00000000000000000KM20"), "solo-work", "Single-machine work.", "main", "Go.")
 	if err != nil || res3.Outcome != OutcomeConfirmed {
 		t.Fatalf("open on the local ledger: %+v %v", res3, err)
 	}

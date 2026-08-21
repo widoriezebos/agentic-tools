@@ -50,7 +50,11 @@ ledger = open(sys.argv[1]).read()
 json.dump({"schemaVersion": 1, "ledger": ledger,
            "sha256": hashlib.sha256(ledger.encode()).hexdigest()}, open(sys.argv[2], "w"))
 PY
-git -C "$clone" add plans
+# The sandbox ships the guard so the CLI's enrollment (R2-11) has
+# something to enroll — a fresh clone has no hooks at all.
+mkdir -p "$clone/scripts/agents"
+cp "$root/scripts/agents/pre-commit-guard.sh" "$clone/scripts/agents/"
+git -C "$clone" add plans scripts
 git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm "legacy ledger"
 git -C "$clone" push -q origin main
 
@@ -88,6 +92,11 @@ grep -q "lineage=fixture-lineage" "$tmp/claimed.md" \
 if git -C "$clone" cat-file -e "$canonical_tip:plans/goals.md" 2>/dev/null; then
   echo "goals.md survived the cutover commit" >&2; exit 1
 fi
+
+# 2b. The mutation ENROLLED the guard (R2-11): a fresh clone has no
+# hooks, and the migrate installed the composer before publishing.
+grep -q "pre-commit-guard.sh" "$clone/.git/hooks/pre-commit" \
+  || { echo "goal migrate did not enroll the pre-commit guard (R2-11)" >&2; exit 1; }
 
 # 3. The read-side fetch reports the canonical tip and settles on
 # already-current (the migration's confirm advanced the accepted

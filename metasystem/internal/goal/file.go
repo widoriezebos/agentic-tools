@@ -181,6 +181,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Parked != nil && !validStamp(f.Parked.At) {
 		addProblem("Parked at=%q is not an RFC3339 timestamp", f.Parked.At)
 	}
+	if f.Parked != nil && strings.TrimSpace(f.Parked.Because) == "" {
+		addProblem("Parked without its because — a pause without a why is a stall in disguise")
+	}
 	if f.State == StateDone && f.Conclude == "" {
 		addProblem("done without Concluded")
 	}
@@ -234,14 +237,14 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 	case "Arc":
 		f.Arc = value
 	case "Claimed":
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, nil)
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, nil, "")
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
 		}
 		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"]}
 	case "Parked":
-		rec, err := parseKVRecord(value, []string{"by", "at"}, []string{"displaced"})
+		rec, err := parseKVRecord(value, []string{"by", "at"}, []string{"displaced"}, "because")
 		if err != nil {
 			addProblem("Parked: %v", err)
 			return
@@ -257,7 +260,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 // CLOSED key set: required keys must appear, optional keys may, and
 // anything else refuses — a key the grammar does not know is a tree
 // nobody reviewed. Free text (because=) is handled by the caller.
-func parseKVRecord(s string, required, optional []string) (map[string]string, error) {
+func parseKVRecord(s string, required, optional []string, freeTail string) (map[string]string, error) {
 	allowed := map[string]bool{}
 	for _, k := range required {
 		allowed[k] = true
@@ -271,8 +274,8 @@ func parseKVRecord(s string, required, optional []string) (map[string]string, er
 		if !found {
 			return nil, fmt.Errorf("stray token %q — the record grammar is key=value", tok)
 		}
-		if k == "because" {
-			break // because= consumes the rest; caller extracts it
+		if k == freeTail && freeTail != "" {
+			break // the lawful free-text tail consumes the rest; the caller extracts it
 		}
 		if !allowed[k] {
 			return nil, fmt.Errorf("unknown key %q — the record grammar is closed", k)
@@ -387,17 +390,43 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 		return h, fmt.Errorf("wants <at> <opid> <verb> actor=..., got %q", line)
 	}
 	h.At, h.Opid, h.Verb = fields[0], fields[1], fields[2]
+	if !validOpidShape(h.Opid) {
+		return h, fmt.Errorf("opid %q is not <ulid>-<machine>-<hash8>", h.Opid)
+	}
+	seenKeys := map[string]bool{}
+	dup := func(key string) error {
+		if seenKeys[key] {
+			return fmt.Errorf("duplicate %s= — the last write would silently win", key)
+		}
+		seenKeys[key] = true
+		return nil
+	}
 	for _, tok := range fields[3:] {
 		switch {
 		case strings.HasPrefix(tok, "actor="):
+			if err := dup("actor"); err != nil {
+				return h, err
+			}
 			h.Actor = strings.TrimPrefix(tok, "actor=")
 		case strings.HasPrefix(tok, "targets="):
+			if err := dup("targets"); err != nil {
+				return h, err
+			}
 			h.Targets = strings.Split(strings.TrimPrefix(tok, "targets="), ",")
 		case strings.HasPrefix(tok, "displaced="):
+			if err := dup("displaced"); err != nil {
+				return h, err
+			}
 			h.Displaced = strings.TrimPrefix(tok, "displaced=")
 		case tok == "ack":
+			if err := dup("ack"); err != nil {
+				return h, err
+			}
 			h.Ack = true
 		case strings.HasPrefix(tok, "keep="):
+			if err := dup("keep"); err != nil {
+				return h, err
+			}
 			n, err := strconv.Atoi(strings.TrimPrefix(tok, "keep="))
 			if err != nil {
 				return h, fmt.Errorf("keep= wants an integer: %q", tok)
@@ -436,6 +465,30 @@ func RenderHistoryLine(h HistoryLine) string {
 		b.WriteString(" reason=" + h.Reason)
 	}
 	return b.String()
+}
+
+// validOpidShape binds the opid grammar from the right (machine
+// names may carry dashes): a trailing 8-hex lineage hash, a
+// non-empty machine, and a leading 26-character Crockford ulid.
+func validOpidShape(opid string) bool {
+	lastDash := strings.LastIndex(opid, "-")
+	if lastDash < 0 || len(opid)-lastDash-1 != 8 {
+		return false
+	}
+	for _, r := range opid[lastDash+1:] {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	if len(opid) < 28 || opid[26] != '-' {
+		return false
+	}
+	for _, r := range opid[:26] {
+		if !strings.ContainsRune("0123456789ABCDEFGHJKMNPQRSTVWXYZ", r) {
+			return false
+		}
+	}
+	return lastDash > 27 // a non-empty machine between the ulid and the hash
 }
 
 // Opid builds an operation id: <ulid>-<machine>-<lineage-hash8>.

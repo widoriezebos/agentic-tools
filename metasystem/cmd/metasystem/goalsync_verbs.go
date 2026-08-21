@@ -15,7 +15,61 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 )
+
+// ensureGuardEnrolled installs or composes the pre-commit guard
+// before any goal mutation publishes (R2-11): git does not clone
+// hooks, so a fresh clone would otherwise mutate the ledger with no
+// accidental-edit fence. An existing hook is preserved as
+// pre-commit.local behind the guard; a hook already referencing the
+// guard is left alone; BOTH files existing without the guard
+// refuses toward manual composition — enrollment never clobbers
+// (R2-15's rule, held here too). The composer pins the guard's
+// absolute path: hooks are per-clone by nature, and the vendored
+// layout keeps the guard below the git toplevel.
+func ensureGuardEnrolled(root string) error {
+	guard := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
+	if _, err := os.Stat(guard); err != nil {
+		return nil // no guard ships here; nothing to enroll
+	}
+	out, err := exec.Command("git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return nil // not a git repository; the verbs refuse on their own terms
+	}
+	hookDir := filepath.Join(strings.TrimSpace(string(out)), "hooks")
+	hookPath := filepath.Join(hookDir, "pre-commit")
+	existing, readErr := os.ReadFile(hookPath)
+	if readErr == nil && strings.Contains(string(existing), "pre-commit-guard.sh") {
+		return nil
+	}
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		return err
+	}
+	localPath := filepath.Join(hookDir, "pre-commit.local")
+	if readErr == nil {
+		if _, localErr := os.Stat(localPath); localErr == nil {
+			return fmt.Errorf("pre-commit and pre-commit.local both exist and neither enrolls the guard; compose them by hand before mutating the ledger")
+		}
+		if err := os.Rename(hookPath, localPath); err != nil {
+			return err
+		}
+	}
+	composer := "#!/usr/bin/env bash\nguard=" + strconv.Quote(guard) + "\n" + `if [[ -x "$guard" ]]; then
+  "$guard" || exit $?
+fi
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -x "$here/pre-commit.local" ]]; then
+  exec "$here/pre-commit.local" "$@"
+fi
+exit 0
+`
+	return os.WriteFile(hookPath, []byte(composer), 0o755)
+}
 
 func goalActor(root string, human string) (goal.Actor, error) {
 	machine, err := goal.ResolveMachine(root)
@@ -78,6 +132,10 @@ func runGoalMigrate(args []string) int {
 			}
 			adoption = minted
 		}
+	}
+	if err := ensureGuardEnrolled(*root); err != nil {
+		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
+		return 1
 	}
 	actor, err := goalActor(*root, *by)
 	if err != nil {
@@ -172,6 +230,10 @@ func runGoalRecover(args []string) int {
 	if *root == "" {
 		fmt.Fprintln(os.Stderr, "goal recover: --root is required")
 		return 2
+	}
+	if err := ensureGuardEnrolled(*root); err != nil {
+		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
+		return 1
 	}
 	endpoint, err := goal.ResolveEndpoint(*root)
 	if err != nil {

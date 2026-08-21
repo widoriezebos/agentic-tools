@@ -148,7 +148,7 @@ func TestPruneKeepFieldIsLawful(t *testing.T) {
 }
 
 func TestUnknownHistoryKeyRefuses(t *testing.T) {
-	_, err := ParseHistoryLine("- 2026-08-20T03:00:00Z opid verb actor=a+b sneaky=1")
+	_, err := ParseHistoryLine("- 2026-08-20T03:00:00Z 01J5X0000000000000000000A0-mac-a-1a2b3c4d verb actor=a+b sneaky=1")
 	if err == nil || !strings.Contains(err.Error(), "unknown History key") {
 		t.Fatalf("unknown key must refuse by name, got %v", err)
 	}

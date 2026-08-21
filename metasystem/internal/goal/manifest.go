@@ -157,11 +157,17 @@ func ParseManifest(data []byte) (*Manifest, error) {
 	for lineNo, raw := range strings.Split(string(data), "\n") {
 		line := strings.TrimRight(raw, " \t")
 		if strings.HasPrefix(line, "MIGRATION_EPOCH:") {
+			if len(m.Entries) > 0 || current != nil {
+				return nil, fmt.Errorf("manifest line %d: MIGRATION_EPOCH must precede the first entry", lineNo+1)
+			}
 			m.Epoch = strings.TrimSpace(strings.TrimPrefix(line, "MIGRATION_EPOCH:"))
 			epochCount++
 			continue
 		}
 		if strings.HasPrefix(line, "REVIEWED_SOURCE_SHA256:") {
+			if len(m.Entries) > 0 || current != nil {
+				return nil, fmt.Errorf("manifest line %d: REVIEWED_SOURCE_SHA256 must precede the first entry", lineNo+1)
+			}
 			m.ReviewedSHA256 = strings.TrimSpace(strings.TrimPrefix(line, "REVIEWED_SOURCE_SHA256:"))
 			shaCount++
 			continue
@@ -183,6 +189,11 @@ func ParseManifest(data []byte) (*Manifest, error) {
 						current.Position = addPosition
 					}
 				}
+			}
+			if current == nil {
+				// An unrecognized entry heading is a tree nobody
+				// reviewed, never commentary (R2-16).
+				return nil, fmt.Errorf("manifest line %d: unknown entry heading %q — the schema admits add-goal and amend-goal", lineNo+1, line)
 			}
 			continue
 		}

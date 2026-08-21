@@ -9,6 +9,7 @@ package goal
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -173,14 +174,14 @@ func parseRootField(r *RootRecord, field string, seen map[string]bool, addProble
 	case "MigrationMode":
 		r.MigrationMode = value
 	case "Revision":
-		var n uint64
-		if _, err := fmt.Sscanf(value, "%d", &n); err != nil {
+		n, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
 			addProblem("Revision %q is not an unsigned integer", value)
 			return
 		}
 		r.Revision = n
 	case "Goal-free":
-		rec, err := parseKVRecord(value, []string{"declared", "origin", "digest"}, nil)
+		rec, err := parseKVRecord(value, []string{"declared", "origin", "digest"}, nil, "")
 		if err != nil {
 			addProblem("Goal-free: %v", err)
 			return

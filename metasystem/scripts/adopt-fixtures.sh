@@ -232,6 +232,24 @@ if true; then  # template-gated by the orchestrator
   grep -q "touch" "$compose_tgt/.git/hooks/pre-commit.local" \
     || { echo "re-adoption clobbered the preserved project hook" >&2; exit 1; }
 
+  # R2-15: a target ALREADY carrying both files gets neither
+  # clobbered — adoption warns and leaves both byte-identical.
+  both_tgt="$tmp/both-hooks-target"
+  mkdir -p "$both_tgt"
+  git -C "$both_tgt" init -q -b main
+  mkdir -p "$both_tgt/.git/hooks"
+  printf '#!/bin/sh\necho main-hook\n' >"$both_tgt/.git/hooks/pre-commit"
+  printf '#!/bin/sh\necho local-hook\n' >"$both_tgt/.git/hooks/pre-commit.local"
+  chmod +x "$both_tgt/.git/hooks/pre-commit" "$both_tgt/.git/hooks/pre-commit.local"
+  "$nested_src/vendored/scripts/adopt.sh" "$both_tgt" --runtimes claude >"$tmp/adopt-both.out" 2>&1 \
+    || { echo "adoption over the both-hooks target failed" >&2; cat "$tmp/adopt-both.out" >&2; exit 1; }
+  grep -q "compose them by hand" "$tmp/adopt-both.out" \
+    || { echo "the both-hooks shape did not warn by name" >&2; cat "$tmp/adopt-both.out" >&2; exit 1; }
+  grep -q "main-hook" "$both_tgt/.git/hooks/pre-commit" \
+    || { echo "the existing pre-commit was clobbered (R2-15)" >&2; exit 1; }
+  grep -q "local-hook" "$both_tgt/.git/hooks/pre-commit.local" \
+    || { echo "the existing pre-commit.local was clobbered (R2-15)" >&2; exit 1; }
+
   # IL-16: an open chain counts as current for a plan's in-flight claim, within
   # a bounded window; a closed or aged chain does not. jobs_in_flight stays
   # strict on purpose, so the stop hook still refuses abandoning an open chain.
