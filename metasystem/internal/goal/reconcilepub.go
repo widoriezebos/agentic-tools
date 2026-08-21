@@ -50,9 +50,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	}
 	res, err := Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "reconcile", Targets: targets, Args: map[string]string{
-			"by": r.Actor.Human, "rows": fmt.Sprintf("%d", len(rows)),
-		}},
+		Intent:  reconcileIntent(r.Actor.Human, targets, rows),
 		Message: "goal reconcile (" + r.Actor.Human + ")",
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -226,4 +224,40 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		return []Change{{Path: livePath(row.Id), Content: RenderFile(f)}}, nil
 	}
 	return nil, fmt.Errorf("reconcile has no application for verb %q", row.Verb)
+}
+
+// reconcileIntent serializes every mapped row into the journal's
+// durable intent (F7): verb, target, reason, conclusion, cascade
+// set, and field deltas — the whole session, rebuildable.
+func reconcileIntent(human string, targets []string, rows []MappedVerb) Intent {
+	in := Intent{Verb: "reconcile", Targets: targets, Args: map[string]string{
+		"by": human, "rows": fmt.Sprintf("%d", len(rows)),
+	}}
+	for i, row := range rows {
+		prefix := fmt.Sprintf("row%d.", i)
+		in.Args[prefix+"verb"] = row.Verb
+		in.Args[prefix+"id"] = row.Id
+		if row.Because != "" {
+			in.Args[prefix+"because"] = row.Because
+		}
+		if row.Conclude != "" {
+			in.Args[prefix+"conclude"] = row.Conclude
+		}
+		if len(row.ArcIds) > 0 {
+			in.Args[prefix+"arc"] = strings.Join(row.ArcIds, ",")
+		}
+		if row.Fields.Intent != nil {
+			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "intent", New: *row.Fields.Intent})
+		}
+		if row.Fields.NextStep != nil {
+			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "next", New: *row.Fields.NextStep})
+		}
+		if row.Fields.Origin != nil {
+			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "origin", New: *row.Fields.Origin})
+		}
+		if row.Fields.Blocked != nil {
+			in.Deltas = append(in.Deltas, FieldDelta{Target: row.Id, Field: "blockedBy", New: strings.Join(*row.Fields.Blocked, ",")})
+		}
+	}
+	return in
 }

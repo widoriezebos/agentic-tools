@@ -742,3 +742,37 @@ func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 		t.Fatalf("the joined arc stays lawful: %v", problems)
 	}
 }
+
+func TestFreshNoOpsAbandonHonestly(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	if res, err := OpenClaim(verbReq(a, "01J5X00000000000000000F900", "mac-a"), "held-fast", "Held.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --claim: %+v %v", res, err)
+	}
+	// A fresh claim of an already-ours goal abandons (F8): its opid
+	// is nowhere, so confirmed would be a lie.
+	res, err := Claim(verbReq(a, "01J5X00000000000000000F910", "mac-a"), "held-fast")
+	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "not by this operation") {
+		t.Fatalf("claim-already-ours abandons: %+v %v", res, err)
+	}
+	// A fresh steal of an already-ours goal abandons the same way.
+	humanReq := verbReq(a, "01J5X00000000000000000F920", "mac-a")
+	humanReq.Actor.Human = "wido"
+	res, err = Steal(humanReq, "held-fast")
+	if err != nil || res.Outcome != OutcomeAbandoned {
+		t.Fatalf("steal-already-ours abandons: %+v %v", res, err)
+	}
+	// Detach without an arc abandons with its reason.
+	res, err = Detach(verbReq(b, "01J5X00000000000000000F930", "mac-b"), "held-fast")
+	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "not in an arc") {
+		t.Fatalf("detach-without-arc abandons: %+v %v", res, err)
+	}
+	// Every abandoned entry is journaled with its reason — no
+	// confirmed entry whose opid is nowhere.
+	for _, ulid := range []string{"01J5X00000000000000000F910", "01J5X00000000000000000F920"} {
+		entry, err := ReadEntry(a, Opid(ulid, "mac-a", "lin-1"))
+		if err != nil || entry.Outcome != OutcomeAbandoned {
+			t.Fatalf("the no-op journals abandoned: %+v %v", entry, err)
+		}
+	}
+}

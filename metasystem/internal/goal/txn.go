@@ -390,6 +390,15 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 	if _, err := CreateEntry(e.Root, req.Opid, req.Machine, req.Lineage, req.Intent); err != nil {
 		return PublishResult{}, err
 	}
+	return runTransaction(e, req)
+}
+
+// runTransaction drives one journaled transaction whose entry
+// ALREADY exists (created or pushed): Publish creates then runs;
+// recovery takes over a dead owner's entry then runs the same loop
+// from the stored intent (F7 — recovery completes, it does not
+// kill).
+func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 	deadline := req.Deadline
 	if deadline <= 0 {
 		deadline = DefaultPublishDeadline

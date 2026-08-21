@@ -458,7 +458,7 @@ type EditFields struct {
 
 // Edit applies field deltas to one live goal.
 func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
-	deltas := []FieldDelta{}
+	deltas := editDeltas(id, fields)
 	return Publish(r.Endpoint, PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: deltas},
@@ -1061,4 +1061,24 @@ func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	})
+}
+
+// editDeltas serializes an edit's field changes into the journal's
+// durable intent — enough to rebuild the edit without the original
+// process (F7: recovery completes from the stored intent).
+func editDeltas(id string, fields EditFields) []FieldDelta {
+	var deltas []FieldDelta
+	if fields.Intent != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "intent", New: *fields.Intent})
+	}
+	if fields.NextStep != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "next", New: *fields.NextStep})
+	}
+	if fields.Origin != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "origin", New: *fields.Origin})
+	}
+	if fields.Blocked != nil {
+		deltas = append(deltas, FieldDelta{Target: id, Field: "blockedBy", New: strings.Join(*fields.Blocked, ",")})
+	}
+	return deltas
 }

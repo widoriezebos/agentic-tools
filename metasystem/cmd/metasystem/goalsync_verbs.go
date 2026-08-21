@@ -151,3 +151,35 @@ func runGoalSourceDigest(args []string) int {
 	fmt.Println(goal.SourceDigestOf(data))
 	return 0
 }
+
+// runGoalRecover executes the one recovery rule over the journal —
+// the verb a stranded clone runs to move again.
+func runGoalRecover(args []string) int {
+	flags := flag.NewFlagSet("goal recover", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" {
+		fmt.Fprintln(os.Stderr, "goal recover: --root is required")
+		return 2
+	}
+	endpoint, err := goal.ResolveEndpoint(*root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
+		return 1
+	}
+	reports, err := goal.Recover(endpoint)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
+		return 1
+	}
+	if len(reports) == 0 {
+		fmt.Println("the journal is clean; nothing to recover")
+		return 0
+	}
+	for _, rep := range reports {
+		fmt.Printf("%s: %s — %s\n", rep.Opid, rep.Action, rep.Detail)
+	}
+	return 0
+}

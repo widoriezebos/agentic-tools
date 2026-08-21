@@ -314,6 +314,7 @@ func families() []family {
 				{"migrate", "the cutover: one commit turns the legacy ledger into the multi-machine tree (human act, reviewed bytes)", runGoalMigrate},
 				{"fetch", "the read-side advance: validate the canonical tip and move the accepted ref", runGoalFetch},
 				{"source-digest", "print goals.md's sha256 — the reviewed literal the migration demands", runGoalSourceDigest},
+				{"recover", "run the one recovery rule over the journal: confirm, correct, complete, or close every stranded entry", runGoalRecover},
 			},
 		},
 		{
