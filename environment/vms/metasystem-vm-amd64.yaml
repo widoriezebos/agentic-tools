@@ -98,8 +98,8 @@ param:
   # bare binary alone starts and chats but cannot execute a single tool call:
   # Code Mode fails closed without its host helper. Checksum is sha256 of the
   # tarball; bump both together.
-  CODEX_TAG: "rust-v0.147.0"
-  CODEX_SHA256_AMD64: "bd758d53d56e41dc65e045f4589df79a038ed197a011adcb52a258e6ad64cfda"
+  CODEX_TAG: "rust-v0.148.0"
+  CODEX_SHA256_AMD64: "8c790500af2ba6e74ce4948fe26c651ac1f77f6dbb005b47c8d26ff711146262"
   # GitHub CLI. Also serves as git's credential helper for HTTPS push/pull.
   GH_VERSION: "2.97.0"
   # Descartes MCP debug proxy, run as a systemd service on this port. Public
