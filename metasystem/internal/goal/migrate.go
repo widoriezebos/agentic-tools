@@ -40,7 +40,7 @@ type MigrateOptions struct {
 // Migrate synthesizes and publishes the new ledger.
 // migrationComplete reports whether the tip already carries EXACTLY
 // this migration's root record — identity, mode, sync mode, and the
-// manifest digest all matching (round 3 finding 6: identity+mode
+// manifest digest all matching (identity+mode
 // alone let a rerun requesting the opposite sync mode or a different
 // manifest read as idempotent although that cutover never landed).
 // Any mismatch on a completed migration is the named confusion.
@@ -110,8 +110,8 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 	for _, cleanPath := range cleanPaths {
 		out, stErr := gitIn(r.Endpoint.Root, "status", "--porcelain", "--untracked-files=all", "--", cleanPath)
 		if stErr != nil {
-			// A probe that cannot answer proves nothing (round 3
-			// finding 9): refusing beats reading failure as clean.
+			// A probe that cannot answer proves nothing: refusing
+			// beats reading failure as clean.
 			return PublishResult{}, fmt.Errorf("migration precondition refused: the cleanliness of %s cannot be proven: %v", cleanPath, stErr)
 		}
 		if strings.TrimSpace(out) != "" {
@@ -141,19 +141,27 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 	// a confirmation with no History line and no trailer — a lie the
 	// replay path then reads as branch surgery. The same check
 	// re-runs inside the transaction for the racing case.
-	if preNonce, nonceErr := readNonce(); nonceErr == nil {
-		if preTip, capErr := CaptureTip(r.Endpoint, preNonce); capErr == nil {
-			done, doneErr := migrationComplete(r.Endpoint.Root, preTip, opts.Identity, mode, opts.SyncMode, manifestDigest)
-			CleanupRefs(r.Endpoint, preNonce)
-			if doneErr != nil {
-				return PublishResult{}, doneErr
-			}
-			if done {
-				return PublishResult{Outcome: OutcomeConfirmed, Tip: preTip, Detail: "idempotent"}, nil
-			}
-		} else {
-			CleanupRefs(r.Endpoint, preNonce)
-		}
+	// A check that cannot answer refuses HERE, before any journal
+	// write: falling through to Publish on a capture outage journals
+	// a fresh entry that the same outage immediately abandons — a
+	// husk recovery then has to classify. Nothing is lost by
+	// refusing: the transaction's own capture would fail identically.
+	preNonce, nonceErr := readNonce()
+	if nonceErr != nil {
+		return PublishResult{}, fmt.Errorf("the rerun check cannot run: %v", nonceErr)
+	}
+	preTip, capErr := CaptureTip(r.Endpoint, preNonce)
+	if capErr != nil {
+		CleanupRefs(r.Endpoint, preNonce)
+		return PublishResult{}, fmt.Errorf("the rerun check cannot capture the canonical tip: %v", capErr)
+	}
+	done, doneErr := migrationComplete(r.Endpoint.Root, preTip, opts.Identity, mode, opts.SyncMode, manifestDigest)
+	CleanupRefs(r.Endpoint, preNonce)
+	if doneErr != nil {
+		return PublishResult{}, doneErr
+	}
+	if done {
+		return PublishResult{Outcome: OutcomeConfirmed, Tip: preTip, Detail: "idempotent"}, nil
 	}
 
 	return Publish(r.Endpoint, PublishRequest{
@@ -176,7 +184,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 				// check and this capture: the desired state holds
 				// WITHOUT this opid (R2-7) — abandoned, never a
 				// manufactured confirm. The SAME four-way comparison
-				// as the pre-journal check (round 3 finding 6).
+				// as the pre-journal check.
 				return nil, NothingToDo{Reason: "the migration already completed under this identity, mode, sync mode, and manifest"}
 			}
 
@@ -202,7 +210,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 				if jsonErr := json.Unmarshal([]byte(accJSON), &accepted); jsonErr != nil || accepted.Sha256 == "" {
 					return nil, fmt.Errorf("migration precondition refused: the accepted baseline does not parse (schemaVersion/ledger/sha256)")
 				}
-				// The WHOLE baseline certifies (round 3 finding 8):
+				// The WHOLE baseline certifies:
 				// its schema version, its digest, AND its full ledger
 				// bytes must all agree with the tip's goals.md — a
 				// crafted digest over foreign bytes proves nothing.
@@ -275,9 +283,9 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 		for _, ev := range g.Evidence {
 			f.Legacy = append(f.Legacy, "Evidence: "+ev)
 		}
-		// EVERY tolerated prose line survives (R2-5, restored by
-		// round 3 finding 1 — the append was lost in an edit-pipeline
-		// slip and the reviewer caught the deletion risk it recreated).
+		// EVERY tolerated prose line survives: migration deletes
+		// goals.md afterwards, so a line dropped here is gone
+		// irreversibly.
 		f.Legacy = append(f.Legacy, g.Prose...)
 	}
 

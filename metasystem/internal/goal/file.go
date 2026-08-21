@@ -295,7 +295,7 @@ func parseKVRecord(s string, required, optional []string, freeTail string) (map[
 
 // splitParkTail extracts because= (rest of value, after any displaced=).
 func splitParkTail(s string) (because, displaced string) {
-	// TOKEN boundaries, never substrings (round 3 finding 13): a
+	// TOKEN boundaries, never substrings: a
 	// because= or displaced= buried inside another value must not
 	// fabricate a reason or displacement state.
 	rest := s

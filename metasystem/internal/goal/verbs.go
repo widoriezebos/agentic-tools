@@ -190,8 +190,8 @@ func ackDisplacements(t *TreeGoals, r VerbRequest, changes []Change) []Change {
 	return append(changes, rendered)
 }
 
-// intentArgs stamps the directing human into every journaled intent
-// (round 3 finding 2): recovery reconstructs authority from the
+// intentArgs stamps the directing human into every journaled
+// intent: recovery reconstructs authority from the
 // stored args, and a live human-directed verb that omitted by= was
 // replayed as an AGENT — refused by its own gates or written with
 // machine attribution.

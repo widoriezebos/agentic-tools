@@ -40,12 +40,12 @@ func ensureGuardEnrolled(root string) error {
 	guard := filepath.Join(absRoot, "scripts", "agents", "pre-commit-guard.sh")
 	info, statErr := os.Stat(guard)
 	if statErr != nil || info.Mode()&0o111 == 0 {
-		// Fail closed (round 3 finding 3): a checkout without an
+		// Fail closed: a checkout without an
 		// EXECUTABLE guard cannot claim the fence exists, and a
 		// mutation without the fence is exactly what R2-11 forbids.
 		return fmt.Errorf("this checkout ships no executable pre-commit guard at %s; the ledger fence cannot be enrolled, so the mutation refuses", guard)
 	}
-	// --git-path hooks honors core.hooksPath (round 3 finding 3):
+	// --git-path hooks honors core.hooksPath:
 	// writing under .git/hooks while git reads a configured hooks
 	// path elsewhere would enroll a hook git never invokes.
 	out, err := exec.Command("git", "-C", absRoot, "rev-parse", "--path-format=absolute", "--git-path", "hooks").Output()

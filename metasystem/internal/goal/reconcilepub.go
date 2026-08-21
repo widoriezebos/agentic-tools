@@ -113,7 +113,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		// a failed confirming refetch) KEEPS the record and its
 		// snapshot — --refresh-only resolves it by the opid's trailer
 		// (R2-1). The JOURNAL decides definitiveness, not the returned
-		// outcome (round 3 finding 12): pre-push failures mark the
+		// outcome: pre-push failures mark the
 		// entry abandoned but return an empty result, and leaving the
 		// pending record then blocks ordinary reconcile spuriously.
 		definitive := false
@@ -271,8 +271,8 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb) ([]Change, error) {
 		if !exists {
 			return nil, conflict("state", "not live on the fetched tip")
 		}
-		// The state before-value binds for edits too (round 3
-		// finding 5): a hand edit captured against queued must not
+		// The state before-value binds for edits too: a hand edit
+		// captured against queued must not
 		// publish over a concurrently landed claim as if displacement
 		// were consent. The compose case is exempt — this session's
 		// own done row already moved the goal, and ITS BaseState

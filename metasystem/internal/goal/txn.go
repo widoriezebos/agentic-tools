@@ -121,10 +121,10 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 // tipCarriesLedger reports whether the tip has a ledger root at
 // all — the pre-migration discriminator the mutation-side
 // validation and the sync-mode gate share. Absence and FAILURE are
-// different facts (round 3 finding 10): ls-tree answers absence
-// with empty output and success, while an execution failure returns
-// the error — a probe that cannot answer must never read as
-// "pre-migration, skip validation".
+// different facts: ls-tree answers absence with empty output and
+// success, while an execution failure returns the error — a probe
+// that cannot answer must never read as "pre-migration, skip
+// validation".
 func tipCarriesLedger(e Endpoint, tip string) (bool, error) {
 	out, err := gitIn(e.Root, "ls-tree", "--name-only", tip, "--", goalsPrefix+"backlog.md")
 	if err != nil {

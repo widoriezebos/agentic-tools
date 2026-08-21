@@ -191,7 +191,7 @@ func Parse(data []byte) (*Ledger, []Problem) {
 		if strings.HasPrefix(line, "# ") {
 			// Only the FIRST document title is structure; a later
 			// accepted "# " heading is content the migration must
-			// carry (round 3 finding 1).
+			// carry.
 			if !seenTitle {
 				seenTitle = true
 				return
