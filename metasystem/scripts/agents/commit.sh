@@ -28,6 +28,12 @@ else
   "$ms" lease require-holder --root "$root" --caller-pid "$$" >/dev/null
 fi
 
+push_after=0
+if [[ ${1:-} == --push ]]; then
+  push_after=1
+  shift
+fi
+
 started=$("$ms" proc started-at --pid $$) || {
   echo "agent commit wrapper refused: wrapper process start time is unreadable" >&2
   exit 1
@@ -179,4 +185,24 @@ if [[ "$landed_tree" != "$proved_tree" ]]; then
   fi
   echo "agent commit refused: the commit recorded a tree the static re-proof never judged (content selection beyond the index); the commit was rolled back — stage the exact bytes and commit them plainly" >&2
   exit 1
+fi
+
+# The landing is both remotes or it is not a landing (--push): agents
+# remembered this rule around the tooling until one push was missed;
+# now the wrapper owns it. Origin first; transport only if declared.
+if (( push_after )); then
+  branch=$(git -C "$root" symbolic-ref --short HEAD) || {
+    echo "landing push refused: HEAD is not on a branch" >&2
+    exit 1
+  }
+  git -C "$root" push origin "$branch" || {
+    echo "landing push failed at origin; the commit stands locally — resolve and push both remotes" >&2
+    exit 1
+  }
+  if git -C "$root" remote | grep -qx transport; then
+    git -C "$root" push transport "$branch" || {
+      echo "landing push failed at transport with origin already pushed; resolve (force-with-lease is YOUR call) and push transport" >&2
+      exit 1
+    }
+  fi
 fi

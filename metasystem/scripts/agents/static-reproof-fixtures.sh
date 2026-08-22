@@ -177,6 +177,28 @@ grep -Fq "never judged" <<<"$selected" \
 [[ "$(git -C "$fixture_root" rev-parse 'HEAD^{tree}')" == "$staged_tree" ]] \
   || { echo "static re-proof fixture: the concluding commit did not record the proved tree" >&2; exit 1; }
 
+# Leg 8b (landing-tooling-fixes): --push lands on BOTH declared
+# remotes or fails by name — the rule agents remembered around the
+# tooling is now the tooling's.
+origin_bare=$(mktemp -d)/origin.git
+transport_bare=$(mktemp -d)/transport.git
+git init -q --bare -b main "$origin_bare"
+git init -q --bare -b main "$transport_bare"
+git -C "$fixture_root" remote add origin "$origin_bare"
+git -C "$fixture_root" remote add transport "$transport_bare"
+printf 'landed\n' >"$fixture_root/internal/red/landed.txt"
+git -C "$fixture_root" add internal/red/landed.txt
+"$fixture_root/scripts/agents/commit.sh" __lease-held human --push -q -m "push lands both remotes" \
+  || { echo "static re-proof fixture: --push refused a lawful landing" >&2; exit 1; }
+pushed_head=$(git -C "$fixture_root" rev-parse HEAD)
+[[ "$(git -C "$origin_bare" rev-parse main)" == "$pushed_head" ]] \
+  || { echo "static re-proof fixture: --push did not land origin" >&2; exit 1; }
+[[ "$(git -C "$transport_bare" rev-parse main)" == "$pushed_head" ]] \
+  || { echo "static re-proof fixture: --push did not land transport" >&2; exit 1; }
+git -C "$fixture_root" remote remove origin
+git -C "$fixture_root" remote remove transport
+
+
 # Leg 8 (IL28-R3-1/R4-2): a red audit refuses the commit by its OWN
 # exact message. The red shim is STAGED so the closure passes and the
 # audit actually executes — an unstaged red shim would trip the
