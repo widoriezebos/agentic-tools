@@ -73,11 +73,22 @@ func WriteBase(repoRoot string, rec BaseRecord) error {
 	if err != nil {
 		return err
 	}
-	tmp := baseRecordPath(repoRoot) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// A UNIQUE temp name per writer: a shared ".tmp" lets two
+	// sessions clobber each other's half-written record.
+	tmpF, err := os.CreateTemp(dir, "materialized-*.json.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, baseRecordPath(repoRoot))
+	if _, err := tmpF.Write(data); err != nil {
+		tmpF.Close()
+		os.Remove(tmpF.Name())
+		return err
+	}
+	if err := tmpF.Close(); err != nil {
+		os.Remove(tmpF.Name())
+		return err
+	}
+	return os.Rename(tmpF.Name(), baseRecordPath(repoRoot))
 }
 
 // Snapshot is one stable capture of the checkout's ledger surface:
@@ -246,6 +257,22 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 	if err != nil {
 		return nil, err
 	}
+	// The goal directories themselves must be REAL: a symlinked
+	// parent routes every write and removal outside the root, and
+	// the leaf checks below never see it.
+	for _, rel := range []string{"plans", "plans/goals", "plans/goals/done"} {
+		dirAbs := filepath.Join(repoRoot, filepath.FromSlash(rel))
+		lst, lstErr := os.Lstat(dirAbs)
+		if lstErr != nil {
+			if os.IsNotExist(lstErr) {
+				continue
+			}
+			return nil, fmt.Errorf("the refresh cannot prove %s is a real directory: %v", rel, lstErr)
+		}
+		if lst.Mode()&os.ModeSymlink != 0 || !lst.IsDir() {
+			return nil, fmt.Errorf("%s is not a real directory; the refresh writes nothing through a changed identity", rel)
+		}
+	}
 	for _, p := range sortedKeys(published) {
 		abs := filepath.Join(repoRoot, filepath.FromSlash(p))
 		// Identity BEFORE content: a post-capture symlink (or any
@@ -282,11 +309,21 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 		// Write-then-rename: an in-place truncate torn by ENOSPC or
 		// death leaves partial bytes the RERUN would misread as a
 		// hand edit — and then record completion over the tear.
-		tmp := abs + ".goal-refresh-tmp"
-		if err := os.WriteFile(tmp, published[p], 0o644); err != nil {
+		tmpF, tmpErr := os.CreateTemp(filepath.Dir(abs), ".goal-refresh-*")
+		if tmpErr != nil {
+			return skipped, tmpErr
+		}
+		if _, err := tmpF.Write(published[p]); err != nil {
+			tmpF.Close()
+			os.Remove(tmpF.Name())
 			return skipped, err
 		}
-		if err := os.Rename(tmp, abs); err != nil {
+		if err := tmpF.Close(); err != nil {
+			os.Remove(tmpF.Name())
+			return skipped, err
+		}
+		if err := os.Rename(tmpF.Name(), abs); err != nil {
+			os.Remove(tmpF.Name())
 			return skipped, err
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // materialize writes a commit's ledger files into the worktree and
@@ -393,5 +394,55 @@ func TestVerbsAreImmuneToGitEnvironmentSteering(t *testing.T) {
 	out, catErr := gitIn(a, "cat-file", "-p", "origin/main:./plans/goals/steered-not.md")
 	if catErr != nil || !strings.Contains(out, "Immune.") {
 		t.Fatalf("the publish landed on the REAL origin: %v %s", catErr, out)
+	}
+}
+
+func TestRefreshRefusesASymlinkedGoalDirectory(t *testing.T) {
+	a, tip := reconcileBed(t)
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The done/ directory becomes a symlink to an outside dir: leaf
+	// checks never see it, and every write through it would land
+	// outside the root.
+	outside := t.TempDir()
+	doneDir := filepath.Join(a, "plans", "goals", "done")
+	_ = os.Remove(doneDir)
+	if err := os.Symlink(outside, doneDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Refresh(a, tip, snap); err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("a symlinked goal directory refuses the whole refresh: %v", err)
+	}
+}
+
+func TestOverlappingReconcileClaimsAreSerialized(t *testing.T) {
+	a, _ := reconcileBed(t)
+	// A standing FRESH lock refuses the second claimant instead of
+	// letting it overwrite the first's pending record.
+	lock := baseRecordPath(a) + ".lock"
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	editablePath := filepath.Join(a, "plans", "goals", "editable.md")
+	data, _ := os.ReadFile(editablePath)
+	if err := os.WriteFile(editablePath, []byte(strings.Replace(string(data), "Original intent.", "Contended intent.", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	req := verbReq(a, "01J5X00000000000000000CC10", "mac-a")
+	req.Actor.Human = "wido"
+	if _, err := Reconcile(req); err == nil || !strings.Contains(err.Error(), "mid-claim") {
+		t.Fatalf("a fresh lock serializes the claim: %v", err)
+	}
+	// A STALE lock (a crashed claimant) is stolen and the session
+	// proceeds.
+	old := time.Now().Add(-11 * time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Reconcile(req)
+	if err != nil || res.Publish.Outcome != OutcomeConfirmed {
+		t.Fatalf("a stale lock is stolen: %+v %v", res.Publish, err)
 	}
 }

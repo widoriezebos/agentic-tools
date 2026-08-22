@@ -7,6 +7,7 @@ package main
 // projection owns the reads after.
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"flag"
@@ -72,7 +73,32 @@ func ensureGuardEnrolled(root string) error {
 	if err != nil {
 		return fmt.Errorf("the hooks directory cannot be resolved for %s: %v", absRoot, err)
 	}
-	hookDir := strings.TrimSpace(string(out))
+	// Newline-only trim: a core.hooksPath ending in a space is a
+	// lawful (if hostile) directory name, and deleting the byte would
+	// install the hook where git never looks.
+	hookDir := strings.TrimRight(string(out), "\n")
+	// A hooks directory OUTSIDE both the repository's common dir and
+	// its toplevel is SHARED (a global core.hooksPath): composing our
+	// fail-closed guard there would break every unrelated repository
+	// that commits through it.
+	commonCmd := exec.Command("git", "-C", absRoot, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	commonCmd.Env = environWithoutGitSteeringCLI()
+	commonOut, commonErr := commonCmd.Output()
+	topCmd0 := exec.Command("git", "-C", absRoot, "rev-parse", "--show-toplevel")
+	topCmd0.Env = environWithoutGitSteeringCLI()
+	topOut0, topErr0 := topCmd0.Output()
+	if commonErr != nil || topErr0 != nil {
+		return fmt.Errorf("the repository's own directories cannot be resolved for enrollment")
+	}
+	within := func(dir, parent string) bool {
+		rel, relErr := filepath.Rel(parent, dir)
+		return relErr == nil && (rel == "." || filepath.IsLocal(rel))
+	}
+	commonDir := strings.TrimRight(string(commonOut), "\n")
+	topDir := strings.TrimRight(string(topOut0), "\n")
+	if !within(hookDir, commonDir) && !within(hookDir, topDir) {
+		return fmt.Errorf("this repository's hooks directory %s is shared (core.hooksPath outside the repository); composing the ledger fence there would break unrelated repositories — enroll by hand, then re-run", hookDir)
+	}
 	hookPath := filepath.Join(hookDir, "pre-commit")
 	existing, readErr := os.ReadFile(hookPath)
 	if readErr != nil && !os.IsNotExist(readErr) {
@@ -80,42 +106,27 @@ func ensureGuardEnrolled(root string) error {
 		// would overwrite a file whose content was never seen.
 		return fmt.Errorf("the existing pre-commit hook cannot be read: %v", readErr)
 	}
-	// Enrollment means the guard RUNS, not that it is mentioned: an
-	// executing line must INVOKE it — "$guard" with the assignment
-	// bound to the current path, or the path itself in a command
-	// position. An assignment followed by exit 0, a comment, a stale
-	// path from before a move: all of those leave commits unfenced.
+	// Enrollment means the guard RUNS: static reading of a shell hook
+	// is an arms race (reassignments, echoes, substitutions all fool
+	// it), so the proof is BEHAVIORAL — the hook chain is executed
+	// with a probe nonce and must return the guard's acknowledgment.
+	// The guard answers the probe first thing and exits distinctly,
+	// so no downstream hook does real work.
 	enrolled := false
 	if readErr == nil {
-		resolved := string(existing)
-		topCmd := exec.Command("git", "-C", absRoot, "rev-parse", "--show-toplevel")
-		topCmd.Env = environWithoutGitSteeringCLI()
-		if topOut, topErr := topCmd.Output(); topErr == nil {
-			resolved = strings.ReplaceAll(resolved, "$(git rev-parse --show-toplevel)", strings.TrimRight(string(topOut), "\n"))
+		if hookInfo, hookStatErr := os.Stat(hookPath); hookStatErr == nil && hookInfo.Mode()&0o111 != 0 {
+			nonce, nonceErr := goalUlid()
+			if nonceErr != nil {
+				return nonceErr
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			probeRun := exec.CommandContext(ctx, hookPath)
+			probeRun.Dir = absRoot
+			probeRun.Env = append(environWithoutGitSteeringCLI(), "METASYSTEM_GUARD_PROBE="+nonce)
+			probeOutBytes, _ := probeRun.CombinedOutput()
+			cancel()
+			enrolled = strings.Contains(string(probeOutBytes), "guard-probe-ack "+nonce)
 		}
-		assigned, varInvoked, pathInvoked := false, false, false
-		for _, line := range strings.Split(resolved, "\n") {
-			trimmed := strings.TrimLeft(line, " \t")
-			if strings.HasPrefix(trimmed, "#") {
-				continue
-			}
-			// Quote characters interrupt the byte-compare, not the
-			// shell's word: strip them before matching the path.
-			bare := strings.NewReplacer(`"`, "", "'", "").Replace(trimmed)
-			if strings.HasPrefix(bare, "guard=") {
-				if strings.Contains(bare, guard) {
-					assigned = true
-				}
-				continue
-			}
-			if strings.Contains(trimmed, "$guard") {
-				varInvoked = true
-			}
-			if strings.Contains(bare, guard) {
-				pathInvoked = true
-			}
-		}
-		enrolled = pathInvoked || (assigned && varInvoked)
 	}
 	// An enrolled hook of OUR OWN shape still carrying the fail-open
 	// body upgrades in place: a missing guard must block the commit,
@@ -123,13 +134,6 @@ func ensureGuardEnrolled(root string) error {
 	upgradeOurs := readErr == nil && isOurComposer(string(existing)) &&
 		!strings.Contains(string(existing), "if [[ ! -x \"$guard\" ]]")
 	if enrolled && !upgradeOurs {
-		hookInfo, hookStatErr := os.Stat(hookPath)
-		if hookStatErr != nil {
-			return fmt.Errorf("the pre-commit hook's mode cannot be proven: %v", hookStatErr)
-		}
-		if hookInfo.Mode()&0o111 == 0 {
-			return fmt.Errorf("the pre-commit hook references the guard but is not executable; fix its mode before mutating the ledger")
-		}
 		return nil
 	}
 	if err := os.MkdirAll(hookDir, 0o755); err != nil {
@@ -221,10 +225,17 @@ func isOurComposer(hook string) bool {
 	// is a human's extension, and rewriting it would delete their
 	// check.
 	guardLine := lines[1]
-	if !strings.HasPrefix(guardLine, "guard=") || strings.ContainsAny(guardLine, ";&|") {
+	if !strings.HasPrefix(guardLine, "guard=") || strings.ContainsAny(guardLine, ";&|`") {
 		return false
 	}
 	if !strings.HasSuffix(guardLine, `pre-commit-guard.sh"`) && !strings.HasSuffix(guardLine, "pre-commit-guard.sh'") {
+		return false
+	}
+	// The ONLY lawful command substitution is the literal toplevel
+	// resolution our composers emit; any other $( is a human's logic.
+	rest := strings.ReplaceAll(guardLine, `guard="$(git rev-parse --show-toplevel)/"`, "")
+	rest = strings.ReplaceAll(rest, `"$(git rev-parse --show-toplevel)/`, "")
+	if strings.Contains(rest, "$(") {
 		return false
 	}
 	return lines[2] == composerBodyFailClosed || lines[2] == composerBodyFailOpen
@@ -248,6 +259,8 @@ func environWithoutGitSteeringCLI() []string {
 		"GIT_CONFIG": true, "GIT_CONFIG_PARAMETERS": true,
 		"GIT_CONFIG_COUNT": true, "GIT_CONFIG_GLOBAL": true,
 		"GIT_CONFIG_SYSTEM": true, "GIT_CONFIG_NOSYSTEM": true,
+		"GIT_GRAFT_FILE": true, "GIT_SHALLOW_FILE": true,
+		"GIT_REPLACE_REF_BASE": true,
 	}
 	var out []string
 	for _, entry := range os.Environ() {

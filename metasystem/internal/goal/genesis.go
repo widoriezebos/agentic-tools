@@ -130,6 +130,8 @@ func environWithoutGitSteering() []string {
 		"GIT_CONFIG": true, "GIT_CONFIG_PARAMETERS": true,
 		"GIT_CONFIG_COUNT": true, "GIT_CONFIG_GLOBAL": true,
 		"GIT_CONFIG_SYSTEM": true, "GIT_CONFIG_NOSYSTEM": true,
+		"GIT_GRAFT_FILE": true, "GIT_SHALLOW_FILE": true,
+		"GIT_REPLACE_REF_BASE": true,
 	}
 	var out []string
 	for _, entry := range os.Environ() {

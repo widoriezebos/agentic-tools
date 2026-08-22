@@ -55,33 +55,20 @@ git_target() {
     -u GIT_CEILING_DIRECTORIES -u GIT_OBJECT_DIRECTORY \
     -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_CONFIG \
     -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT -u GIT_CONFIG_GLOBAL \
-    -u GIT_CONFIG_SYSTEM -u GIT_CONFIG_NOSYSTEM git "$@"
+    -u GIT_CONFIG_SYSTEM -u GIT_CONFIG_NOSYSTEM -u GIT_GRAFT_FILE \
+    -u GIT_SHALLOW_FILE -u GIT_REPLACE_REF_BASE git "$@"
 }
 
-# A hook enrolls the guard only if a non-comment line INVOKES it —
-# "$guard" with the assignment bound to the target's current absolute
-# guard path, or that path itself in a command position. A mention in
-# a comment, an inert assignment followed by exit 0, or a stale path
-# from a moved checkout is a hook git runs WITHOUT the fence. Quote
-# characters are stripped before matching: they interrupt the byte
-# compare, not the shell's word.
+# A hook enrolls the guard only if running it PROVES the guard runs:
+# the hook chain is executed with a probe nonce and must return the
+# guard's acknowledgment. Static reading of shell is an arms race the
+# fence cannot afford to lose.
 enrolls_guard() {
-  local raw toplevel line bare assigned=0 var_invoked=0 path_invoked=0
-  raw=$(grep -v '^[[:space:]]*#' "$1" 2>/dev/null) || true
-  [[ -n "$raw" ]] || return 1
-  toplevel=$(git_target -C "$target" rev-parse --show-toplevel 2>/dev/null) || toplevel="$target"
-  raw=${raw//'$(git rev-parse --show-toplevel)'/$toplevel}
-  while IFS= read -r line; do
-    bare=${line//\"/}
-    bare=${bare//\'/}
-    if [[ "$bare" == guard=* ]]; then
-      [[ "$bare" == *"$target/scripts/agents/pre-commit-guard.sh"* ]] && assigned=1
-      continue
-    fi
-    [[ "$line" == *'$guard'* ]] && var_invoked=1
-    [[ "$bare" == *"$target/scripts/agents/pre-commit-guard.sh"* ]] && path_invoked=1
-  done <<<"$raw"
-  (( path_invoked == 1 || (assigned == 1 && var_invoked == 1) ))
+  local hook="$1" nonce out
+  [[ -x "$hook" ]] || return 1
+  nonce="probe-$$-$RANDOM$RANDOM"
+  out=$(cd "$target" && METASYSTEM_GUARD_PROBE="$nonce" "$hook" 2>/dev/null) || true
+  [[ "$out" == *"guard-probe-ack $nonce"* ]]
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

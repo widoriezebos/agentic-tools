@@ -140,9 +140,18 @@ func acceptedTipForGates(root string) (string, bool, error) {
 		// read must refuse, never read as pre-bootstrap.
 		var ge *gitError
 		if errors.As(refErr, &ge) && ge.ExitCode() == 1 {
-			if refPathOut, pathErr := gitIn(root, "rev-parse", "--path-format=absolute", "--git-path", AcceptedRef); pathErr == nil {
-				if _, statErr := os.Stat(strings.TrimSpace(refPathOut)); statErr == nil {
+			if commonOut, pathErr := gitIn(root, "rev-parse", "--path-format=absolute", "--git-common-dir"); pathErr == nil {
+				// The loose-ref path is BUILT from the common dir,
+				// never asked of --git-path: git resolves a ref
+				// symlink to its TARGET there, and the probe must
+				// see the LINK. Lstat for the same reason — a
+				// dangling symlink is an existing entry git ignores.
+				// Any probe error other than not-exist refuses.
+				refPath := filepath.Join(strings.TrimRight(commonOut, "\n"), filepath.FromSlash(AcceptedRef))
+				if _, lstatErr := os.Lstat(refPath); lstatErr == nil {
 					return "", false, fmt.Errorf("the accepted ref's file exists but git reports no valid ref; repair %s before continuing", AcceptedRef)
+				} else if !os.IsNotExist(lstatErr) {
+					return "", false, fmt.Errorf("the accepted ref's file cannot be proven absent: %v", lstatErr)
 				}
 			}
 			return "", false, nil

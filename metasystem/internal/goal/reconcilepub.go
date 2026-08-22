@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // ReconcileResult reports one reconcile session.
@@ -60,6 +61,23 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	// both sessions may have passed BaseTip before either wrote, and
 	// the overwritten session's durable snapshot is what ITS crash
 	// recovery would need.
+	// The read-check-write below is serialized by an O_EXCL lock:
+	// without it two sessions both read clean state and then
+	// overwrite each other's pending record. A crash's stale lock
+	// is stolen after ten minutes.
+	lockPath := baseRecordPath(r.Endpoint.Root) + ".lock"
+	lockFile, lockErr := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if lockErr != nil {
+		if fi, statErr := os.Stat(lockPath); statErr == nil && time.Since(fi.ModTime()) > 10*time.Minute {
+			_ = os.Remove(lockPath)
+			lockFile, lockErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		}
+		if lockErr != nil {
+			return ReconcileResult{}, fmt.Errorf("another reconcile session is mid-claim (%s); retry shortly", lockPath)
+		}
+	}
+	lockFile.Close()
+	defer os.Remove(lockPath)
 	if prior, priorExists, priorErr := ReadBase(r.Endpoint.Root); priorErr != nil {
 		return ReconcileResult{}, priorErr
 	} else if priorExists && prior.RefreshDue && prior.Opid != r.opid() {

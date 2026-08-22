@@ -14,6 +14,15 @@
 # only additions can smuggle in a file the committer has never read.
 set -euo pipefail
 
+# Enrollment's execution probe: the goal CLI proves the fence RUNS —
+# not merely that a hook mentions it — by invoking the hook chain
+# with a nonce and requiring this acknowledgment. The distinct exit
+# code stops the chain so no downstream hook does real work.
+if [[ -n "${METASYSTEM_GUARD_PROBE:-}" ]]; then
+  echo "guard-probe-ack ${METASYSTEM_GUARD_PROBE}"
+  exit 42
+fi
+
 guard_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 git rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
 ms="${METASYSTEM_BIN:-$guard_root/bin/metasystem}"

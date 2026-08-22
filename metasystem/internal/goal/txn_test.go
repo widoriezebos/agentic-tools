@@ -412,3 +412,24 @@ func TestAMalformedAcceptedRefFileRefusesMutations(t *testing.T) {
 		t.Fatalf("a broken accepted-ref file refuses by name at the gate: %v (has=%v)", gateErr, has)
 	}
 }
+
+func TestADanglingAcceptedRefSymlinkRefusesMutations(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	refFile := filepath.Join(a, ".git", "refs", "metasystem", "goals", "accepted")
+	if err := os.MkdirAll(filepath.Dir(refFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The seed's own accepted ref steps aside first: the bed needs
+	// the BROKEN shape at the path.
+	_ = os.Remove(refFile)
+	// A DANGLING symlink: git ignores it like an absent ref, a
+	// following stat sees nothing — only Lstat tells the truth.
+	if err := os.Symlink(filepath.Join(a, "no-such-target"), refFile); err != nil {
+		t.Fatal(err)
+	}
+	_, has, gateErr := acceptedTipForGates(a)
+	if has || gateErr == nil || !strings.Contains(gateErr.Error(), "no valid ref") {
+		t.Fatalf("a dangling ref symlink refuses at the gate: %v (has=%v)", gateErr, has)
+	}
+}
