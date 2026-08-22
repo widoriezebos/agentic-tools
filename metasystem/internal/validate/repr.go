@@ -9,7 +9,7 @@ import (
 // The ported message dialect: how decoded JSON renders inside gate refusal
 // texts — 'single-quoted' strings, None for null, integral floats without a
 // decimal point. The dialect is a fixture-asserted message contract, and
-// this file is its one home (review validate-report-9).
+// this file is its one home.
 
 // reprValue is the dialect core every renderer shares. Strings are
 // single-quoted when quote is set, bare otherwise. Values outside the core

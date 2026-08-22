@@ -314,7 +314,7 @@ func TestConformanceFactRefusals(t *testing.T) {
 	}
 }
 
-// Agnosticism audit (critique r1-8): a NEWLY declared runtime
+// Runtime agnosticism: a NEWLY declared runtime
 // instruction filename is protected by the no-waiver set the moment it
 // is declared — even when the checked-in path list has not caught up.
 func TestConformanceProtectsDeclaredInstructionFile(t *testing.T) {

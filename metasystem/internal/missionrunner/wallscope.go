@@ -1,6 +1,6 @@
 package missionrunner
 
-// The wall's snapshot scope (HIW-O15 CRITICAL, HIW-O16 HIGH): a mission
+// The wall's snapshot scope: a mission
 // host turn never ships implementer work, and "ship" has three carriers —
 // the worktree, the index, and committed history — inside a repository
 // that, in a nested checkout, is bigger than the workspace. This file
@@ -72,7 +72,7 @@ func stateAnswerOf(err error) string {
 }
 
 // captureWallPostureStable retries a capture whose failure is a
-// repository-state ANSWER (WSS I13-4): normal runner cleanup can remove
+// repository-state ANSWER: normal runner cleanup can remove
 // a pseudoref or worktree between enumeration and read, so a transient
 // answer must never become sticky evidence — only an answer that
 // REPRODUCES on a fresh capture stands. Could-not-run failures keep the
@@ -94,7 +94,7 @@ func (e *Engine) captureWallPostureStable(expectedTree string, declared map[stri
 		last = err
 	}
 	// Exhaustion with DISTINCT answers proved instability, not any one
-	// answer (WSS I14-3): the sticky evidence must say so instead of
+	// answer: the sticky evidence must say so instead of
 	// electing whichever transient came last.
 	return nil, &wallStateAnswer{msg: "repository posture would not hold still during capture; last answer: " + stateAnswerOf(last)}
 }
@@ -331,7 +331,7 @@ type wallAccountant struct {
 	ledgerRel string
 	// anchoredLedger is the anchored ledger blob OID ("" while the
 	// mission has never anchored): the ONLY bytes any judged carrier may
-	// hold at the ledger path (WSS I11-3).
+	// hold at the ledger path.
 	anchoredLedger string
 	prefix         string
 	originTop      string // the origin toplevel tree (nested checkouts): sibling scope for retained OIDs
@@ -354,7 +354,7 @@ func (e *Engine) newWallAccountant(preTree string, state map[string]any, auths [
 		anchoredLedger = oid
 	} else if !errors.Is(aerr, mission.ErrNoAnchor) {
 		// Any other anchor failure is the runner's own — never a silent
-		// pass that disables the raw-ledger carrier lane (WSS I11-3).
+		// pass that disables the raw-ledger carrier lane.
 		return nil, failf(3, "wall accounting cannot resolve the anchored ledger blob: %v", aerr)
 	}
 	acct := &wallAccountant{
@@ -449,8 +449,8 @@ func (a *wallAccountant) decompose(tree string) (string, error) {
 }
 
 // rawLedgerCarrier refuses a tree whose UNFILTERED ledger entry carries
-// anything but the anchored ledger blob as a regular file (WSS I11-3,
-// I11-9): every accounted/reviewed lane judges the workspace-filtered
+// anything but the anchored ledger blob as a regular
+// file: every accounted/reviewed lane judges the workspace-filtered
 // tree, and the filter must never launder a foreign — or mode-changed —
 // ledger into reachable shipping history or pseudoref cargo.
 func (a *wallAccountant) rawLedgerCarrier(tree, scope string) (string, error) {
@@ -475,7 +475,7 @@ func (a *wallAccountant) commitWorkspaceTree(oid string) (tree, violation string
 	if err != nil {
 		// Ran-and-answered unreadable history — a merge naming a missing
 		// or corrupt object — is a VIOLATION on the host's watch, never
-		// the runner's failure (WSS I13-6); only could-not-run rides the
+		// the runner's failure; only could-not-run rides the
 		// ramp.
 		var runFailure *gittree.RunFailure
 		if errors.As(err, &runFailure) {
@@ -517,8 +517,8 @@ func (a *wallAccountant) accountedOrReviewedCommit(oid string) (string, error) {
 }
 
 // accountedOrReviewedTree is the side-tip and pseudoref lane: the
-// conformance-bound reviewed tree is admissible there by the O14
-// contract.
+// conformance-bound reviewed tree is admissible there — the lane
+// reserved for merge side tips and permitted pseudoref cargo.
 func (a *wallAccountant) accountedOrReviewedTree(tree string) (string, error) {
 	if a.reviewed[tree] {
 		return "", nil
@@ -533,7 +533,7 @@ func (a *wallAccountant) accountedOID(e *Engine, oid string) (string, error) {
 	stdout, stderr, code := gitCaptured(e.Root, "cat-file", "-t", oid)
 	if code == -1 {
 		// Could-not-run is the runner's own failure, never a repository
-		// verdict (WSS I11-13).
+		// verdict.
 		return "", failf(3, "wall accounting could not probe retained object %s: %s", oid, firstDetail(stderr, stdout))
 	}
 	if code != 0 {
@@ -563,7 +563,7 @@ func (a *wallAccountant) accountedOID(e *Engine, oid string) (string, error) {
 			sub, _, subCode := gitCaptured(e.Root, "rev-parse", oid+":"+strings.TrimSuffix(a.prefix, "/"))
 			if subCode == -1 {
 				// A failed probe is NOT "no subtree": continuing on the
-				// toplevel tree would judge the wrong scope (WSS I11-13).
+				// toplevel tree would judge the wrong scope.
 				return "", failf(3, "wall accounting could not resolve retained tree %s's workspace subtree", oid)
 			}
 			if subCode == 0 {
@@ -571,7 +571,7 @@ func (a *wallAccountant) accountedOID(e *Engine, oid string) (string, error) {
 			}
 		}
 		// The raw ledger entry is judged before the filter here exactly
-		// as on the commit lanes (WSS I11-3).
+		// as on the commit lanes.
 		if detail, err := a.rawLedgerCarrier(tree, "retained tree "+oid); err != nil || detail != "" {
 			return detail, err
 		}
@@ -827,8 +827,8 @@ func (e *Engine) judgeHeadChain(origin *scopeOrigin, cap *wallCapture, acct *wal
 					return "", failf(3, "wall inspection cannot compute a merge base: %s", firstDetail(baseErr, baseOut))
 				}
 				if baseCode != 0 {
-					// Ran-and-answered "no common ancestor" is a VERDICT
-					// (WSS I12-9): an unrelated side chain has no scopable
+					// Ran-and-answered "no common ancestor" is a
+					// VERDICT: an unrelated side chain has no scopable
 					// base and is exactly the foreign-history carrier the
 					// sibling fence exists to refuse.
 					return fmt.Sprintf("sibling scope cannot bound commit %s: side chain %s shares no history with the mission line", commit, side), nil
@@ -862,7 +862,7 @@ func (e *Engine) commitParents(oid string) ([]string, error) {
 	}
 	if code != 0 {
 		// Ran-and-answered: the commit's history is unreadable on the
-		// host's watch (WSS I13-6) — a wall answer, not a runner error.
+		// host's watch — a wall answer, not a runner error.
 		return nil, &wallStateAnswer{msg: fmt.Sprintf("commit %s parents are unreadable: %s", oid, firstDetail(stderr, stdout))}
 	}
 	fields := strings.Fields(stdout)
@@ -952,7 +952,7 @@ func (e *Engine) judgeMissionNamespace(missionRefs map[string]string, openAnchor
 				// interval; the anchored truth must still be a prefix with
 				// every cross-check intact.
 				if err := mission.AuthenticateLiveLedger(e.Root, state, filepath.Join(missionDirPath(e.Root, e.Mission), "ledger.md")); err != nil {
-					// Could-not-run stays the runner's own (WSS I11-12);
+					// Could-not-run stays the runner's own;
 					// only a ran-and-answered disagreement is a violation.
 					var runFailure *gittree.RunFailure
 					if errors.As(err, &runFailure) {
@@ -983,7 +983,7 @@ func (e *Engine) judgeMissionNamespace(missionRefs map[string]string, openAnchor
 			// A self-named tree ref retains a TREE object, which never
 			// ships to HEAD, the index, or the worktree — the wall's
 			// judgment space. Unreachable-tree retention is the isolation
-			// tier's business (the same D100/D123 boundary as retained
+			// tier's business (the same boundary as retained
 			// pseudoref blobs); the type check above keeps a
 			// history-carrying commit out of the anchor namespace.
 		}
@@ -1505,7 +1505,7 @@ func worktreePostureDrift(recorded map[string]any, live gittree.WorktreeRecord) 
 	if staged == nil {
 		// A consumed worktree whose record carries no staged baseline
 		// can never be proved stationary: a readability transition after
-		// consumption must re-judge, not silently pass (WSS I11-7).
+		// consumption must re-judge, not silently pass.
 		return "has no recorded staged baseline to prove its posture unchanged"
 	}
 	tree, _ := staged["tree"].(string)
@@ -1588,11 +1588,11 @@ func unmergedOutsidePrefix(before, after []string, prefix string) string {
 	return ""
 }
 
-// judgeToplevelFence runs O16: every changed toplevel path since the
-// origin carries the workspace prefix. ATTRIBUTION HONESTY: the
+// judgeToplevelFence runs the sibling fence: every changed toplevel path
+// since the origin carries the workspace prefix. ATTRIBUTION HONESTY: the
 // violation asserts the change happened during the host's turn, never
 // that the host authored it — a peer writing mid-turn surfaces the same
-// way, which is O16's own requirement: visibly.
+// way, which is the fence's own requirement: visibly.
 func (e *Engine) judgeToplevelFence(origin *scopeOrigin, cap *wallCapture, acct *wallAccountant) (string, error) {
 	if !cap.Nested || origin.TopTree == "" || origin.TopTree == cap.TopTree {
 		return "", nil
@@ -1618,8 +1618,8 @@ func (e *Engine) judgeToplevelFence(origin *scopeOrigin, cap *wallCapture, acct 
 	return "", nil
 }
 
-// judgeLedgerCarriers closes the filtered-path smuggling lane (WSS
-// I3-4): the mission ledger is excluded from tree IDENTITY because it is
+// judgeLedgerCarriers closes the filtered-path smuggling
+// lane: the mission ledger is excluded from tree IDENTITY because it is
 // force-tracked bookkeeping, but that exclusion must not let a host
 // commit or stage ARBITRARY bytes into the ledger path. The committed
 // HEAD ledger entry and the staged ledger entry must each be ABSENT or
@@ -1659,7 +1659,7 @@ func (e *Engine) judgeLedgerCarriers(cap *wallCapture, state map[string]any) (st
 		}
 		entry, present := entries[ledgerRel]
 		// The COMPLETE entry authenticates — object id AND the regular
-		// 100644 mode (WSS I11-9): an executable or symlink entry ships
+		// 100644 mode: an executable or symlink entry ships
 		// a different object kind under the authenticated bytes.
 		if present && (entry.OID != anchoredOID || entry.Mode != "100644") {
 			return fmt.Sprintf("%s carries an unauthorized mission-ledger entry (%s %s)", scope, entry.Mode, entry.OID), nil
@@ -1686,7 +1686,7 @@ func (e *Engine) judgeCommitLedgerCarrier(commit string, state map[string]any) (
 	if err != nil {
 		// Ran-and-answered unreadable history — a first-parent commit
 		// whose tree is missing or corrupt — is a violation on the
-		// host's watch (WSS I14-4); only could-not-run rides the ramp.
+		// host's watch; only could-not-run rides the ramp.
 		var runFailure *gittree.RunFailure
 		if errors.As(err, &runFailure) {
 			return "", failf(3, "wall inspection cannot read commit %s's tree: %v", commit, err)
@@ -1768,7 +1768,7 @@ func (e *Engine) judgeCaptureIntegrity(cap *wallCapture, openAnchor string, stat
 
 // scopeOriginFromOpenTurn builds the mid-turn origin from the open
 // record's anchored fields. The census and staged origins come from the
-// CHAIN's newest recorded posture (WSS-12: turn open and resume run the
+// CHAIN's newest recorded posture (turn open and resume run the
 // full accounting from the previous acceptance's recorded posture, turn
 // one from the birth record) — the open record itself anchors HEAD, the
 // ref map, and the toplevel trees.

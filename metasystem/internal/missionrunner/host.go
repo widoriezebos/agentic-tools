@@ -94,7 +94,7 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) error {
 		return nil
 	}
 	// The GroupOwnershipGrant is issued HERE, on the runner's one signal
-	// path (agnosticism B1): allowFake gates whether the grant is
+	// path: allowFake gates whether the grant is
 	// requested at all; a zero grant refuses.
 	var grant fixtureauth.GroupOwnershipGrant
 	if allowFake {
@@ -251,7 +251,7 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 		// and becomes the lease holder under its own per-process mainId.
 		// Without a shared lineage the next turn's host takes the lease from
 		// its own dead predecessor and sweeps whatever delegates that turn
-		// left in flight — the loop that cost bm-2 two of three delegates.
+		// left in flight.
 		// The host's arming inherits this, so every turn of one mission is
 		// the same logical writer and succession renews instead.
 		"METASYSTEM_OWNER_LINEAGE="+MissionLineage(e.Mission),
@@ -261,14 +261,13 @@ func (e *Engine) assembleHostCommand(l *hostLaunch) error {
 		"METASYSTEM_HOST_START_GATE_TIMEOUT_SEC="+strconv.Itoa(gateTimeout),
 	)
 	// The SEALED host caps ride into the adapter when the contract
-	// declares them (issue #6): without this, an unsealed adapter
-	// default silently shortened the benchmark's stated exposure — a
-	// design turn died at --max-turns 50 with 12 of its sealed 20
-	// minutes unspent. The values come from the PINNED, hash-verified
+	// declares them: without this, an unsealed adapter default silently
+	// shortens the exposure the contract seals — a host can die on the
+	// adapter's own turn cap with sealed budget unspent. The values come
+	// from the PINNED, hash-verified
 	// approved snapshot, never the mutable contract under plans/, and a
 	// snapshot that cannot be read fails the launch — a fail-open here
-	// would hand cap authority back to inherited environment variables
-	// (critique round 1, finding 1).
+	// would hand cap authority back to inherited environment variables.
 	_, values, _, err := e.parseContract(true)
 	if err != nil {
 		return failf(3, "host launch cannot read the approved contract snapshot: %v", err)
@@ -427,10 +426,10 @@ func (e *Engine) superviseHostToExit(l *hostLaunch) (int, map[string]any, string
 		return 3, nil, "capped", nil
 	}
 	// The host PROCESS boundary is here, and it is the honest end of the
-	// host's wall clock (decision D13): the turn's endedAt lands only
+	// host's wall clock: the turn's endedAt lands only
 	// after adjudication, drain, ledger, and state — bookkeeping and
-	// legitimately slow drains that twice tripped the benchmark's cap
-	// gate on turns whose hosts finished inside their cap.
+	// legitimately slow drains that must never trip a cap gate on a turn
+	// whose host finished inside its cap.
 	if _, err := patchTurn(l.turnPath, map[string]any{"hostEndedAt": nowISO()}); err != nil {
 		return 0, nil, "", err
 	}
@@ -463,8 +462,8 @@ func gitAuthorEnvironment(identityName string) []string {
 
 // hostCommandProbe issues the command probe only for the fake runtime
 // (the fixture-mode launcher); a zero probe refuses, and a
-// construction ERROR also refuses (finding 4 — the launch
-// verification then fails on kernel evidence alone).
+// construction ERROR also refuses — the launch
+// verification then fails on kernel evidence alone.
 func hostCommandProbe(e *Engine, fakeRuntime bool) fixtureauth.CommandProbe {
 	if !fakeRuntime {
 		return fixtureauth.CommandProbe{}
@@ -477,7 +476,7 @@ func hostCommandProbe(e *Engine, fakeRuntime bool) fixtureauth.CommandProbe {
 }
 
 // publishFakeIdentityForEngine distinguishes construction refusal (an
-// ERROR, finding 4) from the benign env-absent no-op.
+// ERROR) from the benign env-absent no-op.
 func publishFakeIdentityForEngine(e *Engine, pid int, started int64, tag string) error {
 	authorization, err := e.fixtures()
 	if err != nil {

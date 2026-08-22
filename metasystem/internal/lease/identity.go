@@ -2,7 +2,8 @@
 // main process of a session, classifies who is calling a gated command
 // (MAIN, DELEGATE, SUPERVISION, ADAPTER-SUPERVISOR, or HUMAN), and holds the
 // single checkout lease that decides which main may write. It uses real types
-// and error returns, and fixes the KI-33 same-process lockout.
+// and error returns, and a live main that re-announces under a new mainId
+// reconciles with its own lease instead of being locked out of its checkout.
 package lease
 
 import (
@@ -26,7 +27,7 @@ type Identity struct {
 	Pid        int64
 	StartedAt  int64
 	Command    string
-	StartTicks int64  // clock-step-immune pair (issue #1); 0 on fixtures/legacy
+	StartTicks int64  // clock-step-immune pair; 0 on fixtures/legacy
 	BootID     string // "" on fixtures/legacy — readers fall back to seconds
 }
 
@@ -81,8 +82,8 @@ func ParentPid(pid int64) (int64, bool) {
 // so it reports dead. This is what lets a live holder keep its lease and a
 // dead one lose it.
 // LiveRef is Live with the clock-step-immune pair: when the record and
-// the live process both carry ticks+bootId, the pair decides (issue #1 —
-// a drifted second must not let a claimant judge a live holder dead and
+// the live process both carry ticks+bootId, the pair decides (a
+// drifted second must not let a claimant judge a live holder dead and
 // sweep its jobs); otherwise the seconds rule below stands.
 func LiveRef(pid, startedAt, startTicks int64, bootID string, probe identity.FixtureProbe) bool {
 	if startTicks > 0 && bootID != "" {
@@ -132,8 +133,8 @@ func Live(pid, startedAt int64, probe identity.FixtureProbe) bool {
 }
 
 // fixtureProbe constructs the root-checked fixture authority for this
-// package's entry points (agnosticism B1). The error is the loud
-// leaked-fixture refusal; a nil probe refuses fixtures.
+// package's entry points. The error is the loud leaked-fixture
+// refusal; a nil probe refuses fixtures.
 func fixtureProbe(root string) (identity.FixtureProbe, error) {
 	authorization, err := fixtureauth.New(root)
 	if err != nil {

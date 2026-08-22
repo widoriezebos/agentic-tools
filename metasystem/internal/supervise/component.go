@@ -59,8 +59,7 @@ func WriteHeartbeat(path, component string, self identity.Ref, tag string, inter
 func atomicWrite(path string, content []byte) error {
 	// Heartbeats are EPHEMERAL liveness signals: rewritten every interval,
 	// valueless after a crash. The volatile write is atomic visibility
-	// without the durability barriers — the original writer here never
-	// synced, and adding barriers taxed the hottest write path in the
-	// system for durability nobody reads (B5's recorded classification).
+	// without the durability barriers — barriers would tax the hottest
+	// write path in the system for durability nobody reads.
 	return atomicfile.WriteVolatile(path, string(content))
 }

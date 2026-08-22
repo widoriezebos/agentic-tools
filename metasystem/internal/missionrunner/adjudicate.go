@@ -115,7 +115,7 @@ func ValidateReturn(turn Turn, result map[string]any, turnDir string, checkRetur
 
 // validateReturnAt runs the return-level half of ValidateReturn against an
 // explicit file: completeness, turn identity, runtime/model, and the
-// session rule. The delivery walk's resume (D64 phase 2) validates its
+// session rule. The delivery walk's resume validates its
 // re-collected candidate through exactly this path — one validator.
 func validateReturnAt(turn Turn, returnPath string, checkReturn func(returnPath string) error) (map[string]any, error) {
 	if err := checkReturn(returnPath); err != nil {
@@ -230,7 +230,7 @@ type Verdict struct {
 	Rejected   []map[string]any `json:"rejected"`
 	Certified  []map[string]any `json:"certified"`
 	// Ignored carries informational claims that are neither applied nor
-	// faulted (issue #10): a dispatched entry naming a job this mission
+	// faulted: a dispatched entry naming a job this mission
 	// created in an EARLIER turn is already known — re-reporting it is
 	// noise, not a host failure, and mints no ask.
 	Ignored     []map[string]any `json:"ignored"`
@@ -296,8 +296,8 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		case !numericEqual(record["mission"], mission):
 			reason = "job record is not stamped for this mission"
 		case !numericEqual(record["turnId"], turn.TurnID):
-			// Informational ONLY on authoritative evidence (issue #10
-			// round 2): the job must appear in an earlier ACCEPTED
+			// Informational ONLY on authoritative evidence:
+			// the job must appear in an earlier ACCEPTED
 			// dispatched entry of this mission's own turn log — a
 			// mismatched turn id alone also covers mis-stamped, malformed,
 			// and future ids, and those must keep their host-failure ask.
@@ -326,9 +326,9 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		switch {
 		case stream == nil:
 			reason = "stream does not exist"
-		// The host may never request parked-stop-loss (issue #3): the
+		// The host may never request parked-stop-loss: the
 		// state invariant reserves it for a human answer, so accepting
-		// it here guaranteed a state-write failure that killed the
+		// it here guarantees a state-write failure that kills the
 		// runner. Rejected like any other unlawful entry — the right
 		// move for a stuck host is parked-reserved plus an ask.
 		case requested == "parked-stop-loss":
@@ -364,7 +364,7 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		} else if !turnvocab.OrchestratorMayRaise(reasonClass) {
 			reason = "reason class is unknown"
 		}
-		// A candidate may supersede an earlier ask (issue #11): the named
+		// A candidate may supersede an earlier ask: the named
 		// id must BE an ask id (the grammar check is also the traversal
 		// guard — a path can never reach the join), the ask must exist,
 		// be open, sit on the same stream, and not already be superseded
@@ -376,7 +376,7 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 				reason = "supersedes an unknown ask"
 			case supersededThisPass[named]:
 				reason = "supersedes an ask that was already superseded"
-			// Derived closure counts (round-3): a predecessor whose
+			// Derived closure counts: a predecessor whose
 			// successor landed but whose marker write was lost to a crash
 			// is closed — a second supersession would mint two live
 			// successors for one question.
@@ -410,8 +410,8 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 		}
 	}
 
-	// Certification claims verify against the authorization and job records
-	// (HIW-O5): only adjudicated facts ride toward the turn log, and every
+	// Certification claims verify against the authorization and job records:
+	// only adjudicated facts ride toward the turn log, and every
 	// refused claim joins the rejection asks below.
 	certifiedEntries, err := entryList(returned, "certified")
 	if err != nil {
@@ -441,8 +441,8 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 	}
 
 	verdict.Streams = streams
-	// The audit artifact must not name asks this very verdict closes
-	// (round-2 F2): the predecessors superseded in this pass leave the
+	// The audit artifact must not name asks this very verdict closes:
+	// the predecessors superseded in this pass leave the
 	// waiting list before it is persisted.
 	waiting := []string{}
 	for _, id := range mergedOpenAskIDs(asksDir, newAskIDs) {
@@ -456,7 +456,7 @@ func Adjudicate(root, mission string, turn Turn, state map[string]any, returned 
 
 // acceptedDispatchIndex collects every job id an EARLIER turn's accepted
 // dispatched entries recorded — the authoritative "already known" set for
-// informational re-reports (issue #10 round 2).
+// informational re-reports.
 func acceptedDispatchIndex(state map[string]any) map[string]bool {
 	index := map[string]bool{}
 	turnLog, _ := state["turnLog"].([]any)
@@ -556,7 +556,7 @@ func nextAskID(asksDir, prefix string, allocated map[string]bool) string {
 // superseded when ANY ask on disk names it in supersedes — not only when
 // its own supersededBy marker landed. The successor is written first, so
 // a crash between the two writes still leaves the predecessor derivably
-// closed (issue #11 round-2 F1/F4: the marker is bookkeeping, the
+// closed (the marker is bookkeeping, the
 // successor's existence is the truth).
 func supersededAskIDs(asksDir string) map[string]string {
 	superseded := map[string]string{}

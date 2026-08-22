@@ -109,9 +109,7 @@ func TestGroupProbes(t *testing.T) {
 // TestAssembleHostCommandExportsMissionLineage pins the succession wiring:
 // every turn's host process must inherit METASYSTEM_OWNER_LINEAGE derived
 // from the mission id, or each turn's host takes the lease from its own
-// dead predecessor and sweeps the previous turn's delegates (the loop that
-// cost bm-2 two of three delegates). This replaces the shell fixture's
-// grep of host.go source text (script-fixtures-019).
+// dead predecessor and sweeps the previous turn's delegates.
 func TestAssembleHostCommandExportsMissionLineage(t *testing.T) {
 	root := t.TempDir()
 	engine := &Engine{Mission: "mr-lineage", Root: root}
@@ -124,7 +122,7 @@ func TestAssembleHostCommandExportsMissionLineage(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The sealed-cap pass-through reads the PINNED approved snapshot and
-	// fails the launch without one (issue #6): the fixture pins a minimal
+	// fails the launch without one: the fixture pins a minimal
 	// sealed contract exactly as the launcher does.
 	missionDir := filepath.Join(root, "artifacts", "agents", "missions", "mr-lineage")
 	if err := os.MkdirAll(missionDir, 0o755); err != nil {
@@ -264,7 +262,7 @@ func TestSmallPureHelpers(t *testing.T) {
 	}
 }
 
-// B1 critique finding 15: denied capabilities leave OBSERVABLE
+// Denied capabilities leave OBSERVABLE
 // nothing — a refused publication writes no file, and a refused group
 // grant never proves ownership of a live group.
 func TestDeniedCapabilitiesActNowhere(t *testing.T) {
@@ -285,8 +283,8 @@ func TestDeniedCapabilitiesActNowhere(t *testing.T) {
 	}
 }
 
-// Construction refusal PROPAGATES on the engine's fixture paths
-// (finding 4): a leaked fixture makes publication and group
+// Construction refusal PROPAGATES on the engine's fixture
+// paths: a leaked fixture makes publication and group
 // termination errors, and the command probe refuses.
 func TestEngineFixtureConstructionRefusal(t *testing.T) {
 	root := t.TempDir()

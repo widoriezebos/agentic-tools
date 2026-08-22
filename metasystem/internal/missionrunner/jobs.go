@@ -141,8 +141,7 @@ func CloseableChains(root, mission string) []string {
 		// A dispatch-refused husk never left setup and mirrored nothing:
 		// there is no evidence to attest, so close would refuse ("cannot
 		// close an unmirrored chain") and strand every chain sorted behind
-		// it (KI-6's unfixed half; benchmark cohort bm-1-20260813t055303z
-		// lost both reps to this). Nothing ran, so nothing needs closing.
+		// it. Nothing ran, so nothing needs closing.
 		// A chain that RAN but failed to mirror still lists — its close
 		// must refuse loudly, not vanish here.
 		if root := byID[rootID]; root["mirror"] == nil {

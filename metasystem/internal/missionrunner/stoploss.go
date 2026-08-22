@@ -70,10 +70,10 @@ type stopLossGate struct {
 	noise      map[string]float64
 	baseline   map[string]float64
 	// candidateAware extends the best tuple with the same metrics
-	// measured on the mission's active CANDIDATE branch (issue #4,
-	// ledgerSemantics 3): a binary gate of record cannot register the
+	// measured on the mission's active CANDIDATE branch
+	// (ledgerSemantics 3): a binary gate of record cannot register the
 	// serial pipeline's progress, so a perfect tree awaiting the wall
-	// parked as stagnant. Candidate components fold AFTER every
+	// would park as stagnant. Candidate components fold AFTER every
 	// gate-of-record component, so a candidate pass can never outrank
 	// a real merge — but the first passing candidate is a NEW BEST and
 	// resets stagnation.
@@ -268,7 +268,7 @@ func (g *stopLossGate) lineIsBest(event mission.LedgerEvent, best []float64) (bo
 // budget. An exhausted cycle budget dominates, because a vocal reset must
 // never extend a spent sealed allowance.
 func replayStopLossVerdict(gate *stopLossGate, cycleBudget, noGainBudget int, events []mission.LedgerEvent) StopLossVerdict {
-	best := gate.tuple(gate.observedValues("")) // seed: baseline + candidate components at directed worst (issue-4 F-2)
+	best := gate.tuple(gate.observedValues("")) // seed: baseline + candidate components at directed worst
 	cycles, stagnant := 0, 0
 	for _, event := range events {
 		if event.Reset {
@@ -389,7 +389,7 @@ func (e *Engine) stopLossVerdict(state map[string]any, ledger string) (*StopLoss
 		verdict := replayStopLossVerdict(gate, cycleBudget, noGainBudget, events)
 		return &verdict, nil
 	case 3:
-		// Semantics 3 (issue #4): the best tuple extends with the gate
+		// Semantics 3: the best tuple extends with the gate
 		// metrics measured on the mission's active candidate branch,
 		// folded after every gate-of-record component. Same fuse, same
 		// budgets, same marker-wins replay.
@@ -449,7 +449,7 @@ func (e *Engine) bestMarker(state map[string]any, ledger, observed string) (stri
 	if err != nil {
 		return "", failf(3, "mission stop-loss replay refused: %v", err)
 	}
-	best := gate.tuple(gate.observedValues("")) // seed: baseline + candidate components at directed worst (issue-4 F-2)
+	best := gate.tuple(gate.observedValues("")) // seed: baseline + candidate components at directed worst
 	for _, event := range events {
 		if event.Reset {
 			continue

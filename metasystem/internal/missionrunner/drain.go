@@ -11,8 +11,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// The finite drain and the runner's mission-scoped reap
-// (plans/patience-mission-reap-drain.md). Holding the mission lease
+// The finite drain and the runner's mission-scoped reap.
+// Holding the mission lease
 // authorizes the runner to act on exactly the records its mission's fence
 // reservations name; authority selects the candidates, never the verdict.
 // The verdict needs the standing reaper's proof bar — record facts from
@@ -98,10 +98,9 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 		now := time.Now()
 		if deadline := drainDeadline(live, now); !deadline.After(now) {
 			// A kill-capable reap is still OWED before any park: the reap
-			// cadence is coarser than the slack the deadline leaves (rep 2
-			// of bm-1-20260813t171239z parked 2.0s past a capDeadline the
-			// 5s cadence had a ~40% chance of never serving inside the
-			// window). Run the dispatch reap for every live record NOW,
+			// cadence is coarser than the slack the deadline leaves, so a
+			// record can pass its capDeadline inside a window the periodic
+			// reap never serves. Run the dispatch reap for every live record NOW,
 			// re-read, and only park what a fresh reap could not resolve.
 			for _, record := range live {
 				e.dispatchReap(dispatchScript, jobRecordID(record))
@@ -128,9 +127,9 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 }
 
 // dispatchReap runs the kill-capable dispatch reap for one job and
-// WITNESSES its answer: this incident was undiagnosable by artifact
-// because runCaptured's stdout, stderr, and exit code were all dropped
-// and the runner log stayed empty (F2 of the drain-stall diagnosis).
+// WITNESSES its answer: dropping runCaptured's stdout, stderr, and exit
+// code would leave a failed reap undiagnosable by artifact, with the
+// runner log empty exactly when a stalled drain needs it.
 func (e *Engine) dispatchReap(dispatchScript, jobID string) {
 	stdout, stderr, code := runCaptured(e.Root, nil, dispatchScript, "reap", "--job", jobID)
 	if code != 0 {
@@ -310,7 +309,7 @@ func (e *Engine) custodian(pid, start int64, tag string) identity.Liveness {
 	}
 	authorization, err := e.fixtures()
 	if err != nil {
-		return identity.Unknown // leaked fixture authorizes nothing (finding 4)
+		return identity.Unknown // leaked fixture authorizes nothing
 	}
 	return identity.Custodian(pid, start, tag, authorization.Identity())
 }

@@ -40,13 +40,13 @@ type Checkout interface {
 	// Currency reports what the lock's owner file says about self.
 	Currency() CurrencyState
 	// StateNamesSelf reports whether state.json's owner stanza names
-	// this owner (for the republish repair, SLC-R5-016). Only
+	// this owner (for the republish repair). Only
 	// meaningful when StateFileState is Present.
 	StateNamesSelf() (bool, error)
 	// PublishState atomically writes state.json from held identities;
 	// implementations MUST re-read the lock immediately before the
-	// rename and abort if it no longer names self (fenced publication,
-	// SLC-R4-001).
+	// rename and abort if it no longer names self (fenced
+	// publication).
 	PublishState(held []Held) error
 }
 
@@ -69,21 +69,21 @@ type Components interface {
 // Ledger is the owner's slice of the registry: the write-ahead
 // appends (REG-2) and the terminal.
 type Ledger interface {
-	// AppendRelaunched is the GATING write-ahead (SLC-R6-006): if it
+	// AppendRelaunched is the GATING write-ahead: if it
 	// fails, nothing launches this cycle.
 	AppendRelaunched(generation int64, watcherTag, reaperTag string, retiredThrough int64) error
 	// AppendLaunched records one component's identity; failures are
-	// retried at every observation (SLC-R6-006).
+	// retried at every observation.
 	AppendLaunched(held Held) error
 	// AppendExited is best-effort (REG-5): an owner that cannot speak
 	// must still die.
 	AppendExited(reason, diagnosis string, teardownComplete bool)
 }
 
-// Intents reads the shutdown-intent channel (D-1, SLC-R7-009).
+// Intents reads the shutdown-intent channel (D-1).
 type Intents interface {
 	// LatchShutdown reports whether a fresh intent names this owner
-	// AT EXIT-INITIATION (SLC-R9-004); it consumes the file either
+	// AT EXIT-INITIATION; it consumes the file either
 	// way and reports stale or foreign intents without honoring them.
 	LatchShutdown() bool
 }
@@ -97,8 +97,7 @@ type Exit struct {
 
 // CycleTrace narrates ONE observation cycle completely: the three
 // D-1 reads, the classification, the breaker's state, and every
-// action taken — the extreme-observability ruling of 2026-08-10
-// made structural. One trace line reconstructs WHY without a
+// action taken. One trace line reconstructs WHY without a
 // debugger.
 type CycleTrace struct {
 	At          time.Time `json:"at"`
@@ -178,7 +177,7 @@ type Owner struct {
 	generation     int64
 	retiredThrough int64
 	published      bool
-	launchedRetry  []Held // launched appends still owed (SLC-R6-006)
+	launchedRetry  []Held // launched appends still owed
 	relaunchDue    time.Time
 	appendFailures int
 }
@@ -216,8 +215,7 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 		}
 	}()
 	// D-1: the purpose/currency check runs every cycle, independent
-	// of backoff (SLC-R2-008), but only arms after first publication
-	// (SLC-R1-004).
+	// of backoff, but only arms after first publication.
 	if o.published {
 		root, currency, state := o.Checkout.RootState(), o.Checkout.Currency(), o.Checkout.StateFileState()
 		trace.Root, trace.Currency, trace.StateFile = fileStateName(root), currencyName(currency), fileStateName(state)
@@ -233,7 +231,7 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 			return nil // log-and-continue: no relaunch on indeterminacy
 		}
 		trace.Verdict = "continue"
-		// Stale state is REPAIRED, not tolerated (SLC-R5-016).
+		// Stale state is REPAIRED, not tolerated.
 		if namesSelf, err := o.Checkout.StateNamesSelf(); err == nil && !namesSelf {
 			trace.Actions = append(trace.Actions, "republish-state")
 			if err := o.Checkout.PublishState(o.held); err != nil {
@@ -262,17 +260,17 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 	}
 
 	// Owed launched appends retry every observation; persistent
-	// failure is itself an incrementing observation (SLC-R6-006).
+	// failure is itself an incrementing observation.
 	unrecordable := o.retryOwedAppends()
 
-	// The ceiling is a duration property (SLC-R4-010): overshoot is
+	// The ceiling is a duration property: overshoot is
 	// an incrementing observation and the set stops NOW.
 	members, err := o.Components.GroupCount(o.held)
 	observation := o.observeComponents()
 	if err != nil {
 		// An uncountable group is NOT a healthy group: a process-table
 		// denial must not let a forking set grow past its ceiling while
-		// the breaker resets (review dispatch-supervise-6).
+		// the breaker resets.
 		trace.Actions = append(trace.Actions, "ceiling-indeterminable")
 		if observation == Healthy {
 			observation = Indeterminable
@@ -281,7 +279,7 @@ func (o *Owner) Cycle(now time.Time) *Exit {
 		trace.GroupCount = members
 		if stop, _ := CeilingVerdict(members, o.Ceiling); stop {
 			// Stop the set NOW: overshoot survives at most one
-			// interval (SLC-R4-010), and the observation increments.
+			// interval, and the observation increments.
 			trace.Actions = append(trace.Actions, "ceiling-stop-set")
 			o.stopHeldSet()
 			observation = Failing
@@ -354,7 +352,7 @@ func (o *Owner) establish() error {
 }
 
 // relaunchSet is launch_set: stop the old set verifying deaths for
-// the watermark (SLC-R8-002), write-ahead relaunched (GATING), then
+// the watermark, write-ahead relaunched (GATING), then
 // launch and record each component as its identity is captured.
 func (o *Owner) relaunchSet() error {
 	// Stop the current set, verifying deaths; re-verify every
@@ -374,7 +372,7 @@ func (o *Owner) relaunchSet() error {
 				all = false
 				// An unproven identity stays HELD: teardown and the
 				// sweep must still be able to find it, and its
-				// generation pins the watermark (SLC-R9-003).
+				// generation pins the watermark.
 				unproven = append(unproven, held)
 			}
 		}
@@ -385,7 +383,7 @@ func (o *Owner) relaunchSet() error {
 	next := o.generation + 1
 	watcherTag := fmt.Sprintf("%s-watcher-%d", o.TagPrefix, next)
 	reaperTag := fmt.Sprintf("%s-reaper-%d", o.TagPrefix, next)
-	// WRITE-AHEAD GATES THE LAUNCH (SLC-R6-006): an owner that cannot
+	// WRITE-AHEAD GATES THE LAUNCH: an owner that cannot
 	// record intent must not create processes.
 	if err := o.Ledger.AppendRelaunched(next, watcherTag, reaperTag, o.retiredThrough); err != nil {
 		return fmt.Errorf("write-ahead refused, launching nothing: %w", err)
@@ -456,8 +454,8 @@ func (o *Owner) stopHeldSet() {
 
 // teardownHeld stops exactly what this owner launched, by held
 // identity, and reports whether EVERY death was proven — the honest
-// teardownComplete (SLC-R4-012). It must work with the checkout gone
-// (SLC-R7-005): implementations of Components.Stop use held memory
+// teardownComplete. It must work with the checkout
+// gone: implementations of Components.Stop use held memory
 // and system calls only.
 func (o *Owner) teardownHeld() (complete bool) {
 	complete = true

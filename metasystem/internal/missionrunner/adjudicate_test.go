@@ -303,7 +303,7 @@ func TestAdjudicate(t *testing.T) {
 		t.Fatalf("rejected: got %d items: %v", len(verdict.Rejected), verdict.Rejected)
 	}
 	// The stale-turn job stays REJECTED here: no earlier accepted
-	// dispatched entry vouches for it (issue #10 round 2 — informational
+	// dispatched entry vouches for it (informational
 	// requires authoritative evidence, covered by its own test).
 	if len(verdict.Ignored) != 0 {
 		t.Fatalf("no evidence, no informational routing: %v", verdict.Ignored)
@@ -433,7 +433,7 @@ func TestAdjudicateParkedRequestNeedsReason(t *testing.T) {
 	}
 }
 
-// Issue #3: a parked-stop-loss request from the host is REJECTED with the
+// A parked-stop-loss request from the host is REJECTED with the
 // invariant's reason while the rest of the return applies — it must never
 // reach the state write, whose refusal killed the runner.
 func TestAdjudicateRejectsStopLossRequest(t *testing.T) {
@@ -494,7 +494,7 @@ func TestAdjudicateRejectsStopLossRequest(t *testing.T) {
 	}
 }
 
-// Issue #11's supersede semantics through adjudication: a candidate that
+// The supersede semantics through adjudication: a candidate that
 // names an open same-stream ask closes it in the same pass; unlawful
 // supersede claims reject; the waiting list hides the closed ask.
 func TestAdjudicateSupersedesAsks(t *testing.T) {
@@ -560,9 +560,9 @@ func TestAdjudicateSupersedesAsks(t *testing.T) {
 
 }
 
-// Round-2 regression pins for the supersede guards: the path-like id, the
+// Regression pins for the supersede guards: the path-like id, the
 // duplicate predecessor in one pass, the between-write crash shape, and
-// the superseded-only park case (issue #11 round-2 F4).
+// the superseded-only park case.
 func TestSupersedeGuardEdges(t *testing.T) {
 	root := t.TempDir()
 	mission := "demo"
@@ -598,7 +598,7 @@ func TestSupersedeGuardEdges(t *testing.T) {
 		}
 	}
 	// The persisted waiting list never names the predecessor this same
-	// verdict closes (round-2 F2).
+	// verdict closes.
 	for _, id := range verdict.WaitingList {
 		if id == "ask-1-1" {
 			t.Fatalf("the waiting list names a superseded predecessor: %v", verdict.WaitingList)
@@ -641,7 +641,7 @@ func TestSupersedeCrashShapeStaysClosed(t *testing.T) {
 	}
 }
 
-// Round-3: after the between-write crash, a NEW candidate superseding the
+// After the between-write crash, a NEW candidate superseding the
 // derivably closed predecessor must reject — two live successors for one
 // question is exactly what supersession exists to prevent.
 func TestSupersedeRejectsDerivablyClosedPredecessor(t *testing.T) {
@@ -675,7 +675,7 @@ func TestSupersedeRejectsDerivablyClosedPredecessor(t *testing.T) {
 	}
 }
 
-// Issue #10 (2): a dispatched entry naming this mission's own job from an
+// A dispatched entry naming this mission's own job from an
 // EARLIER turn is informational — no host-failure ask for telling the
 // truth twice; a nonexistent job still rejects with its ask.
 func TestAdjudicateIgnoresPreExistingJobReports(t *testing.T) {
@@ -694,7 +694,7 @@ func TestAdjudicateIgnoresPreExistingJobReports(t *testing.T) {
 		},
 		"streamUpdatesRequested": []any{}, "askCandidates": []any{}, "certified": []any{},
 	}
-	// "Already known" requires AUTHORITATIVE evidence (round 2): the job
+	// "Already known" requires AUTHORITATIVE evidence: the job
 	// appears in an earlier turn's ACCEPTED dispatched entries. The
 	// mis-stamped job has none and must keep its host-failure ask.
 	state := map[string]any{"streams": map[string]any{

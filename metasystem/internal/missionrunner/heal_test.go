@@ -51,7 +51,7 @@ func crashedMission(t *testing.T, ledgerCycles, spentCycles int) (engine *Engine
 		return string(out)
 	}
 	git("init", "-q")
-	// The deployment's projection boundary (HIW-O3): runtime state under
+	// The deployment's projection boundary: runtime state under
 	// artifacts/ stays outside the wall's shippable snapshot.
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/\nbin/\nmetasystem.conf\n"), 0o644); err != nil {
 		t.Fatal(err)

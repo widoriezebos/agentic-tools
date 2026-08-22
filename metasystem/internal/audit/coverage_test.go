@@ -26,8 +26,8 @@ func TestParseCoverage(t *testing.T) {
 	}
 }
 
-// The ratchet can fail — a deliberately lowered number is caught (the
-// prove-the-check-can-fail requirement of production-grade Phase 0c).
+// The ratchet can fail — a deliberately lowered number is caught. A
+// check that cannot fail proves nothing.
 func TestCheckCoverageFailsOnDrop(t *testing.T) {
 	baseline := testBaseline(t, map[string]float64{"internal/adapter": 85.9, "internal/dispatch": 66.8})
 	measured := map[string]float64{"internal/adapter": 85.9, "internal/dispatch": 60.0}
@@ -61,7 +61,7 @@ func TestCheckCoverageClosedWorld(t *testing.T) {
 	}
 }
 
-// The inventory join (go-production-grade B8): a package the module carries
+// The inventory join: a package the module carries
 // that produced no coverage line — a testless package is invisible to
 // `go test -cover` output — refuses the ratchet unless exempt.
 func TestCheckCoverageInventoryJoin(t *testing.T) {
@@ -290,9 +290,9 @@ func TestAuditEdgeBranches(t *testing.T) {
 	if err != nil || len(hits) != 0 {
 		t.Fatalf(".git content or an absent root disturbed the scan: %v %v", hits, err)
 	}
-	// B7: a policy file that EXISTS but cannot be read must REFUSE the
-	// audit. Reporting clean over a file it could not open is the fail-open
-	// hole this replaces — the forbidden reference inside it would pass.
+	// A policy file that EXISTS but cannot be read must REFUSE the
+	// audit. Reporting clean over a file it could not open is failing
+	// open — the forbidden reference inside it would pass.
 	unreadable := filepath.Join(root, "skills", "sealed.md")
 	os.WriteFile(unreadable, []byte("/Users/secret\n"), 0o644)
 	os.Chmod(unreadable, 0o000)

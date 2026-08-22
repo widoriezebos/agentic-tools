@@ -6,7 +6,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
-// Issue #4: the candidate-aware tuple's core properties, driven directly
+// The candidate-aware tuple's core properties, driven directly
 // on the gate — (1) a passing candidate is a NEW BEST against a
 // no-candidate history; (2) a candidate pass can NEVER outrank a real
 // merge (gate-of-record components dominate lexicographically); (3) an
@@ -29,7 +29,7 @@ func TestCandidateTupleProperties(t *testing.T) {
 	}
 
 	// (1) the first PASSING candidate is a new best and would reset
-	// stagnation — exactly vm-smoke-4's cycle 4 state.
+	// stagnation.
 	candidatePass := gate.tuple(gate.observedValues("self-assessment=0,candidate-self-assessment=1"))
 	if !gate.qualifies(candidatePass, baseline) {
 		t.Fatal("a passing candidate did not qualify as a new best")
@@ -56,7 +56,7 @@ func TestCandidateTupleProperties(t *testing.T) {
 	}
 }
 
-// Issue-4 round-1 F-2: on a MINIMIZATION gate the seed's absent candidate
+// On a MINIMIZATION gate the seed's absent candidate
 // components must be the directed worst (+inf pre-negation), so the first
 // real passing candidate still qualifies as a new best.
 func TestCandidateSeedDirectedWorstOnMinGate(t *testing.T) {
@@ -76,8 +76,8 @@ func TestCandidateSeedDirectedWorstOnMinGate(t *testing.T) {
 }
 
 // The fold replays REAL LEDGER BYTES: a semantics-3 mission whose cycle 4
-// carries a passing candidate token resets stagnation, exactly vm-smoke-4's
-// shape — and the same bytes without the token would have parked.
+// carries a passing candidate token resets stagnation —
+// and the same bytes without the token would park.
 func TestCandidateTokenResetsStagnationInReplay(t *testing.T) {
 	engine, ledgerPath := stopLossEngine(t)
 	for cycle, observed := range []string{

@@ -4,7 +4,7 @@ package steward
 // human-run install, authenticated by ownership, mode, and content.
 // It exists to make the scheduled tick a NAMED caller instead of an
 // unrecognized process — accident-proofing at the repository's trust
-// level (D118): a stray cron job does not match a pinned record; a
+// level: a stray cron job does not match a pinned record; a
 // same-user adversary is out of scope repo-wide.
 
 import (

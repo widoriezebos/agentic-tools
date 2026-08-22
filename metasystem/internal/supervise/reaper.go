@@ -14,8 +14,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
-// The reaper's per-interval job sweep. This reaper holds NO kill authority
-// (human ruling, Wido, 2026-08-12): it never signals a process and never
+// The reaper's per-interval job sweep. This reaper holds NO kill
+// authority: it never signals a process and never
 // records a death it has not proven. It owns terminal transitions only for
 // jobs whose recorded custodian is PROVABLY dead:
 //
@@ -134,7 +134,7 @@ func (cfg ReaperConfig) reapOne(path string) error {
 	start, _ := recordInt(record["pidStartedAt"])
 	tag, _ := record["instanceTag"].(string)
 	if verdict := cfg.Custodian(pid, start, tag); verdict != identity.Dead {
-		// The decline is a decision too (review F5): a running job past
+		// The decline is a decision too: a running job past
 		// its cap whose custodian this reaper may not kill is exactly the
 		// state an operator needs to see. Said once per pass; the record
 		// itself stays with the kill-capable dispatch path.

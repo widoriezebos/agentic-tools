@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The rendering and position helpers, case by case (Phase 6).
+// The rendering and position helpers, case by case.
 
 func TestJSONErrorPosition(t *testing.T) {
 	data := []byte("{\n  \"a\": 1,\n  broken\n}")

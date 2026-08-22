@@ -68,7 +68,7 @@ func ReturnCompleteRole(root, role, file string) []string {
 // ReturnCompleteJobFile validates an EXPLICIT candidate file with the
 // full job flow — record, chain walk, schema, and identity — instead of
 // the round's conventional return path. The delivery collector's
-// per-candidate selection (D64) needs exactly this: schema-only
+// per-candidate selection needs exactly this: schema-only
 // validation cannot catch a schema-valid return for the wrong job.
 func ReturnCompleteJobFile(root, job, file string) []string {
 	return returnCompleteJobAt(root, job, file)

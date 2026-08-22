@@ -25,9 +25,9 @@ func (f *conformanceFixture) missionize(mission string) {
 	record["stream"] = "main"
 	record["turnId"] = mission + "-t1"
 	f.writeJSON("artifacts/agents/jobs/impl.json", record)
-	// The issuance point derivation (slice-5 critique F-2) requires the
-	// boundary base to BE a named expected-tree point: in a live mission
-	// that is the open turn's pre-tree; the bed states exactly that.
+	// The issuance point derivation requires the boundary base to BE a
+	// named expected-tree point: in a live mission that is the open
+	// turn's pre-tree; the bed states exactly that.
 	baseTree := f.git(f.controller, "rev-parse", f.baseSha+"^{tree}")
 	f.writeJSON("artifacts/agents/missions/"+mission+"/state.json", map[string]any{
 		"integrity": map[string]any{"sequence": 4},
@@ -61,7 +61,7 @@ func issuedDigest(t *testing.T, out []string) string {
 	return ""
 }
 
-// The HIW-O2 issuance join: a mission chain passing every merge check gets
+// The wall's issuance join: a mission chain passing every merge check gets
 // a content-addressed authorization whose patch provably applies back to
 // exactly the reviewed tree; the digest domain omits the embedded digest;
 // re-issuance supersedes; and every refusal fails the merge itself.
@@ -94,7 +94,7 @@ func TestMissionAuthorizationIssuance(t *testing.T) {
 	}
 	// The bound occurrence is the CURRENT SEQUENCE POINT of the base's
 	// expected tree — {0, 0} for a mission with no acceptance entries —
-	// never the raw chain sequence (slice-5 critique F-2).
+	// never the raw chain sequence.
 	point, _ := record["baseSequencePoint"].(map[string]any)
 	if point["sequence"] != float64(0) || point["segment"] != float64(0) {
 		t.Fatalf("sequence point wrong: %v", point)
@@ -166,8 +166,8 @@ func TestMissionAuthorizationIssuance(t *testing.T) {
 	expectConformance(t, f, "merge", 1, "predates the host-implementer wall")
 }
 
-// The wall's issuance preconditions on the FULL merge path (slice-3
-// critique F-3): a mission waiver refuses outright, a mission chain with
+// The wall's issuance preconditions on the FULL merge path: a mission
+// waiver refuses outright, a mission chain with
 // no critic record accepts nothing and issues nothing, and a tampered
 // review-stage diff artifact changes nothing — issuance derives its patch
 // from the trees, never from an artifact.

@@ -147,3 +147,19 @@ times of the same piped-return-code mistake it was documenting,
 which is the strongest argument it produced: ease of use is not a
 courtesy, it is what keeps the operators of the system from fooling
 themselves.
+
+## The code stopped talking about its own making (August 22, 2026)
+
+Nearly five hundred comments across the engine's six remaining
+packages still explained themselves by the process that made them —
+decision numbers, review rounds, finding tags, the dates of rulings.
+The comment standard says the next reader was not there for any of
+that: a comment states the constraint in the system's own language or
+it does not exist. Three parallel agents swept the packages in an
+afternoon, keeping every constraint and dropping every event; where a
+tag was the entire comment, the real reason was researched out of the
+code and written down for the first time. The living spec names —
+sections of the supervision contract that code legitimately cites —
+stayed. What the sweep could not touch it flagged honestly: a handful
+of user-facing strings still carry old tags into refusal messages,
+banked as their own small piece of work.

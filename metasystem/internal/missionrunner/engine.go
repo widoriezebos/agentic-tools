@@ -52,7 +52,7 @@ type Engine struct {
 	Root    string
 	Mission string
 	emitter events.Emitter
-	// unattendedCheckout is the MISSION-START fact (issue #2 round-4):
+	// unattendedCheckout is the MISSION-START fact:
 	// true when the checkout lease carried this mission's own lineage as
 	// the loop began — the unattended arming's signature. A live read at
 	// reclaim time cannot distinguish "attended by design" from "foreign
@@ -71,8 +71,8 @@ type Engine struct {
 	// use the bytes that were authenticated. Production leaves it nil.
 	afterApprovedParse func()
 	// preAnchorHook fires between a state write and its PINNED anchor —
-	// a test seam for injecting ledger movement into that window
-	// (slice-6 successor round-13 finding 2). Nil in production.
+	// a test seam for injecting ledger movement into that window. Nil in
+	// production.
 	preAnchorHook func()
 	// custodianFn overrides the custodian prover for tests. Production binds
 	// identity.Custodian, the kernel custodian discipline the standing
@@ -85,17 +85,17 @@ type Engine struct {
 	survivorsFn func(tag string, exclude, pgid int64) (alive bool, certain bool)
 }
 
-// fixtures is the engine's root-checked fixture authority (agnosticism
-// B1): constructed on demand from Root. A refused construction (leaked
-// fixture in a non-fake checkout) returns the ERROR — the caller
-// refuses its decision, never normalizes to kernel-only (B1 critique
-// finding 4).
+// fixtures is the engine's root-checked fixture authority, constructed on
+// demand from Root. A refused construction (leaked fixture in a non-fake
+// checkout) returns the ERROR — the caller refuses its decision, never
+// normalizes to kernel-only, because a kernel-only fallback would let a
+// leaked fixture authorize what only a real checkout may.
 func (e *Engine) fixtures() (*fixtureauth.Authorization, error) {
 	return fixtureauth.New(e.Root)
 }
 
 // anchor writes the state's anchor commit through the configured anchorer.
-// EVERY anchor reclaims the checkout first (issue #2 round-2 F2): the
+// EVERY anchor reclaims the checkout first: the
 // failed-turn, drain-stalled, and proposal-refusal paths all anchor after
 // a host turn held the lease, and an anchor without runner holdership
 // would advance the runner-owned anchor ref outside the single-writer

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// HIW-O11: a preserved pre-wall mission state refuses PUBLIC RESUME with
+// A preserved pre-wall mission state refuses PUBLIC RESUME with
 // the exact named error — before shape validation, with no migration
 // path and no mutation. The bodies here are deliberately shape-invalid
 // beyond their version marker: the named refusal must outrank every

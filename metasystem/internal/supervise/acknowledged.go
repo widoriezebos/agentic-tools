@@ -14,20 +14,20 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
-// The acknowledged-process mechanism (KI-23): an UNTRACKED report that
+// The acknowledged-process mechanism: an UNTRACKED report that
 // nags forever for a process the human has already judged harmless
 // teaches the reader to skim, which is how a REAL untracked agent
 // slips past. The human acknowledges one exact process; the watchdog
 // then stays silent about THAT process and no other. The safety
 // property is one-directional: acknowledgement must never silence a
 // new or different process, so every ambiguity here fails toward
-// shouting. This is a COOPERATIVE control (D93: unforgeable local
+// shouting. This is a COOPERATIVE control (unforgeable local
 // records are not a product contract): a same-user process that
 // forges the record file itself is outside what filesystem state can
 // refuse; the verb's authority check and the exact-birth token close
 // the accidental and the ordinary-hostile cases.
 //
-// The code critique that shaped this (7 findings): the identity is a
+// The load-bearing details: the identity is a
 // kernel-resolution birth token, not a whole second (pid reuse within
 // a second); the verb authorizes its caller (an untracked agent must
 // not acknowledge itself); the census consulted must be CURRENT
@@ -65,7 +65,7 @@ func acknowledgedLockDir(repo string) string {
 // unreadable, malformed, or an entry missing a required field — is an
 // error, and the watchdog's error path treats an error as an empty
 // set, so bad records make the nag REAPPEAR rather than silence
-// anything (the critique's fail-toward-shouting table).
+// anything — the record fails toward shouting.
 func LoadAcknowledged(repo string) ([]AcknowledgedProcess, error) {
 	raw, err := os.ReadFile(acknowledgedPath(repo))
 	if err != nil {
@@ -174,8 +174,8 @@ func Acknowledge(repo string, pid int64, reason string, now time.Time, probe ide
 	// The binding is to THE process the census observed: the live
 	// probe's kernel-resolution token must equal the token the census
 	// recorded. A pid recycled after the scan — even within the same
-	// second — carries a different token and refuses (the verification
-	// round's S1: second-resolution binding left a same-second window).
+	// second — carries a different token and refuses; second-resolution
+	// binding alone would leave a same-second window open.
 	if exact != censusExact {
 		return AcknowledgedProcess{}, fmt.Errorf("acknowledge refused: pid %d is not the process the census observed (recycled since the last scan); re-run after the next census", pid)
 	}
@@ -225,7 +225,7 @@ func Acknowledge(repo string, pid int64, reason string, now time.Time, probe ide
 		// live pid whose identity no longer matches (recycled). An
 		// unprovable probe keeps the entry — losing a live
 		// acknowledgement to a transient read failure would re-nag a
-		// process the human already judged (critique finding 7).
+		// process the human already judged.
 		if identity.Custodian(a.Pid, a.PidStartedAt, "", probe) == identity.Dead {
 			continue
 		}

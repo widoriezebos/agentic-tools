@@ -7,8 +7,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// Issue #1 sweep: the pair outranks a drifted second in holder liveness
-// and KI-33 same-process reconciliation; wrong pairs still read dead.
+// The clock-step-immune pair outranks a drifted second in holder liveness
+// and same-process reconciliation; wrong pairs still read dead.
 func TestPairAwareHolderIdentity(t *testing.T) {
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)

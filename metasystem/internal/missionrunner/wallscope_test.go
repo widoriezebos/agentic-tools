@@ -1,6 +1,6 @@
 package missionrunner
 
-// Fixtures for the wall's snapshot scope (WSS-1..13): HEAD-movement
+// Fixtures for the wall's snapshot scope: HEAD-movement
 // accounting, the ref transition fence, staged accounting at both
 // scopes, the worktree census, the nested repository fence, and the
 // two-phase acceptance verification. Each bed is a real git repository;
@@ -134,7 +134,7 @@ func TestScopeCleanBedPasses(t *testing.T) {
 	}
 }
 
-// WSS-2: a HEAD retreat is a violation.
+// A HEAD retreat is a violation.
 func TestScopeHeadRetreatViolates(t *testing.T) {
 	bed := newScopeBed(t)
 	writeText(t, filepath.Join(bed.engine.Root, "second.go"), "package main\n")
@@ -148,7 +148,7 @@ func TestScopeHeadRetreatViolates(t *testing.T) {
 	}
 }
 
-// WSS-2: an amend of pre-open history leaves the open commit off the
+// An amend of pre-open history leaves the open commit off the
 // first-parent chain.
 func TestScopeAmendViolates(t *testing.T) {
 	bed := newScopeBed(t)
@@ -159,7 +159,7 @@ func TestScopeAmendViolates(t *testing.T) {
 	}
 }
 
-// WSS-2: a commit carrying an unaccounted tree names itself.
+// A commit carrying an unaccounted tree names itself.
 func TestScopeUnaccountedCommitViolates(t *testing.T) {
 	bed := newScopeBed(t)
 	writeText(t, filepath.Join(bed.engine.Root, "smuggled.go"), "package main\n")
@@ -171,7 +171,7 @@ func TestScopeUnaccountedCommitViolates(t *testing.T) {
 	}
 }
 
-// WSS-2/WSS-8: an empty commit moves no byte and is lawful — accounting
+// An empty commit moves no byte and is lawful — accounting
 // is by content, not ceremony. HEAD unmoved is lawful too.
 func TestScopeEmptyCommitAndNoCommitLawful(t *testing.T) {
 	bed := newScopeBed(t)
@@ -184,7 +184,7 @@ func TestScopeEmptyCommitAndNoCommitLawful(t *testing.T) {
 	}
 }
 
-// WSS-2/WSS-8: a commit of the expected composition is lawful, and a
+// A commit of the expected composition is lawful, and a
 // commit of an intermediate subset (one whole patch of two) is lawful.
 func TestScopeSubsetAndFullCompositionCommitsLawful(t *testing.T) {
 	bed := newScopeBed(t)
@@ -217,7 +217,7 @@ func TestScopeSubsetAndFullCompositionCommitsLawful(t *testing.T) {
 	}
 }
 
-// WSS-2: a partially-carried patch (one hunk of a reviewed change)
+// A partially-carried patch (one hunk of a reviewed change)
 // violates the whole-patch rule.
 func TestScopePartialPatchCommitViolates(t *testing.T) {
 	bed := newScopeBed(t)
@@ -236,7 +236,7 @@ func TestScopePartialPatchCommitViolates(t *testing.T) {
 	}
 }
 
-// WSS-2 (O14 lane): a reviewed side branch integrated with --no-ff is
+// The side-tip lane: a reviewed side branch integrated with --no-ff is
 // lawful; the same branch fast-forwarded puts intermediate trees on the
 // first-parent chain and the violation names the remedy.
 func TestScopeMergeIntegrationLawfulAndFastForwardNamesRemedy(t *testing.T) {
@@ -273,7 +273,7 @@ func TestScopeMergeIntegrationLawfulAndFastForwardNamesRemedy(t *testing.T) {
 	}
 }
 
-// WSS-2: an ours-merge burying an illicit side tip fails by its tip.
+// An ours-merge burying an illicit side tip fails by its tip.
 func TestScopeOursMergeBuriedCommitViolates(t *testing.T) {
 	bed := newScopeBed(t)
 	root := bed.engine.Root
@@ -289,7 +289,7 @@ func TestScopeOursMergeBuriedCommitViolates(t *testing.T) {
 	}
 }
 
-// WSS-11: tag, custom-namespace, and remote-namespace retention all
+// Tag, custom-namespace, and remote-namespace retention all
 // violate the exact transition fence.
 func TestScopeRefRetentionViolates(t *testing.T) {
 	for _, ref := range []string{"refs/tags/keeper", "refs/custom/hideout", "refs/remotes/origin/x"} {
@@ -304,7 +304,7 @@ func TestScopeRefRetentionViolates(t *testing.T) {
 	}
 }
 
-// WSS-11: a same-tip detach violates — the active branch must BE the
+// A same-tip detach violates — the active branch must BE the
 // checkout.
 func TestScopeSameTipDetachViolates(t *testing.T) {
 	bed := newScopeBed(t)
@@ -315,7 +315,7 @@ func TestScopeSameTipDetachViolates(t *testing.T) {
 	}
 }
 
-// WSS-11: an implementer branch moves freely while unconsumed and holds
+// An implementer branch moves freely while unconsumed and holds
 // still from consumption on.
 func TestScopeAgentBranchFreeThenHeld(t *testing.T) {
 	bed := newScopeBed(t)
@@ -348,7 +348,7 @@ func TestScopeAgentBranchFreeThenHeld(t *testing.T) {
 	_ = acct
 }
 
-// WSS-11: pseudoref retention — an unaccounted commit parked in
+// Pseudoref retention — an unaccounted commit parked in
 // REBASE_HEAD violates; ORIG_HEAD at an accounted commit is lawful
 // (exactly what a lawful --no-ff integration leaves).
 func TestScopePseudorefRetention(t *testing.T) {
@@ -376,7 +376,7 @@ func TestScopePseudorefRetention(t *testing.T) {
 	}
 }
 
-// WSS-11: an unrecorded worktree is a private carrier and violates
+// An unrecorded worktree is a private carrier and violates
 // outright; a runner-recorded measurement worktree at its recorded tip
 // is lawful.
 func TestScopeWorktreeCensus(t *testing.T) {
@@ -406,7 +406,7 @@ func TestScopeWorktreeCensus(t *testing.T) {
 	}
 }
 
-// WSS-3: staged smuggling violates; a staged lawful subset passes; a
+// Staged smuggling violates; a staged lawful subset passes; a
 // conflicted workspace index refuses toward the wall.
 func TestScopeStagedAccounting(t *testing.T) {
 	bed := newScopeBed(t)
@@ -474,7 +474,7 @@ func newNestedScopeBed(t *testing.T) *scopeBed {
 	return bed
 }
 
-// WSS-5/O16: a sibling edit mid-turn violates with the paths named; a
+// A sibling edit mid-turn violates with the paths named; a
 // workspace edit does not trip the toplevel fence.
 func TestScopeSiblingEditViolates(t *testing.T) {
 	bed := newNestedScopeBed(t)
@@ -489,7 +489,7 @@ func TestScopeSiblingEditViolates(t *testing.T) {
 	}
 }
 
-// WSS-4: a host commit touching a sibling path violates at repository
+// A host commit touching a sibling path violates at repository
 // scope even when its workspace subtree is clean.
 func TestScopeSiblingCommitViolates(t *testing.T) {
 	bed := newNestedScopeBed(t)
@@ -506,7 +506,7 @@ func TestScopeSiblingCommitViolates(t *testing.T) {
 	}
 }
 
-// WSS-4: a sibling payload buried in an interior side commit under an
+// A sibling payload buried in an interior side commit under an
 // empty accounted tip is caught by the ACCUMULATED side-chain scope.
 func TestScopeSiblingPayloadBuriedUnderAccountedTipViolates(t *testing.T) {
 	bed := newNestedScopeBed(t)
@@ -531,7 +531,7 @@ func TestScopeSiblingPayloadBuriedUnderAccountedTipViolates(t *testing.T) {
 	}
 }
 
-// WSS-3 (nested): staged sibling motion violates; a preexisting sibling
+// Nested: staged sibling motion violates; a preexisting sibling
 // conflict refuses nothing.
 func TestScopeToplevelStagedMotion(t *testing.T) {
 	bed := newNestedScopeBed(t)
@@ -547,7 +547,7 @@ func TestScopeToplevelStagedMotion(t *testing.T) {
 	}
 }
 
-// WSS-6: the seeded projection follows the comparison target — a
+// The seeded projection follows the comparison target — a
 // committed ignored declared artifact stays projected instead of
 // reading as drift.
 func TestScopeSeededCaptureFollowsExpected(t *testing.T) {
@@ -577,7 +577,7 @@ func TestScopeSeededCaptureFollowsExpected(t *testing.T) {
 	}
 }
 
-// WSS-12: the post-publication verification concludes a clean turn and
+// The post-publication verification concludes a clean turn and
 // parks over motion between the acceptance write and its verification.
 func TestScopeAcceptanceVerification(t *testing.T) {
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
@@ -657,7 +657,7 @@ func TestScopeAcceptanceVerification(t *testing.T) {
 	}
 }
 
-// WSS-12: motion after the acceptance write parks over the acceptance.
+// Motion after the acceptance write parks over the acceptance.
 func TestScopeAcceptanceVerificationCatchesMotion(t *testing.T) {
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
@@ -749,7 +749,7 @@ func TestScopeAcceptanceVerificationCatchesMotion(t *testing.T) {
 	}
 }
 
-// WSS-10: admission REFUSES a nonempty replacement namespace — the real
+// Admission REFUSES a nonempty replacement namespace — the real
 // preflight path, not merely the ref's presence.
 func TestScopeAdmissionRefusesReplaceNamespace(t *testing.T) {
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
@@ -781,7 +781,7 @@ func TestScopeAdmissionRefusesReplaceNamespace(t *testing.T) {
 	}
 }
 
-// WSS-13: RESTORE verifies every carrier — a staged remnant or an
+// RESTORE verifies every carrier — a staged remnant or an
 // unaccounted commit refuses the restore even when the worktree equals
 // the named safe tree — and the recorded resolution carries the full
 // carrier posture as the next accounting origin.
@@ -849,7 +849,7 @@ func TestScopeRestoreVerifiesCarriers(t *testing.T) {
 	}
 }
 
-// WSS-I1-9: a grafts file forges the first-parent walk; its presence is
+// A grafts file forges the first-parent walk; its presence is
 // a violation before any accounting runs.
 func TestScopeGraftFileViolates(t *testing.T) {
 	bed := newScopeBed(t)
@@ -864,7 +864,7 @@ func TestScopeGraftFileViolates(t *testing.T) {
 	}
 }
 
-// WSS-I1-3: a commit parked under its own id in the mission's anchor
+// A commit parked under its own id in the mission's anchor
 // namespace is not an anchor — anchors are trees.
 func TestScopeCommitInAnchorNamespaceViolates(t *testing.T) {
 	bed := newScopeBed(t)
@@ -876,10 +876,10 @@ func TestScopeCommitInAnchorNamespaceViolates(t *testing.T) {
 	}
 }
 
-// WSS-I1-6: a raw reviewed tree from an OLD base is not globally
+// A raw reviewed tree from an OLD base is not globally
 // accounted — committing it on the first-parent chain reverts later
 // state and refuses — while the same tree stays lawful as a merge side
-// tip (the O14 lane).
+// tip (the side-tip lane).
 func TestScopeReviewedTreeIsNotGloballyAccounted(t *testing.T) {
 	bed := newScopeBed(t)
 	root := bed.engine.Root
@@ -936,7 +936,7 @@ func TestPriorContextSkipsVerificationEntries(t *testing.T) {
 	}
 }
 
-// WSS-I3-1: deleting the state-anchors ref during a live (chained)
+// Deleting the state-anchors ref during a live (chained)
 // mission is a runner-ref deletion — a violation.
 func TestScopeStateAnchorDeletionViolates(t *testing.T) {
 	engine := parkedSoloBuildMission(t)
@@ -969,7 +969,7 @@ func runIn(t *testing.T, dir string, args ...string) (string, int) {
 	return string(out), 0
 }
 
-// WSS-I3-4: a host that force-commits arbitrary bytes into the filtered
+// A host that force-commits arbitrary bytes into the filtered
 // ledger path smuggles them onto the branch; the ledger-carrier check
 // refuses it even though the tree identity filters the path.
 func TestScopeLedgerCarrierSmugglingViolates(t *testing.T) {
@@ -1029,7 +1029,7 @@ func TestScopeLedgerCarrierSmugglingViolates(t *testing.T) {
 	if v, err := engine.judgeCommitLedgerCarrier(smuggleCommit, state); err != nil || !strings.Contains(v, "unauthorized mission-ledger entry") {
 		t.Fatalf("committed ledger smuggle must violate per-commit: %q %v", v, err)
 	}
-	// WSS I11-3: the accounted/reviewed lanes judge the RAW ledger entry
+	// The accounted/reviewed lanes judge the RAW ledger entry
 	// before the workspace filter — a side tip or pseudoref cargo commit
 	// carrying the foreign blob refuses even though the filtered tree
 	// would read as accounted.
@@ -1047,7 +1047,7 @@ func TestScopeLedgerCarrierSmugglingViolates(t *testing.T) {
 	}
 }
 
-// WSS-I5-1: requiredAnchorTrees names the OPEN turn's topTree and
+// requiredAnchorTrees names the OPEN turn's topTree and
 // topStaged.tree — ExpectedTreePoints excludes the open turn, so without
 // this their anchors' deletion would go unseen.
 func TestScopeRequiredAnchorTreesIncludesOpenTurn(t *testing.T) {

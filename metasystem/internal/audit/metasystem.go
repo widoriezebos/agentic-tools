@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
-// The metasystem audit (ported whole from scripts/audit-metasystem.sh under
-// plans/kill-shell.md Phase A): required instruction files, the
+// The metasystem audit, the decision engine behind the
+// scripts/audit-metasystem.sh shim: required instruction files, the
 // outside-reference scan over the explicit metasystem-owned list, the
 // instruction inventories, placeholder checks, the always-loaded word budget,
 // and the report-only common-path bundle.
@@ -259,8 +259,7 @@ func auditScanFiles(root string, paths []string, pattern *regexp.Regexp) ([]stri
 			// carries every optional tree. Anything else (a permission
 			// denial, an I/O error) means the audit cannot see a file it
 			// is supposed to police, and an audit that cannot read its
-			// subject must refuse rather than report clean
-			// (go-production-grade B7).
+			// subject must refuse rather than report clean.
 			if os.IsNotExist(err) {
 				continue
 			}
@@ -272,7 +271,7 @@ func auditScanFiles(root string, paths []string, pattern *regexp.Regexp) ([]stri
 				if err != nil {
 					// A runtime path that vanished mid-walk (a lock
 					// directory, a temp file) is not a policy failure; any
-					// other walk error is (B7).
+					// other walk error is.
 					if os.IsNotExist(err) {
 						return nil
 					}
@@ -391,9 +390,9 @@ func auditGoalSystem(root string) []string {
 		violations = append(violations, "docs/project-adaptation.md must carry the goal-open convention")
 	}
 
-	// Class 14's positive audit (B1 critique finding 14): the named
-	// operational documents must carry registry-derived pointers, not
-	// hand-maintained universes.
+	// The registry-pointer audit is positive, not just negative: the
+	// named operational documents must carry registry-derived pointers,
+	// not hand-maintained universes.
 	pointerDocs := map[string]string{
 		"docs/project-adaptation.md": "runtime registration",
 		"docs/orchestration.md":      "runtime\nlist",
@@ -449,7 +448,8 @@ func enforcementConfigFor(runtime string) string {
 
 // instructionInventoryNames is the audit's instruction filename set:
 // the generic names plus every registry-declared instruction file,
-// computed when the audit RUNS (code critique finding 8).
+// computed when the audit RUNS — an init-time freeze would miss any
+// runtime declared after package load.
 func instructionInventoryNames() map[string]bool {
 	names := map[string]bool{"wow.md": true, "SKILL.md": true, "AGENT.md": true}
 	for _, name := range runtimereg.InstructionFiles() {

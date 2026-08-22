@@ -17,7 +17,7 @@ func TestClassify(t *testing.T) {
 		want     Verdict
 	}{
 		// Proof "Purpose gone": a deleted checkout always lands in
-		// PurposeGone, never Superseded (SLC-R6-001) — even though the
+		// PurposeGone, never Superseded — even though the
 		// lock vanished with it.
 		{"deleted checkout", Absent, NoLock, Absent, PurposeGone},
 		{"deleted checkout, lock cached as other", Absent, NamesOther, Absent, PurposeGone},
@@ -25,7 +25,7 @@ func TestClassify(t *testing.T) {
 		{"state revoked under own lock", Present, NamesSelf, Absent, PurposeGone},
 		// Healthy current owner.
 		{"current", Present, NamesSelf, Present, Continue},
-		// SLC-R3-003: replaced after a false-death takeover — leave.
+		// Replaced after a false-death takeover — leave.
 		{"replaced", Present, NamesOther, Present, Superseded},
 		{"lock revoked, checkout persists", Present, NoLock, Present, Superseded},
 		// Proof "Indeterminacy": chmod-000 state — keep running, no
@@ -58,7 +58,7 @@ func TestBreakerTripsAtN(t *testing.T) {
 }
 
 // A full healthy interval resets; UNKNOWN neither increments nor
-// resets (SLC-R3-004) and skips the relaunch.
+// resets and skips the relaunch.
 func TestBreakerResetAndIndeterminacy(t *testing.T) {
 	breaker := &Breaker{GiveUpAt: 3, BaseInterval: time.Second, BackoffCap: time.Minute}
 	breaker.Advance(Failing)
@@ -129,7 +129,7 @@ func TestEstablishment(t *testing.T) {
 	}
 }
 
-// SLC-R9-003: the watermark advances over the verified contiguous
+// The watermark advances over the verified contiguous
 // prefix only; one unverified older generation pins it.
 func TestRetireWatermark(t *testing.T) {
 	recorded := []int64{1, 2, 3}

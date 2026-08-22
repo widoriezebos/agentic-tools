@@ -91,7 +91,7 @@ type TurnConclusion struct {
 // stream is left active, otherwise still running.
 
 // wallEntryPayload reads the turn's wall.json evidence back for the
-// acceptance entry (HIW-O4), FAIL CLOSED (critique F-4): a turn with no
+// acceptance entry, FAIL CLOSED: a turn with no
 // evidence, unreadable evidence, or a non-passed verdict never concludes
 // into the log — deleting wall.json must never buy a wall-free acceptance.
 func wallEntryPayload(root, mission, turnID string, state map[string]any) (map[string]any, []any, error) {
@@ -109,7 +109,7 @@ func wallEntryPayload(root, mission, turnID string, state map[string]any) (map[s
 	// The payload's occurrence identity names the write that will land
 	// it: this proposal builds on state at sequence S, so acceptance
 	// lands at S+1 under the compare-and-write; the transition validator
-	// refuses anything else (critique F-2).
+	// refuses anything else.
 	integrity, _ := state["integrity"].(map[string]any)
 	sequence, ok := jsonInt(integrity["sequence"])
 	if !ok {
@@ -157,8 +157,8 @@ func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclus
 		"gaps":           conclusion.Gaps,
 	}
 	// The entry carries the wall verdict and its consumptions, and the
-	// open-turn marker dies in the same write: acceptance is ONE write
-	// (HIW-O4), never a second one, and never without evidence.
+	// open-turn marker dies in the same write: acceptance is ONE write,
+	// never a second one, and never without evidence.
 	wall, consumed, err := wallEntryPayload(root, mission, turn.TurnID, proposed)
 	if err != nil {
 		return nil, err
@@ -169,7 +169,7 @@ func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclus
 	if err := appendTurnLog(proposed, entry); err != nil {
 		return nil, err
 	}
-	// The acceptance append stays THE single commit point (HIW-O13) but
+	// The acceptance append stays THE single commit point but
 	// no longer concludes the turn: openTurn survives it, and the
 	// post-verification entry concludes on a clean re-capture — so
 	// COMPLETION (the one success outcome) defers to that write, while
@@ -255,8 +255,8 @@ func ConcludeFaultedTurn(root, mission string, state map[string]any, turn Turn, 
 		"feedsBreaker": fault.FeedsBreaker,
 	}
 	// The entry carries the wall verdict and its consumptions, and the
-	// open-turn marker dies in the same write: acceptance is ONE write
-	// (HIW-O4), never a second one, and never without evidence.
+	// open-turn marker dies in the same write: acceptance is ONE write,
+	// never a second one, and never without evidence.
 	wall, consumed, err := wallEntryPayload(root, mission, turn.TurnID, proposed)
 	if err != nil {
 		return nil, err
@@ -310,8 +310,8 @@ func RecordFailureProposal(root, mission string, state map[string]any, turn Turn
 		"measurement": nil,
 	}
 	// The entry carries the wall verdict and its consumptions, and the
-	// open-turn marker dies in the same write: acceptance is ONE write
-	// (HIW-O4), never a second one, and never without evidence.
+	// open-turn marker dies in the same write: acceptance is ONE write,
+	// never a second one, and never without evidence.
 	wall, consumed, err := wallEntryPayload(root, mission, turn.TurnID, proposed)
 	if err != nil {
 		return nil, err
@@ -382,8 +382,8 @@ func parkOutcome(root, mission string, state map[string]any, reason, question, s
 	outcome := &ParkOutcome{Asks: []map[string]any{}}
 	newAskIDs := []string{}
 	// A wall-violation ask suppresses a new one only while it is STILL
-	// RELEVANT — bound to a taint the state records as unresolved
-	// (slice-6 round-3 finding 6): a stale tail (resolved taint, crash
+	// RELEVANT — bound to a taint the state records as unresolved:
+	// a stale tail (resolved taint, crash
 	// before its answer landed) or an unbound ask must never strand the
 	// NEXT taint askless.
 	suppressed := hasOpenAskWithReason(asksDir, reason)
@@ -417,7 +417,7 @@ func parkOutcome(root, mission string, state map[string]any, reason, question, s
 
 // hasOpenAskWithReason reports whether any unanswered ask on disk already
 // carries the reason class, so a re-park does not stack duplicate asks.
-// A SUPERSEDED ask does not count (issue #11 critique F2): prompts and the
+// A SUPERSEDED ask does not count: prompts and the
 // waiting list hide it, so letting it satisfy the park guarantee would
 // leave a parked mission with no visible answer path.
 func hasOpenAskWithReason(asksDir, reason string) bool {

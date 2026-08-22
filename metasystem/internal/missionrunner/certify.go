@@ -1,10 +1,10 @@
 package missionrunner
 
-// Certification adjudication (host-implementer wall, HIW-O5 — the D99
-// hole): a return's certified claims were copied into the turn log
-// UNVERIFIED, so a host could declare any job certified and the wall's
-// whole authorization machinery was decorative. Every accepted
-// certification now proves, against records the host cannot write, that
+// Certification adjudication, the host-implementer wall's certification
+// gate: a return's certified claims copied into the turn log
+// UNVERIFIED would let a host declare any job certified and reduce the
+// wall's whole authorization machinery to decoration. Every accepted
+// certification proves, against records the host cannot write, that
 // the named integration authorization exists, binds this exact job and
 // mission incarnation, covers the job record as it stands today, is the
 // live head of its chain's supersession order, and has never been
@@ -63,8 +63,8 @@ func readAuthorizationIndex(dir string) (*authorizationIndex, error) {
 		if recorded, _ := doc["authorizationDigest"].(string); recorded != digest {
 			continue
 		}
-		// The record's bytes must still hash to the digest they claim
-		// (round-2 finding 1): a rewritten record beside an intact
+		// The record's bytes must still hash to the digest they claim:
+		// a rewritten record beside an intact
 		// filename is not an authorization at all.
 		if recomputed, err := validate.AuthorizationRecordDigest(doc); err != nil || recomputed != digest {
 			continue

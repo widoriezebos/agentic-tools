@@ -65,8 +65,9 @@ func TestLoadAcknowledgedUnreadableIsError(t *testing.T) {
 }
 
 // A partial or null field must be an ERROR (which the watchdog treats
-// as an empty set — shout), never a zero value that silences (pid 0 /
-// start 0 collisions were the critique's finding 4).
+// as an empty set — shout), never a zero value that silences: a
+// missing field decoded as pid 0 or start 0 could match and silence
+// the wrong process.
 func TestLoadAcknowledgedStrictFields(t *testing.T) {
 	cases := []struct{ name, body string }{
 		{"missing pid", `[{"pidStartedAt":100,"pidStartedAtExactMicro":1,"reason":"r","acknowledgedAt":"2026-08-16T00:00:00Z"}]`},
@@ -218,17 +219,17 @@ func TestAcknowledgeRefusals(t *testing.T) {
 		t.Fatalf("an empty reason must refuse: %v", err)
 	}
 	// The census token disagrees with the live probe at FULL resolution
-	// while the whole seconds agree — the same-second recycle the S1
-	// binding exists for. Must refuse.
+	// while the whole seconds agree — the same-second recycle the
+	// exact-token binding exists for. Must refuse.
 	sameSecond := `{"verdict":"SUCCESS","completedAtEpoch":` + itoaTest(watchdogNow) +
 		`,"intervalSec":60,"inventory":[{"class":"UNTRACKED","pid":` + itoaTest(self) + `,"pidStartedAt":100,"pidStartedAtExactMicro":100000005}]}`
 	writeSupervisionFile(t, repo, "last-census.json", sameSecond)
 	if _, err := Acknowledge(repo, self, "r", now, probe); err == nil || !strings.Contains(err.Error(), "not the process the census observed") {
 		t.Fatalf("a same-second token mismatch must refuse: %v", err)
 	}
-	// A census predating exact birth tokens refuses (the S1 binding:
+	// A census predating exact birth tokens refuses:
 	// without the census-observed token there is nothing sound to bind
-	// to).
+	// to.
 	pretoken := `{"verdict":"SUCCESS","completedAtEpoch":` + itoaTest(watchdogNow) +
 		`,"intervalSec":60,"inventory":[{"class":"UNTRACKED","pid":` + itoaTest(self) + `,"pidStartedAt":100}]}`
 	writeSupervisionFile(t, repo, "last-census.json", pretoken)

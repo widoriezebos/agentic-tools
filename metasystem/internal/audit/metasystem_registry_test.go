@@ -9,7 +9,7 @@ import (
 	runtimereg "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
-// Code critique finding 8: a NEWLY declared instruction filename
+// A NEWLY declared instruction filename
 // reaches the audit's outside-reference scan roots and instruction
 // inventory the moment it is declared — proven by override, not by
 // init-time freezing.

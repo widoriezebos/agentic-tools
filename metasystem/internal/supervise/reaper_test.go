@@ -171,7 +171,7 @@ func TestReaperPassCoreTransitions(t *testing.T) {
 			t.Fatalf("reaped record %s missing provenance: %v", path, got)
 		}
 	}
-	// Three reap verdicts plus the live-over-budget DECLINE (review F5):
+	// Three reap verdicts plus the live-over-budget DECLINE:
 	// the state the reaper may not act on is still said out loud.
 	if len(emitted) != 4 {
 		t.Fatalf("expected three reap lines and one decline, got %v", emitted)
@@ -399,7 +399,7 @@ func TestReaperPassClearsAbandonedSetupHusks(t *testing.T) {
 	}
 }
 
-// The decline is itself reportable (review F5): a running job past its cap
+// The decline is itself reportable: a running job past its cap
 // with a custodian this reaper may not kill emits its state once per pass
 // and the record is left untouched for the kill-capable dispatch path.
 func TestReaperPassEmitsTheDeclineItCannotAct(t *testing.T) {
@@ -447,9 +447,8 @@ func TestReaperHonorsTheCancellingMarker(t *testing.T) {
 
 	// A cancel marks the record BEFORE it kills: a dead group with
 	// the marker is that cancel's outcome, never a process loss —
-	// the kill-before-mark window this closes turned cancelled into
-	// failed under an unlucky reaper pass (three sightings,
-	// 2026-08-20).
+	// without the marker rule, a reaper pass landing between the kill
+	// and the record write would turn cancelled into failed.
 	marked := writeJobRecord(t, dir, "marked", map[string]any{
 		"jobId": "marked", "status": "running", "phase": "cancelling",
 		"pid": 555, "pidStartedAt": 9, "instanceTag": "job-marked",

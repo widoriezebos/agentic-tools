@@ -48,7 +48,7 @@ func newClaimer(root string) (*claimer, error) {
 
 // claim brings the lease into agreement with ann. It handles every case a
 // main can present: a fresh checkout, its own renewal, a live holder (kept, or
-// reconciled when it is the same process re-announcing — the KI-33 fix), a
+// reconciled when it is the same process re-announcing), a
 // dead holder of the same lineage (succession, epoch preserved), and a dead
 // holder of a foreign lineage (takeover, epoch bumped and predecessor swept).
 func (c *claimer) claim(ann *Announcement) error {
@@ -59,8 +59,9 @@ func (c *claimer) claim(ann *Announcement) error {
 	defer lock.release()
 
 	// A supervision component announces so the census can see it, but it is
-	// not a writer: it must never claim or disturb the checkout lease. This is
-	// the KI-32 fix — a detached owner once claimed and refused its own parent.
+	// not a writer: it must never claim or disturb the checkout lease — a
+	// detached owner that claimed would refuse its own parent as
+	// OWNED-ELSEWHERE.
 	if isSupervisionTag(ann.InstanceTag) {
 		return nil
 	}
@@ -79,14 +80,14 @@ func (c *claimer) claim(ann *Announcement) error {
 
 	case LiveRef(current.Pid, current.PidStartedAt, current.PidStartTicks, current.BootID, c.probe):
 		if sameLeaseProcess(current, ann) {
-			// KI-33 fix: the same live process re-announced under a new mainId
+			// The same live process re-announced under a new mainId
 			// (a --shutdown then re-arm). It still owns its own checkout, so
 			// reconcile the lease to the new identity instead of stranding the
 			// session as OWNED-ELSEWHERE against its own former mainId.
 			return c.reconcileSameProcess(current, ann)
 		}
-		// THE ONE EXCEPTION to "a live holder never yields" (issue #2,
-		// D102): a mission's own HOST TURN succeeds the mission's LIVE
+		// THE ONE EXCEPTION to "a live holder never yields":
+		// a mission's own HOST TURN succeeds the mission's LIVE
 		// RUNNER. Unattended, the runner is the main that armed the
 		// checkout and holds the lease for the mission's whole life;
 		// without this edge every host turn's dispatch refuses
@@ -94,7 +95,7 @@ func (c *claimer) claim(ann *Announcement) error {
 		// edge is fenced three ways: same mission lineage, the holder's
 		// own announcement carries the runner tag, and the claimant is
 		// NOT itself a runner. A foreign main — different lineage —
-		// stays refused (O-1), and the runner re-announces at turn
+		// stays refused, and the runner re-announces at turn
 		// conclusion to succeed the then-dead host via the ordinary
 		// dead-holder rule below; the epoch is PRESERVED across every
 		// succession (it is not a seizure), which is what keeps
@@ -103,7 +104,7 @@ func (c *claimer) claim(ann *Announcement) error {
 			announcementLineage(ann) != "" &&
 			holderIsMissionRunner(c.root, current) &&
 			descendsFrom(ann.Pid, current.Pid) {
-			// Kernel ancestry is the whole fence (round-3): the mission's
+			// Kernel ancestry is the whole fence: the mission's
 			// host turn AND the runner's own detached loop are both real
 			// children of the runner-side holder; a twin runner or an
 			// impostor session, whatever its tags claim, is not.
@@ -156,7 +157,7 @@ func (c *claimer) renewHeld(current *Lease, ann *Announcement) error {
 		return err
 	}
 	renewed := *current
-	renewed.OwnerLineage = announcementLineage(ann) // D-1c: reconcile on every renewal
+	renewed.OwnerLineage = announcementLineage(ann) // the lease's lineage follows the announcement on every renewal
 	renewed.RenewedAt = nowStamp()
 	renewed.Revision = current.Revision + 1
 	expected := current.Revision
@@ -171,8 +172,8 @@ func (c *claimer) renewHeld(current *Lease, ann *Announcement) error {
 	return nil
 }
 
-// reconcileSameProcess is the KI-33 fix: the same live process re-announced
-// under a new mainId. Move the holder identity to the new mainId, preserve the
+// reconcileSameProcess handles the same live process re-announcing
+// under a new mainId: move the holder identity to the new mainId, preserve the
 // epoch (its work is still valid), and bump the revision. Not a takeover.
 func (c *claimer) reconcileSameProcess(current *Lease, ann *Announcement) error {
 	reconciled := *current
@@ -337,8 +338,8 @@ func itoa(n int64) string {
 }
 
 // sameLeaseProcess decides whether the lease holder and an announcement are
-// one process: the clock-step-immune pair when both carry it (issue #1 —
-// KI-33 reconciliation must not fail on a drifted second the moment
+// one process: the clock-step-immune pair when both carry it
+// (same-process reconciliation must not fail on a drifted second the moment
 // LiveRef has proven the holder live), else the legacy seconds rule.
 func sameLeaseProcess(current *Lease, ann *Announcement) bool {
 	if current.Pid != ann.Pid {
@@ -353,8 +354,8 @@ func sameLeaseProcess(current *Lease, ann *Announcement) bool {
 // holderIsMissionRunner reports whether the lease holder's own announcement
 // carries the mission-runner tag AND names the same kernel identity the
 // lease holds — a structurally valid announcement file that merely reuses
-// the holder's mainId proves nothing (round-2 F1). Together with the
-// kernel-ancestry check at the call site, the issue-#2 succession edge
+// the holder's mainId proves nothing. Together with the
+// kernel-ancestry check at the call site, the succession edge
 // cannot be reached by forgeable declarations: lineage and tags are text,
 // but parentage and the holder's identity pair are the kernel's.
 func holderIsMissionRunner(root string, current *Lease) bool {

@@ -1,8 +1,8 @@
 package steward
 
 // The steward's identity record lives inside the repository —
-// nothing about recognition depends on host paths (D121 third
-// addendum). `steward arm` mints it; the classifier authenticates
+// nothing about recognition depends on host paths.
+// `steward arm` mints it; the classifier authenticates
 // it by ownership, mode, and content; a reinstall bumps the
 // generation so stale authorizations stop authorizing.
 

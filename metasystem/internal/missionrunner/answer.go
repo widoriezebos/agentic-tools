@@ -115,7 +115,7 @@ func (e *Engine) Answer(askID, answer string) int {
 			// tripped (e.g. the human raised fence.cycles while the
 			// wall clock kept growing). Consuming the only fence ask
 			// here would park the mission beyond the documented
-			// surface's reach (review missionrunner-4): refuse, leave
+			// surface's reach: refuse, leave
 			// the ask open, and NAME the fence still reached so the
 			// human amends the right limit and answers again.
 			fmt.Fprintf(os.Stderr, "answer refused: fence(s) still reached after the amendment: %s; raise those limits and answer again\n", strings.Join(names, ", "))

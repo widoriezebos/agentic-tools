@@ -393,7 +393,7 @@ func TestParkProposalStopLossAndOtherReasons(t *testing.T) {
 	}
 }
 
-// The acceptance append no longer concludes the turn (WSS-12): every
+// The acceptance append does not conclude the turn: every
 // conclusion path KEEPS the open-turn marker — the defined
 // consumed-but-unconcluded state — and the post-verification write is
 // the one place the marker dies.

@@ -9,8 +9,8 @@ import (
 
 // aggregateUsageForProjection refreshes the mission usage aggregate so the
 // fence projection that follows reads current totals — every terminal round
-// reaches the fence ledger at each conclude, park, and failure exit
-// (plans/patience-orphan-usage.md O4). Best-effort by design: a failure is
+// reaches the fence ledger at each conclude, park, and failure exit.
+// Best-effort by design: a failure is
 // witnessed as an aggregation-failed flight-recorder event and the older
 // aggregate stands until the next successful call; it never fails a park, a
 // conclusion, or an exit. Aggregation takes its own mission-fence lock,

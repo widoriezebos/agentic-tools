@@ -108,7 +108,7 @@ func TestFailureRampAggregatesUsageWithoutLedgerWrite(t *testing.T) {
 	}
 }
 
-// O4 ordering: the park proposal aggregates before it projects, so the
+// Aggregate-then-project ordering: the park proposal aggregates before it projects, so the
 // parked state's fence usage carries every terminal round.
 func TestParkProposalAggregatesBeforeProjection(t *testing.T) {
 	root := t.TempDir()

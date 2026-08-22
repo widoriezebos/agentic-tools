@@ -180,7 +180,7 @@ func TestReadAnnouncementsSkipsIncompleteButRefusesTampered(t *testing.T) {
 	}
 }
 
-// B1 critique finding 15: a leaked fixture in a non-fake checkout
+// A leaked fixture in a non-fake checkout
 // refuses CLASSIFICATION itself — the lease's every decision, takeover
 // included, sits behind this gate.
 func TestClassifyRefusesLeakedFixture(t *testing.T) {
@@ -195,7 +195,7 @@ func TestClassifyRefusesLeakedFixture(t *testing.T) {
 	}
 }
 
-// Issue #12: the Devin HOST CLI's internal raw `devin acp` helper sits
+// The Devin HOST CLI's internal raw `devin acp` helper sits
 // between the announced main and every orchestrator tool shell. The
 // signature exclusion lets the ancestry walk continue THROUGH the helper
 // to the announced main — while the delegate-side server (argv0

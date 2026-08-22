@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
-// Issue #3 part 2: the ProposalError boundary is REACHABLE through the
+// The ProposalError boundary is REACHABLE through the
 // runner's writeState — a transition-violating proposal keeps its type so
 // concludeCycle's guard can park instead of dying — while a
 // compare-and-write miss stays a plain runner failure (the ramp's).

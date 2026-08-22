@@ -1,6 +1,6 @@
 package validate
 
-// The integration authorization (host-implementer wall, HIW-O2): issued
+// The integration authorization (the host-implementer wall): issued
 // ONLY here, at the moment every implementer-return, critic-chain, and
 // merge check has passed, proving atomically at issue time that
 // apply(exact bound patch, exact bound base) = reviewed tree — with the
@@ -95,8 +95,8 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 		return fmt.Errorf("an empty diff cannot be authorized; the chain shipped no reviewable change")
 	}
 	// The trees this record names stay reachable for consumption-time
-	// verification (slice-5 critique F-7): the runner's staleness check
-	// dereferences both long after the delegate's worktree is gone.
+	// verification: the runner's staleness check dereferences both long
+	// after the delegate's worktree is gone.
 	repoWorkspace := gittree.Workspace{Dir: r.root}
 	for _, tree := range []string{baseTree, finalTree} {
 		if err := repoWorkspace.Anchor(mission, tree); err != nil {
@@ -145,17 +145,17 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 		"issuanceTurn":       issuanceTurn,
 		"baseTree":           baseTree,
 		// The sequence point names WHICH occurrence of the base tree this
-		// authorization was issued against (r5 HIW-R5-01: tree ids
-		// repeat): the E-point whose tree IS the boundary base, found in
-		// the mission's acceptance entries or the open turn — never the
-		// raw chain sequence (slice-5 critique F-2).
+		// authorization was issued against (tree ids repeat): the E-point
+		// whose tree IS the boundary base, found in the mission's
+		// acceptance entries or the open turn — never the raw chain
+		// sequence.
 		"baseSequencePoint": map[string]any{"sequence": baseSequence, "segment": baseSegment},
 		"reviewedTree":      finalTree,
 		"patchDigest":       hex.EncodeToString(patchSum[:]),
 		"changedPaths":      changedPaths,
 		"supersedes":        supersedes,
 	}
-	// Digest-then-embed (r5): the digest covers the record WITHOUT the
+	// Digest-then-embed: the digest covers the record WITHOUT the
 	// authorizationDigest field; the filename carries the same digest.
 	digest, err := canonicalDigest(record)
 	if err != nil {
@@ -198,8 +198,7 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 // whose tree IS the boundary base — the open turn's pre-tree under the
 // current sequence point, or an earlier acceptance's post-tree under the
 // occurrence it was accepted at. A base that is no named point refuses
-// issuance outright: consumption could never verify it (slice-5 critique
-// F-2 — the raw chain sequence bound nothing).
+// issuance outright: consumption could never verify it.
 func missionBaseSequencePoint(root, missionID, baseTree string) (int64, int64, error) {
 	statePath := filepath.Join(root, "artifacts", "agents", "missions", missionID, "state.json")
 	data, err := os.ReadFile(statePath)
@@ -277,9 +276,9 @@ func priorChainAuthorizations(dir, rootJob string) ([]string, error) {
 
 // AuthorizationRecordDigest recomputes the canonical digest of an
 // authorization record — the exact bytes issuance signed, with the
-// embedded authorizationDigest omitted (the r5 digest domain). Every
-// consumer must call this before trusting ANY field: the filename match
-// alone authenticates nothing (slice-5 round-2 finding 1).
+// embedded authorizationDigest omitted. Every consumer must call this
+// before trusting ANY field: the filename match alone authenticates
+// nothing.
 func AuthorizationRecordDigest(record map[string]any) (string, error) {
 	clone := make(map[string]any, len(record))
 	for key, value := range record {

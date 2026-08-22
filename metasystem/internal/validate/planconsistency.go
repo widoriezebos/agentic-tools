@@ -42,10 +42,10 @@ func PlanConsistency(plansDir string) (int, []string, error) {
 		}
 		data, err := os.ReadFile(filepath.Join(plansDir, name))
 		if err != nil {
-			// Gone is fine, unreadable is not (the B7 rule): a plan this
+			// Gone is fine, unreadable is not: a plan this
 			// gate cannot read may hold the RETIRED declaration or the
 			// violation it exists to catch, and "none prescribed" over a
-			// skipped file is failing open (validate-report-5).
+			// skipped file is failing open.
 			if os.IsNotExist(err) {
 				continue
 			}

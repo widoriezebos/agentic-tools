@@ -127,7 +127,7 @@ type stateComponent struct {
 }
 
 // BuildStamp is set by the linker at build time and stamped into
-// every artifact this engine writes (GO-MIG-R4-009: execution is
+// every artifact this engine writes (execution is
 // attested by the workload's own artifacts, not installation
 // paperwork).
 var BuildStamp = "dev"
@@ -160,15 +160,15 @@ func (c *DiskCheckout) StateNamesSelf() (bool, error) {
 	return owner.Pid == c.Self.Pid && owner.PidStartedAt == c.Self.StartedAtSec && owner.InstanceTag == c.SelfTag, nil
 }
 
-// PublishState writes state.json atomically, FENCED (SLC-R4-001): the
+// PublishState writes state.json atomically, FENCED: the
 // lock's owner file is re-read immediately before the rename, and a
 // lock that no longer names this owner aborts the publication — the
 // caller's next cycle classifies the supersession.
 func (c *DiskCheckout) PublishState(held []Held) error {
 	// The current set is the HIGHEST generation present in held — the
 	// owner's live generation, not a field this adapter has to be told
-	// (an earlier static-field version published generation 0 with no
-	// components; the running binary caught it). Unproven survivors of
+	// (a statically told generation goes stale across relaunches and
+	// publishes the wrong set). Unproven survivors of
 	// older generations stay held for teardown but are not the
 	// published set.
 	current := int64(0)
@@ -205,10 +205,10 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 	if err != nil {
 		return fmt.Errorf("state encoding: %w", err)
 	}
-	// NOT delegated to the durable-write owner (go-production-grade B5,
-	// recorded classification): this is a FENCED publication — the lock
+	// NOT delegated to the durable-write owner: this is a FENCED
+	// publication — the lock
 	// currency is re-checked between the temp write and the rename
-	// (SLC-R4-001 below), and the owner has no seam for a fence. The sync
+	// (below), and the owner has no seam for a fence. The sync
 	// discipline here matches the owner's pre-anchor path.
 	temporary, err := os.CreateTemp(c.supervisionDir(), ".state-*")
 	if err != nil {
@@ -237,8 +237,8 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 	return nil
 }
 
-// DiskIntents implements the shutdown-intent channel (D-1,
-// SLC-R7-009, SLC-R9-004): latch at exit initiation, consume on read,
+// DiskIntents implements the shutdown-intent channel
+// (D-1): latch at exit initiation, consume on read,
 // honor only a fresh intent naming this owner.
 type DiskIntents struct {
 	Root    string

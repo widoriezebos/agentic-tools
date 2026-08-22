@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// The refactor gate (script-misc-2/D29): the completion-gate decision engine
+// The refactor gate: the completion-gate decision engine
 // behind skills/refactor's Risk-Sized Batches, ported from the last policy
 // gate still deciding in shell. The on-disk baseline format (sha= /
 // recorded_epoch= / gate= lines), every message, and the 0/1/2 exit-code

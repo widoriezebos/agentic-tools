@@ -23,7 +23,7 @@ type Announcement struct {
 	MainId       string `json:"mainId,omitempty"`
 	Pid          int64  `json:"pid"`
 	PidStartedAt int64  `json:"pidStartedAt"`
-	// The clock-step-immune identity pair (issue #1); zero values on
+	// The clock-step-immune identity pair; zero values on
 	// announcements that predate it fall back to the seconds comparison.
 	PidStartTicks int64  `json:"pidStartTicks,omitempty"`
 	BootID        string `json:"bootId,omitempty"`
@@ -42,7 +42,7 @@ type announcementFile struct {
 
 var (
 	// The identity grammars and the announcement/protocol-file split have
-	// ONE home in census (review lease-census-4).
+	// ONE home in census.
 	mainIDPattern      = census.MainIDRe
 	commandHashPattern = census.CommandHashRe
 )
@@ -147,7 +147,7 @@ func authenticatedAnnouncement(pid int64, records []announcementFile, probe iden
 		if ann.Pid != pid || ann.CommandHash != digest {
 			continue
 		}
-		// The pair decides when both sides carry it (issue #1: the
+		// The pair decides when both sides carry it (the
 		// btime-derived second drifts on time-synced guests); legacy
 		// announcements keep the seconds rule.
 		if ann.PidStartTicks > 0 && ann.BootID != "" && id.StartTicks > 0 && id.BootID != "" {
@@ -210,12 +210,12 @@ func custodyIdentities(root string) (supervision map[procKey]bool, adapters map[
 	statePath := filepath.Join(root, "artifacts/agents/supervision/state.json")
 	data, readErr := os.ReadFile(statePath)
 	if readErr != nil && !os.IsNotExist(readErr) {
-		// FAIL CLOSED (review lease-census-1): a state file that EXISTS but
-		// cannot be read is not the same as supervision being unarmed. The
-		// old code silently skipped here, custody came back empty, Classify
-		// fell through to HUMAN — and RequireHolder passes HUMAN through
-		// the write gate ungated. A permissions mishap must refuse, exactly
-		// as the neighbouring parse failure always has.
+		// FAIL CLOSED: a state file that EXISTS but cannot be read is not
+		// the same as supervision being unarmed. Silently skipping would
+		// leave custody empty, Classify would fall through to HUMAN — and
+		// RequireHolder passes HUMAN through the write gate ungated. A
+		// permissions mishap must refuse, exactly as the neighbouring
+		// parse failure does.
 		return nil, nil, fmt.Errorf("caller classification refused: supervision state is unreadable: %v", readErr)
 	}
 	if readErr == nil {

@@ -1,6 +1,6 @@
 package missionrunner
 
-// The post-publication verification (HIW-O15, WSS-12): the acceptance
+// The post-publication verification: the acceptance
 // append stays the single commit point, but the turn CONCLUDES only when
 // a fresh capture matches the posture the acceptance recorded — a
 // mismatch appends a violation over the acceptance before any success
@@ -114,7 +114,7 @@ func acceptanceEntryFor(state map[string]any, turnID string) map[string]any {
 // captureMismatch compares a live capture against the acceptance
 // payload's RECORDED posture — the chain, never wall.json — and names
 // the first carrier that moved; empty means the postures match.
-// A non-nil error is the RUNNER's own failure to judge (WSS I11-4) —
+// A non-nil error is the RUNNER's own failure to judge —
 // the fail ramp, never false wall evidence.
 func (e *Engine) captureMismatch(capture *wallCapture, wall map[string]any, state map[string]any) (string, error) {
 	openAnchor := ""
@@ -195,7 +195,7 @@ func (e *Engine) verifyAcceptance(statePath, ledger, turnID, turnDir string, cyc
 	mismatch, merr := e.captureMismatch(capture, wall, diskState)
 	if merr != nil {
 		// A ran-and-answered probe defeat is a wall answer here exactly
-		// as at the gate (WSS I13-6); only could-not-run keeps the ramp.
+		// as at the gate; only could-not-run keeps the ramp.
 		if answer := stateAnswerOf(merr); answer != "" {
 			mismatch = answer
 		} else {
@@ -253,7 +253,7 @@ func (e *Engine) concludeVerification(statePath, ledger, turnID string, cycle in
 	}
 	gatePassed, _ := entry["gatePassed"].(bool)
 	// The pin origin for the closing anchor is read BEFORE the write,
-	// through the authenticated pass itself (WSS I11-2): the bytes the
+	// through the authenticated pass itself: the bytes the
 	// hash covers are the bytes the anchor machinery just proved equal
 	// to the acceptance's anchored truth — never a separate reread.
 	provenSHA := ""
@@ -283,8 +283,8 @@ func (e *Engine) concludeVerification(statePath, ledger, turnID string, cycle in
 	if err != nil {
 		return nil, err
 	}
-	// Terminal delivery runs AFTER the concluding write is durable (WSS
-	// I11-5): the write owns the transition, and a crash on either side
+	// Terminal delivery runs AFTER the concluding write is durable:
+	// the write owns the transition, and a crash on either side
 	// of the delivery heals idempotently at resume — while the closing
 	// anchor below still binds the annotated bytes because delivery
 	// precedes it. The append itself refuses if the ledger moved past
@@ -311,20 +311,20 @@ func (e *Engine) concludeVerification(statePath, ledger, turnID string, cycle in
 }
 
 // healTerminalPublication idempotently finishes a COMPLETED mission's
-// terminal publication at public resume (WSS I11-6): a crash between
+// terminal publication at public resume: a crash between
 // the verification write and its delivery or its anchor must strand
 // neither — delivery re-runs line-idempotently and reconciliation heals
 // the anchor lag — so the terminal-status refusal answers the human
 // over consistent records instead of a state-integrity park.
 func (e *Engine) healTerminalPublication(statePath string, state map[string]any) error {
 	ledgerPath := filepath.Join(e.missionDir(), "ledger.md")
-	// Reconciliation ONLY — never a late delivery (WSS I13-3): if the
+	// Reconciliation ONLY — never a late delivery: if the
 	// completion's delivery failed but its anchor published the current
 	// hash, appending annotations now would mutate a ledger already
 	// anchored at this state — the one shape no heal admits (anchor
 	// cadence refuses same-hash re-binding by design). A lost delivery
 	// stays lost; the returns remain recoverable in the tree
-	// (patience-orphan-usage O1's stated best-effort boundary). The
+	// (terminal delivery's stated best-effort boundary). The
 	// crash-after-delivery case needs no re-delivery: its annotation
 	// suffix is exactly what reconciliation's terminal-delivery-lag
 	// shape re-anchors.

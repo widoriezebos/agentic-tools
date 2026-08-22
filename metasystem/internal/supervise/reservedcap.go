@@ -12,7 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 )
 
-// The reserved-cap arming gate (review cli-1, relocated from cmd): a watcher
+// The reserved-cap arming gate: a watcher
 // ceiling may be armed only when it strictly clears every live cap
 // reservation, so an armed watcher can never kill a job whose cap was
 // promised at or above that ceiling.
@@ -30,9 +30,9 @@ type ReservedCapBlocker struct {
 // cap, ties to the lexically first job). ok is false when the ceiling clears
 // every live reservation. An error refuses arming by name: a record this
 // scan cannot read might carry the very reservation that blocks the ceiling
-// (FAIL CLOSED, review codex-4) — only a record that vanished between glob
-// and read is tolerable. The identity-fixture fence rides here too (review
-// lease-census-7): this gate runs at every arming choke point, and a leaked
+// (FAIL CLOSED) — only a record that vanished between glob
+// and read is tolerable. The identity-fixture fence rides here
+// too: this gate runs at every arming choke point, and a leaked
 // fixture entry would keep a dead custodian reading Alive with no refusal
 // anywhere.
 func BlockingReservedCap(agentsDir string, ceiling int64) (ReservedCapBlocker, bool, error) {

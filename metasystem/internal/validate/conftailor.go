@@ -167,8 +167,8 @@ func TailorConf(confPath string, requested []string) error {
 		out = append(out, "role.default.runtime="+defaultRuntime)
 	}
 	// Every selected non-synthesized runtime gets its default-model row
-	// materialized when the source carried none (B1 critique finding
-	// 13): a new runtime's scaffold needs no per-runtime boilerplate in
+	// materialized when the source carried none: a new runtime's
+	// scaffold needs no per-runtime boilerplate in
 	// the shipped template — the operator fills the value. Synthesized
 	// runtimes (fake) already materialize their fixed model above.
 	for _, runtime := range selected {
@@ -189,8 +189,8 @@ func TailorConf(confPath string, requested []string) error {
 		}
 	}
 
-	// Through the durable-write owner (go-production-grade B5): the old
-	// path here was WriteFile plus rename with no sync at all. Empty anchor
+	// Through the durable-write owner: a bare write-and-rename with no
+	// sync could leave a torn conf after a crash. Empty anchor
 	// until adoption's caller carries the two-outcome contract.
 	_, err = atomicfile.WriteText(confPath, strings.Join(out, "\n")+"\n", "")
 	return err

@@ -43,7 +43,7 @@ func TestPlanConsistencyMissingDirectoryErrors(t *testing.T) {
 	}
 }
 
-// validate-report-5: gone is fine, unreadable is not — a skipped plan may
+// Gone is fine, unreadable is not — a skipped plan may
 // hold the very declaration or violation this gate exists to catch.
 func TestPlanConsistencyRefusesUnreadablePlan(t *testing.T) {
 	if os.Geteuid() == 0 {

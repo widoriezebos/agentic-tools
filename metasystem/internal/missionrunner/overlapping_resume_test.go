@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// GOAL-22: runner-record publication is lease-serialized. A acquires the
+// Runner-record publication is lease-serialized. A acquires the
 // lease and publishes; B contends for the same mission, loses, and is
 // proven to NEITHER publish NOR finalize — A's record survives
 // byte-identical through B's whole attempt.

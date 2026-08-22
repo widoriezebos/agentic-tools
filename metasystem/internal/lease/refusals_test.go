@@ -153,7 +153,7 @@ func TestExpectedEpochMismatchRefused(t *testing.T) {
 	}
 }
 
-// lease-census-1 (the review): classification fails CLOSED. An unreadable
+// Classification fails CLOSED. An unreadable
 // state file or job record — anything short of genuine absence — refuses
 // classification instead of silently yielding empty custody, which
 // Classify would have escalated to HUMAN and RequireHolder would have
@@ -207,7 +207,7 @@ func TestCustodyIdentitiesFailClosed(t *testing.T) {
 	}
 }
 
-// lease-census-2 (the review): the sweep never certifies a generation it
+// The sweep never certifies a generation it
 // did not clear, and unprovable group ownership is never "provably not
 // owned". Driven through the process-table seams.
 func TestSweepFailsClosed(t *testing.T) {
@@ -306,7 +306,7 @@ func TestGroupOwnsTagUnprovableRows(t *testing.T) {
 	}
 }
 
-// lease-census-9: a wedged record-lock holder yields a LOUD bounded refusal
+// A wedged record-lock holder yields a LOUD bounded refusal
 // naming the record, never an indefinite hang under the lease lock.
 func TestRecordLockAcquisitionIsBounded(t *testing.T) {
 	t.Setenv("METASYSTEM_LEASE_LOCK_WAIT_SEC", "0.2")
@@ -329,7 +329,7 @@ func TestRecordLockAcquisitionIsBounded(t *testing.T) {
 	}
 }
 
-// lease-census-10: the sweep's kill-adjacent refusals, driven end to end
+// The sweep's kill-adjacent refusals, driven end to end
 // through cleanupStaleJobs — the fuse between a takeover sweep and
 // SIGTERM-ing a recycled process group.
 func TestSweepStopVerdictRows(t *testing.T) {

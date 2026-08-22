@@ -206,7 +206,7 @@ func TestGivingUpAtN(t *testing.T) {
 	}
 }
 
-// Proof "Unrecordable set" (SLC-R6-006): a failed relaunched append
+// Proof "Unrecordable set": a failed relaunched append
 // launches NOTHING.
 func TestWriteAheadGatesLaunch(t *testing.T) {
 	world := newWorld()
@@ -220,7 +220,7 @@ func TestWriteAheadGatesLaunch(t *testing.T) {
 	}
 }
 
-// Proof "Ceiling under forking" (SLC-R4-010): overshoot stops the set
+// Proof "Ceiling under forking": overshoot stops the set
 // on THIS observation and counts against the breaker.
 func TestCeilingStopsTheSet(t *testing.T) {
 	world := newWorld()
@@ -239,7 +239,7 @@ func TestCeilingStopsTheSet(t *testing.T) {
 	}
 }
 
-// SLC-R6-006: a failed launched append is retried each observation and
+// A failed launched append is retried each observation and
 // persistent failure increments the breaker.
 func TestLaunchedAppendRetries(t *testing.T) {
 	world := newWorld()
@@ -267,7 +267,7 @@ func TestLaunchedAppendRetries(t *testing.T) {
 	}
 }
 
-// SLC-R5-016: a state file naming another owner is repaired by
+// A state file naming another owner is repaired by
 // republication within the cycle, without a relaunch.
 func TestStateRepair(t *testing.T) {
 	world := newWorld()
@@ -286,7 +286,7 @@ func TestStateRepair(t *testing.T) {
 	}
 }
 
-// Proof "Shutdown attribution" (SLC-R9-004): the intent is latched at
+// Proof "Shutdown attribution": the intent is latched at
 // exit initiation — fresh intent means shutdown, none means terminated.
 func TestSignalExitLatchesIntent(t *testing.T) {
 	for _, fresh := range []bool{true, false} {
@@ -308,7 +308,7 @@ func TestSignalExitLatchesIntent(t *testing.T) {
 	}
 }
 
-// SLC-R8-002/SLC-R9-003: each relaunch verifies the old set and the
+// Each relaunch verifies the old set and the
 // watermark rides the relaunched record; an unproven stop pins it.
 func TestWatermarkAdvancesOnVerifiedStops(t *testing.T) {
 	world := newWorld()
@@ -339,7 +339,7 @@ func TestWatermarkAdvancesOnVerifiedStops(t *testing.T) {
 }
 
 // The teardownComplete bit is honest: an unprovable stop reports
-// incomplete teardown on the terminal (SLC-R4-012).
+// incomplete teardown on the terminal.
 func TestHonestTeardownComplete(t *testing.T) {
 	world := newWorld()
 	owner := newOwner(world)
@@ -367,7 +367,7 @@ func TestTagsCarryGeneration(t *testing.T) {
 	}
 }
 
-// dispatch-supervise-6: an uncountable group is not a healthy one — the
+// An uncountable group is not a healthy one — the
 // count error maps to Indeterminable, which HOLDS the breaker where it is
 // (no reset, no increment: unknown never authorizes anything) instead of
 // being silently ignored and read as Healthy, which would reset the

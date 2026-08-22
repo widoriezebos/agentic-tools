@@ -40,13 +40,13 @@ func Announce(root, session string, pid, start int64, tag, runtime, ownerLineage
 }
 
 // AnnounceWithPair is Announce carrying the clock-step-immune pair
-// (StartTicks+BootID, issue #1 sweep 3). It reads the live process ONCE (one
+// (StartTicks+BootID). It reads the live process ONCE (one
 // authoritative probe) and records that identity. Identity verification: when
 // the caller supplies the pair AND the live process carries it, the pair must
 // match (drift-immune, and it catches a genuinely wrong pid); a seconds-only
 // caller is accepted as the live process it just handed us, because the
-// btime-derived second it read a moment ago drifts on a time-synced guest and
-// gating on it was the KI-37 false-death. The RECORDED second stays the
+// btime-derived second it read a moment ago drifts on a time-synced guest, and
+// gating on it would refuse a genuinely live caller as dead. The RECORDED second stays the
 // caller's `start` (so the announcement's second matches whatever the caller
 // stored elsewhere, e.g. the owner lock), while the recorded pair is the fresh
 // probe's — one process, one identity.
@@ -103,8 +103,8 @@ func AnnounceWithPair(root, session string, pid, start, startTicks int64, bootID
 		if rec.Ann.Pid != pid {
 			continue
 		}
-		// Same-process match prefers the clock-step-immune pair (issue
-		// #1): an earlier announcement of THIS process must stay ours
+		// Same-process match prefers the clock-step-immune pair:
+		// an earlier announcement of THIS process must stay ours
 		// even after the btime-derived second drifted.
 		if rec.Ann.PidStartTicks > 0 && rec.Ann.BootID != "" && selfTicks > 0 && selfBootID != "" {
 			if rec.Ann.PidStartTicks != selfTicks || rec.Ann.BootID != selfBootID {
@@ -518,8 +518,8 @@ func initializeCursor(root, mainID string) error {
 
 var sessionUnsafe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-// Slug is the one home of the tag/filename sanitize rule (review
-// architecture-2): runs outside [A-Za-z0-9._-] collapse to a single dash,
+// Slug is the one home of the tag/filename sanitize rule:
+// runs outside [A-Za-z0-9._-] collapse to a single dash,
 // leading and trailing dashes and dots trim, the result lowercases, and an
 // empty result becomes "session". Announcement filenames and the arming and
 // hook paths' instance tags must agree on these bytes, so they all call
@@ -553,7 +553,7 @@ func sortedKeys(m map[string]int) []string {
 
 // AnnouncementsFor lists the valid announcements naming a pid — the
 // runner's reclaim uses it to find its own arming announcement without
-// re-probing a start second a clock step may have moved (issue #2).
+// re-probing a start second a clock step may have moved.
 func AnnouncementsFor(root string, pid int64) []Announcement {
 	records, err := readAnnouncements(resolveRoot(root), false)
 	if err != nil {
@@ -570,8 +570,8 @@ func AnnouncementsFor(root string, pid int64) []Announcement {
 
 // CheckoutForeignToLineage reports whether the checkout lease exists,
 // reads validly, and carries a DIFFERENT owner lineage — the one state
-// that makes a mission runner's checkout reclaim someone else's business
-// (issue #2 round-5): an attended run's human lease, or a foreign main.
+// that makes a mission runner's checkout reclaim someone else's business:
+// an attended run's human lease, or a foreign main.
 // An absent or unreadable lease is NOT foreign — the runner treats the
 // checkout as its own to prove, and the reclaim's holder gate surfaces
 // any misclassification loudly instead of silently skipping.

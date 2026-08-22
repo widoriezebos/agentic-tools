@@ -62,8 +62,8 @@ func (l *fileLock) release() {
 
 // LockBounded is the exported form of the bounded lease flock for
 // sibling packages whose own critical sections must exclude each
-// other — the mission lease's acquire and stale-cleanup pair first
-// (KI-38). The returned func releases.
+// other — the mission lease's acquire and stale-cleanup pair first.
+// The returned func releases.
 func LockBounded(path, what string) (func(), error) {
 	l, err := acquireBounded(path, what)
 	if err != nil {

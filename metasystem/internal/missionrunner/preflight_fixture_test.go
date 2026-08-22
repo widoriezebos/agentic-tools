@@ -20,7 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
-// The armed-preflight fixture (the design recorded in the plan): a real
+// The armed-preflight fixture: a real
 // git checkout with frozen instruments, a contract sealed and signed
 // in-test, a bare origin carrying the signed bytes, live tagged holder
 // processes behind fabricated-but-honest supervision facts, and a stub
@@ -1206,7 +1206,7 @@ func freshEngineBinary(t *testing.T) string {
 		}
 	})
 	if freshBinaryErr != nil {
-		// A proof that silently vanishes is no proof (round-8 finding 4):
+		// A proof that silently vanishes is no proof:
 		// the wrapper certification REQUIRES the reviewed binary.
 		t.Fatalf("cannot build the engine binary from source: %v", freshBinaryErr)
 	}
@@ -1227,7 +1227,7 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 	t.Helper()
 	root := engine.Root
 	// The bed binary is COMPILED FROM THE REVIEWED TREE, once per test
-	// process (slice-6 successor round-7 finding 4): a prebuilt
+	// process: a prebuilt
 	// bin/metasystem can be stale, and a wrapper fixture passing against
 	// yesterday's implementation proves nothing about this one.
 	binary, err := os.ReadFile(freshEngineBinary(t))
@@ -1239,7 +1239,7 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 		t.Fatal(err)
 	}
 	os.MkdirAll(filepath.Join(root, "scripts", "agents", "hosts"), 0o755)
-	// The host and its shared library travel together (script-adapters-13):
+	// The host and its shared library travel together:
 	// fake.sh sources host-common.sh from its own directory.
 	for _, name := range []string{"fake.sh", "host-common.sh"} {
 		adapter, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "hosts", name))
@@ -1248,8 +1248,8 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 		}
 		os.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", name), adapter, 0o755)
 	}
-	// The human entrypoint travels too (slice-6 successor round-5
-	// finding 3): the resolution fixtures must drive the REAL wrapper,
+	// The human entrypoint travels
+	// too: the resolution fixtures must drive the REAL wrapper,
 	// not only the in-process engine.
 	wrapper, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "mission-runner.sh"))
 	if err != nil {
@@ -1492,7 +1492,7 @@ func TestInternalRunCloseStreamCycle(t *testing.T) {
 		t.Fatal("a terminal mission resumed")
 	}
 
-	// The wall's open-turn lifecycle across the real cycle (HIW-O1): the
+	// The wall's open-turn lifecycle across the real cycle: the
 	// concluded mission holds no open turn, the turn record carries the
 	// pre-tree it opened under, and that tree is anchored against garbage
 	// collection under the mission's ref namespace.
@@ -1708,7 +1708,7 @@ func TestStatusRendersEveryClass(t *testing.T) {
 	}
 }
 
-// The D99 shape, caught (HIW-O3): the host authors a product file in the
+// The solo-build shape, caught: the host authors a product file in the
 // checkout and returns a clean empty-dispatch envelope. The wall parks the
 // mission with taint BEFORE any measurement, the violated turn record and
 // the wall.json evidence name the undeclared path, and no further run mode
@@ -1747,7 +1747,7 @@ func TestInternalRunSoloBuildParksWallViolation(t *testing.T) {
 	if evidence["verdict"] != "violated" || !strings.Contains(evidence["violation"].(string), "solo.go") {
 		t.Fatalf("wall.json: %v", evidence)
 	}
-	// Every tree the evidence names is anchored (critique F-7): the
+	// Every tree the evidence names is anchored: the
 	// violation's post tree must survive garbage collection for the
 	// resolution to verify against.
 	postTree, _ := evidence["postTree"].(string)

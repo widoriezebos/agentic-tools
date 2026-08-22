@@ -10,7 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
-// Patience floors (plans/patience-satellite-4.md, ACCEPTED 2026-08-12): the
+// Patience floors: the
 // vocal-only chain-drought observation. A chain round is WITNESSED exactly
 // when a concluded turn's durable log certifies its job, by jobId, with
 // verdict accepted and a non-empty trimmed evidence string; patience counts
@@ -31,8 +31,8 @@ var patienceLawfulNonterminal = map[string]bool{
 	"pending-setup": true, "pending": true, "running": true,
 }
 
-// patienceNeverStarted is the never-started error vocabulary (r17/P4-084,
-// r18/P4-085), named exactly from the shipped writers: HandshakeEval's
+// patienceNeverStarted is the never-started error vocabulary, named
+// exactly from the shipped writers: HandshakeEval's
 // pre-running refusals (internal/dispatch/handshake.go) and the adapter
 // setup failures (scripts/agents/dispatch.sh, runtime-common.sh). A
 // cancelled or failed record with one of these errors and no spend-proving
@@ -40,7 +40,7 @@ var patienceLawfulNonterminal = map[string]bool{
 // resume_collision is deliberately absent: a pre-start collision carries no
 // effectiveModel and is excluded by the model requirement, while a
 // post-running collision is real lost work. Spend-proving usage trumps every
-// entry (r14/P4-078).
+// entry.
 var patienceNeverStarted = map[string]bool{
 	"abandoned-setup":              true,
 	"handshake_timeout":            true,
@@ -53,14 +53,14 @@ var patienceNeverStarted = map[string]bool{
 const patienceNeverStartedPrefix = "permissions_mismatch:"
 
 // patienceModelSentinels are shipped effectiveModel values that canonicalize
-// nonempty but are NOT model evidence (r6/P4-041): treating them as evidence
+// nonempty but are NOT model evidence: treating them as evidence
 // would silently resolve a configured floor to infinite patience.
 var patienceModelSentinels = map[string]bool{"unobserved": true}
 
 const patienceMultiModelPrefix = "multi-model:"
 
-// patienceDetailBound is the landed-returns bound copied exactly
-// (r2/P4-027, r8/P4-051): at most 20 Patience lines per booking — 20 detail,
+// patienceDetailBound is the landed-returns bound copied exactly:
+// at most 20 Patience lines per booking — 20 detail,
 // or 19 detail plus 1 overflow whose count includes breaches AND orphans.
 const patienceDetailBound = 20
 
@@ -68,7 +68,7 @@ const patienceDetailBound = 20
 type patienceFloors map[string]int
 
 // parsePatienceFloors reads the patience.rounds.* entries from the approved
-// contract's authored values. Floors exist only there (r1/P4-006, r1/P4-007):
+// contract's authored values. Floors exist only there:
 // no conf, local, environment, or per-dispatch surface.
 func parsePatienceFloors(values map[string]string) patienceFloors {
 	floors := patienceFloors{}
@@ -104,24 +104,24 @@ type patienceChain struct {
 	orphan bool
 	closed bool
 	count  int
-	//lint:ignore U1000 staged by the patience stream (plans/patience-satellite-4.md); wired by its next satellite, not dead code
+	//lint:ignore U1000 reserved slot in the chain drought model; intentionally unused, not dead code
 	floor int // 0 = infinite / not applicable
-	//lint:ignore U1000 staged by the patience stream (plans/patience-satellite-4.md); wired by its next satellite, not dead code
+	//lint:ignore U1000 reserved slot in the chain drought model; intentionally unused, not dead code
 	breach bool
 	streak []jobRecord
-	//lint:ignore U1000 staged by the patience stream (plans/patience-satellite-4.md); wired by its next satellite, not dead code
+	//lint:ignore U1000 reserved slot in the chain drought model; intentionally unused, not dead code
 	witness bool
 }
 
 // patienceEvaluate derives the bounded Patience annotations for one cycle
 // booking. Pure over its inputs: the sealed floors, the mission's job
 // records, the durable turn log, and the in-flight conclusion's certified
-// entries (which reset streaks before anything is written, r2/P4-016). The
+// entries (which reset streaks before anything is written). The
 // pre-append read is the linearization point; the one-booking lag windows
 // are the design's stated crash contract.
 func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any, inflightCertified any) []string {
 	if len(floors) == 0 {
-		return nil // unconfigured: byte-identical to today, structurally (r9/P4-059)
+		return nil // unconfigured: patience contributes no bytes to the booking
 	}
 	participating, byID, excluded := patienceParticipants(records)
 	chains := patienceChains(participating, byID)
@@ -130,7 +130,7 @@ func patienceEvaluate(floors patienceFloors, records []jobRecord, turnLog []any,
 	return patienceAnnotations(details, excluded)
 }
 
-// patienceParticipants applies the participation boundary (r10, r12/P4-075):
+// patienceParticipants applies the participation boundary:
 // clean records only — a well-formed id matching its file stem, in a lawful
 // terminal or nonterminal status. Everything else counts toward the
 // excluded aggregate.
@@ -152,10 +152,9 @@ func patienceParticipants(records []jobRecord) (participating []jobRecord, byID 
 	return participating, byID, excluded
 }
 
-// patienceChains derives chain sets via the branch-tolerant parent walk
-// (r3/P4-029); a record whose walk breaks forms a single-round orphan chain
-// (r4/P4-036), and closed chains leave the evaluation set at derivation
-// time (r20/P4-093).
+// patienceChains derives chain sets via the branch-tolerant parent walk;
+// a record whose walk breaks forms a single-round orphan chain,
+// and closed chains leave the evaluation set at derivation time.
 func patienceChains(participating []jobRecord, byID map[string]jobRecord) map[string]*patienceChain {
 	chains := map[string]*patienceChain{}
 	for _, record := range participating {
@@ -201,8 +200,8 @@ func patienceChains(participating []jobRecord, byID map[string]jobRecord) map[st
 	return chains
 }
 
-// patienceWitnesses builds the witness set (r2/P4-024, r9/P4-056,
-// r11/P4-071): accepted certifications with non-empty trimmed string
+// patienceWitnesses builds the witness set:
+// accepted certifications with non-empty trimmed string
 // evidence, joined by jobId to a participating, STARTED, terminal job. Both
 // the durable turn log and the in-flight conclusion contribute.
 func patienceWitnesses(turnLog []any, inflightCertified any, byID map[string]jobRecord) map[string]bool {
@@ -256,10 +255,10 @@ type patienceRanked struct {
 	orphan     bool
 }
 
-// patienceDroughts counts each open chain's current drought (r9/P4-057):
+// patienceDroughts counts each open chain's current drought:
 // counted jobs strictly newer, in the total order, than the chain's newest
 // witnessed job; orphan chains always report, floored chains only on a
-// strict breach (r1/P4-011).
+// strict breach.
 func patienceDroughts(floors patienceFloors, chains map[string]*patienceChain, byID map[string]jobRecord, witnessed map[string]bool) []patienceRanked {
 	var details []patienceRanked
 	for _, key := range sortedKeys(chains) {
@@ -301,7 +300,7 @@ func patienceDroughts(floors patienceFloors, chains map[string]*patienceChain, b
 		}
 		floor := selectPatienceFloor(floors, chain.streak)
 		if floor <= 0 || chain.count <= floor {
-			continue // infinite patience, or tolerated (strictly-exceeds, r1/P4-011)
+			continue // infinite patience, or tolerated: a floor breaches only when strictly exceeded
 		}
 		details = append(details, patienceRanked{
 			annotation: mission.PatienceChainAnnotation(chain.root, chain.count, floor),
@@ -311,10 +310,10 @@ func patienceDroughts(floors patienceFloors, chains map[string]*patienceChain, b
 	return details
 }
 
-// patienceAnnotations ranks the breach lines (r5/P4-040, r7/P4-049) —
+// patienceAnnotations ranks the breach lines —
 // breach distance descending, count descending, root ascending, orphans
 // after all breaches — bounds them, and appends the excluded aggregate
-// outside the bound (r11/P4-069, r12/P4-075).
+// outside the bound.
 func patienceAnnotations(details []patienceRanked, excluded int) []string {
 	sort.SliceStable(details, func(i, j int) bool {
 		a, b := details[i], details[j]
@@ -347,7 +346,7 @@ func patienceAnnotations(details []patienceRanked, excluded int) []string {
 }
 
 // patienceStarted reports whether a terminal record proves the delegate
-// actually worked (r9/P4-058 through r18/P4-085). completed and timeout are
+// actually worked. completed and timeout are
 // structural: the lifecycle CAS map reaches them only through running.
 // cancelled and failed prove it with spend-proving usage — money provably
 // spent is work, whatever the error is called — or, lacking usage, a
@@ -379,10 +378,10 @@ func patienceStarted(record jobRecord) bool {
 // patienceUsageProvesSpend reports whether a usage object proves money was
 // spent: at least one concrete spend field strictly positive — token counts,
 // the nested cost amount, or a nested provider-unit value. Presence proves
-// nothing (adapters write a native usage object even when no block exists,
-// r15/P4-081); zero proves nothing (r20/P4-092, r21/P4-097); the
+// nothing (adapters write a native usage object even when no block
+// exists); zero proves nothing; the
 // availability marker plays no part (Devin's tokenless accounts record
-// unavailable beside real provider-unit spend, r16/P4-082).
+// unavailable beside real provider-unit spend).
 func patienceUsageProvesSpend(raw any) bool {
 	usage, ok := raw.(map[string]any)
 	if !ok {
@@ -416,9 +415,9 @@ func positiveNumber(v any) bool {
 	return ok && f > 0
 }
 
-// selectPatienceFloor resolves a chain's floor over its STREAK set only
-// (r10/P4-065): the whole (role, runtime, model) triple comes from one
-// qualifying evidence record (r8/P4-054, r9/P4-060), rows tried in order.
+// selectPatienceFloor resolves a chain's floor over its STREAK set only:
+// the whole (role, runtime, model) triple comes from one
+// qualifying evidence record, rows tried in order.
 // Returns 0 for infinite patience.
 func selectPatienceFloor(floors patienceFloors, streak []jobRecord) int {
 	// Rows 1-2: the newest streak job qualifying as an effective-model
@@ -431,10 +430,10 @@ func selectPatienceFloor(floors patienceFloors, streak []jobRecord) int {
 		if floor, present := floors[role+"|"+runtime+"|"+model]; present {
 			return floor
 		}
-		return 0 // configured-nothing for a real pair (r3/P4-030)
+		return 0 // configured-nothing for a real pair
 	}
 	// Rows 3-4: the newest streak job whose requestedModel is model evidence
-	// (r11/P4-070, r12/P4-074 — the pre-witness root is never consulted).
+	// (the pre-witness root is never consulted).
 	for _, record := range streak {
 		role, runtime, model, ok := patienceEvidenceTriple(record, "requestedModel")
 		if !ok {
@@ -473,7 +472,7 @@ func patienceEvidenceTriple(record jobRecord, modelField string) (role, runtime,
 }
 
 // sortJobsNewestFirst orders records by (endedAt, startedAt, jobId)
-// descending (r4/P4-034, r5/P4-038): RFC3339 parsing, missing and
+// descending: RFC3339 parsing, missing and
 // unparseable timestamps in one oldest bucket, ties falling through, jobId
 // the final lexicographic tiebreak — total over damaged records.
 func sortJobsNewestFirst(records []jobRecord) {

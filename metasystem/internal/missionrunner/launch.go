@@ -166,8 +166,8 @@ func stateShapeRefusal(statePath string) error {
 // gitCaptured runs one git command on the runner's own surface: the
 // repository-steering environment stripped and object replacement
 // disabled, so an inherited GIT_DIR or a planted replace ref can never
-// steer what the runner reads (the D120 posture, applied to every runner
-// git surface).
+// steer what the runner reads. The same posture applies to every runner
+// git surface.
 func gitCaptured(dir string, args ...string) (stdout, stderr string, code int) {
 	full := append([]string{"-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}, args...)
 	return runCaptured(dir, gittree.ScrubbedEnviron(), "git", full...)
@@ -251,7 +251,8 @@ func (e *Engine) cleanupStaleLease() error {
 	marker := filepath.Join(dir, "lease.d")
 	leasePath := filepath.Join(dir, "lease.json")
 	// The same flock the acquirer holds: classification must never
-	// judge a half-published claim (KI-38).
+	// judge a half-published claim, or two runners can be minted for
+	// one mission.
 	release, lockErr := lease.LockBounded(filepath.Join(dir, "lease.lock"), "mission lease")
 	if lockErr != nil {
 		return lockErr
@@ -334,8 +335,8 @@ type armingIdentity struct {
 //
 // The lineage is the mission's own ONLY when this runner is the main. Beneath
 // a live holder the runner is part of that main's work, so it announces
-// nothing new and must not rewrite that holder's lineage — see D-3a in
-// plans/lease-succession.md, which scopes this fix to the unattended branch.
+// nothing new and must not rewrite that holder's lineage; only the
+// unattended branch carries a fresh lineage.
 //
 // A runner started BY the main that holds this checkout is part of that
 // main's work, not a second writer competing for the same checkout. Arming
@@ -586,9 +587,9 @@ func (e *Engine) launch(mode string, foreground bool) error {
 				// A completed mission may still owe its terminal delivery
 				// or anchor (crash after the verification write): heal
 				// idempotently BEFORE the refusal, so the terminal-lag
-				// case is never stranded behind it (WSS I11-6).
+				// case is never stranded behind it.
 				if state["status"] == "completed" {
-					// The LIVE-runner refusal comes first (WSS I14-2): a
+					// The LIVE-runner refusal comes first: a
 					// runner mid-conclusion still owes its delivery and
 					// closing anchor, and reconciling under it would
 					// anchor the completed hash to pre-delivery bytes —

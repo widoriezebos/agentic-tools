@@ -69,7 +69,7 @@ func (e *Engine) Status() int {
 				fields.Pid = pid
 				fields.PidStartedAt = recordedStart
 				// The clock-step-immune pair rides along when the record
-				// carries it (issue #1) — without this copy the classifier
+				// carries it — without this copy the classifier
 				// falls back to the drifted second and a live runner still
 				// reads abandoned.
 				if ticks, ok := jsonInt(record["pidStartTicks"]); ok {

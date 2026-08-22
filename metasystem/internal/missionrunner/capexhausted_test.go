@@ -9,7 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
-// Issue #6 finding 3: the named cap outcome is certified — a provider
+// The named cap outcome is certified — a provider
 // result carrying is_error + error_max_turns names the cutoff; a crash
 // without it stays generic; absence stays generic.
 func TestProviderErrorSubtype(t *testing.T) {
@@ -42,9 +42,9 @@ func TestCapExhaustedReachesLedger(t *testing.T) {
 	engine, statePath, ledgerPath, _ := crashedMission(t, 0, 1)
 	// The failure record concludes through the REAL two-phase machinery
 	// (openFixtureTurn anchors for real): a stubbed anchor would leave
-	// the anchored truth behind the failure write and the verification's
-	// integrity judgment now surfaces that as the runner error it is
-	// (WSS I11-4) instead of a silent false-park.
+	// the anchored truth behind the failure write, and the verification's
+	// integrity judgment surfaces that as the runner error it is,
+	// never a silent false-park.
 	engine.anchorFn = nil
 	runnersDir := filepath.Join(engine.Root, "artifacts", "agents", "missions", "runners")
 	os.MkdirAll(runnersDir, 0o755)
@@ -77,7 +77,7 @@ func TestCapExhaustedReachesLedger(t *testing.T) {
 	}
 }
 
-// The public-resume terminal heal (WSS I12-4/I12-6 lane): a completed
+// The public-resume terminal heal: a completed
 // mission owing nothing re-runs delivery idempotently and reconciles to
 // a clean verdict; a mission whose records cannot reconcile surfaces
 // the runner error instead of silently refusing.
@@ -96,7 +96,7 @@ func TestHealTerminalPublication(t *testing.T) {
 	}
 }
 
-// The could-not-run ramps (WSS I11-13): a git that cannot spawn is the
+// The could-not-run ramps: a git that cannot spawn is the
 // runner's failure at every retained-object probe — never a repository
 // verdict that could park the mission falsely.
 func TestScopeProbesTypeCouldNotRun(t *testing.T) {

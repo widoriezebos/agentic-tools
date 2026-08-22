@@ -190,7 +190,7 @@ func TestRegistryLedgerRecords(t *testing.T) {
 	ledger.AppendExited("giving-up", "diag", false) // must not panic or block
 }
 
-// dispatch-supervise-6: the group count is real and its error paths are
+// The group count is real and its error paths are
 // verdicts, not silence.
 func TestProcessGroupMembersErrorPaths(t *testing.T) {
 	savedPids, savedPgid := groupAllPids, groupGetpgid
@@ -232,7 +232,7 @@ func TestProcessGroupMembersErrorPaths(t *testing.T) {
 	}
 }
 
-// GroupMemberPids: the F4 kill domain (own group minus self), same
+// GroupMemberPids: the kill domain "own group minus self", same
 // indeterminability contract as the ceiling count.
 func TestGroupMemberPids(t *testing.T) {
 	restoreAll, restoreGet := groupAllPids, groupGetpgid

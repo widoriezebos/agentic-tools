@@ -10,8 +10,7 @@ import "time"
 
 // FileState is a three-way observation of one file or directory:
 // present, definitively absent (ENOENT on it or any parent), or
-// unknown (any other failure). Only a definite negative kills
-// (SLC-R1-003, SLC-R2-006).
+// unknown (any other failure). Only a definite negative kills.
 type FileState int
 
 const (
@@ -54,7 +53,7 @@ const (
 )
 
 // Classify is D-1's decision table. Order is normative: PURPOSE GONE
-// is checked FIRST (SLC-R6-001) so a deleted checkout — which takes
+// is checked FIRST so a deleted checkout — which takes
 // the lock with it — lands there and never in SUPERSEDED; the lock
 // vanishing WITH the checkout is not a replacement.
 func Classify(checkoutRoot FileState, currency CurrencyState, state FileState) Verdict {
@@ -68,8 +67,7 @@ func Classify(checkoutRoot FileState, currency CurrencyState, state FileState) V
 	case NamesSelf:
 		if state == Absent {
 			// Deliberate revocation: our own token was removed while
-			// we are still the named owner (subsumes E1/E3,
-			// SLC-R2-005).
+			// we are still the named owner.
 			return PurposeGone
 		}
 		if state == Indeterminate {
@@ -80,15 +78,14 @@ func Classify(checkoutRoot FileState, currency CurrencyState, state FileState) V
 		// Replaced or revoked while the checkout persists. A live
 		// owner can only be superseded after a FALSE death
 		// observation; leaving voluntarily is the insurance for
-		// exactly that case (SLC-R3-003).
+		// exactly that case.
 		return Superseded
 	default:
 		return Blind
 	}
 }
 
-// Observation is the breaker's three-way component reading (D-2,
-// SLC-R3-004).
+// Observation is the breaker's three-way component reading (D-2).
 type Observation int
 
 const (
@@ -103,8 +100,8 @@ const (
 	Indeterminable
 )
 
-// Breaker counts consecutive failing observations on ONE clock
-// (SLC-R3-005): observations tick every base interval and nothing
+// Breaker counts consecutive failing observations on ONE
+// clock: observations tick every base interval and nothing
 // else; backoff gates relaunch attempts only.
 type Breaker struct {
 	// Consecutive failing observations. Reset by a healthy interval;
@@ -141,7 +138,7 @@ func (b *Breaker) Advance(observation Observation) BreakerVerdict {
 // consecutive incrementing observations, 0 for k=1 and interval ×
 // 2^(k-2) for k≥2 (k=2→interval, k=3→2×interval, …), capped (D-6;
 // the schedule TestBackoffSchedule pins). Observations and D-1's
-// checks never slow down (SLC-R2-008).
+// checks never slow down.
 func (b *Breaker) backoff() time.Duration {
 	if b.Consecutive <= 1 {
 		return 0
@@ -162,7 +159,7 @@ func (b *Breaker) backoff() time.Duration {
 // BreakerVerdict is what one observation obliges the owner to do.
 type BreakerVerdict struct {
 	// GiveUp: teardown per D-1, then exited reason giving-up with the
-	// last diagnosis and the teardown outcome (SLC-R4-012).
+	// last diagnosis and the teardown outcome.
 	GiveUp bool
 	// SkipRelaunch: indeterminacy — attempt nothing this cycle.
 	SkipRelaunch bool
@@ -174,8 +171,7 @@ type BreakerVerdict struct {
 // CeilingVerdict applies D-2's population bound: the DURATION property.
 // A count above the ceiling is itself an incrementing observation and
 // the owner stops the set immediately, so a group above the ceiling
-// survives at most one base interval (SLC-R3-006, SLC-R3-007,
-// SLC-R4-010).
+// survives at most one base interval.
 func CeilingVerdict(groupMembers, ceiling int) (stopSet bool, failing bool) {
 	if groupMembers > ceiling {
 		return true, true
@@ -183,7 +179,7 @@ func CeilingVerdict(groupMembers, ceiling int) (stopSet bool, failing bool) {
 	return false, false
 }
 
-// Establishment bounds first publication (SLC-R1-004, SLC-R4-005): an
+// Establishment bounds first publication: an
 // owner that cannot COMPLETE first publication within Deadline
 // consecutive observations gives up as establishment-failed. The
 // purpose/currency check arms only after Published.
@@ -208,7 +204,7 @@ func (e *Establishment) Observe(published bool) (giveUp bool) {
 }
 
 // RetireWatermark advances retiredThrough over the verified contiguous
-// prefix ONLY (SLC-R8-002, SLC-R9-003): given the current watermark
+// prefix ONLY: given the current watermark
 // and the set of generation numbers whose every recorded identity was
 // VERIFIED DEAD in this pass, it returns the new watermark. One
 // unverified older generation pins it, however many newer generations

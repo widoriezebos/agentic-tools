@@ -168,7 +168,7 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 		t.Fatalf("a declared artifact must pass: %+v", inspection)
 	}
 
-	// The same path under a consumed authorization refuses (HIW-R4-05):
+	// The same path under a consumed authorization refuses:
 	// a declared artifact never overwrites reviewed bytes.
 	writeText(t, filepath.Join(root, "docs", "note.md"), "reviewed bytes\n")
 	reviewed := snapshotTree(t, root)
@@ -257,7 +257,7 @@ func TestHostArtifactDeclarationGrammar(t *testing.T) {
 }
 
 // openFixtureTurn stamps the open-turn marker a bed's concluding paths
-// need (HIW-O1): the wall gate reads the anchored pre-tree from it, so any
+// need: the wall gate reads the anchored pre-tree from it, so any
 // bed driving a conclude path must have opened its turn like the runner
 // does — through the state's compare-and-write.
 func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
@@ -329,7 +329,7 @@ func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
 }
 
 // seedWallEvidence writes the minimal passed wall.json a direct
-// builder-call bed needs: since F-4 a conclusion without evidence is an
+// builder-call bed needs: a conclusion without evidence is an
 // error, exactly as the engine paths guarantee by running the gate first.
 func seedWallEvidence(t *testing.T, root, mission, turnID string) {
 	t.Helper()
@@ -344,7 +344,7 @@ func seedWallEvidence(t *testing.T, root, mission, turnID string) {
 			}})
 }
 
-// The resume binding order (critique F-1): an unfinished open turn is
+// The resume binding order: an unfinished open turn is
 // inspected BEFORE healing or any new baseline. Drift parks with taint at
 // resume; a clean workspace closes the unaccepted turn's marker so a
 // fresh turn can open.
@@ -403,7 +403,7 @@ func TestResumeClosesCleanUnacceptedTurn(t *testing.T) {
 	}
 }
 
-// The staleness predicate (critique F-2): an authorization based on an
+// The staleness predicate: an authorization based on an
 // older E-point refuses when intervening accepted changes touch its
 // paths, and consumes cleanly when they are disjoint.
 func TestWallStalenessPredicate(t *testing.T) {
@@ -455,7 +455,7 @@ func TestWallStalenessPredicate(t *testing.T) {
 	}
 }
 
-// Tampered evidence refuses (critiques F-2/F-3): a record claiming a
+// Tampered evidence refuses: a record claiming a
 // reviewed tree the patch does not produce, and swapped patch bytes
 // beside an intact record, both violate.
 func TestWallRefusesTamperedAuthorization(t *testing.T) {
@@ -500,7 +500,7 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	}
 }
 
-// Fail-closed acceptance (critique F-4): no wall evidence, no conclusion.
+// Fail-closed acceptance: no wall evidence, no conclusion.
 func TestConclusionRefusesWithoutWallEvidence(t *testing.T) {
 	root := t.TempDir()
 	turn := testTurn()
@@ -556,7 +556,7 @@ func patchRecord(t *testing.T, root, missionID, digest string, fields map[string
 	writeJSONFile(t, path, record)
 }
 
-// The changed-then-reverted ambiguity (round-2 finding 4): a path the
+// The changed-then-reverted ambiguity: a path the
 // mission changed and later reverted vanishes from the endpoint diff, but
 // the turn-by-turn union still names it — an old authorization touching
 // it refuses instead of landing bytes whose review context is gone.
@@ -594,8 +594,8 @@ func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
 	}
 }
 
-// A declared artifact path beneath a symlinked ancestor refuses (round-2
-// finding 6): the write escaped the repository, so the tree shows nothing.
+// A declared artifact path beneath a symlinked ancestor
+// refuses: the write escaped the repository, so the tree shows nothing.
 func TestWallRefusesSymlinkedArtifactAncestry(t *testing.T) {
 	root := wallRepo(t)
 	outside := t.TempDir()
@@ -612,7 +612,7 @@ func TestWallRefusesSymlinkedArtifactAncestry(t *testing.T) {
 	}
 }
 
-// The ledger-ahead violation window (round-2 finding 3): the crashed
+// The ledger-ahead violation window: the crashed
 // turn's cycle is already booked, so the violation ramp must not append
 // it twice — the taint and park still land.
 func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
@@ -669,7 +669,7 @@ func TestResumeWallParkSurvivesLedgerAhead(t *testing.T) {
 	}
 }
 
-// A CLEAN ledger-ahead crash resumes without taint (round-3 finding 1):
+// A CLEAN ledger-ahead crash resumes without taint:
 // the runner's own append between the anchor and the crash is the
 // legitimate shape the guard tolerates at resume, and the filtered tree
 // identity never sees it.
@@ -684,7 +684,7 @@ func TestResumeCleanLedgerAheadHeals(t *testing.T) {
 	if err := engine.anchor(statePath, ledgerPath, "crash-seed"); err != nil {
 		t.Fatal(err)
 	}
-	// The TRUE production crash window (round-5/6): the runner RESERVED
+	// The TRUE production crash window: the runner RESERVED
 	// cycle 1, opened the turn, appended its block, then died before the
 	// state write — reservation and the open marker answer for the block.
 	if err := mission.ReserveCycle(engine.Root, engine.Mission); err != nil {
@@ -711,7 +711,7 @@ func TestResumeCleanLedgerAheadHeals(t *testing.T) {
 	}
 }
 
-// The filtered identity is append-stable (round-3 finding 2): tracked
+// The filtered identity is append-stable: tracked
 // ledger appends between snapshots never change the wall's trees, so
 // E(i+1) == pre(i+1) holds exactly across turn boundaries.
 func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
@@ -744,11 +744,11 @@ func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
 	}
 }
 
-// The resolution segment fence (round-3 finding 3): the live taint
+// The resolution segment fence: the live taint
 // segment advances at resolution, before any new-segment acceptance, and
 // an old-segment authorization refuses even on a repeated tree.
-// The resolution's E-transition is PATH-SENSITIVE (design r4, slice-6
-// critique F3): a delayed authorization overlapping the resolution's own
+// The resolution's E-transition is
+// PATH-SENSITIVE: a delayed authorization overlapping the resolution's own
 // delta refuses, and one disjoint from it consumes — the old blanket
 // segment fence refused work the resolution never touched.
 func TestWallResolutionDeltaStalenessOverlap(t *testing.T) {
@@ -803,8 +803,8 @@ func TestWallResolutionDeltaStalenessDisjoint(t *testing.T) {
 	}
 }
 
-// A FIRST-turn violation resolved before anything was accepted (slice-6
-// round-2 finding 5): turnLog is empty, so E0 must derive from the
+// A FIRST-turn violation resolved before anything was
+// accepted: turnLog is empty, so E0 must derive from the
 // resolution's previousTree — a delayed {0,0} authorization disjoint
 // from the ruling's delta still names its base and consumes.
 func TestWallFirstTurnResolutionKeepsE0(t *testing.T) {
@@ -856,7 +856,7 @@ func resolvedFixtureState(pre, adopted string) map[string]any {
 	}
 }
 
-// The in-turn ledger guard (round-4 finding 2): the baseline is the
+// The in-turn ledger guard: the baseline is the
 // AUTHENTICATED anchor ref, so a host that edits the ledger mid-turn —
 // even one that commits its edit on the mission branch to become "the
 // last commit touching the path" — violates.
@@ -917,8 +917,8 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 	}
 }
 
-// Answering a superseded ask refuses BY NAME toward its successor
-// (issue #11): the refusal must be the superseded guard, not a
+// Answering a superseded ask refuses BY NAME toward its
+// successor: the refusal must be the superseded guard, not a
 // coincidental later refusal, so the bed is a real provisioned mission
 // and the stderr text is captured.
 func TestAnswerRefusesSupersededAsk(t *testing.T) {
@@ -949,7 +949,8 @@ func TestAnswerRefusesSupersededAsk(t *testing.T) {
 	}
 }
 
-// HIW-O6: the two typed resolutions, end to end from the D99 park. The
+// The two typed resolutions, end to end from a host-authored-product
+// wall-violation park. The
 // bed classifies HUMAN (a test process has no recognized ancestry), which
 // is exactly the human-reserved gate's happy path.
 func TestResolveTaintRestore(t *testing.T) {
@@ -969,8 +970,7 @@ func TestResolveTaintRestore(t *testing.T) {
 		t.Fatal("a free-text answer must never clear taint")
 	}
 
-	// Whitespace never satisfies the identity and reason gates (slice-6
-	// critique F7).
+	// Whitespace never satisfies the identity and reason gates.
 	if code := engine.ResolveTaint(1, "restore", preTree, "  ", " ", nil); code == 0 {
 		t.Fatal("whitespace identity and reason must refuse")
 	}
@@ -1039,7 +1039,7 @@ func TestResolveTaintRestore(t *testing.T) {
 	}
 }
 
-// Two unresolved taints, one resolution each (slice-6 critique F5):
+// Two unresolved taints, one resolution each:
 // resolving the first answers ONLY its own ask and leaves the mission
 // parked with the violated turn's marker intact; the last resolution
 // unparks.
@@ -1144,7 +1144,7 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 	}
 }
 
-// A ledger-domain taint cannot be RESTORED (slice-6 round-2 finding 2):
+// A ledger-domain taint cannot be RESTORED:
 // the ledger sits outside the tree projection restore proves against;
 // adoption — which re-baselines the anchored truth — is the lawful path.
 func TestResolveTaintLedgerDomainRefusesRestore(t *testing.T) {
@@ -1182,10 +1182,10 @@ func TestResolveTaintLedgerDomainRefusesRestore(t *testing.T) {
 	}
 }
 
-// The resolution tail is COMPLETABLE (slice-6 round-2 finding 4): a crash
+// The resolution tail is COMPLETABLE: a crash
 // after the durable state write but before the ask answers is repaired by
 // re-running resolve-taint, which answers from the RECORDED ruling; an
-// ask without a parseable bound taint id is never touched (finding 7).
+// ask without a parseable bound taint id is never touched.
 func TestResolveTaintTailCompletion(t *testing.T) {
 	engine := parkedSoloBuildMission(t)
 	statePath := filepath.Join(engine.missionDir(), "state.json")
@@ -1242,7 +1242,7 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 	}
 }
 
-// E-continuity at reservation (slice-6 round-2 finding 3): drift landing
+// E-continuity at reservation: drift landing
 // between a resolution and the next turn parks as a NEW wall violation
 // instead of becoming the silently grandfathered baseline.
 func TestReservationParksOnDriftAfterResolution(t *testing.T) {
@@ -1276,13 +1276,13 @@ func TestReservationParksOnDriftAfterResolution(t *testing.T) {
 	if second["resolution"] != nil {
 		t.Fatal("the drift taint must be unresolved")
 	}
-	// The violation wrote its wall.json evidence (round-3 finding 7)...
+	// The violation wrote its wall.json evidence...
 	turnID, _ := second["turnId"].(string)
 	evidence := readTestDoc(t, filepath.Join(engine.missionDir(), "turns", turnID, "wall.json"))
 	if v, _ := evidence["violation"].(string); !strings.Contains(v, "workspace drifted between turns") {
 		t.Fatalf("the drift park must record wall evidence: %v", evidence)
 	}
-	// ...and booked NO ledger block (round-3 finding 4): the reserved
+	// ...and booked NO ledger block: the reserved
 	// cycle heals as a lost turn, so every crash window reconciles.
 	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
 	_, _, cycles, err := mission.ParseLedger(ledgerPath)
@@ -1299,8 +1299,8 @@ func TestReservationParksOnDriftAfterResolution(t *testing.T) {
 	}
 }
 
-// Late ledger bytes never ride a resolution (slice-6 round-3 finding
-// 3): tamper between the park and the ruling fails the anchor-verified
+// Late ledger bytes never ride a
+// resolution: tamper between the park and the ruling fails the anchor-verified
 // entry, and reconciliation refuses to bless it.
 func TestResolveTaintRefusesLedgerDrift(t *testing.T) {
 	engine := parkedSoloBuildMission(t)
@@ -1323,8 +1323,8 @@ func TestResolveTaintRefusesLedgerDrift(t *testing.T) {
 	}
 }
 
-// The runner repairs a resolution's crash tail at start (slice-6
-// round-3 finding 6): a RESOLVED taint's still-open ask is answered from
+// The runner repairs a resolution's crash tail at
+// start: a RESOLVED taint's still-open ask is answered from
 // the recorded ruling, and the NEXT violation books its own bound ask —
 // a stale tail never suppresses or strands it.
 func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
@@ -1381,8 +1381,8 @@ func TestRunnerRepairsResolutionTailAtResume(t *testing.T) {
 }
 
 // Violated evidence with NO marker and NO taint — the reservation
-// park's evidence-to-park crash window (slice-6 successor round-2
-// finding 2) — re-executes the park at the next reservation, even when
+// park's evidence-to-park crash
+// window — re-executes the park at the next reservation, even when
 // the workspace was cleaned up in between.
 func TestReservationReparksOrphanedEvidence(t *testing.T) {
 	engine := parkedSoloBuildMission(t)
@@ -1424,8 +1424,8 @@ func TestReservationReparksOrphanedEvidence(t *testing.T) {
 	}
 }
 
-// Both typed resolutions through the REAL human entrypoint (slice-6
-// successor round-5 finding 3): the wrapper resolves the bed root from
+// Both typed resolutions through the REAL human
+// entrypoint: the wrapper resolves the bed root from
 // its own location and forwards to the bed's binary — this is the
 // invocation a human actually types, wrapper to binary to engine.
 func TestResolveTaintThroughWrapper(t *testing.T) {
@@ -1475,7 +1475,7 @@ func TestResolveTaintThroughWrapper(t *testing.T) {
 	}
 }
 
-// The FINAL-CYCLE orphan (slice-6 successor round-11 finding 4): with
+// The FINAL-CYCLE orphan: with
 // the cycle budget exhausted, no new reservation exists to run the
 // reservation-time sweep — ONLY the resume-time sweep can turn the
 // orphaned evidence into a taint before the fence buries it.
@@ -1528,14 +1528,14 @@ func TestResumeSweepOutranksTheCycleFence(t *testing.T) {
 	}
 }
 
-// EVERY unparsable-ledger tamper shape resolves through ONE flow
-// (slice-6 successor round-12 finding 1): the park lands with its
+// EVERY unparsable-ledger tamper shape resolves through ONE
+// flow: the park lands with its
 // anchor DEFERRED (the anchor refuses unparsable bytes — a baseline
 // nothing can drive), resolution refuses with the named
 // byte-restoration path, and after restoration the one-step lag-heal
 // bridges and adoption completes on a mission the machinery can still
 // read. The shapes cover the budget line, the heading grammar, and the
-// round-12 cross-product (broken budget beside a valid contiguous
+// cross-product (broken budget beside a valid contiguous
 // block).
 func TestUnparsableLedgerTamperResolvesAfterRestoration(t *testing.T) {
 	shapes := map[string]func(string) string{
@@ -1561,7 +1561,7 @@ func TestUnparsableLedgerTamperResolvesAfterRestoration(t *testing.T) {
 				[]string{"ledger narrative integrity"}); code != 3 {
 				t.Fatalf("resolution over unparsable bytes must refuse: %d", code)
 			}
-			// The NATURAL intervening resume (round-13 finding 1): the
+			// The NATURAL intervening resume: the
 			// taint STOP refuses on a raw read BEFORE any reconciliation
 			// can write, so the anchor gap stays exactly one step.
 			signal := filepath.Join(t.TempDir(), "resume.json")
@@ -1589,7 +1589,7 @@ func TestUnparsableLedgerTamperResolvesAfterRestoration(t *testing.T) {
 }
 
 // The TAIL CALL SITE faces moved ledger bytes in its write-to-anchor
-// window (round-13 finding 2): the pinned anchor must refuse — a caller
+// window: the pinned anchor must refuse — a caller
 // reverted to a post-write reread would pin the moved bytes and anchor
 // them successfully, failing this test.
 func TestTailAnchorRefusesMovedLedger(t *testing.T) {
@@ -1626,7 +1626,7 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	// The refused anchor left the tail DURABLE (asks answered, waiting
 	// list written) with the anchor one lawful step behind. The NATURAL
 	// retry with the bytes STILL MOVED must refuse WITHOUT WIDENING the
-	// gap (round-14 finding 1): no state-integrity park may land on the
+	// gap: no state-integrity park may land on the
 	// recoverable shape.
 	engine.preAnchorHook = nil
 	beforeRetry := readTestDoc(t, statePath)
@@ -1640,8 +1640,8 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 	if afterHash, _ := afterIntegrity["hash"].(string); afterHash != beforeHash {
 		t.Fatal("the refusal must not write — the gap must stay one step")
 	}
-	// The HUMAN VERB surfaces the actionable repair (round-16 finding 5,
-	// round-17 finding 3): resolve-taint over the moved bytes must print
+	// The HUMAN VERB surfaces the actionable
+	// repair: resolve-taint over the moved bytes must print
 	// the restore instruction, not a generic verification failure.
 	announcements2, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
 	for _, path := range announcements2 {
@@ -1675,7 +1675,7 @@ func TestTailAnchorRefusesMovedLedger(t *testing.T) {
 }
 
 // The RESUME CLOSE-MARKER call site faces the same moved-bytes window
-// (round-13 finding 2) and must refuse rather than rebind.
+// and must refuse rather than rebind.
 func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
 	statePath, err := seedCrashedMissionState(t, engine)
@@ -1698,7 +1698,7 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 		t.Fatal("the close-marker anchor must refuse ledger bytes moved past the verified pin")
 	}
 	// The natural retry with bytes still moved refuses WITHOUT widening;
-	// restoration heals (round-14 finding 1).
+	// restoration heals.
 	engine.preAnchorHook = nil
 	statePathClean := filepath.Join(engine.missionDir(), "state.json")
 	before := readTestDoc(t, statePathClean)
@@ -1718,7 +1718,7 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	}
 }
 
-// The pin ORIGIN is distinguishing (round-12 finding 2): when the live
+// The pin ORIGIN is distinguishing: when the live
 // ledger bytes have moved past the anchored truth, the verified pin is
 // the TIP's sha — a reverted post-write reread would return the moved
 // bytes' sha and this test would fail.
@@ -1796,7 +1796,7 @@ func ledgerTamperPark(t *testing.T, tamper func(string) string) (*Engine, string
 	return engine, statePath, ledgerPath, taintID
 }
 
-// The resolution's crash window (slice-6 critique F4): state written,
+// The resolution's crash window: state written,
 // anchor missing. The reconciliation anchor-lag heal recovers it without
 // human surgery.
 func TestResolveTaintCrashHealsAtReconcile(t *testing.T) {
@@ -1880,7 +1880,8 @@ func TestResolveTaintAdoptDisputedTree(t *testing.T) {
 	}
 }
 
-// parkedSoloBuildMission drives the D99 shape to its wall-violation park
+// parkedSoloBuildMission drives a host that authors its own product file
+// to its wall-violation park
 // and returns the engine, ready for resolution.
 func parkedSoloBuildMission(t *testing.T) *Engine {
 	t.Helper()
@@ -1920,7 +1921,7 @@ func stageHumanShell(t *testing.T) {
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
 }
 
-// The O3 positive after a resolution: FRESH work issued at the new
+// The tree-equation positive after a resolution: FRESH work issued at the new
 // segment consumes cleanly — the fence blocks only the old segment.
 func TestWallConsumesFreshWorkAfterResolution(t *testing.T) {
 	root := wallRepo(t)

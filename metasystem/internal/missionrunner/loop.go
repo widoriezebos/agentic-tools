@@ -32,7 +32,7 @@ func (e *Engine) RunLoop(mode, tag, startSignal string) int {
 	// The FIRST act of the runner's life: refuse ledger semantics this
 	// binary does not implement — before the runner-started event, the
 	// lease, the runner record, the heartbeat, and every resume healer
-	// (issue-4 round 3: even the failure ramp aggregates usage and
+	// (even the failure ramp aggregates usage and
 	// emits, so the guard cannot live behind it). Only the start signal
 	// is written, so a waiting launcher learns the refusal.
 	if err := stateShapeRefusal(filepath.Join(e.missionDir(), "state.json")); err != nil {
@@ -70,8 +70,8 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 		if leaseHeld {
 			aggregateUsageForProjection(e.Root, e.Mission, "failure-ramp")
 			// Finalize BEFORE releasing: the shared record belongs to the
-			// lease winner, and after release another runner may own it
-			// (goal-system GOAL-22). A loser that never held the lease
+			// lease winner, and after release another runner may own
+			// it. A loser that never held the lease
 			// never touches the record at all.
 			e.finishRunner("failed", err.Error())
 			e.releaseLease()
@@ -92,7 +92,7 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 	leaseHeld = true
 	e.unattendedCheckout = !lease.CheckoutForeignToLineage(e.Root, MissionLineage(e.Mission))
 
-	// Publication is lease-serialized (goal-system GOAL-22): only the
+	// Publication is lease-serialized: only the
 	// winner writes the shared runner record, so a losing contender can
 	// never replace or finalize the record of a live runner.
 	pid := os.Getpid()
@@ -105,7 +105,7 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 		return fail(err)
 	}
 	recordPath, _, _ := e.runnerPaths()
-	// The taint STOP (HIW-R2-04): an unresolved workspace taint refuses
+	// The taint STOP: an unresolved workspace taint refuses
 	// every run mode before any turn machinery — only a human's typed
 	// RESTORE or ADOPT_DISPUTED_TREE resolution reopens the mission.
 	if doc, derr := readJSONDoc(filepath.Join(e.missionDir(), "state.json")); derr == nil {
@@ -147,7 +147,7 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 			return fail(err)
 		}
 	}
-	// Finalize before releasing (goal-system GOAL-22): after release the
+	// Finalize before releasing: after release the
 	// record may belong to the next winner.
 	e.finishRunner("completed", nil)
 	e.releaseLease()
@@ -158,8 +158,8 @@ func (e *Engine) internalRun(mode, tag, startSignal string) int {
 // runnerRecord is the runner's process record, the artifact status reads to
 // decide whether anyone is actually driving a running mission.
 func (e *Engine) runnerRecord(pid, pgid int, started int64, tag string) map[string]any {
-	// The clock-step-immune pair rides beside the legacy second (issue
-	// #1): readers prefer it, and a time-synced guest stepping the clock
+	// The clock-step-immune pair rides beside the legacy
+	// second: readers prefer it, and a time-synced guest stepping the clock
 	// can no longer make this record's live runner read as Dead.
 	var startTicks int64
 	var bootID string
@@ -184,8 +184,8 @@ func (e *Engine) runnerRecord(pid, pgid int, started int64, tag string) map[stri
 
 // finishRunner finalizes the runner record. Best-effort by design: the
 // record is a witness for status, and failing to finalize it must not change
-// how the mission itself ended. Terminal writes are OWNER-ONLY (goal-system
-// GOAL-22): the record must be the one THIS process published — on a resume
+// how the mission itself ended. Terminal writes are
+// OWNER-ONLY: the record must be the one THIS process published — on a resume
 // that failed before publication, the previous runner's concluded record
 // survives untouched, and a contender that never won the lease never gets
 // here at all.
@@ -244,7 +244,7 @@ func (e *Engine) acquireLease(tag string) (string, error) {
 	// ONE flock over the whole claim: the marker and its records are
 	// separate writes, and an unserialized cleanup can classify the
 	// half-published subset as stale and remove it under a live
-	// claimant (KI-38's two-runner mint).
+	// claimant — minting a second runner for one mission.
 	release, lockErr := lease.LockBounded(filepath.Join(dir, "lease.lock"), "mission lease")
 	if lockErr != nil {
 		return "", lockErr
@@ -315,8 +315,8 @@ func (e *Engine) verifyState(statePath string, anchor bool) (map[string]any, err
 }
 
 // writeStateResolution is resolve-taint's writer: the only caller allowed
-// to land a typed resolution or a segment move (mission.WriteStateResolution;
-// slice-6 round-2 finding 1).
+// to land a typed resolution or a segment move
+// (mission.WriteStateResolution).
 func (e *Engine) writeStateResolution(statePath string, proposed map[string]any, expect string) (map[string]any, error) {
 	return e.writeStateWith(statePath, proposed, expect, mission.WriteStateResolution)
 }
@@ -328,8 +328,8 @@ func (e *Engine) writeState(statePath string, proposed map[string]any) (map[stri
 }
 
 // writeStateWith lands one proposal. A non-empty expect PINS the
-// compare-and-write to a hash the caller VERIFIED (slice-6 round-3
-// finding 2: the resolution's base must be the anchor-verified read, not
+// compare-and-write to a hash the caller VERIFIED
+// (the resolution's base must be the anchor-verified read, not
 // whatever a reread finds); empty expect derives it from the current
 // file, the ordinary runner behavior.
 func (e *Engine) writeStateWith(statePath string, proposed map[string]any, expected string, write func(string, string, string) error) (map[string]any, error) {
@@ -365,7 +365,7 @@ func (e *Engine) writeStateWith(statePath string, proposed map[string]any, expec
 	}
 	if err := write(statePath, sourcePath, expected); err != nil {
 		// A proposal-validation refusal keeps its type: the conclude path
-		// parks adjudicated host content instead of dying on it (issue #3).
+		// parks adjudicated host content instead of dying on it.
 		var proposal *mission.ProposalError
 		if errors.As(err, &proposal) {
 			return nil, err
@@ -380,8 +380,8 @@ func (e *Engine) writeStateWith(statePath string, proposed map[string]any, expec
 }
 
 // anchorState writes the local anchor commit binding the state hash and
-// ledger — IN-PROCESS (slice-6 successor finding 4: the state-anchor CLI
-// verb is human-reserved now, and the runner is not a human); the acting
+// ledger — IN-PROCESS (the state-anchor CLI
+// verb is human-reserved, and the runner is not a human); the acting
 // identity pins the git author through AnchorNamed.
 func (e *Engine) anchorState(statePath, ledgerPath, identityName string) error {
 	if err := mission.AnchorNamed(statePath, e.Root, ledgerPath, identityName, "", ""); err != nil {
@@ -392,7 +392,7 @@ func (e *Engine) anchorState(statePath, ledgerPath, identityName string) error {
 
 // anchorStatePinned is the resolution's anchor: it binds EXACTLY the
 // verified position — the state hash the resolution wrote and the ledger
-// bytes its recheck examined (successor finding 2).
+// bytes its recheck examined.
 func (e *Engine) anchorStatePinned(statePath, ledgerPath, identityName, stateHash, ledgerSHA string) error {
 	if err := e.reclaimCheckout(); err != nil {
 		return err
@@ -404,7 +404,7 @@ func (e *Engine) anchorStatePinned(statePath, ledgerPath, identityName, stateHas
 }
 
 // anchorPinnedTo routes a CONCLUDING write's anchor through the verified
-// position (WSS I11-2): the stubbed-anchor beds keep their stub, and the
+// position: the stubbed-anchor beds keep their stub, and the
 // real path refuses if state or ledger moved past the caller's proof.
 func (e *Engine) anchorPinnedTo(statePath, ledgerPath, identityName, stateHash, ledgerSHA string) error {
 	if e.anchorFn != nil {
@@ -482,8 +482,8 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 	// verified these bytes against the fence digest, and every later
 	// consumer takes them as given — a pin file replaced after that read
 	// can influence nothing.
-	// E0 and the accounting origins derive from ONE STABLE observation
-	// (WSS-1): admission and origin capture re-run until two consecutive
+	// E0 and the accounting origins derive from ONE STABLE
+	// observation: admission and origin capture re-run until two consecutive
 	// passes agree, so a repository moving during birth can never leave
 	// origins that disagree with the admitted baseline.
 	var admitted string
@@ -665,7 +665,7 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 		return "", "", nil, failf(3, "mission is %s; answer or amend its park reason before resume", valueString(state["status"]))
 	}
 	// An unfinished open turn is inspected BEFORE healing or any new
-	// baseline (the design's binding order, critique F-1): the crashed
+	// baseline — the binding order: the crashed
 	// turn's workspace proves the equation before the mission moves.
 	if openTurn, ok := state["openTurn"].(map[string]any); ok {
 		turnID, _ := openTurn["turnId"].(string)
@@ -697,13 +697,13 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 			closedIntegrity, _ := closedFinal["integrity"].(map[string]any)
 			closedHash, _ := closedIntegrity["hash"].(string)
 			if e.preAnchorHook != nil {
-				// Test seam (round-14 finding 2): the movement must land
+				// Test seam: the movement must land
 				// BEFORE the pin is acquired, so a reverted post-write
 				// reread would select the moved bytes and anchor them.
 				e.preAnchorHook()
 			}
-			// The pin ORIGINATES at reconciliation's verified position
-			// (round-11 finding 3): the close writes no ledger bytes, so the
+			// The pin ORIGINATES at reconciliation's verified
+			// position: the close writes no ledger bytes, so the
 			// lawful ledger sha is the one the anchor tip already certifies —
 			// a fresh reread would self-select any bytes moved since.
 			anchoredSHA, lerr := e.verifiedLedgerPin()
@@ -726,14 +726,14 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 		return "", "", nil, err
 	}
 	// A resolution's crash tail — RESOLVED taint, ask still open —
-	// repairs here, AFTER reconciliation verified the anchor (slice-6
-	// successor finding 6: ask answers must never derive from unverified
+	// repairs here, AFTER reconciliation verified the anchor
+	// (ask answers must never derive from unverified
 	// state), so a stale ask can never re-enter the waiting list or
 	// suppress the next violation's ask.
 	if err := e.repairResolvedTaintAsks(state); err != nil {
 		return "", "", nil, err
 	}
-	// Sticky evidence outranks the CYCLE FENCE (round-10 finding 2): the
+	// Sticky evidence outranks the CYCLE FENCE: the
 	// orphan sweep runs here too, before any new reservation can burn the
 	// last allowed cycle into a fence park that buries the violation.
 	if orphanTurn, orphanViolation := e.orphanedViolationEvidence(state); orphanViolation != "" {
@@ -868,7 +868,7 @@ func (e *Engine) healReservedCycle(statePath, ledger string, state map[string]an
 		return false, err
 	}
 	// The heal's anchor pins the written hash and the healed booking's
-	// own bytes (WSS I12-3) — the same discipline as every conclusion.
+	// own bytes — the same discipline as every conclusion.
 	if err := e.anchorPinnedTo(statePath, ledger, e.Mission, stateIntegrityHash(updated), ledgerSHA); err != nil {
 		return false, err
 	}
@@ -949,8 +949,8 @@ func (e *Engine) writeProposedAsks(asks []map[string]any) error {
 	asksDir := asksDirPath(e.Root, e.Mission)
 	for _, ask := range asks {
 		askID, _ := ask["askId"].(string)
-		// The SUCCESSOR lands first, THEN its predecessor closes (issue
-		// #11 critique F4): a crash between the two leaves a visible
+		// The SUCCESSOR lands first, THEN its predecessor
+		// closes: a crash between the two leaves a visible
 		// duplicate for one turn — never a hidden ask refusing answers
 		// toward a successor that does not exist.
 		if err := atomicWriteJSON(filepath.Join(asksDir, askID+".json"), ask); err != nil {
@@ -1022,8 +1022,8 @@ func (e *Engine) applyPark(statePath, ledger, identityName string, outcome *Park
 		return nil, err
 	}
 	if err := e.anchor(statePath, ledger, identityName); err != nil {
-		// A park must SURVIVE an unanchorable ledger (round-11 finding
-		// 1): the tainted state is durable and the STOP works from it;
+		// A park must SURVIVE an unanchorable
+		// ledger: the tainted state is durable and the STOP works from it;
 		// the anchor lag heals once the disputed bytes are restored.
 		// Every other park cause still surfaces the anchor failure.
 		if reason, _ := outcome.State["parkReason"].(string); reason == "wall-violation" {
@@ -1052,14 +1052,14 @@ func (e *Engine) gitRevParse(ref string) (string, error) {
 // rules it started with. Annotations land in the same atomic append, as
 // separate lines beside the classification line.
 // It returns the sha256 of the complete post-append ledger bytes — the
-// verified position the concluding anchor pins to (WSS I11-2).
+// verified position the concluding anchor pins to.
 func (e *Engine) appendLedger(state map[string]any, ledger string, cycle int64, classification, candidateSHA, observed string, inflightCertified any, annotations ...string) (string, error) {
 	best, err := e.bestMarker(state, ledger, observed)
 	if err != nil {
 		return "", err
 	}
 	// Patience rides the SAME atomic append as the cycle line, on every
-	// booking path (plans/patience-satellite-4.md): the shared function is
+	// booking path: the shared function is
 	// what makes ordinary, faulted, failed, and heal bookings all evaluate.
 	annotations = append(append([]string(nil), annotations...),
 		e.patienceBookingAnnotations(state, inflightCertified)...)
@@ -1122,10 +1122,10 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 		return nil, failf(3, "turn record cycle is invalid")
 	}
 	// Even a turn that failed before or during its host runs the wall
-	// (HIW-O3 "after EVERY host exit"): a failed turn consumed nothing,
+	// ("after EVERY host exit"): a failed turn consumed nothing,
 	// so any product-byte drift from the pre-tree is a violation. The
-	// wall runs BEFORE any ledger-narration identity is resolved (WSS
-	// I14-1): a host that deleted the candidate branch must meet the
+	// wall runs BEFORE any ledger-narration identity is
+	// resolved: a host that deleted the candidate branch must meet the
 	// inspection — which names that deletion — not a runner error that
 	// skips it.
 	ctx, final, violated, werr := e.wallGate(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, nil, false)
@@ -1151,7 +1151,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 		return nil, err
 	}
 	// The VERIFIED CAPTURE is the failure acceptance's authority exactly
-	// as at the ordinary conclude (WSS I13-2): the proposal transports
+	// as at the ordinary conclude: the proposal transports
 	// wall.json's rewritable evidence, and a payload differing from what
 	// this process judged was built over tampered evidence.
 	if violation := acceptancePayloadMismatch(proposed, turn.TurnID, ctx, false, nil); violation != "" {
@@ -1170,7 +1170,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 		return nil, err
 	}
 	// The failure acceptance pins its anchor exactly as the ordinary
-	// conclude does (WSS I12-3): the written state hash and the runner's
+	// conclude does: the written state hash and the runner's
 	// own appended bytes, so a peer rewrite before publication refuses
 	// instead of authenticating.
 	if err := e.anchorPinnedTo(statePath, ledger, turn.TurnID, stateIntegrityHash(updated), ledgerSHA); err != nil {
@@ -1191,21 +1191,21 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	return e.continueOrParkStopLoss(statePath, ledger, turn.TurnID, verified)
 }
 
-// deliverLandedUnconsumed is terminal delivery (plans/patience-orphan-usage.md
-// O1): a completed mission produces no next prompt, so its Landed Returns
+// deliverLandedUnconsumed is terminal
+// delivery: a completed mission produces no next prompt, so its Landed Returns
 // list is appended to the final cycle's ledger block as Landed unconsumed
 // annotations — the place a terminal mission is read. It runs ONLY at the
 // completion conclude, where a ledger block for the final cycle exists and
 // is safely writable, and it runs AFTER the state write that owns the
 // transition and BEFORE the closing anchor, which therefore still binds
-// the annotated bytes (WSS I11-5). Best-effort: a mission that
+// the annotated bytes. Best-effort: a mission that
 // passed its gate is never failed over its reminder list, so a refused
 // append is reported on stderr and the returns stay recoverable in the tree.
 // It returns the sha256 of the post-delivery ledger bytes (expectSHA on
 // a delivery that appended nothing), so the concluding anchor can pin
-// the exact position (WSS I11-2); a non-empty expectSHA makes the append
+// the exact position; a non-empty expectSHA makes the append
 // refuse if the ledger moved past the caller's proof, and re-delivered
-// annotations are skipped line-idempotently (WSS I11-5).
+// annotations are skipped line-idempotently.
 func (e *Engine) deliverLandedUnconsumed(ledger string, cycle int64, state map[string]any, expectSHA string) string {
 	turnLog, _ := state["turnLog"].([]any)
 	annotations := []string{}
@@ -1269,10 +1269,10 @@ func (e *Engine) measure(state map[string]any) (classification, observed string,
 		"candidateSha": result.CandidateSHA,
 	}
 	observedLine := result.Observed
-	// Semantics 3 (issue #4): the same gate runs a SECOND time on the
+	// Semantics 3: the same gate runs a SECOND time on the
 	// mission's active candidate branch, in a scratch worktree the runner
 	// owns. A binary gate of record cannot register the serial pipeline's
-	// progress, so a perfect tree awaiting the wall parked as stagnant;
+	// progress, so a perfect tree awaiting the wall would park as stagnant;
 	// the candidate tokens let the stop-loss see it without ever letting
 	// it outrank a real merge. A failed candidate measurement is an
 	// absent token — the directed worst — never a dead runner.
@@ -1344,7 +1344,7 @@ func (e *Engine) activeCandidateBranch(state map[string]any) string {
 		branch, _ := record["branch"].(string)
 		jobID, _ := record["jobId"].(string)
 		// EXACTLY the dispatch-produced branch of THIS job, and free of
-		// the observed line's grammar characters (issue-4 F-3: a crafted
+		// the observed line's grammar characters (a crafted
 		// branch like agent/x,candidate-score=999 is a valid git ref and
 		// its candidate-ref token would inject a forged metric).
 		if jobID == "" || branch != "agent/"+jobID || strings.ContainsAny(branch, ",=@ \t") {
@@ -1417,8 +1417,8 @@ type concludeSpec struct {
 // crash between the two is heal-forward, and finally judge the stop-loss.
 func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, spec concludeSpec) (map[string]any, error) {
 	// The wall inspects the tree FIRST — before the drain can park the
-	// mission for a lesser reason and before any measurement (HIW-O3,
-	// critique F-5): delegates write their own worktrees, never the
+	// mission for a lesser reason and before any
+	// measurement: delegates write their own worktrees, never the
 	// checkout, so the inspection races nothing, and a host that altered
 	// the workspace hides behind neither a stalled drain nor a gate pass.
 	ctx, final, violated, err := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, false)
@@ -1516,7 +1516,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 		}
 		ctx = rerun
 	}
-	// The MEASURED CANDIDATE is the concluded tip (WSS I13-1): the
+	// The MEASURED CANDIDATE is the concluded tip: the
 	// stability loop lawfully re-admits accounted HEAD motion, but the
 	// measurement's success evidence was produced for candidateSHA — a
 	// gate command that moves the branch to any other accounted commit
@@ -1561,8 +1561,8 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 		// is the mission's protection; the outcome is a parked mission
 		// with the refusal surfaced — never the fail ramp. I/O,
 		// corruption, and compare-and-write misses keep the ramp: those
-		// are the runner's own to fail loudly on (issue #3, critique
-		// round 1: the guard must be reachable, correctly scoped, and
+		// are the runner's own to fail loudly on
+		// (the guard must be reachable, correctly scoped, and
 		// the park must stay ledger-consistent).
 		var proposalRefusal *mission.ProposalError
 		if errors.As(err, &proposalRefusal) {
@@ -1593,7 +1593,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 	}
 	// The acceptance anchor binds EXACTLY the position this conclusion
 	// proved — the state hash the write produced and the ledger bytes
-	// the runner's own append wrote (WSS I11-2): a peer that rewrites
+	// the runner's own append wrote: a peer that rewrites
 	// the appended cycle into different parseable bytes before
 	// publication makes the anchor REFUSE, never re-authenticate the
 	// reread.
@@ -1732,8 +1732,8 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 		return nil, true, err
 	}
 	// The wall's pre-tree: the shippable projection at turn open, anchored
-	// against garbage collection for the mission's life (HIW-O1; the state
-	// openTurn write joins in the acceptance-write step of the build map).
+	// against garbage collection for the mission's life (the state
+	// openTurn write joins in the acceptance-write step).
 	workspace := gittree.Workspace{Dir: e.Root}
 	preTree, err := wallSnapshot(workspace, e.Mission)
 	if err != nil {
@@ -1778,7 +1778,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	if err := atomicWriteJSON(c.turnPath, c.turn); err != nil {
 		return nil, true, err
 	}
-	// The open-turn marker is the wall's sequence point (HIW-O1): the state
+	// The open-turn marker is the wall's sequence point: the state
 	// records, before the host launches, WHICH turn is in flight and the
 	// exact chain position and taint segment it opened under — the identity
 	// every authorization issued this turn binds. The pending turn record
@@ -1788,7 +1788,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	if err != nil {
 		return nil, true, err
 	}
-	// STICKY EVIDENCE without a marker (successor round-2 finding 2): a
+	// STICKY EVIDENCE without a marker: a
 	// violation whose evidence landed but whose park crashed must
 	// re-execute before anything opens — even if the workspace was
 	// cleaned up in between, the detected violation is a fact.
@@ -1815,8 +1815,8 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	}
 	if expectedNow != preTree {
 		violation := fmt.Sprintf("workspace drifted between turns: the filtered projection %s does not equal the expected tree %s", preTree, expectedNow)
-		// The violation writes its wall.json evidence like every other
-		// (round-3 finding 7): the observed projection IS both the pre-
+		// The violation writes its wall.json evidence like every
+		// other: the observed projection IS both the pre-
 		// and post-tree of a turn that never launched.
 		evidence := &wallInspection{PreTree: preTree, ExpectedTree: expectedNow, PostTree: preTree, Violation: violation}
 		if changed, derr := workspace.ChangedPaths(expectedNow, preTree); derr == nil {
@@ -1860,7 +1860,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	continuityViolation, err := e.judgeScope(origin, capture, acct, diskState)
 	if err != nil {
 		// A ran-and-answered probe defeat inside the judgment is a wall
-		// answer (WSS I13-6), the same as one raised during capture.
+		// answer, the same as one raised during capture.
 		if answer := stateAnswerOf(err); answer != "" {
 			continuityViolation = answer
 		} else {
@@ -1908,7 +1908,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	}
 	// The marker's occurrence identity is the CURRENT SEQUENCE POINT —
 	// the acceptance that produced this expected tree — never the raw
-	// chain position (critique F-2: parks and heals advance the chain
+	// chain position (parks and heals advance the chain
 	// without changing the expected tree, and tree ids repeat).
 	sequence, segment := mission.CurrentSequencePoint(diskState)
 	opened := deepCopyDoc(diskState)
@@ -1929,7 +1929,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	if err != nil {
 		return nil, true, err
 	}
-	// The open write anchors like every other state write (critique F-1):
+	// The open write anchors like every other state write:
 	// a crash mid-turn must reconcile against THIS state, not park on an
 	// anchor mismatch.
 	if err := e.anchor(c.statePath, c.ledger, turnID); err != nil {
@@ -2026,7 +2026,7 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 			detail = fmt.Sprintf("host exited non-zero (%d)", exitCode)
 		}
 		// A host CUT OFF by its native turn cap is a different fact
-		// than a host that crashed (issue #6): the ledger and the
+		// than a host that crashed: the ledger and the
 		// operator must be able to tell them apart, and the next turn
 		// can be told to continue rather than restart.
 		if subtype := providerErrorSubtype(filepath.Join(c.turnDir, "claude-result.json")); subtype == "error_max_turns" {
@@ -2098,9 +2098,9 @@ func (e *Engine) cycleAdjudicate(c *cycleContext) (map[string]any, bool, error) 
 // state, patches the turn terminal, anchors, and applies the stop-loss.
 func (e *Engine) cycleConclude(c *cycleContext) (map[string]any, bool, error) {
 	// The turn's ADJUDICATED certifications participate in this booking's
-	// patience evaluation before anything is written (r2/P4-016): a job
+	// patience evaluation before anything is written: a job
 	// certified by THIS turn is not booked barren in the same breath —
-	// but only a claim that survived verification counts (HIW-O5).
+	// but only a claim that survived verification counts.
 	var inflightCertified any
 	if c.verdict != nil {
 		entries := make([]any, 0, len(c.verdict.Certified))
@@ -2159,8 +2159,8 @@ func docFromValue(value any) (map[string]any, error) {
 	return decodeJSONDoc(data)
 }
 
-// reclaimCheckout re-announces the RUN LOOP before an anchor (issue #2,
-// D102, round-3): the loop — not the launcher whose announcement armed
+// reclaimCheckout re-announces the RUN LOOP before an
+// anchor: the loop — not the launcher whose announcement armed
 // the checkout — is the process that anchors, so it announces ITSELF
 // under the mission lineage and the claim ladder does the rest: a dead
 // prior holder (a finished host turn, the exited detached launcher)
@@ -2169,11 +2169,12 @@ func docFromValue(value any) (map[string]any, error) {
 // because the loop is its real kernel child. STRICTLY a no-op in the
 // ATTENDED branch: the unattended marker is the checkout lease carrying
 // THIS mission's owner lineage — a human-held or foreign lease means
-// nothing here is ours to reclaim (round-2 F3's shadow stays impossible).
+// nothing here is ours to reclaim, so shadowing a live holder stays
+// impossible.
 // The announce passes the FRESHLY probed start second — self-consistent
 // at call time by construction — and reannouncement matching recognizes
 // the loop's earlier announcement by the clock-step-immune pair, so
-// drift cannot desynchronize it (round-3 F2). A FAILED reclaim is
+// drift cannot desynchronize it. A FAILED reclaim is
 // returned, not swallowed: anchoring without holdership is exactly the
 // defect the reclaim exists to prevent.
 func (e *Engine) reclaimCheckout() error {
@@ -2181,7 +2182,7 @@ func (e *Engine) reclaimCheckout() error {
 		return nil
 	}
 	self := int64(os.Getpid())
-	// Class HOLDER exactly (round-6): RequireHolder answers Holder:true
+	// Class HOLDER exactly: RequireHolder answers Holder:true
 	// for HUMAN before reading the lease, and a detached runner whose
 	// launcher ancestor died classifies HUMAN — that must reclaim, not
 	// silently skip and anchor ungated.
@@ -2195,7 +2196,7 @@ func (e *Engine) reclaimCheckout() error {
 	session := fmt.Sprintf("mission-runner-%s-%d", e.Mission, self)
 	_, announceErr := lease.Announce(e.Root, session, self, started,
 		"mission-runner.sh", "metasystem", MissionLineage(e.Mission))
-	// Holdership is PROVEN through the PRODUCTION gate (round-5): the
+	// Holdership is PROVEN through the PRODUCTION gate: the
 	// same RequireHolder every gated verb answers to — holder identity
 	// AND a complete claim stamp; a saved-but-unstamped succession, a
 	// silent live-holder refusal, and the check-to-claim race all fail

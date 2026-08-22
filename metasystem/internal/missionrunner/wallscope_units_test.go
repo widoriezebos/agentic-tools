@@ -58,7 +58,7 @@ func TestWorktreePostureDrift(t *testing.T) {
 		t.Fatalf("changed pseudoref must drift: %q", drift)
 	}
 	// A record with NO staged baseline can never prove the live staged
-	// posture unchanged (WSS I11-7): a readability transition after
+	// posture unchanged: a readability transition after
 	// consumption must re-judge, not silently pass.
 	bare := map[string]any{
 		"headOid": strings.Repeat("a", 40),

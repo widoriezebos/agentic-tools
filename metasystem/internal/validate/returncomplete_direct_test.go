@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// Direct tests for the return checkers (Phase 6): previously exercised only
-// through the suite's shell fixtures, invisible to package coverage.
+// Direct tests for the return checkers: the suite's shell fixtures
+// exercise them end to end but are invisible to package coverage.
 
 func returnRoot(t *testing.T) string {
 	t.Helper()

@@ -56,7 +56,7 @@ func (r *conformanceRun) gitBytes(dir string, env []string, args ...string) ([]b
 	}
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-	// Bounded like every other external call (B4).
+	// Bounded like every other external call.
 	limit := boundedexec.Timeout(filepath.Join(dir, "metasystem.conf"), boundedexec.Local)
 	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
 	return stdout.Bytes(), err
@@ -503,9 +503,9 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 		return r.fail("conformance failure: instruction-bearing path list is empty or contains duplicates")
 	}
 	// The registry's declared instruction filenames join the no-waiver
-	// set unconditionally (agnosticism audit, critique r1-8): a future
-	// runtime's instruction file must be protected the moment it is
-	// declared, whether or not the checked-in path list keeps up.
+	// set unconditionally: a future runtime's instruction file must be
+	// protected the moment it is declared, whether or not the checked-in
+	// path list keeps up.
 	for _, declared := range runtimes.InstructionFiles() {
 		if !seenInstruction[declared] {
 			seenInstruction[declared] = true
@@ -533,10 +533,10 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 	var out, errs []string
 	var code int
 	if waiver != nil {
-		// A MISSION chain can never waive critique (slice-3 critique F-1):
-		// the wall issues authorizations only on critic closure, with no
-		// small-change exception (D100 — the micro-dispatch lane is a
-		// separate backlog design). Non-mission chains keep the waiver.
+		// A MISSION chain can never waive critique: the wall issues
+		// authorizations only on critic closure, with no small-change
+		// exception — the micro-dispatch lane is a separate design, not
+		// a waiver path. Non-mission chains keep the waiver.
 		if mission, _ := r.record["mission"].(string); mission != "" {
 			return r.fail("conformance failure: a mission chain cannot waive critique; the host-implementer wall issues integration authorizations only on critic closure (no exception, D100)")
 		}
@@ -557,7 +557,7 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 	} else {
 		out, errs, code = r.mergeCritique(recordPath, finalTree, configuredRuntime, independence)
 	}
-	// The wall's issuance point (HIW-O2): a mission chain that passed every
+	// The wall's issuance point: a mission chain that passed every
 	// merge check gets its integration authorization HERE, atomically with
 	// acceptance — and a chain that cannot be authorized is not accepted.
 	if code == 0 {

@@ -288,7 +288,7 @@ func TestStopLossVerdictKeyedBySemantics(t *testing.T) {
 		t.Fatalf("replay verdict: %+v", replay)
 	}
 
-	// Semantics 3 replays with the candidate-aware tuple (issue #4);
+	// Semantics 3 replays with the candidate-aware tuple;
 	// markerless lines without candidate tokens fold them as directed
 	// worst, so this ledger's verdict matches semantics 2 exactly.
 	sem3, err := engine.stopLossVerdict(map[string]any{"ledgerSemantics": 3}, ledger)

@@ -43,7 +43,8 @@ func parseContractText(text string) (authored, seal map[string]string, err error
 }
 
 // contractKeyValues parses one fenced block's key=value lines under the
-// contract owner's ONE grammar (review mission-contract-4).
+// contract owner's ONE grammar: every consumer of contract text parses it
+// through the contract package, so the grammar cannot drift per caller.
 func contractKeyValues(block string) (map[string]string, error) {
 	values, err := contract.ParseAuthoredValues(block, "mission contract")
 	if err != nil {

@@ -69,7 +69,7 @@ func TestDiskThreeWayReads(t *testing.T) {
 	}
 }
 
-// SLC-R4-001: publication is fenced — a lock that stopped naming this
+// Publication is fenced — a lock that stopped naming this
 // owner aborts the atomic rename.
 func TestDiskPublicationFence(t *testing.T) {
 	checkout, root := diskCheckout(t)

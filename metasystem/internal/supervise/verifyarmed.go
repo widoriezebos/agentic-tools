@@ -9,11 +9,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// The arming success verdict (review script-orchestration-10, relocated
-// from arm-supervision.sh): the same freshness judgment `job census-fresh`
-// renders for dispatch, computed once. Before this, arming certified in
-// shell what dispatch verified in Go, and the two had to move in lockstep
-// by hand whenever the freshness rule changed.
+// The arming success verdict: the same freshness judgment `job census-fresh`
+// renders for dispatch, computed once — arming and dispatch must agree
+// on one freshness rule, so neither side carries its own copy.
 
 // armedIdentityAlive is the arming ladder's liveness: the recorded (pid,
 // start) must be live by the census's one-source rule, and a recorded tag
@@ -43,13 +41,13 @@ func ArmedNow(agentsDir string, ownerPid, ownerStart int64, ownerTag string, int
 	supervision := filepath.Join(agentsDir, "supervision")
 	statePath := filepath.Join(supervision, "state.json")
 	lastPath := filepath.Join(supervision, "last-census.json")
-	// The fixture authority (agnosticism B1): root is two levels above
+	// The fixture authority: root is two levels above
 	// the agents dir, the reserved-cap fence's own derivation; a refused
 	// construction refuses fixtures.
 	authorization, authErr := fixtureauth.New(filepath.Dir(filepath.Dir(agentsDir)))
 	if authErr != nil {
 		// A leaked fixture is a refusal of the VERIFICATION, not a
-		// kernel-only fallback (B1 critique finding 4).
+		// kernel-only fallback.
 		return false
 	}
 	probe := identity.FixtureProbe(authorization.Identity())

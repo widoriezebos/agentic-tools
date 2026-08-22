@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Issue #3 round-2 landing condition: the concludeCycle recovery branch is
+// The concludeCycle recovery branch is
 // EXECUTED — a proposal refusal parks host-failure with an open ask, the
 // state's ledger cycle count matches the block the cycle already appended,
 // and the post-park anchor runs. Removing the branch, or only its

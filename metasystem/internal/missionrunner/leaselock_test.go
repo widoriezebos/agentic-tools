@@ -11,7 +11,7 @@ import (
 
 // The mission lease's acquire and stale-cleanup exclude each other
 // under ONE flock: a cleanup that classifies a half-published claim
-// minted two runners (KI-38).
+// as stale can mint two runners for one mission.
 func TestMissionLeaseAcquireAndCleanupShareOneLock(t *testing.T) {
 	t.Setenv("METASYSTEM_LEASE_LOCK_WAIT_SEC", "0.2")
 	engine := &Engine{Root: t.TempDir(), Mission: "mr-ki38"}

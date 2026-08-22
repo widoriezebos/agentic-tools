@@ -31,7 +31,7 @@ type Lease struct {
 	OwnerLineage string `json:"ownerLineage"`
 	Pid          int64  `json:"pid"`
 	PidStartedAt int64  `json:"pidStartedAt"`
-	// The clock-step-immune pair (issue #1); zero values on legacy leases
+	// The clock-step-immune pair; zero values on legacy leases
 	// fall back to the seconds comparison.
 	PidStartTicks int64      `json:"pidStartTicks,omitempty"`
 	BootID        string     `json:"bootId,omitempty"`
@@ -150,9 +150,9 @@ func atomicJSON(path string, value any) error {
 		return err
 	}
 	encoded = append(encoded, '\n')
-	// Through the durable-write owner (go-production-grade B5), with the
-	// two-outcome contract adopted (D12): the anchor is the checkout root
-	// derived from the path, and doubt is witnessed, never swallowed.
+	// Through the durable-write owner, under its two-outcome contract:
+	// the anchor is the checkout root derived from the path, and doubt
+	// is witnessed, never swallowed.
 	anchor := ""
 	clean := filepath.ToSlash(filepath.Clean(path))
 	if index := strings.LastIndex(clean, "/artifacts/"); index > 0 {

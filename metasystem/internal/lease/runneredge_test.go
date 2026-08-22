@@ -27,7 +27,7 @@ func writeRunnerAnnouncement(t *testing.T, root, mainID string, pid, start int64
 	}
 }
 
-// Issue #2 (D102): the ONE exception to "a live holder never yields" — a
+// The ONE exception to "a live holder never yields" — a
 // mission's host turn, PROVEN a kernel descendant of the live runner,
 // succeeds it (epoch preserved, revision advanced). Everything forgeable
 // alone is insufficient: same lineage + non-runner tag from a NON-descendant
@@ -62,7 +62,7 @@ func TestHostSucceedsLiveRunnerHolder(t *testing.T) {
 	}
 
 	// A runner-tagged DESCENDANT lawfully succeeds too — that is the
-	// detached run loop succeeding its own foreground launcher (round 3).
+	// detached run loop succeeding its own foreground launcher.
 	twinPid, twinStart := liveChild(t)
 	twin := ann(fmt.Sprintf("main-%d-%d-dddddd", twinStart, twinPid), twinPid, twinStart, lineage)
 	twin.InstanceTag = "mission-runner.sh"
@@ -92,7 +92,7 @@ func TestHostSucceedsLiveRunnerHolder(t *testing.T) {
 	}
 }
 
-// The impostor case (round-2 F1): same lineage, non-runner tag, live —
+// The impostor case: same lineage, non-runner tag, live —
 // but NOT a kernel descendant of the holder. The edge must refuse.
 func TestImpostorCannotStealLiveRunnerLease(t *testing.T) {
 	root := t.TempDir()

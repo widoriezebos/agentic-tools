@@ -1,6 +1,6 @@
 package missionrunner
 
-// Taint resolution (host-implementer wall, HIW-O6): the ONLY two ways a
+// Taint resolution, on the host-implementer wall: the ONLY two ways a
 // tainted workspace reopens, both typed, both human-reserved. RESTORE
 // names a recorded safe tree and the runner verifies the workspace equals
 // it byte-for-byte before clearing; ADOPT_DISPUTED_TREE binds the
@@ -49,8 +49,8 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		fmt.Fprintln(os.Stderr, "resolve refused: --by and --reason are required; the resolution records who ruled and why")
 		return 2
 	}
-	// EVERY argument-shape refusal fires before the first state read
-	// (round-4 finding 2, round-5 finding 1): entry verification may
+	// EVERY argument-shape refusal fires before the first state read:
+	// entry verification may
 	// reconcile — write and anchor a heal — and a malformed invocation
 	// must not mutate anything on its way to a usage error. Cross-shape
 	// arguments (waivers on restore, a tree on adoption), a nonpositive
@@ -92,9 +92,9 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	statePath := filepath.Join(e.missionDir(), "state.json")
 	ledgerPath := filepath.Join(e.missionDir(), "ledger.md")
 	// An UNPARSABLE ledger refuses before any verification or heal can
-	// write (rounds 11-12, finding 1): a resolution over bytes the
+	// write: a resolution over bytes the
 	// ledger machinery cannot read would hand back a running mission
-	// nothing can drive, and the anchor now refuses such bytes anyway —
+	// nothing can drive, and the anchor refuses such bytes anyway —
 	// the park deferred its anchor, the taint is recorded, the STOP
 	// holds. The repair is byte-restoration from the anchor ref, then
 	// this verb; the one-step lag-heal bridges the deferred anchor.
@@ -102,18 +102,18 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		fmt.Fprintf(os.Stderr, "resolve refused: the mission ledger is unparsable (%v); restore its bytes from the anchor ref (git show <anchor>:%s), then re-run\n", lerr, missionLedgerRel(e.Mission))
 		return 3
 	}
-	// The starting state must be ANCHOR-VERIFIED (round-2 finding 1): a
+	// The starting state must be ANCHOR-VERIFIED: a
 	// resolution that anchors an unanchored prior write would launder it.
 	// A lagging anchor from a clean crash reconciles first — the same
 	// heal the runner runs at resume. The VERIFIED hash is remembered:
 	// the resolution's compare-and-write pins to it, so a state that
 	// moves between this read and the write refuses instead of becoming
-	// the resolution's silent base (round-3 finding 2).
+	// the resolution's silent base.
 	_, verifiedHash, err := mission.VerifyStateWithAnchor(statePath, e.Root, ledgerPath)
 	if err != nil {
 		if code, rerr := mission.Reconcile(statePath, e.Root, ledgerPath); rerr != nil || code != 0 {
-			// The reconciliation refusal carries the ACTIONABLE repair
-			// (round-16 finding 5) — surface it, not the generic
+			// The reconciliation refusal carries the ACTIONABLE repair —
+			// surface it, not the generic
 			// verification failure it explains.
 			if rerr != nil {
 				fmt.Fprintln(os.Stderr, rerr)
@@ -155,7 +155,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	}
 	if recorded, _ := entry["resolution"].(map[string]any); recorded != nil {
 		// The resolution is durable but a crash may have left its asks
-		// unanswered (round-2 finding 4): complete the tail from the
+		// unanswered: complete the tail from the
 		// RECORDED ruling — never from this call's arguments — or
 		// refuse when there is nothing left to do.
 		if e.openBoundAsks(taintID) == 0 {
@@ -166,11 +166,11 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			fmt.Fprintln(os.Stderr, err)
 			return exitFor(err)
 		}
-		// The recorded waiting list re-derives after the late answers
-		// (round-3 finding 6) — a lawful non-resolution write.
+		// The recorded waiting list re-derives after the late answers —
+		// a lawful non-resolution write.
 		repaired := deepCopyDoc(state)
 		repaired["waitingList"] = openAskIDs(asksDirPath(e.Root, e.Mission))
-		// Pinned to the VERIFIED hash (successor finding 5): if the
+		// Pinned to the VERIFIED hash: if the
 		// runner moved the state meanwhile, this stale proposal refuses
 		// instead of legally clearing a marker it never saw.
 		tailFinal, err := e.writeStateWith(statePath, repaired, verifiedHash, mission.WriteState)
@@ -181,12 +181,12 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		tailIntegrity, _ := tailFinal["integrity"].(map[string]any)
 		tailHash, _ := tailIntegrity["hash"].(string)
 		if e.preAnchorHook != nil {
-			// Test seam (round-14 finding 2): movement lands BEFORE the
+			// Test seam: movement lands BEFORE the
 			// pin is acquired.
 			e.preAnchorHook()
 		}
-		// The tail's ledger pin ORIGINATES at the entry verification
-		// (round-11 finding 2): the tail touches no ledger bytes, so the
+		// The tail's ledger pin ORIGINATES at the entry verification:
+		// the tail touches no ledger bytes, so the
 		// lawful position is exactly the one the anchor tip certified
 		// when this call verified it — never a post-write reread, which
 		// would self-select moved bytes.
@@ -220,8 +220,8 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	}
 	switch variant {
 	case "restore":
-		// The mission ledger sits OUTSIDE the restorable tree projection
-		// (round-2 finding 2): a ledger-domain violation cannot be proved
+		// The mission ledger sits OUTSIDE the restorable tree projection:
+		// a ledger-domain violation cannot be proved
 		// restored by tree equality, and the park itself appended to the
 		// disputed file. Adoption — with its named waivers and its
 		// re-baselined anchored truth — is the one lawful closure.
@@ -229,8 +229,8 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 			fmt.Fprintf(os.Stderr, "resolve refused: taint %d disputes the mission ledger, which sits outside the restorable tree projection; use adopt-disputed-tree\n", taintID)
 			return 3
 		}
-		// The named tree must BE a recorded SAFE tree (round-1 critique
-		// F2: the violated post-tree also sits recorded and anchored in
+		// The named tree must BE a recorded SAFE tree
+		// (the violated post-tree also sits recorded and anchored in
 		// wall.json — accepting it as a restore would be adoption without
 		// its named waivers). Safe = the violated turn's pre-tree, an
 		// accepted expected-tree point, or an earlier resolution's tree.
@@ -256,7 +256,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		resolution["waivedClaims"] = claims
 	}
 
-	// The resolution is a NAMED E-point (round-1 critique F3): it binds
+	// The resolution is a NAMED E-point: it binds
 	// the occurrence it will land at — pinned by the transition validator
 	// exactly like an acceptance payload — and records the expected tree
 	// it replaces, so the wall can measure the resolution's own delta.
@@ -300,7 +300,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		return 3
 	}
 
-	// Multi-taint discipline (F5): the marker closes and the mission
+	// Multi-taint discipline: the marker closes and the mission
 	// unparks only when THIS resolution leaves no unresolved taint.
 	remaining := 0
 	for _, raw := range entries {
@@ -313,7 +313,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		}
 	}
 
-	// The verification-to-write gap closes to one re-check (F6): the
+	// The verification-to-write gap closes to one re-check: the
 	// workspace must STILL be the ruled tree at the last moment before
 	// the write; drift in between refuses rather than becoming the next
 	// turn's silently grandfathered baseline. The residual instant
@@ -377,8 +377,8 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 		}
 	}
 	resolution["posture"] = capture.postureDoc(e.Mission)
-	// The LEDGER is outside that projection and gets its own recheck
-	// (round-3 finding 3): late ledger bytes must never ride the
+	// The LEDGER is outside that projection and gets its own recheck:
+	// late ledger bytes must never ride the
 	// resolution's anchor into the guard's baseline. The one exception
 	// is adopting a ledger-domain taint — there the current bytes ARE
 	// the adopted, waived truth.
@@ -454,7 +454,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	// The waiting list the write records EXCLUDES the asks this
 	// resolution is about to answer — the answers land right after the
 	// write, and a crash in between leaves only late answers, never a
-	// ruling that disagrees with state (round-2 finding 4). The order is
+	// ruling that disagrees with state. The order is
 	// RECOVERABLE: write, anchor, answer-from-state; every later step
 	// derives from the durable record, and the tail-completion path
 	// above re-runs it.
@@ -470,7 +470,7 @@ func (e *Engine) ResolveTaint(taintID int64, variant, tree, resolvedBy, reason s
 	}
 	writtenIntegrity, _ := written["integrity"].(map[string]any)
 	writtenHash, _ := writtenIntegrity["hash"].(string)
-	// The anchor binds EXACTLY the ruled position (successor finding 2):
+	// The anchor binds EXACTLY the ruled position:
 	// the state hash this resolution wrote and the ledger bytes its
 	// recheck examined — anything that moved in between refuses.
 	if err := e.anchorStatePinned(statePath, ledgerPath, resolvedBy, writtenHash, ledgerSHA); err != nil {
@@ -498,7 +498,7 @@ func sha256Hex(s string) string {
 }
 
 // verifiedLedgerPin is the ONE pin origin for anchors of positions
-// whose write touches no ledger bytes (successor rounds 11-12): the
+// whose write touches no ledger bytes: the
 // anchor tip's recorded sha — the position the caller's entry
 // verification proved — never a fresh file read, which would
 // self-select any bytes moved since.
@@ -507,7 +507,7 @@ func (e *Engine) verifiedLedgerPin() (string, error) {
 }
 
 // recordedSafeTree reports whether a tree is RECORDED as safe for this
-// taint, from HASH-CHAINED evidence only (round-2 finding 2: on-disk
+// taint, from HASH-CHAINED evidence only (on-disk
 // wall.json is rewritable by the offender): the open marker's pre-tree,
 // a named expected-tree point, or an earlier resolution's tree. The
 // violated POST-tree is deliberately not safe — keeping it is adoption,
@@ -543,7 +543,7 @@ func (e *Engine) recordedSafeTree(state, entry map[string]any, tree string) bool
 
 // answerWallViolationAsks closes THIS taint's open wall-violation asks
 // from the STATE-RECORDED resolution — asks carry taintId since the park
-// bound them (F5), and matching FAILS CLOSED (round-2 finding 7): an ask
+// bound them, and matching FAILS CLOSED: an ask
 // without a parseable bound taint id is never answered here. Idempotent:
 // answered asks are skipped, so the tail-completion path re-runs cleanly.
 func (e *Engine) answerWallViolationAsks(taintID int64, resolution map[string]any) error {

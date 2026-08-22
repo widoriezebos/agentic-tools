@@ -33,7 +33,7 @@ func TestPatienceUnconfiguredIsSilent(t *testing.T) {
 }
 
 // A breach books when the count strictly exceeds the floor; at the floor it
-// stays silent (r1/P4-011).
+// stays silent.
 func TestPatienceThresholdStrictlyExceeds(t *testing.T) {
 	records := []jobRecord{
 		patienceRecord("root-1", map[string]any{"endedAt": "2026-08-12T10:00:00Z"}),
@@ -51,8 +51,8 @@ func TestPatienceThresholdStrictlyExceeds(t *testing.T) {
 }
 
 // Certification resets the streak: alternating witness/barren never
-// breaches (r9/P4-057), and a certification in the CURRENT conclusion
-// suppresses the breach in the SAME booking (r20/P4-091).
+// breaches, and a certification in the CURRENT conclusion
+// suppresses the breach in the SAME booking.
 func TestPatienceCertificationResetsStreak(t *testing.T) {
 	records := []jobRecord{
 		patienceRecord("root-1", map[string]any{"endedAt": "2026-08-12T10:00:00Z"}),
@@ -80,8 +80,8 @@ func TestPatienceCertificationResetsStreak(t *testing.T) {
 	}
 }
 
-// A certification of a job that never started cannot erase a drought
-// (r11/P4-071), and foreign jobIds are ignored (r2/P4-024).
+// A certification of a job that never started cannot erase a drought,
+// and foreign jobIds are ignored.
 func TestPatienceWitnessMustBeStartedAndOwned(t *testing.T) {
 	records := []jobRecord{
 		patienceRecord("root-1", map[string]any{"endedAt": "2026-08-12T10:00:00Z"}),
@@ -101,7 +101,7 @@ func TestPatienceWitnessMustBeStartedAndOwned(t *testing.T) {
 	}
 }
 
-// Started-work proof (r9/P4-058 through r18/P4-085): husks and
+// Started-work proof: husks and
 // pending-cancelled never count; started cancellations count; the
 // never-started vocabulary is trumped by spend-proving usage; a
 // failed-handshake record with a patched effectiveModel never counts.
@@ -139,7 +139,7 @@ func TestPatienceStartedPredicate(t *testing.T) {
 	}
 }
 
-// Spend proof (r15/P4-081, r16/P4-082, r20/P4-092, r21/P4-097): presence and
+// Spend proof: presence and
 // zero prove nothing, nested positives prove spend, availability plays no
 // part.
 func TestPatienceUsageProvesSpend(t *testing.T) {
@@ -167,9 +167,9 @@ func TestPatienceUsageProvesSpend(t *testing.T) {
 	}
 }
 
-// Participation boundary (r10, r5/P4-039, r6/P4-045, r12/P4-075): identity
+// Participation boundary: identity
 // mismatches and unknown statuses are excluded and counted in the aggregate
-// line; lawful running jobs participate but never count (r19/P4-089).
+// line; lawful running jobs participate but never count.
 func TestPatienceParticipationBoundary(t *testing.T) {
 	records := []jobRecord{
 		patienceRecord("root-1", map[string]any{"endedAt": "2026-08-12T10:00:00Z"}),
@@ -190,7 +190,7 @@ func TestPatienceParticipationBoundary(t *testing.T) {
 	if len(got) != 2 || !want[got[0]] || !want[got[1]] {
 		t.Fatalf("boundary misdrawn: %v", got)
 	}
-	// The running job later terminates uncertified: it counts (r19/P4-089).
+	// The running job later terminates uncertified: it counts.
 	records[5].doc["status"] = "completed"
 	records[5].doc["endedAt"] = "2026-08-12T13:00:00Z"
 	got = patienceEvaluate(solFloors, records, nil, nil)
@@ -199,8 +199,8 @@ func TestPatienceParticipationBoundary(t *testing.T) {
 	}
 }
 
-// Branch tolerance and round numbers (r3/P4-029, r2/P4-023, r19/P4-087,
-// r19/P4-088): sibling follow-ups aggregate into one set; duplicate round
+// Branch tolerance and round numbers: sibling follow-ups aggregate
+// into one set; duplicate round
 // numbers are harmless.
 func TestPatienceBranchesAndRoundNumbers(t *testing.T) {
 	records := []jobRecord{
@@ -214,7 +214,7 @@ func TestPatienceBranchesAndRoundNumbers(t *testing.T) {
 	}
 }
 
-// Orphans (r7/P4-049, r9/P4-059): broken lineage becomes a floor-independent
+// Orphans: broken lineage becomes a floor-independent
 // damage report, emitted despite any positive floor — in configured missions
 // only.
 func TestPatienceOrphanReports(t *testing.T) {
@@ -231,7 +231,7 @@ func TestPatienceOrphanReports(t *testing.T) {
 	}
 }
 
-// Two-chain isolation (r20/P4-094): certifying a job in chain B resets B and
+// Two-chain isolation: certifying a job in chain B resets B and
 // leaves chain A's breach intact.
 func TestPatienceTwoChainIsolation(t *testing.T) {
 	records := []jobRecord{
@@ -248,7 +248,7 @@ func TestPatienceTwoChainIsolation(t *testing.T) {
 	}
 }
 
-// Closed chains leave evaluation at derivation time (r20/P4-093).
+// Closed chains leave evaluation at derivation time.
 func TestPatienceClosedChainExcluded(t *testing.T) {
 	records := []jobRecord{
 		patienceRecord("root-1", map[string]any{"endedAt": "2026-08-12T10:00:00Z", "chainClosed": true}),
@@ -260,7 +260,7 @@ func TestPatienceClosedChainExcluded(t *testing.T) {
 	}
 }
 
-// Selection (r6/P4-041, r8/P4-054, r9/P4-060, r10/P4-065, r12/P4-074):
+// Selection:
 // sentinels are not evidence; the triple comes from one qualifying record;
 // pre-witness history selects nothing; requested-model fallback is
 // streak-scoped.
@@ -319,7 +319,7 @@ func TestPatienceFloorSelection(t *testing.T) {
 	}
 }
 
-// Ranking and bound (r5/P4-040, r6/P4-046, r7/P4-049, r8/P4-051): breach
+// Ranking and bound: breach
 // distance beats raw count, orphans rank after breaches, and the combined
 // set bounds at 19 detail + 1 overflow.
 func TestPatienceRankingAndBound(t *testing.T) {
@@ -376,7 +376,7 @@ func TestPatienceRankingAndBound(t *testing.T) {
 	}
 }
 
-// Ordering totality over damaged timestamps (r4/P4-034, r5/P4-038): missing
+// Ordering totality over damaged timestamps: missing
 // and unparseable stamps share the oldest bucket; jobId breaks the tie
 // deterministically.
 func TestPatienceOrderingDeterministic(t *testing.T) {

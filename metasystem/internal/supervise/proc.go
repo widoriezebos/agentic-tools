@@ -18,7 +18,7 @@ import (
 // survives the owner's shell exactly as the shell system's
 // launch_detached does), observed by heartbeat freshness plus kernel
 // liveness, and stopped TERM-then-KILL by process group. Teardown
-// works from HELD IDENTITY and system calls only (SLC-R7-005: it must
+// works from HELD IDENTITY and system calls only (it must
 // run with the checkout gone), so nothing here reads a state file.
 type ProcComponents struct {
 	// SupervisionDir is where heartbeat files live.
@@ -123,7 +123,7 @@ type heartbeatRecord struct {
 
 // Observe reports one component's three-way health: identity alive
 // AND heartbeat fresh is Healthy; a definitively dead identity is
-// Failing; anything unreadable is Indeterminable (SLC-R3-004).
+// Failing; anything unreadable is Indeterminable.
 func (p *ProcComponents) Observe(held Held) Observation {
 	// Reap first: a component that exited but is still our unreaped
 	// child is a ZOMBIE the kernel still lists, which would read as
@@ -174,7 +174,7 @@ func (p *ProcComponents) GroupCount(held []Held) (int, error) {
 // Stop signals one held identity's group TERM-then-KILL within the
 // stop ceiling and reports whether it is PROVEN gone (three-way:
 // false on definitive survival OR unknown — teardownComplete stays
-// honest, SLC-R4-012).
+// honest).
 func (p *ProcComponents) Stop(held Held) (proven bool) {
 	// Reap first: a component already killed but not yet reaped is a
 	// zombie the prober still sees; reaping makes its death provable.
@@ -214,7 +214,7 @@ func (p *ProcComponents) signalGroup(pid int64, sig syscall.Signal) {
 }
 
 // Group enumeration goes through seams so the ceiling's error paths are
-// testable without a process-table fixture (dispatch-supervise-6).
+// testable without a process-table fixture.
 var (
 	groupAllPids = identity.AllPids
 	groupGetpgid = func(pid int64) (int64, error) {
@@ -224,9 +224,9 @@ var (
 )
 
 // processGroupMembers counts live processes in the group led by pgid — the
-// REAL enumeration the ceiling verdict needs (review dispatch-supervise-6:
-// the old leader-only floor could never exceed len(held), so the SLC-R4-010
-// duration property was vacuous outside test injection). Only ESRCH counts
+// REAL enumeration the ceiling verdict needs: counting only the group
+// leaders could never exceed the number of held components, which would
+// make the ceiling's duration bound vacuous against a forking set. Only ESRCH counts
 // as an absent member; any other failure makes the count indeterminable —
 // a process-table denial must not undercount while the breaker resets.
 func processGroupMembers(pgid int64) (int, error) {
@@ -251,7 +251,7 @@ func processGroupMembers(pgid int64) (int, error) {
 }
 
 // GroupMemberPids lists the live members of the group led by pgid, minus an
-// excluded pid — the F4 kill domain "my own group except me" (D32). The
+// excluded pid — the kill domain "my own group except me". The
 // same indeterminability rule as the ceiling count: only ESRCH is an absent
 // member; any other probe failure refuses, because a sweep that silently
 // undercounts would prove a death that was not proven.

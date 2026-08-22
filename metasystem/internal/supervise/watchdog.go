@@ -12,8 +12,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// The end-of-turn supervision health judgment (review cli-2, relocated from
-// cmd): what a session should know before it ends — a stale or unsuccessful
+// The end-of-turn supervision health judgment:
+// what a session should know before it ends — a stale or unsuccessful
 // census, untracked agent processes, a fingerprint older than the code, and
 // any recorded identity that is no longer running — each with re-arm advice.
 
@@ -21,9 +21,9 @@ import (
 // a human at the end of a session: at most one supervision line (every
 // symptom shares the one remedy), at most one untracked line (grouped pids,
 // no argv walls — `proc census` has the detail), and NO lines when
-// everything is healthy. The page of repeated WATCHDOG lines this replaced
-// was ignored by its audience, which is the one failure a report cannot
-// survive (human, 2026-08-13). now is injected so staleness is testable.
+// everything is healthy. A page of repeated WATCHDOG lines gets
+// ignored by its audience, which is the one failure a report cannot
+// survive. now is injected so staleness is testable.
 func WatchdogReport(repo string, now time.Time) []string {
 	supervision := filepath.Join(repo, "artifacts", "agents", "supervision")
 	var problems []string
@@ -49,7 +49,7 @@ func WatchdogReport(repo string, now time.Time) []string {
 			problems = append(problems, "last census "+humanAge(age)+" old")
 		}
 		if inventory, ok := last["inventory"].([]any); ok {
-			// Acknowledged processes (KI-23) are silenced only on a full
+			// Acknowledged processes are silenced only on a full
 			// identity proof: the recorded (pid, second) pair AND a fresh
 			// probe matching the kernel-resolution birth token. A load
 			// failure yields an empty set and an unprovable probe never
@@ -174,7 +174,7 @@ func stateComponents(state map[string]any) (map[string]any, bool) {
 }
 
 // watchdogProbe is the report's fixture authority: root-checked, and a
-// refused construction refuses fixtures (agnosticism B1).
+// refused construction refuses fixtures.
 func watchdogProbe(repo string) identity.FixtureProbe {
 	authorization, err := fixtureauth.New(repo)
 	if err != nil {

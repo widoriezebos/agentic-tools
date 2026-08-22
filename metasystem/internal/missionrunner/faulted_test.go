@@ -101,7 +101,7 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 	}
 	git("-c", "init.defaultBranch=main", "init", "-q")
 	git("config", "commit.gpgsign", "false")
-	// The deployment's projection boundary (HIW-O3): runtime state under
+	// The deployment's projection boundary: runtime state under
 	// artifacts/ stays outside the wall's shippable snapshot.
 	write(".gitignore", "artifacts/\nbin/\nmetasystem.conf\n", 0o644)
 	write("scripts/gate.sh", "#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n", 0o755)

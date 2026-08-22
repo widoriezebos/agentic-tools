@@ -158,10 +158,10 @@ func TestTailorConfInsertsMissingDurableKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := readFile(t, conf)
-	// The B1 materialization (finding 13): every selected
+	// Every selected
 	// non-synthesized runtime gets its default-model row, empty for
-	// the operator to fill — the r6 expectation of NEITHER key was the
-	// dropped obligation.
+	// the operator to fill — a tailoring that emits NEITHER key
+	// silently drops that obligation.
 	want := "metasystem.runtimes=devin,codex\nevidence.root=artifacts\nrole.default.runtime=codex\nrole.default.model.devin=\nrole.default.model.codex=\n"
 	if got != want {
 		t.Fatalf("tailored conf mismatch:\n--- got ---\n%s--- want ---\n%s", got, want)

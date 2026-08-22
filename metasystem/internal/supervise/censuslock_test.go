@@ -167,7 +167,7 @@ func (p unknownProber) Probe(pid int64) (identity.Exact, identity.Liveness, erro
 	return p.base.Probe(pid)
 }
 
-// dispatch-supervise-3 (the review): Unknown liveness never authorizes a
+// Unknown liveness never authorizes a
 // census-lock takeover — indeterminacy keeps the lock exactly as life does.
 func TestCensusClaimRefusesUnknownOwner(t *testing.T) {
 	dir := t.TempDir()

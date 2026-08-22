@@ -111,7 +111,7 @@ func TestLiveHolderKeepsLeaseAgainstDifferentProcess(t *testing.T) {
 	}
 }
 
-// TestKI33SameProcessReannounce is the fix: a live process that re-announces
+// TestKI33SameProcessReannounce: a live process that re-announces
 // under a fresh mainId (a --shutdown then re-arm) must reclaim its own
 // checkout rather than be stranded OWNED-ELSEWHERE against its former identity.
 func TestKI33SameProcessReannounce(t *testing.T) {
@@ -119,7 +119,7 @@ func TestKI33SameProcessReannounce(t *testing.T) {
 	pid, start := liveChild(t)
 	mustClaim(t, root, ann("main-1-1-aaaaaa", pid, start, ""))
 
-	// Same pid+start, new mainId — the shape KI-33 used to strand.
+	// Same pid+start, new mainId — the shape that would otherwise strand.
 	mustClaim(t, root, ann("main-1-1-cccccc", pid, start, ""))
 
 	lease, _ := loadLease(root, true)

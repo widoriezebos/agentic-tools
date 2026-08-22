@@ -21,7 +21,7 @@ type RegistryLedger struct {
 	// Append writes one framed record under the registry lock. The
 	// binary supplies the lock-held append; tests supply a recorder.
 	// It returns an error only when the record could not be durably
-	// written — write-ahead gating depends on that (SLC-R6-006).
+	// written — write-ahead gating depends on that.
 	Append func(record map[string]any) error
 	// CheckoutPath is the canonical path stamped on every record.
 	CheckoutPath string
@@ -51,7 +51,7 @@ func (l *RegistryLedger) base(event string) map[string]any {
 	}
 }
 
-// AppendRelaunched is the GATING write-ahead (SLC-R6-006): a failure
+// AppendRelaunched is the GATING write-ahead: a failure
 // here means launch_set launches nothing this cycle.
 func (l *RegistryLedger) AppendRelaunched(generation int64, watcherTag, reaperTag string, retiredThrough int64) error {
 	record := l.base(registry.EventRelaunched)
@@ -66,7 +66,7 @@ func (l *RegistryLedger) AppendRelaunched(generation int64, watcherTag, reaperTa
 }
 
 // AppendLaunched records one component's identity; a failure is
-// retried by the owner at every observation (SLC-R6-006).
+// retried by the owner at every observation.
 func (l *RegistryLedger) AppendLaunched(held Held) error {
 	record := l.base(registry.EventLaunched)
 	record["generation"] = held.Generation

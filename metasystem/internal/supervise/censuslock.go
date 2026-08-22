@@ -14,11 +14,11 @@ import (
 
 // The census-writer lock keeps at most one component publishing the census
 // verdict for a supervision directory. It is a THIN BINDING over
-// internal/lock, the one home of the rename-born directory-lock protocol
-// (review dispatch-supervise-4): this file contributes the owner-file
+// internal/lock, the one home of the rename-born directory-lock
+// protocol: this file contributes the owner-file
 // schema, the liveness mapping, and the caller-facing refusal texts.
 // Takeover requires proven death; UNKNOWN NEVER AUTHORIZES (the three-way
-// rule; review dispatch-supervise-3) — a prior owner whose liveness cannot
+// rule) — a prior owner whose liveness cannot
 // be proven keeps its lock exactly as a live one does.
 
 // CensusWriterLock is one component's claim on the sole census-writer role

@@ -42,7 +42,7 @@ func certBed(t *testing.T) (root string, state map[string]any, jobRecord map[str
 // certAuthorization mints a SELF-CONSISTENT record: the content (after
 // any mutation) is canonically digested and written under that digest —
 // consumption authenticates the bytes, so fixtures fabricate content, not
-// digests (round-2 finding 1).
+// digests.
 func certAuthorization(t *testing.T, root string, mutate func(map[string]any)) string {
 	t.Helper()
 	jobRecord, err := readJSONDoc(filepath.Join(jobsDirPath(root), "job-cert.json"))
@@ -215,7 +215,7 @@ func TestCertifiedClaimNeedsARealJob(t *testing.T) {
 	}
 }
 
-// The conclusion plumbing ships ONLY adjudicated certifications (HIW-O5):
+// The conclusion plumbing ships ONLY adjudicated certifications:
 // a forged claim in the raw return must never reach the turn log, even
 // when the verdict file beside it carries the verified list.
 func TestConcludeFilesShipsAdjudicatedCertifiedOnly(t *testing.T) {

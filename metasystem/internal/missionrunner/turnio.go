@@ -53,7 +53,7 @@ func AdjudicateFiles(root, mission, statePath, turnPath, resultPath, turnDir, no
 	}
 	validation, err := ValidateReturn(turn, result, turnDir, returnCompletenessCheck(root))
 	if err != nil {
-		// The delivery walk's ONE resume (D64 phase 2): a devin host
+		// The delivery walk's ONE resume: a devin host
 		// candidate the session rule rejected post-envelope is skipped by
 		// digest and the walk continues — a wrong-session stdout can delay
 		// but never destroy a valid lower-channel result. Any failure of
@@ -121,7 +121,7 @@ func ConcludeFiles(root, mission, statePath, turnPath, verdictPath, returnPath, 
 		GatePassed:  gatePassed,
 		Accepted:    verdict["accepted"],
 		Rejected:    verdict["rejected"],
-		// Adjudicated facts only (HIW-O5): the raw return's certified
+		// Adjudicated facts only: the raw return's certified
 		// claims never reach the turn log; the verdict's verified and
 		// normalized list is what the mission remembers.
 		Certified:      verdict["certified"],
@@ -132,8 +132,8 @@ func ConcludeFiles(root, mission, statePath, turnPath, verdictPath, returnPath, 
 
 // resumeDelivery re-collects a host turn's delivery past the candidate
 // the runner just rejected — through the runtime's REGISTERED
-// recollection capability, never a runtime name (agnosticism audit
-// class 5) — then validates the new candidate through the same
+// recollection capability, never a runtime name, so the runner core
+// stays runtime-agnostic — then validates the new candidate through the same
 // return-level path. The digest computation, validation, and
 // ReturnValidation construction are runner-owned.
 func resumeDelivery(root string, turn Turn, turnPath, turnDir string, recollect host.RecollectFn) (*ReturnValidation, error) {
@@ -153,8 +153,8 @@ func resumeDelivery(root string, turn Turn, turnPath, turnDir string, recollect 
 	if err != nil || !result.Delivered {
 		return nil, fmt.Errorf("no further delivery candidate qualified")
 	}
-	// The recollected reply must live INSIDE the turn directory (code
-	// critique finding 4): the containment boundary is runner-owned and
+	// The recollected reply must live INSIDE the turn directory:
+	// the containment boundary is runner-owned and
 	// a future recollector must not be able to point validation at an
 	// arbitrary schema-valid file.
 	replyPath, err := containedPath(turnDir, result.ReplyPath, "recollected reply")

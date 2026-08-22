@@ -9,10 +9,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
-// The watcher-ceiling derivation (review script-orchestration-04, relocated
-// from arm-supervision.sh): the supervision contract's core number. Dispatch
-// refuses caps at or above it and re-arm refuses ceilings below reserved
-// caps — both refusals were already Go; the input they check now is too.
+// The watcher-ceiling derivation: the supervision contract's core number.
+// Dispatch refuses caps at or above it and re-arm refuses ceilings below
+// reserved caps — both refusals check the number this one derivation
+// produces.
 
 var ceilingValuePattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 

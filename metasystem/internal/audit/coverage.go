@@ -2,11 +2,11 @@
 // shipped instruction-asset audit (metasystem.go, behind `audit
 // metasystem`) is a product feature adopted repositories run: required
 // files, outside references, placeholders, word budgets. The coverage
-// ratchet in this file is the kill-shell program's mechanical fence
-// (plans/kill-shell.md): a decision the gate consults between steps,
-// never gate sequencing — the bootstrap owns that, because Go never
-// launches the toolchain and no trustworthy binary exists before the
-// first build.
+// ratchet in this file is the go gate's mechanical fence: a decision
+// the gate consults between steps,
+// never gate sequencing — the shell bootstrap owns that, because Go
+// never launches the toolchain and no trustworthy binary exists before
+// the first build.
 package audit
 
 import (
@@ -76,8 +76,8 @@ func ParseCoverage(output, modulePrefix string) map[string]float64 {
 // measured — losing sight of a package never counts as passing it; and
 // every package in the independent inventory must be measured or exempt —
 // `go test` prints no coverage value for a package with no test files, so
-// without the inventory join a brand-new testless package is invisible
-// (go-production-grade B8). A nil inventory skips only that last join, for
+// without the inventory join a brand-new testless package is invisible.
+// A nil inventory skips only that last join, for
 // callers that genuinely have no package list.
 func CheckCoverage(baseline *CoverageBaseline, measured map[string]float64, inventory []string) []string {
 	var violations []string

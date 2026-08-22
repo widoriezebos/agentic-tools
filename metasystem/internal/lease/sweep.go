@@ -61,7 +61,7 @@ func (c *claimer) cleanupStaleJobs(epoch int64) error {
 
 // cleanupStaleRuns hands the run half of the takeover sweep to the run
 // package, which owns the lock, the wrapped-only proof rule, the bounded
-// drain, and the forced conclusion (critique finding 1); this side
+// drain, and the forced conclusion; this side
 // supplies the group-proof and kill seams the job sweep already tests.
 func (c *claimer) cleanupStaleRuns(epoch int64) error {
 	store := &run.Store{Root: c.root}
@@ -87,7 +87,7 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 	data, err := os.ReadFile(path)
 	if err != nil {
 		// Only a record that VANISHED between glob and read is "nothing to
-		// sweep" (review lease-census-2). Any other failure is a job this
+		// sweep". Any other failure is a job this
 		// sweep cannot prove cleared — and the function's own contract
 		// forbids certifying a generation it did not actually clear.
 		if os.IsNotExist(err) {
@@ -108,8 +108,7 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 	// absent epoch means the job belongs to NO lease generation, so an
 	// epoch sweep has no claim over it and skipping is truthful. Only a
 	// present, wrong-typed value is schema corruption the sweep must
-	// refuse rather than certify past (the supervision canary caught the
-	// stricter first cut of this refusing legitimate null-epoch records).
+	// refuse rather than certify past.
 	rawEpoch, present := job["claimEpoch"]
 	if !present || rawEpoch == nil {
 		// One exception owns the null: a steward continuation was
@@ -186,7 +185,7 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 	if !ok || pgid <= 1 || !tagOK || tag == "" {
 		return nil
 	}
-	// SIGNAL authorization is KERNEL-ONLY (B1 critique finding 1): a
+	// SIGNAL authorization is KERNEL-ONLY: a
 	// fixture row must never be the evidence that TERMs a real process
 	// group. The claimer's probe serves classification reads, not this.
 	owned, provable := groupOwnsTag(pgid, tag, nil)
@@ -212,7 +211,7 @@ func (c *claimer) stopStaleGroup(job map[string]any, stem string) error {
 // ownership.
 // The sweep's process-table reads go through seams so the refusal rows —
 // the branches standing between a takeover sweep and SIGTERM-ing a
-// recycled group — are testable (review lease-census-10).
+// recycled group — are testable.
 var (
 	sweepAllPids = identity.AllPids
 	sweepGetpgid = func(pid int64) (int64, error) {
@@ -233,8 +232,8 @@ func groupOwnsTag(pgid int64, tag string, probe identity.FixtureProbe) (owned, p
 	for _, pid := range pids {
 		pg, err := sweepGetpgid(pid)
 		if err != nil {
-			// Only ESRCH proves the member is gone (review
-			// lease-census-2); any other inspection failure means this
+			// Only ESRCH proves the member is gone;
+			// any other inspection failure means this
 			// group's ownership cannot be PROVEN either way, and an
 			// unproven group must never be ruled "provably not owned".
 			if err == unix.ESRCH {
@@ -261,7 +260,7 @@ func groupOwnsTag(pgid int64, tag string, probe identity.FixtureProbe) (owned, p
 // acquireRecordLock takes a blocking exclusive lock on a job's record lock,
 // serialising the sweep's rewrite against dispatch's own record writes.
 // acquireRecordLock is BOUNDED like the lease lock one layer up, and for
-// the documented reason there (review lease-census-9): the sweep holds the
+// the same reason: the sweep holds the
 // lease lock while taking record locks, so a wedged-alive record-lock
 // holder — the stale-job class this sweep exists to handle — would turn
 // every claim, renew, and succession into an unexplained hang. Bounded

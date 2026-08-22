@@ -9,14 +9,13 @@ import (
 	"testing"
 )
 
-// The G-5 instruction-owner coverage lint, ported from the python block in
-// conformance-fixtures.sh (script-fixtures-001/D46): every document that
+// The G-5 instruction-owner coverage lint: every document that
 // AGENTS.md, the role preambles' quote-source markers, or the host-turn
 // template names as a rule owner must appear in
 // instruction-bearing-paths.txt — a missed owner silently un-protects a
-// canonical instruction file. Post-D17 adopted repositories run this under
-// their own full-suite gate, so the enforcement scope the verifier feared
-// losing is preserved through source delivery.
+// canonical instruction file. Adopted repositories receive the suite as
+// source and run this under their own full-suite gate, so the lint keeps
+// enforcing after delivery.
 func TestInstructionOwnersAreInstructionBearing(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// The round-3 regression: the signature universe is every INSTALLED
+// The signature universe is every INSTALLED
 // adapter, independent of metasystem.runtimes — a root configured for
 // claude only must still recognize the fake adapter's argv as an
 // agent, because an unconfigured runtime's binary spawning a verb is

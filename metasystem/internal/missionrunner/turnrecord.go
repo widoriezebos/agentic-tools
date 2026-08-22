@@ -4,11 +4,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
-// TurnRecord is the typed read lens over a turn record's wire document
-// (plans/typed-documents-design.md, the 5.2 projection). Same contract as
+// TurnRecord is the typed read lens over a turn record's wire document.
+// Same contract as
 // dispatch's JobRecord: it interprets the fields decisions dereference,
 // the document stays the permissive map, and an ill-typed field reads as
-// its zero value — what the inline casts gave their callers, in one place.
+// its zero value — one tolerance for every caller, in one place.
 type TurnRecord struct {
 	doc *wiredoc.Doc
 }

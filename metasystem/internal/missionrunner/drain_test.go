@@ -17,8 +17,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
-// The proof of the finite drain and the runner's mission-scoped reap
-// (plans/patience-mission-reap-drain.md): authority stops at the reservation
+// The proof of the finite drain and the runner's mission-scoped
+// reap: authority stops at the reservation
 // set, verdicts need the standing reaper's proof bar, every drain
 // terminates, and the drain-stalled park round-trips through the resume:
 // answer into the heal's distinguishable ledger line.
