@@ -237,3 +237,47 @@ not paths.
 - **Design loop** — design → critique by an independent model to zero
   material findings (or a recorded close rule) → implement → code-critique
   → gates. `docs/collaboration.md` owns the details.
+
+## The backlog: what the fleet works on
+
+The working rules live in `docs/backlog-mechanism.md`; the machinery is
+the engine's `metasystem goal` family (`internal/goal`).
+
+- **Goal** — one item of intent that survives every turn, a file under
+  `plans/goals/`. A goal is opened, claimed, worked, and concluded
+  through the goal verbs, never by hand-editing state (hand edits go
+  through `goal reconcile`).
+- **Backlog** — all live goals plus the root record
+  (`plans/goals/backlog.md`, the ledger's minted identity). On a
+  converted checkout every goal verb publishes directly to the shared
+  remote, so all machines read the same truth; a checkout catches up
+  with an ordinary pull.
+- **Claim** — one machine's exclusive hold on one goal (one claim per
+  machine at a time). An **arc** is a set of goals that claim and move
+  as a whole.
+- **Appetite** — the worth-sizing agreed between Wido and the
+  coordinator before a goal is ready: a duration token (`4h`, `1d`)
+  opening the goal's next step. It scopes the design, is re-checked as
+  effort accumulates, and a blown appetite stops the work and raises
+  the human. Breaches print as banners on every read and reach the
+  operator through the steward.
+- **Slicing law** — large work is never embarked on in one piece; it is
+  split into iterative, independently deployable slices. Composes with
+  appetite: appetite sizes what a feature is worth, slicing governs how
+  anything big gets delivered.
+- **Draft** — a backlog item still being shaped, living in
+  `plans/goals-drafts/`, invisible to the fleet until the coordinator
+  promotes it through the intake checklist.
+- **Steward** — the always-running idle watchdog (`metasystem steward`):
+  open delegated work is never silently idle, and what the steward
+  tells an agent is covenant, not advice.
+- **Review brief** — the contract a critique chain starts from
+  (`scripts/agents/templates/review-brief.md`): round budget, threat
+  model, appetite, and scope, fixed before round one.
+- **Flake registry** — the shared table of known-flaky suite legs and
+  the rerun protocol (`docs/flake-registry.md`): a listed leg earns one
+  solo rerun, an unlisted failure is diagnosed first, three sightings
+  in thirty days force a fix goal.
+- **Journey** — the plain-English story of the program
+  (`docs/journey.md`). Concluding a goal appends its paragraph in the
+  same landing.

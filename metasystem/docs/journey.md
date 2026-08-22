@@ -132,3 +132,18 @@ done.
 ---
 
 *Chapters below are appended as goals conclude.*
+
+## The system asked itself if it was easy (August 22, 2026)
+
+The first goal concluded under the covenant was, fittingly, the one
+that reviewed the system from the seat of the agents who use it.
+Four slices — the goal verbs, the dispatch flow, the scripts and
+skills, the docs — each landing its fixes inside its own appetite.
+The verbs' bones were right; the findings clustered where refusals
+wore success or silence, and where the newest tools had slipped the
+discipline the old ones kept. The docs turned out honest but hard to
+find from the outside. And the review convicted its own author four
+times of the same piped-return-code mistake it was documenting,
+which is the strongest argument it produced: ease of use is not a
+courtesy, it is what keeps the operators of the system from fooling
+themselves.

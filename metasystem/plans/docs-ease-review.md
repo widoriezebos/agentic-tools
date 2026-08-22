@@ -1,10 +1,10 @@
 # Docs from the agent seat
 
-agent-ease-assessment, slice four (Appetite: 3h). PARTIALLY PROBED —
-released mid-slice when Wido prioritized the narrator; findings so
-far banked here so the next claimant does not redo the sweep.
+agent-ease-assessment, slice four (Appetite: 3h). COMPLETE — the
+slice was paused once for the narrator's first edition and resumed
+the same day; all three findings fixed in-slice.
 
-## Banked findings (probed, not yet fixed)
+## Findings, all fixed
 
 1. docs/project-adaptation.md still tells an adopting project to
    declare goals "in `plans/goals.md`" — the legacy single-file
@@ -20,11 +20,25 @@ far banked here so the next claimant does not redo the sweep.
    concepts.md, not the glossary. The working rules of the backlog
    are invisible to an arriving agent unless they happen to ls
    docs/. Same for docs/flake-registry.md (linked only by itself).
-   One pointer line each in AGENTS.md and the glossary. Appetite:
-   minutes.
+   FIXED within the 1400-word always-loaded budget (which refused
+   the first attempt): AGENTS.md names the mechanism doc on its
+   glossary line, and the glossary's new backlog section links the
+   flake registry, one hop away.
 
-## Not yet probed
+## Judged fine
 
-- Staleness read of concepts / collaboration / working-modes /
-  orchestration bodies against the week (spot greps only so far).
+- The core doc bodies (concepts, collaboration, working-modes,
+  working-with-agents, orchestration, architecture, patience,
+  project-rules, reconciliation) carry no stale ledger references.
 - docs/reviews/* are archival records — stale by design, no action.
+
+## Slice summary
+
+The docs' defect family was DISCOVERABILITY, not staleness: the
+bodies were honest, but the newest rules (the backlog mechanism,
+the flake protocol, the whole goal vocabulary) were reachable only
+by listing the directory. All three fixes are pointers or
+definitions, not rewrites. With this slice the agent-ease goal is
+complete: four surfaces reviewed (goal verbs, dispatch flow,
+scripts+skills, docs), every slice landing its fixes inside its
+own appetite.
