@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: A hard look at the metasystem's complexity from the agent seat: it must be intuitive to use; accepted simplifications get executed
 - Origin: main
-- Next step: Appetite: 3h for SLICE FOUR (docs from the agent seat) — the last slice; slices one-three done (goal verbs, dispatch flow, scripts+skills: plans/*-ease-review.md).
+- Next step: Appetite: 3h for SLICE FOUR (docs) — PARTIALLY PROBED, three findings banked in plans/docs-ease-review.md (stale goals.md ref; glossary missing the whole goal/backlog vocabulary; backlog-mechanism.md linked by nothing). Next claimant: fix the three, finish the staleness read, conclude.
 - OpenedAt: 2026-08-20T00:19:00Z
-- Revision: 13
+- Revision: 14
 - Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-22T18:42:49Z
 
 History:
@@ -22,4 +22,5 @@ History:
 - 2026-08-22T18:39:20Z 9H1GP2HEZBKNZCYZ4PGK3TN71S-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=agent-ease-assessment
 - 2026-08-22T18:39:25Z DPKF2JK3RZ24F8PF3PBVN3SMDB-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=agent-ease-assessment
 - 2026-08-22T18:42:49Z 56PS5GXKD7D8HN2SWZPDPY3B58-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=agent-ease-assessment
-Integrity: sha256=e94221e898fac883520eb1837b4f480dbb5e9110e72d2d2514d7525c37ce9027
+- 2026-08-22T18:45:23Z YCBHGCD9GNG60E3HWF6TVAWX6H-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=agent-ease-assessment
+Integrity: sha256=b324d6710b4797280c3da297e75a5ffc76542e90d56eae878f7c29afe44d5a74
