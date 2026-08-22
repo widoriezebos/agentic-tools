@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: A hard look at the metasystem's complexity from the agent seat: it must be intuitive to use; accepted simplifications get executed
 - Origin: main
-- Next step: Appetite: 4h for SLICE TWO (Wido ruled: slice it) — dispatch and mission flow from the agent seat, findings as retro-style input; later slices: scripts+skills, docs. Part one (goal verbs) done: plans/goal-verb-ease-review.md.
+- Next step: Appetite: 4h for SLICE THREE — scripts and skills from the agent seat. Slices one (goal verbs) and two (dispatch/mission flow: plans/dispatch-flow-ease-review.md) done; slice four (docs) remains.
 - OpenedAt: 2026-08-20T00:19:00Z
-- Revision: 7
+- Revision: 8
 - Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-22T16:03:39Z
 
 History:
@@ -16,4 +16,5 @@ History:
 - 2026-08-22T11:38:32Z DG2DRA1ZDKWGGNY80BNFA39R1W-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=agent-ease-assessment
 - 2026-08-22T16:02:40Z 88NRFHQV5BV8XZKAJVHETRRCWY-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=agent-ease-assessment
 - 2026-08-22T16:03:39Z VSGCZR6D7D1SF66SRWYY81WSVP-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=agent-ease-assessment
-Integrity: sha256=fae19984ad558dd1831f12823e0ec65253767c9e9621ffc6caa4ada67eb31ae4
+- 2026-08-22T16:58:53Z MR176JZV7G6JW4CSHQCRVKA219-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=agent-ease-assessment
+Integrity: sha256=37615b5b1bca486307f8ac9b241954639bcbb1e7fe73f25d4d518f4060fb584b
