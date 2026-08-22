@@ -196,6 +196,7 @@ func auditQualifiedNames(root string) ([]string, error) {
 		filepath.Join("scripts", "agents", "templates"),
 		filepath.Join("scripts", "agents", "roles"),
 		"skills",
+		"optional-skills",
 	} {
 		dir := filepath.Join(root, rel)
 		walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {

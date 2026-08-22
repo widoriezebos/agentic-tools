@@ -34,7 +34,7 @@ Resolve uncertain lines before setting breakpoints. Start with at most five high
 ## Async-Safe Loop
 
 1. Trigger asynchronously. Never use synchronous JShell for code that can hit a breakpoint; it can deadlock the MCP channel.
-2. Wait for `debugger.breakpoint_hit` with `since_sequence=<latest_sequence>` and carry the returned cursor forward. Do not routinely clear the event queue.
+2. Wait for `debugger.breakpoint_hit` with `since_sequence=<latest_sequence>` and carry the returned cursor forward. Do not routinely clear the debugger event queue.
 3. Capture filtered stack trace, then frame-zero locals, then only targeted child values or expressions.
 4. Record a decision snapshot: request/thread identity, class/method/line, branch inputs, budgets/counters, selected outcome, and hypothesis result.
 5. Step only when one targeted transition remains unclear.

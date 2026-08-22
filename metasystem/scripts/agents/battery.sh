@@ -12,8 +12,13 @@ mkdir -p "$out_dir"
 log="$out_dir/$stamp.log"
 codes="$out_dir/$stamp.codes"
 
-"$root/scripts/validate-metasystem.sh" >"$log" 2>&1
-echo "validate-metasystem=$?" >"$codes"
+# The verdict is recorded WHATEVER the suite returns: set -e dying
+# on a red validate would leave no codes file — the exact silent
+# outcome this entrypoint exists to prevent (its own first run did
+# exactly that).
+rc=0
+"$root/scripts/validate-metasystem.sh" >"$log" 2>&1 || rc=$?
+echo "validate-metasystem=$rc" >"$codes"
 
 if grep -qE '=[1-9][0-9]*' "$codes"; then
   echo "BATTERY-RED: $(cat "$codes")"
