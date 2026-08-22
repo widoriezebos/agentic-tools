@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -91,6 +92,15 @@ func ensureGuardEnrolled(root string) error {
 		return fmt.Errorf("the repository's own directories cannot be resolved for enrollment")
 	}
 	within := func(dir, parent string) bool {
+		// Filesystem identity, not lexical shape: a lexically inner
+		// path whose component is a symlink OUT of the repository
+		// must not pass containment.
+		if rd, rdErr := filepath.EvalSymlinks(dir); rdErr == nil {
+			dir = rd
+		}
+		if rp, rpErr := filepath.EvalSymlinks(parent); rpErr == nil {
+			parent = rp
+		}
 		rel, relErr := filepath.Rel(parent, dir)
 		return relErr == nil && (rel == "." || filepath.IsLocal(rel))
 	}
@@ -123,9 +133,20 @@ func ensureGuardEnrolled(root string) error {
 			probeRun := exec.CommandContext(ctx, hookPath)
 			probeRun.Dir = absRoot
 			probeRun.Env = append(environWithoutGitSteeringCLI(), "METASYSTEM_GUARD_PROBE="+nonce)
-			probeOutBytes, _ := probeRun.CombinedOutput()
+			probeRun.WaitDelay = 5 * time.Second
+			probeOutBytes, probeRunErr := probeRun.CombinedOutput()
 			cancel()
-			enrolled = strings.Contains(string(probeOutBytes), "guard-probe-ack "+nonce)
+			// The ack alone is not enrollment: the guard exits 42
+			// under probe, and the hook chain must PROPAGATE that
+			// status — a wrapper that swallows it ("$guard" || true)
+			// would equally swallow the guard's real rejections. A
+			// timeout or any other exit refuses. (A hook that FORGES
+			// the ack and the status is its owner sabotaging their
+			// own fence — the fence guards accidents, not authors.)
+			var exitErr *exec.ExitError
+			ackSeen := strings.Contains(string(probeOutBytes), "guard-probe-ack "+nonce)
+			statusPropagated := errors.As(probeRunErr, &exitErr) && exitErr.ExitCode() == 42 && ctx.Err() == nil
+			enrolled = ackSeen && statusPropagated
 		}
 	}
 	// An enrolled hook of OUR OWN shape still carrying the fail-open
@@ -225,7 +246,8 @@ func isOurComposer(hook string) bool {
 	// is a human's extension, and rewriting it would delete their
 	// check.
 	guardLine := lines[1]
-	if !strings.HasPrefix(guardLine, "guard=") || strings.ContainsAny(guardLine, ";&|`") {
+	if !strings.HasPrefix(guardLine, "guard=") || strings.ContainsAny(guardLine, ";&|`") ||
+		strings.Contains(guardLine, "<(") || strings.Contains(guardLine, ">(") {
 		return false
 	}
 	if !strings.HasSuffix(guardLine, `pre-commit-guard.sh"`) && !strings.HasSuffix(guardLine, "pre-commit-guard.sh'") {

@@ -50,25 +50,44 @@ die() { echo "$2" >&2; exit "$1"; }
 # Every probe of the TARGET's repository runs with git's steering env
 # scrubbed: an inherited GIT_DIR or config override must not make the
 # probe answer for some other repository.
-git_target() {
+scrubbed_env() {
   env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE \
     -u GIT_CEILING_DIRECTORIES -u GIT_OBJECT_DIRECTORY \
     -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_CONFIG \
     -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT -u GIT_CONFIG_GLOBAL \
     -u GIT_CONFIG_SYSTEM -u GIT_CONFIG_NOSYSTEM -u GIT_GRAFT_FILE \
-    -u GIT_SHALLOW_FILE -u GIT_REPLACE_REF_BASE git "$@"
+    -u GIT_SHALLOW_FILE -u GIT_REPLACE_REF_BASE "$@"
 }
+git_target() { scrubbed_env git "$@"; }
 
 # A hook enrolls the guard only if running it PROVES the guard runs:
 # the hook chain is executed with a probe nonce and must return the
 # guard's acknowledgment. Static reading of shell is an arms race the
 # fence cannot afford to lose.
 enrolls_guard() {
-  local hook="$1" nonce out
+  local hook="$1" nonce rc probe_out pid waited
   [[ -x "$hook" ]] || return 1
   nonce="probe-$$-$RANDOM$RANDOM"
-  out=$(cd "$target" && METASYSTEM_GUARD_PROBE="$nonce" "$hook" 2>/dev/null) || true
-  [[ "$out" == *"guard-probe-ack $nonce"* ]]
+  probe_out=$(mktemp)
+  ( cd "$target" && scrubbed_env env METASYSTEM_GUARD_PROBE="$nonce" "$hook" >"$probe_out" 2>/dev/null ) &
+  pid=$!
+  waited=0
+  while kill -0 "$pid" 2>/dev/null && (( waited < 30 )); do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    rm -f "$probe_out"
+    return 1
+  fi
+  wait "$pid" 2>/dev/null; rc=$?
+  local out
+  out=$(cat "$probe_out"); rm -f "$probe_out"
+  # The ack AND the guard's distinct exit status: a wrapper that
+  # swallows the status would equally swallow real rejections.
+  [[ $rc -eq 42 && "$out" == *"guard-probe-ack $nonce"* ]]
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -168,8 +187,14 @@ echo "note: only file-shaped instruction assets are detectable. Confirm by hand 
 # message, zero writes.
 if probe_out=$(git_target -C "$target" rev-parse --is-inside-work-tree 2>&1); then
   pre_hook_dir=$(git_target -C "$target" rev-parse --path-format=absolute --git-path hooks)
+  # This PRE-WRITE gate must not execute foreign hook code (the
+  # zero-write refusal would otherwise have side effects), so it
+  # uses a non-executing heuristic: our composers' dynamic guard
+  # resolution marker. The authoritative behavioral probe runs at
+  # the post-payload enrollment phase.
   if [[ -e "$pre_hook_dir/pre-commit" && -e "$pre_hook_dir/pre-commit.local" ]] \
-    && ! enrolls_guard "$pre_hook_dir/pre-commit"; then
+    && ! { grep -qF 'git rev-parse --show-toplevel' "$pre_hook_dir/pre-commit" \
+           && grep -qF 'pre-commit-guard.sh' "$pre_hook_dir/pre-commit"; }; then
     die 1 "target carries both pre-commit and pre-commit.local and neither enrolls the guard; compose them by hand, then re-run adoption"
   fi
 elif [[ "$probe_out" != *"not a git repository"* ]]; then
@@ -425,6 +450,16 @@ if git_target -C "$target" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   # and .git/hooks is wrong wherever core.hooksPath points elsewhere.
   hook_dir=$(git_target -C "$target" rev-parse --path-format=absolute --git-path hooks)
   mkdir -p "$hook_dir"
+  # Containment by filesystem identity: a shared or global
+  # core.hooksPath (or a symlinked one) must not receive our
+  # fail-closed composer — it would block commits in every
+  # unrelated repository using it.
+  hook_dir_real=$(cd "$hook_dir" 2>/dev/null && pwd -P) || hook_dir_real="$hook_dir"
+  common_real=$(cd "$(git_target -C "$target" rev-parse --path-format=absolute --git-common-dir)" 2>/dev/null && pwd -P) || common_real=""
+  case "$hook_dir_real" in
+    "$target"|"$target"/*|"$common_real"|"$common_real"/*) ;;
+    *) die 1 "the target's hooks directory $hook_dir is outside the repository (shared core.hooksPath); enroll the guard by hand, then re-run adoption" ;;
+  esac
   # The composer runs the guard FIRST, then hands off to whatever hook
   # the project already had (preserved as pre-commit.local). Declining
   # to enroll because a hook existed left the ledger fence unenforced

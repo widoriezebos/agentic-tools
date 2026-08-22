@@ -91,6 +91,79 @@ func WriteBase(repoRoot string, rec BaseRecord) error {
 	return os.Rename(tmpF.Name(), baseRecordPath(repoRoot))
 }
 
+// claimReconcileLock serializes every owner of the pending record —
+// live reconciles and --refresh-only alike. Stale-lock takeover is
+// owner-safe: the old lock is RENAMED to a unique name (rename is
+// atomic, exactly one contender wins) before a fresh O_EXCL create,
+// and the lock carries its owner token so release removes only its
+// own. The returned func releases.
+func claimReconcileLock(repoRoot, owner string) (func(), error) {
+	dir := filepath.Dir(baseRecordPath(repoRoot))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	lockPath := baseRecordPath(repoRoot) + ".lock"
+	acquire := func() (bool, error) {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err != nil {
+			return false, nil
+		}
+		_, werr := f.WriteString(owner)
+		cerr := f.Close()
+		if werr != nil || cerr != nil {
+			_ = os.Remove(lockPath)
+			return false, fmt.Errorf("the claim lock could not be written: %v %v", werr, cerr)
+		}
+		return true, nil
+	}
+	got, err := acquire()
+	if err != nil {
+		return nil, err
+	}
+	if !got {
+		if fi, statErr := os.Stat(lockPath); statErr == nil && time.Since(fi.ModTime()) > 10*time.Minute {
+			steal := lockPath + ".stale-" + owner
+			if renameErr := os.Rename(lockPath, steal); renameErr == nil {
+				_ = os.Remove(steal)
+				got, err = acquire()
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	if !got {
+		return nil, fmt.Errorf("another reconcile session is mid-claim (%s); retry shortly", lockPath)
+	}
+	release := func() {
+		if data, readErr := os.ReadFile(lockPath); readErr == nil && string(data) == owner {
+			_ = os.Remove(lockPath)
+		}
+	}
+	return release, nil
+}
+
+// ensureRealGoalDirs refuses when any goal directory is not a real
+// directory: a symlinked parent routes every read, write, and
+// removal outside the root — and it must refuse BEFORE capture, not
+// only before refresh, or the outside bytes get published first.
+func ensureRealGoalDirs(repoRoot string) error {
+	for _, rel := range []string{"plans", "plans/goals", "plans/goals/done"} {
+		dirAbs := filepath.Join(repoRoot, filepath.FromSlash(rel))
+		lst, lstErr := os.Lstat(dirAbs)
+		if lstErr != nil {
+			if os.IsNotExist(lstErr) {
+				continue
+			}
+			return fmt.Errorf("cannot prove %s is a real directory: %v", rel, lstErr)
+		}
+		if lst.Mode()&os.ModeSymlink != 0 || !lst.IsDir() {
+			return fmt.Errorf("%s is not a real directory; nothing reads or writes through a changed identity", rel)
+		}
+	}
+	return nil
+}
+
 // Snapshot is one stable capture of the checkout's ledger surface:
 // every candidate file's bytes, read once. The index is neither
 // read nor written.
@@ -257,21 +330,8 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 	if err != nil {
 		return nil, err
 	}
-	// The goal directories themselves must be REAL: a symlinked
-	// parent routes every write and removal outside the root, and
-	// the leaf checks below never see it.
-	for _, rel := range []string{"plans", "plans/goals", "plans/goals/done"} {
-		dirAbs := filepath.Join(repoRoot, filepath.FromSlash(rel))
-		lst, lstErr := os.Lstat(dirAbs)
-		if lstErr != nil {
-			if os.IsNotExist(lstErr) {
-				continue
-			}
-			return nil, fmt.Errorf("the refresh cannot prove %s is a real directory: %v", rel, lstErr)
-		}
-		if lst.Mode()&os.ModeSymlink != 0 || !lst.IsDir() {
-			return nil, fmt.Errorf("%s is not a real directory; the refresh writes nothing through a changed identity", rel)
-		}
+	if err := ensureRealGoalDirs(repoRoot); err != nil {
+		return nil, err
 	}
 	for _, p := range sortedKeys(published) {
 		abs := filepath.Join(repoRoot, filepath.FromSlash(p))
@@ -366,6 +426,15 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 // bytes differ from the published tree are preserved and named"
 // (the captured snapshot died with the process).
 func RefreshOnly(repoRoot string) (skipped []string, err error) {
+	// The same claim protocol as live reconciles: resolving a
+	// crashed window against a tip captured before a LIVE
+	// publisher's push could otherwise clear the only snapshot
+	// that publisher's own crash recovery needs.
+	release, lockErr := claimReconcileLock(repoRoot, "refresh-only-"+nowISO8601())
+	if lockErr != nil {
+		return nil, lockErr
+	}
+	defer release()
 	rec, exists, err := ReadBase(repoRoot)
 	if err != nil {
 		return nil, err

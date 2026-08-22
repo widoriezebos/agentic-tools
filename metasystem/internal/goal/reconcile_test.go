@@ -446,3 +446,24 @@ func TestOverlappingReconcileClaimsAreSerialized(t *testing.T) {
 		t.Fatalf("a stale lock is stolen: %+v %v", res.Publish, err)
 	}
 }
+
+func TestReconcileRefusesASymlinkedGoalDirectoryBeforeCapture(t *testing.T) {
+	a, _ := reconcileBed(t)
+	// The directory identity flips BEFORE the session: capture
+	// through the link would publish outside bytes long before
+	// Refresh's own check could refuse.
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "planted.md"), RenderFile(vGoal("planted", StateQueued)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doneDir := filepath.Join(a, "plans", "goals", "done")
+	_ = os.Remove(doneDir)
+	if err := os.Symlink(outside, doneDir); err != nil {
+		t.Fatal(err)
+	}
+	req := verbReq(a, "01J5X00000000000000000PC10", "mac-a")
+	req.Actor.Human = "wido"
+	if _, err := Reconcile(req); err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("the session refuses at its door, before capture: %v", err)
+	}
+}

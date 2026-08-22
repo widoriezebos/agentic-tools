@@ -106,13 +106,17 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if err := ensureGuardEnrolled(*root); err != nil {
-		fmt.Fprintf(os.Stderr, "goal %s: %v\n", name, err)
-		return 1
-	}
 	caller, err := goalCaller(*root, *callerPid, name)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	// Enrollment runs AFTER authorization: it executes the target's
+	// pre-commit hook (the behavioral probe), and an unauthorized
+	// caller must not be able to trigger foreign hook code through a
+	// refused mutation.
+	if err := ensureGuardEnrolled(*root); err != nil {
+		fmt.Fprintln(os.Stderr, "goal "+name+": "+err.Error())
 		return 1
 	}
 	values := make([]string, len(extras))

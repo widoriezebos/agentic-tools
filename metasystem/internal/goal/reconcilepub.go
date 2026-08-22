@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 )
 
 // ReconcileResult reports one reconcile session.
@@ -30,6 +29,18 @@ type ReconcileResult struct {
 func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	if r.Actor.Human == "" {
 		return ReconcileResult{}, fmt.Errorf("reconcile republishes hand edits and names its human (--by)")
+	}
+	// The claim lock wraps the WHOLE session — base resolution,
+	// capture, mapping, the pending record, the publish: a base
+	// captured outside the lock could be regressed by this
+	// session's own cleanup after a sibling published meanwhile.
+	release, lockErr := claimReconcileLock(r.Endpoint.Root, r.opid())
+	if lockErr != nil {
+		return ReconcileResult{}, lockErr
+	}
+	defer release()
+	if err := ensureRealGoalDirs(r.Endpoint.Root); err != nil {
+		return ReconcileResult{}, err
 	}
 	MaintainBase(r.Endpoint.Root)
 	base, err := BaseTip(r.Endpoint.Root)
@@ -61,23 +72,6 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	// both sessions may have passed BaseTip before either wrote, and
 	// the overwritten session's durable snapshot is what ITS crash
 	// recovery would need.
-	// The read-check-write below is serialized by an O_EXCL lock:
-	// without it two sessions both read clean state and then
-	// overwrite each other's pending record. A crash's stale lock
-	// is stolen after ten minutes.
-	lockPath := baseRecordPath(r.Endpoint.Root) + ".lock"
-	lockFile, lockErr := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if lockErr != nil {
-		if fi, statErr := os.Stat(lockPath); statErr == nil && time.Since(fi.ModTime()) > 10*time.Minute {
-			_ = os.Remove(lockPath)
-			lockFile, lockErr = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		}
-		if lockErr != nil {
-			return ReconcileResult{}, fmt.Errorf("another reconcile session is mid-claim (%s); retry shortly", lockPath)
-		}
-	}
-	lockFile.Close()
-	defer os.Remove(lockPath)
 	if prior, priorExists, priorErr := ReadBase(r.Endpoint.Root); priorErr != nil {
 		return ReconcileResult{}, priorErr
 	} else if priorExists && prior.RefreshDue && prior.Opid != r.opid() {
