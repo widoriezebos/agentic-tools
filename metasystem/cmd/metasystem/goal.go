@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"time"
 )
 
 // The goal family (D67): the doctrine commands humans and agents type.
@@ -248,6 +249,9 @@ func runGoalList(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
+	if converted(*root) {
+		return listSynced(*root)
+	}
 	store := &goal.Store{Root: *root}
 	ledger, problems, err := store.ReadLedger()
 	if err != nil {
@@ -274,6 +278,77 @@ func runGoalList(args []string) int {
 	return 0
 }
 
+// converted reports the post-migration world: the legacy ledger is
+// gone from the worktree. The legacy file's presence keeps every
+// pre-conversion behavior byte-identical.
+func converted(root string) bool {
+	if _, err := os.Stat(filepath.Join(root, "plans", "goals.md")); err == nil {
+		return false
+	}
+	return true
+}
+
+// listSynced prints the accepted world: the same JSON idea as the
+// legacy list, grouped by state, with the projection's banners.
+func listSynced(root string) int {
+	e, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	p, err := goal.Project(e, false, time.Now())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	grouped := map[string][]*goal.GoalFile{}
+	for _, id := range goal.SortedGoalIds(p.Tree.Live) {
+		f := p.Tree.Live[id]
+		grouped[f.State] = append(grouped[f.State], f)
+	}
+	var done []*goal.GoalFile
+	for _, id := range goal.SortedGoalIds(p.Tree.Done) {
+		done = append(done, p.Tree.Done[id])
+	}
+	printJSON(map[string]any{
+		"world": "synced", "tip": p.Tip, "banners": p.Banners,
+		"queued": grouped[goal.StateQueued], "claimed": grouped[goal.StateClaimed],
+		"parked": grouped[goal.StateParked], "done": done,
+	})
+	return 0
+}
+
+// nextSynced prints the frontier line for this machine.
+func nextSynced(root string) int {
+	e, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	machine, err := goal.ResolveMachine(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	p, err := goal.Project(e, false, time.Now())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	v := goal.Next(p, machine)
+	switch {
+	case len(v.Claimed) > 0:
+		fmt.Println("continue your claimed goal: " + v.Claimed[0])
+	case len(v.Ready) > 0:
+		fmt.Println("next ready goal: " + v.Ready[0])
+	case len(v.Blocked) > 0:
+		fmt.Println("all queued goals are blocked; the first is " + v.Blocked[0])
+	default:
+		fmt.Println("the backlog is empty; open a goal or rest")
+	}
+	return 0
+}
+
 // runGoalNext prints the one orientation line any runtime's main can read
 // by instruction — the universal fallback transport.
 func runGoalNext(args []string) int {
@@ -281,6 +356,9 @@ func runGoalNext(args []string) int {
 	root := flags.String("root", ".", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
+	}
+	if converted(*root) {
+		return nextSynced(*root)
 	}
 	store := &goal.Store{Root: *root}
 	ledger, problems, err := store.ReadLedger()

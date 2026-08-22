@@ -401,6 +401,10 @@ func sortedKeys(m map[string][]byte) []string {
 	return keys
 }
 
+// SortedGoalIds is the deterministic iteration order every reader
+// shares.
+func SortedGoalIds(m map[string]*GoalFile) []string { return sortedGoalIds(m) }
+
 func sortedGoalIds(m map[string]*GoalFile) []string {
 	ids := make([]string, 0, len(m))
 	for id := range m {
