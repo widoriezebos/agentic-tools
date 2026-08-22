@@ -1,12 +1,11 @@
 # agent-ease-assessment
 
-- State: claimed
+- State: queued
 - Intent: A hard look at the metasystem's complexity from the agent seat: it must be intuitive to use; accepted simplifications get executed
 - Origin: main
 - Next step: Appetite: 3h for SLICE FOUR (docs from the agent seat) — the last slice; slices one-three done (goal verbs, dispatch flow, scripts+skills: plans/*-ease-review.md).
 - OpenedAt: 2026-08-20T00:19:00Z
-- Revision: 11
-- Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-22T18:18:04Z
+- Revision: 12
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=agent-ease-assessment
@@ -20,4 +19,5 @@ History:
 - 2026-08-22T16:58:58Z 2W9VTE3TP856TDKV0MSYWFEC3B-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=agent-ease-assessment
 - 2026-08-22T18:18:04Z 7FDNKAFBV68K27JYFS3G12XMB3-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=agent-ease-assessment
 - 2026-08-22T18:39:20Z 9H1GP2HEZBKNZCYZ4PGK3TN71S-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=agent-ease-assessment
-Integrity: sha256=d6cc2a601baa5757e4459ad2d7e463d4d3499845ea7a82851ebbdbdaa1cdb6ec
+- 2026-08-22T18:39:25Z DPKF2JK3RZ24F8PF3PBVN3SMDB-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=agent-ease-assessment
+Integrity: sha256=741708099a62a874834826ba0cd7dd8a91cc15baf952894a55ff173cfcf7639a
