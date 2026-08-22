@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: A plain-English story of what happened, why it happened, and who did it
 - Origin: main
-- Next step: Appetite: 3h for SLICE ONE (coordinator-ratified, prioritized by Wido 2026-08-22): the journey narrative — docs/journey.md, the plain-English story of the building journey so far, plus the update covenant (each concluded goal appends its chapter at conclusion time, backlog-mechanism.md conclusion ritual). The D122 real-time charter (continuous narration wired into the steward, anomaly-to-action, reach-the-human) is UNCHANGED and remains for later slices — it exceeds the 8h line whole and needs its own sliced design when picked.
+- Next step: SLICE ONE DONE 2026-08-22 (well under its 3h appetite): docs/journey.md written and landed (05cc3ea) with the conclusion covenant in docs/backlog-mechanism.md — every concluding goal appends its paragraph in the same landing; published for reading at the artifact URL in the coordinator's session. REMAINING: the D122 real-time charter (continuous narration wired into the steward, anomaly-to-action, reach-the-human) — needs its own sliced design with agreed appetites, and MUST NOT start before idle-watchdog concludes (the block was lifted only for slice one, on Wido's 2026-08-22 prioritization). Journey upkeep needs no claim: the covenant makes every concluder write.
 - OpenedAt: 2026-08-20T00:02:00Z
-- Revision: 4
+- Revision: 5
 - Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-22T18:48:35Z
 
 History:
@@ -13,4 +13,5 @@ History:
 - 2026-08-22T18:45:33Z SCRVCNAMCQWT3VYASG52D5H1PC-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=narrator
 - 2026-08-22T18:48:28Z DQ8WXG3GDQA6KKZ35AHS2XRQ9G-widos-m5-pro-bf243850 edit actor=human:wido targets=narrator
 - 2026-08-22T18:48:35Z VPDXHQD0099D8FSR46FSGRVAHQ-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=narrator
-Integrity: sha256=f7d445ab7aea0164e9f9d80a2fa1790a709787027da560494d3cb0221d5f8859
+- 2026-08-22T18:52:27Z ZQJ0RF4CYYQ0G3SDPY1FCGREV4-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=narrator
+Integrity: sha256=8b6e802cfe34b1dcf67655375f3262c6f207b2f2b66970cadb60eb4443e81bc0
