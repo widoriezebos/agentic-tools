@@ -37,11 +37,12 @@ findings bank here as probed.
 
 ## Completeness and embedding
 
-8. **`metasystem mission` (family, no verb) says "a verb is
-   required" and exits rc=0.** A refusal wearing a success code —
-   the same class as finding 5, in the engine's own front door.
-   Check every family's bare invocation while fixing. Appetite: an
-   hour with a table-driven test.
+8. RETRACTED: the mission family's bare call exits 2 correctly —
+   the rc=0 reading was this review's OWN pipe error, a FOURTH
+   instance, committed in the same session that documented the
+   error class. Finding 7 upgrades from proposal to necessity on
+   this evidence: even a reviewer hunting this exact mistake kept
+   making it.
 9. The templates are admirably compact (brief 32 lines, follow-up
    16, host-turn 13) and the host-turn template already speaks
    qualified names post-sweep. No finding.
@@ -52,10 +53,11 @@ The dispatch flow's bones are right: entry discipline, usage
 text, exit-code table, runtime discoverability, template economy.
 The findings are all one family — REFUSALS WEARING SUCCESS OR
 SILENCE: watch times out on a never-existed job instead of
-failing fast (5), status answers a human with nothing, the
-mission family's bare call refuses with rc=0, and piped stdout
-eats the truth (my own probes proved it thrice). Proposed as ONE
-backlog item: "dispatch/mission exit honesty" — fast-fail watch,
-stderr status lines on every terminal path, rc audit across
-family entries. Appetite: 3h with fixture legs. Slice three
-(scripts+skills) and slice four (docs) remain tokened separately.
+failing fast (5), status answers a human with nothing (3), and a
+piped stdout eats the terminal truth — proved FOUR times by this
+review's own probes, finding 8 retracted as the fourth. Proposed
+as ONE backlog item: "dispatch-exit-honesty" — fast-fail watch,
+a stderr line on silent status, terminal status lines to stderr
+on every dispatch exit path. Appetite: 3h with fixture legs.
+Slice three (scripts+skills) and slice four (docs) remain
+tokened separately.

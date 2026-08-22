@@ -1128,6 +1128,13 @@ watch_job() { # --job <id>
     esac
   done
   [[ -n "$job" ]] || { usage; exit 2; }
+  # A job with no record is knowable NOW: watching it to the timeout
+  # would conflate "never existed" with "still silent" — the refusal
+  # answers fast and says so (vanished, exit 5).
+  if [[ ! -e "$jobs/$job.json" ]]; then
+    echo "watch: no job record for $job — it never existed here or was reaped" >&2
+    exit 5
+  fi
   # The Go core blocks to terminal and holds the waiter record the turn
   # verdict reads; exit codes ride through verbatim.
   "$ms" job watch --root "$root" --job "$job" --caller-pid $$
@@ -1301,7 +1308,7 @@ status_job() {
   local job= status
   [[ ${1:-} == --job && $# -eq 2 ]] || { usage; exit 2; }; job=$2
   valid_id "$job" || { usage; exit 2; }
-  [[ -e "$jobs/$job.json" ]] || return 6
+  [[ -e "$jobs/$job.json" ]] || { echo "status: no job record for $job" >&2; return 6; }
   status=$(json_field "$jobs/$job.json" status 2>/dev/null || true)
   case "$status" in
     pending|running|completed|failed|timeout|cancelled)
