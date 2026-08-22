@@ -1,7 +1,8 @@
 # DRAFT: backlog-mechanism
 
-Status: draft — appetite NOT yet agreed with Wido; not ready to work.
-This file is the first inhabitant of the drafts folder it proposes.
+Status: PROMOTED 2026-08-22 (goal backlog-mechanism, claimed). The
+conventions live in docs/backlog-mechanism.md; what remains in this
+draft is the retrospective agenda for the conversation with Wido.
 
 ## Why this item exists (Wido, 2026-08-22, verbatim rulings)
 

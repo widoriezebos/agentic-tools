@@ -281,14 +281,18 @@ func runGoalList(args []string) int {
 	return 0
 }
 
-// converted reports the post-migration world: the legacy ledger is
-// gone from the worktree. The legacy file's presence keeps every
-// pre-conversion behavior byte-identical.
+// converted reports the post-migration world by POSITIVE evidence:
+// the legacy ledger is gone AND the synced tree is present. Absence
+// of goals.md alone is not conversion — fixture sandboxes and plain
+// directories never had a backlog, and routing them into the sync
+// engine sends fetches at remotes that do not exist. The legacy
+// file's presence keeps every pre-conversion behavior byte-identical.
 func converted(root string) bool {
 	if _, err := os.Stat(filepath.Join(root, "plans", "goals.md")); err == nil {
 		return false
 	}
-	return true
+	_, err := os.Stat(filepath.Join(root, "plans", "goals", "backlog.md"))
+	return err == nil
 }
 
 // listSynced prints the accepted world: the same JSON idea as the
