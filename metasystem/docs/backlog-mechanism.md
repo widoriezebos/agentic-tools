@@ -86,3 +86,11 @@ Backlog order — priorities, appetites, item shape, intake — is the
 coordinator's standing responsibility on every machine. Disorder is
 fixed by discussing it with Wido: never reordered by fiat, never
 silently tolerated.
+
+## Concluding a goal
+
+A goal is not done until its story is told. Concluding a goal appends
+its paragraph to `docs/journey.md` — what it changed and why it
+mattered, in plain English for a reader, not a grep — in the same
+landing as the conclusion. The narrator goal owns the file's shape;
+every concluder writes in it.
