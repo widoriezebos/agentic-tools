@@ -59,3 +59,15 @@ func (l *fileLock) release() {
 	_ = unix.Flock(int(l.f.Fd()), unix.LOCK_UN)
 	_ = l.f.Close()
 }
+
+// LockBounded is the exported form of the bounded lease flock for
+// sibling packages whose own critical sections must exclude each
+// other — the mission lease's acquire and stale-cleanup pair first
+// (KI-38). The returned func releases.
+func LockBounded(path, what string) (func(), error) {
+	l, err := acquireBounded(path, what)
+	if err != nil {
+		return nil, err
+	}
+	return l.release, nil
+}

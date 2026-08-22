@@ -241,6 +241,15 @@ func (e *Engine) acquireLease(tag string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+	// ONE flock over the whole claim: the marker and its records are
+	// separate writes, and an unserialized cleanup can classify the
+	// half-published subset as stale and remove it under a live
+	// claimant (KI-38's two-runner mint).
+	release, lockErr := lease.LockBounded(filepath.Join(dir, "lease.lock"), "mission lease")
+	if lockErr != nil {
+		return "", lockErr
+	}
+	defer release()
 	if err := os.Mkdir(marker, 0o755); err != nil {
 		if os.IsExist(err) {
 			return "", failf(3, "mission lease is busy")

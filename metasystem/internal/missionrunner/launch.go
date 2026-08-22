@@ -250,6 +250,13 @@ func (e *Engine) cleanupStaleLease() error {
 	dir := e.missionDir()
 	marker := filepath.Join(dir, "lease.d")
 	leasePath := filepath.Join(dir, "lease.json")
+	// The same flock the acquirer holds: classification must never
+	// judge a half-published claim (KI-38).
+	release, lockErr := lease.LockBounded(filepath.Join(dir, "lease.lock"), "mission lease")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 	markerExists := pathExists(marker)
 	if !markerExists && !pathExists(leasePath) {
 		return nil
