@@ -1,6 +1,6 @@
 package goal
 
-// The verb surface (BGS-9/14), first slice: open, claim, release,
+// The verb surface: open, claim, release,
 // done — the single-file rows of the transition table. Every verb
 // is one transaction: its mutation callback re-reads the fetched
 // tip and re-decides on the current world (a rebuilt tip classifies
@@ -8,7 +8,7 @@ package goal
 // touches NO path outside the table's row. Common effects, applied
 // once here: every touched file's Revision increments by exactly
 // one and its History gains exactly the opid's line with the verb
-// and actor. Arc cascades land with the arcs layer (BGS-15).
+// and actor. Arc cascades land with the arcs layer.
 
 import (
 	"fmt"
@@ -79,7 +79,7 @@ func touch(f *GoalFile, r VerbRequest, verb string, targets []string) {
 }
 
 // ownPair reports whether a claim names the actor's machine AND
-// lineage — the pair is the ownership key (BGS-10), never the
+// lineage — the pair is the ownership key, never the
 // machine alone: a second lineage on the machine is a stranger.
 func ownPair(c *ClaimRecord, a Actor) bool {
 	return c != nil && c.Machine == a.Machine && c.Lineage == a.Lineage
@@ -91,7 +91,7 @@ func pairMarker(c *ClaimRecord) string {
 	return c.Machine + "+" + c.Lineage + "@" + c.At
 }
 
-// touchDisplaced is touch with the displacement marker (R9-05):
+// touchDisplaced is touch with the displacement marker:
 // every foreign-human mutation of a claimed goal records displaced=
 // uniformly, so no lawful override changes a claim's scope without
 // leaving the signal.
@@ -105,7 +105,7 @@ func touchDisplaced(f *GoalFile, r VerbRequest, verb string, targets []string, d
 }
 
 // ackDisplacements answers displacement addressed to this actor's
-// pair (R9-06): the displaced pair's next History-appending
+// pair: the displaced pair's next History-appending
 // publication piggybacks one automatic root-record line per
 // unanswered displacement — the published verb with ack,
 // targets=<the displaced goal>, and the displaced=<pair>@<at> it
@@ -125,7 +125,7 @@ func ackDisplacements(t *TreeGoals, r VerbRequest, changes []Change) []Change {
 			}
 		}
 	}
-	// One acknowledgment per displaced pair (R10-M06): goals group
+	// One acknowledgment per displaced pair: goals group
 	// under their marker, one line per marker.
 	pending := map[string][]string{}
 	var markers []string
@@ -230,7 +230,7 @@ func Open(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, er
 
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func openRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -275,18 +275,18 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequ
 }
 
 // Claim takes ownership of a queued goal for the actor's pair.
-// Claim is AGENT-ONLY (R3-06): humans direct agents; no human
+// Claim is AGENT-ONLY: humans direct agents; no human
 // lineage exists, so no human claim row.
 func Claim(r VerbRequest, id string) (PublishResult, error) {
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("claim is agent-only (R3-06): humans direct agents; steal reassigns a standing claim under --by")
+		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
 	}
 	return Publish(r.Endpoint, claimRequest(r, id))
 }
 
 // claimRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func claimRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -337,7 +337,7 @@ func Release(r VerbRequest, id string) (PublishResult, error) {
 
 // releaseRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func releaseRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -385,7 +385,7 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 
 // doneRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -408,9 +408,9 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			if !exists {
 				return nil, fmt.Errorf("goal %s is not live; nothing to conclude", id)
 			}
-			// Queued concludes directly (D113 ergonomics); a foreign
+			// Queued concludes directly; a foreign
 			// claim concludes only under a human, and the override
-			// leaves the displacement signal (R9-05).
+			// leaves the displacement signal.
 			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s is claimed by %s+%s; concluding another's work is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
 			}
@@ -466,7 +466,7 @@ func lastOpid(f *GoalFile) string {
 
 // Park pauses a goal with its reason. Parking another machine's
 // claim is a human act, and the displaced claimant is recorded —
-// displacement is a stop signal the serving machine hears (BGS-8's
+// displacement is a stop signal the serving machine hears (the
 // notification legs land with the projection). Arc cascades land
 // with the arcs layer.
 func Park(r VerbRequest, id, because string) (PublishResult, error) {
@@ -478,7 +478,7 @@ func Park(r VerbRequest, id, because string) (PublishResult, error) {
 
 // parkRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func parkRequest(r VerbRequest, id, because string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -542,7 +542,7 @@ func Unpark(r VerbRequest, id string) (PublishResult, error) {
 
 // unparkRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func unparkRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -595,7 +595,7 @@ func Reopen(r VerbRequest, id string) (PublishResult, error) {
 
 // reopenRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func reopenRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -618,7 +618,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 			}
 			// Reopening under claimed dependents is the transition
 			// closure's refusal: a claimed goal's blockers must stay
-			// done (BGS-9).
+			// done.
 			for _, liveId := range sortedGoalIds(t.Live) {
 				dependent := t.Live[liveId]
 				if dependent.State != StateClaimed {
@@ -631,10 +631,10 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 				}
 			}
 			// The member rejoins its arc under the arc's STANDING state
-			// (R7-08): a claimed arc adopts it under the standing
+			//: a claimed arc adopts it under the standing
 			// claimant (claimant or human only — an outside agent
 			// cannot inject work into someone's claim; the member's
-			// blockers must be done, R8-02); a parked arc is human-only
+			// blockers must be done); a parked arc is human-only
 			// and the member lands parked with the arc's record.
 			f.State = StateQueued
 			f.Conclude = ""
@@ -689,8 +689,8 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 }
 
 // EditFields is the edit verb's delta set: nil-able fields change
-// only when set. Prose caps are REMOVED by design (D113/D114) — a
-// multi-kilobyte intent is lawful. Origin is NOT here (R2-8):
+// only when set. Prose caps are REMOVED by design — a
+// multi-kilobyte intent is lawful. Origin is NOT here:
 // provenance is immutable authority-bearing fact, refused on every
 // surface — hand edit, verb, and recovery alike.
 type EditFields struct {
@@ -706,7 +706,7 @@ func Edit(r VerbRequest, id string, fields EditFields) (PublishResult, error) {
 
 // editRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func editRequest(r VerbRequest, id string, fields EditFields) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -726,7 +726,7 @@ func editRequest(r VerbRequest, id string, fields EditFields) PublishRequest {
 			}
 			// The table's edit rows: queued is open to all, claimed is
 			// the claimant's or a human's (the foreign-human override
-			// leaves the displacement signal, R9-05), parked has no
+			// leaves the displacement signal), parked has no
 			// agent row — the pause stands until a human moves it.
 			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s is claimed by %s+%s; editing another's claimed goal is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
@@ -734,13 +734,13 @@ func editRequest(r VerbRequest, id string, fields EditFields) PublishRequest {
 			if f.State == StateParked && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s is parked; editing a parked goal is a human act", id)
 			}
-			// D115's invariant: a claimed goal is never blocked — a new
+			// The standing invariant: a claimed goal is never blocked — a new
 			// blocker must be DONE for EVERY actor (a human who wants
 			// the edge parks or releases first).
 			if f.State == StateClaimed && fields.Blocked != nil {
 				for _, dep := range *fields.Blocked {
 					if depState(t, dep) != StateDone {
-						return nil, fmt.Errorf("goal %s is claimed and never blocked (D115): %s is not done — park or release first", id, dep)
+						return nil, fmt.Errorf("goal %s is claimed and never blocked: %s is not done — park or release first", id, dep)
 					}
 				}
 			}
@@ -773,7 +773,7 @@ func DeclareFree(r VerbRequest, origin, digest string) (PublishResult, error) {
 
 // declareFreeRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func declareFreeRequest(r VerbRequest, origin, digest string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -814,8 +814,8 @@ func declareFreeRequest(r VerbRequest, origin, digest string) PublishRequest {
 }
 
 // Steal reassigns another machine's claim under a human's name —
-// steal without its human refuses up front (BGS-10), and the
-// history line carries the human authority (R7-08).
+// steal without its human refuses up front, and the
+// history line carries the human authority.
 func Steal(r VerbRequest, id string) (PublishResult, error) {
 	if r.Actor.Human == "" {
 		return PublishResult{}, fmt.Errorf("steal is a human act and names its human (--by)")
@@ -825,7 +825,7 @@ func Steal(r VerbRequest, id string) (PublishResult, error) {
 
 // stealRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func stealRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -851,11 +851,11 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 			if ownPair(f.Claimed, r.Actor) {
 				return nil, NothingToDo{Reason: "already claimed by this pair (not by this operation)"}
 			}
-			// The claim binds the ARC (R4-08): stealing any member
+			// The claim binds the ARC: stealing any member
 			// reassigns every live member the standing pair holds, one
 			// transaction, one quota slot — a partial steal would split
 			// the arc's ownership. Every touched line carries the
-			// displaced marker (R9-05).
+			// displaced marker.
 			oldPair := f.Claimed
 			members := arcMembers(t, id)
 			targets := make([]string, 0, len(members))
@@ -882,14 +882,14 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 // the claim guards holding trivially on a goal with no blockers.
 func OpenClaim(r VerbRequest, id, intent, origin, nextStep string) (PublishResult, error) {
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("open --claim is agent-only (R3-06): humans direct agents; bare open leaves the goal queued")
+		return PublishResult{}, fmt.Errorf("open --claim is agent-only: humans direct agents; bare open leaves the goal queued")
 	}
 	return Publish(r.Endpoint, openClaimRequest(r, id, intent, origin, nextStep))
 }
 
 // openClaimRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -948,7 +948,7 @@ func Prune(r VerbRequest, keep int) (PublishResult, error) {
 
 // pruneRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func pruneRequest(r VerbRequest, keep int) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -967,7 +967,7 @@ func pruneRequest(r VerbRequest, keep int) PublishRequest {
 			if rootOpidLanded(t.Root, r) {
 				return nil, AlreadyApplied{}
 			}
-			// Selection first, closure second (R4-09): retained =
+			// Selection first, closure second: retained =
 			// closure(live goals ∪ the keep-count newest done goals),
 			// walked through done-to-done edges — a keep-count
 			// survivor's own older done blocker is retained WITH it,
@@ -1043,7 +1043,7 @@ func sortDoneNewestFirst(t *TreeGoals, ids []string) {
 
 // arcMembers collects the LIVE members of a goal's arc, the asked
 // goal included — the cascade set claim/release/park/unpark move as
-// one atomic unit (R4-08). A goal with no arc is its own cascade.
+// one atomic unit. A goal with no arc is its own cascade.
 func arcMembers(t *TreeGoals, id string) []*GoalFile {
 	f := t.Live[id]
 	if f == nil {
@@ -1067,14 +1067,14 @@ func arcMembers(t *TreeGoals, id string) []*GoalFile {
 // member loses the whole cascade.
 func ClaimArc(r VerbRequest, id string) (PublishResult, error) {
 	if r.Actor.Human != "" {
-		return PublishResult{}, fmt.Errorf("claim is agent-only (R3-06): humans direct agents; steal reassigns a standing claim under --by")
+		return PublishResult{}, fmt.Errorf("claim is agent-only: humans direct agents; steal reassigns a standing claim under --by")
 	}
 	return Publish(r.Endpoint, claimArcRequest(r, id))
 }
 
 // claimArcRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func claimArcRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -1136,7 +1136,7 @@ func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 
 // releaseArcRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -1187,7 +1187,7 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 // ParkArc pauses a whole arc as one unit. Parking a foreign claim
 // anywhere in the cascade is a human act, and the design pins ONE
 // acknowledgment for the displaced pair across the whole cascade
-// (R10-M06): the displaced= field rides every touched history line,
+// : the displaced= field rides every touched history line,
 // but the pair is recorded once per claimant, not once per member.
 func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 	if strings.TrimSpace(because) == "" {
@@ -1198,7 +1198,7 @@ func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 
 // parkArcRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -1281,7 +1281,7 @@ func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 
 // unparkArcRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func unparkArcRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -1336,14 +1336,14 @@ func unparkArcRequest(r VerbRequest, id string) PublishRequest {
 
 // Detach removes one member from its arc. A member claimed under
 // the arc's claimant RELEASES on the way out — the quota never
-// splits one claim into two (R4-08's no-quota-split leg).
+// splits one claim into two (the no-quota-split rule).
 func Detach(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, detachRequest(r, id))
 }
 
 // detachRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func detachRequest(r VerbRequest, id string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -1388,14 +1388,14 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 }
 
 // SetArc moves a goal into an arc under the membership matrix
-// (R8-07/R9-10): a move between arcs composes detach-then-join in
+// : a move between arcs composes detach-then-join in
 // ONE transaction under the stricter of the two rules. Leaving a
 // claimed arc releases the member on the way out (never a quota
 // split); a parked source or a parked destination is human-only; a
 // claimed destination auto-claims a queued member with done
 // blockers under the STANDING claimant — a stranger refuses, and a
 // human injecting into another machine's claim leaves the
-// displacement signal (R9-05).
+// displacement signal.
 func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 	if arc == "" {
 		return PublishResult{}, fmt.Errorf("set-arc names its arc; detach removes membership")
@@ -1405,7 +1405,7 @@ func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 
 // setArcRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (R2-2: recovery rebuilds through the real verb paths).
+// run (recovery rebuilds through the real verb paths).
 func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -1429,7 +1429,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 			displaced := ""
 			sourceWasClaimed := false
 			// The source side: leaving an arc under its row's rule;
-			// the detach result feeds the join (R9-10).
+			// the detach result feeds the join.
 			switch f.State {
 			case StateQueued:
 			case StateClaimed:
@@ -1473,7 +1473,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 					// TWO displaced pairs in one move — the source
 					// claimant losing a member and the destination
 					// claimant gaining one — is the composed-move row
-					// the design explicitly refuses (R2-14/BGS-15):
+					// the design explicitly refuses:
 					// release first, then join.
 					return nil, fmt.Errorf("goal %s moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first", id)
 				}
@@ -1518,7 +1518,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 
 // editDeltas serializes an edit's field changes into the journal's
 // durable intent — enough to rebuild the edit without the original
-// process (F7: recovery completes from the stored intent).
+// process (recovery completes from the stored intent).
 func editDeltas(id string, fields EditFields) []FieldDelta {
 	var deltas []FieldDelta
 	if fields.Intent != nil {

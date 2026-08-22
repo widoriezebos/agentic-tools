@@ -1,6 +1,6 @@
 package goal
 
-// The tree validator (BGS-3): the full read-set, revalidated on
+// The tree validator: the full read-set, revalidated on
 // every transaction tree and on every read-side advance. A tree
 // passes WHOLE or names the file and the rule — the projection
 // stays at the accepted tree on any refusal, so a torn or tampered
@@ -96,7 +96,7 @@ func ValidateTree(t *TreeGoals) []Problem {
 	}
 
 	// Placement and State agree — path never silently implies state
-	// (R7-14).
+	//.
 	for _, id := range sortedGoalIds(t.Live) {
 		f := t.Live[id]
 		if f.State == StateDone {
@@ -181,7 +181,7 @@ func ValidateTree(t *TreeGoals) []Problem {
 	}
 
 	// Quota: one claim per machine, tree-wide; the members of ONE
-	// arc under one claimant count once (R4-08).
+	// arc under one claimant count once.
 	claimsByMachine := map[string][]*GoalFile{}
 	for _, id := range sortedGoalIds(t.Live) {
 		f := t.Live[id]
@@ -215,7 +215,7 @@ func ValidateTree(t *TreeGoals) []Problem {
 		}
 	}
 
-	// Arc uniformity (R6-06): an arc moves whole — after ANY
+	// Arc uniformity: an arc moves whole — after ANY
 	// transaction every live member of an arc shares one state, and
 	// a claimed arc has exactly one claimant pair. A split arc is a
 	// split claim, the exact ownership confusion the arc exists to

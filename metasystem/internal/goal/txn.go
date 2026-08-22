@@ -1,6 +1,6 @@
 package goal
 
-// The ledger transaction engine (BGS-1/BGS-2): fetch the canonical
+// The ledger transaction engine: fetch the canonical
 // branch to a per-operation ref, rebuild the mutation on exactly
 // that tip in an isolated index, commit with the explicit fetched
 // parent and the Goal-Transaction trailer, publish by
@@ -39,7 +39,7 @@ const AcceptedRef = "refs/metasystem/goals/accepted"
 
 // DefaultPublishDeadline bounds the benign-advancement retry loop —
 // a deadline, not a fixed count: four benign advancements in a row
-// are lawful work, not failure (R3-13).
+// are lawful work, not failure.
 const DefaultPublishDeadline = 60 * time.Second
 
 // ResolveEndpoint reads goal.sync-remote (default origin) and
@@ -59,7 +59,7 @@ func ResolveEndpoint(root string) (Endpoint, error) {
 	return e, nil
 }
 
-// LocalMode reports the declared single-machine mode (R3-12).
+// LocalMode reports the declared single-machine mode.
 func (e Endpoint) LocalMode() bool { return e.Remote == "local" }
 
 func fetchRefFor(opid string) string { return "refs/metasystem/goals/fetch/" + opid }
@@ -86,14 +86,14 @@ func goalGit(root string, extraEnv []string, args ...string) (string, error) {
 }
 
 // CaptureTip fetches the canonical branch into the per-operation
-// ref (R4-03: concurrent operations in one clone can never rewind a
+// ref (concurrent operations in one clone can never rewind a
 // shared ref under each other) and returns the captured tip oid.
 // Single-machine mode reads the dedicated local ledger branch.
 func CaptureTip(e Endpoint, opid string) (string, error) {
 	if e.LocalMode() {
 		out, err := goalGit(e.Root, nil, "rev-parse", "--verify", LocalLedgerBranch)
 		if err != nil {
-			// The branch is BORN by the first publication (F16: local
+			// The branch is BORN by the first publication (local
 			// migration bootstraps it): until then the checkout HEAD
 			// is the world the transaction reads — it carries the
 			// legacy sources and no ledger, so ordinary verbs still
@@ -110,8 +110,8 @@ func CaptureTip(e Endpoint, opid string) (string, error) {
 	// otherwise opportunistically updates the remote-tracking ref
 	// too, and two concurrent operations then collide on that ONE
 	// shared ref's lock ("cannot lock ref 'refs/remotes/...'") — the
-	// exact contention the per-op refs exist to prevent. The F17
-	// race certification caught it on its first true-concurrency run.
+	// exact contention the per-op refs exist to prevent — true
+	// concurrency hit it on its first certified run.
 	if _, err := goalGit(e.Root, nil, "fetch", "--no-tags", "--refmap=", e.Remote,
 		"+"+e.Branch+":"+fetchRefFor(opid)); err != nil {
 		return "", err
@@ -177,7 +177,7 @@ func tipCarriesLedger(e Endpoint, tip string) (bool, error) {
 }
 
 // SyncModeGate refuses the durable/declared mode mismatch at EVERY
-// operational boundary (F16: the projection alone checked it): the
+// operational boundary (the projection alone checked it): the
 // fetched tip's root record speaks for the ledger, the endpoint for
 // this clone's config. A tip with no root record is pre-migration
 // and gates nothing; a torn record is the validator's to refuse.
@@ -219,7 +219,7 @@ type Change struct {
 
 // BuildCommit rebuilds the mutation on exactly the captured tip: an
 // isolated index seeded from the tip's tree, the changes applied,
-// and a commit whose parent IS that tip (R3-02), carrying the
+// and a commit whose parent IS that tip, carrying the
 // Goal-Transaction trailer. The commit is stored under the
 // operation's temporary ref and returned.
 func BuildCommit(e Endpoint, opid, tip string, changes []Change, message string) (string, error) {
@@ -314,7 +314,7 @@ func classifyPushFailure(output string) CASOutcome {
 	// remote says "stale info", while receive-pack on a file-path
 	// remote says "cannot lock ref ... but expected" with "[remote
 	// rejected] ... (failed to update ref)". Both ARE the lost
-	// compare — the F17 race certification hit the second shape as
+	// compare — the race certification hit the second shape as
 	// "unknown" on its first concurrent same-ref push.
 	for _, marker := range []string{
 		"stale info", "[rejected]", "fetch first", "non-fast-forward",
@@ -336,7 +336,7 @@ func PublishCAS(e Endpoint, tip, commit string) (CASOutcome, error) {
 		if _, err := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", LocalLedgerBranch); err != nil {
 			// The first publication CREATES the branch, and creation
 			// IS the compare: the empty old-value makes update-ref
-			// refuse a concurrent creator atomically (F16).
+			// refuse a concurrent creator atomically.
 			if out, cErr := goalGit(e.Root, nil, "update-ref", LocalLedgerBranch, commit, ""); cErr != nil {
 				return CASRefused, fmt.Errorf("local CAS refused: %s", strings.TrimSpace(out))
 			}
@@ -382,7 +382,7 @@ func AdvanceAccepted(root, newTip string) error {
 	return advanceAcceptedForward(root, newTip)
 }
 
-// advanceAcceptedForward moves the accepted ref FORWARD only (F6):
+// advanceAcceptedForward moves the accepted ref FORWARD only:
 // the CAS asserts the value read here, and a lost CAS re-reads —
 // if the ref already descends to (or past) the new tip, someone
 // else carried it and this pass is done; a ref that does NOT
@@ -392,7 +392,7 @@ func advanceAcceptedForward(root, newTip string) error {
 	for attempt := 0; attempt < 5; attempt++ {
 		old, err := goalGit(root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
 		if err != nil {
-			// Creation IS the compare (R2-3): the empty old-value
+			// Creation IS the compare: the empty old-value
 			// refuses a concurrent creator, so a later bootstrap can
 			// never replace a descendant with its ancestor.
 			if _, createErr := goalGit(root, nil, "update-ref", AcceptedRef, newTip, ""); createErr == nil {
@@ -464,7 +464,7 @@ type PublishRequest struct {
 	// a definite rejection by name.
 	Mutate func(tip string) ([]Change, error)
 	// Validate runs the full read-set revalidation on the built
-	// commit's tree (BGS-3). Nil skips — the layers land in order.
+	// commit's tree. Nil skips — the layers land in order.
 	Validate func(commit string) error
 	// Deadline bounds the retry loop; zero takes the default.
 	Deadline time.Duration
@@ -533,7 +533,7 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 // runTransaction drives one journaled transaction whose entry
 // ALREADY exists (created or pushed): Publish creates then runs;
 // recovery takes over a dead owner's entry then runs the same loop
-// from the stored intent (F7 — recovery completes, it does not
+// from the stored intent (recovery completes, it does not
 // kill).
 func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 	deadline := req.Deadline
@@ -552,7 +552,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			return PublishResult{}, err
 		}
 		// The acceptance gates stand between EVERY mutation and the
-		// fetched tip (F5): a foreign or rewound canonical branch is
+		// fetched tip: a foreign or rewound canonical branch is
 		// refused here exactly as the read side refuses it — a
 		// mutation must never build on a world this clone would not
 		// accept.
@@ -575,7 +575,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			return PublishResult{}, gateErr
 		}
 		// The captured tip must pass the SAME whole-tree validation
-		// the read side runs (R2-4): identity and descent alone let a
+		// the read side runs: identity and descent alone let a
 		// malformed descendant be "healed" incidentally by whatever
 		// verb ran next, publishing a repair nobody reviewed. A tree
 		// that carries no ledger yet (pre-migration) validates
@@ -632,7 +632,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		switch outcome {
 		case CASLanded:
 			// The postcondition, not the push's exit code, is the
-			// truth (F6): refetch and find OUR trailer before
+			// truth: refetch and find OUR trailer before
 			// anything terminalizes.
 			verifyNonce, nErr := readNonce()
 			if nErr != nil {
@@ -656,7 +656,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			}
 			// The refetched tip may already be a DESCENDANT someone
 			// else pushed after ours: accepted advances only onto a
-			// tree this clone validated (R2-3) — never incidentally
+			// tree this clone validated — never incidentally
 			// onto a stranger's unvalidated descendant.
 			advanceTarget := newTip
 			if newTip != commit {

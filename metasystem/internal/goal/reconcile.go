@@ -1,6 +1,6 @@
 package goal
 
-// Reconcile, stage one (BGS-5's second half, R8-06/R9-01/R9-02):
+// Reconcile, stage one:
 // the PERSISTED MATERIALIZED-EDIT-BASE and the STABLE CAPTURE. The
 // engine records the commit whose goal tree it last wrote into this
 // checkout; reconcile diffs the edited snapshot against THAT
@@ -35,12 +35,12 @@ type BaseRecord struct {
 	WrittenAt  string `json:"writtenAt"`
 	RefreshDue bool   `json:"refreshDue"` // a publish is in flight or landed; the refresh has not completed
 	// Publishing marks the window where the publish's OUTCOME is not
-	// yet known (R2-1): Commit still names the BASE, and completing
+	// yet known: Commit still names the BASE, and completing
 	// "from" it would erase the hand edits — resolution goes through
 	// the opid's trailer on a fresh capture instead.
 	Publishing bool   `json:"publishing,omitempty"`
 	Opid       string `json:"opid,omitempty"`
-	// Snapshot carries the captured bytes DURABLY (F10): a refresh
+	// Snapshot carries the captured bytes DURABLY: a refresh
 	// completing after a crash distinguishes post-capture edits,
 	// creations, and deletions exactly as the live session would.
 	Snapshot map[string][]byte `json:"snapshot,omitempty"`
@@ -232,12 +232,12 @@ func BaseTip(repoRoot string) (string, error) {
 }
 
 // baseAnchorRef keeps the materialized base reachable through
-// rewind repair and git gc (R10-M02).
+// rewind repair and git gc.
 const baseAnchorRef = "refs/metasystem/goals/materialized-base"
 
 // MaintainBase advances the materialized base when the checkout's
 // goal files exactly match HEAD's goal tree and the record lags —
-// the ordinary pull/checkout path (F9): no hook needed, the next
+// the ordinary pull/checkout path: no hook needed, the next
 // session's read does the bookkeeping.
 func MaintainBase(repoRoot string) {
 	rec, exists, err := ReadBase(repoRoot)
@@ -421,7 +421,7 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 }
 
 // RefreshOnly completes a died refresh from the durably recorded
-// publish (R10-M01): publication succeeded, the base record says
+// publish: publication succeeded, the base record says
 // refreshDue, and the snapshot protection degrades to "current
 // bytes differ from the published tree are preserved and named"
 // (the captured snapshot died with the process).
@@ -446,7 +446,7 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 		return nil, fmt.Errorf("the pending record carries no snapshot; this refresh predates the durable capture and completes by hand")
 	}
 	if rec.Publishing {
-		// The crash fell inside the publish window (R2-1): whether
+		// The crash fell inside the publish window: whether
 		// the commit landed is a fact about the canonical branch, and
 		// the opid's trailer answers it. Landed → refresh onto the
 		// tip that carries it. Never landed → the hand edits are
@@ -500,7 +500,7 @@ func RefreshOnly(repoRoot string) (skipped []string, err error) {
 		return Refresh(repoRoot, tip, &Snapshot{Files: rec.Snapshot})
 	}
 	// The DURABLE snapshot restores the live session's exact
-	// protection (F10): the completion runs the same refresh the
+	// protection: the completion runs the same refresh the
 	// crash interrupted, post-capture edits, creations, and
 	// deletions all distinguished.
 	return Refresh(repoRoot, rec.Commit, &Snapshot{Files: rec.Snapshot})

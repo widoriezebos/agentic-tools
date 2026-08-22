@@ -1,6 +1,6 @@
 package goal
 
-// The read-side advance (BGS-7, D118): the accepted ref moves only
+// The read-side advance: the accepted ref moves only
 // onto a fetched tip whose TREE validates whole, whose ledger
 // identity matches, and which DESCENDS from the accepted tip. On
 // any refusal the projection stays at the accepted tree and the
@@ -39,7 +39,7 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 	defer CleanupRefs(e, nonce)
 
 	// The sync-mode identity holds BEFORE the already-current
-	// short-circuit (F16): a flipped config must refuse on the very
+	// short-circuit: a flipped config must refuse on the very
 	// next fetch, not only when the tip happens to move.
 	if err := SyncModeGate(e, fetched); err != nil {
 		return AdvanceResult{}, err
@@ -52,7 +52,7 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{Tip: accepted, Detail: "already at the canonical tip"}, nil
 	}
 
-	// The ledger identity binds "same ledger" semantically (R7-12):
+	// The ledger identity binds "same ledger" semantically:
 	// re-pointing config at a different remote or branch cannot
 	// silently select another ledger, whatever the strings say.
 	if acceptedErr == nil {
@@ -66,7 +66,7 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{}, err
 	}
 
-	// The rollback DISCRIMINATION (R8-11): a descendant revert
+	// The rollback DISCRIMINATION: a descendant revert
 	// restoring an older valid state is accepted — the tree is the
 	// truth — with the prefix diagnosis REPORTED, never gating.
 	detail := "accepted " + short(fetched)
@@ -82,7 +82,7 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 }
 
 // AcceptanceGates are the rules that stand between ANY operation
-// and a fetched tip (F5: the read side had them, mutations bypassed
+// and a fetched tip (the read side had them, mutations bypassed
 // them). Both facts first, strongest name wins: a READABLE foreign
 // identity is a foreign ledger whatever its ancestry; a tip that
 // does not descend (a rewound branch, or a tip with no ledger at

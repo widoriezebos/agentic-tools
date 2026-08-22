@@ -1,12 +1,12 @@
 package goal
 
-// The migration (BGS-4): ONE commit, ONE opid (R7-04) turns the
+// The migration: ONE commit, ONE opid turns the
 // legacy single-file ledger into the synthesized live+done tree
 // with the root record, deleting goals.md and goals-accepted.json —
 // the exact clean-path set. Semantic-lossless over the shipped
 // parser domain: a legacy ledger that does not parse cleanly
 // refuses by name before anything mutates, and the REVIEWED source
-// digest literal is checked first of all (R5-08) — the migration
+// digest literal is checked first of all — the migration
 // runs on exactly the bytes the review saw or not at all.
 // Deterministic under injected identity and timestamp; the rerun is
 // idempotent keyed on the root record and mode.
@@ -86,7 +86,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		mode = "manifest"
 	}
 
-	// The worktree preconditions, before ANY mutation (F3/R2-6): the
+	// The worktree preconditions, before ANY mutation: the
 	// clean-path set must match HEAD — an uncommitted hand edit to
 	// the ledger, its baseline, the destination directory, or an
 	// in-repo manifest dies here, not inside the commit. Porcelain
@@ -136,7 +136,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		if err != nil {
 			return PublishResult{}, err
 		}
-		// The manifest BINDS the reviewed literal itself (F3): a
+		// The manifest BINDS the reviewed literal itself: a
 		// caller-provided digest that disagrees is a confusion.
 		if manifest.ReviewedSHA256 != opts.SourceDigest {
 			return PublishResult{}, fmt.Errorf("the manifest binds reviewed digest %s but the caller supplied %s; the manifest is the authority", manifest.ReviewedSHA256, opts.SourceDigest)
@@ -145,12 +145,12 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		manifest = &Manifest{Epoch: r.stamp()}
 	}
 	// The fast digest gate on the worktree copy — the authoritative
-	// read happens tip-side inside the transaction (F2).
+	// read happens tip-side inside the transaction.
 	sourcePath := filepath.Join(r.Endpoint.Root, "plans", "goals.md")
 	sourceBytes, err := os.ReadFile(sourcePath)
 	if os.IsNotExist(err) {
 		// A completed cutover deleted goals.md; the RERUN must still
-		// classify idempotently (F4 residue). The fast worktree gate
+		// classify idempotently. The fast worktree gate
 		// has nothing to read, and the tip-side authoritative checks
 		// inside the transaction own the verdict.
 		sourceBytes = nil
@@ -161,7 +161,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("source digest mismatch refused: goals.md is %s, the reviewed literal is %s — the migration runs on exactly the reviewed bytes or not at all", got, opts.SourceDigest)
 	}
 
-	// The rerun is answered BEFORE any journal write (R2-7): a
+	// The rerun is answered BEFORE any journal write: a
 	// completed migration is a fact about the canonical tip, and a
 	// freshly minted opid journaled "confirmed" against it would be
 	// a confirmation with no History line and no trailer — a lie the
@@ -208,13 +208,13 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 			} else if done {
 				// A racing migrator completed between the pre-journal
 				// check and this capture: the desired state holds
-				// WITHOUT this opid (R2-7) — abandoned, never a
+				// WITHOUT this opid — abandoned, never a
 				// manufactured confirm. The SAME four-way comparison
 				// as the pre-journal check.
 				return nil, NothingToDo{Reason: "the migration already completed under this identity, mode, sync mode, and manifest"}
 			}
 
-			// The AUTHORITATIVE source is the TIP's ledger (F2): a
+			// The AUTHORITATIVE source is the TIP's ledger: a
 			// concurrent legacy advance since the review makes the
 			// tip's bytes differ from the reviewed literal, and the
 			// migration refuses rather than silently discarding it.
@@ -301,7 +301,7 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 	legacyPosition := 0
 
 	// Every converted goal's OpenedAt comes from the EPOCH's
-	// positional formula (F4): deterministic on any machine, and
+	// positional formula: deterministic on any machine, and
 	// (OpenedAt, id) ordering reproduces the ledger's textual order.
 	migrated := func(id, state, intent, origin, next string) (*GoalFile, error) {
 		legacyPosition++
@@ -316,7 +316,7 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 		touch(f, r, "migrate", []string{id})
 		return f, nil
 	}
-	// Semantic-lossless (F4): Evidence lines and any prose the
+	// Semantic-lossless: Evidence lines and any prose the
 	// legacy parser tolerated survive as LegacyNotes — nothing the
 	// review read disappears.
 	carryNotes := func(f *GoalFile, g Goal) {
@@ -426,7 +426,7 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 				f.State = StateQueued
 				f.Parked = nil
 			}
-			// No entry is a no-op (R5-09): an amend that changes
+			// No entry is a no-op: an amend that changes
 			// nothing against the converted output refuses.
 			if string(RenderFile(f)) == before {
 				return nil, fmt.Errorf("manifest amend-goal %s: the amendment changes nothing against the converted output", entry.Id)
@@ -447,7 +447,7 @@ func synthesize(legacy *Ledger, manifest *Manifest, r VerbRequest, opts MigrateO
 		MigrationEpoch: manifest.Epoch, ManifestDigest: manifestDigest,
 		MigrationMode: mode, Revision: 1,
 		// Root-level tolerated prose survives on the root record
-		// (R2-5) exactly as per-goal prose survives on its goal.
+		// exactly as per-goal prose survives on its goal.
 		Legacy: trimRightAll(legacy.RootProse),
 	}
 	if legacy.Free != nil {

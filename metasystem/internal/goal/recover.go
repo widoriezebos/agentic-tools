@@ -1,6 +1,6 @@
 package goal
 
-// Executable recovery (F7): the one rule, run for real. Recover
+// Executable recovery: the one rule, run for real. Recover
 // walks every non-terminal journal entry, resolves the opid
 // postcondition against a fresh capture, and ACTS — confirming what
 // landed, correcting terminalized beliefs the canonical history
@@ -63,7 +63,7 @@ func Recover(e Endpoint) ([]RecoveryReport, error) {
 				return reports, err
 			}
 			// Accepted advances only onto a VALIDATED tip, recovery
-			// included (R2-3), and a refused advance is said in the
+			// included, and a refused advance is said in the
 			// report — never discarded.
 			if valErr := ValidateCommit(e.Root, tip); valErr != nil {
 				report.Detail = "confirmed on the canonical tip; accepted NOT advanced (the tip does not validate): " + valErr.Error()
@@ -135,7 +135,7 @@ func completeFromIntent(e Endpoint, entry Entry) (string, error) {
 
 // requestForEntry rebuilds the COMPLETE verb request from the
 // entry's stored intent through the SAME constructors the live
-// verbs run (R2-2): cascades, Goal-free clears, authority checks,
+// verbs run: cascades, Goal-free clears, authority checks,
 // displacement markers, and acknowledgment piggybacks all replay
 // identically, and the derived opid — the entry's ulid under the
 // entry's pair — IS the entry's opid, so every rebuilt history
@@ -198,7 +198,7 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 			case "next":
 				fields.NextStep = &value
 			case "origin":
-				// Origin is immutable provenance (R2-8): a stored
+				// Origin is immutable provenance: a stored
 				// origin delta is a pre-fold journal's residue.
 				return PublishRequest{}, fmt.Errorf("the stored intent rewrites Origin, which is immutable; close this entry by hand")
 			case "blockedBy":

@@ -45,7 +45,7 @@ func ResolveMachine(root string) (string, error) {
 // after.
 // ExistingLedgerIdentity returns the migrated ledger's adoption
 // identity, or "" before migration. The CLI's rerun path adopts it
-// instead of minting a second identity (F4 residue): the identity
+// instead of minting a second identity: the identity
 // is minted ONCE, and a rerun that invents another is a confusion
 // the engine would refuse anyway — this keeps the rerun honest and
 // idempotent without the caller re-supplying it.

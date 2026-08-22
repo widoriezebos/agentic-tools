@@ -38,14 +38,14 @@ type ScanResult struct {
 	// liveness. Non-empty Unreadable vetoes BOTH the all-clear and any
 	// goal block: nothing can be asserted over unread inputs.
 	Unreadable []string
-	// Jobs and Runs are the monitor facility's typed facts (MON-05):
+	// Jobs and Runs are the monitor facility's typed facts:
 	// the unwatched rule, the run warnings, and the green cursor
 	// consume these, never the display-shaped Busy items.
 	Jobs []JobFact
 	Runs []RunFact
 	// RunUnreadable is the run readers' own failure channel — surfaced
 	// OUTSIDE the ladder so Busy can never hide it, and it freezes the
-	// green cursor (FIX-R6-04).
+	// green cursor (the cursor rides only proven-green scans).
 	RunUnreadable []string
 }
 
@@ -128,7 +128,7 @@ type sessionState struct {
 	BlockedGoalRevisions []string `json:"blockedGoalRevisions"`
 	BlockedFreeDigests   []string `json:"blockedFreeDigests"`
 	WatchdogSurfaced     *string  `json:"watchdogSurfaced"`
-	// The monitor facility's two additive slots (MON-05): the
+	// The monitor facility's two additive slots: the
 	// unwatched-work block-once digests and the green cursor riding the
 	// terminal sequence's total order.
 	BlockedUnwatchedDigests []string `json:"blockedUnwatchedDigests,omitempty"`
@@ -221,7 +221,7 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 	warnings = append(warnings, scan.RunUnreadable...)
 	verdict.Diagnostics = append(verdict.Diagnostics, scan.RunUnreadable...)
 
-	// The unwatched-work block (MON-05, FIX-R6-01: lifecycle-tagged keys).
+	// The unwatched-work block: lifecycle-tagged keys.
 	var unwatchedTags, unwatchedIds []string
 	for _, job := range scan.Jobs {
 		if mainId != "" && job.MainId == mainId &&
@@ -262,7 +262,7 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 // inside this verdict's flock (critique finding 3): the scanner's
 // ScanResult predates the lock and a stale snapshot could advance the
 // cursor past a green it never saw. Any unreadable run record freezes
-// the cursor entirely (FIX-R6-04). Crafted scan facts still drive the
+// the cursor entirely. Crafted scan facts still drive the
 // warning paths; the CURSOR trusts only the fresh read.
 func (s *Store) decideGreens(scan ScanResult, session *sessionState) []string {
 	records, unreadable := (&run.Store{Root: s.Root}).List()

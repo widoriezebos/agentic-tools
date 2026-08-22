@@ -1,6 +1,6 @@
 package goal
 
-// Reconcile, stage two (R9-03): the hand-edit grammar is
+// Reconcile, stage two: the hand-edit grammar is
 // EXECUTABLE. Generated fields — Revision, History, Integrity,
 // Claimed, OpenedAt — are IGNORED as input and synthesized at
 // publication; a hand-supplied generated value that DIFFERS from
@@ -22,7 +22,7 @@ import (
 
 // MappedVerb is one lawful row delta the hand edit decomposed
 // into, carrying the BASE-side values its replay compares against
-// (F9): a concurrent edit that moved a field past the base is a
+// : a concurrent edit that moved a field past the base is a
 // conflict, never an overwrite.
 type MappedVerb struct {
 	Verb      string // open | park | unpark | done | reopen | edit
@@ -37,7 +37,7 @@ type MappedVerb struct {
 	BaseArc   string     // the base's arc, compared at replay
 	ArcIds    []string   // cascade park: every live member
 	// ArcBaseStates carries each cascade member's own before-state
-	// (R2-10): the cascade is one row, the conflicts are per member.
+	//: the cascade is one row, the conflicts are per member.
 	ArcBaseStates map[string]string
 }
 
@@ -203,7 +203,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	}
 	// A hand park of a CLAIMED goal lawfully clears the Claimed line
 	// — that is the park's own effect, synthesized either way at
-	// replay (R2-13). Every other Claimed alteration stays refused.
+	// replay. Every other Claimed alteration stays refused.
 	claimClearedByPark := base.Claimed != nil && edited.Claimed == nil &&
 		base.State == StateClaimed && edited.State == StateParked
 	if !claimClearedByPark && ((edited.Claimed == nil) != (base.Claimed == nil) ||
@@ -217,7 +217,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		switch {
 		case (base.State == StateQueued || base.State == StateClaimed) && edited.State == StateParked:
 			// A hand park is lawful from queued AND from claimed — the
-			// pause lever's own predicate, all rows actor H (R2-13);
+			// pause lever's own predicate, all rows actor H;
 			// the replay records displacement for a foreign claim.
 			if edited.Parked == nil || edited.Parked.Because == "" {
 				return nil, fmt.Errorf("%s: a hand-park needs its Parked because", p)
@@ -252,7 +252,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		editNeeded = true
 	}
 	if edited.Origin != base.Origin {
-		// Origin is OUTSIDE the closed edit surface (F11): the
+		// Origin is OUTSIDE the closed edit surface: the
 		// provenance of a goal is not a hand-editable fact.
 		return nil, fmt.Errorf("%s: Origin is not on the closed edit surface", p)
 	}
@@ -263,7 +263,7 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		baseFields.Blocked = &baseBlocked
 		editNeeded = true
 	}
-	// Arc IS on the closed surface (F11): a membership change maps
+	// Arc IS on the closed surface: a membership change maps
 	// to its verbs — set-arc for a join or move, detach for a clear.
 	if edited.Arc != base.Arc {
 		if edited.Arc == "" {

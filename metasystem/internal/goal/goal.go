@@ -1,5 +1,5 @@
 // Package goal owns the sixth standing ledger: plans/goals.md, the thread
-// of intent that survives every turn boundary (goal-system design, D69).
+// of intent that survives every turn boundary.
 // It holds the grammar, the parser, the verbs, the turn verdict, and the
 // verdict's input contract (ScanResult); internal/report's scanner fills
 // that contract across the declared report→goal edge, and the verdict
@@ -22,7 +22,7 @@ import (
 	"strings"
 )
 
-// Byte bounds, complete by design (r4 finding 12). Everything projected
+// Byte bounds, complete by design. Everything projected
 // anywhere is bounded at its source.
 const (
 	MaxIdBytes        = 64
@@ -38,7 +38,7 @@ const (
 )
 
 // Origin says who opened a goal. Human-origin goals carry an advisory
-// authority gate on done/park (D66 constraint 3).
+// authority gate on done/park.
 const (
 	OriginHuman = "human"
 	OriginMain  = "main"
@@ -54,7 +54,7 @@ type Goal struct {
 	Parked   string   // Parked: the required "Parked because"
 	Conclude string   // Done: the required "Concluded"
 	// Prose retains every tolerated non-field line following this
-	// goal's section (R2-5): migration must carry it into
+	// goal's section: migration must carry it into
 	// LegacyNotes — a line the parser accepted and then dropped
 	// would be deleted forever with goals.md.
 	Prose []string
@@ -76,7 +76,7 @@ type Ledger struct {
 	Done    []Goal
 	Free    *Free
 	// RootProse retains tolerated prose lines preceding any goal
-	// section (R2-5): they migrate into the root record's
+	// section: they migrate into the root record's
 	// LegacyNotes.
 	RootProse []string
 
@@ -91,7 +91,7 @@ type Ledger struct {
 // HasGoals reports whether the ledger carries any real goal (current,
 // queued, parked, or done). A genesis skeleton is goal-free; an
 // initialized project is not — the distinction blocks the
-// deleted-baseline downgrade (genesis authority review F2).
+// deleted-baseline downgrade.
 func (l *Ledger) HasGoals() bool {
 	return l.Current != nil || len(l.Queued) > 0 || len(l.Parked) > 0 || len(l.Done) > 0
 }

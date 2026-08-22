@@ -1,10 +1,10 @@
 package goal
 
-// The accepted-ref integrity lifecycle (BGS-5, D118): the
+// The accepted-ref integrity lifecycle: the
 // human-reserved clone-local repair that deliberately accepts a
 // rewound remote, and the opid-History rollback DISCRIMINATION — a
 // descendant revert restoring an older valid state is ACCEPTED with
-// the prefix diagnosis reported (R8-11); the diagnosis is never an
+// the prefix diagnosis reported; the diagnosis is never an
 // acceptance gate. Terminals are beliefs, the tree is the truth:
 // validation gates every acceptance, history is not authenticated.
 
@@ -99,7 +99,7 @@ func setAcceptedTo(root, newTip, oldTip string) error {
 // PrefixDiagnosis reports every goal file in the new tree whose
 // History is a strict PREFIX of the same file's History in the old
 // tree — the shape of a descendant revert restoring an older state.
-// A DIAGNOSTIC, never a gate (R8-11): the caller reports it and
+// A DIAGNOSTIC, never a gate: the caller reports it and
 // accepts anyway.
 func PrefixDiagnosis(root, oldTip, newTip string) ([]string, error) {
 	oldFiles, err := ReadCommitGoals(root, oldTip)

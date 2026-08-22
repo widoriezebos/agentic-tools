@@ -1,15 +1,14 @@
 package goal
 
 // The transaction journal: the machine-local crash record every
-// ledger mutation writes BEFORE acting (BGS-6, D118's three-phase
-// collapse). Three phases are the entire vocabulary — created,
-// pushed, terminal (R8-04) — and recovery is ONE rule for every
+// ledger mutation writes BEFORE acting. Three phases are the entire vocabulary — created,
+// pushed, terminal — and recovery is ONE rule for every
 // non-terminal entry: refetch, evaluate the opid postcondition, and
-// when that is absent let the OWNER'S LIVENESS decide (R10-M04). A
+// when that is absent let the OWNER'S LIVENESS decide. A
 // dead owner's entry is COMPLETED from its stored intent, never
-// killed (R9-07); only the live owner abandons its own never-pushed
+// killed; only the live owner abandons its own never-pushed
 // work or expires its own retry loop. Terminals are beliefs, the
-// opid is the truth (R9-08): a pre-rewind push can land after the
+// opid is the truth: a pre-rewind push can land after the
 // entry terminalized, and any later sighting of the opid in
 // canonical history corrects the entry to confirmed-late.
 
@@ -25,7 +24,7 @@ import (
 )
 
 // Phase is a journal entry's lifecycle position. These three names
-// are the ONLY journal vocabulary anywhere in the design (R8-04).
+// are the ONLY journal vocabulary anywhere in the design.
 type Phase string
 
 const (
@@ -55,7 +54,7 @@ type FieldDelta struct {
 	New    string `json:"new"`
 }
 
-// Intent is the COMPLETE NORMALIZED COMMAND INTENT (R8-03): verb,
+// Intent is the COMPLETE NORMALIZED COMMAND INTENT: verb,
 // targets, and every argument — reason, conclusion, keep count, arc
 // changes, edit deltas — enough to rebuild the operation without
 // the original process.
@@ -112,8 +111,8 @@ func entryPath(repoRoot, opid string) string {
 	return filepath.Join(journalDir(repoRoot), opid+".json")
 }
 
-// JournalLock serializes every journal transition on this clone
-// (R8-05). Callers hold it across read-decide-write.
+// JournalLock serializes every journal transition on this clone.
+// Callers hold it across read-decide-write.
 type JournalLock struct{ f *os.File }
 
 func AcquireJournalLock(repoRoot string) (*JournalLock, error) {
@@ -189,7 +188,7 @@ func callerIsOwner(e Entry) bool {
 	return self.StartedAt.Unix() == e.Owner.PidStartedAt
 }
 
-// guardTouch enforces R8-05: a process other than the owner touches
+// guardTouch: a process other than the owner touches
 // an entry only when the owner is provably dead.
 func guardTouch(e Entry) error {
 	if callerIsOwner(e) {
@@ -335,7 +334,7 @@ func MarkTerminal(repoRoot, opid string, outcome Outcome, evidence string) error
 	return writeEntry(repoRoot, e)
 }
 
-// CorrectLate is the ONE lawful terminal correction (R9-08): a
+// CorrectLate is the ONE lawful terminal correction: a
 // pre-rewind push landed after the entry terminalized, so the opid
 // now sits in canonical history. Confirmed entries stand; every
 // other terminal corrects to confirmed-late with the new evidence.
@@ -365,7 +364,7 @@ func CorrectLate(repoRoot, opid, evidence string) error {
 
 // TakeOver reassigns a provably-dead owner's non-terminal entry to
 // the calling process, under the lock — the first step of
-// recovery-completes (R9-07).
+// recovery-completes.
 func TakeOver(repoRoot, opid string) (Entry, error) {
 	lock, err := AcquireJournalLock(repoRoot)
 	if err != nil {
@@ -468,7 +467,7 @@ const (
 )
 
 // ClassifyRecovery is the ONE rule, as a pure function over the
-// evidence (R10-M04): the opid postcondition decides first; when it
+// evidence: the opid postcondition decides first; when it
 // is absent the owner's liveness decides — a dead owner's entry is
 // completed from its stored intent, created and pushed alike; only
 // the live owner abandons its own never-pushed work or expires its

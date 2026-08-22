@@ -1,6 +1,6 @@
 package goal
 
-// The migration manifest (BGS-4, R5-09): a CLOSED, deterministic
+// The migration manifest: a CLOSED, deterministic
 // schema, parsed exactly as the checked-in document declares
 // itself. MIGRATION_EPOCH and REVIEWED_SOURCE_SHA256 are REQUIRED
 // headers, each exactly once before the first entry. Entries are
@@ -192,7 +192,7 @@ func ParseManifest(data []byte) (*Manifest, error) {
 			}
 			if current == nil {
 				// An unrecognized entry heading is a tree nobody
-				// reviewed, never commentary (R2-16).
+				// reviewed, never commentary.
 				return nil, fmt.Errorf("manifest line %d: unknown entry heading %q — the schema admits add-goal and amend-goal", lineNo+1, line)
 			}
 			continue

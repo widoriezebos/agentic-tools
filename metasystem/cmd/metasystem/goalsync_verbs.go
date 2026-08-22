@@ -24,13 +24,13 @@ import (
 )
 
 // ensureGuardEnrolled installs or composes the pre-commit guard
-// before any goal mutation publishes (R2-11): git does not clone
+// before any goal mutation publishes: git does not clone
 // hooks, so a fresh clone would otherwise mutate the ledger with no
 // accidental-edit fence. An existing hook is preserved as
 // pre-commit.local behind the guard; a hook already referencing the
 // guard is left alone; BOTH files existing without the guard
 // refuses toward manual composition — enrollment never clobbers
-// (R2-15's rule, held here too). The composer pins the guard's
+// (the never-clobber rule, held here too). The composer pins the guard's
 // absolute path: hooks are per-clone by nature, and the vendored
 // layout keeps the guard below the git toplevel.
 func ensureGuardEnrolled(root string) error {
@@ -43,7 +43,7 @@ func ensureGuardEnrolled(root string) error {
 	if statErr != nil || info.Mode()&0o111 == 0 {
 		// Fail closed: a checkout without an
 		// EXECUTABLE guard cannot claim the fence exists, and a
-		// mutation without the fence is exactly what R2-11 forbids.
+		// mutation without the fence is exactly what enrollment forbids.
 		return fmt.Errorf("this checkout ships no executable pre-commit guard at %s; the ledger fence cannot be enrolled, so the mutation refuses", guard)
 	}
 	// The probes run with git's steering env scrubbed (GIT_DIR and
@@ -235,7 +235,7 @@ exit 0
 // assignment, and one of the two known bodies byte-for-byte. A
 // foreign or locally extended hook that merely contains similar
 // fragments is a human's file — rewriting it would delete their
-// checks (R2-15).
+// checks.
 func isOurComposer(hook string) bool {
 	lines := strings.SplitN(hook, "\n", 3)
 	if len(lines) < 3 || lines[0] != "#!/usr/bin/env bash" {
@@ -302,7 +302,7 @@ func goalActor(root string, human string) (goal.Actor, error) {
 	}
 	// METASYSTEM_OWNER_LINEAGE is the runner's real export (the same
 	// variable arming and succession read); a second spelling here
-	// collapsed every real session to the literal "session" (F16).
+	// collapsed every real session to the literal "session".
 	lineage := os.Getenv("METASYSTEM_OWNER_LINEAGE")
 	if lineage == "" {
 		lineage = "session"
@@ -345,7 +345,7 @@ func runGoalMigrate(args []string) int {
 	adoption := *identity
 	if adoption == "" {
 		// A rerun never mints a second identity: the ledger's own
-		// standing identity is adopted when one exists (F4 residue).
+		// standing identity is adopted when one exists.
 		if existing := goal.ExistingLedgerIdentity(*root); existing != "" {
 			adoption = existing
 		} else {

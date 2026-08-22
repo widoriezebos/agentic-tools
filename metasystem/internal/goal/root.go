@@ -31,7 +31,7 @@ type RootRecord struct {
 type FreeRecord struct {
 	Declared string
 	Origin   string
-	Digest   string // freshness digest per the design's R7-11 domain
+	Digest   string // freshness digest over the declared plans world
 }
 
 // Sync modes, closed.

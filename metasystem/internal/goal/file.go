@@ -156,7 +156,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		addProblem("missing Intent — a goal without its why is unreadable")
 	}
 	if f.Origin != OriginHuman && f.Origin != OriginMain {
-		addProblem("Origin %q is not human|main — provenance is immutable and closed (R2-8)", f.Origin)
+		addProblem("Origin %q is not human|main — provenance is immutable and closed", f.Origin)
 	}
 	if f.OpenedAt == "" {
 		addProblem("missing OpenedAt")

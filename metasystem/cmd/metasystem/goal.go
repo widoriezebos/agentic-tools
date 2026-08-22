@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// The goal family (D67): the doctrine commands humans and agents type.
+// The goal family: the doctrine commands humans and agents type.
 // Mutations classify the caller and run the same authority matrix every
 // record-writer path runs (holder-only), then hand the goal package a
 // distilled caller; the goal-specific gates — active mission, baseline

@@ -403,7 +403,7 @@ func (s *Store) successor(ledger *Ledger, caller Caller, thenId string, andNone 
 	}
 }
 
-// humanGate is the advisory reservation on human-origin conclusions (D66
+// humanGate is the advisory reservation on human-origin conclusions (the
 // constraint 3): done/park on a human-opened goal needs a HUMAN caller.
 func humanGate(goal Goal, caller Caller, verb string) error {
 	if goal.Origin == OriginHuman && caller.Class != "HUMAN" {
@@ -598,7 +598,7 @@ func (s *Store) Reconcile(caller Caller) (Result, error) {
 				return Result{}, fmt.Errorf("genesis reconcile refused: %s", problems[0])
 			}
 			// The deleted-baseline downgrade guard (authority review
-			// F2/F3), re-checked HERE under the lock so a baseline
+			// adoption-shape rules), re-checked HERE under the lock so a baseline
 			// appearing between authorization and this write cannot be
 			// bypassed: a populated ledger with no baseline is a
 			// corrupted or attacked INITIALIZED project, not a virgin

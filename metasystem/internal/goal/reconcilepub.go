@@ -64,7 +64,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		targets = append(targets, row.Id)
 	}
 	// The pending record — snapshot included — lands durably BEFORE
-	// the publish leaves this process (F10): a crash at ANY point
+	// the publish leaves this process: a crash at ANY point
 	// after publication finds the snapshot on disk and
 	// --refresh-only completes exactly what the live session would
 	// have done. The commit field is stamped after confirmation.
@@ -125,7 +125,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 				}
 			}
 			// A reconcile is a publication like any other: standing
-			// displacement addressed to this pair acks here (R9-06).
+			// displacement addressed to this pair acks here.
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
@@ -136,7 +136,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		// An unknown outcome (a pushed-but-unconfirmed crash window,
 		// a failed confirming refetch) KEEPS the record and its
 		// snapshot — --refresh-only resolves it by the opid's trailer
-		// (R2-1). The JOURNAL decides definitiveness, not the returned
+		//. The JOURNAL decides definitiveness, not the returned
 		// outcome: pre-push failures mark the
 		// entry abandoned but return an empty result, and leaving the
 		// pending record then blocks ordinary reconcile spuriously.
@@ -231,7 +231,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			if !exists {
 				return nil, conflict("state", "%s is not live on the fetched tip", id)
 			}
-			// The state before-value binds (R2-10): a hand park made
+			// The state before-value binds: a hand park made
 			// against queued must not swallow a claim that landed
 			// meanwhile — the competitor's work is preserved and the
 			// conflict named.
@@ -243,7 +243,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			}
 			if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
 				// The human parks a foreign claim lawfully; the
-				// displaced PAIR is recorded (R2-12: the full
+				// displaced PAIR is recorded (the full
 				// ownership key, never the machine alone).
 				f.Parked = &ParkRecord{By: r.Actor.historyActor(), At: r.stamp(), Because: row.Because,
 					Displaced: pairMarker(f.Claimed)}
@@ -311,7 +311,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		}, nil
 
 	case "edit":
-		// done+edit compose (F11): the edited goal may already have
+		// done+edit compose: the edited goal may already have
 		// moved to the archive by an earlier row in THIS session —
 		// only that archive is lawful to keep editing. An archive
 		// already on the fetched tip means another transaction
@@ -343,7 +343,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if !archived && !session.moved[row.Id] && row.BaseState != "" && f.State != row.BaseState {
 			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
 		}
-		// The BASE comparison per field (F9): a concurrent edit that
+		// The BASE comparison per field: a concurrent edit that
 		// moved a field past the base conflicts by name — the hand
 		// edit never overwrites what it never saw.
 		if row.Base.Intent != nil && f.Intent != *row.Base.Intent {
@@ -367,7 +367,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		editDisplaced := ""
 		if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
 			// A hand edit of another pair's claim is lawful under the
-			// human, and displacement-bearing (R2-12/R9-05).
+			// human, and displacement-bearing.
 			editDisplaced = pairMarker(f.Claimed)
 		}
 		touchDisplaced(f, r, "edit", []string{row.Id}, editDisplaced)
@@ -391,7 +391,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		detachDisplaced := ""
 		if f.State == StateClaimed && f.Claimed != nil {
 			if !ownPair(f.Claimed, r.Actor) {
-				// The released foreign pair hears it (R2-12/R9-05).
+				// The released foreign pair hears it.
 				detachDisplaced = pairMarker(f.Claimed)
 			}
 			f.State = StateQueued
@@ -417,7 +417,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
 		}
 		// The hand move composes under the SAME membership matrix as
-		// the verb, all rows actor H (R2-13: the replay was stricter
+		// the verb, all rows actor H (the replay was stricter
 		// than the table and refused lawful human joins).
 		setArcDisplaced := ""
 		handSourceWasClaimed := false
@@ -456,7 +456,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		case standing.State == StateClaimed && standing.Claimed != nil:
 			if handSourceWasClaimed {
 				// Two displaced pairs in one hand move refuses exactly
-				// as the verb refuses it (R2-14): release first.
+				// as the verb refuses it: release first.
 				return nil, conflict("state", "the member moves from one claimed arc into another; two claimants cannot trade a member in one move — release it first")
 			}
 			if f.State == StateParked {
@@ -470,7 +470,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			if !ownPair(standing.Claimed, r.Actor) {
 				// A human injection into another pair's claim is
 				// displacement-bearing: the runner hears its scope
-				// changed (R9-05).
+				// changed.
 				setArcDisplaced = pairMarker(standing.Claimed)
 			}
 			f.State = StateClaimed
@@ -490,7 +490,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 }
 
 // reconcileIntent serializes every mapped row into the journal's
-// durable intent (F7): verb, target, reason, conclusion, cascade
+// durable intent: verb, target, reason, conclusion, cascade
 // set, and field deltas — the whole session, rebuildable.
 func reconcileIntent(human string, targets []string, rows []MappedVerb) Intent {
 	in := Intent{Verb: "reconcile", Targets: targets, Args: map[string]string{
@@ -526,7 +526,7 @@ func reconcileIntent(human string, targets []string, rows []MappedVerb) Intent {
 }
 
 // clearFreeIfDeclared applies the verbs' Goal-free clearing rule to
-// a mapped row (F11): an open or unpark under a declared Goal-free
+// a mapped row: an open or unpark under a declared Goal-free
 // clears it in the same commit, exactly as the verb does.
 func clearFreeIfDeclared(t *TreeGoals, r VerbRequest, target string) []Change {
 	if t.Root == nil || t.Root.Free == nil {

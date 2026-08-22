@@ -1,6 +1,6 @@
 package goal
 
-// The canonical projection (BGS-13): every read — list, next, the
+// The canonical projection: every read — list, next, the
 // open-work verdict — comes from the ACCEPTED ref's tree, never the
 // checkout. Offline reads work from the last accepted tree with a
 // staleness banner past the threshold; the sync mode is a durable
