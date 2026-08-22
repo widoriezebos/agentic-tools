@@ -3,10 +3,11 @@
 - State: queued
 - Intent: Pre-wall mission state refuses resume with the named error; no migration path (HIW-O11)
 - Origin: main
-- Next step: Implement per the wall design's O11 row (an independent refusal, not a verification of other rows).
+- Next step: Appetite: 3h — ratified by the coordinator on mac-coordinator's proposal: the named refusal with fixtures, in its author's own wall context.
 - OpenedAt: 2026-08-20T16:49:00Z
-- Revision: 1
+- Revision: 2
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=wall-o11-legacy-state-refusal
-Integrity: sha256=f99c81871d11106555bce52e0923c5fa63e5e5a64c39251d3b028a6235e30a57
+- 2026-08-22T14:38:42Z BE4BG1PVT6PRWMP4PH7QGACPPR-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=wall-o11-legacy-state-refusal
+Integrity: sha256=e5ccdc2135fc32cd14517b3af99bc6cfd29cb84f23209d01d933aa8902360b1b
