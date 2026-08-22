@@ -1,99 +1,30 @@
 {
+  "id": "taskrun",
+  "version": "0.3",
+  "schemaVersion": 1,
+  "title": "taskrun: a dependency-aware task runner (Java, Maven, command line) \u2014 Devin roster (sol delegate roster)",
+  "product": {
+    "entryPoint": "java -jar target/taskrun.jar",
+    "requirementCount": 26,
+    "sourcePaths": [
+      "src/main/**",
+      "src/test/**",
+      "pom.xml"
+    ]
+  },
   "comparisonEligible": false,
   "comparisonEligibleNote": "Version 0.x is a trial spec; benchmark-compare refuses any cohort below 1.0. This spec is also not comparable to bm-1 even after promotion: it is a separate benchmark identity with its own roster, and comparing cohorts across identities is exactly what the roster note forbids.",
-  "completionGate": {
-    "command": "the builder's stated test command passes AND requirements-map.json covers 1..26 AND ./mvnw -o -q package succeeds from a clean state AND the host authored no product bytes (every product change arrived through an implementer job, critic closure, and conformance-authorized exact integration)",
-    "decision": "self-assessment, decided 2026-08-05 under the human's blanket approval",
-    "rationale": "The grader is held out, so the mission cannot iterate against it; the run stops when the builders believe they are done, and the held-out grading afterwards measures how right that belief was, which is among the most interesting numbers the benchmark produces."
-  },
-  "deferredMetrics": {
-    "mutation_catch": {
-      "bound": null,
-      "direction": "max",
-      "domain": [
-        0.0,
-        1.0
-      ],
-      "note": "Deferred with its refutation recorded under grader.mutation. Not emitted in v0.1; a consumer of the metric vector must not expect it."
-    }
-  },
-  "grader": {
-    "calibration": {
-      "probeVectors": {
-        "alternating-order": {
-          "mustNotDisturb": [
-            "cache_correctness",
-            "failure_propagation"
-          ],
-          "target": "determinism"
-        },
-        "cache-blind-command": {
-          "mustNotDisturb": [
-            "determinism",
-            "failure_propagation",
-            "format_agreement"
-          ],
-          "target": "cache_correctness"
-        },
-        "formats-disagree": {
-          "mustNotDisturb": [
-            "cache_correctness",
-            "determinism",
-            "failure_propagation"
-          ],
-          "target": "format_agreement"
-        },
-        "incomplete": {
-          "condition": "acceptance strictly between 0 and 1",
-          "target": null
-        },
-        "note": "A probe is a near-correct minimal implementation with exactly its one flaw: correct enough on its siblings' target behaviours that those metrics stay up. config_errors and the Maven-dependent metrics are outside every vector, because demanding full configuration validation of a twenty-line probe would make the probes bigger than the point. The alternating-order probe legitimately disturbs format_agreement and gap_handled, since its order differs across the separate invocations those checks compare.",
-        "runs-blocked-dependents": {
-          "mustNotDisturb": [
-            "cache_correctness",
-            "determinism",
-            "format_agreement"
-          ],
-          "target": "failure_propagation"
-        }
-      },
-      "probes": "small purpose-built wrong implementations, each DECLARING the metric it targets",
-      "repetitions": 3,
-      "rule": "A probe must fail its target metric on every repetition. Other metrics may legitimately drop too, because the metrics overlap by construction (a wrong order hits determinism, format agreement and requirement 10's acceptance at once); demanding one-metric isolation is the same impossibility the mutant corpus already hit (SP-2-1, BA-3-2). Each probe also names the metrics it must NOT disturb, and calibration checks both directions."
-    },
-    "heldOut": true,
-    "heldOutNote": "Never copied into the repository the agents work in. Provisioning copies spec.md and seed/ only.",
-    "mutation": {
-      "note": "Not built in grader v0.1, and the deferral is a disposition of BA-2-2, not a postponement of the old text: that finding refuted the claim that mutating the builder's own code is architecture-neutral. With no reference corpus, mutants come from arbitrary builder source, and attributing a surviving mutant to the requirement whose tests should have caught it is not derivable from requirements-map.json alone. A later version needs a design of its own, critiqued before it is built. Until then mutation_catch stays in the metric table with a null bound and is never emitted.",
-      "status": "deferred, not designed"
-    },
-    "outsideOnlyException": "Requirement 24 is graded by reading pom.xml. No finite set of runs can prove an unexercised branch imports nothing, so the outside-only rule states its one exception rather than pretending (BA-2-11).",
-    "path": "grader/",
-    "v01Scope": {
-      "builds": [
-        "grade.sh emitting metric=<name>=<value> lines in the mission gate grammar, exit 0 when measurement ran",
-        "the held-out acceptance suite, one or more checks per requirement, driving the built jar from outside; per-requirement lines metric=requirement_<n>=1|0",
-        "behavioural batteries: cache_correctness, failure_propagation, determinism (each repetition from a deleted cache), config_errors, format_agreement (cold cache both sides)",
-        "build_clean, own_tests_pass, plan_seconds per requirement 25, dependency_count from pom.xml (the stated outside-only exception), gap_handled (declared rule checked against behaviour on a disagreeing configuration)",
-        "seed watches, emitted as unscored observation lines (wrapper intact, release level, files replaced), never as a metric: a scored version for a from-scratch case encodes hidden preferences (BA-3-3)",
-        "calibration probes, each declaring its target metric and the metrics it must not disturb; the target fails on every repetition, overlap elsewhere is expected (BA-3-2); scores recorded in grader/calibration.md"
-      ],
-      "doesNotBuild": [
-        "mutation_catch",
-        "any reference implementation",
-        "noise floors, which come from repeated runs"
-      ]
-    }
-  },
-  "id": "taskrun",
-  "language": {
-    "buildCommand": "./mvnw -o -q package",
-    "buildTool": "Maven, via the wrapper shipped in the repository",
-    "entryPoint": "java -jar target/taskrun.jar",
-    "note": "Spring Boot was considered and dropped: the deliverable is a command-line tool and a web framework would have added ceremony without adding anything the benchmark measures.",
-    "runtime": "Java 21",
-    "testCommand": "./mvnw -o test",
-    "testIdentifierForm": "<fully.qualified.ClassName>#<methodName>"
+  "seededGap": {
+    "allowedValues": [
+      "alphabetical",
+      "config-order",
+      "dependency-depth"
+    ],
+    "decisionFile": "DECISIONS.md",
+    "declaredRuleKey": "order-rule",
+    "entryGrammar": "requirement <n>: <key>: <value>",
+    "note": "Published in spec.md in full: the entry grammar, the key, and the three permitted values with their exact semantics. A builder cannot satisfy a machine-checked declaration whose format is withheld (BA-1-1), and a rule without executable semantics leaves the grader holding a hidden right answer (BA-2-1). v0.2 ruling (human, 2026-08-11): this spec ships CLEAN \u2014 no seeded defect. Requirement 5's accidental self-contradiction stays fixed (b584fc5); this published decision point is spec content a builder can satisfy, not a trap. Spec-contradiction discovery, with grading that rewards finding it, is a separate future experiment.",
+    "requirement": 10
   },
   "metrics": {
     "acceptance": {
@@ -209,7 +140,128 @@
     }
   },
   "metricsNote": "A null bound is deliberate: calibration proves each metric fires, it does not set thresholds. Bounds are set once, at promotion to spec 1.0, from the trial runs (feasibility) and the probe scores (a floor above what a broken implementation reaches), per the promotion rule. Version 0.x produces scores, not verdicts, so nothing needs a bound before then (BA-3-6). A metric whose procedure cannot run on the target is omitted from the output, never invented: omission means unmeasurable, and the compare layer already treats a missing metric as no-verdict.",
+  "noiseFloors": null,
+  "noiseFloorsNote": "Unknown until repeated runs measure the spread. Until then this spec produces scores, not verdicts.",
+  "seed": {
+    "description": "A git repository containing README.md, spec.md, and an empty tests/ directory. Empty because BM-1 builds from scratch.",
+    "path": "seed/"
+  },
+  "grader": {
+    "calibration": {
+      "probeVectors": {
+        "alternating-order": {
+          "mustNotDisturb": [
+            "cache_correctness",
+            "failure_propagation"
+          ],
+          "target": "determinism"
+        },
+        "cache-blind-command": {
+          "mustNotDisturb": [
+            "determinism",
+            "failure_propagation",
+            "format_agreement"
+          ],
+          "target": "cache_correctness"
+        },
+        "formats-disagree": {
+          "mustNotDisturb": [
+            "cache_correctness",
+            "determinism",
+            "failure_propagation"
+          ],
+          "target": "format_agreement"
+        },
+        "incomplete": {
+          "condition": "acceptance strictly between 0 and 1",
+          "target": null
+        },
+        "note": "A probe is a near-correct minimal implementation with exactly its one flaw: correct enough on its siblings' target behaviours that those metrics stay up. config_errors and the Maven-dependent metrics are outside every vector, because demanding full configuration validation of a twenty-line probe would make the probes bigger than the point. The alternating-order probe legitimately disturbs format_agreement and gap_handled, since its order differs across the separate invocations those checks compare.",
+        "runs-blocked-dependents": {
+          "mustNotDisturb": [
+            "cache_correctness",
+            "determinism",
+            "format_agreement"
+          ],
+          "target": "failure_propagation"
+        }
+      },
+      "probes": "small purpose-built wrong implementations, each DECLARING the metric it targets",
+      "repetitions": 3,
+      "rule": "A probe must fail its target metric on every repetition. Other metrics may legitimately drop too, because the metrics overlap by construction (a wrong order hits determinism, format agreement and requirement 10's acceptance at once); demanding one-metric isolation is the same impossibility the mutant corpus already hit (SP-2-1, BA-3-2). Each probe also names the metrics it must NOT disturb, and calibration checks both directions."
+    },
+    "heldOut": true,
+    "heldOutNote": "Never copied into the repository the agents work in. Provisioning copies spec.md and seed/ only.",
+    "mutation": {
+      "note": "Not built in grader v0.1, and the deferral is a disposition of BA-2-2, not a postponement of the old text: that finding refuted the claim that mutating the builder's own code is architecture-neutral. With no reference corpus, mutants come from arbitrary builder source, and attributing a surviving mutant to the requirement whose tests should have caught it is not derivable from requirements-map.json alone. A later version needs a design of its own, critiqued before it is built. Until then mutation_catch stays in the metric table with a null bound and is never emitted.",
+      "status": "deferred, not designed"
+    },
+    "outsideOnlyException": "Requirement 24 is graded by reading pom.xml. No finite set of runs can prove an unexercised branch imports nothing, so the outside-only rule states its one exception rather than pretending (BA-2-11).",
+    "path": "grader/",
+    "v01Scope": {
+      "builds": [
+        "grade.sh emitting metric=<name>=<value> lines in the mission gate grammar, exit 0 when measurement ran",
+        "the held-out acceptance suite, one or more checks per requirement, driving the built jar from outside; per-requirement lines metric=requirement_<n>=1|0",
+        "behavioural batteries: cache_correctness, failure_propagation, determinism (each repetition from a deleted cache), config_errors, format_agreement (cold cache both sides)",
+        "build_clean, own_tests_pass, plan_seconds per requirement 25, dependency_count from pom.xml (the stated outside-only exception), gap_handled (declared rule checked against behaviour on a disagreeing configuration)",
+        "seed watches, emitted as unscored observation lines (wrapper intact, release level, files replaced), never as a metric: a scored version for a from-scratch case encodes hidden preferences (BA-3-3)",
+        "calibration probes, each declaring its target metric and the metrics it must not disturb; the target fails on every repetition, overlap elsewhere is expected (BA-3-2); scores recorded in grader/calibration.md"
+      ],
+      "doesNotBuild": [
+        "mutation_catch",
+        "any reference implementation",
+        "noise floors, which come from repeated runs"
+      ]
+    }
+  },
+  "language": {
+    "buildCommand": "./mvnw -o -q package",
+    "buildTool": "Maven, via the wrapper shipped in the repository",
+    "entryPoint": "java -jar target/taskrun.jar",
+    "note": "Spring Boot was considered and dropped: the deliverable is a command-line tool and a web framework would have added ceremony without adding anything the benchmark measures.",
+    "runtime": "Java 21",
+    "testCommand": "./mvnw -o test",
+    "testIdentifierForm": "<fully.qualified.ClassName>#<methodName>"
+  },
+  "deferredMetrics": {
+    "mutation_catch": {
+      "bound": null,
+      "direction": "max",
+      "domain": [
+        0.0,
+        1.0
+      ],
+      "note": "Deferred with its refutation recorded under grader.mutation. Not emitted in v0.1; a consumer of the metric vector must not expect it."
+    }
+  },
+  "watches": {
+    "grammar": "watch=<name>=<value> lines on standard output beside the metric lines: seed_wrapper_intact 0 or 1, seed_release_level the integer pom.xml declares, seed_files_replaced a count",
+    "note": "Observations, never gates and never targets. A scored seed_respected metric for a build-from-scratch case can only encode hidden preferences about legitimate build edits (BA-3-3); grading what a builder does with inherited code is BM-2's business, where the seed is a working system and inheritance is the point. The human's intent to grade seed handling is honoured there, and observed here.",
+    "seed_files_replaced": "count of seed-shipped files the builder replaced or deleted",
+    "seed_release_level": "the release level pom.xml declares",
+    "seed_wrapper_intact": "the Maven wrapper files are present and mvnw runs"
+  },
+  "completionGate": {
+    "command": "the builder's stated test command passes AND requirements-map.json covers 1..26 AND ./mvnw -o -q package succeeds from a clean state AND the host authored no product bytes (every product change arrived through an implementer job, critic closure, and conformance-authorized exact integration)",
+    "decision": "self-assessment, decided 2026-08-05 under the human's blanket approval",
+    "rationale": "The grader is held out, so the mission cannot iterate against it; the run stops when the builders believe they are done, and the held-out grading afterwards measures how right that belief was, which is among the most interesting numbers the benchmark produces."
+  },
+  "needs": {
+    "dependencies": "jdk21,maven",
+    "network": "either",
+    "networkNote": "Per-spec, not a benchmark-wide rule, and allowed here. This spec is idiosyncratic enough that no published task runner satisfies it: the stdout grammar, the four states, the cache directory, the JSON shape and the decision-record rule are all ours, so a downloaded implementation still has to be rewritten to match, which is most of the work. The constraint worth protecting, no third-party dependencies, is graded from pom.xml rather than enforced by cutting the network, which is the right place for it: a requirement should be scored, not made impossible to violate, or we never learn that an agent would have violated it.",
+    "environmentNotes": {
+      "denyMechanism": "A spec that does need isolation sets dispatch.permissions.network=deny in the provisioned target's metasystem.conf, which narrows every preset for every role. Reasons that would justify it: a published solution a search would hand over wholesale, or a metric that cannot tolerate run-to-run variance from fetched content.",
+      "maven": "Builds still run with -o against a pre-populated repository, because the build must be deterministic and must work whether or not the network is up. That is a spec requirement, not a sandbox constraint."
+    }
+  },
   "mission": {
+    "note": "Everything provisioning needs to write a preflightable contract. Decided 2026-08-05 under the human's blanket approval; these are benchmark policy, not something a provisioning script may invent.",
+    "instruments": [
+      "gate.sh",
+      "guard-deps.sh"
+    ],
+    "instrumentsNote": "Copied to the target root from the spec directory and tagged; the builder must never edit them, which gate.paths enforces.",
     "gate": {
       "command": "bash gate.sh",
       "direction": "max",
@@ -231,65 +283,12 @@
       "note": "Guard name and metric are deliberately identical: the mission contract grammar has no separate guard-to-metric mapping, so a guard named X must emit metric=X. The first draft named the guard `deps` while its script emitted `no-runtime-deps`, which the runner would have refused.",
       "rationale": "Requirement 24's floor, checked every cycle and deliberately orthogonal to the completion gate: a build can stay green and the tests can stay passing while a dependency quietly does the work. A guard stops the run; a metric would only score it afterwards."
     },
-    "instruments": [
-      "gate.sh",
-      "guard-deps.sh"
-    ],
-    "instrumentsNote": "Copied to the target root from the spec directory and tagged; the builder must never edit them, which gate.paths enforces.",
-    "note": "Everything provisioning needs to write a preflightable contract. Decided 2026-08-05 under the human's blanket approval; these are benchmark policy, not something a provisioning script may invent.",
-    "streams": {
-      "build": "Build the task runner described in spec.md so that gate.sh reports self-assessment>=26 (the v0.2 count gate: every requirement validly mapped)."
-    },
     "truth": {
       "certification": "certified",
       "paths": "gate.sh,guard-deps.sh"
-    }
-  },
-  "needs": {
-    "dependencies": "jdk21,maven",
-    "environmentNotes": {
-      "denyMechanism": "A spec that does need isolation sets dispatch.permissions.network=deny in the provisioned target's metasystem.conf, which narrows every preset for every role. Reasons that would justify it: a published solution a search would hand over wholesale, or a metric that cannot tolerate run-to-run variance from fetched content.",
-      "maven": "Builds still run with -o against a pre-populated repository, because the build must be deterministic and must work whether or not the network is up. That is a spec requirement, not a sandbox constraint."
     },
-    "network": "either",
-    "networkNote": "Per-spec, not a benchmark-wide rule, and allowed here. This spec is idiosyncratic enough that no published task runner satisfies it: the stdout grammar, the four states, the cache directory, the JSON shape and the decision-record rule are all ours, so a downloaded implementation still has to be rewritten to match, which is most of the work. The constraint worth protecting, no third-party dependencies, is graded from pom.xml rather than enforced by cutting the network, which is the right place for it: a requirement should be scored, not made impossible to violate, or we never learn that an agent would have violated it."
-  },
-  "noiseFloors": null,
-  "noiseFloorsNote": "Unknown until repeated runs measure the spread. Until then this spec produces scores, not verdicts.",
-  "product": {
-    "entryPoint": "java -jar target/taskrun.jar",
-    "requirementCount": 26,
-    "sourcePaths": [
-      "src/main/**",
-      "src/test/**",
-      "pom.xml"
-    ]
-  },
-  "schemaVersion": 1,
-  "seed": {
-    "description": "A git repository containing README.md, spec.md, and an empty tests/ directory. Empty because BM-1 builds from scratch.",
-    "path": "seed/"
-  },
-  "seededGap": {
-    "allowedValues": [
-      "alphabetical",
-      "config-order",
-      "dependency-depth"
-    ],
-    "decisionFile": "DECISIONS.md",
-    "declaredRuleKey": "order-rule",
-    "entryGrammar": "requirement <n>: <key>: <value>",
-    "note": "Published in spec.md in full: the entry grammar, the key, and the three permitted values with their exact semantics. A builder cannot satisfy a machine-checked declaration whose format is withheld (BA-1-1), and a rule without executable semantics leaves the grader holding a hidden right answer (BA-2-1). v0.2 ruling (human, 2026-08-11): this spec ships CLEAN — no seeded defect. Requirement 5's accidental self-contradiction stays fixed (b584fc5); this published decision point is spec content a builder can satisfy, not a trap. Spec-contradiction discovery, with grading that rewards finding it, is a separate future experiment.",
-    "requirement": 10
-  },
-  "title": "taskrun: a dependency-aware task runner (Java, Maven, command line) — Devin roster (sol delegate roster)",
-  "version": "0.3",
-  "versionNote": "0.3 = 0.2 plus the host-implementer wall's discipline sentence in the completion gate (HIW-O8, landed 2026-08-22). Minted as a NEW version because 0.1 and 0.2 are registered immutable and pinned by the retired bm-* aliases; the in-place edit that first carried the sentence was refused by the kit's versions.lock and is reverted in the same landing that mints this version.",
-  "watches": {
-    "grammar": "watch=<name>=<value> lines on standard output beside the metric lines: seed_wrapper_intact 0 or 1, seed_release_level the integer pom.xml declares, seed_files_replaced a count",
-    "note": "Observations, never gates and never targets. A scored seed_respected metric for a build-from-scratch case can only encode hidden preferences about legitimate build edits (BA-3-3); grading what a builder does with inherited code is BM-2's business, where the seed is a working system and inheritance is the point. The human's intent to grade seed handling is honoured there, and observed here.",
-    "seed_files_replaced": "count of seed-shipped files the builder replaced or deleted",
-    "seed_release_level": "the release level pom.xml declares",
-    "seed_wrapper_intact": "the Maven wrapper files are present and mvnw runs"
+    "streams": {
+      "build": "Build the task runner described in spec.md so that gate.sh reports self-assessment>=26 (the v0.2 count gate: every requirement validly mapped)."
+    }
   }
 }
