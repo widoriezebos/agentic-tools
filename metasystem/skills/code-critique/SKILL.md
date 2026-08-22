@@ -55,7 +55,7 @@ The orchestrator answers every finding with the shared dispositions table:
 | F-2 | refuted | <the exact check and observed result> | none |
 ```
 
-Use `accepted` or `refuted` for material findings. Use `noted` only for non-material findings. Close the round by running `scripts/assert-critique-closed.sh --findings <return.json> --dispositions <file>`; a count or prose claim is not closure.
+Use `accepted` or `refuted` for material findings. Use `noted` only for non-material findings. A chain closes on ZERO unrefuted material findings, and a refutation carries the exact check and its observed result — an evidence-free refutation is refused by the closure check itself. Close the round by running `scripts/assert-critique-closed.sh --findings <return.json> --dispositions <file>`; a count or prose claim is not closure.
 
 ## Round Budget and Exit
 

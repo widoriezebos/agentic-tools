@@ -63,3 +63,37 @@ func TestCritiqueClosedRejectsUnjoinableSides(t *testing.T) {
 		t.Fatalf("a fenced table must not count as a header: %s", violations[1])
 	}
 }
+
+func TestCritiqueClosedRefusesEvidenceFreeRefutation(t *testing.T) {
+	// A refutation without evidence is not a refutation: the chain
+	// closes on zero UNREFUTED material findings, and an empty or
+	// placeholder evidence cell leaves the finding standing.
+	table := `# Dispositions
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| f-1 | refuted | none | none |
+`
+	findings, dispositions := critiqueFixture(t,
+		`{"findings":[{"id":"f-1","material":true}]}`, table)
+	violations := CritiqueClosed(findings, dispositions)
+	if len(violations) == 0 {
+		t.Fatal("an evidence-free refutation closed the chain")
+	}
+	joined := strings.Join(violations, "\n")
+	if !strings.Contains(joined, "without evidence") {
+		t.Fatalf("the refusal names the rule: %v", violations)
+	}
+	// The SAME finding with real evidence closes.
+	evidenced := `# Dispositions
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| f-1 | refuted | ran the probe at HEAD; the claimed path does not execute (exit 1, log attached) | none |
+`
+	findings2, dispositions2 := critiqueFixture(t,
+		`{"findings":[{"id":"f-1","material":true}]}`, evidenced)
+	if violations := CritiqueClosed(findings2, dispositions2); len(violations) != 0 {
+		t.Fatalf("an evidenced refutation closes: %v", violations)
+	}
+}

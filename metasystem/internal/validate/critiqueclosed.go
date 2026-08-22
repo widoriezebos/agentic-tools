@@ -215,6 +215,18 @@ func readDispositions(path string, violation func(string, ...any)) ([]string, ma
 			violation("disposition for finding id '%s' has unknown value '%s'; allowed values are accepted, refuted, noted",
 				findingID, disposition)
 		}
+		// A refutation without evidence is not a refutation: the chain
+		// closes on ZERO unrefuted material findings, and an empty or
+		// placeholder evidence cell leaves the finding standing.
+		if disposition == "refuted" {
+			evidence := ""
+			if len(row.cells) > 2 {
+				evidence = strings.TrimSpace(row.cells[2])
+			}
+			if evidence == "" || evidence == "..." || strings.EqualFold(evidence, "none") || strings.EqualFold(evidence, "n/a") {
+				violation("finding id '%s' is refuted without evidence; a refutation carries the exact check and its observed result, or the finding stands", findingID)
+			}
+		}
 		if _, recorded := dispositionByID[findingID]; !recorded {
 			dispositionByID[findingID] = disposition
 			ids = append(ids, findingID)
