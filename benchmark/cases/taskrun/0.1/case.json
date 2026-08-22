@@ -243,7 +243,7 @@
   },
   "completionGate": {
     "decision": "self-assessment, decided 2026-08-05 under the human's blanket approval",
-    "command": "the builder's stated test command passes AND requirements-map.json covers 1..26 AND ./mvnw -o -q package succeeds from a clean state",
+    "command": "the builder's stated test command passes AND requirements-map.json covers 1..26 AND ./mvnw -o -q package succeeds from a clean state AND the host authored no product bytes (every product change arrived through an implementer job, critic closure, and conformance-authorized exact integration)",
     "rationale": "The grader is held out, so the mission cannot iterate against it; the run stops when the builders believe they are done, and the held-out grading afterwards measures how right that belief was, which is among the most interesting numbers the benchmark produces."
   },
   "needs": {

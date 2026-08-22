@@ -195,3 +195,18 @@ best evidence there is: it had been waking the coordinator all day,
 and the commit boundary's static re-proof, which refused a real
 overrun the same afternoon. Six wall rows then took their appetite
 tokens, and the machines had a truthful queue to run dark against.
+
+## The wall got its words (August 22, 2026)
+
+The host-implementer wall's first implement row landed the doctrine
+where doctrine actually binds: the interim rule — inside a
+mission the mission runner creates, the host never authors product
+bytes — now
+sits verbatim in both prompt authorities, byte-pinned by tests so a
+paraphrase can never quietly widen it; the orchestrator's broad
+"repository work is yours" opening narrowed to the duties a host
+legitimately owns; and the benchmark manifests' completion gates
+carry the discipline sentence, so a mission cannot call itself done
+while the wall was breached. Interactive work outside the runner
+keeps its ordinary freedom — the rule says so in its own last
+sentence, and a test holds it to that.

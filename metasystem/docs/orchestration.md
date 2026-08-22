@@ -14,6 +14,8 @@ This file owns delegation judgment and the runtime-neutral orchestration mechani
 - Sequentially dependent edits, or work that needs the judgment built up in the main conversation.
 - When coordination plus billing outweighs the saving. Subagents run their own context windows and inference calls and bill separately on every current runtime.
 
+These exemptions govern interactive work. Inside a mission the mission runner creates, the host-implementer rule in `## The Collaboration Loop` step 1 governs instead: the host never authors product bytes there.
+
 ## Delegation Contract
 
 Every delegation states the goal, the workspace it runs in, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), the acceptance criteria, a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. The trust and certification rule below binds every return.
@@ -22,9 +24,11 @@ Every delegation states the goal, the workspace it runs in, the inputs it may re
 
 For each substantial piece of work, use this five-step loop:
 
-1. **Design.** The orchestrator writes the design. A small, obvious change may
-   skip to implementation only when the orchestrator records why it is too
-   small to delegate.
+1. **Design.** The orchestrator writes the design. A mechanically small change
+   may omit the separate design artifact when the recorded contract permits it;
+   inside a mission created by the mission runner the implementation itself still goes through
+   an implementer job — the host never authors product bytes there, regardless
+   of size or urgency. Interactive work outside the mission runner is unaffected.
 2. **Design critique.** A delegate critiques the design, the orchestrator
    dispositions every finding, and rounds continue until a mechanically joined
    round has zero material findings. Exhausting the round budget is not
