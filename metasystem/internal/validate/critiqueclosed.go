@@ -17,7 +17,8 @@ var (
 // CritiqueClosed joins the canonical findings array from a critic
 // return JSON against the Markdown dispositions table on finding id and
 // returns every violation: each finding must have a disposition row, a
-// material finding may not be dispositioned 'noted', and no disposition
+// material finding may not be dispositioned 'noted' (out-of-scope
+// closes one, carrying the brief's scope as evidence), and no disposition
 // may name an unknown finding id. Structural problems on either side
 // make that side unjoinable, and the join runs only when both sides
 // join cleanly.
@@ -211,9 +212,26 @@ func readDispositions(path string, violation func(string, ...any)) ([]string, ma
 		} else {
 			seen[findingID] = true
 		}
-		if disposition != "accepted" && disposition != "refuted" && disposition != "noted" {
-			violation("disposition for finding id '%s' has unknown value '%s'; allowed values are accepted, refuted, noted",
+		if disposition != "accepted" && disposition != "refuted" && disposition != "noted" && disposition != "out-of-scope" {
+			violation("disposition for finding id '%s' has unknown value '%s'; allowed values are accepted, refuted, noted, out-of-scope",
 				findingID, disposition)
+		}
+		// TRUE findings outside the brief's threat model close as
+		// out-of-scope — accepted as fact, rejected as work — but
+		// only by CITING the scope: an out-of-scope row whose
+		// evidence does not reference the brief's declared scope is
+		// a dodge, not a disposition. (The old criterion had no seat
+		// for true-but-irrelevant, and every true finding meant
+		// another round.)
+		if disposition == "out-of-scope" {
+			evidence := ""
+			if len(row.cells) > 2 {
+				evidence = strings.TrimSpace(row.cells[2])
+			}
+			lower := strings.ToLower(evidence)
+			if evidence == "" || (!strings.Contains(lower, "scope") && !strings.Contains(lower, "threat model") && !strings.Contains(lower, "brief")) {
+				violation("finding id '%s' is out-of-scope without citing the brief's declared scope or threat model; cite it or the finding stands", findingID)
+			}
 		}
 		// A refutation without evidence is not a refutation: the chain
 		// closes on ZERO unrefuted material findings, and an empty or

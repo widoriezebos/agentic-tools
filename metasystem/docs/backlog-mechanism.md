@@ -27,6 +27,23 @@ The appetite acts at every stage:
 The standing ceiling: nothing sized over eight hours starts without
 a discussion with Wido first.
 
+**The appetite is machine-enforced, as covenant.** Its recorded form
+opens the goal's next step with a duration token — `Appetite: 4h`,
+`Appetite: 1d` (a day is eight working hours), `Appetite: 30m` —
+prose welcome after the token. Every read of the backlog (goal next,
+goal list) computes claim-age against the appetite and BANNERS a
+breach on every machine; the steward's tick queues the same breach
+to Wido's notification channel. A steward instruction — breach or
+otherwise — is binding on the agent that receives it: covenant, not
+advice.
+
+**Reviews carry appetites and threat models.** A review brief
+declares its round budget and its threat model up front; a TRUE
+finding outside that threat model closes as `out-of-scope` in the
+dispositions (citing the scope as evidence) — accepted as fact,
+rejected as work. The closure validator enforces both the citation
+and the evidence-carrying refutation rule.
+
 ## Drafts and promotion
 
 Items are shaped in `plans/goals-drafts/` — free-form files, no

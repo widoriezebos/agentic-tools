@@ -10,6 +10,7 @@ package goal
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -63,6 +64,31 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 		}
 	}
 
+	// Appetite breaches are COMPUTED at read time from ledger data
+	// alone (the claim's At stamp and the Appetite: token opening the
+	// next step), so every machine's read sees the same escalation
+	// with no extra writes — the steward's covenant tick and every
+	// coordinator's goal next surface identical banners.
+	for _, id := range sortedGoalIds(tree.Live) {
+		f := tree.Live[id]
+		if f.State != StateClaimed || f.Claimed == nil {
+			continue
+		}
+		appetite, declared := ParseAppetite(f.NextStep)
+		if !declared {
+			continue
+		}
+		claimedAt, tErr := time.Parse(time.RFC3339, f.Claimed.At)
+		if tErr != nil {
+			continue
+		}
+		if age := now.Sub(claimedAt); age > appetite {
+			p.Banners = append(p.Banners, fmt.Sprintf(
+				"APPETITE BREACH: %s claimed %s ago against an appetite of %s (%s+%s) — the covenant says pause it and raise it with Wido",
+				id, age.Round(time.Minute), appetite, f.Claimed.Machine, f.Claimed.Lineage))
+		}
+	}
+
 	// Staleness: the accepted COMMIT's age is the tree's age.
 	if ageOut, err := goalGit(e.Root, nil, "log", "-1", "--format=%ct", tip); err == nil {
 		if seconds := strings.TrimSpace(ageOut); seconds != "" {
@@ -76,6 +102,42 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 		}
 	}
 	return p, nil
+}
+
+// ParseAppetite reads the appetite convention: the next step OPENS
+// with "Appetite: <duration>" where the duration's first token is
+// machine-comparable — 4h, 1d (a day is eight working hours), 30m.
+// Prose after the token is welcome; prose INSTEAD of a token means
+// no enforceable appetite is declared.
+func ParseAppetite(nextStep string) (time.Duration, bool) {
+	const prefix = "Appetite:"
+	trimmed := strings.TrimSpace(nextStep)
+	if !strings.HasPrefix(trimmed, prefix) {
+		return 0, false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+	token := rest
+	if sp := strings.IndexAny(rest, " \t.,;"); sp >= 0 {
+		token = rest[:sp]
+	}
+	if len(token) < 2 {
+		return 0, false
+	}
+	unit := token[len(token)-1]
+	value := token[:len(token)-1]
+	n, err := strconv.Atoi(value)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	switch unit {
+	case 'm':
+		return time.Duration(n) * time.Minute, true
+	case 'h':
+		return time.Duration(n) * time.Hour, true
+	case 'd':
+		return time.Duration(n) * 8 * time.Hour, true
+	}
+	return 0, false
 }
 
 // NextVerdict is the frontier read the dispatcher and the steward

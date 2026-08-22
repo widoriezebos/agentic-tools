@@ -106,3 +106,55 @@ func soloLedgerRepo(t *testing.T) string {
 	}
 	return repo
 }
+
+func TestAppetiteBreachBannersEveryRead(t *testing.T) {
+	if d, ok := ParseAppetite("Appetite: 4h then prose"); !ok || d != 4*time.Hour {
+		t.Fatalf("token parse: %v %v", d, ok)
+	}
+	if d, ok := ParseAppetite("Appetite: 1d — a day is eight hours"); !ok || d != 8*time.Hour {
+		t.Fatalf("day parse: %v %v", d, ok)
+	}
+	if _, ok := ParseAppetite("Appetite: half a day of prose"); ok {
+		t.Fatal("prose-only appetites declare nothing enforceable")
+	}
+	if _, ok := ParseAppetite("Design the thing."); ok {
+		t.Fatal("no prefix, no appetite")
+	}
+
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X00000000000000000AB00", "mac-a"), "hungry", "Bounded work.", "main", "Appetite: 2h build the thing."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000AB10", "mac-a"), "hungry"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", res, err)
+	}
+	e := endpointFor(a)
+	if _, err := FetchAdvance(e); err != nil {
+		t.Fatal(err)
+	}
+	// Within the appetite: no breach banner.
+	early, err := Project(e, false, time.Date(2026, 8, 20, 23, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range early.Banners {
+		if strings.Contains(b, "APPETITE BREACH") {
+			t.Fatalf("no breach inside the appetite: %v", early.Banners)
+		}
+	}
+	// Past it: the breach banners on ANY machine's read.
+	late, err := Project(e, false, time.Date(2026, 8, 21, 5, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, b := range late.Banners {
+		if strings.Contains(b, "APPETITE BREACH") && strings.Contains(b, "hungry") && strings.Contains(b, "raise it with Wido") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the breach banners with the covenant's words: %v", late.Banners)
+	}
+}

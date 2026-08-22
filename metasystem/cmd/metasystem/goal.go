@@ -342,6 +342,11 @@ func nextSynced(root string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	// Escalation banners outrank orientation: an appetite breach is
+	// the covenant speaking, and it prints before anything else.
+	for _, banner := range p.Banners {
+		fmt.Println(banner)
+	}
 	v := goal.Next(p, machine)
 	switch {
 	case len(v.Claimed) > 0:

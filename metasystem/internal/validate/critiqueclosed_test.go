@@ -97,3 +97,32 @@ func TestCritiqueClosedRefusesEvidenceFreeRefutation(t *testing.T) {
 		t.Fatalf("an evidenced refutation closes: %v", violations)
 	}
 }
+
+func TestCritiqueClosedOutOfScopeCitesTheBrief(t *testing.T) {
+	// A true finding outside the declared threat model closes as
+	// out-of-scope — but only by CITING the scope; a bare dismissal
+	// leaves it standing.
+	bare := `# Dispositions
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| f-1 | out-of-scope | not relevant | none |
+`
+	findings, dispositions := critiqueFixture(t,
+		`{"findings":[{"id":"f-1","material":true}]}`, bare)
+	violations := CritiqueClosed(findings, dispositions)
+	if len(violations) == 0 || !strings.Contains(strings.Join(violations, "\n"), "without citing") {
+		t.Fatalf("a bare out-of-scope is refused by name: %v", violations)
+	}
+	cited := `# Dispositions
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| f-1 | out-of-scope | true, but the brief's threat model declares no attackers; hostile-env hardening is out of scope | none |
+`
+	findings2, dispositions2 := critiqueFixture(t,
+		`{"findings":[{"id":"f-1","material":true}]}`, cited)
+	if violations := CritiqueClosed(findings2, dispositions2); len(violations) != 0 {
+		t.Fatalf("a scope-citing out-of-scope closes a material finding: %v", violations)
+	}
+}
