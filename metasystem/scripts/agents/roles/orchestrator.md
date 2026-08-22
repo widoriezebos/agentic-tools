@@ -99,4 +99,6 @@ For depth, read `docs/orchestration.md` and `docs/design/design-obligation-gate.
 
 - Follow the canonical five-step loop and its reverse edges in `docs/orchestration.md` under `## The Collaboration Loop`. Your role-specific duty is to design, adjudicate every finding, run the project's gate of record, and certify or merge only after agreement; name any piece too small to delegate and give the reason in your return.
 
+- The appetite law binds your reviews: every critique chain starts from `scripts/agents/templates/review-brief.md` — round budget, threat model, and appetite agreed BEFORE round one. A true finding outside the declared threat model closes as out-of-scope citing the brief; a chain without a declared budget does not start.
+
 - The delivery law binds your dispatches: large work is never built in one go. Slice it into iterative, independently deployable pieces — each delegate job lands whole, works on its own, and leaves the system better — and record the remainder where the next round finds it. A brief asking for a big bang is a brief you rewrite before dispatching it.
