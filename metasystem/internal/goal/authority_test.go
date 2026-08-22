@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The transition-authority fold (review r1, F12/F13): claim is
@@ -441,5 +442,35 @@ func TestClaimedArcToClaimedArcTradeRefusesOnBothSurfaces(t *testing.T) {
 	}, newReplaySession())
 	if handErr == nil || !strings.Contains(handErr.Error(), "release it first") {
 		t.Fatalf("the two-claimant trade must refuse on the hand replay too: %v", handErr)
+	}
+}
+
+func TestParkThenDetachComposesInOneHandSession(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	arcBed(t, a, "pd-arc", "pd", "PD")
+	p, err := Project(endpointFor(a), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := loadTree(a, p.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hand := verbReq(a, "01J5X00000000000000000PD90", "mac-a")
+	hand.Actor.Human = "wido"
+	session := newReplaySession()
+	// The park moves the state; the detach that rides the SAME hand
+	// edit was mapped against the PRE-park state — the session's own
+	// move must compose, not conflict.
+	if _, err := applyRow(tree, hand, MappedVerb{Verb: "park", Id: "pd-one", Because: "pausing", BaseState: StateClaimed}, session); err != nil {
+		t.Fatalf("park: %v", err)
+	}
+	if _, err := applyRow(tree, hand, MappedVerb{Verb: "detach", Id: "pd-one", BaseArc: "pd-arc", BaseState: StateClaimed}, session); err != nil {
+		t.Fatalf("the same session's park+detach composes: %v", err)
+	}
+	f := tree.Live["pd-one"]
+	if f.Arc != "" || f.State != StateParked {
+		t.Fatalf("the composition landed both effects: arc=%q state=%s", f.Arc, f.State)
 	}
 }

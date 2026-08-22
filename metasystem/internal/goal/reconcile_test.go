@@ -324,3 +324,74 @@ func TestRefreshPreservesAPostCaptureCreation(t *testing.T) {
 		t.Fatalf("the post-capture creation was overwritten: %s", got)
 	}
 }
+
+func TestRefreshNeverFollowsAPostCaptureSymlink(t *testing.T) {
+	a, _ := reconcileBed(t)
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := Open(verbReq(a, "01J5X00000000000000000SM00", "mac-a"), "sym-bait", "New goal.", "main", "Go.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	// Post-capture, the captured file is REPLACED by a symlink to an
+	// external copy carrying the same captured bytes: reading through
+	// it shows "unchanged", writing through it would mutate the
+	// outside file. Identity decides, not content.
+	editablePath := filepath.Join(a, "plans", "goals", "editable.md")
+	outside := filepath.Join(t.TempDir(), "outside-copy.md")
+	if err := os.WriteFile(outside, snap.Files[goalsPrefix+"editable.md"], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(editablePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, editablePath); err != nil {
+		t.Fatal(err)
+	}
+	outsideBefore, _ := os.ReadFile(outside)
+	skipped, err := Refresh(a, res.Tip, snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := false
+	for _, s := range skipped {
+		if s == goalsPrefix+"editable.md" {
+			named = true
+		}
+	}
+	if !named {
+		t.Fatalf("the identity change is preserved and NAMED: %v", skipped)
+	}
+	outsideAfter, _ := os.ReadFile(outside)
+	if string(outsideBefore) != string(outsideAfter) {
+		t.Fatal("the refresh wrote THROUGH the symlink to the outside file")
+	}
+}
+
+func TestVerbsAreImmuneToGitEnvironmentSteering(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	// A hostile-or-accidental environment points at ANOTHER
+	// repository and injects a replacement remote URL. The
+	// transaction must operate on its --root and its configured
+	// remote regardless.
+	decoy := filepath.Join(t.TempDir(), "decoy")
+	mustGit(t, t.TempDir(), "init", "-q", "-b", "main", decoy)
+	t.Setenv("GIT_DIR", filepath.Join(decoy, ".git"))
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "remote.origin.url")
+	t.Setenv("GIT_CONFIG_VALUE_0", "steered://wrong")
+	res, err := Open(verbReq(a, "01J5X00000000000000000EV00", "mac-a"), "steered-not", "Immune.", "main", "Go.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the steered environment must not move the transaction: %+v %v", res, err)
+	}
+	// The verification reads through the package's own scrubbed git
+	// runner — the TEST process still carries the steering env, and a
+	// raw git here would answer for the decoy.
+	out, catErr := gitIn(a, "cat-file", "-p", "origin/main:./plans/goals/steered-not.md")
+	if catErr != nil || !strings.Contains(out, "Immune.") {
+		t.Fatalf("the publish landed on the REAL origin: %v %s", catErr, out)
+	}
+}

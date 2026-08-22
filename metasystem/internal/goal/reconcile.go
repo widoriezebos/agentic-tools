@@ -248,6 +248,14 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 	}
 	for _, p := range sortedKeys(published) {
 		abs := filepath.Join(repoRoot, filepath.FromSlash(p))
+		// Identity BEFORE content: a post-capture symlink (or any
+		// non-regular entry) is a hand act — reading through it can
+		// show the captured bytes while writing through it would
+		// mutate whatever it points at, outside the goal root.
+		if lst, lstErr := os.Lstat(abs); lstErr == nil && !lst.Mode().IsRegular() {
+			skipped = append(skipped, p)
+			continue
+		}
 		current, readErr := os.ReadFile(abs)
 		captured, wasCaptured := snap.Files[p]
 		switch {
@@ -271,7 +279,14 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			return skipped, err
 		}
-		if err := os.WriteFile(abs, published[p], 0o644); err != nil {
+		// Write-then-rename: an in-place truncate torn by ENOSPC or
+		// death leaves partial bytes the RERUN would misread as a
+		// hand edit — and then record completion over the tear.
+		tmp := abs + ".goal-refresh-tmp"
+		if err := os.WriteFile(tmp, published[p], 0o644); err != nil {
+			return skipped, err
+		}
+		if err := os.Rename(tmp, abs); err != nil {
 			return skipped, err
 		}
 	}
@@ -284,6 +299,12 @@ func Refresh(repoRoot, publishedCommit string, snap *Snapshot) (skipped []string
 			continue
 		}
 		abs := filepath.Join(repoRoot, filepath.FromSlash(p))
+		if lst, lstErr := os.Lstat(abs); lstErr == nil && !lst.Mode().IsRegular() {
+			// The captured file's IDENTITY changed — preserved and
+			// named like any other post-capture hand act.
+			skipped = append(skipped, p)
+			continue
+		}
 		current, readErr := os.ReadFile(abs)
 		if readErr != nil {
 			if os.IsNotExist(readErr) {

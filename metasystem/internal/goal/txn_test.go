@@ -390,3 +390,25 @@ func TestABrokenAcceptedRefRefusesMutations(t *testing.T) {
 		t.Fatalf("a broken accepted ref refuses the mutation by name: %v", openErr)
 	}
 }
+
+func TestAMalformedAcceptedRefFileRefusesMutations(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	// git WARNS and ignores a broken loose ref (exit 1, same as
+	// absent): the file's existence is the only tell, and reading it
+	// as pre-bootstrap would skip identity and descent.
+	refFile := filepath.Join(a, ".git", "refs", "metasystem", "goals", "accepted")
+	if err := os.MkdirAll(filepath.Dir(refFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(refFile, []byte("garbagenothex\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// End to end, remote mode already refuses — git's own fetch dies
+	// enumerating the corrupt ref. The GATE's arm is what needs the
+	// direct proof: absent and broken must answer differently.
+	_, has, gateErr := acceptedTipForGates(a)
+	if has || gateErr == nil || !strings.Contains(gateErr.Error(), "no valid ref") {
+		t.Fatalf("a broken accepted-ref file refuses by name at the gate: %v (has=%v)", gateErr, has)
+	}
+}

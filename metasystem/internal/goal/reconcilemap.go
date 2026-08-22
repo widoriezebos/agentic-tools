@@ -304,7 +304,7 @@ func handLenient(data []byte) []byte {
 		// nor donate a fabricated value to one.
 		tail := strings.TrimPrefix(line, "- Parked: ")
 		by, at := "", ""
-		byFound, atFound, becauseFound, foreignToken := false, false, false, false
+		byFound, atFound, displacedFound, becauseFound, foreignToken := false, false, false, false, false
 		j := 0
 		for j < len(tail) {
 			for j < len(tail) && (tail[j] == ' ' || tail[j] == '\t') {
@@ -324,11 +324,20 @@ func handLenient(data []byte) []byte {
 			}
 			switch {
 			case strings.HasPrefix(token, "by="):
+				if byFound {
+					foreignToken = true // a duplicate is the strict parser's to refuse
+				}
 				by, byFound = strings.TrimPrefix(token, "by="), true
 			case strings.HasPrefix(token, "at="):
+				if atFound {
+					foreignToken = true
+				}
 				at, atFound = strings.TrimPrefix(token, "at="), true
 			case strings.HasPrefix(token, "displaced="):
-				// lawful; splitParkTail carries it into the rebuild
+				if displacedFound {
+					foreignToken = true
+				}
+				displacedFound = true
 			default:
 				foreignToken = true
 			}

@@ -12,6 +12,7 @@ package goal
 // participate and never move.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -72,7 +73,11 @@ func goalGit(root string, extraEnv []string, args ...string) (string, error) {
 		"-c", "core.logAllRefUpdates=false",
 	}, args...)
 	cmd := exec.Command("git", full...)
-	cmd.Env = append(os.Environ(), extraEnv...)
+	// The scrubbed base, never os.Environ: -C does not defeat an
+	// inherited GIT_DIR, and injected config can replace the remote
+	// URL — the transaction must be steerable by NOTHING but its
+	// arguments.
+	cmd.Env = append(environWithoutGitSteering(), extraEnv...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("git %s: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
@@ -129,7 +134,20 @@ func acceptedTipForGates(root string) (string, bool, error) {
 		return strings.TrimSpace(out), true, nil
 	}
 	if _, refErr := gitIn(root, "show-ref", "--verify", "--quiet", AcceptedRef); refErr != nil {
-		return "", false, nil
+		// Exit 1 is show-ref's word for absent — but git ALSO answers
+		// exit 1 for a broken loose ref file, warning and ignoring
+		// it. The file's presence is the tell: a ref file git cannot
+		// read must refuse, never read as pre-bootstrap.
+		var ge *gitError
+		if errors.As(refErr, &ge) && ge.ExitCode() == 1 {
+			if refPathOut, pathErr := gitIn(root, "rev-parse", "--path-format=absolute", "--git-path", AcceptedRef); pathErr == nil {
+				if _, statErr := os.Stat(strings.TrimSpace(refPathOut)); statErr == nil {
+					return "", false, fmt.Errorf("the accepted ref's file exists but git reports no valid ref; repair %s before continuing", AcceptedRef)
+				}
+			}
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("the accepted ref cannot be probed: %v", refErr)
 	}
 	return "", false, fmt.Errorf("the accepted ref exists but does not resolve to a commit; repair %s before continuing", AcceptedRef)
 }
@@ -155,13 +173,23 @@ func tipCarriesLedger(e Endpoint, tip string) (bool, error) {
 // this clone's config. A tip with no root record is pre-migration
 // and gates nothing; a torn record is the validator's to refuse.
 func SyncModeGate(e Endpoint, tip string) error {
-	content, err := gitIn(e.Root, "cat-file", "-p", tip+":./"+goalsPrefix+"backlog.md")
-	if err != nil {
+	hasLedger, probeErr := tipCarriesLedger(e, tip)
+	if probeErr != nil {
+		return probeErr
+	}
+	if !hasLedger {
 		return nil
 	}
-	record, _ := ParseRoot([]byte(content))
-	if record == nil {
-		return nil
+	content, err := gitIn(e.Root, "cat-file", "-p", tip+":./"+goalsPrefix+"backlog.md")
+	if err != nil {
+		// The ledger provably exists; a root that cannot be read
+		// gates CLOSED — reporting "already current" over an
+		// unreadable world is the exact skip this gate forbids.
+		return fmt.Errorf("the tip's root record cannot be read for the sync-mode gate: %v", err)
+	}
+	record, problems := ParseRoot([]byte(content))
+	if record == nil || len(problems) != 0 {
+		return fmt.Errorf("the tip's root record does not parse; the sync mode cannot be gated: %v", problems)
 	}
 	if record.SyncMode == SyncLocal && !e.LocalMode() {
 		return fmt.Errorf("sync-mode mismatch refused: the ledger is committed local, the config says remote %q — promotion is the backlog-local-promotion goal, not a config flip", e.Remote)
@@ -246,6 +274,7 @@ func BuildCommit(e Endpoint, opid, tip string, changes []Change, message string)
 
 func hashObject(root string, content []byte) (string, error) {
 	cmd := exec.Command("git", "-C", root, "hash-object", "-w", "--stdin")
+	cmd.Env = environWithoutGitSteering()
 	cmd.Stdin = strings.NewReader(string(content))
 	out, err := cmd.CombinedOutput()
 	if err != nil {

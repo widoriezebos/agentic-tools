@@ -324,3 +324,29 @@ func TestHandParkWithAForeignTokenRefusesUnrewritten(t *testing.T) {
 		t.Fatalf("a foreign park token refuses by diagnostic, never a cleaned rewrite: %v", mapErr)
 	}
 }
+
+func TestHandParkWithDuplicateKeysRefusesUnrewritten(t *testing.T) {
+	a, tip := reconcileBed(t)
+	// A duplicate by= must reach the strict parser intact: the old
+	// rebuild laundered "by=original by= at=" into a clean
+	// placeholder line, discarding the first value AND the
+	// duplicate-key diagnostic.
+	abs := filepath.Join(a, "plans", "goals", "editable.md")
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "- State: queued",
+		"- State: parked\n- Parked: by=original by= at= because=held", 1)
+	if err := os.WriteFile(abs, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, mapErr := MapDeltas(a, tip, snap)
+	if mapErr == nil || !strings.Contains(mapErr.Error(), "diagnostic") {
+		t.Fatalf("a duplicate park key refuses by diagnostic, never a cleaned rewrite: %v", mapErr)
+	}
+}

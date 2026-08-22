@@ -58,19 +58,30 @@ git_target() {
     -u GIT_CONFIG_SYSTEM -u GIT_CONFIG_NOSYSTEM git "$@"
 }
 
-# A hook enrolls the guard only if a NON-COMMENT line references the
-# EFFECTIVE guard: after resolving the composer's dynamic toplevel
-# reference, some executing line must name the target's current
-# absolute guard path. A mention in a comment, a stale path from a
-# moved checkout, or a bare basename is a hook git runs WITHOUT the
-# fence.
+# A hook enrolls the guard only if a non-comment line INVOKES it —
+# "$guard" with the assignment bound to the target's current absolute
+# guard path, or that path itself in a command position. A mention in
+# a comment, an inert assignment followed by exit 0, or a stale path
+# from a moved checkout is a hook git runs WITHOUT the fence. Quote
+# characters are stripped before matching: they interrupt the byte
+# compare, not the shell's word.
 enrolls_guard() {
-  local hook_text toplevel
-  hook_text=$(grep -v '^[[:space:]]*#' "$1" 2>/dev/null) || true
-  [[ -n "$hook_text" ]] || return 1
+  local raw toplevel line bare assigned=0 var_invoked=0 path_invoked=0
+  raw=$(grep -v '^[[:space:]]*#' "$1" 2>/dev/null) || true
+  [[ -n "$raw" ]] || return 1
   toplevel=$(git_target -C "$target" rev-parse --show-toplevel 2>/dev/null) || toplevel="$target"
-  hook_text=${hook_text//'$(git rev-parse --show-toplevel)'/$toplevel}
-  [[ "$hook_text" == *"$target/scripts/agents/pre-commit-guard.sh"* ]]
+  raw=${raw//'$(git rev-parse --show-toplevel)'/$toplevel}
+  while IFS= read -r line; do
+    bare=${line//\"/}
+    bare=${bare//\'/}
+    if [[ "$bare" == guard=* ]]; then
+      [[ "$bare" == *"$target/scripts/agents/pre-commit-guard.sh"* ]] && assigned=1
+      continue
+    fi
+    [[ "$line" == *'$guard'* ]] && var_invoked=1
+    [[ "$bare" == *"$target/scripts/agents/pre-commit-guard.sh"* ]] && path_invoked=1
+  done <<<"$raw"
+  (( path_invoked == 1 || (assigned == 1 && var_invoked == 1) ))
 }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -421,15 +432,25 @@ echo "  2. Fill metasystem.conf with verified models, tiers, and the durable evi
 # A target need not be a git repository yet; the guard only makes sense once
 # it is, so a non-repository target skips the install with a note instead of
 # killing the adoption.
-if hook_common=$(cd "$target" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
-  hook_dir="$hook_common/hooks"
+if git_target -C "$target" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # Same scrubbed, hooksPath-honoring resolution as the early gate:
+  # raw git here could be steered into ANOTHER repository's hooks,
+  # and .git/hooks is wrong wherever core.hooksPath points elsewhere.
+  hook_dir=$(git_target -C "$target" rev-parse --path-format=absolute --git-path hooks)
   mkdir -p "$hook_dir"
   # The composer runs the guard FIRST, then hands off to whatever hook
   # the project already had (preserved as pre-commit.local). Declining
   # to enroll because a hook existed left the ledger fence unenforced
   # in exactly the repositories that care about their hooks (F15).
+  # The guard path is prefix-aware (a target nested below its git
+  # toplevel resolves under its own prefix) and the relative part
+  # rides SINGLE-QUOTED so lawful path bytes never become syntax:
+  # the template carries a placeholder, substituted once below.
+  target_prefix=$(git_target -C "$target" rev-parse --show-prefix)
+  guard_rel="${target_prefix}scripts/agents/pre-commit-guard.sh"
+  guard_rel_quoted="'${guard_rel//\'/\'\\\'\'}'"
   composer='#!/usr/bin/env bash
-guard="$(git rev-parse --show-toplevel)/scripts/agents/pre-commit-guard.sh"
+guard="$(git rev-parse --show-toplevel)/"__GUARD_REL__
 if [[ ! -x "$guard" ]]; then
   echo "pre-commit: the metasystem ledger guard is missing at $guard; refusing to commit without the fence" >&2
   exit 1
@@ -441,6 +462,7 @@ if [[ -x "$here/pre-commit.local" ]]; then
 fi
 exit 0
 '
+  composer=${composer/__GUARD_REL__/$guard_rel_quoted}
   if [[ -e "$hook_dir/pre-commit" ]] && enrolls_guard "$hook_dir/pre-commit"; then
     echo "pre-commit guard already enrolled in the target's hook; left as is"
   else

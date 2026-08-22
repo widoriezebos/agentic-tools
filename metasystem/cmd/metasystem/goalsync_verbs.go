@@ -80,29 +80,42 @@ func ensureGuardEnrolled(root string) error {
 		// would overwrite a file whose content was never seen.
 		return fmt.Errorf("the existing pre-commit hook cannot be read: %v", readErr)
 	}
-	// Enrollment means THIS checkout's guard on an EXECUTING line:
-	// after resolving the composer's dynamic toplevel reference, some
-	// non-comment line must name the current absolute guard path. A
-	// mention in a comment, a stale path from before a checkout move,
-	// or an inert basename leaves git running no fence at all.
+	// Enrollment means the guard RUNS, not that it is mentioned: an
+	// executing line must INVOKE it — "$guard" with the assignment
+	// bound to the current path, or the path itself in a command
+	// position. An assignment followed by exit 0, a comment, a stale
+	// path from before a move: all of those leave commits unfenced.
 	enrolled := false
 	if readErr == nil {
 		resolved := string(existing)
 		topCmd := exec.Command("git", "-C", absRoot, "rev-parse", "--show-toplevel")
 		topCmd.Env = environWithoutGitSteeringCLI()
 		if topOut, topErr := topCmd.Output(); topErr == nil {
-			resolved = strings.ReplaceAll(resolved, "$(git rev-parse --show-toplevel)", strings.TrimSpace(string(topOut)))
+			resolved = strings.ReplaceAll(resolved, "$(git rev-parse --show-toplevel)", strings.TrimRight(string(topOut), "\n"))
 		}
+		assigned, varInvoked, pathInvoked := false, false, false
 		for _, line := range strings.Split(resolved, "\n") {
 			trimmed := strings.TrimLeft(line, " \t")
 			if strings.HasPrefix(trimmed, "#") {
 				continue
 			}
-			if strings.Contains(line, guard) {
-				enrolled = true
-				break
+			// Quote characters interrupt the byte-compare, not the
+			// shell's word: strip them before matching the path.
+			bare := strings.NewReplacer(`"`, "", "'", "").Replace(trimmed)
+			if strings.HasPrefix(bare, "guard=") {
+				if strings.Contains(bare, guard) {
+					assigned = true
+				}
+				continue
+			}
+			if strings.Contains(trimmed, "$guard") {
+				varInvoked = true
+			}
+			if strings.Contains(bare, guard) {
+				pathInvoked = true
 			}
 		}
+		enrolled = pathInvoked || (assigned && varInvoked)
 	}
 	// An enrolled hook of OUR OWN shape still carrying the fail-open
 	// body upgrades in place: a missing guard must block the commit,
@@ -145,8 +158,12 @@ func ensureGuardEnrolled(root string) error {
 	if prefixErr != nil {
 		return fmt.Errorf("the checkout's toplevel prefix cannot be resolved: %v", prefixErr)
 	}
-	guardRel := strings.TrimSpace(string(prefixOut)) + "scripts/agents/pre-commit-guard.sh"
-	composer := "#!/usr/bin/env bash\nguard=\"$(git rev-parse --show-toplevel)/" + guardRel + "\"\n" + composerBodyFailClosed
+	// Newline-only trim (a prefix beginning with whitespace is a
+	// lawful path), and the relative part rides SINGLE-QUOTED: a
+	// directory component carrying $(), backticks, or quotes must
+	// reach bash as bytes, never as syntax.
+	guardRel := strings.TrimRight(string(prefixOut), "\n") + "scripts/agents/pre-commit-guard.sh"
+	composer := "#!/usr/bin/env bash\nguard=\"$(git rev-parse --show-toplevel)/\"" + shellSingleQuote(guardRel) + "\n" + composerBodyFailClosed
 	if err := os.WriteFile(hookPath, []byte(composer), 0o755); err != nil {
 		return err
 	}
@@ -199,10 +216,25 @@ func isOurComposer(hook string) bool {
 	if len(lines) < 3 || lines[0] != "#!/usr/bin/env bash" {
 		return false
 	}
-	if !strings.HasPrefix(lines[1], "guard=") || !strings.Contains(lines[1], "pre-commit-guard.sh") {
+	// The guard line is ONE assignment ending in the quoted guard
+	// filename — a trailing command ("guard=...; run-custom-check")
+	// is a human's extension, and rewriting it would delete their
+	// check.
+	guardLine := lines[1]
+	if !strings.HasPrefix(guardLine, "guard=") || strings.ContainsAny(guardLine, ";&|") {
+		return false
+	}
+	if !strings.HasSuffix(guardLine, `pre-commit-guard.sh"`) && !strings.HasSuffix(guardLine, "pre-commit-guard.sh'") {
 		return false
 	}
 	return lines[2] == composerBodyFailClosed || lines[2] == composerBodyFailOpen
+}
+
+// shellSingleQuote renders s as one single-quoted shell word: inside
+// single quotes the shell expands nothing, so path components
+// carrying $, backticks, quotes, or spaces reach bash as bytes.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // environWithoutGitSteeringCLI mirrors the goal package's scrub: the

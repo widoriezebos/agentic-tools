@@ -56,6 +56,15 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	// after publication finds the snapshot on disk and
 	// --refresh-only completes exactly what the live session would
 	// have done. The commit field is stamped after confirmation.
+	// It never OVERWRITES another session's standing pending record:
+	// both sessions may have passed BaseTip before either wrote, and
+	// the overwritten session's durable snapshot is what ITS crash
+	// recovery would need.
+	if prior, priorExists, priorErr := ReadBase(r.Endpoint.Root); priorErr != nil {
+		return ReconcileResult{}, priorErr
+	} else if priorExists && prior.RefreshDue && prior.Opid != r.opid() {
+		return ReconcileResult{}, fmt.Errorf("another reconcile session's refresh is pending (opid %s); complete it with goal reconcile --refresh-only first", prior.Opid)
+	}
 	if err := WriteBase(r.Endpoint.Root, BaseRecord{
 		Commit: base, WrittenAt: nowISO8601(), RefreshDue: true,
 		Publishing: true, Opid: r.opid(), Snapshot: snap.Files,
@@ -364,7 +373,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if f.Arc != row.BaseArc {
 			return nil, conflict("arc", "the fetched tip carries arc %q, the hand edit was made against %q", f.Arc, row.BaseArc)
 		}
-		if row.BaseState != "" && f.State != row.BaseState {
+		if !session.moved[row.Id] && row.BaseState != "" && f.State != row.BaseState {
 			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
 		}
 		detachDisplaced := ""
@@ -389,7 +398,10 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if f.Arc != row.BaseArc {
 			return nil, conflict("arc", "the fetched tip carries arc %q, the hand edit was made against %q", f.Arc, row.BaseArc)
 		}
-		if row.BaseState != "" && f.State != row.BaseState {
+		// session.moved: a park earlier in THIS session lawfully moved
+		// the member — its own BaseState bound there (the same
+		// composition rule the edit arm carries).
+		if !session.moved[row.Id] && row.BaseState != "" && f.State != row.BaseState {
 			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
 		}
 		// The hand move composes under the SAME membership matrix as
