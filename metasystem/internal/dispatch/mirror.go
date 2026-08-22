@@ -129,6 +129,30 @@ func mirrorSources(agents, payload, repoRoot, recordPath, job string, record map
 		}
 		sources = append(sources, mirrorSource{path, filepath.Join("rounds", round, relative)})
 	}
+	if mission := asString(record["mission"]); mission != "" {
+		// A mission job's integration authorizations are chain evidence:
+		// the wall's proof that this exact job's patch was authorized.
+		// They mirror with the round so a closed chain can testify alone.
+		authDir := filepath.Join(repoRoot, "artifacts", "agents", "missions", mission, "authorizations")
+		var authFiles []string
+		filepath.WalkDir(authDir, func(path string, entry fs.DirEntry, err error) error {
+			if err == nil && entry.Type().IsRegular() && strings.HasSuffix(path, ".json") {
+				authFiles = append(authFiles, path)
+			}
+			return nil
+		})
+		sort.Strings(authFiles)
+		for _, path := range authFiles {
+			doc, err := readObject(path)
+			if err != nil {
+				return nil, fmt.Errorf("unreadable integration authorization %s: %v", filepath.Base(path), err)
+			}
+			if asString(doc["jobId"]) != job {
+				continue
+			}
+			sources = append(sources, mirrorSource{path, filepath.Join("authorizations", filepath.Base(path))})
+		}
+	}
 	snapshotField, ok := record["capabilitySnapshot"].(string)
 	if !ok {
 		return nil, fmt.Errorf("job record has no capability snapshot path")

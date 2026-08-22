@@ -227,3 +227,19 @@ refused it — immutable versions mean the sentence rides a new case
 version instead, while tonight's benchmark arm keeps its pinned
 instruments. Two slices in a row now, the system's own gates have
 been the sharpest reviewer of the day's work.
+
+## A closed chain testifies alone (August 23, 2026)
+
+The wall's evidence row finished in two sittings. First the
+witnesses: five events joined the closed catalogue and went live at
+their decision sites — an accepted turn announces its wall pass and
+every authorization it consumed, a refusal names the authorization
+and the reason, a violation park names the exact taint a human must
+resolve. Then the durability: a mission chain's integration
+authorizations now travel with the chain's mirror, and closing the
+chain attests them — a record the mirror never carried, a record
+tampered after mirroring, and a record the disk lost each refuse
+the close by name. The principle underneath is the flight
+recorder's, applied to the wall: records are the authority, events
+are the witnesses, and evidence that cannot survive its author has
+not been kept.

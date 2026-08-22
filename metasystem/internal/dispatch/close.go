@@ -2,7 +2,9 @@ package dispatch
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 )
 
 // CloseCheck decides whether a chain may be closed: every record terminal,
@@ -74,6 +76,49 @@ func CloseCheck(repoRoot, root string) error {
 		digest, err := sha256File(source)
 		if err != nil || asString(entry["sha256"]) != digest {
 			return fmt.Errorf("manifest has a stale implementer diff.patch for %s", job)
+		}
+	}
+	// A mission chain's integration authorizations are the wall's
+	// evidence; a close that lets one go unmirrored or stale attests
+	// durability the mirror does not have.
+	for _, member := range members {
+		mission := asString(member.record["mission"])
+		if mission == "" {
+			continue
+		}
+		job := asString(member.record["jobId"])
+		authDir := filepath.Join(repoRoot, "artifacts", "agents", "missions", mission, "authorizations")
+		entries, err := os.ReadDir(authDir)
+		if err != nil {
+			continue
+		}
+		for _, dirEntry := range entries {
+			if dirEntry.IsDir() || !strings.HasSuffix(dirEntry.Name(), ".json") {
+				continue
+			}
+			source := filepath.Join(authDir, dirEntry.Name())
+			doc, readErr := readObject(source)
+			if readErr != nil || asString(doc["jobId"]) != job {
+				continue
+			}
+			relative := "authorizations/" + dirEntry.Name()
+			entry, entryOK := files[relative].(map[string]any)
+			if !entryOK {
+				return fmt.Errorf("integration authorization is not mirrored for %s", job)
+			}
+			digest, digestErr := sha256File(source)
+			if digestErr != nil || asString(entry["sha256"]) != digest {
+				return fmt.Errorf("manifest has a stale integration authorization for %s", job)
+			}
+		}
+		for relative := range files {
+			if !strings.HasPrefix(relative, "authorizations/") {
+				continue
+			}
+			source := filepath.Join(authDir, strings.TrimPrefix(relative, "authorizations/"))
+			if !fileExists(source) {
+				return fmt.Errorf("integration authorization vanished after mirroring for %s", job)
+			}
 		}
 	}
 	return nil
