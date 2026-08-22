@@ -53,9 +53,10 @@ func runIdentityGroupExists(args []string) int {
 }
 
 // runProcGroupMembers prints the live pids of a process group, optionally
-// excluding one — the F4 kill domain enumeration (D32). Indeterminable
-// membership (any probe failure but ESRCH) refuses with exit 1: a sweep
-// must never act on an undercount.
+// excluding one — the kill-domain enumeration the job supervisor's
+// deadline enforcement sweeps. Indeterminable membership (any probe
+// failure but ESRCH) refuses with exit 1: a sweep must never act on an
+// undercount.
 func runProcGroupMembers(args []string) int {
 	flags := flag.NewFlagSet("proc group-members", flag.ContinueOnError)
 	pgid := flags.Int64("pgid", 0, "process group id")

@@ -20,9 +20,9 @@ var hexDigest64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // well-formed, successful, generation-matched to the current arming record,
 // attesting that record's exact bytes, young enough, and — when
 // expectedFingerprint is non-empty — carrying the fingerprint of the armed
-// code, signatures, and configuration (script-orchestration-12: the whole
-// gate renders ONE verdict; the fingerprint half used to be shell string
-// equality). armHint and repoHint only name the re-arm command in refusals.
+// code, signatures, and configuration. The whole
+// gate renders ONE verdict, fingerprint check included.
+// armHint and repoHint only name the re-arm command in refusals.
 func CensusFresh(verdictPath, statePath, armHint, repoHint, expectedFingerprint string, now time.Time) error {
 	verdictBytes, err := os.ReadFile(verdictPath)
 	if err != nil {
@@ -83,7 +83,7 @@ func CensusFresh(verdictPath, statePath, armHint, repoHint, expectedFingerprint 
 		return fmt.Errorf("dispatch refused: arming record generation is invalid")
 	}
 	if generation != armedGeneration {
-		// The arming-window transient (script-validate-3/D34): the one
+		// The arming-window transient: the one
 		// refusal that is safe to retry before a job record exists gets a
 		// TYPE, so callers branch on a contract instead of grepping the
 		// diagnostic's wording. The message bytes are unchanged.

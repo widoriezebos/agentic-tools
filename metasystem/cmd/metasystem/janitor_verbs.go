@@ -34,8 +34,8 @@ func runJanitorHeadroom(args []string) int {
 			return 2
 		}
 	}
-	// A floor must be a real non-negative number: NaN silently became
-	// zero and negative/-Inf became always-pass (review finding 5).
+	// A floor must be a real non-negative number: NaN silently becomes
+	// zero and negative/-Inf becomes always-pass.
 	if math.IsNaN(*floorGB) || math.IsInf(*floorGB, 0) || *floorGB < 0 {
 		fmt.Fprintln(os.Stderr, "janitor headroom: --floor-gb must be a finite non-negative number")
 		return 2

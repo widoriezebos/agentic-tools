@@ -10,7 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
-// The Phase 5.3 golden corpus for host results: this family's dialect is
+// The golden corpus for host results: this family's dialect is
 // the unescaped canon (canonicalJSON), like dispatch and unlike
 // missionrunner.
 
@@ -59,7 +59,7 @@ func TestHostResultCorpus(t *testing.T) {
 	}
 }
 
-// TD-1 for this family: the envelope's unescaped Render matches the corpus.
+// This family's cross-writer proof: the envelope's unescaped Render matches the corpus.
 func TestWiredocMatchesHostCorpus(t *testing.T) {
 	for _, entry := range hostResultCorpus {
 		golden, err := os.ReadFile(corpusFile(entry.name))

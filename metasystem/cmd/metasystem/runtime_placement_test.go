@@ -15,11 +15,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
-// The placement convention, mechanically checked (backlog item 17,
-// D78; rebuilt after the item's own critique showed the first cut
-// could not match runtime names INSIDE identifiers): in the seam
+// The placement convention, mechanically checked: in the seam
 // packages and the runtime-named shell files, a file owned by one
-// runtime must not reference another runtime in code. Go files are
+// runtime must not reference another runtime in code — including a
+// runtime name buried inside an identifier. Go files are
 // parsed — identifiers are split into camelCase/snake_case tokens and
 // compared, comments are exempt by construction, and a string literal
 // counts only when it IS a bare runtime name (a selector like

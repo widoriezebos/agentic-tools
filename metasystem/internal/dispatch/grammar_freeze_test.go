@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// The frozen accepted-input grammar for job records (Phase 5.1, TD-3):
+// The frozen accepted-input grammar for job records:
 // each case pins a shape the CURRENT reader accepts or refuses. The typed
 // reader must reproduce every verdict below before any writer converts;
-// narrowing the grammar is a behavior change Phase 5 does not carry.
+// narrowing the grammar is a behavior change this freeze exists to catch.
 func TestJobRecordGrammarFrozen(t *testing.T) {
 	cases := []struct {
 		name     string

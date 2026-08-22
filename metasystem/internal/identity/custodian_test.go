@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The custodian verdict table (go-production-grade Phase 1, B1), one focused
+// The custodian verdict table, one focused
 // test per row. Custodian binds the kernel prober directly, so the rows are
 // driven through real processes and the fixture file — the same two sources
 // production uses.
@@ -25,8 +25,8 @@ func selfIdentity(t *testing.T) (pid int64, start int64, tag string) {
 	return pid, exact.StartedAt.Unix(), exact.Argv[0]
 }
 
-// mapProbe is the test-local FixtureProbe: identity no longer reads
-// the fixture environment itself (agnosticism B1 — fixtureauth owns
+// mapProbe is the test-local FixtureProbe: identity never reads
+// the fixture environment itself (fixtureauth owns
 // the file and the authorization; this package only consumes the
 // interface).
 type mapProbe map[string]FixtureEntry
@@ -104,7 +104,7 @@ func TestCustodianRow4StartMismatchIsDead(t *testing.T) {
 	}
 }
 
-// Row 5 — the B1 correction: a tag is expected but the argv was unreadable.
+// Row 5: a tag is expected but the argv was unreadable.
 // Absence of evidence is Unknown, never Dead. The subject is a real process
 // whose probe succeeds with ArgvKnown=false: on darwin an unprivileged test
 // cannot read launchd's argv; on linux a kernel thread has an empty cmdline.
@@ -163,8 +163,8 @@ func TestCustodianTagOutranksDriftedStartSecond(t *testing.T) {
 	}
 }
 
-// Round-2 F-2: a composite argv element containing the tag as a substring
-// keeps its pre-override semantics — Alive when identity matches (no
+// A composite argv element containing the tag as a substring
+// keeps substring semantics — Alive when identity matches (no
 // exact-element override fires, the Contains fallback rules).
 func TestCustodianCompositeTagElementStillAlive(t *testing.T) {
 	pid, start, tag := selfIdentity(t)

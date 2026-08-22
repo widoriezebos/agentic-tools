@@ -119,11 +119,11 @@ func quoteTOML(value string) string {
 }
 
 // CodexPermissionSettings derives the sandbox/network pair from a
-// permission envelope (review script-adapters-06): an empty writeRoots
+// permission envelope: an empty writeRoots
 // means read-only, anything else workspace-write; network "allow" means
 // true. recordPath reads the record's requested envelope; otherwise
 // permissionsPath is the envelope JSON itself. The envelope-to-flag
-// mapping is the security-relevant half of command construction (KI-12),
+// mapping is the security-relevant half of command construction,
 // so it is decided here, not pre-chewed in shell.
 func CodexPermissionSettings(permissionsPath, recordPath string) (sandbox, network string, err error) {
 	var envelope map[string]any

@@ -24,7 +24,7 @@ type mirrorSource struct {
 // repository, maintaining a per-chain manifest of content digests. Every copy
 // is verified by digest after landing. A mirror whose manifest already covers
 // every source byte-for-byte does nothing and reports unchanged, so repeated
-// reaps of a settled chain cost only reads. Four named steps (Phase 3c):
+// reaps of a settled chain cost only reads. Four named steps:
 // gather the sources, judge unchanged against the manifest, land and verify
 // the copies, report.
 func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error {
@@ -243,7 +243,7 @@ func runtimesConfigured(repoRoot string) string {
 // must not collide, so each checkout gets a segment derived from its
 // resolved path (resolution happens here, so every caller derives from
 // the same form). Exported because evidence GC must look only in its own
-// checkout's segment (review foundations-1) — a shared derivation is the
+// checkout's segment — a shared derivation is the
 // only way the two sides cannot drift.
 func CheckoutSegment(checkoutRoot string) string {
 	sum := sha256.Sum256([]byte(resolvePath(checkoutRoot)))
@@ -253,7 +253,7 @@ func CheckoutSegment(checkoutRoot string) string {
 // SemanticRecordHash digests a job record with its mirror field blanked: the
 // hash of what the record says, independent of when it was last mirrored.
 // Exported because evidence GC must compare the manifest's mirror-time hash
-// against the record's current state before pruning (review codex-1); the
+// against the record's current state before pruning; the
 // two sides must never drift apart in how they compute it.
 func SemanticRecordHash(path string) (string, error) {
 	record, err := readObject(path)
@@ -265,11 +265,10 @@ func SemanticRecordHash(path string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// copyFileAtomic lands a copy through the durable-write owner
-// (go-production-grade B5): a reader at the destination never sees a
+// copyFileAtomic lands a copy through the durable-write owner:
+// a reader at the destination never sees a
 // half-copied file. Empty anchor until this caller carries the two-outcome
-// contract; the owner also syncs the temp before publishing, which the old
-// copy here skipped.
+// contract; the owner also syncs the temp before publishing.
 func copyFileAtomic(sourcePath, targetPath string) error {
 	_, err := atomicfile.CopyFile(sourcePath, targetPath, "")
 	return err

@@ -12,7 +12,7 @@ import (
 
 func openItem(detail string) Item { return Item{Kind: "plan", Id: detail, Detail: detail} }
 
-// GOAL-04: the dual-slot block-once state machine — the G-01 sequence:
+// The dual-slot block-once state machine — the canonical sequence:
 // goal-block, open-work-block, clear, and NO re-block of the unchanged
 // goal.
 func TestVerdictDualSlotSequence(t *testing.T) {
@@ -66,7 +66,7 @@ func TestVerdictDualSlotSequence(t *testing.T) {
 	}
 }
 
-// GOAL-07: precedence — busy suppresses everything; human-waits suppress
+// Precedence — busy suppresses everything; human-waits suppress
 // the goal clause; stale plans never block; unreadable vetoes both ways.
 func TestPrecedenceLadder(t *testing.T) {
 	s := testStore(t)
@@ -90,7 +90,7 @@ func TestPrecedenceLadder(t *testing.T) {
 		t.Fatalf("stale plans changed the goal outcome: %+v", v)
 	}
 
-	// GOAL-17: unreadable vetoes the goal block AND the all-clear.
+	// Unreadable vetoes the goal block AND the all-clear.
 	v, _ = s.TurnVerdict(ScanResult{Unreadable: []string{"plans/broken.md: permission denied"}}, "s2", "", "")
 	if v.ShouldBlock || strings.Contains(v.Display, "NOTHING LEFT") || !strings.Contains(v.Display, "unreadable") {
 		t.Fatalf("unreadable veto wrong: %+v", v)
@@ -100,7 +100,7 @@ func TestPrecedenceLadder(t *testing.T) {
 	}
 }
 
-// GOAL-10: pre-adoption absence is advisory; post-adoption deletion is
+// Pre-adoption absence is advisory; post-adoption deletion is
 // degraded with the all-clear vetoed and reconcile named.
 func TestAbsenceAdvisoryVsDeletionDegraded(t *testing.T) {
 	s := testStore(t)
@@ -117,7 +117,7 @@ func TestAbsenceAdvisoryVsDeletionDegraded(t *testing.T) {
 	}
 }
 
-// GOAL-20: the queued-only ledger blocks once naming the first queued
+// The queued-only ledger blocks once naming the first queued
 // goal, never a silent all-clear.
 func TestQueuedOnlyVerdict(t *testing.T) {
 	s := testStore(t)
@@ -154,7 +154,7 @@ func TestQueuedOnlyVerdict(t *testing.T) {
 	}
 }
 
-// GOAL-01 + GOAL-15: a goal-free declaration over a moved world blocks
+// A goal-free declaration over a moved world blocks
 // once; renewal re-arms the all-clear.
 func TestGoalFreeStaleness(t *testing.T) {
 	s := testStore(t)
@@ -194,7 +194,7 @@ func TestGoalFreeStaleness(t *testing.T) {
 	}
 }
 
-// GOAL-04: the sessions map caps at 128 oldest-evicted, session ids
+// The sessions map caps at 128 oldest-evicted, session ids
 // normalize, and concurrent verdicts serialize under the flock.
 func TestSessionMapCapAndHygiene(t *testing.T) {
 	s := testStore(t)
@@ -241,7 +241,7 @@ func TestSessionMapCapAndHygiene(t *testing.T) {
 	}
 }
 
-// GOAL-04: the watchdog protocol — changed surfaces, same suppresses,
+// The watchdog protocol — changed surfaces, same suppresses,
 // clear resets, same surfaces again; concurrent calls surface exactly
 // once.
 func TestWatchdogProtocol(t *testing.T) {
@@ -295,7 +295,7 @@ func TestWatchdogProtocol(t *testing.T) {
 	}
 }
 
-// GOAL-17 tail: inventory failure (as Unreadable) vetoes even when the
+// Unreadable-veto tail: inventory failure (as Unreadable) vetoes even when the
 // ledger is goal-free-fresh — no all-clear over unknown activity.
 func TestInventoryFailureVetoes(t *testing.T) {
 	s := testStore(t)
@@ -308,7 +308,7 @@ func TestInventoryFailureVetoes(t *testing.T) {
 	}
 }
 
-// MON-05 + FIX-R6-01: unwatched work blocks once before Busy can hide it,
+// Unwatched work blocks once before Busy can hide it,
 // keys on lifecycle tags so a reused job id re-arms, and run warnings ride
 // above the ladder.
 func TestUnwatchedAndWarnings(t *testing.T) {
@@ -328,7 +328,7 @@ func TestUnwatchedAndWarnings(t *testing.T) {
 	if v.ShouldBlock || !strings.Contains(v.Display, "STILL WORKING") {
 		t.Fatalf("unwatched re-blocked or Busy hidden: %+v", v)
 	}
-	// FIX-R6-01: the SAME job id with a NEW startedAt is a new incarnation
+	// The SAME job id with a NEW startedAt is a new incarnation
 	// and re-arms.
 	reused := job
 	reused.StartedAt = "2026-08-15T11:00:00Z"
@@ -363,7 +363,7 @@ func TestUnwatchedAndWarnings(t *testing.T) {
 	}
 }
 
-// FIX-R6-04: greens surface exactly once per session in terminal-sequence
+// Greens surface exactly once per session in terminal-sequence
 // order, and any unreadable run record freezes the cursor so a delayed
 // green is never skipped.
 func TestGreenPrefixConsistency(t *testing.T) {
@@ -415,7 +415,7 @@ func TestHumanOwnsHumanRuns(t *testing.T) {
 	}
 }
 
-// Critique finding 3: the green cursor trusts the DISK read inside the
+// The green cursor trusts the DISK read inside the
 // verdict flock, not the scanner's snapshot — a scan that predates a
 // run's conclusion must not let the cursor advance past it, and a torn
 // record on disk freezes the cursor even when the scan looked clean.

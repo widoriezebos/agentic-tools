@@ -202,7 +202,7 @@ func TestSelftestListenerTimesOutQuietlyWithoutARequest(t *testing.T) {
 	}
 }
 
-// adapter-host-registry-3: newest means capturedAt, never filename order —
+// Newest means capturedAt, never filename order —
 // after a CLI upgrade the old version's snapshots sort lexically LAST.
 func TestSelftestEnvelopeDeclarationPicksByCapturedAt(t *testing.T) {
 	dir := t.TempDir()
@@ -221,8 +221,8 @@ func TestSelftestEnvelopeDeclarationPicksByCapturedAt(t *testing.T) {
 	}
 }
 
-// Code critique finding 10: the devin pass record through the
-// REGISTERED probe is byte-pinned — labels, order, and every field.
+// The devin pass record through the REGISTERED probe is byte-pinned —
+// labels, order, and every field.
 func TestDevinPassRecordBytesGolden(t *testing.T) {
 	saved := now
 	now = func() time.Time { return time.Unix(1786924800, 0).UTC() } // 2026-08-16T00:00:00Z

@@ -70,7 +70,7 @@ func TestRunAdapterCodexUsageAndDevinSession(t *testing.T) {
 	}
 
 	// Two new sessions in the same workspace is the ambiguous case: its own
-	// exit 3, distinct from the package-wide 2 for usage (D15/cli-6).
+	// exit 3, distinct from the package-wide 2 for usage.
 	before := filepath.Join(dir, "before.json")
 	current := filepath.Join(dir, "current.json")
 	os.WriteFile(before, []byte(`[]`), 0o644)

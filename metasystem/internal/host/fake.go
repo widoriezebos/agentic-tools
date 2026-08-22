@@ -103,7 +103,7 @@ func FakeReturn(turnPath, statePath, outputPath, behavior, root string) error {
 			"stream": active,
 		}}
 	case "solo-build":
-		// The D99 shape: the host authors a product file in the checkout
+		// The solo-build shape: the host authors a product file in the checkout
 		// and returns a clean empty-dispatch envelope — the wall's whole
 		// reason to exist. The write is TRACKED product content, outside
 		// artifacts/ and any declared host-artifact set.

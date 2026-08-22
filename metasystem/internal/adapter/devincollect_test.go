@@ -43,9 +43,8 @@ func newCollectFixture(t *testing.T) *collectFixture {
 	  "sessionId": "sess-1", "requestedModel": "devin-model", "effectiveModel": null
 	}`)
 
-	// A schema-valid devin return built locally (placement audit, item
-	// 17 critique finding 2): devin's collect tests no longer depend on
-	// the fake runtime's production writer.
+	// A schema-valid devin return built locally: devin's collect tests
+	// must not depend on the fake runtime's production writer.
 	f.validReturn = []byte(`{
 	  "schemaVersion": 2, "jobId": "job-1", "round": 1, "runtime": "devin",
 	  "sessionId": "sess-1",

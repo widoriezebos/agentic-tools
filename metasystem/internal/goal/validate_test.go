@@ -149,7 +149,7 @@ func TestQuotaIsOneClaimPerMachine(t *testing.T) {
 	files := vTree(vRoot(), []*GoalFile{first, second}, nil)
 	expectProblem(t, problemsOf(files), "quota is one claim per machine")
 
-	// One ARC under one claimant counts once (R4-08).
+	// One ARC under one claimant counts once.
 	first.Arc = "the-arc"
 	second.Arc = "the-arc"
 	files = vTree(vRoot(), []*GoalFile{first, second}, nil)

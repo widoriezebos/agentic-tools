@@ -253,13 +253,12 @@ func setupReaper(repo string) func() {
 // (identity.Custodian) as the reaper's custody prover: one implementation,
 // so the standing reaper and the mission runner's drain reap can never
 // disagree about one record's custodian. The fixture authority is
-// root-checked (agnosticism B1); a refused construction refuses
-// fixtures.
+// root-checked; a refused construction refuses fixtures.
 func kernelCustodian(repo string) func(pid, start int64, tag string) identity.Liveness {
 	authorization, err := fixtureauth.New(repo)
 	if err != nil {
 		// A leaked fixture makes every custody verdict Unknown — which
-		// authorizes nothing (B1 critique finding 4).
+		// authorizes nothing.
 		return func(int64, int64, string) identity.Liveness { return identity.Unknown }
 	}
 	return func(pid, start int64, tag string) identity.Liveness {

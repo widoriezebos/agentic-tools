@@ -208,7 +208,7 @@ func readAggregateRounds(t *testing.T, repo, mission string) map[string]map[stri
 	return entries
 }
 
-// The bm-2s-shaped gap: a budget-capped job whose record carries usage null
+// A budget-capped job whose record carries usage null
 // derives its spend from the dead round's event stream — last valid usage
 // block wins, a truncated final line is tolerated, and the derived value is
 // never written back to the round.
@@ -460,8 +460,7 @@ func TestReleaseJobFreesAHuskedReservation(t *testing.T) {
 	}
 }
 
-// The pinned-bytes drift refusals, ported from AUTH-R2-002/003
-// (script-fixtures-006/D42): the fence's cap authority reads the raw
+// The pinned-bytes drift refusals: the fence's cap authority reads the raw
 // contract bytes pinned in fences.json, so ANY drift — a real edit or a
 // whitespace-only one — must refuse against approvedContractSha256.
 func TestAuthorizeCapRefusesPinnedContractDrift(t *testing.T) {

@@ -16,7 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-// The run family (monitor facility, D72): tracked long-running work.
+// The run family (the monitor facility): tracked long-running work.
 // Mutations classify the caller and run the holder-only matrix exactly
 // like the goal family; conclude is record-writer so supervision's
 // watcher may conclude; watch and the reads are open.
@@ -46,10 +46,9 @@ func runCaller(root string, callerPid int64, mode string) (run.Caller, error) {
 	}, nil
 }
 
-// runStore binds a Store with the in-lock epoch reader (critique
-// finding 2): the CLI ALWAYS wires CurrentEpoch so a stale-epoch child
-// cannot mutate records after a takeover; only library/test use leaves
-// the seam nil.
+// runStore binds a Store with the in-lock epoch reader: the CLI
+// ALWAYS wires CurrentEpoch so a stale-epoch child cannot mutate
+// records after a takeover; only library/test use leaves the seam nil.
 func runStore(root string) *run.Store {
 	return &run.Store{Root: root, CurrentEpoch: func() (*int64, bool) {
 		view, err := lease.ClassifyVerb(root, int64(os.Getpid()))

@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// Code critique finding 12: the runtime family's pinned contract —
-// exit codes 0/1/2, empty stdout on absent capabilities — is
-// table-tested for every verb shape.
+// The runtime family's pinned contract — exit codes 0/1/2, empty
+// stdout on absent capabilities — is table-tested for every verb
+// shape.
 func TestRuntimeVerbContract(t *testing.T) {
 	capture := func(f func([]string) int, args []string) (int, string) {
 		old := os.Stdout
@@ -70,8 +70,8 @@ func TestRuntimeVerbContract(t *testing.T) {
 }
 
 // joinLines derives the expected population from the declarations —
-// a valid new runtime must not fail shared core tests (ric critique
-// r3-13); only RELATIONAL policies are pinned elsewhere.
+// a valid new runtime must not fail shared core tests; only
+// RELATIONAL policies are pinned elsewhere.
 func joinLines(names []string) string {
 	out := ""
 	for _, name := range names {

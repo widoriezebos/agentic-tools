@@ -219,7 +219,7 @@ func missionRunnerUsage() {
 // runner's strict grammar: only the given keys, every valued key valued, and
 // nothing else. It reports whether the arguments parsed cleanly.
 //
-// Kept hand-rolled deliberately (cli-9): the five runner verbs share ONE
+// Kept hand-rolled deliberately: the five runner verbs share ONE
 // grammar whose flag sets are data (the valued/switches maps), and the
 // grammar refuses a stray positional anywhere in the argument list —
 // flag.FlagSet stops parsing at the first positional instead of refusing
@@ -287,8 +287,8 @@ func runMissionRunnerAnswer(args []string) int {
 }
 
 func runMissionRunnerResolveTaint(args []string) int {
-	// ONE strict left-to-right scan over the RAW tokens (successor
-	// round-8 finding 1): every token in flag position must be a known
+	// ONE strict left-to-right scan over the RAW tokens: every token
+	// in flag position must be a known
 	// flag; --adopt is a bare switch; every valued flag consumes exactly
 	// the next token, which must not itself look like a flag; duplicates
 	// refuse (only --waives repeats). No token is lifted, filtered, or

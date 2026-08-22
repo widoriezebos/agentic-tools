@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// codex-4 (the review): the arming blocker scan fails CLOSED. A record it
+// The arming blocker scan fails CLOSED. A record it
 // cannot read might carry the very reservation that blocks the ceiling, so
 // unreadable and malformed inputs refuse arming; only genuinely absent
 // files skip.

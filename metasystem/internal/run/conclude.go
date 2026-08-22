@@ -290,7 +290,7 @@ func readTail(path string, limit int64) ([]byte, error) {
 
 func strPtr(s string) *string { return &s }
 
-// SweepStale is the takeover sweep's run half (critique finding 1): it
+// SweepStale is the takeover sweep's run half: it
 // holds the runs lock for the whole pass, signals ONLY wrapped runs whose
 // group ownership the proof function establishes (adopted custody never
 // carries the argv nonce and is never signaled — it surfaces through the

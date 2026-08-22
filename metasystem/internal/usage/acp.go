@@ -7,9 +7,9 @@ import (
 )
 
 // The ACP transport's usage owner: PromptResponse.usage arrives
-// WITH the completion signal and the wire probe proved its
-// semantics are PER-TURN (each turn reports its own context read —
-// plans/acp-wire-probe.md step B), so no predecessor differencing
+// WITH the completion signal and its observed wire
+// semantics are PER-TURN (each turn reports its own context read),
+// so no predecessor differencing
 // exists on this path. An absent or unreadable usage member
 // publishes UNAVAILABLE — never a fabricated number, never a
 // legacy-transcript fallback: wire and transcript figures are

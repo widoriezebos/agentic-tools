@@ -1,4 +1,4 @@
-// The cross-family helpers every verb file may use (cli-10): flag parsing,
+// The cross-family helpers every verb file may use: flag parsing,
 // JSON read/write/print. Family-named files hold only their own verbs.
 package main
 
@@ -28,9 +28,10 @@ func writeIdentityJSON(path string, value any) error {
 		return err
 	}
 	encoded = append(encoded, '\n')
-	// Through the durable-write owner (go-production-grade B5); the
-	// empty anchor preserves this writer's previous behavior exactly
-	// until its caller is converted to the two-outcome contract.
+	// Through the durable-write owner; the empty anchor syncs only the
+	// target's own directory, and the durable outcome is dropped,
+	// because this writer's callers have not adopted the two-outcome
+	// contract.
 	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
 	return writeErr
 }
@@ -57,9 +58,9 @@ func jsonIntField(v any) (int64, bool) {
 
 // strictBool registers a string boolean flag that accepts exactly the two
 // spellings its shell callers already pass and refuses anything else: a
-// typo must be a usage error (exit 2), never a silent false (D16/cli-7 —
-// a mistyped --signal value used to quietly disable the session-handshake
-// deadline). Existing wire spellings are preserved ("true"/"false" and
+// typo must be a usage error (exit 2), never a silent false — a
+// mistyped --signal value would quietly disable the session-handshake
+// deadline. Existing wire spellings are preserved ("true"/"false" and
 // "1"/"0" families); NEW verbs use flags.Bool instead.
 func strictBool(flags *flag.FlagSet, name, trueWord, falseWord, usage string) *bool {
 	value := false

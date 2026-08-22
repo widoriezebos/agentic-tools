@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Blankness is category-complete (slice-6): whitespace, controls, and
+// Blankness is category-complete: whitespace, controls, and
 // every Unicode format codepoint carry no attribution; any graphic
 // non-space rune does.
 func TestBlankStringCategories(t *testing.T) {

@@ -21,7 +21,7 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 
-	// Claim under a human name refuses up front (R3-06).
+	// Claim under a human name refuses up front.
 	humanClaim := verbReq(a, "01J5X00000000000000000AK10", "mac-a")
 	humanClaim.Actor.Human = "wido"
 	if _, err := Claim(humanClaim, "pair-keyed"); err == nil || !strings.Contains(err.Error(), "agent-only") {
@@ -119,7 +119,7 @@ func TestEditChecksAuthorityAndTheBlockerInvariant(t *testing.T) {
 		t.Fatalf("foreign agent edit refuses: %+v %v", res, err)
 	}
 	// The foreign HUMAN can — and the override leaves the
-	// displacement signal (R9-05).
+	// displacement signal.
 	humanEdit := verbReq(b, "01J5X00000000000000000EA40", "mac-b")
 	humanEdit.Actor.Human = "wido"
 	res, err = Edit(humanEdit, "held", EditFields{Intent: &intent})
@@ -138,7 +138,7 @@ func TestEditChecksAuthorityAndTheBlockerInvariant(t *testing.T) {
 	if held.Claimed == nil || held.Claimed.Machine != "mac-a" {
 		t.Fatal("an edit never moves the claim itself")
 	}
-	// D115: a claimed goal is never blocked — even the human cannot
+	// A claimed goal is never blocked — even the human cannot
 	// hang a live blocker on it.
 	edge := []string{"loose"}
 	humanEdge := verbReq(b, "01J5X00000000000000000EA50", "mac-b")
@@ -273,8 +273,8 @@ func TestSetArcComposesMovesUnderTheMatrix(t *testing.T) {
 	arcBed(t, a, "move-src", "mv", "MV")
 
 	// The claimant moves a member out of its claimed arc into a
-	// fresh arc: released as it detaches, lands QUEUED (R9-10 —
-	// auto-claim fires only when the DESTINATION is claimed).
+	// fresh arc: released as it detaches, lands QUEUED
+	// (auto-claim fires only when the DESTINATION is claimed).
 	res, err = SetArc(verbReq(a, "01J5X00000000000000000MX20", "mac-a"), "mv-two", "move-dst")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("move between arcs: %+v %v", res, err)

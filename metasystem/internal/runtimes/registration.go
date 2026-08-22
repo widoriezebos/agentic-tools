@@ -5,16 +5,16 @@ import (
 	"strings"
 )
 
-// The registration rows (agnosticism phase B1, D76; B1 code-critique
-// finding 5): the canonical tagged-union declaration of every runtime's
-// installed artifacts, transcribed verbatim from adopt.sh's arms. In B1
+// The registration rows: the canonical tagged-union declaration of every
+// runtime's installed artifacts, transcribed verbatim from adopt.sh's
+// arms. Today
 // the rows are VALIDATION DATA — the registration/v1 wire, the derived
 // dirs view, config validation's presence checks, and the declared
-// drift policies all read them; the B2 installer (goal
-// runtime-install-execution, PARKED) will execute them.
+// drift policies all read them; a future installer
+// will execute them.
 
-// RowOperation is the closed B1 vocabulary; the installer union arm
-// lands with B2.
+// RowOperation is the closed operation vocabulary; the installer union
+// arm lands with the installer.
 type RowOperation string
 
 const (
@@ -24,15 +24,14 @@ const (
 	OpSkillProfiles RowOperation = "skill-profiles"
 )
 
-// Requiredness is the context-indexed product (ric critique r4-1/r6-2):
+// Requiredness is the context-indexed product:
 // the template and adopted contexts are independent.
 type Requiredness struct {
 	TemplateSource     string // required | optional
 	AdoptedDestination string // required | source-conditioned | optional
 }
 
-// ValidationPolicy is the row's drift judgment (ric critique r1-12,
-// r4-4, r2-7).
+// ValidationPolicy is the row's drift judgment.
 type ValidationPolicy string
 
 const (
@@ -53,7 +52,7 @@ type RegistrationRow struct {
 	InstructionBearing bool
 	// UncoveredException marks the ONE sanctioned instruction-bearing
 	// destination outside every collision root: codex's .codex/hooks.json
-	// (ric critique r5-4/r6-4; any addition is a human-reserved change).
+	// (any addition is a human-reserved change).
 	UncoveredException bool
 	Source             string
 	Mode               string // link|copy (user-selectable trees), copy|in-place (profiles), "" otherwise

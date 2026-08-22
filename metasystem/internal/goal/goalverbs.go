@@ -36,8 +36,7 @@ type Caller struct {
 	// genesis-admitted caller may take ONLY the genesis arm, so a
 	// baseline appearing between authorization and the lock cannot hand
 	// a non-holder the restore, malformed-replacement, or replay paths
-	// (the opus-window re-review's pre-lock race,
-	// plans/opus-window-review-genesis.md finding 4).
+	// (the pre-lock race).
 	Genesis bool
 }
 
@@ -118,7 +117,7 @@ func (s *Store) withLock(fn func() (Result, error)) (Result, error) {
 	return fn()
 }
 
-// refuseMissionSeat is the recorded-fact seat check (GOAL-21): mutation
+// refuseMissionSeat is the recorded-fact seat check: mutation
 // refuses while any mission in this checkout is actively driven, and
 // refuses fail-closed when liveness is indeterminate — an unverifiable
 // runner cannot authorize rewriting intent.
@@ -318,7 +317,7 @@ func dropFree(ledger *Ledger) {
 }
 
 // Open declares a new goal. With no Current goal it becomes Current — the
-// one-command program start (GOAL-20); otherwise it queues.
+// one-command program start; otherwise it queues.
 func (s *Store) Open(caller Caller, id, intent, next string) (Result, error) {
 	return s.mutate(true, func(ledger *Ledger) (Result, error) {
 		if section := sectionOf(ledger, id); section != "" {

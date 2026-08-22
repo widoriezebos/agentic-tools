@@ -20,7 +20,7 @@ func WriteModelPatch(outputPath, model string) error {
 }
 
 // WriteTransportPatch pins the job's transport into its record —
-// a chain never switches transports (D82 fix-forward), and the
+// a chain never switches transports, and the
 // pin is what lets both branches refuse a switch.
 func WriteTransportPatch(outputPath, transport string) error {
 	if transport != "acp" && transport != "legacy" {

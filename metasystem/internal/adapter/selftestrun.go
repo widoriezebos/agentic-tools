@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// The full-contract adapter self-test (review script-adapters-05): one Go
+// The full-contract adapter self-test: one Go
 // orchestration of the sequence the real adapters run manually — dispatch,
 // return validation, session-identity resume, cancellation, the permission
 // probes against the runtime's own envelope declaration, and the pass record

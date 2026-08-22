@@ -13,8 +13,8 @@ import (
 )
 
 // The registry's capability EXPECTATIONS and the owner tables'
-// registered capabilities must agree both ways (agnosticism audit:
-// expected-but-unregistered fails, registered-but-undeclared fails) —
+// registered capabilities must agree both ways
+// (expected-but-unregistered fails, registered-but-undeclared fails) —
 // this is what keeps the pure-data registry and the seam-local
 // behavior tables from drifting apart.
 func TestCapabilityDeclarationsMatchRegistrations(t *testing.T) {
@@ -62,8 +62,8 @@ func TestCapabilityDeclarationsMatchRegistrations(t *testing.T) {
 }
 
 // The adapter/host capability FLAGS are backed by executable seam
-// files (code critique finding 7): a declaration cannot claim an
-// adapter or launcher that does not exist.
+// files: a declaration cannot claim an adapter or launcher that does
+// not exist.
 func TestCapabilityFlagsBackedByExecutables(t *testing.T) {
 	root := "../.."
 	for _, declaration := range runtimes.All() {

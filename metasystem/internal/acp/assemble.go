@@ -5,11 +5,11 @@ import (
 	"errors"
 )
 
-// The watermark rule, proven necessary by direct capture (probe
-// step B): session/load REPLAYS history as live-looking
+// The watermark rule, proven necessary by direct wire capture:
+// session/load REPLAYS history as live-looking
 // agent_message_chunk notifications, and channel hand-off loses
-// arrival order between channels — the linux race in slice two
-// proved a post-response chunk can be SELECTED before the response
+// arrival order between channels —
+// a post-response chunk can be SELECTED before the response
 // it followed. So the prompt window is a pure SEQUENCE RANGE: the
 // assembler buffers every candidate-relevant event with its wire
 // sequence, and Candidate assembles exactly the events strictly
@@ -75,8 +75,7 @@ func NewAssembler(sessionID string) *Assembler {
 // SetFence marks the window's lower bound: the newest routed
 // sequence sampled immediately before the prompt is sent. Events
 // at or below it — setup noise and load replay — are never
-// buffered, so out-of-window bytes cannot poison the accounting
-// (slice-two critique F4, F5).
+// buffered, so out-of-window bytes cannot poison the accounting.
 func (a *Assembler) SetFence(seq uint64) {
 	a.fence = seq
 	a.fenceSet = true

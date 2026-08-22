@@ -89,8 +89,8 @@ func TestCompareAndWriteAdvancesTheChain(t *testing.T) {
 	}
 }
 
-// The PUBLIC state writer never lands a resolution (HIW-O6, slice-6
-// round-2 finding 1): the custody check runs INSIDE WriteState on the
+// The PUBLIC state writer never lands a resolution:
+// the custody check runs INSIDE WriteState on the
 // single parsed proposal — no source swap between check and write — and
 // only WriteStateResolution (resolve-taint's writer) may pass it.
 func TestPublicWriterRefusesResolutionTransitions(t *testing.T) {
@@ -154,7 +154,7 @@ func TestPublicWriterRefusesResolutionTransitions(t *testing.T) {
 	}
 }
 
-// One write resolves at most one taint (slice-6 round-2 finding 6): two
+// One write resolves at most one taint: two
 // resolutions sharing a single occurrence would put two trees on one
 // E-point.
 func TestTransitionRefusesTwoResolutionsInOneWrite(t *testing.T) {
@@ -188,8 +188,8 @@ func TestTransitionRefusesTwoResolutionsInOneWrite(t *testing.T) {
 	}
 
 	// An acceptance ALONGSIDE a resolution shares the occurrence the
-	// same way (round-3 finding 5) and refuses. The acceptance binds to
-	// an open marker (WSS I11-1), so the beds open m-t3 first.
+	// same way and refuses. The acceptance binds to
+	// an open marker, so the beds open m-t3 first.
 	openMarker := map[string]any{
 		"turnId": "m-t3", "cycle": 1, "preTree": tree,
 		"sequence": 0, "segment": 0, "openedAt": "2026-08-18T00:00:00Z",
@@ -430,7 +430,7 @@ func mustMarshalIndent(t *testing.T, doc map[string]any) string {
 	return b.String()
 }
 
-// State v2 (host-implementer wall): the exact legacy refusal precedes shape
+// State v2 carries the wall: the exact legacy refusal precedes shape
 // validation; the fresh state carries openTurn/workspaceTaint; acceptance
 // payloads derive the consumption index and refuse duplicates; the taint
 // ledger is monotonic across transitions.
@@ -492,7 +492,7 @@ func TestStateV2Wall(t *testing.T) {
 		t.Fatal("wall-only entry accepted")
 	}
 
-	// Entry-grain immutability (slice-4 F-1/F-3): acceptance entries are
+	// Entry-grain immutability: acceptance entries are
 	// append-only; taint facts freeze; a resolution lands once and bumps
 	// the segment by exactly one; appended taints start unresolved.
 	fresh, _ := readStateDoc(state)
@@ -551,8 +551,7 @@ func TestStateV2Wall(t *testing.T) {
 }
 
 // A preserved v1 state reaches the operator as the exact named refusal
-// through the REAL reconcile surface: no corrupt-state file, no recovery
-// (slice-4 critique F-2).
+// through the REAL reconcile surface: no corrupt-state file, no recovery.
 func TestReconcileRefusesLegacyStateVerbatim(t *testing.T) {
 	root, state, ledger := initMission(t)
 	doc, _ := readStateDoc(state)
@@ -585,7 +584,7 @@ func TestReconcileRefusesLegacyStateVerbatim(t *testing.T) {
 	}
 }
 
-// Corrupt-state recovery never re-roots wall history (slice-4 R2-1): a
+// Corrupt-state recovery never re-roots wall history: a
 // tampered state carrying an acceptance entry refuses automatic recovery,
 // preserves evidence, and leaves the corrupt bytes in place for the human.
 func TestReconcileRefusesToRerootWallHistory(t *testing.T) {
@@ -622,10 +621,10 @@ func TestReconcileRefusesToRerootWallHistory(t *testing.T) {
 	}
 }
 
-// Issue-4 round 3 (R3-2, the in-tree half of the downgrade claim): a
+// The in-tree half of the downgrade claim: a
 // schema-3 state carrying wall history that reaches a reconciler which
 // cannot validate it is NEVER re-rooted — the corrupt-state recovery
-// refusal from slice 4 holds for schema-invalid bytes exactly as for
+// refusal holds for schema-invalid bytes exactly as for
 // tampered ones, so state.json itself stays byte-identical. (The full
 // cross-version proof needs a pre-semantics-3 binary and is recorded as
 // the accepted residual: an old binary may write its runner record and a
@@ -655,7 +654,7 @@ func TestReconcileRefusesRerootOnFutureSchema(t *testing.T) {
 	}
 }
 
-// The open-turn marker's transition discipline (HIW-O1): a write may open
+// The open-turn marker's transition discipline: a write may open
 // a turn or conclude one, but never silently replace the turn in flight —
 // that would mask a missed conclusion.
 func TestOpenTurnImmutableWhileInFlight(t *testing.T) {
@@ -712,7 +711,7 @@ func testRecordedPosture() map[string]any {
 	}
 }
 
-// WSS-9: a schema-2/3 state predates the snapshot-scope anchors and
+// A schema-2/3 state predates the snapshot-scope anchors and
 // refuses resume with the named error — no migration machinery.
 func TestPreSnapshotScopeStateRefusesByName(t *testing.T) {
 	_, state, _ := initMission(t)
@@ -725,7 +724,7 @@ func TestPreSnapshotScopeStateRefusesByName(t *testing.T) {
 	}
 }
 
-// WSS-12 (two-phase enforcement): an acceptance write can neither
+// Two-phase enforcement: an acceptance write can neither
 // surface success nor carry its own verification, and the admission
 // origins are immutable identity.
 func TestTwoPhaseAcceptanceSchema(t *testing.T) {
@@ -771,7 +770,7 @@ func TestTwoPhaseAcceptanceSchema(t *testing.T) {
 	if err := validateTransition(openBase, successWrite); err == nil || !strings.Contains(err.Error(), "cannot surface success") {
 		t.Fatalf("acceptance+completed in one write must refuse: %v", err)
 	}
-	// The acceptance BINDS to the already-open turn (WSS I11-1): no
+	// The acceptance BINDS to the already-open turn: no
 	// marker, a foreign marker, and a cycle mismatch all refuse.
 	if err := propose(func(doc map[string]any) {
 		doc["openTurn"] = marker

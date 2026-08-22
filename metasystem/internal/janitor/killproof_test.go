@@ -45,7 +45,7 @@ func TestKillable(t *testing.T) {
 			want:     false,
 		},
 		{
-			// KI-14 restated: a shell QUOTING the tag matches no shape
+			// A shell QUOTING the tag matches no shape
 			// because the tag is not the tag-flag's value.
 			name: "tag mention in a grep is never killable",
 			observed: observed(41, 100,

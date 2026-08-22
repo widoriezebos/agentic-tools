@@ -41,8 +41,8 @@ func CompileSignature(runtime string, matches, excludes []string) (Signature, er
 }
 
 // matches reports whether argv is this runtime: some match hits and no
-// exclude does. Exclude wins ties (KI-14: a shell that merely mentions a
-// runtime name in an excluded path is not that runtime).
+// exclude does. Exclude wins ties: a shell that merely mentions a
+// runtime name in an excluded path is not that runtime.
 func (s Signature) matches(argv string) bool {
 	excluded := false
 	for _, pattern := range s.Excludes {

@@ -104,9 +104,9 @@ func stateVerbRoot(statePath string) string {
 	if err != nil {
 		return ""
 	}
-	// Symlinks resolve BEFORE the layout walk (slice-6 successor finding
-	// 4): an alias root symlinked into the real mission directory must
-	// classify against the real repository, not an empty decoy.
+	// Symlinks resolve BEFORE the layout walk: an alias root symlinked
+	// into the real mission directory must classify against the real
+	// repository, not an empty decoy.
 	if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
 		abs = resolved
 	}
@@ -120,8 +120,8 @@ func stateVerbRoot(statePath string) string {
 	return filepath.Dir(dir)
 }
 
-// requireHumanStateCaller gates the state family's mutating verbs (HIW-O6,
-// slice-6 round-3 finding 1): the lease-holding runner is the only
+// requireHumanStateCaller gates the state family's mutating verbs:
+// the lease-holding runner is the only
 // ordinary writer and it writes in-process, so every CLI caller that
 // classifies as an announced agent — MAIN, DELEGATE, supervision,
 // adapter — refuses. The posture stays the design's cooperative
@@ -158,8 +158,8 @@ func runMissionStateWrite(args []string) int {
 		return code
 	}
 	// The writer additionally refuses resolution-shaped transitions
-	// inside WriteState itself (HIW-O6): resolutions and segment moves
-	// land only through resolve-taint's verified path.
+	// inside WriteState itself: resolutions and segment moves land
+	// only through resolve-taint's verified path.
 	if err := mission.WriteState(*state, *source, *expect); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

@@ -75,8 +75,8 @@ func TestACPUsagePartialMembers(t *testing.T) {
 	}
 }
 
-// A thinned journal disqualifies native usage the same way (P3
-// critique F8): the number cannot be provably complete when the
+// A thinned journal disqualifies native usage the same way:
+// the number cannot be provably complete when the
 // raw evidence is not.
 func TestACPUsageJournalThinning(t *testing.T) {
 	dir := t.TempDir()

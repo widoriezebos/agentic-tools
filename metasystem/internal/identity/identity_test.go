@@ -138,7 +138,7 @@ func TestProbeLiveChildArgv(t *testing.T) {
 	}
 }
 
-// btimeShiftProber replays issue #1's kernel behavior: the same live
+// btimeShiftProber replays the btime-step kernel behavior: the same live
 // process, constant ticks and boot id, but a start SECOND that walks as
 // the realtime clock is stepped.
 type btimeShiftProber struct{ shift int64 }

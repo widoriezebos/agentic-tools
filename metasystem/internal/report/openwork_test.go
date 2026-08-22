@@ -95,8 +95,8 @@ func TestNoStaleWhenClaimNamesRunningJob(t *testing.T) {
 	}
 }
 
-// The four shell-only cases, ported before retirement
-// (script-fixtures-008/D45).
+// Staleness edge cases: chain-root claims, per-stream verdicts, and the
+// plans README, which is documentation rather than a work stream.
 
 func TestNoStaleWhenClaimNamesTheChainRootOfALiveRound(t *testing.T) {
 	root := newPlanRoot(t)

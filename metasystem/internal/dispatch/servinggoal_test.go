@@ -9,7 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// GOAL-08: the projection resolves through the parser and refuses when no
+// The projection resolves through the parser and refuses when no
 // usable Current goal exists — absent, degraded, and goal-free states all
 // refuse rather than silently omitting.
 func TestServingGoalResolvesAndRefuses(t *testing.T) {

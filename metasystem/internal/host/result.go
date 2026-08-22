@@ -67,8 +67,7 @@ func fakeUsage(input, cached, output int) map[string]any {
 	}
 }
 
-// FinishTurn is the host turn's one outcome adjudication (review
-// script-adapters-10, replacing three shell copies): it decides the
+// FinishTurn is the host turn's one outcome adjudication: it decides the
 // outcome from the observed facts, writes the envelope, and returns the
 // exit code of the host's taxonomy — 3 a failed turn, 6 a missing session
 // (the adapter's own fault signal; a ROTATED session is reported in the
@@ -77,7 +76,7 @@ func fakeUsage(input, cached, output int) map[string]any {
 // "could not do it" (Devin): treating it as success would hand the runner
 // an empty return and blame the wrong thing.
 // acceptedPath, when non-empty, is the delivery walk's accepted
-// snapshot (D64 phase 2): the require-reply judgment consults IT
+// snapshot: the require-reply judgment consults IT
 // instead of raw stdout, so a file-delivered host result is a reply.
 // The raw path stays in the envelope as evidence either way.
 func FinishTurn(resultPath, session, usagePath, rawPath, returnPath, acceptedPath string, cliStatus int64, requireReply bool) (int, error) {

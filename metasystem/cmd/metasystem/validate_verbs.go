@@ -49,8 +49,8 @@ func runValidatePlanConsistency(args []string) int {
 	retired, violations, err := validate.PlanConsistency(*plansDir)
 	if err != nil {
 		// The real error, not a guessed label: an EACCES or not-a-directory
-		// mislabeled "no such plans directory" sent investigations the wrong
-		// way (cli-8).
+		// mislabeled "no such plans directory" sends an investigation the
+		// wrong way.
 		fmt.Fprintf(os.Stderr, "plan-consistency: %s: %v\n", *plansDir, err)
 		return 2
 	}
@@ -383,10 +383,10 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 	return code
 }
 
-// runValidateRefactorBaseline relays the refactor gate (script-misc-2/D29):
+// runValidateRefactorBaseline relays the refactor gate:
 // record a trusted baseline after the acceptance gate, or check whether a
 // new refactor edit batch may start. Exit 0 safe, 1 blocked, 2 usage or
-// environment error — the shim's contract, unchanged.
+// environment error — the contract its callers script against.
 func runValidateRefactorBaseline(args []string) int {
 	flags := flag.NewFlagSet("validate refactor-baseline", flag.ContinueOnError)
 	var p validate.RefactorBaselineParams

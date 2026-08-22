@@ -64,12 +64,12 @@ func SelftestUsageCheck(recordPath, expected string) error {
 // reading, under which the self-test demands behavioural proof of denial.
 func SelftestEnvelopeDeclaration(capabilitiesDir, runtime, field string) string {
 	matches, _ := filepath.Glob(filepath.Join(capabilitiesDir, runtime+"-*.json"))
-	// Newest by (capturedAt, filename) — capability's own rule (review
-	// adapter-host-registry-3): snapshot names sort by CLI version and
-	// config hash BEFORE date, so after an upgrade like 1.9 -> 1.10 the
-	// lexical order this replaced read a STALE declaration — a stale
-	// 'mapped' demanded a denial the current runtime cannot produce, a
-	// stale 'notEnforced' skipped proof it could have given. The runtime
+	// Newest by (capturedAt, filename) — capability's own rule:
+	// snapshot names sort by CLI version and
+	// config hash BEFORE date, so after an upgrade like 1.9 -> 1.10
+	// lexical order reads a STALE declaration — a stale
+	// 'mapped' demands a denial the current runtime cannot produce, a
+	// stale 'notEnforced' skips proof it could have given. The runtime
 	// segment is also matched exactly so a runtime whose name extends
 	// this one's prefix cannot shadow it.
 	var newest map[string]any

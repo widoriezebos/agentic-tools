@@ -132,13 +132,12 @@ func WriteCompacted(path string, kept []Frame) error {
 	}
 	// The registry's directory must already exist: compaction rewrites a
 	// ledger in place and must never invent its location — the owner's
-	// MkdirAll would mask a wrong path (contract pinned by an existing
-	// test, preserved across the B5 conversion).
+	// MkdirAll would mask a wrong path (a test pins this contract).
 	if _, err := os.Stat(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("compaction temp file: %w", err)
 	}
-	// Through the durable-write owner (go-production-grade B5), two-outcome
-	// contract adopted (D12): the registry is durable machine-wide state,
+	// Through the durable-write owner, two-outcome
+	// contract adopted: the registry is durable machine-wide state,
 	// anchored one level above its own directory, and a doubted
 	// publication is witnessed on stderr.
 	durable, err := atomicfile.WriteText(path, content.String(), filepath.Dir(filepath.Dir(path)))

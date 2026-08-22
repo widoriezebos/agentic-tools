@@ -17,7 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
-// The delivery collector (the delegate-delivery design, D64): one owner
+// The delivery collector: one owner
 // for candidate enumeration, per-candidate selection, attempt
 // boundaries, and provenance. The collector reports COLLECTION FACTS
 // only — repair eligibility is adjudication's composition, and the
@@ -172,8 +172,8 @@ type acpOutcome struct {
 // collectACP is the ACP transport's exclusive walk: one channel,
 // no fallthrough. The candidate rides the SAME qualification path
 // as every legacy channel (snapshot, normalize, full-job validate,
-// accepted snapshot) — the D62 owners downstream of selection are
-// reused unchanged.
+// accepted snapshot) — the owners downstream of selection are
+// shared, never duplicated.
 func (p CollectParams) collectACP(verdict *CollectVerdict) (*CollectVerdict, error) {
 	body, err := os.ReadFile(p.ACPOutcomePath)
 	if err != nil {

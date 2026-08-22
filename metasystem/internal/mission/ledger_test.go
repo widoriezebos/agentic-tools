@@ -245,7 +245,7 @@ func TestAppendAnnotationsToFinalBlock(t *testing.T) {
 }
 
 // Terminal delivery is idempotent at line grain and pinned to the bytes
-// the caller verified (WSS I11-2, I11-5): a re-delivered annotation must
+// the caller verified: a re-delivered annotation must
 // not double, and an append over bytes that moved past the expectSHA
 // proof must refuse under the lock.
 func TestAppendAnnotationsIdempotentAndPinned(t *testing.T) {
@@ -395,7 +395,7 @@ func TestParseLedgerEventsMarkerlessAndBareLines(t *testing.T) {
 }
 
 // The four Patience annotation forms round-trip through write and parse
-// (plans/patience-satellite-4.md r6/P4-044, r11/P4-069): the chain kind
+// (plans/patience-satellite-4.md): the chain kind
 // lives in the durable bytes, so the prompt projection needs no second
 // source.
 func TestPatienceAnnotationsRoundTrip(t *testing.T) {

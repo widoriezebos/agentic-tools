@@ -13,7 +13,7 @@
 // seconds to records for compatibility with every artifact the system
 // already has.
 //
-// SAME-USER SCOPE INVARIANT (B2): every consumer that acts on Dead —
+// SAME-USER SCOPE INVARIANT: every consumer that acts on Dead —
 // the reapers, lock takeover, the lease sweep — judges processes this
 // engine's own user spawned. The platform probers must never misread
 // another user's LIVE process as dead (permission denial is Unknown or
@@ -27,7 +27,7 @@ import (
 
 // Ref is a recorded process identity: the pid and the second its
 // process started, the resolution every existing record carries.
-// StartTicks and BootID are the clock-step-immune pair (issue #1): on
+// StartTicks and BootID are the clock-step-immune pair: on
 // Linux the btime-anchored epoch second MOVES when the realtime clock
 // steps (time-synced guests step every ~30s), so equality on seconds
 // reads live processes as Dead. Ticks are boot-relative and constant
@@ -53,7 +53,7 @@ type Exact struct {
 	// still alive — but a consumer matching a tag against Argv must treat
 	// ArgvKnown=false as absence of evidence, never as a failed match:
 	// an unreadable argv proves nothing, and Unknown never authorizes
-	// anything (go-production-grade B1).
+	// anything.
 	ArgvKnown bool
 }
 

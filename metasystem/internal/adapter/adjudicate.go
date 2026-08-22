@@ -8,12 +8,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
-// The adapter turn's terminal-outcome state machine (review
-// script-adapters-01, relocated from runtime-common.sh's complete_from_cli
-// and devin.sh's empty-reply extension). PURE DECISION by design: the CAS
+// The adapter turn's terminal-outcome state machine. PURE DECISION by
+// design: the CAS
 // stays in the shell wrappers because adapter record writes ride
 // dispatch.sh's lease-held __record-cas re-exec, and moving them here would
-// change the authority path (D24). Every error code and phase name below is
+// change the authority path. Every error code and phase name below is
 // vocabulary internal/dispatch and internal/missionrunner adjudicate on.
 
 // AdjudicateParams is one stage of the turn adjudication.
@@ -76,7 +75,7 @@ func writeRepairPrompt(path, violationText string, schema []byte) error {
 	return os.WriteFile(path, []byte(prompt.String()), 0o644)
 }
 
-// writeDeliveryRepairPrompt is the empty-delivery ask (D64): the session
+// writeDeliveryRepairPrompt is the empty-delivery ask: the session
 // did its work and delivered nothing our channels could read; the repair
 // names the exact file to write and asks for the print as well.
 func writeDeliveryRepairPrompt(path, namedRepairPath string, schema []byte) error {
@@ -160,7 +159,7 @@ func AdjudicateTurn(p AdjudicateParams) (string, error) {
 		}
 		return "finish failed session_identity_disagreement delivery", nil
 	case "empty-delivery":
-		// The delivery-repair recommendation (D64): CLI 0, settlement
+		// The delivery-repair recommendation: CLI 0, settlement
 		// certified, and the collector found nothing qualified. PURE
 		// recommendation — the shell must win `job repair-claim` between
 		// this verdict and the paid launch; a lost claim re-enters at

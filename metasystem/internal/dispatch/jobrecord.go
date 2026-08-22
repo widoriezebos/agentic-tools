@@ -4,13 +4,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
-// JobRecord is the typed READ LENS over a job record's wire document
-// (plans/typed-documents-design.md, 5.1). It interprets the fields
+// JobRecord is the typed READ LENS over a job record's wire document.
+// It interprets the fields
 // decisions dereference and nothing more; the document itself stays the
 // permissive map the CAS path patches under its own rules, so nothing the
 // wire accepts today is refused by going typed. An ill-typed field reads as
 // its zero value plus ok=false — exactly what the asString/jsonInt casts
-// gave their callers, now in one place per field.
+// give their callers, in one place per field.
 type JobRecord struct {
 	doc *wiredoc.Doc
 }

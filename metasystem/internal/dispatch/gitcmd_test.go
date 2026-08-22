@@ -8,7 +8,7 @@ import (
 )
 
 // gitOutput runs inside the LOCKED build-record path: a hung git there
-// blocks dispatch and arming checkout-wide (review mission-contract-3).
+// blocks dispatch and arming checkout-wide.
 // The bound must release the caller, promptly and with an error.
 func TestGitOutputBoundsAHangingGit(t *testing.T) {
 	dir := t.TempDir()

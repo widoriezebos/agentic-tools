@@ -2,8 +2,7 @@
 // checkout have a mission someone is actually driving? The rule is the one
 // the mission status verb has always applied — the runner record plus
 // kernel process identity, never either alone: a record claiming "running"
-// counts only while the recorded runner process is provably alive
-// (goal-system design, GOAL-16/GOAL-21/GOAL-22).
+// counts only while the recorded runner process is provably alive.
 //
 // Liveness answers are THREE-WAY and stay three-way here (the identity
 // package's contract): Alive means ACTIVE, a proven-dead process means
@@ -70,7 +69,8 @@ type Result struct {
 	Runners []Runner
 	// Unreadable lists inventory-source failures: unreadable or
 	// unparsable records, and enumeration errors. Enumeration failure
-	// must never collapse to idle (goal-system r6 finding 3).
+	// must never collapse to idle: a survey that could not see every
+	// record cannot certify that no one is driving.
 	Unreadable []string
 }
 

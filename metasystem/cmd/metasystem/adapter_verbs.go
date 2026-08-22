@@ -118,7 +118,8 @@ func runAdapterModelPatch(args []string) int {
 }
 
 // runAdapterTransportPatch writes a {transport} compare-and-swap
-// patch file (the D82 chain pin).
+// patch file — the pin that keeps a chain on one transport for its
+// whole life.
 func runAdapterTransportPatch(args []string) int {
 	flags := flag.NewFlagSet("adapter transport-patch", flag.ContinueOnError)
 	output := flags.String("output", "", "patch output file")

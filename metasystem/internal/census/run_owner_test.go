@@ -10,7 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-// MON-03: run records own their process groups through the census walk —
+// Run records own their process groups through the census walk —
 // wrapped three-factor with the argv nonce, draining by pgid+claim with
 // the honest label, pid reuse never owned, unreadable records surfacing.
 func TestRunGroupCustody(t *testing.T) {
@@ -32,7 +32,7 @@ func TestRunGroupCustody(t *testing.T) {
 	}
 	writeRecord("wrapped-run", "running", "wrapped", 900, 900, "")
 	writeRecord("drain-run", "draining", "wrapped", 901, 901, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
-	// Finding 6: a drain whose wind-down expired owns NOTHING anymore.
+	// A drain whose wind-down expired owns NOTHING anymore.
 	writeRecord("expired-drain", "draining", "wrapped", 902, 902,
 		time.Now().UTC().Add(-30*time.Minute).Format("2006-01-02T15:04:05Z"))
 	os.WriteFile(filepath.Join(run.Dir(repo), "broken.json"), []byte("{nope"), 0o644)

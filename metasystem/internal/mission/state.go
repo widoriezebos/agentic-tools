@@ -236,7 +236,7 @@ func validateShape(state map[string]any) error {
 	if schemaVersion != 4 {
 		return stateErr("mission state schema version or mission id is invalid")
 	}
-	// The DOWNGRADE BARRIER (issue-4 round 2): a semantics-3 mission is
+	// The DOWNGRADE BARRIER: a semantics-3 mission is
 	// always schema 3, because post-wall pre-semantics-3 binaries accept
 	// schema 2 with any positive ledgerSemantics and would mutate the
 	// state and write wrong best markers before their verdict-time
@@ -407,7 +407,7 @@ func validateLogsAndLedger(state map[string]any) error {
 		}
 	}
 	// Acceptance payloads are the consumption index's ONE recovery source
-	// (wall design r4: payload-bearing entries, not hash-only history);
+	// (payload-bearing entries, not hash-only history);
 	// a malformed or duplicated digest refuses the whole state as corrupt.
 	if _, err := ConsumedAuthorizations(state); err != nil {
 		return err
@@ -555,11 +555,11 @@ func sameHashRef(a, b any) bool {
 }
 
 func validate(state map[string]any) error {
-	// The exact legacy refusal comes BEFORE strict shape validation (wall
-	// design, named contracts): a version-1 state is a pre-wall mission,
+	// The exact legacy refusal comes BEFORE strict shape validation:
+	// a version-1 state is a pre-wall mission,
 	// and the remedy is re-provisioning, not a shape diagnostic. It is a
 	// SENTINEL so the reconcile path passes it through instead of
-	// classifying it as corruption (slice-4 critique F-2).
+	// classifying it as corruption.
 	if v, _ := intValue(state["schemaVersion"]); v == 1 {
 		return ErrLegacyState
 	}
@@ -618,8 +618,8 @@ func finalizeNext(next map[string]any, previous map[string]any, recoveryOf any) 
 	return value, nil
 }
 
-// BlankString reports whether a string carries NO visible content
-// (slice-6 successor rounds 6-7): a rune counts as content only when it
+// BlankString reports whether a string carries NO visible content:
+// a rune counts as content only when it
 // is GRAPHIC and not whitespace — the whole Unicode format category
 // (BOM, zero-width characters, word joiners, function application, and
 // every other Cf/control codepoint) is non-graphic and therefore blank
@@ -750,7 +750,7 @@ func InitStateFromSource(statePath, contractPath, ledgerPath, lease, branchArg, 
 		// The ledger semantics under which this mission's stop-loss verdict
 		// replays, pinned for the mission's whole life: a sealed budget's
 		// meaning never changes mid-mission (docs/design/stop-loss-core.md).
-		// Semantics 3 (issue #4): candidate-branch gate measurements
+		// Semantics 3: candidate-branch gate measurements
 		// extend the stop-loss best tuple; sealed meaning never changes
 		// mid-mission, so only NEW missions carry it.
 		"ledgerSemantics": 3,
@@ -790,7 +790,7 @@ func validateTransition(previous, next map[string]any) error {
 			return stateErr("mission state update changes immutable identity")
 		}
 	}
-	// Acceptance history is append-only (slice-4 critique F-1): every
+	// Acceptance history is append-only: every
 	// existing turn-log entry survives byte-identical at its position, so
 	// a consumed authorization can never be erased and replayed by a
 	// later otherwise-valid write. Current runner paths only append.
@@ -804,9 +804,9 @@ func validateTransition(previous, next map[string]any) error {
 			return stateErr("mission turn log entry %d is immutable", i)
 		}
 	}
-	// Every NEW entry carries the wall payload and its consumption list
-	// (slice-5 critique F-4), and the payload's sequence point names THIS
-	// write (critique F-2): the occurrence identity an authorization will
+	// Every NEW entry carries the wall payload and its consumption list,
+	// and the payload's sequence point names THIS
+	// write: the occurrence identity an authorization will
 	// later bind must be the chain position the acceptance actually landed
 	// at, not a number any proposal chose freely.
 	prevIntegrityDoc, _ := previous["integrity"].(map[string]any)
@@ -837,7 +837,7 @@ func validateTransition(previous, next map[string]any) error {
 		}
 		appendedAcceptances++
 		entryTurn, _ := entry["turnId"].(string)
-		// The acceptance BINDS to the already-open turn (WSS I11-1): the
+		// The acceptance BINDS to the already-open turn: the
 		// previous state must carry the marker, and the entry must name
 		// that marker's turn and cycle — a write can never open a turn
 		// and accept it in the same breath, nor accept a turn other than
@@ -869,7 +869,7 @@ func validateTransition(previous, next map[string]any) error {
 		}
 		// The acceptance append is the commit point but never the
 		// conclusion: success may surface only through the verification
-		// write (WSS-12).
+		// write.
 		if gate, _ := next["gatePassed"].(bool); gate || next["status"] == "completed" {
 			return stateErr("mission acceptance write cannot surface success before its verification")
 		}
@@ -929,7 +929,7 @@ func validateTransition(previous, next map[string]any) error {
 			return stateErr("mission openTurn cannot close over an unverified acceptance")
 		}
 	}
-	// The taint ledger is monotonic at ENTRY grain (slice-4 critique F-3):
+	// The taint ledger is monotonic at ENTRY grain:
 	// existing facts are immutable except a null resolution becoming a
 	// typed one; a written resolution never changes; appended entries
 	// start unresolved; and the segment ordinal advances by exactly the
@@ -965,8 +965,8 @@ func validateTransition(previous, next map[string]any) error {
 			case prevEntry["resolution"] == nil && nowEntry["resolution"] != nil:
 				resolved++
 				// The resolution's occurrence identity names THIS write,
-				// exactly like an acceptance payload's (slice-6 critique
-				// F3): the E-point a later authorization resolves against
+				// exactly like an acceptance payload's:
+				// the E-point a later authorization resolves against
 				// is the chain position the resolution actually landed at.
 				resolution, _ := nowEntry["resolution"].(map[string]any)
 				point, _ := resolution["sequencePoint"].(map[string]any)
@@ -985,7 +985,7 @@ func validateTransition(previous, next map[string]any) error {
 				return stateErr("mission workspaceTaint entries are appended unresolved")
 			}
 		}
-		// One E-EVENT per state-chain write (slice-6 round-3 finding 5):
+		// One E-EVENT per state-chain write:
 		// every acceptance and every resolution names the occurrence
 		// {prevSequence+1, segment} of the write that lands it, so a
 		// write carrying two of them would put two trees on one E-point
@@ -1113,7 +1113,7 @@ func WriteState(statePath, sourcePath, expect string) error {
 
 // WriteStateResolution is the resolve-taint writer: the ONLY entry that
 // may land a typed resolution or move the taint segment. Everything the
-// public writer refuses under runner custody (slice-6 critique F1) is
+// public writer refuses under runner custody is
 // legal here, because the caller has already passed the human-reserved
 // classification and the verified-tree gates.
 func WriteStateResolution(statePath, sourcePath, expect string) error {
@@ -1145,7 +1145,7 @@ func writeState(statePath, sourcePath, expect string, allowResolution bool) erro
 	if h, _ := prevIntegrity["hash"].(string); h != expect {
 		return stateErr("mission state compare-and-write hash mismatch")
 	}
-	// Resolution custody (HIW-O6, slice-6 round-2 finding 1): the check
+	// Resolution custody: the check
 	// runs on the SAME parsed proposal the transition validates — one
 	// read, no swap window — and only the resolution writer may pass.
 	if !allowResolution {
@@ -1292,7 +1292,7 @@ func validateWorkspaceTaint(raw any) error {
 		variant, _ := resolution["variant"].(string)
 		// Both variants are human-reserved acts and record who resolved
 		// and why; adoption additionally records the exact attribution
-		// claims being waived (slice-4 critique F-4).
+		// claims being waived.
 		switch variant {
 		case "restore":
 			if !exactKeys(resolution, "variant", "treeId", "previousTree", "resolvedAt", "resolvedBy", "reason", "sequencePoint", "posture") {
@@ -1322,8 +1322,8 @@ func validateWorkspaceTaint(raw any) error {
 		if tree, _ := resolution["treeId"].(string); !treeIDRe.MatchString(tree) {
 			return stateErr("mission workspaceTaint resolution tree id is invalid")
 		}
-		// The resolution is a named E-sequence point (slice-6 critique
-		// F3): it records the occurrence it landed at and the expected
+		// The resolution is a named E-sequence point:
+		// it records the occurrence it landed at and the expected
 		// tree it replaced, so the staleness predicate can measure the
 		// resolution's own delta instead of fencing whole segments.
 		if tree, _ := resolution["previousTree"].(string); !treeIDRe.MatchString(tree) {
@@ -1434,12 +1434,12 @@ func ConsumedAuthorizations(state map[string]any) (map[string]string, error) {
 	return index, nil
 }
 
-// refuseResolutionTransition guards every writer except resolve-taint's
-// (HIW-O6): a proposal that types a resolution onto any taint entry or
+// refuseResolutionTransition guards every writer except resolve-taint's:
+// a proposal that types a resolution onto any taint entry or
 // moves the taint segment is refused — those transitions belong to the
 // verified, human-reserved path alone. Runs inside writeState's lock on
 // the already-parsed documents, so no source swap between check and
-// write is possible (slice-6 round-2 finding 1).
+// write is possible.
 func refuseResolutionTransition(current, proposed map[string]any) error {
 	currentTaint, _ := current["workspaceTaint"].(map[string]any)
 	proposedTaint, _ := proposed["workspaceTaint"].(map[string]any)
@@ -1467,15 +1467,15 @@ func refuseResolutionTransition(current, proposed map[string]any) error {
 }
 
 // CurrentSequencePoint names the occurrence identity of the CURRENT
-// expected tree (host-implementer wall): the sequence point of the last
+// expected tree: the sequence point of the last
 // acceptance entry carrying a wall payload, or {0, 0} for a mission whose
 // expected tree is still the initial baseline. This — never the raw chain
 // sequence — is what an open-turn marker records and an authorization
-// binds (slice-5 critique F-2: tree ids repeat; the occurrence decides
+// binds (tree ids repeat; the occurrence decides
 // the intervening-change set).
 func CurrentSequencePoint(state map[string]any) (sequence, segment int64) {
-	// The SEGMENT is always the live taint segment (slice-5 round-3
-	// finding 3): a resolution advances it immediately, before any
+	// The SEGMENT is always the live taint segment:
+	// a resolution advances it immediately, before any
 	// new-segment acceptance exists, so an old-segment authorization can
 	// never ride a repeated tree through the k==j comparison.
 	taint, _ := state["workspaceTaint"].(map[string]any)
@@ -1496,7 +1496,7 @@ func CurrentSequencePoint(state map[string]any) (sequence, segment int64) {
 			break
 		}
 	}
-	// A resolution is an E-transition too (slice-6 critique F3): when one
+	// A resolution is an E-transition too: when one
 	// landed after the last acceptance, ITS occurrence is the current
 	// expected tree's identity — an authorization issued at the
 	// resolution point must bind a point that stays resolvable.
@@ -1525,12 +1525,12 @@ func CurrentSequencePoint(state map[string]any) (sequence, segment int64) {
 func ExpectedTreePoints(state map[string]any) []ExpectedTreePoint {
 	turnLog, _ := state["turnLog"].([]any)
 	points := []ExpectedTreePoint{}
-	// E0 — the initial baseline — is a named point too (slice-5 round-2
-	// finding 5): a first-turn authorization binds {0, 0}, and its base
+	// E0 — the initial baseline — is a named point too:
+	// a first-turn authorization binds {0, 0}, and its base
 	// must stay resolvable after later turns land. E0 is the PRE-side of
 	// the earliest E-event: the first acceptance's preTree, or — when the
 	// first turn violated and was resolved before anything was accepted —
-	// the first resolution's previousTree (slice-6 round-2 finding 5).
+	// the first resolution's previousTree.
 	e0Sequence := int64(-1)
 	e0Tree := ""
 	for _, raw := range turnLog {
@@ -1588,7 +1588,7 @@ func ExpectedTreePoints(state map[string]any) []ExpectedTreePoint {
 			points = append(points, ExpectedTreePoint{Tree: tree, Sequence: s, Segment: g})
 		}
 	}
-	// Resolutions are named E-points (slice-6 critique F3): E(next) after
+	// Resolutions are named E-points: E(next) after
 	// a ruling is the restored or adopted tree, and fresh work issued
 	// there must stay resolvable after later turns land.
 	taint, _ := state["workspaceTaint"].(map[string]any)
@@ -1652,7 +1652,7 @@ var ErrPreWallBaseline = errors.New("mission state predates the wall's baseline 
 // transition rules or shape validation of the proposal itself — as opposed
 // to unreadable current state, corruption, or a compare-and-write miss.
 // The mission runner uses this boundary to park adjudicated host content
-// instead of dying (issue #3): only the proposal's content is host-derived.
+// instead of dying: only the proposal's content is host-derived.
 type ProposalError struct{ Err error }
 
 func (e *ProposalError) Error() string { return e.Err.Error() }

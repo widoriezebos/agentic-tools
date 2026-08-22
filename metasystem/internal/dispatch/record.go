@@ -46,15 +46,15 @@ var terminalStatuses = map[string]bool{
 }
 
 // TerminalStatus reports whether a job status is one a record cannot leave.
-// This predicate is the vocabulary's one exported home (review cli-1);
+// This predicate is the vocabulary's one exported home;
 // consumers outside dispatch must not re-declare the set.
 func TerminalStatus(status string) bool { return terminalStatuses[status] }
 
 // Identity fields a running record fixes for its whole life; a patch that
 // names any of them is refused. Mission provenance — mission, incarnation,
 // turn, stream — is immutable because the host-implementer wall's
-// integration authorizations bind these exact values at issue time
-// (plans/host-implementer-wall-design.md): a record that could rewrite its
+// integration authorizations bind these exact values at issue time:
+// a record that could rewrite its
 // provenance could launder work across missions or turns.
 var immutableFields = map[string]bool{
 	"jobId": true, "role": true, "runtime": true, "round": true,
@@ -123,7 +123,7 @@ func withRecordLock(root, job string, fn func(recordPath string) error) error {
 		return fmt.Errorf("cannot open record lock for %s: %w", job, err)
 	}
 	defer handle.Close()
-	// Bounded like the lease lock (review codex-5): production record
+	// Bounded like the lease lock: production record
 	// operations run through lease run-held, which holds the GLOBAL lease
 	// lock across this acquire — a record-lock holder wedged mid-hold
 	// (SIGSTOP, fsync stall, an inherited flock fd) would otherwise block
@@ -176,8 +176,8 @@ func RecordCreate(root, job, sourcePath string) error {
 		if asString(record["jobId"]) != job || asString(record["status"]) != "pending-setup" {
 			return refuse(1, "invalid initial record identity or status for %s", job)
 		}
-		// A FRESH chain root must not be named like a later round (issue
-		// #10): round identity is the record's, never the id's, and a new
+		// A FRESH chain root must not be named like a later round:
+		// round identity is the record's, never the id's, and a new
 		// job called <name>-r2 briefs its delegate as round 2 while the
 		// record says 1 — the return then dies on the identity mismatch
 		// after the tokens are spent. Rounds continue by resuming the
@@ -185,9 +185,9 @@ func RecordCreate(root, job, sourcePath string) error {
 		// beyond r1.
 		if record["parentJob"] == nil {
 			if m := freshRoundSuffixRe.FindStringSubmatch(job); m != nil {
-				// Fail CLOSED on an unparseable suffix (round 2: an
-				// overflow literal matched the regex, erred in Atoi, and
-				// walked straight through the guard).
+				// Fail CLOSED on an unparseable suffix: an
+				// overflow literal matches the regex, errs in Atoi, and
+				// would walk straight through the guard.
 				if n, err := strconv.Atoi(m[1]); err != nil || n >= 2 {
 					return refuse(1, "a fresh job must not claim round %s in its name (%s); continue the existing chain with a follow-up instead", m[1], job)
 				}
@@ -386,8 +386,8 @@ func readJSON(path string) (any, error) {
 }
 
 // readEnvelope reads a record through the wire-document owner: the same
-// frozen grammar as readJSON, carried by the package whose tests pin it
-// (Phase 5.1). readObject delegates here so the grammar has ONE owner.
+// frozen grammar as readJSON, carried by the package whose tests pin it.
+// readObject delegates here so the grammar has ONE owner.
 func readEnvelope(path string) (*wiredoc.Doc, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -419,7 +419,7 @@ func ReadRecordObject(path string) (map[string]any, error) {
 // the on-disk format every reader expects: two-space indent, sorted keys, one
 // trailing newline, and no HTML escaping.
 func writeRecord(recordPath string, record map[string]any) error {
-	// Rendered by the wire-document owner (Phase 5.1): the corpus
+	// Rendered by the wire-document owner: the corpus
 	// equivalence test proves these bytes identical to the encoder this
 	// replaces, and the capture test re-diffs the golden corpus on every
 	// run, so a drift in either writer fails before it ships.
@@ -431,9 +431,9 @@ func writeRecord(recordPath string, record map[string]any) error {
 	return writeErr
 }
 
-// atomicWriteText writes bytes through the durable-write owner
-// (go-production-grade B5). Job-record paths — the durable STATE this
-// package owns — adopt the two-outcome contract (decision D12): the
+// atomicWriteText writes bytes through the durable-write owner.
+// Job-record paths — the durable STATE this
+// package owns — adopt the two-outcome contract: the
 // anchor is the checkout root derived from the path itself (the parent
 // of artifacts/), and a publication whose directory sync failed is
 // WITNESSED as doubt rather than silently trusted. Transient hand-off
@@ -506,13 +506,13 @@ func nowISO() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05Z")
 }
 
-// RepairClaim atomically claims the round's ONE paid repair (the
-// delegate-delivery design, D64): under the record lock it requires
+// RepairClaim atomically claims the round's ONE paid repair:
+// under the record lock it requires
 // status running and returnRepairs absent-or-zero — ABSENT MEANS ZERO,
 // because the record builders do not initialize the field and should
 // not have to — then stamps returnRepairs to 1 in the same write. The
-// claim precedes the paid provider call by contract; the old order
-// (record after the call, failure ignored) allowed a crash to leave
+// claim precedes the paid provider call by contract; recording after
+// the call would let a crash leave
 // durable state saying no repair happened. Exit taxonomy via the
 // returned observed string and error: nil error with empty observed is
 // a won claim; a lost claim (already claimed, or not running) returns

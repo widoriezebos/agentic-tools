@@ -20,11 +20,11 @@ var (
 
 // patiencePromptLines projects the final cycle block's Patience annotations
 // into This Turn lines. Detail lines are FILTERED against current
-// chain-closed flags (r9/P4-061): park-then-close cannot strand a stale
-// warning, the ledger keeps its history, and the prompt stays a pure
-// function of (ledger, chain-closed flags). The overflow and excluded lines
-// name no chains and are exempt (r10/P4-068); their one-booking staleness is
-// the design's stated crash contract. A missing or unparsable ledger
+// chain-closed flags: park-then-close cannot strand a stale warning, the
+// ledger keeps its history, and the prompt stays a pure function of
+// (ledger, chain-closed flags). The overflow and excluded lines name no
+// chains and are exempt; their one-booking staleness is the design's
+// stated crash contract. A missing or unparsable ledger
 // projects nothing: patience is a non-acting audit surface and prompt
 // assembly must not fail on its account.
 func patiencePromptLines(ledgerPath, jobsDir string) []string {

@@ -49,7 +49,7 @@ func TestRestrictedProcfsAt(t *testing.T) {
 	}
 }
 
-// The same-user-scope invariant (B2, recorded in the package doc): every
+// The same-user-scope invariant (recorded in the package doc): every
 // consumer acting on Dead judges pids this engine's own user spawned, and
 // the platform prober must never misread another user's LIVE process as
 // dead. Pid 1 belongs to root and exists on every supported platform.

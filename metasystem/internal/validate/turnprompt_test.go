@@ -214,8 +214,7 @@ func TestTurnPromptRejectsRecordMismatch(t *testing.T) {
 func TestTurnPromptAcceptsRunnerRaisedAsks(t *testing.T) {
 	// The runner itself raises fence and stop-loss asks; a prompt carrying
 	// one must validate, or the first fence refusal poisons every later
-	// turn into prompt-refused (the failure that parked the first bm-2s
-	// cohort run).
+	// turn into prompt-refused, parking the whole run.
 	for _, reason := range []string{"fence", "stop-loss"} {
 		root, promptPath, turnDir := promptFixture(t)
 		raw, err := os.ReadFile(promptPath)

@@ -1,16 +1,15 @@
 // Package usage is the single owner of typed usage extraction — the
 // correctness-sensitive rules that turn each runtime's raw reporting into
-// the typed per-turn usage records the fences aggregate (review
-// architecture-1: DevinUsage existed verbatim in host AND adapter, and
-// mission/fence.go pulled runtime event parsing through an adapter import).
+// the typed per-turn usage records the fences aggregate. Host and adapter
+// must never carry their own copies: duplicated usage math drifts, and a
+// fence must not reach runtime event parsing through an adapter import.
 // A Devin metric change or a delta bugfix lands here, once. adapter and
-// host front these functions behind their own CLI families per the
-// GSC-R1-003 verb-surface ruling; the implementation has one home.
+// host front these functions behind their own CLI families; the
+// implementation has one home.
 //
 // RootJobID lives here because usage attribution is per CHAIN: attributing
-// a round's spend requires walking to its root. If W2's chain-walker
-// consolidation (dispatch-supervise-7) builds a dedicated ancestry home,
-// it may move there.
+// a round's spend requires walking to its root. If a dedicated ancestry
+// home ever exists, it may move there.
 package usage
 
 import (
@@ -171,7 +170,7 @@ func sortedKeys(object map[string]any) []string {
 
 // eventStreamUsageValue derives typed usage from the last usage block
 // an events.jsonl stream reports — the RUNTIME-NEUTRAL parser both
-// claude and codex recoverers share (placement audit, item 17: the
+// claude and codex recoverers share (the
 // shared code lives in the neutral file; each runtime's seam file
 // wraps or registers it under its own name). Field spellings vary
 // across builds, so each takes the first present spelling.

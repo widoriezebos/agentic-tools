@@ -268,7 +268,7 @@ func TestComputeReapFacts(t *testing.T) {
 func TestExpandPermissions(t *testing.T) {
 	dir := t.TempDir()
 	repo := t.TempDir()
-	// A writable workspace is a REAL git worktree since issue #5: the
+	// A writable workspace is a REAL git worktree: the
 	// expansion derives the commit's git-metadata roots from it.
 	gitCmd := func(workdir string, args ...string) {
 		t.Helper()
@@ -413,7 +413,7 @@ func TestBuildRecordsCohereWithLifecycle(t *testing.T) {
 
 // Mission provenance is complete-or-refused at build, bound from the
 // mission's own fences, and a follow-up refuses when the mission has been
-// re-provisioned under a new incarnation (round-2 critique F7/F8).
+// re-provisioned under a new incarnation.
 func TestMissionProvenanceTuple(t *testing.T) {
 	root := t.TempDir()
 	tmp := t.TempDir()
@@ -518,7 +518,7 @@ func TestMissionProvenanceTuple(t *testing.T) {
 	}
 
 	// The one owner classifies the two failures distinctly on the public
-	// path too (round-4 critique R4-F2): an ABSENT incarnation key is
+	// path too: an ABSENT incarnation key is
 	// "predates the wall"; a present-but-different value is "re-provisioned".
 	if err := VerifyChainIncarnation(root, "m-one", map[string]any{}); err == nil || !strings.Contains(err.Error(), "predates the host-implementer wall") {
 		t.Fatalf("absent incarnation key misclassified: %v", err)
@@ -559,7 +559,7 @@ func TestCensusFreshVerdicts(t *testing.T) {
 	if err := CensusFresh(verdict, statePath, "arm.sh", "/repo", "", now); err != nil {
 		t.Fatalf("fresh census refused: %v", err)
 	}
-	// The fingerprint half of the gate (script-orchestration-12): matching
+	// The fingerprint half of the gate: matching
 	// expectation passes, anything else refuses with the one verdict text.
 	if err := CensusFresh(verdict, statePath, "arm.sh", "/repo", "f", now); err != nil {
 		t.Fatalf("matching fingerprint refused: %v", err)
@@ -799,8 +799,8 @@ func TestValidateMissionRefusals(t *testing.T) {
 
 // A timed-out (or failed, or cancelled) implementer round never delivered a
 // diff: CloseCheck must not demand one, or the chain is permanently
-// uncloseable and the runner dies at mission end (rep 1 of cohort
-// bm-1-20260813t113617z). A COMPLETED round without its deliverable is
+// uncloseable and the runner dies at mission
+// end. A COMPLETED round without its deliverable is
 // still a violation, and undelivered rounds' OTHER evidence must still be
 // mirrored.
 func TestCloseCheckToleratesUndeliveredImplementerRounds(t *testing.T) {
@@ -892,8 +892,7 @@ func TestLineageRootOneVerdict(t *testing.T) {
 	}
 }
 
-// The code-critic chain cases ported from conformance-fixtures.sh's
-// exhaustion section (script-fixtures-021/D44): a critic may never own the
+// Code-critic chain exhaustion: a critic may never own the
 // successor; a RECORDED implementer successor reopens the budget to none;
 // and the RECORD's round beats a return that lies about its own round.
 func TestCritiqueExhaustionCodeCriticChain(t *testing.T) {

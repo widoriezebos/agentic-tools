@@ -203,8 +203,8 @@ func ClaudeSessionSignal(r io.Reader, signalPath, eventsPath string) (string, er
 }
 
 // The Claude argv, permission-mode/tool-list mapping, and native budget
-// policy (review script-adapters-02, relocated from adapters/claude.sh and
-// hosts/claude.sh — the second copy had already forked). The codex pattern:
+// policy: one home, so the adapter and host copies cannot fork. The
+// codex pattern:
 // one builder, NUL-separated tokens on the wire, both shells read it back.
 
 // claudeFullTools is the read-write tool list; the read-only list is the

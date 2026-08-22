@@ -1,9 +1,9 @@
 package identity
 
 // The fake-identity fixture table (METASYSTEM_FAKE_PROCESS_IDENTITY_FILE)
-// has ONE reader (review lease-census-3): five packages parsed it with
-// private structs and two different start-time spellings, and the shell
-// fixtures wrote both keys into every entry to satisfy them all.
+// has ONE reader: scattered private parsers breed divergent key
+// spellings, and the shell fixtures end up writing every spelling into
+// every entry to satisfy them all.
 
 // FixtureEntry is one pid's recorded identity in the fixture table. The
 // Has* flags distinguish an absent field from a zero value.
@@ -19,7 +19,7 @@ type FixtureEntry struct {
 }
 
 // FixtureProbe is the neutral seam fixture-capable identity decisions
-// accept (agnosticism phase B1): internal/fixtureauth implements it
+// accept: internal/fixtureauth implements it
 // behind root-checked authorization; a nil probe refuses every
 // fixture read. The file reader itself moved to fixtureauth — this
 // foundation package no longer touches the environment.

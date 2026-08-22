@@ -193,12 +193,11 @@ func recordInWorkspace(record map[string]any, workspaceResolved string) bool {
 }
 
 // DevinPermissionMode decides the Devin CLI's --permission-mode. Every
-// dispatch runs `dangerous` (auto-approve all tools) under the human
-// waiver of 2026-08-15 (D61): Devin already runs uncontained by the
-// human's earlier ruling, and the graded modes turned envelope
-// refusals into sessions that ended without delivering — swe-1-7
-// worked nine minutes and a confirmation-blocked tool call ate the
-// return (D57). The record read stays: an unreadable or malformed
+// dispatch runs `dangerous` (auto-approve all tools) under a standing
+// human waiver: Devin already runs uncontained, and a graded mode
+// turns an envelope refusal into a session that ends without
+// delivering — a confirmation-blocked tool call eats the
+// return. The record read stays: an unreadable or malformed
 // record must still refuse the launch rather than default open.
 func DevinPermissionMode(recordPath string) (string, error) {
 	if _, err := requestedPermissions(recordPath); err != nil {
@@ -224,15 +223,14 @@ func WriteUnavailableUsage(outputPath string) error {
 }
 
 // DevinSettle adjudicates the exported transcript against the correlated
-// session and derives the effective model (review script-adapters-07,
-// replacing three shell judgments). The transcript is authoritative: a
+// session and derives the effective model. The transcript is authoritative: a
 // correlated session it contradicts — or fails to name — is not certified,
 // and the disagreement artifact says why. The model is the transcript's
 // display name canonicalised; absent or unreadable records "unobserved",
 // never the requested value the handshake seeded. requireTranscript is the
 // repair shape: no transcript at all means session and model are
 // unconfirmable, and no model is derived. Record writes stay with the
-// caller (D24).
+// caller.
 func DevinSettle(transcriptPath, snapshotPath, correlatedSession, roundDir string, requireTranscript bool) (model string, certified bool, err error) {
 	disagreement := filepath.Join(roundDir, "session-disagreement.txt")
 	if requireTranscript {
@@ -243,7 +241,7 @@ func DevinSettle(transcriptPath, snapshotPath, correlatedSession, roundDir strin
 			return "", false, err
 		}
 	}
-	// The attempt snapshot (D64): with a snapshot path, settlement decides
+	// The attempt snapshot: with a snapshot path, settlement decides
 	// over the same immutable bytes usage and collection read; oversize
 	// propagates for the caller's transcript-oversize terminal.
 	var transcript map[string]any
@@ -285,16 +283,16 @@ func DevinSettle(transcriptPath, snapshotPath, correlatedSession, roundDir strin
 	return model, true, nil
 }
 
-// DevinPrompt writes the schema-augmented prompt copy the Devin CLI reads
-// (script-adapters-08/D28): this runtime has no schema flag, so the schema
+// DevinPrompt writes the schema-augmented prompt copy the Devin CLI reads:
+// this runtime has no schema flag, so the schema
 // goes in the prompt or the model invents field names. The dispatcher's
-// prompt file stays untouched as evidence. One writer replaces the two
-// hand-maintained copies (adapter round turns and host turns) whose
-// line-break placement had already drifted.
+// prompt file stays untouched as evidence. One writer serves both the
+// adapter round turns and the host turns, so the two copies cannot
+// drift apart.
 // returnFile, when non-empty, names a SECOND delivery channel the prompt
 // instructs the model to use alongside printing: swe-1-7 finishes work by
-// writing files rather than emitting a final message (D62's evidence: a
-// schema-perfect return written to /tmp while stdout stayed empty, in
+// writing files rather than emitting a final message (a schema-perfect
+// return can land at an uninstructed path while stdout stays empty, in
 // both graded and dangerous permission modes), so the adapter names a
 // deterministic path inside the round's evidence and reads it whenever
 // stdout comes back empty.
@@ -325,8 +323,8 @@ func DevinPrompt(promptPath, schemaPath, outputPath, returnFile string) error {
 }
 
 // The devin probe: symlinked .agents/skills discovery, registered
-// seam-locally (agnosticism audit class 13). The labels reproduce the
-// old --devin-checks pass record byte-for-byte.
+// seam-locally. The labels are the exact pass-record strings its
+// readers match.
 func init() {
 	RegisterSelftestProbe("devin", SelftestProbe{
 		Name: "symlinked-skill-discovery",
@@ -348,7 +346,7 @@ func init() {
 }
 
 // DevinTurnUsage is the adapter seam's entry point for devin usage
-// derivation (code critique finding 6): command bodies call the seam,
+// derivation: command bodies call the seam,
 // the seam calls the single usage owner.
 func DevinTurnUsage(usagePath, transcriptPath, snapshotPath, cumulativePath, previousPath string, expectPrevious bool) error {
 	return usage.DevinUsage(usagePath, transcriptPath, snapshotPath, cumulativePath, previousPath, expectPrevious)

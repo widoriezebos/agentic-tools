@@ -177,7 +177,7 @@ func TestAdjudicateTurnAfterRepairInvalidGoesProtocolError(t *testing.T) {
 	}
 }
 
-// The empty-delivery stage (D64): a pure recommendation. Correlated +
+// The empty-delivery stage: a pure recommendation. Correlated +
 // repair-available writes the delivery prompt naming the repair path;
 // uncorrelated or repair-unavailable falls to the empty-reply verdicts.
 func TestAdjudicateEmptyDeliveryStage(t *testing.T) {

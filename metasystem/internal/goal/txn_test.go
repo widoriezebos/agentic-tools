@@ -195,7 +195,7 @@ func TestBenignAdvancementRetriesWithinTheDeadline(t *testing.T) {
 	_, a, b := twoClones(t)
 
 	// The competitor's commit touches a DIFFERENT goal: lawful work,
-	// not failure (R3-13). A's first push refuses on the lease, the
+	// not failure. A's first push refuses on the lease, the
 	// rebuild carries the same change, the second push lands.
 	injected := false
 	attempts := 0

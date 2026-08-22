@@ -7,7 +7,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// pairProber replays issue #1: the same live process, constant pair,
+// pairProber replays a btime step: the same live process, constant pair,
 // drifting seconds.
 type pairProber struct{ shift int64 }
 

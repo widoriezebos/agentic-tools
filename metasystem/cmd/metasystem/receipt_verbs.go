@@ -12,11 +12,11 @@ import (
 )
 
 // runReceipt relays scripts/receipt.sh's calling convention: the action
-// word, then one flag vocabulary shared by every action (a flag.FlagSet,
-// cli-9 — the former hand-rolled switch re-implemented flag semantics). A
+// word, then one flag vocabulary shared by every action (a flag.FlagSet —
+// a hand-rolled switch would re-implement flag semantics loosely). A
 // retro summary may ride as the first positional argument after the
 // action. The FlagSet's own messages are discarded so a misuse prints
-// exactly the historical one-line usage.
+// exactly the one-line usage its callers know.
 func runReceipt(args []string) int {
 	usage := func() {
 		fmt.Fprintln(os.Stderr, "usage: metasystem receipt add|correct|check|stats|retro [flags] (see scripts/receipt.sh --help)")

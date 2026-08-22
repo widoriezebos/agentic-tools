@@ -9,8 +9,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-// JobWatch is the delegate-job waiter (monitor facility, MON-04; backlog
-// item 1 as the human wrote it): it blocks until the job record is
+// JobWatch is the delegate-job waiter:
+// it blocks until the job record is
 // terminal and exits with the pinned code — completed=0, failed=1,
 // missing or unparsable=4, with the waiter layer's operational codes for
 // registration failures. The waiter record it holds is what the turn

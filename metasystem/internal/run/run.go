@@ -1,6 +1,6 @@
 // Package run owns the run record: tracked long-running work with
-// terminal-state watching (plans/monitor-facility-design.md, converged r7,
-// D72). A run is NON-JOB work — a suite, a cohort, any detached process —
+// terminal-state watching.
+// A run is NON-JOB work — a suite, a cohort, any detached process —
 // registered as a record with kernel identity, watched by the standing
 // supervision watcher, wakeable through a blocking waiter, and spoken for
 // by the turn verdict.
@@ -30,7 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// Bounds, every one at the source (MON-11).
+// Bounds, every one at the source.
 const (
 	MaxIdBytes       = 64
 	MaxDisplayBytes  = 200
@@ -136,7 +136,7 @@ func Terminal(status string) bool {
 }
 
 // Store binds one checkout. Prober and Now are test seams; CurrentEpoch
-// is the in-lock lease-epoch reader (finding 2 of the code critique): a
+// is the in-lock lease-epoch reader: a
 // mutation carrying lease coordinates must prove its epoch is STILL the
 // checkout's epoch inside the runs lock — authorization at the command
 // layer is point-in-time and a stalled child can outlive its main.
@@ -356,7 +356,7 @@ func atomicWrite(path string, data []byte) error {
 	return os.Rename(name, path)
 }
 
-// Validate enforces every bound and structural rule (MON-11).
+// Validate enforces every bound and structural rule.
 func Validate(r *Record) []string {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
@@ -451,7 +451,7 @@ func mintNonce() (string, error) {
 
 // OwnerDigest is the waiter key's owner component: the mainId, or
 // human:<uid> for HUMAN callers (the OS user id is the canonical stable
-// human key — FIX-R6-03).
+// human key).
 func OwnerDigest(mainId string) string {
 	owner := mainId
 	if owner == "" {
@@ -461,8 +461,8 @@ func OwnerDigest(mainId string) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// LifecycleTag is the tagged digest encoding for runs (FIX-R6-01 pins the
-// job form beside it in internal/goal).
+// LifecycleTag is the tagged digest encoding for runs (the
+// job form is pinned beside it in internal/goal).
 func (r *Record) LifecycleTag() string {
 	return fmt.Sprintf("run:%s.g%d.%s", r.RunId, r.Generation, r.LaunchNonce)
 }

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// B6's third outcome for the append families: a failed durability barrier is
+// The append families' third outcome: a failed durability barrier is
 // VISIBLE BUT UNCOMMITTED — the caller gets a plain error and claims no
 // success, and the reader survives whatever reached the file.
 func TestAppendFrameRefusesWhenNotDurable(t *testing.T) {

@@ -256,7 +256,7 @@ func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
 	}
 }
 
-// The round-2 reconcile cluster: state before-values bind, foreign
+// The reconcile cluster: state before-values bind, foreign
 // claims hear every hand override, and the hand path speaks the
 // same membership matrix as the verbs.
 

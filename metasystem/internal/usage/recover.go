@@ -5,12 +5,12 @@ import (
 	"sort"
 )
 
-// Dead-round usage recovery (agnosticism audit classes 6+7): the fence
+// Dead-round usage recovery: the fence
 // asks by provider; each per-runtime seam file registers its
 // recoverer; a provider without one is honestly unsupported. The
-// consumer keeps today's measured-count rule: a Recovered outcome
-// whose fields are all null normalizes to unavailable (critique r3-6
-// — fence.go's field count IS the contract), so State alone never
+// consumer keeps the measured-count rule: a Recovered outcome
+// whose fields are all null normalizes to unavailable
+// (fence.go's field count IS the contract), so State alone never
 // claims spend.
 type RecoveryState string
 
@@ -55,8 +55,8 @@ func RegisterRecoverer(runtime string, fn RecoverFn) {
 }
 
 // Recover runs the provider's registered recovery, or reports
-// Unsupported when none is declared — today's honest unavailability,
-// now stated (devin and every future runtime without a recoverer).
+// Unsupported when none is declared — honest unavailability, stated
+// (devin and every future runtime without a recoverer).
 func Recover(provider string, ctx RecoveryContext) RecoveryOutcome {
 	fn, ok := recoverers[provider]
 	if !ok {

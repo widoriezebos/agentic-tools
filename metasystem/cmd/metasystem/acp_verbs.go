@@ -142,8 +142,8 @@ func runACPTurn(args []string) int {
 	// The signal bridge: scripts keep kill authority, and a TERM or
 	// INT lands here as parent-context cancellation so the courtesy
 	// session/cancel and the typed cancelled outcome still happen —
-	// the critique's live probe showed exit 143 with no outcome
-	// without this.
+	// without it the default signal action kills the process (exit
+	// 143) with no outcome recorded.
 	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stopSignals()
 

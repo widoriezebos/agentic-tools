@@ -14,13 +14,13 @@ import (
 )
 
 // The dispatch owner lock is a THIN BINDING over internal/lock, the one
-// home of the rename-born directory-lock protocol (review
-// dispatch-supervise-4): this file contributes only the owner-file schema
+// home of the rename-born directory-lock protocol:
+// this file contributes only the owner-file schema
 // and the holder classification. Takeover is legal only when the recorded
 // holder is provably dead or provably stale — a live pid whose READ argv
 // no longer carries the recorded tag is a stranger, which the probe
 // reports as Dead (the custodian rule); a live or unreadable holder keeps
-// the lock (the B1 rule; review codex-2).
+// the lock.
 
 // ErrOwnerLockBusy and ErrOwnerLockNotOwner are the distinguished refusals.
 var (

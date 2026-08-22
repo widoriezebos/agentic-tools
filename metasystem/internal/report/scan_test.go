@@ -42,7 +42,7 @@ func writeFile(t *testing.T, root, rel, body string) {
 	}
 }
 
-// GOAL-16: the scanner classifies runner records three-way from file
+// The scanner classifies runner records three-way from file
 // facts — live counts busy, completed/crashed/identity-mismatch do not,
 // Unknown joins Unreadable and never reads as dead — and a stale
 // heartbeat sidecar surviving completion changes nothing (nothing reads
@@ -100,7 +100,7 @@ func TestScanResultClassification(t *testing.T) {
 	}
 }
 
-// GOAL-16: another checkout's activity can never suppress this checkout's
+// Another checkout's activity can never suppress this checkout's
 // goal — the scan is file-fact scoped to its root, so a sibling root full
 // of live work leaves this root idle.
 func TestOtherCheckoutNeverSuppresses(t *testing.T) {
@@ -168,8 +168,7 @@ func TestMonitorFacts(t *testing.T) {
 			`"expect":{"green":"gg","red":"rr","hung":"hh","unknown":"uu"},"status":"running","acked":false}`)
 	writeFile(t, root, "artifacts/agents/runs/broken-run.json", "{torn")
 	// A fresh attestation by the ARMED live watcher covering the run's
-	// triple — the armed state supplies the identity and the interval
-	// (critique finding 5).
+	// triple — the armed state supplies the identity and the interval.
 	writeFile(t, root, "artifacts/agents/supervision/state.json",
 		`{"schemaVersion":1,"components":{"watcher":{"pid":602,"pidStartedAt":7500,"instanceTag":"w"}},"intervalSec":300}`)
 	writeFile(t, root, "artifacts/agents/supervision/runs-pass.json",
@@ -201,7 +200,7 @@ func TestMonitorFacts(t *testing.T) {
 		t.Fatalf("torn run record did not surface: %v", scan.RunUnreadable)
 	}
 
-	// A FUTURE-stamped attestation supervises nothing (finding 5).
+	// A FUTURE-stamped attestation supervises nothing.
 	writeFile(t, root, "artifacts/agents/supervision/runs-pass.json",
 		`{"completedAt":"`+time.Now().UTC().Add(time.Hour).Format("2006-01-02T15:04:05Z")+`",`+
 			`"watcherPid":602,"watcherStart":7500,`+

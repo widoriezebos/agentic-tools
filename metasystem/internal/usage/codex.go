@@ -1,7 +1,7 @@
 package usage
 
-// Codex's usage parsing — a per-runtime seam file (agnosticism audit
-// class 6). The event-stream walk is shared with claude.go: both
+// Codex's usage parsing — a per-runtime seam file.
+// The event-stream walk is shared with claude.go: both
 // runtimes append a usage block to rounds/N/events.jsonl and the
 // parser takes each field's first present spelling.
 

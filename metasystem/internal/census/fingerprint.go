@@ -49,7 +49,7 @@ func SignatureText(adapterPath string) (string, error) {
 	cmd := exec.Command(adapterPath, "signature")
 	var out strings.Builder
 	cmd.Stdout = &out
-	// Bounded (B4): a hung adapter would otherwise hang watcher passes and
+	// Bounded: a hung adapter would otherwise hang watcher passes and
 	// lease classification. Adapters live at
 	// <root>/scripts/agents/adapters/<runtime>.sh, so the checkout's conf is
 	// four steps up; anywhere else the stated default applies — a missing

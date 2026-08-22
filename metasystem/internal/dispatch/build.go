@@ -10,18 +10,18 @@ import (
 var incarnationRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // VerifyChainIncarnation proves a chain still belongs to the LIVE mission
-// incarnation (round-2 critique F8): a mission identifier can be
+// incarnation: a mission identifier can be
 // re-provisioned, and a surviving chain from incarnation A must not consume
 // incarnation B's fences while recording A's provenance. The shell calls
 // this BEFORE cap authorization so the named re-provision refusal outranks
-// any fence side effect (round-3 critique F10); the follow-up builder calls
+// any fence side effect; the follow-up builder calls
 // it again as the authoritative gate.
 func VerifyChainIncarnation(root, mission string, parent map[string]any) error {
 	if root == "" {
 		return fmt.Errorf("mission-scoped follow-up requires the checkout root for provenance")
 	}
-	// The pre-wall classification lives HERE, in the one owner (round-4
-	// critique R4-F2): a parent with NO recorded incarnation predates the
+	// The pre-wall classification lives HERE, in the one owner:
+	// a parent with NO recorded incarnation predates the
 	// wall — that is a different fact than a re-provisioned mission, and an
 	// absent key must never read as an empty string that "drifted".
 	if _, present := parent["missionIncarnation"]; !present {
@@ -202,7 +202,7 @@ func BuildRecord(p BuildRecordParams) error {
 		return err
 	}
 	// Mission provenance is resolved here, not accepted from the caller,
-	// and it is COMPLETE or refused (round-2 critique F7): a mission-scoped
+	// and it is COMPLETE or refused: a mission-scoped
 	// job binds the incarnation dispatch reads from the mission's own fence
 	// counters, the turn it was dispatched in, and the stream it serves —
 	// the wall's authorizations bind this whole tuple, so a partial tuple
@@ -332,7 +332,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		}
 	}
 	// Mission follow-ups carry the same complete-or-refused provenance as
-	// fresh dispatches (round-3 critique F9/F11): the chain must still run
+	// fresh dispatches: the chain must still run
 	// under the incarnation it started under, the follow-up binds the turn
 	// it is dispatched in, and a MISSION chain predating the wall refuses
 	// by name. Non-mission chains never carried these fields — absent keys

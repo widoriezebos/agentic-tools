@@ -12,7 +12,7 @@ import (
 // The one git invocation helper the dispatch decisions share.
 
 // gitOutput runs a git subcommand in a directory and returns its trimmed
-// stdout. Bounded (B4): it runs inside the locked build-record path, where
+// stdout. Bounded: it runs inside the locked build-record path, where
 // a hung git would block dispatch and arming checkout-wide.
 func gitOutput(dir string, args ...string) (string, error) {
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)

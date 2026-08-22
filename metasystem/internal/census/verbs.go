@@ -12,13 +12,13 @@ import (
 // positive/lookalike contract).
 
 // Alive is the `alive` verb: true iff the pid is live at expectedStart.
-// The probe is the fixture authority (agnosticism B1) — nil refuses
-// fixture identity and only the kernel answers.
+// The probe is the fixture authority — nil refuses fixture identity and
+// only the kernel answers.
 func Alive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
 	return identityAlive(pid, expectedStart, probe)
 }
 
-// AlivePair is Alive with the clock-step-immune pair (issue #1 sweep 3): when
+// AlivePair is Alive with the clock-step-immune pair: when
 // expectedTicks>0 and expectedBootID!="" and the live process carries them,
 // the pair decides and a btime step cannot false-death the process; otherwise
 // the seconds comparison stands (darwin, legacy records). The pair is
@@ -67,7 +67,7 @@ func kernelIdentity(pid int64) (ProcIdentity, error) {
 // SignatureCheck is the `signature-check` verb: the positive argv must
 // classify as the adapter's runtime and the lookalike must NOT — the
 // adapters' self-test that their signatures are neither too loose nor too
-// tight (KI-14). Returns an error when the contract fails.
+// tight. Returns an error when the contract fails.
 func SignatureCheck(adapterPath, positive, lookalike string) error {
 	text, err := SignatureText(adapterPath)
 	if err != nil {

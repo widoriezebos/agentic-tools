@@ -7,8 +7,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
 )
 
-// Devin's usage math — a per-runtime seam file (agnosticism audit
-// class 6): adapter and host both consume it here, once. Devin's
+// Devin's usage math — a per-runtime seam file:
+// adapter and host both consume it here, once. Devin's
 // dead-round recovery is DECLARED UNSUPPORTED: the math needs
 // transcript metrics and predecessor cumulative state a dead round's
 // event stream does not carry, so recovery stays honestly unavailable.
@@ -29,7 +29,7 @@ var devinUsageFields = []string{
 // would double-count every earlier turn. An enterprise account reports ACU and
 // no tokens; ACU rides in providerUnits, never as a token or a cost.
 func DevinUsage(usagePath, transcriptPath, snapshotPath, cumulativePath, previousPath string, expectPrevious bool) error {
-	// The attempt snapshot (D64): when a snapshot path is given, the
+	// The attempt snapshot: when a snapshot path is given, the
 	// transcript is read through atif's bounded, materialize-once copy so
 	// usage, settlement, and collection all decide over the SAME bytes.
 	// An oversize transcript surfaces as its own error for the caller's

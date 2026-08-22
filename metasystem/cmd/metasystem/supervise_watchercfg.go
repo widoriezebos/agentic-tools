@@ -12,11 +12,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
-// watcherConfig is the ONE constructor of supervise.WatcherConfig (review
-// cli-5): the standing component and the one-shot watcher-pass previously
-// assembled it separately, and the same tuning key resolved through
-// different precedence rules — a .local override honored by one census
-// writer and ignored by the other. The deliberate resolution choice is the
+// watcherConfig is the ONE constructor of supervise.WatcherConfig: with
+// two assemblers, the standing component and the one-shot watcher-pass
+// would resolve the same tuning key through different precedence rules
+// — a .local override honored by one census writer and ignored by the
+// other. The deliberate resolution choice is the
 // COMMITTED conf (config.ConfValue): a watcher is an armed component whose
 // behavior the supervision fingerprint pins, so its tuning follows the
 // committed state the fingerprint covers, never per-process overrides that

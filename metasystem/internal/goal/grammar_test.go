@@ -114,7 +114,7 @@ func withFreshIntegrity(doc string) string {
 }
 
 func TestOriginDomainAndImmutabilityAreProven(t *testing.T) {
-	// The parser's Origin domain (round 3 finding 14): out-of-domain
+	// The parser's Origin domain: out-of-domain
 	// provenance refuses by name.
 	f := vGoal("origin-probe", StateQueued)
 	f.Origin = "elsewhere"

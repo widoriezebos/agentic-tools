@@ -19,11 +19,11 @@ type chainMember struct {
 }
 
 // lineageRoot resolves a job's root through lookup: THE one verdict for
-// corrupt lineage (review dispatch-supervise-7). A walk that leaves the
+// corrupt lineage. A walk that leaves the
 // table, cycles, or hits a non-string parent roots NOWHERE ("") — a
 // member of a corrupt chain is attributed to no chain, never to whatever
-// record a broken walk happened to stop on (the old disk walker's
-// verdict, which could disagree with the critique walker about the same
+// record a broken walk happened to stop on (two walkers stopping in
+// different places would disagree about the same
 // corrupt chain).
 func lineageRoot(lookup func(string) (map[string]any, bool), job string) string {
 	seen := map[string]bool{}

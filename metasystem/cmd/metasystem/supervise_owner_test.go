@@ -6,7 +6,8 @@ import (
 	"testing"
 )
 
-// The B2 wiring proof: with a restrictive mounts table, supervision arming
+// The restricted-procfs refusal wiring, proven end to end: with a
+// restrictive mounts table, supervision arming
 // refuses before it waits on the start gate — the verb returns promptly
 // with a non-zero code instead of blocking, which is exactly the refusal
 // contract (a hung test here would itself be the failure).

@@ -43,7 +43,7 @@ func AppendFrame(path string, payload []byte) error {
 	// would append fine and then read as a tolerated fragment that trips
 	// CorruptionError on the next record — one buggy caller turning the
 	// machine-wide registry permanently fail-closed (REG-5) when the
-	// append could have refused at the door (review adapter-host-registry-4).
+	// append could have refused at the door.
 	var object map[string]any
 	if json.Unmarshal(payload, &object) != nil || object == nil {
 		return fmt.Errorf("registry append refused: payload is not a JSON object")
@@ -91,8 +91,8 @@ func AppendFrame(path string, payload []byte) error {
 			return fmt.Errorf("registry append: %w", err)
 		}
 	}
-	// Durability is claimed only after the sync succeeds
-	// (go-production-grade B6). A failure here is the append families' third
+	// Durability is claimed only after the sync succeeds.
+	// A failure here is the append families' third
 	// outcome — VISIBLE BUT UNCOMMITTED: bytes may already be in the file,
 	// but the append is not committed, so the caller returns a plain error
 	// and emits no success. The torn tail is the READER's contract, which

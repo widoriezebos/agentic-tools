@@ -150,7 +150,7 @@ func TestScanJobsSidecarAndScope(t *testing.T) {
 
 func TestScanJobsNonJSONRecordGetsMtimeVerdictsOnly(t *testing.T) {
 	f := newScanFixture(t)
-	// The header's promise (script-misc-4): a non-JSON record ages into
+	// The header's promise: a non-JSON record ages into
 	// STALE/CAPPED on mtime alone and never takes a status-based verdict —
 	// NEVER-STARTED's empty-status leg requires a record that parses.
 	notJSON := f.write("raw-log-job.txt", "not json at all", 45)

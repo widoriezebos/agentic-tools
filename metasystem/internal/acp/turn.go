@@ -15,9 +15,8 @@ var jsonMarshal = json.Marshal
 
 // authRequiredCode is the pinned schema's authentication-required
 // JSON-RPC error code; auth classification keys on IT, not on
-// whether auth methods were advertised — the live probe proved
-// methods can be advertised while unauthenticated sessions succeed
-// (slice-two critique F8).
+// whether auth methods were advertised — live servers advertise
+// methods while unauthenticated sessions succeed.
 const authRequiredCode = -32000
 
 // Row is the failure-matrix classification of a turn's outcome —
@@ -71,7 +70,7 @@ type TurnConfig struct {
 	// SessionFile, when set, receives the session id the moment
 	// setup succeeds — minutes before the prompt settles — so the
 	// adapter can record its handshake inside the dispatcher's
-	// deadline instead of after the turn (P3 critique F1).
+	// deadline instead of after the turn.
 	SessionFile string
 }
 
@@ -96,7 +95,7 @@ type promptResult struct {
 // prompt alike — is serviced while notifications and server
 // requests keep flowing, so a request flood or a server that
 // requires its answer before responding can never wedge the read
-// loop (critique F3). phase governs the correlation gate.
+// loop. phase governs the correlation gate.
 type turnDriver struct {
 	conn       *Conn
 	assembler  *Assembler
@@ -110,7 +109,7 @@ type turnDriver struct {
 // connection. Custody, spawning, and killing are the calling
 // script's; RunTurn only ever touches the wire. The prompt window
 // opens at the fence sampled immediately before the prompt is
-// SENT (critique F4) and closes at the PromptResponse's sequence;
+// SENT and closes at the PromptResponse's sequence;
 // replay before it and stragglers after it are journaled evidence
 // that arithmetic, not timing, keeps out of the candidate.
 func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
@@ -155,8 +154,7 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 		driver.sessionID = id
 	} else {
 		// The capability gate: sending load to a server that never
-		// declared it is a client bug, not a wire experiment
-		// (critique F8).
+		// declared it is a client bug, not a wire experiment.
 		if !initBody.AgentCapabilities.LoadSession {
 			return Outcome{Row: RowSetupError, Violations: driver.violations, Detail: "session/load requested but the server did not declare loadSession"}
 		}
@@ -186,7 +184,7 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 			return driver.fail("session/set_mode", err)
 		}
 		if frame.Msg.Error != nil {
-			// The mode IS the enforcement lever (probe steps C–E):
+			// The mode IS the enforcement lever:
 			// a mode that cannot be set means the envelope cannot
 			// be honored, so the turn must not proceed.
 			return Outcome{Row: RowSetupError, SessionID: driver.sessionID, Violations: driver.violations, Detail: "set_mode failed; the envelope's grade cannot be applied"}
@@ -212,7 +210,7 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 			// session/cancel as the bounded courtesy and give the
 			// server the grace window to settle; a COMPLETE
 			// PromptResponse inside it wins (the matrix's
-			// cancellation-race row; critique F7).
+			// cancellation-race row).
 			return driver.cancelAndSettle(cfg)
 		}
 		return driver.fail("prompt", err)
@@ -246,7 +244,7 @@ func (d *turnDriver) call(ctx context.Context, method string, params any) (Frame
 				if err := d.answer(ctx, frame); err != nil {
 					// A mandatory answer that never reached the
 					// wire breaks the protocol; remember it so the
-					// turn cannot settle as delivered (critique F2).
+					// turn cannot settle as delivered.
 					if d.failure == nil {
 						d.failure = err
 					}
@@ -272,14 +270,14 @@ func (d *turnDriver) answer(ctx context.Context, frame Frame) error {
 	}
 	inWindow := d.inWindow
 	if err := json.Unmarshal(request.Params, &params); err != nil || params.SessionID != d.sessionID || !inWindow {
-		// Wrong session, unreadable, or outside the open window
-		// (r4 F6; slice-two F6): a violation, answered cancelled,
+		// Wrong session, unreadable, or outside the open window:
+		// a violation, answered cancelled,
 		// never normalized.
 		d.violations++
 		return d.conn.Respond(ctx, request.ID, PermissionAnswer{Outcome: outcomeCancelled}.WireResult())
 	}
 	// Strict-refusal posture until a captured dialect wires the
-	// normalizer + Decide (probe steps C–E: no request fired in
+	// normalizer + Decide (no live capture has fired this request in
 	// any envelope-relevant mode, so this is the defensive
 	// backstop, not the enforcement lever).
 	return d.conn.Respond(ctx, request.ID, StrictAnswer(params.Options).WireResult())
@@ -324,7 +322,7 @@ func (d *turnDriver) cancelAndSettle(cfg TurnConfig) Outcome {
 
 // classifySetup maps a setup-phase response to its matrix row, or
 // returns the session id on success. Auth classification keys on
-// the pinned schema's code, never on advertisement (critique F8).
+// the pinned schema's code, never on advertisement.
 func classifySetup(frame Frame, violations int, phase string) (*Outcome, string) {
 	if frame.Msg.Error != nil {
 		if frame.Msg.Error.Code == authRequiredCode {
@@ -427,10 +425,10 @@ drained:
 }
 
 // drainLate consumes frames for the bounded late window after the
-// PromptResponse — the step-A capture proved late frames are real.
+// PromptResponse — live captures prove late frames are real.
 // They are journaled evidence; the fence arithmetic keeps them out
 // of the candidate, and post-window requests are violations
-// answered cancelled (critique F6).
+// answered cancelled.
 func (d *turnDriver) drainLate(window time.Duration, responseSeq uint64) {
 	if window <= 0 {
 		return

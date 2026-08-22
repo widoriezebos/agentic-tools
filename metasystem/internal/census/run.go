@@ -35,10 +35,10 @@ type Process struct {
 	// StartedExactMicro is the kernel-resolution birth token, ADDITIVE
 	// beside the whole-second join key (announcements and custody join
 	// on seconds; the exact token exists so a consumer can bind to THE
-	// process the census observed — KI-23's acknowledgement). Fixture
-	// rows may omit it; enumeration backfills seconds*1e6.
+	// process the census observed). Fixture rows may omit it;
+	// enumeration backfills seconds*1e6.
 	StartedExactMicro int64 `json:"pidStartedAtExactMicro,omitempty"`
-	// The clock-step-immune pair (issue #1); zero/empty on fixture rows.
+	// The clock-step-immune pair; zero/empty on fixture rows.
 	StartTicks int64  `json:"pidStartTicks,omitempty"`
 	BootID     string `json:"bootId,omitempty"`
 	Argv       string `json:"argv"`
@@ -78,7 +78,7 @@ type Verdict struct {
 	// It is additive telemetry under schemaVersion 2 (dispatch's CensusFresh
 	// gate requires schema == 2 exactly), so it is omitempty and no consumer
 	// needs a version discriminator. Fixtures count it as the census actor's
-	// "attempt" for attempt-based patience (plans/patience-attempts.md).
+	// "attempt" for attempt-based patience.
 	ScanSeq     int64           `json:"scanSeq,omitempty"`
 	IntervalSec int             `json:"intervalSec"`
 	Fingerprint string          `json:"fingerprint"`
@@ -95,7 +95,7 @@ var liveStatuses = map[string]bool{
 }
 
 // MainIDRe and CommandHashRe are the identity grammars of the mains
-// directory, shared with lease (review lease-census-4).
+// directory, shared with lease.
 var MainIDRe = regexp.MustCompile(`^main-[1-9][0-9]*-[1-9][0-9]*-[0-9a-f]{6}$`)
 var CommandHashRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -126,9 +126,9 @@ func runCensus(metasystemRoot, repo, fingerprint string, interval int, now time.
 	metasystemRoot = realpath(metasystemRoot)
 	repoReal := realpath(repo)
 	var errors, diagnostics []string
-	// The fixture authority for this walk (agnosticism B1): constructed
+	// The fixture authority for this walk: constructed
 	// once from the METASYSTEM root — the configuration owner — never
-	// the scan scope (B1 critique finding 3: a fake scope must not
+	// the scan scope (a fake scope must not
 	// authorize fixtures for a non-fake metasystem). A refused
 	// construction surfaces as an error and fixtures stay refused.
 	var fixtureProbe identity.FixtureProbe
@@ -284,7 +284,7 @@ func assembleVerdict(label, fingerprint string, interval int, generation *int64,
 
 // sameProcessIdentity joins a census-enumerated process to a durable
 // record: the clock-step-immune pair decides when both sides carry it
-// (issue #1 — the btime-derived second drifts on time-synced guests),
+// (the btime-derived second drifts on time-synced guests),
 // else the legacy seconds join stands.
 func sameProcessIdentity(process Process, item identityRecord) bool {
 	if item.Pid != process.Pid {
@@ -307,7 +307,7 @@ func classifyOwnership(process Process, custody, announced []identityRecord, run
 			return "ANNOUNCED", item.Registry, item.InstanceTag
 		}
 	}
-	// The RUN custody source (monitor facility, MON-03): group-level, with
+	// The RUN custody source: group-level, with
 	// the strongest proof each custody mode can actually carry. Owned
 	// processes ride the CUSTODY class with a RUN tag — the label carries
 	// the run id, the enum stays closed.
@@ -355,7 +355,7 @@ func loadRunOwners(repo string, processes []Process, diagnostics *[]string) []ru
 			continue
 		}
 		if record.Status == run.StatusDraining && record.EndedAt != nil {
-			// Draining custody is BOUNDED (critique finding 6): past the
+			// Draining custody is BOUNDED: past the
 			// wind-down the survivors surface as UNTRACKED — a stopped
 			// watcher must not let a dead run own a reused group forever.
 			if ended, err := time.Parse("2006-01-02T15:04:05Z", *record.EndedAt); err == nil {
@@ -393,14 +393,14 @@ func loadRunOwners(repo string, processes []Process, diagnostics *[]string) []ru
 type identityRecord struct {
 	Pid         int64
 	Started     int64
-	StartTicks  int64  // clock-step-immune pair (issue #1); 0 = legacy record
+	StartTicks  int64  // clock-step-immune pair; 0 = legacy record
 	BootID      string // "" = legacy record
 	InstanceTag string
 	Registry    string
 }
 
 func enumerateFixture(metasystemRoot, processFile string) ([]Process, error) {
-	// The ProcessTableProbe authority (agnosticism B1): fixtureauth owns
+	// The ProcessTableProbe authority: fixtureauth owns
 	// the one fixture-mode predicate.
 	if !fixtureauth.FixtureModeRoot(metasystemRoot) {
 		return nil, fmt.Errorf("METASYSTEM_CENSUS_PROCESS_FILE is allowed only when metasystem.runtimes=fake")
@@ -507,8 +507,8 @@ func identityAlive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
 }
 
 // alivePair reports whether pid is alive AND its identity matches the
-// expected one, preferring the clock-step-immune pair (StartTicks+BootID,
-// issue #1 sweep 3) over the btime-derived second when BOTH the caller and
+// expected one, preferring the clock-step-immune pair (StartTicks+BootID)
+// over the btime-derived second when BOTH the caller and
 // the live process carry it. A caller with only a second (expectedTicks==0
 // and expectedBootID=="") gets the legacy seconds comparison verbatim, so
 // darwin (no pair) and old records are unchanged. The fixture identity file
@@ -648,10 +648,10 @@ func announcementsList(metasystemRoot string, processes []Process, probe identit
 		alive := false
 		annTicks, _ := jsonInt(value["pidStartTicks"])
 		annBootID, _ := value["bootId"].(string)
-		// The pair is EXCLUSIVE when both sides carry it (round-3 R3-1:
-		// "seconds OR pair" let a recycled pid with the same second but
-		// different ticks keep a stale announcement). PRODUCTION
-		// processes land in the enumerated map too (round-2 R2-1);
+		// The pair is EXCLUSIVE when both sides carry it:
+		// "seconds OR pair" would let a recycled pid with the same second
+		// but different ticks keep a stale announcement. PRODUCTION
+		// processes land in the enumerated map too;
 		// fixture rows keep zero pairs so the seconds rule stands there.
 		if process, ok := synthetic[pid]; ok {
 			if process.Alive && annTicks > 0 && annBootID != "" &&

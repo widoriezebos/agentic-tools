@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// codex-5: dispatch's record lock is bounded like the lease lock — a
+// Dispatch's record lock is bounded like the lease lock — a
 // wedged holder produces a refusal naming the job, not a hang under the
 // global lease lock.
 func TestWithRecordLockIsBounded(t *testing.T) {
@@ -38,7 +38,7 @@ func TestWithRecordLockIsBounded(t *testing.T) {
 	}
 }
 
-// D12: the job-record writer derives its durable anchor from the path —
+// The job-record writer derives its durable anchor from the path —
 // the checkout root above artifacts/ — and transient paths anchor nowhere.
 func TestArtifactsAnchorDerivation(t *testing.T) {
 	if got := artifactsAnchor("/repo/x/artifacts/agents/jobs/j.json"); got != "/repo/x" {

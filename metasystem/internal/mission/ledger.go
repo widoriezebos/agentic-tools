@@ -246,7 +246,7 @@ func InitLedger(file string, cycleBudget, noGainBudget int) error {
 // block always carries both facts or neither.
 // AppendCycle returns the sha256 of the complete post-append ledger
 // bytes — the caller's PROOF of exactly what it wrote, for pinning the
-// concluding anchor to the verified position (WSS I11-2).
+// concluding anchor to the verified position.
 func AppendCycle(file string, cycle int, classification, candidateSHA, observed, best string, annotations ...string) (string, error) {
 	lock, err := lockFile(file)
 	if err != nil {
@@ -297,10 +297,10 @@ func AppendCycle(file string, cycle int, classification, candidateSHA, observed,
 		entry += "- " + annotation + "\n"
 	}
 	content := existing + entry
-	// The pending stamp makes the crash-tail BYTE-PRECISE (slice-6
-	// successor round-8 finding 3): reconciliation's ledger-ahead heal
-	// accepts ONLY a file whose complete bytes hash to what this append
-	// wrote — any line added by anyone else afterward refuses.
+	// The pending stamp makes the crash-tail BYTE-PRECISE:
+	// reconciliation's ledger-ahead heal accepts ONLY a file whose
+	// complete bytes hash to what this append wrote — any line added by
+	// anyone else afterward refuses.
 	if err := stampLedgerPending(file, cycle, content); err != nil {
 		return "", err
 	}
@@ -338,8 +338,8 @@ func AppendAnnotations(file string, cycle int, expectSHA string, annotations ...
 	if err != nil {
 		return "", fmt.Errorf("cannot read mission ledger: %w", err)
 	}
-	// The append EXTENDS only the position the caller verified (WSS
-	// I11-2/I11-5): bytes that moved past the proof refuse under the
+	// The append EXTENDS only the position the caller verified:
+	// bytes that moved past the proof refuse under the
 	// lock, so a peer rewrite can never be annotated into authenticity.
 	if expectSHA != "" && sha256Hex(string(data)) != expectSHA {
 		return "", fmt.Errorf("mission ledger moved past the verified bytes")
@@ -349,7 +349,7 @@ func AppendAnnotations(file string, cycle int, expectSHA string, annotations ...
 	} else if len(cycles) == 0 || cycle != len(cycles) {
 		return "", fmt.Errorf("annotations append only to the final ledger cycle (%d)", len(cycles))
 	}
-	// IDEMPOTENT at line grain (WSS I11-5): a crash between delivery and
+	// IDEMPOTENT at line grain: a crash between delivery and
 	// the write that owns it re-runs delivery at resume, and an
 	// annotation already present in the final block must not double.
 	final := finalCycleBlock(string(data))
@@ -372,7 +372,7 @@ func AppendAnnotations(file string, cycle int, expectSHA string, annotations ...
 	}
 	appended.WriteString("\n")
 	// The annotation append mutates the final block, so the pending
-	// stamp re-records the post-write bytes (round-8 finding 3).
+	// stamp re-records the post-write bytes.
 	if err := stampLedgerPending(file, cycle, appended.String()); err != nil {
 		return "", err
 	}
@@ -424,8 +424,8 @@ func AppendReset(file, askID, reason string) error {
 	existing := strings.TrimRightFunc(string(data), unicode.IsSpace)
 	entry := fmt.Sprintf("\n\nStop-loss reset: ask=%s; reason=%s\n", askID, reason)
 	content := existing + entry
-	// Every ledger write stamps (slice-6 successor round-10 finding 6):
-	// the reset line rides the same byte-precision proof as the blocks.
+	// Every ledger write stamps: the reset line rides the same
+	// byte-precision proof as the blocks.
 	headings := headingRe.FindAllString(content, -1)
 	if err := stampLedgerPending(file, len(headings), content); err != nil {
 		return err
@@ -539,11 +539,10 @@ func (l *fileLock) release() {
 }
 
 func atomicWriteText(path, text string) error {
-	// The durable-anchor argument is empty until this writer is converted to
-	// the two-outcome signature (go-production-grade B5): with no anchor the
-	// owner syncs the target directory only, which is exactly the behavior
-	// this caller had before. Converting it is the caller-migration step,
-	// and until then no crash-durability may be claimed here.
+	// The durable-anchor argument is empty: with no anchor the owner
+	// syncs the target directory only, so no crash-durability may be
+	// claimed here. A caller that needs that claim must pass a real
+	// anchor through the two-outcome signature.
 	_, err := atomicfile.WriteText(path, text, "")
 	return err
 }

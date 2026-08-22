@@ -104,8 +104,8 @@ func runDispatchRecordProtocolError(args []string) int {
 	return recordExit(dispatchcore.RecordProtocolError(*root, *job, *expect, *violation, *violationFile))
 }
 
-// runDispatchRepairClaim atomically claims the round's one paid repair
-// (D64): exit 0 won, exit 3 lost (already claimed or not running, the
+// runDispatchRepairClaim atomically claims the round's one paid
+// repair: exit 0 won, exit 3 lost (already claimed or not running, the
 // observation on stdout), exit 1 mechanical — the caller must treat 3 as
 // a delegate-side outcome and 1 as a harness failure, never conflating.
 func runDispatchRepairClaim(args []string) int {
@@ -145,8 +145,8 @@ func runDispatchBuildSetup(args []string) int {
 }
 
 // runDispatchResolveRoster relays `job resolve-roster`: the roster, tier,
-// and escalation decisions live in dispatchcore.ResolveRoster
-// (script-orchestration-02); the shell keeps only the approval ladder.
+// and escalation decisions live in dispatchcore.ResolveRoster; the
+// shell keeps only the approval ladder.
 func runDispatchResolveRoster(args []string) int {
 	flags := flag.NewFlagSet("job resolve-roster", flag.ContinueOnError)
 	conf := flags.String("conf", "", "path to metasystem.conf")
@@ -421,7 +421,7 @@ func runDispatchCensusFresh(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		var armingWindow dispatchcore.ArmingWindowError
 		if errors.As(err, &armingWindow) {
-			return 9 // the retry-safe arming-window transient (D34)
+			return 9 // the retry-safe arming-window transient
 		}
 		return 1
 	}
@@ -558,9 +558,9 @@ func runDispatchExhaustionPatches(args []string) int {
 }
 
 // runDispatchResolveCap relays `job resolve-cap`: the non-mission cap chain
-// and the unsigned-mission-cap refusal live in dispatchcore
-// (script-orchestration-03). With --mission it only runs the refusal; the
-// mission fence remains cap authority.
+// and the unsigned-mission-cap refusal live in dispatchcore. With
+// --mission it only runs the refusal; the mission fence remains cap
+// authority.
 func runDispatchResolveCap(args []string) int {
 	flags := flag.NewFlagSet("job resolve-cap", flag.ContinueOnError)
 	conf := flags.String("conf", "", "path to metasystem.conf")

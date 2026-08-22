@@ -24,7 +24,7 @@ import (
 // Reconcile against a root with NO accepted baseline is GENESIS: the
 // control plane being seeded does not exist yet, so holder-only would
 // protect nothing and refuse everything (the adopt/provisioning path;
-// goal-system GOAL-14's reconcile-only initialization).
+// reconcile is the only initialization).
 //
 // The genesis rule: the caller is classified against the root being
 // written — the same root every goal verb classifies against, never a
@@ -37,7 +37,7 @@ import (
 // way; nobody but the holder puts intent into one that exists, and the
 // store re-judges the shape under its lock.
 //
-// Posture, stated plainly (D93 ruled C'): this is cooperative, not
+// Posture, stated plainly: this is cooperative, not
 // unforgeable. --caller-pid names the ancestry for every classified verb
 // in the system, a denied process table reads HUMAN for every verb, and a
 // same-user actor can write the control-plane files directly; none of

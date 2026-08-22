@@ -12,7 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
-// The Landed Returns derivation (plans/patience-orphan-usage.md O1): the
+// The Landed Returns derivation (plans/patience-orphan-usage.md): the
 // delegate rounds whose return landed on disk but which no concluded turn's
 // host-authored record has acted on. The list is a pure function of the tree
 // and the turn log, derived fresh at every prompt assembly and once more at
@@ -148,7 +148,7 @@ func LandedReturns(repo, missionID string, turnLog []any) [][]string {
 func landedRoundValid(repo, jobID string) bool {
 	cmd := exec.Command(filepath.Join(repo, "scripts", "assert-return-complete.sh"), "--job", jobID)
 	cmd.Dir = repo
-	// Bounded (B4): a wedged checker must not freeze prompt assembly; a
+	// Bounded: a wedged checker must not freeze prompt assembly; a
 	// checker that ran out of its bound proved nothing, so the return
 	// lists as invalid.
 	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)

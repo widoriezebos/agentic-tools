@@ -127,8 +127,8 @@ func runAdapterCodexCommand(args []string) int {
 	return 0
 }
 
-// runAdapterClaudeCommand relays `adapter claude-command`
-// (script-adapters-02/D25): one home for the Claude argv, the permission
+// runAdapterClaudeCommand relays `adapter claude-command`:
+// one home for the Claude argv, the permission
 // envelope's mode/tool mapping, and the native budget policy, emitted
 // NUL-separated exactly like codex-command. Exit 3 is an invalid budget,
 // exit 4 an invalid turn limit — the adapter maps them to its two protocol
@@ -234,7 +234,7 @@ func runAdapterClaudeResultField(args []string) int {
 	value, print, err := adapter.ClaudeResultField(*result, *field)
 	if err != nil {
 		// Named on stderr like every sibling adapter verb: this runs inside
-		// hook plumbing where stderr is the only diagnostic channel (cli-8).
+		// hook plumbing where stderr is the only diagnostic channel.
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -328,9 +328,9 @@ func runAdapterDevinConfig(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	// The permission mode rides on stdout beside the config
-	// (script-adapters-06/D25): the launch argv consumes the same envelope
-	// decision the config was built from.
+	// The permission mode rides on stdout beside the config: the
+	// launch argv consumes the same envelope decision the config was
+	// built from.
 	mode, err := adapter.DevinPermissionMode(*record)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -341,9 +341,9 @@ func runAdapterDevinConfig(args []string) int {
 }
 
 // runAdapterAdjudicateTurn relays `adapter adjudicate-turn`: the terminal-
-// outcome state machine lives in adapter.AdjudicateTurn
-// (script-adapters-01/D24). Pure decision — the CAS stays in the shell
-// wrappers riding dispatch.sh's lease-held re-exec.
+// outcome state machine lives in adapter.AdjudicateTurn. Pure decision —
+// the CAS stays in the shell wrappers riding dispatch.sh's lease-held
+// re-exec.
 func runAdapterAdjudicateTurn(args []string) int {
 	flags := flag.NewFlagSet("adapter adjudicate-turn", flag.ContinueOnError)
 	var p adapter.AdjudicateParams
@@ -383,9 +383,9 @@ func runAdapterAdjudicateTurn(args []string) int {
 	return 0
 }
 
-// runAdapterDevinSettle relays `adapter devin-settle`
-// (script-adapters-07/D26): the transcript-vs-correlated-session
-// certification and the effective-model fallback. Prints the derived model
+// runAdapterDevinSettle relays `adapter devin-settle`: the
+// transcript-vs-correlated-session certification and the
+// effective-model fallback. Prints the derived model
 // (nothing when a required transcript is absent); exit 0 certified, 1 not.
 func runAdapterDevinSettle(args []string) int {
 	flags := flag.NewFlagSet("adapter devin-settle", flag.ContinueOnError)
@@ -415,7 +415,7 @@ func runAdapterDevinSettle(args []string) int {
 	return 1
 }
 
-// runAdapterDevinCollect walks the delivery channels (D64). Exit 0
+// runAdapterDevinCollect walks the delivery channels. Exit 0
 // delivered (verdict JSON on stdout), 3 nothing qualified, 5 transcript
 // over the ceiling, 1 mechanical.
 func runAdapterDevinCollect(args []string) int {
@@ -485,7 +485,7 @@ func runAdapterACPUsage(args []string) int {
 // pre-launch baseline. It prints the id and exits 0, exits 1 when none is
 // found yet, and exits 3 (naming the candidates) when the correlation is
 // ambiguous — its own code, distinct from the package-wide 2 for usage
-// errors (D15/cli-6; the owner-lock 3/4 and chain-usage 7 precedent).
+// errors.
 func runAdapterDevinSession(args []string) int {
 	flags := flag.NewFlagSet("adapter devin-session", flag.ContinueOnError)
 	before := flags.String("before", "", "pre-launch session listing")

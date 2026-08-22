@@ -76,9 +76,10 @@ func atomicWriteJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	// Through the durable-write owner (go-production-grade B5); the
-	// empty anchor preserves this writer's previous behavior exactly
-	// until its caller is converted to the two-outcome contract.
+	// Through the durable-write owner; the empty anchor syncs only the
+	// target's own directory, and the durable outcome is dropped,
+	// because this writer's callers have not adopted the two-outcome
+	// contract.
 	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
 	return writeErr
 }

@@ -77,9 +77,9 @@ func ValidateMission(root, mission, leasePath string) error {
 
 // processCommand reads a pid's full command line through the identity owner
 // — the same kernel read every other liveness decision in this module uses,
-// rather than a ps subprocess (go-production-grade P6). An UNREADABLE argv
+// rather than a ps subprocess. An UNREADABLE argv
 // is an error, not an empty string: the caller must fall back to its
-// fixture, never treat absent evidence as a tag mismatch (B1).
+// fixture, never treat absent evidence as a tag mismatch.
 func processCommand(pid int64) (string, error) {
 	exact, state, err := (identity.KernelProber{}).Probe(pid)
 	if err != nil {
@@ -98,7 +98,7 @@ func processCommand(pid int64) (string, error) {
 // fixture, verifying the fixture agrees with the kernel about the process
 // group.
 func fixtureCommand(root string, pid, actualPgid int64) (string, error) {
-	// The MissionHolderProbe (agnosticism B1): fixtureauth owns the
+	// The MissionHolderProbe: fixtureauth owns the
 	// conf predicate this function used to open-code, and mission-join
 	// gets exactly the command+pgid facts it needs.
 	authorization, err := fixtureauth.New(root)

@@ -60,7 +60,7 @@ func launchOne(t *testing.T, s *Store, id string) string {
 	return nonce
 }
 
-// MON-01: pending-before-process; a live id refuses reuse; the fence
+// Pending-before-process; a live id refuses reuse; the fence
 // concludes a stale pending as launch-failed with a note, never deletion.
 func TestLaunchReservationAndFence(t *testing.T) {
 	s := testStore(t)
@@ -96,7 +96,7 @@ func TestLaunchReservationAndFence(t *testing.T) {
 	}
 }
 
-// MON-02 + MON-06: the evidence table — sidecar green/red, forged and
+// The evidence table — sidecar green/red, forged and
 // stale-generation sidecars ignored, dead-no-evidence=ended-unknown,
 // Unknown concludes nothing; conclusion CAS fences on generation.
 func TestConcludeEvidenceTable(t *testing.T) {
@@ -216,7 +216,7 @@ func TestAssessUsesSyntheticProcessTable(t *testing.T) {
 
 // Draining: a dead leader with survivors drains with a frozen provisional
 // verdict; the wind-down clock runs from endedAt; finalization keeps the
-// frozen verdict (MON-02's freeze + MON-03's window).
+// frozen verdict.
 func TestDrainingFreezesVerdict(t *testing.T) {
 	s := testStore(t)
 	// This test creates a real process group and must scan the real table.
@@ -278,7 +278,7 @@ func TestDrainingFreezesVerdict(t *testing.T) {
 	}
 }
 
-// MON-10: prune drops only acked terminal records past the age, with
+// Prune drops only acked terminal records past the age, with
 // their sidecars, reporting drops.
 func TestPruneReportsDrops(t *testing.T) {
 	s := testStore(t)
@@ -310,7 +310,7 @@ func TestPruneReportsDrops(t *testing.T) {
 	}
 }
 
-// MON-11: the bounds refuse at the source.
+// The bounds refuse at the source.
 func TestBounds(t *testing.T) {
 	s := testStore(t)
 	cases := []LaunchParams{
@@ -329,7 +329,7 @@ func TestBounds(t *testing.T) {
 	}
 }
 
-// MON-08: HUMAN callers carry nullable coordinates.
+// HUMAN callers carry nullable coordinates.
 func TestHumanCoordinatesNullable(t *testing.T) {
 	s := testStore(t)
 	human := Caller{Class: "HUMAN", SessionId: "h1"}
@@ -501,7 +501,7 @@ func TestHungFlagAndRegisterPattern(t *testing.T) {
 	}
 }
 
-// FIX-R6-02 + FIX-R6-03 + the watch round-trip: owner-keyed exclusive
+// The watch round-trip: owner-keyed exclusive
 // waiters, stale-lifecycle replacement, human keys, pinned exit codes.
 func TestWaiterContract(t *testing.T) {
 	s := testStore(t)
@@ -520,8 +520,7 @@ func TestWaiterContract(t *testing.T) {
 	if WaiterExitCode(err) != ExitWaiterBusy {
 		t.Fatalf("live same-lifecycle waiter not busy: %v", err)
 	}
-	// Same owner, NEW lifecycle: the stale live waiter is replaceable
-	// (FIX-R6-02).
+	// Same owner, NEW lifecycle: the stale live waiter is replaceable.
 	fresh := WaiterTarget{Generation: 2, LaunchNonce: strings.Repeat("b", 32)}
 	if err := s.RegisterWaiter("run", "w-run", mainCaller, fresh); err != nil {
 		t.Fatalf("stale-lifecycle waiter blocked replacement: %v", err)
@@ -542,7 +541,7 @@ func TestWaiterContract(t *testing.T) {
 	if LiveWaiter(s.Root, prober, "run", "w-run", mainCaller.MainId, target) {
 		t.Fatal("a stale target satisfied LiveWaiter")
 	}
-	// FIX-R6-03: a HUMAN caller keys on human:<uid> — distinct from
+	// A HUMAN caller keys on human:<uid> — distinct from
 	// every main and stable without session plumbing.
 	human := Caller{Class: "HUMAN", SessionId: "h1"}
 	if err := s.RegisterWaiter("run", "w-run", human, fresh); err != nil {
@@ -594,7 +593,7 @@ func TestWaiterContract(t *testing.T) {
 	}
 }
 
-// Critique finding 2: a mutation carrying lease coordinates must prove
+// A mutation carrying lease coordinates must prove
 // its epoch is STILL current inside the runs lock — a stale child, an
 // unverifiable lease, and a current holder each get their exact answer.
 // Humans (nil epoch) are never gated.
@@ -631,7 +630,7 @@ func TestEpochSeamRefusesStale(t *testing.T) {
 	}
 }
 
-// Critique finding 7: pattern evidence trusts the BOUND file, not the
+// Pattern evidence trusts the BOUND file, not the
 // path — a log swapped for a symlink between bind and conclusion is
 // refused as ended-unknown, never read through to a green.
 func TestPatternEvidenceSymlinkSwap(t *testing.T) {

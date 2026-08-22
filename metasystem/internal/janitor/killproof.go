@@ -1,7 +1,7 @@
 // Package janitor implements D-4: the machine-wide sweep that closes
 // dead claims and stops their surviving sets — killing ONLY what it
-// can prove (REG-6), in the order the incident taught (owner first,
-// SLC-R7-001).
+// can prove (REG-6), owner before survivors (SLC-R7-001: a surviving
+// owner relaunches whatever the sweep just killed).
 package janitor
 
 import (
@@ -24,7 +24,7 @@ type Shape struct {
 	// TagFlag is the flag whose FOLLOWING argv word must equal the
 	// claim's tag ("--tag", "--instance-tag"). The tag must appear as
 	// that flag's value — a tag merely mentioned anywhere in argv
-	// never matches (KI-14's lesson, restated by REG-6).
+	// never matches (REG-6: quoting a tag is not running under it).
 	TagFlag string
 }
 

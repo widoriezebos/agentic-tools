@@ -6,8 +6,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TagState classifies a recorded (pid, tag) for the shell's liveness ladder
-// (review script-orchestration-09): "dead" (no such process), "live" (the
+// TagState classifies a recorded (pid, tag) for the shell's liveness
+// ladder: "dead" (no such process), "live" (the
 // process's argv carries the tag), "stale" (argv readable, tag absent or
 // none recorded — a stranger holds the pid), "unknown" (the process exists
 // but cannot be inspected). The old shell ladder was two-way on the

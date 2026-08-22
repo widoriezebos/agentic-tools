@@ -53,7 +53,7 @@ func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
 	}
 	result.Unreadable = append(result.Unreadable, missions.Unreadable...)
 
-	// The monitor facility's typed facts (MON-05): job facts for the
+	// The monitor facility's typed facts: job facts for the
 	// unwatched rule, run facts for warnings + the green cursor, and the
 	// run readers' own failure channel. Live runs also join Busy so the
 	// STILL WORKING sentence names them.
@@ -264,7 +264,7 @@ func readRunsPass(root string, prober identity.Prober) (map[string]bool, string)
 		return nil, path + ": unparsable attestation"
 	}
 	// The freshness bound and the ARMED watcher identity come from the
-	// supervision state (critique finding 5): a one-shot pass or a
+	// supervision state: a one-shot pass or a
 	// future-stamped file supervises nothing.
 	armedPid, armedStart, intervalSec, armedOK := armedWatcherIdentity(root)
 	if !armedOK {

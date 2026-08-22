@@ -10,7 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-// MON-04: the job waiter blocks to terminal with pinned codes, holds a
+// The job waiter blocks to terminal with pinned codes, holds a
 // waiter record while waiting, and removes it on exit.
 func TestJobWatchRoundTrip(t *testing.T) {
 	root := t.TempDir()

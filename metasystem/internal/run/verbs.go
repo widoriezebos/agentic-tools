@@ -45,7 +45,7 @@ type LaunchParams struct {
 }
 
 // Launch writes the PENDING record — before any process exists — and
-// returns the minted nonce for the wrapper's argv (MON-01). It never
+// returns the minted nonce for the wrapper's argv. It never
 // deletes on failure; the fence concludes stale pendings.
 func (s *Store) Launch(caller Caller, p LaunchParams) (nonce string, err error) {
 	err = s.withLock(func() error {
@@ -283,7 +283,7 @@ func (s *Store) Adopt(caller Caller, id string, pid int64) error {
 			r.HungSince = nil
 			// Custody is RECOMPUTED from fresh kinship every adoption —
 			// an old adopted-verified label never survives a generation
-			// whose kinship fails (critique finding 8).
+			// whose kinship fails.
 			if r.Custody == CustodyWrapped {
 				r.Evidence = Evidence{Mode: EvidenceNone}
 			}
@@ -443,7 +443,7 @@ func (s *Store) groupEmpty(pgid int64) bool {
 }
 
 // FailLaunch concludes a pending record the launcher could not spawn —
-// the reservation is never deleted, it fails loudly (critique finding 10).
+// the reservation is never deleted, it fails loudly.
 func (s *Store) FailLaunch(id, note string) error {
 	return s.withLock(func() error {
 		record, err := s.Read(id)

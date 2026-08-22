@@ -9,8 +9,8 @@ import (
 )
 
 // The runtime family is the shell's ONLY window onto the runtime
-// registry (agnosticism audit, D74 phase A): the declaration lives in
-// Go, plumbing asks the binary. Exit codes are pinned: 0 ok, 1 unknown
+// registry: the declaration lives in Go, plumbing asks the binary.
+// Exit codes are pinned: 0 ok, 1 unknown
 // runtime or undeclared capability, 2 usage.
 
 func runtimeArg(args []string, verbName string) (runtimes.Declaration, int) {

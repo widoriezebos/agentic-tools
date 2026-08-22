@@ -8,8 +8,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
-// The non-mission cap chain and the unsigned-mission-cap refusal (review
-// script-orchestration-03, relocated from dispatch.sh). The rule and origin
+// The non-mission cap chain and the unsigned-mission-cap refusal
+// (relocated from dispatch.sh). The rule and origin
 // vocabularies are wire: the benchmark kit's extractor reads them from the
 // cap-resolution record, so every spelling here is a contract.
 

@@ -36,7 +36,7 @@ func TestJournalEntryIsDurableBeforeAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The stored intent must be COMPLETE enough to rebuild without
-	// the original process (R8-03).
+	// the original process.
 	if back.Intent.Verb != "edit" || back.Intent.Args["conclusion"] != "done well" ||
 		len(back.Intent.Deltas) != 1 || back.Intent.Deltas[0].New != "b" {
 		t.Fatalf("the normalized command intent must round-trip whole: %+v", back.Intent)

@@ -162,7 +162,7 @@ func stalePlans(root string) []string {
 		}
 	}
 
-	// IL-16: an open chain is work in flight for a plan's purposes even between
+	// An open chain is work in flight for a plan's purposes even between
 	// rounds, but bounded by a grace window so an abandoned chain still goes
 	// stale. jobsInFlight keeps the strict view; this is only for stale-plan
 	// accuracy.

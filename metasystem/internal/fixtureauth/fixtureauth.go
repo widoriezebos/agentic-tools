@@ -1,5 +1,5 @@
-// Package fixtureauth owns fixture-identity authorization (agnosticism
-// phase B1, D76): the ONE reader of the fake-process fixture table,
+// Package fixtureauth owns fixture-identity authorization:
+// the ONE reader of the fake-process fixture table,
 // gated by the root's configuration — the reserved-cap predicate,
 // metasystem.runtimes=fake — and issued to consumers as MINIMAL
 // per-authority capability values. internal/identity stays a
@@ -37,7 +37,7 @@ type Authorization struct {
 	// fixtureMode records that the ROOT authorizes fixtures at all —
 	// independent of the identity-table env, because the
 	// mission-process and process-table sources ride their OWN
-	// variables (B1 critique finding 7).
+	// variables.
 	fixtureMode bool
 }
 
@@ -62,9 +62,9 @@ func New(root string) (*Authorization, error) {
 	return &Authorization{tablePath: path, fixtureMode: true}, nil
 }
 
-// entryFor is the ONE fixture-table read (moved verbatim from
-// identity's retired reader; pidStartedAt is canonical per D14, the
-// legacy "started" spelling still parses during the transition).
+// entryFor is the ONE fixture-table read. pidStartedAt is the
+// canonical key; the legacy "started" spelling still parses during
+// the transition.
 func (a *Authorization) entryFor(pid int64) (identity.FixtureEntry, bool) {
 	if a == nil || a.tablePath == "" {
 		return identity.FixtureEntry{}, false
@@ -139,8 +139,8 @@ func (a *Authorization) GroupOwnership() GroupOwnershipGrant { return GroupOwner
 
 // FixtureGroup returns the fixture's recorded (pgid, command) for the
 // ownership proof — and only while the fixture leader is KERNEL-LIVE
-// at its recorded start and still in that group (B1 critique finding
-// 2: a stale row must never authorize signaling a recycled group).
+// at its recorded start and still in that group (a stale row must
+// never authorize signaling a recycled group).
 func (g GroupOwnershipGrant) FixtureGroup(pid int64) (pgid int64, command string, ok bool) {
 	entry, present := g.a.entryFor(pid)
 	if !present || !entry.HasPgid || !entry.HasCommand {
@@ -177,7 +177,7 @@ func (a *Authorization) MissionProcess() MissionProcessProbe { return MissionPro
 
 // Allows gates the mission-process source (its OWN env var, read by
 // the consumer): the ROOT's fixture mode authorizes it, not the
-// identity table's presence (B1 critique finding 7).
+// identity table's presence.
 func (p MissionProcessProbe) Allows() bool { return p.a != nil && p.a.fixtureMode }
 
 // PublicationGrant authorizes the mission runner's fixture WRITES —

@@ -92,13 +92,12 @@ func TestMaterializeV1AndV2(t *testing.T) {
 	}
 }
 
-// The structured-output invariants, in the generator's own package
-// (script-fixtures-002/D37): every object typed and closed, every required
-// list complete, every property declaring a type. Two shipped defects
-// motivated the original shell-side linter — an object without required
-// and a bare const without a type — each of which failed every codex
-// dispatch before the model produced a token. Running under the go gate,
-// they now survive fixture retirement.
+// The structured-output invariants, in the generator's own package:
+// every object typed and closed, every required
+// list complete, every property declaring a type. The defect classes
+// this guards against — an object without required
+// and a bare const without a type — each fail every codex
+// dispatch before the model produces a token.
 func TestMaterializedSchemasObeyStructuredOutputRules(t *testing.T) {
 	// go test runs with the package directory as cwd; the shipped role
 	// schemas this linter guards live two levels up.

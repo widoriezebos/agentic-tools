@@ -2,10 +2,10 @@ package main
 
 import "testing"
 
-// The public resolve-taint parser speaks exactly the amended design
-// grammar (slice-6 successor round-3 finding 2): one typed act — either
-// --restore <treeId> or --adopt — beside the taint id; anything else is
-// a usage refusal (exit 2) before any engine work.
+// The public resolve-taint parser speaks exactly the design grammar:
+// one typed act — either --restore <treeId> or --adopt — beside the
+// taint id; anything else is a usage refusal (exit 2) before any
+// engine work.
 func TestResolveTaintParserGrammar(t *testing.T) {
 	refusals := [][]string{
 		{},

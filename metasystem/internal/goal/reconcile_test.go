@@ -226,8 +226,8 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 	}
 
 	// Arm two: the publish LANDED — proven with the RECONCILE's OWN
-	// opid, not a bystander's (round 3 finding 4 called the old
-	// unrelated-trailer shape unproven). A real reconcile publishes
+	// opid, not a bystander's (an unrelated trailer
+	// proves nothing). A real reconcile publishes
 	// the hand edit; the crash is reconstructed as the publishing-
 	// shaped record with that reconcile's opid, and the completion
 	// must materialize the tree CARRYING the hand edit.

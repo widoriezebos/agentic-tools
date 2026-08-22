@@ -95,8 +95,8 @@ func jsonCompact(value any) string {
 // envelopes — that the shell reads within the same operation and that no
 // later run depends on. They are not contractually durable state, so they
 // keep the error-only contract and pass no durable anchor
-// (go-production-grade B5's inventory is durable STATE mutations; this is
-// the recorded classification for this writer).
+// (the durable-anchor contract exists for durable STATE mutations; this
+// writer is classified outside it).
 func writeCompactJSON(path string, value any) error {
 	_, err := atomicfile.WriteText(path, jsonCompact(value)+"\n", "")
 	return err

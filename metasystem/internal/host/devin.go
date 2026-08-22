@@ -90,8 +90,8 @@ func resolvePath(path string) string {
 	return path
 }
 
-// The devin delivery recollection, registered seam-locally
-// (agnosticism audit class 5): re-run the collect ladder past the
+// The devin delivery recollection, registered seam-locally so the
+// core never names the runtime: re-run the collect ladder past the
 // rejected digests, naming devin's own artifact files.
 func init() {
 	RegisterDeliveryRecollector("devin", func(p RecollectParams) (RecollectResult, error) {
@@ -113,7 +113,7 @@ func init() {
 }
 
 // HostDevinUsage is the host seam's entry point for devin usage
-// derivation (code critique finding 6): command bodies call the seam,
+// derivation: command bodies call the seam,
 // the seam calls the single usage owner. The host path records no
 // attempt snapshot.
 func HostDevinUsage(usagePath, transcriptPath, cumulativePath, previousPath string, expectPrevious bool) error {

@@ -2,8 +2,7 @@
 //
 // It exists as one owner rather than a copy per package because what it
 // promises is a DURABILITY contract: the guarantee has to be implemented
-// once, or two copies become two fixes that silently diverge
-// (go-production-grade B5).
+// once, or two copies become two fixes that silently diverge.
 //
 // # The outcome model
 //
@@ -33,13 +32,13 @@
 // failed chain sync leaves the directories visible, so a retry sees them
 // pre-existing, skips the chain, and could report durable over an unproven
 // chain.
-// Adopted callers of the two-outcome (durable, err) contract, per the
-// staged migration D12 records: dispatch's job-record writes (anchor
+// Adopted callers of the two-outcome (durable, err)
+// contract: dispatch's job-record writes (anchor
 // derived as the checkout root above artifacts/), the lease's state
 // writes (same derivation), and the registry's compaction write (anchor
 // one level above the registry directory) — each witnesses a doubted
 // publication instead of discarding it. Every other caller still passes
-// anchor "" (the pre-B5 behavior) until its package is touched; no
+// anchor "" (target-directory sync only) until its package is touched; no
 // crash-durability is claimed for those paths.
 package atomicfile
 
@@ -71,7 +70,7 @@ var syncDir = func(path string) error {
 // for in-repo writers, or the parent of a directory the writer may itself
 // create. Every directory from path's own up to and including anchor is made
 // durable before publication. When anchor is empty, only the target's own
-// directory is synced (the pre-B5 behavior, for callers not yet converted).
+// directory is synced (for callers not yet converted).
 //
 // See the package doc for the outcome model behind (durable, err).
 func WriteText(path, text, anchor string) (durable bool, err error) {
@@ -81,7 +80,7 @@ func WriteText(path, text, anchor string) (durable bool, err error) {
 	})
 }
 
-// publish is the ONE publication sequence (review foundations-4): make the
+// publish is the ONE publication sequence: make the
 // directory chain durable, fill a synced temp file in the target's own
 // directory, rename it into place, then sync the directory — with the
 // (false, nil) rule after the rename: PUBLISHED is committed, and only its
@@ -191,9 +190,8 @@ func CopyFile(sourcePath, targetPath, anchor string) (durable bool, err error) {
 // freshness stamps — that are rewritten every interval and carry no value
 // across a crash: a rebooted machine re-arms and re-stamps. Routing those
 // through WriteText's barriers taxes the hottest write path with
-// full-flushes (F_FULLFSYNC on darwin) for durability nobody reads, which
-// destabilized the suite's timing-scaled fixtures when it was tried
-// (go-production-grade B5, the recorded classification).
+// full-flushes (F_FULLFSYNC on darwin) for durability nobody reads —
+// enough load to destabilize the suite's timing-scaled fixtures.
 func WriteVolatile(path, text string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

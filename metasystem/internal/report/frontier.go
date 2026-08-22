@@ -159,7 +159,7 @@ func frontierGit(repo string, args ...string) (string, error) {
 	cmd.Dir = repo
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
-	// Bounded like every other external call (B4).
+	// Bounded like every other external call.
 	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
 	return strings.TrimSpace(stdout.String()), err
@@ -194,8 +194,8 @@ func FrontierRecord(opts FrontierOptions) ([]string, *FrontierError) {
 	case os.IsNotExist(readErr):
 		// First record: no frontier yet, nothing to guard against.
 	default:
-		// An unreadable frontier is NOT an absent one (validate-report-3,
-		// the B7 rule): treating it as absent skips the direction, expiry,
+		// An unreadable frontier is NOT an absent one:
+		// treating it as absent skips the direction, expiry,
 		// and regression guards and overwrites the recorded frontier
 		// without --force — the one guard README sells this verb for.
 		return nil, frontierFail(2, "frontier file is unreadable: %v", readErr)
@@ -249,8 +249,8 @@ func FrontierRecord(opts FrontierOptions) ([]string, *FrontierError) {
 	content := fmt.Sprintf("sha=%s\nrecorded_epoch=%d\nscore=%s\nmin_delta=%s\ndirection=%s\nmax_age_minutes=%s\neval=%s\nartifact=%s\n",
 		sha, opts.now().UTC().Unix(), opts.Score, formatFloat(minDelta), direction, window, opts.Eval, opts.Artifact)
 	// The frontier is the single durable record improvement mode compares
-	// against: it lands through the durable-write owner (B5), never a bare
-	// WriteFile a crash can truncate (validate-report-4).
+	// against: it lands through the durable-write owner, never a bare
+	// WriteFile a crash can truncate.
 	if _, err := atomicfile.WriteText(opts.File, content, ""); err != nil {
 		return nil, frontierFail(2, "cannot write frontier file: %v", err)
 	}

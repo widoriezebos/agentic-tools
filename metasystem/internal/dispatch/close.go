@@ -56,8 +56,8 @@ func CloseCheck(repoRoot, root string) error {
 			// The diff exists only once the HOST runs the conformance
 			// review; the reap never writes it. A completed round the
 			// host did not review has no diff BY CONSTRUCTION, and
-			// demanding one wedged the close of every unreviewed chain
-			// at mission end (rep 1 of cohort bm-1-20260813t155700z).
+			// demanding one would wedge the close of every unreviewed
+			// chain at mission end.
 			// Closing attests that evidence ON DISK is durable — the
 			// workflow gap of an unreviewed implementer is already the
 			// delegation floor's verdict, not the close's. A diff the

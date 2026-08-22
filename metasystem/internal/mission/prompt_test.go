@@ -298,8 +298,8 @@ func TestPromptConfigValueResolutionOrder(t *testing.T) {
 	}
 }
 
-// Patience prompt projection (plans/patience-satellite-4.md r2/P4-017,
-// r9/P4-061, r10/P4-068): lines derive from the final cycle block's
+// Patience prompt projection (plans/patience-satellite-4.md):
+// lines derive from the final cycle block's
 // annotations; detail lines filter against current chain-closed flags;
 // overflow and excluded lines are exempt.
 func TestPatiencePromptLines(t *testing.T) {
@@ -357,7 +357,8 @@ func TestPatiencePromptLines(t *testing.T) {
 	}
 }
 
-// GOAL-09 both ways: a usable Current goal projects exactly one optional
+// The serving-goal orientation line both ways: a usable Current goal
+// projects exactly one optional
 // section between the contract and the ledger tail, and the assembled
 // prompt passes the turn-prompt grammar; a degraded or absent ledger
 // produces no line and never blocks assembly.

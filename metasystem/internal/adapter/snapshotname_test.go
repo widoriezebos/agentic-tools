@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// The naming contract, pinned behaviorally (script-validate-9/D34): the
-// suite used to grep this package's SOURCE for two Sprintf lines, which
-// failed on any reflow with zero behavior change. The grammar the readers
+// The naming contract, pinned behaviorally — by generated names, never
+// by grepping this package's source, which would fail on any reflow
+// with zero behavior change. The grammar the readers
 // depend on is <runtime>-<version>-<configHash>-<yyyymmdd>-<seq %03d>.json,
 // and only generated names can prove it.
 func TestSnapshotNameGrammar(t *testing.T) {

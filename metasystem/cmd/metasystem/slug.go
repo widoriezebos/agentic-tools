@@ -16,7 +16,7 @@ import (
 
 // runUtilSlug prints a stable slug of its positional argument. The sanitize
 // rule's one home is lease.Slug: instance tags derived here must match the
-// announcement filenames the lease writes (review architecture-2).
+// announcement filenames the lease writes.
 func runUtilSlug(args []string) int {
 	input := ""
 	if len(args) > 0 {
@@ -81,9 +81,8 @@ func runUtilTokenHex(args []string) int {
 
 // runUtilSHA256 prints the hex SHA-256 of --file, or of stdin when --file
 // is absent. It exists so production scripts need no shasum — a perl tool
-// on Linux — when the engine already owns hashing (go-production-grade
-// Phase 1, supported-platforms rule: owning the capability beats
-// documenting the dependency).
+// on Linux — when the engine already owns hashing: owning the
+// capability beats documenting the dependency.
 func runUtilSHA256(args []string) int {
 	flags := flag.NewFlagSet("util sha256", flag.ContinueOnError)
 	file := flags.String("file", "", "file to hash; stdin when absent")

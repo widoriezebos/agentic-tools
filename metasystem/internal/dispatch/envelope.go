@@ -102,7 +102,7 @@ func ExpandPermissions(sourcePath, repo, workspace string, isWorktree bool, pres
 }
 
 // worktreeGitWriteRoots derives the git-metadata write roots a worktree
-// delegate needs to commit on its own branch (issue #5), verified against
+// delegate needs to commit on its own branch, verified against
 // a live probe: the worktree git dir (index, HEAD, COMMIT_EDITMSG, its
 // logs), the common object store, and the branch's ref namespace with its
 // reflog (ref updates create sibling .lock files, so the namespace
@@ -119,8 +119,8 @@ func worktreeGitWriteRoots(worktree string) ([]string, error) {
 	if !filepath.IsAbs(commonDir) {
 		commonDir = filepath.Join(worktree, commonDir)
 	}
-	// The files ref backend is the only one these roots model (round-1
-	// F5): a reftable repository writes shared reftable storage instead,
+	// The files ref backend is the only one these roots model:
+	// a reftable repository writes shared reftable storage instead,
 	// and granting refs/heads there would be meaningless while commits
 	// silently failed elsewhere.
 	if _, err := os.Stat(filepath.Join(commonDir, "reftable")); err == nil {
@@ -130,8 +130,8 @@ func worktreeGitWriteRoots(worktree string) ([]string, error) {
 	if err != nil || branch == "" {
 		return nil, fmt.Errorf("worktree delegate must be on its own branch (detached or unreadable HEAD)")
 	}
-	// Only the agent/ namespace is grantable (round-1 F5's bare-branch
-	// hole: a branch named "topic" would have granted ALL of refs/heads,
+	// Only the agent/ namespace is grantable (a bare branch named
+	// "topic" would grant ALL of refs/heads,
 	// main included). Dispatch creates agent/<job>; anything else refuses.
 	if !strings.HasPrefix(branch, "agent/") {
 		return nil, fmt.Errorf("worktree delegate must sit on an agent/ branch, not %q", branch)
@@ -139,12 +139,12 @@ func worktreeGitWriteRoots(worktree string) ([]string, error) {
 	refDir := filepath.Join(commonDir, "refs", "heads", "agent")
 	logDir := filepath.Join(commonDir, "logs", "refs", "heads", "agent")
 	// Pre-create the reflog namespace so the sandbox root resolves — and
-	// refuse when it cannot be created (round-1 F4: a discarded error
-	// here recreates the lost-cycle failure the fix exists to end).
+	// refuse when it cannot be created: a discarded error
+	// here loses the delegate's commits for the whole cycle.
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return nil, fmt.Errorf("cannot prepare the reflog namespace: %v", err)
 	}
-	// NO shared objects/ grant (round-1 F1): loose objects go to the
+	// NO shared objects/ grant: loose objects go to the
 	// worktree's quarantine store (GIT_OBJECT_DIRECTORY, set by the
 	// adapters; alternates-linked by the engine at worktree creation),
 	// which the workspace write root already covers. The shared object

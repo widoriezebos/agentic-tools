@@ -3,10 +3,8 @@
 // the job envelope, and watermarked candidate assembly. The package
 // is runtime-neutral — dialect facts (mode identifiers, launch argv,
 // wire-to-effect mappings) are supplied by adapter-owned tables, and
-// nothing here names an agent runtime. Design: plans/
-// acp-transport-design.md (the D81 spec); wire evidence: plans/
-// acp-wire-probe.md; message shapes: the pinned schema artifact in
-// schema/ (see schema/PIN.md).
+// nothing here names an agent runtime. Message shapes: the pinned
+// schema artifact in schema/ (see schema/PIN.md).
 package acp
 
 import (

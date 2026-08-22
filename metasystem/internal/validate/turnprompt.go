@@ -34,8 +34,9 @@ var turnHeadings = []string{
 	"## Streams", "## Reconciliation", "## Landed Returns", "## This Turn",
 }
 
-// servingGoalHeading is the one OPTIONAL section (goal-system GOAL-09):
+// servingGoalHeading is the one OPTIONAL section:
 // a single orientation line between the contract and the ledger tail.
+// Goal absence produces no section and never blocks assembly.
 const servingGoalHeading = "## Serving goal"
 
 var servingGoalLine = regexp.MustCompile(`^.{1,64} — .{1,160}$`)
@@ -189,7 +190,7 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 		found = append(found, position.heading)
 	}
 	// The serving-goal block is OPTIONAL at exactly one position:
-	// immediately after the mission contract (goal-system GOAL-09). The
+	// immediately after the mission contract. The
 	// assembler and this grammar move together by design.
 	withGoal := make([]string, 0, len(turnHeadings)+1)
 	withGoal = append(withGoal, turnHeadings[0], servingGoalHeading)

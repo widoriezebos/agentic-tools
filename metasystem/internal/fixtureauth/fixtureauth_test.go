@@ -64,8 +64,8 @@ func TestAuthorizationMatrix(t *testing.T) {
 
 // Each capability value exposes ONLY its authority's facts, and every
 // zero/nil value refuses. The group grant additionally demands a
-// KERNEL-LIVE leader at its recorded start in its recorded group (B1
-// critique finding 2), so the fixture row is built from this test's
+// KERNEL-LIVE leader at its recorded start in its recorded group,
+// so the fixture row is built from this test's
 // own live process.
 func TestCapabilityScoping(t *testing.T) {
 	self := int64(os.Getpid())

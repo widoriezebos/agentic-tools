@@ -87,16 +87,16 @@ var contractScalarSet = func() map[string]bool {
 
 // contractOptionalScalars are single-valued keys a contract MAY declare.
 // host.max-turns and host.max-budget-usd seal the host adapter's native
-// caps (issue #6): without them an unsealed adapter default silently
-// shortened the benchmark's stated exposure.
+// caps: without them an unsealed adapter default silently
+// shortens the benchmark's stated exposure.
 var contractOptionalScalars = map[string]bool{
 	"host.max-turns": true, "host.max-budget-usd": true,
 	// The EXPLICIT sealed acknowledgment that a binary gate rides a
-	// no-gain budget below the cycle fence (issue #4): fixture beds
+	// no-gain budget below the cycle fence: fixture beds
 	// legitimately exercise the fuse with tiny budgets, but the
 	// mismatch must never be signable SILENTLY.
 	"ledger.accept-binary-gate-fuse": true,
-	// The declared host-artifact files (host-implementer wall, HIW-R2-03):
+	// The declared host-artifact files (host-implementer wall):
 	// canonical repository-relative files the host may author, default
 	// deny; the runner's wall inspection enforces the declaration.
 	"wall.host-artifacts": true,
@@ -163,8 +163,7 @@ func (d *contractDoc) calibrationWarnings() []string {
 	// exhaustion rule), so a host that serializes critique before
 	// implementation needs a no-gain budget STRICTLY ABOVE 3 to reach
 	// its first implementer dispatch — at 3 or below the fuse fires the
-	// moment critique ends. Two such empty parks on 2026-08-14 (cohort
-	// bm-1-20260814t192803z-44271 reps 1-2) are the evidence. A warning,
+	// moment critique ends, parking the mission empty. A warning,
 	// not a refusal: fixture beds legitimately exercise the fuse with
 	// tiny budgets.
 	if noGain <= 3 {
@@ -172,8 +171,8 @@ func (d *contractDoc) calibrationWarnings() []string {
 			"ledger.no-gain-budget=%d does not exceed the critique cadence (exhaustion at round 3): a serialized host is fused before its first implementer job (docs/design/stop-loss-core.md)",
 			noGain))
 	}
-	// An unsealed adapter default silently shortens the stated exposure
-	// (issue #6): a design turn died at --max-turns 50 with most of its
+	// An unsealed adapter default silently shortens the stated exposure:
+	// the native turn cap can end a mission with most of its
 	// sealed time cap unspent. A warning, not a refusal — non-benchmark
 	// missions may accept the default knowingly.
 	if d.values["host.max-turns"] == "" {
@@ -458,9 +457,9 @@ func (d *contractDoc) validate(projectRoot string) error {
 
 // contractValidatePairCap checks that a per-pair cap key is canonical for its
 // runtime and model and carries a positive integer.
-// ValidatePairCap is THE cap-key canonicality rule: exported because the
-// runtime fence check re-implemented it with independently worded errors
-// (review mission-contract-5) — and the seal-time check and the runtime
+// ValidatePairCap is THE cap-key canonicality rule: exported so the
+// runtime fence check cannot re-implement it with independently worded
+// errors — the seal-time check and the runtime
 // check are precisely the two that must never disagree about what a
 // signed cap means.
 func ValidatePairCap(key, value string) error {
@@ -484,7 +483,7 @@ func contractValidatePairCap(key, value string) error {
 }
 
 // contractValidatePatience checks a patience-floor entry
-// (plans/patience-satellite-4.md): patience.rounds.<role>.<runtime>.<model>,
+// (docs/patience.md): patience.rounds.<role>.<runtime>.<model>,
 // role and runtime in the identifier grammar, the model a canonical key in
 // the cap-key encoding, the floor a positive integer counted in value-barren
 // rounds. Floors exist only here — no conf, local, environment, or
@@ -1087,7 +1086,7 @@ func contractCapKeys(values map[string]string) []string {
 }
 
 // contractPatienceKeys returns the sorted patience-floor keys
-// (plans/patience-satellite-4.md). They seal beside the cap entries through
+// (docs/patience.md). They seal beside the cap entries through
 // the same expectedSeal enumeration preflight recomputes, so a signed
 // mission's patience behavior is frozen with its signature.
 func contractPatienceKeys(values map[string]string) []string {
@@ -1113,7 +1112,7 @@ func (d *contractDoc) seal(repo, projectRoot string) (string, error) {
 	}
 	// A BINARY single-metric gate cannot register progress before its
 	// final step, so a no-gain budget shorter than the cycle fence fires
-	// on perfect play (issue #4, vm-smoke-4: full marks parked). Refused
+	// on perfect play — full marks parked as no-gain. Refused
 	// at SEAL — the moment exposure becomes binding — regardless of the
 	// candidate-measurement mitigation, so the mismatch is unsignable.
 	if err := d.refuseBinaryGateShortFuse(); err != nil {
@@ -1275,7 +1274,7 @@ func (d *contractDoc) verifyOrigin(repo string) error {
 	fetch.Env = gittree.ScrubbedEnviron()
 	var stderr strings.Builder
 	fetch.Stderr = &stderr
-	// Network work is bounded (B4): an unreachable remote must fail the
+	// Network work is bounded: an unreachable remote must fail the
 	// preflight, never hang the mission that is waiting on it.
 	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Network)
 	if err := boundedexec.Run(fetch, limit, "preflight origin fetch"); err != nil {
@@ -1416,20 +1415,20 @@ func contractProcessHasTag(projectRoot string, pid, started int64, tag string) b
 		return false
 	}
 	if fileExists(filepath.Join(projectRoot, "bin", "metasystem")) {
-		// The fixture authority for the liveness check (agnosticism B1):
+		// The fixture authority for the liveness check:
 		// constructed from the project root; a refused construction
 		// refuses fixtures and the kernel alone answers.
 		authorization, authErr := fixtureauth.New(projectRoot)
 		if authErr != nil {
-			return false // leaked fixture refuses the decision (finding 4)
+			return false // leaked fixture refuses the decision
 		}
 		if !census.Alive(pid, started, authorization.Identity()) {
 			return false
 		}
 	}
-	// The identity owner reads argv natively (go-production-grade P6); an
+	// The identity owner reads argv natively; an
 	// unreadable argv takes the fixture fallback exactly as a failed ps
-	// invocation did, never a tag mismatch on absent evidence (B1).
+	// invocation would, never a tag mismatch on absent evidence.
 	exact, state, err := (identity.KernelProber{}).Probe(pid)
 	if err != nil || state != identity.Alive || !exact.ArgvKnown {
 		return contractFixtureIdentityMatches(projectRoot, pid, started, tag)
@@ -1440,7 +1439,7 @@ func contractProcessHasTag(projectRoot string, pid, started int64, tag string) b
 // contractFixtureIdentityMatches consults the fixture identity file used when
 // the process table cannot be read, matching the recorded start and tag.
 func contractFixtureIdentityMatches(projectRoot string, pid, started int64, tag string) bool {
-	// MissionProcessProbe gate (agnosticism B1): the env-var fallback is
+	// MissionProcessProbe gate: the env-var fallback is
 	// honored only under root-checked fixture authorization, and only
 	// AFTER unreadable kernel argv — the caller preserves that order.
 	if authorization, err := fixtureauth.New(projectRoot); err != nil || !authorization.MissionProcess().Allows() {
@@ -1479,7 +1478,7 @@ func contractRunFingerprint(projectRoot string) (string, int) {
 	command.Env = gittree.ScrubbedEnviron()
 	var out strings.Builder
 	command.Stdout = &out
-	// A fingerprint script that hangs must not hang the preflight (B4).
+	// A fingerprint script that hangs must not hang the preflight.
 	limit := boundedexec.Timeout(filepath.Join(projectRoot, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(command, limit, "supervision fingerprint"); err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
@@ -1520,11 +1519,10 @@ func contractMetasystemRoot() string {
 		return ""
 	}
 	// The binary ships at <root>/bin/metasystem — TWO components deep, so
-	// the checkout is Dir^2 of the executable. The shell originals derived
-	// three levels from scripts/agents/<script>; the port kept three Dir
-	// calls on a binary only two deep, landing on the checkout's PARENT and
-	// making the confirmation below fail everywhere (review
-	// mission-contract-1).
+	// the checkout is Dir^2 of the executable. Three Dir
+	// calls (the depth a scripts/agents/<script> origin would need)
+	// land on the checkout's PARENT and
+	// make the confirmation below fail everywhere.
 	root := resolvePath(filepath.Dir(filepath.Dir(exe)))
 	if fileExists(filepath.Join(root, "metasystem.conf")) || contractDirExists(filepath.Join(root, "scripts", "agents")) {
 		return root
@@ -1584,9 +1582,10 @@ func contractIntField(v any) (int64, bool) {
 }
 
 // CanonicalContractHash is the digest a human approval records, exposed for
-// the hash-only verb (script-validate-1/D34): the suite's fixture used to
-// shadow contractCanonicalSignedBytes in awk, and a canonicalization change
-// in Go would have left the awk silently computing yesterday's algorithm.
+// the hash-only verb: a fixture must consume THIS digest rather than
+// shadow contractCanonicalSignedBytes with its own copy — a
+// canonicalization change would leave a copy silently computing
+// yesterday's algorithm.
 func CanonicalContractHash(text string) string {
 	return sha256Hex(string(contractCanonicalSignedBytes(text)))
 }

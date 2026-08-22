@@ -163,3 +163,35 @@ sections of the supervision contract that code legitimately cites —
 stayed. What the sweep could not touch it flagged honestly: a handful
 of user-facing strings still carry old tags into refusal messages,
 banked as their own small piece of work.
+
+The third wave of the sweep also wrote a smaller, sharper lesson.
+One of its agents went silent — all twenty of its packages finished,
+not a word reported, no error, no signal. The coordinator treated
+the silence the way the patience vocabulary teaches: no observable
+progress where progress belonged is a stall, so probe it and put a
+clock on the answer. The probe turned out to be more than a
+question — messaging a stopped agent resumes it, and the agent came
+back, completed its verification, and delivered a full green report.
+Two truths came out of that half hour. Correctness never depended
+on the rescue: the work was on disk and verifiable without its
+author, which is why the silence cost nothing but attention. And
+the silence itself was invisible to every watcher except a curious
+coordinator — agents launched through the runtime enjoy none of the
+supervision the metasystem gives its own dispatches. The liveness
+contract that closes that gap is drafted on the backlog.
+
+## The queue was made to tell the truth (August 22, 2026)
+
+Before the fleet's first long unattended window, Wido and the
+coordinator trued the ledger in one sitting: nine goals concluded.
+Two were absorbed — the synced backlog and the promotion protocol had
+already been delivered by the very mechanism they asked for, and a
+queue that still requests what exists is lying. Three were dropped by
+ruling, each with a record that can reopen it if the pain returns:
+the principle being that the backlog serves the system as it behaves
+now, not as it once did. Four had been implemented and never
+formally closed — among them the idle watchdog, concluded on the
+best evidence there is: it had been waking the coordinator all day,
+and the commit boundary's static re-proof, which refused a real
+overrun the same afternoon. Six wall rows then took their appetite
+tokens, and the machines had a truthful queue to run dark against.

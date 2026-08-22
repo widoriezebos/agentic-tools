@@ -11,7 +11,7 @@ import (
 )
 
 // The json family relays: the shell-facing rendering and edit decisions
-// live in internal/jsonedit (review architecture-2); these verbs parse
+// live in internal/jsonedit; these verbs parse
 // flags, read files, and print.
 
 // runJSONSet reads a JSON object file, sets the given top-level fields, and

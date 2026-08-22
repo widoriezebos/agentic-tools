@@ -13,7 +13,7 @@ import (
 // read loop routes each frame by its JSON-RPC shape; the write
 // loop owns the blocking writes so that EVERY caller wait is
 // context-bounded — a server that stops reading can wedge the
-// writer goroutine, never a deadline (slice-two critique F1). A
+// writer goroutine, never a deadline. A
 // malformed frame, a mismatched response ID, or a write failure is
 // a connection death: recorded, channels closed, pending calls
 // failed — the matrix's "protocol error; record; teardown" row.
@@ -54,7 +54,7 @@ type sendRequest struct {
 // journal receives every frame in both directions and is required
 // for production turns (settlement evidence); the shared sink is
 // serialized so concurrent directions can never interleave into
-// invalid evidence (critique F9).
+// invalid evidence.
 func NewConn(readEnd io.Reader, writeEnd io.Writer, journal io.Writer) *Conn {
 	if journal != nil {
 		journal = &lockedWriter{w: journal}
@@ -282,7 +282,7 @@ func (c *Conn) CallSeq(ctx context.Context, method string, params any) (Frame, e
 
 // Respond answers a server request with a result. The error is
 // NEVER discardable: an unanswered mandatory request breaks the
-// protocol (critique F2), so callers must fail the turn on it.
+// protocol, so callers must fail the turn on it.
 func (c *Conn) Respond(ctx context.Context, id *RequestID, result any) error {
 	return c.enqueue(ctx, &Message{JSONRPC: "2.0", ID: id, Result: mustMarshal(result)})
 }

@@ -95,7 +95,8 @@ func TestLandedReturnsQualificationMatrix(t *testing.T) {
 	landedWriteJob(t, repo, "f1", map[string]any{"mission": "other", "status": "completed", "round": 1})
 	landedWriteReturn(t, repo, "f1", 1)
 	// g: a runner-closed chain with an uncertified landed round KEEPS its
-	// row - closure never excludes (the recreated bm-2s loss).
+	// row - closure never excludes (the park that orphans a return must
+	// not also hide it).
 	landedWriteJob(t, repo, "g1", terminal(map[string]any{"chainClosed": true, "runnerClosed": true}))
 	landedWriteReturn(t, repo, "g1", 1)
 	// h: no landed return at all -> no row.

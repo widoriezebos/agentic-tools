@@ -10,8 +10,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
-// Roster resolution, tier ranking, and escalation classification (review
-// script-orchestration-02, relocated from dispatch.sh): which runtime:model
+// Roster resolution, tier ranking, and escalation classification
+// (relocated from dispatch.sh): which runtime:model
 // pair a role's roster names, which pair the caller effectively requested,
 // and whether honoring the request needs escalation approval. The shell
 // keeps only the approval ladder (TTY confirm, signed envelope, refusal

@@ -77,8 +77,8 @@ func runMissionContractPreflight(args []string) int {
 
 // runMissionContractHash prints the canonical signed-bytes digest of a
 // contract file — the hash an approval records — without validating the
-// authored grammar (script-validate-1/D34: the envelope-only fixtures need
-// the hash, not the full gate instruments).
+// authored grammar: envelope-only fixtures need the hash, not the full
+// gate instruments.
 func runMissionContractHash(args []string) int {
 	flags := flag.NewFlagSet("mission contract-hash", flag.ContinueOnError)
 	file := flags.String("file", "", "contract file")

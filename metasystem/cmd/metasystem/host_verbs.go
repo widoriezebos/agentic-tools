@@ -42,8 +42,8 @@ func runHostResultWrite(args []string) int {
 	return 0
 }
 
-// runHostFinish relays `host finish`: the one turn-outcome adjudication
-// (script-adapters-10/D26). Its exit code IS the host taxonomy the mission
+// runHostFinish relays `host finish`: the one turn-outcome
+// adjudication. Its exit code IS the host taxonomy the mission
 // runner interprets — 0 completed, 3 failed, 6 missing session — and the
 // host scripts just propagate it.
 func runHostFinish(args []string) int {
@@ -70,8 +70,8 @@ func runHostFinish(args []string) int {
 	return code
 }
 
-// runHostDevinCollect walks a devin HOST turn's delivery channels (D64
-// phase 2). Exit 0 delivered (facts JSON on stdout), 3 nothing
+// runHostDevinCollect walks a devin HOST turn's delivery channels.
+// Exit 0 delivered (facts JSON on stdout), 3 nothing
 // qualified, 5 transcript over the ceiling, 1 mechanical.
 func runHostDevinCollect(args []string) int {
 	flags := flag.NewFlagSet("host devin-collect", flag.ContinueOnError)

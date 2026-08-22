@@ -1,10 +1,10 @@
 package usage
 
-// Claude's usage recovery — a per-runtime seam file (agnosticism audit
-// class 6, critique r1-5: claude appends its full result, including
+// Claude's usage recovery — a per-runtime seam file:
+// claude appends its full result, including
 // top-level usage, to the round's event stream, and the shared parser
 // already recognizes claude's field spellings — a claude round IS
-// partially recoverable and always was; this file states it).
+// partially recoverable; this file states it.
 
 // The claude dead-round recoverer rides the NEUTRAL event-stream
 // walk (usage.go): both runtimes land a usage block in

@@ -13,9 +13,9 @@ import (
 )
 
 // The command-layer genesis boundary: goalCaller classifies against the
-// ONE root it is writing (never a caller-named second root — that
-// mechanism carried the laundering holes the genesis-authority review
-// recorded) and applies the matrix. A DELEGATE-shaped caller — every
+// ONE root it is writing (never a caller-named second root — a root
+// the caller chooses is an authority-laundering hole) and applies the
+// matrix. A DELEGATE-shaped caller — every
 // provisioning flow under agent ancestry looks like one to a virgin
 // target — is admitted to genesis exactly when the ledger is
 // adoption-shaped, and is refused every holder-only verb; the human

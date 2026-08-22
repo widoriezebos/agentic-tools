@@ -5,9 +5,8 @@ import (
 	"sort"
 )
 
-// SelftestProbe is one runtime's typed self-test probe (agnosticism
-// audit class 13): the four stages --devin-checks used to steer by
-// name, now a registered capability. A probe prepares scratch state,
+// SelftestProbe is one runtime's typed self-test probe, a registered
+// capability. A probe prepares scratch state,
 // contributes prompt text, verifies returned evidence, and names the
 // exact behavior labels the pass record earns. Shared self-test code
 // consumes the probe and never the runtime name.

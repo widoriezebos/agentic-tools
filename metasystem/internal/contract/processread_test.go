@@ -8,9 +8,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// Contract preflight's process-identity proof (go-production-grade Phase 2½
-// Unit A, obligations A-3 and A-4). Written against the pre-move `ps`
-// implementation and unchanged across the move to the identity owner.
+// Contract preflight's process-identity proof. These tests verify the
+// contract, not the mechanism: they hold for a `ps` subprocess and for
+// the identity owner's native read alike.
 
 func selfStartAndTag(t *testing.T) (int64, string) {
 	t.Helper()

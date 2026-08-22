@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Issue #1 sweep round-3 R3-1: the announcement prune treats the pair as
+// The announcement prune treats the pair as
 // EXCLUSIVE when both sides carry it — a recycled pid whose start second
 // happens to match but whose ticks differ is a stranger and the stale
 // announcement is pruned; a drifted second with a matching pair survives.

@@ -81,14 +81,14 @@ func TestAnchorAndVerifyRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected verify result: seq=%d hash=%q", seq, hash)
 	}
 	// The anchor commit carries the mission trailers — on the
-	// runner-owned anchor ref, never the mission branch (slice-5 r4).
+	// runner-owned anchor ref, never the mission branch.
 	log := gitCmd(t, repo, "log", "-1", "--format=%B", "refs/metasystem/missions/demo/state-anchors")
 	if !strings.Contains(log, "Mission-Id: demo") || !strings.Contains(log, "Mission-Cycle: 1") {
 		t.Fatalf("anchor commit missing trailers:\n%s", log)
 	}
 }
 
-// Anchor cadence (slice-6 round-3 finding 1): re-binding the SAME state
+// Anchor cadence: re-binding the SAME state
 // hash to DIFFERENT ledger bytes is the mid-turn laundering shape and
 // refuses; re-anchoring an identical position stays allowed (heal retry).
 func TestAnchorRefusesLedgerMoveWithoutStateWrite(t *testing.T) {
@@ -104,8 +104,8 @@ func TestAnchorRefusesLedgerMoveWithoutStateWrite(t *testing.T) {
 	}
 }
 
-// The pinned anchor binds exactly the verified position (slice-6
-// successor finding 2): moved state or moved ledger bytes refuse.
+// The pinned anchor binds exactly the verified position: moved state or
+// moved ledger bytes refuse.
 func TestAnchorPinsRefuseMovedPosition(t *testing.T) {
 	repo, state, ledger := anchoredMission(t)
 	doc, _ := readStateDoc(state)
@@ -129,7 +129,7 @@ func TestAnchorPinsRefuseMovedPosition(t *testing.T) {
 	}
 }
 
-// The two round-16/17 recovery folds, regression-certified: a deleted
+// The two recoverable one-step refusal shapes: a deleted
 // live ledger in the one-step gap refuses WITHOUT writing and heals
 // after blob restoration; a healable lag whose publication fails
 // (wrong checked-out branch) refuses WITHOUT writing and heals once
@@ -382,7 +382,7 @@ func advanceStateOneStep(t *testing.T, state string) {
 	}
 }
 
-// The heal-crash lag (slice-5 round-6/7): an anchor exactly one state
+// The heal-crash lag: an anchor exactly one state
 // step behind, with identical ledger truth, re-anchors and reconciles.
 func TestReconcileHealsAnchorLag(t *testing.T) {
 	repo, state, ledger := anchoredMission(t)
@@ -397,7 +397,7 @@ func TestReconcileHealsAnchorLag(t *testing.T) {
 	}
 }
 
-// Terminal-delivery lag (WSS I12-4): a crash between the completion
+// Terminal-delivery lag: a crash between the completion
 // conclude's annotation delivery and its closing anchor leaves the
 // anchor one state step behind with SAME-cycle bytes extended by
 // write-grammar annotation lines only — that exact stamped shape heals;
@@ -431,7 +431,7 @@ func TestReconcileHealsTerminalDeliveryLag(t *testing.T) {
 }
 
 // A forged child commit on the anchor ref — matching trailers, no ledger
-// blob — must PARK, never launder the evidence (round-7).
+// blob — must PARK, never launder the evidence.
 func TestReconcileParksForgedAnchorTip(t *testing.T) {
 	repo, state, ledger := anchoredMission(t)
 	advanceStateOneStep(t, state)
@@ -460,8 +460,8 @@ func TestReconcileParksForgedAnchorTip(t *testing.T) {
 	}
 }
 
-// The cycle-authentication arms of the recovery predicate (successor
-// round-18): a complete, blob-carrying tip whose Mission-Cycle is WRONG
+// The cycle-authentication arms of the recovery predicate:
+// a complete, blob-carrying tip whose Mission-Cycle is WRONG
 // for its own blob, and a tip lawfully ONE CYCLE BEHIND a state whose
 // ledger then moved — neither is prescribed as repair; both PARK.
 func TestRecoveryPredicateCycleArms(t *testing.T) {
@@ -470,8 +470,8 @@ func TestRecoveryPredicateCycleArms(t *testing.T) {
 		// The state LAWFULLY reaches cycle 2 (ledger append + state
 		// write) so the trailer-versus-state check below is SATISFIED —
 		// only the blob-count gate stands between a lying trailer and
-		// the repair prescription (round-19: the earlier construction
-		// let the trailer-versus-state check mask this arm).
+		// the repair prescription; a bed that failed the
+		// trailer-versus-state check would mask this arm.
 		sha := strings.Repeat("e", 40)
 		if _, err := AppendCycle(ledger, 2, "no-progress", sha, "score=0", ""); err != nil {
 			t.Fatal(err)
@@ -515,7 +515,7 @@ func TestRecoveryPredicateCycleArms(t *testing.T) {
 	})
 	t.Run("one-cycle-behind-heals-then-rejects-movement", func(t *testing.T) {
 		repo, state, ledger := anchoredMission(t)
-		// POSITIVE ARM (round-19): anchor at cycle 1, state and the
+		// POSITIVE ARM: anchor at cycle 1, state and the
 		// exactly-stamped ledger at cycle 2 — the lawful one-block lag
 		// must HEAL. Rejecting lawful cycle lag fails here.
 		sha := strings.Repeat("e", 40)
@@ -555,7 +555,7 @@ func TestRecoveryPredicateCycleArms(t *testing.T) {
 	})
 }
 
-// Every malformed-tip shape over an OLDER VALID anchor parks (round-8):
+// Every malformed-tip shape over an OLDER VALID anchor parks:
 // these pin tip-only lookup (no scan-past) and each required trailer
 // independently — the parent commit below the forged tip is a complete,
 // valid anchor that scan-past behavior would wrongly accept.
@@ -614,7 +614,7 @@ func TestReconcileParksMalformedAnchorTips(t *testing.T) {
 
 // A tip whose trailers are COMPLETE and correct but whose tree lacks the
 // declared blob parks — the committed-blob check exercised alone
-// (round-8: the earlier forged-tip bed died at the path mismatch first).
+// (a bed with a wrong declared path would die at the path mismatch first).
 func TestReconcileParksAnchorTipWithoutBlob(t *testing.T) {
 	repo, state, ledger := anchoredMission(t)
 	advanceStateOneStep(t, state)

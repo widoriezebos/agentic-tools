@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Code critique finding 9: the SHIPPED role files' waiver decisions are
+// The SHIPPED role files' waiver decisions are
 // golden-pinned against the live selector — a role-policy typo cannot
 // silently change a live decision. Every shipped role waives devin's
 // two declared residuals; devin's undeclared network fails closed; an

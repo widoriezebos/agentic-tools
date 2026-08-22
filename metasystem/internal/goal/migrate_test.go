@@ -159,7 +159,7 @@ func TestMigrateRefusalsComeBeforeAnyMutation(t *testing.T) {
 	if res, err := Migrate(verbReq(a, "01J5XM0000000000000000M030", "mac-a"), good); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("migrate: %+v %v", res, err)
 	}
-	// The confusion refuses BEFORE any journal write (R2-7): a
+	// The confusion refuses BEFORE any journal write: a
 	// doomed rerun never mints an entry.
 	bare := MigrateOptions{SourceDigest: digest, Identity: good.Identity, SyncMode: SyncRemote}
 	_, err = Migrate(verbReq(a, "01J5XM0000000000000000M040", "mac-a"), bare)

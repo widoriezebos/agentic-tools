@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// The cross-platform enumeration contract (plans/linux-portability.md test
-// strategy): untagged, so darwin and linux are held to one standard.
+// The cross-platform enumeration contract:
+// untagged, so darwin and linux are held to one standard.
 
 func TestAllPidsContainsSelf(t *testing.T) {
 	pids, err := AllPids()

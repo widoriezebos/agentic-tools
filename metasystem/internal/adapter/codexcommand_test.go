@@ -6,7 +6,8 @@ import (
 	"testing"
 )
 
-// Moved from claudecommand_test.go (placement audit, item 17).
+// The envelope-to-flag derivation from both sources: a job record's
+// requested envelope and a bare envelope file.
 func TestCodexPermissionSettings(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "job.json")

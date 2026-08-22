@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The critique chain helpers, driven directly (Phase 6): the lineage walk's
+// The critique chain helpers, driven directly: the lineage walk's
 // verdicts and the highest-round member selection.
 
 func chainState(records map[string]map[string]any) critiqueState {

@@ -26,7 +26,7 @@ func events(kept []Frame) []string {
 	return out
 }
 
-// SLC-R10-001, verified by round 11: a bound unreleased custody keeps
+// SLC-R10-001: a bound unreleased custody keeps
 // its claim's FULL skeleton — including the terminal — even when the
 // claim closed clean, so re-reducing the compacted file shows the
 // claim CLOSED and the custody BOUND. No phantom open claim, no slot.

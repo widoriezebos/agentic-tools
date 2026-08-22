@@ -11,10 +11,9 @@ import (
 	"time"
 )
 
-// The watcher's job-file classification engine (review
-// script-orchestration-06 = script-misc-3, relocated from
-// watch-background-jobs.sh; the REPORT family per the recorded
-// r3/KS-R3-009 ruling). Every report line and the seen-state file format
+// The watcher's job-file classification engine (relocated from
+// watch-background-jobs.sh; it belongs to the REPORT
+// family). Every report line and the seen-state file format
 // are wire: humans and fixtures grep them. The census half of the watcher
 // already runs through `supervise watcher-pass`; this is the other half.
 

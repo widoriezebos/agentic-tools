@@ -128,7 +128,7 @@ func TestRootJobIDCycle(t *testing.T) {
 	}
 }
 
-// The snapshot path (D64): usage reads the attempt snapshot when given
+// The snapshot path: usage reads the attempt snapshot when given
 // one, the snapshot survives export mutation, and oversize propagates.
 func TestDevinUsageThroughSnapshot(t *testing.T) {
 	dir := t.TempDir()

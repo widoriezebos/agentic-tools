@@ -106,7 +106,7 @@ func TestClaimRefusalsAreNamed(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open eager: %+v %v", res, err)
 	}
-	// Wire the edge by hand for the fixture (edit lands next slice):
+	// Wire the edge by hand for the fixture (no verb writes this edge):
 	// publish an updated file carrying BlockedBy.
 	t2, err := loadTree(a, res.Tip)
 	if err != nil {
@@ -341,8 +341,8 @@ func TestEditAcceptsAMultiKilobyteIntent(t *testing.T) {
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000F4", "mac-a"), "verbose", "Short.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	// Prose caps are REMOVED (D113/D114): witnessed by a
-	// multi-kilobyte intent, not a 500-byte one (BGS-14).
+	// Prose caps are REMOVED: witnessed by a
+	// multi-kilobyte intent, not a 500-byte one.
 	big := strings.Repeat("A thorough paragraph of intent. ", 150) // ~4.8KB
 	res, err := Edit(verbReq(a, "01J5X0000000000000000000F5", "mac-a"), "verbose", EditFields{Intent: &big})
 	if err != nil || res.Outcome != OutcomeConfirmed {
@@ -645,7 +645,7 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 	}
 	// The displaced pair's next History-appending publication
 	// piggybacks ONE automatic root-record ack line answering the
-	// displacement (R9-06) — both goals on the one line.
+	// displacement — both goals on the one line.
 	res, err = Open(verbReq(a, "01J5X00000000000000000C218", "mac-a"), "casc-after", "Displaced pair keeps working.", "main", "Go.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the displaced pair's next publication: %+v %v", res, err)

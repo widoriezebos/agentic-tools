@@ -14,7 +14,7 @@ import (
 // goes terminal while the orphan keeps running, and no later pass
 // ever winds it down. certain=false means the scan could not prove
 // absence — an unenumerable table, or a signalable-but-unreadable
-// process inside the recorded group (R2-9: indeterminacy never
+// process inside the recorded group (indeterminacy never
 // acts). The indeterminacy scope is the GROUP, not the whole
 // table: same-uid unreadable processes are chronic on macOS
 // (zombies, restricted daemons), group membership stays readable

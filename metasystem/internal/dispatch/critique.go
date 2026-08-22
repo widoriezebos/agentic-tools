@@ -43,7 +43,7 @@ func loadCritiqueState(repoRoot string) critiqueState {
 }
 
 // chainRoot resolves a job's lineage root within the loaded table via the
-// ONE lineage walker (review dispatch-supervise-7).
+// ONE lineage walker.
 func (s critiqueState) chainRoot(job string) string {
 	return lineageRoot(func(id string) (map[string]any, bool) {
 		record, present := s.records[id]

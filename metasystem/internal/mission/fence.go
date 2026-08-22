@@ -114,9 +114,9 @@ func contractValuesFromBytes(data []byte) (map[string]string, error) {
 		if !strings.HasPrefix(key, "cap.min.") {
 			continue
 		}
-		// Signed-exposure policy has ONE home (review mission-contract-5):
-		// the seal-time check and this runtime fence check can no longer
-		// disagree about what a canonical cap key is.
+		// Signed-exposure policy has ONE home: the seal-time check and
+		// this runtime fence check must never disagree about what a
+		// canonical cap key is.
 		if err := contract.ValidatePairCap(key, value); err != nil {
 			return nil, err
 		}
@@ -262,7 +262,7 @@ func atoiOr(s string) int64 {
 // recovery channel for a tripped fence, so a failed ask write must ride
 // the refusal loudly: a mission parked on a fence whose ask never landed
 // is otherwise indistinguishable from one waiting on a human, and waits
-// forever (review mission-contract-6).
+// forever.
 func fenceRefusal(what string, found []string, ask string, askErr error) error {
 	if askErr != nil {
 		return fmt.Errorf("mission fence refused %s (%s); FAILED to write batched ask: %v", what, strings.Join(found, ", "), askErr)
@@ -403,10 +403,9 @@ func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
 
 // ReleaseJob deletes a job's fence reservation, for dispatches that died
 // during setup without ever starting a process. A husk's reservation
-// otherwise counts against fence.jobs forever — rep 1 of cohort
-// bm-1-20260813t132947z held 8 reservations for 4 jobs that ever ran, so
-// half the signed job budget was consumed by refusals and the prompt's
-// headroom lied to the host every turn. Releasing under the fence lock
+// otherwise counts against fence.jobs forever — the signed job budget is
+// consumed by refusals instead of work, and the prompt's headroom lies
+// to the host every turn. Releasing under the fence lock
 // also closes the reserve-before-setup window in which a doomed dispatch
 // holds a concurrency slot it will never use.
 func ReleaseJob(repo, mission, job string) error {
@@ -565,7 +564,7 @@ func Refuse(repo, mission, reason string) (string, error) {
 }
 
 // The provenance a terminal job's aggregate entry carries
-// (plans/patience-orphan-usage.md O3): the adapter reported the usage, the
+// (plans/patience-orphan-usage.md): the adapter reported the usage, the
 // aggregator derived it from a provably dead round's event stream, the group
 // is not yet provably dead, or the usage is unrecoverable by proof.
 const (
@@ -785,11 +784,11 @@ func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]a
 	}
 	rel := path.Join("artifacts", "agents", rootID, "rounds", strconv.FormatInt(round, 10), "events.jsonl")
 	eventsPath := filepath.Join(repo, filepath.FromSlash(rel))
-	// Recovery is DECLARED per provider (agnosticism audit classes 6+7)
-	// and dispatches BEFORE any provider-specific evidence check (code
-	// critique finding 2): each recoverer owns its evidence, so an
-	// unsupported provider reports its declared reason instead of a
-	// missing-file guess, and the published source is the OUTCOME's.
+	// Recovery is DECLARED per provider and dispatches BEFORE any
+	// provider-specific evidence check: each recoverer owns its
+	// evidence, so an unsupported provider reports its declared reason
+	// instead of a missing-file guess, and the published source is the
+	// OUTCOME's.
 	outcome := usage.Recover(provider, usage.RecoveryContext{
 		Repo: repo, RoundDir: filepath.Dir(eventsPath), EventsPath: eventsPath,
 	})
@@ -799,10 +798,10 @@ func deriveRoundUsage(repo, jobsDir, jobID, provider string, record map[string]a
 	if _, err := os.Stat(eventsPath); err != nil {
 		return usageUnavailable, nil, fmt.Sprintf("event stream is unreadable: %s", rel)
 	}
-	// Recovered fields ride the SAME aggregator as reported usage (code
-	// critique finding 3): a cost-only or provider-unit-only recovery
-	// counts, and an all-null recovery normalizes to unavailability —
-	// the measured answer IS the contract (r3-6).
+	// Recovered fields ride the SAME aggregator as reported usage: a
+	// cost-only or provider-unit-only recovery counts, and an all-null
+	// recovery normalizes to unavailability — the measured answer IS
+	// the contract.
 	if !addReportedUsage(units, provider, outcome.Fields) {
 		return usageUnavailable, nil, fmt.Sprintf("event stream carries no usage block: %s", rel)
 	}

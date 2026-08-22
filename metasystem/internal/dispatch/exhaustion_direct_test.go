@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// CritiqueExhaustionAction's guard paths and the small value helpers
-// (Phase 6).
+// CritiqueExhaustionAction's guard paths and the small value helpers.
 
 func TestCritiqueExhaustionGuards(t *testing.T) {
 	root := t.TempDir()
@@ -69,7 +68,7 @@ func TestNumStringSpellings(t *testing.T) {
 	}
 }
 
-// ValidateMission's guard ladder, up to the liveness probe (Phase 6).
+// ValidateMission's guard ladder, up to the liveness probe.
 func TestValidateMissionGuards(t *testing.T) {
 	root := t.TempDir()
 	leaseDir := filepath.Join(root, "artifacts", "agents", "missions", "m-1")

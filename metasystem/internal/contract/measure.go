@@ -374,7 +374,7 @@ func measureCommand(commandRoot, command string, capMinutes int) (map[string]str
 	var output strings.Builder
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	// Bounded with group-kill (B4), for the same reason as the contract
+	// Bounded with group-kill, for the same reason as the contract
 	// gate command: a context deadline alone leaves grandchildren holding
 	// the output pipe past the ceiling.
 	runErr := boundedexec.Run(cmd,
@@ -401,7 +401,7 @@ func measureCommand(commandRoot, command string, capMinutes int) (map[string]str
 }
 
 // MeasureCandidate runs the declared gate against an EXPLICIT commit —
-// the mission's active candidate branch (issue #4, ledgerSemantics 3) —
+// the mission's active candidate branch —
 // through the same materialization, cap ceiling, and declared-metric
 // validation as the gate of record. It returns the reported metrics
 // alone: classification, guards, and the best fold belong to the caller's

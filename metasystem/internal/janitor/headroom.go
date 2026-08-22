@@ -9,13 +9,10 @@ import (
 	"syscall"
 )
 
-// The disk-hygiene headroom guard (backlog item 19, implementation-
-// first per D81): the ENOSPC incident that motivated the goal was a
-// full disk masquerading as a code failure. This guard makes a full
-// disk NAME ITSELF, per physical filesystem, before the suite or a
-// provision path assumes space. It is the first shipped slice; the
-// class registry, sweep, and journal follow behind their fixtures
-// (plans/disk-hygiene-design.md, plans/dh-critique-r1..r3.md).
+// The disk-hygiene headroom guard: an exhausted disk otherwise
+// masquerades as a code failure. This guard makes a full disk NAME
+// ITSELF, per physical filesystem, before the suite or a provision
+// path assumes space.
 
 // FilesystemHeadroom is the free-space fact for one physical
 // filesystem, named by the device id its representative path sits
@@ -52,8 +49,8 @@ func (f FilesystemHeadroom) Deficit() int64 {
 // container report DISTINCT device ids while sharing one free-space
 // pool (verified on this host: Data/VM/Preboot each report the
 // container's free bytes), so any aggregate or pressure decision
-// needs a real pool identity this measurement does not provide
-// (plans/opus-window-review-dh.md finding 3). A path whose
+// needs a real pool identity this measurement does not provide.
+// A path whose
 // filesystem cannot be established is an error, never a silent
 // skip: an unmeasurable filesystem is a refusal, not a pass.
 func Headroom(paths []string, floorBytes int64) ([]FilesystemHeadroom, error) {
@@ -88,18 +85,18 @@ func statFilesystem(path string) (int64, uint64, error) {
 	// opened once, and both the device id (Fstat) and the free bytes
 	// (Fstatfs) come from that one open file — a rename, mount, or
 	// symlink swap between two path-based calls can no longer pair one
-	// filesystem's identity with another's capacity (review finding 2).
+	// filesystem's identity with another's capacity.
 	// Only ENOENT ascends to the parent (a not-yet-created target
 	// still has a filesystem to measure); EACCES, ELOOP, ENOTDIR, and
 	// every other failure REFUSES — the requested path could not be
 	// established, and converting that into an answer about some
-	// ancestor reported success for a measurement that never happened
-	// (review finding 1).
-	// The walk uses the RAW path: filepath.Clean before opening erased
+	// ancestor would report success for a measurement that never
+	// happened.
+	// The walk uses the RAW path: filepath.Clean before opening erases
 	// components that should refuse — 'file/../.' cleans to '.' and
-	// measured the working directory while the real path is ENOTDIR
-	// (verification round S3). The open is O_NONBLOCK so a FIFO without
-	// a writer cannot hang the guard (M5); directories and regular
+	// would measure the working directory while the real path is
+	// ENOTDIR. The open is O_NONBLOCK so a FIFO without
+	// a writer cannot hang the guard; directories and regular
 	// files are unaffected.
 	current := path
 	for {
@@ -121,8 +118,7 @@ func statFilesystem(path string) (int64, uint64, error) {
 				return 0, 0, fmt.Errorf("stat sys is not a Stat_t for %s", current)
 			}
 			// Checked unsigned multiply: a pathological Bavail*Bsize
-			// saturates at MaxInt64 instead of wrapping negative
-			// (review finding 5).
+			// saturates at MaxInt64 instead of wrapping negative.
 			bavail := uint64(fs.Bavail)
 			bsize := uint64(fs.Bsize)
 			var free int64
@@ -145,9 +141,9 @@ func statFilesystem(path string) (int64, uint64, error) {
 }
 
 // rawParent strips the last path component WITHOUT cleaning: filepath.Dir
-// internally Cleans, which let 'absent/../x' ascend into '.' after the
-// ENOENT — measuring a directory the requested path never named
-// (verification round 2, finding 3). A remaining '.' or '..' component
+// internally Cleans, which would let 'absent/../x' ascend into '.' after
+// the ENOENT — measuring a directory the requested path never named.
+// A remaining '.' or '..' component
 // at the tail is refused outright: ascending across dot components from
 // a missing entry has no sound lexical meaning for a guard.
 func rawParent(path string) (string, bool) {

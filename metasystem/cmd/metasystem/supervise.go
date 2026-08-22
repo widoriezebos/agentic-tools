@@ -15,9 +15,9 @@ import (
 )
 
 // runSuperviseDeriveCeiling relays `supervise derive-ceiling`: the
-// watcher-ceiling derivation lives in supervise.DeriveCeiling
-// (script-orchestration-04). --max-cap spelling is validated here (exit 2,
-// the arming script's historical usage refusal); source refusals exit 1.
+// watcher-ceiling derivation lives in supervise.DeriveCeiling.
+// --max-cap spelling is validated here (exit 2, the usage refusal the
+// arming script relies on); source refusals exit 1.
 func runSuperviseDeriveCeiling(args []string) int {
 	flags := flag.NewFlagSet("supervise derive-ceiling", flag.ContinueOnError)
 	conf := flags.String("conf", "", "path to metasystem.conf")
@@ -48,7 +48,7 @@ func runSuperviseDeriveCeiling(args []string) int {
 }
 
 // runSuperviseVerifyArmed relays `supervise verify-armed`: one arming
-// attempt's verdict from supervise.ArmedNow (script-orchestration-10).
+// attempt's verdict from supervise.ArmedNow.
 // Exit 0 armed, 1 not yet; the arming script owns the retry loop and the
 // timeout message.
 func runSuperviseVerifyArmed(args []string) int {
@@ -73,7 +73,7 @@ func runSuperviseVerifyArmed(args []string) int {
 
 // runCensusFingerprint prints the supervision fingerprint for --repo, using
 // --root as the metasystem root (defaults to the binary's checkout). It lives
-// here because it registers under the supervise family (cli-10).
+// here because it registers under the supervise family.
 func runCensusFingerprint(args []string) int {
 	flags := flag.NewFlagSet("supervise fingerprint", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root to fingerprint")
@@ -88,8 +88,8 @@ func runCensusFingerprint(args []string) int {
 	metasystemRoot := *root
 	if metasystemRoot == "" {
 		if exe, err := os.Executable(); err == nil {
-			// <root>/bin/metasystem is two deep: Dir^2, not Dir^3 (cli-4;
-			// the third Dir pointed the default at the checkout's parent).
+			// <root>/bin/metasystem is two deep: Dir^2, not Dir^3 — a
+			// third Dir points the default at the checkout's parent.
 			metasystemRoot = filepath.Dir(filepath.Dir(exe))
 		}
 	}

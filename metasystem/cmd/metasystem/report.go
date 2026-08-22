@@ -23,7 +23,7 @@ func runReportStopBlock(args []string) int {
 }
 
 // runReportRunningWork relays `report running-work`: the turn-end active
-// clause from report.RunningWorkClause (script-orchestration-05) — live
+// clause from report.RunningWorkClause — live
 // jobs, missions running elsewhere, gate runs; nothing prints when idle.
 func runReportRunningWork(args []string) int {
 	flags := flag.NewFlagSet("report running-work", flag.ContinueOnError)
@@ -42,8 +42,8 @@ func runReportRunningWork(args []string) int {
 }
 
 // runReportScanJobs relays `report scan-jobs`: one watcher classification
-// pass from report.ScanJobs (script-orchestration-06; the report family per
-// r3/KS-R3-009). Threshold misuse is a usage error; anything else exits 1.
+// pass from report.ScanJobs. Threshold misuse is a usage error;
+// anything else exits 1.
 func runReportScanJobs(args []string) int {
 	flags := flag.NewFlagSet("report scan-jobs", flag.ContinueOnError)
 	var dirs []string

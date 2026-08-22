@@ -147,7 +147,7 @@ func TestSelectRestrictiveFieldRefusedThenWaived(t *testing.T) {
 	e.writeEnvelope(t, map[string]any{"network": "deny"}) // deny != allow -> restrictive
 
 	// Codex declares NO network residual: fail closed, and no waiver
-	// can change that (agnosticism audit class 9).
+	// can change that.
 	e.writeRequirements(t, map[string]any{"required": []any{}, "optional": map[string]any{}, "waivers": map[string]any{}})
 	if err := Select(e.root, e.runtime, e.role, e.identity("abc123"), 30, e.envelopePath, e.outputPath); err == nil ||
 		!strings.Contains(err.Error(), "declares no residual") {

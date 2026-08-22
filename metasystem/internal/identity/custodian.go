@@ -19,7 +19,7 @@ import (
 // census uses — but kernel death always vetoes it. Unknown (unreadable) never
 // authorizes anything. The fixture is fenced at ARMING: supervise
 // blocking-reserved-cap refuses to arm a fleet when the env var is set in a
-// checkout whose metasystem.runtimes is not fake (review lease-census-7), so
+// checkout whose metasystem.runtimes is not fake, so
 // a leaked fixture cannot ride an armed component into production verdicts.
 func Custodian(pid, start int64, tag string, probe FixtureProbe) Liveness {
 	exact, state, err := (KernelProber{}).Probe(pid)
@@ -38,13 +38,13 @@ func Custodian(pid, start int64, tag string, probe FixtureProbe) Liveness {
 	if err != nil || state == Unknown {
 		return Unknown
 	}
-	// The argv tag is consulted BEFORE start-time equality (issue #1): a
+	// The argv tag is consulted BEFORE start-time equality: a
 	// process still bearing the job's tag at the recorded pid is the
 	// strongest liveness evidence available, and on a time-synced guest
 	// the btime-derived second can drift while the tag cannot. The
 	// OVERRIDE demands an EXACT argv element match — substring matching
 	// would let a recycled pid running job foo-bar false-match job foo's
-	// stale record (round-1 finding 2). A tag MISS still requires the
+	// stale record. A tag MISS still requires the
 	// identity check below, so order does not weaken the negative.
 	tagHit := false
 	if tag != "" && exact.ArgvKnown {
@@ -62,13 +62,12 @@ func Custodian(pid, start int64, tag string, probe FixtureProbe) Liveness {
 		return Dead
 	}
 	if tag != "" {
-		// The B1 verdict-table row 5 (go-production-grade, human-approved
-		// 2026-08-12): a tag is expected but the argv was UNREADABLE —
+		// A tag is expected but the argv was UNREADABLE —
 		// absence of evidence is Unknown, which authorizes nothing. With
-		// identity proven above, the tag check keeps its ORIGINAL
-		// substring semantics (round-2 F-2): a composite argv element
-		// like --instance-tag=foo stays Alive exactly as before the
-		// override existed.
+		// identity proven above, the tag check keeps
+		// substring semantics: a composite argv element
+		// like --instance-tag=foo stays Alive even though the exact-match
+		// override above missed it.
 		if !exact.ArgvKnown {
 			return Unknown
 		}

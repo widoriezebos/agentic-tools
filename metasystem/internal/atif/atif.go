@@ -1,5 +1,5 @@
-// Package atif owns bounded access to exported ATIF transcripts (the
-// delegate-delivery design, D64): one ceiling, one snapshot per attempt,
+// Package atif owns bounded access to exported ATIF transcripts:
+// one ceiling, one snapshot per attempt,
 // and step iteration — a LEAF, imported by adapter and usage, importing
 // neither. Transcripts are delegate-controlled input; every consumer that
 // reads one unbounded is a wedge surface, and consumers that read the

@@ -47,7 +47,7 @@ func TestAuthIdentityFixtureFile(t *testing.T) {
 		t.Fatal("a non-existent pid must error")
 	}
 	// The authorization REFUSES construction outside a fake checkout —
-	// the leaked-fixture fence at every entry point (agnosticism B1).
+	// the leaked-fixture fence at every entry point.
 	os.WriteFile(filepath.Join(dir, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644)
 	if _, err := fixtureauth.New(dir); err == nil {
 		t.Fatal("a leaked fixture in a non-fake checkout was authorized")
@@ -78,7 +78,7 @@ func TestAliveNonexistentPid(t *testing.T) {
 	}
 }
 
-// TestAlivePairSurvivesBtimeDrift is the issue #1 sweep-3 / KI-37 regression:
+// TestAlivePairSurvivesBtimeDrift:
 // on a time-synced guest the btime-derived start SECOND of a live process
 // differs between two reads, so seconds-equality false-deaths it. The
 // clock-step-immune pair (StartTicks+BootID) does not move, so AlivePair with

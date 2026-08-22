@@ -53,7 +53,7 @@ type AgentAncestor struct {
 // delegate or wrapper runs under. A fake-agent ancestor may be pinned by
 // environment for the fake runtime.
 func FindAncestorProduction(metasystemRoot string, pid int64, runtime string) (AgentAncestor, error) {
-	// The AncestorProbe authority (agnosticism B1): the pin is honored
+	// The AncestorProbe authority: the pin is honored
 	// only in a fixture-mode checkout AND for the fake runtime — the
 	// runtime guard stays, root authorization is necessary not
 	// sufficient.

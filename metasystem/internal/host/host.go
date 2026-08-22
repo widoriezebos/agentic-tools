@@ -15,7 +15,7 @@ import (
 )
 
 // canonicalJSON renders a value in this family's wire dialect — the
-// unescaped canon — through the wire-document owner (Phase 5.3); the corpus
+// unescaped canon — through the wire-document owner; the corpus
 // equivalence test proves the bytes identical to the encoder this replaces.
 func canonicalJSON(value any) ([]byte, error) {
 	return wiredoc.RenderValue(value)
@@ -29,8 +29,8 @@ func atomicWriteJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	// Through the durable-write owner (go-production-grade B5); the
-	// empty anchor preserves this writer's previous behavior exactly
+	// Through the durable-write owner; the
+	// empty anchor keeps this writer's non-fsync behavior
 	// until its caller is converted to the two-outcome contract.
 	_, writeErr := atomicfile.WriteText(path, string(encoded), "")
 	return writeErr

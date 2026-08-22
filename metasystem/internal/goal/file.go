@@ -1,7 +1,7 @@
 package goal
 
 // The per-goal file format of the multi-machine ledger
-// (plans/goals/<id>.md, design: plans/backlog-git-sync-design.md).
+// (plans/goals/<id>.md).
 // One goal per file; every verb write appends a History line carrying
 // its operation id and bumps Revision by one; a trailing Integrity
 // line pins the bytes above it. Parsing is strict: the validator and

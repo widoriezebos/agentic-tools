@@ -16,7 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
-// procfsMounts is the mount table the B2 arming refusal reads; a test
+// procfsMounts is the mount table the restricted-procfs arming refusal reads; a test
 // points it at a fixture to prove the refusal wiring end to end.
 var procfsMounts = "/proc/self/mounts"
 
@@ -48,7 +48,7 @@ func runSuperviseOwnerLoop(args []string) int {
 	}
 	// Restricted procfs breaks the three-way liveness guarantee (a live
 	// foreign process reads as ENOENT-dead), so supervision refuses to arm
-	// under it (go-production-grade B2). Configuration-based, never
+	// under it. Configuration-based, never
 	// privilege-based: root's hidepid exemption does not relax this.
 	if value, restricted := identity.RestrictedProcfsAt(procfsMounts); restricted {
 		fmt.Fprintf(os.Stderr, "supervise owner: refusing to arm: /proc is mounted hidepid=%s, which makes another user's live process indistinguishable from a dead one and breaks identity's three-way liveness guarantee\n", value)
@@ -151,7 +151,7 @@ func runSuperviseOwnerLoop(args []string) int {
 	// TERM/INT take the ExitOnSignal path (D-1): latch the shutdown intent,
 	// tear the held set down BY IDENTITY, append the terminal. The check
 	// lives in the injected Sleep so it runs between cycles, never
-	// concurrently with one — an unhandled TERM used to kill the owner with
+	// concurrently with one — an unhandled TERM would kill the owner with
 	// the default action and leak its detached components forever.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// The mains-directory record contract has ONE home (review lease-census-4):
+// The mains-directory record contract has ONE home:
 // which files are announcements, which keys an announcement carries, and
 // the identity grammars. census and lease both consume these; the census
 // once went CENSUS-FAILED in production because its private optional-key
@@ -33,7 +33,7 @@ var (
 	}
 	AnnouncementOptionalKeys = map[string]bool{
 		"mainId": true, "commandHash": true, "ownerLineage": true,
-		// The clock-step-immune identity pair (issue #1): optional so
+		// The clock-step-immune identity pair: optional so
 		// legacy announcements stay valid; absent on darwin (omitempty).
 		"pidStartTicks": true, "bootId": true,
 	}

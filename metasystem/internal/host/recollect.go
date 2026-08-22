@@ -7,10 +7,10 @@ import (
 
 // RecollectParams is the runtime-neutral input to a delivery
 // recollection: re-collect a host turn's delivery past the candidates
-// the runner already rejected (agnosticism audit class 5 — the
+// the runner already rejected. The
 // session-fault gate, the one-resume limit, validation, and the
 // original-error fallback all stay in missionrunner; only the
-// runtime-specific recollection lives behind this table).
+// runtime-specific recollection lives behind this table.
 type RecollectParams struct {
 	Root           string
 	TurnRecordPath string

@@ -17,9 +17,9 @@ import (
 // owner-identity publication, component-identity reads, and detached launch.
 
 // runSuperviseBlockingReservedCap relays `supervise blocking-reserved-cap`:
-// the scan/rank decision lives in supervise.BlockingReservedCap (review
-// cli-1), and this verb prints the highest blocker as job|cap or the
-// refusal by name.
+// the scan/rank decision lives in supervise.BlockingReservedCap, and
+// this verb prints the highest blocker as job|cap or the refusal by
+// name.
 func runSuperviseBlockingReservedCap(args []string) int {
 	flags := flag.NewFlagSet("supervise blocking-reserved-cap", flag.ContinueOnError)
 	agents := flags.String("agents", "", "artifacts/agents directory")
@@ -83,7 +83,7 @@ func runSuperviseComponentIdentity(args []string) int {
 	}
 	doc, err := readJSONObject(*state)
 	if err != nil {
-		// Named on stderr (cli-8): this runs in detached supervision where
+		// Named on stderr: this runs in detached supervision where
 		// stderr is the only diagnostic channel. An absent component or
 		// field below stays silent by design — the callers probe with
 		// || true and an absent entry is an ordinary outcome, not a fault.
@@ -161,8 +161,8 @@ func runSuperviseLaunchDetached(args []string) int {
 }
 
 // runSuperviseWatchdogReport relays `supervise watchdog-report`: the health
-// judgment lives in supervise.WatchdogReport (review cli-2), and this verb
-// prints its lines — nothing when everything is healthy.
+// judgment lives in supervise.WatchdogReport, and this verb prints its
+// lines — nothing when everything is healthy.
 func runSuperviseWatchdogReport(args []string) int {
 	flags := flag.NewFlagSet("supervise watchdog-report", flag.ContinueOnError)
 	repo := flags.String("repo", "", "checkout root")

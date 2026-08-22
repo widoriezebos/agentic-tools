@@ -131,8 +131,8 @@ func workingMode(promptPath string) (string, error) {
 	return "implement", nil
 }
 
-// gitHead is the commit a design critique reviewed: HEAD of the job's
-// workspace.
+// gitHead is the commit the design-critic role reports as
+// reviewedCommit: HEAD of the job's workspace.
 func gitHead(workspace string) (string, error) {
 	output, err := exec.Command("git", "-C", workspace, "rev-parse", "HEAD").Output()
 	if err != nil {

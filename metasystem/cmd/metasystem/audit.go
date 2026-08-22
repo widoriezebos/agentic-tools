@@ -10,7 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 )
 
-// The audit family holds the kill-shell program's mechanical fences: pure
+// The audit family holds mechanical fences: pure
 // judges the gate bootstrap consults between steps.
 
 func runAuditCoverageRatchet(args []string) int {

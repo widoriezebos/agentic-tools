@@ -13,7 +13,7 @@ const contractFence = "```"
 // baseContract is a complete, valid mission contract over the fixture repo's
 // frozen instruments.
 // sealableContract is baseContract with the no-gain budget raised to the
-// cycle fence: the binary-gate short-fuse refusal (issue #4) makes the
+// cycle fence: the binary-gate short-fuse refusal makes the
 // original combination unsignable by design.
 func sealableContract() string {
 	return strings.Replace(baseContract(), "ledger.no-gain-budget=2", "ledger.no-gain-budget=3", 1)
@@ -366,10 +366,10 @@ func removeLine(text, line string) string {
 	return strings.Join(kept, "\n")
 }
 
-// Patience-floor entries (plans/patience-satellite-4.md): validated in the
+// Patience-floor entries (docs/patience.md): validated in the
 // canonical five-part shape, sealed beside the cap entries through the same
 // expectedSeal enumeration preflight recomputes, so a freshly sealed
-// patience-bearing contract passes its own preflight (r1/P4-015) and a
+// patience-bearing contract passes its own preflight and a
 // pre-feature contract's seal is unchanged by the feature's existence.
 func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
 	_, contractPath := newContractRepo(t)
@@ -435,7 +435,7 @@ func TestContractPatienceEntriesRejected(t *testing.T) {
 	}
 }
 
-// The hash-only surface (script-validate-1/D34), pinned against an
+// The hash-only surface, pinned against an
 // independently constructed canonical image: approval lines dropped,
 // per-line trailing whitespace stripped, trailing blanks trimmed.
 func TestCanonicalContractHash(t *testing.T) {
@@ -447,11 +447,9 @@ func TestCanonicalContractHash(t *testing.T) {
 	}
 }
 
-// The per-key grammar matrix, ported from mission-fixtures.sh's mutation
-// table (script-fixtures-003/D38): every key of the base contract must
-// reject when MISSING and when MALFORMED with the shell table's exact bad
-// values. The shell drove ~52 assert-mission subprocesses per suite run to
-// prove what this table proves in-process under the gate.
+// The per-key grammar matrix: every key of the base contract must
+// reject when MISSING and when MALFORMED with exact bad
+// values, proved in-process under the gate.
 func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
 	badValues := map[string]string{
 		"gate.command":           " value ",

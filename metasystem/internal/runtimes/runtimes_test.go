@@ -198,7 +198,7 @@ func TestDeclaredSurfaces(t *testing.T) {
 		}
 	}
 	// Today's exact full population is a CURRENT-declaration fact the
-	// B2 installer relies on; pinned here with that provenance.
+	// installer relies on; pinned here so drift refuses by name.
 	if len(roots) != 3 || roots[0] != ".agents" || roots[1] != ".claude" || roots[2] != ".devin" {
 		t.Fatalf("collision-root population drifted: %v", roots)
 	}

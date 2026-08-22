@@ -6,10 +6,9 @@ import (
 	"testing"
 )
 
-// The process-command read behind the mission-lease identity proof
-// (go-production-grade Phase 2½ Unit A, obligations A-1 and A-6). Written
-// against the pre-move `ps` implementation and kept unchanged across the
-// move to the identity owner, so the contract is what is verified, not the
+// The process-command read behind the mission-lease identity proof.
+// These tests hold for a `ps` subprocess and for the identity owner's
+// native read alike, so the contract is what is verified, not the
 // mechanism.
 
 func TestProcessCommandReadsOwnCommandLine(t *testing.T) {

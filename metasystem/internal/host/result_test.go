@@ -45,7 +45,7 @@ func TestFinishTurnTaxonomy(t *testing.T) {
 	}
 }
 
-// The accepted-reply path (D64 phase 2): a file-delivered host result is
+// The accepted-reply path: a file-delivered host result is
 // a reply even when raw stdout is empty.
 func TestFinishTurnAcceptedReplySatisfiesRequireReply(t *testing.T) {
 	dir := t.TempDir()

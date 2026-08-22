@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The Phase 5.1 golden corpus (plans/typed-documents-design.md, TD-2): each
+// The job-record golden corpus: each
 // case drives the CURRENT writer and commits the exact bytes it produced.
 // Run with -capture-corpus to (re)record; without the flag the test DIFFS
 // the writer's output against the committed corpus, so any conversion that

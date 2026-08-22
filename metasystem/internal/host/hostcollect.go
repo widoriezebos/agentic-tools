@@ -15,7 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
-// The host-turn delivery walk (D64 phase 2). Turn-shaped, not
+// The host-turn delivery walk. Turn-shaped, not
 // job-shaped: the pre-envelope check is everything decidable before
 // the result envelope exists — the orchestrator schema plus turnId,
 // missionId, and cycle equality against the turn record. Session

@@ -24,7 +24,7 @@ type KernelProber struct{}
 // userHZ is the userspace ABI clock-tick constant. It is 100 on all
 // mainstream Linux architectures and independent of the kernel's internal
 // CONFIG_HZ; there is no cgo-free sysconf, so it is named here rather than
-// probed (plans/linux-portability.md).
+// probed.
 const userHZ = 100
 
 func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
@@ -34,7 +34,8 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
 		// ENOENT on the stat read is the definitive negative — with the
-		// B2 arming refusal guaranteeing an unrestricted procfs, a
+		// restricted-procfs arming refusal guaranteeing an unrestricted
+		// procfs, a
 		// missing entry means no such process. Anything else (EACCES,
 		// EPERM, transient errors) is Unknown, never Dead.
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
@@ -59,7 +60,7 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 	// of is still alive, and the KILL decision separately demands a
 	// readable, claim-consistent argv (REG-6). An empty cmdline (kernel
 	// threads, zombies) is an argv read failure, not a liveness failure —
-	// ArgvKnown stays false (B1).
+	// ArgvKnown stays false.
 	if cmdline, readErr := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); readErr == nil && len(cmdline) > 0 {
 		parts := bytes.Split(bytes.TrimRight(cmdline, "\x00"), []byte{0})
 		argv := make([]string, 0, len(parts))
@@ -78,8 +79,8 @@ func (KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 // 4 (ppid) from /proc/<pid>/stat content. Field 2 is the executable name in
 // parentheses and MAY ITSELF CONTAIN SPACES AND CLOSING PARENTHESES, so the
 // parse locates the LAST ')' and splits the remainder: remainder[0] is
-// field 3, remainder[1] is field 4 (ppid), remainder[19] is field 22
-// (plans/linux-portability.md — the parsing trap).
+// field 3, remainder[1] is field 4 (ppid), remainder[19] is field 22.
+// Splitting on whitespace from the front would misparse such names.
 func parseProcStat(stat string) (startTicks int64, ppid int64, err error) {
 	closing := strings.LastIndexByte(stat, ')')
 	if closing < 0 {
@@ -104,7 +105,7 @@ func parseProcStat(stat string) (startTicks int64, ppid int64, err error) {
 // The anchor is whole-second, so Linux start times carry a constant
 // per-machine sub-second offset against true wall clock — harmless, since
 // this binary is the system's only start-time clock and every comparison
-// goes through it (plans/linux-portability.md).
+// goes through it.
 func bootTimeEpoch() (int64, error) {
 	data, err := os.ReadFile("/proc/stat")
 	if err != nil {

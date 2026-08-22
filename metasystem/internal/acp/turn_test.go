@@ -16,8 +16,7 @@ import (
 // matches an expected client method, optionally validates params,
 // and answers with notifications then a response (or a scripted
 // misbehavior). Consumed steps are counted so a fixture cannot
-// pass on canned responses it never earned (slice-two critique
-// F10).
+// pass on canned responses it never earned.
 type stubServer struct {
 	t        *testing.T
 	reader   *Reader
@@ -207,7 +206,7 @@ func TestTurnAuthClassification(t *testing.T) {
 }
 
 // Requesting a load from a server that never declared loadSession
-// is refused client-side (critique F8).
+// is refused client-side.
 func TestTurnLoadCapabilityGate(t *testing.T) {
 	conn, _, cleanup := newStubTurn(t, []stubStep{
 		{expectMethod: "initialize", result: `{"protocolVersion":1,"agentCapabilities":{"loadSession":false},"authMethods":[]}`},
@@ -239,7 +238,7 @@ func TestTurnSetModeFailure(t *testing.T) {
 
 // The end-to-end fence: replay delivered before the prompt was
 // sent never enters the candidate; only the post-prompt chunk
-// does — probe step B as a protocol-level fixture.
+// does — the captured replay wire as a protocol-level fixture.
 func TestTurnLoadReplayWatermark(t *testing.T) {
 	conn, _, cleanup := newStubTurn(t, []stubStep{
 		initStep("[]"),
@@ -364,7 +363,7 @@ func TestTurnParentCancellation(t *testing.T) {
 	}
 }
 
-// The critique-F3 scenarios: a server that requires its request
+// The wedge scenarios: a server that requires its request
 // answered BEFORE it responds to setup, and a notification flood
 // past the channel buffer — neither may wedge the turn, because
 // the driver services both queues while its own call waits.
@@ -474,7 +473,7 @@ func TestTurnPermissionGateAndStrictAnswer(t *testing.T) {
 }
 
 // The journal survives concurrent directions intact: every line
-// parses as one well-formed prefixed frame (critique F9).
+// parses as one well-formed prefixed frame.
 func TestJournalIntegrityUnderConcurrency(t *testing.T) {
 	var journal bytes.Buffer
 	clientReads, serverWrites := io.Pipe()
@@ -518,7 +517,7 @@ func TestJournalIntegrityUnderConcurrency(t *testing.T) {
 
 // A server that stops reading cannot defeat deadlines: the write
 // hand-off is context-bounded even while the physical write is
-// wedged (critique F1).
+// wedged.
 func TestBlockedWriteIsBounded(t *testing.T) {
 	clientReads, _ := io.Pipe()
 	_, clientWrites := io.Pipe() // nobody ever reads this side

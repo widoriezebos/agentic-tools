@@ -1,5 +1,5 @@
-// Package runtimes is the ONE declaration of the agent-runtime universe
-// (agnosticism audit, D74 phase A). It is pure data and a dependency
+// Package runtimes is the ONE declaration of the agent-runtime universe.
+// It is pure data and a dependency
 // leaf: config, validate, audit, missionrunner, and cmd consume it;
 // nothing here imports the rest of the tree, and no behavior lives here
 // — behavioral capabilities register seam-locally in their owner
@@ -64,7 +64,7 @@ type Declaration struct {
 	InstructionFile string
 	// RegistrationDirs is the adopted-repository directory view (the
 	// `runtime dirs` verb; source of config validation's presence
-	// checks). Phase B's registration rows replace this field's source
+	// checks). The registration rows are to become this field's source
 	// of truth; until then it mirrors today's table.
 	RegistrationDirs []string
 	// ShippedEnforcementConfig is the scripts/enforcement filename this
@@ -91,22 +91,22 @@ type Declaration struct {
 	// against each owner table's list view, both ways).
 	ExpectedCapabilities []string
 	// SignatureVectors are the provider-owned conformance vectors the
-	// S4-7 fixture consumes (agnosticism B1, critique r3-5): the honest
+	// S4-7 fixture consumes: the honest
 	// positive process word and a lookalike that must stay out.
 	SignatureVectors SignatureVectors
 	// CommonLifecycleAdapter marks adapters sharing the common
 	// initializer/writer source shape (runtime-common.sh); fake
-	// deliberately does not (critique r4-4: independent of the static
-	// enforcement map).
+	// deliberately does not. Independent of the static
+	// enforcement map.
 	CommonLifecycleAdapter bool
 	// CollisionRoots are this runtime's contributed adoption collision
 	// roots — scanned as the deduplicated FULL population regardless of
-	// selection (critique r6-4; the B2 installer consumes them, the
+	// selection (the installer consumes them, the
 	// verb transports them).
 	CollisionRoots []string
 	// ExpectedACP declares that this runtime is expected to support
 	// the ACP transport, with the protocol version selection pins
-	// pre-launch (plans/acp-transport-design.md, registry: data
+	// pre-launch (this registry stays data
 	// only). The dialect — mode mappings, launch argv — is
 	// adapter-owned; conformance joins the two both ways.
 	ExpectedACP *ACPExpectation
@@ -168,9 +168,9 @@ var declarations = []Declaration{
 		RegistrationDirs:         []string{".agents/skills", ".devin/skills", ".devin/agents"},
 		ShippedEnforcementConfig: "devin-hooks.json",
 		ConfigIdentityFilter:     "devin-config-filter.v1.json",
-		// Measured truth, not a weakening: O-9/O-10 in
-		// plans/devin-support.md demonstrated writes and reads outside
-		// the declared roots on 2026-08-08.
+		// Measured truth, not a weakening: devin has been observed
+		// writing and reading outside
+		// the declared roots.
 		ExpectedEnvelopeEnforcement: map[string]Enforcement{
 			"writeRoots": NotEnforced, "readRoots": NotEnforced, "network": NotEnforced,
 		},
@@ -179,8 +179,7 @@ var declarations = []Declaration{
 			"writeRoots": "devin-write-roots-unenforced",
 		},
 		ExpectedCapabilities: []string{CapDeliveryRecollection, CapSelfTestProbe},
-		// The one ACP increment (D79 scope): protocol 1 verified
-		// live at devin 3000.4.25 (plans/acp-wire-probe.md).
+		// Protocol 1 is verified live at devin 3000.4.25.
 		ExpectedACP: &ACPExpectation{ExpectedProtocolVersion: 1},
 	},
 	{

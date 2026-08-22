@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// Restricted-procfs detection (go-production-grade Phase 1, B2,
-// human-approved reserved decision 3). With /proc mounted hidepid, another
+// Restricted-procfs detection
+// (a human-approved reserved decision). With /proc mounted hidepid, another
 // user's live process can be indistinguishable from a dead one — a stat
 // that fails ENOENT — which silently breaks the three-way guarantee this
 // package exists to keep: a false Dead authorizes lock takeover and

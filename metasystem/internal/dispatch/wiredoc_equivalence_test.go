@@ -8,9 +8,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
-// TD-1's cross-writer proof: for every corpus case, the wiredoc envelope
+// The cross-writer proof: for every corpus case, the wiredoc envelope
 // renders byte-identically to the current writer's committed golden bytes.
-// This equivalence is what makes the 5.1 conversion safe — when writeRecord
+// This equivalence is what makes the conversion safe — when writeRecord
 // later delegates to the envelope, this test is the reason nothing on disk
 // can change.
 func TestWiredocMatchesTheCorpus(t *testing.T) {

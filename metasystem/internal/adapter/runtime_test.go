@@ -451,7 +451,7 @@ func hookCommandOf(t *testing.T, settings map[string]any) string {
 	return command["command"].(string)
 }
 
-// Issue #5 round-2 F4: the extra write roots actually reach the codex
+// The extra write roots actually reach the codex
 // argv — --add-dir per root on dispatch, the writable_roots override on
 // resume — and outside-workspace filtering keeps inside roots out.
 func TestBuildCodexCommandCarriesExtraDirs(t *testing.T) {

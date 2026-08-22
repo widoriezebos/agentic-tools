@@ -12,13 +12,13 @@ func chunk(session, kind, text string) json.RawMessage {
 		session, kind, text))
 }
 
-// The step-B capture, frames as recorded in plans/acp-wire-probe.md:
+// A replayed session, frames as captured from a live wire:
 // the replay delivered the user chunk (with clientMessageId and
 // messageSubIndex meta) and the prior answer "pong" (with timestamp
 // meta) at sequences BEFORE the load response; the live chunk came
 // after the prompt was sent. The sequence range — not drain timing —
-// keeps the stale answer out (the slice-two linux race proved drain
-// timing lies).
+// keeps the stale answer out (drain
+// timing lies under channel hand-off).
 func TestWatermarkDefeatsReplay(t *testing.T) {
 	replayUser := json.RawMessage(`{"sessionId":"marvelous-answer","update":{"_meta":{"cognition.ai/clientMessageId":"63bca575-c374-4c72-928a-40c06ff73d46","cognition.ai/messageSubIndex":0,"cognition.ai/timestamp":"2026-08-16T11:14:17.000000+00:00"},"content":{"text":"Reply with exactly the word: pong.","type":"text"},"sessionUpdate":"user_message_chunk"}}`)
 	replayAnswer := json.RawMessage(`{"sessionId":"marvelous-answer","update":{"_meta":{"cognition.ai/timestamp":"2026-08-16T11:14:17.984606+00:00"},"content":{"text":"pong","type":"text"},"sessionUpdate":"agent_message_chunk"}}`)

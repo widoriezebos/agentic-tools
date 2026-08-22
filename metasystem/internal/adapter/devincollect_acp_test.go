@@ -93,8 +93,7 @@ func TestCollectACPSessionAndPresence(t *testing.T) {
 }
 
 // A thinned journal disqualifies delivery even with a perfect
-// candidate: the raw evidence is admittedly incomplete (P3
-// critique F8).
+// candidate: the raw evidence is admittedly incomplete.
 func TestCollectACPJournalThinningRejects(t *testing.T) {
 	f := newCollectFixture(t)
 	candidate, _ := json.Marshal(string(f.validReturn))

@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// The turn-end "is anything still working?" answer (review
-// script-orchestration-05, relocated from supervision-hook.sh): live
+// The turn-end "is anything still working?" answer (relocated from
+// supervision-hook.sh): live
 // delegate jobs read from decoded records instead of a raw status grep,
 // mission runners found by argv tokens instead of pgrep-plus-sed, and gate
 // runs. This is the surface the README's unsupervised-runs failure class
@@ -60,9 +60,9 @@ func missionRootBase(argv string) string {
 // RunningWorkClause composes the active clause of the turn-end sentence —
 // empty when nothing is running. The wording is the hook's historical one:
 // "N helper agent(s): role id [status, runtime]; ...", ", and a mission
-// still going in a, b", ", and the test gates". The facts now come from
-// the checkout-scoped scanner (goal-system GOAL-16): argv matching
-// answered for the whole machine, so another checkout's mission could
+// still going in a, b", ", and the test gates". The facts come from
+// the checkout-scoped scanner: argv matching
+// answers for the whole machine, so another checkout's mission could
 // swing this checkout's sentence.
 func RunningWorkClause(repo string) string {
 	scan := Scan(repo)

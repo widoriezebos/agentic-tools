@@ -20,16 +20,16 @@ import (
 )
 
 // The contract package's own small foundations. The three pure helpers are
-// duplicated from mission deliberately (go-production-grade obligation C-3):
+// duplicated from mission deliberately:
 // each is a few lines over the standard library with no state, and a package
 // created to share them would be exactly the dumping ground the design
 // standard forbids. The durable write is NOT duplicated — it delegates to
-// the one owner (C-4).
+// the one owner.
 
 // ContractError is a contract validation or operation failure. The contract
 // package carries its own error type rather than reaching back into mission
 // for one; no consumer outside internal/mission ever read mission's, so
-// nothing observable changes (C-2).
+// nothing observable changes.
 type ContractError struct{ msg string }
 
 func (e *ContractError) Error() string { return e.msg }
@@ -59,7 +59,7 @@ func isValidUTF8(data []byte) bool {
 
 func atomicWriteText(path, text string) error {
 	// Empty anchor until this writer is converted to the two-outcome
-	// signature (go-production-grade B5); see the mission copy.
+	// signature; see the mission copy.
 	_, err := atomicfile.WriteText(path, text, "")
 	return err
 }
@@ -90,7 +90,7 @@ func gitOutput(repo string, args ...string) (string, error) {
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	// Bounded like every other external call (B4): a git that never
+	// Bounded like every other external call: a git that never
 	// returns must not hang the caller.
 	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	if err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " ")); err != nil {
@@ -107,7 +107,7 @@ func gitTry(repo string, args ...string) (string, int) {
 	cmd.Env = gittree.ScrubbedEnviron()
 	var stdout strings.Builder
 	cmd.Stdout = &stdout
-	// Bounded like every other external call (B4); a timeout is a failure
+	// Bounded like every other external call; a timeout is a failure
 	// answer, not an exit code.
 	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
 	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))

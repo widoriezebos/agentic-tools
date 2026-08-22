@@ -51,7 +51,7 @@ func PreflightACP(envelope Envelope) string {
 }
 
 // EffectClass is the dialect-neutral shape the request normalizer
-// produces. Wire evidence (probe steps C–E) shows the permission
+// produces. Live wire captures show the permission
 // machinery is idle in every tested mode, so Decide is the
 // fail-closed BACKSTOP for requests that do fire, not the primary
 // enforcement lever — that lever is the mode the adapter selects
@@ -211,7 +211,7 @@ func (a PermissionAnswer) WireResult() map[string]PermissionAnswer {
 // matches return cancelled. Persistent grants (allow_always,
 // reject_always) are never selected — reject_always is remembered
 // server-side and would poison a loaded repair session (spec:
-// option mapping; critique r3 F4, r4 F13).
+// option mapping).
 func MapVerdict(verdict Verdict, options []PermissionOption) PermissionAnswer {
 	want := "reject_once"
 	if verdict == VerdictAllow {

@@ -107,7 +107,7 @@ func TestWorktreeEnvelopeGrantsGitRoots(t *testing.T) {
 	if git(repo, nil, "rev-parse", "refs/heads/main") != mainRefBefore {
 		t.Fatal("a worktree commit moved main")
 	}
-	// Forced-threshold maintenance proof (round-3 F2): even with the
+	// Forced-threshold maintenance proof: even with the
 	// REPOSITORY config demanding gc at every object, the quarantine
 	// env's maintenance.auto/gc.auto override wins and packed-refs
 	// never appears from a delegate commit.
@@ -179,7 +179,7 @@ func TestWorktreeGitRootRefusals(t *testing.T) {
 	}
 }
 
-// Issue #5 round-2 F5: the negative guards prove themselves — a reftable
+// The negative guards prove themselves — a reftable
 // repository refuses by name, and a reflog namespace that cannot be
 // created fails the expansion closed instead of losing a delegate cycle.
 func TestWorktreeGitRootNegativeGuards(t *testing.T) {

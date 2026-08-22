@@ -84,7 +84,7 @@ func TestObjectSpelling(t *testing.T) {
 	}
 }
 
-// StripKeys: the structural settings.json derivation (script-misc-8/D30).
+// StripKeys: the structural settings.json derivation.
 func TestStripKeys(t *testing.T) {
 	data := []byte(`{"_comment":"note","hooks":{"Stop":[{"command":"x"}]},"systemMessage":"m"}`)
 	object, err := StripKeys(data, []string{"_comment"})

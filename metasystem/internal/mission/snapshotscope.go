@@ -1,10 +1,10 @@
 package mission
 
-// Snapshot-scope state shapes (host-implementer wall, HIW-O15/O16): the
-// recorded origins and postures that make HEAD, the ref map, the staged
-// projections, and the worktree census accountable across turn and crash
-// boundaries. Every shape validates by EXACT key set — new authoritative
-// fields are a schema decision, never a silent addition.
+// Snapshot-scope state shapes: the recorded origins and postures that
+// make HEAD, the ref map, the staged projections, and the worktree
+// census accountable across turn and crash boundaries. Every shape
+// validates by EXACT key set — new authoritative fields are a schema
+// decision, never a silent addition.
 
 import (
 	"strings"

@@ -169,12 +169,11 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 		t.Fatalf("the recovered park carries its reason: %+v", parked.Parked)
 	}
 
-	// A dead owner's edit, deltas in the stored intent (the F7
-	// completeness fix feeding recovery).
+	// A dead owner's edit, deltas in the stored intent feeding recovery.
 	// The park above was a HUMAN act, so lifting it is one too — the
-	// rebuild runs the REAL verb (R2-2), which enforces exactly that.
-	// The by= arg here is what a live human-directed unpark NOW
-	// journals itself (round 3 finding 2: intentArgs stamps it), so
+	// rebuild runs the REAL verb, which enforces exactly that.
+	// The by= arg here is what a live human-directed unpark
+	// journals itself (intentArgs stamps it), so
 	// this stranded shape is the real crash shape, not a fabrication.
 	unparkOpid := Opid("01J5X00000000000000000Q120", "mac-a", "lin-1")
 	strandEntry(t, a, unparkOpid, PhaseCreated, Intent{Verb: "unpark", Targets: []string{"target"},
@@ -325,7 +324,7 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 		}
 	}
 	// A dead owner's CASCADE claim: the rebuilt transaction must
-	// claim BOTH members — the old hand-copy split the arc (R2-2).
+	// claim BOTH members — a hand-copy would split the arc.
 	claimOpid := Opid("01J5X00000000000000000Q160", "mac-a", "lin-1")
 	strandEntry(t, a, claimOpid, PhaseCreated, Intent{
 		Verb: "claim", Targets: []string{"rv-one"},
@@ -381,8 +380,8 @@ func TestRecoveryRefusesAStrandedOriginRewrite(t *testing.T) {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	// A pre-fold journal's origin delta: recovery must refuse it by
-	// name, never replay it (R2-8 through recovery — round 3
-	// finding 14 asked for the focused proof).
+	// name, never replay it — origin is immutable through recovery
+	// exactly as it is through the live verbs.
 	opid := Opid("01J5X00000000000000000Q210", "mac-a", "lin-1")
 	strandEntry(t, a, opid, PhaseCreated, Intent{
 		Verb: "edit", Targets: []string{"prov"},

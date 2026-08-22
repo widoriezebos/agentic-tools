@@ -139,8 +139,8 @@ func runAdapterSelftestListener(args []string) int {
 	return 0
 }
 
-// runAdapterSelftestRun drives the full-contract self-test
-// (script-adapters-05/D27): Go orchestrates the sequence by exec'ing
+// runAdapterSelftestRun drives the full-contract self-test: Go
+// orchestrates the sequence by exec'ing
 // dispatch.sh and the adapter script, and owns the decisions — the
 // model-placeholder refusal, the denial taxonomy, session equality, and the
 // evidence assertions as parsed reads of return.json. The per-runtime knobs
@@ -189,8 +189,8 @@ func runAdapterSelftestRun(args []string) int {
 }
 
 // runAdapterDevinPrompt writes the schema-augmented prompt copy the Devin
-// CLI reads (script-adapters-08/D28) — one writer for the adapter and host
-// paths whose hand-maintained copies had drifted.
+// CLI reads — one writer for the adapter and host paths, so the two
+// copies cannot drift apart.
 func runAdapterDevinPrompt(args []string) int {
 	flags := flag.NewFlagSet("adapter devin-prompt", flag.ContinueOnError)
 	prompt := flags.String("prompt", "", "dispatcher prompt file (left untouched)")

@@ -13,8 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-// The turn verdict: one verb, one structured decision (GOAL-04, GOAL-07,
-// GOAL-10, GOAL-15, GOAL-17, GOAL-20). The scanner fills ScanResult (the
+// The turn verdict: one verb, one structured decision. The scanner fills ScanResult (the
 // verdict's input contract — internal/report imports this package, never
 // the reverse), the verdict decides, and the one capped, pruned, flocked
 // state file is the ONLY Stop-state on disk.
@@ -88,8 +87,8 @@ func (r ScanResult) OpenWorkSignature() string {
 	return sha256Hex([]byte(strings.Join(lines, "\n")))
 }
 
-// GoalFacts is the exported goal read surface (GOAL-12: exported and
-// unconsumed beyond the verdict in item 14; item 15 composes here).
+// GoalFacts is the exported goal read surface; the turn verdict is its
+// one in-tree composer.
 type GoalFacts struct {
 	Id       string `json:"id"`
 	Intent   string `json:"intent"`
@@ -259,7 +258,7 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 
 // decideGreens surfaces green terminals exactly once per session on the
 // terminal sequence's total order. The greens are RE-READ FROM DISK
-// inside this verdict's flock (critique finding 3): the scanner's
+// inside this verdict's flock: the scanner's
 // ScanResult predates the lock and a stale snapshot could advance the
 // cursor past a green it never saw. Any unreadable run record freezes
 // the cursor entirely. Crafted scan facts still drive the

@@ -50,7 +50,7 @@ func mustOpen(t *testing.T, s *Store, caller Caller, id, intent, next string) {
 	}
 }
 
-// GOAL-20: open with no Current goal lands Current — the one-command
+// Open with no Current goal lands Current — the one-command
 // program start; a second open queues behind it.
 func TestOpenPromotesWhenEmpty(t *testing.T) {
 	s := testStore(t)
@@ -159,7 +159,7 @@ func TestTransitionTableMatrix(t *testing.T) {
 	}
 }
 
-// GOAL-15: declare-free renews on a standing declaration (the one
+// Declare-free renews on a standing declaration (the one
 // idempotence exception), refreshing the digest as the world moves.
 func TestGoalFreeRenew(t *testing.T) {
 	s := testStore(t)
@@ -198,7 +198,7 @@ func TestHumanGate(t *testing.T) {
 	}
 }
 
-// GOAL-02: reconcile replays full transition authority — a manual edit
+// Reconcile replays full transition authority — a manual edit
 // marking a human-origin goal done is refused for MAIN and accepted for
 // HUMAN; origin rewrites and illegal jumps always refuse.
 func TestReconcileReplaysAuthority(t *testing.T) {
@@ -241,7 +241,7 @@ func TestReconcileReplaysAuthority(t *testing.T) {
 	}
 }
 
-// GOAL-03 + GOAL-14 + GOAL-10 substrate: the baseline lifecycle — genesis
+// The baseline-lifecycle substrate — genesis
 // adoption of an unbaselined ledger, the crash window (ledger written,
 // baseline stale), and restoration after post-adoption deletion.
 func TestBaselineLifecycle(t *testing.T) {
@@ -307,7 +307,7 @@ func TestReconcileRefusesIllegalDeltas(t *testing.T) {
 	}
 }
 
-// GOAL-13: prune keeps the newest ten done goals and reports every drop.
+// Prune keeps the newest ten done goals and reports every drop.
 func TestPruneReportsDrops(t *testing.T) {
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "seed", "seed goal", "Do.")
@@ -339,7 +339,7 @@ func TestPruneReportsDrops(t *testing.T) {
 	}
 }
 
-// GOAL-21: mutation refuses while a mission is actively driven (live
+// Mutation refuses while a mission is actively driven (live
 // runner record), refuses fail-closed on unknown liveness, and allows
 // after the runner is provably dead. Env-stripping is irrelevant by
 // construction: the fact is read from disk.
@@ -510,7 +510,7 @@ func TestGenesisAdmitsGoalFreeLedgerForNonHolder(t *testing.T) {
 	}
 }
 
-// The pre-lock race (opus-window re-review finding 4): a caller the
+// The pre-lock race: a caller the
 // verb layer admitted under GENESIS mode reaches Reconcile after a
 // baseline has appeared. Every non-genesis arm must refuse it — the
 // caller never earned holder-only authority — while the same state

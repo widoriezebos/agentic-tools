@@ -12,9 +12,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
-// Direct tests for the owner-lock protocol (Phase 6): claim, re-claim
-// against every holder class, and identity-checked release. Previously
-// exercised only through the suite's supervision fixtures.
+// Direct tests for the owner-lock protocol: claim, re-claim
+// against every holder class, and identity-checked release — in-process,
+// not through the suite's supervision fixtures.
 
 func TestOwnerLockClaimAndRelease(t *testing.T) {
 	lock := filepath.Join(t.TempDir(), "owner.lock.d")

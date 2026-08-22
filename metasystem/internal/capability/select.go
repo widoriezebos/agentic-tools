@@ -134,7 +134,7 @@ func Select(root, runtime, role, identityJSON string, maxAge int, envelopePath, 
 			continue
 		}
 		// The waiver match is by DECLARED RESIDUAL IDENTIFIER, never by
-		// runtime name (agnosticism audit class 9): the registry names
+		// runtime name: the registry names
 		// each runtime's enforcement gap per field; the role file — the
 		// live, checkout-local security control — must waive that exact
 		// identifier under the same field. An unverified restrictive

@@ -29,7 +29,7 @@ func publishGoal(t *testing.T, root, opid, id string, extra []*GoalFile) Publish
 func TestTwoClonesConvergeByFetchAlone(t *testing.T) {
 	_, a, b := twoClones(t)
 
-	// BGS-1: different-goal mutations from two clones both publish;
+	// Different-goal mutations from two clones both publish;
 	// each machine observes the other via goal fetch — a read-side
 	// advance with no own mutation needed — and the projections
 	// converge.

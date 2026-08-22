@@ -33,7 +33,7 @@ func TestRuntimeClassification(t *testing.T) {
 	}{
 		{"bare claude command", "claude --flag", "claude"},
 		{"claude by full path", "/usr/local/bin/claude serve", "claude"},
-		// KI-14: a tool shell quoting a claude path in an excluded file is
+		// A tool shell quoting a claude path in an excluded file is
 		// NOT claude.
 		{"excluded session-signal", "python3 claude-session-signal.py", ""},
 		{"excluded supervision hook", "bash supervision-hook.sh claude stop", ""},

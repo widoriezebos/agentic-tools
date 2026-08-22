@@ -64,9 +64,9 @@ func runCensusRun(args []string) int {
 }
 
 // runProcClassify relays `proc classify`: the shell liveness ladder's
-// four-way verdict — live, stale, dead, unknown — from internal/identity
-// (script-orchestration-09). Callers on kill-capable paths DEFER on
-// unknown; indeterminacy never acts.
+// four-way verdict — live, stale, dead, unknown — from
+// internal/identity. Callers on kill-capable paths DEFER on unknown;
+// indeterminacy never acts.
 func runProcClassify(args []string) int {
 	flags := flag.NewFlagSet("proc classify", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "process id")
@@ -85,12 +85,13 @@ func runProcClassify(args []string) int {
 // runProcAcknowledge records that one exact untracked process (by the
 // pid the human saw in the watchdog line) is known-harmless, so the
 // end-of-turn report stops nagging about it — while a new untracked
-// process, or the same pid reused by a different one, still shouts
-// (KI-23). The caller is classified and authorized holder-only (the
-// human is sovereign; a holder main passes; machinery is refused), so
-// an untracked agent cannot acknowledge itself through the verb — a
+// process, or the same pid reused by a different one, still shouts.
+// The caller is classified and authorized holder-only (the human is
+// sovereign; a holder main passes; machinery is refused), so an
+// untracked agent cannot acknowledge itself through the verb — a
 // same-user direct file write remains outside what local state can
-// refuse, per the D93 cooperative ruling.
+// refuse; the posture is cooperative tamper evidence, not an
+// adversarial boundary.
 func runProcAcknowledge(args []string) int {
 	flags := flag.NewFlagSet("proc acknowledge", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "pid of the untracked process to acknowledge")
@@ -104,7 +105,7 @@ func runProcAcknowledge(args []string) int {
 		return 2
 	}
 	// The caller is ALWAYS the real parent process — this verb takes no
-	// --caller-pid: the verification round proved a caller-supplied pid
+	// --caller-pid: a caller-supplied pid
 	// (e.g. -1) classifies HUMAN by fallthrough and launders holder-only
 	// authorization. A human types this command; wrappers that need
 	// identity forwarding have no business acknowledging.
@@ -122,11 +123,10 @@ func runProcAcknowledge(args []string) int {
 	// The classifier's ancestry walk checks the exact caller node for
 	// announcements but starts machinery checks at its parent — so an
 	// agent binary SPAWNING this verb directly would be judged by its
-	// own ancestors, not by what it is (verification round 2, finding
-	// 2). Close the seam here against EVERY installed adapter's
-	// signature — not only configured runtimes, since adoption retains
-	// all adapters while configuring one (round 3's residual). Fail
-	// closed: an unprovable invoker refuses too.
+	// own ancestors, not by what it is. Close the seam here against
+	// EVERY installed adapter's signature — not only configured
+	// runtimes, since adoption retains all adapters while configuring
+	// one. Fail closed: an unprovable invoker refuses too.
 	runtime, isAgent, invErr := lease.DirectAgentInvoker(*root, parent)
 	if invErr != nil {
 		fmt.Fprintln(os.Stderr, "acknowledge refused:", invErr)

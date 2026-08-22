@@ -316,8 +316,8 @@ func TestRecordCASRejectsInvalidJobID(t *testing.T) {
 	wantCode(t, err, 2)
 }
 
-// The reader-visibility property, ported from record-protocol-fixtures.sh's
-// concurrent python reader (script-fixtures-012/D43): while a protocol
+// The reader-visibility property, proved against a concurrent
+// reader: while a protocol
 // error is applied, no reader may ever observe status=failed WITHOUT its
 // protocolError object — atomicfile's rename is what guarantees the two
 // land together — and no .tmp residue may survive in the jobs directory.
@@ -380,7 +380,7 @@ func TestRecordProtocolErrorNeverExposesFailedWithoutViolation(t *testing.T) {
 	}
 }
 
-// RepairClaim's contract (D64): absent returnRepairs means zero; the
+// RepairClaim's contract: absent returnRepairs means zero; the
 // claim wins once, atomically, only on a running record; a second claim
 // and a non-running record are delegate-side losses (observed set); an
 // unreadable record is a harness failure (error).
@@ -453,7 +453,7 @@ func TestRecordCreateRefusesFreshLaterRoundNames(t *testing.T) {
 	if err := RecordCreate(root, "demo-c1-critique-r1-r2", write("demo-c1-critique-r1-r2", "demo-c1-critique-r1")); err != nil {
 		t.Fatalf("a resume record may carry the round it is: %v", err)
 	}
-	// The boundary is numeric N >= 2 exactly (round 2): -r0 is odd but
+	// The boundary is numeric N >= 2 exactly: -r0 is odd but
 	// claims no later round, so it stays lawful.
 	if err := RecordCreate(root, "demo-c1-critique-r0", write("demo-c1-critique-r0", nil)); err != nil {
 		t.Fatalf("-r0 claims no later round and must stay lawful: %v", err)
@@ -461,7 +461,7 @@ func TestRecordCreateRefusesFreshLaterRoundNames(t *testing.T) {
 	if err := RecordCreate(root, "demo-c1-critique-r12", write("demo-c1-critique-r12", nil)); err == nil {
 		t.Fatal("a fresh job named -r12 must refuse")
 	}
-	// An overflow suffix fails CLOSED, never through (round 2).
+	// An overflow suffix fails CLOSED, never through.
 	overflow := "demo-c1-critique-r9223372036854775808"
 	if err := RecordCreate(root, overflow, write(overflow, nil)); err == nil {
 		t.Fatal("an unparseable round suffix must refuse, not bypass")
@@ -480,7 +480,7 @@ func TestLossVerdictVoidsDuringCancellation(t *testing.T) {
 		t.Fatalf("cas pending->running: %v", err)
 	}
 
-	// The F-1 interleave: a reaper read the record BEFORE the
+	// The stale-reaper interleave: a reaper read the record BEFORE the
 	// cancel's marker landed, then tries its stale failed verdict on
 	// a status-only compare. The marker must void it — every verdict
 	// owner (Go reaper, shell reaper, mission drain) converges on
@@ -527,7 +527,7 @@ func TestHandshakeCannotEraseTheCancellingMarker(t *testing.T) {
 	createPending(t, root, "job-a")
 	setupPending(t, root, "job-a")
 
-	// The F-5 interleave: cancel marks the PENDING record, the
+	// The handshake interleave: cancel marks the PENDING record, the
 	// concurrent handshake then tries pending→running — its patch
 	// carries phase=running and would erase the marker, handing the
 	// next reaper pass an unmarked dead group. Once cancelling, the
@@ -574,7 +574,7 @@ func TestProtocolErrorDefersDuringCancellation(t *testing.T) {
 	if _, err := RecordCAS(root, "job-a", "running", "running", mark); err != nil {
 		t.Fatalf("marker: %v", err)
 	}
-	// The F-8 back door: the adapter records a protocol violation
+	// The protocol-stamp back door: the adapter records a protocol violation
 	// concurrently with the cancel. The stamp must defer — it would
 	// otherwise flip the record failed AND erase the marker.
 	err := RecordProtocolError(root, "job-a", "running", "malformed return", "")
@@ -599,7 +599,7 @@ func TestOwnershipWriteVoidsDuringCancellation(t *testing.T) {
 	createPending(t, root, "job-a")
 	setupPending(t, root, "job-a")
 
-	// The F-10 interleave: cancel marks the pending record, then the
+	// The ownership-write interleave: cancel marks the pending record, then the
 	// launch tries to record its group and open the start gate via
 	// the ownership pending→pending write. Once cancelling, only
 	// cancelled and a genuine completion proceed — cancelled work

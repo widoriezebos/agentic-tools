@@ -128,7 +128,7 @@ func promptAskRecords(dir string) ([][]string, error) {
 	}
 	paths, _ := filepath.Glob(filepath.Join(dir, "*.json"))
 	// Closure is DERIVED from the successor's existence, not only the
-	// predecessor's marker (issue #11 round-2): a crash between the
+	// predecessor's marker: a crash between the
 	// successor write and the marker write must not resurrect the stale
 	// question.
 	superseded := map[string]bool{}
@@ -153,7 +153,7 @@ func promptAskRecords(dir string) ([][]string, error) {
 		if ask["answeredAt"] != nil {
 			continue
 		}
-		// A superseded ask is closed by its successor (issue #11): showing
+		// A superseded ask is closed by its successor: showing
 		// it beside the live question would present a stale duplicate.
 		if ask["supersededBy"] != nil {
 			continue
@@ -176,7 +176,7 @@ func promptAskRecords(dir string) ([][]string, error) {
 	return records, nil
 }
 
-// promptAnswerRecords renders every standing human ruling (issue #11): the
+// promptAnswerRecords renders every standing human ruling: the
 // asks each stream's answeredAsk names, as [askId, streamId, answeredAt,
 // question, answer] rows ordered by ask id. The answer is THE thing the
 // next turn must act on; a state that names a missing or unanswered ask
@@ -328,9 +328,8 @@ func promptMax0(x int) int {
 // still spend against its signed fences, the concurrency headroom, and the
 // LIVE delegate roster. The concurrency line and roster exist because a
 // host without them is structurally blind to the one fence a parallel
-// dispatch can trip: rep 1 of bm-1-20260813t132947z hit exactly that,
-// then wrote a false ledger fact about it (fence-refusal diagnosis,
-// docs/reviews/2026-08-13-delegated-decisions.md D7).
+// dispatch can trip — and a host that cannot see the fence it tripped
+// misdiagnoses the refusal and records it as a false ledger fact.
 func promptFenceHeadroom(repo string, values map[string]string, dir string) (string, error) {
 	cycleLimit, ok1 := promptContractInt(values, "fence.cycles")
 	jobLimit, ok2 := promptContractInt(values, "fence.jobs")
@@ -559,7 +558,7 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 		return err
 	}
 	// The Landed Returns list derives fresh from the tree and the turn log
-	// at every assembly (plans/patience-orphan-usage.md O1): landed work is
+	// at every assembly (plans/patience-orphan-usage.md): landed work is
 	// inherited through the prompt, never through recorded surfacing state.
 	turnLog, _ := state["turnLog"].([]any)
 	landedRecords := LandedReturns(repo, mission, turnLog)
@@ -604,12 +603,12 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 		{"orchestrator preamble", strings.TrimRight(string(preambleData), "\n")},
 		{"## Mission Contract", "## Mission Contract\n" + strings.TrimRight(contractText, "\n")},
 	}
-	// The serving-goal orientation line (goal-system GOAL-09): one
-	// optional block between the mission intent and the streams, read
-	// through the goal parser. A missing, absent, or degraded ledger
-	// produces NO line — prompt assembly never degrades and never blocks
-	// on goal state. Runner-side and runtime-neutral: every host of every
-	// runtime gets the same line the same way.
+	// The serving-goal orientation line: one optional block between the
+	// mission intent and the streams, read through the goal parser. A
+	// missing, absent, or degraded ledger produces NO line — prompt
+	// assembly never degrades and never blocks on goal state.
+	// Runner-side and runtime-neutral: every host of every runtime gets
+	// the same line the same way.
 	if goalId, goalIntent, ok := (&goal.Store{Root: repo}).CurrentProjection(); ok {
 		blocks = append(blocks, struct {
 			name    string

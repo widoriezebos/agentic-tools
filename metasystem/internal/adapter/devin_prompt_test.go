@@ -36,7 +36,7 @@ func TestDevinPromptBytes(t *testing.T) {
 		t.Fatalf("augmented prompt drifted:\n%q\nwant:\n%q", got, expected)
 	}
 	// With a named return file the delivery section names the exact path
-	// (D62: this model delivers by writing files, not by final message).
+	// (this model delivers by writing files, not by final message).
 	if err := DevinPrompt(prompt, schema, output, "/round/devin-return.json"); err != nil {
 		t.Fatal(err)
 	}
@@ -60,13 +60,12 @@ func TestDevinPromptBytes(t *testing.T) {
 	}
 }
 
-// Moved from claudecommand_test.go (placement audit, item 17):
-// devin's test lives in devin's test file.
 func TestDevinPermissionMode(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "job.json")
-	// Every readable record runs dangerous under the D61 human waiver;
-	// the graded modes turned refusals into non-delivery (D57).
+	// Every readable record runs dangerous under the standing human
+	// waiver; a graded mode turns an envelope refusal into
+	// non-delivery.
 	os.WriteFile(record, []byte(`{"permissions":{"requested":{"writeRoots":[]}}}`), 0o644)
 	if mode, err := DevinPermissionMode(record); err != nil || mode != "dangerous" {
 		t.Fatalf("read-only role = (%s,%v)", mode, err)
@@ -80,7 +79,8 @@ func TestDevinPermissionMode(t *testing.T) {
 	}
 }
 
-// Moved from claudecommand_test.go (placement audit, item 17).
+// The transcript-vs-correlated-session certification and the
+// effective-model derivation, over every disagreement shape.
 func TestDevinSettle(t *testing.T) {
 	dir := t.TempDir()
 	transcript := filepath.Join(dir, "t.json")

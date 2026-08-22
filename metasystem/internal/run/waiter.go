@@ -18,8 +18,8 @@ import (
 // facility can hold — and its record is the fact the turn verdict reads.
 // Records are exclusive PER (kind, id, owner) by liveness: a foreign
 // waiter neither satisfies your unwatched rule nor blocks your own
-// watching; a live same-owner waiter from a DEAD lifecycle is replaceable
-// (FIX-R6-02), because its own watch is about to exit on the terminal
+// watching; a live same-owner waiter from a DEAD lifecycle is
+// replaceable, because its own watch is about to exit on the terminal
 // record it is actually reading.
 
 // Watch exit codes: outcomes 0-4, operational failures 64-66, disjoint.
@@ -126,8 +126,8 @@ func (s *Store) RegisterWaiter(kind, id string, owner Caller, target WaiterTarge
 				if existing.Target == target {
 					return &waiterError{ExitWaiterBusy, "a live waiter already watches this lifecycle for this owner"}
 				}
-				// Live but watching a DEAD lifecycle: replaceable
-				// (FIX-R6-02); fall through to the write.
+				// Live but watching a DEAD lifecycle: replaceable;
+				// fall through to the write.
 			case identity.Unknown:
 				return &waiterError{ExitWaiterUnknown, "existing waiter liveness unknown; refusing"}
 			}
@@ -172,7 +172,7 @@ func (s *Store) RemoveWaiter(kind, id string, owner Caller) {
 		exact, state, _ := s.prober().Probe(self)
 		same := false
 		if existing.Pid == self && state == identity.Alive {
-			// The pair decides when both sides carry it (issue #1):
+			// The pair decides when both sides carry it:
 			// cleanup must not orphan its own record after clock drift.
 			if existing.PidStartTicks > 0 && existing.BootID != "" &&
 				exact.StartTicks > 0 && exact.BootID != "" {

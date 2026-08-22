@@ -39,9 +39,8 @@ func TestHeadroom(t *testing.T) {
 
 // Only ENOENT ascends to a parent; every other failure to establish
 // the requested path REFUSES — an ancestor's answer is not a
-// measurement of the path that was asked about (the opus-window
-// review's finding 1: permission-denied and overlong paths returned
-// exit 0 while reporting the ancestor).
+// measurement of the path that was asked about (permission-denied and
+// overlong paths must not report the ancestor as success).
 func TestHeadroomRefusesUnestablishablePath(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("permission refusal is unobservable as root")
@@ -64,8 +63,8 @@ func TestHeadroomRefusesUnestablishablePath(t *testing.T) {
 
 // The ascent never cleans: an absent component followed by dot
 // components must refuse, not lexically collapse into some directory
-// the requested path never named (verification round 2 finding 3 —
-// filepath.Dir internally Cleans, so 'absent/../x' ascended into '.').
+// the requested path never named (filepath.Dir internally Cleans, so
+// 'absent/../x' would ascend into '.').
 func TestHeadroomRefusesDotComponentAscent(t *testing.T) {
 	dir := t.TempDir()
 	// Raw concatenation on purpose: filepath.Join CLEANS, which would
