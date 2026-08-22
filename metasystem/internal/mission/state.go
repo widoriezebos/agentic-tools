@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"math"
 	"os"
@@ -1160,7 +1161,45 @@ func writeState(statePath, sourcePath, expect string, allowResolution bool) erro
 	if err != nil {
 		return &ProposalError{Err: err}
 	}
-	return atomicWriteJSON(statePath, finalized)
+	return writeAcceptanceDurable(statePath, finalized)
+}
+
+// writeAcceptanceDurable publishes the state through the two-outcome
+// writer. The acceptance write is the mission's single commit point, so
+// a publication whose durability is in doubt is re-read and verified
+// byte-for-byte before the runner may proceed on it: a commit point
+// that might not survive a crash has not committed.
+func writeAcceptanceDurable(statePath string, value any) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(value); err != nil {
+		return err
+	}
+	durable, err := atomicfile.WriteText(statePath, buf.String(), filepath.Dir(statePath))
+	if err != nil {
+		return err
+	}
+	if !durable {
+		if err := verifyPublishedBytes(statePath, buf.Bytes()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyPublishedBytes re-reads a published file and proves it carries
+// exactly the bytes the writer meant to commit.
+func verifyPublishedBytes(path string, expected []byte) error {
+	reread, err := os.ReadFile(path)
+	if err != nil {
+		return stateErr("mission state durability is unverified: %v", err)
+	}
+	if !bytes.Equal(reread, expected) {
+		return stateErr("mission state durability is unverified: published bytes differ from the committed proposal")
+	}
+	return nil
 }
 
 // VerifyStateShape validates a state document and returns its sequence and hash.
