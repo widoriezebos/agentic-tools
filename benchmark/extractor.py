@@ -825,9 +825,16 @@ class Extractor:
         return metric, passed, "all observable cycle, job, concurrency, wall-clock, and per-process caps were enforced" if passed else "one or more observable fence limits were exceeded or unavailable"
 
     def delegation_metric(self, chains: dict[str, list[dict[str, Any]]]) -> tuple[dict[str, Any], bool | None, str]:
+        # The hardened delegation floor: a stream qualifies only through a
+        # validated implementer job whose NONEMPTY authorized patch was
+        # actually consumed into an accepted turn under an unsuperseded
+        # integration authorization. Rejected, empty, sham (no record),
+        # replayed (another job's record), superseded, unapplied, and
+        # human-adopted evidence never counts.
         streams = sorted(self.state.get("streams", {})) if self.state else []
         dispatched: dict[str, list[str]] = defaultdict(list)
-        certified: set[str] = set()
+        certified_digests: dict[str, set[str]] = defaultdict(set)
+        consumed: set[str] = set()
         if self.state:
             for turn in self.state.get("turnLog", []):
                 for accepted in turn.get("accepted", []):
@@ -836,16 +843,51 @@ class Extractor:
                         if value.get("role") == "implementer" and isinstance(value.get("stream"), str) and isinstance(value.get("jobId"), str):
                             dispatched[value["stream"]].append(value["jobId"])
                 for item in turn.get("certified", []):
-                    if item.get("verdict") == "accepted" and isinstance(item.get("jobId"), str):
-                        certified.add(item["jobId"])
+                    if item.get("verdict") == "accepted" and isinstance(item.get("jobId"), str) and isinstance(item.get("authorizationDigest"), str):
+                        certified_digests[item["jobId"]].add(item["authorizationDigest"])
+                raw_consumed = turn.get("consumedAuthorizations")
+                if isinstance(raw_consumed, list):
+                    consumed.update(digest for digest in raw_consumed if isinstance(digest, str))
+        records: dict[str, dict[str, Any]] = {}
+        auth_dir = self.mission_root / "authorizations"
+        if auth_dir.is_dir():
+            for path in sorted(auth_dir.glob("*.json")):
+                try:
+                    record = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    self.gap("mechanicalBehavior.delegationFloor", f"unreadable authorization record: {path.name}")
+                    continue
+                digest = record.get("authorizationDigest")
+                if isinstance(digest, str):
+                    records[digest] = record
+        superseded: set[str] = set()
+        for record in records.values():
+            for prior in record.get("supersedes") or []:
+                if isinstance(prior, str):
+                    superseded.add(prior)
         jobs_by_id = {job.get("jobId"): job for job in self.jobs}
         results = []
         for stream in streams:
             qualifying = []
             for job_id in dispatched.get(stream, []):
                 job = jobs_by_id.get(job_id)
-                if job and job.get("status") == "completed" and job_id in certified:
+                if not (job and job.get("status") == "completed"):
+                    continue
+                for digest in sorted(certified_digests.get(job_id, ())):
+                    record = records.get(digest)
+                    if record is None:
+                        continue
+                    if record.get("jobId") != job_id:
+                        continue
+                    changed = record.get("changedPaths")
+                    if not isinstance(changed, list) or not changed:
+                        continue
+                    if digest in superseded:
+                        continue
+                    if digest not in consumed:
+                        continue
                     qualifying.append(job_id)
+                    break
             results.append({"streamId": stream, "qualifyingImplementerJobIds": sorted(qualifying), "met": bool(qualifying)})
         passed = all(item["met"] for item in results) if results else None
         if not streams:
@@ -857,7 +899,11 @@ class Extractor:
             "streams": results,
         }
         failed = [item["streamId"] for item in results if not item["met"]]
-        detail = "at least one completed and certified implementer job exists per stream" if passed else "streams without a completed and certified implementer job: " + ", ".join(failed)
+        detail = (
+            "every stream holds a completed implementer job whose nonempty authorized patch was consumed unsuperseded into an accepted turn"
+            if passed
+            else "streams without a consumed, unsuperseded, nonempty implementer authorization: " + ", ".join(failed)
+        )
         return metric, passed, detail
 
     def acceptable_effective(self, requested: Any, effective: Any) -> bool:

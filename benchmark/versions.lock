@@ -3,7 +3,7 @@
   "entries": {
     "case:taskrun@0.1": "2c24945e4c3a50c99b1501a3b0660c684b11accf",
     "case:taskrun@0.2": "c789b887b5293b925094df75f8c2e8b2ed171b20",
-    "case:taskrun@0.3": "3c3106f471b3a4501e3bbaaf125560f5e96cfad8",
+    "case:taskrun@0.3": "8f57bfc21d4c73d4a87b78ba3d2b21c138cd9e12",
     "configuration:cheap@1": "3b526d1cffb6b6331e108cf0778de9200334cded",
     "configuration:devin-delegate@1": "8a13bae2deb80147c04db71ae89c5a7d53ce0834",
     "configuration:devin-host-claude-delegate@1": "6ad8613645e33d402e6fc2c00595d9e1162c0c81",

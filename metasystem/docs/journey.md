@@ -210,3 +210,20 @@ carry the discipline sentence, so a mission cannot call itself done
 while the wall was breached. Interactive work outside the runner
 keeps its ordinary freedom — the rule says so in its own last
 sentence, and a test holds it to that.
+
+## The floor stopped counting sham evidence (August 23, 2026)
+
+The wall's second implement row hardened the benchmark's delegation
+floor: a stream now qualifies only through a completed implementer
+job whose nonempty authorized patch was actually consumed —
+unsuperseded — into an accepted turn. Empty, sham, replayed,
+unapplied, and human-adopted evidence stopped counting, each pinned
+by its own fixture leg, and the incident cohort that motivated the
+wall stays invalid by construction: the new rule accepts a strict
+subset of what the old one accepted. The kit also corrected the
+previous slice on the way through: the discipline sentence had been
+edited into version-locked case manifests in place, and the gate
+refused it — immutable versions mean the sentence rides a new case
+version instead, while tonight's benchmark arm keeps its pinned
+instruments. Two slices in a row now, the system's own gates have
+been the sharpest reviewer of the day's work.

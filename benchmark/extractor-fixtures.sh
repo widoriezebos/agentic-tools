@@ -118,6 +118,7 @@ state = {
         "cycle": 1,
         "accepted": [{"kind": "dispatched", "value": {"jobId": "implementer-fixture", "role": "implementer", "stream": "build"}}],
         "certified": [{"jobId": "implementer-fixture", "verdict": "accepted", "evidence": "fixture", "authorizationDigest": "1" * 64}],
+        "consumedAuthorizations": ["1" * 64],
     }],
     "waitingList": [],
     "runnerLease": None,
@@ -274,6 +275,19 @@ write_json(round_dir / "return.json", {
 (round_dir / "prompt.md").write_text("fixture delegate prompt\n", encoding="utf-8")
 (round_dir / "raw.out").write_text("fixture delegate transcript\n", encoding="utf-8")
 
+write_json(mission / "authorizations" / ("1" * 64 + ".json"), {
+    "schemaVersion": 1,
+    "authorizationDigest": "1" * 64,
+    "jobId": "implementer-fixture",
+    "rootJob": "implementer-fixture",
+    "mission": "fixture",
+    "stream": "build",
+    "reviewedTree": "b" * 40,
+    "patchDigest": "c" * 64,
+    "changedPaths": ["src/fixture.txt"],
+    "supersedes": [],
+})
+
 supervision = agents / "supervision"
 supervision.mkdir(parents=True, exist_ok=True)
 (supervision / "census.log").write_text("CUSTODY pid=1 start=1 runtime=fake registry=fixture argv=fake\n", encoding="utf-8")
@@ -300,9 +314,15 @@ variants = {
     "zeroUntracked": "untracked",
     "fencesEnforced": "fence",
     "delegationFloorMet": "delegation",
+    "authEmptyPatch": "auth-empty",
+    "authShamRecord": "auth-sham",
+    "authReplayed": "auth-replayed",
+    "authUnapplied": "auth-unapplied",
+    "authSuperseded": "auth-superseded",
     "rosterPinned": "roster",
     "evidenceSetComplete": "missing-ledger",
 }
+auth_path_name = "1" * 64 + ".json"
 for name, mutation in variants.items():
     destination = fixture / name
     shutil.copytree(base, destination)
@@ -326,6 +346,34 @@ for name, mutation in variants.items():
         value = json.loads((mission_copy / "state.json").read_text())
         value["turnLog"][0]["certified"] = []
         write_json(mission_copy / "state.json", value)
+    elif mutation == "auth-empty":
+        value = json.loads((mission_copy / "authorizations" / auth_path_name).read_text())
+        value["changedPaths"] = []
+        write_json(mission_copy / "authorizations" / auth_path_name, value)
+    elif mutation == "auth-sham":
+        (mission_copy / "authorizations" / auth_path_name).unlink()
+    elif mutation == "auth-replayed":
+        value = json.loads((mission_copy / "authorizations" / auth_path_name).read_text())
+        value["jobId"] = "someone-elses-job"
+        value["rootJob"] = "someone-elses-job"
+        write_json(mission_copy / "authorizations" / auth_path_name, value)
+    elif mutation == "auth-unapplied":
+        value = json.loads((mission_copy / "state.json").read_text())
+        value["turnLog"][0]["consumedAuthorizations"] = []
+        write_json(mission_copy / "state.json", value)
+    elif mutation == "auth-superseded":
+        write_json(mission_copy / "authorizations" / ("2" * 64 + ".json"), {
+            "schemaVersion": 1,
+            "authorizationDigest": "2" * 64,
+            "jobId": "implementer-fixture",
+            "rootJob": "implementer-fixture",
+            "mission": "fixture",
+            "stream": "build",
+            "reviewedTree": "d" * 40,
+            "patchDigest": "e" * 64,
+            "changedPaths": ["src/fixture.txt"],
+            "supersedes": ["1" * 64],
+        })
     elif mutation == "roster":
         value = json.loads((agents_copy / "jobs" / "implementer-fixture.json").read_text())
         value["requestedModel"] = "wrong-model"
@@ -398,7 +446,7 @@ assert "does not match its recorded chain" in errors, errors[:2000]
 PY_AUTH
 echo "authority refusing leg passed"
 
-for name in valid everyJobTerminal everyChainClosed zeroUntracked fencesEnforced delegationFloorMet rosterPinned evidenceSetComplete; do
+for name in valid everyJobTerminal everyChainClosed zeroUntracked fencesEnforced delegationFloorMet authEmptyPatch authShamRecord authReplayed authUnapplied authSuperseded rosterPinned evidenceSetComplete; do
   mission="$fixture/$name/artifacts/agents/missions/fixture"
   out="$fixture/$name-scorecard.json"
   "$kit/extract.sh" "$mission" --spec "$fixture/spec" --out "$out" >/dev/null
@@ -422,9 +470,13 @@ if variant == "valid":
     assert scorecard["identity"]["candidateSha"] is not None
     assert scorecard["machineFingerprint"]["cpuModel"] == "fixture-cpu"
 else:
+    # The five auth* legs are distinct causes of one gate: the hardened
+    # delegation floor refuses empty, sham, replayed, unapplied, and
+    # superseded authorization evidence alike.
+    gate_name = "delegationFloorMet" if variant.startswith("auth") else variant
     assert scorecard["runValidity"]["valid"] is False, scorecard["runValidity"]
-    assert gates[variant] is False, gates
-    expected_false = {variant}
+    assert gates[gate_name] is False, gates
+    expected_false = {gate_name}
     if variant == "everyJobTerminal":
         # The same sole implementer cannot be both non-terminal and satisfy the
         # completed-and-certified delegation floor.
