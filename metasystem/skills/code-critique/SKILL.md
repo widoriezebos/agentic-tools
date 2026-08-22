@@ -59,6 +59,8 @@ Use `accepted` or `refuted` for material findings; a TRUE finding outside the br
 
 ## Round Budget and Exit
 
+When a design chain exited through fixtures-as-arbiter (see the design-critique skill), this code critique is MANDATORY and the named fixture obligations are part of its findings surface: an unimplemented or failing named fixture is a material finding.
+
 The shipped round budget is three focused rounds; record it in the brief before review:
 
 1. Run both layers over the full implementation and adjudicate every finding.

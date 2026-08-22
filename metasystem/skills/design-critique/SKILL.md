@@ -49,6 +49,33 @@ budget — no exhaustion can ever fire — which is how a seven-round loop ran
 unbudgeted on this repository's own consolidation design (2026-08-12)
 before the human called it.
 
+## Fixtures as Arbiter: the Principled Exit
+
+When a chain's trajectory is FALLING and past its round budget, and
+every remaining material finding is MECHANICAL-GRAIN — it names a
+value, a format, or a bounded choice, never an invariant or a
+contract shape — prose review stops being the arbiter: fold the
+remaining findings and START implementation. All five conditions
+bind, or the exit is unavailable:
+
+1. The trajectory is falling and the budget is spent — this is an
+   exit from a converging chain, never an escape from a losing one.
+2. Every remaining finding is mechanical-grain. ONE invariant-grade
+   finding keeps the chain open.
+3. The fold is one-to-one: each finding becomes a NAMED fixture
+   obligation in the plan's Proof section — nothing dissolves into
+   prose.
+4. Code-critique of the implementation is MANDATORY, not the usual
+   per-batch judgement call: the fixtures and the code critic
+   together are the arbiter prose review stopped being.
+5. The switch is RECORDED in the plan header with the trajectory
+   that justified it.
+
+At mechanical grain, the implementation's own tests judge better
+and cheaper than another prose round — that is the rule's whole
+reason (human-ratified on the flight-recorder chain, six falling
+rounds: 21, 15, 10, 4, 3, 2).
+
 ## Close a Round by Join, Not by Count
 
 A round is closed only when every material finding carries a disposition — and that is a claim to be checked, not asserted. Parse the critique into a structured worklist (stable identifier, severity, proposal) and join it against the dispositions; the round closes when the two sets are equal. Working from prose invites the failure this prevents: "N corrections applied" reads like closure while unaddressed findings sit in the body, and the next round spends itself rediscovering them instead of finding anything new. If the critique carries no stable identifier per finding, ask for one — an unjoinable critique can be estimated, not closed.
