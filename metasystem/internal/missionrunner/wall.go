@@ -1013,9 +1013,14 @@ func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cy
 			ask["taintId"] = nextTaintID
 		}
 	}
-	if err := appendTaintEntry(outcome.State, turnID, violation); err != nil {
+	taintID, err := appendTaintEntry(outcome.State, turnID, violation)
+	if err != nil {
 		return nil, err
 	}
+	e.emit("taint-set", "workspace taint set by "+turnID, map[string]string{
+		"missionId": e.Mission, "turnId": turnID,
+		"taintId": fmt.Sprintf("%d", taintID), "error": clipSummary(violation),
+	})
 	return e.applyPark(statePath, ledger, turnID, outcome)
 }
 
@@ -1023,25 +1028,25 @@ func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cy
 // in the same proposal as the park, so the taint and the stop are one
 // write. Resolution stays null: only a human's typed RESTORE or
 // ADOPT_DISPUTED_TREE ever clears it.
-func appendTaintEntry(state map[string]any, turnID, reason string) error {
+func appendTaintEntry(state map[string]any, turnID, reason string) (int64, error) {
 	taint, ok := state["workspaceTaint"].(map[string]any)
 	if !ok {
-		return failf(3, "mission state carries no workspaceTaint ledger")
+		return 0, failf(3, "mission state carries no workspaceTaint ledger")
 	}
 	next, ok := jsonInt(taint["next"])
 	if !ok || next < 1 {
-		return failf(3, "mission workspaceTaint next id is invalid")
+		return 0, failf(3, "mission workspaceTaint next id is invalid")
 	}
 	entries, ok := taint["entries"].([]any)
 	if !ok {
-		return failf(3, "mission workspaceTaint entries are invalid")
+		return 0, failf(3, "mission workspaceTaint entries are invalid")
 	}
 	taint["entries"] = append(entries, map[string]any{
 		"taintId": next, "turnId": turnID, "reason": reason,
 		"setAt": nowISO(), "resolution": nil,
 	})
 	taint["next"] = next + 1
-	return nil
+	return next, nil
 }
 
 // hasOpenWallAskForUnresolvedTaint reports whether any open

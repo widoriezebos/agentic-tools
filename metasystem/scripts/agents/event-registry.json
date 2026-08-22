@@ -111,6 +111,24 @@
         }
       }
     },
+    "authorization-consumed": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "authorizationDigest": {
+          "required": true,
+          "type": "str"
+        },
+        "turnId": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "authorization-issued": {
       "emitters": [
         "conformance"
@@ -122,6 +140,25 @@
       "payload": {
         "authorizationDigest": {
           "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "authorization-refused": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "jobId": "required",
+        "missionId": "required"
+      },
+      "payload": {
+        "error": {
+          "required": true,
+          "type": "str"
+        },
+        "authorizationDigest": {
+          "required": false,
           "type": "str"
         }
       }
@@ -411,6 +448,24 @@
         }
       }
     },
+    "recovery-inspected": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "verdict": {
+          "required": true,
+          "type": "str"
+        },
+        "turnId": {
+          "required": false,
+          "type": "str"
+        }
+      }
+    },
     "repair-attempted": {
       "emitters": [
         "adapter",
@@ -679,6 +734,28 @@
         }
       }
     },
+    "taint-set": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "taintId": {
+          "required": true,
+          "type": "str"
+        },
+        "turnId": {
+          "required": true,
+          "type": "str"
+        },
+        "error": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
     "turn-ended": {
       "emitters": [
         "adapter",
@@ -775,6 +852,24 @@
           "type": "str"
         },
         "observed": {
+          "required": true,
+          "type": "str"
+        }
+      }
+    },
+    "wall-passed": {
+      "emitters": [
+        "runner"
+      ],
+      "ids": {
+        "missionId": "required"
+      },
+      "payload": {
+        "turnId": {
+          "required": true,
+          "type": "str"
+        },
+        "consumedCount": {
           "required": true,
           "type": "str"
         }

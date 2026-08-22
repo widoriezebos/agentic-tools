@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 )
 
 // The continue/park/complete decision after a turn, and the state proposals
@@ -168,6 +170,18 @@ func ConcludeTurn(root, mission string, state map[string]any, turn Turn, conclus
 	entry["gatePassed"] = conclusion.GatePassed
 	if err := appendTurnLog(proposed, entry); err != nil {
 		return nil, err
+	}
+	if verdict, _ := wall["verdict"].(string); verdict == "passed" {
+		runnerWitness(root, "wall-passed", "host-implementer wall passed for turn "+turn.TurnID, map[string]string{
+			"missionId": mission, "turnId": turn.TurnID, "consumedCount": fmt.Sprintf("%d", len(consumed)),
+		})
+	}
+	for _, raw := range consumed {
+		if digest, ok := raw.(string); ok {
+			runnerWitness(root, "authorization-consumed", "integration authorization consumed into turn "+turn.TurnID, map[string]string{
+				"missionId": mission, "turnId": turn.TurnID, "authorizationDigest": digest,
+			})
+		}
 	}
 	// The acceptance append stays THE single commit point but
 	// no longer concludes the turn: openTurn survives it, and the
@@ -467,4 +481,18 @@ func anyActiveStream(state map[string]any) bool {
 		}
 	}
 	return false
+}
+
+// runnerWitness records one observability event from the turn-conclusion
+// path. The turn-log records remain the authority; a lost event loses a
+// witness, never a fact.
+func runnerWitness(root, event, summary string, fields map[string]string) {
+	kept := map[string]string{}
+	for key, value := range fields {
+		if value != "" {
+			kept[key] = value
+		}
+	}
+	emitter := events.Emitter{Component: "runner", Pid: int64(os.Getpid())}
+	emitter.Emit(root, event, summary, kept)
 }

@@ -120,6 +120,13 @@ func adjudicateCertified(root, missionID string, state map[string]any, entries [
 	reject := func(entry map[string]any, reason string) {
 		rejected = append(rejected, map[string]any{"kind": "certified", "value": entry, "reason": reason})
 	}
+	rejectAuthorization := func(entry map[string]any, digest, reason string) {
+		reject(entry, reason)
+		jobID, _ := entry["jobId"].(string)
+		runnerWitness(root, "authorization-refused", "integration authorization refused for "+jobID, map[string]string{
+			"missionId": missionID, "jobId": jobID, "error": reason, "authorizationDigest": digest,
+		})
+	}
 	for _, entry := range entries {
 		jobID, _ := entry["jobId"].(string)
 		record, recordErr := readJSONDoc(filepath.Join(jobsDirPath(root), jobID+".json"))
@@ -144,38 +151,38 @@ func adjudicateCertified(root, missionID string, state map[string]any, entries [
 		}
 		digest, _ := entry["authorizationDigest"].(string)
 		if !authorizationDigestRe.MatchString(digest) {
-			reject(entry, "an accepted certification must name its integration authorization digest")
+			rejectAuthorization(entry, "", "an accepted certification must name its integration authorization digest")
 			continue
 		}
 		authorization, exists := index.records[digest]
 		if !exists {
-			reject(entry, "integration authorization record does not exist")
+			rejectAuthorization(entry, digest, "integration authorization record does not exist")
 			continue
 		}
 		if authJob, _ := authorization["jobId"].(string); authJob != jobID {
-			reject(entry, "integration authorization was issued for a different job")
+			rejectAuthorization(entry, digest, "integration authorization was issued for a different job")
 			continue
 		}
 		if authMission, _ := authorization["mission"].(string); authMission != missionID {
-			reject(entry, "integration authorization was issued for a different mission")
+			rejectAuthorization(entry, digest, "integration authorization was issued for a different mission")
 			continue
 		}
 		if authIncarnation, _ := authorization["missionIncarnation"].(string); incarnation == "" || authIncarnation != incarnation {
-			reject(entry, "integration authorization was issued under a different mission incarnation")
+			rejectAuthorization(entry, digest, "integration authorization was issued under a different mission incarnation")
 			continue
 		}
 		identityDigest, digestErr := validate.JobIdentityDigest(record)
 		if digestErr != nil || authorization["jobRecordDigest"] != identityDigest {
-			reject(entry, "job record identity no longer matches the authorization")
+			rejectAuthorization(entry, digest, "job record identity no longer matches the authorization")
 			continue
 		}
 		if index.superseded[digest] {
-			reject(entry, "integration authorization is superseded by a later round")
+			rejectAuthorization(entry, digest, "integration authorization is superseded by a later round")
 			continue
 		}
 		rootJob, _ := authorization["rootJob"].(string)
 		if heads := index.headsByRoot[rootJob]; len(heads) != 1 {
-			reject(entry, fmt.Sprintf("authorization chain %s carries %d live heads; a forked chain certifies nothing", rootJob, len(heads)))
+			rejectAuthorization(entry, digest, fmt.Sprintf("authorization chain %s carries %d live heads; a forked chain certifies nothing", rootJob, len(heads)))
 			continue
 		}
 		if consumer, taken := consumed[digest]; taken {
