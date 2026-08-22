@@ -27,13 +27,16 @@ The appetite acts at every stage:
 The standing ceiling: nothing sized over eight hours starts without
 a discussion with Wido first.
 
-**Slicing is the way (Wido's ruling, 2026-08-22).** When work is too
-big for its appetite — or too big to have one — the answer is never
-a bigger appetite: SLICE it into manageable pieces, each with its
-own token, each independently landable and concludable. Big items
-live on the backlog as their next slice's token plus a note naming
-the remainder; the remainder gets sliced when its turn comes, not
-before. This is how the metasystem handles every big piece of work.
+**Slicing is the way (Wido's ruling, 2026-08-22).** Slicing is not
+an appetite mechanism — it is the delivery law: large pieces of
+work are NEVER built in one go. They are split into iterative,
+independently DEPLOYABLE pieces — each slice lands whole, works on
+its own, and leaves the system better — and the backlog carries the
+next slice plus a note naming the remainder, sliced when its turn
+comes. The appetite is a different instrument: it sizes the WORTH
+of a feature. A well-sliced piece still carries its own appetite;
+a blown appetite still pauses and raises. The two laws compose,
+they do not substitute.
 
 **The appetite is machine-enforced, as covenant.** Its recorded form
 opens the goal's next step with a duration token — `Appetite: 4h`,
