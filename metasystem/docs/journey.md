@@ -243,3 +243,19 @@ the close by name. The principle underneath is the flight
 recorder's, applied to the wall: records are the authority, events
 are the witnesses, and evidence that cannot survive its author has
 not been kept.
+
+## The commit point learned to doubt itself (August 23, 2026)
+
+The acceptance write — the one write that joins wall verdict,
+trees, turn log, and consumed digests — turned out to be mostly
+built already: the crash shapes on either side of it had been
+pinned one incident at a time, by the reserve-wedge fix, the heal
+work, and the ledger-ahead fixtures, and the obligation row's
+MISSING status was simply stale. The audit that proved this found
+one real gap: the write claimed atomicity but not durability, and
+a commit point that might not survive a crash has not committed.
+It now publishes through the two-outcome writer and, when
+durability is in doubt, re-reads and proves its own bytes before
+the runner may proceed. Most of the row's work was recognizing
+what already existed — which is its own kind of progress, and
+cheaper than building it twice.
