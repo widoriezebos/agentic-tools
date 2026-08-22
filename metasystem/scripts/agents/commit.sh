@@ -144,17 +144,34 @@ proved_tree=$(git -C "$root" write-tree) || {
   echo "agent commit refused: the index cannot be proved as a tree (unmerged entries?)" >&2
   exit 1
 }
-"$root/scripts/agents/go-gate.sh" --fast || {
+# The proof's progress chatter is diagnostics, never landing output:
+# callers own this wrapper's stdout (benchmark provisioning's
+# three-human-steps contract reads it), so both proofs speak on stderr.
+# And the proof is SIDE-EFFECT-FREE: the gate compiles to a scratch
+# path and bin/metasystem stays byte-identical — a supervision-armed
+# checkout fingerprints the live binary, and a commit-time swap under
+# an armed watch broke the benchmark target's preflight the day this
+# boundary first met one.
+proof_engine=$(mktemp "${TMPDIR:-/tmp}/metasystem-proof-engine.XXXXXX")
+trap 'rm -f -- "$proof_engine"' EXIT
+"$root/scripts/agents/go-gate.sh" --fast --proof-out "$proof_engine" 1>&2 || {
   echo "agent commit refused: the static re-proof failed (go-gate.sh --fast)" >&2
   exit 1
 }
-# The audit proof runs on the freshly gate-built engine with its
+# The audit proof runs on the freshly PROOF-built engine with its
 # override knobs cleared (IL28-R4-4): a stale exported cap or
 # placeholder waiver is exactly the long-lived environment escape the
-# boundary forbids.
+# boundary forbids. On a non-Go adopted checkout the fast gate skips
+# without building, and the audit runs on the checkout's own engine.
+audit_engine="$proof_engine"
+if [[ -s "$audit_engine" ]]; then
+  chmod +x "$audit_engine"
+else
+  audit_engine="$root/bin/metasystem"
+fi
 env -u METASYSTEM_MAX_ALWAYS_LOADED_WORDS -u METASYSTEM_AUDIT_ALLOW_PLACEHOLDERS \
-  METASYSTEM_BIN="$root/bin/metasystem" \
-  "$root/scripts/audit-metasystem.sh" "$root" || {
+  METASYSTEM_BIN="$audit_engine" \
+  "$root/scripts/audit-metasystem.sh" "$root" 1>&2 || {
   echo "agent commit refused: the static re-proof failed (audit-metasystem.sh)" >&2
   exit 1
 }

@@ -551,6 +551,49 @@ os.replace(temporary, path)
 PY
 "$target/scripts/metasystem-config.sh" validate
 
+# The adopted target must survive its own landing boundary: the
+# instruments commit below rides the target's commit.sh, whose IL-28
+# static re-proof audits docs/project-rules.md for template
+# placeholders. A benchmark target's answers are all knowable here, so
+# provisioning fills the template's placeholders with the mission's
+# concrete facts — keeping every machine-read section (the envelope
+# eligibility table the contract preflight parses) byte-intact.
+python3 - "$target" "$manifest" <<'PY'
+import json, sys
+from pathlib import Path
+target = Path(sys.argv[1])
+manifest = json.load(open(sys.argv[2], encoding="utf-8"))
+contract = manifest["missionContract"]
+gate = contract["gate"]
+rules_path = target / "docs" / "project-rules.md"
+text = rules_path.read_text(encoding="utf-8")
+evidence = "recorded in metasystem.conf (evidence.root, filled by the provisioner)"
+fills = {
+    "<template sha>": "benchmark scratch target; the adopt record carries the template identity",
+    "<one paragraph>": "The benchmark mission's product: a scratch target provisioned for one sealed mission contract, graded by a held-out grader afterwards.",
+    "<paths and ownership>": "none",
+    "<paths>": "named by the sealed mission contract",
+    "<path outside the repository>": evidence,
+    "<durable evidence root, outside the repository>": evidence,
+    "<command>": gate["command"],
+    "<list them here>": "none",
+    "<sources and handling>": "none; the seed, spec, and sealed contract are the only inputs",
+    "<forbidden list>": "none beyond the runtime defaults",
+    "<policy>": "no egress beyond the roster runtimes' own APIs",
+    "<location>": "metasystem.conf",
+    "<amount and period>": "none; cohort spend is ruled at the human seal",
+    "<warning threshold>": "not applicable in a benchmark target",
+    "<who approves>": "the human at the seal boundary",
+    "<usage source>": "the adapters' usage records under artifacts/",
+    "<cheapest model class>": "per the sealed contract's roster",
+    "<middle model class>": "per the sealed contract's roster",
+    "<costliest model class>": "per the sealed contract's roster",
+}
+for marker, value in fills.items():
+    text = text.replace(marker, value)
+rules_path.write_text(text, encoding="utf-8")
+PY
+
 while IFS= read -r instrument; do
   [[ -n "$instrument" ]] || continue
   cp "$fixture_spec/$instrument" "$target/$(basename "$instrument")"

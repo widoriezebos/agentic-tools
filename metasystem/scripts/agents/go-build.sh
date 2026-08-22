@@ -10,10 +10,23 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 cd "$root"
 
+# --out PATH is the PROOF build: compile the engine to PATH and leave
+# bin/metasystem untouched. The landing boundary uses it because a
+# supervision-armed checkout fingerprints the live binary — a commit-time
+# swap under an armed watch is exactly what the fingerprint refuses
+# (found live: the benchmark kit's wrapped-commit probe rebuilt the
+# provisioned target's engine and its preflight then refused).
+proof_out=
+if [[ "${1:-}" == --out ]]; then
+  [[ $# -ge 2 && -n "$2" ]] || { echo "go-build: --out needs a path" >&2; exit 2; }
+  proof_out=$2
+  shift 2
+fi
+
 command -v go >/dev/null 2>&1 \
   || { echo "go-build: no go toolchain on PATH; the engine cannot be built" >&2; exit 1; }
 
-if [[ "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x "$root/bin/metasystem" ]]; then
+if [[ -z "$proof_out" && "${METASYSTEM_ALLOW_CONCURRENT_GATE:-0}" != 1 && -x "$root/bin/metasystem" ]]; then
   fence_rc=0
   "$root/bin/metasystem" gate fence --root "$root" --self-pid $$ || fence_rc=$?
   if [[ "$fence_rc" == 1 ]]; then
@@ -33,6 +46,14 @@ mkdir -p bin
 # a non-object file (exactly the stale/foreign case this script exists to
 # replace), and the atomic rename never leaves a half-written binary where
 # a live process might exec it.
+if [[ -n "$proof_out" ]]; then
+  CGO_ENABLED=0 go build -buildvcs=false \
+    -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=$commit" \
+    -o "$proof_out" ./cmd/metasystem \
+    || { echo "go-build: build failed" >&2; exit 1; }
+  echo "go-build: proof engine @ $commit (CGO_ENABLED=0); bin/metasystem untouched"
+  exit 0
+fi
 staging="bin/.metasystem.build.$$"
 trap 'rm -f "$staging"' EXIT
 CGO_ENABLED=0 go build -buildvcs=false \

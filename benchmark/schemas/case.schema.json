@@ -137,7 +137,7 @@
     "needs": {
       "type": "object",
       "additionalProperties": false,
-      "description": "What the TASK requires of any configuration (design \u00a75/\u00a76).",
+      "description": "What the TASK requires of any configuration (design §5/§6).",
       "required": [
         "dependencies",
         "network"
@@ -279,6 +279,11 @@
           }
         }
       }
+    },
+    "versionNote": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional provenance for this version mint: what changed from the predecessor and why it needed a new version (registered versions are immutable, so every in-place-refused edit lands as a mint with its story here)."
     }
   }
 }

@@ -23,8 +23,19 @@ cd "$root"
 # The fast switch is argument-only (see the header): every caller states
 # fast mode at the call site or gets the full gate.
 gate_fast=0
-if [[ "${1:-}" == --fast ]]; then
-  gate_fast=1
+gate_proof_out=
+while (($#)); do
+  case "$1" in
+    --fast) gate_fast=1; shift ;;
+    --proof-out)
+      [[ $# -ge 2 && -n "$2" ]] || { echo "go gate: --proof-out needs a path" >&2; exit 2; }
+      gate_proof_out=$2; shift 2 ;;
+    *) echo "go gate: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+if [[ -n "$gate_proof_out" && "$gate_fast" != 1 ]]; then
+  echo "go gate: --proof-out is a fast-mode flag (the landing boundary's side-effect-free build proof)" >&2
+  exit 2
 fi
 
 # Fast mode is an edit-loop tool, not a landing gate: it must neither
@@ -227,8 +238,16 @@ go run honnef.co/go/tools/cmd/staticcheck@2025.1 ./... \
 # Fast mode stops here: the static verdicts are in, and the build proves
 # the engine still compiles while handing the edit loop a fresh binary.
 if [[ "$gate_fast" == 1 ]]; then
-  bash scripts/agents/go-build.sh \
-    || { echo "go gate: build failed" >&2; exit 1; }
+  if [[ -n "$gate_proof_out" ]]; then
+    # The landing boundary's build proof: compile to the caller's scratch
+    # path and leave bin/metasystem alone — a supervision-armed checkout
+    # fingerprints the live binary, and the boundary must prove, not swap.
+    bash scripts/agents/go-build.sh --out "$gate_proof_out" \
+      || { echo "go gate: build failed" >&2; exit 1; }
+  else
+    bash scripts/agents/go-build.sh \
+      || { echo "go gate: build failed" >&2; exit 1; }
+  fi
   echo "go gate: fast mode passed (gofmt, vet, staticcheck, build); the full gate remains the landing requirement"
   exit 0
 fi

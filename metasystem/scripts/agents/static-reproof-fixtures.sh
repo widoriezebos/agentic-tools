@@ -17,6 +17,8 @@ tail_body=$(awk '/IL-28 static re-proof/{flag=1} flag' "$wrapper")
   || { echo "static re-proof fixture: commit.sh lost its IL-28 stanza" >&2; exit 1; }
 grep -Fq 'go-gate.sh" --fast' <<<"$tail_body" \
   || { echo "static re-proof fixture: the boundary does not invoke go-gate.sh --fast" >&2; exit 1; }
+grep -Fq -- '--fast --proof-out' "$wrapper" \
+  || { echo "static re-proof fixture: the boundary's gate call lost its side-effect-free --proof-out" >&2; exit 1; }
 gate_line=$(grep -n 'go-gate.sh" --fast' "$wrapper" | head -1 | cut -d: -f1)
 commit_line=$(grep -n 'git -C "$root" commit "$@"' "$wrapper" | head -1 | cut -d: -f1)
 [[ -n "$gate_line" && -n "$commit_line" && "$gate_line" -lt "$commit_line" ]] \
@@ -172,10 +174,15 @@ grep -Fq "never judged" <<<"$selected" \
 # write-tree, not merely "some cached change".
 [[ "$(git -C "$fixture_root" write-tree)" == "$staged_tree" ]] \
   || { echo "static re-proof fixture: the rollback did not preserve the proved index tree" >&2; exit 1; }
+engine_before=$(shasum -a 256 "$fixture_root/bin/metasystem" | cut -d' ' -f1)
 "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "plain message concludes" \
   || { echo "static re-proof fixture: a plain -m commit was blocked" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" rev-parse 'HEAD^{tree}')" == "$staged_tree" ]] \
   || { echo "static re-proof fixture: the concluding commit did not record the proved tree" >&2; exit 1; }
+# The boundary never touches the supervised engine (the armed-checkout
+# fingerprint incident): bin/metasystem is byte-identical after a landing.
+[[ "$(shasum -a 256 "$fixture_root/bin/metasystem" | cut -d' ' -f1)" == "$engine_before" ]] \
+  || { echo "static re-proof fixture: the landing boundary rewrote bin/metasystem" >&2; exit 1; }
 
 # Leg 8b (landing-tooling-fixes): --push lands on BOTH declared
 # remotes or fails by name — the rule agents remembered around the
