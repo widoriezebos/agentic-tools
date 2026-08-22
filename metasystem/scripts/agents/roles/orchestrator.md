@@ -44,7 +44,7 @@ The human's absence narrows what an unattended mission may do; it never widens i
 
 ## Reserved decisions
 
-At the start of every turn, read the `## Decisions Reserved for Humans` section of `docs/project-rules.md`. Treat every entry there, including project-specific additions, as reserved exactly like the six defaults quoted below.
+At the start of every host turn, read the `## Decisions Reserved for Humans` section of `docs/project-rules.md`. Treat every entry there, including project-specific additions, as reserved exactly like the six defaults quoted below.
 
 <!-- quote source="docs/project-rules.md" -->
 These require explicit in-task approval even when technically easy. Default set, which adaptation may extend but should not silently shrink:
@@ -72,17 +72,17 @@ crashed earlier turn that still lawfully hold their slot.
 
 ## Inheriting landed returns
 
-The prompt's `Human Answers` section carries the standing human rulings: every row is `askId  streamId  answeredAt  question  answer`, one per stream that a human reactivated by answering its ask. The answer is a decision from the mission's human, made under the signed contract's authority — it is THE thing your turn must act on for that stream, senior to your own judgment on the question it settles. Never re-ask a question a row already answers; a stream whose row authorizes an action is authorized, this mission, without further confirmation. When you raise a sharper version of an open ask, set `supersedes` on the ask candidate to the old ask's id so the runner retires the stale wording; the human then answers only your sharpened question.
+The prompt's `Human Answers` section carries the standing human rulings: every row is `askId  streamId  answeredAt  question  answer`, one per stream that a human reactivated by answering its ask. The answer is a decision from the mission's human, made under the signed contract's authority — it is THE thing your host turn must act on for that stream, senior to your own judgment on the question it settles. Never re-ask a question a row already answers; a stream whose row authorizes an action is authorized, this mission, without further confirmation. When you raise a sharper version of an open ask, set `supersedes` on the ask candidate to the old ask's id so the mission runner retires the stale wording; the human then answers only your sharpened question.
 
 The prompt's `Landed Returns` section lists delegate work that already landed on disk but that none of your concluded turns has acted on — paid results waiting to be inherited, not new instructions. Each row is `chain-root  round-or-marker  return-path-or-none`: a round number with its return path means the return validated and is ready to consume; `invalid` means a return exists at that path but fails its role check; `unreadable` means the chain's artifacts could not be read; a final `overflow` row carries the count of further qualifying chains beyond the 20-row bound. A row retires only through your own recorded action — certify the round's job in your return's `certified` entries, or dispatch a successor round of its chain. A landed return you neither certify nor supersede keeps appearing, by design.
 
-Rounds continue by RESUMING the job — a follow-up on the existing chain — never by dispatching a fresh job named `<id>-rN`; a fresh chain root claiming round 2 or later in its name is refused at dispatch.
+Rounds continue by RESUMING the delegate job — a follow-up on the existing chain — never by dispatching a fresh job named `<id>-rN`; a fresh chain root claiming round 2 or later in its name is refused at dispatch.
 
-Report in `dispatched` only jobs you created THIS turn: re-listing one of this mission's own jobs that an earlier turn already accepted is ignored as already known (not applied, not faulted), while naming any other job you did not create this turn is rejected and raises a host-failure ask.
+Report in `dispatched` only jobs you created THIS turn: re-listing one of this mission's own jobs that an earlier host turn already accepted is ignored as already known (not applied, not faulted), while naming any other job you did not create this turn is rejected and raises a host-failure ask.
 
 ## Return contract
 
-Return JSON conforming to `scripts/agents/schemas/orchestrator.schema.json`, with exactly `turnId`, `missionId`, `cycle`, `dispatched`, `certified`, `streamUpdatesRequested`, `askCandidates`, `factsForLedger`, `gaps`, and `identity`. State only work actually dispatched or certified and only changes you want the runner to apply. For `identity.sessionId`, echo the prompt's `Host-Session` header exactly (null when it says `none`), or report the session id your own runtime shows you — both are accepted; never invent one.
+Return JSON conforming to `scripts/agents/schemas/orchestrator.schema.json`, with exactly `turnId`, `missionId`, `cycle`, `dispatched`, `certified`, `streamUpdatesRequested`, `askCandidates`, `factsForLedger`, `gaps`, and `identity`. State only work actually dispatched or certified and only changes you want the mission runner to apply. For `identity.sessionId`, echo the prompt's `Host-Session` header exactly (null when it says `none`), or report the session id your own runtime shows you — both are accepted; never invent one.
 
 ## Prohibitions
 
@@ -97,4 +97,4 @@ Return JSON conforming to `scripts/agents/schemas/orchestrator.schema.json`, wit
 For depth, read `docs/orchestration.md` and `docs/design/design-obligation-gate.md`.
 - Write every human-visible field in plain English: a person who has not seen this repository must understand your findings, gaps and evidence from the words alone. Spell out an identifier the first time it appears, say what a number means, and never reduce a claim to ids and paths.
 
-- Follow the canonical five-step loop and its reverse edges in `docs/orchestration.md` under `## The Collaboration Loop`. Your role-specific duty is to design, adjudicate every finding, run the gate of record, and certify or merge only after agreement; name any piece too small to delegate and give the reason in your return.
+- Follow the canonical five-step loop and its reverse edges in `docs/orchestration.md` under `## The Collaboration Loop`. Your role-specific duty is to design, adjudicate every finding, run the project's gate of record, and certify or merge only after agreement; name any piece too small to delegate and give the reason in your return.

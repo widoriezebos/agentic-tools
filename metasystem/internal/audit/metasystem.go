@@ -171,7 +171,73 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 		fmt.Sprintf("Effective common-path bundle: %d words (report only)", bundleWords))
 
 	result.Violations = append(result.Violations, auditGoalSystem(absRoot)...)
+	qualified, qualErr := auditQualifiedNames(absRoot)
+	if qualErr != nil {
+		return nil, qualErr
+	}
+	result.Violations = append(result.Violations, qualified...)
 	return result, nil
+}
+
+// auditQualifiedNames guards the TRAVELING agent-facing surfaces —
+// dispatch templates, role briefs, and skills, which all end up read
+// inside project workspaces — against bare words a project may own:
+// metasystem prose there says "delegate job", "mission runner",
+// "host turn", "mission gate", "recorder event". A bare use with no
+// qualifying word in front cannot tell a delegate WHICH system's
+// noun it is reading. Self-defined terms qualify themselves (the
+// refactor skill's "acceptance gate").
+var bareCollision = regexp.MustCompile(`(?i)\b(?:the|a|an|this|each|every|its) (job|runner|turn|gate|event)s?\b`)
+var collisionQualifier = regexp.MustCompile(`(?i)(?:delegate|mission|host|recorder|stale|dispatch|goal|go.?gate|start.?gate|quality|acceptance|completion) (?:job|runner|turn|gate|event)s?\b|inside it\b`)
+
+func auditQualifiedNames(root string) ([]string, error) {
+	var violations []string
+	for _, rel := range []string{
+		filepath.Join("scripts", "agents", "templates"),
+		filepath.Join("scripts", "agents", "roles"),
+		"skills",
+	} {
+		dir := filepath.Join(root, rel)
+		walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			// A file that qualifies a word ONCE has told its reader
+			// which system owns it; later bare uses read under that
+			// definition (the refactor skill's "acceptance gate",
+			// then "the gate" throughout).
+			qualifiedAbove := map[string]bool{}
+			for i, line := range strings.Split(string(data), "\n") {
+				lower := strings.ToLower(line)
+				if collisionQualifier.MatchString(line) {
+					for _, w := range []string{"job", "runner", "turn", "gate", "event"} {
+						if strings.Contains(lower, w) {
+							qualifiedAbove[w] = true
+						}
+					}
+					continue
+				}
+				for _, hit := range bareCollision.FindAllStringSubmatch(line, -1) {
+					word := strings.ToLower(strings.TrimSuffix(hit[1], "s"))
+					if qualifiedAbove[word] {
+						continue
+					}
+					relPath, _ := filepath.Rel(root, path)
+					violations = append(violations, fmt.Sprintf("%s:%d speaks the bare %q on a traveling surface; qualify it (delegate job, mission runner, host turn, ...)", relPath, i+1, strings.TrimSpace(hit[0])))
+					break
+				}
+			}
+			return nil
+		})
+		if walkErr != nil && !os.IsNotExist(walkErr) {
+			return nil, walkErr
+		}
+	}
+	return violations, nil
 }
 
 func fileExists(path string) bool {

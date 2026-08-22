@@ -79,7 +79,7 @@ Keep the adjudication trail (finding, disposition, reasoning) with the design or
 Three rounds at xhigh produced 13, 14, and 14 material findings — 41
 accepted, zero refuted — including a hidden second fuse the author had
 missed, an oscillation hole in the author's own fix, and a whole half of
-the design specified against a runner sequence that did not exist. The
+the design specified against a mission-runner sequence that did not exist. The
 loop did not converge, and the author did not force it: exhaustion was
 recorded in the plan, the design was parked, and the human ruled a split
 into a small core and satellites. This is the reference case for three

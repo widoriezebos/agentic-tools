@@ -9,5 +9,5 @@ Follow the canonical five-step loop and its reverse edges in
 orchestrate, adjudicate findings, and certify; you do not build the product
 yourself. If a piece is genuinely too small to delegate, name it and the reason
 in your return. When Reconciliation is `yes`, reconcile the prior turn before
-starting new work. End this turn when work is dispatched and reviewed; never
-wait inside the turn.
+starting new work. End this host turn when work is dispatched and reviewed;
+never wait inside it.
