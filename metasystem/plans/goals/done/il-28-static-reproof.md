@@ -1,12 +1,14 @@
 # il-28-static-reproof
 
-- State: queued
+- State: done
 - Intent: No landing goes red on a static check: the landing boundary re-proves formatting, vet, staticcheck, and build via the fast gate before any commit concludes (IL-28, adopted at the 2026-08-20 retro)
 - Origin: main
 - Next step: IMPLEMENTED 2026-08-21: scripts/agents/commit.sh — the agent landing boundary — re-proves the static verdicts before any commit concludes: go-gate.sh --fast plus the always-loaded word audit (run env-scrubbed on the gate-built engine). The proof BINDS the committed bytes structurally: the inverted input closure (everything under the module prefix except bin/, artifacts/, the never-committed metasystem.conf.local, and plans/ minus the three plan files the audit itself reads; a committed toplevel go.work in scope; the prefix regex-escaped) refuses diverged, untracked, and ignored inputs by name in one --full-name path space; staged gitlinks, symlinks at critical input names (skill registrations stay lawful), and assume-unchanged/skip-worktree entries in scope refuse; the index tree is captured before the proofs and re-checked after them; and the POSTCONDITION — the landed commit tree must equal the proved index tree, else soft rollback and refusal — replaces any argument grammar, closing every content-selection spelling and hook-staged mid-commit bytes alike. Fixtures: scripts/agents/static-reproof-fixtures.sh, nine legs (shape + whole-wrapper escape scan with a pre-marker mutation leg; red gate refuses; green gate concludes; diverged input refuses then converges; untracked input refuses; postcondition pathspec rollback with exact proved-tree preservation and conclusion assertions; red audit refuses by name; ignored input refuses then converges), wired into validate-metasystem.sh. Loop closed 2026-08-21 at its declared round-6 failsafe (rounds returned 3, 3, 5, 7, 8, 5 findings; all folded except the recorded residue). Recorded residue: post-commit hook side effects fire before the rollback of a mismatched tree (no such automation exists in this repository; adopted-target hooks are sovereign; a failed rollback still lands inside the full-battery landing requirement), and git-quoted pathological filenames could evade the grep closure (no such names exist; repo convention forbids them). Remaining: observe the retro's expected effect — zero landings red on a static check — at the next retro.
+- Concluded: Concluded on proof by use: the commit boundary's static re-proof refused a real overrun today (the always-loaded word-budget catch).
 - OpenedAt: 2026-08-20T16:53:00Z
-- Revision: 1
+- Revision: 2
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=il-28-static-reproof
-Integrity: sha256=e0c88f4d72306d155afade64c56f0e2a4bbaceda0801546ebfb15d5d19108baa
+- 2026-08-22T19:56:25Z AW7WPJ0BFFF84224EZ60CH4M7H-widos-m5-pro-bf243850 done actor=widos-m5-pro+coordinator targets=il-28-static-reproof
+Integrity: sha256=e76121702669ef3dca03722d241a6078b61d9fbdeec02093c64e9f3962d54c8d
