@@ -22,6 +22,10 @@ close_bed_baseline() { # repo
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 cd "$root"
 source scripts/agents/fixture-budget.sh
+# Standalone runs resolve their own cap scale exactly as the sibling
+# suites do; under the battery the resolved env is inherited and the
+# init is a no-op re-resolution.
+harness_fixture_budget_init "$root"
 fixture_minimum_cap_min=$(harness_fixture_semantic_cap minimum-minutes)
 fixture_mission_job_cap_min=$(harness_fixture_semantic_cap mission-job-minutes)
 fixture_dispatch_envelope_cap_min=$(harness_fixture_semantic_cap dispatch-envelope-minutes)
@@ -554,6 +558,24 @@ make_agent_brief "$happy_brief" design
 run_agent_fixture happy happy "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id happy --wait
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job happy)" == completed ]] \
   || { echo "valid fake dispatch did not complete" >&2; exit 1; }
+
+# Exit honesty: a job that never existed answers FAST and speaks —
+# watch says vanished (5) with the reason on stderr instead of
+# burning its timeout; status names the missing record beside its 6.
+set +e
+never_watch_err=$(cd "$agent_repo" && scripts/agents/dispatch.sh watch --job never-was 2>&1 >/dev/null)
+never_watch_rc=$?
+never_status_err=$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job never-was 2>&1 >/dev/null)
+never_status_rc=$?
+set -e
+[[ $never_watch_rc -eq 5 ]] \
+  || { echo "watch on a never-existed job must answer vanished (5), got $never_watch_rc" >&2; exit 1; }
+grep -q "no job record" <<<"$never_watch_err" \
+  || { echo "the fast-fail watch must speak its reason: $never_watch_err" >&2; exit 1; }
+[[ $never_status_rc -eq 6 ]] \
+  || { echo "status on a never-existed job answers 6, got $never_status_rc" >&2; exit 1; }
+grep -q "no job record" <<<"$never_status_err" \
+  || { echo "status must name the missing record on stderr: $never_status_err" >&2; exit 1; }
 python3 - "$agent_repo" <<'PY'
 import json, re, sys
 from pathlib import Path
