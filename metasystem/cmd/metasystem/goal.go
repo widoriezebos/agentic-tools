@@ -97,6 +97,9 @@ func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) 
 // mutation, and the result on stdout.
 func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*string,
 	run func(*goal.Store, goal.Caller, []string) (goal.Result, error)) int {
+	if code, handled := trySyncMutation(name, args); handled {
+		return code
+	}
 	flags := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid (defaults to the parent process)")
