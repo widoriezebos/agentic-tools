@@ -15,8 +15,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// syncReq assembles the one request every synced verb consumes.
-func syncReq(root, by string) (goal.VerbRequest, error) {
+// syncReq assembles the one request every synced verb consumes. A
+// mutation without an identity refuses: the silent "session"
+// default minted claims under a generic lineage, and steal and
+// succession then judged the wrong owner.
+func syncReq(root, by, lineageFlag string) (goal.VerbRequest, error) {
 	if err := ensureGuardEnrolled(root); err != nil {
 		return goal.VerbRequest{}, err
 	}
@@ -28,9 +31,12 @@ func syncReq(root, by string) (goal.VerbRequest, error) {
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
-	lineage := os.Getenv("METASYSTEM_OWNER_LINEAGE")
+	lineage := lineageFlag
 	if lineage == "" {
-		lineage = "session"
+		lineage = os.Getenv("METASYSTEM_OWNER_LINEAGE")
+	}
+	if lineage == "" {
+		return goal.VerbRequest{}, fmt.Errorf("mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage")
 	}
 	ulid, err := goalUlid()
 	if err != nil {
@@ -60,6 +66,7 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // it consumes and ignores the rest.
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc string
+	lineage, digest                                            string
 	claim, refreshOnly                                         bool
 	keep                                                       int
 }
@@ -76,6 +83,8 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.because, "because", "", "the park's reason")
 	fs.StringVar(&f.conclude, "conclude", "", "the conclusion")
 	fs.StringVar(&f.arc, "arc", "", "the destination arc")
+	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
+	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
 	fs.BoolVar(&f.claim, "claim", false, "claim on open")
 	fs.BoolVar(&f.refreshOnly, "refresh-only", false, "complete a died refresh")
 	fs.IntVar(&f.keep, "keep", 10, "archive entries to keep")
@@ -97,7 +106,7 @@ func trySyncMutation(name string, args []string) (int, bool) {
 	if !converted(f.root) {
 		return 0, false
 	}
-	req, err := syncReq(f.root, f.by)
+	req, err := syncReq(f.root, f.by, f.lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1, true
@@ -124,11 +133,19 @@ func trySyncMutation(name string, args []string) (int, bool) {
 		if !need(f.id, "id") || !need(f.because, "because") {
 			return 2, true
 		}
+		if f.arc != "" {
+			res, err := goal.ParkArc(req, f.id, f.because)
+			return printSyncResult(res, err), true
+		}
 		res, err := goal.Park(req, f.id, f.because)
 		return printSyncResult(res, err), true
 	case "unpark":
 		if !need(f.id, "id") {
 			return 2, true
+		}
+		if f.arc != "" {
+			res, err := goal.UnparkArc(req, f.id)
+			return printSyncResult(res, err), true
 		}
 		res, err := goal.Unpark(req, f.id)
 		return printSyncResult(res, err), true
@@ -157,8 +174,11 @@ func trySyncMutation(name string, args []string) (int, bool) {
 		fmt.Fprintln(os.Stderr, "the synced backlog has no Current slot to promote into; claim the goal instead (goal claim --id ...)")
 		return 1, true
 	case "declare-free":
-		fmt.Fprintln(os.Stderr, "declare-free on the synced backlog is not wired yet; raise it if you need it")
-		return 1, true
+		if !need(f.digest, "digest") {
+			return 2, true
+		}
+		res, err := goal.DeclareFree(req, f.origin, f.digest)
+		return printSyncResult(res, err), true
 	case "reconcile":
 		if f.refreshOnly {
 			skipped, err := goal.RefreshOnly(f.root)
@@ -205,7 +225,7 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 				return 2
 			}
 		}
-		req, err := syncReq(f.root, f.by)
+		req, err := syncReq(f.root, f.by, f.lineage)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1

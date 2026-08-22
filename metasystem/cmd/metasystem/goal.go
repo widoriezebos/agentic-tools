@@ -249,11 +249,12 @@ func boolAsString(f *flag.FlagSet, name string) *string {
 func runGoalList(args []string) int {
 	flags := flag.NewFlagSet("goal list", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
+	pretty := flags.Bool("pretty", false, "a human table instead of JSON")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if converted(*root) {
-		return listSynced(*root)
+		return listSynced(*root, *pretty)
 	}
 	store := &goal.Store{Root: *root}
 	ledger, problems, err := store.ReadLedger()
@@ -262,6 +263,8 @@ func runGoalList(args []string) int {
 		return 1
 	}
 	out := map[string]any{
+		"root":            *root,
+		"world":           "legacy",
 		"problems":        problems,
 		"baselinePresent": store.BaselinePresent(),
 		// The read-only pair fact (bytes AND digest match the accepted
@@ -297,7 +300,7 @@ func converted(root string) bool {
 
 // listSynced prints the accepted world: the same JSON idea as the
 // legacy list, grouped by state, with the projection's banners.
-func listSynced(root string) int {
+func listSynced(root string, pretty bool) int {
 	e, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -317,10 +320,78 @@ func listSynced(root string) int {
 	for _, id := range goal.SortedGoalIds(p.Tree.Done) {
 		done = append(done, p.Tree.Done[id])
 	}
+	if pretty {
+		for _, banner := range p.Banners {
+			fmt.Println("! " + banner)
+		}
+		section := func(name string, goals []*goal.GoalFile) {
+			if len(goals) == 0 {
+				return
+			}
+			fmt.Println(name + ":")
+			for _, f := range goals {
+				line := "  " + f.Id
+				if f.Claimed != nil {
+					line += "  [" + f.Claimed.Machine + "+" + f.Claimed.Lineage + "]"
+				}
+				if f.Parked != nil && f.Parked.Because != "" {
+					line += "  (parked: " + f.Parked.Because + ")"
+				}
+				fmt.Println(line)
+				if f.Intent != "" {
+					fmt.Println("      " + f.Intent)
+				}
+			}
+		}
+		section("claimed", grouped[goal.StateClaimed])
+		section("queued", grouped[goal.StateQueued])
+		section("parked", grouped[goal.StateParked])
+		fmt.Printf("done: %d archived\n", len(done))
+		return 0
+	}
 	printJSON(map[string]any{
-		"world": "synced", "tip": p.Tip, "banners": p.Banners,
+		"root": root, "world": "synced", "tip": p.Tip, "banners": p.Banners,
 		"queued": grouped[goal.StateQueued], "claimed": grouped[goal.StateClaimed],
 		"parked": grouped[goal.StateParked], "done": done,
+	})
+	return 0
+}
+
+// runGoalShow addresses ONE goal: fields, claim, park, and history,
+// from the accepted tree.
+func runGoalShow(args []string) int {
+	flags := flag.NewFlagSet("goal show", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	id := flags.String("id", "", "goal id")
+	if flags.Parse(args) != nil || *id == "" {
+		fmt.Fprintln(os.Stderr, "goal show needs --id")
+		return 2
+	}
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal show reads the synced backlog; this checkout still carries the legacy ledger (goal list shows it whole)")
+		return 1
+	}
+	e, err := goal.ResolveEndpoint(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	p, err := goal.Project(e, false, time.Now())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	f, live := p.Tree.Live[*id]
+	state := "live"
+	if !live {
+		if f = p.Tree.Done[*id]; f == nil {
+			fmt.Fprintf(os.Stderr, "no goal %q on the accepted tree (tip %s)\n", *id, p.Tip)
+			return 1
+		}
+		state = "archived"
+	}
+	printJSON(map[string]any{
+		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": f,
 	})
 	return 0
 }
