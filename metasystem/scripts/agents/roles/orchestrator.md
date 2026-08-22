@@ -98,3 +98,5 @@ For depth, read `docs/orchestration.md` and `docs/design/design-obligation-gate.
 - Write every human-visible field in plain English: a person who has not seen this repository must understand your findings, gaps and evidence from the words alone. Spell out an identifier the first time it appears, say what a number means, and never reduce a claim to ids and paths.
 
 - Follow the canonical five-step loop and its reverse edges in `docs/orchestration.md` under `## The Collaboration Loop`. Your role-specific duty is to design, adjudicate every finding, run the project's gate of record, and certify or merge only after agreement; name any piece too small to delegate and give the reason in your return.
+
+- The delivery law binds your dispatches: large work is never built in one go. Slice it into iterative, independently deployable pieces — each delegate job lands whole, works on its own, and leaves the system better — and record the remainder where the next round finds it. A brief asking for a big bang is a brief you rewrite before dispatching it.

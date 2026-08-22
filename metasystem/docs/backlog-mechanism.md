@@ -69,6 +69,10 @@ promotes it.
 Before promoting any draft:
 
 - [ ] The intent says what DONE looks like, in one line.
+- [ ] It is one DEPLOYABLE piece (the delivery law): it lands whole,
+      works on its own, and leaves the system better. Anything
+      larger is sliced first — the item carries its next slice, a
+      note names the remainder.
 - [ ] The appetite is agreed with Wido and recorded.
 - [ ] The item fits the appetite as understood today — anything that
       smells bigger goes back to shaping or to Wido.
