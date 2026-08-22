@@ -11,7 +11,13 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-chain=${1:?chain name}; round=${2:?round number}; input=${3:?input packet}
+if (( $# < 3 )); then
+  echo "usage: critique-round.sh <chain-name> <round> <input-file> [--model M] [--effort E]" >&2
+  echo "runs one review round and archives packet, verdict, and stderr under artifacts/agents/critiques/<chain>/" >&2
+  [[ ${1:-} == --help || ${1:-} == -h ]] && exit 0
+  exit 2
+fi
+chain=$1; round=$2; input=$3
 shift 3
 model=gpt-5.6-sol
 effort=xhigh
