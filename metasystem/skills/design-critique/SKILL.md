@@ -35,7 +35,7 @@ The loop's stop rule is fixed before round 1, never improvised mid-loop: the bri
 
 ## Round Budget and Exhaustion
 
-The shipped round budget is three focused rounds; record it in the brief. If
+The shipped round budget is three focused rounds. Start every chain from `scripts/agents/templates/review-brief.md` — budget, threat model, appetite, and scope declared BEFORE round one; a true finding outside the declared threat model closes as out-of-scope citing the brief. Record the budget in the brief. If
 material findings remain after round three, the next focused follow-up must
 enumerate every open finding identifier; dispatch records that successor in
 the chain's `critiqueExhaustions` array and opens one fresh three-round budget

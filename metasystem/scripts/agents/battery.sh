@@ -5,6 +5,14 @@
 # and nothing else. Evidence survives under artifacts/ either way.
 set -euo pipefail
 
+# The battery takes no arguments: anything passed is a mistake, and
+# a mistake must not cost a forty-minute suite run (--help once did).
+if (( $# )); then
+  echo "usage: scripts/agents/battery.sh   (no arguments; runs the full validate suite, writes a durable verdict under artifacts/agents/battery/)" >&2
+  [[ ${1:-} == --help || ${1:-} == -h ]] && exit 0
+  exit 2
+fi
+
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 out_dir="$root/artifacts/agents/battery"

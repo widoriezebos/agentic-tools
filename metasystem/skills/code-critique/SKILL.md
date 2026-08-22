@@ -61,7 +61,7 @@ Use `accepted` or `refuted` for material findings; a TRUE finding outside the br
 
 When a design chain exited through fixtures-as-arbiter (see the design-critique skill), this code critique is MANDATORY and the named fixture obligations are part of its findings surface: an unimplemented or failing named fixture is a material finding.
 
-The shipped round budget is three focused rounds; record it in the brief before review:
+The shipped round budget is three focused rounds. Start every chain from `scripts/agents/templates/review-brief.md` — round budget, threat model, appetite, and scope declared BEFORE round one; a true finding outside the declared threat model closes as out-of-scope citing the brief. Record the budget in the brief before review:
 
 1. Run both layers over the full implementation and adjudicate every finding.
 2. If corrections were required, send one focused follow-up to the same implementer, then recompute the whole diff and run both layers again.
