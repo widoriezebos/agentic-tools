@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: An idle machine picks up claimable shared-backlog work by itself: fleet liveness is the steward's duty, never a human's memory
 - Origin: main
-- Next step: Appetite: 4h for the DESIGN (Wido's expectation 2026-08-23: new claimable items on the remote backlog are always picked up by an idle machine). Scope: the steward's tick gains the fleet-pull duty — machine holds no claim AND the synced backlog carries a claimable tokened goal → launch or wake a coordinator session THROUGH THE RUNTIME ADAPTER SEAM (agent-agnostic; no runtime named in core). Design with the launch mechanics per runtime, the no-thrash bound (one pull attempt per tick, backoff on failure), the interplay with the session-level dead-man's switch (which stays as defense in depth, cadence then tunable or retirable), and fixtures. Composes with the ACP seam but must not wait for it. Design first, codex-reviewed; implementation slices follow their own tokens.
+- Next step: STOPPED BY THE APPETITE LAW 2026-08-23 evening (first budget exhausted at r3 with seven findings FP-R3-01..07, four invariant-grade; trajectory 7-6-7 — the design is a full day, not 4h). RAISED TO WIDO in plans/fleet-pull-design.md: the orphaned-claim owner ruling, and the 1d re-scope timing (recommendation: after bm-2d and with the ACP seam in sight, which makes outcome adjudication nearly free). The r3 chain also exposed a LIVE defect fixed separately: the steward's open-work reader was degraded on converted checkouts. RESERVED for the re-scope conversation.
 - OpenedAt: 2026-08-23T08:06:12Z
-- Revision: 6
+- Revision: 7
 - Claimed: machine=m1 lineage=coordinator at=2026-08-23T10:31:21Z
 
 History:
@@ -15,4 +15,5 @@ History:
 - 2026-08-23T08:16:21Z 97YYDE2BR2DX4NNP111C3NQ5NZ-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=fleet-pull
 - 2026-08-23T08:17:58Z QM2KW7V24PHYDJJBGXAD22SBXD-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=fleet-pull
 - 2026-08-23T10:31:21Z 81MNRPXTSD15RD4CXHW7943YEJ-m1-bf243850 claim actor=m1+coordinator targets=fleet-pull
-Integrity: sha256=73fa34faaef09df6a2f4e3d36cd36b893c8ea3131ce82dea0fa096067ad4dc98
+- 2026-08-23T11:26:43Z QWVMBGWJQMXAFWKV6FAREKW90Y-m1-bf243850 edit actor=m1+coordinator targets=fleet-pull
+Integrity: sha256=29cacaf8a452fd5f3fbed902e483482f46fbcf4d8e089bd319ffda22374ee9c7
