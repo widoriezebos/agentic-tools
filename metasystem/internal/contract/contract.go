@@ -105,6 +105,10 @@ var contractOptionalScalars = map[string]bool{
 	// authorization; issuance and the wall both enforce the warden's
 	// lane for them.
 	"wall.guardrails": true,
+	// The app's covenant location: when declared, preflight loads the
+	// covenant and refuses a contract whose gate or guardrails disagree
+	// with it — green must mean what the covenant says.
+	"covenant.path": true,
 	// The human-sealed initial baseline: a dirty starting
 	// workspace refuses preflight unless the signed contract seals its
 	// exact filtered tree — the human saw and accepted those bytes.

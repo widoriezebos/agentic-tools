@@ -8,6 +8,7 @@ package mission
 import (
 	"fmt"
 	gopath "path"
+	"sort"
 	"strings"
 )
 
@@ -142,4 +143,21 @@ func VerifiedGuardrails(repo, missionID string) (*GuardrailClass, error) {
 		return nil, fmt.Errorf("guardrail custody refused: %s", violation)
 	}
 	return class, nil
+}
+
+// Entries lists the class's declarations as written: files, then
+// directory prefixes (with their trailing slash). Consumers that must
+// compare two declared nets — the covenant's against a contract's —
+// compare these entries, never re-derived strings.
+func (g *GuardrailClass) Entries() []string {
+	if g == nil {
+		return nil
+	}
+	out := make([]string, 0, len(g.files)+len(g.prefixes))
+	for file := range g.files {
+		out = append(out, file)
+	}
+	out = append(out, g.prefixes...)
+	sort.Strings(out)
+	return out
 }

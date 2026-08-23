@@ -628,6 +628,9 @@ func (e *Engine) wallPreflight(mode string, values map[string]string, approved [
 	if mode != "start" {
 		return nil
 	}
+	if err := e.covenantPreflight(values); err != nil {
+		return err
+	}
 	_, err := e.admittedBaseline(values, approved)
 	return err
 }

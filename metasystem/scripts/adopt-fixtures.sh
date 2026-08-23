@@ -616,4 +616,24 @@ PLAN
   }
 fi
 
+# The two-part law: the app-specific part — here the covenant, the
+# app-owned declaration of its net and battery — survives adoption and
+# re-adoption byte for byte. The metasystem updates its own generic
+# files; it never writes inside the app's.
+mkdir -p "$tmp/adopt-covenant"
+printf '{"app": "owned bytes with distinctive content the adopter must never touch"}\n' >"$tmp/adopt-covenant/covenant.json"
+covenant_before=$(cksum "$tmp/adopt-covenant/covenant.json")
+bash "$adopt" "$tmp/adopt-covenant" >/dev/null
+covenant_after=$(cksum "$tmp/adopt-covenant/covenant.json")
+[[ "$covenant_before" == "$covenant_after" ]] || {
+  echo "adopt: adoption altered the app-owned covenant" >&2
+  exit 1
+}
+bash "$adopt" "$tmp/adopt-covenant" >/dev/null
+covenant_after=$(cksum "$tmp/adopt-covenant/covenant.json")
+[[ "$covenant_before" == "$covenant_after" ]] || {
+  echo "adopt: re-adoption (the update path) altered the app-owned covenant" >&2
+  exit 1
+}
+
 echo "adopt fixtures passed"
