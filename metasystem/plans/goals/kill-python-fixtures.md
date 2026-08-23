@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Finish the two-languages end state: no python3 in fixtures, the suite, or preflight
 - Origin: main
-- Next step: Appetite: 4h for SLICE TWO — the next tranche of the ~140 remaining python3 sites (largest concentrations first; same rule: engine verbs or shell, never a weakened assertion, suites green standalone). SLICE ONE LANDED: goal-cli-fixtures.sh and adopt-fixtures.sh are python-free, both suites green (adopt green on the protocol rerun after a listed S4-2 flake, now at three sightings — fix goal s4-2-census-join opened).
+- Next step: Appetite: 6h for SLICE THREE — dispatch-fixtures.sh (53 sites, the largest concentration; same rules: engine verbs or shell, atomic JSON edits, no weakened assertions, suite green standalone with CAP_SCALE=8). SLICES ONE+TWO LANDED: goal-cli, adopt, supervision, delegate-caps, supervision-go all python-free (94 sites gone); slice two also closed four torn-write windows the python had been opening. Remaining after three: validate-metasystem.sh (21) and the tail (~30 across small suites), each its own token. Known epsilon, accepted and recorded: json-get canonicalization cannot distinguish integral-float lexemes from integers — the only writer is the Go engine, which cannot emit them.
 - OpenedAt: 2026-08-20T00:09:00Z
-- Revision: 6
+- Revision: 7
 - Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-23T00:57:57Z
 
 History:
@@ -15,4 +15,5 @@ History:
 - 2026-08-23T00:29:16Z E94T59FNDQZ1TT8XMV5GJKEXRF-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=kill-python-fixtures
 - 2026-08-23T00:29:21Z 2S12P37AWM4XE1Q90ZX9FPZ8GY-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=kill-python-fixtures
 - 2026-08-23T00:57:57Z 9VD3YQPJ3F8QJ1ACJPMM66ZRY5-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=kill-python-fixtures
-Integrity: sha256=0ff749d08cdf2b9cf243ae4fea6f08c99f308668ef9926a1596a8079237c1483
+- 2026-08-23T01:26:00Z TPWZ2FA3X5FRHGW5BRK9JT8APS-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=kill-python-fixtures
+Integrity: sha256=c178839b48943a8067a5e306173b98032d2e736e7b0384b58b02c01444847036
