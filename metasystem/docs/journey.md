@@ -461,3 +461,20 @@ migration, harmlessly but blindly, now measured and queued as its
 own fix; and three readers confirmed correct on purpose, each
 serving the old world's own commands. The pattern that started as
 a defect became a checklist, and the checklist came up empty.
+
+## The end of the turn finds its thread again (August 23, 2026)
+
+The last blind reader from the sweep got its sight back the same
+night. At the end of every working turn, a verdict decides whether
+the agent may stop or must be reminded of unfinished intent — and
+since the migration that verdict had been running without its goal
+thread, never wrong but never helpful, reporting only that the old
+ledger was absent. It now reads the shared backlog with the same
+vocabulary it always had: the goal this machine claimed has the
+floor and blocks once with its next step, an unclaimed queue prods
+once toward promotion naming the oldest goal first, and a fresh
+all-clear declaration is honored as rest. Three tests pin each
+shape, the old world's behavior is untouched, and the proof came
+live from the machine again: asked immediately after the fix, the
+verdict named the goal it was fixed under. Every reader in the
+system now sees the world it actually lives in.

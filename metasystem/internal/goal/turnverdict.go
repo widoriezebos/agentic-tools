@@ -395,9 +395,11 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState)
 				display = append(display, "NOTHING LEFT TO WORK ON; the current goal is "+facts.Id+" ("+facts.NextStep+")")
 			}
 		case "queued-only":
-			ledger, _, _ := s.ReadLedger()
-			digest := ledger.QueuedDigest()
-			first := ledger.Queued[0].Id
+			first, digest := s.queuedFrontier()
+			if first == "" {
+				display = append(display, "no goal is claimed here and the queue is empty; `goal open` starts one")
+				break
+			}
 			if !contains(session.BlockedGoalRevisions, digest) {
 				session.BlockedGoalRevisions = appendCapped(session.BlockedGoalRevisions, digest, maxGoalRevisions)
 				blockGoal(fmt.Sprintf("no current goal; the queue holds %s: `goal promote %s` or park it", first, first))
@@ -405,10 +407,9 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState)
 				display = append(display, "no current goal; the queue holds "+first)
 			}
 		case "goal-free":
-			ledger, _, _ := s.ReadLedger()
-			fresh, digest := s.freeIsFresh(ledger)
+			fresh, digest, declared := s.freeState()
 			if fresh {
-				display = append(display, "NOTHING LEFT TO WORK ON; goal-free declared "+ledger.Free.Declared)
+				display = append(display, "NOTHING LEFT TO WORK ON; goal-free declared "+declared)
 			} else if !contains(session.BlockedFreeDigests, digest) {
 				session.BlockedFreeDigests = appendCapped(session.BlockedFreeDigests, digest, maxFreeDigests)
 				blockGoal("the goal-free declaration predates new work; declare a goal or renew with `goal declare-free`")
@@ -429,8 +430,56 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState)
 	verdict.Display = strings.Join(display, "\n")
 }
 
-// goalFacts reads the ledger read-side and classifies it for the verdict.
+// goalFacts reads the goal world and classifies it for the verdict,
+// routed on the checkout's world: a converted checkout judges from the
+// synced projection by this machine's enrolled nickname, a legacy
+// checkout from the single file. The vocabulary is shared — ok,
+// queued-only, goal-free, absent, degraded — so every verdict rule
+// downstream is world-neutral.
 func (s *Store) goalFacts() (*GoalFacts, string, string) {
+	if NewWorld(s.Root) {
+		return s.convertedGoalFacts()
+	}
+	return s.legacyGoalFacts()
+}
+
+// convertedGoalFacts maps the synced world onto the verdict's
+// vocabulary: this machine's claimed goal plays the Current role, the
+// root record's declaration plays goal-free, and a queue nobody here
+// claimed plays queued-only.
+func (s *Store) convertedGoalFacts() (*GoalFacts, string, string) {
+	machine, err := ResolveMachine(s.Root)
+	if err != nil {
+		return nil, "degraded", err.Error()
+	}
+	endpoint, err := ResolveEndpoint(s.Root)
+	if err != nil {
+		return nil, "degraded", err.Error()
+	}
+	proj, err := Project(endpoint, false, time.Now())
+	if err != nil {
+		return nil, "degraded", err.Error()
+	}
+	if proj.Tree == nil {
+		return nil, "degraded", "the accepted tree is unreadable"
+	}
+	for id, f := range proj.Tree.Live {
+		if f.State == "claimed" && f.Claimed != nil && f.Claimed.Machine == machine {
+			return &GoalFacts{
+				Id:       id,
+				Intent:   f.Intent,
+				NextStep: f.NextStep,
+				Revision: fmt.Sprintf("%s@%d", id, f.Revision),
+			}, "ok", ""
+		}
+	}
+	if proj.Tree.Root != nil && proj.Tree.Root.Free != nil {
+		return nil, "goal-free", ""
+	}
+	return nil, "queued-only", ""
+}
+
+func (s *Store) legacyGoalFacts() (*GoalFacts, string, string) {
 	ledger, problems, err := s.ReadLedger()
 	if err != nil {
 		return nil, "degraded", err.Error()
@@ -460,6 +509,81 @@ func (s *Store) goalFacts() (*GoalFacts, string, string) {
 	default:
 		return nil, "queued-only", ""
 	}
+}
+
+// queuedFrontier names the first queued goal and a stable digest of the
+// queue, routed on the world: the digest keys the once-per-change block
+// the session records, so it must change exactly when the queue does.
+func (s *Store) queuedFrontier() (first, digest string) {
+	if NewWorld(s.Root) {
+		endpoint, err := ResolveEndpoint(s.Root)
+		if err != nil {
+			return "", ""
+		}
+		proj, err := Project(endpoint, false, time.Now())
+		if err != nil || proj.Tree == nil {
+			return "", ""
+		}
+		type row struct {
+			id     string
+			rev    uint64
+			opened string
+		}
+		var rows []row
+		for id, f := range proj.Tree.Live {
+			if f.State == "queued" {
+				rows = append(rows, row{id, f.Revision, f.OpenedAt})
+			}
+		}
+		if len(rows) == 0 {
+			return "", ""
+		}
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].opened != rows[j].opened {
+				return rows[i].opened < rows[j].opened
+			}
+			return rows[i].id < rows[j].id
+		})
+		var lines []string
+		for _, r := range rows {
+			lines = append(lines, fmt.Sprintf("%s@%d", r.id, r.rev))
+		}
+		return rows[0].id, sha256Hex([]byte(strings.Join(lines, "\n")))
+	}
+	ledger, _, _ := s.ReadLedger()
+	if ledger == nil || len(ledger.Queued) == 0 {
+		return "", ""
+	}
+	return ledger.Queued[0].Id, ledger.QueuedDigest()
+}
+
+// freeState reads the goal-free declaration's freshness, routed on the
+// world: both worlds compare the recorded digest against the current
+// plans-stream scan, because a declaration is only as good as the world
+// it described.
+func (s *Store) freeState() (fresh bool, digest, declared string) {
+	if NewWorld(s.Root) {
+		endpoint, err := ResolveEndpoint(s.Root)
+		if err != nil {
+			return false, "", ""
+		}
+		proj, err := Project(endpoint, false, time.Now())
+		if err != nil || proj.Tree == nil || proj.Tree.Root == nil || proj.Tree.Root.Free == nil {
+			return false, "", ""
+		}
+		scan, err := ScanDigest(s.Root)
+		if err != nil {
+			return false, scan, proj.Tree.Root.Free.Declared
+		}
+		return scan == proj.Tree.Root.Free.Digest, scan, proj.Tree.Root.Free.Declared
+	}
+	ledger, _, _ := s.ReadLedger()
+	fresh, digest = s.freeIsFresh(ledger)
+	declared = ""
+	if ledger != nil && ledger.Free != nil {
+		declared = ledger.Free.Declared
+	}
+	return fresh, digest, declared
 }
 
 // freeIsFresh recomputes the plans-stream digest against the declaration.
