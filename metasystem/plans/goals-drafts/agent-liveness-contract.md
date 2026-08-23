@@ -33,3 +33,17 @@ Scope to design:
    down as doctrine: work lands on disk incrementally; the final
    act is a report, never the only copy of the result; verification
    runs in bounded chunks, never one unbounded call.
+
+## SEQUENCING (coordinator, 2026-08-23)
+
+This draft WAITS FOR acp-adapter-seam deliberately. Harness-launched
+agents cannot be instrumented from outside — the runtime does not run
+our code between their tool rounds — so any bespoke heartbeat here
+would be coordinator-side bookkeeping around an opaque process. Once
+the ACP-shaped seam lands, agent sessions carry typed events and
+liveness falls out of the session stream nearly for free. Building
+bespoke liveness first would be spend the seam obsoletes within
+weeks. Interim protection is the recorded playbook: work-product
+mtimes, a resume-capable probe, and a timed verdict watch — exercised
+five times tonight, recovered every stall. Promote this draft only
+if the seam slips materially.
