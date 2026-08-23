@@ -94,6 +94,10 @@ wait_for_census() { # name, predicate-fn, [predicate-args...]
       fi
       if (( m >= base + 1 + CENSUS_ATTEMPT_BUDGET )) && ! "$predicate" "$snap" "$@"; then
         echo "$name: still wrong after $CENSUS_ATTEMPT_BUDGET fresh census passes (scanSeq $base -> $m)" >&2
+        # The census snapshot that failed the predicate is the diagnosis;
+        # a swept bed leaves the next reader nothing, so say it here.
+        echo "$name: failing census snapshot follows" >&2
+        cat "$snap" >&2 || true
         return 1
       fi
     fi
@@ -696,15 +700,17 @@ PY
 # key is wrong; only the exact pid+start+tag triple may classify the real CLI
 # child as CUSTODY (S4-2).
 python3 - "$repo/artifacts/agents/jobs/owned.json" "$custody_start" <<'PY'
-import json, sys
-p=sys.argv[1]; v=json.load(open(p)); v["custodyProcesses"][0]["pidStartedAt"]=int(sys.argv[2]); v["custodyProcesses"][0]["instanceTag"]="wrong-tag"; json.dump(v,open(p,"w"))
+import json, os, sys
+p=sys.argv[1]; v=json.load(open(p)); v["custodyProcesses"][0]["pidStartedAt"]=int(sys.argv[2]); v["custodyProcesses"][0]["instanceTag"]="wrong-tag"
+t=p+".tmp"; json.dump(v,open(t,"w")); os.replace(t,p)
 PY
 wait_for_census "S4-2 wrong-tag census pass" pred_any
 inventory_has "$last" UNTRACKED "$custody_pid" \
   || { echo "S4-2: wrong instanceTag gained custody" >&2; exit 1; }
 python3 - "$repo/artifacts/agents/jobs/owned.json" <<'PY'
-import json, sys
-p=sys.argv[1]; v=json.load(open(p)); v["custodyProcesses"][0]["instanceTag"]=v["instanceTag"]; json.dump(v,open(p,"w"))
+import json, os, sys
+p=sys.argv[1]; v=json.load(open(p)); v["custodyProcesses"][0]["instanceTag"]=v["instanceTag"]
+t=p+".tmp"; json.dump(v,open(t,"w")); os.replace(t,p)
 PY
 wait_for_census "S4-2 child custody exact join" inventory_has CUSTODY "$custody_pid"
 

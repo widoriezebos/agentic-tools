@@ -11,7 +11,7 @@ Remove an entry when its leg is fixed or three quiet months pass.
 |---|---|---|---|---|
 | fence job-cap-min ask | dispatch-fixtures | 2 | 2026-08-20 | pre-registry count carried from memory |
 | silent exit-2 | supervision-fixtures | 1 | 2026-08-21 | no output captured; standalone rerun green |
-| S4-2 census custody exact join | supervision-fixtures | 3 | 2026-08-23 | scanSeq drift under load; rerun green; THIRD sighting inside 30 days (inside the adopt suite nested validation, busy machine) — fix goal s4-2-census-join OPENED per the protocol |
+| S4-2 census custody exact join | supervision-fixtures | 3 | 2026-08-23 | scanSeq drift under load; rerun green; THIRD sighting inside 30 days (inside the adopt suite nested validation, busy machine) — fix goal s4-2-census-join CONCLUDED 2026-08-23: failing census waits now dump their snapshot into the preserved evidence, the fixture record edits are atomic (torn-read candidate eliminated), standalone and deliberate-load runs green; the mechanism is UNPROVEN until a sighting arrives with its snapshot — if one does, reopen from that evidence |
 | adopt placeholder naming | adopt-fixtures | 1 | 2026-08-22 | standalone smoke red, battery's own run green same tree |
 
 ## Unnamed sightings

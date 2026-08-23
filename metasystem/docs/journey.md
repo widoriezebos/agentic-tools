@@ -259,3 +259,20 @@ durability is in doubt, re-reads and proves its own bytes before
 the runner may proceed. Most of the row's work was recognizing
 what already existed — which is its own kind of progress, and
 cheaper than building it twice.
+
+## The flake was made to explain itself (August 23, 2026)
+
+Three sightings in thirty days promoted a census flake from noise
+to defect, and the fix turned out to be epistemology rather than
+surgery. The failing bed's inner state had been swept every time,
+so the mechanism could not be known — the only honest fix was to
+make the failure carry its own evidence: a census wait that fails
+now prints the exact snapshot it judged, and the fixture's record
+edits became atomic, eliminating the one candidate that could be
+eliminated by construction. The investigation also convicted its
+own author once more: a liveness probe added on the load-kill
+theory fired deterministically — because the "child" it probed is
+a synthetic pid in a simulated process table, and the probe was
+interrogating a stranger. The theory died by its own instrument,
+the probe came out, and the suite passed standalone and under
+deliberate parallel load. If the flake returns, it arrives named.
