@@ -3,9 +3,9 @@
 - State: queued
 - Intent: An idle machine picks up claimable shared-backlog work by itself: fleet liveness is the steward's duty, never a human's memory
 - Origin: main
-- Next step: STOPPED BY THE APPETITE LAW 2026-08-23 evening (first budget exhausted at r3 with seven findings FP-R3-01..07, four invariant-grade; trajectory 7-6-7 — the design is a full day, not 4h). RAISED TO WIDO in plans/fleet-pull-design.md: the orphaned-claim owner ruling, and the 1d re-scope timing (recommendation: after bm-2d and with the ACP seam in sight, which makes outcome adjudication nearly free). The r3 chain also exposed a LIVE defect fixed separately: the steward's open-work reader was degraded on converted checkouts. RESERVED for the re-scope conversation.
+- Next step: Wido's rulings 2026-08-23 evening: ORPHANED PULLED CLAIMS ARE THE STEWARD'S — stale fleet-pull claims join its revival duty, one owner for all launched-work liveness. RE-SCOPE AT 1d AFTER bm-2d LANDS, when the ACP seam's session events make outcome adjudication nearly free. RESERVED until then; the successor chain enumerates FP-R3-01..07 plus the steward-ownership ruling as input.
 - OpenedAt: 2026-08-23T08:06:12Z
-- Revision: 8
+- Revision: 9
 
 History:
 - 2026-08-23T08:06:12Z B9R7HVR9Z1H2XQ1C9GGHX63018-widos-m5-pro-bf243850 open actor=widos-m5-pro+coordinator targets=fleet-pull
@@ -16,4 +16,5 @@ History:
 - 2026-08-23T10:31:21Z 81MNRPXTSD15RD4CXHW7943YEJ-m1-bf243850 claim actor=m1+coordinator targets=fleet-pull
 - 2026-08-23T11:26:43Z QWVMBGWJQMXAFWKV6FAREKW90Y-m1-bf243850 edit actor=m1+coordinator targets=fleet-pull
 - 2026-08-23T11:26:47Z A3CM12JAXQPFTMHCQW1QNG2C8E-m1-bf243850 release actor=m1+coordinator targets=fleet-pull
-Integrity: sha256=695fc16acfe356f0f95df9749e8e6c0f26f29cf59b6cdbb6313e5653daf49b86
+- 2026-08-23T13:34:08Z AX2T6QBNVSYBXMA2X7TGBT44EJ-m1-bf243850 edit actor=m1+coordinator targets=fleet-pull
+Integrity: sha256=46c2ef9c3152f04a7d4f4581ba7867929f3ed7100a8572b87e3ac0a027462cc6
