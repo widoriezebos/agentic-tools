@@ -357,3 +357,18 @@ use, reference numbers stay out of the prose, what happened comes
 before what it means, and every sentence must survive being read
 aloud to someone who was not there. This chapter is the first one
 written under that rule about itself.
+
+## Every landing signs its origin (August 23, 2026)
+
+With two computers working the same shared backlog, Wido asked a
+simple question: when a change lands on the shared repository, do
+we know which machine it came from? For the backlog itself the
+answer was already yes — every claim and every edit there is
+stamped with the machine's name. But the code landings were
+anonymous: commits from both machines looked identical, told apart
+only by chasing session links. Now the commit wrapper — the one
+gate every landing passes through — stamps each commit with the
+machine's hostname and the role that made it, the same identity
+pair the backlog records. Nobody types it and nobody can forget
+it, and a test proves the stamp is always there. From this landing
+on, provenance is a property of the road, not the driver.

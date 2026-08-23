@@ -20,7 +20,7 @@ grep -Fq 'go-gate.sh" --fast' <<<"$tail_body" \
 grep -Fq -- '--fast --proof-out' "$wrapper" \
   || { echo "static re-proof fixture: the boundary's gate call lost its side-effect-free --proof-out" >&2; exit 1; }
 gate_line=$(grep -n 'go-gate.sh" --fast' "$wrapper" | head -1 | cut -d: -f1)
-commit_line=$(grep -n 'git -C "$root" commit "$@"' "$wrapper" | head -1 | cut -d: -f1)
+commit_line=$(grep -n 'git -C "$root" commit --trailer' "$wrapper" | head -1 | cut -d: -f1)
 [[ -n "$gate_line" && -n "$commit_line" && "$gate_line" -lt "$commit_line" ]] \
   || { echo "static re-proof fixture: the re-proof does not precede the commit" >&2; exit 1; }
 escape_scan() {
@@ -247,5 +247,12 @@ grep -Fq "generated.go" <<<"$shadowed" \
 rm "$fixture_root/internal/red/generated.go"
 "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "audit and stage converge" \
   || { echo "static re-proof fixture: the converged tail commit was blocked" >&2; exit 1; }
+
+# Leg 10: every landing names the machine it came from — the wrapper
+# stamps the Machine trailer (hostname plus lineage), so provenance
+# never depends on what an author typed.
+stamped=$(git -C "$fixture_root" log -1 --format=%B)
+grep -Fq "Machine: $(hostname -s)+" <<<"$stamped" \
+  || { echo "static re-proof fixture: the landing does not name its machine: $stamped" >&2; exit 1; }
 
 echo "static re-proof fixtures: PASSED"

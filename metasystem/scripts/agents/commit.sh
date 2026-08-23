@@ -192,7 +192,11 @@ fi
 # back softly (index and worktree untouched), and the refusal names the
 # principle.
 proved_head=$(git -C "$root" rev-parse --verify --quiet HEAD || true)
-git -C "$root" commit "$@"
+# Every landing names the machine it came from: the wrapper stamps
+# the trailer, so it is uniform on every machine and never typed by
+# an author — the same hostname+lineage pair the goal ledger records
+# on its mutations.
+git -C "$root" commit --trailer "Machine: $(hostname -s)+${METASYSTEM_OWNER_LINEAGE:-human}" "$@"
 landed_tree=$(git -C "$root" rev-parse HEAD^{tree})
 if [[ "$landed_tree" != "$proved_tree" ]]; then
   if [[ -n "$proved_head" ]]; then
