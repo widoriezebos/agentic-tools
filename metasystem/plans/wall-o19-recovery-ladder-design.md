@@ -176,3 +176,246 @@ transaction as the design's spine, appetite a full day (the o14
 lesson: wall design rows are systematically bigger than their
 original tokens). The chain stands at one round spent; any
 successor enumerates all nine findings.
+
+---
+
+# Review brief: wall-o19 successor chain (fresh three-round budget)
+
+Round budget: 3 focused rounds. This is the SECOND chain; per the
+budget rules a second exhaustion stops with the work waiting on the
+human, regardless of finding count.
+
+Threat model: unchanged from the first brief — one trusted operator;
+accidents, crashes, laundering-through-recovery, and repeat patterns
+in scope; the isolation tier, runtime compromise, and the sealed-dirty
+composition out.
+
+Appetite: 1d (Wido's re-scope token, with his two rulings below).
+
+Open findings this chain MUST resolve, enumerated per the budget
+rules: O19-R3-01 (no crash-safe park-recover-ask transaction),
+O19-R3-02 (the taint STOP blocks the promised crash escalation),
+O19-R3-03 (the park can anchor a poisoned ledger tier 2 would
+restore), O19-R3-04 (four detection phases need a phase table and a
+typed recovery outcome), O19-R3-05 (the destructive restore target is
+ambiguous where choosing wrongly loses accepted work), O19-R3-06 (the
+adoption verdict has no derivable predicate), O19-R3-07 (the repeat
+window is not derivable from taint entries as they exist), O19-R3-08
+(runner-prefix provenance is presentation, not authentication),
+O19-R3-09 (best-effort events cannot be the inspection's evidence).
+
+Wido's rulings, now inputs rather than questions: restorable
+violations NEVER ask — auto-restore silently, a repeat offense still
+escalates (this DERIVES the adoption predicate O19-R3-06 demanded:
+the inspector never labels adoption; adoption exists only as the
+human's own resolve-taint choice). Provenance gets an authenticated
+ACTOR FIELD in the resolution record — a deliberate schema change,
+which also settles O19-R3-08 and gives O19-R3-07 its recorded
+dimension (the actor field plus the acceptance entry's turn identity
+make the repeat window derivable).
+
+Return format: numbered findings, most severe first, each with file,
+rule, and the concrete failure; or AGREE with observations that do
+not gate.
+
+---
+
+# Design: the wall recovery ladder (revision 4 — one anchored commit point)
+
+Round two's verdict named the disease behind every symptom: recovery
+had no authenticated, reachable commit point. Revision 4 builds
+exactly one primitive and derives everything else from it.
+
+## The primitive: the ANCHORED RECOVERY INTENT
+
+At park time, in the same pass that books the taint, the runner
+writes ONE recovery-intent record covering EVERY violated domain
+(S2-R2-01) — per-domain verdicts and per-domain targets, the
+detection phase, the inspection evidence digests, and the typed
+plan — then COMMITS it to a git anchor:
+refs/metasystem/missions/<m>/recovery/<taintId>, a commit whose
+tree holds the record and whose creation is the RECOVERY COMMIT
+POINT. The state's taint entry stores only {taintId, status,
+anchorCommit}. Authentication after any crash is the anchor: a
+recovery admitted anywhere verifies the record against its anchored
+bytes, and a record without its anchor is no record (S2-R2-03 —
+state hashes cannot vouch for bodies, so the anchor does).
+The anchor commit's own position supplies the durable sequence
+point the repeat predicate reads (S2-R2-07): repeat = a new
+recovery anchor whose commit is reachable from the prior
+runner-resolved anchor with no accepted turn commit between them,
+judged per phase exactly as revision 3 ruled.
+
+## The record's shape
+
+{ taintId, phase, domains: [{domain, verdict:
+mechanical|escalate, target, materialization}], status:
+pending|restored|escalated, actor, createdAt } — status transitions
+live in STATE (custody: the runner-recovery writer capability,
+unchanged from revision 3); everything else is immutable under the
+anchor. A record listing ANY escalate domain escalates whole: partial
+automatic recovery of a multi-domain violation is exactly the
+masking round two convicted (S2-R2-01).
+
+## Materialization is path-scoped (S2-R2-09)
+
+Each workspace domain's materialization names the exact paths the
+wall found unaccounted — restore THOSE paths from the target tree,
+touch no carrier, delete nothing outside the list, preserve every
+filtered runner file and untracked non-violating path. The clean-
+carrier narrowing from revision 3 stands: any carrier divergence is
+an escalate domain by classification, so path-scoped restore is
+the ONLY mechanical materialization that exists. Re-verification
+re-runs the wall's own capture over the named paths.
+
+## The ledger transaction, repaired (S2-R2-02)
+
+The composed post-recovery ledger — prior blob PLUS the park
+block — is built in memory at intent time and recorded as the
+ledger domain's target (bytes digest in the record, bytes in the
+anchor tree). The seven steps collapse to: anchor the intent (the
+commit point), restore the composed bytes, verify byte-exact
+against the record, advance status. The pending-aware anchor lane
+anchors the RECORDED composed target; the cycle-count precondition
+holds because the composed bytes already carry the park block.
+Disputed bytes ride the anchor tree as evidence, replacing
+revision 3's ad-hoc turn-directory file.
+
+## Escalation and admission (S2-R2-04)
+
+Resume's recovery-only mode admits a parked mission whose taint
+entry carries a recovery anchor in ANY non-terminal shape: pending
+(complete the plan), escalated-without-ask (create the ask,
+idempotent by taintId), restored-unconcluded (finish bookkeeping).
+The three gates key on the anchor's existence and validity, not on
+one status value — every crash window converges.
+
+## The typed outcome, restored to the arbiter (S2-R2-05)
+
+recoveryOutcome = restored | escalated | deferred, and the caller
+mapping is part of the design: pre-acceptance restored → the pass
+re-runs its gate over the restored tree and proceeds to a lawful
+acceptance or a fresh verdict, never replaying consumed work;
+post-verification restored → the pass appends the clean
+re-verification entry so the accepted completion stands;
+reservation-continuity → deferred (below); escalated anywhere →
+the pass ends parked-with-ask. G6 pins every mapping.
+
+## Deferred has an owner (S2-R2-06)
+
+The next-tick actor is the STEWARD — the machinery whose whole
+charter is that open delegated work is never silently idle. A
+parked mission with a live recovery anchor is OPEN WORK to the
+steward's census, and its revival path invokes recovery-only
+resume exactly as it revives continuations today. No new
+scheduler; the fleet's existing watcher is the trigger, and the
+recovery design composes with the landed steward rather than
+inventing a second one.
+
+## The legacy variant (S2-R2-08)
+
+Old states migrate their unresolved taints to a LEGACY recovery
+record: {kind: legacy, status: escalated} with no phase, domains,
+or target — its ONLY lawful continuation is the human's
+resolve-taint, and the upgrade creates its ask. Nothing is
+invented, nothing trusts mutable evidence, nothing old ever
+auto-restores; historical resolutions keep revision 3's
+conservative human-actor mapping.
+
+## Unchanged from revision 3
+
+The phase table and phase-owned targets; state-first-ask-second
+with idempotent repair (now anchored, S2-R2-03); the writer
+capabilities and per-entry target selection; the clean-carrier
+narrowing; the resume-time versioned upgrade; both events in the
+registry and the arbiter.
+
+## Fixture obligations (the arbiter, revision 4)
+
+- H1: the anchor IS the commit point — a taint entry whose anchor
+  is missing or mismatched refuses every recovery admission.
+- H2: multi-domain — a simultaneous ledger and workspace violation
+  produces one record with both domains; any escalate domain
+  escalates whole; no partial restore exists.
+- H3: path-scoped materialization — only the named paths change;
+  carriers, filtered files, and untracked innocents survive; a
+  moved-HEAD carrier escalates named (revision 3's G9).
+- H4: the composed-ledger target — anchor, restore, byte-exact
+  verify, cycle count holds; disputed bytes readable from the
+  anchor tree.
+- H5: every crash window — after intent, after restore, after
+  escalated-before-ask — converges through recovery-only resume;
+  working modes refused throughout.
+- H6: the typed outcome's four caller mappings, including
+  post-verification's clean re-verification append and
+  pre-acceptance's no-replay rule.
+- H7: the steward revives a parked-with-anchor mission through
+  recovery-only resume — the deferred trigger proven end to end.
+- H8: the repeat predicate from anchor positions, per phase, both
+  window sides.
+- H9: writer capabilities both directions (revision 3's G8).
+- H10: the upgrade — legacy records escalate with their ask; the
+  chain advances; nothing old auto-restores.
+- H11: both events, payload and ordering.
+
+## Design-obligation matrix
+
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| RL-O1 | CRITICAL | o19 r4 primitive | The anchored recovery intent is the one authenticated commit point | mission anchor + state | intent record + anchor ref | H1, H5 | forced-kill across the park in the suite | MISSING | implement |
+| RL-O2 | CRITICAL | o19 r4 domains | Multi-domain records; escalate-whole on any non-mechanical domain | missionrunner wall | combined inspection | H2 | dual-violation fixture | MISSING | implement |
+| RL-O3 | CRITICAL | o19 r4 materialization | Path-scoped restore; carriers and innocents untouched | missionrunner recovery + gittree | path materializer | H3 | moved-HEAD escalation | MISSING | implement |
+| RL-O4 | CRITICAL | o19 r4 ledger | The composed-target ledger transaction through the pending-aware lane | mission anchor | composed target + lane | H4 | ledger-tamper end to end | MISSING | implement |
+| RL-O5 | CRITICAL | o19 r4 admission | Recovery-only resume admits every non-terminal anchored shape | missionrunner launch/loop | gate keying on the anchor | H5 | crash-window suite legs | MISSING | implement |
+| RL-O6 | HIGH | o19 r4 outcome | The typed outcome's caller mappings | missionrunner callers | outcome type + mappings | H6 | resume and post-verification legs | MISSING | implement |
+| RL-O7 | HIGH | o19 r4 steward | The steward revives parked-with-anchor missions | steward + missionrunner | census + revival wiring | H7 | steward tick reviving in the suite | MISSING | implement |
+| RL-O8 | HIGH | o19 r4 repeat | Repeat from anchor positions, phase-correct | missionrunner recovery | anchor adjacency | H8 | per-phase repeat legs | MISSING | implement |
+| RL-O9 | HIGH | o19 r4 actor | Writer capabilities, both directions | mission state + entries | capability plumbing | H9 | runner actor in history | MISSING | implement |
+| RL-O10 | MEDIUM | o19 r4 legacy | The legacy record variant with its ask | mission state upgrade | legacy kind + upgrade | H10 | old-state upgrade leg | MISSING | implement |
+| RL-O11 | MEDIUM | o19 r4 events | Both events registered, emitted, ordered | events + missionrunner | registry + emissions | H11 | recorder stream leg | MISSING | implement |
+
+---
+
+# SECOND EXHAUSTION — THE DESIGN WAITS ON WIDO (by rule)
+
+Two chains, six rounds, trajectory 9-11-9-8: never converging. What
+six rounds proved is itself the finding: AUTOMATIC RECOVERY FROM A
+WALL VIOLATION INTERSECTS EVERY HARD INVARIANT THE SYSTEM OWNS —
+the state/anchor publication order (S2-R3-01), the wall's own
+namespace law (the recovery ref would be judged a violation,
+S2-R3-04), the authorization-composed expected tree (restoring the
+pre-tree can discard reviewed work, S2-R3-02 — a correction that
+stands regardless of any future path), whole-posture re-verification
+(S2-R3-03), mixed-domain human closure (S2-R3-05), provenance
+ownership across immutable and mutable records (S2-R3-06), a git
+graph that can actually answer ordering (S2-R3-07), and steward
+authority that does not yet exist (S2-R3-08).
+
+What the chains produced of lasting value: the phase table with
+phase-owned targets; the anchored-intent concept; the clean-carrier
+narrowing of "mechanical"; the composed-ledger target; the
+never-ask ruling dissolving the adoption predicate; and eight sharp
+constraints any future design must honor, each grounded in landed
+code.
+
+## The options for Wido
+
+1. THE MINIMAL LADDER (recommended): descope to the dominant case
+   only — pre-acceptance phase, workspace domain only, all carriers
+   clean, no simultaneous domains, and ANY doubt (crash, mixed
+   domain, dirty carrier, unlisted late mutation) escalates rather
+   than resumes recovery. No new refs, no schema cutover beyond the
+   recovery field, no steward wiring — recovery either completes in
+   its own pass or becomes a human ask. Perhaps two days honestly;
+   kills the most common interruption while every hatch opens
+   toward the human.
+2. DEFER D117 WHOLE: wall violations stay human-resolved until
+   mission volume proves the interruption cost; the six rounds'
+   constraints wait in this file.
+3. THE FULL PRIMITIVE AS ITS OWN PROGRAM: the authenticated
+   recovery transaction (state+anchor publication protocol) built
+   as a mission-state feature first, the ladder second — a
+   multi-day program with its own design chains.
+
+Reopen from this record; any future chain enumerates
+O19-S2-R3-01..08.
