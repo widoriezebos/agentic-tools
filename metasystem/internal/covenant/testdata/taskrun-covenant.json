@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "name": "taskrun",
+    "entryPoint": "java -jar target/taskrun.jar",
+    "sourcePaths": ["src/main/**", "src/test/**", "pom.xml"]
+  },
+  "requirements": [
+    {"id": "10", "ref": "spec.md requirement 10 (the published decision point: DECISIONS.md declares order-rule)", "proof": "gap_handled"},
+    {"id": "24", "ref": "spec.md requirement 24 (no third-party runtime dependencies)", "proof": "no-runtime-deps"},
+    {"id": "25", "ref": "spec.md requirement 25 (1000-task chain plans under the budget)", "proof": "plan_seconds"}
+  ],
+  "battery": {
+    "command": "bash gate.sh",
+    "metric": "self-assessment",
+    "direction": "max",
+    "threshold": ">=26"
+  },
+  "budgets": [
+    {"metric": "dependency_count", "bound": 0, "direction": "min"},
+    {"metric": "plan_seconds", "bound": 20, "direction": "min"}
+  ],
+  "guards": [
+    {"name": "no-runtime-deps", "command": "bash guard-deps.sh", "cadence": 1, "floor": 1}
+  ],
+  "guardrails": ["gate.sh", "guard-deps.sh", "grader/"]
+}
