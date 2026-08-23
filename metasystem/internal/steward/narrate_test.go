@@ -13,7 +13,7 @@ func TestNarrationLineSpeaksPlainly(t *testing.T) {
 	line := narrationLine(root, TickResult{
 		OpenWork: "claimed goal: narrator",
 		Decision: Decision{Action: ActNone},
-	}, time.Date(2026, 8, 23, 21, 0, 0, 0, time.UTC))
+	}, TickConfig{}, time.Date(2026, 8, 23, 21, 0, 0, 0, time.UTC))
 	if !strings.Contains(line, "working on narrator") || strings.Contains(line, "claimed goal:") {
 		t.Fatalf("the sentence must translate the record, not quote it: %q", line)
 	}
@@ -23,7 +23,7 @@ func TestNarrationLineSpeaksPlainly(t *testing.T) {
 func TestNarrationCapsItsHistory(t *testing.T) {
 	root := t.TempDir()
 	for i := 0; i < narrationCapLines+25; i++ {
-		Narrate(root, TickResult{OpenWork: "observing", Decision: Decision{Action: ActNone}})
+		Narrate(root, TickResult{OpenWork: "observing", Decision: Decision{Action: ActNone}}, TickConfig{})
 	}
 	data, err := os.ReadFile(NarrationPath(root))
 	if err != nil {
@@ -42,5 +42,29 @@ func TestNarrationFailureIsSilent(t *testing.T) {
 	if err := os.WriteFile(root+"/artifacts", []byte("a file where a directory must be"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	Narrate(root, TickResult{OpenWork: "observing", Decision: Decision{Action: ActNone}})
+	Narrate(root, TickResult{OpenWork: "observing", Decision: Decision{Action: ActNone}}, TickConfig{})
+}
+
+// The account notices a stall building before the steward acts, and
+// says nothing when work is fresh or the decision already speaks.
+func TestNoticingsNameTheApproachingStall(t *testing.T) {
+	mid := TickResult{
+		OpenWork: "claimed goal: narrator",
+		Decision: Decision{Action: ActNone},
+		Evidence: Evidence{TicksSinceAdvance: 3},
+	}
+	notes := noticings(mid, TickConfig{StaleTicks: 5, MaxRevivals: 3})
+	if len(notes) != 1 || !strings.Contains(notes[0], "no visible progress for 3 checks") {
+		t.Fatalf("an approaching stall must be noticed: %v", notes)
+	}
+	fresh := mid
+	fresh.Evidence.TicksSinceAdvance = 1
+	if n := noticings(fresh, TickConfig{StaleTicks: 5, MaxRevivals: 3}); len(n) != 0 {
+		t.Fatalf("fresh work is not an anomaly: %v", n)
+	}
+	acting := mid
+	acting.Decision = Decision{Action: ActNotify, Reason: "stalled"}
+	if n := noticings(acting, TickConfig{StaleTicks: 5, MaxRevivals: 3}); len(n) != 0 {
+		t.Fatalf("when the decision speaks, the noticing stays quiet: %v", n)
+	}
 }

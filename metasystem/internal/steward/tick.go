@@ -127,7 +127,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	result := TickResult{Decision: d, Evidence: ev, OpenWork: workReason, Reaped: reaped}
 	// The running plain-English account rides every tick, strictly
 	// best-effort: the storyteller never fails the shift.
-	Narrate(repoRoot, result)
+	Narrate(repoRoot, result, cfg)
 	return result, nil
 }
 
