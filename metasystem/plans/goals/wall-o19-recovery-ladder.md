@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Wall violations recover on a ladder: the runner auto-restores mechanical cases; a human is asked only for adoption, no verifiable restore, or repeat offense (D117, Wido's ruling)
 - Origin: main
-- Next step: STOPPED BY THE APPETITE LAW 2026-08-23 (mac-coordinator, 2h of the 6h token spent): design ran two both-must-agree rounds — round 1's 8 findings folded structurally, round 2 returned 9 with 4 critical (ledger booking-onto-disputed-bytes transaction, authenticated resume entry outranking the raw taint stop and reconciliation, per-detection-site phase table, binding crash-window durability) — a diverging trajectory of real transactional designs that no honest 6h shape fits. plans/wall-o19-recovery-ladder-design.md at b0eaac5 carries the converged round-1 foundation, the round-2 open-question ledger, and a FOUR-SLICE PROPOSAL awaiting coordinator ratification: slice-1 in-turn workspace ladder (6h), slice-2 ledger transaction (1d, design first), slice-3 post-verify+reservation phases (6h), slice-4 repeat rule (3h). Ratify and re-queue as slices; the remaining 4h of this token were preserved rather than burned to a residue-laden failsafe.
+- Next step: STOPPED AND RAISED 2026-08-23 after codex round one returned nine material findings (four CRITICAL, transaction/invariant-level — enumerated in plans/wall-o19-recovery-ladder-design.md with the archive under artifacts/agents/critiques/wall-o19/). Two findings embed HUMAN-RESERVED decisions: the adoption policy (always-discard vs always-ask for restorable violations — decides how often Wido is interrupted, the exact quantity D117 rules on) and authenticated runner provenance (CLI contract or schema change either way). DO NOT resume without Wido's rulings; re-scope with the phase table and ledger transaction as the spine, appetite a full day.
 - OpenedAt: 2026-08-20T16:45:00Z
-- Revision: 6
+- Revision: 7
 - Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-23T01:38:02Z
 
 History:
@@ -15,4 +15,5 @@ History:
 - 2026-08-23T00:09:27Z K8XF5SESQ9RA6YTC0CR4BYKE8E-widos-macbook-pro-bc1be9cb edit actor=widos-macbook-pro+mac-coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T00:09:34Z RNW7FC11CSYJ0NP78A5EGQTV06-widos-macbook-pro-bc1be9cb release actor=widos-macbook-pro+mac-coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T01:38:02Z TWFPVS1M2BN8V7H9TB57QNWHV0-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=wall-o19-recovery-ladder
-Integrity: sha256=e3aa5d50b708f3a338da37bf9b1ee861fae26120a51dbd86314c569e621e825b
+- 2026-08-23T01:52:33Z H0TV6VRM55AX4PDPGC1CRBVE5Z-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=wall-o19-recovery-ladder
+Integrity: sha256=85611df10f608f20a11e6090e36f695a8d392501f8b246eed21f81b24caeab8b
