@@ -114,3 +114,18 @@ wholesale; no janitor duty is added.
   UNKNOWN refuses.
 - After provisioning returns, the target's lease has no live
   holder and the runner's resume claims it exactly as today.
+
+## D-P1.2 AMENDED (Wido's ruling, 2026-08-23)
+
+The provisioner announces BEFORE adoption, not after. The original
+ordering worked only at a desk: adoption's goal-baseline genesis
+classifies its caller against the target, a headless provisioner's
+child processes are recognized only through the announced-ancestor
+walk, and the controlling terminal was silently doing the
+announcement's job. On the VM (bm-2d, 2026-08-22) there was no
+terminal, the caller classified UNTRUSTED, and the genesis fence
+refused — correctly. No engine surface changed for the fix: the
+authority matrix already admits an announced non-holder main over
+an adoption-shaped target (now pinned positively in
+internal/authority/authority_test.go), and the fence against
+UNTRUSTED and STEWARD callers stands untouched.

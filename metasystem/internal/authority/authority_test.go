@@ -134,3 +134,19 @@ func TestUntrustedRefusesEveryMode(t *testing.T) {
 		t.Fatal("the steward's one action is continuation dispatch, never genesis")
 	}
 }
+
+// The composition every headless provisioner rides: an announced main —
+// recognized through ancestry, holding no lease, seeing no terminal —
+// is a working caller, and the adoption shape admits it to genesis.
+// Without the shape the same caller refuses: the widening is the
+// target's emptiness, never the caller's convenience.
+func TestAnnouncedMainAdmitsGenesisByAdoptionShape(t *testing.T) {
+	shaped := map[string]any{"class": "MAIN", "holder": false, "adoptionShaped": true}
+	if err := Authorize("genesis", shaped, ""); err != nil {
+		t.Fatalf("an announced non-holder main over an adoption-shaped target must genesis: %v", err)
+	}
+	unshaped := map[string]any{"class": "MAIN", "holder": false}
+	if err := Authorize("genesis", unshaped, ""); err == nil {
+		t.Fatal("a non-holder main must not genesis a target that is not adoption-shaped")
+	}
+}

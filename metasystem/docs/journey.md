@@ -311,3 +311,30 @@ exception; a publication aborts because a successor took custody
 mid-write; a re-announcement reconciles the holder identity. Small
 words, but they are the words the system speaks to its operator at
 exactly the moments trust is being decided.
+
+## The benchmark knocks and is let in (August 23, 2026)
+
+Overnight, the second computer tried to run the benchmark Wido had
+ordered: a full dress rehearsal in which the system provisions a
+fresh virtual machine and builds a small software project there,
+unattended, so its performance can be judged. The run stopped at
+the front door. Before the system starts work in a new place, it
+creates its first record book there — the ledger every later
+decision is written into — and it checks who is asking for that
+privilege. Days earlier those identity rules had been tightened so
+that no stray, unidentified program could ever pass for a person.
+The tightened rules looked at the process on the virtual machine,
+found neither a person at a keyboard nor a registered session
+behind it, and refused. The refusal was correct.
+
+The bug was somewhere else, and it was nineteen lines wide. The
+provisioning script did register itself as a proper session — but
+nineteen lines after the step that needed it. At a desk this never
+showed, because the person's own terminal silently vouched for
+every step; on the terminal-less virtual machine there was nothing
+to vouch, and the truth came out. The fix registers the session
+first and builds second, with the reason written into the script.
+One reordering, one new test pinning that a registered headless
+session is welcome exactly where an unidentified one is not, and
+no security rule loosened. The benchmark is unblocked for its
+rerun.

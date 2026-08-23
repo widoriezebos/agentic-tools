@@ -431,6 +431,23 @@ PY
 )
 cp -R "$fixture_spec/$seed_path/." "$target/"
 
+# D-P1.2 (plans/provisioning-identity.md, amended 2026-08-23): the
+# provisioner is the target's first main, and it announces BEFORE
+# adoption — adoption's goal-baseline genesis classifies its caller
+# against the target, and a headless provisioner's children are
+# recognized only through the announced ancestor (at a desk the tty
+# masked this; the VM had no tty and genesis refused UNTRUSTED).
+# Holdership is verified right after: announce alone does not fail
+# against a live holder, and a fresh target has none.
+provisioner_start=$("$ms" proc started-at --pid $$) \
+  || die 1 "provision refused: cannot read the provisioner's own start time"
+"$ms" lease announce --root "$target" \
+  --session "provision-$mission_id" --pid $$ --start "$provisioner_start" \
+  --tag "metasystem-provisioner-$mission_id" --runtime "$host_runtime" >/dev/null \
+  || die 1 "provision refused: could not announce the provisioner in the target"
+"$ms" lease require-holder --root "$target" --caller-pid $$ >/dev/null \
+  || die 1 "provision refused: the provisioner did not become the target's lease holder"
+
 if ! "$root/scripts/adopt.sh" "$target" --runtimes "$runtimes" >"$scratch/adopt.log" 2>&1; then
   cat "$scratch/adopt.log" >&2
   die 1 "provision failed while adopting the metasystem"
@@ -444,18 +461,6 @@ if [[ -n "${pair_record:-}" ]]; then
   mkdir -p "$target/artifacts/agents"
   printf '%s\n' "$pair_record" | python3 -c 'import json,sys; d=json.load(sys.stdin); json.dump(d, open(sys.argv[1],"w"), indent=2, sort_keys=True); open(sys.argv[1],"a").write("\n")' "$target/artifacts/agents/benchmark-pair.json"
 fi
-
-# D-P1.2 (plans/provisioning-identity.md): the provisioner is the target's
-# first main. Announce AFTER adoption (the helpers now exist), then VERIFY
-# holdership — announce alone does not fail against a live holder.
-provisioner_start=$("$ms" proc started-at --pid $$) \
-  || die 1 "provision refused: cannot read the provisioner's own start time"
-"$ms" lease announce --root "$target" \
-  --session "provision-$mission_id" --pid $$ --start "$provisioner_start" \
-  --tag "metasystem-provisioner-$mission_id" --runtime "$host_runtime" >/dev/null \
-  || die 1 "provision refused: could not announce the provisioner in the target"
-"$ms" lease require-holder --root "$target" --caller-pid $$ >/dev/null \
-  || die 1 "provision refused: the provisioner did not become the target's lease holder"
 
 mkdir -p "$evidence_root"
 python3 - "$target/metasystem.conf" "$manifest" "$evidence_root" "$roster_independence" <<'PY'
