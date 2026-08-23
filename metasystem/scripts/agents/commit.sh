@@ -192,11 +192,14 @@ fi
 # back softly (index and worktree untouched), and the refusal names the
 # principle.
 proved_head=$(git -C "$root" rev-parse --verify --quiet HEAD || true)
-# Every landing names the machine it came from: the wrapper stamps
-# the trailer, so it is uniform on every machine and never typed by
-# an author — the same hostname+lineage pair the goal ledger records
-# on its mutations.
-git -C "$root" commit --trailer "Machine: $(hostname -s)+${METASYSTEM_OWNER_LINEAGE:-human}" "$@"
+# Every landing names the machine it came from — by its enrolled
+# nickname, never its hostname: the trailer is pushed to shared
+# remotes, and what a machine IS stays off them. The wrapper stamps
+# it so it is uniform on every machine and never typed by an author.
+machine_nickname=$(git -C "$root" config --get metasystem.goal.machine || true)
+[[ -n "$machine_nickname" ]] \
+  || { echo "commit refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine" >&2; exit 2; }
+git -C "$root" commit --trailer "Machine: ${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}" "$@"
 landed_tree=$(git -C "$root" rev-parse HEAD^{tree})
 if [[ "$landed_tree" != "$proved_tree" ]]; then
   if [[ -n "$proved_head" ]]; then

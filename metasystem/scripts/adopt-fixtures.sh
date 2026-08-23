@@ -127,11 +127,13 @@ if true; then  # template-gated by the orchestrator
   mkdir -p "$nested_src/vendored"
   copy_tree_without_artifacts "$root" "$nested_src/vendored"
   git -C "$nested_src" init -q -b main
+  git -C "$nested_src" config metasystem.goal.machine fixture-machine
   git -C "$nested_src" add .
   git -C "$nested_src" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm nested
   nested_tgt="$tmp/adopt-nested-target"
   mkdir -p "$nested_tgt"
   git -C "$nested_tgt" init -q -b main
+  git -C "$nested_tgt" config metasystem.goal.machine fixture-machine
   "$nested_src/vendored/scripts/adopt.sh" "$nested_tgt" --runtimes claude >"$tmp/adopt-nested.out" 2>&1 \
     || { echo "nested-prefix adoption failed" >&2; cat "$tmp/adopt-nested.out" >&2; exit 1; }
   [[ -f "$nested_tgt/metasystem.conf" && -d "$nested_tgt/scripts/agents" ]] \
@@ -172,6 +174,7 @@ if true; then  # template-gated by the orchestrator
   guard_under_test="$guard_stub_root/scripts/agents/pre-commit-guard.sh"
   mkdir -p "$guard_repo/plans"
   git -C "$guard_repo" init -q -b main
+  git -C "$guard_repo" config metasystem.goal.machine fixture-machine
   echo old >"$guard_repo/plans/existing.md"
   git -C "$guard_repo" add plans/existing.md
   git -C "$guard_repo" -c user.name=m -c user.email=m@example.invalid commit -qm seed
@@ -185,6 +188,7 @@ if true; then  # template-gated by the orchestrator
   unborn_repo="$tmp/guard-unborn"
   mkdir -p "$unborn_repo/plans"
   git -C "$unborn_repo" init -q -b main
+  git -C "$unborn_repo" config metasystem.goal.machine fixture-machine
   echo first >"$unborn_repo/plans/new.md"
   git -C "$unborn_repo" add plans/new.md
   (cd "$unborn_repo" && "$guard_under_test") \
@@ -203,6 +207,7 @@ if true; then  # template-gated by the orchestrator
   compose_tgt="$tmp/compose-target"
   mkdir -p "$compose_tgt"
   git -C "$compose_tgt" init -q -b main
+  git -C "$compose_tgt" config metasystem.goal.machine fixture-machine
   mkdir -p "$compose_tgt/.git/hooks"
   printf '#!/usr/bin/env bash\ntouch "$(git rev-parse --show-toplevel)/.project-hook-ran"\nexit 0\n' \
     >"$compose_tgt/.git/hooks/pre-commit"
@@ -233,6 +238,7 @@ if true; then  # template-gated by the orchestrator
   both_tgt="$tmp/both-hooks-target"
   mkdir -p "$both_tgt"
   git -C "$both_tgt" init -q -b main
+  git -C "$both_tgt" config metasystem.goal.machine fixture-machine
   mkdir -p "$both_tgt/.git/hooks"
   printf '#!/bin/sh\necho main-hook\n' >"$both_tgt/.git/hooks/pre-commit"
   printf '#!/bin/sh\necho local-hook\n' >"$both_tgt/.git/hooks/pre-commit.local"
@@ -283,6 +289,7 @@ PLAN
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
   echo junk >"$srcrepo/ignored-fixture.txt"
   git init -q -b main "$srcrepo"
+  git -C "$srcrepo" config metasystem.goal.machine fixture-machine
   git -C "$srcrepo" add -A
   git -C "$srcrepo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm snapshot
   adopt="$srcrepo/scripts/adopt.sh"

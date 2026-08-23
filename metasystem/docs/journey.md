@@ -372,3 +372,41 @@ machine's hostname and the role that made it, the same identity
 pair the backlog records. Nobody types it and nobody can forget
 it, and a test proves the stamp is always there. From this landing
 on, provenance is a property of the road, not the driver.
+
+## Four rulings in one sitting (August 23, 2026)
+
+Wido sat down with everything that had queued up for him and ruled
+on all of it in one conversation. The benchmark's sealing warning —
+its give-up rule would trigger before a pass/fail test could ever
+show partial progress — is acknowledged as intended behavior rather
+than raised away. The question of whether the mission machinery
+should write into the shared to-do ledger at every turn closed the
+way the review recommended: it keeps reading and never writes, with
+one small read-only line to be added at mission start. The idea of
+letting specially-sealed missions use worker agents was set aside
+until a real case proves it worth its now-known cost, its findings
+preserved for that day. And the self-healing design for safety-rule
+violations got its two missing decisions: heal silently when the
+repair is mechanical — a repeat offense still escalates — and record
+who healed what in an honest new field rather than a naming trick.
+Four decisions, four unblocked paths, one conversation.
+
+## The machines take pen names (August 23, 2026)
+
+Wido noticed that the shared repository was learning more than it
+should: every backlog entry and, since that morning, every landing
+named the actual computer it came from, hostname and all. What a
+machine is called should be a choice, not a disclosure. The
+capability half-existed — a locally-kept nickname the machinery
+would prefer — but nothing required it, and the silent fallback to
+the hostname was the leak. Now the fallback is gone: a machine
+with no enrolled nickname is refused, loudly, with the one-line
+command that fixes it, on every surface that publishes — backlog
+entries, landings, and the repositories the system provisions,
+which inherit their creator's nickname so they never refuse their
+own birth. Getting there took five runs of the adoption test
+suite, each catching a real gap — including the discovery that the
+suite had been quietly testing an outdated build of the engine,
+because a compile check is not a build. The names already written
+into history stay, immutable as everything else there; from here
+forward, the machines sign with pen names.

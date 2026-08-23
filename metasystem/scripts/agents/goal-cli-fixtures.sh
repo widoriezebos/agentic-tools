@@ -17,7 +17,9 @@ trap 'rm -rf "$tmp"' EXIT
 origin="$tmp/origin.git"
 clone="$tmp/clone"
 git init -q --bare "$origin"
+git -C "$origin" config metasystem.goal.machine fixture-machine
 git init -q -b main "$clone"
+git -C "$clone" config metasystem.goal.machine fixture-machine
 git -C "$clone" remote add origin "$origin"
 git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid commit -q --allow-empty -m seed
 mkdir -p "$clone/plans"

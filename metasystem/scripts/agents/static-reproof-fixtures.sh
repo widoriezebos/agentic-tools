@@ -60,6 +60,9 @@ SH
 chmod +x "$fixture_root/bin/metasystem"
 
 git -C "$fixture_root" init -q -b main
+# Beds enroll a fixture nickname: publishing surfaces refuse without
+# one, and a bed must exercise the stamp, not the refusal.
+git -C "$fixture_root" config metasystem.goal.machine fixture-machine
 # Repo-local identity: the wrapper's own `git commit` (leg 3) must not
 # depend on ambient user configuration on a clean runner (IL28-R1-2).
 git -C "$fixture_root" config user.name fixture
@@ -252,7 +255,8 @@ rm "$fixture_root/internal/red/generated.go"
 # stamps the Machine trailer (hostname plus lineage), so provenance
 # never depends on what an author typed.
 stamped=$(git -C "$fixture_root" log -1 --format=%B)
-grep -Fq "Machine: $(hostname -s)+" <<<"$stamped" \
-  || { echo "static re-proof fixture: the landing does not name its machine: $stamped" >&2; exit 1; }
+machine_line=$(grep '^Machine: ' <<<"$stamped" | head -1)
+[[ "$machine_line" == "Machine: fixture-machine+"* ]] \
+  || { echo "static re-proof fixture: the landing's Machine trailer is not the enrolled nickname: ${machine_line:-absent}" >&2; exit 1; }
 
 echo "static re-proof fixtures: PASSED"

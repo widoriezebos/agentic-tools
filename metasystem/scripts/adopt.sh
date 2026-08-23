@@ -357,6 +357,16 @@ chmod +x "$target/bin/metasystem"
 # baseline) needs no write at all, and reconciling it would run
 # holder-only against a target that cannot know this caller — a re-run
 # must not turn a no-op into a refusal.
+# The target inherits the adopting machine's enrolled nickname: goal
+# verbs in the target publish an actor, hostnames are never published,
+# and a target must not refuse its own genesis for lack of enrollment.
+adopter_nickname=$(git -C "$root" config --get metasystem.goal.machine || true)
+[[ -n "$adopter_nickname" ]] \
+  || die 1 "adoption refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine"
+if git -C "$target" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$target" config metasystem.goal.machine "$adopter_nickname"
+fi
+
 pair_state=$("$target/bin/metasystem" goal list --root "$target" 2>/dev/null || true)
 if [[ -n "$pair_state" ]] \
   && [[ $("$ms" json get --value "$pair_state" --field baselinePresent --default false) == true ]] \

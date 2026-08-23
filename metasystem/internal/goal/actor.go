@@ -9,33 +9,22 @@ package goal
 
 import (
 	"fmt"
-	"os"
 	"strings"
 )
 
-// ResolveMachine reads the durable machine name.
+// ResolveMachine reads the durable machine nickname. There is no
+// hostname fallback on purpose: everything this name reaches — ledger
+// claims, publication history, landing trailers — is pushed to shared
+// remotes, and a hostname is what a machine IS, not what it is called.
+// Enrollment is one local command, and refusing until it happens is
+// the privacy holding its ground.
 func ResolveMachine(root string) (string, error) {
 	if out, err := gitIn(root, "config", "--get", "metasystem.goal.machine"); err == nil {
 		if name := strings.TrimSpace(out); name != "" {
 			return name, nil
 		}
 	}
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		return "", fmt.Errorf("no machine identity: set git config metasystem.goal.machine")
-	}
-	name := strings.ToLower(strings.Split(host, ".")[0])
-	sanitized := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
-			return r
-		}
-		return '-'
-	}, name)
-	if sanitized == "" {
-		return "", fmt.Errorf("the hostname sanitizes to nothing: set git config metasystem.goal.machine")
-	}
-	return sanitized, nil
+	return "", fmt.Errorf("no machine nickname is enrolled and hostnames are never published: run  git config metasystem.goal.machine <nickname>  once on this machine")
 }
 
 // NewWorld reports whether this repository has migrated: the
