@@ -3,9 +3,9 @@
 - State: queued
 - Intent: A plain-English story of what happened, why it happened, and who did it
 - Origin: main
-- Next step: SLICE ONE DONE 2026-08-22 (well under its 3h appetite): docs/journey.md written and landed (05cc3ea) with the conclusion covenant in docs/backlog-mechanism.md — every concluding goal appends its paragraph in the same landing; published for reading at the artifact URL in the coordinator's session. REMAINING: the D122 real-time charter (continuous narration wired into the steward, anomaly-to-action, reach-the-human) — needs its own sliced design with agreed appetites, and MUST NOT start before idle-watchdog concludes (the block was lifted only for slice one, on Wido's 2026-08-22 prioritization). Journey upkeep needs no claim: the covenant makes every concluder write.
+- Next step: Appetite: 6h for SLICE TWO (Wido ratified the three-slice plan 2026-08-23): READ-ONLY NARRATION — the steward's tick writes a running plain-English account of what the system is doing (docs are the narrator style rules beside the conclusion covenant), nothing else; independently deployable. Then SLICE THREE (6h): anomaly naming — stalls and drift become named events in the narration. Then SLICE FOUR (4h): reach-the-human — flagged anomalies route through the delivery-gated channels. Claimable in order by any machine; slice one (the journey) landed 2026-08-22.
 - OpenedAt: 2026-08-20T00:02:00Z
-- Revision: 6
+- Revision: 7
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=narrator
@@ -14,4 +14,5 @@ History:
 - 2026-08-22T18:48:35Z VPDXHQD0099D8FSR46FSGRVAHQ-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=narrator
 - 2026-08-22T18:52:27Z ZQJ0RF4CYYQ0G3SDPY1FCGREV4-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=narrator
 - 2026-08-22T18:52:32Z WNMM81Y5RJGSMKWP5BB2V7CD0P-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=narrator
-Integrity: sha256=786e27b9d244d3fce6752b2f236ddae7f725f2613e47bec63d38eb4264647ae3
+- 2026-08-23T13:34:13Z EZ793X199W374QQ9WDQ6EM03TB-m1-bf243850 edit actor=m1+coordinator targets=narrator
+Integrity: sha256=806c13e30ef9a62a75caccf541c9f35a6c5108f581976f514070e23d8239c205
