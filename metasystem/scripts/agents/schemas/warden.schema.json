@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "metasystem.version=1",
+  "title": "Warden return",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "jobId",
+    "round",
+    "runtime",
+    "sessionId",
+    "model",
+    "evidence",
+    "gaps",
+    "mode",
+    "reviewedTree",
+    "findings",
+    "verdictMaterialCount"
+  ],
+  "properties": {
+    "jobId": {
+      "type": "string"
+    },
+    "round": {
+      "type": "integer"
+    },
+    "runtime": {
+      "type": "string"
+    },
+    "sessionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested",
+        "effective"
+      ],
+      "properties": {
+        "requested": {
+          "type": "string"
+        },
+        "effective": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "observed",
+          "level"
+        ],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "observed": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "ran",
+              "read",
+              "inferred"
+            ]
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "mode": {
+      "type": "string"
+    },
+    "reviewedTree": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "severity",
+          "material",
+          "claim",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "material": {
+            "type": "boolean"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "verdictMaterialCount": {
+      "type": "integer"
+    }
+  }
+}

@@ -63,8 +63,8 @@ func authorizationsDir(root, mission string) string {
 // patch. Any refusal here fails the merge: an unauthorizable mission
 // chain is not accepted.
 func (r *conformanceRun) issueAuthorization(finalTree string) error {
-	mission, _ := r.record["mission"].(string)
-	if mission == "" {
+	missionName, _ := r.record["mission"].(string)
+	if missionName == "" {
 		return nil
 	}
 	incarnation, _ := r.record["missionIncarnation"].(string)
@@ -94,12 +94,32 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	if len(bytes.TrimSpace(patch)) == 0 || len(changedPaths) == 0 {
 		return fmt.Errorf("an empty diff cannot be authorized; the chain shipped no reviewable change")
 	}
+	// Guardrail custody at issuance: a chain that changes the mission's
+	// declared net needs the warden's review before it can be
+	// authorized — the wall re-refuses unmarked guardrail touches at
+	// consumption regardless, so this is the early, explainable refusal.
+	guardrails, err := mission.VerifiedGuardrails(r.root, missionName)
+	if err != nil {
+		return err
+	}
+	guardrailTouch := ""
+	for _, path := range changedPaths {
+		if guardrails.Covers(path) {
+			guardrailTouch = path
+			break
+		}
+	}
+	if guardrailTouch != "" {
+		if failures := r.wardenReviewFailures(finalTree); len(failures) > 0 {
+			return fmt.Errorf("authorization refused: this chain changes the guardrail %s and its warden review is not in order (%s); dispatch role warden with --reviews %s, close the chain at zero material findings, and re-run conformance", guardrailTouch, strings.Join(failures, "; "), r.job)
+		}
+	}
 	// The trees this record names stay reachable for consumption-time
 	// verification: the runner's staleness check dereferences both long
 	// after the delegate's worktree is gone.
 	repoWorkspace := gittree.Workspace{Dir: r.root}
 	for _, tree := range []string{baseTree, finalTree} {
-		if err := repoWorkspace.Anchor(mission, tree); err != nil {
+		if err := repoWorkspace.Anchor(missionName, tree); err != nil {
 			return fmt.Errorf("cannot anchor the authorization's %s: %v", tree, err)
 		}
 	}
@@ -121,13 +141,13 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	if err != nil {
 		return fmt.Errorf("cannot digest the job record identity: %v", err)
 	}
-	baseSequence, baseSegment, err := missionBaseSequencePoint(r.root, mission, baseTree)
+	baseSequence, baseSegment, err := missionBaseSequencePoint(r.root, missionName, baseTree)
 	if err != nil {
 		return err
 	}
 	patchSum := sha256.Sum256(patch)
 
-	dir := authorizationsDir(r.root, mission)
+	dir := authorizationsDir(r.root, missionName)
 	supersedes, err := priorChainAuthorizations(dir, r.rootJob)
 	if err != nil {
 		return err
@@ -138,7 +158,7 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 		"jobId":              r.job,
 		"rootJob":            r.rootJob,
 		"jobRecordDigest":    jobRecordDigest,
-		"mission":            mission,
+		"mission":            missionName,
 		"missionIncarnation": incarnation,
 		"stream":             stream,
 		"dispatchTurn":       dispatchTurn,
@@ -154,6 +174,11 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 		"patchDigest":       hex.EncodeToString(patchSum[:]),
 		"changedPaths":      changedPaths,
 		"supersedes":        supersedes,
+	}
+	// The lane fact rides the digest-covered record: consumers refuse a
+	// guardrail touch without it, and it cannot be added after issuance.
+	if guardrailTouch != "" {
+		record["guardrailLane"] = true
 	}
 	// Digest-then-embed: the digest covers the record WITHOUT the
 	// authorizationDigest field; the filename carries the same digest.
@@ -188,10 +213,107 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 	events.EmitOnce(r.root, "conformance", "authorization-issued",
 		"integration authorization issued for "+r.job,
 		int64(os.Getpid()), 0, 1, map[string]string{
-			"authorizationDigest": digest, "jobId": r.job, "missionId": mission,
+			"authorizationDigest": digest, "jobId": r.job, "missionId": missionName,
 		})
 	r.out = append(r.out, "integrationAuthorization="+digest)
 	return nil
+}
+
+// wardenReviewFailures judges whether a COMPLETED warden review admits
+// this chain's guardrail change: a top-level warden chain must review a
+// job of this chain, be closed, have a completed final round whose
+// return parses, report zero material findings with a consistent
+// verdict count, and have reviewed EXACTLY the tree being authorized —
+// a warden that merely exists, or reviewed different bytes, admits
+// nothing. Empty means admitted. The critique-exhaustion discipline
+// the code-critic requirement additionally enforces is not yet judged
+// for warden chains; the backlog owns that widening.
+func (r *conformanceRun) wardenReviewFailures(finalTree string) []string {
+	records := r.loadConformanceRecords()
+	implementationIDs := map[string]bool{}
+	for jobID := range records {
+		if root, ok := chainRootIn(records, jobID); ok && root == r.rootJob {
+			implementationIDs[jobID] = true
+		}
+	}
+	var wardenIDs []string
+	for jobID, record := range records {
+		if record["role"] != "warden" || record["parentJob"] != nil {
+			continue
+		}
+		if reviews, ok := record["reviews"].(string); ok && implementationIDs[reviews] {
+			wardenIDs = append(wardenIDs, jobID)
+		}
+	}
+	sort.Strings(wardenIDs)
+	if len(wardenIDs) == 0 {
+		return []string{"no warden chain reviews this implementation"}
+	}
+	var allFailures []string
+	for _, wardenID := range wardenIDs {
+		var failures []string
+		wardenRoot := records[wardenID]
+		var final map[string]any
+		finalRound := -1.0
+		for jobID, record := range records {
+			if root, ok := chainRootIn(records, jobID); !ok || root != wardenID {
+				continue
+			}
+			if round, ok := record["round"].(float64); ok && round > finalRound {
+				finalRound, final = round, record
+			}
+		}
+		if final == nil {
+			failures = append(failures, fmt.Sprintf("warden chain %s has no readable rounds", wardenID))
+			if wardenRoot["chainClosed"] != true {
+				failures = append(failures, fmt.Sprintf("warden chain %s is not closed", wardenID))
+			}
+			allFailures = append(allFailures, failures...)
+			continue
+		}
+		if wardenRoot["chainClosed"] != true {
+			failures = append(failures, fmt.Sprintf("warden chain %s is not closed", wardenID))
+		}
+		if final["status"] != "completed" {
+			failures = append(failures, fmt.Sprintf("warden chain %s final round is not completed", wardenID))
+		}
+		returnPath := filepath.Join(r.root, "artifacts", "agents", wardenID,
+			"rounds", scalarText(final["round"]), "return.json")
+		result := map[string]any{}
+		returnData, err := os.ReadFile(returnPath)
+		var parsedReturn any
+		if err == nil {
+			err = json.Unmarshal(returnData, &parsedReturn)
+		}
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("warden chain %s final return is unreadable", wardenID))
+		} else if object, ok := parsedReturn.(map[string]any); ok {
+			result = object
+		} else {
+			failures = append(failures, fmt.Sprintf("warden chain %s final return is not a JSON object", wardenID))
+		}
+		materialCount := 0
+		if findings, ok := result["findings"].([]any); ok {
+			for _, item := range findings {
+				if finding, ok := item.(map[string]any); ok && finding["material"] == true {
+					materialCount++
+				}
+			}
+		} else if len(result) > 0 {
+			failures = append(failures, fmt.Sprintf("warden chain %s final return has no findings array", wardenID))
+		}
+		if materialCount > 0 || result["verdictMaterialCount"] != float64(0) {
+			failures = append(failures, fmt.Sprintf("warden chain %s still reports material findings", wardenID))
+		}
+		if reviewed, _ := result["reviewedTree"].(string); reviewed != finalTree {
+			failures = append(failures, fmt.Sprintf("warden chain %s reviewed tree %s, not the tree being authorized", wardenID, scalarText(result["reviewedTree"])))
+		}
+		if len(failures) == 0 {
+			return nil
+		}
+		allFailures = append(allFailures, failures...)
+	}
+	return allFailures
 }
 
 // missionBaseSequencePoint binds the issuance point: the E-sequence point

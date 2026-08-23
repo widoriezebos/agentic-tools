@@ -15,7 +15,7 @@ import (
 var Roles = map[string]bool{
 	"behavior-judge": true, "code-critic": true, "design-critic": true,
 	"implementer": true, "investigator": true, "steward-continuation": true,
-	"verifier": true,
+	"verifier": true, "warden": true,
 }
 
 // VersionTwo returns the v2 form of a v1 schema: a version marker, the

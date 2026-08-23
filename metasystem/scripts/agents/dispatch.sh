@@ -872,14 +872,14 @@ dispatch_job() {
   fi
   [[ -n "$role" && -f "$brief" ]] || { usage; exit 2; }
   [[ -f "$root/scripts/agents/roles/$role.md" && -f "$root/scripts/agents/roles/$role.requirements.json" ]] || die 1 "unknown dispatch role: $role"
-  if [[ "$role" == code-critic ]]; then
-    [[ -n "$reviews" ]] || die 2 "code-critic dispatch requires --reviews <implementer-job-id>"
+  if [[ "$role" == code-critic || "$role" == warden ]]; then
+    [[ -n "$reviews" ]] || die 2 "$role dispatch requires --reviews <implementer-job-id>"
     valid_id "$reviews" || die 2 "invalid implementer job id for --reviews: $reviews"
-    [[ -f "$jobs/$reviews.json" ]] || die 1 "code-critic dispatch cannot review unknown implementer job: $reviews"
+    [[ -f "$jobs/$reviews.json" ]] || die 1 "$role dispatch cannot review unknown implementer job: $reviews"
     [[ "$(json_field "$jobs/$reviews.json" role 2>/dev/null || true)" == implementer ]] \
-      || die 1 "code-critic dispatch --reviews must name an implementer job: $reviews"
+      || die 1 "$role dispatch --reviews must name an implementer job: $reviews"
   elif [[ -n "$reviews" ]]; then
-    die 2 "--reviews is only valid for the code-critic role"
+    die 2 "--reviews is only valid for the code-critic and warden roles"
   fi
   [[ ! ( $use_worktree -eq 1 && -n "$workspace" ) ]] || die 2 "--workspace and --worktree are mutually exclusive"
   if (( approve_escalation )) && { [[ ! -t 0 ]] || [[ ! -t 2 ]]; }; then
@@ -1018,6 +1018,14 @@ dispatch_job() {
     workspace=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"
   fi
   permission_name=${permissions_override:-$(config_get --key "dispatch.permissions.$role" --default none)}
+  if [[ "$role" == warden ]]; then
+    # The warden holds the no-pen seat: its write authority is bound by
+    # the role, never by a caller flag, a config key, or a file that
+    # shadows a preset name — the shipped zero-write preset is forced
+    # by its absolute repository path.
+    [[ -z "$permissions_override" ]] || die 2 "the warden role dispatches with the zero-write preset; --permissions cannot change it"
+    permission_name="$root/scripts/agents/permissions/none.json"
+  fi
   permission_json=$(mktemp "$record_locks/permissions.XXXXXX")
   expand_permissions "$permission_name" "$workspace" "$use_worktree" "$permission_json"
   snapshot_json=$(mktemp "$record_locks/snapshot.XXXXXX")

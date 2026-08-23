@@ -22,13 +22,13 @@ var returnJobIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 var returnAllowedRoles = map[string]bool{
 	"orchestrator": true, "design-critic": true, "implementer": true,
 	"code-critic": true, "verifier": true, "investigator": true, "behavior-judge": true,
-	"steward-continuation": true,
+	"steward-continuation": true, "warden": true,
 }
 
 var returnVersionedRoles = map[string]bool{
 	"design-critic": true, "implementer": true, "code-critic": true,
 	"verifier": true, "investigator": true, "behavior-judge": true,
-	"steward-continuation": true,
+	"steward-continuation": true, "warden": true,
 }
 
 type returnChecker struct {
@@ -194,7 +194,7 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 	}
 
 	resultObj, _ := result.(map[string]any)
-	if (role == "design-critic" || role == "code-critic") && resultObj != nil {
+	if (role == "design-critic" || role == "code-critic" || role == "warden") && resultObj != nil {
 		c.checkMaterialCount(resultObj)
 	}
 	if role == "behavior-judge" && resultObj != nil {

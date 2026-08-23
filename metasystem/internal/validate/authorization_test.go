@@ -1,6 +1,8 @@
 package validate
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -271,5 +273,89 @@ func TestAuthorizationRefusesEmptyDiff(t *testing.T) {
 	}
 	if _, statErr := os.Stat(authorizationsDir(f.controller, "m-empty")); !os.IsNotExist(statErr) {
 		t.Fatal("refused issuance left an authorizations directory")
+	}
+}
+
+// Guardrail custody at issuance: a chain that changes the mission's
+// declared net cannot merge without a warden chain reviewing it — and
+// with one, the issued record carries the lane fact inside its digest.
+func TestMissionAuthorizationGuardrailLane(t *testing.T) {
+	f := newConformanceFixture(t)
+	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")
+	f.writeImplementer("", "source.txt")
+	f.missionize("m-net")
+
+	contractText := "```mission\n" +
+		"fence.wall-clock-hours=2\nfence.cycles=10\nfence.jobs=20\n" +
+		"fence.concurrency=2\nfence.job-cap-min=5\n" +
+		"wall.guardrails=source.txt\n" +
+		"```\n"
+	contractPath := filepath.Join(f.controller, "plans", "mission-m-net.contract.md")
+	os.MkdirAll(filepath.Dir(contractPath), 0o755)
+	if err := os.WriteFile(contractPath, []byte(contractText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(contractText))
+	f.writeJSON("artifacts/agents/missions/m-net/fences.json", map[string]any{
+		"schemaVersion": 1, "missionId": "m-net",
+		"startedAt": "2026-08-20T00:00:00Z", "cycles": 0,
+		"reservations":           map[string]any{},
+		"approvedContractSha256": hex.EncodeToString(sum[:]),
+	})
+
+	expectConformance(t, f, "review", 0, "")
+	reviewedTree := f.reviewedTree()
+	f.commitWorktree()
+	f.writeFollowUp()
+	f.writeCritic(reviewedTree, "", "", "critic-model")
+	t.Setenv("METASYSTEM_MISSION_TURN", "m-net-t2")
+
+	// Without any warden, the merge itself refuses and says what the
+	// change needs.
+	expectConformance(t, f, "merge", 1, "no warden chain reviews this implementation")
+
+	// A warden that merely EXISTS admits nothing: the hollow record
+	// refuses with its closure failures named.
+	f.writeJSON("artifacts/agents/jobs/net-warden.json", map[string]any{
+		"jobId": "net-warden", "role": "warden", "reviews": "impl"})
+	expectConformance(t, f, "merge", 1, "warden review is not in order")
+
+	// A warden chain that reviewed DIFFERENT bytes admits nothing.
+	f.writeJSON("artifacts/agents/jobs/net-warden.json", map[string]any{
+		"jobId": "net-warden", "role": "warden", "round": 1, "parentJob": nil,
+		"reviews": "impl", "status": "completed", "chainClosed": true,
+	})
+	f.writeJSON("artifacts/agents/net-warden/rounds/1/return.json", map[string]any{
+		"jobId": "net-warden", "round": 1, "reviewedTree": strings.Repeat("e", 40),
+		"findings": []any{}, "verdictMaterialCount": 0,
+	})
+	expectConformance(t, f, "merge", 1, "not the tree being authorized")
+
+	// A CLOSED warden chain at zero material findings, agreeing on the
+	// tree being authorized, admits the change.
+	f.writeJSON("artifacts/agents/net-warden/rounds/1/return.json", map[string]any{
+		"jobId": "net-warden", "round": 1, "reviewedTree": reviewedTree,
+		"findings": []any{}, "verdictMaterialCount": 0,
+	})
+	out, _ := expectConformance(t, f, "merge", 0, "integrationAuthorization=")
+	digest := issuedDigest(t, out)
+	record := f.authorization("m-net", digest)
+	if record["guardrailLane"] != true {
+		t.Fatalf("the issued record must carry the lane fact: %v", record["guardrailLane"])
+	}
+	// The lane fact sits inside the digest domain: stripping it changes
+	// the digest, so it cannot be forged onto a record after issuance.
+	stripped := map[string]any{}
+	for k, v := range record {
+		if k != "authorizationDigest" && k != "guardrailLane" {
+			stripped[k] = v
+		}
+	}
+	recomputed, err := canonicalDigest(stripped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recomputed == record["authorizationDigest"] {
+		t.Fatal("the lane fact must be inside the digest domain")
 	}
 }

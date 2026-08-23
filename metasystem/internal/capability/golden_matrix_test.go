@@ -42,11 +42,30 @@ func TestShippedRoleWaiverMatrixGolden(t *testing.T) {
 	restrictiveRoots := map[string]any{"readRoots": []any{"src"}, "writeRoots": []any{"src"}}
 	for _, roleFile := range entries {
 		role := strings.TrimSuffix(filepath.Base(roleFile), ".requirements.json")
-		t.Run(role+"/roots-allowed", func(t *testing.T) {
-			if err := stage(t, roleFile, []any{"readRoots", "writeRoots"}, restrictiveRoots); err != nil {
-				t.Fatalf("shipped %s waivers no longer allow devin restrictive roots: %v", role, err)
-			}
-		})
+		if role == "warden" {
+			// The warden holds the no-pen seat: a runtime that cannot
+			// enforce restrictive WRITE roots is refused, never waived —
+			// the refusal is pinned here with the same weight as every
+			// allow, so a waiver quietly added to the shipped file would
+			// fail this golden.
+			t.Run("warden/write-refuses", func(t *testing.T) {
+				err := stage(t, roleFile, []any{"readRoots", "writeRoots"}, restrictiveRoots)
+				if err == nil || !strings.Contains(err.Error(), "writeRoots") {
+					t.Fatalf("the warden must refuse devin's unenforced write roots: %v", err)
+				}
+			})
+			t.Run("warden/read-only-allowed", func(t *testing.T) {
+				if err := stage(t, roleFile, []any{"readRoots"}, map[string]any{"readRoots": []any{"src"}}); err != nil {
+					t.Fatalf("the warden's read waiver must still admit: %v", err)
+				}
+			})
+		} else {
+			t.Run(role+"/roots-allowed", func(t *testing.T) {
+				if err := stage(t, roleFile, []any{"readRoots", "writeRoots"}, restrictiveRoots); err != nil {
+					t.Fatalf("shipped %s waivers no longer allow devin restrictive roots: %v", role, err)
+				}
+			})
+		}
 		t.Run(role+"/network-fails-closed", func(t *testing.T) {
 			err := stage(t, roleFile, []any{"network"}, map[string]any{"network": "deny"})
 			if err == nil || !strings.Contains(err.Error(), "declares no residual") {

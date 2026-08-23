@@ -100,6 +100,11 @@ var contractOptionalScalars = map[string]bool{
 	// canonical repository-relative files the host may author, default
 	// deny; the runner's wall inspection enforces the declaration.
 	"wall.host-artifacts": true,
+	// The declared guardrail class: the files that ARE the app's net —
+	// changes to them never ride an ordinary implementation
+	// authorization; issuance and the wall both enforce the warden's
+	// lane for them.
+	"wall.guardrails": true,
 	// The human-sealed initial baseline: a dirty starting
 	// workspace refuses preflight unless the signed contract seals its
 	// exact filtered tree — the human saw and accepted those bytes.

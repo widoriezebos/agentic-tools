@@ -112,7 +112,7 @@ func TestWallPassesUntouchedWorkspace(t *testing.T) {
 	pre := snapshotTree(t, root)
 	// Machine metadata under artifacts/ is outside the projection.
 	writeText(t, filepath.Join(root, "artifacts", "agents", "x.json"), "{}\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestWallPassesConsumedAuthorizedPatch(t *testing.T) {
 	post := snapshotTree(t, root)
 	digest := wallAuthorization(t, root, "demo", pre, post, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestWallRefusesUndeclaredHostBytes(t *testing.T) {
 	root := wallRepo(t)
 	pre := snapshotTree(t, root)
 	writeText(t, filepath.Join(root, "main.go"), "package main // host-authored drift\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 	root := wallRepo(t)
 	pre := snapshotTree(t, root)
 	writeText(t, filepath.Join(root, "docs", "note.md"), "design note\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
 	writeText(t, filepath.Join(root, "docs", "note.md"), "host overwrote the review\n")
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{"docs/note.md": true}, "", legacySnapshot(root, "demo"))
+	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestWallRefusesOverlappingAuthorizations(t *testing.T) {
 		{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": first},
 		{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": second},
 	}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestWallRefusesMissingPatchBytes(t *testing.T) {
 	record["authorizationDigest"] = digest
 	writeJSONFile(t, filepath.Join(missionDirPath(root, "demo"), "authorizations", digest+".json"), record)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +427,7 @@ func TestWallStalenessPredicate(t *testing.T) {
 	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
 	stale := wallAuthorization(t, root, "demo", base, overlapping, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": stale}}
-	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestWallStalenessPredicate(t *testing.T) {
 	// delegate bytes — exactly expected + the consumed patch.
 	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": disjoint}}
-	inspection, err = inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err = inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,7 +467,7 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	// not produce — authenticates fine and dies on object-id equality.
 	forged := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["reviewedTree"] = pre })
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": forged}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +479,7 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	honest := wallAuthorization(t, root, "demo", pre, post, nil)
 	writeText(t, filepath.Join(missionDirPath(root, "demo"), "authorizations", honest+".patch"), "not the issued bytes\n")
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": honest}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +491,7 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	rewritten := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["jobId"] = "job-w3" })
 	patchRecord(t, root, "demo", rewritten, map[string]any{"changedPaths": []any{"free-pass.go"}})
 	certified = []map[string]any{{"jobId": "job-w3", "verdict": "accepted", "authorizationDigest": rewritten}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +585,7 @@ func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
 				"sequencePoint": map[string]any{"sequence": 2, "segment": 0}}},
 	}}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", preJ, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", preJ, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -603,7 +603,7 @@ func TestWallRefusesSymlinkedArtifactAncestry(t *testing.T) {
 		t.Fatal(err)
 	}
 	pre := snapshotTree(t, root)
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -766,7 +766,7 @@ func TestWallResolutionDeltaStalenessOverlap(t *testing.T) {
 
 	state := resolvedFixtureState(pre, adopted)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -791,7 +791,7 @@ func TestWallResolutionDeltaStalenessDisjoint(t *testing.T) {
 
 	state := resolvedFixtureState(pre, adopted)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -822,7 +822,7 @@ func TestWallFirstTurnResolutionKeepsE0(t *testing.T) {
 	state := resolvedFixtureState(pre, adopted)
 	state["turnLog"] = []any{}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1943,7 +1943,7 @@ func TestWallConsumesFreshWorkAfterResolution(t *testing.T) {
 		}},
 	}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, "", legacySnapshot(root, "demo"))
+	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}

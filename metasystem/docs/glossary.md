@@ -240,6 +240,20 @@ not paths.
 - **Design loop** — design → critique by an independent model to zero
   material findings (or a recorded close rule) → implement → code-critique
   → gates. `docs/collaboration.md` owns the details.
+- **Guardrails** — the files that ARE an app's net: the specs, golden
+  data, gate scripts, and budgets a mission contract declares under
+  `wall.guardrails` (exact files, or directory prefixes with a
+  trailing slash). A change touching them never rides an ordinary
+  implementation authorization: authorization issuance refuses the
+  merge without the warden's review, and the wall re-refuses any
+  unmarked record at consumption — the net is never changed by the
+  work it judges.
+- **Warden** — the reviewer of the net itself, with no pen: it judges
+  whether a guardrail change strengthens the net or quietly weakens
+  it, and its review is what admits the change into an authorization
+  (the lane fact rides inside the record's own digest). The warden
+  edits nothing — product or guardrail; what it refuses stays refused
+  and what it finds becomes work.
 
 ## The backlog: what the fleet works on
 

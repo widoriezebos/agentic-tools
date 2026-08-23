@@ -40,7 +40,7 @@ else
 fi
 
 case "$role" in
-  ""|orchestrator|design-critic|implementer|code-critic|verifier|investigator|behavior-judge) ;;
+  ""|orchestrator|design-critic|implementer|code-critic|verifier|investigator|behavior-judge|warden) ;;
   *) echo "violation: unknown role: $role" >&2; exit 1 ;;
 esac
 

@@ -149,7 +149,7 @@ func parseHostArtifacts(value string) (map[string]bool, string) {
 // only declared host-artifact files that no consumed patch touched. Any
 // failure to PROVE is a violation; an error is the runner's own (git
 // unavailable, unreadable workspace), never a judgment.
-func inspectWall(root, missionID, preTree string, state map[string]any, certified []map[string]any, declared map[string]bool, declarationViolation string, snapshot func(expected string) (string, error)) (*wallInspection, error) {
+func inspectWall(root, missionID, preTree string, state map[string]any, certified []map[string]any, declared map[string]bool, guardrails *mission.GuardrailClass, declarationViolation string, snapshot func(expected string) (string, error)) (*wallInspection, error) {
 	workspace := gittree.Workspace{Dir: root}
 	inspection := &wallInspection{PreTree: preTree, ExpectedTree: preTree, OrderedDigests: []string{}}
 	if declarationViolation != "" {
@@ -225,10 +225,20 @@ func inspectWall(root, missionID, preTree string, state map[string]any, certifie
 		}
 		changed, _ := record["changedPaths"].([]any)
 		changedPaths := make([]string, 0, len(changed))
+		guardrailLane, _ := record["guardrailLane"].(bool)
 		for _, item := range changed {
 			path, _ := item.(string)
 			if prior, taken := consumedPaths[path]; taken {
 				inspection.Violation = fmt.Sprintf("authorizations %.12s and %.12s overlap on %s; a combined authorization is required", prior, digest, path)
+				return inspection, nil
+			}
+			// Guardrail custody: the net is never changed by the work it
+			// judges. An authorization touching a guardrail-classed path
+			// must have been issued down the warden-reviewed lane — the
+			// lane fact is part of the digest-authenticated record, so it
+			// cannot be added after issuance.
+			if guardrails.Covers(path) && !guardrailLane {
+				inspection.Violation = fmt.Sprintf("authorization %.12s touches the guardrail %s outside the warden's lane; guardrail changes take their own review", digest, path)
 				return inspection, nil
 			}
 			consumedPaths[path] = digest
@@ -770,6 +780,13 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 		return nil, nil, false, err
 	}
 	declared, declarationViolation := parseHostArtifacts(values["wall.host-artifacts"])
+	guardrails, guardrailViolation := mission.ParseGuardrails(values["wall.guardrails"], protectedArtifactPath)
+	if declarationViolation == "" && guardrailViolation != "" {
+		declarationViolation = guardrailViolation
+	}
+	if declarationViolation == "" {
+		declarationViolation = mission.GuardrailContradiction(declared, guardrails)
+	}
 	// The ledger guard replaces the tree identity the filter removed:
 	// in-turn, live bytes must equal the anchored
 	// truth exactly; at resume, reconciliation has already verified it.
@@ -784,7 +801,7 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 	}
 	origin := scopeOriginFromOpenTurn(openTurn, diskState)
 	workspace := gittree.Workspace{Dir: e.Root}
-	inspection, capture, stable, err := e.runWallInspection(preTree, diskState, certified, declared, declarationViolation, origin)
+	inspection, capture, stable, err := e.runWallInspection(preTree, diskState, certified, declared, guardrails, declarationViolation, origin)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -870,7 +887,7 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 			// must become a fresh violation, never a laundered pass.
 			e.postRestoreHook()
 		}
-		inspection, capture, stable, err = e.runWallInspection(preTree, diskState, certified, declared, declarationViolation, origin)
+		inspection, capture, stable, err = e.runWallInspection(preTree, diskState, certified, declared, guardrails, declarationViolation, origin)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -900,14 +917,14 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 // capture re-runs the inspection; a repository that will not hold still is
 // itself a violation. The returned stable flag reports whether the verdict
 // was judged over bytes that held still.
-func (e *Engine) runWallInspection(preTree string, diskState map[string]any, certified []map[string]any, declared map[string]bool, declarationViolation string, origin *scopeOrigin) (*wallInspection, *wallCapture, bool, error) {
+func (e *Engine) runWallInspection(preTree string, diskState map[string]any, certified []map[string]any, declared map[string]bool, guardrails *mission.GuardrailClass, declarationViolation string, origin *scopeOrigin) (*wallInspection, *wallCapture, bool, error) {
 	var inspection *wallInspection
 	var capture *wallCapture
 	stable := false
 	for attempt := 0; attempt < 3 && !stable; attempt++ {
 		capture = nil
 		var err error
-		inspection, err = inspectWall(e.Root, e.Mission, preTree, diskState, certified, declared, declarationViolation,
+		inspection, err = inspectWall(e.Root, e.Mission, preTree, diskState, certified, declared, guardrails, declarationViolation,
 			func(expected string) (string, error) {
 				snapped, cerr := e.captureWallPostureStable(expected, declared)
 				if cerr != nil {
