@@ -43,13 +43,15 @@ cat >"$clone/plans/goals.md" <<'LEDGER'
 - Concluded: Landed and gated on both hosts.
 LEDGER
 # The REAL baseline shape: the accepted ledger's bytes and digest —
-# the migration precondition proves the digest matches goals.md.
-python3 - "$clone/plans/goals.md" "$clone/plans/goals-accepted.json" <<'PY'
-import hashlib, json, sys
-ledger = open(sys.argv[1]).read()
-json.dump({"schemaVersion": 1, "ledger": ledger,
-           "sha256": hashlib.sha256(ledger.encode()).hexdigest()}, open(sys.argv[2], "w"))
-PY
+# the migration precondition proves the digest matches goals.md. The
+# ledger value must be the file's exact bytes, so the trailing newline
+# command substitution eats is put back; schemaVersion must be a JSON
+# number, which json set --int provides.
+ledger=$(cat "$clone/plans/goals.md" && printf x) && ledger=${ledger%x}
+"$ms" json object ledger="$ledger" \
+  sha256="$(shasum -a 256 "$clone/plans/goals.md" | cut -d' ' -f1)" \
+  >"$clone/plans/goals-accepted.json"
+"$ms" json set --file "$clone/plans/goals-accepted.json" --int schemaVersion=1
 # The sandbox ships the guard so the CLI's enrollment (R2-11) has
 # something to enroll — a fresh clone has no hooks at all.
 mkdir -p "$clone/scripts/agents"

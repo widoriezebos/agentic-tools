@@ -16,8 +16,6 @@ cd "$root"
 # adoption shape (a goal-free ledger on a checkout whose history carries
 # none), judged against the target itself, so these fixtures carry no
 # invocation-shape dependence and no authority-root env hook.
-command -v python3 >/dev/null 2>&1 \
-  || { echo "${0##*/}: python3 is required by these fixtures (the metasystem itself does not need it)" >&2; exit 1; }
 tmp=$(mktemp -d)
 cleanup() {
   status=$?
@@ -32,38 +30,36 @@ cleanup() {
 trap cleanup EXIT
 
 fill_harness_conf() { # config path, absolute evidence root
-  python3 - "$1" "$2" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-evidence = sys.argv[2]
-model_key = re.compile(
-    r"^(?:role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$"
-)
-lines = []
-models = set()
-for raw in path.read_text(encoding="utf-8").splitlines():
-    if "=" not in raw:
-        lines.append(raw)
-        continue
-    key, value = raw.split("=", 1)
-    match = model_key.fullmatch(key)
-    if key == "evidence.root":
-        value = evidence
-    elif match:
-        runtime = match.group(1)
-        value = f"fixture-{runtime}-model"
-        models.add(f"{runtime}:{value}")
-    elif key == "model.tier.1":
-        value = "__MODELS__"
-    elif key.startswith("model.tier."):
-        value = ""
-    lines.append(f"{key}={value}")
-joined = "\n".join(lines).replace("model.tier.1=__MODELS__", f"model.tier.1={','.join(sorted(models))}")
-path.write_text(joined + "\n", encoding="utf-8")
-PY
+  # Point evidence at the harness sandbox and give every rostered
+  # role a fixture model, so a nested validation never resolves a
+  # real model or writes evidence outside the fixture tree. Tier 1
+  # then names exactly the fixture models (sorted, deduplicated) and
+  # every deeper tier empties.
+  local path=$1 evidence=$2 line key value runtime joined out=""
+  local model_key='^(role\.[a-z0-9-]+|mode\.[a-z0-9-]+\.role\.[a-z0-9-]+)\.model\.([a-z0-9-]+)$'
+  local models=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" != *=* ]]; then out+="$line"$'\n'; continue; fi
+    key=${line%%=*}
+    value=${line#*=}
+    if [[ "$key" == evidence.root ]]; then
+      value=$evidence
+    elif [[ "$key" =~ $model_key ]]; then
+      runtime=${BASH_REMATCH[2]}
+      value="fixture-$runtime-model"
+      models+=("$runtime:$value")
+    elif [[ "$key" == model.tier.1 ]]; then
+      value=__MODELS__
+    elif [[ "$key" == model.tier.* ]]; then
+      value=""
+    fi
+    out+="$key=$value"$'\n'
+  done <"$path"
+  joined=""
+  if [[ ${#models[@]} -gt 0 ]]; then
+    joined=$(printf '%s\n' "${models[@]}" | LC_ALL=C sort -u | paste -sd, -)
+  fi
+  printf '%s' "${out//model.tier.1=__MODELS__/model.tier.1=$joined}" >"$path"
 }
 
 # Adopted-mode contract: a copy without the template marker validates with a
@@ -278,13 +274,10 @@ PLAN
     || { echo "a plan naming an open chain between rounds was called stale" >&2; exit 1; }
   [[ -n "$(METASYSTEM_CHAIN_GRACE_SECONDS=0 "$root/bin/metasystem" report open-work --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "an aged-out chain still suppressed the stale report" >&2; exit 1; }
-  python3 - "$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json" <<'PYEOF'
-import json, sys
-path = sys.argv[1]
-record = json.load(open(path))
-record["chainClosed"] = True
-json.dump(record, open(path, "w"))
-PYEOF
+  # The same two-field fixture record, now with its chain closed —
+  # chainClosed must be a JSON boolean for the report to honor it.
+  printf '{"jobId":"implementer-20260101t000000z-cccc","status":"completed","chainClosed":true}\n' \
+    >"$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json"
   [[ -n "$("$root/bin/metasystem" report open-work --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "a closed chain still suppressed the stale report" >&2; exit 1; }
   echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
