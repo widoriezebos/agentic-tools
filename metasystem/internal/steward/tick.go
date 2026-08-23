@@ -124,7 +124,11 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	if err := SaveEvidence(evPath, ev); err != nil {
 		return TickResult{}, err
 	}
-	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason, Reaped: reaped}, nil
+	result := TickResult{Decision: d, Evidence: ev, OpenWork: workReason, Reaped: reaped}
+	// The running plain-English account rides every tick, strictly
+	// best-effort: the storyteller never fails the shift.
+	Narrate(repoRoot, result)
+	return result, nil
 }
 
 // shortBannerKey keys one pending message per breached goal: the
