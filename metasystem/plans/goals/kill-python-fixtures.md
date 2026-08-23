@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Finish the two-languages end state: no python3 in fixtures, the suite, or preflight
 - Origin: main
-- Next step: Appetite: 6h for SLICE THREE — dispatch-fixtures.sh (53 sites, the largest concentration; same rules: engine verbs or shell, atomic JSON edits, no weakened assertions, suite green standalone with CAP_SCALE=8). SLICES ONE+TWO LANDED: goal-cli, adopt, supervision, delegate-caps, supervision-go all python-free (94 sites gone); slice two also closed four torn-write windows the python had been opening. Remaining after three: validate-metasystem.sh (21) and the tail (~30 across small suites), each its own token. Known epsilon, accepted and recorded: json-get canonicalization cannot distinguish integral-float lexemes from integers — the only writer is the Go engine, which cannot emit them.
+- Next step: Appetite: 4h for SLICE FOUR (the last): validate-metasystem.sh (21 sites) plus the ~30-site tail across small suites; same rules (engine verbs or shell, atomic edits, no weakened assertions, suites green standalone). SLICES ONE-THREE LANDED: 145 of ~146 sites gone; the one deliberate survivor is dispatch-fixtures' TTY escalation driver (real pty allocation — not expressible in engine verbs or portable shell without approximating; its guard names it). After slice four the goal concludes.
 - OpenedAt: 2026-08-20T00:09:00Z
-- Revision: 9
+- Revision: 10
 - Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-23T01:53:05Z
 
 History:
@@ -18,4 +18,5 @@ History:
 - 2026-08-23T01:26:00Z TPWZ2FA3X5FRHGW5BRK9JT8APS-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=kill-python-fixtures
 - 2026-08-23T01:26:04Z 455P075T6YHHAZ4TCJ2KTZFES8-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=kill-python-fixtures
 - 2026-08-23T01:53:05Z CCSPKQKX950YK5E56ZC4AGFCSX-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=kill-python-fixtures
-Integrity: sha256=c85b037545cf1478dbd0e3f0bee910ac17fa8f74f02a0eb36d40e95a82b1204a
+- 2026-08-23T02:25:02Z 273BN7WMDNB49VP69MTSZRXPF3-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=kill-python-fixtures
+Integrity: sha256=23bb153541e0772fb8f45e9f985589faf10c4443b2f1fb131a47418d8ff0a133
