@@ -209,23 +209,18 @@ printf '{"%s":{"pidStartedAt":%s,"command":"fixture mission-watcher-tag"},"%s":{
 export METASYSTEM_MISSION_PROCESS_IDENTITY_FILE=$identity_file
 supervision=$repo/artifacts/agents/supervision
 mkdir -p "$supervision"
-python3 - "$supervision" "$watcher_pid" "$reaper_pid" "$watcher_start" "$reaper_start" <<'PY'
-import json, sys, time
-from pathlib import Path
-directory = Path(sys.argv[1])
-watcher, reaper, watcher_start, reaper_start = map(int, sys.argv[2:6])
-now = int(time.time())
-watcher_hb = directory / "watcher.heartbeat.json"
-reaper_hb = directory / "reaper.heartbeat.json"
-watcher_hb.write_text(json.dumps({"function":"watcher","pid":watcher,"pidStartedAt":watcher_start,"observedAtEpoch":now}) + "\n")
-reaper_hb.write_text(json.dumps({"function":"reaper","pid":reaper,"pidStartedAt":reaper_start,"observedAtEpoch":now}) + "\n")
-state = {"intervalSec":60,"fingerprint":"fixture-fingerprint","components":{
-    "watcher":{"pid":watcher,"pidStartedAt":watcher_start,"instanceTag":"mission-watcher-tag","heartbeat":str(watcher_hb)},
-    "reaper":{"pid":reaper,"pidStartedAt":reaper_start,"instanceTag":"mission-reaper-tag","heartbeat":str(reaper_hb)},
-}}
-(directory / "state.json").write_text(json.dumps(state) + "\n")
-(directory / "last-census.json").write_text(json.dumps({"verdict":"SUCCESS","completedAtEpoch":now,"fingerprint":"fixture-fingerprint"}) + "\n")
-PY
+supervision_now=$(date +%s)
+watcher_hb=$supervision/watcher.heartbeat.json
+reaper_hb=$supervision/reaper.heartbeat.json
+printf '{"function":"watcher","pid":%s,"pidStartedAt":%s,"observedAtEpoch":%s}\n' \
+  "$watcher_pid" "$watcher_start" "$supervision_now" >"$watcher_hb"
+printf '{"function":"reaper","pid":%s,"pidStartedAt":%s,"observedAtEpoch":%s}\n' \
+  "$reaper_pid" "$reaper_start" "$supervision_now" >"$reaper_hb"
+printf '{"intervalSec":60,"fingerprint":"fixture-fingerprint","components":{"watcher":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-watcher-tag","heartbeat":"%s"},"reaper":{"pid":%s,"pidStartedAt":%s,"instanceTag":"mission-reaper-tag","heartbeat":"%s"}}}\n' \
+  "$watcher_pid" "$watcher_start" "$watcher_hb" \
+  "$reaper_pid" "$reaper_start" "$reaper_hb" >"$supervision/state.json"
+printf '{"verdict":"SUCCESS","completedAtEpoch":%s,"fingerprint":"fixture-fingerprint"}\n' \
+  "$supervision_now" >"$supervision/last-census.json"
 
 "$root/scripts/assert-mission.sh" --preflight --file "$contract" >/dev/null
 mv "$supervision/state.json" "$supervision/state.unarmed"
@@ -271,24 +266,9 @@ sed 's/fence.concurrency=2/fence.concurrency=1/' "$base" >"$race_contract"
 # bytes; here the exact raw bytes must merely stay fixed across both contenders.
 race_fences=$repo/artifacts/agents/missions/race/fences.json
 mkdir -p "$(dirname "$race_fences")"
-python3 - "$race_contract" "$race_fences" <<'PY'
-import hashlib
-import json
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-contract_path, fences_path = Path(sys.argv[1]), Path(sys.argv[2])
-raw = contract_path.read_bytes()
-fences_path.write_text(json.dumps({
-    "schemaVersion": 1,
-    "missionId": "race",
-    "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    "cycles": 0,
-    "reservations": {},
-    "approvedContractSha256": hashlib.sha256(raw).hexdigest(),
-}) + "\n")
-PY
+printf '{"schemaVersion":1,"missionId":"race","startedAt":"%s","cycles":0,"reservations":{},"approvedContractSha256":"%s"}\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  "$("$root/bin/metasystem" util sha256 --file "$race_contract")" >"$race_fences"
 (
   set +e
   "$root/bin/metasystem" mission fence-reserve-job --repo "$repo" --mission race --job race-a --cap-min "$minimum_cap_min" >"$fixture_root/race-a.out" 2>&1
@@ -337,14 +317,12 @@ git -C "$repo" commit -qm 'install mission runner fixtures'
 git -C "$repo" push -qu origin main
 
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
-python3 - "$supervision" <<'PY'
-import json,sys,time
-from pathlib import Path
-directory=Path(sys.argv[1]); now=int(time.time())
-for name in ("watcher.heartbeat.json","reaper.heartbeat.json"):
-    path=directory/name; value=json.loads(path.read_text()); value["observedAtEpoch"]=now; path.write_text(json.dumps(value)+"\n")
-path=directory/"last-census.json"; value=json.loads(path.read_text()); value["completedAtEpoch"]=now; path.write_text(json.dumps(value)+"\n")
-PY
+# Refresh the supervision facts to now; json set stages beside each file
+# and renames, so no reader can observe a torn record.
+supervision_now=$(date +%s)
+"$root/bin/metasystem" json set --file "$supervision/watcher.heartbeat.json" --int "observedAtEpoch=$supervision_now"
+"$root/bin/metasystem" json set --file "$supervision/reaper.heartbeat.json" --int "observedAtEpoch=$supervision_now"
+"$root/bin/metasystem" json set --file "$supervision/last-census.json" --int "completedAtEpoch=$supervision_now"
 
 # A mission runner reaps and closes job chains, and both are control-plane
 # writes reserved for the checkout's holder. This shell is that main: announce
@@ -500,12 +478,10 @@ FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
   --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
   --result "$host_turn/result.json" --instance-tag fixture-host-session-tag \
   --resume-session announced-session
-python3 - "$host_turn/result.json" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-assert value["outcome"] == "completed", value
-assert value["sessionId"] == "rotated-session", value
-PY
+[[ "$("$root/bin/metasystem" json get --file "$host_turn/result.json" --field outcome)" == completed ]] \
+  || { echo "a rotated session did not stay outcome completed" >&2; cat "$host_turn/result.json" >&2; exit 1; }
+[[ "$("$root/bin/metasystem" json get --file "$host_turn/result.json" --field sessionId)" == rotated-session ]] \
+  || { echo "the result envelope did not report the rotated session" >&2; cat "$host_turn/result.json" >&2; exit 1; }
 
 set +e
 FAKE_CLAUDE_SESSION=none PATH="$host_bin:$PATH" \
@@ -517,11 +493,9 @@ missing_status=$?
 set -e
 [[ $missing_status -eq 6 ]] \
   || { echo "missing host session did not keep exit 6 (got $missing_status)" >&2; exit 1; }
-python3 - "$host_turn/result-missing.json" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-assert value["outcome"] == "unresumable" and value["sessionId"] is None, value
-PY
+[[ "$("$root/bin/metasystem" json get --file "$host_turn/result-missing.json" --field outcome)" == unresumable \
+   && "$("$root/bin/metasystem" json get --file "$host_turn/result-missing.json" --field sessionId)" == null ]] \
+  || { echo "a missing session did not report unresumable with a null session" >&2; cat "$host_turn/result-missing.json" >&2; exit 1; }
 
 set +e
 FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \

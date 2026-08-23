@@ -21,7 +21,7 @@ cp "$root/scripts/agents/event-registry.json" "$checkout/scripts/agents/"
 fail() { echo "flight recorder fixture failed: $1" >&2; exit 1; }
 
 # 1. Harmlessness at the caller boundary: chmod-000 stream, missing helper,
-#    and a PATH without python3 each leave a set -e caller alive.
+#    and a broken PATH each leave a set -e caller alive.
 run_caller() { # extra setup commands
   bash -c "
 set -euo pipefail
@@ -52,27 +52,25 @@ source '$root/scripts/agents/emit-event.sh'
 _metasystem_event_root='$checkout'
 for j in \$(seq 1 30); do emit_event dispatch job-created jobId=w$i-\$j summary=s; done
 " & done; wait
-python3 - "$stream" <<'PY' || exit 1
-import json, sys
-lines = [l for l in open(sys.argv[1]).read().split("\n") if l.strip()]
-parsed = []
-for line in lines:
-    try:
-        parsed.append(json.loads(line))
-    except ValueError:
-        print("flight recorder fixture failed: torn line under concurrency", file=sys.stderr)
-        raise SystemExit(1)
-if len(parsed) != 180:
-    print(f"flight recorder fixture failed: {len(parsed)} events, want 180", file=sys.stderr)
-    raise SystemExit(1)
-writers = {}
-for v in parsed:
-    writers.setdefault(v["pid"], []).append(v["seq"])
-for pid, seqs in writers.items():
-    if sorted(seqs) != list(range(1, len(seqs) + 1)):
-        print(f"flight recorder fixture failed: seq gap for writer {pid}", file=sys.stderr)
-        raise SystemExit(1)
-PY
+event_count=0
+: >"$tmp/writer-seqs"
+while IFS= read -r event_line || [[ -n "$event_line" ]]; do
+  [[ -n "${event_line//[[:space:]]/}" ]] || continue
+  "$root/bin/metasystem" util json-validate --value "$event_line" \
+    || fail "torn line under concurrency"
+  event_pid=$("$root/bin/metasystem" json get --value "$event_line" --field pid) \
+    || fail "an event carries no writer pid"
+  event_seq=$("$root/bin/metasystem" json get --value "$event_line" --field seq) \
+    || fail "an event carries no seq"
+  printf '%s %s\n' "$event_pid" "$event_seq" >>"$tmp/writer-seqs"
+  event_count=$((event_count + 1))
+done <"$stream"
+[[ $event_count -eq 180 ]] || fail "$event_count events, want 180"
+for writer_pid in $(awk '{print $1}' "$tmp/writer-seqs" | sort -u); do
+  awk -v pid="$writer_pid" '$1 == pid {print $2}' "$tmp/writer-seqs" | sort -n >"$tmp/writer-got"
+  seq 1 "$(($(wc -l <"$tmp/writer-got")))" >"$tmp/writer-want"
+  cmp -s "$tmp/writer-got" "$tmp/writer-want" || fail "seq gap for writer $writer_pid"
+done
 
 # 3. A torn fragment cannot poison the next writer: simulate a short write
 #    (raw fragment without framing), then emit normally -- the new event parses.
@@ -81,14 +79,17 @@ bash -c "
 source '$root/scripts/agents/emit-event.sh'
 _metasystem_event_root='$checkout'
 emit_event lease lease-renewed epoch=2 summary=after-torn"
-python3 - "$stream" <<'PY' || exit 1
-import json, sys
-lines = [l for l in open(sys.argv[1]).read().split("\n") if l.strip()]
-good = [json.loads(l) for l in lines if not l.startswith('{"torn"')]
-if not any(v.get("event") == "lease-renewed" for v in good):
-    print("flight recorder fixture failed: event after torn fragment did not survive", file=sys.stderr)
-    raise SystemExit(1)
-PY
+renewed_seen=0
+while IFS= read -r event_line || [[ -n "$event_line" ]]; do
+  [[ -n "${event_line//[[:space:]]/}" ]] || continue
+  [[ "$event_line" == '{"torn"'* ]] && continue
+  "$root/bin/metasystem" util json-validate --value "$event_line" \
+    || fail "a healthy line failed to parse after the torn fragment"
+  if [[ "$("$root/bin/metasystem" json get --value "$event_line" --field event --default '')" == lease-renewed ]]; then
+    renewed_seen=1
+  fi
+done <"$stream"
+[[ $renewed_seen -eq 1 ]] || fail "event after torn fragment did not survive"
 
 # Sections 4 (oversize degradation), 5 (registry conformance) and the
 # FRCC-001/FRCC-002 door-and-cap legs retired to the go gate
@@ -113,11 +114,8 @@ start=$("$root/bin/metasystem" proc started-at --pid $$)
   --session fr-fixture --pid $$ --start "$start" --tag metasystem-main-fr --runtime fake >/dev/null \
   || fail "a lease claim failed because the witness stream was unwritable"
 chmod 644 "$lease_repo/artifacts/agents/events.jsonl"
-python3 -c "
-import json
-v = json.load(open('$lease_repo/artifacts/agents/mains/worktree-lease.json'))
-assert v['claimEpoch'] == 1
-" || fail "the lease claim did not actually happen"
+[[ "$("$root/bin/metasystem" json get --file "$lease_repo/artifacts/agents/mains/worktree-lease.json" --field claimEpoch)" == 1 ]] \
+  || fail "the lease claim did not actually happen"
 
 # 7. The lease emits its witness events when the stream IS writable.
 lease_repo2="$tmp/lease-repo2"

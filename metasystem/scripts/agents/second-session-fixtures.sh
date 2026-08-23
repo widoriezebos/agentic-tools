@@ -11,18 +11,16 @@ for adapter in "$root"/scripts/agents/adapters/*.sh; do
   [[ ${adapter##*/} != runtime-common.sh ]] || continue
   "$adapter" local-config-paths
 done | sort -u >"$manifest"
-python3 - "$manifest" <<'PY'
-import sys
-from pathlib import Path
-assert Path(sys.argv[1]).read_text(encoding="utf-8").splitlines() == [
-    ".claude/settings.json",
-    ".claude/settings.local.json",
-    ".codex/config.toml",
-    ".devin/config.json",
-    ".devin/config.local.json",
-    ".devin/hooks.v1.json",
-]
-PY
+# The manifest is a contract: exactly these files, no more, no fewer.
+printf '%s\n' \
+  '.claude/settings.json' \
+  '.claude/settings.local.json' \
+  '.codex/config.toml' \
+  '.devin/config.json' \
+  '.devin/config.local.json' \
+  '.devin/hooks.v1.json' >"$tmp/expected-paths"
+diff -u "$tmp/expected-paths" "$manifest" >&2 \
+  || { echo "second-session fixtures: adapter local-config-paths drifted from the declared manifest" >&2; exit 1; }
 # The copy-verification and symlink-into-primary refusal legs retired to
 # the go gate (script-fixtures-015): internal/validate's
 # TestSessionIsolationCopiesAndResolvesHarness and
@@ -76,18 +74,28 @@ METASYSTEM_SECOND_SESSION_ARM_LOG="$tmp/bootstrap-arm.log" \
   >"$tmp/bootstrap.out"
 bootstrap_destination=$(cd "$bootstrap_destination" && pwd -P)
 grep -Fqx "cd '$bootstrap_destination'" "$tmp/bootstrap.out"
-python3 - "$tmp/bootstrap-arm.log" "$bootstrap_destination" <<'PY'
-import sys
-from pathlib import Path
-
-args = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
-destination = sys.argv[2]
-pairs = dict(zip(args[::2], args[1::2]))
-assert pairs["--repo"] == destination
-assert pairs["--pid"].isdigit() and int(pairs["--pid"]) > 0
-assert pairs["--start-time"] == "1786104000"
-assert pairs["--session"].startswith("second-session-bootstrap-human-session-")
-assert pairs["--tag"].startswith("metasystem-main-bootstrap-human-session-")
-PY
+# The arm log is one flag or value per line; read it as flag/value pairs.
+arm_args=()
+while IFS= read -r arm_line; do arm_args+=("$arm_line"); done <"$tmp/bootstrap-arm.log"
+arm_value() { # flag: print the flag's recorded value, refuse when absent
+  local flag=$1 index found=0 value=
+  for ((index = 0; index + 1 < ${#arm_args[@]}; index += 2)); do
+    [[ "${arm_args[index]}" == "$flag" ]] || continue
+    found=1; value=${arm_args[index + 1]}
+  done
+  (( found )) || { echo "second-session fixtures: arming was not passed $flag" >&2; return 1; }
+  printf '%s\n' "$value"
+}
+[[ "$(arm_value --repo)" == "$bootstrap_destination" ]] \
+  || { echo "second-session fixtures: arming did not target the new session checkout" >&2; exit 1; }
+arm_pid=$(arm_value --pid)
+[[ "$arm_pid" =~ ^[0-9]+$ && "$arm_pid" -gt 0 ]] \
+  || { echo "second-session fixtures: arming did not carry a real pid: $arm_pid" >&2; exit 1; }
+[[ "$(arm_value --start-time)" == 1786104000 ]] \
+  || { echo "second-session fixtures: arming did not carry the recorded start time" >&2; exit 1; }
+[[ "$(arm_value --session)" == second-session-bootstrap-human-session-* ]] \
+  || { echo "second-session fixtures: arming session name lost its bootstrap prefix" >&2; exit 1; }
+[[ "$(arm_value --tag)" == metasystem-main-bootstrap-human-session-* ]] \
+  || { echo "second-session fixtures: arming tag lost its bootstrap prefix" >&2; exit 1; }
 
 echo "second-session isolation fixtures: PASSED"

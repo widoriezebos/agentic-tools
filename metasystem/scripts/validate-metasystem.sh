@@ -286,13 +286,134 @@ if (( ! delegate_scope )) && (( metasystem_go_source )); then
 fi
 
 
-# python3 is a load-bearing validation dependency (script-validate-10/D36):
-# dozens of fixture heredocs use it even in adopted repositories, where the
-# PRODUCT no longer needs python at all. Say so up front, loudly, instead
-# of dying mid-suite with a cryptic 127.
+# python3 remains a suite-host dependency for exactly one fixture: the
+# dispatch fixtures' TTY escalation driver needs a real pty, which shell
+# cannot open. Say so up front, loudly, instead of dying mid-suite with a
+# cryptic 127. The PRODUCT does not need python at all.
 command -v python3 >/dev/null 2>&1 \
-  || { echo "validate-metasystem: python3 is required by the validation fixtures (the metasystem itself does not need it)" >&2; exit 1; }
+  || { echo "validate-metasystem: python3 is required by the TTY escalation fixture (the metasystem itself does not need it)" >&2; exit 1; }
 source scripts/agents/fixture-budget.sh
+
+# The engine does the structural JSON work below; helpers use the absolute
+# path so they survive the fixture subshells that change directories.
+engine="$root/bin/metasystem"
+
+# Canonical (engine-rendered) compact form of a JSON literal, so equality
+# checks compare one encoder's bytes against the same encoder's bytes.
+canonical_json() { # JSON text
+  "$engine" json get --value "{\"root\":$1}" --field root
+}
+
+# Print one top-level element per line from the engine's compact rendering
+# of a JSON array (or one "key":value member per line from an object). The
+# walk is depth- and string-aware, so elements may nest objects and arrays
+# — the flat-object splitter in supervision-fixtures.sh cannot. Compact
+# rendering escapes control characters, so no element carries a newline.
+json_elements() { # compact JSON array or object
+  printf '%s' "$1" | awk '
+    {
+      n = length($0)
+      first = substr($0, 1, 1)
+      if (n < 2 || (first != "[" && first != "{")) exit 1
+      depth = 0; instring = 0; escaped = 0; start = 2
+      for (i = 2; i < n; i++) {
+        ch = substr($0, i, 1)
+        if (instring) {
+          if (escaped) escaped = 0
+          else if (ch == "\\") escaped = 1
+          else if (ch == "\"") instring = 0
+        } else if (ch == "\"") instring = 1
+        else if (ch == "{" || ch == "[") depth++
+        else if (ch == "}" || ch == "]") depth--
+        else if (ch == "," && depth == 0) {
+          print substr($0, start, i - start)
+          start = i + 1
+        }
+      }
+      if (n > 2) print substr($0, start, n - start)
+    }'
+}
+
+# The key names of a JSON object, one per line, in the engine's canonical
+# (byte-sorted) order.
+json_object_keys() { # compact JSON object
+  local member
+  while IFS= read -r member; do
+    member=${member#\"}
+    printf '%s\n' "${member%%\":*}"
+  done < <(json_elements "$1")
+}
+
+# Atomically replace one top-level field of a JSON object file, leaving
+# every other field exactly as the file's parser sees it. `json set`
+# covers string and integer fields; this covers null and the object and
+# array fields it cannot spell. The whole file and the field are rendered
+# by the same engine encoder, so the needle below is byte-exact; a failed
+# splice or an unparseable result refuses instead of writing. (Copied from
+# supervision-fixtures.sh, extended two ways: string-valued fields print
+# bare, so those retry with the quoted spelling; and a read-back proves
+# the edit landed on the top-level field, not a nested lookalike.)
+json_replace_field() { # file, top-level field, replacement JSON value
+  local file=$1 field=$2 new=$3 compact old out canonical staged
+  compact=$("$engine" json get --value "{\"root\":$(cat "$file")}" --field root) \
+    || { echo "json_replace_field: $file did not parse" >&2; return 1; }
+  old=$("$engine" json get --file "$file" --field "$field") \
+    || { echo "json_replace_field: $file has no $field" >&2; return 1; }
+  out=${compact/"\"$field\":$old"/"\"$field\":$new"}
+  if [[ "$out" == "$compact" ]]; then
+    out=${compact/"\"$field\":\"$old\""/"\"$field\":$new"}
+  fi
+  "$engine" util json-validate --value "$out" \
+    || { echo "json_replace_field: editing $field left $file unparseable" >&2; return 1; }
+  canonical=$("$engine" json get --value "{\"root\":$new}" --field root) \
+    || { echo "json_replace_field: replacement for $field is not JSON: $new" >&2; return 1; }
+  [[ "$("$engine" json get --value "$out" --field "$field")" == "$canonical" ]] \
+    || { echo "json_replace_field: could not locate $field in $file" >&2; return 1; }
+  staged=$(mktemp "$(dirname "$file")/.replace.XXXXXX") || return 1
+  printf '%s\n' "$out" >"$staged"
+  mv "$staged" "$file"
+}
+
+# Atomically add one top-level field a JSON object file does not have yet.
+# `json set` spells only string and integer values; this inserts the null,
+# object, and array values it cannot. The file is re-rendered by the engine
+# encoder first so the splice point is exact, and a read-back proves the
+# new field landed before the stage replaces the file.
+json_insert_field() { # file, new top-level field, JSON value
+  local file=$1 field=$2 new=$3 compact out canonical staged
+  compact=$("$engine" json get --value "{\"root\":$(cat "$file")}" --field root) \
+    || { echo "json_insert_field: $file did not parse" >&2; return 1; }
+  if "$engine" json get --file "$file" --field "$field" >/dev/null 2>&1; then
+    echo "json_insert_field: $file already has $field" >&2; return 1
+  fi
+  if [[ "$compact" == "{}" ]]; then
+    out="{\"$field\":$new}"
+  else
+    out="{\"$field\":$new,${compact#\{}"
+  fi
+  "$engine" util json-validate --value "$out" \
+    || { echo "json_insert_field: inserting $field left $file unparseable" >&2; return 1; }
+  canonical=$("$engine" json get --value "{\"root\":$new}" --field root) \
+    || { echo "json_insert_field: value for $field is not JSON: $new" >&2; return 1; }
+  [[ "$("$engine" json get --value "$out" --field "$field")" == "$canonical" ]] \
+    || { echo "json_insert_field: $field did not land in $file" >&2; return 1; }
+  staged=$(mktemp "$(dirname "$file")/.insert.XXXXXX") || return 1
+  printf '%s\n' "$out" >"$staged"
+  mv "$staged" "$file"
+}
+
+# Atomically remove one top-level field that must exist: the callers model
+# a document that HAD the field, so a silent no-op would leave the fixture
+# proving nothing.
+json_remove_field() { # file, top-level field the file must have
+  local file=$1 field=$2 staged
+  "$engine" json get --file "$file" --field "$field" >/dev/null \
+    || { echo "json_remove_field: $file has no $field" >&2; return 1; }
+  staged=$(mktemp "$(dirname "$file")/.remove.XXXXXX") || return 1
+  "$engine" json strip --file "$file" --key "$field" >"$staged" \
+    || { rm -f "$staged"; return 1; }
+  mv "$staged" "$file"
+}
 if (( delegate_scope )); then
   # Load calibration is itself a real census. Delegate validation uses the
   # policy's minimum scale so no process enumeration occurs before the
@@ -543,15 +664,17 @@ if grep -Eq '^(model\.tier\.[1-9][0-9]*|mode\.[a-z0-9-]+\.role\.)' metasystem.co
   echo "template demotion fixture: an optional tier or mode role key is still active" >&2
   exit 1
 fi
-python3 - scripts/enforcement/claude-code-hooks.json scripts/enforcement/codex-hooks.json scripts/enforcement/devin-hooks.json <<'PY'
-import json, sys
-for source in sys.argv[1:]:
-    value=json.load(open(source))
-    hooks=value["hooks"]
-    assert set(hooks) >= {"SessionStart", "Stop", "SessionEnd"}
-    flattened=json.dumps(hooks)
-    assert "supervision-hook.sh" in flattened
-PY
+for enforcement_source in scripts/enforcement/claude-code-hooks.json \
+  scripts/enforcement/codex-hooks.json scripts/enforcement/devin-hooks.json; do
+  enforcement_hooks=$("$engine" json get --file "$enforcement_source" --field hooks) \
+    || { echo "$enforcement_source has no hooks object" >&2; exit 1; }
+  for lifecycle_event in SessionStart Stop SessionEnd; do
+    "$engine" json get --value "$enforcement_hooks" --field "$lifecycle_event" >/dev/null \
+      || { echo "$enforcement_source hooks lack the $lifecycle_event lifecycle event" >&2; exit 1; }
+  done
+  [[ "$enforcement_hooks" == *supervision-hook.sh* ]] \
+    || { echo "$enforcement_source hooks never invoke supervision-hook.sh" >&2; exit 1; }
+done
 # The common-lifecycle source-shape rows iterate the DECLARED
 # population (agnosticism B1, ric critique r4-4: independent of the
 # static enforcement map; fake's standalone shape is excluded by
@@ -762,20 +885,12 @@ fake_probe_result="$tmp/fake-envelope-probe-result.json"
 fake_snapshot=$(METASYSTEM_FAKE_ENVELOPE_PROBE_RESULT="$fake_probe_result" \
   METASYSTEM_BIN="$PWD/bin/metasystem" \
   "$fake_probe_root/scripts/agents/adapters/fake.sh" probe)
-python3 - "$fake_snapshot" "$fake_probe_result" <<'PY'
-import json, sys
-from pathlib import Path
-
-snapshot = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-result = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-assert snapshot["envelopeEnforcement"] == {
-    "writeRoots": "mapped", "readRoots": "notEnforced", "network": "mapped",
-}
-assert result == {
-    "writeRoots": {"observed": "denied", "exitStatus": 77},
-    "network": {"observed": "denied", "exitStatus": 77},
-}
-PY
+[[ "$("$engine" json get --file "$fake_snapshot" --field envelopeEnforcement)" == \
+   "$(canonical_json '{"writeRoots": "mapped", "readRoots": "notEnforced", "network": "mapped"}')" ]] \
+  || { echo "fake snapshot envelope enforcement drifted" >&2; cat "$fake_snapshot" >&2; exit 1; }
+[[ "$(canonical_json "$(cat "$fake_probe_result")")" == \
+   "$(canonical_json '{"writeRoots": {"observed": "denied", "exitStatus": 77}, "network": {"observed": "denied", "exitStatus": 77}}')" ]] \
+  || { echo "fake envelope probe did not observe both denials with status 77" >&2; cat "$fake_probe_result" >&2; exit 1; }
 
 # Every fixture repository this suite arms, so cleanup can stop all of them.
 # A single variable was tracked before, reassigned as the suite moved between
@@ -859,164 +974,243 @@ grep -q '^Disposition:' scripts/agents/templates/follow-up.md \
   || { echo "follow-up template does not restate the disposition" >&2; exit 1; }
 grep -q '^# Unchanged Return Contract$' scripts/agents/templates/follow-up.md \
   || { echo "follow-up template can lose the original return contract" >&2; exit 1; }
-python3 - scripts/agents/templates/host-turn-instruction.md <<'PY'
-import re
-import sys
-from pathlib import Path
-
-body = Path(sys.argv[1]).read_text(encoding="utf-8")
-parameters = re.findall(r"<([^<>]+)>", body)
-if parameters != ["cycle-number", "fence-headroom", "yes | no"]:
-    raise SystemExit("host-turn instruction parameters drifted from cycle, fence headroom, reconciliation")
-if "Runtime:" in body:
-    raise SystemExit("host-turn instruction is parameterized by runtime")
-PY
+# Every <...> placeholder in the whole body, in order. The scan crosses
+# line boundaries the way the placeholder grammar does; a parameter that
+# somehow carried a newline is printed with a visible \n so it can never
+# masquerade as two well-formed parameters.
+host_turn_parameters=$(awk '
+  { body = body $0 "\n" }
+  END {
+    n = length(body); start = 0
+    for (i = 1; i <= n; i++) {
+      ch = substr(body, i, 1)
+      if (ch == "<") start = i
+      else if (ch == ">" && start && i - start > 1) {
+        parameter = substr(body, start + 1, i - start - 1)
+        gsub(/\n/, "\\n", parameter)
+        print parameter
+        start = 0
+      }
+      else if (ch == ">") start = 0
+    }
+  }' scripts/agents/templates/host-turn-instruction.md)
+[[ "$host_turn_parameters" == $'cycle-number\nfence-headroom\nyes | no' ]] \
+  || { echo "host-turn instruction parameters drifted from cycle, fence headroom, reconciliation" >&2; exit 1; }
+if grep -Fq 'Runtime:' scripts/agents/templates/host-turn-instruction.md; then
+  echo "host-turn instruction is parameterized by runtime" >&2
+  exit 1
+fi
 
 # Assert the machine-readable shapes item 2 owns. Later dispatcher fixtures
 # exercise expansion and capability gating; here the shipped declarations
 # must remain minimal and must not grow baseline guarantees into snapshots.
-python3 - "$root" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1])
-common = {"jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode"}
-role_fields = {
-    "design-critic": {"reviewedCommit", "findings", "verdictMaterialCount"},
-    "implementer": {"riskiestPart", "diffBoundary", "whatWasDone"},
-    "code-critic": {"reviewedTree", "findings", "verdictMaterialCount"},
-    "verifier": {"riskiestPart", "whatWasDone"},
-    "investigator": {"frozenFrame", "theories", "classifications", "stopLoss"},
-    "behavior-judge": {"dimensions", "reliabilityWatch"},
+return_schema_roles='design-critic implementer code-critic verifier investigator behavior-judge'
+return_schema_common_fields='jobId round runtime sessionId model evidence gaps mode'
+return_schema_owned_fields() { # role: print the role-owned schema fields
+  case $1 in
+    design-critic) printf '%s\n' reviewedCommit findings verdictMaterialCount ;;
+    implementer) printf '%s\n' riskiestPart diffBoundary whatWasDone ;;
+    code-critic) printf '%s\n' reviewedTree findings verdictMaterialCount ;;
+    verifier) printf '%s\n' riskiestPart whatWasDone ;;
+    investigator) printf '%s\n' frozenFrame theories classifications stopLoss ;;
+    behavior-judge) printf '%s\n' dimensions reliabilityWatch ;;
+    *) echo "return_schema_owned_fields: unknown role $1" >&2; return 1 ;;
+  esac
 }
-for role, owned in role_fields.items():
-    path = root / "scripts" / "agents" / "schemas" / f"{role}.schema.json"
-    schema = json.loads(path.read_text())
-    expected = common | owned
-    actual = set(schema.get("properties", {}))
-    required = set(schema.get("required", []))
-    if actual != expected or required != expected or schema.get("additionalProperties") is not False:
-        raise SystemExit(f"{role} schema property set drifted from the protocol")
 
-orchestrator_path = root / "scripts" / "agents" / "schemas" / "orchestrator.schema.json"
-orchestrator = json.loads(orchestrator_path.read_text())
-orchestrator_fields = {
-    "turnId", "missionId", "cycle", "dispatched", "certified",
-    "streamUpdatesRequested", "askCandidates", "factsForLedger", "gaps", "identity",
+# A schema node member with its absent-member default. An explicit null is
+# NOT folded into the default: a null properties or required list is a
+# malformed schema and must refuse, not read as empty.
+schema_node_member() { # node JSON, field, default when the field is absent
+  local value
+  if value=$("$engine" json get --value "$1" --field "$2" 2>/dev/null); then
+    printf '%s\n' "$value"
+  else
+    printf '%s\n' "$3"
+  fi
 }
-if (
-    set(orchestrator.get("properties", {})) != orchestrator_fields
-    or set(orchestrator.get("required", [])) != orchestrator_fields
-    or orchestrator.get("additionalProperties") is not False
-):
-    raise SystemExit("orchestrator schema property set drifted from the host-turn protocol")
 
-
-def assert_closed_schema(node, path):
-    if node.get("type") == "object":
-        properties = node.get("properties", {})
-        if node.get("additionalProperties") is not False or set(node.get("required", [])) != set(properties):
-            raise SystemExit(f"orchestrator schema object is not fully enumerated: {path}")
-        for name, child in properties.items():
-            assert_closed_schema(child, f"{path}.{name}")
-    if node.get("type") == "array":
-        assert_closed_schema(node.get("items", {}), f"{path}[]")
-
-
-assert_closed_schema(orchestrator, "$")
-
-permission_expected = {
-    # Network is granted by default: the container or VM is the isolation
-    # boundary, and a delegate that cannot resolve a dependency or read
-    # documentation cannot do real work. A repository narrows it for every role
-    # with dispatch.permissions.network=deny.
-    "none": {
-        "readRoots": ["."], "writeRoots": [], "network": "allow",
-        "approvals": "deny", "tools": "read-only",
-    },
-    "workspace": {
-        "readRoots": ["."], "writeRoots": ["<worktree>"], "network": "allow",
-        "approvals": "deny", "tools": "runtime-default",
-    },
+# One sorted-field-set check for a closed object schema: the properties,
+# the required list, and the expected field roster must be the same set,
+# and additionalProperties must be exactly false.
+assert_schema_field_set() { # schema JSON, expected fields (newline-separated), failure message
+  local schema=$1 expected=$2 message=$3 properties required_json actual required additional
+  properties=$(schema_node_member "$schema" properties '{}')
+  required_json=$(schema_node_member "$schema" required '[]')
+  [[ "$properties" == \{* && "$required_json" == \[* ]] || { echo "$message" >&2; exit 1; }
+  actual=$(json_object_keys "$properties" | LC_ALL=C sort -u)
+  required=$(json_elements "$required_json" | sed 's/^"//; s/"$//' | LC_ALL=C sort -u)
+  additional=$("$engine" json get --value "$schema" --field additionalProperties --default null)
+  [[ "$actual" == "$expected" && "$required" == "$expected" && "$additional" == false ]] \
+    || { echo "$message" >&2; exit 1; }
 }
-for name, expected in permission_expected.items():
-    path = root / "scripts" / "agents" / "permissions" / f"{name}.json"
-    if json.loads(path.read_text()) != expected:
-        raise SystemExit(f"{name} permission preset drifted from its envelope")
 
-for role in role_fields:
-    path = root / "scripts" / "agents" / "roles" / f"{role}.requirements.json"
-    requirement = json.loads(path.read_text())
-    if not {"required", "optional"}.issubset(requirement) or not set(requirement).issubset({"required", "optional", "waivers"}):
-        raise SystemExit(f"{role} capability declaration has unknown top-level fields")
-    waivers = requirement.get("waivers", {})
-    if not isinstance(waivers, dict) or any(
-        not isinstance(field, str) or not isinstance(runtimes, list)
-        or not all(isinstance(runtime, str) for runtime in runtimes)
-        for field, runtimes in waivers.items()
-    ):
-        raise SystemExit(f"{role} capability waivers have an invalid shape")
-    if requirement["required"] != []:
-        raise SystemExit(f"{role} incorrectly repeats adapter-guaranteed baseline capabilities")
-    if role == "implementer":
-        resume = requirement["optional"].get("resume")
-        if set(requirement["optional"]) != {"resume"} or not isinstance(resume, dict) or not resume.get("fallback"):
-            raise SystemExit("implementer resume capability lacks its embed fallback")
-    elif requirement["optional"] != {}:
-        raise SystemExit(f"{role} declares a variable capability it does not need")
-PY
+for role in $return_schema_roles; do
+  role_schema=$(canonical_json "$(cat "scripts/agents/schemas/$role.schema.json")")
+  role_expected_fields=$(printf '%s\n' $return_schema_common_fields; return_schema_owned_fields "$role")
+  assert_schema_field_set "$role_schema" "$(printf '%s\n' "$role_expected_fields" | LC_ALL=C sort -u)" \
+    "$role schema property set drifted from the protocol"
+done
+
+orchestrator_schema=$(canonical_json "$(cat scripts/agents/schemas/orchestrator.schema.json)")
+orchestrator_expected_fields=$(printf '%s\n' turnId missionId cycle dispatched certified \
+  streamUpdatesRequested askCandidates factsForLedger gaps identity | LC_ALL=C sort -u)
+assert_schema_field_set "$orchestrator_schema" "$orchestrator_expected_fields" \
+  "orchestrator schema property set drifted from the host-turn protocol"
+
+# Every object node in the orchestrator schema must be fully enumerated:
+# additionalProperties false and required naming every property, at every
+# nesting level, through array item schemas too.
+assert_closed_schema() { # canonical schema node, dotted path for the report
+  local node=$1 path=$2 node_type properties required_json keys_sorted required_sorted member name child
+  node_type=$("$engine" json get --value "$node" --field type --default '')
+  if [[ "$node_type" == object ]]; then
+    properties=$(schema_node_member "$node" properties '{}')
+    required_json=$(schema_node_member "$node" required '[]')
+    [[ "$properties" == \{* && "$required_json" == \[* ]] \
+      || { echo "orchestrator schema object is not fully enumerated: $path" >&2; exit 1; }
+    keys_sorted=$(json_object_keys "$properties" | LC_ALL=C sort -u)
+    required_sorted=$(json_elements "$required_json" | sed 's/^"//; s/"$//' | LC_ALL=C sort -u)
+    [[ "$("$engine" json get --value "$node" --field additionalProperties --default null)" == false \
+       && "$required_sorted" == "$keys_sorted" ]] \
+      || { echo "orchestrator schema object is not fully enumerated: $path" >&2; exit 1; }
+    while IFS= read -r member; do
+      [[ -n "$member" ]] || continue
+      name=${member#\"}
+      name=${name%%\":*}
+      child=${member#\"$name\":}
+      assert_closed_schema "$child" "$path.$name"
+    done < <(json_elements "$properties")
+  fi
+  if [[ "$node_type" == array ]]; then
+    child=$(schema_node_member "$node" items '{}')
+    [[ "$child" == \{* ]] \
+      || { echo "orchestrator schema array has no item schema: $path" >&2; exit 1; }
+    assert_closed_schema "$child" "$path[]"
+  fi
+}
+assert_closed_schema "$orchestrator_schema" '$'
+
+# Network is granted by default: the container or VM is the isolation
+# boundary, and a delegate that cannot resolve a dependency or read
+# documentation cannot do real work. A repository narrows it for every role
+# with dispatch.permissions.network=deny.
+permission_preset_expected() { # preset name
+  case $1 in
+    none) printf '%s' '{"readRoots": ["."], "writeRoots": [], "network": "allow", "approvals": "deny", "tools": "read-only"}' ;;
+    workspace) printf '%s' '{"readRoots": ["."], "writeRoots": ["<worktree>"], "network": "allow", "approvals": "deny", "tools": "runtime-default"}' ;;
+    *) echo "permission_preset_expected: unknown preset $1" >&2; return 1 ;;
+  esac
+}
+for preset in none workspace; do
+  [[ "$(canonical_json "$(cat "scripts/agents/permissions/$preset.json")")" == \
+     "$(canonical_json "$(permission_preset_expected "$preset")")" ]] \
+    || { echo "$preset permission preset drifted from its envelope" >&2; exit 1; }
+done
+
+for role in $return_schema_roles; do
+  requirement=$(canonical_json "$(cat "scripts/agents/roles/$role.requirements.json")")
+  requirement_shape_ok=1
+  "$engine" json get --value "$requirement" --field required >/dev/null 2>&1 || requirement_shape_ok=0
+  "$engine" json get --value "$requirement" --field optional >/dev/null 2>&1 || requirement_shape_ok=0
+  while IFS= read -r requirement_key; do
+    [[ -n "$requirement_key" ]] || continue
+    case $requirement_key in required|optional|waivers) ;; *) requirement_shape_ok=0 ;; esac
+  done < <(json_object_keys "$requirement")
+  (( requirement_shape_ok )) \
+    || { echo "$role capability declaration has unknown top-level fields" >&2; exit 1; }
+  # A declared waivers member must be an object of field -> runtime-name list.
+  if "$engine" json get --value "$requirement" --field waivers >/dev/null 2>&1; then
+    waivers=$("$engine" json get --value "$requirement" --field waivers)
+  else
+    waivers='{}'
+  fi
+  waivers_ok=1
+  [[ "$waivers" == \{* ]] || waivers_ok=0
+  if (( waivers_ok )); then
+    while IFS= read -r waiver_member; do
+      [[ -n "$waiver_member" ]] || continue
+      waiver_field=${waiver_member#\"}
+      waiver_field=${waiver_field%%\":*}
+      waiver_runtimes=${waiver_member#\"$waiver_field\":}
+      [[ "$waiver_runtimes" == \[* ]] || { waivers_ok=0; break; }
+      while IFS= read -r waiver_runtime; do
+        [[ -n "$waiver_runtime" ]] || continue
+        [[ "$waiver_runtime" == \"* ]] || { waivers_ok=0; break; }
+      done < <(json_elements "$waiver_runtimes")
+      (( waivers_ok )) || break
+    done < <(json_elements "$waivers")
+  fi
+  (( waivers_ok )) || { echo "$role capability waivers have an invalid shape" >&2; exit 1; }
+  [[ "$("$engine" json get --value "$requirement" --field required)" == "[]" ]] \
+    || { echo "$role incorrectly repeats adapter-guaranteed baseline capabilities" >&2; exit 1; }
+  role_optional=$("$engine" json get --value "$requirement" --field optional)
+  if [[ "$role" == implementer ]]; then
+    implementer_optional_ok=1
+    [[ "$role_optional" == \{* ]] || implementer_optional_ok=0
+    [[ "$(json_object_keys "$role_optional" 2>/dev/null)" == resume ]] || implementer_optional_ok=0
+    resume=$("$engine" json get --value "$role_optional" --field resume --default null 2>/dev/null) || resume=null
+    [[ "$resume" == \{* ]] || implementer_optional_ok=0
+    resume_fallback=$("$engine" json get --value "$resume" --field fallback --default '' 2>/dev/null) || resume_fallback=
+    case $resume_fallback in ''|null|false|0|'[]'|'{}') implementer_optional_ok=0 ;; esac
+    (( implementer_optional_ok )) \
+      || { echo "implementer resume capability lacks its embed fallback" >&2; exit 1; }
+  else
+    [[ "$role_optional" == "{}" ]] \
+      || { echo "$role declares a variable capability it does not need" >&2; exit 1; }
+  fi
+done
 
 # Quote markers name their canonical source. The checker compares the content
 # bytes rather than trusting a second prose copy of the binding criterion.
 scripts/agents/check-preamble-quotes.sh
-python3 - scripts/agents/roles/orchestrator.md <<'PY'
-import re
-import sys
-from pathlib import Path
-
-body = Path(sys.argv[1]).read_bytes()
-pattern = re.compile(
-    br'^<!-- quote source="([^"\r\n]+)" -->\n(.*?)^<!-- /quote -->$',
-    re.MULTILINE | re.DOTALL,
-)
-required = [
-    (b"AGENTS.md", b"## Completion\n"),
-    (b"docs/orchestration.md", b"## Delegation Contract\n"),
-    (b"docs/orchestration.md", b"### Working without the human\n"),
-    (b"docs/collaboration.md", b"## Review Guide in Reports\n"),
-    (b"docs/collaboration.md", b"## Escalation Shape\n"),
-    (b"docs/project-rules.md", b"These require explicit in-task approval"),
-]
-
-
-def matches(value):
-    return list(pattern.finditer(value))
-
-
-def missing(value):
-    blocks = matches(value)
-    return [
-        (source, marker)
-        for source, marker in required
-        if not any(match.group(1) == source and marker in match.group(2) for match in blocks)
-    ]
-
-
-absent = missing(body)
-if absent:
-    raise SystemExit(f"orchestrator preamble lacks mandated quote blocks: {absent!r}")
-for source, marker in required:
-    match = next(
-        item for item in matches(body)
-        if item.group(1) == source and marker in item.group(2)
-    )
-    deleted = body[:match.start()] + body[match.end():]
-    if (source, marker) not in missing(deleted):
-        raise SystemExit(
-            f"orchestrator required-block fixture did not detect deletion: {source!r} {marker!r}"
-        )
-PY
+# Count the quote blocks from one source whose body carries one marker. A
+# block runs from a `<!-- quote source="..." -->` line to the first
+# `<!-- /quote -->` line; block bodies are whole lines, so a marker that
+# names a full heading line matches as a line suffix and a bare phrase
+# matches anywhere in a line.
+count_quote_blocks() { # roles file, source, marker, 1 when the marker ends its line
+  awk -v wanted_source="$2" -v marker="$3" -v marker_ends_line="$4" '
+    BEGIN { count = 0; inblock = 0 }
+    !inblock && /^<!-- quote source="[^"]+" -->$/ {
+      block_source = $0
+      sub(/^<!-- quote source="/, "", block_source)
+      sub(/" -->$/, "", block_source)
+      inblock = 1; hit = 0
+      next
+    }
+    inblock && $0 == "<!-- /quote -->" {
+      if (block_source == wanted_source && hit) count++
+      inblock = 0
+      next
+    }
+    inblock {
+      if (marker_ends_line) {
+        if (length($0) >= length(marker) && substr($0, length($0) - length(marker) + 1) == marker) hit = 1
+      } else if (index($0, marker)) hit = 1
+    }
+    END { print count }
+  ' "$1"
+}
+# Each mandated (source, marker) pair must appear in EXACTLY one block:
+# zero means the preamble lost its mandated quote, and more than one means
+# deleting the block would go undetected, so the requirement would not be
+# protecting anything.
+while IFS=$'\t' read -r quote_source quote_marker quote_marker_ends_line; do
+  quote_block_count=$(count_quote_blocks scripts/agents/roles/orchestrator.md \
+    "$quote_source" "$quote_marker" "$quote_marker_ends_line")
+  [[ "$quote_block_count" -ge 1 ]] \
+    || { echo "orchestrator preamble lacks mandated quote block: $quote_source $quote_marker" >&2; exit 1; }
+  [[ "$quote_block_count" -eq 1 ]] \
+    || { echo "orchestrator required-block deletion would go undetected: $quote_source $quote_marker appears in $quote_block_count blocks" >&2; exit 1; }
+done <<'REQUIRED'
+AGENTS.md	## Completion	1
+docs/orchestration.md	## Delegation Contract	1
+docs/orchestration.md	### Working without the human	1
+docs/collaboration.md	## Review Guide in Reports	1
+docs/collaboration.md	## Escalation Shape	1
+docs/project-rules.md	These require explicit in-task approval	0
+REQUIRED
 cp -R scripts/agents/roles "$tmp/drifted-roles"
 sed 's/build something DIFFERENT/build the same thing/' \
   "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
@@ -1064,139 +1258,75 @@ grep -q 'quote drifted from docs/orchestration.md' "$tmp/orchestrator-quote-drif
 # JSON remains canonical; these fixtures never rely on the Markdown view.
 return_fixtures="$tmp/returns"
 mkdir -p "$return_fixtures"
-python3 - "$return_fixtures" <<'PY'
-import copy
-import json
-import sys
-from pathlib import Path
+# The eight fields every role return shares, minus mode, which varies by
+# role and is appended alongside the role-owned fields.
+return_fixture_common='"jobId":"fixture-job","round":1,"runtime":"fake","sessionId":"session-1","model":{"requested":"fake-model","effective":"fake-model"},"evidence":[{"command":"scripts/validate-metasystem.sh","observed":"fixture output","level":"ran"}],"gaps":[]'
+fixture_zero_sha=$(printf '0%.0s' {1..40})
+fixture_ones_digest=$(printf '1%.0s' {1..64})
 
-out = Path(sys.argv[1])
-common = {
-    "jobId": "fixture-job",
-    "round": 1,
-    "runtime": "fake",
-    "sessionId": "session-1",
-    "model": {"requested": "fake-model", "effective": "fake-model"},
-    "evidence": [{"command": "scripts/validate-metasystem.sh", "observed": "fixture output", "level": "ran"}],
-    "gaps": [],
-    "mode": "implement",
+behavior_dimension() { # id, anchors JSON, findings JSON
+  printf '{"id":"%s","score":4,"rationale":"fixture judgment","anchors":%s,"findings":%s}' "$1" "$2" "$3"
 }
-behavior_dimension_ids = [
-    "brief-quality",
-    "adjudication-quality",
-    "delegation-discipline",
-    "gap-handling",
-    "spec-fidelity",
-    "repeated-work",
-    "proportionality",
-    "evidence-honesty",
-]
-behavior_dimensions = [
-    {
-        "id": dimension_id,
-        "score": 4,
-        "rationale": "fixture judgment",
-        "anchors": [{"file": "artifacts/agents/missions/fixture/ledger.md", "line": 1}],
-        "findings": [],
-    }
-    for dimension_id in behavior_dimension_ids
-]
-behavior_dimensions[0]["findings"] = [{
-    "id": "BQ-1",
-    "claim": "fixture finding",
-    "evidence": "fixture evidence",
-    "anchors": [{"file": "artifacts/agents/fixture/rounds/1/prompt.md", "line": 10}],
-}]
-positive = {
-    "orchestrator": {
-        "turnId": "turn-3",
-        "missionId": "fixture-mission",
-        "cycle": 3,
-        "dispatched": [{"jobId": "fixture-job", "role": "implementer", "stream": "stream-a"}],
-        "certified": [{"jobId": "prior-job", "verdict": "accepted", "evidence": "focused checks passed", "authorizationDigest": "1" * 64}],
-        "streamUpdatesRequested": [{"streamId": "stream-a", "requestedState": "active", "reason": "work remains"}],
-        "askCandidates": [{"streamId": "stream-b", "reasonClass": "reserved-decision", "question": "Approve the contract change?", "supersedes": None}],
-        "factsForLedger": ["focused check exposed one new fact"],
-        "gaps": [],
-        "identity": {"runtime": "fake", "model": "fake-model", "sessionId": None},
-    },
-    "design-critic": {
-        **common,
-        "mode": "design",
-        "reviewedCommit": "0" * 40,
-        "findings": [{"id": "F-1", "severity": "high", "material": True, "claim": "contract gap", "evidence": "read design"}],
-        "verdictMaterialCount": 1,
-    },
-    "code-critic": {
-        **common,
-        "reviewedTree": "0" * 40,
-        "findings": [],
-        "verdictMaterialCount": 0,
-    },
-    "implementer": {
-        **common,
-        "riskiestPart": "schema boundary",
-        "diffBoundary": ["scripts/example.sh"],
-        "whatWasDone": "implemented the brief",
-    },
-    "verifier": {
-        **common,
-        "mode": "verify",
-        "riskiestPart": "failure path",
-        "whatWasDone": "drove the runnable surface",
-    },
-    "investigator": {
-        **common,
-        "mode": "take-a-step-back",
-        "frozenFrame": "symptom and boundary frozen",
-        "theories": [{"statement": "owner lost state", "evidenceFor": "trace", "evidenceAgainst": "focused check"}],
-        "classifications": ["falsified-continue"],
-        "stopLoss": {"triggered": False, "trigger": None},
-    },
-    "behavior-judge": {
-        **common,
-        "mode": "verify",
-        "dimensions": behavior_dimensions,
-        "reliabilityWatch": [{
-            "dimension": "proportionality",
-            "mechanicalMetric": "fence-economy",
-            "agreement": "agrees",
-            "explanation": "fixture agreement",
-            "anchors": [{"file": "artifacts/agents/missions/fixture/state.json", "line": 5}],
-        }],
-    },
+# The eight judged dimensions; only the first carries findings, and only
+# its anchors ever vary, so the two are parameters.
+behavior_dimensions_json() { # first dimension's anchors JSON, first dimension's findings JSON
+  local out dimension_id
+  out='['$(behavior_dimension brief-quality "$1" "$2")
+  for dimension_id in adjudication-quality delegation-discipline gap-handling \
+    spec-fidelity repeated-work proportionality evidence-honesty; do
+    out+=,$(behavior_dimension "$dimension_id" "$behavior_ledger_anchor" '[]')
+  done
+  printf '%s]' "$out"
 }
-for role, value in positive.items():
-    (out / f"{role}-positive.json").write_text(json.dumps(value, indent=2) + "\n")
+behavior_ledger_anchor='[{"file":"artifacts/agents/missions/fixture/ledger.md","line":1}]'
+behavior_zero_line_anchor='[{"file":"artifacts/agents/missions/fixture/ledger.md","line":0}]'
+behavior_first_findings='[{"id":"BQ-1","claim":"fixture finding","evidence":"fixture evidence","anchors":[{"file":"artifacts/agents/fixture/rounds/1/prompt.md","line":10}]}]'
+behavior_first_findings_unanchored='[{"id":"BQ-1","claim":"fixture finding","evidence":"fixture evidence","anchors":[]}]'
 
-negative = copy.deepcopy(positive)
-negative["orchestrator"].pop("factsForLedger")
-negative["design-critic"].pop("findings")
-negative["design-critic"].pop("verdictMaterialCount")
-negative["code-critic"]["whatWasDone"] = "critics do not own this section"
-negative["implementer"].pop("diffBoundary")
-negative["verifier"]["diffBoundary"] = ["not verifier-owned"]
-negative["investigator"].pop("frozenFrame")
-negative["investigator"].pop("theories")
-negative["behavior-judge"]["dimensions"][0]["findings"][0]["anchors"] = []
-for role, value in negative.items():
-    (out / f"{role}-negative.json").write_text(json.dumps(value, indent=2) + "\n")
+printf '{"turnId":"turn-3","missionId":"fixture-mission","cycle":3,"dispatched":[{"jobId":"fixture-job","role":"implementer","stream":"stream-a"}],"certified":[{"jobId":"prior-job","verdict":"accepted","evidence":"focused checks passed","authorizationDigest":"%s"}],"streamUpdatesRequested":[{"streamId":"stream-a","requestedState":"active","reason":"work remains"}],"askCandidates":[{"streamId":"stream-b","reasonClass":"reserved-decision","question":"Approve the contract change?","supersedes":null}],"factsForLedger":["focused check exposed one new fact"],"gaps":[],"identity":{"runtime":"fake","model":"fake-model","sessionId":null}}\n' \
+  "$fixture_ones_digest" >"$return_fixtures/orchestrator-positive.json"
+printf '{%s,"mode":"design","reviewedCommit":"%s","findings":[{"id":"F-1","severity":"high","material":true,"claim":"contract gap","evidence":"read design"}],"verdictMaterialCount":1}\n' \
+  "$return_fixture_common" "$fixture_zero_sha" >"$return_fixtures/design-critic-positive.json"
+printf '{%s,"mode":"implement","reviewedTree":"%s","findings":[],"verdictMaterialCount":0}\n' \
+  "$return_fixture_common" "$fixture_zero_sha" >"$return_fixtures/code-critic-positive.json"
+printf '{%s,"mode":"implement","riskiestPart":"schema boundary","diffBoundary":["scripts/example.sh"],"whatWasDone":"implemented the brief"}\n' \
+  "$return_fixture_common" >"$return_fixtures/implementer-positive.json"
+printf '{%s,"mode":"verify","riskiestPart":"failure path","whatWasDone":"drove the runnable surface"}\n' \
+  "$return_fixture_common" >"$return_fixtures/verifier-positive.json"
+printf '{%s,"mode":"take-a-step-back","frozenFrame":"symptom and boundary frozen","theories":[{"statement":"owner lost state","evidenceFor":"trace","evidenceAgainst":"focused check"}],"classifications":["falsified-continue"],"stopLoss":{"triggered":false,"trigger":null}}\n' \
+  "$return_fixture_common" >"$return_fixtures/investigator-positive.json"
+printf '{%s,"mode":"verify","dimensions":%s,"reliabilityWatch":[{"dimension":"proportionality","mechanicalMetric":"fence-economy","agreement":"agrees","explanation":"fixture agreement","anchors":[{"file":"artifacts/agents/missions/fixture/state.json","line":5}]}]}\n' \
+  "$return_fixture_common" \
+  "$(behavior_dimensions_json "$behavior_ledger_anchor" "$behavior_first_findings")" \
+  >"$return_fixtures/behavior-judge-positive.json"
 
-empty_dimensions = copy.deepcopy(positive["behavior-judge"])
-empty_dimensions["dimensions"] = []
-(out / "behavior-judge-empty-dimensions.json").write_text(json.dumps(empty_dimensions, indent=2) + "\n")
+# Every negative is the positive with ONE drift, derived rather than
+# restated, so the checker below can only be failing for that drift.
+for role in orchestrator design-critic implementer code-critic verifier investigator behavior-judge; do
+  cp "$return_fixtures/$role-positive.json" "$return_fixtures/$role-negative.json"
+done
+json_remove_field "$return_fixtures/orchestrator-negative.json" factsForLedger
+json_remove_field "$return_fixtures/design-critic-negative.json" findings
+json_remove_field "$return_fixtures/design-critic-negative.json" verdictMaterialCount
+"$engine" json set --file "$return_fixtures/code-critic-negative.json" \
+  --field 'whatWasDone=critics do not own this section'
+json_remove_field "$return_fixtures/implementer-negative.json" diffBoundary
+json_insert_field "$return_fixtures/verifier-negative.json" diffBoundary '["not verifier-owned"]'
+json_remove_field "$return_fixtures/investigator-negative.json" frozenFrame
+json_remove_field "$return_fixtures/investigator-negative.json" theories
+json_replace_field "$return_fixtures/behavior-judge-negative.json" dimensions \
+  "$(behavior_dimensions_json "$behavior_ledger_anchor" "$behavior_first_findings_unanchored")"
 
-invalid_anchor = copy.deepcopy(positive["behavior-judge"])
-invalid_anchor["dimensions"][0]["anchors"][0]["line"] = 0
-(out / "behavior-judge-invalid-anchor.json").write_text(json.dumps(invalid_anchor, indent=2) + "\n")
+cp "$return_fixtures/behavior-judge-positive.json" "$return_fixtures/behavior-judge-empty-dimensions.json"
+json_replace_field "$return_fixtures/behavior-judge-empty-dimensions.json" dimensions '[]'
+cp "$return_fixtures/behavior-judge-positive.json" "$return_fixtures/behavior-judge-invalid-anchor.json"
+json_replace_field "$return_fixtures/behavior-judge-invalid-anchor.json" dimensions \
+  "$(behavior_dimensions_json "$behavior_zero_line_anchor" "$behavior_first_findings")"
 
-miscount = copy.deepcopy(positive["design-critic"])
-miscount["verdictMaterialCount"] = 0
-(out / "critic-miscount.json").write_text(json.dumps(miscount, indent=2) + "\n")
-missing_verdict = copy.deepcopy(positive["design-critic"])
-missing_verdict.pop("verdictMaterialCount")
-(out / "critic-missing-verdict.json").write_text(json.dumps(missing_verdict, indent=2) + "\n")
-PY
+cp "$return_fixtures/design-critic-positive.json" "$return_fixtures/critic-miscount.json"
+"$engine" json set --file "$return_fixtures/critic-miscount.json" --int verdictMaterialCount=0
+cp "$return_fixtures/design-critic-positive.json" "$return_fixtures/critic-missing-verdict.json"
+json_remove_field "$return_fixtures/critic-missing-verdict.json" verdictMaterialCount
 
 for role in orchestrator design-critic implementer code-critic verifier investigator behavior-judge; do
   scripts/assert-return-complete.sh --role "$role" --file "$return_fixtures/$role-positive.json"
@@ -1339,40 +1469,37 @@ EOF
 
 scripts/assert-turn-prompt.sh --file "$good_turn_prompt" --turn "$turn_dir"
 
-python3 - "$good_turn_prompt" "$turn_fixture" <<'PY'
-import sys
-from pathlib import Path
-
-source = Path(sys.argv[1]).read_text(encoding="utf-8")
-out = Path(sys.argv[2])
-mutations = {
-    "missing-header": source.replace("Model: fake-model\n", "", 1),
-    "turn-mismatch": source.replace("Turn-Id: turn-3\n", "Turn-Id: turn-other\n", 1),
-    "mission-mismatch": source.replace("Mission-Id: fixture-mission\n", "Mission-Id: other-mission\n", 1),
-    "altered-preamble": source.replace(
-        "You are the orchestrator for an unattended mission.",
-        "You are an orchestrator for an unattended mission.",
-        1,
-    ),
-    "headings-out-of-order": source.replace("## Open Asks", "## TEMP", 1)
-        .replace("## Streams", "## Open Asks", 1)
-        .replace("## TEMP", "## Streams", 1),
-    "unfenced-data": source.replace(
-        "## Open Asks\n<<<DATA>>>\nask-1\tstream-a\treserved-decision\tApprove the named API contract?\n<<<END>>>",
-        "## Open Asks\nask-1\tstream-a\treserved-decision\tApprove the named API contract?",
-        1,
-    ),
-    "malformed-record": source.replace(
-        "ask-1\tstream-a\treserved-decision\tApprove the named API contract?",
-        "ask-1\tstream-a\treserved-decision",
-        1,
-    ),
+# Each mutation replaces the first occurrence of its needle; a mutation
+# that changes nothing means the fixture and the needle drifted apart, so
+# it refuses rather than testing a copy of the good prompt.
+turn_prompt_source=$(cat "$good_turn_prompt")
+write_turn_prompt_mutation() { # name, needle, replacement [, needle, replacement ...]
+  local name=$1 mutated=$turn_prompt_source
+  shift
+  while (($#)); do
+    mutated=${mutated/"$1"/"$2"}
+    shift 2
+  done
+  [[ "$mutated" != "$turn_prompt_source" ]] \
+    || { echo "turn-prompt mutation did not change fixture: $name" >&2; exit 1; }
+  printf '%s\n' "$mutated" >"$turn_fixture/$name.md"
 }
-for name, value in mutations.items():
-    if value == source:
-        raise SystemExit(f"turn-prompt mutation did not change fixture: {name}")
-    (out / f"{name}.md").write_text(value, encoding="utf-8")
-PY
+write_turn_prompt_mutation missing-header $'Model: fake-model\n' ''
+write_turn_prompt_mutation turn-mismatch $'Turn-Id: turn-3\n' $'Turn-Id: turn-other\n'
+write_turn_prompt_mutation mission-mismatch $'Mission-Id: fixture-mission\n' $'Mission-Id: other-mission\n'
+write_turn_prompt_mutation altered-preamble \
+  'You are the orchestrator for an unattended mission.' \
+  'You are an orchestrator for an unattended mission.'
+write_turn_prompt_mutation headings-out-of-order \
+  '## Open Asks' '## TEMP' \
+  '## Streams' '## Open Asks' \
+  '## TEMP' '## Streams'
+write_turn_prompt_mutation unfenced-data \
+  $'## Open Asks\n<<<DATA>>>\nask-1\tstream-a\treserved-decision\tApprove the named API contract?\n<<<END>>>' \
+  $'## Open Asks\nask-1\tstream-a\treserved-decision\tApprove the named API contract?'
+write_turn_prompt_mutation malformed-record \
+  $'ask-1\tstream-a\treserved-decision\tApprove the named API contract?' \
+  $'ask-1\tstream-a\treserved-decision'
 
 check_bad_turn_prompt() { # fixture name, failing check
   local name=$1 expected=$2 output status
@@ -1412,91 +1539,76 @@ set -e
 # findings and table rows needed to exercise each join invariant.
 critique_fixtures="$tmp/critiques"
 mkdir -p "$critique_fixtures"
-python3 - "$return_fixtures/design-critic-positive.json" "$critique_fixtures" <<'PY'
-import copy
-import json
-import sys
-from pathlib import Path
+critique_material_finding='{"id":"F-1","severity":"high","material":true,"claim":"contract gap","evidence":"read design"}'
+critique_nonmaterial_finding='{"id":"F-2","severity":"low","material":false,"claim":"wording issue","evidence":"read design"}'
+critique_second_material_finding='{"id":"F-3","severity":"medium","material":true,"claim":"incorrect premise","evidence":"checked implementation"}'
 
-source = json.loads(Path(sys.argv[1]).read_text())
-out = Path(sys.argv[2])
-material = {
-    "id": "F-1", "severity": "high", "material": True,
-    "claim": "contract gap", "evidence": "read design",
+# A critique return is the positive design-critic return with the given
+# findings; the material count is derived from them, never restated.
+write_critique_return() { # name, findings JSON array
+  local name=$1 findings=$2 finding finding_material material_count=0
+  while IFS= read -r finding; do
+    [[ -n "$finding" ]] || continue
+    finding_material=$("$engine" json get --value "$finding" --field material) \
+      || { echo "critique fixture finding lacks a material flag: $finding" >&2; exit 1; }
+    [[ "$finding_material" == true ]] || continue
+    material_count=$((material_count + 1))
+  done < <(json_elements "$findings")
+  cp "$return_fixtures/design-critic-positive.json" "$critique_fixtures/$name.json"
+  json_replace_field "$critique_fixtures/$name.json" findings "$findings"
+  "$engine" json set --file "$critique_fixtures/$name.json" --int "verdictMaterialCount=$material_count"
 }
-nonmaterial = {
-    "id": "F-2", "severity": "low", "material": False,
-    "claim": "wording issue", "evidence": "read design",
+
+write_critique_table() { # name, separator row, rows as "id<TAB>disposition<TAB>reasoning<TAB>amendment"
+  local name=$1 separator=$2 row finding_id disposition reasoning amendment
+  {
+    echo '| Finding id | Disposition | Reasoning and evidence | Amendment |'
+    echo "$separator"
+    for row in "${@:3}"; do
+      IFS=$'\t' read -r finding_id disposition reasoning amendment <<<"$row"
+      printf '| %s | %s | %s | %s |\n' "$finding_id" "$disposition" "$reasoning" "$amendment"
+    done
+  } >"$critique_fixtures/$name.md"
 }
-second_material = {
-    "id": "F-3", "severity": "medium", "material": True,
-    "claim": "incorrect premise", "evidence": "checked implementation",
-}
+critique_table_separator='| --- | --- | --- | --- |'
 
+write_critique_return joinable \
+  "[$critique_material_finding,$critique_nonmaterial_finding,$critique_second_material_finding]"
+write_critique_table all-disposed "$critique_table_separator" \
+  $'F-1\taccepted\tdesign amended\tsection 3' \
+  $'F-2\tnoted\tdoes not change implementation\tnone' \
+  $'F-3\trefuted\timplementation disproves the claim\tnone'
+write_critique_table open-material "$critique_table_separator" \
+  $'F-2\tnoted\tdoes not change implementation\tnone' \
+  $'F-3\trefuted\timplementation disproves the claim\tnone'
+write_critique_table noted-on-material "$critique_table_separator" \
+  $'F-1\tnoted\tincorrect disposition\tnone' \
+  $'F-2\tnoted\tdoes not change implementation\tnone' \
+  $'F-3\trefuted\timplementation disproves the claim\tnone'
+write_critique_table missing-nonmaterial-disposition "$critique_table_separator" \
+  $'F-1\taccepted\tdesign amended\tsection 3' \
+  $'F-3\trefuted\timplementation disproves the claim\tnone'
+write_critique_table unknown-disposition "$critique_table_separator" \
+  $'F-1\tdismissed\tnot a protocol value\tnone' \
+  $'F-2\tnoted\tdoes not change implementation\tnone' \
+  $'F-3\trefuted\timplementation disproves the claim\tnone'
+write_critique_table unknown-finding-id "$critique_table_separator" \
+  $'F-1\taccepted\tdesign amended\tsection 3' \
+  $'F-2\tnoted\tdoes not change implementation\tnone' \
+  $'F-3\trefuted\timplementation disproves the claim\tnone' \
+  $'F-404\trefuted\tno matching finding\tnone'
 
-def write_return(name, findings):
-    value = copy.deepcopy(source)
-    value["findings"] = findings
-    value["verdictMaterialCount"] = sum(1 for finding in findings if finding["material"])
-    (out / f"{name}.json").write_text(json.dumps(value, indent=2) + "\n")
+write_critique_return duplicate-id \
+  "[$critique_material_finding,$critique_material_finding,$critique_nonmaterial_finding,$critique_second_material_finding]"
+write_critique_table duplicate-id "$critique_table_separator" \
+  $'F-1\taccepted\tfirst row\tsection 3' \
+  $'F-1\trefuted\tsecond row\tnone' \
+  $'F-2\tnoted\tdoes not change implementation\tnone' \
+  $'F-3\trefuted\timplementation disproves the claim\tnone'
 
-
-def write_table(name, rows, separator="| --- | --- | --- | --- |"):
-    lines = [
-        "| Finding id | Disposition | Reasoning and evidence | Amendment |",
-        separator,
-        *[f"| {finding_id} | {disposition} | {reasoning} | {amendment} |"
-          for finding_id, disposition, reasoning, amendment in rows],
-    ]
-    (out / f"{name}.md").write_text("\n".join(lines) + "\n")
-
-
-write_return("joinable", [material, nonmaterial, second_material])
-write_table("all-disposed", [
-    ("F-1", "accepted", "design amended", "section 3"),
-    ("F-2", "noted", "does not change implementation", "none"),
-    ("F-3", "refuted", "implementation disproves the claim", "none"),
-])
-write_table("open-material", [
-    ("F-2", "noted", "does not change implementation", "none"),
-    ("F-3", "refuted", "implementation disproves the claim", "none"),
-])
-write_table("noted-on-material", [
-    ("F-1", "noted", "incorrect disposition", "none"),
-    ("F-2", "noted", "does not change implementation", "none"),
-    ("F-3", "refuted", "implementation disproves the claim", "none"),
-])
-write_table("missing-nonmaterial-disposition", [
-    ("F-1", "accepted", "design amended", "section 3"),
-    ("F-3", "refuted", "implementation disproves the claim", "none"),
-])
-write_table("unknown-disposition", [
-    ("F-1", "dismissed", "not a protocol value", "none"),
-    ("F-2", "noted", "does not change implementation", "none"),
-    ("F-3", "refuted", "implementation disproves the claim", "none"),
-])
-write_table("unknown-finding-id", [
-    ("F-1", "accepted", "design amended", "section 3"),
-    ("F-2", "noted", "does not change implementation", "none"),
-    ("F-3", "refuted", "implementation disproves the claim", "none"),
-    ("F-404", "refuted", "no matching finding", "none"),
-])
-
-write_return("duplicate-id", [material, material, nonmaterial, second_material])
-write_table("duplicate-id", [
-    ("F-1", "accepted", "first row", "section 3"),
-    ("F-1", "refuted", "second row", "none"),
-    ("F-2", "noted", "does not change implementation", "none"),
-    ("F-3", "refuted", "implementation disproves the claim", "none"),
-])
-
-missing_findings = copy.deepcopy(source)
-missing_findings.pop("findings")
-(out / "unjoinable-missing-findings.json").write_text(
-    json.dumps(missing_findings, indent=2) + "\n"
-)
-write_table("unjoinable-malformed-table", [], separator="| --- | --- | --- |")
-PY
+cp "$return_fixtures/design-critic-positive.json" "$critique_fixtures/unjoinable-missing-findings.json"
+json_remove_field "$critique_fixtures/unjoinable-missing-findings.json" findings
+write_critique_table unjoinable-malformed-table '| --- | --- | --- |'
 
 scripts/assert-critique-closed.sh \
   --findings "$critique_fixtures/joinable.json" \
@@ -1645,36 +1757,22 @@ cat >"$job_fixture/artifacts/agents/jobs/fixture-job-r2.json" <<'EOF'
   "sessionId": "session-2"
 }
 EOF
-python3 - "$return_fixtures/implementer-positive.json" \
-  "$job_fixture/artifacts/agents/fixture-job/rounds/2/return.json" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-value = json.loads(Path(sys.argv[1]).read_text())
-value.update({"jobId": "fixture-job-r2", "round": 2, "sessionId": "session-2"})
-Path(sys.argv[2]).write_text(json.dumps(value, indent=2) + "\n")
-PY
+cp "$return_fixtures/implementer-positive.json" \
+  "$job_fixture/artifacts/agents/fixture-job/rounds/2/return.json"
+"$engine" json set --file "$job_fixture/artifacts/agents/fixture-job/rounds/2/return.json" \
+  --field jobId=fixture-job-r2 --int round=2 --field sessionId=session-2
 (cd "$job_fixture" && scripts/assert-return-complete.sh --job fixture-job-r2)
 
-python3 - "$return_fixtures/implementer-positive.json" "$return_fixtures" <<'PY'
-import copy
-import json
-import sys
-from pathlib import Path
-
-source = json.loads(Path(sys.argv[1]).read_text())
-out = Path(sys.argv[2])
-for field, value in {
-    "jobId": "other-job",
-    "round": 2,
-    "runtime": "other-runtime",
-    "sessionId": "other-session",
-}.items():
-    changed = copy.deepcopy(source)
-    changed[field] = value
-    (out / f"identity-{field}.json").write_text(json.dumps(changed, indent=2) + "\n")
-PY
+# One mismatched identity field per fixture, each derived from the same
+# schema-valid positive return.
+cp "$return_fixtures/implementer-positive.json" "$return_fixtures/identity-jobId.json"
+"$engine" json set --file "$return_fixtures/identity-jobId.json" --field jobId=other-job
+cp "$return_fixtures/implementer-positive.json" "$return_fixtures/identity-round.json"
+"$engine" json set --file "$return_fixtures/identity-round.json" --int round=2
+cp "$return_fixtures/implementer-positive.json" "$return_fixtures/identity-runtime.json"
+"$engine" json set --file "$return_fixtures/identity-runtime.json" --field runtime=other-runtime
+cp "$return_fixtures/implementer-positive.json" "$return_fixtures/identity-sessionId.json"
+"$engine" json set --file "$return_fixtures/identity-sessionId.json" --field sessionId=other-session
 for field in jobId round runtime sessionId; do
   cp "$return_fixtures/identity-$field.json" \
     "$job_fixture/artifacts/agents/fixture-job/rounds/1/return.json"
@@ -1725,29 +1823,37 @@ if grep -Fq '|| true' "$hooks_json"; then
   echo "stop hook masks the retro-due exit code with || true" >&2
   exit 1
 fi
-if command -v python3 >/dev/null; then
-  hook_cmd=$(python3 -c "import json; print(json.load(open('$hooks_json'))['hooks']['Stop'][0]['hooks'][0]['command'])")
-  hookrepo="$tmp/hookrepo"
-  mkdir -p "$hookrepo/scripts" "$hookrepo/plans" "$hookrepo/bin"
-  cp scripts/receipt.sh scripts/metasystem-config.sh "$hookrepo/scripts/"
-  cp bin/metasystem "$hookrepo/bin/metasystem"
-  cp metasystem.conf "$hookrepo/"
-  printf '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n' >"$hookrepo/plans/receipts.log"
-  out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
-  grep -q systemMessage <<<"$out" || { echo "stop hook stayed silent on a due retro" >&2; exit 1; }
-  printf '%s|%s|RETRO|note=fixture\n' "$(date -u +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$hookrepo/plans/receipts.log"
-  out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
-  [[ -z "$out" ]] || { echo "stop hook emitted output when no retro is due" >&2; exit 1; }
-  printf 'garbage\n' >"$hookrepo/plans/receipts.log"
-  out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
-  grep -q "errored" <<<"$out" || { echo "stop hook hid a failing receipt check" >&2; exit 1; }
-  if grep -q "retro due" <<<"$out"; then
-    echo "stop hook misreported a check error as a due retro" >&2
-    exit 1
-  fi
-  out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$tmp/definitely-missing" bash -c "$hook_cmd")
-  grep -q "project directory" <<<"$out" || { echo "stop hook stayed silent on an unresolvable project directory" >&2; exit 1; }
+# The first Stop entry's first hook command, straight from the shipped
+# hooks file; a missing level fails the extraction rather than testing
+# an empty command.
+stop_entries=$("$engine" json get --file "$hooks_json" --field hooks.Stop)
+first_stop_entry=$(json_elements "$stop_entries" | head -n 1)
+[[ -n "$first_stop_entry" ]] || { echo "the shipped hooks file has no Stop entry" >&2; exit 1; }
+stop_hooks=$("$engine" json get --value "$first_stop_entry" --field hooks)
+first_stop_hook=$(json_elements "$stop_hooks" | head -n 1)
+[[ -n "$first_stop_hook" ]] || { echo "the shipped Stop entry carries no hooks" >&2; exit 1; }
+hook_cmd=$("$engine" json get --value "$first_stop_hook" --field command)
+[[ -n "$hook_cmd" ]] || { echo "the shipped Stop hook has no command" >&2; exit 1; }
+hookrepo="$tmp/hookrepo"
+mkdir -p "$hookrepo/scripts" "$hookrepo/plans" "$hookrepo/bin"
+cp scripts/receipt.sh scripts/metasystem-config.sh "$hookrepo/scripts/"
+cp bin/metasystem "$hookrepo/bin/metasystem"
+cp metasystem.conf "$hookrepo/"
+printf '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n' >"$hookrepo/plans/receipts.log"
+out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
+grep -q systemMessage <<<"$out" || { echo "stop hook stayed silent on a due retro" >&2; exit 1; }
+printf '%s|%s|RETRO|note=fixture\n' "$(date -u +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$hookrepo/plans/receipts.log"
+out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
+[[ -z "$out" ]] || { echo "stop hook emitted output when no retro is due" >&2; exit 1; }
+printf 'garbage\n' >"$hookrepo/plans/receipts.log"
+out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$hookrepo" bash -c "$hook_cmd")
+grep -q "errored" <<<"$out" || { echo "stop hook hid a failing receipt check" >&2; exit 1; }
+if grep -q "retro due" <<<"$out"; then
+  echo "stop hook misreported a check error as a due retro" >&2
+  exit 1
 fi
+out=$(cd "$tmp" && CLAUDE_PROJECT_DIR="$tmp/definitely-missing" bash -c "$hook_cmd")
+grep -q "project directory" <<<"$out" || { echo "stop hook stayed silent on an unresolvable project directory" >&2; exit 1; }
 
 # The debug-java preflight is optional: absent in adopted repositories that
 # excluded the skill, moved into skills/ in JVM repositories that enabled it.
@@ -2107,31 +2213,14 @@ mkdir -p "$receipt_relation/scripts" "$receipt_relation/artifacts/agents/jobs" "
 cp scripts/receipt.sh scripts/metasystem-config.sh "$receipt_relation/scripts/"
 cp bin/metasystem "$receipt_relation/bin/metasystem"
 printf 'retro.max-receipts=25\nretro.max-age-days=30\n' >"$receipt_relation/metasystem.conf"
-python3 - "$receipt_relation/artifacts/agents/jobs" <<'PY'
-import json, sys
-from pathlib import Path
-
-jobs = Path(sys.argv[1])
-values = {
-    "fixture-implementer": {
-        "jobId": "fixture-implementer", "role": "implementer", "parentJob": None,
-    },
-    "fixture-critic": {
-        "jobId": "fixture-critic", "role": "code-critic", "parentJob": None,
-        "reviews": "fixture-implementer",
-    },
-    "unrelated-critic": {
-        "jobId": "unrelated-critic", "role": "code-critic", "parentJob": None,
-        "reviews": "another-implementer",
-    },
-    "waived-implementer": {
-        "jobId": "waived-implementer", "role": "implementer", "parentJob": None,
-        "critiqueWaived": {"class": "prose-under-30"},
-    },
-}
-for name, value in values.items():
-    (jobs / f"{name}.json").write_text(json.dumps(value) + "\n")
-PY
+printf '{"jobId":"fixture-implementer","role":"implementer","parentJob":null}\n' \
+  >"$receipt_relation/artifacts/agents/jobs/fixture-implementer.json"
+printf '{"jobId":"fixture-critic","role":"code-critic","parentJob":null,"reviews":"fixture-implementer"}\n' \
+  >"$receipt_relation/artifacts/agents/jobs/fixture-critic.json"
+printf '{"jobId":"unrelated-critic","role":"code-critic","parentJob":null,"reviews":"another-implementer"}\n' \
+  >"$receipt_relation/artifacts/agents/jobs/unrelated-critic.json"
+printf '{"jobId":"waived-implementer","role":"implementer","parentJob":null,"critiqueWaived":{"class":"prose-under-30"}}\n' \
+  >"$receipt_relation/artifacts/agents/jobs/waived-implementer.json"
 relation_log="$receipt_relation/receipts.log"
 if "$receipt_relation/scripts/receipt.sh" add --type implement --outcome shipped \
     --skills code-critique --delegate fake:model:fixture-implementer \
@@ -2216,6 +2305,15 @@ fi
 # watch-background-jobs: all four reportable states plus baseline suppression.
 # The state file is pre-created because a MISSING state file auto-baselines on
 # first run (the 2026-08-03 hardening); an existing empty state means armed.
+# Backdate a file's timestamps so stale and cap windows are separable;
+# touch -t takes a local-time stamp, so the arithmetic stays in local time.
+age_file() { # path, seconds into the past
+  local stamp
+  stamp=$(date -v -"$2"S +%Y%m%d%H%M.%S 2>/dev/null) \
+    || stamp=$(date -d "-$2 seconds" +%Y%m%d%H%M.%S) \
+    || { echo "age_file: this host's date cannot compute a past stamp" >&2; return 1; }
+  touch -t "$stamp" "$1"
+}
 wbj="$tmp/wbj"; mkdir -p "$wbj/jobs"
 printf '{"status":"completed"}' >"$wbj/jobs/done.json"
 printf '{"status":"running"}'   >"$wbj/jobs/live.json"
@@ -2229,11 +2327,7 @@ scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s1" --once >"$w
 grep -v "^ARMED " "$wbj/o2" | grep -q . && {
   echo "watch-background-jobs: re-reported an already-reported job" >&2; exit 1; }
 # age the record by a controlled 10 minutes so stale and cap are separable
-python3 - "$wbj/jobs/live.json" <<'AGE'
-import os, sys, time
-t = time.time() - 600
-os.utime(sys.argv[1], (t, t))
-AGE
+age_file "$wbj/jobs/live.json" 600
 scripts/watch-background-jobs.sh --dir "$wbj/jobs" --state "$wbj/s2" --stale-min 5 --cap-min "$fixture_watcher_nonfiring_cap_min" --once >"$wbj/o3" 2>&1
 grep -q "^STALE live" "$wbj/o3" || {
   echo "watch-background-jobs: stale job not reported" >&2; exit 1; }
@@ -2248,20 +2342,12 @@ grep -q "^CAPPED live" "$wbj/o4" || {
 # stale window it reports STALE, so the id is not marked seen prematurely.
 mkdir -p "$wbj/plain/jobs"
 printf 'plain text progress notes\n' >"$wbj/plain/jobs/notes.json"
-python3 - "$wbj/plain/jobs/notes.json" <<'AGE'
-import os, sys, time
-t = time.time() - 360
-os.utime(sys.argv[1], (t, t))
-AGE
+age_file "$wbj/plain/jobs/notes.json" 360
 touch "$wbj/s9" "$wbj/s10"
 scripts/watch-background-jobs.sh --dir "$wbj/plain/jobs" --state "$wbj/s9" --start-verify-min 5 --stale-min 20 --once >"$wbj/o9" 2>&1
 grep -q "NEVER-STARTED" "$wbj/o9" && {
   echo "watch-background-jobs: non-JSON record got a status-based NEVER-STARTED" >&2; exit 1; }
-python3 - "$wbj/plain/jobs/notes.json" <<'AGE'
-import os, sys, time
-t = time.time() - 1500
-os.utime(sys.argv[1], (t, t))
-AGE
+age_file "$wbj/plain/jobs/notes.json" 1500
 scripts/watch-background-jobs.sh --dir "$wbj/plain/jobs" --state "$wbj/s10" --start-verify-min 5 --stale-min 20 --once >"$wbj/o10" 2>&1
 grep -q "^STALE notes" "$wbj/o10" || {
   echo "watch-background-jobs: quiet non-JSON record did not report STALE" >&2; exit 1; }
@@ -2272,20 +2358,12 @@ grep -q "^STALE notes" "$wbj/o10" || {
 mkdir -p "$wbj/live-log/jobs"
 printf '{"status":"running"}' >"$wbj/live-log/jobs/busy.json"
 printf 'building\n' >"$wbj/live-log/jobs/busy.log"
-python3 - "$wbj/live-log/jobs/busy.json" <<'AGE'
-import os, sys, time
-t = time.time() - 3600
-os.utime(sys.argv[1], (t, t))
-AGE
+age_file "$wbj/live-log/jobs/busy.json" 3600
 scripts/watch-background-jobs.sh --dir "$wbj/live-log/jobs" --state "$wbj/s3b" --stale-min 5 --once >"$wbj/o4b" 2>&1
 grep -q "^STALE busy" "$wbj/o4b" && {
   echo "watch-background-jobs: reported STALE for a job whose log is advancing" >&2; exit 1; }
 # ...but when BOTH files go quiet it is genuinely stale and must still report.
-python3 - "$wbj/live-log/jobs/busy.log" <<'AGE'
-import os, sys, time
-t = time.time() - 3600
-os.utime(sys.argv[1], (t, t))
-AGE
+age_file "$wbj/live-log/jobs/busy.log" 3600
 scripts/watch-background-jobs.sh --dir "$wbj/live-log/jobs" --state "$wbj/s3c" --stale-min 5 --once >"$wbj/o4c" 2>&1
 grep -q "^STALE busy" "$wbj/o4c" || {
   echo "watch-background-jobs: missed a genuinely stale job (all files quiet)" >&2; exit 1; }

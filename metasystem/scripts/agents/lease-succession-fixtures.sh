@@ -38,27 +38,26 @@ announce() { "$ms" lease announce --root "$checkout" --session mission-runner-bm
 
 announce >/dev/null
 announce --owner-lineage mission-deadbeef >/dev/null
-python3 - "$checkout" <<'PY'
-import glob, json, sys
-from pathlib import Path
-root = Path(sys.argv[1])
-lease = json.loads((root / "artifacts/agents/mains/worktree-lease.json").read_text())
-records = [
-    p for p in glob.glob(str(root / "artifacts/agents/mains/*.json"))
-    if not any(name in p for name in ("worktree-lease", "reaped-after-claim", "protocol-cursor"))
-]
-announcement = json.loads(Path(records[0]).read_text())
-failures = []
-if announcement.get("ownerLineage") != "mission-deadbeef":
-    failures.append("supplying a lineage where none was stored must fill it in")
-if lease.get("ownerLineage") != "mission-deadbeef":
-    failures.append("the fill must reach the lease, which is what a claim reads")
-if lease.get("claimEpoch") != 1:
-    failures.append("filling in a lineage must not bump the epoch")
-for line in failures:
-    print(f"lease succession fixture failed: {line}", file=sys.stderr)
-raise SystemExit(1 if failures else 0)
-PY
+lease_file="$checkout/artifacts/agents/mains/worktree-lease.json"
+announcement=
+for main_record in "$checkout"/artifacts/agents/mains/*.json; do
+  case $main_record in
+    *worktree-lease*|*reaped-after-claim*|*protocol-cursor*) continue ;;
+  esac
+  announcement=$main_record
+  break
+done
+[[ -n "$announcement" ]] \
+  || { echo "lease succession fixture failed: the announce wrote no main record" >&2; exit 1; }
+succession_failed=0
+succession_failure() { echo "lease succession fixture failed: $1" >&2; succession_failed=1; }
+[[ "$("$ms" json get --file "$announcement" --field ownerLineage --default null)" == mission-deadbeef ]] \
+  || succession_failure "supplying a lineage where none was stored must fill it in"
+[[ "$("$ms" json get --file "$lease_file" --field ownerLineage --default null)" == mission-deadbeef ]] \
+  || succession_failure "the fill must reach the lease, which is what a claim reads"
+[[ "$("$ms" json get --file "$lease_file" --field claimEpoch --default null)" == 1 ]] \
+  || succession_failure "filling in a lineage must not bump the epoch"
+(( succession_failed == 0 )) || exit 1
 
 announce --owner-lineage mission-deadbeef >/dev/null
 
@@ -93,23 +92,20 @@ printf '%s\n' '{"jobId":"inflight","status":"pending","claimEpoch":1,"mainId":"m
   >"$turns/artifacts/agents/jobs/inflight.json"
 bash "$tmp/turn.sh"
 unset METASYSTEM_OWNER_LINEAGE
-python3 - "$turns" <<'PY'
-import json, sys
-from pathlib import Path
-root = Path(sys.argv[1])
-lease = json.loads((root / "artifacts/agents/mains/worktree-lease.json").read_text())
-job = json.loads((root / "artifacts/agents/jobs/inflight.json").read_text())
-failures = []
-if lease["claimEpoch"] != 1:
-    failures.append("a second host turn must renew, not bump the epoch")
-if lease["takeovers"]:
-    failures.append("a second host turn of the same mission is not a takeover")
-if job["status"] != "pending":
-    failures.append("a delegate left in flight across a turn boundary must survive")
-for line in failures:
-    print(f"lease succession fixture failed: {line}", file=sys.stderr)
-raise SystemExit(1 if failures else 0)
-PY
+turns_lease="$turns/artifacts/agents/mains/worktree-lease.json"
+turns_job="$turns/artifacts/agents/jobs/inflight.json"
+turn_failed=0
+turn_failure() { echo "lease succession fixture failed: $1" >&2; turn_failed=1; }
+[[ "$("$ms" json get --file "$turns_lease" --field claimEpoch)" == 1 ]] \
+  || turn_failure "a second host turn must renew, not bump the epoch"
+# An empty takeover list renders as [] (or null when never seized).
+turns_takeovers=$("$ms" json get --file "$turns_lease" --field takeovers) \
+  || { echo "lease succession fixture failed: the lease has no takeovers field" >&2; exit 1; }
+[[ "$turns_takeovers" == "[]" || "$turns_takeovers" == null ]] \
+  || turn_failure "a second host turn of the same mission is not a takeover"
+[[ "$("$ms" json get --file "$turns_job" --field status)" == pending ]] \
+  || turn_failure "a delegate left in flight across a turn boundary must survive"
+(( turn_failed == 0 )) || exit 1
 
 # The lineage-export wiring is pinned in Go, not by grepping source text
 # from shell (script-fixtures-019): internal/missionrunner's

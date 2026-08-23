@@ -4,8 +4,9 @@
 # "a POSIX userland", so arming and adoption name anything missing up
 # front instead of failing mid-operation. The inventory is derived from
 # the production scripts (fixture drivers excluded; their extra tools —
-# python3, perl — are suite-host concerns). shasum is deliberately absent:
-# production hashing moved onto `metasystem util sha256`.
+# python3 for the one TTY escalation driver, perl — are suite-host
+# concerns). shasum is deliberately absent: production hashing moved onto
+# `metasystem util sha256`.
 set -euo pipefail
 
 missing=()

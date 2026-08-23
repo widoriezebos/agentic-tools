@@ -276,3 +276,21 @@ a synthetic pid in a simulated process table, and the probe was
 interrogating a stranger. The theory died by its own instrument,
 the probe came out, and the suite passed standalone and under
 deliberate parallel load. If the flake returns, it arrives named.
+
+## The fixtures' python era ends (August 23, 2026)
+
+Kill-python finished in four slices over one night: one hundred
+ninety-five heredocs across seventeen fixture suites and the gate
+of record itself became engine verbs and plain shell, with a single
+honest survivor — the TTY escalation driver, whose real pty has no
+portable shell equivalent, and whose guard now says exactly that.
+The conversion paid for itself twice before it was even done. It
+found four sites truncating live-read files in place and made every
+record edit atomic; and it exposed a race the deleted python had
+been hiding for the leg's whole life — the interpreter's startup
+delay was an accidental settle window, and the faster shell tore it
+off. The night's hardest lesson rode the same slice: a landing
+chain that prints its verification's return code instead of gating
+on it will eventually ship over a red, and did, once — the fix
+landed within the hour, and the rule that landings gate on their
+own suite's exit is now doctrine in the coordinator's memory.

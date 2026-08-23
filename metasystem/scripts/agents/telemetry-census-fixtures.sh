@@ -40,43 +40,16 @@ run_model_case() { # case name, expected model, modelUsage JSON
   round_dir="$case_dir/round"
   session_id=fixture-session
   effective_model=provisional-handshake-model
-  python3 - "$record" "$case_dir/result.json" "$job" "$model_usage" <<'PY'
-import json, sys
-from pathlib import Path
-
-record_path, result_path = Path(sys.argv[1]), Path(sys.argv[2])
-job, model_usage = sys.argv[3], json.loads(sys.argv[4])
-record = {
-    "jobId": job,
-    "round": 1,
-    "runtime": "claude",
-    "sessionId": "fixture-session",
-    "requestedModel": "requested-model",
-    "effectiveModel": "provisional-handshake-model",
-    "status": "running",
-}
-role_return = {
-    "jobId": job,
-    "round": 1,
-    "runtime": "claude",
-    "sessionId": "fixture-session",
-    "model": {"requested": "requested-model", "effective": "agent-claimed-model"},
-    "evidence": [],
-    "gaps": [],
-    "mode": "implement",
-    "riskiestPart": "fixture",
-    "diffBoundary": [],
-    "whatWasDone": "fixture",
-}
-result = {
-    "type": "result",
-    "session_id": "fixture-session",
-    "modelUsage": model_usage,
-    "structured_output": role_return,
-}
-record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+  "$root/bin/metasystem" util json-validate --value "$model_usage" \
+    || { echo "$name modelUsage fixture is not JSON: $model_usage" >&2; exit 1; }
+  # The record lands in the live jobs directory, so stage beside it and
+  # rename; the result file is private to this case.
+  record_staged=$(mktemp "$(dirname "$record")/.record.XXXXXX")
+  printf '{"jobId":"%s","round":1,"runtime":"claude","sessionId":"fixture-session","requestedModel":"requested-model","effectiveModel":"provisional-handshake-model","status":"running"}\n' \
+    "$job" >"$record_staged"
+  mv "$record_staged" "$record"
+  printf '{"type":"result","session_id":"fixture-session","modelUsage":%s,"structured_output":{"jobId":"%s","round":1,"runtime":"claude","sessionId":"fixture-session","model":{"requested":"requested-model","effective":"agent-claimed-model"},"evidence":[],"gaps":[],"mode":"implement","riskiestPart":"fixture","diffBoundary":[],"whatWasDone":"fixture"}}\n' \
+    "$model_usage" "$job" >"$case_dir/result.json"
   result_model=$(claude_result_field "$case_dir/result.json" model)
   [[ "$result_model" == "$expected" ]] || {
     echo "$name modelUsage produced $result_model instead of $expected" >&2
@@ -84,16 +57,17 @@ PY
   }
   record_result_effective_model "$result_model"
   normalize_return "$case_dir/result.json"
-  python3 - "$record" "$round_dir/return.json" "$expected" <<'PY'
-import json, sys
-from pathlib import Path
-
-record = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-role_return = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-expected = sys.argv[3]
-assert record["effectiveModel"] == expected
-assert role_return["model"] == {"requested": "requested-model", "effective": expected}
-PY
+  [[ "$("$root/bin/metasystem" json get --file "$record" --field effectiveModel)" == "$expected" ]] || {
+    echo "$name record did not adopt the observed effective model" >&2
+    cat "$record" >&2
+    exit 1
+  }
+  [[ "$("$root/bin/metasystem" json get --file "$round_dir/return.json" --field model)" == \
+     "$("$root/bin/metasystem" json get --value "{\"root\":{\"requested\":\"requested-model\",\"effective\":\"$expected\"}}" --field root)" ]] || {
+    echo "$name normalized return did not carry the observed model" >&2
+    cat "$round_dir/return.json" >&2
+    exit 1
+  }
 }
 
 # One wiring case through the real CAS; the zero-keys and two-keys
@@ -119,13 +93,15 @@ printf '[]\n' >"$census_checkout/processes.json"
 METASYSTEM_CENSUS_PROCESS_FILE="$census_checkout/processes.json" \
   "$root/bin/metasystem" proc census --root "$census_checkout" --repo "$census_checkout" \
   --fingerprint fixture-fingerprint --interval 10 --output "$tmp/failure-census.json"
-python3 - "$tmp/failure-census.json" <<'PY'
-import json, sys
-failure = json.load(open(sys.argv[1]))
-assert failure["schemaVersion"] == 2
-assert failure["verdict"] == "CENSUS-FAILED"
-assert "generation" in failure and failure["generation"] is None
-assert "stateDigest" in failure and failure["stateDigest"] is None
-PY
+# A missing generation or stateDigest KEY fails the lookup outright, so
+# comparing the rendering to null asserts present-and-null in one step.
+[[ "$("$root/bin/metasystem" json get --file "$tmp/failure-census.json" --field schemaVersion)" == 2 ]] \
+  || { echo "failure census is not schema 2" >&2; cat "$tmp/failure-census.json" >&2; exit 1; }
+[[ "$("$root/bin/metasystem" json get --file "$tmp/failure-census.json" --field verdict)" == CENSUS-FAILED ]] \
+  || { echo "unavailable supervision did not produce CENSUS-FAILED" >&2; cat "$tmp/failure-census.json" >&2; exit 1; }
+[[ "$("$root/bin/metasystem" json get --file "$tmp/failure-census.json" --field generation)" == null ]] \
+  || { echo "failure census generation is not a present null" >&2; cat "$tmp/failure-census.json" >&2; exit 1; }
+[[ "$("$root/bin/metasystem" json get --file "$tmp/failure-census.json" --field stateDigest)" == null ]] \
+  || { echo "failure census stateDigest is not a present null" >&2; cat "$tmp/failure-census.json" >&2; exit 1; }
 
 echo "adapter telemetry and census schema fixtures passed"

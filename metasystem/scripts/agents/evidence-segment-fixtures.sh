@@ -45,20 +45,38 @@ JSON
 
 mirror_checkout "$tmp/checkout-a"
 mirror_checkout "$tmp/checkout-b"
-python3 - "$evidence" <<'PY'
-import json, sys
-from pathlib import Path
-evidence = Path(sys.argv[1])
-destinations = sorted((evidence / "agents").glob("*/segment-chain"))
-assert len(destinations) == 2, destinations
-assert destinations[0].parent.name != destinations[1].parent.name
-for destination in destinations:
-    manifest = json.loads((destination / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["rootJob"] == "segment-chain"
-    assert "brief.md" in manifest["files"]
-    assert "rounds/1/raw.out" in manifest["files"]
-    assert "jobs/segment-chain.json" in manifest["files"]
-PY
+# Two checkouts of the same chain must land in two distinct evidence
+# segments, each carrying a complete manifest.
+destinations=()
+for destination in "$evidence"/agents/*/segment-chain; do
+  [[ -d "$destination" ]] || continue
+  destinations+=("$destination")
+done
+[[ ${#destinations[@]} -eq 2 ]] || {
+  echo "evidence segment fixture: expected two mirrored segments, found ${#destinations[@]}" >&2
+  exit 1
+}
+[[ "$(basename "$(dirname "${destinations[0]}")")" != "$(basename "$(dirname "${destinations[1]}")")" ]] || {
+  echo "evidence segment fixture: both checkouts mirrored into the same segment" >&2
+  exit 1
+}
+for destination in "${destinations[@]}"; do
+  manifest="$destination/manifest.json"
+  [[ "$("$source_root/bin/metasystem" json get --file "$manifest" --field rootJob)" == segment-chain ]] || {
+    echo "evidence segment fixture: $manifest does not name its root job" >&2
+    exit 1
+  }
+  # Manifest keys carry dots and slashes, so membership is checked against
+  # the engine's canonical rendering of the files object; no manifest value
+  # can spell a quoted key followed by a colon.
+  manifest_files=$("$source_root/bin/metasystem" json get --file "$manifest" --field files)
+  for manifest_key in brief.md rounds/1/raw.out jobs/segment-chain.json; do
+    [[ "$manifest_files" == *"\"$manifest_key\":"* ]] || {
+      echo "evidence segment fixture: $manifest does not cover $manifest_key" >&2
+      exit 1
+    }
+  done
+done
 
 # The collector continues to understand the pre-segmentation location
 # evidence/agents/<chain>/manifest.json. A closed terminal payload covered by
@@ -89,19 +107,14 @@ cat >"$legacy_root/artifacts/agents/jobs/legacy-chain.json" <<JSON
 }
 JSON
 printf 'legacy payload\n' >"$legacy_root/artifacts/agents/legacy-chain/brief.md"
-python3 - "$legacy_root/artifacts/agents/legacy-chain/brief.md" \
-  "$evidence/agents/legacy-chain/manifest.json" <<'PY'
-import hashlib, json, sys
-from datetime import datetime, timezone
-from pathlib import Path
-payload, manifest = map(Path, sys.argv[1:])
-digest = hashlib.sha256(payload.read_bytes()).hexdigest()
-manifest.write_text(json.dumps({
-    "rootJob": "legacy-chain",
-    "files": {"brief.md": {"sha256": digest, "bytes": payload.stat().st_size}},
-    "updatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+legacy_payload="$legacy_root/artifacts/agents/legacy-chain/brief.md"
+legacy_digest=$("$source_root/bin/metasystem" util sha256 --file "$legacy_payload")
+legacy_bytes=$(($(wc -c <"$legacy_payload")))
+legacy_manifest="$evidence/agents/legacy-chain/manifest.json"
+legacy_staged=$(mktemp "$(dirname "$legacy_manifest")/.manifest.XXXXXX")
+printf '{"rootJob":"legacy-chain","files":{"brief.md":{"sha256":"%s","bytes":%s}},"updatedAt":"%s"}\n' \
+  "$legacy_digest" "$legacy_bytes" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$legacy_staged"
+mv "$legacy_staged" "$legacy_manifest"
 "$legacy_root/scripts/agents/evidence-gc.sh" __lease-held human >"$tmp/legacy-gc.out"
 grep -Fq 'collected legacy-chain' "$tmp/legacy-gc.out"
 [[ ! -e "$legacy_root/artifacts/agents/legacy-chain" ]] || {

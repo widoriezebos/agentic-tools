@@ -9,6 +9,23 @@ controller=
 worktree=
 base_sha=
 
+# Record writes stage beside their target and rename, so a reader never
+# observes a torn file.
+write_staged() { # target file; content on stdin
+  local target=$1 staged
+  staged=$(mktemp "$(dirname "$target")/.staged.XXXXXX")
+  cat >"$staged"
+  mv "$staged" "$target"
+}
+
+# A JSON array of the given strings. Fixture paths never carry the quote
+# or backslash characters JSON would need escaped.
+json_string_array() {
+  local out='[' item separator=''
+  for item in "$@"; do out+="$separator\"$item\""; separator=','; done
+  printf '%s]' "$out"
+}
+
 new_case() { # name
   local name=$1 case_root="$fixture_root/$1"
   controller="$case_root/controller"
@@ -49,147 +66,65 @@ write_implementer() { # waiver class or empty, diff paths...
   local waiver=$1
   shift
   mkdir -p "$controller/artifacts/agents/jobs" \
-    "$controller/artifacts/agents/impl/rounds/1"
-  python3 - "$controller" "$worktree" "$base_sha" "$waiver" "$@" <<'PY'
-import json, subprocess, sys
-from pathlib import Path
-
-root, worktree, base, waiver, *paths = sys.argv[1:]
-root, worktree = Path(root), Path(worktree)
-record = {
-    "jobId": "impl",
-    "role": "implementer",
-    "round": 1,
-    "parentJob": None,
-    "workspaceRoot": str(worktree),
-    "baseSha": base,
-    "branch": subprocess.check_output(["git", "-C", str(worktree), "branch", "--show-current"], text=True).strip(),
-    "status": "completed",
-    "effectiveModel": "shared-model",
-}
-if waiver:
-    record["critiqueWaived"] = {"class": waiver}
-(root / "artifacts/agents/jobs/impl.json").write_text(json.dumps(record, indent=2) + "\n")
-result = {
-    "jobId": "impl",
-    "round": 1,
-    "runtime": "fake",
-    "sessionId": "implementer-session",
-    "model": {"requested": "shared-model", "effective": "shared-model"},
-    "evidence": [],
-    "gaps": [],
-    "mode": "implement",
-    "riskiestPart": "fixture boundary",
-    "diffBoundary": paths,
-    "whatWasDone": "fixture implementation",
-}
-(root / "artifacts/agents/impl/rounds/1/return.json").write_text(json.dumps(result, indent=2) + "\n")
-(root / "artifacts/agents/impl/brief.md").write_text(
-    "Working Mode: implement\nMission Stream: fixture-stream\n\n"
-    "Successor obligations: F-9.\n",
-    encoding="utf-8",
-)
-(root / "artifacts/agents/impl/rounds/1/prompt.md").write_text(
-    "Fixture prompt enumerates F-9.\n", encoding="utf-8"
-)
-child = dict(record)
-child.update({"jobId": "impl-r2", "round": 2, "parentJob": "impl"})
-(root / "artifacts/agents/jobs/impl-r2.json").write_text(json.dumps(child, indent=2) + "\n")
-(root / "artifacts/agents/impl/rounds/2").mkdir(parents=True, exist_ok=True)
-(root / "artifacts/agents/impl/rounds/2/prompt.md").write_text(
-    "Implementer follow-up enumerates F-9.\n", encoding="utf-8"
-)
-PY
+    "$controller/artifacts/agents/impl/rounds/1" \
+    "$controller/artifacts/agents/impl/rounds/2"
+  local branch boundary waiver_member=''
+  branch=$(git -C "$worktree" branch --show-current)
+  boundary=$(json_string_array "$@")
+  [[ -z "$waiver" ]] || waiver_member=",\"critiqueWaived\":{\"class\":\"$waiver\"}"
+  printf '{"jobId":"impl","role":"implementer","round":1,"parentJob":null,"workspaceRoot":"%s","baseSha":"%s","branch":"%s","status":"completed","effectiveModel":"shared-model"%s}\n' \
+    "$worktree" "$base_sha" "$branch" "$waiver_member" \
+    | write_staged "$controller/artifacts/agents/jobs/impl.json"
+  printf '{"jobId":"impl","round":1,"runtime":"fake","sessionId":"implementer-session","model":{"requested":"shared-model","effective":"shared-model"},"evidence":[],"gaps":[],"mode":"implement","riskiestPart":"fixture boundary","diffBoundary":%s,"whatWasDone":"fixture implementation"}\n' \
+    "$boundary" | write_staged "$controller/artifacts/agents/impl/rounds/1/return.json"
+  printf 'Working Mode: implement\nMission Stream: fixture-stream\n\nSuccessor obligations: F-9.\n' \
+    >"$controller/artifacts/agents/impl/brief.md"
+  printf 'Fixture prompt enumerates F-9.\n' >"$controller/artifacts/agents/impl/rounds/1/prompt.md"
+  # The follow-up child shares the whole implementation record shape.
+  printf '{"jobId":"impl-r2","role":"implementer","round":2,"parentJob":"impl","workspaceRoot":"%s","baseSha":"%s","branch":"%s","status":"completed","effectiveModel":"shared-model"%s}\n' \
+    "$worktree" "$base_sha" "$branch" "$waiver_member" \
+    | write_staged "$controller/artifacts/agents/jobs/impl-r2.json"
+  printf 'Implementer follow-up enumerates F-9.\n' >"$controller/artifacts/agents/impl/rounds/2/prompt.md"
 }
 
 write_followup_return() { # round, diff paths...
   local fixture_round=$1
   shift
-  python3 - "$controller" "$fixture_round" "$@" <<'PY'
-import json, sys
-from pathlib import Path
-
-root, round_text, *paths = sys.argv[1:]
-root, round_number = Path(root), int(round_text)
-result = {
-    "jobId": f"impl-r{round_number}",
-    "round": round_number,
-    "runtime": "fake",
-    "sessionId": "implementer-session",
-    "model": {"requested": "shared-model", "effective": "shared-model"},
-    "evidence": [],
-    "gaps": [],
-    "mode": "implement",
-    "riskiestPart": "fixture follow-up boundary",
-    "diffBoundary": paths,
-    "whatWasDone": "fixture follow-up implementation",
-}
-round_dir = root / "artifacts/agents/impl/rounds" / str(round_number)
-round_dir.mkdir(parents=True, exist_ok=True)
-(round_dir / "return.json").write_text(json.dumps(result, indent=2) + "\n")
-PY
+  [[ "$fixture_round" =~ ^[0-9]+$ ]] \
+    || { echo "write_followup_return: round is not a number: $fixture_round" >&2; exit 1; }
+  local round_dir="$controller/artifacts/agents/impl/rounds/$fixture_round"
+  mkdir -p "$round_dir"
+  printf '{"jobId":"impl-r%s","round":%s,"runtime":"fake","sessionId":"implementer-session","model":{"requested":"shared-model","effective":"shared-model"},"evidence":[],"gaps":[],"mode":"implement","riskiestPart":"fixture follow-up boundary","diffBoundary":%s,"whatWasDone":"fixture follow-up implementation"}\n' \
+    "$fixture_round" "$fixture_round" "$(json_string_array "$@")" \
+    | write_staged "$round_dir/return.json"
 }
 
 write_critic() { # reviewed tree, material id or empty, exhaustion mode, effective model
   local tree=$1 material_id=$2 exhaustion=$3 model=$4
   mkdir -p "$controller/artifacts/agents/critic/rounds/1"
-  python3 - "$controller" "$tree" "$material_id" "$exhaustion" "$model" <<'PY'
-import json, sys
-from pathlib import Path
-
-root, tree, material_id, exhaustion, model = Path(sys.argv[1]), *sys.argv[2:]
-items = []
-if exhaustion == "one":
-    items = [{"round": 1, "openFindingIds": ["F-9"], "successorJobId": "impl-r2"}]
-elif exhaustion == "missing-successor-finding":
-    items = [{"round": 1, "openFindingIds": ["F-10"], "successorJobId": "impl-r2"}]
-elif exhaustion == "critic-successor":
-    items = [{"round": 1, "openFindingIds": ["F-9"], "successorJobId": "other-critic"}]
-elif exhaustion == "two":
-    items = [
-        {"round": 1, "openFindingIds": ["F-9"], "successorJobId": "impl-r2"},
-        {"round": 4, "openFindingIds": ["F-11"], "successorJobId": "impl-r2"},
-    ]
-record = {
-    "jobId": "critic",
-    "role": "code-critic",
-    "round": 1,
-    "parentJob": None,
-    "reviews": "impl",
-    "status": "completed",
-    "effectiveModel": model,
-    "chainClosed": True,
-    "critiqueExhaustions": items,
-}
-(root / "artifacts/agents/jobs/critic.json").write_text(json.dumps(record, indent=2) + "\n")
-if exhaustion == "critic-successor":
-    other = dict(record)
-    other.update({"jobId": "other-critic", "reviews": "unrelated"})
-    (root / "artifacts/agents/jobs/other-critic.json").write_text(json.dumps(other, indent=2) + "\n")
-findings = []
-if material_id:
-    findings = [{
-        "id": material_id,
-        "severity": "high",
-        "material": True,
-        "claim": "fixture material finding remains open",
-        "evidence": "fixture evidence",
-    }]
-result = {
-    "jobId": "critic",
-    "round": 1,
-    "runtime": "fake",
-    "sessionId": "critic-session",
-    "model": {"requested": model, "effective": model},
-    "evidence": [],
-    "gaps": [],
-    "mode": "implement",
-    "reviewedTree": tree,
-    "findings": findings,
-    "verdictMaterialCount": len(findings),
-}
-(root / "artifacts/agents/critic/rounds/1/return.json").write_text(json.dumps(result, indent=2) + "\n")
-PY
+  local items findings material_count
+  case $exhaustion in
+    one) items='[{"round":1,"openFindingIds":["F-9"],"successorJobId":"impl-r2"}]' ;;
+    missing-successor-finding) items='[{"round":1,"openFindingIds":["F-10"],"successorJobId":"impl-r2"}]' ;;
+    critic-successor) items='[{"round":1,"openFindingIds":["F-9"],"successorJobId":"other-critic"}]' ;;
+    two) items='[{"round":1,"openFindingIds":["F-9"],"successorJobId":"impl-r2"},{"round":4,"openFindingIds":["F-11"],"successorJobId":"impl-r2"}]' ;;
+    *) items='[]' ;;
+  esac
+  printf '{"jobId":"critic","role":"code-critic","round":1,"parentJob":null,"reviews":"impl","status":"completed","effectiveModel":"%s","chainClosed":true,"critiqueExhaustions":%s}\n' \
+    "$model" "$items" | write_staged "$controller/artifacts/agents/jobs/critic.json"
+  if [[ "$exhaustion" == critic-successor ]]; then
+    printf '{"jobId":"other-critic","role":"code-critic","round":1,"parentJob":null,"reviews":"unrelated","status":"completed","effectiveModel":"%s","chainClosed":true,"critiqueExhaustions":%s}\n' \
+      "$model" "$items" | write_staged "$controller/artifacts/agents/jobs/other-critic.json"
+  fi
+  findings='[]'
+  material_count=0
+  if [[ -n "$material_id" ]]; then
+    findings="[{\"id\":\"$material_id\",\"severity\":\"high\",\"material\":true,\"claim\":\"fixture material finding remains open\",\"evidence\":\"fixture evidence\"}]"
+    material_count=1
+  fi
+  printf '{"jobId":"critic","round":1,"runtime":"fake","sessionId":"critic-session","model":{"requested":"%s","effective":"%s"},"evidence":[],"gaps":[],"mode":"implement","reviewedTree":"%s","findings":%s,"verdictMaterialCount":%s}\n' \
+    "$model" "$model" "$tree" "$findings" "$material_count" \
+    | write_staged "$controller/artifacts/agents/critic/rounds/1/return.json"
 }
 
 # G-5, the canonical-instruction protection amendment: derive rule-owning
@@ -239,8 +174,8 @@ grep -Fq 'reviewedTree=' "$fixture_root/review-stage.out" \
 [[ -s "$controller/artifacts/agents/impl/rounds/1/diff.patch" \
    && -s "$controller/artifacts/agents/impl/rounds/1/review.json" ]] \
   || { echo "review stage did not persist both review artifacts" >&2; exit 1; }
-reviewed_tree=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reviewedTree"])' \
-  "$controller/artifacts/agents/impl/rounds/1/review.json")
+reviewed_tree=$("$source_root/bin/metasystem" json get \
+  --file "$controller/artifacts/agents/impl/rounds/1/review.json" --field reviewedTree)
 
 expect_failure missing-chain 'reviews field names implementer job' \
   "$controller/scripts/agents/assert-conformance.sh" --stage merge --job impl
@@ -328,8 +263,8 @@ new_case recovery
 printf 'changed\n' >>"$worktree/source.txt"
 write_implementer '' source.txt
 "$controller/scripts/agents/assert-conformance.sh" --stage review --job impl >/dev/null
-first_tree=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["reviewedTree"])' \
-  "$controller/artifacts/agents/impl/rounds/1/review.json")
+first_tree=$("$source_root/bin/metasystem" json get \
+  --file "$controller/artifacts/agents/impl/rounds/1/review.json" --field reviewedTree)
 commit_worktree
 printf 'advanced target\n' >"$controller/upstream.txt"
 git -C "$controller" add upstream.txt
