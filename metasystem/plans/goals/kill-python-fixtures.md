@@ -3,13 +3,14 @@
 - State: claimed
 - Intent: Finish the two-languages end state: no python3 in fixtures, the suite, or preflight
 - Origin: main
-- Next step: Appetite: 6h for SLICE ONE — the python3 heredocs in goal-cli-fixtures.sh and adopt-fixtures.sh become engine verbs or shell; the remaining ~140 get sliced with their own tokens.
+- Next step: Appetite: 4h for SLICE TWO — the next tranche of the ~140 remaining python3 sites (largest concentrations first; same rule: engine verbs or shell, never a weakened assertion, suites green standalone). SLICE ONE LANDED: goal-cli-fixtures.sh and adopt-fixtures.sh are python-free, both suites green (adopt green on the protocol rerun after a listed S4-2 flake, now at three sightings — fix goal s4-2-census-join opened).
 - OpenedAt: 2026-08-20T00:09:00Z
-- Revision: 3
+- Revision: 4
 - Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-22T22:35:44Z
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=kill-python-fixtures
 - 2026-08-22T15:10:18Z HVQ1X0CVDSHKZXADF7CTMRBH36-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=kill-python-fixtures
 - 2026-08-22T22:35:44Z Y065HYFMDAS6ZDRWNPN917876H-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=kill-python-fixtures
-Integrity: sha256=a869bf54f644c521f3eaf0ce2f7a8d01c8f0f21c8cc275ee91cec931e5f1f0e9
+- 2026-08-23T00:29:16Z E94T59FNDQZ1TT8XMV5GJKEXRF-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=kill-python-fixtures
+Integrity: sha256=23db56085c49638d3a2be615666bf03ad82cff86842e45d217b9da5d7024436e
