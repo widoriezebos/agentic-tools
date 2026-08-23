@@ -167,6 +167,22 @@ func TestWallRecoveryLeavesLedgerDomainToTheHuman(t *testing.T) {
 	if reason := unresolvedTaint(state); !strings.Contains(reason, "ledger") {
 		t.Fatalf("the taint must stand and name the ledger: %q", reason)
 	}
+	// The ask arrives with the ladder's context: the human reads what
+	// the rung ruled out without reconstructing it from events.
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	if len(asks) != 1 {
+		t.Fatalf("the park must raise one wall-violation ask: %v", asks)
+	}
+	ask := readTestDoc(t, asks[0])
+	if note, _ := ask["recoveryNote"].(string); !strings.Contains(note, "declaration or ledger domain") {
+		t.Fatalf("the ask must carry the rung's refusal: %v", ask["recoveryNote"])
+	}
+	// The evidence carries the same story: the turn dir answers the
+	// whole question without the event stream.
+	wallDoc := readTestDoc(t, filepath.Join(turnDir, "wall.json"))
+	if note, _ := wallDoc["recovery"].(string); !strings.Contains(note, "declaration or ledger domain") {
+		t.Fatalf("the evidence must carry the rung's refusal: %v", wallDoc["recovery"])
+	}
 }
 
 // Detected evidence stays sticky ABOVE the rung: a wall.json already
@@ -215,6 +231,14 @@ func TestWallRecoveryCrashTailParksThePublishedPass(t *testing.T) {
 	state := readTestDoc(t, statePath)
 	if reason := unresolvedTaint(state); reason != "undeclared host-authored change: x.txt" {
 		t.Fatalf("the park must carry the recovered offense verbatim: %q", reason)
+	}
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	if len(asks) != 1 {
+		t.Fatalf("the crash tail must raise one ask: %v", asks)
+	}
+	ask := readTestDoc(t, asks[0])
+	if note, _ := ask["recoveryNote"].(string); !strings.Contains(note, "before the record landed") {
+		t.Fatalf("the ask must explain the crash tail: %v", ask["recoveryNote"])
 	}
 }
 
@@ -325,8 +349,12 @@ func TestWallRecoveryRefusesRepeatOffense(t *testing.T) {
 		PostTree: strings.Repeat("b", 40), UndeclaredOnly: true,
 		Violation: "undeclared host-authored change: y.txt", Unaccounted: []string{"y.txt"},
 	}
-	if block, ok := engine.attemptWallRecovery(inspection, &wallCapture{}, true, "", map[string]bool{}, &scopeOrigin{}, state, "alpha-t1-live"); ok || block != nil {
+	block, refusal, ok := engine.attemptWallRecovery(inspection, &wallCapture{}, true, "", map[string]bool{}, &scopeOrigin{}, state, "alpha-t1-live")
+	if ok || block != nil {
 		t.Fatal("a repeat offense must refuse the rung")
+	}
+	if !strings.Contains(refusal, "repeat offense") {
+		t.Fatalf("the refusal must name the repeat for the ask's context: %q", refusal)
 	}
 	_ = statePath
 	_ = ledgerPath
@@ -336,5 +364,44 @@ func TestWallRecoveryRefusesRepeatOffense(t *testing.T) {
 	}
 	if !missionHasRecoveredAcceptance(state) {
 		t.Fatal("the seeded chain carries one")
+	}
+}
+
+// The window between a successful restore and its re-verification: a
+// late mutation landing there must become a fresh violation — the park
+// carries the failed-re-verification note on ask AND evidence, and no
+// recovery record ever reaches a pass.
+func TestWallRecoveryLateMutationFailsTheReverification(t *testing.T) {
+	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
+	writeText(t, filepath.Join(engine.Root, "host-scribble.txt"), "junk\n")
+	engine.postRestoreHook = func() {
+		writeText(t, filepath.Join(engine.Root, "late-mutation.txt"), "raced in\n")
+	}
+
+	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !violated {
+		t.Fatalf("the late mutation must park: %v", final)
+	}
+	state := readTestDoc(t, statePath)
+	if reason := unresolvedTaint(state); !strings.Contains(reason, "late-mutation.txt") {
+		t.Fatalf("the park must carry the fresh violation: %q", reason)
+	}
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	if len(asks) != 1 {
+		t.Fatalf("the park must raise one ask: %v", asks)
+	}
+	ask := readTestDoc(t, asks[0])
+	if note, _ := ask["recoveryNote"].(string); !strings.Contains(note, "re-verification still refused") {
+		t.Fatalf("the ask must carry the failed-re-verification note: %v", ask["recoveryNote"])
+	}
+	wallDoc := readTestDoc(t, filepath.Join(turnDir, "wall.json"))
+	if note, _ := wallDoc["recovery"].(string); !strings.Contains(note, "re-verification still refused") {
+		t.Fatalf("the evidence must carry the same note: %v", wallDoc["recovery"])
+	}
+	if wallDoc["verdict"] != "violated" || wallDoc["recovered"] != nil {
+		t.Fatalf("no recovery record may survive a failed re-verification: %v", wallDoc)
 	}
 }

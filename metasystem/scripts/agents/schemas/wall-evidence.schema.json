@@ -35,6 +35,39 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
           }
+        },
+        "scope": {
+          "type": "object"
+        },
+        "posture": {
+          "type": "object"
+        },
+        "recovered": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "violation",
+            "restoredPaths",
+            "restoredAt"
+          ],
+          "properties": {
+            "violation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "restoredPaths": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "restoredAt": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },
@@ -83,6 +116,16 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "scope": {
+          "type": "object"
+        },
+        "posture": {
+          "type": "object"
+        },
+        "recovery": {
+          "type": "string",
+          "minLength": 1
         }
       }
     }

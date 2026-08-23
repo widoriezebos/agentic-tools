@@ -1826,6 +1826,17 @@ func TestInternalRunSoloBuildRecoversThenRepeatParks(t *testing.T) {
 		t.Fatalf("the repeat's disputed bytes must stay for the human: %v", err)
 	}
 
+	// The repeat's ask arrives with the ladder's context: the human
+	// reads that the rung already ran once and refused the second pass.
+	asks, _ := filepath.Glob(filepath.Join(asksDirPath(engine.Root, engine.Mission), "wall-violation*.json"))
+	if len(asks) != 1 {
+		t.Fatalf("the repeat park must raise one ask: %v", asks)
+	}
+	ask := readTestDoc(t, asks[0])
+	if note, _ := ask["recoveryNote"].(string); !strings.Contains(note, "repeat offense") {
+		t.Fatalf("the ask must carry the repeat refusal: %v", ask["recoveryNote"])
+	}
+
 	// The taint STOP: a fresh run refuses before any turn machinery.
 	code := engine.internalRun("resume", "metasystem-mission-runner-alpha-fixture-2", signal)
 	if code == 0 {

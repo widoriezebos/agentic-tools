@@ -503,3 +503,48 @@ parks).
 SLICE B (second 1d, tokened when this lands): escalation-ask
 automation, events beyond the three verdicts, crash-window hardening
 within this shape.
+
+## SLICE B LANDED (2026-08-24, the ladder's second day)
+
+What landed: the escalation carries its context. The wall-violation
+ask now arrives with a recoveryNote — the rung's refusal reason ("a
+repeat offense in this mission belongs to the human", "the violation
+is in the declaration or ledger domain"), a failed re-verification's
+residual violation, or the published-recovery crash-tail explanation —
+and the violating wall.json carries the same story as a `recovery`
+field whenever the rung was consulted, so the turn dir answers the
+whole question without a walk through the event stream. Sticky crash
+tails never rewrite evidence; their context rides the ask alone.
+
+Two token candidates REJECTED, with reasoning:
+
+- The composed expected tree as a recordedSafeTree for the human
+  RESTORE: after a recovery crash tail the violated turn never
+  accepted, so its authorizations were never consumed — they survive
+  as records and re-drive in the next turn after an ordinary pre-tree
+  restore. The widening would re-enter the authorization-staleness
+  swamp (rounds r4-r5) to save one turn's re-run. The ask note tells
+  the human exactly this.
+- Events beyond the three verdicts: the registered recovery-inspected
+  event already speaks refused/failed/recovered, and the ask +
+  evidence notes carry the prose. Records are the authority; events
+  stay observability; a richer event would duplicate both.
+
+The critic's slice-B round (codex NOT AGREE, five findings, all
+fixed): the evidence enrichment is best-effort by contract — a failed
+context write must never convert "park and taint" into a runner error;
+the sticky crash tail replays a persisted note onto the ask (decoration
+only — the taint reason stays the verbatim violation); the crash-tail
+note now states the re-drive fact itself (unconsumed authorizations
+survive and re-drive after a pre-tree restore); the shipped
+wall-evidence schema mirrors the Go shape again (scope/posture on both
+verdicts, recovered on a pass, recovery on a consulted violation); and
+the failed-re-verification shape is pinned through a named test seam
+(postRestoreHook): a late mutation between restore and re-verification
+becomes a fresh violation with the failed note on ask AND evidence,
+never a laundered pass.
+
+With slices A and B landed, the MINIMAL LADDER per Wido's ruling is
+complete. The upper rungs (multi-domain recovery, the authenticated
+recovery transaction, steward-invoked resume) remain in this file's
+constraint record for reopening under the drop rule.

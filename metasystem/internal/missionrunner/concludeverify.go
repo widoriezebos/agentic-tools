@@ -194,7 +194,7 @@ func (e *Engine) verifyAcceptance(statePath, ledger, turnID, turnDir string, cyc
 	capture, err := e.captureWallPostureStable(expected, declared)
 	if err != nil {
 		if answer := stateAnswerOf(err); answer != "" {
-			final, perr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, answer, diskState, true)
+			final, perr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, answer, diskState, true, "")
 			return final, true, perr
 		}
 		return nil, false, err
@@ -221,7 +221,7 @@ func (e *Engine) verifyAcceptance(statePath, ledger, turnID, turnDir string, cyc
 				return nil, false, werr
 			}
 		}
-		final, perr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, violation, diskState, true)
+		final, perr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, violation, diskState, true, "")
 		return final, true, perr
 	}
 	final, err := e.concludeVerification(statePath, ledger, turnID, cycle, capture.CapturedAt)
@@ -358,7 +358,7 @@ func (e *Engine) completePendingVerification(statePath, ledger string, state map
 	// afterwards does not un-happen the detection.
 	if prior, perr := readJSONDoc(filepath.Join(turnDir, "wall.json")); perr == nil {
 		if recorded, _ := prior["violation"].(string); recorded != "" {
-			final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, state, true)
+			final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, state, true, "")
 			return final, true, ferr
 		}
 	}
@@ -368,7 +368,7 @@ func (e *Engine) completePendingVerification(statePath, ledger string, state map
 	}
 	declared, declarationViolation := parseHostArtifacts(values["wall.host-artifacts"])
 	if declarationViolation != "" {
-		final, perr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, declarationViolation, state, true)
+		final, perr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, declarationViolation, state, true, "")
 		return final, true, perr
 	}
 	return e.verifyAcceptance(statePath, ledger, turnID, turnDir, cycle, declared)

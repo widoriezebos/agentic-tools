@@ -74,6 +74,10 @@ type Engine struct {
 	// a test seam for injecting ledger movement into that window. Nil in
 	// production.
 	preAnchorHook func()
+	// postRestoreHook fires between the recovery rung's successful
+	// restore and its whole-posture re-verification — a test seam for a
+	// late mutation landing in that window. Nil in production.
+	postRestoreHook func()
 	// custodianFn overrides the custodian prover for tests. Production binds
 	// identity.Custodian, the kernel custodian discipline the standing
 	// reaper judges by, so the runner's drain reap can never disagree with

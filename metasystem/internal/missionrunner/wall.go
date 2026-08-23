@@ -739,7 +739,11 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 	// once.
 	if prior, perr := readJSONDoc(filepath.Join(turnDir, "wall.json")); perr == nil {
 		if recorded, _ := prior["violation"].(string); recorded != "" {
-			final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, diskState, true)
+			// A persisted recovery context replays onto the ask beside the
+			// verbatim violation: decoration only — the taint reason and
+			// every state decision still come from the violation itself.
+			priorNote, _ := prior["recovery"].(string)
+			final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, diskState, true, priorNote)
 			return nil, final, true, ferr
 		}
 		if verdict, _ := prior["verdict"].(string); verdict == "passed" && inPassRecovery == nil {
@@ -748,12 +752,14 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 				if recorded == "" {
 					recorded = "a published recovery names no violation"
 				}
-				final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, diskState, true)
+				final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, diskState, true,
+					"a mechanical recovery published its pass but the mission stopped before the record landed; the workspace was restored and re-verified once — verify it and resolve by name (a pre-tree restore loses nothing durable: unconsumed authorizations survive as records and re-drive after unpark)")
 				return nil, final, true, ferr
 			}
 		}
 	}
 	inheritedRecovery := inPassRecovery
+	var recoveryNote string
 	openTurn, ok := diskState["openTurn"].(map[string]any)
 	if !ok {
 		return nil, nil, false, failf(3, "wall inspection needs the open-turn marker; this turn was opened by a pre-wall runner — conclude it with that runner or re-provision the mission")
@@ -844,6 +850,7 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 		}
 		if !allowRecovery || attempted {
 			if attempted {
+				recoveryNote = "a mechanical restore was attempted and the whole-posture re-verification still refused: " + inspection.Violation
 				e.emit("recovery-inspected", "mechanical restore did not re-verify clean; the taint stands: "+clipSummary(inspection.Violation), map[string]string{
 					"missionId": e.Mission, "turnId": turnID, "verdict": "failed",
 				})
@@ -851,18 +858,39 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 			break
 		}
 		attempted = true
-		block, ok := e.attemptWallRecovery(inspection, capture, stable, declarationViolation, declared, origin, diskState, turnID)
+		block, refusal, ok := e.attemptWallRecovery(inspection, capture, stable, declarationViolation, declared, origin, diskState, turnID)
 		if !ok {
+			recoveryNote = "the mechanical rung refused: " + refusal
 			break
 		}
 		recovered = block
+		if e.postRestoreHook != nil {
+			// Test seam: the window between a successful restore and its
+			// whole-posture re-verification — a late mutation landing here
+			// must become a fresh violation, never a laundered pass.
+			e.postRestoreHook()
+		}
 		inspection, capture, stable, err = e.runWallInspection(preTree, diskState, certified, declared, declarationViolation, origin)
 		if err != nil {
 			return nil, nil, false, err
 		}
 	}
 
-	final, err := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, inspection.Violation, diskState, true)
+	// The evidence tells the ladder's story too: when the rung was
+	// consulted, the violating wall.json carries what was tried or why
+	// it refused beside the violation the taint books — the turn dir
+	// answers the whole question without a walk through the event
+	// stream. Sticky crash tails never rewrite evidence; their context
+	// rides the ask alone.
+	// Best-effort by contract: the sticky violating document is already
+	// durable, and a failed enrichment must never convert "park and
+	// taint" into a runner error — the note still reaches the ask.
+	if recoveryNote != "" {
+		doc := inspection.document()
+		doc["recovery"] = recoveryNote
+		_ = atomicWriteJSON(filepath.Join(turnDir, "wall.json"), doc)
+	}
+	final, err := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, inspection.Violation, diskState, true, recoveryNote)
 	return nil, final, true, err
 }
 
@@ -988,12 +1016,12 @@ func (e *Engine) runWallInspection(preTree string, diskState map[string]any, cer
 // before any pass is published. Every refusal here — mixed domain, dirty
 // carrier, unstable capture, repeat offense, unmaterializable entry —
 // returns false and leaves the taint for the existing human path.
-func (e *Engine) attemptWallRecovery(inspection *wallInspection, capture *wallCapture, stable bool, declarationViolation string, declared map[string]bool, origin *scopeOrigin, diskState map[string]any, turnID string) (map[string]any, bool) {
-	refuse := func(why string) (map[string]any, bool) {
+func (e *Engine) attemptWallRecovery(inspection *wallInspection, capture *wallCapture, stable bool, declarationViolation string, declared map[string]bool, origin *scopeOrigin, diskState map[string]any, turnID string) (map[string]any, string, bool) {
+	refuse := func(why string) (map[string]any, string, bool) {
 		e.emit("recovery-inspected", "mechanical restore refused ("+why+"); the taint stands: "+clipSummary(inspection.Violation), map[string]string{
 			"missionId": e.Mission, "turnId": turnID, "verdict": "refused",
 		})
-		return nil, false
+		return nil, why, false
 	}
 	if declarationViolation != "" {
 		return refuse("the violation is in the declaration or ledger domain")
@@ -1072,7 +1100,7 @@ func (e *Engine) attemptWallRecovery(inspection *wallInspection, capture *wallCa
 		"violation":     inspection.Violation,
 		"restoredPaths": restored,
 		"restoredAt":    nowISO(),
-	}, true
+	}, "", true
 }
 
 // missionHasRecoveredAcceptance reports whether any acceptance entry in
@@ -1138,7 +1166,10 @@ func scopeEvidence(origin *scopeOrigin, capture *wallCapture) map[string]any {
 // exists yet, so a ledger block here would be unhealable if the process
 // died before the state write; the reserved cycle instead heals as a
 // lost turn through the existing reserve/append machinery).
-func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cycle int64, violation string, diskState map[string]any, bookLedger bool) (map[string]any, error) {
+// recoveryNote, when non-empty, is the recovery ladder's context for the
+// human: what the mechanical rung tried or why it refused. It rides the
+// wall-violation ask only — the taint reason stays the violation itself.
+func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cycle int64, violation string, diskState map[string]any, bookLedger bool, recoveryNote string) (map[string]any, error) {
 	payload := map[string]string{
 		"missionId": e.Mission, "turnId": turnID, "error": violation,
 	}
@@ -1216,6 +1247,9 @@ func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cy
 	for _, ask := range outcome.Asks {
 		if ask["reasonClass"] == "wall-violation" {
 			ask["taintId"] = nextTaintID
+			if recoveryNote != "" {
+				ask["recoveryNote"] = recoveryNote
+			}
 		}
 	}
 	taintID, err := appendTaintEntry(outcome.State, turnID, violation)

@@ -740,7 +740,7 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 		orphanDir := filepath.Join(e.missionDir(), "turns", orphanTurn)
 		fences, _ := readJSONDoc(e.fencesPath())
 		fenceCycle, _ := jsonInt(fences["cycles"])
-		final, perr := e.parkWallViolation(statePath, ledger, orphanTurn, orphanDir, fenceCycle, orphanViolation, state, false)
+		final, perr := e.parkWallViolation(statePath, ledger, orphanTurn, orphanDir, fenceCycle, orphanViolation, state, false, "")
 		if perr != nil {
 			return "", "", nil, perr
 		}
@@ -1159,7 +1159,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 		if derr != nil {
 			return nil, derr
 		}
-		final, ferr := e.parkWallViolation(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, violation, parkState, true)
+		final, ferr := e.parkWallViolation(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, violation, parkState, true, "")
 		if ferr != nil {
 			return nil, ferr
 		}
@@ -1469,7 +1469,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 				if derr != nil {
 					return nil, derr
 				}
-				final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, answer, diskState, true)
+				final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, answer, diskState, true, "")
 				if ferr != nil {
 					return nil, ferr
 				}
@@ -1487,7 +1487,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 			if derr != nil {
 				return nil, derr
 			}
-			final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, violation, diskState, true)
+			final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, violation, diskState, true, "")
 			if ferr != nil {
 				return nil, ferr
 			}
@@ -1502,7 +1502,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 				return nil, derr
 			}
 			final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle,
-				"repository would not hold still during inspection", diskState, true)
+				"repository would not hold still during inspection", diskState, true, "")
 			if ferr != nil {
 				return nil, ferr
 			}
@@ -1527,7 +1527,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 			return nil, derr
 		}
 		final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle,
-			fmt.Sprintf("the concluded tip %s is not the measured candidate %s", ctx.Capture.Head, candidateSHA), diskState, true)
+			fmt.Sprintf("the concluded tip %s is not the measured candidate %s", ctx.Capture.Head, candidateSHA), diskState, true, "")
 		if ferr != nil {
 			return nil, ferr
 		}
@@ -1546,7 +1546,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 		if derr != nil {
 			return nil, derr
 		}
-		final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, violation, diskState, true)
+		final, ferr := e.parkWallViolation(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, violation, diskState, true, "")
 		if ferr != nil {
 			return nil, ferr
 		}
@@ -1794,7 +1794,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	// cleaned up in between, the detected violation is a fact.
 	if orphanTurn, orphanViolation := e.orphanedViolationEvidence(diskState); orphanViolation != "" {
 		orphanDir := filepath.Join(e.missionDir(), "turns", orphanTurn)
-		final, err := e.parkWallViolation(c.statePath, c.ledger, orphanTurn, orphanDir, cycle, orphanViolation, diskState, false)
+		final, err := e.parkWallViolation(c.statePath, c.ledger, orphanTurn, orphanDir, cycle, orphanViolation, diskState, false, "")
 		return final, true, err
 	}
 	// E-CONTINUITY at reservation: between turns the filtered
@@ -1825,7 +1825,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 		if err := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), evidence.document()); err != nil {
 			return nil, true, err
 		}
-		final, err := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, violation, diskState, false)
+		final, err := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, violation, diskState, false, "")
 		return final, true, err
 	}
 	// Between-turns continuity beyond the worktree: HEAD, the ref map,
@@ -1848,7 +1848,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 			if werr := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), evidence.document()); werr != nil {
 				return nil, true, werr
 			}
-			final, ferr := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, answer, diskState, false)
+			final, ferr := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, answer, diskState, false, "")
 			return final, true, ferr
 		}
 		return nil, true, err
@@ -1873,7 +1873,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 		if err := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), evidence.document()); err != nil {
 			return nil, true, err
 		}
-		final, err := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, continuityViolation, diskState, false)
+		final, err := e.parkWallViolation(c.statePath, c.ledger, turnID, turnDir, cycle, continuityViolation, diskState, false, "")
 		return final, true, err
 	}
 	// The open origins anchor BEFORE the host launches: the open commit
