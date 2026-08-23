@@ -1,12 +1,12 @@
 # wall-o19-recovery-ladder
 
-- State: claimed
+- State: done
 - Intent: Wall violations recover on a ladder: the runner auto-restores mechanical cases; a human is asked only for adoption, no verifiable restore, or repeat offense (D117, Wido's ruling)
 - Origin: main
 - Next step: Appetite: 1d for SLICE B (slice A LANDED 92a37c7 on codex AGREE at round 4 — the mechanical rung, the anchored recovery record on the acceptance entry, crash tails park verbatim, repeat offenses escalate): escalation-ask automation (the parked taint's ask carries the recovery context: what was tried, what refused, what the human should verify), events beyond the three verdicts, and the crash-window hardening within slice A's shape (candidates: the composed expected tree as a recordedSafeTree for the human RESTORE after a recovery crash tail; the recovery-refusal reasons as typed evidence). The six rounds' eight constraints in plans/wall-o19-recovery-ladder-design.md bind, plus slice A's recorded narrowings (in-pass-only record flow, the re-verification safety floor).
+- Concluded: The minimal recovery ladder (D117, Wido's ruling): the runner mechanically restores the dominant wall violation — undeclared workspace content, clean carriers, stable capture, first offense — from the composed expected tree with whole-posture re-verification, booking the offense into the acceptance chain; every other shape, every repeat, and every crash parks for the human with the ladder's context on the ask and the evidence. Landed e85962e (slice A, codex AGREE round 4) and ba3c6d1 (slice B, all findings sound round 2). Upper rungs stay in plans/wall-o19-recovery-ladder-design.md under the drop rule.
 - OpenedAt: 2026-08-20T16:45:00Z
-- Revision: 17
-- Claimed: machine=m1 lineage=coordinator at=2026-08-23T17:37:58Z
+- Revision: 18
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=wall-o19-recovery-ladder
@@ -26,4 +26,5 @@ History:
 - 2026-08-23T17:31:49Z WBX3YVYJ5MF20YQ95KRZ52NFV2-m1-bf243850 edit actor=m1+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T17:31:54Z 2BETZA9BBQ33QR8XPFVBC2PRFB-m1-bf243850 release actor=m1+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T17:37:58Z ABRV0W5EHYKXS04EBQQAE1Y7XX-m1-bf243850 claim actor=m1+coordinator targets=wall-o19-recovery-ladder
-Integrity: sha256=f99a06ee52f0baa37e2a94bb02ac468caf44bbfffca01b513ceb0421d90af0d5
+- 2026-08-23T19:05:44Z 367T6107GE255V3QK0EM31NX05-m1-bf243850 done actor=m1+coordinator targets=wall-o19-recovery-ladder
+Integrity: sha256=4702cde509638d6bdf4dff9b319267090034b3181d587d95de35d40f9bfe0d6d
