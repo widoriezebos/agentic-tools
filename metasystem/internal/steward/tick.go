@@ -162,7 +162,7 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 // so a re-check can never advance the clock it is checking.
 func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence) (Decision, string, error) {
 	cfg = cfg.withDefaults()
-	work, workReason, err := LegacyOpenWork(repoRoot)
+	work, workReason, err := ReadOpenWork(repoRoot)
 	if err != nil {
 		return Decision{}, "", err
 	}

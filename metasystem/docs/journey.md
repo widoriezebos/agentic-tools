@@ -410,3 +410,23 @@ suite had been quietly testing an outdated build of the engine,
 because a compile check is not a build. The names already written
 into history stay, immutable as everything else there; from here
 forward, the machines sign with pen names.
+
+## The watchdog gets its eyes back (August 23, 2026)
+
+The fleet-pull design review earned its keep twice in one finding.
+Its critic noticed that the watchdog — the always-running guard
+that decides whether a machine has open work — was still reading
+the old single-file to-do list, which the migration to the shared
+backlog had emptied a day earlier. Since then, on both machines,
+the guard had been answering "I cannot tell" — the honest degraded
+answer, which is exactly what it should say when its source is
+gone, and exactly why nobody noticed: degraded looks safe. The fix
+teaches the guard to read the shared backlog and judge by this
+machine's own enrolled name — a claim held here is open work, a
+declared all-clear is rest, and a queue nobody claimed is visible
+but nobody's to revive. Three new tests pin the judgment, and the
+proof came from the machine itself: asked immediately after the
+fix, the guard replied that open work exists — the very repair job
+it was being healed by. The larger fleet-pull design, meanwhile,
+proved a full day's work rather than an afternoon's, and stopped
+honestly at its budget with its questions queued for Wido.

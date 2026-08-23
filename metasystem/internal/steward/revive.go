@@ -158,7 +158,7 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 // active-continuation guard — an intent must not suppress itself.
 func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, excludeNonce string) (Decision, string, error) {
 	cfg = cfg.withDefaults()
-	work, workReason, err := LegacyOpenWork(repoRoot)
+	work, workReason, err := ReadOpenWork(repoRoot)
 	if err != nil {
 		return Decision{}, "", err
 	}
