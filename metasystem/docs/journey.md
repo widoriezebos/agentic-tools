@@ -497,3 +497,42 @@ phone hears that something is drifting once while it drifts, never
 once per check. The goal that began as a request to see the journey
 written down ends as a system that narrates its own present, names
 its own troubles, and knows when to speak to its human.
+
+## The wall learns mercy, carefully
+
+The wall has had one answer to a scribbled workspace since the day it
+was built: stop the mission, record what changed, and wait for Wido to
+rule. That severity is the wall's whole worth — nothing unreviewed
+ever slips into the product — but it made no distinctions. A stray
+file written by some background process got the same treatment as a
+forged ledger: everything halts, a human walks over, and usually the
+ruling is the obvious one. Put it back the way it was.
+
+This weekend the wall learned to make exactly that ruling itself, in
+exactly one shape of trouble. When the only thing wrong is workspace
+content nobody declared — the repository's steering untouched, its
+references unmoved, its ledger honest, and this the mission's first
+offense — the runner now puts the recorded bytes back itself, using
+the version that carries every piece of reviewed work, and then
+re-checks the entire posture from scratch before believing its own
+repair. The offense and its restoration are written into the mission's
+permanent, tamper-proof record. The mission keeps moving. Nobody is
+interrupted.
+
+Everything outside that one shape still stops for a human — and a
+second offense in the same mission stops too, because a machine that
+keeps needing mercy is telling you something. A crash at any point
+during the repair also stops: doubt always escalates. And when the
+mission does stop, the request for help now explains itself — what the
+machine tried, what it refused to try, and why, written both into the
+question Wido answers and into the evidence folder beside it.
+
+The reviewer made this hard to land, which is the system working. Six
+rounds across the two slices, ten real defects refused before
+agreement: a restore aimed at the wrong directory in nested checkouts,
+a crash window that quietly lost the record the repeat-check depends
+on, security claims stronger than the operating system actually
+provides. Each refusal made the thing safer or the words about it more
+honest. The final agreement covers what was actually built — including
+the sentence in the design record that says plainly what the repair
+cannot promise, and what catches it when that happens.
