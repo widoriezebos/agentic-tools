@@ -80,6 +80,12 @@ Before promoting any draft:
       authority gates; `main` otherwise).
 - [ ] It does not duplicate or belong inside an existing item.
 
+## The drop rule
+
+A backlog item earns its place from current behavior or current
+pain; losing that, it concludes with a record cheap to reopen from.
+History is preserved in the conclusion note, never in a queue slot.
+
 ## Coordinator ownership
 
 Backlog order — priorities, appetites, item shape, intake — is the
