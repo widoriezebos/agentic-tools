@@ -1,11 +1,12 @@
 # kill-python-fixtures
 
-- State: queued
+- State: claimed
 - Intent: Finish the two-languages end state: no python3 in fixtures, the suite, or preflight
 - Origin: main
 - Next step: Appetite: 4h for SLICE FOUR (the last): validate-metasystem.sh (21 sites) plus the ~30-site tail across small suites; same rules (engine verbs or shell, atomic edits, no weakened assertions, suites green standalone). SLICES ONE-THREE LANDED: 145 of ~146 sites gone; the one deliberate survivor is dispatch-fixtures' TTY escalation driver (real pty allocation — not expressible in engine verbs or portable shell without approximating; its guard names it). After slice four the goal concludes.
 - OpenedAt: 2026-08-20T00:09:00Z
-- Revision: 11
+- Revision: 12
+- Claimed: machine=widos-m5-pro lineage=coordinator at=2026-08-23T02:37:55Z
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=kill-python-fixtures
@@ -19,4 +20,5 @@ History:
 - 2026-08-23T01:53:05Z CCSPKQKX950YK5E56ZC4AGFCSX-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=kill-python-fixtures
 - 2026-08-23T02:25:02Z 273BN7WMDNB49VP69MTSZRXPF3-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=kill-python-fixtures
 - 2026-08-23T02:25:06Z 56BRS036Y3ME89QG11BN916CBC-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=kill-python-fixtures
-Integrity: sha256=4e1c3fc0bd20fc2ecd5bcaadc4e7c4b20e44cfa602121693eed9d4a298d076f8
+- 2026-08-23T02:37:55Z X73CDFH8SYTDBCTYW7HVSQK1ZT-widos-m5-pro-bf243850 claim actor=widos-m5-pro+coordinator targets=kill-python-fixtures
+Integrity: sha256=903dbc457451a8324976f35f1086b16b1784ccea30d38cd82843f613e502bffc
