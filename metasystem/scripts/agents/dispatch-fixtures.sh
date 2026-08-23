@@ -32,7 +32,80 @@ fixture_dispatch_envelope_cap_min=$(harness_fixture_semantic_cap dispatch-envelo
 fixture_dispatch_over_envelope_cap_min=$(harness_fixture_semantic_cap dispatch-over-envelope-minutes)
 
 command -v python3 >/dev/null 2>&1 \
-  || { echo "${0##*/}: python3 is required by these fixtures (the metasystem itself does not need it)" >&2; exit 1; }
+  || { echo "${0##*/}: python3 is required by the TTY escalation driver (the metasystem itself does not need it)" >&2; exit 1; }
+
+# The engine does the structural JSON work below; functions use the
+# absolute path because agent-driver functions run from varying cwds.
+engine="$root/bin/metasystem"
+
+# Atomically replace one top-level field of a JSON object file, leaving
+# every other field exactly as the file's parser sees it. `json set`
+# covers string and integer fields; this covers null and the object and
+# array fields it cannot spell. The whole file and the field are rendered
+# by the same engine encoder, so the needle below is byte-exact; a failed
+# splice or an unparseable result refuses instead of writing. (Copied from
+# supervision-fixtures.sh, extended two ways: string-valued fields print
+# bare, so those retry with the quoted spelling; and a read-back proves
+# the edit landed on the top-level field, not a nested lookalike.)
+json_replace_field() { # file, top-level field, replacement JSON value
+  local file=$1 field=$2 new=$3 compact old out canonical staged
+  compact=$("$engine" json get --value "{\"root\":$(cat "$file")}" --field root) \
+    || { echo "json_replace_field: $file did not parse" >&2; return 1; }
+  old=$("$engine" json get --file "$file" --field "$field") \
+    || { echo "json_replace_field: $file has no $field" >&2; return 1; }
+  out=${compact/"\"$field\":$old"/"\"$field\":$new"}
+  if [[ "$out" == "$compact" ]]; then
+    out=${compact/"\"$field\":\"$old\""/"\"$field\":$new"}
+  fi
+  "$engine" util json-validate --value "$out" \
+    || { echo "json_replace_field: editing $field left $file unparseable" >&2; return 1; }
+  canonical=$("$engine" json get --value "{\"root\":$new}" --field root) \
+    || { echo "json_replace_field: replacement for $field is not JSON: $new" >&2; return 1; }
+  [[ "$("$engine" json get --value "$out" --field "$field")" == "$canonical" ]] \
+    || { echo "json_replace_field: could not locate $field in $file" >&2; return 1; }
+  staged=$(mktemp "$(dirname "$file")/.replace.XXXXXX") || return 1
+  printf '%s\n' "$out" >"$staged"
+  mv "$staged" "$file"
+}
+
+# Print one top-level element per line from the engine's compact rendering
+# of a JSON array (or one "key":value member per line from an object). The
+# walk is depth- and string-aware, so elements may nest objects and arrays
+# — the flat-object splitter in supervision-fixtures.sh cannot. Compact
+# rendering escapes control characters, so no element carries a newline.
+json_elements() { # compact JSON array or object
+  printf '%s' "$1" | awk '
+    {
+      n = length($0)
+      first = substr($0, 1, 1)
+      if (n < 2 || (first != "[" && first != "{")) exit 1
+      depth = 0; instring = 0; escaped = 0; start = 2
+      for (i = 2; i < n; i++) {
+        ch = substr($0, i, 1)
+        if (instring) {
+          if (escaped) escaped = 0
+          else if (ch == "\\") escaped = 1
+          else if (ch == "\"") instring = 0
+        } else if (ch == "\"") instring = 1
+        else if (ch == "{" || ch == "[") depth++
+        else if (ch == "}" || ch == "]") depth--
+        else if (ch == "," && depth == 0) {
+          print substr($0, start, i - start)
+          start = i + 1
+        }
+      }
+      if (n > 2) print substr($0, start, n - start)
+    }'
+}
+
+# The physical path of an existing file: symlinked parents resolved the
+# way Path.resolve() saw them (macOS /tmp is such a symlink).
+resolve_existing_path() { # path
+  local dir
+  dir=$(cd "$(dirname "$1")" && pwd -P) || return 1
+  printf '%s/%s\n' "$dir" "$(basename "$1")"
+}
+
 tmp=$(mktemp -d)
 agent_supervision_repo=
 armed_supervision_repos=()
@@ -142,15 +215,14 @@ runner_git() {
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
   if [[ -e "$runner_repo/.git/index.lock" ]]; then
-    python3 - "$runner_repo/.git/index.lock" "$runner_git_stale_sec" <<'LOCK'
-import os, sys, time
-lock = sys.argv[1]
-try:
-  if time.time() - os.stat(lock).st_mtime >= int(sys.argv[2]):
-      os.unlink(lock)
-except OSError:
-  pass
-LOCK
+    # Old enough is a dead runner's leaving and is removed; a lock that
+    # vanishes mid-check (racing stat or unlink) is left alone.
+    local lock_mtime=
+    lock_mtime=$(stat -c %Y "$runner_repo/.git/index.lock" 2>/dev/null \
+      || stat -f %m "$runner_repo/.git/index.lock" 2>/dev/null) || lock_mtime=
+    if [[ -n "$lock_mtime" ]] && (( $(date +%s) - lock_mtime >= runner_git_stale_sec )); then
+      rm -f "$runner_repo/.git/index.lock" 2>/dev/null || true
+    fi
   fi
   # Harness acts, not agent ledger commits: the mission flow's own
   # goal mutations ENROLL the pre-commit guard (R2-11), and these
@@ -230,8 +302,8 @@ stop_timed_out_agent_fixture() { # fixture name, job id or -, driver pid, wait s
   elapsed=$((SECONDS - wait_started))
   agent_fixture_diagnostics "$name" "$job" "$elapsed"
   if [[ "$job" != - && -f "$agent_repo/artifacts/agents/jobs/$job.json" ]]; then
-    status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", "malformed"))' \
-      "$agent_repo/artifacts/agents/jobs/$job.json" 2>/dev/null || true)
+    status=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/$job.json" \
+      --field status --default malformed 2>/dev/null || true)
     if [[ "$status" == pending || "$status" == running ]]; then
       "$agent_dispatch" cancel --job "$job" >"$agent_fixture/$name-timeout-cancel.out" 2>&1 &
       cleanup_pid=$!
@@ -489,12 +561,7 @@ rm -f "$config_order/metasystem.conf.local"
 
 "$agent_config" validate
 no_tier_conf="$agent_fixture/no-tier-metasystem.conf"
-python3 - "$good_agent_conf" "$no_tier_conf" <<'PY'
-import sys
-from pathlib import Path
-source, output = map(Path, sys.argv[1:])
-output.write_text("\n".join(line for line in source.read_text().splitlines() if not line.startswith("model.tier.")) + "\n")
-PY
+grep -v '^model\.tier\.' "$good_agent_conf" >"$no_tier_conf"
 cp "$no_tier_conf" "$agent_repo/metasystem.conf"
 "$agent_config" validate >"$agent_fixture/no-tier-validate.out"
 [[ $(grep -Fc 'INFO: model tiers are absent; dispatch overrides therefore always escalate' "$agent_fixture/no-tier-validate.out") -eq 1 ]] \
@@ -576,34 +643,52 @@ grep -q "no job record" <<<"$never_watch_err" \
   || { echo "status on a never-existed job answers 6, got $never_status_rc" >&2; exit 1; }
 grep -q "no job record" <<<"$never_status_err" \
   || { echo "status must name the missing record on stderr: $never_status_err" >&2; exit 1; }
-python3 - "$agent_repo" <<'PY'
-import json, re, sys
-from pathlib import Path
-root = Path(sys.argv[1])
-record = json.loads((root / "artifacts/agents/jobs/happy.json").read_text())
-required = {
-  "jobId", "role", "mission", "runtime", "round", "parentJob", "status", "phase", "error",
-  "workspaceRoot", "baseSha", "branch", "permissions", "capMin", "pid", "pidStartedAt", "pgid", "instanceTag", "custodyProcesses",
-  "sessionId", "turnId", "requestedModel", "effectiveModel", "overridden", "capabilitySnapshot",
-  "sessionEstablishedTimeoutSec", "input", "startedAt", "endedAt", "usage", "mirror",
-}
-assert required.issubset(record) and record["status"] == "completed"
-assert record["capabilitySnapshot"].endswith("-002.json")
-snapshot = json.loads((root / record["capabilitySnapshot"]).read_text())
-assert record["sessionEstablishedTimeoutSec"] == snapshot["capabilities"]["sessionEstablishedTimeoutSec"]
-assert record["permissions"]["requested"]["preset"] == "none"
-assert record["permissions"]["enforcementSnapshot"] == record["capabilitySnapshot"]
-snapshot = json.loads((root / record["permissions"]["enforcementSnapshot"]).read_text())
-assert snapshot["envelopeEnforcement"] == {
-  "writeRoots": "mapped", "readRoots": "notEnforced", "network": "mapped",
-}
-assert record["input"]["delivery"] == "stdin" and record["input"]["bytes"] > 0
-prompt = (root / "artifacts/agents/happy/rounds/1/prompt.md").read_text()
-assert prompt.startswith("Job-Id: happy\nRole: design-critic\nRuntime: fake\nModel: fake-model\nRound: 1\n")
-preamble = (root / "scripts/agents/roles/design-critic.md").read_text().rstrip("\n")
-brief = (root / "artifacts/agents/happy/brief.md").read_text().rstrip("\n")
-assert prompt.index(preamble) < prompt.index(brief)
-PY
+happy_record="$agent_repo/artifacts/agents/jobs/happy.json"
+for happy_key in jobId role mission runtime round parentJob status phase error \
+  workspaceRoot baseSha branch permissions capMin pid pidStartedAt pgid instanceTag custodyProcesses \
+  sessionId turnId requestedModel effectiveModel overridden capabilitySnapshot \
+  sessionEstablishedTimeoutSec input startedAt endedAt usage mirror; do
+  "$engine" json get --file "$happy_record" --field "$happy_key" >/dev/null \
+    || { echo "happy record lacks required field: $happy_key" >&2; exit 1; }
+done
+[[ "$("$engine" json get --file "$happy_record" --field status)" == completed ]] \
+  || { echo "happy record is not completed" >&2; exit 1; }
+happy_snapshot_rel=$("$engine" json get --file "$happy_record" --field capabilitySnapshot)
+[[ "$happy_snapshot_rel" == *-002.json ]] \
+  || { echo "happy record does not carry the second sequence snapshot: $happy_snapshot_rel" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field sessionEstablishedTimeoutSec)" \
+   == "$("$engine" json get --file "$agent_repo/$happy_snapshot_rel" --field capabilities.sessionEstablishedTimeoutSec)" ]] \
+  || { echo "happy record does not carry the snapshot's session-established timeout" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field permissions.requested.preset)" == none ]] \
+  || { echo "happy record did not request the none preset" >&2; exit 1; }
+happy_enforcement_rel=$("$engine" json get --file "$happy_record" --field permissions.enforcementSnapshot)
+[[ "$happy_enforcement_rel" == "$happy_snapshot_rel" ]] \
+  || { echo "happy enforcement snapshot is not the capability snapshot" >&2; exit 1; }
+# Exact object equality: the engine's compact rendering is canonical
+# (keys sorted), so one string compare covers keys and values both.
+[[ "$("$engine" json get --file "$agent_repo/$happy_enforcement_rel" --field envelopeEnforcement)" \
+   == '{"network":"mapped","readRoots":"notEnforced","writeRoots":"mapped"}' ]] \
+  || { echo "happy snapshot envelope enforcement changed shape" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field input.delivery)" == stdin ]] \
+  || { echo "happy input was not delivered on stdin" >&2; exit 1; }
+happy_input_bytes=$("$engine" json get --file "$happy_record" --field input.bytes)
+[[ "$happy_input_bytes" =~ ^[0-9]+$ ]] && (( happy_input_bytes > 0 )) \
+  || { echo "happy input bytes are not positive: $happy_input_bytes" >&2; exit 1; }
+happy_prompt="$agent_repo/artifacts/agents/happy/rounds/1/prompt.md"
+happy_prompt_head=$'Job-Id: happy\nRole: design-critic\nRuntime: fake\nModel: fake-model\nRound: 1\n'
+head -c ${#happy_prompt_head} "$happy_prompt" | cmp -s - <(printf '%s' "$happy_prompt_head") \
+  || { echo "happy prompt does not open with its identity header" >&2; sed -n '1,6p' "$happy_prompt" >&2; exit 1; }
+happy_prompt_text=$(cat "$happy_prompt")
+happy_preamble=$(cat "$agent_repo/scripts/agents/roles/design-critic.md")
+happy_payload_brief=$(cat "$agent_repo/artifacts/agents/happy/brief.md")
+happy_preamble_prefix=${happy_prompt_text%%"$happy_preamble"*}
+[[ "$happy_preamble_prefix" != "$happy_prompt_text" ]] \
+  || { echo "happy prompt lost the role preamble" >&2; exit 1; }
+happy_brief_prefix=${happy_prompt_text%%"$happy_payload_brief"*}
+[[ "$happy_brief_prefix" != "$happy_prompt_text" ]] \
+  || { echo "happy prompt lost the brief" >&2; exit 1; }
+(( ${#happy_preamble_prefix} < ${#happy_brief_prefix} )) \
+  || { echo "happy prompt does not place the preamble before the brief" >&2; exit 1; }
 # GOAL-08: --serving-goal joins the recorded brief bytes BEFORE the hash.
 # Refusal first: no usable Current goal in the fixture repo refuses exit 3
 # without creating a job. Then with a goal open, the payload brief carries
@@ -675,11 +760,12 @@ review_target_brief="$agent_fixture/review-target.md"
 make_agent_brief "$review_target_brief" implement
 run_agent_fixture review-target review-target "$agent_dispatch" dispatch --role implementer --brief "$review_target_brief" --job-id review-target --worktree --wait
 run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --permissions none --job-id flag-runtime --wait
-python3 - "$agent_repo/artifacts/agents/jobs/flag-runtime.json" <<'PY'
-import json, sys
-record = json.load(open(sys.argv[1])); assert record["runtime"] == "fake" and record["overridden"] is True
-assert record["reviews"] == "review-target", record
-PY
+flag_runtime_record="$agent_repo/artifacts/agents/jobs/flag-runtime.json"
+[[ "$("$engine" json get --file "$flag_runtime_record" --field runtime)" == fake \
+   && "$("$engine" json get --file "$flag_runtime_record" --field overridden)" == true ]] \
+  || { echo "flag runtime override was not recorded as overridden fake" >&2; exit 1; }
+[[ "$("$engine" json get --file "$flag_runtime_record" --field reviews)" == review-target ]] \
+  || { echo "flag-runtime record lost its reviews binding" >&2; cat "$flag_runtime_record" >&2; exit 1; }
 investigator_brief="$agent_fixture/investigator.md"
 make_agent_brief "$investigator_brief" take-a-step-back
 run_agent_fixture investigator-role investigator-role "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --permissions none --job-id investigator-role --wait
@@ -687,7 +773,7 @@ run_agent_fixture investigator-role investigator-role "$agent_dispatch" dispatch
 no_signal="$agent_fixture/no-signal.md"
 make_agent_brief "$no_signal" design 'FAKE:no-session-signal'
 agent_fails no-session-signal '' "$agent_dispatch" dispatch --role design-critic --brief "$no_signal" --job-id no-signal --wait
-[[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$agent_repo/artifacts/agents/jobs/no-signal.json")" == failed ]] \
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/no-signal.json" --field status)" == failed ]] \
   || { echo "non-signal handshake did not end failed" >&2; exit 1; }
 grep -Fq 'handshake_timeout' "$agent_repo/artifacts/agents/jobs/no-signal.json" \
   || { echo "non-signal handshake did not retain its error" >&2
@@ -728,45 +814,38 @@ launch_window_pending="$agent_fixture/launch-window-pending.json"
 # so the fixture takes both steps the dispatcher takes. Writing a pending
 # record straight into creation tested a transition the dispatcher no longer
 # performs.
-python3 - "$agent_repo/artifacts/agents/jobs/happy.json" "$launch_window_source" "$launch_window_pending" <<'PY'
-import json, sys
-from datetime import datetime, timezone
-from pathlib import Path
-record = json.loads(Path(sys.argv[1]).read_text())
-record.update({
-  "jobId": "launch-window", "parentJob": None, "round": 1,
-  "status": "pending-setup", "phase": "handshake", "error": None,
-  "pid": None, "pidStartedAt": None, "pgid": None,
-  "instanceTag": "metasystem-job-launch-window", "custodyProcesses": [],
-  "sessionId": None, "endedAt": None, "usage": None, "mirror": None,
-  "sessionEstablishedTimeoutSec": 60,
-  "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-})
 # This record has not launched, so it carries no launch-time stamps: the
 # handshake deadline among them, which is stamped when a dispatcher starts
 # waiting on an adapter it just started.
-for key in ("ownershipProof", "chainUsage", "handshakeDeadline"):
-  record.pop(key, None)
-Path(sys.argv[2]).write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-Path(sys.argv[3]).write_text(json.dumps({**record, "status": "pending"}, indent=2, sort_keys=True) + "\n")
-PY
+"$engine" json strip --file "$agent_repo/artifacts/agents/jobs/happy.json" \
+  --key ownershipProof --key chainUsage --key handshakeDeadline >"$launch_window_source"
+# custodyProcesses first: emptying it removes the nested pid/pidStartedAt
+# spellings, so the top-level nulling below cannot splice a lookalike.
+json_replace_field "$launch_window_source" custodyProcesses '[]'
+for launch_window_field in parentJob error pid pidStartedAt pgid sessionId endedAt usage mirror; do
+  json_replace_field "$launch_window_source" "$launch_window_field" null
+done
+"$engine" json set --file "$launch_window_source" \
+  --field jobId=launch-window --field status=pending-setup --field phase=handshake \
+  --field instanceTag=metasystem-job-launch-window \
+  --field "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --int round=1 --int sessionEstablishedTimeoutSec=60
+cp "$launch_window_source" "$launch_window_pending"
+"$engine" json set --file "$launch_window_pending" --field status=pending
 run_agent_fixture launch-window-create launch-window "$agent_dispatch" __record-create --job launch-window --source "$launch_window_source"
 run_agent_fixture launch-window-setup launch-window "$agent_dispatch" __record-setup --job launch-window --source "$launch_window_pending"
 run_agent_fixture launch-window-young-reap launch-window "$agent_dispatch" reap --job launch-window
-[[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$agent_repo/artifacts/agents/jobs/launch-window.json")" == pending ]] \
+launch_window_record="$agent_repo/artifacts/agents/jobs/launch-window.json"
+[[ "$("$engine" json get --file "$launch_window_record" --field status)" == pending ]] \
   || { echo "pending record was reaped inside its handshake window" >&2; exit 1; }
-python3 - "$agent_repo/artifacts/agents/jobs/launch-window.json" <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["startedAt"] = "2000-01-01T00:00:00Z"
-tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
-PY
+# A LIVE record rewrite: json set stages beside the file and renames over
+# it, so the sweeping reaper never observes a torn read.
+"$engine" json set --file "$launch_window_record" --field startedAt=2000-01-01T00:00:00Z
 run_agent_fixture launch-window-old-reap launch-window "$agent_dispatch" reap --job launch-window
-python3 - "$agent_repo/artifacts/agents/jobs/launch-window.json" <<'PY'
-import json, sys
-record = json.load(open(sys.argv[1]))
-assert record["status"] == "failed" and record["error"] == "process-lost" and record["phase"] == "supervision", record
-PY
+[[ "$("$engine" json get --file "$launch_window_record" --field status)" == failed \
+   && "$("$engine" json get --file "$launch_window_record" --field error)" == process-lost \
+   && "$("$engine" json get --file "$launch_window_record" --field phase)" == supervision ]] \
+  || { echo "an out-of-window pending record did not classify as process loss" >&2; cat "$launch_window_record" >&2; exit 1; }
 
 pending_loss_brief="$agent_fixture/pending-loss.md"
 make_agent_brief "$pending_loss_brief" design 'FAKE:pending-process-loss'
@@ -804,7 +883,7 @@ make_agent_brief "$interrupted" design 'FAKE:interrupted-atomic-write'
 run_agent_fixture interrupted interrupted "$agent_dispatch" dispatch --role design-critic --brief "$interrupted" --job-id interrupted --wait
 [[ -f "$agent_repo/artifacts/agents/record-locks/interrupted.interrupted" ]] \
   || { echo "interrupted atomic-write fixture did not leave its staged partial" >&2; exit 1; }
-python3 -m json.tool "$agent_repo/artifacts/agents/jobs/interrupted.json" >/dev/null
+"$engine" util json-validate --file "$agent_repo/artifacts/agents/jobs/interrupted.json"
 terminal_patch="$agent_fixture/terminal-race.json"
 printf '{"error":"loser"}\n' >"$terminal_patch"
 set +e
@@ -835,20 +914,20 @@ run_agent_fixture effective-narrower effective-narrower "$agent_dispatch" dispat
 # role at once. Until 2026-08-05 the adapters hard-coded network off and never
 # read the field, so a job could be recorded as networked and still be cut off
 # (KI-12); these fixtures exist so that cannot recur silently.
-[[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["network"])' scripts/agents/permissions/workspace.json)" == allow ]] \
+[[ "$("$engine" json get --file scripts/agents/permissions/workspace.json --field network)" == allow ]] \
   || { echo "the workspace preset no longer grants network" >&2; exit 1; }
-[[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["network"])' scripts/agents/permissions/none.json)" == allow ]] \
+[[ "$("$engine" json get --file scripts/agents/permissions/none.json --field network)" == allow ]] \
   || { echo "the none preset no longer grants network" >&2; exit 1; }
 net_default="$agent_fixture/net-default.md"
 make_agent_brief "$net_default" design
 run_agent_fixture net-default net-default "$agent_dispatch" dispatch --role design-critic --brief "$net_default" --job-id net-default --wait
-[[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["permissions"]["requested"]["network"])' "$agent_repo/artifacts/agents/jobs/net-default.json")" == allow ]] \
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/net-default.json" --field permissions.requested.network)" == allow ]] \
   || { echo "a delegate did not receive network by default" >&2; exit 1; }
 printf 'dispatch.permissions.network=deny\n' >>"$agent_repo/metasystem.conf"
 net_floor="$agent_fixture/net-floor.md"
 make_agent_brief "$net_floor" design
 run_agent_fixture net-floor net-floor "$agent_dispatch" dispatch --role design-critic --brief "$net_floor" --job-id net-floor --wait
-[[ "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["permissions"]["requested"]["network"])' "$agent_repo/artifacts/agents/jobs/net-floor.json")" == deny ]] \
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/net-floor.json" --field permissions.requested.network)" == deny ]] \
   || { echo "the repository network floor did not narrow the preset" >&2; exit 1; }
 perl -0pi -e 's/^dispatch\.permissions\.network=deny\n//m' "$agent_repo/metasystem.conf"
 agent_fails invalid-network-floor 'must be deny or allow' \
@@ -894,23 +973,17 @@ wait_for_agent_census_fresh timed
 ) &
 timeout_driver=$!
 wait_for_agent_status timed running
-python3 - "$agent_repo/artifacts/agents/jobs/timed.json" <<'PY'
-import json, sys
-from pathlib import Path
 # The engine judges the budget by capDeadline first (startedAt+capMin is
 # only the fallback), so the fixture must backdate BOTH: backdating only
 # startedAt left the real one-minute deadline live and the explicit reap
 # inert, a coin-flip against the fixture's own wait ceiling.
 #
-# Rewrites of LIVE records are atomic (tmp + rename): the waiting
-# dispatcher classifies on every poll, classification reads every job
-# record fail-closed, and a torn read here refused reap-held and mapped
+# Rewrites of LIVE records are atomic (json set stages and renames): the
+# waiting dispatcher classifies on every poll, classification reads every
+# job record fail-closed, and a torn read here refused reap-held and mapped
 # this timeout to wait exit 3 (VM, 2026-08-14, evidence 014657Z-2066978).
-path = Path(sys.argv[1]); value = json.loads(path.read_text())
-value["startedAt"] = "2000-01-01T00:00:00Z"
-value["capDeadline"] = "2000-01-01T00:01:00Z"
-tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
-PY
+"$engine" json set --file "$agent_repo/artifacts/agents/jobs/timed.json" \
+  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture timed-reap timed "$agent_dispatch" reap --job timed
 wait_for_agent_fixture_process timed-driver timed "$timeout_driver"
 [[ "$(cat "$timeout_result")" == 4 ]] || {
@@ -979,24 +1052,29 @@ make_agent_brief "$mirror_failure" design 'FAKE:mirror-failure'
 run_agent_fixture mirror-retry mirror-retry "$agent_dispatch" dispatch --role design-critic --brief "$mirror_failure" --job-id mirror-retry --wait
 [[ -f "$agent_repo/artifacts/agents/mirror-retry/.mirror-failed" ]] \
   || { echo "scripted first mirror failure did not occur" >&2; exit 1; }
-if [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")" == None ]]; then
+mirror_retry_record="$agent_repo/artifacts/agents/jobs/mirror-retry.json"
+if [[ "$("$engine" json get --file "$mirror_retry_record" --field mirror)" == null ]]; then
   run_agent_fixture mirror-retry-first-reap mirror-retry "$agent_dispatch" reap --job mirror-retry
 fi
-mirror_hash_before=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"]["manifest"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")
+mirror_hash_before=$("$engine" json get --file "$mirror_retry_record" --field mirror.manifest)
 run_agent_fixture mirror-retry-second-reap mirror-retry "$agent_dispatch" reap --job mirror-retry
-mirror_hash_after=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mirror"]["manifest"])' "$agent_repo/artifacts/agents/jobs/mirror-retry.json")
+mirror_hash_after=$("$engine" json get --file "$mirror_retry_record" --field mirror.manifest)
 [[ "$mirror_hash_before" == "$mirror_hash_after" && "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job mirror-retry)" == completed ]] \
   || { echo "idempotent mirror retry changed terminal state or durable content" >&2; exit 1; }
-python3 - "$agent_repo/artifacts/agents/jobs/mirror-retry.json" <<'PY'
-import hashlib, json, sys
-from pathlib import Path
-record = json.load(open(sys.argv[1])); mirror = record["mirror"]; assert mirror
-manifest_path = Path(mirror["path"]) / "manifest.json"
-assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == mirror["manifest"]
-manifest = json.loads(manifest_path.read_text())
-for relative, item in manifest["files"].items():
-  assert hashlib.sha256((Path(mirror["path"]) / relative).read_bytes()).hexdigest() == item["sha256"]
-PY
+mirror_home=$("$engine" json get --file "$mirror_retry_record" --field mirror.path) \
+  || { echo "mirror-retry record carries no mirror stamp" >&2; exit 1; }
+[[ -n "$mirror_home" && "$mirror_home" != null ]] \
+  || { echo "mirror-retry mirror path is empty" >&2; exit 1; }
+[[ "$("$engine" util sha256 --file "$mirror_home/manifest.json")" == "$mirror_hash_after" ]] \
+  || { echo "mirror manifest digest does not match the record" >&2; exit 1; }
+while IFS= read -r mirror_member; do
+  [[ -n "$mirror_member" ]] || continue
+  mirror_rel=${mirror_member#\"}; mirror_rel=${mirror_rel%%\"*}
+  mirror_item=${mirror_member#*\":}
+  [[ "$("$engine" util sha256 --file "$mirror_home/$mirror_rel")" \
+     == "$("$engine" json get --value "$mirror_item" --field sha256)" ]] \
+    || { echo "mirrored file digest mismatch: $mirror_rel" >&2; exit 1; }
+done < <(json_elements "$("$engine" json get --file "$mirror_home/manifest.json" --field files)")
 
 # Follow-ups are child records under one serialized, explicitly closed chain.
 follow_message="$agent_fixture/follow.md"
@@ -1021,24 +1099,37 @@ grep -q 'WORKTREE-BEHIND' "$tmp/stale-wt.err" \
 run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
 [[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \
   || { echo "follow-up did not preserve round 1 and create round 2" >&2; exit 1; }
-python3 - "$agent_repo" <<'PY'
-import hashlib, json, sys
-from pathlib import Path
-root = Path(sys.argv[1]); parent = json.loads((root / "artifacts/agents/jobs/happy.json").read_text()); child = json.loads((root / "artifacts/agents/jobs/happy-r2.json").read_text())
-assert child["parentJob"] == "happy" and child["round"] == 2 and child["sessionId"] == parent["sessionId"]
-assert child["startedAt"] >= parent["startedAt"] and child["capMin"] == parent["capMin"]
-snapshot = json.loads((root / child["capabilitySnapshot"]).read_text())
-assert child["sessionEstablishedTimeoutSec"] == snapshot["capabilities"]["sessionEstablishedTimeoutSec"]
-assert parent["chainUsage"]["providerUnits"]["fake"]["fake-unit"] == 2
+happy_child="$agent_repo/artifacts/agents/jobs/happy-r2.json"
+[[ "$("$engine" json get --file "$happy_child" --field parentJob)" == happy \
+   && "$("$engine" json get --file "$happy_child" --field round)" == 2 \
+   && "$("$engine" json get --file "$happy_child" --field sessionId)" \
+      == "$("$engine" json get --file "$happy_record" --field sessionId)" ]] \
+  || { echo "follow-up child does not chain to happy round 1" >&2; exit 1; }
+happy_child_started=$("$engine" json get --file "$happy_child" --field startedAt)
+happy_parent_started=$("$engine" json get --file "$happy_record" --field startedAt)
+[[ ! "$happy_child_started" < "$happy_parent_started" ]] \
+  || { echo "follow-up child started before its parent" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_child" --field capMin)" \
+   == "$("$engine" json get --file "$happy_record" --field capMin)" ]] \
+  || { echo "follow-up child changed the chain's cap" >&2; exit 1; }
+happy_child_snapshot=$("$engine" json get --file "$happy_child" --field capabilitySnapshot)
+[[ "$("$engine" json get --file "$happy_child" --field sessionEstablishedTimeoutSec)" \
+   == "$("$engine" json get --file "$agent_repo/$happy_child_snapshot" --field capabilities.sessionEstablishedTimeoutSec)" ]] \
+  || { echo "follow-up child does not carry its snapshot's session-established timeout" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field chainUsage.providerUnits.fake.fake-unit)" == 2 ]] \
+  || { echo "chain usage did not aggregate two fake units" >&2; exit 1; }
 # One chain, one mirror home; each stamp records ITS OWN mirror moment
 # (chain-wide stamp equality was the lie KI-6 round 3 removed). The
 # durable proof is the shared manifest covering BOTH records.
-assert parent["mirror"]["path"] == child["mirror"]["path"]
-manifest_path = Path(child["mirror"]["path"]) / "manifest.json"
-assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == child["mirror"]["manifest"]
-covered = json.loads(manifest_path.read_text())["files"]
-assert "jobs/happy.json" in covered and "jobs/happy-r2.json" in covered
-PY
+happy_mirror_home=$("$engine" json get --file "$happy_child" --field mirror.path)
+[[ "$("$engine" json get --file "$happy_record" --field mirror.path)" == "$happy_mirror_home" ]] \
+  || { echo "parent and child mirror to different homes" >&2; exit 1; }
+[[ "$("$engine" util sha256 --file "$happy_mirror_home/manifest.json")" \
+   == "$("$engine" json get --file "$happy_child" --field mirror.manifest)" ]] \
+  || { echo "chain manifest digest does not match the child stamp" >&2; exit 1; }
+happy_manifest_files=$("$engine" json get --file "$happy_mirror_home/manifest.json" --field files)
+[[ "$happy_manifest_files" == *'"jobs/happy.json":'* && "$happy_manifest_files" == *'"jobs/happy-r2.json":'* ]] \
+  || { echo "the shared manifest does not cover both chain records" >&2; exit 1; }
 run_agent_fixture malformed-return-follow-up malformed-return-r2 "$agent_dispatch" follow-up --job malformed-return --message "$follow_message" --wait
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
   || { echo "protocol-error retry did not create a completed child" >&2; exit 1; }
@@ -1046,11 +1137,7 @@ agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$age
 agent_fails timeout-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job timed --message "$follow_message"
 agent_fails process-loss-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job process-loss --message "$follow_message"
 
-python3 - "$agent_repo/artifacts/agents/jobs/default-role.json" <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["sessionId"] = None; tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
-PY
+json_replace_field "$agent_repo/artifacts/agents/jobs/default-role.json" sessionId null
 agent_fails null-session-follow-up 'fresh-context embed fallback' "$agent_dispatch" follow-up --job default-role --message "$follow_message"
 
 resume_root="$agent_fixture/resume-root.md"
@@ -1074,7 +1161,7 @@ agent_fails active-follow-up 'pending, running, timeout, or process-lost' "$agen
 run_agent_fixture active-turn-cancel active-turn "$agent_dispatch" cancel --job active-turn
 
 run_agent_fixture happy-close happy "$agent_dispatch" close --job happy
-[[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["runnerClosed"])' "$agent_repo/artifacts/agents/jobs/happy.json")" == False ]] \
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/happy.json" --field runnerClosed)" == false ]] \
   || { echo "host-closed chain was stamped as runner-closed" >&2; exit 1; }
 agent_fails closed-follow-up 'job chain is closed' "$agent_dispatch" follow-up --job happy --message "$follow_message"
 
@@ -1109,23 +1196,17 @@ run_agent_fixture conformance-close conformance "$agent_dispatch" close --job co
 mv "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch" "$agent_fixture/diff.patch.save"
 agent_fails diff-vanished 'vanished after mirroring' "$agent_dispatch" close --job conformance
 mv "$agent_fixture/diff.patch.save" "$agent_repo/artifacts/agents/conformance/rounds/1/diff.patch"
-conformance_workspace=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["workspaceRoot"])' "$agent_repo/artifacts/agents/jobs/conformance.json")
+conformance_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/conformance.json" --field workspaceRoot)
 case "${conformance_workspace%/}/" in "${agent_repo%/}/"*) ;; *) echo "job worktree is outside the watcher scope" >&2; exit 1 ;; esac
 printf 'untracked change\n' >"$conformance_workspace/source.txt"
 agent_fails diff-boundary-mismatch 'changed paths fall outside the cumulative implementation boundary' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
-python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
-PY
+json_replace_field "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" \
+  diffBoundary '["source.txt"]'
 (cd "$agent_repo" && scripts/agents/assert-conformance.sh --stage review --job conformance)
 mkdir -p "$conformance_workspace/plans"
 printf 'delegate plan\n' >"$conformance_workspace/plans/delegate.md"
-python3 - "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" source.txt plans/delegate.md <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["diffBoundary"] = sys.argv[2:]; tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n"); tmp.replace(path)
-PY
+json_replace_field "$agent_repo/artifacts/agents/conformance/rounds/1/return.json" \
+  diffBoundary '["source.txt","plans/delegate.md"]'
 agent_fails untracked-plan 'trusted plans/ state changed' "$agent_repo/scripts/agents/assert-conformance.sh" --stage review --job conformance
 git -C "$conformance_workspace" add source.txt plans/delegate.md
 # The workspace is a WORKTREE of the enrolled repo (shared hooks);
@@ -1172,24 +1253,33 @@ mv "$snapshot_dir"/*.json "$old_save/"
 old_brief="$agent_fixture/old-capabilities.md"
 make_agent_brief "$old_brief" implement 'FAKE:old-capability-set' 'FAKE:no-event-stream' 'FAKE:hook-unavailable'
 run_agent_fixture old-capabilities old-capabilities "$agent_dispatch" dispatch --role implementer --brief "$old_brief" --job-id old-capabilities --worktree --wait
-python3 - "$agent_repo/artifacts/agents/jobs/old-capabilities.json" <<'PY'
-import json, sys
-record = json.load(open(sys.argv[1])); assert record["sessionEstablishedSignal"] is False
-assert any(item["capability"] == "resume" for item in record["capabilityFallbacks"])
-PY
+old_caps_record="$agent_repo/artifacts/agents/jobs/old-capabilities.json"
+[[ "$("$engine" json get --file "$old_caps_record" --field sessionEstablishedSignal)" == false ]] \
+  || { echo "old-capability dispatch claimed a session-established signal" >&2; exit 1; }
+old_caps_resume_fallback=
+while IFS= read -r old_caps_item; do
+  [[ -n "$old_caps_item" ]] || continue
+  [[ "$("$engine" json get --value "$old_caps_item" --field capability)" == resume ]] || continue
+  old_caps_resume_fallback=1
+done < <(json_elements "$("$engine" json get --file "$old_caps_record" --field capabilityFallbacks)")
+[[ -n "$old_caps_resume_fallback" ]] \
+  || { echo "old-capability dispatch did not record the resume fallback" >&2; exit 1; }
 [[ ! -e "$agent_repo/artifacts/agents/old-capabilities/rounds/1/events.jsonl" ]] \
   || { echo "no-event-stream fallback emitted a native event file" >&2; exit 1; }
 grep -Fq 'polling fallback used' "$agent_repo/artifacts/agents/jobs/old-capabilities.log" \
   || { echo "hook-unavailable fallback was not observable" >&2; exit 1; }
 run_agent_fixture old-capabilities-follow-up old-capabilities-r2 "$agent_dispatch" follow-up --job old-capabilities --message "$follow_message" --wait
-python3 - "$agent_repo" <<'PY'
-import json, sys
-from pathlib import Path
-root = Path(sys.argv[1]); parent = json.loads((root / "artifacts/agents/jobs/old-capabilities.json").read_text()); child = json.loads((root / "artifacts/agents/jobs/old-capabilities-r2.json").read_text())
-assert child["resumeMode"] == "fresh-context" and child["sessionId"] != parent["sessionId"]
-prompt = (root / "artifacts/agents/old-capabilities/rounds/2/prompt.md").read_text()
-assert "# Prior brief" in prompt and "# Prior return" in prompt and "# Correction" in prompt
-PY
+old_caps_child="$agent_repo/artifacts/agents/jobs/old-capabilities-r2.json"
+[[ "$("$engine" json get --file "$old_caps_child" --field resumeMode)" == fresh-context ]] \
+  || { echo "no-resume follow-up did not fall back to fresh context" >&2; exit 1; }
+[[ "$("$engine" json get --file "$old_caps_child" --field sessionId)" \
+   != "$("$engine" json get --file "$old_caps_record" --field sessionId)" ]] \
+  || { echo "fresh-context follow-up reused the parent session" >&2; exit 1; }
+old_caps_prompt="$agent_repo/artifacts/agents/old-capabilities/rounds/2/prompt.md"
+grep -Fq '# Prior brief' "$old_caps_prompt" \
+  && grep -Fq '# Prior return' "$old_caps_prompt" \
+  && grep -Fq '# Correction' "$old_caps_prompt" \
+  || { echo "fresh-context prompt lost an embed section" >&2; exit 1; }
 mv "$snapshot_dir"/*.json "$agent_fixture/"
 mv "$old_save"/*.json "$snapshot_dir/"
 
@@ -1211,13 +1301,25 @@ agent_fails unverified-deny 'cannot enforce restrictive permission field network
 # Merge the network waiver into whatever waivers the role already declares
 # (the shipped roles now waive readRoots/writeRoots for devin), rather than
 # string-injecting a second waivers key and producing invalid JSON.
-python3 - "$requirements" <<'PY'
-import json, sys
-from pathlib import Path
-p = Path(sys.argv[1]); v = json.loads(p.read_text())
-v.setdefault("waivers", {}).setdefault("network", []).append("fake-network-unverified")
-p.write_text(json.dumps(v, indent=2) + "\n")
-PY
+if requirements_network=$("$engine" json get --file "$requirements" --field waivers.network 2>/dev/null); then
+  if [[ "$requirements_network" == '[]' ]]; then
+    requirements_network_new='["fake-network-unverified"]'
+  else
+    requirements_network_new="${requirements_network%]},\"fake-network-unverified\"]"
+  fi
+  requirements_waivers=$("$engine" json get --file "$requirements" --field waivers)
+  json_replace_field "$requirements" waivers \
+    "${requirements_waivers/"\"network\":$requirements_network"/"\"network\":$requirements_network_new"}"
+elif requirements_waivers=$("$engine" json get --file "$requirements" --field waivers 2>/dev/null); then
+  if [[ "$requirements_waivers" == '{}' ]]; then
+    json_replace_field "$requirements" waivers '{"network":["fake-network-unverified"]}'
+  else
+    json_replace_field "$requirements" waivers \
+      "${requirements_waivers%\}},\"network\":[\"fake-network-unverified\"]}"
+  fi
+else
+  echo "design-critic requirements carry no waivers object to merge into" >&2; exit 1
+fi
 run_agent_fixture waived-deny waived-deny "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --permissions "$restrictive_permissions" --job-id waived-deny --wait
 cp "$saved_requirements" "$requirements"
 mv "$agent_fixture/pre-unverified"/*.json "$snapshot_dir/" 2>/dev/null || true
@@ -1305,22 +1407,26 @@ grep -Fq 'escalation approval declined' "$agent_fixture/escalation-declined.out"
   || { echo "declined escalation fixture created a job" >&2; exit 1; }
 run_tty_agent_fixture escalation-approved 'APPROVE Fixture Human' 0 \
   "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --model fake-escalated --approve-escalation --job-id escalation-approved --wait
-python3 - "$agent_repo/artifacts/agents/jobs/escalation-approved.json" "$agent_fixture/escalation-approved.out" <<'PY'
-import json
-import re
-import sys
-from pathlib import Path
-record = json.loads(Path(sys.argv[1]).read_text())
-display = Path(sys.argv[2]).read_text()
-approval = record["escalationApproval"]
-assert approval["name"] == "Fixture Human"
-assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", approval["approvedAt"])
-assert approval["rosterResolution"] == "fake:fake-model"
-assert approval["requestedPair"] == "fake:fake-escalated"
-assert approval["costDirection"] == "unranked (model tiers absent; overrides always escalate)"
-for label, key in (("Roster resolution", "rosterResolution"), ("Requested pair", "requestedPair"), ("Cost direction", "costDirection")):
-  assert f"{label}: {approval[key]}" in display
-PY
+escalation_record="$agent_repo/artifacts/agents/jobs/escalation-approved.json"
+escalation_display="$agent_fixture/escalation-approved.out"
+[[ "$("$engine" json get --file "$escalation_record" --field escalationApproval.name)" == 'Fixture Human' ]] \
+  || { echo "escalation approval lost the approver's name" >&2; exit 1; }
+escalation_approved_at=$("$engine" json get --file "$escalation_record" --field escalationApproval.approvedAt)
+[[ "$escalation_approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+  || { echo "escalation approval stamp changed shape: $escalation_approved_at" >&2; exit 1; }
+escalation_roster=$("$engine" json get --file "$escalation_record" --field escalationApproval.rosterResolution)
+[[ "$escalation_roster" == 'fake:fake-model' ]] \
+  || { echo "escalation approval roster resolution is wrong: $escalation_roster" >&2; exit 1; }
+escalation_requested=$("$engine" json get --file "$escalation_record" --field escalationApproval.requestedPair)
+[[ "$escalation_requested" == 'fake:fake-escalated' ]] \
+  || { echo "escalation approval requested pair is wrong: $escalation_requested" >&2; exit 1; }
+escalation_direction=$("$engine" json get --file "$escalation_record" --field escalationApproval.costDirection)
+[[ "$escalation_direction" == 'unranked (model tiers absent; overrides always escalate)' ]] \
+  || { echo "escalation approval cost direction is wrong: $escalation_direction" >&2; exit 1; }
+grep -Fq "Roster resolution: $escalation_roster" "$escalation_display" \
+  && grep -Fq "Requested pair: $escalation_requested" "$escalation_display" \
+  && grep -Fq "Cost direction: $escalation_direction" "$escalation_display" \
+  || { echo "the escalation prompt did not display the recorded approval facts" >&2; exit 1; }
 
 # Dispatch only reads mission leases. The future mission runner owns their
 # acquisition and renewal; this fixture fabricates the frozen shape around
@@ -1355,21 +1461,18 @@ printf '\nApproval: name=Fixture-Human; date=2026-08-06; contract-sha256=%s\n' \
 stamp_fixture_contract() { # mission — seed the runner-owned contract pin
   # (Codex's caps ruling: fixtures below the runner lifecycle seed
   # approvedContractSha256 as the digest of the exact raw contract bytes.)
-  python3 - "$agent_repo/plans/mission-$1.contract.md" "$agent_repo/artifacts/agents/missions/$1/fences.json" "$1" <<'PY_STAMP'
-import hashlib, json, sys
-from datetime import datetime, timezone
-from pathlib import Path
-contract, fences_path, mission = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
-if fences_path.exists():
-  value = json.loads(fences_path.read_text())
-else:
-  value = {"schemaVersion": 1, "missionId": mission,
-           "startedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-           "cycles": 0, "reservations": {}}
-value["approvedContractSha256"] = hashlib.sha256(contract.read_bytes()).hexdigest()
-fences_path.parent.mkdir(parents=True, exist_ok=True)
-tmp = fences_path.with_name(fences_path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value) + "\n"); tmp.replace(fences_path)
-PY_STAMP
+  local mission=$1 contract="$agent_repo/plans/mission-$1.contract.md"
+  local fences="$agent_repo/artifacts/agents/missions/$1/fences.json" contract_sha staged
+  contract_sha=$("$engine" util sha256 --file "$contract")
+  if [[ -f "$fences" ]]; then
+    "$engine" json set --file "$fences" --field "approvedContractSha256=$contract_sha"
+  else
+    mkdir -p "$(dirname "$fences")"
+    staged=$(mktemp "$(dirname "$fences")/.fences.XXXXXX")
+    printf '{"schemaVersion":1,"missionId":"%s","startedAt":"%s","cycles":0,"reservations":{},"approvedContractSha256":"%s"}\n' \
+      "$mission" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$contract_sha" >"$staged"
+    mv "$staged" "$fences"
+  fi
 }
 stamp_fixture_contract mission-alpha
 dispatch_origin="$agent_fixture/dispatch-origin.git"
@@ -1385,15 +1488,13 @@ git -C "$agent_repo" remote set-head origin -a >/dev/null
 "$agent_repo/bin/metasystem" util hold --tag mission-lease-tag & mission_pid=$!
 mission_pgid=$(ps -p "$mission_pid" -o pgid= | tr -d ' ')
 mission_identity="$agent_fixture/mission-process-identity.json"
-python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" "$mission_identity" "$mission_pid" "$mission_pgid" <<'PY'
-import json, sys
-from datetime import datetime, timezone
-from pathlib import Path
-now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-pid, pgid = int(sys.argv[3]), int(sys.argv[4])
-Path(sys.argv[1]).write_text(json.dumps({"missionId":"mission-alpha","pid":pid,"pgid":pgid,"instanceTag":"mission-lease-tag","startedAt":now,"renewedAt":now}) + "\n")
-Path(sys.argv[2]).write_text(json.dumps({str(pid): {"pgid": pgid, "command": "metasystem util hold --tag mission-lease-tag"}}) + "\n")
-PY
+mission_lease_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+mission_lease_staged=$(mktemp "$agent_repo/artifacts/agents/missions/mission-alpha/.lease.XXXXXX")
+printf '{"missionId":"mission-alpha","pid":%s,"pgid":%s,"instanceTag":"mission-lease-tag","startedAt":"%s","renewedAt":"%s"}\n' \
+  "$mission_pid" "$mission_pgid" "$mission_lease_now" "$mission_lease_now" >"$mission_lease_staged"
+mv "$mission_lease_staged" "$agent_repo/artifacts/agents/missions/mission-alpha/lease.json"
+printf '{"%s":{"pgid":%s,"command":"metasystem util hold --tag mission-lease-tag"}}\n' \
+  "$mission_pid" "$mission_pgid" >"$mission_identity"
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
 run_agent_fixture envelope-model-override envelope-model-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
   --role design-critic --brief "$happy_brief" --model fake-escalated --job-id envelope-model-override --mission mission-alpha --stream main --wait
@@ -1416,18 +1517,22 @@ agent_fails mission-cap 'above signed fence.job-cap-min' env METASYSTEM_MISSION_
 # proven by the fence-* fixtures below and the timeout-ask above.
 [[ ! -f "$agent_repo/artifacts/agents/missions/mission-alpha/asks/fence-bound.json" ]] \
   || { echo "an authorization refusal wrote a fence-bound ask; that is the fence-violation channel" >&2; exit 1; }
-python3 - "$agent_repo" <<'PY'
-import json, sys
-from pathlib import Path
-root=Path(sys.argv[1]); usage=json.loads((root/"artifacts/agents/missions/mission-alpha/usage.json").read_text())
-units={(item["provider"],item["unit"]):item["value"] for item in usage["units"]}
-assert units[("fake","provider.fake-unit")] == 4
-for job in ("mission-explicit","mission-inherited"):
-  prompt=(root/f"artifacts/agents/{job}/rounds/1/prompt.md").read_text()
-  assert "\nMission: mission-alpha\n" in prompt
-inherited=json.loads((root/"artifacts/agents/jobs/mission-inherited.json").read_text())
-assert inherited["turnId"] == "mission-alpha-t1-fixture"
-PY
+mission_alpha_usage="$agent_repo/artifacts/agents/missions/mission-alpha/usage.json"
+mission_alpha_fake_units=
+while IFS= read -r mission_alpha_item; do
+  [[ -n "$mission_alpha_item" ]] || continue
+  [[ "$("$engine" json get --value "$mission_alpha_item" --field provider)" == fake ]] || continue
+  [[ "$("$engine" json get --value "$mission_alpha_item" --field unit)" == provider.fake-unit ]] || continue
+  mission_alpha_fake_units=$("$engine" json get --value "$mission_alpha_item" --field value)
+done < <(json_elements "$("$engine" json get --file "$mission_alpha_usage" --field units)")
+[[ "$mission_alpha_fake_units" == 4 ]] \
+  || { echo "mission-alpha fake unit total is ${mission_alpha_fake_units:-missing}, want 4" >&2; exit 1; }
+for mission_alpha_job in mission-explicit mission-inherited; do
+  grep -Fxq 'Mission: mission-alpha' "$agent_repo/artifacts/agents/$mission_alpha_job/rounds/1/prompt.md" \
+    || { echo "$mission_alpha_job prompt lost its mission line" >&2; exit 1; }
+done
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/mission-inherited.json" --field turnId)" == mission-alpha-t1-fixture ]] \
+  || { echo "inherited dispatch did not record the mission turn" >&2; exit 1; }
 
 make_fence_mission() { # mission id, cycles, jobs, concurrency, wall hours
   local mission=$1 cycles=$2 jobs_limit=$3 concurrency=$4 wall=$5 mission_dir="$agent_repo/artifacts/agents/missions/$1"
@@ -1441,13 +1546,12 @@ fence.concurrency=$concurrency
 fence.job-cap-min=$fixture_dispatch_envelope_cap_min
 \`\`\`
 EOF
-  python3 - "$mission_dir/lease.json" "$mission" "$mission_pid" "$mission_pgid" <<'PY'
-import json,sys
-from datetime import datetime,timezone
-from pathlib import Path
-now=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-Path(sys.argv[1]).write_text(json.dumps({"missionId":sys.argv[2],"pid":int(sys.argv[3]),"pgid":int(sys.argv[4]),"instanceTag":"mission-lease-tag","startedAt":now,"renewedAt":now})+"\n")
-PY
+  local fence_now fence_staged
+  fence_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  fence_staged=$(mktemp "$mission_dir/.lease.XXXXXX")
+  printf '{"missionId":"%s","pid":%s,"pgid":%s,"instanceTag":"mission-lease-tag","startedAt":"%s","renewedAt":"%s"}\n' \
+    "$mission" "$mission_pid" "$mission_pgid" "$fence_now" "$fence_now" >"$fence_staged"
+  mv "$fence_staged" "$mission_dir/lease.json"
 }
 
 assert_fence_ask() { # mission, expected reason
@@ -1513,45 +1617,48 @@ wait_for_agent_census_fresh mission-timeout-job
 ) >"$agent_fixture/mission-timeout.out" 2>&1 &
 mission_timeout_driver=$!
 wait_for_agent_status mission-timeout-job running
-python3 - "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" <<'PY'
-import json,sys
-from pathlib import Path
 # capDeadline first, startedAt only as fallback — backdate both (see the
-# timed fixture above).
-path=Path(sys.argv[1]); value=json.loads(path.read_text())
-value["startedAt"]="2000-01-01T00:00:00Z"
-value["capDeadline"]="2000-01-01T00:01:00Z"
-tmp = path.with_name(path.name + ".rewrite-tmp"); tmp.write_text(json.dumps(value)+"\n"); tmp.replace(path)
-PY
+# timed fixture above); json set stages and renames, so the rewrite of
+# this live record stays atomic.
+"$engine" json set --file "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" \
+  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture mission-timeout-reap mission-timeout-job "$agent_dispatch" reap --job mission-timeout-job
 wait_for_agent_fixture_process mission-timeout-driver mission-timeout-job "$mission_timeout_driver"
 [[ "$(cat "$mission_timeout_result")" == 4 ]] || {
   echo "mission job timeout did not map to exit 4 (got $(cat "$mission_timeout_result"))" >&2
-  python3 -c 'import json,sys;v=json.load(open(sys.argv[1]));print("status:",v.get("status"),"error:",v.get("error"),"phase:",v.get("phase"))' "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" >&2 2>/dev/null || true
+  echo "status: $("$engine" json get --file "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" --field status --default None 2>/dev/null || true) error: $("$engine" json get --file "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" --field error --default None 2>/dev/null || true) phase: $("$engine" json get --file "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" --field phase --default None 2>/dev/null || true)" >&2
   echo "--- driver output:" >&2; sed -n '1,40p' "$agent_fixture/mission-timeout.out" >&2 2>/dev/null || true
   exit 1; }
 assert_fence_ask mission-timeout job-cap-min
 
 # A provider-native unit with the same spelling from another provider stays
 # a separate typed tuple; no heterogeneous mission total exists.
-python3 - "$agent_repo/artifacts/agents/jobs/other-provider.json" <<'PY'
-import json,sys
-from pathlib import Path
-Path(sys.argv[1]).write_text(json.dumps({"jobId":"other-provider","mission":"mission-alpha","runtime":"other","status":"completed","usage":{"availability":"native","inputTokens":3,"cachedInputTokens":None,"outputTokens":None,"reasoningTokens":None,"cost":None,"providerUnits":{"name":"fake-unit","value":5}}})+"\n")
-PY
+other_provider_staged=$(mktemp "$agent_repo/artifacts/agents/jobs/.other-provider.XXXXXX")
+printf '%s\n' '{"jobId":"other-provider","mission":"mission-alpha","runtime":"other","status":"completed","usage":{"availability":"native","inputTokens":3,"cachedInputTokens":null,"outputTokens":null,"reasoningTokens":null,"cost":null,"providerUnits":{"name":"fake-unit","value":5}}}' \
+  >"$other_provider_staged"
+mv "$other_provider_staged" "$agent_repo/artifacts/agents/jobs/other-provider.json"
 "$agent_repo/bin/metasystem" mission fence-aggregate-usage --repo "$agent_repo" --mission mission-alpha
-python3 - "$agent_repo/artifacts/agents/missions/mission-alpha/usage.json" <<'PY'
-import json,sys
-value=json.load(open(sys.argv[1])); units={(item["provider"],item["unit"]):item["value"] for item in value["units"]}
+mission_usage_fake= mission_usage_other=
+while IFS= read -r mission_usage_item; do
+  [[ -n "$mission_usage_item" ]] || continue
+  mission_usage_unit=$("$engine" json get --value "$mission_usage_item" --field unit)
+  [[ "$mission_usage_unit" != provider.total ]] \
+    || { echo "mission usage aggregated a heterogeneous provider total" >&2; exit 1; }
+  [[ "$mission_usage_unit" == provider.fake-unit ]] || continue
+  case "$("$engine" json get --value "$mission_usage_item" --field provider)" in
+    fake) mission_usage_fake=$("$engine" json get --value "$mission_usage_item" --field value) ;;
+    other) mission_usage_other=$("$engine" json get --value "$mission_usage_item" --field value) ;;
+  esac
+done < <(json_elements "$("$engine" json get --file "$mission_alpha_usage" --field units)")
 # 4 = explicit + inherited + the two envelope-allowlisted jobs F-4 added.
-assert units[("fake","provider.fake-unit")] == 4
-assert units[("other","provider.fake-unit")] == 5
-assert not any(item["unit"] == "provider.total" for item in value["units"])
-PY
+[[ "$mission_usage_fake" == 4 ]] \
+  || { echo "fake provider unit total is ${mission_usage_fake:-missing}, want 4" >&2; exit 1; }
+[[ "$mission_usage_other" == 5 ]] \
+  || { echo "other-provider unit stayed out of its own typed tuple (${mission_usage_other:-missing}, want 5)" >&2; exit 1; }
 agent_fails missing-mission-lease 'does not have a live' "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id missing-mission --mission missing
 agent_fails ambiguous-mission 'ambiguous mission context' env METASYSTEM_MISSION_ID=mission-alpha METASYSTEM_MISSION_LEASE="$agent_repo/artifacts/agents/missions/mission-alpha/lease.json" \
   "$agent_dispatch" dispatch --role design-critic --brief "$happy_brief" --job-id mission-ambiguous --mission another
-[[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mission"])' "$agent_repo/artifacts/agents/jobs/happy.json")" == None ]] \
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/happy.json" --field mission)" == null ]] \
   || { echo "unstamped interactive dispatch gained mission authority" >&2; exit 1; }
 kill "$mission_pid" 2>/dev/null || true
 wait_for_agent_fixture_process mission-lease-holder - "$mission_pid" 2>/dev/null || true
@@ -1613,19 +1720,18 @@ sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:?}"
 done
 if [[ -n "${METASYSTEM_MISSION_PROCESS_IDENTITY_FILE:-}" \
 && -f "$fixture_root/artifacts/agents/supervision/state.json" ]]; then
-python3 - "$fixture_root/artifacts/agents/supervision/state.json" \
-  "$METASYSTEM_MISSION_PROCESS_IDENTITY_FILE" <<'PY'
-import json,sys
-from pathlib import Path
-state=json.loads(Path(sys.argv[1]).read_text()); identities={}
-for name in ("watcher","reaper"):
-  value=state["components"][name]
-  identities[str(value["pid"])]= {
-      "pidStartedAt":value["pidStartedAt"],
-      "command":f"fixture {value['instanceTag']}",
-  }
-Path(sys.argv[2]).write_text(json.dumps(identities)+"\n")
-PY
+state_file="$fixture_root/artifacts/agents/supervision/state.json"
+watcher_pid=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.watcher.pid)
+watcher_started=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.watcher.pidStartedAt)
+watcher_tag=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.watcher.instanceTag)
+reaper_pid=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.reaper.pid)
+reaper_started=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.reaper.pidStartedAt)
+reaper_tag=$("$fixture_root/bin/metasystem" json get --file "$state_file" --field components.reaper.instanceTag)
+identity_staged=$(mktemp "$(dirname "$METASYSTEM_MISSION_PROCESS_IDENTITY_FILE")/.identities.XXXXXX")
+printf '{"%s":{"pidStartedAt":%s,"command":"fixture %s"},"%s":{"pidStartedAt":%s,"command":"fixture %s"}}\n' \
+  "$watcher_pid" "$watcher_started" "$watcher_tag" \
+  "$reaper_pid" "$reaper_started" "$reaper_tag" >"$identity_staged"
+mv "$identity_staged" "$METASYSTEM_MISSION_PROCESS_IDENTITY_FILE"
 fi
 ARM
 chmod +x "$runner_repo/scripts/agents/arm-supervision.sh"
@@ -1770,26 +1876,33 @@ wait_runner_file() { # path, description
   return 1
 }
 
+watch_atomic_result() { # result path — first sight is the judgment
+  local result_path=$1 deadline=$((SECONDS + agent_fixture_cap_sec)) result_field
+  while (( SECONDS < deadline )); do
+    if [[ -e "$result_path" ]]; then
+      # The envelope must appear whole: a torn write is observable
+      # exactly once, and this first read is that observation.
+      "$engine" util json-validate --file "$result_path" \
+        || { echo "host result was observable in a partial state: $result_path"; return 1; }
+      for result_field in sessionId outcome usage rawPath returnPath; do
+        "$engine" json get --file "$result_path" --field "$result_field" >/dev/null \
+          || { echo "host result lacks $result_field"; cat "$result_path"; return 1; }
+      done
+      [[ "$("$engine" json strip --file "$result_path" --key sessionId --key outcome --key usage --key rawPath --key returnPath)" == '{}' ]] \
+        || { echo "host result carries unexpected fields"; cat "$result_path"; return 1; }
+      [[ "$("$engine" json get --file "$result_path" --field outcome)" == completed \
+         && "$("$engine" json get --file "$result_path" --field sessionId)" == codex-fixture-session ]] \
+        || { echo "host result outcome or session identity is wrong"; cat "$result_path"; return 1; }
+      return 0
+    fi
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  echo "host result did not appear within ${agent_fixture_cap_sec}s: $result_path"
+  return 1
+}
+
 start_atomic_result_watcher() { # result path, fixture name
-  local result_path=$1 name=$2
-  python3 - "$result_path" "$agent_fixture_cap_sec" "$METASYSTEM_FIXTURE_POLL_INTERVAL_MS" \
-    >"$agent_fixture/$name.out" 2>&1 <<'PY' &
-import json, sys, time
-from pathlib import Path
-path, cap, poll_ms = Path(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
-deadline = time.monotonic() + cap
-while time.monotonic() < deadline:
-  if path.exists():
-      try:
-          value = json.loads(path.read_text(encoding="utf-8"))
-      except (OSError, json.JSONDecodeError) as error:
-          raise SystemExit(f"host result was observable in a partial state: {error}")
-      assert set(value) == {"sessionId", "outcome", "usage", "rawPath", "returnPath"}, value
-      assert value["outcome"] == "completed" and value["sessionId"] == "codex-fixture-session", value
-      raise SystemExit(0)
-  time.sleep(poll_ms / 1000)
-raise SystemExit(f"host result did not appear within {cap}s: {path}")
-PY
+  watch_atomic_result "$1" >"$agent_fixture/$2.out" 2>&1 &
   atomic_result_watcher_pid=$!
 }
 
@@ -1811,24 +1924,28 @@ run_runner_expect runner-cycle-start 0 "${runner_process_env[@]}" METASYSTEM_AGE
 wait_runner_status runner-cycle 10
 cycle_turn=$(find "$runner_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
 "$runner_repo/scripts/assert-turn-prompt.sh" --file "$cycle_turn/prompt.md" --turn "$cycle_turn"
-python3 - "$runner_repo" "$cycle_turn/prompt.md" <<'PY'
-import sys
-from pathlib import Path
-root,prompt_path=Path(sys.argv[1]),Path(sys.argv[2])
-prompt=prompt_path.read_bytes(); header_end=prompt.index(b"\n\n")
-header=prompt[:header_end].decode().splitlines()
-assert [line.split(": ",1)[0] for line in header] == [
-  "Mission-Id","Turn-Id","Cycle","Host-Session","Runtime","Model","Reconciliation"
-]
-preamble=(root/"scripts/agents/roles/orchestrator.md").read_bytes()
-assert prompt[header_end+2:header_end+2+len(preamble)] == preamble
-text=prompt.decode(); headings=[
-  "## Mission Contract","## Ledger Tail","## Open Asks",
-  "## Streams","## Reconciliation","## Landed Returns","## This Turn",
-]
-positions=[text.index(heading) for heading in headings]
-assert positions == sorted(positions)
-PY
+cycle_prompt="$cycle_turn/prompt.md"
+[[ "$(sed -n '/^$/q;p' "$cycle_prompt" | sed 's/: .*//')" \
+   == $'Mission-Id\nTurn-Id\nCycle\nHost-Session\nRuntime\nModel\nReconciliation' ]] \
+  || { echo "host-turn prompt header keys changed shape" >&2; sed -n '1,8p' "$cycle_prompt" >&2; exit 1; }
+# The orchestrator preamble must follow the header break byte-for-byte.
+cycle_header_end=$(grep -n -m1 '^$' "$cycle_prompt" | cut -d: -f1)
+[[ -n "$cycle_header_end" ]] || { echo "host-turn prompt has no header break" >&2; exit 1; }
+cycle_preamble="$runner_repo/scripts/agents/roles/orchestrator.md"
+tail -c +"$(( $(head -n "$cycle_header_end" "$cycle_prompt" | wc -c) + 1 ))" "$cycle_prompt" \
+  | head -c "$(( $(wc -c <"$cycle_preamble") ))" | cmp -s - "$cycle_preamble" \
+  || { echo "host-turn prompt does not open with the orchestrator preamble" >&2; exit 1; }
+cycle_prompt_text=$(cat "$cycle_prompt")
+cycle_prev_index=0
+for cycle_heading in '## Mission Contract' '## Ledger Tail' '## Open Asks' \
+  '## Streams' '## Reconciliation' '## Landed Returns' '## This Turn'; do
+  cycle_prefix=${cycle_prompt_text%%"$cycle_heading"*}
+  [[ "$cycle_prefix" != "$cycle_prompt_text" ]] \
+    || { echo "host-turn prompt lacks heading: $cycle_heading" >&2; exit 1; }
+  (( ${#cycle_prefix} >= cycle_prev_index )) \
+    || { echo "host-turn prompt headings are out of order at: $cycle_heading" >&2; exit 1; }
+  cycle_prev_index=${#cycle_prefix}
+done
 grep -Fq -- '- Classification: contract-improved;' \
   "$runner_repo/artifacts/agents/missions/runner-cycle/ledger.md" \
   || { echo "full mission cycle did not record runner-measured contract improvement" >&2; exit 1; }
@@ -1938,37 +2055,24 @@ git add candidate-score.txt
 # agent commit — the enrolled guard (R2-11) is for the real thing.
 git -c core.hooksPath=/dev/null commit --allow-empty -qm 'improve candidate from codex host fixture'
 fi
-python3 - "$prompt" "$output" "$sequence" <<'PY'
-import json, sys
-from pathlib import Path
-prompt, output, sequence = Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3])
-headers = dict(
-  line.split(": ", 1)
-  for line in prompt.read_text(encoding="utf-8").split("\n\n", 1)[0].splitlines()
-)
-declared = None if headers["Host-Session"] == "none" else headers["Host-Session"]
-if sequence == 1:
-  assert declared is None
-else:
-  assert declared == "codex-fixture-session"
-value = {
-  "turnId": headers["Turn-Id"],
-  "missionId": headers["Mission-Id"],
-  "cycle": int(headers["Cycle"]),
-  "dispatched": [],
-  "certified": [],
-  "streamUpdatesRequested": [],
-  "askCandidates": [],
-  "factsForLedger": [],
-  "gaps": [],
-  "identity": {
-      "runtime": headers["Runtime"],
-      "model": headers["Model"],
-      "sessionId": declared,
-  },
-}
-output.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
+stub_headers=$(sed -n '/^$/q;p' "$prompt")
+stub_header() { printf '%s\n' "$stub_headers" | sed -n "s/^$1: //p" | head -1; }
+stub_host_session=$(stub_header Host-Session)
+if [[ $sequence -eq 1 ]]; then
+[[ "$stub_host_session" == none ]] \
+  || { echo "codex host fixture: first turn declared a session: $stub_host_session" >&2; exit 9; }
+stub_declared=null
+else
+[[ "$stub_host_session" == codex-fixture-session ]] \
+  || { echo "codex host fixture: resumed turn lost its session: $stub_host_session" >&2; exit 9; }
+stub_declared='"codex-fixture-session"'
+fi
+stub_cycle=$(stub_header Cycle)
+[[ "$stub_cycle" =~ ^[0-9]+$ ]] \
+  || { echo "codex host fixture: cycle is not a number: $stub_cycle" >&2; exit 9; }
+printf '{"turnId":"%s","missionId":"%s","cycle":%s,"dispatched":[],"certified":[],"streamUpdatesRequested":[],"askCandidates":[],"factsForLedger":[],"gaps":[],"identity":{"runtime":"%s","model":"%s","sessionId":%s}}\n' \
+  "$(stub_header Turn-Id)" "$(stub_header Mission-Id)" "$stub_cycle" \
+  "$(stub_header Runtime)" "$(stub_header Model)" "$stub_declared" >"$output"
 printf '%s\n' \
 '{"type":"thread.started","thread_id":"codex-fixture-session"}' \
 "{\"type\":\"turn.started\",\"turn_id\":\"codex-fixture-turn-$sequence\"}" \
@@ -1995,13 +2099,15 @@ run_runner_expect runner-codex-start 0 "${runner_process_env[@]}" \
 wait_runner_file "$codex_host_fixture/ready-1" "codex host first turn"
 codex_turn_one=$(find "$runner_repo/artifacts/agents/missions/runner-codex/turns" \
   -mindepth 1 -maxdepth 1 -type d | head -1)
-read -r codex_host_pid codex_host_tag < <(python3 - "$codex_turn_one/turn.json" <<'PY'
-import json,sys
-value=json.load(open(sys.argv[1])); assert value["status"]=="running"
-assert value["pid"]==value["pgid"] and value["instanceTag"].startswith("metasystem-host-")
-print(value["pid"], value["instanceTag"])
-PY
-)
+codex_turn_one_record="$codex_turn_one/turn.json"
+[[ "$("$engine" json get --file "$codex_turn_one_record" --field status)" == running ]] \
+  || { echo "first codex host turn is not running" >&2; cat "$codex_turn_one_record" >&2; exit 1; }
+codex_host_pid=$("$engine" json get --file "$codex_turn_one_record" --field pid)
+codex_host_tag=$("$engine" json get --file "$codex_turn_one_record" --field instanceTag)
+[[ "$codex_host_pid" == "$("$engine" json get --file "$codex_turn_one_record" --field pgid)" ]] \
+  || { echo "codex host is not its own process-group leader" >&2; exit 1; }
+[[ "$codex_host_tag" == metasystem-host-* ]] \
+  || { echo "codex host instance tag changed shape: $codex_host_tag" >&2; exit 1; }
 codex_host_command=$(ps -ww -p "$codex_host_pid" -o command=)
 [[ "$codex_host_command" == *"$codex_host_tag"* ]] \
   || { echo "codex host process did not carry its recorded instance tag" >&2; exit 1; }
@@ -2011,16 +2117,14 @@ touch "$codex_host_fixture/release-1"
 wait_for_agent_fixture_process codex-result-one - "$codex_result_one_watcher" \
   || { cat "$agent_fixture/codex-result-one.out" >&2; exit 1; }
 wait_runner_file "$codex_host_fixture/ready-2" "codex host resumed turn"
-codex_turn_two=$(python3 - "$runner_repo/artifacts/agents/missions/runner-codex/turns" <<'PY'
-import json,sys
-from pathlib import Path
-for path in Path(sys.argv[1]).glob("*/turn.json"):
-  if json.loads(path.read_text())["cycle"] == 2:
-      print(path.parent)
-      raise SystemExit(0)
-raise SystemExit("second codex host turn was not created")
-PY
-)
+codex_turn_two=
+for codex_turn_candidate in "$runner_repo/artifacts/agents/missions/runner-codex/turns"/*/turn.json; do
+  [[ -f "$codex_turn_candidate" ]] || continue
+  [[ "$("$engine" json get --file "$codex_turn_candidate" --field cycle)" == 2 ]] || continue
+  codex_turn_two=${codex_turn_candidate%/turn.json}
+  break
+done
+[[ -n "$codex_turn_two" ]] || { echo "second codex host turn was not created" >&2; exit 1; }
 start_atomic_result_watcher "$codex_turn_two/result.json" codex-result-two
 codex_result_two_watcher=$atomic_result_watcher_pid
 touch "$codex_host_fixture/release-2"
@@ -2028,50 +2132,91 @@ wait_for_agent_fixture_process codex-result-two - "$codex_result_two_watcher" \
   || { cat "$agent_fixture/codex-result-two.out" >&2; exit 1; }
 wait_runner_status runner-codex 10
 wait_lease_released runner-codex "completed codex-host mission"
-python3 - "$runner_repo" "$codex_host_fixture" "$codex_turn_one" "$codex_turn_two" <<'PY'
-import json, sys
-from pathlib import Path
-root, fixture, first, second = map(Path, sys.argv[1:])
-
-def arguments(sequence):
-  return [part.decode() for part in (fixture / f"request-{sequence}.args").read_bytes().split(b"\0") if part]
-
-first_args, second_args = arguments(1), arguments(2)
-assert first_args[:2] == ["exec", "--json"]
-assert first_args[first_args.index("-m") + 1] == "gpt-5-fixture"
-assert first_args[first_args.index("--sandbox") + 1] == "workspace-write"
-assert first_args[first_args.index("-C") + 1] == str(root)
-assert 'approval_policy="never"' in first_args
-assert "sandbox_workspace_write.network_access=true" in first_args
-assert second_args[:3] == ["exec", "resume", "--json"]
-assert "-C" not in second_args
-assert 'model="gpt-5-fixture"' in second_args
-assert 'sandbox_mode="workspace-write"' in second_args
-assert 'approval_policy="never"' in second_args
-assert "sandbox_workspace_write.network_access=true" in second_args
-assert "codex-fixture-session" in second_args
-assert (fixture / "request-1.cwd").read_text().strip() == str(root)
-assert (fixture / "request-2.cwd").read_text().strip() == str(root)
-
-expected_result_fields = {"sessionId", "outcome", "usage", "rawPath", "returnPath"}
-expected_usage = {
-  "availability": "native", "inputTokens": 10, "cachedInputTokens": 2,
-  "outputTokens": 4, "reasoningTokens": 1, "cost": None, "providerUnits": None,
+argv_contains() { # needle, argv... — exact element membership
+  local needle=$1 arg
+  shift
+  for arg in "$@"; do [[ "$arg" == "$needle" ]] && return 0; done
+  return 1
 }
-for turn in (first, second):
-  result = json.loads((turn / "result.json").read_text())
-  assert set(result) == expected_result_fields and result["outcome"] == "completed"
-  assert result["sessionId"] == "codex-fixture-session" and result["usage"] == expected_usage
-  assert Path(result["rawPath"]).resolve() == (turn / "raw.out").resolve()
-  assert Path(result["returnPath"]).resolve() == (turn / "return.json").resolve()
-  assert not list(turn.glob("result.json.*.tmp"))
-first_return = json.loads((first / "return.json").read_text())
-second_return = json.loads((second / "return.json").read_text())
-second_turn = json.loads((second / "turn.json").read_text())
-assert first_return["identity"]["sessionId"] is None
-assert second_turn["hostSession"] == "codex-fixture-session"
-assert second_return["identity"]["sessionId"] == second_turn["hostSession"]
-PY
+argv_value_after() { # flag, argv... — the value following the first exact flag
+  local flag=$1
+  shift
+  while (( $# > 1 )); do
+    [[ "$1" == "$flag" ]] && { printf '%s\n' "$2"; return 0; }
+    shift
+  done
+  return 1
+}
+codex_args_one=()
+while IFS= read -r -d '' codex_arg; do codex_args_one+=("$codex_arg"); done \
+  <"$codex_host_fixture/request-1.args"
+codex_args_two=()
+while IFS= read -r -d '' codex_arg; do codex_args_two+=("$codex_arg"); done \
+  <"$codex_host_fixture/request-2.args"
+[[ "${codex_args_one[0]}" == exec && "${codex_args_one[1]}" == --json ]] \
+  || { echo "first codex argv does not open with exec --json" >&2; exit 1; }
+[[ "$(argv_value_after -m "${codex_args_one[@]}")" == gpt-5-fixture ]] \
+  || { echo "first codex argv lost its model flag" >&2; exit 1; }
+[[ "$(argv_value_after --sandbox "${codex_args_one[@]}")" == workspace-write ]] \
+  || { echo "first codex argv lost its sandbox mode" >&2; exit 1; }
+[[ "$(argv_value_after -C "${codex_args_one[@]}")" == "$runner_repo" ]] \
+  || { echo "first codex argv does not enter the workspace" >&2; exit 1; }
+argv_contains 'approval_policy="never"' "${codex_args_one[@]}" \
+  || { echo "first codex argv lost the never-approve policy" >&2; exit 1; }
+argv_contains 'sandbox_workspace_write.network_access=true' "${codex_args_one[@]}" \
+  || { echo "first codex argv lost network access" >&2; exit 1; }
+[[ "${codex_args_two[0]}" == exec && "${codex_args_two[1]}" == resume && "${codex_args_two[2]}" == --json ]] \
+  || { echo "resumed codex argv does not open with exec resume --json" >&2; exit 1; }
+if argv_contains -C "${codex_args_two[@]}"; then
+  echo "resumed codex argv re-entered the workspace flag" >&2; exit 1
+fi
+argv_contains 'model="gpt-5-fixture"' "${codex_args_two[@]}" \
+  || { echo "resumed codex argv lost its model override" >&2; exit 1; }
+argv_contains 'sandbox_mode="workspace-write"' "${codex_args_two[@]}" \
+  || { echo "resumed codex argv lost its sandbox mode" >&2; exit 1; }
+argv_contains 'approval_policy="never"' "${codex_args_two[@]}" \
+  || { echo "resumed codex argv lost the never-approve policy" >&2; exit 1; }
+argv_contains 'sandbox_workspace_write.network_access=true' "${codex_args_two[@]}" \
+  || { echo "resumed codex argv lost network access" >&2; exit 1; }
+argv_contains codex-fixture-session "${codex_args_two[@]}" \
+  || { echo "resumed codex argv lost the session id" >&2; exit 1; }
+[[ "$(cat "$codex_host_fixture/request-1.cwd")" == "$runner_repo" \
+   && "$(cat "$codex_host_fixture/request-2.cwd")" == "$runner_repo" ]] \
+  || { echo "codex host did not run from the workspace root" >&2; exit 1; }
+# Exact usage equality through one canonical rendering (keys sorted) on
+# both sides.
+codex_expected_usage=$("$engine" json get --field u --value \
+  '{"u":{"availability":"native","inputTokens":10,"cachedInputTokens":2,"outputTokens":4,"reasoningTokens":1,"cost":null,"providerUnits":null}}')
+for codex_turn_dir in "$codex_turn_one" "$codex_turn_two"; do
+  codex_result="$codex_turn_dir/result.json"
+  for codex_result_field in sessionId outcome usage rawPath returnPath; do
+    "$engine" json get --file "$codex_result" --field "$codex_result_field" >/dev/null \
+      || { echo "codex result lacks $codex_result_field: $codex_result" >&2; exit 1; }
+  done
+  [[ "$("$engine" json strip --file "$codex_result" --key sessionId --key outcome --key usage --key rawPath --key returnPath)" == '{}' ]] \
+    || { echo "codex result carries unexpected fields: $codex_result" >&2; exit 1; }
+  [[ "$("$engine" json get --file "$codex_result" --field outcome)" == completed \
+     && "$("$engine" json get --file "$codex_result" --field sessionId)" == codex-fixture-session ]] \
+    || { echo "codex result outcome or session is wrong: $codex_result" >&2; exit 1; }
+  [[ "$("$engine" json get --file "$codex_result" --field usage)" == "$codex_expected_usage" ]] \
+    || { echo "codex result usage changed shape: $codex_result" >&2; exit 1; }
+  [[ "$(resolve_existing_path "$("$engine" json get --file "$codex_result" --field rawPath)")" \
+     == "$(resolve_existing_path "$codex_turn_dir/raw.out")" ]] \
+    || { echo "codex result rawPath does not resolve to the turn's raw.out" >&2; exit 1; }
+  [[ "$(resolve_existing_path "$("$engine" json get --file "$codex_result" --field returnPath)")" \
+     == "$(resolve_existing_path "$codex_turn_dir/return.json")" ]] \
+    || { echo "codex result returnPath does not resolve to the turn's return.json" >&2; exit 1; }
+  if compgen -G "$codex_turn_dir/result.json.*.tmp" >/dev/null; then
+    echo "codex result staging residue survived: $codex_turn_dir" >&2; exit 1
+  fi
+done
+[[ "$("$engine" json get --file "$codex_turn_one/return.json" --field identity.sessionId)" == null ]] \
+  || { echo "first codex return declared a session identity" >&2; exit 1; }
+codex_second_host_session=$("$engine" json get --file "$codex_turn_two/turn.json" --field hostSession)
+[[ "$codex_second_host_session" == codex-fixture-session ]] \
+  || { echo "second codex turn record lost its host session" >&2; exit 1; }
+[[ "$("$engine" json get --file "$codex_turn_two/return.json" --field identity.sessionId)" == "$codex_second_host_session" ]] \
+  || { echo "second codex return does not carry the resumed session" >&2; exit 1; }
 runner_git push -qu origin "$runner_branch"
 
 run_runner_expect prompt-missing-turn 1 "$runner_repo/bin/metasystem" mission prompt-assemble \
@@ -2098,19 +2243,36 @@ make_runner_contract runner-ghost dispatch-ghost 5
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-ghost-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-ghost
 wait_runner_status runner-ghost 10
-python3 - "$runner_repo/artifacts/agents/missions/runner-ghost" <<'PY'
-import json,sys
-from pathlib import Path
-mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
+ghost_mission="$runner_repo/artifacts/agents/missions/runner-ghost"
 # The newest HOST-TURN entry: post-verification entries conclude turns
 # but carry no adjudication.
-turns=[e for e in state["turnLog"] if e.get("kind")!="wall-verification"]
-rejected=turns[-1]["rejected"]
-assert len(rejected)==1 and rejected[0]["kind"]=="dispatched"
-assert "does not exist" in rejected[0]["reason"]
-ask=json.loads((mission/"asks"/f"{rejected[0]['askId']}.json").read_text())
-assert ask["reasonClass"]=="host-failure" and ask["answeredAt"] is None
-PY
+ghost_last_turn=
+while IFS= read -r ghost_entry; do
+  [[ -n "$ghost_entry" ]] || continue
+  [[ "$("$engine" json get --value "$ghost_entry" --field kind --default '')" == wall-verification ]] && continue
+  ghost_last_turn=$ghost_entry
+done < <(json_elements "$("$engine" json get --file "$ghost_mission/state.json" --field turnLog)")
+[[ -n "$ghost_last_turn" ]] || { echo "runner-ghost recorded no host turns" >&2; exit 1; }
+ghost_rejected=$("$engine" json get --value "$ghost_last_turn" --field rejected) \
+  || { echo "the ghost host turn carries no rejected set" >&2; exit 1; }
+ghost_rejected_count=0 ghost_rejected_item=
+while IFS= read -r ghost_candidate; do
+  [[ -n "$ghost_candidate" ]] || continue
+  ghost_rejected_count=$((ghost_rejected_count + 1))
+  ghost_rejected_item=$ghost_candidate
+done < <(json_elements "$ghost_rejected")
+[[ "$ghost_rejected_count" == 1 ]] \
+  || { echo "ghost dispatch produced $ghost_rejected_count rejections, want 1" >&2; exit 1; }
+[[ "$("$engine" json get --value "$ghost_rejected_item" --field kind)" == dispatched ]] \
+  || { echo "the ghost rejection is not a dispatched rejection" >&2; exit 1; }
+case "$("$engine" json get --value "$ghost_rejected_item" --field reason)" in
+  *'does not exist'*) ;;
+  *) echo "the ghost rejection reason does not name the missing job" >&2; exit 1 ;;
+esac
+ghost_ask="$ghost_mission/asks/$("$engine" json get --value "$ghost_rejected_item" --field askId).json"
+[[ "$("$engine" json get --file "$ghost_ask" --field reasonClass)" == host-failure \
+   && "$("$engine" json get --file "$ghost_ask" --field answeredAt)" == null ]] \
+  || { echo "the ghost rejection ask is not an open host-failure ask" >&2; exit 1; }
 
 make_runner_contract runner-fence return-ok 1
 mkdir -p "$runner_repo/artifacts/agents/missions/runner-fence"
@@ -2120,32 +2282,52 @@ printf '{"schemaVersion":1,"missionId":"runner-fence","startedAt":"%s","cycles":
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-fence-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake "$runner" start --mission runner-fence
 wait_runner_status runner-fence 11
-python3 - "$runner_repo/artifacts/agents/missions/runner-fence" <<'PY'
-import json,sys
-from pathlib import Path
-mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
-assert state["status"]=="parked" and state["parkReason"]=="fence"
-asks=[json.loads(path.read_text()) for path in (mission/"asks").glob("*.json")]
-assert any(ask["reasonClass"]=="fence" and ask["answeredAt"] is None for ask in asks)
-PY
+fence_mission="$runner_repo/artifacts/agents/missions/runner-fence"
+[[ "$("$engine" json get --file "$fence_mission/state.json" --field status)" == parked \
+   && "$("$engine" json get --file "$fence_mission/state.json" --field parkReason)" == fence ]] \
+  || { echo "the fence-refused mission is not parked on fence" >&2; exit 1; }
+fence_open_ask=
+for fence_ask in "$fence_mission/asks"/*.json; do
+  [[ -f "$fence_ask" ]] || continue
+  "$engine" util json-validate --file "$fence_ask" \
+    || { echo "unparseable mission ask: $fence_ask" >&2; exit 1; }
+  [[ "$("$engine" json get --file "$fence_ask" --field reasonClass)" == fence ]] || continue
+  [[ "$("$engine" json get --file "$fence_ask" --field answeredAt)" == null ]] || continue
+  fence_open_ask=1
+done
+[[ -n "$fence_open_ask" ]] \
+  || { echo "the fence park raised no unanswered fence ask" >&2; exit 1; }
 
 make_runner_contract runner-unverified return-ok 5
 close_bed_baseline "$runner_repo"
 run_runner_expect runner-unverified-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_FAKE_HOST_START_UNVERIFIED=1 "$runner" start --mission runner-unverified
 wait_runner_status runner-unverified 11
-unverified_ask=$(python3 - "$runner_repo/artifacts/agents/missions/runner-unverified" <<'PY'
-import json,sys
-from pathlib import Path
-mission=Path(sys.argv[1]); state=json.loads((mission/"state.json").read_text())
-assert state["parkReason"]=="host-failure"
-turns=list((mission/"turns").glob("*/turn.json")); assert len(turns)==1
-turn=json.loads(turns[0].read_text()); assert turn["error"]=="start-unverified"
-asks=[json.loads(path.read_text()) for path in (mission/"asks").glob("*.json")]
-ask=next(value for value in asks if value["reasonClass"]=="host-failure" and value["answeredAt"] is None)
-print(ask["askId"])
-PY
-)
+unverified_mission="$runner_repo/artifacts/agents/missions/runner-unverified"
+[[ "$("$engine" json get --file "$unverified_mission/state.json" --field parkReason)" == host-failure ]] \
+  || { echo "the unverified-start mission did not park on host-failure" >&2; exit 1; }
+unverified_turn_count=0 unverified_turn_record=
+for unverified_turn in "$unverified_mission/turns"/*/turn.json; do
+  [[ -f "$unverified_turn" ]] || continue
+  unverified_turn_count=$((unverified_turn_count + 1))
+  unverified_turn_record=$unverified_turn
+done
+[[ "$unverified_turn_count" == 1 ]] \
+  || { echo "the unverified-start mission ran $unverified_turn_count turns, want 1" >&2; exit 1; }
+[[ "$("$engine" json get --file "$unverified_turn_record" --field error)" == start-unverified ]] \
+  || { echo "the failed turn does not carry start-unverified" >&2; exit 1; }
+unverified_ask=
+for unverified_ask_file in "$unverified_mission/asks"/*.json; do
+  [[ -f "$unverified_ask_file" ]] || continue
+  "$engine" util json-validate --file "$unverified_ask_file" \
+    || { echo "unparseable mission ask: $unverified_ask_file" >&2; exit 1; }
+  [[ "$("$engine" json get --file "$unverified_ask_file" --field reasonClass)" == host-failure ]] || continue
+  [[ "$("$engine" json get --file "$unverified_ask_file" --field answeredAt)" == null ]] || continue
+  unverified_ask=$("$engine" json get --file "$unverified_ask_file" --field askId)
+  break
+done
+[[ -n "$unverified_ask" ]] \
+  || { echo "no unanswered host-failure ask for the unverified start" >&2; exit 1; }
 run_runner_expect runner-unverified-answer 0 "$runner" answer --mission runner-unverified \
   --ask "$unverified_ask" --answer acknowledged
 wait_runner_status runner-unverified 0
@@ -2189,15 +2371,15 @@ fake_selftest_adapter="$agent_selftest_repo/scripts/agents/adapters/fake.sh"
 run_agent_fixture_captured fake-selftest - "$agent_fixture/fake-selftest.out" "$fake_selftest_adapter" selftest
 grep -Fq 'full protocol sequence' "$agent_fixture/fake-selftest.out" \
   || { echo "fake adapter selftest did not run its full protocol sequence" >&2; exit 1; }
-python3 - "$agent_selftest_repo/artifacts/agents/selftests" <<'PY'
-import json, sys
-from pathlib import Path
-paths = list(Path(sys.argv[1]).glob("fake-selftest-*.json")); assert paths
-value = json.loads(max(paths, key=lambda path: path.stat().st_mtime).read_text())
-assert "resume-identity" in value["provenBehaviorally"]
-assert {"denied-write", "denied-network"}.issubset(value["provenBehaviorally"])
-assert "network" not in value["constructedOnly"]
-PY
+selftest_newest=$(ls -t "$agent_selftest_repo/artifacts/agents/selftests"/fake-selftest-*.json 2>/dev/null | head -1)
+[[ -n "$selftest_newest" ]] || { echo "the fake selftest wrote no pass record" >&2; exit 1; }
+selftest_proven=$("$engine" json get --file "$selftest_newest" --field provenBehaviorally)
+[[ "$selftest_proven" == *'"resume-identity"'* ]] \
+  || { echo "the selftest record does not prove resume-identity" >&2; exit 1; }
+[[ "$selftest_proven" == *'"denied-write"'* && "$selftest_proven" == *'"denied-network"'* ]] \
+  || { echo "the selftest record does not prove the denied probes" >&2; exit 1; }
+[[ "$("$engine" json get --file "$selftest_newest" --field constructedOnly)" != *'"network"'* ]] \
+  || { echo "network stayed constructed-only in the selftest record" >&2; exit 1; }
 
 "$agent_selftest_repo/scripts/agents/arm-supervision.sh" --repo "$agent_selftest_repo" --shutdown >/dev/null 2>&1
 agent_supervision_repo=
