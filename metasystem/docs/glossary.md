@@ -230,7 +230,10 @@ not paths.
 - **Gates** — the checks that must pass, chained with the push in one
   command: the metasystem **suite** (`scripts/validate-metasystem.sh`) and
   the benchmark **kit gate** (`benchmark/validate-kit.sh`). A verdict is
-  read from the chain's exit, never from a log tail.
+  read from the verifying command's own exit code, captured — never
+  from a log tail, and never from the exit of a composite or
+  background invocation that wraps the command and reports its own
+  success instead. A landing gates on that captured code.
 - **Fixture** — a self-contained proof of one behavior inside the suite;
   the design loop's findings land as fixtures so they cannot regress
   silently.

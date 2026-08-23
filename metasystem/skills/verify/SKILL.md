@@ -20,6 +20,7 @@ If no such entrypoint exists, say so explicitly and report the change as unverif
 1. Exercise the changed path with realistic input, including at least one failure or boundary input when the change touches error handling, limits, or state transitions.
 2. Capture the exact command and the observed output. The claim "it works" must be replaceable by that evidence.
 3. When asserting on another agent's behavior, assert the world-state fact (the file exists or does not, the exit code, the listener heard nothing), never the agent's narration of it: a sandbox can deny correctly while the model skips the magic word (recorded 2026-08-03).
+4. Read a verification's verdict from the verifying command's OWN exit code, captured into a variable or file — never from the exit of a composite or background invocation that wraps it (`suite; echo rc=$?` reports the echo, and a `&&` chain sails past a red), and never from a log tail. Any step that acts on the verdict — a commit above all — refuses unless that captured code is zero.
 4. Confirm the observation distinguishes new behavior from old: reproduce the before state when cheap, or point to the artifact that only the new behavior can produce.
 5. If the observation contradicts expectation, stop and diagnose; switch to `skills/take-a-step-back/SKILL.md` if it stops converging.
 6. If making verification pass would require changing an existing test, golden, or expected output, stop and surface it as a contract change for the human. Never silently weaken the assertion.

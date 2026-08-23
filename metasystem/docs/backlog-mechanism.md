@@ -93,4 +93,6 @@ A goal is not done until its story is told. Concluding a goal appends
 its paragraph to `docs/journey.md` — what it changed and why it
 mattered, in plain English for a reader, not a grep — in the same
 landing as the conclusion. The narrator goal owns the file's shape;
-every concluder writes in it.
+every concluder writes in it. Mechanically: append the chapter at
+the end of the file — never anchor an edit on existing prose, which
+wraps across lines and fails silently.

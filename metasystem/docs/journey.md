@@ -292,8 +292,13 @@ delay was an accidental settle window, and the faster shell tore it
 off. The night's hardest lesson rode the same slice: a landing
 chain that prints its verification's return code instead of gating
 on it will eventually ship over a red, and did, once — the fix
-landed within the hour, and the rule that landings gate on their
-own suite's exit is now doctrine in the coordinator's memory.
+landed within the hour. The rule that landings gate on their own
+suite's captured exit was first written into the coordinator's
+memory — and Wido caught that as its own defect the next morning:
+what steers the metasystem must live in the metasystem's code and
+prompts, not in one agent's recollection on one machine. The rule
+now lives in the verify skill and the gates' own definition, where
+every agent on every machine reads it.
 
 ## The last tags leave the human's text (August 23, 2026)
 
