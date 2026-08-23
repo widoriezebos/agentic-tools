@@ -96,3 +96,24 @@ landing as the conclusion. The narrator goal owns the file's shape;
 every concluder writes in it. Mechanically: append the chapter at
 the end of the file — never anchor an edit on existing prose, which
 wraps across lines and fails silently.
+
+How a chapter is written (Wido's standard, 2026-08-23): the journey
+is for a casual reader who has never seen this repository. Every
+chapter must be understandable on its own after one read — a story
+a person could retell. Concretely:
+
+- No acronyms, identifiers, decision numbers, or commit hashes in
+  the prose. Reference numbers live in commit messages and records,
+  never in the story.
+- Abstractions are welcome, including ones that borrow familiar
+  words (the wall, the kit, the ledger) — but the FIRST use in a
+  chapter explains what the thing means inside this system, in one
+  plain clause, before the story leans on it.
+- Say what actually happened — who did what, what broke, what
+  changed — before any principle drawn from it. Concrete first,
+  meaning second.
+- Prefer everyday words over the system's internal vocabulary:
+  "the success signal a command exits with", not "the rc"; "a small
+  embedded Python program", not "a heredoc".
+- The test is reading a chapter aloud to someone who was not there:
+  every sentence must survive that.

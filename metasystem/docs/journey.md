@@ -135,182 +135,184 @@ done.
 
 ## The system asked itself if it was easy (August 22, 2026)
 
-The first goal concluded under the covenant was, fittingly, the one
-that reviewed the system from the seat of the agents who use it.
-Four slices — the goal verbs, the dispatch flow, the scripts and
-skills, the docs — each landing its fixes inside its own appetite.
-The verbs' bones were right; the findings clustered where refusals
-wore success or silence, and where the newest tools had slipped the
-discipline the old ones kept. The docs turned out honest but hard to
-find from the outside. And the review convicted its own author four
-times of the same piped-return-code mistake it was documenting,
-which is the strongest argument it produced: ease of use is not a
-courtesy, it is what keeps the operators of the system from fooling
-themselves.
+The first goal concluded under the covenant was, fittingly, a
+review of the system from the seat of the agents who use it every
+day. Four sittings looked at four surfaces: the commands agents
+type, the machinery that hands work to helper agents, the scripts
+and skills, and the documentation. The healthy finding: the bones
+were right. The sharp finding: almost every defect was a refusal
+dressed up as success or as silence — a command that failed but
+looked fine, or said nothing when it should have explained itself.
+Funniest of all, the review caught its own author four times making
+the same mistake it was documenting: when you chain two commands
+together in a shell, the success signal you see belongs to the last
+command, not the one you cared about — so a failure upstream can
+smile at you. The conclusion wrote itself: ease of use is not a
+courtesy. It is what keeps the people and agents operating a system
+from fooling themselves.
 
 ## The code stopped talking about its own making (August 22, 2026)
 
-Nearly five hundred comments across the engine's six remaining
-packages still explained themselves by the process that made them —
-decision numbers, review rounds, finding tags, the dates of rulings.
-The comment standard says the next reader was not there for any of
-that: a comment states the constraint in the system's own language or
-it does not exist. Three parallel agents swept the packages in an
-afternoon, keeping every constraint and dropping every event; where a
-tag was the entire comment, the real reason was researched out of the
-code and written down for the first time. The living spec names —
-sections of the supervision contract that code legitimately cites —
-stayed. What the sweep could not touch it flagged honestly: a handful
-of user-facing strings still carry old tags into refusal messages,
-banked as their own small piece of work.
+Nearly nine hundred comments in the source code explained themselves
+by the process that produced them — "per decision 118", "review
+round 3, finding 7", dates of old rulings — references that mean
+nothing to the next reader, who was not there. The standard says a
+comment states the rule the code protects, in the system's own
+words, or it does not exist. Waves of helper agents swept the whole
+codebase in an evening, keeping every real explanation and deleting
+every piece of history; where a reference number was the entire
+comment, the agent read the code, worked out the actual reason, and
+wrote it down for the first time.
 
-The third wave of the sweep also wrote a smaller, sharper lesson.
-One of its agents went silent — all twenty of its packages finished,
-not a word reported, no error, no signal. The coordinator treated
-the silence the way the patience vocabulary teaches: no observable
-progress where progress belonged is a stall, so probe it and put a
-clock on the answer. The probe turned out to be more than a
-question — messaging a stopped agent resumes it, and the agent came
-back, completed its verification, and delivered a full green report.
-Two truths came out of that half hour. Correctness never depended
-on the rescue: the work was on disk and verifiable without its
-author, which is why the silence cost nothing but attention. And
-the silence itself was invisible to every watcher except a curious
-coordinator — agents launched through the runtime enjoy none of the
-supervision the metasystem gives its own dispatches. The liveness
-contract that closes that gap is drafted on the backlog.
+The sweep also produced a small drama. One of the helper agents
+went completely silent after finishing its share — no report, no
+error, nothing. Treating silence with no visible progress as a
+stall, the coordinator sent it a status message with a timer
+running — and discovered that messaging a stopped agent brings it
+back to life: it woke, finished its checks, and delivered a full
+report. Nothing was lost, because the working rule held: every
+agent writes its results to disk as it goes, so the work survives
+its author. The gap it exposed — these helper agents run without
+any of the supervision the system gives its own workers — went
+onto the backlog.
 
 ## The queue was made to tell the truth (August 22, 2026)
 
-Before the fleet's first long unattended window, Wido and the
-coordinator trued the ledger in one sitting: nine goals concluded.
-Two were absorbed — the synced backlog and the promotion protocol had
-already been delivered by the very mechanism they asked for, and a
-queue that still requests what exists is lying. Three were dropped by
-ruling, each with a record that can reopen it if the pain returns:
-the principle being that the backlog serves the system as it behaves
-now, not as it once did. Four had been implemented and never
-formally closed — among them the idle watchdog, concluded on the
-best evidence there is: it had been waking the coordinator all day,
-and the commit boundary's static re-proof, which refused a real
-overrun the same afternoon. Six wall rows then took their appetite
-tokens, and the machines had a truthful queue to run dark against.
+Before the two computers ran unattended through the night, Wido and
+the coordinator cleaned up the backlog in one sitting: nine items
+closed. Two were closed because the thing they asked for had
+already been built by other work — a to-do list that still requests
+what exists is lying. Three were dropped by Wido's decision, each
+with a note that makes it cheap to revive if the pain ever returns.
+Four had been finished earlier but never formally closed — among
+them the watchdog that had been waking the coordinator all day,
+closed on the best evidence there is: it visibly works. The six
+remaining pieces of night work each got an agreed time budget, and
+the machines had an honest queue to work from.
 
 ## The wall got its words (August 22, 2026)
 
-The host-implementer wall's first implement row landed the doctrine
-where doctrine actually binds: the interim rule — inside a
-mission the mission runner creates, the host never authors product
-bytes — now
-sits verbatim in both prompt authorities, byte-pinned by tests so a
-paraphrase can never quietly widen it; the orchestrator's broad
-"repository work is yours" opening narrowed to the duties a host
-legitimately owns; and the benchmark manifests' completion gates
-carry the discipline sentence, so a mission cannot call itself done
-while the wall was breached. Interactive work outside the runner
-keeps its ordinary freedom — the rule says so in its own last
-sentence, and a test holds it to that.
+The wall is one of the system's central safety rules: when a run
+operates unattended, the coordinating agent may design, review, and
+approve — but it must never write the product's code itself. Every
+change must come from a worker agent and pass review first. The
+rule keeps an unsupervised coordinator from quietly doing whatever
+it likes and calling it reviewed.
 
-## The floor stopped counting sham evidence (August 23, 2026)
+This night the rule got its exact wording. The one authoritative
+sentence now appears, word for word, in both of the instruction
+documents every unattended run is built from, and automated tests
+pin those words so nobody can quietly soften them later. The
+benchmark's completion checklist gained the same sentence, so a
+run cannot declare itself finished while the rule was broken. And
+pleasingly, the system itself edited the lawyer: an automated check
+that polices vocabulary rejected the sentence's first draft and
+forced a clearer word choice.
 
-The wall's second implement row hardened the benchmark's delegation
-floor: a stream now qualifies only through a completed implementer
-job whose nonempty authorized patch was actually consumed —
-unsuperseded — into an accepted turn. Empty, sham, replayed,
-unapplied, and human-adopted evidence stopped counting, each pinned
-by its own fixture leg, and the incident cohort that motivated the
-wall stays invalid by construction: the new rule accepts a strict
-subset of what the old one accepted. The kit also corrected the
-previous slice on the way through: the discipline sentence had been
-edited into version-locked case manifests in place, and the gate
-refused it — immutable versions mean the sentence rides a new case
-version instead, while tonight's benchmark arm keeps its pinned
-instruments. Two slices in a row now, the system's own gates have
-been the sharpest reviewer of the day's work.
+## The floor stopped counting sham evidence (August 22-23, 2026)
+
+When a benchmark run finishes, a scoring program decides whether
+the run was valid — among other things, whether the work was truly
+done by worker agents rather than smuggled in some other way. The
+old check was shallow: it accepted a worker's job as proof if the
+job finished and someone marked it approved. The new check follows
+the whole paper trail: the job must have produced a real,
+non-empty change, that change must carry its signed permission
+slip from review, the slip must not have been replaced by a newer
+one, and the change must actually have landed in the accepted
+result. Empty work, borrowed slips, reused slips, and changes that
+never landed all stopped counting — each rejection now proven by
+its own automated test. The old benchmark run that once exposed
+this weakness stays invalid forever, by construction.
 
 ## A closed chain testifies alone (August 23, 2026)
 
-The wall's evidence row finished in two sittings. First the
-witnesses: five events joined the closed catalogue and went live at
-their decision sites — an accepted turn announces its wall pass and
-every authorization it consumed, a refusal names the authorization
-and the reason, a violation park names the exact taint a human must
-resolve. Then the durability: a mission chain's integration
-authorizations now travel with the chain's mirror, and closing the
-chain attests them — a record the mirror never carried, a record
-tampered after mirroring, and a record the disk lost each refuse
-the close by name. The principle underneath is the flight
-recorder's, applied to the wall: records are the authority, events
-are the witnesses, and evidence that cannot survive its author has
-not been kept.
+Every worker agent's job leaves records — what it was asked, what
+it produced, what the review said. Those records are copied into a
+safe archive, and closing a job is a formal act that certifies the
+archive is complete. This night the permission slips joined the
+archive: the review approvals a job earned are now copied alongside
+its other records, and the closing check refuses to certify if a
+slip is missing from the archive, was tampered with after copying,
+or vanished from disk after being archived — each refusal with its
+own plainly-worded error. The principle is the system's oldest one,
+applied to its newest records: evidence that cannot survive the
+loss of its author has not really been kept.
 
 ## The commit point learned to doubt itself (August 23, 2026)
 
-The acceptance write — the one write that joins wall verdict,
-trees, turn log, and consumed digests — turned out to be mostly
-built already: the crash shapes on either side of it had been
-pinned one incident at a time, by the reserve-wedge fix, the heal
-work, and the ledger-ahead fixtures, and the obligation row's
-MISSING status was simply stale. The audit that proved this found
-one real gap: the write claimed atomicity but not durability, and
-a commit point that might not survive a crash has not committed.
-It now publishes through the two-outcome writer and, when
-durability is in doubt, re-reads and proves its own bytes before
-the runner may proceed. Most of the row's work was recognizing
-what already existed — which is its own kind of progress, and
-cheaper than building it twice.
+In an unattended run, there is exactly one moment when a round of
+work becomes official: a single write that records the outcome,
+the evidence, and the approvals together, so a crash can never
+leave the books half-written. Reviewing this machinery revealed a
+pleasant surprise and one real gap. The surprise: nearly all of it
+already existed — earlier incidents had each forced a piece of it,
+and the to-do row simply had not been updated. The gap: the write
+promised that a crash could not corrupt it, but not that its bytes
+had actually reached the disk. Now, whenever that doubt exists, the
+system reads its own write back and proves the bytes before moving
+on. A moment that might not survive a crash has not really
+happened — so now it checks.
 
 ## The flake was made to explain itself (August 23, 2026)
 
-Three sightings in thirty days promoted a census flake from noise
-to defect, and the fix turned out to be epistemology rather than
-surgery. The failing bed's inner state had been swept every time,
-so the mechanism could not be known — the only honest fix was to
-make the failure carry its own evidence: a census wait that fails
-now prints the exact snapshot it judged, and the fixture's record
-edits became atomic, eliminating the one candidate that could be
-eliminated by construction. The investigation also convicted its
-own author once more: a liveness probe added on the load-kill
-theory fired deterministically — because the "child" it probed is
-a synthetic pid in a simulated process table, and the probe was
-interrogating a stranger. The theory died by its own instrument,
-the probe came out, and the suite passed standalone and under
-deliberate parallel load. If the flake returns, it arrives named.
+A flake is a test that usually passes but occasionally fails for
+unclear reasons. One such test — part of the machinery that
+periodically head-counts every process on the machine — failed for
+the third time in a month, which by the system's own rule promotes
+it from noise to a defect that must be addressed. The frustration:
+every time it failed, the temporary folder holding the evidence had
+already been cleaned up, so the cause could not be studied. The fix
+was therefore about knowledge rather than surgery: a failing test
+of this kind now prints the exact data it judged, so the next
+failure arrives carrying its own explanation, and the one cause
+that could be ruled out by construction — a reader catching a file
+mid-write — was eliminated by making all such writes atomic. The
+investigation also convicted its own author: a probe added to test
+one theory kept firing constantly, because the "process" it was
+probing turned out to be a made-up number in a simulated test
+environment. Wrong theory, disproven by its own instrument,
+removed. The test now passes even under deliberate heavy load, and
+if it ever fails again, it will say why.
 
 ## The fixtures' python era ends (August 23, 2026)
 
-Kill-python finished in four slices over one night: one hundred
-ninety-five heredocs across seventeen fixture suites and the gate
-of record itself became engine verbs and plain shell, with a single
-honest survivor — the TTY escalation driver, whose real pty has no
-portable shell equivalent, and whose guard now says exactly that.
-The conversion paid for itself twice before it was even done. It
-found four sites truncating live-read files in place and made every
-record edit atomic; and it exposed a race the deleted python had
-been hiding for the leg's whole life — the interpreter's startup
-delay was an accidental settle window, and the faster shell tore it
-off. The night's hardest lesson rode the same slice: a landing
-chain that prints its verification's return code instead of gating
-on it will eventually ship over a red, and did, once — the fix
-landed within the hour. The rule that landings gate on their own
-suite's captured exit was first written into the coordinator's
-memory — and Wido caught that as its own defect the next morning:
-what steers the metasystem must live in the metasystem's code and
-prompts, not in one agent's recollection on one machine. The rule
-now lives in the verify skill and the gates' own definition, where
-every agent on every machine reads it.
+The system's test scripts had grown a habit: whenever a test needed
+to inspect or edit structured data, it embedded a small Python
+program inside the shell script to do it. Almost two hundred of
+these embedded programs had accumulated. In four sittings over one
+night, helper agents replaced them all — each one rewritten to use
+the system's own tools, with the explicit rule that no check may
+come out weaker than the Python it replaces. One survivor remains,
+honestly: a test that drives a real interactive terminal, which
+shell simply cannot do, and which now says so in its own comments.
+
+The conversion paid for itself twice before it was done. It found
+four places where tests were rewriting files in place while other
+programs might be reading them — a recipe for corruption, now fixed
+everywhere. And it exposed a hidden race: one test had only ever
+passed because starting Python is slow, and that accidental delay
+gave the system time to finish a step; the faster replacement tore
+the delay away and the race appeared. The night's hardest lesson
+rode the same work: the coordinator once shipped a change while its
+test run was actually failing, because the success signal it read
+belonged to the wrapper around the test, not the test itself. The
+rule that came out of it — a landing must check the test's own
+recorded result and refuse otherwise — was first written into the
+coordinator's private notes, and Wido caught that too: rules that
+steer this system live in the system's own documents, where every
+agent on every machine reads them. They do now.
 
 ## The last tags leave the human's text (August 23, 2026)
 
-The comment sweep had left string literals alone by design, and a
-handful carried review tags into text a person actually reads — a
-refusal citing a decision number, an error citing a review round, an
-event naming a known-issue id. Each now names its invariant instead:
-the wall issues authorizations only on critic closure, without
-exception; a publication aborts because a successor took custody
-mid-write; a re-announcement reconciles the holder identity. Small
-words, but they are the words the system speaks to its operator at
-exactly the moments trust is being decided.
+A final small cleanup with an outsized principle. Three of the
+messages the system shows a person at its most delicate moments —
+refusing an unauthorized change, aborting a risky write, recording
+an identity handover — still cited internal reference numbers, the
+way an old bureaucracy cites form codes. Each message now explains
+its actual reason in plain words. They are only sentences, but they
+are the sentences the system speaks exactly when a person is
+deciding whether to trust it.
 
 ## The benchmark knocks and is let in (August 23, 2026)
 
@@ -338,3 +340,20 @@ One reordering, one new test pinning that a registered headless
 session is welcome exactly where an unidentified one is not, and
 no security rule loosened. The benchmark is unblocked for its
 rerun.
+
+## The story learns to speak plainly (August 23, 2026)
+
+Wido read the narrative this morning and split it in two with one
+judgment: the early chapters welcomed a casual reader in, and the
+overnight chapters shut that reader out — written by someone deep
+inside the machine, in the machine's own words, to the point of
+word salad. Both halves were written by the same narrator; the
+difference was discipline, not ability. So the overnight chapters
+were rewritten the same day for a reader who has never seen the
+repository, and the discipline became a standing rule in the
+system's own documentation, beside the covenant that creates these
+chapters: every abstraction earns a plain introduction at first
+use, reference numbers stay out of the prose, what happened comes
+before what it means, and every sentence must survive being read
+aloud to someone who was not there. This chapter is the first one
+written under that rule about itself.
