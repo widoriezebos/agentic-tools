@@ -1,11 +1,12 @@
 # wall-o19-recovery-ladder
 
-- State: queued
+- State: claimed
 - Intent: Wall violations recover on a ladder: the runner auto-restores mechanical cases; a human is asked only for adoption, no verifiable restore, or repeat offense (D117, Wido's ruling)
 - Origin: main
 - Next step: Appetite: 1d for SLICE A of the MINIMAL LADDER (Wido's ruling 2026-08-23 evening, sliced per the delivery law): the anchored recovery record plus in-pass mechanical restore for the dominant case ONLY — pre-acceptance phase, workspace domain, clean carriers, no simultaneous domains, restore sourced from the wall's COMPOSED expected tree (the S2-R3-02 correction), whole-posture re-verification before clearing — and ANY doubt (crash, mixed domain, dirty carrier, late mutation) leaves the taint for the existing human path. No new refs, no schema cutover, no steward wiring. SLICE B (a second 1d, separately tokened when A lands): escalation-ask automation, events, and the crash-window hardening within slice A's shape. The six rounds' eight constraints in plans/wall-o19-recovery-ladder-design.md bind both slices.
 - OpenedAt: 2026-08-20T16:45:00Z
-- Revision: 13
+- Revision: 14
+- Claimed: machine=m1 lineage=coordinator at=2026-08-23T14:18:17Z
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=wall-o19-recovery-ladder
@@ -21,4 +22,5 @@ History:
 - 2026-08-23T13:20:18Z ZAY3MCFGDXQMY0QDJ34CRM05AQ-m1-bf243850 edit actor=m1+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T13:20:23Z 42DJRK2AX32V14J1AQ0NQB9TRQ-m1-bf243850 release actor=m1+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T13:34:03Z ER238TN24RHMC366NBT79TPE0P-m1-bf243850 edit actor=m1+coordinator targets=wall-o19-recovery-ladder
-Integrity: sha256=ef074d7a5931ba87c4a4eb41669f480fbfc9a0e8b67f1d9ff64b19f931b9c322
+- 2026-08-23T14:18:17Z SASDG79KD777ZP3EZHSCEY2HD5-m1-bf243850 claim actor=m1+coordinator targets=wall-o19-recovery-ladder
+Integrity: sha256=ef2d98efbed9c25b77b2f447d86227fab148a82ad688c5f6d1ff5ccb21cf98d2
