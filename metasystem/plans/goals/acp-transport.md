@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
-- Next step: Appetite: 8h continues — PARKED AT WIDO'S SEAL (D88), 2026-08-23 08:15Z, exactly as designed. The genesis fix (9a86eb8) held: rep 1's target provisioned clean in the VM at matched HEAD 89b2509. Cohort bm-2d-20260823t080725z-3548802. THE SEAL NEEDS WIDO, in the VM (limactl shell metasystem-debian-amd64): (1) review /home/wido.guest/trials/cohorts/bm-2d-20260823t080725z-3548802/targets/1/plans/mission-bm-2d.contract.md; (2) note the standing warning — devin-host@1 carries ledgerNoGainBudget=5 below cycles=8 with no acceptBinaryGateFuse, and the contract WILL NOT SEAL until the budget is raised or the fuse acknowledged (issues #4/#8) — that ruling is part of the seal; (3) seal: cd targets/1 && scripts/assert-mission.sh --seal --file plans/mission-bm-2d.contract.md; (4) sign: add the Approval line with the printed hash, commit and push. THEN any coordinator resumes: benchmark/run-cohort.sh --resume bm-2d-20260823t080725z-3548802 (VM, METASYSTEM_TRIALS_ROOT=/home/wido.guest/trials). Machine 2 moves to fleet-menu follow-on work meanwhile; the claim holds for the resume.
+- Next step: Appetite: 8h, ~5h30 spent across both machine-2 sessions — PARKED AT WIDO'S SEAL (D88), 2026-08-23 08:15Z, exactly as designed; CLAIM RELEASED so the human-gated wait does not burn claim-age (re-claim to resume). The genesis fix (9a86eb8) held: rep 1's target provisioned clean in the VM at matched HEAD 89b2509. Cohort bm-2d-20260823t080725z-3548802. THE SEAL NEEDS WIDO, in the VM (limactl shell metasystem-debian-amd64): (1) review /home/wido.guest/trials/cohorts/bm-2d-20260823t080725z-3548802/targets/1/plans/mission-bm-2d.contract.md; (2) rule on the standing warning — devin-host@1 carries ledgerNoGainBudget=5 below cycles=8 with no acceptBinaryGateFuse, and the contract WILL NOT SEAL until the budget is raised or the fuse acknowledged (issues #4/#8); (3) seal: cd targets/1 && scripts/assert-mission.sh --seal --file plans/mission-bm-2d.contract.md; (4) sign: Approval line with the printed hash, commit and push. THEN whichever coordinator is live re-claims and resumes: benchmark/run-cohort.sh --resume bm-2d-20260823t080725z-3548802 (in the VM, METASYSTEM_TRIALS_ROOT=/home/wido.guest/trials). Do not flip without the sealed benchmark (D82).
 - OpenedAt: 2026-08-20T00:25:00Z
-- Revision: 9
+- Revision: 10
 - Claimed: machine=widos-macbook-pro lineage=mac-coordinator at=2026-08-23T08:06:42Z
 
 History:
@@ -18,4 +18,5 @@ History:
 - 2026-08-23T07:55:43Z YP2PPK1WG52X99ACWMEVS5WZP4-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=acp-transport
 - 2026-08-23T08:06:42Z W5C3A9F7PA9ZMK6SSA4J6KTPEB-widos-macbook-pro-bc1be9cb claim actor=widos-macbook-pro+mac-coordinator targets=acp-transport
 - 2026-08-23T08:09:04Z HZZHGM8GA47PE5EFEKZ4NAGHJX-widos-macbook-pro-bc1be9cb edit actor=widos-macbook-pro+mac-coordinator targets=acp-transport
-Integrity: sha256=c0c9a4e0677b3ddf54a4128e5ba1e0fd157c2ea0b271cf5548919de74d0864d7
+- 2026-08-23T08:10:06Z Z80JFBJM135TFZMMZESB4Y33G2-widos-macbook-pro-bc1be9cb edit actor=widos-macbook-pro+mac-coordinator targets=acp-transport
+Integrity: sha256=01f125d8b9a3140fbd7995e7649022911aa39ea72d2731826697452c1d7014d3
