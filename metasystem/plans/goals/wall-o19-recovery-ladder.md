@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Wall violations recover on a ladder: the runner auto-restores mechanical cases; a human is asked only for adoption, no verifiable restore, or repeat offense (D117, Wido's ruling)
 - Origin: main
-- Next step: Appetite: 1d (Wido's rulings 2026-08-23 unblock the redesign): restorable violations NEVER ask — auto-restore silently, repeat offense still escalates — and provenance gets an authenticated ACTOR FIELD in the resolution record (a deliberate schema change, done properly once). The successor design chain enumerates O19-R3-01..05 plus the phase table and the ledger transaction as its spine (all nine round-one findings in plans/wall-o19-recovery-ladder-design.md); a second budget exhaustion stops for Wido regardless.
+- Next step: SECOND EXHAUSTION 2026-08-23 (chains 9-11-9-8, never converging) — BY RULE THE DESIGN WAITS ON WIDO. Six rounds proved automatic wall recovery intersects every hard invariant the system owns; the eight final findings and three options are in plans/wall-o19-recovery-ladder-design.md. RECOMMENDATION: the minimal ladder — pre-acceptance, workspace-only, clean carriers, any doubt escalates — ~2 days honest. RESERVED for Wido's ruling.
 - OpenedAt: 2026-08-20T16:45:00Z
-- Revision: 10
+- Revision: 11
 - Claimed: machine=m1 lineage=coordinator at=2026-08-23T12:38:00Z
 
 History:
@@ -19,4 +19,5 @@ History:
 - 2026-08-23T01:52:37Z 82616NHYM0BN1J8PMKP5SMAQEE-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T08:36:58Z 22AVMF7TWBA1XFHS1B10BVG7SK-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T12:38:00Z 89J49X7641BK0T9X1CNB0Q6PJM-m1-bf243850 claim actor=m1+coordinator targets=wall-o19-recovery-ladder
-Integrity: sha256=325b6e206bb3d7dd51e51d307b9d6e820d6ebdf27ed5f6cfe73d7e3fda862f43
+- 2026-08-23T13:20:18Z ZAY3MCFGDXQMY0QDJ34CRM05AQ-m1-bf243850 edit actor=m1+coordinator targets=wall-o19-recovery-ladder
+Integrity: sha256=3ea39b8ba0bfbaac022f7a1667b3b8aa1cc507def9f5446a92c5ec4cb2d07a7a
