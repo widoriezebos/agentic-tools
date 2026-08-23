@@ -241,3 +241,43 @@ runtimes, not the supported universe.
 | Fake | `scripts/agents/adapters/fake.sh` | No runtime registration; fixture-only protocol simulator |
 
 Per-runtime profile templates live under `skills/<name>/agents/`, and `scripts/adopt.sh` registers them for the selected runtimes. Project-specific delegation facts belong in `docs/project-rules.md`.
+
+## Native subagents versus metasystem delegates
+
+Every rostered runtime ships its own internal subagent feature (Devin
+subagents, Claude Code's agent tool, Codex equivalents). Those are
+CONTEXT-MANAGEMENT features: same session, same credentials, same
+workspace, no external identity. Metasystem dispatch is an
+ACCOUNTABILITY protocol: a delegate carries its own job record, a
+quarantined worktree, a role-scoped permission envelope, a pinned
+model, a hashed brief, a schema-validated return, critic closure, and
+integration only through a conformance-authorized exact patch.
+
+The boundary, in one line: **if the output only feeds the host's own
+head, native subagents are welcome; if the output ships, closes a
+protocol gate, or gets billed to a role, it needs metasystem
+identity.** Native subagent hands are HOST hands — the wall attributes
+their bytes to the host, by definition, not as a technicality.
+
+Native subagents are the right choice — often the better one — for:
+read-only fan-out (search, survey, summarize), the host's own thinking
+(drafting briefs, weighing options, red-teaming a plan before
+dispatch), deepening the host's certification judgment over a
+delegate's return (the recorded certification act stays the host's
+own), throwaway probes in scratch space that never touch the product
+tree, and interactive sessions where the human present is the
+accountability.
+
+They are disqualified, in mission context and without exception, for:
+product bytes (D100), every protocol role whose closure is recorded —
+implementer, design critic, code critic, verifier, conformance; a
+native subagent playing critic is the host grading its own homework
+under another name — and anything that must survive an audit.
+
+Evidence this section exists to prevent repeating: benchmark run bm-2d
+rep 1 (2026-08-23), where a Devin host satisfied the word
+"implementer" with Devin's NATIVE subagents working in the main repo —
+no job record, no worktree, no authorization — and the wall parked the
+mission on the resulting host-authored product tree. The rationale for
+the transport that prevents it at the tool layer is
+`docs/design/acp-transport-rationale.md`.
