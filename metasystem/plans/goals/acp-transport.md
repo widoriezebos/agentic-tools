@@ -3,9 +3,9 @@
 - State: queued
 - Intent: ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
-- Next step: READY except one gate, run attempted 2026-08-23 (mac-coordinator): the kit's versions.lock violation from the o8 in-place case edit is repaired (2d02080: locked bytes restored, sentence minted as taskrun@0.3), the three IL-28 provisioning collisions are fixed (86e2302: stderr proofs, concrete project-rules fill, side-effect-free proof build — the armed-target fingerprint refusal), and validate-kit passes end to end on darwin. VM at matched HEAD 86e2302, devin CLI authenticated, swe-1-7 listed. bm-2d cohort bm-2d-20260822t232655z-3544999 then REFUSED at goal-baseline genesis inside the fresh target: the headless VM caller classifies UNTRUSTED (deebe08's positive-only rule) and genesis refuses it (cabe674's fence) — exactly the PARKED provision-genesis-authority gap, whose own next step already says it gates the D82/D83 acceptance benchmarks. Unblock = that goal's authority ruling, or Wido's word on a sanctioned caller identity for headless VM provisioning (spoofing an agent-signature ancestor works mechanically and was rejected as laundering). Nothing spent past the refusal; the seal was never reached.
+- Next step: Appetite: 8h continues — RESERVED FOR MACHINE 2. UNBLOCKED 2026-08-23 morning (Wido's ruling, landed 9a86eb8): the genesis refusal you hit is fixed — provisioning now announces its session BEFORE adoption, so the headless caller classifies as a registered main and adoption-shape admits it; the kit gate ran green end to end on the fixed path. RERUN: pull main on the Mac AND push origin+transport to the VM, confirm the VM's HEAD matches, then rerun bm-2d via benchmark/run-cohort.sh exactly as before. The run STOPS at Wido's seal (D88) — park there, record where it stopped and what the seal needs, and pick follow-on work from the fleet menu. If anything new refuses, bank the exact refusal on this next step and release.
 - OpenedAt: 2026-08-20T00:25:00Z
-- Revision: 6
+- Revision: 7
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=acp-transport
@@ -14,4 +14,5 @@ History:
 - 2026-08-22T20:28:53Z 46BBGXS24D3V5HFKYZE224T08Q-widos-macbook-pro-bc1be9cb claim actor=widos-macbook-pro+mac-coordinator targets=acp-transport
 - 2026-08-22T23:29:03Z F3XJH1MECQ52E45A36Y9CKP3XG-widos-macbook-pro-bc1be9cb edit actor=widos-macbook-pro+mac-coordinator targets=acp-transport
 - 2026-08-22T23:29:17Z KJ6T9MQS52A1FPB6ZR1YK8FRKA-widos-macbook-pro-bc1be9cb release actor=widos-macbook-pro+mac-coordinator targets=acp-transport
-Integrity: sha256=addf954cf895c3e03e49fd3764495f31eddc63edaa7c543dda61fd9f74c7c3f8
+- 2026-08-23T07:55:43Z YP2PPK1WG52X99ACWMEVS5WZP4-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=acp-transport
+Integrity: sha256=f9196cc9a4e414845a398083c678fc927beaa19d24ebc73ac2f49f9b34096717
