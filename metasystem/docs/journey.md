@@ -478,3 +478,22 @@ shape, the old world's behavior is untouched, and the proof came
 live from the machine again: asked immediately after the fix, the
 verdict named the goal it was fixed under. Every reader in the
 system now sees the world it actually lives in.
+
+## The system finds its voice (August 23, 2026)
+
+The narrator's charter, ruled three months of ambition and sliced
+into three deployable afternoons, finished the same day it was
+ratified. First the system learned to keep a running account of its
+present: one plain sentence per check — which machine, doing what,
+anything a person would care about — capped so it stays readable,
+best-effort so the storyteller can never fail the shift it
+describes; its first live sentence was about itself. Then the
+account learned to notice: a stall reads as a story building — "no
+visible progress for three checks in a row, watching, not yet
+acting" — and falls silent the moment the machinery itself steps
+in. And finally the noticing learned to reach Wido: each building
+condition holds exactly one place in the message queue, so his
+phone hears that something is drifting once while it drifts, never
+once per check. The goal that began as a request to see the journey
+written down ends as a system that narrates its own present, names
+its own troubles, and knows when to speak to its human.

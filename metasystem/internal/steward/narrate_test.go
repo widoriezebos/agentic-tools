@@ -54,7 +54,7 @@ func TestNoticingsNameTheApproachingStall(t *testing.T) {
 		Evidence: Evidence{TicksSinceAdvance: 3},
 	}
 	notes := noticings(mid, TickConfig{StaleTicks: 5, MaxRevivals: 3})
-	if len(notes) != 1 || !strings.Contains(notes[0], "no visible progress for 3 checks") {
+	if len(notes) != 1 || !strings.Contains(notes[0].Line, "no visible progress for 3 checks") {
 		t.Fatalf("an approaching stall must be noticed: %v", notes)
 	}
 	fresh := mid
@@ -66,5 +66,27 @@ func TestNoticingsNameTheApproachingStall(t *testing.T) {
 	acting.Decision = Decision{Action: ActNotify, Reason: "stalled"}
 	if n := noticings(acting, TickConfig{StaleTicks: 5, MaxRevivals: 3}); len(n) != 0 {
 		t.Fatalf("when the decision speaks, the noticing stays quiet: %v", n)
+	}
+}
+
+// A building stall reaches the operator exactly once while it builds:
+// the noticing key holds one pending slot, however many ticks notice.
+func TestNoticingsReachTheHumanOncePerCondition(t *testing.T) {
+	root := t.TempDir()
+	items := []Noticing{{Key: "stall-approaching", Line: "noticing: test stall"}}
+	ReachTheHuman(root, items)
+	ReachTheHuman(root, items)
+	pending, err := PendingNotifications(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, p := range pending {
+		if strings.Contains(p.Message, "test stall") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("one building condition holds one pending slot, got %d", count)
 	}
 }

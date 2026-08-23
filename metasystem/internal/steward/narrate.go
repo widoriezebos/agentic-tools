@@ -96,7 +96,7 @@ func narrationLine(repoRoot string, result TickResult, cfg TickConfig, now time.
 	if result.Decision.Action == ActRevive {
 		notes = append(notes, "reviving stalled work: "+result.Decision.Reason)
 	}
-	notes = append(notes, noticings(result, cfg)...)
+	notes = append(notes, noticingLines(noticings(result, cfg))...)
 	sentence := now.Format("2006-01-02 15:04") + "  " + machine + " is " + doing
 	if len(notes) > 0 {
 		sentence += "; " + strings.Join(notes, "; ")
@@ -109,23 +109,60 @@ func narrationLine(repoRoot string, result TickResult, cfg TickConfig, now time.
 // stall approach instead of learning about it from the intervention;
 // once the decision itself acts, its own note speaks and these stay
 // quiet.
-func noticings(result TickResult, cfg TickConfig) []string {
+// A Noticing is one named building anomaly: the key deduplicates it
+// on the human channel (one pending message per building condition,
+// not one per tick), the line is its plain-English sentence.
+type Noticing struct {
+	Key  string
+	Line string
+}
+
+func noticingLines(items []Noticing) []string {
+	var out []string
+	for _, n := range items {
+		out = append(out, n.Line)
+	}
+	return out
+}
+
+func noticings(result TickResult, cfg TickConfig) []Noticing {
 	cfg = cfg.withDefaults()
 	if result.Decision.Action != ActNone {
 		return nil
 	}
-	var out []string
+	var out []Noticing
 	age := result.Evidence.TicksSinceAdvance
 	working := strings.HasPrefix(result.OpenWork, "claimed goal: ") || strings.HasPrefix(result.OpenWork, "current goal: ")
 	if working && age >= (cfg.StaleTicks+1)/2 && age < cfg.StaleTicks {
-		out = append(out, fmt.Sprintf(
-			"noticing: no visible progress for %d checks in a row — watching, not yet acting (the steward steps in at %d)",
-			age, cfg.StaleTicks))
+		out = append(out, Noticing{
+			Key: "stall-approaching",
+			Line: fmt.Sprintf(
+				"noticing: no visible progress for %d checks in a row — watching, not yet acting (the steward steps in at %d)",
+				age, cfg.StaleTicks),
+		})
 	}
 	if result.Evidence.DryRevivals > 0 && result.Evidence.DryRevivals < cfg.MaxRevivals {
-		out = append(out, fmt.Sprintf(
-			"noticing: %d revival(s) so far without real progress (the steward stops trying at %d and calls the operator)",
-			result.Evidence.DryRevivals, cfg.MaxRevivals))
+		out = append(out, Noticing{
+			Key: "revivals-building",
+			Line: fmt.Sprintf(
+				"noticing: %d revival(s) so far without real progress (the steward stops trying at %d and calls the operator)",
+				result.Evidence.DryRevivals, cfg.MaxRevivals),
+		})
 	}
 	return out
+}
+
+// ReachTheHuman queues each noticing on the delivery-gated channel,
+// one pending message per noticing key: the phone hears that a stall
+// is building exactly once while it builds, and again only if it
+// resolves and later rebuilds (delivery clears the pending slot).
+// Best-effort like the narration itself: the messenger never fails
+// the tick.
+func ReachTheHuman(repoRoot string, items []Noticing) {
+	for _, n := range items {
+		_ = QueueNotification(repoRoot, PendingNotification{
+			Nonce:   "noticing-" + n.Key,
+			Message: "narrator: " + n.Line,
+		})
+	}
 }

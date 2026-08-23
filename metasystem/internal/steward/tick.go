@@ -126,8 +126,11 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	}
 	result := TickResult{Decision: d, Evidence: ev, OpenWork: workReason, Reaped: reaped}
 	// The running plain-English account rides every tick, strictly
-	// best-effort: the storyteller never fails the shift.
+	// best-effort: the storyteller never fails the shift. What the
+	// narration notices also reaches the operator, one gated message
+	// per building condition.
 	Narrate(repoRoot, result, cfg)
+	ReachTheHuman(repoRoot, noticings(result, cfg))
 	return result, nil
 }
 
