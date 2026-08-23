@@ -3,9 +3,9 @@
 - State: queued
 - Intent: ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
-- Next step: Appetite: 8h, ~5h45 spent — RESUME ATTEMPTED 2026-08-23 after Wido's seal word, REFUSED: 'cohort resume refused: repetition 1 contract has no Approval line' (verbatim). The cohort target's contract is still the unsigned provision state — git log in targets/1 shows only 'Add unsigned bm-2d mission contract' / 'Provision benchmark bm-2d instruments', zero Approval lines in plans/mission-bm-2d.contract.md, no seal commit. THE SIGNING NEEDS WIDO AGAIN — likely the seal happened in another checkout or the commit/push step was missed. Exact sequence, in the VM (limactl shell metasystem-debian-amd64): cd /home/wido.guest/trials/cohorts/bm-2d-20260823t080725z-3548802/targets/1 && scripts/assert-mission.sh --seal --file plans/mission-bm-2d.contract.md (prints the contract hash; expect the ledgerNoGainBudget=5-below-cycles=8 warning to need its budget/fuse ruling first per issues #4/#8), then append 'Approval: name=...; date=...; contract-sha256=<printed hash>' to that file, git add + COMMIT + git push origin main (the target's sibling bare origin). Then any coordinator re-claims and resumes: METASYSTEM_TRIALS_ROOT=/home/wido.guest/trials benchmark/run-cohort.sh --resume bm-2d-20260823t080725z-3548802. Claim released meanwhile; machine m2 standing by.
+- Next step: Appetite: 8h, ~5h45 spent — WAITING ON THE SEAL (resume refused verbatim: 'cohort resume refused: repetition 1 contract has no Approval line'; targets/1 still carries the unsigned provision commits). WIDO'S RULING 2026-08-23, recorded on his word this session: FLIP ON VALID GREEN — APPROVED. When cohort bm-2d-20260823t080725z-3548802 completes with a VALID scorecard, the shepherding coordinator flips the ACP delegate-transport default and retires the dangerous-mode waiver in the same arc, evidence linked, no further confirmation round-trip needed (amends the earlier bank-and-wait instruction; D82's sealed-benchmark precondition is then satisfied by the valid green itself). Seal sequence for Wido unchanged: in the VM, cd /home/wido.guest/trials/cohorts/bm-2d-20260823t080725z-3548802/targets/1 && scripts/assert-mission.sh --seal --file plans/mission-bm-2d.contract.md, expect the ledgerNoGainBudget=5-below-cycles=8 budget/fuse ruling (issues #4/#8), append the Approval line with the printed hash, git add + commit + push. m2 has a watcher on the contract and resumes the moment the Approval line lands.
 - OpenedAt: 2026-08-20T00:25:00Z
-- Revision: 14
+- Revision: 15
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=acp-transport
@@ -22,4 +22,5 @@ History:
 - 2026-08-23T08:39:50Z K4DDXC6FTJYR4C8GY10JNR417Z-m2-bc1be9cb claim actor=m2+mac-coordinator targets=acp-transport
 - 2026-08-23T08:40:49Z 2YV0TVZYX3M0YZ752V8536D5VT-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
 - 2026-08-23T08:40:57Z EF4PF87ZVFJHDH97BFQR320T2G-m2-bc1be9cb release actor=m2+mac-coordinator targets=acp-transport
-Integrity: sha256=8cf2e45a072f553cb2da207474f2f0f45867d18128447e00bbb5d902bd9f4b51
+- 2026-08-23T08:42:52Z 1K9TBJR793ERYF90GJXME6XTEJ-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
+Integrity: sha256=436a8d11bec9788486f7c9f0c393879ed070c428178821718f202493d155e0cf
