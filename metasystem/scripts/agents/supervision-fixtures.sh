@@ -122,27 +122,32 @@ pred_any() { # snapshot (ignored): satisfied by any fresh pass — "the census r
 pred_verdict_is() { # snapshot, expected-verdict
   [[ "$(census_field "$1" verdict)" == "$2" ]]
 }
+# The two array predicates below match against `json get`'s compact
+# rendering of a string array. The needles used here carry no
+# JSON-escapable characters, so a substring hit is exactly "some element
+# contains the needle"; an element START is a quote right after the
+# opening bracket or a separating comma, and a mid-element quote renders
+# escaped, so the anchored form is exactly "some element starts with the
+# needle". Needles must stay free of ", \, and ERE metacharacters.
+census_array_contains() { # snapshot, array field, substring
+  local rendered
+  rendered=$(census_field "$1" "$2")
+  [[ "$rendered" == \[* ]] && grep -Fq -- "$3" <<<"$rendered"
+}
+census_array_has_prefix() { # snapshot, array field, element prefix
+  local rendered
+  rendered=$(census_field "$1" "$2")
+  [[ "$rendered" == \[* ]] && grep -Eq -- "(\[|,)\"$3" <<<"$rendered"
+}
 pred_error_contains() { # snapshot, substring
-  python3 - "$1" "$2" <<'PY'
-import json, sys
-v = json.load(open(sys.argv[1]))
-raise SystemExit(0 if any(sys.argv[2] in e for e in v.get("errors", [])) else 1)
-PY
+  census_array_contains "$1" errors "$2"
 }
 pred_verdict_and_error_prefix() { # snapshot, verdict, error-prefix
-  python3 - "$1" "$2" "$3" <<'PY'
-import json, sys
-v = json.load(open(sys.argv[1]))
-raise SystemExit(0 if v.get("verdict") == sys.argv[2]
-                 and any(e.startswith(sys.argv[3]) for e in v.get("errors", [])) else 1)
-PY
+  [[ "$(census_field "$1" verdict)" == "$2" ]] \
+    && census_array_has_prefix "$1" errors "$3"
 }
 pred_raced_exit() { # snapshot: a RACED-EXIT diagnostic is present (freshness via scanSeq)
-  python3 - "$1" <<'PY'
-import json, sys
-v = json.load(open(sys.argv[1]))
-raise SystemExit(0 if any(str(x).startswith("RACED-EXIT") for x in v.get("diagnostics", [])) else 1)
-PY
+  census_array_has_prefix "$1" diagnostics RACED-EXIT
 }
 pred_path_absent() { # snapshot (ignored), path
   [[ ! -e "$2" ]]
@@ -251,29 +256,105 @@ json_field() { # file, dotted field (script-fixtures-022: the engine verb)
   "$ms" json get --file "$1" --field "$2"
 }
 
+json_array_items() { # file, top-level array field: one element per line
+  local raw boundary=$'}\n{'
+  raw=$("$ms" json get --file "$1" --field "$2" 2>/dev/null) || return 1
+  [[ "$raw" == \[* ]] || return 1
+  raw=${raw#\[}
+  raw=${raw%\]}
+  [[ -n "$raw" ]] || return 0
+  # Census inventory items are flat objects and no fixture string carries
+  # "},{", so this boundary split is exact here.
+  printf '%s\n' "${raw//"},{"/$boundary}"
+}
+
 inventory_has() { # last-census, class, pid
-  python3 - "$1" "$2" "$3" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-raise SystemExit(0 if any(str(item.get("pid")) == sys.argv[3] and item.get("class") == sys.argv[2] for item in value.get("inventory", [])) else 1)
-PY
+  local item
+  while IFS= read -r item; do
+    [[ "$("$ms" json get --value "$item" --field pid 2>/dev/null)" == "$3" ]] || continue
+    [[ "$("$ms" json get --value "$item" --field class 2>/dev/null)" == "$2" ]] || continue
+    return 0
+  done < <(json_array_items "$1" inventory)
+  return 1
+}
+
+inventory_has_pid() { # last-census, pid (any class)
+  local item
+  while IFS= read -r item; do
+    [[ "$("$ms" json get --value "$item" --field pid 2>/dev/null)" == "$2" ]] && return 0
+  done < <(json_array_items "$1" inventory)
+  return 1
+}
+
+# Atomically replace one composite-valued top-level field of a JSON object
+# file, leaving every other field exactly as the file's parser sees it.
+# `json set` covers string and integer fields; this covers the object and
+# array fields it cannot spell. The whole file and the field are rendered
+# by the same engine encoder, so the needle below is byte-exact; a failed
+# splice or an unparseable result refuses instead of writing.
+json_replace_field() { # file, top-level field, replacement JSON value
+  local file=$1 field=$2 new=$3 compact old out staged
+  compact=$("$ms" json get --value "{\"root\":$(cat "$file")}" --field root) \
+    || { echo "json_replace_field: $file did not parse" >&2; return 1; }
+  old=$("$ms" json get --file "$file" --field "$field") \
+    || { echo "json_replace_field: $file has no $field" >&2; return 1; }
+  out=${compact/"\"$field\":$old"/"\"$field\":$new"}
+  if [[ "$out" == "$compact" && "$new" != "$old" ]]; then
+    echo "json_replace_field: could not locate $field in $file" >&2
+    return 1
+  fi
+  "$ms" util json-validate --value "$out" \
+    || { echo "json_replace_field: editing $field left $file unparseable" >&2; return 1; }
+  staged=$(mktemp "$(dirname "$file")/.replace.XXXXXX") || return 1
+  printf '%s\n' "$out" >"$staged"
+  mv "$staged" "$file"
+}
+
+edit_state_owner() { # state file, json set edits applied to the owner object
+  local state=$1 owner_staged
+  shift
+  owner_staged=$(mktemp "$(dirname "$state")/.owner-edit.XXXXXX") || return 1
+  "$ms" json get --file "$state" --field owner >"$owner_staged" \
+    || { rm -f "$owner_staged"; return 1; }
+  "$ms" json set --file "$owner_staged" "$@" \
+    || { rm -f "$owner_staged"; return 1; }
+  json_replace_field "$state" owner "$(cat "$owner_staged")" \
+    || { rm -f "$owner_staged"; return 1; }
+  rm -f "$owner_staged"
+}
+
+set_custody_process() { # job record, pidStartedAt, instanceTag
+  local record=$1 started=$2 tag=$3 item pid
+  item=$(json_field "$record" custodyProcesses) || return 1
+  item=${item#\[}
+  item=${item%\]}
+  pid=$("$ms" json get --value "$item" --field pid) || return 1
+  json_replace_field "$record" custodyProcesses \
+    "[{\"pid\":$pid,\"pidStartedAt\":$started,\"instanceTag\":\"$tag\"}]"
 }
 
 write_process_fixture() { # output followed by pid|ppid|pgid|started|argv|cwd rows
-  local output=$1
+  # Rows are fixture-controlled: argv and cwd never carry JSON-escapable
+  # characters, so the rendering below is plain printf. Rename into place:
+  # the census reads this table mid-pass and a torn read is a known flake
+  # class.
+  local output=$1 staged row pid ppid pgid started argv cwd sep='['
   shift
-  python3 - "$output" "$@" <<'PY'
-import json, sys
-from pathlib import Path
-rows = []
-for raw in sys.argv[2:]:
-    pid, ppid, pgid, started, argv, cwd = raw.split("|", 5)
-    rows.append({"pid": int(pid), "ppid": int(ppid), "pgid": int(pgid),
-                 "pidStartedAt": int(started), "argv": argv,
-                 "cwd": None if cwd == "UNRESOLVED" else cwd,
-                 "cwdError": cwd == "UNRESOLVED", "alive": True})
-Path(sys.argv[1]).write_text(json.dumps(rows, indent=2) + "\n")
-PY
+  staged=$(mktemp "$(dirname "$output")/.process-fixture.XXXXXX")
+  for row in "$@"; do
+    IFS='|' read -r pid ppid pgid started argv cwd <<<"$row"
+    if [[ "$cwd" == UNRESOLVED ]]; then
+      printf '%s{"pid":%s,"ppid":%s,"pgid":%s,"pidStartedAt":%s,"argv":"%s","cwd":null,"cwdError":true,"alive":true}' \
+        "$sep" "$pid" "$ppid" "$pgid" "$started" "$argv" >>"$staged"
+    else
+      printf '%s{"pid":%s,"ppid":%s,"pgid":%s,"pidStartedAt":%s,"argv":"%s","cwd":"%s","cwdError":false,"alive":true}' \
+        "$sep" "$pid" "$ppid" "$pgid" "$started" "$argv" "$cwd" >>"$staged"
+    fi
+    sep=','
+  done
+  [[ "$sep" == , ]] || printf '[' >>"$staged"
+  printf ']\n' >>"$staged"
+  mv "$staged" "$output"
 }
 
 # The ordinary operator layout keeps the vendored metasystem one directory below
@@ -417,30 +498,31 @@ printf '{}\n' >"$identity_fixture"
 # What stays observable from outside is the classification boundary: feed
 # 1,000 unrelated rows and two agent rows through the fixture enumeration
 # and the inventory must contain exactly the two agent processes.
-python3 - "$repo" "$tmp/enumerate-filter-resolve-procs.json" <<'PY'
-import json, sys
-repo, output = sys.argv[1], sys.argv[2]
-rows = [
-    {"pid": 50000 + index, "ppid": 1, "pgid": 50000 + index, "pidStartedAt": 100,
-     "argv": f"/usr/bin/non-agent-{index} --flag value", "cwd": repo, "cwdError": False, "alive": True}
-    for index in range(1000)
-]
-rows.append({"pid": 61001, "ppid": 1, "pgid": 61001, "pidStartedAt": 100,
-             "argv": "metasystem-fake-agent first", "cwd": repo, "cwdError": False, "alive": True})
-rows.append({"pid": 61002, "ppid": 1, "pgid": 61002, "pidStartedAt": 100,
-             "argv": "/tool/metasystem-fake-agent second", "cwd": repo, "cwdError": False, "alive": True})
-json.dump(rows, open(output, "w"))
-PY
+{
+  printf '['
+  for ((index = 0; index < 1000; index++)); do
+    printf '{"pid":%s,"ppid":1,"pgid":%s,"pidStartedAt":100,"argv":"/usr/bin/non-agent-%s --flag value","cwd":"%s","cwdError":false,"alive":true},' \
+      "$((50000 + index))" "$((50000 + index))" "$index" "$repo"
+  done
+  printf '{"pid":61001,"ppid":1,"pgid":61001,"pidStartedAt":100,"argv":"metasystem-fake-agent first","cwd":"%s","cwdError":false,"alive":true},' "$repo"
+  printf '{"pid":61002,"ppid":1,"pgid":61002,"pidStartedAt":100,"argv":"/tool/metasystem-fake-agent second","cwd":"%s","cwdError":false,"alive":true}]' "$repo"
+} >"$tmp/enumerate-filter-resolve-procs.json"
 METASYSTEM_CENSUS_PROCESS_FILE="$tmp/enumerate-filter-resolve-procs.json" \
   "$census_engine" proc census --root "$repo" --repo "$repo" \
   --fingerprint ordering-fixture --interval 60 \
   --output "$tmp/enumerate-filter-resolve.json" >/dev/null
-python3 - "$tmp/enumerate-filter-resolve.json" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-assert [item["pid"] for item in value["inventory"]] == [61001, 61002], value["inventory"]
-assert isinstance(value["durationMs"], int) and value["durationMs"] >= 0
-PY
+efr_pids=""
+while IFS= read -r efr_item; do
+  efr_pid=$("$ms" json get --value "$efr_item" --field pid) \
+    || { echo "inventory item carries no pid: $efr_item" >&2; exit 1; }
+  efr_pids="$efr_pids$efr_pid "
+done < <(json_array_items "$tmp/enumerate-filter-resolve.json" inventory)
+[[ "$efr_pids" == "61001 61002 " ]] \
+  || { echo "inventory is not exactly the two agent processes: ${efr_pids:-empty}" >&2
+       cat "$tmp/enumerate-filter-resolve.json" >&2; exit 1; }
+efr_duration=$(json_field "$tmp/enumerate-filter-resolve.json" durationMs) \
+  && [[ "$efr_duration" =~ ^[0-9]+$ ]] \
+  || { echo "durationMs is not a non-negative integer: ${efr_duration:-absent}" >&2; exit 1; }
 echo "enumerate-filter-resolve census fixture passed" >&2
 
 export METASYSTEM_CENSUS_PROCESS_FILE="$process_fixture"
@@ -525,24 +607,51 @@ wait_until "first complete census" test -s "$last"
 
 # S4-5 and S4-10: the authoritative verdict is single-writer, schema-versioned,
 # identifies its owner and instances, and the cross-component fields exist.
-python3 - "$last" "$state" <<'PY'
-import hashlib, json, sys
-from pathlib import Path
-last = json.loads(Path(sys.argv[1]).read_text())
-state_bytes = Path(sys.argv[2]).read_bytes()
-state = json.loads(state_bytes)
-assert last["schemaVersion"] == 2 and last["writer"] == "watch-background-jobs.sh"
-assert last["verdict"] in {"SUCCESS", "CENSUS-FAILED"}
-assert isinstance(last["completedAtEpoch"], int) and isinstance(last["intervalSec"], int)
-assert isinstance(last["durationMs"], int) and last["durationMs"] >= 0
-assert isinstance(last["fingerprint"], str) and last["fingerprint"]
-assert last["generation"] == state["generation"]
-assert last["stateDigest"] == hashlib.sha256(state_bytes).hexdigest()
-assert set(last["counts"]) == {"CUSTODY", "ANNOUNCED", "UNTRACKED"}
-assert set(state["components"]) == {"watcher", "reaper"}
-for component in state["components"].values():
-    assert set(component) >= {"pid", "pidStartedAt", "instanceTag", "heartbeat"}
-PY
+# One snapshot of each artifact, so every assertion binds to the same bytes
+# the way the retired one-shot reader did; both files publish by atomic
+# rename, so a cp is a consistent copy.
+cp "$last" "$tmp/s45-last.json"
+cp "$state" "$tmp/s45-state.json"
+[[ "$(json_field "$tmp/s45-last.json" schemaVersion)" == 2 ]] \
+  || { echo "S4-5: schemaVersion is not 2" >&2; cat "$tmp/s45-last.json" >&2; exit 1; }
+[[ "$(json_field "$tmp/s45-last.json" writer)" == watch-background-jobs.sh ]] \
+  || { echo "S4-5: the verdict does not name its writer" >&2; exit 1; }
+case "$(json_field "$tmp/s45-last.json" verdict)" in
+  SUCCESS | CENSUS-FAILED) ;;
+  *) echo "S4-5: verdict is neither SUCCESS nor CENSUS-FAILED" >&2; exit 1 ;;
+esac
+[[ "$(json_field "$tmp/s45-last.json" completedAtEpoch)" =~ ^-?[0-9]+$ ]] \
+  || { echo "S4-5: completedAtEpoch is not an integer" >&2; exit 1; }
+[[ "$(json_field "$tmp/s45-last.json" intervalSec)" =~ ^-?[0-9]+$ ]] \
+  || { echo "S4-5: intervalSec is not an integer" >&2; exit 1; }
+[[ "$(json_field "$tmp/s45-last.json" durationMs)" =~ ^[0-9]+$ ]] \
+  || { echo "S4-5: durationMs is not a non-negative integer" >&2; exit 1; }
+[[ -n "$(json_field "$tmp/s45-last.json" fingerprint)" ]] \
+  || { echo "S4-5: fingerprint is absent or empty" >&2; exit 1; }
+s45_generation=$(json_field "$tmp/s45-last.json" generation) \
+  || { echo "S4-5: the verdict carries no generation" >&2; exit 1; }
+[[ "$s45_generation" == "$(json_field "$tmp/s45-state.json" generation)" ]] \
+  || { echo "S4-5: census generation does not match the state" >&2; exit 1; }
+[[ "$(json_field "$tmp/s45-last.json" stateDigest)" == "$("$ms" util sha256 --file "$tmp/s45-state.json")" ]] \
+  || { echo "S4-5: stateDigest does not attest the state bytes" >&2; exit 1; }
+json_field "$tmp/s45-last.json" counts >"$tmp/s45-counts.json" \
+  || { echo "S4-5: the verdict carries no counts" >&2; exit 1; }
+[[ "$("$ms" json strip --file "$tmp/s45-counts.json" --key CUSTODY --key ANNOUNCED --key UNTRACKED)" == '{}' ]] \
+  || { echo "S4-5: counts carries keys beyond the three classes" >&2; cat "$tmp/s45-counts.json" >&2; exit 1; }
+for s45_class in CUSTODY ANNOUNCED UNTRACKED; do
+  json_field "$tmp/s45-counts.json" "$s45_class" >/dev/null \
+    || { echo "S4-5: counts is missing $s45_class" >&2; exit 1; }
+done
+json_field "$tmp/s45-state.json" components >"$tmp/s45-components.json" \
+  || { echo "S4-5: the state carries no components" >&2; exit 1; }
+[[ "$("$ms" json strip --file "$tmp/s45-components.json" --key watcher --key reaper)" == '{}' ]] \
+  || { echo "S4-5: state components beyond watcher and reaper" >&2; cat "$tmp/s45-components.json" >&2; exit 1; }
+for s45_component in watcher reaper; do
+  for s45_key in pid pidStartedAt instanceTag heartbeat; do
+    json_field "$tmp/s45-state.json" "components.$s45_component.$s45_key" >/dev/null \
+      || { echo "S4-5: component $s45_component is missing $s45_key" >&2; exit 1; }
+  done
+done
 if "$watcher" --dir "$repo/artifacts/agents/jobs" --scope "$repo" \
     --state "$tmp/second-writer.state" --interval 1 --once --census \
     --supervision-dir "$repo/artifacts/agents/supervision" \
@@ -571,17 +680,12 @@ mkdir -p "$warning_supervision" "$warning_repo/artifacts/agents/jobs"
 printf '[]\n' >"$warning_process_fixture"
 printf '{}\n' >"$warning_identity_fixture"
 touch "$warning_supervision/jobs.state"
-python3 - "$warning_supervision/state.json" <<'PY'
-import json, sys
-value = {
-    "owner": {"pid": 71001, "pidStartedAt": 1, "instanceTag": "warning-owner"},
-    "components": {
-        "watcher": {"pid": 71002, "pidStartedAt": 1, "instanceTag": "warning-watcher"},
-        "reaper": {"pid": 71003, "pidStartedAt": 1, "instanceTag": "warning-reaper"},
-    },
-}
-json.dump(value, open(sys.argv[1], "w"))
-PY
+cat >"$warning_supervision/state.json" <<'JSON'
+{"owner":{"pid":71001,"pidStartedAt":1,"instanceTag":"warning-owner"},
+ "components":{
+  "watcher":{"pid":71002,"pidStartedAt":1,"instanceTag":"warning-watcher"},
+  "reaper":{"pid":71003,"pidStartedAt":1,"instanceTag":"warning-reaper"}}}
+JSON
 METASYSTEM_CENSUS_PROCESS_FILE="$warning_process_fixture" \
 METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$warning_identity_fixture" \
 METASYSTEM_CENSUS_MAX_INTERVAL_SHARE_PERCENT=50 \
@@ -594,11 +698,11 @@ METASYSTEM_CENSUS_MAX_INTERVAL_SHARE_PERCENT=50 \
 grep -Fq 'WARNING CENSUS-SLOW' "$tmp/slow-census.out" \
   && grep -Fq 'defect=scan-exceeds-interval' "$tmp/slow-census.out" \
   || { echo "slow census was not surfaced as a supervision defect" >&2; cat "$tmp/slow-census.out" >&2; exit 1; }
-python3 - "$warning_supervision/last-census.json" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-assert value["durationMs"] > value["intervalSec"] * 1000, value
-PY
+warning_duration=$(json_field "$warning_supervision/last-census.json" durationMs)
+warning_interval=$(json_field "$warning_supervision/last-census.json" intervalSec)
+(( warning_duration > warning_interval * 1000 )) \
+  || { echo "slow census did not record an over-interval duration" >&2
+       cat "$warning_supervision/last-census.json" >&2; exit 1; }
 
 grep -Fq 'pidStartedAt' "$repo/scripts/agents/dispatch.sh" \
   || { echo "S4-1: job record does not carry pidStartedAt" >&2; exit 1; }
@@ -643,37 +747,36 @@ write_process_fixture "$process_fixture" \
   "$unresolved_pid|1|$unresolved_pid|$unresolved_start|metasystem-fake-agent --repo=$repo|UNRESOLVED" \
   "$relative_pid|1|$relative_pid|$relative_start|metasystem-fake-agent --workspace=../repo/not-created/relative|$tmp/peer"
 mkdir -p "$repo/artifacts/agents/mains" "$repo/artifacts/agents/jobs"
-python3 - "$repo/artifacts/agents/mains/announced-$announced_pid.json" "$announced_pid" "$announced_start" <<'PY'
-import json, sys
-from datetime import datetime, timezone
-json.dump({"sessionId":"announced","pid":int(sys.argv[2]),"pidStartedAt":int(sys.argv[3]),"pgid":int(sys.argv[2]),"runtime":"fake","instanceTag":"main-announced","announcedAt":datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}, open(sys.argv[1], "w"))
-PY
+# Rename announcement and job records into place: the census and reaper
+# read these directories mid-pass and a torn read is a known flake class.
+announced_staged=$(mktemp "$repo/artifacts/agents/mains/.announced.XXXXXX")
+printf '{"sessionId":"announced","pid":%s,"pidStartedAt":%s,"pgid":%s,"runtime":"fake","instanceTag":"main-announced","announcedAt":"%s"}\n' \
+  "$announced_pid" "$announced_start" "$announced_pid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$announced_staged"
+mv "$announced_staged" "$repo/artifacts/agents/mains/announced-$announced_pid.json"
 supervisor_start=$(process_started_at "$$")
-supervisor_pgid=$(python3 -c 'import os; print(os.getpgid(int(__import__("sys").argv[1])))' "$$")
+supervisor_pgid=$(ps -o pgid= -p "$$" | tr -d '[:space:]')
+[[ "$supervisor_pgid" =~ ^[0-9]+$ ]] \
+  || { echo "cannot read this shell's process group" >&2; exit 1; }
 mkdir -p "$repo/artifacts/agents/hb"
-python3 - "$repo/artifacts/agents/jobs/owned.json" "$repo/artifacts/agents/hb/owned" "$repo" \
-  "$custody_pid" "$custody_start" "$$" "$supervisor_start" "$supervisor_pgid" \
-  "$(harness_fixture_semantic_cap dormant-job-minutes)" <<'PY'
-import json, sys
-record,heartbeat,repo,child,child_start,supervisor,supervisor_start,supervisor_pgid,cap_min=sys.argv[1:]
-supervisor,supervisor_start,supervisor_pgid=int(supervisor),int(supervisor_start),int(supervisor_pgid)
-tag="metasystem-job-owned"
-json.dump({"jobId":"owned","status":"running","runtime":"fake","workspaceRoot":repo,"pid":supervisor,"pidStartedAt":supervisor_start,"pgid":supervisor_pgid,"instanceTag":tag,"ownershipProof":{"pid":supervisor,"pidStartedAt":supervisor_start,"pgid":supervisor_pgid,"instanceTag":tag},"startedAt":"2099-01-01T00:00:00Z","capMin":int(cap_min),"custodyProcesses":[{"pid":int(child),"pidStartedAt":int(child_start)-1,"instanceTag":tag}]}, open(record, "w"))
-json.dump({"pid":supervisor,"instanceTag":tag},open(heartbeat,"w"))
-PY
+owned_tag=metasystem-job-owned
+owned_cap=$(harness_fixture_semantic_cap dormant-job-minutes)
+owned_staged=$(mktemp "$repo/artifacts/agents/jobs/.owned.XXXXXX")
+printf '{"jobId":"owned","status":"running","runtime":"fake","workspaceRoot":"%s","pid":%s,"pidStartedAt":%s,"pgid":%s,"instanceTag":"%s","ownershipProof":{"pid":%s,"pidStartedAt":%s,"pgid":%s,"instanceTag":"%s"},"startedAt":"2099-01-01T00:00:00Z","capMin":%s,"custodyProcesses":[{"pid":%s,"pidStartedAt":%s,"instanceTag":"%s"}]}\n' \
+  "$repo" "$$" "$supervisor_start" "$supervisor_pgid" "$owned_tag" \
+  "$$" "$supervisor_start" "$supervisor_pgid" "$owned_tag" \
+  "$owned_cap" "$custody_pid" "$((custody_start - 1))" "$owned_tag" >"$owned_staged"
+mv "$owned_staged" "$repo/artifacts/agents/jobs/owned.json"
+printf '{"pid":%s,"instanceTag":"%s"}\n' "$$" "$owned_tag" >"$repo/artifacts/agents/hb/owned"
 # The reaper proves the record's custodian (this shell) by pid+start+tag.
 # This shell's real command line does not carry the job tag, so the fixture
 # identity source supplies it — the same one-source override the census
-# uses; kernel death still vetoes it.
-python3 - "$identity_fixture" "$$" "$supervisor_start" <<'PY'
-import json, sys
-from pathlib import Path
-path, pid, started = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
-value = json.loads(path.read_text())
-value[pid] = {"pidStartedAt": started,
-              "command": "fixture-supervisor metasystem-job-owned"}
-path.write_text(json.dumps(value) + "\n")
-PY
+# uses; kernel death still vetoes it. The table still holds its initial {}
+# here, so the merged result is this one entry; rename into place because
+# the census reads the table mid-pass.
+identity_staged=$(mktemp "$(dirname "$identity_fixture")/.identities.XXXXXX")
+printf '{"%s":{"pidStartedAt":%s,"command":"fixture-supervisor metasystem-job-owned"}}\n' \
+  "$$" "$supervisor_start" >"$identity_staged"
+mv "$identity_staged" "$identity_fixture"
 wait_for_census "three-class census" inventory_has ANNOUNCED "$announced_pid"
 inventory_has "$last" UNTRACKED "$raw_pid"
 inventory_has "$last" UNTRACKED "$custody_pid"
@@ -681,37 +784,22 @@ inventory_has "$last" UNTRACKED "$worktree_pid"
 inventory_has "$last" UNTRACKED "$argv_pid"
 inventory_has "$last" UNTRACKED "$unresolved_pid"
 inventory_has "$last" UNTRACKED "$relative_pid"
-if python3 - "$last" "$peer_pid" <<'PY'
-import json, sys
-v=json.load(open(sys.argv[1])); raise SystemExit(0 if any(str(x.get("pid"))==sys.argv[2] for x in v["inventory"]) else 1)
-PY
+if inventory_has_pid "$last" "$peer_pid"
 then echo "peer repository process entered scope" >&2; exit 1; fi
 # The engine surfaces the per-process unresolved cwd in the verdict's
 # diagnostics (the shell watcher's census.log transcript retired with it).
-python3 - "$last" "$unresolved_pid" <<'PY' \
+census_array_contains "$last" diagnostics "UNRESOLVED-CWD pid=$unresolved_pid" \
   || { echo "S4-6: unresolved cwd was not surfaced per process" >&2; exit 1; }
-import json, sys
-value = json.load(open(sys.argv[1]))
-needle = f"UNRESOLVED-CWD pid={sys.argv[2]}"
-raise SystemExit(0 if any(needle in item for item in value.get("diagnostics", [])) else 1)
-PY
 
 # Correcting the child start alone must not gain custody while the third join
 # key is wrong; only the exact pid+start+tag triple may classify the real CLI
 # child as CUSTODY (S4-2).
-python3 - "$repo/artifacts/agents/jobs/owned.json" "$custody_start" <<'PY'
-import json, os, sys
-p=sys.argv[1]; v=json.load(open(p)); v["custodyProcesses"][0]["pidStartedAt"]=int(sys.argv[2]); v["custodyProcesses"][0]["instanceTag"]="wrong-tag"
-t=p+".tmp"; json.dump(v,open(t,"w")); os.replace(t,p)
-PY
+set_custody_process "$repo/artifacts/agents/jobs/owned.json" "$custody_start" wrong-tag
 wait_for_census "S4-2 wrong-tag census pass" pred_any
 inventory_has "$last" UNTRACKED "$custody_pid" \
   || { echo "S4-2: wrong instanceTag gained custody" >&2; exit 1; }
-python3 - "$repo/artifacts/agents/jobs/owned.json" <<'PY'
-import json, os, sys
-p=sys.argv[1]; v=json.load(open(p)); v["custodyProcesses"][0]["instanceTag"]=v["instanceTag"]
-t=p+".tmp"; json.dump(v,open(t,"w")); os.replace(t,p)
-PY
+set_custody_process "$repo/artifacts/agents/jobs/owned.json" "$custody_start" \
+  "$(json_field "$repo/artifacts/agents/jobs/owned.json" instanceTag)"
 wait_for_census "S4-2 child custody exact join" inventory_has CUSTODY "$custody_pid"
 
 # CENSUS-FAILED covers total enumeration failure and unresolved scope, while a
@@ -726,10 +814,12 @@ wait_for_census "census recovery" pred_verdict_is SUCCESS
 
 race_pid=41009
 write_process_fixture "$process_fixture" "$race_pid|1|$race_pid|$now|metasystem-fake-agent raced|$repo"
-python3 - "$process_fixture" <<'PY'
-import json,sys
-p=sys.argv[1]; v=json.load(open(p)); v[0]["alive"]=False; json.dump(v,open(p,"w"))
-PY
+# Flip the one row to already-exited: the same row write_process_fixture
+# just rendered, with alive false, renamed into place.
+race_staged=$(mktemp "$(dirname "$process_fixture")/.process-fixture.XXXXXX")
+printf '[{"pid":%s,"ppid":1,"pgid":%s,"pidStartedAt":%s,"argv":"metasystem-fake-agent raced","cwd":"%s","cwdError":false,"alive":false}]\n' \
+  "$race_pid" "$race_pid" "$now" "$repo" >"$race_staged"
+mv "$race_staged" "$process_fixture"
 wait_for_census "S4-6 raced-exit census" pred_raced_exit
 [[ "$(json_field "$last" verdict)" == SUCCESS ]] \
   || { echo "S4-6: exited process race failed the census" >&2; exit 1; }
@@ -782,21 +872,12 @@ dispatch_succeeds() { # name
     || { echo "dispatch refused $name census" >&2; cat "$tmp/$name.out" >&2; exit 1; }
 }
 set_gate_census() { # age, interval, fingerprint
-  python3 - "$gate_repo/artifacts/agents/supervision/last-census.json" \
-    "$gate_repo/artifacts/agents/supervision/state.json" "$1" "$2" "$3" <<'PY'
-import json, sys, time
-from pathlib import Path
-census_path, state_path = Path(sys.argv[1]), Path(sys.argv[2])
-value = json.loads(census_path.read_text()); state = json.loads(state_path.read_text())
-value.update({
-    "completedAtEpoch": int(time.time()) - int(sys.argv[3]),
-    "intervalSec": int(sys.argv[4]),
-    "verdict": "SUCCESS",
-    "fingerprint": sys.argv[5],
-    "generation": state["generation"],
-})
-census_path.write_text(json.dumps(value) + "\n")
-PY
+  "$ms" json set --file "$gate_repo/artifacts/agents/supervision/last-census.json" \
+    --int completedAtEpoch=$(( $(date +%s) - $1 )) \
+    --int intervalSec="$2" \
+    --field verdict=SUCCESS \
+    --field fingerprint="$3" \
+    --int generation="$(json_field "$gate_repo/artifacts/agents/supervision/state.json" generation)"
 }
 assert_stale_shape() { # name, window
   local name=$1 window=$2 output="$tmp/$1.out"
@@ -816,10 +897,8 @@ perl -0pi -e 's/^watch\.stale-min=.*$/watch.stale-min=21/m' "$gate_repo/metasyst
 [[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" != "$gate_fingerprint" ]] \
   || { echo "S4-3: relevant configuration did not alter the fingerprint" >&2; exit 1; }
 git -C "$gate_repo" show HEAD:metasystem.conf >"$gate_repo/metasystem.conf"
-python3 - "$gate_repo/artifacts/agents/supervision/state.json" <<'PY'
-import json,sys
-p=sys.argv[1]; v=json.load(open(p)); v["owner"]["instanceTag"] += "-changed"; json.dump(v,open(p,"w"))
-PY
+edit_state_owner "$gate_repo/artifacts/agents/supervision/state.json" \
+  --field instanceTag="$(json_field "$gate_repo/artifacts/agents/supervision/state.json" owner.instanceTag)-changed"
 [[ "$($gate_repo/scripts/agents/arm-supervision.sh fingerprint --repo "$gate_repo")" == "$gate_fingerprint" ]] \
   || { echo "S4-3: supervisor instance identity altered the static fingerprint" >&2; exit 1; }
 cp "$tmp/gate-state.json" "$gate_repo/artifacts/agents/supervision/state.json"
@@ -851,12 +930,8 @@ git -C "$gate_repo" show HEAD:metasystem.conf >"$gate_repo/metasystem.conf"
 # A census from the prior arming generation uses that same refusal shape and
 # additionally names both generations.
 set_gate_census 0 10 "$gate_fingerprint"
-python3 - "$gate_repo/artifacts/agents/supervision/state.json" <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["generation"] += 1
-path.write_text(json.dumps(value) + "\n")
-PY
+"$ms" json set --file "$gate_repo/artifacts/agents/supervision/state.json" \
+  --int generation=$(( $(json_field "$gate_repo/artifacts/agents/supervision/state.json" generation) + 1 ))
 dispatch_fails stale-census-generation 'census verdict is stale'
 assert_stale_shape stale-census-generation 20
 grep -Fq 'censusGeneration=' "$tmp/stale-census-generation.out" \
@@ -864,20 +939,14 @@ grep -Fq 'censusGeneration=' "$tmp/stale-census-generation.out" \
   || { echo "generation-stale refusal did not name both generations" >&2; cat "$tmp/stale-census-generation.out" >&2; exit 1; }
 cp "$tmp/gate-state.json" "$gate_repo/artifacts/agents/supervision/state.json"
 set_gate_census 0 10 "$gate_fingerprint"
-python3 - "$gate_repo/artifacts/agents/supervision/last-census.json" <<'PY'
-import json, sys, time
-p=sys.argv[1]; v=json.load(open(p)); v.update({"completedAtEpoch":int(time.time()),"verdict":"CENSUS-FAILED"}); json.dump(v,open(p,"w"))
-PY
+"$ms" json set --file "$gate_repo/artifacts/agents/supervision/last-census.json" \
+  --int completedAtEpoch="$(date +%s)" --field verdict=CENSUS-FAILED
 dispatch_fails failed-census 'CENSUS-FAILED'
-python3 - "$gate_repo/artifacts/agents/supervision/last-census.json" <<'PY'
-import json, sys, time
-p=sys.argv[1]; v=json.load(open(p)); v.update({"completedAtEpoch":int(time.time()),"verdict":"SUCCESS","fingerprint":"wrong"}); json.dump(v,open(p,"w"))
-PY
+"$ms" json set --file "$gate_repo/artifacts/agents/supervision/last-census.json" \
+  --int completedAtEpoch="$(date +%s)" --field verdict=SUCCESS --field fingerprint=wrong
 dispatch_fails fingerprint-census 'fingerprint does not match'
-python3 - "$gate_repo/artifacts/agents/supervision/state.json" <<'PY'
-import json,sys
-p=sys.argv[1]; v=json.load(open(p)); v["owner"]["pid"]=999999; v["owner"]["pidStartedAt"]=1; json.dump(v,open(p,"w"))
-PY
+edit_state_owner "$gate_repo/artifacts/agents/supervision/state.json" \
+  --int pid=999999 --int pidStartedAt=1
 # The hook reports on the main it belongs to, so it must run as one: the fake
 # runtime's ancestor variable names this shell, which become_main announced and
 # which therefore holds this checkout. Without it the hook correctly reports
@@ -928,16 +997,9 @@ new_owner=$(json_field "$repo/artifacts/agents/supervision/lock.d/owner.json" pi
 
 # Dead announcements are pruned; SessionEnd retires its own; log rotation and
 # end-of-turn UNTRACKED/stale-supervisor surfacing remain visible.
-dead_pid=$(python3 - <<'PY'
-import subprocess,sys
-p=subprocess.Popen(
-    [sys.executable,"-c","import signal; signal.pause()"],
-    stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-    start_new_session=True,
-)
-print(p.pid)
-PY
-)
+# A real process in its own session that stays alive until stop_owned_pid
+# terminates it below; its tag matches no runtime signature.
+dead_pid=$("$ms" supervise launch-detached -- "$ms" util hold --tag metasystem-dead-main-fixture)
 dead_start=$(process_started_at "$dead_pid")
 owned_pids+=("$dead_pid:$dead_start")
 release_checkout "$repo"
@@ -1026,13 +1088,11 @@ done
 
 # The arming event log proves write-announcement precedes the first census and
 # therefore never labels the arming session UNTRACKED.
-python3 - "$repo/artifacts/agents/supervision/arming.log" <<'PY'
-import sys
-lines=open(sys.argv[1]).read().splitlines()
-announce=min(i for i,x in enumerate(lines) if "announcement-written" in x)
-census=min(i for i,x in enumerate(lines) if "first-census-complete" in x)
-assert announce < census
-PY
+announce_line=$(grep -n -m1 -F 'announcement-written' "$repo/artifacts/agents/supervision/arming.log" | cut -d: -f1 || true)
+census_line=$(grep -n -m1 -F 'first-census-complete' "$repo/artifacts/agents/supervision/arming.log" | cut -d: -f1 || true)
+[[ -n "$announce_line" && -n "$census_line" && "$announce_line" -lt "$census_line" ]] \
+  || { echo "arming log does not prove the announcement preceded the first census" >&2
+       cat "$repo/artifacts/agents/supervision/arming.log" >&2; exit 1; }
 
 # S4-11: a sandbox must never stop a supervisor another checkout armed. The
 # operator sandbox above is built without artifacts/ for exactly this reason;
@@ -1069,16 +1129,9 @@ foreign_sleep_pid=$(
 )
 foreign_start=$(process_started_at "$foreign_sleep_pid")
 owned_pids+=("$foreign_sleep_pid:$foreign_start")
-python3 - "$foreign/repo/metasystem/artifacts/agents/supervision/lock.d/owner.json" \
-  "$foreign_sleep_pid" "$foreign_start" <<'PY'
-import json, sys
-from pathlib import Path
-Path(sys.argv[1]).write_text(json.dumps({
-  "pid": int(sys.argv[2]), "pidStartedAt": int(sys.argv[3]),
-  "instanceTag": "metasystem-supervision-owner-some-other-checkout-1-2",
-  "acquiredAt": "1970-01-01T00:00:00Z",
-}) + "\n")
-PY
+printf '{"pid":%s,"pidStartedAt":%s,"instanceTag":"metasystem-supervision-owner-some-other-checkout-1-2","acquiredAt":"1970-01-01T00:00:00Z"}\n' \
+  "$foreign_sleep_pid" "$foreign_start" \
+  >"$foreign/repo/metasystem/artifacts/agents/supervision/lock.d/owner.json"
 set +e
 "$foreign/repo/metasystem/scripts/agents/arm-supervision.sh" --repo "$foreign/repo" --shutdown \
   >"$tmp/foreign-shutdown.out" 2>&1

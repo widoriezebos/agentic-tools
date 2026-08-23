@@ -117,54 +117,45 @@ export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$identity_fixture"
 # reader — including the armer since this same change — goes through the
 # engine, which honors METASYSTEM_FAKE_PROCESS_IDENTITY_FILE directly.
 process_start=$("$harness/bin/metasystem" proc started-at --pid $$)
-python3 - "$identity_fixture" "$$" "$process_start" <<'PY'
-import json, sys
-from pathlib import Path
-path, pid, started = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
-value = json.loads(path.read_text())
-# The engine reads start times natively and no longer registers callers in
-# the fixture file the way the python helper's restricted-CI fallback did,
-# so create the entry rather than updating one.
-value.setdefault(pid, {}).update({"pidStartedAt": started, "pgid": int(pid), "command": "caps-fixture"})
-# Replace, never truncate-in-place: readers take no lock, and a reader that
-# catches write_text between truncate and write sees an empty table. The
-# engine treats an unparseable table as "no entry" and falls back to the
-# kernel — which un-authenticates this shell's announcement mid-classify
-# and lets the ancestry walk escape into the real process tree (where a
-# claude/codex CLI ancestor classifies the caller DELEGATE).
-tmp = path.with_suffix(path.suffix + ".tmp")
-tmp.write_text(json.dumps(value) + "\n")
-tmp.replace(path)
-PY
+# The table still holds its initial {} here, so the merged result is this
+# shell's one entry. Rename into place, never truncate-in-place: readers
+# take no lock, and a reader that catches a torn write sees an empty table.
+# The engine treats an unparseable table as "no entry" and falls back to
+# the kernel — which un-authenticates this shell's announcement
+# mid-classify and lets the ancestry walk escape into the real process
+# tree (where a claude/codex CLI ancestor classifies the caller DELEGATE).
+identity_staged=$(mktemp "$harness/.identities.XXXXXX")
+printf '{"%s":{"pidStartedAt":%s,"pgid":%s,"command":"caps-fixture"}}\n' \
+  "$$" "$process_start" "$$" >"$identity_staged"
+mv "$identity_staged" "$identity_fixture"
 # The 20ms mirror daemon retired (D47): supervision pids change only at
 # arm/re-arm, so each arming is followed by ONE explicit registration of
 # the published identities — same atomic rename discipline as the tear
 # fix, no standing writer racing every read.
 register_supervision_identities() {
-  python3 - "$identity_fixture" "$harness/artifacts/agents/supervision/state.json" <<'PY' || true
-import fcntl, json, sys
-from pathlib import Path
-identities, state_path = map(Path, sys.argv[1:])
-if not state_path.is_file(): raise SystemExit(0)
-try: state = json.loads(state_path.read_text())
-except (OSError, ValueError): raise SystemExit(0)
-lock_path = identities.with_suffix(identities.suffix + ".lock")
-with lock_path.open("a+") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    try: values = json.loads(identities.read_text())
-    except (OSError, ValueError): values = {}
-    for item in [state.get("owner"), *state.get("components", {}).values()]:
-        if not isinstance(item, dict): continue
-        pid, started, tag = item.get("pid"), item.get("pidStartedAt"), item.get("instanceTag")
-        if type(pid) is int and type(started) is int and isinstance(tag, str):
-            values[str(pid)] = {
-                "pidStartedAt": started,
-                "pgid": pid, "command": f"fixture {tag}",
-            }
-    tmp = identities.with_suffix(identities.suffix + ".tmp")
-    tmp.write_text(json.dumps(values) + "\n")
-    tmp.replace(identities)
-PY
+  local state_file=$harness/artifacts/agents/supervision/state.json
+  local entries="" role pid started tag staged
+  [[ -f "$state_file" ]] || return 0
+  "$ms" util json-validate --file "$state_file" >/dev/null 2>&1 || return 0
+  # The table's whole population is this shell plus the identities the
+  # current state publishes. Entries a past registration wrote for
+  # components a later arming replaced are dead pids the kernel vetoes
+  # anyway, so rebuilding from the current state is observably the same as
+  # the retired merge — and with the retired mirror daemon gone nothing
+  # writes this table concurrently, so its flock retired with it.
+  for role in owner components.watcher components.reaper; do
+    pid=$("$ms" json get --file "$state_file" --field "$role.pid" 2>/dev/null) || continue
+    started=$("$ms" json get --file "$state_file" --field "$role.pidStartedAt" 2>/dev/null) || continue
+    tag=$("$ms" json get --file "$state_file" --field "$role.instanceTag" 2>/dev/null) || continue
+    [[ "$pid" =~ ^-?[0-9]+$ && "$started" =~ ^-?[0-9]+$ ]] || continue
+    case "$tag" in *[\"\\]*) continue ;; esac
+    entries="$entries,\"$pid\":{\"pidStartedAt\":$started,\"pgid\":$pid,\"command\":\"fixture $tag\"}"
+  done
+  # Same atomic rename discipline as the tear fix above.
+  staged=$(mktemp "$(dirname "$identity_fixture")/.identities.XXXXXX") || return 0
+  printf '{"%s":{"pidStartedAt":%s,"pgid":%s,"command":"caps-fixture"}%s}\n' \
+    "$$" "$process_start" "$$" "$entries" >"$staged"
+  mv "$staged" "$identity_fixture"
 }
 "$harness/bin/metasystem" lease announce --root "$harness" \
   --session caps-fixture --pid $$ --start "$process_start" --tag caps-fixture --runtime fake >/dev/null
@@ -175,23 +166,17 @@ register_supervision_identities
 
 state=$harness/artifacts/agents/supervision/state.json
 heartbeat=$harness/artifacts/agents/supervision/watcher.heartbeat.json
-python3 - "$state" "$heartbeat" <<'PY'
-import json, sys
-state = json.load(open(sys.argv[1]))
-heartbeat = json.load(open(sys.argv[2]))
-assert state["derivedWatcherCapMin"] == 230, state
-assert heartbeat["loadedCapMin"] == 230, heartbeat
-PY
+assert_loaded_cap() { # expected minutes
+  [[ "$("$ms" json get --file "$state" --field derivedWatcherCapMin)" == "$1" ]] \
+    || { echo "derivedWatcherCapMin is not $1" >&2; cat "$state" >&2; exit 1; }
+  [[ "$("$ms" json get --file "$heartbeat" --field loadedCapMin)" == "$1" ]] \
+    || { echo "loadedCapMin is not $1" >&2; cat "$heartbeat" >&2; exit 1; }
+}
+assert_loaded_cap 230
 
 $arm --repo "$harness" --session caps-fixture --pid $$ --start-time "$process_start" \
   --tag caps-fixture --rearm --max-cap 300 >/dev/null
-python3 - "$state" "$heartbeat" <<'PY'
-import json, sys
-state = json.load(open(sys.argv[1]))
-heartbeat = json.load(open(sys.argv[2]))
-assert state["derivedWatcherCapMin"] == 330, state
-assert heartbeat["loadedCapMin"] == 330, heartbeat
-PY
+assert_loaded_cap 330
 pass_fixture AUTH-R2-007
 
 # Hold the cap-authority transaction with a REAL live identity: under the
@@ -233,24 +218,14 @@ grep -Fq 'blocking-job' "$tmp/downward-rearm.out" \
   || { cat "$tmp/downward-rearm.out" >&2; exit 1; }
 pass_fixture AUTH-R2-006
 
-python3 - "$harness/artifacts/agents/jobs/blocking-job.json" <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["status"] = "completed"
-path.write_text(json.dumps(value) + "\n")
-PY
+"$ms" json set --file "$harness/artifacts/agents/jobs/blocking-job.json" --field status=completed
 
 # Raise only the derived state field, then let the live watcher publish a fresh
 # successful census over that state while continuing to attest its actually
 # loaded 330-minute ceiling. A transient CENSUS-FAILED verdict can replace the
 # successful census before dispatch reads it, so re-attest and retry only that
 # pre-reservation refusal under the same deadline.
-python3 - "$state" <<'PY'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1]); value = json.loads(path.read_text()); value["derivedWatcherCapMin"] = 999
-path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
-PY
+"$ms" json set --file "$state" --int derivedWatcherCapMin=999
 
 brief=$tmp/cap-brief.md
 cat >"$brief" <<'EOF'
@@ -260,17 +235,20 @@ Attempt a cap above the loaded watcher ceiling.
 EOF
 
 census=$harness/artifacts/agents/supervision/last-census.json
+# The live watcher republishes the census by atomic rename, so one cp gives
+# a consistent snapshot and the verdict and digest below bind to the same
+# publication the way the retired one-shot reader did.
+attested_census_over_state() { # census file, state file
+  local digest verdict attested snap="$tmp/attested-census.snapshot.json"
+  digest=$("$ms" util sha256 --file "$2" 2>/dev/null) || return 1
+  cp "$1" "$snap" 2>/dev/null || return 1
+  verdict=$("$ms" json get --file "$snap" --field verdict 2>/dev/null) || return 1
+  attested=$("$ms" json get --file "$snap" --field stateDigest 2>/dev/null) || return 1
+  [[ "$verdict" == SUCCESS && "$attested" == "$digest" ]]
+}
 deadline=$((SECONDS + 10))
 while true; do
-  until python3 - "$state" "$census" <<'PY'
-import hashlib, json, sys
-from pathlib import Path
-state = Path(sys.argv[1]).read_bytes()
-try: census = json.loads(Path(sys.argv[2]).read_text())
-except (OSError, ValueError): raise SystemExit(1)
-attests_state = census.get("stateDigest") == hashlib.sha256(state).hexdigest()
-raise SystemExit(0 if census.get("verdict") == "SUCCESS" and attests_state else 1)
-PY
+  until attested_census_over_state "$census" "$state"
   do
     (( SECONDS < deadline )) \
       || { echo "AUTH-R2-005: watcher did not publish a successful attestation of mutated state" >&2; exit 1; }
@@ -348,23 +326,16 @@ pass_fixture AUTH-R2-008
 
 # AUTH-R2-009 attacks proof completeness itself: removing one named fixture
 # must fail the registry check, while the actually executed registry is exact.
-if python3 - AUTH-R2-005 AUTH-R2-006 <<'PY'
-import sys
-expected = {f"AUTH-R2-{index:03d}" for index in (5, 6, 7, 8)}
-actual = set(sys.argv[1:])
-raise SystemExit(0 if actual == expected else 1)
-PY
-then
+# AUTH-R2-004 retired to the engine (see its comment above).
+registry_is_complete() { # executed fixture ids, order-free and deduplicated
+  [[ "$(printf '%s\n' "$@" | sort -u)" == "$(printf '%s\n' AUTH-R2-005 AUTH-R2-006 AUTH-R2-007 AUTH-R2-008)" ]]
+}
+if registry_is_complete AUTH-R2-005 AUTH-R2-006; then
   echo "AUTH-R2-009: incomplete fixture registry was accepted" >&2
   exit 1
 fi
-python3 - "${passed[@]}" <<'PY'
-import sys
-# AUTH-R2-004 retired to the engine (see its comment above).
-expected = {f"AUTH-R2-{index:03d}" for index in (5, 6, 7, 8)}
-actual = set(sys.argv[1:])
-assert actual == expected, (sorted(actual), sorted(expected))
-PY
+registry_is_complete "${passed[@]}" \
+  || { echo "AUTH-R2-009: executed registry is not exact:" "${passed[@]}" >&2; exit 1; }
 pass_fixture AUTH-R2-009
 
 echo "delegate caps authority fixtures passed" >&2

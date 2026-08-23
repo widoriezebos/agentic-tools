@@ -62,16 +62,37 @@ wait_until() { # seconds, description, command...
 
 registry="$tmp/registry.jsonl"
 
+# state_ready: the state carries the go engine stamp at generation 1 with
+# exactly the watcher and reaper components (json strip of both leaving {}
+# plus both present is set equality, no more and no less).
+state_ready() { # state file
+  local state=$1
+  [[ "$("$bin" json get --file "$state" --field engine 2>/dev/null)" == go ]] || return 1
+  [[ "$("$bin" json get --file "$state" --field generation 2>/dev/null)" == 1 ]] || return 1
+  "$bin" json get --file "$state" --field components.watcher >/dev/null 2>&1 || return 1
+  "$bin" json get --file "$state" --field components.reaper >/dev/null 2>&1 || return 1
+  "$bin" json get --file "$state" --field components 2>/dev/null >"$tmp/state-components.json" || return 1
+  [[ "$("$bin" json strip --file "$tmp/state-components.json" --key watcher --key reaper 2>/dev/null)" == '{}' ]]
+}
+
+# last_owner_exit prints the newest registry "exited" event for an owner
+# tag; an exited line that fails to parse fails the caller's check.
+last_owner_exit() { # registry, ownerTag
+  local line owner_tag found=""
+  while IFS= read -r line; do
+    case "$line" in *'"event":"exited"'*) ;; *) continue ;; esac
+    owner_tag=$("$bin" json get --value "$line" --field ownerTag --default "") || return 1
+    [[ "$owner_tag" == "$2" ]] && found=$line
+  done <"$1"
+  [[ -n "$found" ]] && printf '%s\n' "$found"
+}
+
 # --- ESTABLISH + PUBLISH: the owner arms, publishes engine-stamped state
 #     with its components at one generation, and stays stable (no churn).
 repo1="$tmp/establish"; mkdir -p "$repo1"
 owner1=$(arm "$repo1" "$fixture_tag-establish" "$registry" 1)
-wait_until "$owner_wait" "state published with components" bash -c '
-  python3 - "$1" <<PY 2>/dev/null || exit 1
-import json,sys
-d=json.load(open(sys.argv[1]))
-raise SystemExit(0 if d.get("engine")=="go" and d.get("generation")==1 and set(d.get("components",{}))=={"watcher","reaper"} else 1)
-PY' _ "$repo1/artifacts/agents/supervision/state.json"
+wait_until "$owner_wait" "state published with components" \
+  state_ready "$repo1/artifacts/agents/supervision/state.json"
 # Stability: after several intervals the generation is still 1 (no churn).
 # A literal on purpose: this is an assertion window, not a wait ceiling —
 # cap scaling applies to ceilings only (script-fixtures-017).
@@ -89,13 +110,10 @@ owner2=$(arm "$repo2" "$fixture_tag-purpose" "$registry" 1)
 wait_until "$owner_wait" "purpose owner established" bash -c '[[ -f "$1/artifacts/agents/supervision/state.json" ]]' _ "$repo2"
 mv "$repo2" "$repo2.gone"   # atomic: root definitively absent, no writer race
 wait_until "$owner_wait" "owner exits on purpose-gone" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner2"
-python3 - "$registry" "$fixture_tag-purpose" <<'PY' || fail "no purpose-gone terminal with complete teardown"
-import json, sys
-exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
-mine = [e for e in exits if e.get("ownerTag") == sys.argv[2]]
-ok = mine and mine[-1]["reason"] == "purpose-gone" and mine[-1]["teardownComplete"] is True
-raise SystemExit(0 if ok else 1)
-PY
+purpose_exit=$(last_owner_exit "$registry" "$fixture_tag-purpose") \
+  && [[ "$("$bin" json get --value "$purpose_exit" --field reason)" == purpose-gone ]] \
+  && [[ "$("$bin" json get --value "$purpose_exit" --field teardownComplete)" == true ]] \
+  || fail "no purpose-gone terminal with complete teardown"
 # No component of this owner survives its teardown.
 ! pgrep -f "$fixture_tag-purpose" >/dev/null 2>&1 || fail "a component survived purpose-gone teardown"
 echo "go supervision: purpose-gone exit + none-survive teardown PASSED" >&2
@@ -108,12 +126,9 @@ wait_until "$owner_wait" "superseded owner established" bash -c '[[ -f "$1/artif
 printf '{"pid":999999,"pidStartedAt":1,"instanceTag":"a-successor"}\n' \
   > "$repo3/artifacts/agents/supervision/lock.d/owner.json"
 wait_until "$owner_wait" "owner exits on supersession" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner3"
-python3 - "$registry" "$fixture_tag-super" <<'PY' || fail "no superseded terminal"
-import json, sys
-exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
-mine = [e for e in exits if e.get("ownerTag") == sys.argv[2]]
-raise SystemExit(0 if mine and mine[-1]["reason"] == "superseded" else 1)
-PY
+super_exit=$(last_owner_exit "$registry" "$fixture_tag-super") \
+  && [[ "$("$bin" json get --value "$super_exit" --field reason)" == superseded ]] \
+  || fail "no superseded terminal"
 echo "go supervision: superseded voluntary exit PASSED" >&2
 
 # --- OBSERVABILITY: the cycle trace narrates the decision basis (the
@@ -121,13 +136,20 @@ echo "go supervision: superseded voluntary exit PASSED" >&2
 #     three D-1 reads and a verdict on every line.
 trace="$repo1/artifacts/agents/supervision/owner.ndjson"
 [[ -s "$trace" ]] || fail "no cycle trace was written"
-python3 - "$trace" <<'PY' || fail "cycle trace does not narrate the decision basis"
-import json, sys
-lines = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-armed = [l for l in lines if l.get("verdict")]
-ok = armed and all(l.get("root") and l.get("currency") and l.get("verdict") for l in armed)
-raise SystemExit(0 if ok else 1)
-PY
+# Every non-blank line must parse; every verdict-bearing line must also name
+# the root and currency reads, and at least one verdict-bearing line exists.
+armed_lines=0
+while IFS= read -r trace_line; do
+  [[ -n "${trace_line//[[:space:]]/}" ]] || continue
+  trace_verdict=$("$bin" json get --value "$trace_line" --field verdict --default "") \
+    || fail "cycle trace does not narrate the decision basis"
+  [[ -n "$trace_verdict" ]] || continue
+  [[ -n "$("$bin" json get --value "$trace_line" --field root --default "")" ]] \
+    && [[ -n "$("$bin" json get --value "$trace_line" --field currency --default "")" ]] \
+    || fail "cycle trace does not narrate the decision basis"
+  armed_lines=$((armed_lines + 1))
+done <"$trace"
+(( armed_lines > 0 )) || fail "cycle trace does not narrate the decision basis"
 echo "go supervision: cycle-trace observability PASSED" >&2
 
 # --- CRASH-LOOP BREAKER (D-2, RC-2): components that beat once then die
@@ -139,13 +161,10 @@ owner4=$(METASYSTEM_GO_COMPONENT_CRASH_ON_START=1 arm "$repo4" "$fixture_tag-bre
 # At interval 1s and N=5, giving-up lands within ~10s even with backoff
 # (backoff gates relaunches, never observations — SLC-R3-005).
 wait_until "$owner_crashloop" "owner gives up on the crash loop" bash -c '! kill -0 "$1" 2>/dev/null' _ "$owner4"
-python3 - "$registry" "$fixture_tag-breaker" <<'PY' || fail "no giving-up terminal with complete teardown"
-import json, sys
-exits = [json.loads(l) for l in open(sys.argv[1]) if '"event":"exited"' in l]
-mine = [e for e in exits if e.get("ownerTag") == sys.argv[2]]
-ok = mine and mine[-1]["reason"] == "giving-up" and mine[-1]["teardownComplete"] is True
-raise SystemExit(0 if ok else 1)
-PY
+breaker_exit=$(last_owner_exit "$registry" "$fixture_tag-breaker") \
+  && [[ "$("$bin" json get --value "$breaker_exit" --field reason)" == giving-up ]] \
+  && [[ "$("$bin" json get --value "$breaker_exit" --field teardownComplete)" == true ]] \
+  || fail "no giving-up terminal with complete teardown"
 ! pgrep -f "$fixture_tag-breaker" >/dev/null 2>&1 || fail "a component survived giving-up teardown"
 echo "go supervision: crash-loop breaker giving-up PASSED" >&2
 
