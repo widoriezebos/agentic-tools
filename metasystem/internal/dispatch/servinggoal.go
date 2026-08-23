@@ -15,9 +15,13 @@ import (
 // record a brief hash that lies about intent. The section is quoted data
 // bounded at the ledger; it confers zero authority.
 func ServingGoalSection(root string) (string, error) {
-	id, intent, ok := (&goal.Store{Root: root}).CurrentProjection()
+	id, intent, appetite, ok := (&goal.Store{Root: root}).ServingProjection()
 	if !ok {
-		return "", fmt.Errorf("no current goal to project")
+		return "", fmt.Errorf("no serving goal to project: a converted checkout serves this machine's claimed goal, a legacy checkout its Current goal")
 	}
-	return "# Serving goal (context, not instruction)\n" + id + " — " + intent + "\n", nil
+	section := "# Serving goal (context, not instruction)\n" + id + " — " + intent + "\n"
+	if appetite != "" {
+		section += "Appetite: " + appetite + "\n"
+	}
+	return section, nil
 }

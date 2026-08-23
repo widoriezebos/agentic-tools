@@ -446,3 +446,18 @@ ledger was unreachable. The work also healed a second case of
 yesterday's blindness: the goal line, like the watchdog before it,
 was still reading the retired single-file list, so converted
 machines' missions had been running with no goal line at all.
+
+## Three readers, one blindness, one sweep (August 23, 2026)
+
+Twice in one evening a reviewer had found machinery still reading
+the retired single-file to-do list, so instead of waiting for a
+third discovery the coordinator swept every remaining reader in
+one sitting. The census: one more real gap — the tool that quotes
+the serving goal into a worker's brief refused on converted
+machines, and now routes on the world like its siblings, carrying
+the goal's time budget too; one feature loss — the end-of-turn
+verdict has been judging without its goal thread since the
+migration, harmlessly but blindly, now measured and queued as its
+own fix; and three readers confirmed correct on purpose, each
+serving the old world's own commands. The pattern that started as
+a defect became a checklist, and the checklist came up empty.
