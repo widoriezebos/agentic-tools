@@ -430,3 +430,19 @@ fix, the guard replied that open work exists — the very repair job
 it was being healed by. The larger fleet-pull design, meanwhile,
 proved a full day's work rather than an afternoon's, and stopped
 honestly at its budget with its questions queued for Wido.
+
+## The mission learns which goal it serves (August 23, 2026)
+
+The last of the day's rulings became code before the day ended.
+When an unattended mission builds the instruction sheet for its
+coordinating agent, that sheet now opens with a fresh look at the
+shared backlog and carries one small block naming the goal this
+machine is serving — and, when the goal has an agreed time budget,
+that budget on a second line, so the mission's coordinator feels
+the same appetite pressure a human coordinator would. The look is
+polite by design: it tries to refresh, and if the network refuses,
+it uses what it has — the sheet never fails to build because a
+ledger was unreachable. The work also healed a second case of
+yesterday's blindness: the goal line, like the watchdog before it,
+was still reading the retired single-file list, so converted
+machines' missions had been running with no goal line at all.

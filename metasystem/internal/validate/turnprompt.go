@@ -41,6 +41,9 @@ const servingGoalHeading = "## Serving goal"
 
 var servingGoalLine = regexp.MustCompile(`^.{1,64} — .{1,160}$`)
 
+// servingGoalAppetite admits the appetite convention's token line.
+var servingGoalAppetite = regexp.MustCompile(`^Appetite: .{1,32}$`)
+
 var (
 	turnIDRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	turnShaRe   = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
@@ -221,8 +224,12 @@ func TurnPrompt(root, promptPath, turnDir string) *Violation {
 	}
 
 	if body, present := sections[servingGoalHeading]; present {
-		if len(body) != 1 || !servingGoalLine.MatchString(body[0]) {
-			return &Violation{"serving-goal", "## Serving goal must hold exactly one '<id> — <intent>' line within the ledger's bounds"}
+		wellFormed := (len(body) == 1 || len(body) == 2) && servingGoalLine.MatchString(body[0])
+		if wellFormed && len(body) == 2 {
+			wellFormed = servingGoalAppetite.MatchString(body[1])
+		}
+		if !wellFormed {
+			return &Violation{"serving-goal", "## Serving goal holds one '<id> — <intent>' line, optionally followed by one 'Appetite: <token>' line"}
 		}
 	}
 

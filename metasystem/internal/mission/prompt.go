@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // A mission host-turn prompt is assembled deterministically from the frozen
@@ -609,11 +610,22 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 	// assembly never degrades and never blocks on goal state.
 	// Runner-side and runtime-neutral: every host of every runtime gets
 	// the same line the same way.
-	if goalId, goalIntent, ok := (&goal.Store{Root: repo}).CurrentProjection(); ok {
+	// Best-effort freshness first: a validated fetch may advance the
+	// accepted ledger, and an offline or refused fetch keeps the stale
+	// read under the same never-degrade rule — the prompt never blocks
+	// on goal state.
+	if endpoint, endpointErr := goal.ResolveEndpoint(repo); endpointErr == nil {
+		_, _ = goal.Project(endpoint, true, time.Now())
+	}
+	if goalId, goalIntent, goalAppetite, ok := (&goal.Store{Root: repo}).ServingProjection(); ok {
+		block := "## Serving goal\n" + goalId + " — " + goalIntent
+		if goalAppetite != "" {
+			block += "\nAppetite: " + goalAppetite
+		}
 		blocks = append(blocks, struct {
 			name    string
 			content string
-		}{"## Serving goal", "## Serving goal\n" + goalId + " — " + goalIntent})
+		}{"## Serving goal", block})
 	}
 	blocks = append(blocks, []struct {
 		name    string
