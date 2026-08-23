@@ -1,12 +1,11 @@
 # acp-transport
 
-- State: claimed
+- State: queued
 - Intent: ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
 - Next step: Appetite: 8h, ~5h45 spent — RESUME ATTEMPTED 2026-08-23 after Wido's seal word, REFUSED: 'cohort resume refused: repetition 1 contract has no Approval line' (verbatim). The cohort target's contract is still the unsigned provision state — git log in targets/1 shows only 'Add unsigned bm-2d mission contract' / 'Provision benchmark bm-2d instruments', zero Approval lines in plans/mission-bm-2d.contract.md, no seal commit. THE SIGNING NEEDS WIDO AGAIN — likely the seal happened in another checkout or the commit/push step was missed. Exact sequence, in the VM (limactl shell metasystem-debian-amd64): cd /home/wido.guest/trials/cohorts/bm-2d-20260823t080725z-3548802/targets/1 && scripts/assert-mission.sh --seal --file plans/mission-bm-2d.contract.md (prints the contract hash; expect the ledgerNoGainBudget=5-below-cycles=8 warning to need its budget/fuse ruling first per issues #4/#8), then append 'Approval: name=...; date=...; contract-sha256=<printed hash>' to that file, git add + COMMIT + git push origin main (the target's sibling bare origin). Then any coordinator re-claims and resumes: METASYSTEM_TRIALS_ROOT=/home/wido.guest/trials benchmark/run-cohort.sh --resume bm-2d-20260823t080725z-3548802. Claim released meanwhile; machine m2 standing by.
 - OpenedAt: 2026-08-20T00:25:00Z
-- Revision: 13
-- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-23T08:39:50Z
+- Revision: 14
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=acp-transport
@@ -22,4 +21,5 @@ History:
 - 2026-08-23T08:10:14Z 2AF6R7255X4SK04JC5N5CX34HX-widos-macbook-pro-bc1be9cb release actor=widos-macbook-pro+mac-coordinator targets=acp-transport
 - 2026-08-23T08:39:50Z K4DDXC6FTJYR4C8GY10JNR417Z-m2-bc1be9cb claim actor=m2+mac-coordinator targets=acp-transport
 - 2026-08-23T08:40:49Z 2YV0TVZYX3M0YZ752V8536D5VT-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
-Integrity: sha256=8453880d140d2ae36e9f3b0adc71c58f392ba86126c2b097b5dbc47b7ecf7736
+- 2026-08-23T08:40:57Z EF4PF87ZVFJHDH97BFQR320T2G-m2-bc1be9cb release actor=m2+mac-coordinator targets=acp-transport
+Integrity: sha256=8cf2e45a072f553cb2da207474f2f0f45867d18128447e00bbb5d902bd9f4b51
