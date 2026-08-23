@@ -3,13 +3,14 @@
 - State: claimed
 - Intent: Wall violations recover on a ladder: the runner auto-restores mechanical cases; a human is asked only for adoption, no verifiable restore, or repeat offense (D117, Wido's ruling)
 - Origin: main
-- Next step: Appetite: 6h — design the recovery ladder from plans/recovery-ladder-design-draft.md; the resolution engine consumes it.
+- Next step: STOPPED BY THE APPETITE LAW 2026-08-23 (mac-coordinator, 2h of the 6h token spent): design ran two both-must-agree rounds — round 1's 8 findings folded structurally, round 2 returned 9 with 4 critical (ledger booking-onto-disputed-bytes transaction, authenticated resume entry outranking the raw taint stop and reconciliation, per-detection-site phase table, binding crash-window durability) — a diverging trajectory of real transactional designs that no honest 6h shape fits. plans/wall-o19-recovery-ladder-design.md at b0eaac5 carries the converged round-1 foundation, the round-2 open-question ledger, and a FOUR-SLICE PROPOSAL awaiting coordinator ratification: slice-1 in-turn workspace ladder (6h), slice-2 ledger transaction (1d, design first), slice-3 post-verify+reservation phases (6h), slice-4 repeat rule (3h). Ratify and re-queue as slices; the remaining 4h of this token were preserved rather than burned to a residue-laden failsafe.
 - OpenedAt: 2026-08-20T16:45:00Z
-- Revision: 3
+- Revision: 4
 - Claimed: machine=widos-macbook-pro lineage=mac-coordinator at=2026-08-22T23:29:40Z
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=wall-o19-recovery-ladder
 - 2026-08-22T19:57:26Z CS7NMJK8N54AQRDNPW06KHQA88-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-22T23:29:40Z YT3S77TSAGM0S17205A9XRHX8Y-widos-macbook-pro-bc1be9cb claim actor=widos-macbook-pro+mac-coordinator targets=wall-o19-recovery-ladder
-Integrity: sha256=25a4565624f830faef0eb1ae46efad121626b03148508c572330eb2bc7c67b6e
+- 2026-08-23T00:09:27Z K8XF5SESQ9RA6YTC0CR4BYKE8E-widos-macbook-pro-bc1be9cb edit actor=widos-macbook-pro+mac-coordinator targets=wall-o19-recovery-ladder
+Integrity: sha256=059969f6e5dd8abe6ed4b55dc1dfd848ba2c9d112bccc924ae58765ec4da320c
