@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
-- Next step: Appetite: 8h, ~6h spent — SEALED AND RUNNING 2026-08-23: Wido delegated the seal explicitly; ledger.accept-binary-gate-fuse=true acknowledged the issues-#4/#8 warning by name (the fence.* spelling refuses; the parser's own message names the ledger.* key), seal rc=0 hash 26e3ce02..., Approval committed d1f498f and pushed in targets/1. Cohort bm-2d-20260823t080725z-3548802 rep 1 RESUMED: mission=bm-2d started=yes turn=bm-2d-t1-c8e3 under the devin host. m2 shepherds to completion; FLIP ON VALID GREEN stands approved (dispatch.transport.devin=acp lands in metasystem.conf with the evidence in the same arc). On failure: bank verbatim and release.
+- Next step: Appetite: 8h, ~6h30 spent — REP 1 COMPLETE AND INVALID; banked and released per the failure rule. Cohort bm-2d-20260823t080725z-3548802, results in the VM at benchmark/results/89b2509.../bm-2d-20260823t080725z-3548802/1.{json,md}; cohort state phase=awaiting-approval with rep 2 provisioned at targets/2 awaiting ITS seal. Scorecard: Run validity INVALID on three gates (verbatim): fencesEnforced=no 'one or more observable fence limits were exceeded or unavailable'; rosterPinned=no 'job bm-2d-design-critic-2 effective model differs from requested model'; evidenceSetComplete=no (sourceOwner: KIT) 'missionState: $.admissionOrigins is not allowed; $.openTurn must match exactly one oneOf branch; $.schemaVersion is not one of the allowed values; turns..session-usage.* missing; turns.bm-2d-t1-c8e3.return: file is missing; lastCensus: $.scanSeq is not allowed'. READING: the probe's two hard mechanical gates PASSED (everyJobTerminal, everyChainClosed — dispatch worked, two critic jobs ran 619s/573s and closed); the host turn ran 90min, raised no implementer stream, produced NO return (protocolConformance 0.0), one no-progress cycle, devin orchestrator cost 98 units. TWO DISTINCT DEBTS BEFORE ANY RE-RUN CAN GO VALID: (1) KIT DEBT, mechanical, proposed Appetite 2h — benchmark/schemas/evidence/{mission-state,orchestrator}.schema.json predate WSS schema 4 (admissionOrigins, extended openTurn, schemaVersion 4) and census scanSeq; guaranteed evidenceSetComplete=invalid until aligned (the VM's Aug-18 stash bm-2d rescue contains a superseded start on exactly these files); (2) PROBE FINDINGS for Wido's read — devin substituting the critic's effective model (rosterPinned) and the host's empty return are the mechanical-health answers this probe exists to surface. DO NOT SEAL REP 2 until (1) lands, or its invalidity is guaranteed. FLIP stays approved-on-valid-green and is NOT met.
 - OpenedAt: 2026-08-20T00:25:00Z
-- Revision: 18
+- Revision: 19
 - Claimed: machine=m2 lineage=mac-coordinator at=2026-08-23T13:41:42Z
 
 History:
@@ -27,4 +27,5 @@ History:
 - 2026-08-23T08:45:40Z EC7FY6DK4Y5PFP9VG8EX4PYFYN-widos-m5-pro-bf243850 edit actor=widos-m5-pro+coordinator targets=acp-transport
 - 2026-08-23T13:41:42Z 1N3Z87ZMWAFX3H4DTBNWPF3HDG-m2-bc1be9cb claim actor=m2+mac-coordinator targets=acp-transport
 - 2026-08-23T13:41:51Z RG3FG1NB4KRX9RCW57B9C4T6C9-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
-Integrity: sha256=2b2b317cfe1163a4ad33641ffc416c54276a93d3bb15f299a184484f23c07a9d
+- 2026-08-23T15:13:01Z WHMH0NDJ9JFGTHGCC72PM1Z6YH-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
+Integrity: sha256=8c41a19bf586548e34196b587c11a699ac8c7b6cdb1de21e5f3436399c57959c
