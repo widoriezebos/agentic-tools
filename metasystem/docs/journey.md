@@ -294,3 +294,15 @@ chain that prints its verification's return code instead of gating
 on it will eventually ship over a red, and did, once — the fix
 landed within the hour, and the rule that landings gate on their
 own suite's exit is now doctrine in the coordinator's memory.
+
+## The last tags leave the human's text (August 23, 2026)
+
+The comment sweep had left string literals alone by design, and a
+handful carried review tags into text a person actually reads — a
+refusal citing a decision number, an error citing a review round, an
+event naming a known-issue id. Each now names its invariant instead:
+the wall issues authorizations only on critic closure, without
+exception; a publication aborts because a successor took custody
+mid-write; a re-announcement reconciles the holder identity. Small
+words, but they are the words the system speaks to its operator at
+exactly the moments trust is being decided.

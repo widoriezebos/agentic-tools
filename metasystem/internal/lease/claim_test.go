@@ -111,10 +111,10 @@ func TestLiveHolderKeepsLeaseAgainstDifferentProcess(t *testing.T) {
 	}
 }
 
-// TestKI33SameProcessReannounce: a live process that re-announces
+// TestSameProcessReannounceReconciles: a live process that re-announces
 // under a fresh mainId (a --shutdown then re-arm) must reclaim its own
 // checkout rather than be stranded OWNED-ELSEWHERE against its former identity.
-func TestKI33SameProcessReannounce(t *testing.T) {
+func TestSameProcessReannounceReconciles(t *testing.T) {
 	root := t.TempDir()
 	pid, start := liveChild(t)
 	mustClaim(t, root, ann("main-1-1-aaaaaa", pid, start, ""))
@@ -124,16 +124,16 @@ func TestKI33SameProcessReannounce(t *testing.T) {
 
 	lease, _ := loadLease(root, true)
 	if lease.HolderMainId != "main-1-1-cccccc" {
-		t.Fatalf("KI-33: same-process re-announce must reconcile the holder, got %q", lease.HolderMainId)
+		t.Fatalf("same-process re-announce must reconcile the holder, got %q", lease.HolderMainId)
 	}
 	if lease.ClaimEpoch != 1 {
-		t.Fatalf("KI-33 reconcile must preserve the epoch, got %d", lease.ClaimEpoch)
+		t.Fatalf("the re-announce reconcile must preserve the epoch, got %d", lease.ClaimEpoch)
 	}
 	if lease.Revision != 2 {
-		t.Fatalf("KI-33 reconcile must bump the revision, got %d", lease.Revision)
+		t.Fatalf("the re-announce reconcile must bump the revision, got %d", lease.Revision)
 	}
 	if len(lease.Takeovers) != 0 {
-		t.Fatal("KI-33 reconcile is not a takeover; no takeover should be recorded")
+		t.Fatal("the re-announce reconcile is not a takeover; no takeover should be recorded")
 	}
 }
 

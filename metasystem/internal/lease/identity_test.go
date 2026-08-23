@@ -29,7 +29,7 @@ func TestPairAwareHolderIdentity(t *testing.T) {
 	current := &Lease{Pid: 7, PidStartedAt: 100, PidStartTicks: 55, BootID: "boot-a"}
 	drifted := &Announcement{Pid: 7, PidStartedAt: 104, PidStartTicks: 55, BootID: "boot-a"}
 	if !sameLeaseProcess(current, drifted) {
-		t.Fatal("KI-33 reconciliation failed on a drifted second despite a matching pair")
+		t.Fatal("same-process reconciliation failed on a drifted second despite a matching pair")
 	}
 	rebooted := &Announcement{Pid: 7, PidStartedAt: 100, PidStartTicks: 55, BootID: "boot-b"}
 	if sameLeaseProcess(current, rebooted) {

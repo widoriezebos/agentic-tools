@@ -95,7 +95,7 @@ func TestDiskPublicationFence(t *testing.T) {
 	// The fence: takeover between build and rename aborts.
 	writeOwner(t, root, 99, "successor")
 	if err := checkout.PublishState(held); err == nil {
-		t.Fatal("publication under a successor's lock must abort (SLC-R4-001)")
+		t.Fatal("publication under a successor's lock must abort")
 	}
 }
 

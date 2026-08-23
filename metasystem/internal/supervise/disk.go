@@ -229,7 +229,7 @@ func (c *DiskCheckout) PublishState(held []Held) error {
 	// The fence: currency re-checked as close to the rename as the
 	// filesystem allows.
 	if c.Currency() != NamesSelf {
-		return fmt.Errorf("publication aborted: the lock no longer names this owner (SLC-R4-001)")
+		return fmt.Errorf("publication aborted: the lock no longer names this owner; a successor took custody mid-write")
 	}
 	if err := os.Rename(temporary.Name(), c.statePath()); err != nil {
 		return fmt.Errorf("state rename: %w", err)

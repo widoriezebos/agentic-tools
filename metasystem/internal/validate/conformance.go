@@ -538,7 +538,7 @@ func (r *conformanceRun) mergeStage(recordPath string) ([]string, []string, int)
 		// exception — the micro-dispatch lane is a separate design, not
 		// a waiver path. Non-mission chains keep the waiver.
 		if mission, _ := r.record["mission"].(string); mission != "" {
-			return r.fail("conformance failure: a mission chain cannot waive critique; the host-implementer wall issues integration authorizations only on critic closure (no exception, D100)")
+			return r.fail("conformance failure: a mission chain cannot waive critique; the host-implementer wall issues integration authorizations only on critic closure, without exception")
 		}
 	}
 	if waiver != nil {

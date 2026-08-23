@@ -186,7 +186,7 @@ func (c *claimer) reconcileSameProcess(current *Lease, ann *Announcement) error 
 	if err := c.casSave(&reconciled, &expected); err != nil {
 		return err
 	}
-	c.emitter.Emit(c.root, "lease-renewed", "same-process identity reconciled (KI-33)",
+	c.emitter.Emit(c.root, "lease-renewed", "same-process re-announcement reconciled the holder identity",
 		map[string]string{"epoch": itoa(reconciled.ClaimEpoch)})
 	return nil
 }
