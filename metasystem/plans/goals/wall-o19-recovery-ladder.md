@@ -1,12 +1,11 @@
 # wall-o19-recovery-ladder
 
-- State: claimed
+- State: queued
 - Intent: Wall violations recover on a ladder: the runner auto-restores mechanical cases; a human is asked only for adoption, no verifiable restore, or repeat offense (D117, Wido's ruling)
 - Origin: main
 - Next step: Appetite: 1d for SLICE B (slice A LANDED 92a37c7 on codex AGREE at round 4 — the mechanical rung, the anchored recovery record on the acceptance entry, crash tails park verbatim, repeat offenses escalate): escalation-ask automation (the parked taint's ask carries the recovery context: what was tried, what refused, what the human should verify), events beyond the three verdicts, and the crash-window hardening within slice A's shape (candidates: the composed expected tree as a recordedSafeTree for the human RESTORE after a recovery crash tail; the recovery-refusal reasons as typed evidence). The six rounds' eight constraints in plans/wall-o19-recovery-ladder-design.md bind, plus slice A's recorded narrowings (in-pass-only record flow, the re-verification safety floor).
 - OpenedAt: 2026-08-20T16:45:00Z
-- Revision: 15
-- Claimed: machine=m1 lineage=coordinator at=2026-08-23T14:18:17Z
+- Revision: 16
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=wall-o19-recovery-ladder
@@ -24,4 +23,5 @@ History:
 - 2026-08-23T13:34:03Z ER238TN24RHMC366NBT79TPE0P-m1-bf243850 edit actor=m1+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T14:18:17Z SASDG79KD777ZP3EZHSCEY2HD5-m1-bf243850 claim actor=m1+coordinator targets=wall-o19-recovery-ladder
 - 2026-08-23T17:31:49Z WBX3YVYJ5MF20YQ95KRZ52NFV2-m1-bf243850 edit actor=m1+coordinator targets=wall-o19-recovery-ladder
-Integrity: sha256=ad13e5be3a7075eb3cd2a65da9ef11d8e0b2b9c9c97d053fbc81c327b11400ed
+- 2026-08-23T17:31:54Z 2BETZA9BBQ33QR8XPFVBC2PRFB-m1-bf243850 release actor=m1+coordinator targets=wall-o19-recovery-ladder
+Integrity: sha256=04873415ad9fa93423527e1e54f4f87f44287ef845badaf44fef416629ef15af
