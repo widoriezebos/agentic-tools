@@ -64,6 +64,13 @@ func acceptancePayloadMismatch(proposed map[string]any, turnID string, ctx *wall
 	if capturedAt, _ := wall["capturedAt"].(string); capturedAt != ctx.Capture.CapturedAt {
 		return "acceptance payload capture instant differs from the verified capture"
 	}
+	// The recovery record answers to the gate this process ran, exactly
+	// like every other wall field: a payload claiming a recovery the gate
+	// never performed — or omitting one it did — was built over tampered
+	// evidence.
+	if !jsonDocEqual(wall["recovered"], ctx.Recovered) {
+		return "acceptance payload recovery record differs from the gate's verdict"
+	}
 	if recorded, _ := entry["gatePassed"].(bool); recorded != gatePassed {
 		return "acceptance payload gate verdict differs from the measured truth"
 	}

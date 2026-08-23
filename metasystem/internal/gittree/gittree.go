@@ -477,6 +477,175 @@ func (w Workspace) Anchor(mission, tree string) error {
 	return nil
 }
 
+// MaterializePaths makes each named workspace path carry exactly what the
+// tree records: blob paths are rewritten with the tree's bytes and mode,
+// symlink paths re-linked, and paths the tree does not record removed.
+// Paths are workspace-relative, like every path in this package's API,
+// and resolve against the workspace root in every layout — never the
+// git toplevel a nested checkout sits inside. Only regular files and
+// symlinks are materializable: a gitlink or any other mode refuses
+// before a single byte moves.
+//
+// The confinement guarantee, stated exactly: every mutation happens
+// through an os.Root descent that Lstats each directory component
+// no-follow and refuses a symlink before opening it, and os.Root
+// refuses any resolution that escapes the opened root — so a
+// pre-planted symlink anywhere in a chain refuses the restore, and no
+// operation ever writes outside the tree under the opened root. What
+// this does NOT promise: a hostile process racing the descent can swap
+// a component between the Lstat and the open (os.Root then still
+// confines the write inside the root, but to a redirected in-root
+// location), and a directory whose handle is already open can be
+// renamed, taking later writes with it. Both degrade to a restore that
+// produced the wrong bytes somewhere it was allowed to write — never a
+// silent success: the caller's whole-posture re-verification is the
+// safety floor that turns every such outcome into a refused recovery.
+// Modes are set on the open file handle, never by pathname. The one
+// path trusted by name is the workspace root argument itself — exactly
+// as far as every git -C invocation in this package trusts it, and no
+// further. The worktree alone changes: never the index, HEAD, or any
+// ref.
+func (w Workspace) MaterializePaths(tree string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	top, err := w.topLevel()
+	if err != nil {
+		return fmt.Errorf("gittree materialize: %w", err)
+	}
+	prefix, err := w.treePrefix()
+	if err != nil {
+		return fmt.Errorf("gittree materialize: %w", err)
+	}
+	entries, err := w.Entries(tree, paths)
+	if err != nil {
+		return fmt.Errorf("gittree materialize: %w", err)
+	}
+	for _, path := range paths {
+		if entry, present := entries[path]; present {
+			switch entry.Mode {
+			case "100644", "100755", "120000":
+			default:
+				return fmt.Errorf("gittree materialize: %s carries mode %s, which only a human can restore", path, entry.Mode)
+			}
+		}
+	}
+	root, err := os.OpenRoot(top)
+	if err != nil {
+		return fmt.Errorf("gittree materialize: cannot open the toplevel: %w", err)
+	}
+	defer root.Close()
+	workspaceRoot, closeWorkspace, err := descendNoFollow(root, strings.Trim(filepath.ToSlash(prefix), "/"), false)
+	if err != nil {
+		return fmt.Errorf("gittree materialize: cannot descend to the workspace: %w", err)
+	}
+	defer closeWorkspace()
+	for _, path := range paths {
+		if err := materializeOne(w, workspaceRoot, path, entries); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// descendNoFollow walks slash-separated directory components from a
+// root, Lstat-ing each one no-follow and refusing symlinks before
+// opening it (creating missing directories when create is set). It
+// returns the leaf root and a cleanup that closes every intermediate
+// handle; the passed root itself stays open.
+func descendNoFollow(root *os.Root, dir string, create bool) (*os.Root, func(), error) {
+	opened := []*os.Root{}
+	cleanup := func() {
+		for i := len(opened) - 1; i >= 0; i-- {
+			opened[i].Close()
+		}
+	}
+	current := root
+	if dir == "" || dir == "." {
+		return current, cleanup, nil
+	}
+	for _, component := range strings.Split(dir, "/") {
+		if component == "" {
+			continue
+		}
+		if create {
+			if err := current.Mkdir(component, 0o755); err != nil && !os.IsExist(err) {
+				cleanup()
+				return nil, nil, err
+			}
+		}
+		info, err := current.Lstat(component)
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			cleanup()
+			return nil, nil, fmt.Errorf("%s is a symlink; a restore never follows one", component)
+		}
+		descended, err := current.OpenRoot(component)
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		opened = append(opened, descended)
+		current = descended
+	}
+	return current, cleanup, nil
+}
+
+// materializeOne restores a single workspace-relative path under the
+// pinned workspace root, opening and closing its own parent-chain
+// handles so a large restore set never accumulates descriptors.
+func materializeOne(w Workspace, workspaceRoot *os.Root, path string, entries map[string]Entry) error {
+	entry, present := entries[path]
+	parent, closeParent, err := descendNoFollow(workspaceRoot, filepath.ToSlash(filepath.Dir(path)), present)
+	if err != nil {
+		return fmt.Errorf("gittree materialize: cannot descend the parent of %s: %w", path, err)
+	}
+	defer closeParent()
+	base := filepath.Base(path)
+	if err := parent.Remove(base); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("gittree materialize: cannot replace %s: %w", path, err)
+	}
+	if !present {
+		return nil
+	}
+	content, err := w.git(nil, "cat-file", "blob", entry.OID)
+	if err != nil {
+		return fmt.Errorf("gittree materialize: cannot read %s: %w", path, err)
+	}
+	if entry.Mode == "120000" {
+		if err := parent.Symlink(string(content), base); err != nil {
+			return fmt.Errorf("gittree materialize: cannot relink %s: %w", path, err)
+		}
+		return nil
+	}
+	mode := os.FileMode(0o644)
+	if entry.Mode == "100755" {
+		mode = 0o755
+	}
+	file, err := parent.OpenFile(base, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return fmt.Errorf("gittree materialize: cannot create %s: %w", path, err)
+	}
+	if _, err := file.Write(content); err != nil {
+		file.Close()
+		return fmt.Errorf("gittree materialize: cannot write %s: %w", path, err)
+	}
+	// The umask may have masked bits at creation; the recorded mode is
+	// part of the tree identity, set on the open handle — never by a
+	// pathname that could have been redirected.
+	if err := file.Chmod(mode); err != nil {
+		file.Close()
+		return fmt.Errorf("gittree materialize: cannot set the mode of %s: %w", path, err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("gittree materialize: cannot finish %s: %w", path, err)
+	}
+	return nil
+}
+
 // DropAnchors deletes every anchor ref the mission owns — called once at
 // mission close, never per turn.
 func (w Workspace) DropAnchors(mission string) error {

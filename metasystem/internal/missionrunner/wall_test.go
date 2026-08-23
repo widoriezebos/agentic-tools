@@ -896,7 +896,7 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 	run("add", "-f", "--", "artifacts/agents/missions/alpha/ledger.md")
 	run("commit", "-qm", "host launders its ledger edit")
 
-	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false)
+	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1772,7 +1772,7 @@ func ledgerTamperPark(t *testing.T, tamper func(string) string) (*Engine, string
 	}
 	writeText(t, ledgerPath, tamper(string(pristine)))
 
-	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false)
+	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

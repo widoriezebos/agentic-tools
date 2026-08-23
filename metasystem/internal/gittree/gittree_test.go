@@ -697,3 +697,164 @@ func TestNestedWorkspacePathSpace(t *testing.T) {
 		t.Fatalf("apply(head, diff) = %s, want %s", applied, dirty)
 	}
 }
+
+// The materializer puts named worktree paths back to exactly what a tree
+// records — and touches nothing else: not the index, not undeclared
+// paths, not HEAD.
+func TestMaterializePathsRestoresNamedPaths(t *testing.T) {
+	f := newTreeFixture(t)
+	f.write("kept.txt", "kept\n")
+	f.write("changed.txt", "good\n")
+	f.write("gone.txt", "resurrect me\n")
+	f.git("add", ".")
+	f.commit("baseline")
+	expected := f.snapshot()
+
+	f.write("changed.txt", "scribbled\n")
+	f.write("stray.txt", "host junk\n")
+	if err := os.Remove(filepath.Join(f.w.Dir, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	f.write("kept.txt", "kept but host-edited\n")
+
+	// Only the named paths move; kept.txt was not named and must keep
+	// its host edit (the caller names the restore set, never the tool).
+	err := f.w.MaterializePaths(expected, []string{"changed.txt", "stray.txt", "gone.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{
+		"changed.txt": "good\n", "gone.txt": "resurrect me\n", "kept.txt": "kept but host-edited\n",
+	} {
+		got, rerr := os.ReadFile(filepath.Join(f.w.Dir, path))
+		if rerr != nil || string(got) != want {
+			t.Fatalf("%s after restore: %q err=%v", path, got, rerr)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(f.w.Dir, "stray.txt")); !os.IsNotExist(err) {
+		t.Fatal("a path the tree does not record must be removed")
+	}
+}
+
+// The recorded mode is part of the tree identity: an executable comes
+// back executable even when the host stripped the bit.
+func TestMaterializePathsRestoresMode(t *testing.T) {
+	f := newTreeFixture(t)
+	tool := filepath.Join(f.w.Dir, "tool.sh")
+	f.write("tool.sh", "#!/bin/sh\n")
+	if err := os.Chmod(tool, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.git("add", ".")
+	f.commit("baseline")
+	expected := f.snapshot()
+	if err := os.Chmod(tool, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.w.MaterializePaths(expected, []string{"tool.sh"}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(tool)
+	if err != nil || info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("the executable bit must come back: %v err=%v", info, err)
+	}
+}
+
+// A planted symlink must never route a restore outside the repository:
+// neither as the target's ancestor nor as the target itself.
+func TestMaterializePathsRefusesSymlinkTraversal(t *testing.T) {
+	f := newTreeFixture(t)
+	f.write("dir/inner.txt", "safe\n")
+	f.git("add", ".")
+	f.commit("baseline")
+	expected := f.snapshot()
+	outside := t.TempDir()
+	if err := os.RemoveAll(filepath.Join(f.w.Dir, "dir")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(f.w.Dir, "dir")); err != nil {
+		t.Fatal(err)
+	}
+	err := f.w.MaterializePaths(expected, []string{"dir/inner.txt"})
+	if err == nil {
+		t.Fatal("a symlinked ancestor must refuse")
+	}
+	if _, lerr := os.Lstat(filepath.Join(outside, "inner.txt")); !os.IsNotExist(lerr) {
+		t.Fatal("the restore must not have written through the link")
+	}
+}
+
+// A gitlink is not materializable: only a human can restore a nested
+// checkout, so the tool refuses before a single byte moves.
+func TestMaterializePathsRefusesGitlink(t *testing.T) {
+	f := newTreeFixture(t)
+	f.write("plain.txt", "a\n")
+	f.git("add", ".")
+	// A gitlink entry enters the index directly; the tree then records
+	// mode 160000 for it.
+	f.git("update-index", "--add", "--cacheinfo",
+		"160000,"+strings.Repeat("a", 40)+",vendor")
+	tree := f.git("write-tree")
+	f.write("plain.txt", "scribbled\n")
+	err := f.w.MaterializePaths(tree, []string{"vendor", "plain.txt"})
+	if err == nil || !strings.Contains(err.Error(), "160000") {
+		t.Fatalf("a gitlink must refuse: %v", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(f.w.Dir, "plain.txt"))
+	if string(got) != "scribbled\n" {
+		t.Fatal("the refusal must happen before any byte moves")
+	}
+}
+
+// In the supported nested checkout, workspace-relative paths resolve
+// against the WORKSPACE root — never the git toplevel above it. A decoy
+// at the toplevel with the same relative name must survive untouched.
+func TestMaterializePathsResolvesTheWorkspaceRoot(t *testing.T) {
+	f := newTreeFixture(t)
+	f.write("inner.txt", "toplevel decoy\n")
+	f.write("sub/inner.txt", "workspace truth\n")
+	f.git("add", ".")
+	f.commit("baseline")
+	sub := Workspace{Dir: filepath.Join(f.w.Dir, "sub")}
+	expected, err := sub.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.write("sub/inner.txt", "scribbled\n")
+	if err := sub.MaterializePaths(expected, []string{"inner.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(f.w.Dir, "sub", "inner.txt"))
+	if err != nil || string(got) != "workspace truth\n" {
+		t.Fatalf("the workspace path must be restored: %q err=%v", got, err)
+	}
+	decoy, err := os.ReadFile(filepath.Join(f.w.Dir, "inner.txt"))
+	if err != nil || string(decoy) != "toplevel decoy\n" {
+		t.Fatalf("the toplevel decoy must survive: %q err=%v", decoy, err)
+	}
+}
+
+// An ancestor symlink pointing WITHIN the workspace is refused too: a
+// restore never follows a link, so a planted in-root redirection cannot
+// even move bytes to a wrong-but-confined location in the honest case.
+func TestMaterializePathsRefusesInRootSymlinkAncestor(t *testing.T) {
+	f := newTreeFixture(t)
+	f.write("dir/inner.txt", "expected\n")
+	f.write("other/decoy.txt", "decoy\n")
+	f.git("add", ".")
+	f.commit("baseline")
+	expected := f.snapshot()
+	if err := os.RemoveAll(filepath.Join(f.w.Dir, "dir")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("other", filepath.Join(f.w.Dir, "dir")); err != nil {
+		t.Fatal(err)
+	}
+	err := f.w.MaterializePaths(expected, []string{"dir/inner.txt"})
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("an in-root symlink ancestor must refuse by name: %v", err)
+	}
+	if _, lerr := os.Lstat(filepath.Join(f.w.Dir, "other", "inner.txt")); !os.IsNotExist(lerr) {
+		t.Fatal("the restore must not have written through the in-root link")
+	}
+}

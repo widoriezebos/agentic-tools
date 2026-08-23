@@ -1708,12 +1708,16 @@ func TestStatusRendersEveryClass(t *testing.T) {
 	}
 }
 
-// The solo-build shape, caught: the host authors a product file in the
-// checkout and returns a clean empty-dispatch envelope. The wall parks the
-// mission with taint BEFORE any measurement, the violated turn record and
-// the wall.json evidence name the undeclared path, and no further run mode
-// opens a turn until a human resolution clears the taint.
-func TestInternalRunSoloBuildParksWallViolation(t *testing.T) {
+// The solo-build shape under the recovery ladder (D117, slice A): the
+// host authors a product file in the checkout and returns a clean
+// empty-dispatch envelope, EVERY turn. The first offense is the
+// dominant mechanical case — the rung restores the file, the whole
+// posture re-verifies, the turn concludes with the recovery record in
+// its acceptance entry, and the mission keeps moving. The second
+// offense is a repeat: the rung refuses, the wall parks the mission
+// with taint exactly as it always did, and no further run mode opens a
+// turn until a human resolution clears it.
+func TestInternalRunSoloBuildRecoversThenRepeatParks(t *testing.T) {
 	engine := buildFullCycleRoot(t, "FAKEHOST:solo-build")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
@@ -1722,12 +1726,14 @@ func TestInternalRunSoloBuildParksWallViolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if state["status"] != "parked" || state["parkReason"] != "wall-violation" {
-		t.Fatalf("solo build must park on the wall: status=%v reason=%v", state["status"], state["parkReason"])
+		t.Fatalf("the repeat offense must park on the wall: status=%v reason=%v", state["status"], state["parkReason"])
 	}
+	// Exactly one taint — the repeat's. The first offense left no taint:
+	// it left a recovery record on its acceptance entry instead.
 	taint, _ := state["workspaceTaint"].(map[string]any)
 	entries, _ := taint["entries"].([]any)
 	if len(entries) != 1 {
-		t.Fatalf("the violation must taint the workspace: %v", taint)
+		t.Fatalf("only the repeat may taint the workspace: %v", taint)
 	}
 	entry := entries[0].(map[string]any)
 	if entry["resolution"] != nil || !strings.Contains(entry["reason"].(string), "solo.go") {
@@ -1736,29 +1742,88 @@ func TestInternalRunSoloBuildParksWallViolation(t *testing.T) {
 	if state["openTurn"] == nil {
 		t.Fatal("the violated turn's marker must survive for the resolution")
 	}
-	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "wall.json"))
-	if len(turns) != 1 {
-		t.Fatalf("wall evidence: %v", turns)
+	// The violated repeat turn never concludes into the log: the chain
+	// holds exactly ONE acceptance — the recovered first turn's, carrying
+	// the recovery record — and nothing for the turn the taint names.
+	repeatTurn, _ := entry["turnId"].(string)
+	acceptances := 0
+	recovered := 0
+	for _, raw := range turnLogOf(state) {
+		logged, _ := raw.(map[string]any)
+		wall, _ := logged["wall"].(map[string]any)
+		if wall == nil {
+			continue
+		}
+		if kind, _ := logged["kind"].(string); kind == mission.WallVerificationKind {
+			continue
+		}
+		acceptances++
+		if id, _ := logged["turnId"].(string); id == repeatTurn {
+			t.Fatalf("the violated turn must not conclude into the log: %v", logged)
+		}
+		record, _ := wall["recovered"].(map[string]any)
+		if record == nil {
+			continue
+		}
+		recovered++
+		if v, _ := record["violation"].(string); !strings.Contains(v, "solo.go") {
+			t.Fatalf("the recovery record must name the offense: %v", record)
+		}
+		paths, _ := record["restoredPaths"].([]any)
+		if len(paths) != 1 || paths[0] != "solo.go" {
+			t.Fatalf("the recovery record must name the restored path: %v", record)
+		}
 	}
-	evidence, err := readJSONDoc(turns[0])
+	if acceptances != 1 || recovered != 1 {
+		t.Fatalf("exactly one acceptance, and it carries the record: acceptances=%d recovered=%d", acceptances, recovered)
+	}
+	// The repeat consumed nothing: no authorization is indexed to it.
+	consumed, err := mission.ConsumedAuthorizations(state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if evidence["verdict"] != "violated" || !strings.Contains(evidence["violation"].(string), "solo.go") {
-		t.Fatalf("wall.json: %v", evidence)
+	for digest, turn := range consumed {
+		if turn == repeatTurn {
+			t.Fatalf("the violated turn must consume nothing: %s", digest)
+		}
+	}
+	// Two turns of wall evidence: the recovered pass, then the repeat's
+	// violation.
+	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "wall.json"))
+	if len(turns) != 2 {
+		t.Fatalf("wall evidence: %v", turns)
+	}
+	verdicts := map[string]int{}
+	var violatedDoc map[string]any
+	for _, path := range turns {
+		evidence, err := readJSONDoc(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verdict, _ := evidence["verdict"].(string)
+		verdicts[verdict]++
+		if verdict == "violated" {
+			violatedDoc = evidence
+		}
+	}
+	if verdicts["passed"] != 1 || verdicts["violated"] != 1 {
+		t.Fatalf("one recovered pass and one repeat violation: %v", verdicts)
+	}
+	if !strings.Contains(violatedDoc["violation"].(string), "solo.go") {
+		t.Fatalf("the repeat's evidence must name the path: %v", violatedDoc)
 	}
 	// Every tree the evidence names is anchored: the
 	// violation's post tree must survive garbage collection for the
 	// resolution to verify against.
-	postTree, _ := evidence["postTree"].(string)
+	postTree, _ := violatedDoc["postTree"].(string)
 	anchorOut, anchorErr := exec.Command("git", "-C", engine.Root, "rev-parse", "--verify",
 		"refs/metasystem/missions/"+engine.Mission+"/"+postTree).Output()
 	if anchorErr != nil || strings.TrimSpace(string(anchorOut)) != postTree {
 		t.Fatalf("violated post tree is not anchored: %v %q", anchorErr, anchorOut)
 	}
-	// No turn-log entry concluded the violated turn, and nothing consumed.
-	if log, _ := state["turnLog"].([]any); len(log) != 0 {
-		t.Fatalf("a violated turn must not conclude into the log: %v", log)
+	// The repeat's offense bytes stay on disk for the human to adjudicate.
+	if _, err := os.Lstat(filepath.Join(engine.Root, "solo.go")); err != nil {
+		t.Fatalf("the repeat's disputed bytes must stay for the human: %v", err)
 	}
 
 	// The taint STOP: a fresh run refuses before any turn machinery.
@@ -1767,7 +1832,7 @@ func TestInternalRunSoloBuildParksWallViolation(t *testing.T) {
 		t.Fatal("a tainted mission resumed")
 	}
 	turnsAfter, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
-	if len(turnsAfter) != 1 {
+	if len(turnsAfter) != 2 {
 		t.Fatalf("the tainted mission opened another turn: %v", turnsAfter)
 	}
 }

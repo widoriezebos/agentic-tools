@@ -32,6 +32,12 @@ type wallInspection struct {
 	OrderedDigests []string
 	Violation      string
 	Unaccounted    []string
+	// UndeclaredOnly marks the one violation class the recovery ladder's
+	// mechanical rung may touch: workspace bytes diverging from the
+	// composed expected tree on undeclared paths. Every other class —
+	// declaration, ledger, authorization accounting, carriers — is set
+	// with this false and stays on the human path.
+	UndeclaredOnly bool
 	// Auths carries the authenticated consumed-authorization facts for
 	// the snapshot-scope accountant (decomposition membership).
 	Auths []scopeAuth
@@ -39,6 +45,10 @@ type wallInspection struct {
 	// Posture the recorded acceptance posture block.
 	Scope   map[string]any
 	Posture map[string]any
+	// Recovered, on a pass, is the recovery record riding the evidence
+	// into the acceptance chain: the violation that was mechanically
+	// restored before this pass verdict, and what the restore touched.
+	Recovered map[string]any
 }
 
 // document renders the inspection for wall.json — the turn-dir evidence —
@@ -69,6 +79,8 @@ func (w *wallInspection) document() map[string]any {
 			unaccounted = append(unaccounted, path)
 		}
 		doc["unaccounted"] = unaccounted
+	} else if w.Recovered != nil {
+		doc["recovered"] = w.Recovered
 	}
 	return doc
 }
@@ -379,6 +391,7 @@ func inspectWall(root, missionID, preTree string, state map[string]any, certifie
 	for _, path := range delta {
 		if !declared[path] {
 			inspection.Violation = fmt.Sprintf("undeclared host-authored change: %s (the workspace differs from pre-tree + authorized patches on a path the contract does not declare)", path)
+			inspection.UndeclaredOnly = true
 			return inspection, nil
 		}
 		if digest, taken := consumedPaths[path]; taken {
@@ -688,6 +701,10 @@ type wallScopeContext struct {
 	Declared       map[string]bool
 	Capture        *wallCapture
 	OpenAnchor     string
+	// Recovered carries the recovery record of a pass that was reached
+	// through the mechanical rung (or inherited from this turn's prior
+	// published pass), for the acceptance payload to book into the chain.
+	Recovered map[string]any
 }
 
 // wallGate runs the inspection for a concluding turn and, on violation,
@@ -696,7 +713,15 @@ type wallScopeContext struct {
 // the park — before any measurement or completion-gate path can run. The
 // bool reports whether the turn was intercepted; on a pass, the returned
 // context carries the verified capture for the acceptance write.
-func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64, certified []map[string]any, atResume bool) (*wallScopeContext, map[string]any, bool, error) {
+// With allowRecovery set (the main conclusion only — never a resume
+// re-drive, where the crash itself is the doubt that belongs to the
+// human), a violation first tries the mechanical rung of the recovery
+// ladder: see attemptWallRecovery. inPassRecovery is the recovery record
+// of THIS process's earlier gate round (the acceptance stability loop
+// hands its live context down on a re-run); it is the ONLY way a
+// recovery record reaches a pass — rewritable evidence is never
+// promoted into the chain.
+func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64, certified []map[string]any, atResume, allowRecovery bool, inPassRecovery map[string]any) (*wallScopeContext, map[string]any, bool, error) {
 	diskState, err := readDocLabeled(statePath, "mission state", 3)
 	if err != nil {
 		return nil, nil, false, err
@@ -705,12 +730,30 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 	// wall.json already recording a violation is never re-inspected
 	// into a pass — a crash between the evidence write and the park
 	// re-executes the park with the recorded violation verbatim.
+	// A prior document recording a PASS WITH a recovery block, reached
+	// with no live in-pass record and no landed acceptance, is the other
+	// crash tail: the recovery published its evidence but its anchored
+	// record never landed. Evidence files are rewritable and prove
+	// nothing forward, so the offense parks verbatim for the human —
+	// never re-earns an automatic pass whose record already vanished
+	// once.
 	if prior, perr := readJSONDoc(filepath.Join(turnDir, "wall.json")); perr == nil {
 		if recorded, _ := prior["violation"].(string); recorded != "" {
 			final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, diskState, true)
 			return nil, final, true, ferr
 		}
+		if verdict, _ := prior["verdict"].(string); verdict == "passed" && inPassRecovery == nil {
+			if record, _ := prior["recovered"].(map[string]any); record != nil && acceptanceEntryFor(diskState, turnID) == nil {
+				recorded, _ := record["violation"].(string)
+				if recorded == "" {
+					recorded = "a published recovery names no violation"
+				}
+				final, ferr := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, recorded, diskState, true)
+				return nil, final, true, ferr
+			}
+		}
 	}
+	inheritedRecovery := inPassRecovery
 	openTurn, ok := diskState["openTurn"].(map[string]any)
 	if !ok {
 		return nil, nil, false, failf(3, "wall inspection needs the open-turn marker; this turn was opened by a pre-wall runner — conclude it with that runner or re-provision the mission")
@@ -735,16 +778,107 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 	}
 	origin := scopeOriginFromOpenTurn(openTurn, diskState)
 	workspace := gittree.Workspace{Dir: e.Root}
-	// ONE RESOLUTION PER INSPECTION, RE-VERIFIED: the posture is captured
-	// once, every rule judges that capture, and the same capture is
-	// re-taken and compared whole before the verdict is acted on. A
-	// changed capture re-runs the inspection; a repository that will not
-	// hold still is itself a violation.
+	inspection, capture, stable, err := e.runWallInspection(preTree, diskState, certified, declared, declarationViolation, origin)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	// The tail runs once per inspection round. A violating round may earn
+	// ONE mechanical recovery attempt (the rung below); its restore is
+	// re-verified by a full fresh round over the whole posture — never by
+	// rechecking only the paths the violation named.
+	var recovered map[string]any
+	attempted := false
+	for {
+		// Every tree the evidence names stays reachable:
+		// garbage collection must never eat a tree that acceptance entries,
+		// violation evidence, or a later staleness check will dereference.
+		anchored := []string{inspection.ExpectedTree, inspection.PostTree}
+		if capture != nil {
+			anchored = append(anchored, capture.StagedTree)
+			if capture.Nested {
+				anchored = append(anchored, capture.TopTree, capture.TopStaged.Tree)
+			}
+		}
+		for _, tree := range anchored {
+			if tree == "" || tree == preTree {
+				continue
+			}
+			if err := workspace.Anchor(e.Mission, tree); err != nil {
+				return nil, nil, false, failf(3, "wall inspection cannot anchor %s: %v", tree, err)
+			}
+		}
+		// Unaccounted paths ride the violation evidence:
+		// the delta the equation could not explain.
+		if inspection.Violation != "" && inspection.PostTree != "" {
+			baseline := inspection.ExpectedTree
+			if baseline == "" {
+				baseline = preTree
+			}
+			if baseline != "" {
+				if changed, derr := workspace.ChangedPaths(baseline, inspection.PostTree); derr == nil {
+					inspection.Unaccounted = changed
+				}
+			}
+		}
+		if inspection.Violation == "" {
+			if recovered == nil {
+				recovered = inheritedRecovery
+			}
+			inspection.Recovered = recovered
+		}
+		if err := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), inspection.document()); err != nil {
+			return nil, nil, false, err
+		}
+		if inspection.Violation == "" {
+			if attempted {
+				e.emit("recovery-inspected", "wall violation mechanically restored and re-verified for turn "+turnID, map[string]string{
+					"missionId": e.Mission, "turnId": turnID, "verdict": "recovered",
+				})
+			}
+			return &wallScopeContext{
+				PreTree: preTree, Expected: inspection.ExpectedTree,
+				OrderedDigests: inspection.OrderedDigests,
+				Declared:       declared, Capture: capture, OpenAnchor: origin.OpenAnchor,
+				Recovered: inspection.Recovered,
+			}, nil, false, nil
+		}
+		if !allowRecovery || attempted {
+			if attempted {
+				e.emit("recovery-inspected", "mechanical restore did not re-verify clean; the taint stands: "+clipSummary(inspection.Violation), map[string]string{
+					"missionId": e.Mission, "turnId": turnID, "verdict": "failed",
+				})
+			}
+			break
+		}
+		attempted = true
+		block, ok := e.attemptWallRecovery(inspection, capture, stable, declarationViolation, declared, origin, diskState, turnID)
+		if !ok {
+			break
+		}
+		recovered = block
+		inspection, capture, stable, err = e.runWallInspection(preTree, diskState, certified, declared, declarationViolation, origin)
+		if err != nil {
+			return nil, nil, false, err
+		}
+	}
+
+	final, err := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, inspection.Violation, diskState, true)
+	return nil, final, true, err
+}
+
+// runWallInspection is the one-resolution-per-inspection loop: the posture
+// is captured once, every rule judges that capture, and the same capture
+// is re-taken and compared whole before the verdict is acted on. A changed
+// capture re-runs the inspection; a repository that will not hold still is
+// itself a violation. The returned stable flag reports whether the verdict
+// was judged over bytes that held still.
+func (e *Engine) runWallInspection(preTree string, diskState map[string]any, certified []map[string]any, declared map[string]bool, declarationViolation string, origin *scopeOrigin) (*wallInspection, *wallCapture, bool, error) {
 	var inspection *wallInspection
 	var capture *wallCapture
 	stable := false
 	for attempt := 0; attempt < 3 && !stable; attempt++ {
 		capture = nil
+		var err error
 		inspection, err = inspectWall(e.Root, e.Mission, preTree, diskState, certified, declared, declarationViolation,
 			func(expected string) (string, error) {
 				snapped, cerr := e.captureWallPostureStable(expected, declared)
@@ -807,6 +941,7 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 				return nil, nil, false, cerr
 			}
 			if recheck.equalTo(capture) {
+				stable = true
 				break
 			}
 			inspection.Violation = ""
@@ -841,50 +976,120 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 	if inspection.Violation == "" && capture != nil && !stable {
 		inspection.Violation = "repository would not hold still during inspection"
 	}
-	// Every tree the evidence names stays reachable:
-	// garbage collection must never eat a tree that acceptance entries,
-	// violation evidence, or a later staleness check will dereference.
-	anchored := []string{inspection.ExpectedTree, inspection.PostTree}
-	if capture != nil {
-		anchored = append(anchored, capture.StagedTree)
-		if capture.Nested {
-			anchored = append(anchored, capture.TopTree, capture.TopStaged.Tree)
-		}
+	return inspection, capture, stable, nil
+}
+
+// attemptWallRecovery is the mechanical rung of the recovery ladder
+// (D117, slice A): for the dominant violation ONLY — undeclared workspace
+// content diverging from the composed expected tree, judged over a stable
+// capture, with every carrier clean and no prior recovery in this
+// mission — it puts the tree's bytes back and reports what it restored.
+// The caller re-verifies the whole posture with a full fresh inspection
+// before any pass is published. Every refusal here — mixed domain, dirty
+// carrier, unstable capture, repeat offense, unmaterializable entry —
+// returns false and leaves the taint for the existing human path.
+func (e *Engine) attemptWallRecovery(inspection *wallInspection, capture *wallCapture, stable bool, declarationViolation string, declared map[string]bool, origin *scopeOrigin, diskState map[string]any, turnID string) (map[string]any, bool) {
+	refuse := func(why string) (map[string]any, bool) {
+		e.emit("recovery-inspected", "mechanical restore refused ("+why+"); the taint stands: "+clipSummary(inspection.Violation), map[string]string{
+			"missionId": e.Mission, "turnId": turnID, "verdict": "refused",
+		})
+		return nil, false
 	}
-	for _, tree := range anchored {
-		if tree == "" || tree == preTree {
+	if declarationViolation != "" {
+		return refuse("the violation is in the declaration or ledger domain")
+	}
+	if !inspection.UndeclaredOnly {
+		return refuse("the violation is not undeclared workspace content")
+	}
+	if capture == nil || !stable {
+		return refuse("the verdict was not judged over a stable capture")
+	}
+	if inspection.ExpectedTree == "" || inspection.PostTree == "" {
+		return refuse("the inspection carries no restore target")
+	}
+	if missionHasRecoveredAcceptance(diskState) {
+		return refuse("a repeat offense in this mission belongs to the human")
+	}
+	// The inspection returns at the FIRST undeclared path, so a second
+	// domain can hide behind the named violation: a declared artifact
+	// overwriting reviewed bytes later in the delta would only surface
+	// after a restore had already mutated the workspace. Mixed domains
+	// refuse before any byte moves.
+	for _, path := range inspection.Unaccounted {
+		if !declared[path] {
 			continue
 		}
-		if err := workspace.Anchor(e.Mission, tree); err != nil {
-			return nil, nil, false, failf(3, "wall inspection cannot anchor %s: %v", tree, err)
-		}
-	}
-	// Unaccounted paths ride the violation evidence:
-	// the delta the equation could not explain.
-	if inspection.Violation != "" && inspection.PostTree != "" {
-		baseline := inspection.ExpectedTree
-		if baseline == "" {
-			baseline = preTree
-		}
-		if baseline != "" {
-			if changed, derr := workspace.ChangedPaths(baseline, inspection.PostTree); derr == nil {
-				inspection.Unaccounted = changed
+		for _, auth := range inspection.Auths {
+			if _, taken := consumedPathOf(auth.changedPaths, path); taken {
+				return refuse("a declared artifact disputes reviewed bytes; mixed domains belong to the human")
 			}
 		}
 	}
-	if err := atomicWriteJSON(filepath.Join(turnDir, "wall.json"), inspection.document()); err != nil {
-		return nil, nil, false, err
+	// Clean carriers, judged at RESTORE time on a FRESH capture that
+	// must equal the judged one whole: the violating branch's equality
+	// confirmation deliberately excludes the mission namespace, so a
+	// carrier planted between the verdict and this rung must fail here —
+	// and bytes that moved since the verdict refuse the restore outright.
+	recheck, cerr := e.captureWallPostureStable(inspection.ExpectedTree, declared)
+	if cerr != nil {
+		return refuse("the restore-time capture could not be taken")
 	}
-	if inspection.Violation == "" {
-		return &wallScopeContext{
-			PreTree: preTree, Expected: inspection.ExpectedTree,
-			OrderedDigests: inspection.OrderedDigests,
-			Declared:       declared, Capture: capture, OpenAnchor: origin.OpenAnchor,
-		}, nil, false, nil
+	if !recheck.equalTo(capture) {
+		return refuse("the repository moved between the verdict and the restore")
 	}
+	acct, aerr := e.newWallAccountant(inspection.PreTree, diskState, inspection.Auths, declared)
+	if aerr != nil {
+		return refuse("the carrier accounting could not be built")
+	}
+	acct.noteExpected(inspection.ExpectedTree)
+	if violation, jerr := e.judgeScope(origin, recheck, acct, diskState); jerr != nil || violation != "" {
+		return refuse("a carrier is not clean")
+	}
+	if violation, jerr := e.judgeCaptureIntegrity(recheck, origin.OpenAnchor, diskState); jerr != nil || violation != "" {
+		return refuse("a carrier is not clean")
+	}
+	// The restore set is the unexplained delta MINUS the declared host
+	// artifacts: a declared path differing from the expected tree is
+	// lawful and must survive the restore untouched.
+	paths := make([]string, 0, len(inspection.Unaccounted))
+	for _, path := range inspection.Unaccounted {
+		if !declared[path] {
+			paths = append(paths, path)
+		}
+	}
+	if len(paths) == 0 {
+		return refuse("the unexplained delta is empty")
+	}
+	workspace := gittree.Workspace{Dir: e.Root}
+	if err := workspace.MaterializePaths(inspection.ExpectedTree, paths); err != nil {
+		return refuse(err.Error())
+	}
+	restored := make([]any, 0, len(paths))
+	for _, path := range paths {
+		restored = append(restored, path)
+	}
+	return map[string]any{
+		"violation":     inspection.Violation,
+		"restoredPaths": restored,
+		"restoredAt":    nowISO(),
+	}, true
+}
 
-	final, err := e.parkWallViolation(statePath, ledger, turnID, turnDir, cycle, inspection.Violation, diskState, true)
-	return nil, final, true, err
+// missionHasRecoveredAcceptance reports whether any acceptance entry in
+// the chain already carries a recovery record: the mechanical rung runs
+// once per mission, and a second offense is a repeat that belongs to the
+// human.
+func missionHasRecoveredAcceptance(state map[string]any) bool {
+	for _, item := range turnLogOf(state) {
+		entry, _ := item.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		if wall, _ := entry["wall"].(map[string]any); wall != nil && wall["recovered"] != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // scopeEvidence renders the snapshot-scope observables for wall.json.

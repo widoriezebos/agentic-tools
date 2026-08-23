@@ -677,7 +677,7 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 			// wall-violation park a human must rule on first.
 			return "", "", nil, failf(3, "mission workspace failed the wall at resume; resolve the taint before any further turn")
 		} else {
-			if _, _, violated, werr := e.wallGate(statePath, ledger, turnID, turnDir, cycle, nil, true); werr != nil {
+			if _, _, violated, werr := e.wallGate(statePath, ledger, turnID, turnDir, cycle, nil, true, false, nil); werr != nil {
 				return "", "", nil, werr
 			} else if violated {
 				return "", "", nil, failf(3, "mission workspace failed the wall at resume; resolve the taint before any further turn")
@@ -1128,7 +1128,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	// resolved: a host that deleted the candidate branch must meet the
 	// inspection — which names that deletion — not a runner error that
 	// skips it.
-	ctx, final, violated, werr := e.wallGate(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, nil, false)
+	ctx, final, violated, werr := e.wallGate(statePath, ledger, turn.TurnID, filepath.Dir(turnPath), cycle, nil, false, false, nil)
 	if werr != nil || violated {
 		return final, werr
 	}
@@ -1421,7 +1421,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 	// measurement: delegates write their own worktrees, never the
 	// checkout, so the inspection races nothing, and a host that altered
 	// the workspace hides behind neither a stalled drain nor a gate pass.
-	ctx, final, violated, err := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, false)
+	ctx, final, violated, err := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, false, true, nil)
 	if err != nil || violated {
 		return final, err
 	}
@@ -1510,7 +1510,7 @@ func (e *Engine) concludeCycle(statePath, ledger string, state map[string]any, s
 		}
 		// The ledger was lawfully appended by this conclusion, so the
 		// re-run skips the in-turn ledger guard exactly as resume does.
-		rerun, final, violated, rerr := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, true)
+		rerun, final, violated, rerr := e.wallGate(statePath, ledger, spec.turnID, spec.turnDir, spec.cycle, spec.certified, true, false, ctx.Recovered)
 		if rerr != nil || violated {
 			return final, rerr
 		}

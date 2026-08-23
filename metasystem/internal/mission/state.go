@@ -1420,8 +1420,37 @@ func ConsumedAuthorizations(state map[string]any) (map[string]string, error) {
 			return nil, stateErr("mission acceptance entry %s must carry both wall and consumedAuthorizations", turnID)
 		}
 		wall, ok := wallRaw.(map[string]any)
-		if !ok || !exactKeys(wall, "verdict", "preTree", "expectedTree", "postTree", "orderedDigests", "sequencePoint",
-			"headCommitPost", "refMapPost", "stagedTreePost", "topTreePost", "topStagedPost", "worktreeCensusPost", "capturedAt") {
+		if !ok {
+			return nil, stateErr("mission acceptance entry %s wall payload has an invalid shape", turnID)
+		}
+		// The recovery record is the one optional key: present only on a
+		// pass the recovery ladder's mechanical rung restored first, with
+		// an exact shape of its own.
+		wallKeys := []string{"verdict", "preTree", "expectedTree", "postTree", "orderedDigests", "sequencePoint",
+			"headCommitPost", "refMapPost", "stagedTreePost", "topTreePost", "topStagedPost", "worktreeCensusPost", "capturedAt"}
+		if _, present := wall["recovered"]; present {
+			wallKeys = append(wallKeys, "recovered")
+			recovered, ok := wall["recovered"].(map[string]any)
+			if !ok || !exactKeys(recovered, "violation", "restoredPaths", "restoredAt") {
+				return nil, stateErr("mission acceptance entry %s recovery record has an invalid shape", turnID)
+			}
+			if v, _ := recovered["violation"].(string); v == "" {
+				return nil, stateErr("mission acceptance entry %s recovery record names no violation", turnID)
+			}
+			if at, _ := recovered["restoredAt"].(string); at == "" || parseISO(at) != nil {
+				return nil, stateErr("mission acceptance entry %s recovery record has no valid restore instant", turnID)
+			}
+			restored, ok := recovered["restoredPaths"].([]any)
+			if !ok || len(restored) == 0 {
+				return nil, stateErr("mission acceptance entry %s recovery record restored no paths", turnID)
+			}
+			for _, raw := range restored {
+				if path, _ := raw.(string); path == "" {
+					return nil, stateErr("mission acceptance entry %s recovery record has a malformed restored path", turnID)
+				}
+			}
+		}
+		if !exactKeys(wall, wallKeys...) {
 			return nil, stateErr("mission acceptance entry %s wall payload has an invalid shape", turnID)
 		}
 		posture := map[string]any{}

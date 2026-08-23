@@ -859,3 +859,50 @@ func TestTwoPhaseAcceptanceSchema(t *testing.T) {
 		t.Fatalf("admissionOrigins rewrite must refuse: %v", err)
 	}
 }
+
+// The recovery record (D117, slice A) is the wall payload's one optional
+// key: a well-formed block validates; a malformed one — wrong keys, no
+// violation, no paths — refuses the state as corrupt.
+func TestAcceptanceRecoveryRecordShape(t *testing.T) {
+	digest := strings.Repeat("c", 64)
+	tree := strings.Repeat("d", 40)
+	entry := func(recovered any) map[string]any {
+		wall := map[string]any{
+			"verdict": "passed", "preTree": tree, "expectedTree": tree,
+			"postTree": tree, "orderedDigests": []any{digest},
+			"sequencePoint":  map[string]any{"sequence": 1, "segment": 0},
+			"headCommitPost": strings.Repeat("c", 40), "refMapPost": map[string]any{},
+			"stagedTreePost": tree, "topTreePost": nil, "topStagedPost": nil,
+			"worktreeCensusPost": []any{}, "capturedAt": "2026-01-01T00:00:00Z",
+		}
+		if recovered != nil {
+			wall["recovered"] = recovered
+		}
+		return map[string]any{
+			"turnId": "demo-t1", "consumedAuthorizations": []any{digest}, "wall": wall,
+		}
+	}
+	good := map[string]any{
+		"violation":     "undeclared host-authored change: x.txt",
+		"restoredPaths": []any{"x.txt"},
+		"restoredAt":    "2026-08-23T00:00:00Z",
+	}
+	doc := map[string]any{"turnLog": []any{entry(good)}}
+	if _, err := ConsumedAuthorizations(doc); err != nil {
+		t.Fatalf("a well-formed recovery record must validate: %v", err)
+	}
+	for name, bad := range map[string]any{
+		"extra key": map[string]any{"violation": "v", "restoredPaths": []any{"x"},
+			"restoredAt": "t", "actor": "runner"},
+		"no violation": map[string]any{"violation": "", "restoredPaths": []any{"x"}, "restoredAt": "t"},
+		"no paths":     map[string]any{"violation": "v", "restoredPaths": []any{}, "restoredAt": "t"},
+		"non-string":   map[string]any{"violation": "v", "restoredPaths": []any{7}, "restoredAt": "t"},
+		"no instant":   map[string]any{"violation": "v", "restoredPaths": []any{"x"}, "restoredAt": ""},
+		"not a map":    "recovered",
+	} {
+		doc := map[string]any{"turnLog": []any{entry(bad)}}
+		if _, err := ConsumedAuthorizations(doc); err == nil {
+			t.Fatalf("%s must refuse", name)
+		}
+	}
+}

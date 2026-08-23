@@ -419,3 +419,87 @@ code.
 
 Reopen from this record; any future chain enumerates
 O19-S2-R3-01..08.
+
+## SLICE A LANDED (2026-08-23, the minimal ladder's first day)
+
+What landed, per Wido's minimal-ladder ruling and the slice-A token:
+
+- gittree.MaterializePaths: path-precise worktree restore from a named
+  tree — blobs, modes, symlinks; refuses gitlinks and symlinked
+  ancestors before any byte moves; never touches index, HEAD, or refs.
+- wallGate grew the mechanical rung (attemptWallRecovery), engaged ONLY
+  at the main conclusion gate (concludeCycle) — never at resume
+  re-drives, where the crash itself is the doubt that belongs to the
+  human. Eligibility: no declaration/ledger violation, the violation is
+  the undeclared-change branch (UndeclaredOnly), stable capture,
+  judgeScope + judgeCaptureIntegrity clean over that capture (clean
+  carriers), no prior recovery in the mission (repeat -> human), all
+  restore paths materializable. Restore set: Unaccounted minus declared
+  artifacts. Target: the COMPOSED expected tree (S2-R3-02 honored — a
+  fixture proves reviewed bytes B survive, never pre-tree A).
+- Whole-posture re-verification: the restore is re-verified by a full
+  fresh inspection round (S2-R3-03 honored — never by rechecking only
+  the named paths). Any residual violation parks with current truth.
+- The anchored recovery record: a `recovered` block (violation,
+  restoredPaths, restoredAt) on the acceptance entry's wall payload —
+  anchored by the existing state chain. NO new refs (S2-R3-04 avoided),
+  NO taint resolution written by the runner (refuseResolutionTransition
+  stays untouched — resolutions remain human-only), NO schema cutover
+  (one optional exact-shaped key; old states validate unchanged).
+- Crash story, both tails, as corrected by the critic's round (codex
+  NOT AGREE, four findings, all fixed): sticky wall.json violation ->
+  re-park verbatim -> existing human path. A PUBLISHED recovery pass
+  whose anchored record never landed (crash before acceptance) also
+  PARKS verbatim at the next gate: the recovery record reaches a pass
+  ONLY through the live in-pass context (the acceptance stability loop
+  hands its block down); rewritable evidence is never promoted into the
+  chain, so no window loses both the taint and the record, and a forged
+  `recovered` block in evidence can never enter the chain at all. The
+  capture authority check (acceptancePayloadMismatch) refuses payloads
+  whose record disagrees with the gate that ran.
+- MaterializePaths, as corrected across the critic's three rounds:
+  paths resolve against the WORKSPACE root (toplevel + prefix — the
+  nested checkout would otherwise restore into the wrong directory);
+  every mutation runs through an os.Root descent that Lstats each
+  directory component no-follow and refuses symlinks before opening
+  (per-path handle scope, so a large restore set never accumulates
+  descriptors); modes are set on the open file handle, never by
+  pathname. The confinement claim, stated honestly per round 3: a
+  pre-planted symlink anywhere in a chain REFUSES, and no operation
+  can escape the opened root — but a hostile process racing the
+  descent can still redirect a write to a wrong-but-confined in-root
+  location, and a rename can relocate an already-opened directory.
+  Both degrade to wrong bytes somewhere the restore was allowed to
+  write, never a silent success: the whole-posture re-verification is
+  the safety floor that turns every such outcome into a refused
+  recovery and a parked taint. The one path trusted by name is the
+  workspace root argument itself — exactly as far as every git -C
+  invocation trusts it (recorded shared assumption).
+- Two more rung refusals from round 2: mixed domains refuse BEFORE any
+  byte moves (the inspection stops at the first undeclared path, so the
+  rung scans the whole unexplained delta for a declared artifact
+  disputing reviewed bytes and refuses pre-mutation), and the carriers
+  are judged at RESTORE time on a fresh capture that must equal the
+  judged one whole — a mission-namespace carrier planted between the
+  verdict and the rung, or any byte motion since the verdict, refuses
+  the restore.
+- recovery-inspected events (already registered): refused / failed /
+  recovered.
+
+One deliberate delta recorded for review: runWallInspection now sets
+stable=true on the violating-branch confirmation (the original left
+the flag unread there; the rung is its first consumer).
+
+Constraint dispositions: S2-R3-01 avoided (no cross-store publication;
+in-pass only), S2-R3-02/03 honored by construction and fixture,
+S2-R3-04 avoided (no refs), S2-R3-05 avoided (single-domain only;
+mixed domains refuse the rung), S2-R3-06 narrowed (the record lives in
+ONE owner, the acceptance chain; no actor field until slice B),
+S2-R3-07 narrowed (repeat = any prior recovered acceptance in this
+mission's chain — locally answerable, fail-toward-human), S2-R3-08 out
+of scope (no steward wiring; recovery completes in its own pass or
+parks).
+
+SLICE B (second 1d, tokened when this lands): escalation-ask
+automation, events beyond the three verdicts, crash-window hardening
+within this shape.

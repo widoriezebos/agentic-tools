@@ -135,6 +135,14 @@ func wallEntryPayload(root, mission, turnID string, state map[string]any) (map[s
 		"postTree": doc["postTree"], "orderedDigests": ordered,
 		"sequencePoint": map[string]any{"sequence": sequence + 1, "segment": segment},
 	}
+	// A pass reached through the recovery ladder's mechanical rung books
+	// its recovery record into the chain beside the verdict — the offense
+	// and its restoration survive even though the evidence file is
+	// rewritable. The capture-authority check verifies the block against
+	// what the gate actually did before the write lands.
+	if recovered, ok := doc["recovered"].(map[string]any); ok {
+		payload["recovered"] = recovered
+	}
 	for _, field := range []string{"headCommitPost", "refMapPost", "stagedTreePost", "topTreePost", "topStagedPost", "worktreeCensusPost", "capturedAt"} {
 		payload[field] = posture[field]
 	}
