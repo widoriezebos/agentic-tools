@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: A plain-English story of what happened, why it happened, and who did it
 - Origin: main
-- Next step: Appetite: 6h for SLICE TWO (Wido ratified the three-slice plan 2026-08-23): READ-ONLY NARRATION — the steward's tick writes a running plain-English account of what the system is doing (docs are the narrator style rules beside the conclusion covenant), nothing else; independently deployable. Then SLICE THREE (6h): anomaly naming — stalls and drift become named events in the narration. Then SLICE FOUR (4h): reach-the-human — flagged anomalies route through the delivery-gated channels. Claimable in order by any machine; slice one (the journey) landed 2026-08-22.
+- Next step: Appetite: 6h for SLICE THREE — anomaly naming: the narration flags stalls and drift as named events (the patience vocabulary made visible), building on slice two's running account (LANDED: the steward's tick writes one plain-English sentence per tick to artifacts/agents/narration.log, capped, best-effort, translating records rather than quoting them — its first live line was 'm1 is working on narrator'). Then SLICE FOUR (4h): reach-the-human through the delivery-gated channels.
 - OpenedAt: 2026-08-20T00:02:00Z
-- Revision: 8
+- Revision: 9
 - Claimed: machine=m1 lineage=coordinator at=2026-08-23T13:34:50Z
 
 History:
@@ -17,4 +17,5 @@ History:
 - 2026-08-22T18:52:32Z WNMM81Y5RJGSMKWP5BB2V7CD0P-widos-m5-pro-bf243850 release actor=widos-m5-pro+coordinator targets=narrator
 - 2026-08-23T13:34:13Z EZ793X199W374QQ9WDQ6EM03TB-m1-bf243850 edit actor=m1+coordinator targets=narrator
 - 2026-08-23T13:34:50Z FC3R9KKNWYQD9MD2CNHQZ1FF7N-m1-bf243850 claim actor=m1+coordinator targets=narrator
-Integrity: sha256=b01321a5a01d2f13d59d414173f8e766843c4e9e8e9492899b47ba0903ae574a
+- 2026-08-23T13:39:46Z GXEYST8FPY8AGWHKEHA2Z5KK7J-m1-bf243850 edit actor=m1+coordinator targets=narrator
+Integrity: sha256=81e19d201637e5f88969322361686ba49f3b2178aaaa673195ffaa12dc7112fd
