@@ -1,320 +1,178 @@
-# The wall recovery ladder: runner-owned tier 2 (HIW-O19, D117)
+# Review brief: wall-o19 recovery ladder
 
-- Status: STOPPED BY THE APPETITE LAW 2026-08-23 (mac-coordinator).
-  Round 1 (8 findings, 3 critical) folded structurally; round 2
-  returned 9 findings with 4 critical — the trajectory diverged, and
-  every round-2 critical is a real transactional design (the ledger
-  booking/restore/anchor transaction, the resume entry that must
-  outrank the raw taint stop AND ordinary reconciliation, the
-  per-detection-site phase table, the durable source binding across
-  the detection-to-park crash window). No honest design of that
-  weight fits the 6h token; per the backlog mechanism, the answer is
-  slicing, not a stretched appetite. The round-2 findings are
-  recorded below as the OPEN-QUESTION LEDGER, mapped to the slice
-  proposal awaiting ratification. Everything above the ledger is the
-  converged round-1 shape and remains the slices' shared foundation.
-- Ruling: D117 (Wido, 2026-08-19): wall violations must not freeze the
-  mission for the human by default; the machinery recovers the
-  mechanical cases; the human is asked only for ambiguity or big
-  implications. Amends slice-6's all-resolution-human-reserved
-  doctrine as WIDO'S RULING, dated, not a delegated choice.
-- Seed: plans/recovery-ladder-design-draft.md, re-grounded against the
-  landed WSS machinery and corrected by review round 1.
-- Loop discipline, declared at loop start: codex gpt-5.6-sol xhigh,
-  read-only, both-must-agree; ABSOLUTE FAILSAFE ROUND 4, no-gain tier
-  two consecutive rounds; land-with-residue on either tier.
+Round budget: 3 focused rounds — agreed before round one; exhaustion
+follows the critique skills' budget rules, never a silent round 4.
 
-## The ladder
+Threat model: one trusted human operator; no external adversaries.
+IN SCOPE: accidents and crashes around violation recovery (a crash
+mid-restore, a re-verification that lies, a repeat pattern hidden by
+silent recovery); a mission host gaming the ladder — engineering a
+violation whose automatic recovery would launder bytes or whose
+repetition stays invisible; forged or stale safe-tree/ledger-blob
+records. OUT OF SCOPE: the unbuilt isolation tier (D100 ruling 2),
+runtime compromise, hostile third parties, and the sealed-dirty
+composition (wall-o14 — stopped and raised separately; this design
+must not depend on its outcome).
 
-**Tier 1 — record (unchanged).** Every violation books its taint,
-writes wall.json evidence, anchors the disputed trees. Identical
+Appetite: 6h for this design; findings whose fixes exceed it pause
+and go to the human.
+
+Scope: the tier structure below; ResolveTaint's split into an engine
+core; the runner's tier-2 recovery pass inside the park flow; the
+repeat-offense derivation; event registration and emission; the
+fixture set. OUT: any new state schema fields; any change to the
+human resolve-taint verb's CLI contract; recovery of anything but
+workspace and ledger domains.
+
+Return format: numbered findings, most severe first, each with
+file, rule, and the concrete failure it causes; or AGREE with
+observations that do not gate.
+
+---
+
+# Design: the wall recovery ladder (revision 1, from the D117 draft)
+
+Wido's ruling, verbatim intent: wall violations must not freeze the
+mission for the human by default. The machinery first figures out
+how to recover; the human is asked only on ambiguity or big
+implications.
+
+## Tier 1 — record (unchanged from the landed slice-6 doctrine)
+
+Every violation books its taint entry (the mint returns the id and
+the taint-set event carries it), writes wall.json with unaccounted
+paths, and anchors the disputed tree. The audit trail is identical
 whether recovery is automatic or human.
 
-**Tier 2 — runner auto-recovery, as a DURABLE PHASE (O19-R1-1).** The
-wall-violation park no longer writes its ask eagerly. The park's state
-write carries a validator-owned PENDING-RECOVERY record; recovery runs
-after that write is durable; the ask becomes the DERIVED final step of
-proved ineligibility — never a side effect of parking.
+## Tier 2 — automatic recovery (the new runner authority)
 
-**Tier 3 — human escalation (narrowed, never removed).** The ask is
-raised and the park stays exactly on the PROVED-INELIGIBLE outcomes of
-the table below. Adoption stays human without exception.
+Runs in the SAME runner pass as the park, after the park's state
+proposal lands and before any ask is raised.
 
-## The pending-recovery record (validator-owned)
+1. INSPECTION FIRST, AS ITS OWN RECORDED STEP. The runner evaluates
+   mechanical recoverability and emits the already-registered
+   recovery-inspected event with verdict restorable | unrestorable
+   | adoption-question, before attempting anything. An unrestorable
+   or adoption verdict falls through to tier 3 with the verdict on
+   the ask.
+2. WORKSPACE RESTORE: the recorded safe tree (the violated turn's
+   pre-tree / current expected point) exists as an authenticated
+   anchor and git can materialize it. After materialization the
+   runner re-verifies byte-exact equality through the SAME
+   recordedSafeTree + observed==tree path the human verb uses —
+   tier 2 calls ResolveTaint's engine core with
+   resolvedBy="runner:auto-restore", never a parallel code path.
+   The engine core is the existing function body behind the verb;
+   the human/CLI entry keeps its authority classification, the
+   in-process runner entry records runner identity instead. One
+   body, two authenticated entries.
+3. LEDGER RESTORE: the anchored blob exists and authenticates under
+   the landed slice-6 predicate; bytes rewrite from the blob through
+   the same core.
+4. ON SUCCESS: the resolution records variant=restore with the
+   runner identity and a reason naming the violation; the segment
+   advances; the mission CONTINUES; no ask exists. A registered
+   wall-auto-recovered event carries the taint id and the restored
+   domain(s). Restoring discards the violating bytes by
+   construction — an engineered violation gains nothing from its
+   own restoration, which is why tier 2 can be automatic at all.
+5. ON ANY FAILURE — materialization error, re-verification
+   mismatch, crash — the taint stays unresolved and tier 3 raises;
+   a crash between restore and resolution record leaves the taint
+   unresolved and the run-mode taint STOP (already landed) refuses
+   every run mode at resume, so a half-recovery cannot be ridden.
 
-Written IN the park's own state write, on wall-violation parks only:
+## Tier 3 — human escalation (narrowed, not removed)
 
-    recovery: {
-      taintId, phase,            // "workspace-gate" | "workspace-postverify" | "ledger"
-      safeTree | safeLedgerSha,  // the SOURCE BINDING, captured at detection
-      boundAt,                   // capture instant
-      attempts: [ {at, outcome, detail} ... ]   // bounded, observable
-    }
+An ask is raised and the mission stays parked exactly when:
+1. adoption is the question — waiving attribution is inherently
+   human;
+2. no mechanically verifiable restore exists (no authenticated
+   safe tree or blob; materialization fails; re-verification
+   fails);
+3. REPEAT OFFENSE: the same mission suffers another violation
+   within K=1 turns of an auto-recovery — the very next turn. A
+   pattern is a judgment call, not an accident. The ask names the
+   prior auto-recovery's taint id so the human sees the pattern.
 
-- The SOURCE BINDING is captured AT DETECTION, before the park's own
-  booking or anchor can move anything (O19-R1-2): for ledger taints,
-  the safe digest is the anchored ledger truth the in-turn guard
-  itself read when it detected the divergence — the park anchor NEVER
-  redefines the recovery source; for workspace taints, the safe tree
-  is the phase-specific target below, an already-anchored chain value.
-- The record is immutable except appends to `attempts` and the final
-  outcome; the validator refuses a recovery record naming a resolved
-  taint, an unknown phase, or a safe target that is not the recorded
-  chain value for that phase.
+The repeat-offense predicate derives from the hash-chained taint
+entries alone: an unresolved-now entry whose predecessor entry
+carries resolution.resolvedBy with the "runner:" prefix and a
+turnId within the lookback window. No new state fields.
 
-## Phase-specific safe targets (O19-R1-5)
+The human resolve-taint verb is byte-identical in contract for
+every tier-3 case.
 
-- `workspace-gate` (violation at the wall gate, nothing consumed): the
-  safe tree is the turn's PRE-TREE — the taint's recorded baseline.
-- `workspace-postverify` (violation at post-verification, acceptance
-  pending): the ACCEPTANCE'S recorded post-posture is the
-  chain-authoritative, already-judged target — restoring toward it
-  PRESERVES the consumed authorizations; the disputed bytes are the
-  motion AFTER the acceptance, not the acceptance itself. The
-  concluding verification then re-runs against the same recorded
-  posture, and the pending acceptance concludes through the landed
-  WSS-12 lane. Restoring to the pre-tree here would discard consumed
-  authorized work and is refused by the validator (wrong safe target
-  for the phase).
-- `ledger`: the detection-time authenticated blob digest, restored
-  byte-exact; the landed CLI refusal of ledger RESTORE stays for
-  humans (tree equality cannot prove a ledger; the runner path
-  restores from the AUTHENTICATED blob it bound at detection, a
-  stronger predicate than the one the CLI refusal guards against).
+## Events
 
-## The total outcome table (O19-R1-8)
+- recovery-inspected (registered, emission lands here): verdict +
+  turnId, one per violation, before any attempt.
+- wall-auto-recovered (registered in this change): taintId +
+  restored domains + turnId. Records remain the authority.
 
-Every tier-2 attempt lands in exactly one:
+## Doctrine edits in the same landing
 
-1. **SAFE-RESTORED**: materialization succeeded AND the full landed
-   verification chain re-proved it (stable capture, observed==tree,
-   staged==tree, judgeScope carriers, final equalTo +
-   judgeCaptureIntegrity). The constrained resolution transition
-   lands; the mission continues; NO ask ever exists.
-2. **PROVED-INELIGIBLE** (→ tier 3, ask raised, park stays):
-   adoption is the question; the bound safe source is missing or
-   fails authentication; the post-restore verification REFUSED with a
-   repository answer; or repeat offense. The ask names the proof.
-3. **COULD-NOT-RUN** (→ contained retry, NO ask, NO human): spawn
-   failures, timeouts, publication-uncertain outcomes stay inside the
-   durable phase — `attempts` records each, resume re-enters
-   idempotently, and a bounded attempt budget (3, then a steward
-   notice — observable, never silent) keeps it from spinning. A
-   machine condition is never escalated as a judgment call
-   (the landed WSS could-not-run/ran-and-answered distinction,
-   applied to recovery).
+- hiw-critique-r2 §4's "human-reserved" amends to the ladder,
+  recorded as Wido's ruling with its date.
+- The HIW-O6 row gains the tier-2 fixtures.
 
-## Crash-boundary table (O19-R1-1, O19-R1-2)
+## Fixture obligations (the arbiter)
 
-- After park write, before recovery: resume sees parkReason
-  wall-violation + recovery record with no terminal outcome → enters
-  recovery BEFORE the parked-status refusal (the same resume-lane
-  pattern as the landed completePendingVerification). No ask exists
-  yet and none is needed for this resume to proceed.
-- After materialization, before judgment: materialization is
-  idempotent toward the bound target (re-running converges); judgment
-  runs after; nothing was recorded, nothing is lost.
-- After judgment, before resolution write: resume re-materializes and
-  re-judges (cheap, idempotent); the chain is unchanged.
-- After resolution write, before its anchor: the landed
-  anchor-lag heal covers it (the resolution write is an ordinary
-  state advance; reconciliation's one-step heal re-anchors).
-- Ledger restore specifically: restore bytes (atomic file write,
-  pending stamp re-recorded) THEN the resolution write; a crash
-  between leaves ledger==bound-safe-bytes with the taint still
-  pending-recovery → resume re-verifies bytes==bound digest
-  (idempotent) and proceeds to the write. The park anchor made no
-  claim about post-park ledger bytes (it is refused as a recovery
-  source by construction), so no reconciliation shape breaks.
-- applyPark's current ask-first ordering and swallowed wall-anchor
-  failures are AMENDED for wall-violation parks: state (with
-  recovery record) first, anchor next with failures surfacing into
-  `attempts` as could-not-run, ask only as tier-3's derived step.
-  Non-wall parks keep their landed ordering untouched.
+- F1: solo-build offense → park → same-pass inspection
+  (recovery-inspected restorable) → auto-restore → byte-exact
+  re-verification → mission continues → NO ask exists.
+- F2: ledger-domain auto-restore from the authenticated blob.
+- F3: adoption question escalates: ask raised, human verb resolves,
+  ladder never touches it.
+- F4: no-safe-tree shape escalates with verdict unrestorable.
+- F5: repeat offense: offense → auto-restore → next-turn offense →
+  ask raised naming the prior auto-recovery's taint id; the human
+  verb works unchanged.
+- F6: crash between restore and resolution record: taint stays
+  unresolved, resume refuses through the landed taint STOP, no
+  double-restore on the next pass.
+- F7: the runner's tier-2 entry cannot be reached from the CLI:
+  the classification gate still refuses non-human callers of the
+  verb (regression of the landed authority matrix).
+- F8: re-verification mismatch (tampered anchor content) refuses
+  the auto-restore and escalates — the restore trusts the
+  verification, never the anchor's name.
 
-## The constrained transition (O19-R1-3)
+---
 
-Runner recovery is NOT an identity-shaped ordinary resolution. The
-validator admits a `resolvedBy: "runner:auto-restore"` resolution ONLY
-when ALL of:
+# ROUND 1 STATE: nine material findings — STOPPED AND RAISED
 
-- the previous state carries a pending-recovery record for exactly
-  this taint, with no terminal outcome;
-- variant is restore; adoption with a runner identity refuses;
-- the resolution's tree/digest EQUALS the record's bound safe target
-  (the phase rule above) — the writer cannot choose a target;
-- the reason equals the taint's recorded reason verbatim;
-- repeat eligibility holds (below) — a repeat-offense state refuses
-  the runner resolution and demands the tier-3 lane;
-- the pending-acceptance condition matches the phase (a
-  workspace-postverify recovery leaves the acceptance pending for the
-  landed verification lane; it never closes it).
+Codex round one (archived under artifacts/agents/critiques/wall-o19/)
+returned nine material findings, four CRITICAL, all transaction- or
+invariant-level: no crash-safe park-recover-ask ordering exists (the
+landed park writes asks first); the landed taint STOP contradicts the
+promised crash escalation; the park can anchor a poisoned ledger that
+tier 2 would then faithfully restore; "inside the park flow" is four
+different detection phases needing a phase table and a typed outcome;
+the destructive restore target is ambiguous exactly where choosing
+wrongly loses accepted work; the adoption verdict has no derivable
+predicate; the K=1 repeat window cannot be derived from taint entries
+as they exist; the runner: prefix is presentation text, not
+provenance; and events are best-effort while the design leaned on one
+as evidence.
 
-The runner entry point DERIVES every one of these from the chain; its
-caller passes only the taint id. A forged runner resolution — from the
-CLI, from a hand-built write, or from a confused future caller — fails
-the transition on the recovery-record join, not on string taste.
+The stop is not only the appetite. Two findings embed decisions that
+are HUMAN-RESERVED:
 
-## Identity namespace (O19-R1-6)
+1. THE ADOPTION POLICY (O19-R3-06): for a restorable violation that
+   might contain valuable work, does the inspector always discard
+   (restore, never ask) or always ask? This decides how often the
+   human is interrupted — the exact quantity D117 rules on — and no
+   recorded fact can derive it.
+2. RUNNER PROVENANCE (O19-R3-08): distinguishing automatic from
+   human resolutions authentically either reserves a prefix in the
+   human CLI's --by (a contract change) or adds an authenticated
+   actor field (a schema change); both cross lines the scope
+   declared closed.
 
-- Every human-facing entry (the resolve-taint CLI, any future verb)
-  REFUSES `--by` values with the `runner:` prefix: the namespace is
-  reserved at the boundary, and the runner mode assigns its identity
-  internally — no parameter selects it.
-- Repeat detection keys on the validated recovery record (an
-  authenticated kind), never on a resolvedBy string prefix.
-
-## The repeat rule (O19-R1-7)
-
-Taint entries gain a validated `violationCycle` field (the reserved
-cycle the wall booked the violation against — the runner knows it at
-parkWallViolation time; the validator requires it on new entries and
-requires it to match the booking). Repeat offense = a new violation
-whose violationCycle is exactly `priorRecoveryCycle + 1`, where the
-prior recovery is the newest taint resolved through a pending-recovery
-record. One clean intervening cycle resets the ladder. Resume and
-unrelated state writes do not move cycles and therefore cannot
-manufacture or destroy adjacency. Fixtures pin: immediate next-cycle
-violation escalates naming the prior recovery; one clean cycle between
-recovers again; resume between the two changes nothing.
-
-## The materialization owner (O19-R1-4)
-
-One new primitive owns workspace materialization —
-`gittree.MaterializeTree(safeTree)`:
-
-- projection: the SAME ledger-filtered workspace projection the wall
-  judges (the safe tree IS such a projection — chain trees are);
-  materialization writes tracked content, modes, and symlinks from
-  the tree; paths present in the worktree but absent from the tree
-  and UNTRACKED are preserved (the wall's identity never covered
-  them); tracked-but-absent paths are removed; the mission ledger
-  path is NEVER touched by workspace materialization (it is
-  filter-excluded and owned by the ledger domain).
-- mechanics: isolated temp index seeded from the safe tree,
-  `checkout-index` into the worktree, then index alignment — the same
-  scrubbed-env, pinned-config invocation discipline as every gittree
-  call; no step consults the live index as authority.
-- atomicity contract: per-file atomic writes; the primitive is
-  IDEMPOTENT toward its tree (re-running converges byte-exact), which
-  is the crash story — "refused judgment writes nothing" is amended
-  to "a partial materialization is re-entered idempotently and judged
-  only at the end" (O19-R1-4's honest correction).
-- nested checkouts: materialization is workspace-scope only; the
-  toplevel fence re-judges after (part of the verification chain).
-
-## Design-doc and registry edits (same landing as implementation)
-
-- host-implementer-wall-design.md: hiw-critique-r2 §4 amends to the
-  ladder as Wido's dated ruling; O19 row gains these anchors; O6
-  cross-references the tier-2 fixtures.
-- event-registry.json: wall-auto-recovered (missionId, taintId,
-  phase, target), wall-recovery-retry (attempt bookkeeping), and the
-  repeat-offense ask naming the prior recovery.
-- State schema: the recovery record and violationCycle join the
-  validator with the same append-only/immutability discipline as the
-  turn log (schema bump per the landed convention).
-
-## Fixtures (minimum)
-
-1. Gate-phase auto-restore end to end: offense → park with recovery
-   record → same-pass restore → constrained resolution → mission
-   continues → no ask ever existed.
-2. Post-verify-phase: motion after acceptance → restore toward the
-   acceptance's recorded posture → pending acceptance concludes
-   through the landed verification lane; consumed authorizations
-   preserved (the R1-5 positive case).
-3. Ledger-domain restore from the detection-bound blob; the park
-   anchor's bytes are proven NOT to be the source.
-4. Adoption escalates; runner-identity adoption refuses in the
-   validator; the CLI refuses --by runner:*.
-5. Repeat offense: offense → recovery → next-cycle offense → ask
-   naming the prior recovery; one-clean-cycle sibling recovers again;
-   resume between changes nothing.
-6. No-safe-source escalates (missing/unauthenticated binding).
-7. Could-not-run containment: injected spawn failure lands attempt
-   1 recorded, no ask; resume re-enters and completes; attempt-budget
-   exhaustion surfaces the steward notice.
-8. Crash boundaries: after park write / after materialization / after
-   judgment / after resolution write — each resumes into the table's
-   single lawful continuation (the completePendingVerification-lane
-   pattern).
-9. Forged runner resolution refuses: right shape, no recovery record;
-   wrong safe target; wrong reason; closing a pending acceptance.
-10. Materialization contract: tracked modification, deletion,
-    untracked preservation, modes/symlinks, staged-only motion,
-    mid-materialization fault → idempotent re-entry.
-
-
-## Open-question ledger (round 2, verbatim substance) and the slice proposal
-
-Round 2's nine findings, each a design obligation for the slice that
-owns it:
-
-- R2-1 (CRITICAL, ledger): the park currently books cycle N+1 onto the
-  DISPUTED ledger bytes and can anchor them; restoring the bound
-  predecessor then conflicts with state. One end-to-end ledger
-  transaction must be designed: never book onto disputed bytes —
-  restore-then-book, or an explicitly unbooked cycle — with state,
-  count, pending stamp, and anchor bound to the exact result. → SLICE 2.
-- R2-2 (CRITICAL, resume): the pending-recovery resume entry must be
-  authenticated and run BEFORE both the runner's raw unresolved-taint
-  stop and ordinary reconciliation, admitting only the bound
-  divergence. → SLICE 2 for the ledger lane; SLICE 1 carries the
-  workspace-only resume entry (which composes with ordinary
-  reconciliation unchanged, the easier half).
-- R2-3 (CRITICAL, phases): workspace-gate conflates the in-turn gate
-  (preTree safe) with reservation continuity (fresh preTree IS the
-  disputed tree; expectedNow is safe). A complete
-  detection-site-to-phase-to-target table is required. → SLICE 1
-  (in-turn gate only); SLICE 3 adds reservation continuity and
-  post-verification.
-- R2-4 (CRITICAL, binding durability): the detection-time source
-  binding must survive the detection-to-park crash window —
-  predecessor-state-hash + anchor locator + digest authenticated at
-  park replay; wall.json stays evidence, never authority. → SLICE 2
-  (ledger); SLICE 1's workspace binding is chain-derived at park time
-  and does not cross that window (the pre-tree is already in the
-  chain).
-- R2-5 (HIGH, schema): the ledger resolution needs its own tagged
-  schema — digest+locator, unchanged workspace E-tree, posture,
-  sequence behavior — the validator must refuse digest-as-tree. →
-  SLICE 2.
-- R2-6 (HIGH, dual targets): post-verification recovery must restore
-  worktree AND staged targets separately (stagedTreePost != postTree
-  is lawful), workspace-scoped, sibling-preserving. → SLICE 3.
-- R2-7 (HIGH, certificates): recovery history needs explicit
-  pending/terminal certificate shapes with a separately clearable
-  active pointer; repeat eligibility binds to a terminal
-  SAFE-RESTORED certificate. → SLICE 4 (repeat rule), certificate
-  shape founded in SLICE 1.
-- R2-8 (HIGH, attempt accounting): attempts must be durably reserved
-  BEFORE effects; state never advances past an unanchored
-  predecessor; anchor refusals keep the could-not-run vs
-  repository-answer split. → SLICE 1 (the containment machinery is
-  its core).
-- R2-9 (HIGH, ask tail): PROVED-INELIGIBLE needs the landed
-  drain-stall pattern — deterministic ask derived from state, terminal
-  write+anchor carrying the ask identity, idempotent publication,
-  missing-ask repair before terminal refusal. → SLICE 1.
-
-### The slice proposal (for coordinator ratification)
-
-1. **o19-slice-1 — the in-turn workspace-gate ladder** (proposed
-   Appetite: 6h design+implement behind fixtures): pending-recovery
-   record, constrained transition, MaterializeTree, could-not-run
-   containment with durable attempt slots (R2-8), the ask tail
-   (R2-9), workspace resume lane (R2-2 easy half), recovery
-   certificate shape (R2-7's foundation). In-turn gate detections
-   only; every other detection site keeps today's human-reserved
-   behavior. Independently landable; delivers D117 for the most
-   common violation shape.
-2. **o19-slice-2 — the ledger transaction** (proposed Appetite: 1d,
-   design first): R2-1's booking/restore/anchor transaction, R2-2's
-   authenticated resume entry, R2-4's durable binding, R2-5's schema.
-3. **o19-slice-3 — post-verification and reservation-continuity
-   phases** (proposed Appetite: 6h): the phase table (R2-3), dual
-   worktree+staged targets (R2-6), nested-checkout fixtures.
-4. **o19-slice-4 — the repeat rule** (proposed Appetite: 3h):
-   violationCycle validation, certificate-bound adjacency (R2-7),
-   the escalation ask naming the prior recovery.
+Recommendation for re-scoping when Wido rules: fold the nine
+findings under a fresh brief with the phase table and the ledger
+transaction as the design's spine, appetite a full day (the o14
+lesson: wall design rows are systematically bigger than their
+original tokens). The chain stands at one round spent; any
+successor enumerates all nine findings.
