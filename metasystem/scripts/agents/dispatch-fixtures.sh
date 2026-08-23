@@ -1556,6 +1556,11 @@ EOF
 
 assert_fence_ask() { # mission, expected reason
   local mission=$1 reason=$2 ask="$agent_repo/artifacts/agents/missions/$1/asks/fence-bound.json"
+  # The batched ask lands a beat after the refusing path returns; the
+  # contract is "the ask is batched", not "batched before the caller's
+  # next syscall". Bounded wait, then the same loud failure.
+  local waited=0
+  while [[ ! -f "$ask" ]] && (( waited < 50 )); do sleep 0.2; waited=$((waited + 1)); done
   [[ -f "$ask" ]] || { echo "mission fence $reason refusal wrote no batched ask" >&2; exit 1; }
   grep -Fq "\`$reason\`" "$ask" || { echo "mission fence ask omitted $reason" >&2; exit 1; }
 }
