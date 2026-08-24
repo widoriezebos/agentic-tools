@@ -1,12 +1,12 @@
 # acp-transport
 
-- State: claimed
+- State: done
 - Intent: ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
 - Next step: Appetite: 8h continues — FULL DELEGATION RECORDED (Wido, 2026-08-23 evening): m2 owns the rep-2 seal end to end on the rep-1 terms (fuse, seal, Approval line with printed hash, commit, push); goal conclusions record --by wido on landed-and-verified reports; the AGENTS/wow word-trade is trusted to m2's judgment. Standing rulings: validity=measurement bar, green=transport health, flip on valid green approved. Path in flight on m2: benchmark-evidence-schema-drift lands (schemas, delegationFloorMet gate-to-metric move, model equivalence via the existing acceptable_effective hook, drift fixture, .session-usage/wall-violation extractor fixes) → rep 1 re-extracted to scratch under the FIXED kit (the evidence is unchanged; the ruler was wrong — if transport-green, the flip evidence may already exist) → prompt sentence → rep-2 seal+resume+shepherd → permission probe → flip on green → conclude with journey chapter.
+- Concluded: ACP is the Devin transport default (flip landed 1060ede on Wido's flip-on-valid-green word; journey chapter cdb76a1). The D88 sealed benchmark completed as a two-rep cohort, BOTH reps VALID with every transport-health gate green under the corrected measuring kit (results/89b2509.../bm-2d-20260823t080725z-3548802/); the dangerous-mode waiver retires with the legacy default. Rulings recorded en route: validity=measurement bar, green=transport health, model equivalence declared (KI-40). Residuals owned elsewhere: devin-subagent-permission-probe (graded-mode verification), the host's twice-reproduced solo-build finding for bm-2dc under graded mode, and the recovery-ladder arc for wall parks. Concluded by Wido's standing word on landed-and-verified reports.
 - OpenedAt: 2026-08-20T00:25:00Z
-- Revision: 23
-- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-24T04:12:55Z
+- Revision: 24
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=acp-transport
@@ -32,4 +32,5 @@ History:
 - 2026-08-23T18:59:56Z 0TJS4Y83R3Y9A1CBED2XWCX4W7-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
 - 2026-08-23T19:03:39Z ZPEBH9RPZQ531D5X5BGZABE8TW-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
 - 2026-08-24T04:12:55Z Y2WETRTJ7W3WTWA6PFEEW1DTAM-m2-bc1be9cb claim actor=m2+mac-coordinator targets=acp-transport
-Integrity: sha256=4443069c150e0f206ccfeecd8e266aaa132c744c00fdc6583db3b7a8fbc8bf3c
+- 2026-08-24T04:13:04Z WEPC5QPQAZ47VGY0H6GMWG8158-m2-bc1be9cb done actor=human:wido targets=acp-transport
+Integrity: sha256=32f24df9a15dc263b92f69a4047a0dbe12b3b055b028219e8dff8c73aea8c89d
