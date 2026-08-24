@@ -59,11 +59,17 @@ tree. Under graded ACP the write tools are refused at the moment of
 use — and because native subagents share their session's tool
 surface, denying the session starves them too.
 
-**Recorded assumption to verify before trusting graded mode:** that
-Devin routes its native subagents' tool calls through the same ACP
-permission flow as the parent session. If they bypass it, the
-prevention has a hole; a cheap capability probe (or the next
-benchmark repetition) must confirm it.
+**The assumption, verified 2026-08-24 (devin-subagent-permission-probe):**
+a live graded ACP session (tools=read-only, mode ask, writes and exec
+denied) was instructed to create a file through its native subagent.
+The session answered that it has NO subagent tool at all under this
+mode, was restricted from edit/write/exec, created nothing on disk,
+and delivered a clean typed outcome. Under the shipped v1 grades the
+hole cannot open: native subagents are not merely permission-gated —
+the feature is absent from the graded session. Scope honestly noted:
+proven for the read-only/runtime-default grades v1 preflight admits;
+write-capable modes outside v1's surface were not probed and stay out
+of scope until a wider grade ships.
 
 Claude and Codex never carried the waiver — their adapters already
 grade permissions through per-runtime config filters — so for them
