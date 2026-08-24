@@ -82,6 +82,16 @@ func TailorConf(confPath string, requested []string) error {
 			continue
 		}
 
+		// A template-project promise never leaks into an adoption: the
+		// template develops beside companion suites (the benchmark kit)
+		// and declares them in validate.extra-suites; an adopted target
+		// has no such sibling, and a leaked declaration would refuse its
+		// every validation run (the declared-suite promise fails closed
+		// by design).
+		if key == "validate.extra-suites" {
+			continue
+		}
+
 		if len(selected) == 0 {
 			switch {
 			case strings.HasPrefix(key, "role.") ||

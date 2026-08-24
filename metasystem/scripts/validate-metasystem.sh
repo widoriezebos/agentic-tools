@@ -648,6 +648,22 @@ bash scripts/agents/config-identity-fixtures.sh
 delivery_contract_skip authority-regression-fixtures || bash scripts/agents/authority-regression-fixtures.sh
 delivery_contract_skip pre-commit-guard-fixtures || bash scripts/agents/pre-commit-guard-fixtures.sh
 delivery_contract_skip static-reproof-fixtures || bash scripts/agents/static-reproof-fixtures.sh
+# PROJECT-DECLARED extra suites (born from the bm-2d rep-1 lesson: a
+# sibling artifact's checks lived in no battery, and engine drift landed
+# green three times in one weekend). The metasystem names nothing beyond
+# itself — the audit's outside-reference fence stands — but a project may
+# DECLARE companion suites in its own configuration, and a declaration is
+# a promise: a declared suite that is missing or red refuses the run.
+extra_suites=$(scripts/metasystem-config.sh get --key validate.extra-suites --default "" 2>/dev/null || true)
+if [[ -n "$extra_suites" ]]; then
+  for extra in $extra_suites; do
+    if [[ ! -x "$extra" ]]; then
+      echo "declared extra suite is missing or not executable: $extra (validate.extra-suites is a promise; clean the key or restore the suite)" >&2
+      exit 1
+    fi
+    delivery_contract_skip "extra-suite-$(basename "$extra")" || bash "$extra"       || { echo "declared extra suite failed: $extra" >&2; exit 1; }
+  done
+fi
 delivery_contract_skip record-protocol-fixtures || bash scripts/agents/record-protocol-fixtures.sh
 delivery_contract_skip evidence-segment-fixtures || bash scripts/agents/evidence-segment-fixtures.sh
 bash scripts/agents/second-session-fixtures.sh

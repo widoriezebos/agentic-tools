@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "note": "Platform truth about model-id spellings: per-group lists of identifiers that denote the SAME model on their platform (a service reporting a display variant of the requested id). Consulted by the extractor's roster gate only after the manifest's own acceptableEffective declaration, because registered configurations are immutable and cannot learn a wobble discovered after their mint. Declared and reviewable -- nothing is ever inferred from name similarity. Ruled by Wido 2026-08-23 (KI-40): Devin's `swe-1-7` IS its 'SWE-1.7 Max' tier; `swe-1-7-medium` is a different tier and stays outside the group.",
+  "groups": [
+    ["swe-1-7", "swe-1-7-max"]
+  ]
+}

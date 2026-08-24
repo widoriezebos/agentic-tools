@@ -86,7 +86,7 @@ copy_tree_without_artifacts() { # source root, destination
   rm -rf "$adopted/development" "$adopted/skills/improve" "$adopted/plans/receipts.log" "$adopted/.claude"
   sed 's/<[^>]*>/filled/g' "$adopted/docs/project-rules.md" >"$adopted/docs/project-rules.md.new"
   mv "$adopted/docs/project-rules.md.new" "$adopted/docs/project-rules.md"
-  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=/m; s/^role\..*\n//mg; s/^mode\..*\.role\..*\n//mg' "$adopted/metasystem.conf"
+  perl -0pi -e 's/^metasystem\.runtimes=.*$/metasystem.runtimes=/m; s/^role\..*\n//mg; s/^mode\..*\.role\..*\n//mg; s/^validate\.extra-suites=.*\n//mg' "$adopted/metasystem.conf"
   fill_harness_conf "$adopted/metasystem.conf" "$tmp/adopted-evidence"
   bash "$adopted/scripts/validate-metasystem.sh" --delivery-contract >"$tmp/nested-pruned.log" 2>&1 || {
     echo "adopted-mode validation failed for a copy with one skill pruned" >&2

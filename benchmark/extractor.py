@@ -412,14 +412,14 @@ class Extractor:
         if not turns_dir.is_dir():
             self.evidence_error("turns", "turns directory is missing")
         else:
-            for turn_dir in sorted(path for path in turns_dir.iterdir() if path.is_dir()):
+            for turn_dir in sorted(path for path in turns_dir.iterdir() if path.is_dir() and not path.name.startswith(".")):
                 turn = self.load_json(turn_dir / "turn.json", f"turns.{turn_dir.name}.turn", "turn.schema.json")
                 # A capped or failed turn produced no host answer: the turn
                 # record itself is the evidence, and demanding a return
                 # failed every run containing one capped turn. A return
                 # that EXISTS is always validated, whatever the outcome.
                 outcome = (turn or {}).get("outcome")
-                if (turn_dir / "return.json").is_file() or outcome not in ("capped", "failed"):
+                if (turn_dir / "return.json").is_file() or outcome not in ("capped", "failed", "faulted", "wall-violation"):
                     returned = self.load_json(turn_dir / "return.json", f"turns.{turn_dir.name}.return", "orchestrator.schema.json")
                 else:
                     returned = None
@@ -912,10 +912,31 @@ class Extractor:
         # 2026-08-15, D65): the service reports a display variant of the
         # same pinned arm. Aliases are per-requested-model and explicit --
         # nothing is inferred from name similarity.
-        if self.manifest is None or not isinstance(requested, str) or not isinstance(effective, str):
+        if not isinstance(requested, str) or not isinstance(effective, str):
             return False
-        aliases = self.manifest.get("roster", {}).get("acceptableEffective", {})
-        return effective in aliases.get(requested, [])
+        if self.manifest is not None:
+            aliases = self.manifest.get("roster", {}).get("acceptableEffective", {})
+            if effective in aliases.get(requested, []):
+                return True
+        # Kit-level platform truth (Wido's leniency ruling, 2026-08-23,
+        # KI-40): benchmark/model-equivalence.json declares per-platform
+        # groups of ids that denote the same model (Devin's tier-spelling
+        # wobble). Registered configurations are immutable, so a config
+        # minted before a platform wobble was known cannot be patched --
+        # the platform file is the declared, reviewable escape. Nothing is
+        # ever inferred from name similarity.
+        return self.platform_equivalent(requested, effective)
+
+    def platform_equivalent(self, requested: str, effective: str) -> bool:
+        path = SCHEMA_DIR.parent / "model-equivalence.json"
+        try:
+            groups = json.loads(path.read_text(encoding="utf-8")).get("groups", [])
+        except (OSError, json.JSONDecodeError):
+            return False
+        for group in groups:
+            if isinstance(group, list) and requested in group and effective in group:
+                return True
+        return False
 
     def roster_gate(self, identity: dict[str, Any]) -> tuple[bool | None, str]:
         expected = {item["role"]: item for item in identity["roster"]["delegates"]}
@@ -939,7 +960,12 @@ class Extractor:
             return None, "host roster is unavailable"
         return not problems, "; ".join(problems) if problems else "host and every job match the pinned roster"
 
-    def validity(self, identity: dict[str, Any], chains: dict[str, list[dict[str, Any]]], tracking_passed: bool | None, tracking_detail: str, fence_passed: bool | None, fence_detail: str, delegation_passed: bool | None, delegation_detail: str) -> dict[str, Any]:
+    def validity(self, identity: dict[str, Any], chains: dict[str, list[dict[str, Any]]], tracking_passed: bool | None, tracking_detail: str, fence_passed: bool | None, fence_detail: str) -> dict[str, Any]:
+        # Validity is a MEASUREMENT bar (Wido's ruling, 2026-08-23): the
+        # gates below judge whether this measurement can be trusted, never
+        # whether the candidate behaved. The delegation floor is candidate
+        # BEHAVIOR and reports as a mechanical metric instead — a host
+        # that never delegates yields a valid scorecard that says so.
         all_terminal = all(job.get("status") in TERMINAL_JOB_STATUSES for job in self.jobs)
         open_chains = [root for root, records in chains.items() if records[0].get("chainClosed") is not True]
         all_closed = not open_chains
@@ -950,7 +976,6 @@ class Extractor:
             {"name": "everyChainClosed", "passed": all_closed, "sourceOwner": "candidate", "detail": "every mission job chain is closed" if all_closed else "open chains: " + ", ".join(open_chains)},
             {"name": "zeroUntracked", "passed": tracking_passed, "sourceOwner": "candidate", "detail": tracking_detail},
             {"name": "fencesEnforced", "passed": fence_passed, "sourceOwner": "candidate", "detail": fence_detail},
-            {"name": "delegationFloorMet", "passed": delegation_passed, "sourceOwner": "candidate", "detail": delegation_detail},
             {"name": "rosterPinned", "passed": roster_passed, "sourceOwner": "candidate", "detail": roster_detail},
             {"name": "evidenceSetComplete", "passed": evidence_passed, "sourceOwner": "kit", "detail": "all required evidence parsed under the pinned schemas" if evidence_passed else "; ".join(self.evidence_errors)},
         ]
@@ -1257,7 +1282,7 @@ class Extractor:
         chains = self.job_chains()
         tracking, tracking_passed, tracking_detail = self.tracking_metric()
         fence, fence_passed, fence_detail = self.fence_metric(identity)
-        delegation, delegation_passed, delegation_detail = self.delegation_metric(chains)
+        delegation, _delegation_passed, _delegation_detail = self.delegation_metric(chains)
         product, grader_watches = self.product_metrics()
         mechanical = self.protocol_and_rework(chains)
         mechanical.extend((tracking, self.critique_metric(chains), delegation, fence, self.progress_metric()))
@@ -1272,7 +1297,7 @@ class Extractor:
         self.gap("watches.validationSuiteWallClockSeconds", "validation-suite wall clock was not logged with the run")
         self.gap("watches.metasystemLineCount", "the evidence set has no pinned metasystem source-path list for line counting")
         self.gap("judgedScores", "behavior-judge output is absent; the judged layer is not estimated by the mechanical extractor")
-        validity = self.validity(identity, chains, tracking_passed, tracking_detail, fence_passed, fence_detail, delegation_passed, delegation_detail)
+        validity = self.validity(identity, chains, tracking_passed, tracking_detail, fence_passed, fence_detail)
         return {
             "schemaVersion": 1,
             "identity": identity,

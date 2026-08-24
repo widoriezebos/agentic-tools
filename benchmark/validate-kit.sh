@@ -140,6 +140,12 @@ echo "kit: extractor fixtures passed"
 "$kit/evolution-fixtures.sh" >/dev/null
 echo "kit: evolution fixtures passed"
 
+# The evidence schemas must track the engine (KI-40's weekend, third
+# drift): a fresh state from the CURRENT engine validates under the
+# kit's own ruler, or nothing else here is measuring anything.
+"$kit/evidence-drift-fixtures.sh" >/dev/null
+echo "kit: evidence drift fixtures passed"
+
 # 2. Cross-artifact seam checks: case against spec against instruments, plus
 # the object model itself — every shipped case version, configuration version
 # and the alias table validate against their schemas; the version registry

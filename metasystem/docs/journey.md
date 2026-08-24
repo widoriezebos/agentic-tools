@@ -536,3 +536,26 @@ provides. Each refusal made the thing safer or the words about it more
 honest. The final agreement covers what was actually built — including
 the sentence in the design record that says plainly what the repair
 cannot promise, and what catches it when that happens.
+
+## The ruler learns to move with what it measures
+
+The first Devin-hosted benchmark run ended with a verdict nobody could
+use: invalid, said the scorecard — but two of its three complaints were
+the measuring kit's own. The engine's mission state had grown new
+truth-carrying fields when the wall landed, and the kit's evidence
+schemas were still checking for the old shape; a turn the wall itself
+had lawfully parked was faulted for missing a return it could never
+have produced; and Devin's habit of spelling one model two ways failed
+a gate on typography. The repair went three ways at once. The schemas
+caught up to the engine, and a new fixture makes the catching-up
+permanent: every validation run now creates a real mission state with
+the engine as it is today and holds it against the kit's own ruler, so
+the two can never drift apart silently again — and because the
+metasystem may not name anything beyond itself, that fixture arrives
+through a new, general courtesy: a project may promise companion
+suites in its own configuration, and a promise, once made, is
+enforced. Model-name leniency became a declared, reviewable fact
+rather than a silent shrug. And under the corrected ruler, that "failed"
+first run turned out to have been valid all along — the wall had
+worked, the machinery had worked, and only the measurement had been
+wrong about itself.

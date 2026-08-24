@@ -26,7 +26,8 @@
     "schemaVersion": {
       "enum": [
         2,
-        3
+        3,
+        4
       ]
     },
     "missionId": {
@@ -219,6 +220,66 @@
                     "minimum": 0
                   }
                 }
+              },
+              "headCommitPost": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40,64}$"
+              },
+              "refMapPost": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40,64}$"
+                }
+              },
+              "stagedTreePost": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40,64}$"
+              },
+              "topTreePost": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40,64}$"
+                  }
+                ]
+              },
+              "topStagedPost": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "tree",
+                      "unmerged"
+                    ],
+                    "properties": {
+                      "tree": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40,64}$"
+                      },
+                      "unmerged": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "worktreeCensusPost": {
+                "type": "array"
+              },
+              "capturedAt": {
+                "type": "string",
+                "minLength": 1
               }
             }
           },
@@ -410,6 +471,102 @@
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}([.,]\\d+)?(Z|[+-]\\d{2}:\\d{2})?$"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "turnId",
+            "cycle",
+            "preTree",
+            "sequence",
+            "segment",
+            "openedAt",
+            "headCommit",
+            "headTree",
+            "topTree",
+            "refMap",
+            "topStaged"
+          ],
+          "properties": {
+            "turnId": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            },
+            "cycle": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "preTree": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
+            },
+            "sequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "segment": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "openedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}([.,]\\d+)?(Z|[+-]\\d{2}:\\d{2})?$"
+            },
+            "headCommit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
+            },
+            "headTree": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
+            },
+            "topTree": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40,64}$"
+                }
+              ]
+            },
+            "refMap": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40,64}$"
+              }
+            },
+            "topStaged": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "tree",
+                    "unmerged"
+                  ],
+                  "properties": {
+                    "tree": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40,64}$"
+                    },
+                    "unmerged": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
         }
       ]
     },
@@ -512,11 +669,20 @@
                       },
                       "resolvedBy": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
                       },
                       "reason": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
+                      },
+                      "posture": {
+                        "type": "object"
+                      },
+                      "waivedClaims": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
                       }
                     }
                   },
@@ -569,18 +735,18 @@
                       },
                       "resolvedBy": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
                       },
                       "reason": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
                       },
                       "waivedClaims": {
                         "type": "array",
                         "minItems": 1,
                         "items": {
                           "type": "string",
-                          "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
+                          "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
                         }
                       }
                     }
@@ -595,6 +761,92 @@
     "initialBaseline": {
       "type": "string",
       "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "admissionOrigins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "headCommit",
+        "topTree",
+        "topStaged",
+        "refMap",
+        "worktreeCensus",
+        "capturedAt"
+      ],
+      "properties": {
+        "headCommit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "topTree": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
+            }
+          ]
+        },
+        "topStaged": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "tree",
+                "unmerged"
+              ],
+              "properties": {
+                "tree": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40,64}$"
+                },
+                "unmerged": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "refMap": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40,64}$"
+          }
+        },
+        "worktreeCensus": {
+          "type": "array"
+        },
+        "capturedAt": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schemaVersion": {
+            "const": 4
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "admissionOrigins"
+        ]
+      }
+    }
+  ]
 }
