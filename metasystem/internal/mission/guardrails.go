@@ -28,6 +28,11 @@ type GuardrailClass struct {
 // refusal always names the document that carries the offending entry.
 const ContractGuardrailSubject = "contract wall.guardrails"
 
+// CovenantFilename is the covenant's one home at the app root. It
+// lives HERE, beside the guardrail class, because the class custodies
+// it by construction (the covenant package aliases this constant).
+const CovenantFilename = "covenant.json"
+
 func (g *GuardrailClass) Empty() bool {
 	return g == nil || (len(g.files) == 0 && len(g.prefixes) == 0)
 }
@@ -64,6 +69,14 @@ func ProtectedArtifactPath(path string) bool {
 func (g *GuardrailClass) Covers(path string) bool {
 	if g == nil {
 		return false
+	}
+	// The covenant custodies itself: covenant.json is a member of
+	// EVERY guardrail class by construction — never read from a
+	// contract, so no contract edit can drop it. This one line reaches
+	// the wall's consumption check, issuance's guardrail-touch scan,
+	// and the host-artifact contradiction alike.
+	if path == CovenantFilename {
+		return true
 	}
 	if g.files[path] {
 		return true

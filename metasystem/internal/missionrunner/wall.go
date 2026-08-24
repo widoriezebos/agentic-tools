@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/covenant"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -96,6 +97,82 @@ func (w *wallInspection) document() map[string]any {
 // applies the same denial.
 func protectedArtifactPath(path string) bool {
 	return mission.ProtectedArtifactPath(path)
+}
+
+// covenantGovernanceViolation deep-checks a warden-lane change to the
+// covenant: the identity and battery rows are governance the human
+// tier owns — the warden may move requirements, budgets, and guards,
+// never what the app IS or what earns green. The OLD covenant reads
+// from the pre-tree blob, the NEW from the AUTHORIZATION'S OWN
+// reviewedTree — the immutable tree the warden actually reviewed and
+// the digest binds — never from the mutable workspace, which can move
+// between this check and the stable snapshot. A returned error is the
+// runner's could-not-run, never a judgment.
+func covenantGovernanceViolation(workspace gittree.Workspace, preTree, reviewedTree, digest string) (string, error) {
+	oldBytes, existed, err := workspace.FileAt(preTree, covenant.Filename)
+	if violation, rerr := covenantReadSplit(err, digest, "pre-change tree"); rerr != nil || violation != "" {
+		return violation, rerr
+	}
+	newBytes, present, err := workspace.FileAt(reviewedTree, covenant.Filename)
+	if violation, rerr := covenantReadSplit(err, digest, "reviewed tree"); rerr != nil || violation != "" {
+		return violation, rerr
+	}
+	if !existed {
+		// Creation is inception's act, not a turn's: a covenant born
+		// inside a mission escalates whole.
+		return fmt.Sprintf("authorization %.12s creates %s inside a mission; a covenant arrives by inception or retrofit under the human tier", digest, covenant.Filename), nil
+	}
+	if !present {
+		return fmt.Sprintf("authorization %.12s's reviewed tree deletes %s; removing the covenant escalates to the human tier", digest, covenant.Filename), nil
+	}
+	oldCovenant, err := covenant.Parse(oldBytes, "the pre-change "+covenant.Filename)
+	if err != nil {
+		// A pre-change covenant that never parsed cannot anchor a
+		// comparison; the change escalates whole rather than guessing.
+		return fmt.Sprintf("authorization %.12s touches %s whose pre-change bytes do not parse (%v); the human tier resolves", digest, covenant.Filename, err), nil
+	}
+	newCovenant, err := covenant.Parse(newBytes, "the reviewed "+covenant.Filename)
+	if err != nil {
+		return fmt.Sprintf("authorization %.12s's reviewed %s does not parse (%v); the net's own record must always parse", digest, covenant.Filename, err), nil
+	}
+	if !identitiesEqual(oldCovenant.Identity, newCovenant.Identity) {
+		return fmt.Sprintf("authorization %.12s's reviewed covenant changes the identity; identity changes escalate to the human tier", digest), nil
+	}
+	if newCovenant.Battery != oldCovenant.Battery {
+		return fmt.Sprintf("authorization %.12s's reviewed covenant changes the battery; what earns green escalates to the human tier", digest), nil
+	}
+	return "", nil
+}
+
+// covenantReadSplit keeps the wall's could-not-run split on the
+// governance path: a spawn refusal or timeout is the runner's own
+// failure, but a repository ANSWER — a missing or malformed reviewed
+// tree, a non-blob entry at the covenant's path — is a judgment, and
+// it must park on the human tier like every governance violation,
+// never dissolve into a runner error that skips the park.
+func covenantReadSplit(err error, digest, source string) (string, error) {
+	if err == nil {
+		return "", nil
+	}
+	var runFailure *gittree.RunFailure
+	if errors.As(err, &runFailure) {
+		return "", err
+	}
+	return fmt.Sprintf("authorization %.12s's %s cannot answer for %s (%v); the human tier resolves", digest, source, covenant.Filename, err), nil
+}
+
+// identitiesEqual compares the identity whole, source paths included —
+// struct equality cannot cover the slice.
+func identitiesEqual(a, b covenant.Identity) bool {
+	if a.Name != b.Name || a.EntryPoint != b.EntryPoint || len(a.SourcePaths) != len(b.SourcePaths) {
+		return false
+	}
+	for index := range a.SourcePaths {
+		if a.SourcePaths[index] != b.SourcePaths[index] {
+			return false
+		}
+	}
+	return true
 }
 
 // parseHostArtifacts parses the contract's declared host-artifact files:
@@ -223,6 +300,24 @@ func inspectWall(root, missionID, preTree string, state map[string]any, certifie
 			if guardrails.Covers(path) && !guardrailLane {
 				inspection.Violation = fmt.Sprintf("authorization %.12s touches the guardrail %s outside the warden's lane; guardrail changes take their own review", digest, path)
 				return inspection, nil
+			}
+			// The covenant's identity and battery are governance, not
+			// work: even the warden's lane may not move them — that
+			// change escalates to the human tier. A declaration-domain
+			// violation by classification (UndeclaredOnly stays false),
+			// so the recovery ladder's mechanical rung never touches it
+			// and only a human resolution ends the park. The check
+			// judges the record's own reviewedTree.
+			if path == covenant.Filename && guardrailLane {
+				reviewedTree, _ := record["reviewedTree"].(string)
+				violation, gerr := covenantGovernanceViolation(workspace, preTree, reviewedTree, digest)
+				if gerr != nil {
+					return nil, gerr
+				}
+				if violation != "" {
+					inspection.Violation = violation
+					return inspection, nil
+				}
 			}
 			consumedPaths[path] = digest
 			changedPaths = append(changedPaths, path)

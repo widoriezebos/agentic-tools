@@ -36,11 +36,16 @@ func TestParseGuardrailsGrammar(t *testing.T) {
 	}
 	empty, _ := ParseGuardrails(ContractGuardrailSubject, "  ", nil)
 	if !empty.Empty() || empty.Covers("anything") {
-		t.Fatal("an empty declaration covers nothing")
+		t.Fatal("an empty declaration covers nothing beyond the covenant")
+	}
+	// The one exception is by construction, not declaration: the
+	// covenant custodies itself in EVERY class, the empty one included.
+	if !empty.Covers(CovenantFilename) || !class.Covers(CovenantFilename) {
+		t.Fatal("every class must custody the covenant by construction")
 	}
 	var nilClass *GuardrailClass
-	if !nilClass.Empty() || nilClass.Covers("anything") {
-		t.Fatal("the nil class is empty and covers nothing")
+	if !nilClass.Empty() || nilClass.Covers("anything") || nilClass.Covers(CovenantFilename) {
+		t.Fatal("the nil class is empty and covers nothing — no class, no custody")
 	}
 	for name, value := range map[string]string{
 		"empty path":  "goldens/,,specs.sh",

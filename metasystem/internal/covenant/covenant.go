@@ -81,8 +81,10 @@ type Guard struct {
 	Floor   float64
 }
 
-// Filename is the covenant's one location at an adopted app's root.
-const Filename = "covenant.json"
+// Filename is the covenant's one location at an adopted app's root —
+// the mission package's constant, aliased so the guardrail class and
+// this reader can never disagree about the one home.
+const Filename = mission.CovenantFilename
 
 func fail(format string, args ...any) error {
 	return fmt.Errorf("covenant refused: "+format, args...)
@@ -210,6 +212,16 @@ func Load(path string) (*Covenant, error) {
 	if err != nil {
 		return nil, fail("cannot read %s: %v", path, err)
 	}
+	return Parse(data, path)
+}
+
+// Parse validates covenant bytes wherever they came from — the one
+// home on disk, or a tree the wall reads them back out of. The label
+// names the source where the syntax and duplicate-member refusals
+// speak; the section refusals name their rows, which need no path.
+func Parse(data []byte, label string) (*Covenant, error) {
+	path := label
+	var err error
 	var doc map[string]any
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, fail("%s is not valid JSON: %v", path, err)

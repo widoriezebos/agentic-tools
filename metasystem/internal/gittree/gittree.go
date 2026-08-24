@@ -438,6 +438,24 @@ func (w Workspace) Entries(tree string, paths []string) (map[string]Entry, error
 	return entries, nil
 }
 
+// FileAt reads one file's bytes at a tree; absent is (nil, false, nil),
+// never an error — a deletion is a fact, not a failure.
+func (w Workspace) FileAt(tree, path string) ([]byte, bool, error) {
+	entries, err := w.Entries(tree, []string{path})
+	if err != nil {
+		return nil, false, err
+	}
+	entry, ok := entries[path]
+	if !ok {
+		return nil, false, nil
+	}
+	content, err := w.git(nil, "cat-file", "blob", entry.OID)
+	if err != nil {
+		return nil, false, err
+	}
+	return content, true, nil
+}
+
 // missionID is the production mission grammar (the job-id grammar): no
 // slashes, so one mission's anchors can never nest inside another's
 // namespace and DropAnchors cannot cross a mission boundary.
