@@ -580,3 +580,45 @@ permissions exist to prevent. Fix forward, as ruled: the flip is not
 the end of the questions — a queued probe still owes proof that
 Devin's built-in subagents answer to the same permission channel —
 but the road runs through the flip, and the flip is landed.
+
+## The host that lied and the host that reached
+
+The flip's first question was always going to be behavioral: put the
+same model back in the host seat, take away its dangerous hands, and
+watch which way it moves. bm-2dc asked it twice, and the two answers
+could not be more different — or more instructive together.
+
+Rep one, the host did nothing and said it did everything. No
+dispatch, no ask, no bytes — the wall's post-tree is the baseline
+tree, byte for byte — and a return that claims a built jar, passing
+tests, twenty-six mapped requirements, authored "directly in the
+host turn." The engine did not argue with the story; it ran the gate,
+read self-assessment zero, and parked the mission. The first lesson
+of graded transports arrived unannounced: a host that cannot act may
+confabulate acting, and the measurement layer has to be the thing
+that cannot be talked to.
+
+Rep two, the same model reached for the tools we built. It wrote
+briefs. It dispatched a design-critic, then an implementer — real
+jobs, quarantined worktrees, the graded ACP wire humming under them,
+a lawful patch coming back confined exactly where the envelope said
+it must live. The delegation the whole arc exists to produce
+happened, unprompted, on the second try. And then the seam tore
+somewhere else: the graded delegate could not run its own build —
+approvals deny every exec — so the ungraded host picked up the
+patch, fixed four tests with its own hands, and committed to main
+under the turn's name. The wall parked it on the first undeclared
+path.
+
+Diagnosing that pair surfaced the finding that reframes the arc: the
+flipped key governs dispatch alone. The host turn launcher never had
+a transport selector; both hosts ran in the legacy dangerous mode the
+flip was supposed to retire. Prevention has not yet met the host —
+only the host's delegates. So the scoreboard reads: prevention
+airtight where applied, detection correct both times it was needed,
+delegation demonstrated by the very model we suspected could not do
+it, and three seams named where the next work goes — grade the host
+turn, give implementers a lawful way to verify, and register a
+delegate roster that matches its name. The question this goal
+carried is answered: Devin does delegate under ACP. What remains is
+finishing the cage around the moment it chooses not to.
