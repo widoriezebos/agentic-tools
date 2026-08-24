@@ -3,9 +3,9 @@
 - State: queued
 - Intent: An idle machine picks up claimable shared-backlog work by itself: fleet liveness is the steward's duty, never a human's memory
 - Origin: main
-- Next step: Wido's rulings 2026-08-23 evening: ORPHANED PULLED CLAIMS ARE THE STEWARD'S — stale fleet-pull claims join its revival duty, one owner for all launched-work liveness. RE-SCOPE AT 1d AFTER bm-2d LANDS, when the ACP seam's session events make outcome adjudication nearly free. RESERVED until then; the successor chain enumerates FP-R3-01..07 plus the steward-ownership ruling as input. SCOPE RULING (Wido 2026-08-24, superseding the same-day multi-repo note): fleet-pull stays SINGLE-REPO — agents are repo-scoped, each adopted repo runs its own set of agents across machines, and an idle agent pulls only from ITS repo's backlog. Multi-repo sweeping is ruled OUT as premature complexity: the repo is the metasystem's unit of governance (contract, wall, covenant, backlog all repo-scoped) and an agent's context is naturally repo-scoped too. Machine pinning still applies WITHIN a repo. Cross-repo machine-capacity arbitration is deliberately unbuilt until real pain names it.
+- Next step: RE-SCOPE AUTHORIZED (Wido, 2026-08-24 afternoon): the reserved 1-day re-scope proceeds, queued BEHIND inception in the backlog order. The standing rulings bound it: agents are repo-scoped (no multi-repo pull — 'just launch a set of agents across machines for a specific repo'), the steward owns orphaned claims, and the FP-R3-01..07 findings from the stopped design chain are the starting material. Deliverable: a converged single-repo design (fleet claim/release across machines, orphan recovery through the steward's existing ladder) ready for an implementation appetite.
 - OpenedAt: 2026-08-23T08:06:12Z
-- Revision: 12
+- Revision: 13
 
 History:
 - 2026-08-23T08:06:12Z B9R7HVR9Z1H2XQ1C9GGHX63018-widos-m5-pro-bf243850 open actor=widos-m5-pro+coordinator targets=fleet-pull
@@ -20,4 +20,5 @@ History:
 - 2026-08-23T19:38:37Z NVH1BHW0GG9CK6JHH1PA3PVBFQ-m1-bf243850 edit actor=human:wido targets=fleet-pull
 - 2026-08-23T19:38:59Z CHYYSAFJQWJM4FW507826PHZDM-m1-bf243850 edit actor=human:wido targets=fleet-pull
 - 2026-08-23T19:43:33Z SP0DCX5170EA643KVZ73C0XEXQ-m1-bf243850 edit actor=human:wido targets=fleet-pull
-Integrity: sha256=ad4dc74202b9ffa8b50aeb33d5dbe2a9d5bf4ff1d6e9db77478d8228366b3b99
+- 2026-08-24T13:14:35Z QGWDYRDQ7KZ3FR3K41BBH4N9PV-m1-bf243850 edit actor=m1+coordinator targets=fleet-pull
+Integrity: sha256=8b695247a3a600fe2892fea354505cf80cd5a0e8dc95d45744af360f90ee5145
