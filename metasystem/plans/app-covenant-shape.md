@@ -21,17 +21,33 @@ never invented. What the kit already carries, generalized:
    guardrail grammar where paths appear. App-owned location: covenant.json
    at the adopted repo root (the two-part law: never overwritten by a
    metasystem update, at worst migrated; a re-adoption fixture proves it).
-2. Staged minimality: the runner refuses a mission ONLY when the contract
-   declares a covenant (covenant.path key) and the file is missing,
-   invalid, or disagrees with the contract's own gate/guardrails — never
-   a universal refusal that would break covenant-less repos. Universal
-   presence is inception-era policy, not slice one.
-3. Derivation checks at preflight: contract gate command == covenant
-   battery command; contract wall.guardrails ⊆ covenant guardrails.
-   Divergence refuses with both values named.
+2. Staged minimality, as sharpened by review: only a repo with NO
+   covenant.json passes untouched. An app CARRYING one refuses contract
+   omission, and covenant.path may only name covenant.json itself — the
+   covenant's one home at the app root; a movable covenant is a
+   selectable one.
+3. Agreement checks at preflight, the battery bound WHOLE: gate command,
+   the threshold for the battery's metric (in the contract's own
+   threshold grammar, shared so the two can never diverge), and the
+   gate direction; the guardrail nets EQUAL as declared, both
+   directions refused distinctly. Divergence refuses with both values
+   named. The gate binds start AND resume.
 4. Fixtures: reader validation (good/malformed/each section), the
    preflight refusal + agreement paths, the re-adoption byte-identity
    fixture for the app section.
 5. The kit's own covenant.json is authored WITH machine 2's arc (its
-   territory), exactly like the wall.guardrails contract line — the
-   fixtures carry a faithful copy extracted from case.json 0.3 meanwhile.
+   territory), exactly like the wall.guardrails contract line. The
+   package fixture meanwhile carries a REPRESENTATIVE extraction from
+   case.json 0.3: three requirement rows spanning the shapes (a
+   decision point, a floor-guarded constraint, a budgeted metric) and
+   the kit's exact instrument set as guardrails — the full 26-row
+   extraction is the kit covenant's own content, landed with it.
+6. The two-part law's adoption proof covers the half adoption owns
+   today: initial adoption and a same-version re-run preserve the
+   app-owned covenant byte for byte (compared with cmp). adopt.sh
+   refuses cross-version reruns and routes them to the documented
+   upgrade path; upgrade-time survival is that machinery's obligation,
+   proven when it exists. The covenant gate binds at start AND resume,
+   compares the battery whole (command plus the threshold for its
+   metric), demands net equality in both directions, and an app
+   carrying covenant.json cannot be opted out by contract omission.

@@ -10,10 +10,13 @@
 package covenant
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 )
 
@@ -95,10 +98,62 @@ func exactKeys(doc map[string]any, label string, keys ...string) error {
 
 func requiredString(doc map[string]any, label, key string) (string, error) {
 	value, _ := doc[key].(string)
-	if value == "" {
+	if strings.TrimSpace(value) == "" {
 		return "", fail("%s.%s must be a non-empty string", label, key)
 	}
 	return value, nil
+}
+
+// duplicateKey walks the raw JSON tokens and reports the first object
+// member name that repeats inside one object: encoding/json silently
+// keeps the last duplicate, which would let a second "battery" shadow
+// the one a reviewer read.
+func duplicateKey(data []byte) string {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	type frame struct {
+		object bool
+		seen   map[string]bool
+		isKey  bool
+	}
+	var stack []*frame
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return ""
+		}
+		if delim, ok := token.(json.Delim); ok {
+			switch delim {
+			case '{':
+				stack = append(stack, &frame{object: true, seen: map[string]bool{}, isKey: true})
+			case '[':
+				stack = append(stack, &frame{})
+			case '}', ']':
+				stack = stack[:len(stack)-1]
+				if len(stack) > 0 && stack[len(stack)-1].object {
+					stack[len(stack)-1].isKey = true
+				}
+			}
+			continue
+		}
+		if len(stack) == 0 {
+			continue
+		}
+		top := stack[len(stack)-1]
+		if !top.object {
+			continue
+		}
+		if top.isKey {
+			if name, ok := token.(string); ok {
+				if top.seen[name] {
+					return name
+				}
+				top.seen[name] = true
+			}
+			top.isKey = false
+		} else {
+			top.isKey = true
+		}
+	}
 }
 
 func stringList(doc map[string]any, label, key string) ([]string, error) {
@@ -109,7 +164,7 @@ func stringList(doc map[string]any, label, key string) ([]string, error) {
 	out := make([]string, 0, len(raw))
 	for _, item := range raw {
 		value, ok := item.(string)
-		if !ok || value == "" {
+		if !ok || strings.TrimSpace(value) == "" {
 			return nil, fail("%s.%s must be a list of non-empty strings", label, key)
 		}
 		out = append(out, value)
@@ -136,6 +191,9 @@ func Load(path string) (*Covenant, error) {
 	var doc map[string]any
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, fail("%s is not valid JSON: %v", path, err)
+	}
+	if name := duplicateKey(data); name != "" {
+		return nil, fail("%s repeats the member %q; a duplicate would silently shadow what a reviewer read", path, name)
 	}
 	if err := exactKeys(doc, "the covenant",
 		"schemaVersion", "identity", "requirements", "battery", "budgets", "guards", "guardrails"); err != nil {
@@ -217,6 +275,9 @@ func Load(path string) (*Covenant, error) {
 	if c.Battery.Threshold, err = requiredString(battery, "battery", "threshold"); err != nil {
 		return nil, err
 	}
+	if !contract.ValidThreshold(c.Battery.Threshold) {
+		return nil, fail("battery.threshold %q is not in the contract's threshold grammar (a comparator then a number, no spaces); a mission contract could never carry it", c.Battery.Threshold)
+	}
 
 	budgets, ok := doc["budgets"].([]any)
 	if !ok {
@@ -281,11 +342,14 @@ func Load(path string) (*Covenant, error) {
 		return nil, err
 	}
 	joined := ""
-	for index, path := range c.Guardrails {
+	for index, entry := range c.Guardrails {
+		if strings.Contains(entry, ",") {
+			return nil, fail("guardrails[%d] %q contains a comma, which the guardrail grammar reserves as its separator", index, entry)
+		}
 		if index > 0 {
 			joined += ","
 		}
-		joined += path
+		joined += entry
 	}
 	class, violation := mission.ParseGuardrails(joined, nil)
 	if violation != "" {

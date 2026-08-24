@@ -27,7 +27,7 @@ func TestLoadKitExtractedCovenant(t *testing.T) {
 	if len(c.Guards) != 1 || c.Guards[0].Cadence != 1 || c.Guards[0].Floor != 1 {
 		t.Fatalf("guards wrong: %+v", c.Guards)
 	}
-	if !c.GuardrailSet.Covers("grader/checks.md") || !c.GuardrailSet.Covers("gate.sh") || c.GuardrailSet.Covers("src/main/App.java") {
+	if !c.GuardrailSet.Covers("gate.sh") || !c.GuardrailSet.Covers("guard-deps.sh") || c.GuardrailSet.Covers("src/main/App.java") {
 		t.Fatalf("the net must cover its declarations and nothing else")
 	}
 }
@@ -75,6 +75,15 @@ func TestLoadRefusals(t *testing.T) {
 		"unlawful net": {func(d map[string]any) {
 			d["guardrails"] = []any{"../outside"}
 		}, "guardrails"},
+		"comma entry": {func(d map[string]any) {
+			d["guardrails"] = []any{"gold,en/"}
+		}, "reserves as its separator"},
+		"toothless threshold": {func(d map[string]any) {
+			d["battery"].(map[string]any)["threshold"] = "not-a-threshold"
+		}, "threshold grammar"},
+		"whitespace proof": {func(d map[string]any) {
+			d["requirements"].([]any)[0].(map[string]any)["proof"] = "   "
+		}, "proof must be a non-empty string"},
 	}
 	for name, tc := range cases {
 		doc := base()
@@ -85,5 +94,15 @@ func TestLoadRefusals(t *testing.T) {
 	}
 	if _, err := Load(filepath.Join(t.TempDir(), Filename)); err == nil {
 		t.Fatal("a missing covenant must refuse")
+	}
+
+	// A duplicate member name shadows what a reviewer read: only raw
+	// bytes can carry one, so this case bypasses the map round trip.
+	raw := filepath.Join(t.TempDir(), Filename)
+	data, _ := os.ReadFile(filepath.Join("testdata", "taskrun-covenant.json"))
+	doubled := strings.Replace(string(data), "\"budgets\":", "\"guards\": [],\n  \"budgets\":", 1)
+	os.WriteFile(raw, []byte(doubled), 0o644)
+	if _, err := Load(raw); err == nil || !strings.Contains(err.Error(), "repeats the member") {
+		t.Fatalf("a duplicate member must refuse: %v", err)
 	}
 }

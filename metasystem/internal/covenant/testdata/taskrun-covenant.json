@@ -23,5 +23,5 @@
   "guards": [
     {"name": "no-runtime-deps", "command": "bash guard-deps.sh", "cadence": 1, "floor": 1}
   ],
-  "guardrails": ["gate.sh", "guard-deps.sh", "grader/"]
+  "guardrails": ["gate.sh", "guard-deps.sh"]
 }

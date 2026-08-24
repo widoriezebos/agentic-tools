@@ -625,11 +625,11 @@ func (e *Engine) wallPreflight(mode string, values map[string]string, approved [
 	if err := e.checkFileModePinned(); err != nil {
 		return err
 	}
-	if mode != "start" {
-		return nil
-	}
 	if err := e.covenantPreflight(values); err != nil {
 		return err
+	}
+	if mode != "start" {
+		return nil
 	}
 	_, err := e.admittedBaseline(values, approved)
 	return err

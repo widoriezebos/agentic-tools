@@ -115,6 +115,13 @@ var contractOptionalScalars = map[string]bool{
 	"wall.sealed-baseline": true,
 }
 
+// ValidThreshold reports whether a threshold is expressible in the
+// contract grammar — the ONE grammar, shared with the covenant reader
+// so a covenant can never demand a threshold no contract can carry.
+func ValidThreshold(value string) bool {
+	return contractThresholdGrammarRe.MatchString(value)
+}
+
 // contractIntegerKeys are the scalar keys that must be positive integers.
 var contractIntegerKeys = []string{
 	"guard.cadence", "ledger.cycle-budget", "ledger.no-gain-budget", "fence.cycles",
