@@ -1,11 +1,12 @@
 # acp-transport
 
-- State: queued
+- State: claimed
 - Intent: ACP as the delegate transport, retiring the dangerous-mode waiver
 - Origin: main
 - Next step: Appetite: 8h continues — FULL DELEGATION RECORDED (Wido, 2026-08-23 evening): m2 owns the rep-2 seal end to end on the rep-1 terms (fuse, seal, Approval line with printed hash, commit, push); goal conclusions record --by wido on landed-and-verified reports; the AGENTS/wow word-trade is trusted to m2's judgment. Standing rulings: validity=measurement bar, green=transport health, flip on valid green approved. Path in flight on m2: benchmark-evidence-schema-drift lands (schemas, delegationFloorMet gate-to-metric move, model equivalence via the existing acceptable_effective hook, drift fixture, .session-usage/wall-violation extractor fixes) → rep 1 re-extracted to scratch under the FIXED kit (the evidence is unchanged; the ruler was wrong — if transport-green, the flip evidence may already exist) → prompt sentence → rep-2 seal+resume+shepherd → permission probe → flip on green → conclude with journey chapter.
 - OpenedAt: 2026-08-20T00:25:00Z
-- Revision: 22
+- Revision: 23
+- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-24T04:12:55Z
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=acp-transport
@@ -30,4 +31,5 @@ History:
 - 2026-08-23T15:13:09Z KJYY737RSPEGT6RFHKC3WSWT8E-m2-bc1be9cb release actor=m2+mac-coordinator targets=acp-transport
 - 2026-08-23T18:59:56Z 0TJS4Y83R3Y9A1CBED2XWCX4W7-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
 - 2026-08-23T19:03:39Z ZPEBH9RPZQ531D5X5BGZABE8TW-m2-bc1be9cb edit actor=m2+mac-coordinator targets=acp-transport
-Integrity: sha256=51ee2312bf4e7eab71db873df78b3de32da8df88c155f94b2954c98079ea78bd
+- 2026-08-24T04:12:55Z Y2WETRTJ7W3WTWA6PFEEW1DTAM-m2-bc1be9cb claim actor=m2+mac-coordinator targets=acp-transport
+Integrity: sha256=4443069c150e0f206ccfeecd8e266aaa132c744c00fdc6583db3b7a8fbc8bf3c
