@@ -1,11 +1,12 @@
 # acp-adapter-seam
 
-- State: queued
+- State: claimed
 - Intent: The metasystem core sees one generic delegate-session capability — ACP-shaped — and never a runtime name; native ACP below the seam, honest emulators for the CLI runtimes
 - Origin: main
 - Next step: SLICE ONE LANDED 358f970 (record unchanged). SLICE TWO DEFERRED BY COORDINATION (m1, 2026-08-24 afternoon): m2's devin-host-delegates-under-acp is a HIGH-PRIORITY behavioral run (Wido's word) that exercises the acp turn flow slice two would restructure — registering the native ACP Driver mid-benchmark risks shifting behavior under their run. Slice two (6h: acp.RunTurn behind delegate.Driver, declared capabilities checked against internal/runtimes expectations) proceeds after their verdict lands. SLICE THREE after: emulator upgrades (structured event streams, turn-boundary asks).
 - OpenedAt: 2026-08-22T20:11:10Z
-- Revision: 9
+- Revision: 10
+- Claimed: machine=m2 lineage=mac-coordinator at=2026-08-24T11:42:30Z
 
 History:
 - 2026-08-22T20:11:10Z FNMFP0KKFF318ETCQNPEBAC5C8-widos-m5-pro-bf243850 open actor=widos-m5-pro+coordinator targets=acp-adapter-seam
@@ -17,4 +18,5 @@ History:
 - 2026-08-24T09:50:14Z JYZN395PWHCQF8XS630Q3M5EN7-m1-bf243850 edit actor=m1+coordinator targets=acp-adapter-seam
 - 2026-08-24T09:50:19Z AVWW5GDWC6BTEAKA0EK3BM6EAT-m1-bf243850 release actor=m1+coordinator targets=acp-adapter-seam
 - 2026-08-24T11:38:21Z JSN24AH2M4BPW37W0A05F68KMR-m1-bf243850 edit actor=m1+coordinator targets=acp-adapter-seam
-Integrity: sha256=3dc000bdf96287f2a71b81e1ee157fef143681ae5651c68fce3d85b0a61e56a8
+- 2026-08-24T11:42:30Z ZT8VDD27SKBF49KBBF1YEX8WAC-m2-bc1be9cb claim actor=m2+mac-coordinator targets=acp-adapter-seam
+Integrity: sha256=43d09802477ae1275ab0f75fefe56eae315e50d6fe6de3db5c9aad44be207aea
