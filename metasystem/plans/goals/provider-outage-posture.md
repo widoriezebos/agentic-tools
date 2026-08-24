@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: A model-provider outage (529/overloaded) stalls the coordinator's brain but must never damage, mislead, or silence the metasystem: local machinery keeps working, the patience clocks stop counting, and a long outage reaches the human without the provider (Wido, 2026-08-24, after a live 529 halted everything)
 - Origin: human
-- Next step: SLICE ONE LANDED e4d611c (2026-08-24, six codex rounds to AGREE, battery rc 0 at 43 packages, gate PASSED). What stands: the internal/outage mark (bounded flock, symmetric 30-min horizon, log-only + is_error-gated classification with provider framing required for the bare word); the steward's paused clocks under one sample per tick with held revival and the fixed narration line; the runner's unified exit ramp (every 529 shape — non-zero exit, exit 6, clean-exit error document — concludes provider-overloaded off the breaker with scaled backoff; clears only on proven conversations, never on our own cap); delegate detection at both paid calls with evidence-gated clears. ACCEPTED RESIDUALS on record: at most one dry revival at outage onset; the Devin delivery-repair launch bypasses the adapter seam (the runner-side net is independent). SLICE TWO (open, next appetite 1d): the provider-independent human alert for a LONG outage — the notify queue already holds messages durably through an outage, so the alert is a standing-outage noticing with its own nonce; plus the coordinator-seat failover far rung. OUT OF REPO SCOPE, recorded: the session-level dead-man firing loop's backoff/coalescing lives in harness configuration.
+- Next step: SLICE ONE LANDED e4d611c; THE ALERT HALF OF SLICE TWO LANDED 875d124 (codex AGREE in one round; battery rc 0 at 44 packages; gate PASSED): ten minutes into a standing outage the narrator tells the operator — duration, failure count, clocks-paused reassurance, and a pointer at the provider's status — through the durable, provider-independent notify queue under its own pending-slot key, deliberately audible even on notify ticks. REMAINING TAIL, unclaimed: the coordinator-seat failover far rung — if the coordinator seat itself is down through a long outage, who picks up the standing work when the provider recovers; needs its own design conversation (seat identity, takeover authority, interplay with the steward's revival ladder) and was always the far rung. What already stands covers the live incident class that opened this goal: the mark, the paused clocks, the breaker exemption, and now the human hearing about it without watching a terminal.
 - OpenedAt: 2026-08-24T05:59:11Z
-- Revision: 7
+- Revision: 8
 - Claimed: machine=m1 lineage=coordinator at=2026-08-24T11:38:15Z
 
 History:
@@ -16,4 +16,5 @@ History:
 - 2026-08-24T08:16:25Z 2NXH8TM1TX1Q3K1R4KM79SM94T-m1-bf243850 edit actor=m1+coordinator targets=provider-outage-posture
 - 2026-08-24T08:16:30Z 6M6PH8ZA5RFV569JNPBWBETA98-m1-bf243850 release actor=m1+coordinator targets=provider-outage-posture
 - 2026-08-24T11:38:15Z 4GQWHCAEK8W7JJ90SE6G0F1T0C-m1-bf243850 claim actor=m1+coordinator targets=provider-outage-posture
-Integrity: sha256=231e0c99f1d248f1883af68a3b318bc400adb0a092551ccf205bde46fd37b0dd
+- 2026-08-24T12:10:53Z 0R19J4FJ80V4HBP19EPPY1X5EW-m1-bf243850 edit actor=m1+coordinator targets=provider-outage-posture
+Integrity: sha256=0d1fe48779895b3fe2b4af8834ac222f8f3a63dddba8e794ff907d6e07686f45
