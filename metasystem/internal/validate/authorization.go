@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -225,9 +226,9 @@ func (r *conformanceRun) issueAuthorization(finalTree string) error {
 // return parses, report zero material findings with a consistent
 // verdict count, and have reviewed EXACTLY the tree being authorized —
 // a warden that merely exists, or reviewed different bytes, admits
-// nothing. Empty means admitted. The critique-exhaustion discipline
-// the code-critic requirement additionally enforces is not yet judged
-// for warden chains; the backlog owns that widening.
+// nothing. Empty means admitted. The warden chain answers to the same
+// critique-exhaustion discipline the code-critic requirement enforces:
+// a warden can no more be exhausted around than a critic can.
 func (r *conformanceRun) wardenReviewFailures(finalTree string) []string {
 	records := r.loadConformanceRecords()
 	implementationIDs := map[string]bool{}
@@ -292,19 +293,44 @@ func (r *conformanceRun) wardenReviewFailures(finalTree string) []string {
 		} else {
 			failures = append(failures, fmt.Sprintf("warden chain %s final return is not a JSON object", wardenID))
 		}
-		materialCount := 0
+		var materialIDs []string
 		if findings, ok := result["findings"].([]any); ok {
 			for _, item := range findings {
-				if finding, ok := item.(map[string]any); ok && finding["material"] == true {
-					materialCount++
+				finding, ok := item.(map[string]any)
+				if !ok || finding["material"] != true {
+					continue
+				}
+				if id, ok := finding["id"].(string); ok {
+					materialIDs = append(materialIDs, id)
+				} else {
+					materialIDs = append(materialIDs, "<unnamed>")
 				}
 			}
 		} else if len(result) > 0 {
 			failures = append(failures, fmt.Sprintf("warden chain %s final return has no findings array", wardenID))
 		}
-		if materialCount > 0 || result["verdictMaterialCount"] != float64(0) {
+		verdictZero := result["verdictMaterialCount"] == float64(0)
+		if len(materialIDs) > 0 || !verdictZero {
 			failures = append(failures, fmt.Sprintf("warden chain %s still reports material findings", wardenID))
 		}
+		successorText := func(successorJob string) (string, bool) {
+			record, present := records[successorJob]
+			if !present {
+				return "", false
+			}
+			round, ok := record["round"].(float64)
+			if !ok || round != float64(int64(round)) {
+				return "", false
+			}
+			prompt := filepath.Join(r.root, "artifacts", "agents", r.rootJob,
+				"rounds", strconv.FormatInt(int64(round), 10), "prompt.md")
+			data, err := os.ReadFile(prompt)
+			if err != nil {
+				return "", false
+			}
+			return string(data), true
+		}
+		failures = append(failures, exhaustionDiscipline(wardenRoot, records, r.rootJob, successorText, final["round"], materialIDs, verdictZero)...)
 		if reviewed, _ := result["reviewedTree"].(string); reviewed != finalTree {
 			failures = append(failures, fmt.Sprintf("warden chain %s reviewed tree %s, not the tree being authorized", wardenID, scalarText(result["reviewedTree"])))
 		}

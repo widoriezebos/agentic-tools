@@ -795,6 +795,102 @@ func enumerates(text, findingID string) bool {
 	}
 }
 
+// exhaustionDiscipline judges a review chain's critiqueExhaustions
+// block — ONE discipline for every reviewing role, critic and warden
+// alike: at most one exhaustion, exact shape, a valid round, unique
+// open finding ids, a successor implementer follow-up in the reviewed
+// chain whose prompt enumerates every open finding, and no exhaustion
+// standing at the final round with material findings open.
+func exhaustionDiscipline(chainRoot map[string]any, records map[string]map[string]any, reviewedRootJob string, successorText func(string) (string, bool), finalRound any, materialIDs []string, verdictZero bool) []string {
+	var failures []string
+	exhaustions, exhaustionsIsList := chainRoot["critiqueExhaustions"].([]any)
+	if chainRoot["critiqueExhaustions"] != nil && !exhaustionsIsList {
+		failures = append(failures, "critiqueExhaustions is not an array")
+		exhaustions = nil
+	}
+	if len(exhaustions) > 1 {
+		failures = append(failures,
+			"a second critique exhaustion is refused outright; waiting on the human is the only remedy")
+	}
+	for index, item := range exhaustions {
+		exhaustion, ok := item.(map[string]any)
+		expected := map[string]bool{"round": true, "openFindingIds": true, "successorJobId": true}
+		shapeOK := ok && len(exhaustion) == len(expected)
+		if shapeOK {
+			for key := range expected {
+				if _, present := exhaustion[key]; !present {
+					shapeOK = false
+				}
+			}
+		}
+		if !shapeOK {
+			failures = append(failures, fmt.Sprintf(
+				"critiqueExhaustions[%d] must contain exactly round, openFindingIds, and successorJobId", index))
+			continue
+		}
+		exhaustedRound, roundIsNumber := exhaustion["round"].(float64)
+		roundValid := roundIsNumber && exhaustedRound == float64(int64(exhaustedRound)) && exhaustedRound >= 1
+		if !roundValid {
+			failures = append(failures, fmt.Sprintf(
+				"critiqueExhaustions[%d].round must be a positive round number", index))
+		}
+		rawIDs, idsIsList := exhaustion["openFindingIds"].([]any)
+		var openIDs []string
+		idsValid := idsIsList && len(rawIDs) > 0
+		if idsValid {
+			seenIDs := map[string]bool{}
+			for _, rawID := range rawIDs {
+				id, ok := rawID.(string)
+				if !ok || id == "" || seenIDs[id] {
+					idsValid = false
+					break
+				}
+				seenIDs[id] = true
+				openIDs = append(openIDs, id)
+			}
+		}
+		if !idsValid {
+			failures = append(failures, fmt.Sprintf(
+				"critiqueExhaustions[%d].openFindingIds must be a nonempty list of unique finding identifiers", index))
+			continue
+		}
+		successor, successorIsString := exhaustion["successorJobId"].(string)
+		if !successorIsString || !conformanceJobID.MatchString(successor) {
+			failures = append(failures, fmt.Sprintf(
+				"critiqueExhaustions[%d].successorJobId is not a valid job identifier", index))
+			continue
+		}
+		successorRecord, present := records[successor]
+		successorRoot, successorRooted := chainRootIn(records, successor)
+		if !present || successorRecord["role"] != "implementer" || successorRecord["parentJob"] == nil ||
+			!successorRooted || successorRoot != reviewedRootJob {
+			failures = append(failures, fmt.Sprintf(
+				"successor job %s is not an implementer follow-up in the reviewed implementation chain", quoted(successor)))
+			continue
+		}
+		text, textOK := successorText(successor)
+		var missing []string
+		for _, findingID := range openIDs {
+			if !textOK || !enumerates(text, findingID) {
+				missing = append(missing, findingID)
+			}
+		}
+		if len(missing) > 0 {
+			failures = append(failures, fmt.Sprintf(
+				"successor job %s prompt does not enumerate open findings: %s", quoted(successor), strings.Join(missing, ", ")))
+		}
+		finalRoundNumber, finalRoundIsNumber := finalRound.(float64)
+		finalRoundValid := finalRoundIsNumber && finalRoundNumber == float64(int64(finalRoundNumber))
+		if !finalRoundValid || (roundValid && finalRoundNumber <= exhaustedRound) || len(materialIDs) > 0 || !verdictZero {
+			failures = append(failures, fmt.Sprintf(
+				"critique exhausted at round %s with open material findings: %s",
+				scalarText(exhaustion["round"]), strings.Join(openIDs, ", ")))
+		}
+	}
+
+	return failures
+}
+
 func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime, independence string) ([]string, []string, int) {
 	records := r.loadConformanceRecords()
 	implementationIDs := map[string]bool{}
@@ -923,90 +1019,7 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 			failures = append(failures, "final round still has material findings despite any dispositions: "+detail)
 		}
 
-		exhaustions, exhaustionsIsList := criticRoot["critiqueExhaustions"].([]any)
-		if criticRoot["critiqueExhaustions"] != nil && !exhaustionsIsList {
-			failures = append(failures, "critiqueExhaustions is not an array")
-			exhaustions = nil
-		}
-		if len(exhaustions) > 1 {
-			failures = append(failures,
-				"a second critique exhaustion is refused outright; waiting on the human is the only remedy")
-		}
-		for index, item := range exhaustions {
-			exhaustion, ok := item.(map[string]any)
-			expected := map[string]bool{"round": true, "openFindingIds": true, "successorJobId": true}
-			shapeOK := ok && len(exhaustion) == len(expected)
-			if shapeOK {
-				for key := range expected {
-					if _, present := exhaustion[key]; !present {
-						shapeOK = false
-					}
-				}
-			}
-			if !shapeOK {
-				failures = append(failures, fmt.Sprintf(
-					"critiqueExhaustions[%d] must contain exactly round, openFindingIds, and successorJobId", index))
-				continue
-			}
-			exhaustedRound, roundIsNumber := exhaustion["round"].(float64)
-			roundValid := roundIsNumber && exhaustedRound == float64(int64(exhaustedRound)) && exhaustedRound >= 1
-			if !roundValid {
-				failures = append(failures, fmt.Sprintf(
-					"critiqueExhaustions[%d].round must be a positive round number", index))
-			}
-			rawIDs, idsIsList := exhaustion["openFindingIds"].([]any)
-			var openIDs []string
-			idsValid := idsIsList && len(rawIDs) > 0
-			if idsValid {
-				seenIDs := map[string]bool{}
-				for _, rawID := range rawIDs {
-					id, ok := rawID.(string)
-					if !ok || id == "" || seenIDs[id] {
-						idsValid = false
-						break
-					}
-					seenIDs[id] = true
-					openIDs = append(openIDs, id)
-				}
-			}
-			if !idsValid {
-				failures = append(failures, fmt.Sprintf(
-					"critiqueExhaustions[%d].openFindingIds must be a nonempty list of unique finding identifiers", index))
-				continue
-			}
-			successor, successorIsString := exhaustion["successorJobId"].(string)
-			if !successorIsString || !conformanceJobID.MatchString(successor) {
-				failures = append(failures, fmt.Sprintf(
-					"critiqueExhaustions[%d].successorJobId is not a valid job identifier", index))
-				continue
-			}
-			successorRecord, present := records[successor]
-			successorRoot, successorRooted := chainRootIn(records, successor)
-			if !present || successorRecord["role"] != "implementer" || successorRecord["parentJob"] == nil ||
-				!successorRooted || successorRoot != r.rootJob {
-				failures = append(failures, fmt.Sprintf(
-					"successor job %s is not an implementer follow-up in the reviewed implementation chain", quoted(successor)))
-				continue
-			}
-			text, textOK := successorText(successor)
-			var missing []string
-			for _, findingID := range openIDs {
-				if !textOK || !enumerates(text, findingID) {
-					missing = append(missing, findingID)
-				}
-			}
-			if len(missing) > 0 {
-				failures = append(failures, fmt.Sprintf(
-					"successor job %s prompt does not enumerate open findings: %s", quoted(successor), strings.Join(missing, ", ")))
-			}
-			finalRoundNumber, finalRoundIsNumber := finalRound.(float64)
-			finalRoundValid := finalRoundIsNumber && finalRoundNumber == float64(int64(finalRoundNumber))
-			if !finalRoundValid || (roundValid && finalRoundNumber <= exhaustedRound) || len(materialIDs) > 0 || !verdictZero {
-				failures = append(failures, fmt.Sprintf(
-					"critique exhausted at round %s with open material findings: %s",
-					scalarText(exhaustion["round"]), strings.Join(openIDs, ", ")))
-			}
-		}
+		failures = append(failures, exhaustionDiscipline(criticRoot, records, r.rootJob, successorText, finalRound, materialIDs, verdictZero)...)
 
 		reviewedTree := result["reviewedTree"]
 		if reviewedTree != finalTree {
