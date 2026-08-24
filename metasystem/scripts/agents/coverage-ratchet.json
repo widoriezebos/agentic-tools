@@ -14,7 +14,7 @@
   "internal/census": 74.1,
   "internal/config": 82.7,
   "internal/contract": 63.1,
-  "internal/covenant": 77.0,
+  "internal/covenant": 77.5,
   "internal/dispatch": 75.9,
   "internal/events": 80.2,
   "internal/evidence": 80.5,
@@ -32,6 +32,7 @@
   "internal/mission": 73.1,
   "internal/missionrunner": 74.9,
   "internal/missionstate": 78.0,
+  "internal/outage": 85.7,
   "internal/receipt": 94.0,
   "internal/registry": 90.8,
   "internal/report": 85.2,
@@ -43,8 +44,7 @@
   "internal/turn": 100.0,
   "internal/usage": 85.8,
   "internal/validate": 79.9,
-  "internal/wiredoc": 87.9,
-  "internal/covenant": 77.5
+  "internal/wiredoc": 87.9
  },
  "note": "Per-package coverage floors; they only rise between re-seeds. Procedures (go-production-grade Phase 0c): a package split or rename re-seeds the affected entries at their measured post-change values in the same commit, with the rationale in that commit's message; composition changes (code added to or deleted from a package) re-baseline the same way. These floors are darwin measurements; linux floors live in coverage-ratchet-linux.json, seeded at production-grade Phase 1 by the two-pass bootstrap (pass one: full gate with METASYSTEM_COVERAGE_RATCHET_SEED=1, floors written from that run; pass two: the enforcing gate as the acceptance run). The cmd exemption's reason is recorded in exempt."
 }

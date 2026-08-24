@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
 // The detached run loop: the process that holds the mission lease, records
@@ -1107,8 +1108,10 @@ func (e *Engine) continueOrParkStopLoss(statePath, ledger, identityName string, 
 
 // recordFailedTurn spends the failed turn's cycle in the ledger, applies the
 // failure proposal, and follows the proposal's park decision (including the
-// stop-loss check when the mission keeps running).
-func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any, turnPath, detail, outcome string, consecutiveFailures int) (map[string]any, error) {
+// stop-loss check when the mission keeps running). feedsBreaker false keeps
+// the failure off the host-failure breaker — a provider-overload exit blames
+// nobody.
+func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any, turnPath, detail, outcome string, consecutiveFailures int, feedsBreaker bool) (map[string]any, error) {
 	turnDoc, err := readDocLabeled(turnPath, "turn record", 3)
 	if err != nil {
 		return nil, err
@@ -1146,7 +1149,7 @@ func (e *Engine) recordFailedTurn(statePath, ledger string, state map[string]any
 	if err != nil {
 		return nil, err
 	}
-	proposed, err := RecordFailureProposal(e.Root, e.Mission, diskState, turn, detail, outcome, consecutiveFailures)
+	proposed, err := RecordFailureProposal(e.Root, e.Mission, diskState, turn, detail, outcome, consecutiveFailures, feedsBreaker)
 	if err != nil {
 		return nil, err
 	}
@@ -1992,32 +1995,93 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 		return nil, true, err
 	}
 	if launchDetail == "start-unverified" {
-		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, launchDetail, "failed", 2)
+		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, launchDetail, "failed", 2, true)
 		return final, true, ferr
 	}
-	if exitCode == 6 {
-		// The adapter's genuine fault signal: the envelope carries no session
-		// at all. Rotation no longer lands here — a rotated session is
-		// reported in the envelope and judged at adjudication.
-		if _, err := patchTurn(c.turnPath, map[string]any{
-			"status": "failed", "outcome": "unresumable", "error": "unresumable",
-			"detail": "host session is not resumable", "endedAt": nowISO(),
-		}); err != nil {
-			return nil, true, err
+	// ONE classification governs the whole exit ramp: a 529 can ride
+	// home as a non-zero exit, as exit 6 with no session, or as the
+	// provider's own error document behind a clean exit — every shape
+	// must reach the same posture (provider-outage-posture), or the
+	// missed one feeds the breaker it was ruled off of. The documents
+	// consulted are the runtime-neutral provider-result.json any host
+	// adapter may leave, and the claude host's native document — the
+	// same seam providerErrorSubtype already reads.
+	overloadClass, overloadEvidence, overloaded := outage.ClassifyLogs(filepath.Join(c.turnDir, "host.log"))
+	for _, name := range []string{"provider-result.json", "claude-result.json"} {
+		if overloaded {
+			break
 		}
-		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, "host session is not resumable", "unresumable", c.priorFailures)
-		return final, true, ferr
+		overloadClass, overloadEvidence, overloaded = outage.ClassifyProviderResult(filepath.Join(c.turnDir, name))
+	}
+	var overloadMark outage.Mark
+	if overloaded {
+		mark, merr := outage.Record(e.Root, overloadClass, overloadEvidence, "mission-runner", time.Now())
+		if merr != nil {
+			mark = outage.Mark{ConsecutiveFailures: 1}
+		}
+		overloadMark = mark
 	}
 	if launchDetail == "capped" {
 		// The cap fired: the turn keeps outcome=capped, and the cycle still
 		// drains, measures, and concludes, so a cap that landed real work
-		// registers as the progress it made.
+		// registers as the progress it made. The cap is OUR deadline, not a
+		// provider exit: overload evidence above fed the mark, but the cap
+		// conclusion stands, and nothing here clears — our own deadline
+		// killing a stalled call proves nothing about the provider.
 		final, ferr := e.concludeFaultedTurn(c.statePath, c.ledger, c.state, c.turnPath, c.turnDir, TurnFault{
 			Outcome:      "capped",
 			Detail:       "host turn reached host.turn-cap-min",
 			FeedsBreaker: true,
 			Annotations:  []string{mission.CappedAnnotation},
 		}, c.priorFailures+1)
+		return final, true, ferr
+	}
+	if overloaded {
+		// A provider-overload turn is the provider's weather, nobody's
+		// failure: it stays off the host-failure breaker, and a scaled
+		// backoff paces the retry probe instead of hammering a provider
+		// that just said it is drowning.
+		detail := fmt.Sprintf("provider-overloaded (%s): host exit %d", overloadClass, exitCode)
+		if _, err := patchTurn(c.turnPath, map[string]any{
+			"status": "failed", "outcome": "failed", "error": "provider-overloaded",
+			"detail": detail, "endedAt": nowISO(),
+		}); err != nil {
+			return nil, true, err
+		}
+		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, detail, "failed", c.priorFailures, false)
+		// The backoff paces only an actual retry: a recording error
+		// or a mission that parked anyway (wall violation, stop-loss)
+		// must reach its own ramp now, not hold the lease sleeping.
+		if ferr == nil && final != nil {
+			if status, _ := final["status"].(string); status == "running" {
+				backoff := 15 * overloadMark.ConsecutiveFailures
+				if backoff > 120 {
+					backoff = 120
+				}
+				if seconds, serr := ScaledSeconds(backoff); serr == nil {
+					e.emit("provider-overloaded", fmt.Sprintf("%s; backing off %ds", overloadClass, seconds), map[string]string{
+						"missionId": e.Mission, "turnId": c.turnID, "outcome": "provider-overloaded",
+					})
+					time.Sleep(time.Duration(seconds) * time.Second)
+				}
+			}
+		}
+		return final, true, ferr
+	}
+	if exitCode == 6 {
+		// The adapter's genuine fault signal: the envelope carries no session
+		// at all. Rotation no longer lands here — a rotated session is
+		// reported in the envelope and judged at adjudication. The CLI
+		// exited zero with no overload evidence: the provider answered,
+		// so a standing outage mark clears.
+		_ = outage.Clear(e.Root)
+		if _, err := patchTurn(c.turnPath, map[string]any{
+			"status": "failed", "outcome": "unresumable", "error": "unresumable",
+			"detail": "host session is not resumable", "endedAt": nowISO(),
+		}); err != nil {
+			return nil, true, err
+		}
+		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, "host session is not resumable", "unresumable", c.priorFailures, true)
 		return final, true, ferr
 	}
 	if exitCode != 0 || result == nil {
@@ -2038,9 +2102,12 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 		}); err != nil {
 			return nil, true, err
 		}
-		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, detail, "failed", c.priorFailures+1)
+		final, ferr := e.recordFailedTurn(c.statePath, c.ledger, c.state, c.turnPath, detail, "failed", c.priorFailures+1, true)
 		return final, true, ferr
 	}
+	// A clean exit with no overload evidence is a proven provider
+	// conversation: a standing outage mark clears.
+	_ = outage.Clear(e.Root)
 	return nil, false, nil
 }
 
@@ -2146,7 +2213,7 @@ func (e *Engine) failTurnBeforeLaunch(statePath, ledger string, state map[string
 	}); err != nil {
 		return nil, err
 	}
-	return e.recordFailedTurn(statePath, ledger, state, turnPath, detail, "failed", 2)
+	return e.recordFailedTurn(statePath, ledger, state, turnPath, detail, "failed", 2, true)
 }
 
 // docFromValue round-trips a typed value into the JSON document shape the

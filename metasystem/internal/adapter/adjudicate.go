@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -29,6 +31,7 @@ type AdjudicateParams struct {
 	MarkdownPath     string // round return.md the validation writes
 	ViolationPath    string
 	RepairPromptPath string
+	LogPath          string // runtime CLI stderr, the provider-overload evidence
 	CLIStatus        int64
 	HandshakeDone    bool
 	RepairAvailable  bool
@@ -102,7 +105,65 @@ func writeDeliveryRepairPrompt(path, namedRepairPath string, schema []byte) erro
 //	"repair"          — violation and repair prompt written; run the repair
 //	"settle"          — repaired return validated; run the settle hook
 //	"protocol-error"  — hand the violation to the protocol-error writer
+//
+// Around the pure state machine rides the outage bookkeeping
+// (provider-outage-posture): a CLI that died on provider overload —
+// the paid initial call or the paid repair call, whose stderr shares
+// the same log — feeds the shared outage mark, and any PROVIDER
+// success clears it. Provider success is the CLI completing a
+// conversation, not the task succeeding: a malformed reply or a
+// protocol error still proves the provider answered. Best-effort both
+// ways, never part of the verdict.
 func AdjudicateTurn(p AdjudicateParams) (string, error) {
+	verdict, err := adjudicateTurnStage(p)
+	if err != nil || p.Root == "" {
+		return verdict, err
+	}
+	switch {
+	case p.Stage == "initial" && p.CLIStatus != 0:
+		recordIfOverloaded(p.Root, p.LogPath, p.CandidatePath)
+	case p.Stage == "initial":
+		// A zero-status CLI can still be carrying the provider's own
+		// error document: that records, never clears. Otherwise the
+		// clear needs evidence a conversation happened — the
+		// correlated handshake — because exit 0 alone does not prove
+		// the provider answered.
+		if class, evidence, hit := outage.ClassifyProviderResult(p.CandidatePath); hit {
+			_, _ = outage.Record(p.Root, class, evidence, "delegate-adapter", time.Now())
+		} else if p.HandshakeDone {
+			_ = outage.Clear(p.Root)
+		}
+	case p.Stage == "after-repair" && p.RepairRC != 0:
+		recordIfOverloaded(p.Root, p.LogPath, p.RepairCandidate)
+	case p.Stage == "after-repair":
+		if class, evidence, hit := outage.ClassifyProviderResult(p.RepairCandidate); hit {
+			_, _ = outage.Record(p.Root, class, evidence, "delegate-adapter", time.Now())
+		} else {
+			// The repair only runs inside an established session; its
+			// zero exit is a provider conversation.
+			_ = outage.Clear(p.Root)
+		}
+	case verdict == "finish completed null completed":
+		_ = outage.Clear(p.Root)
+	}
+	return verdict, nil
+}
+
+// recordIfOverloaded feeds the outage mark when the failed call's
+// evidence is overload-shaped: the CLI stderr log, then the structured
+// provider result behind its is_error gate.
+func recordIfOverloaded(root, logPath, resultPath string) {
+	class, evidence, hit := outage.ClassifyLogs(logPath)
+	if !hit {
+		class, evidence, hit = outage.ClassifyProviderResult(resultPath)
+	}
+	if hit {
+		_, _ = outage.Record(root, class, evidence, "delegate-adapter", time.Now())
+	}
+}
+
+// adjudicateTurnStage is the state machine itself, pure decision.
+func adjudicateTurnStage(p AdjudicateParams) (string, error) {
 	switch p.Stage {
 	case "initial":
 		if p.CLIStatus != 0 {

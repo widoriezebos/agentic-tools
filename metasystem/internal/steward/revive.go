@@ -12,7 +12,9 @@ package steward
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
 
@@ -134,6 +136,19 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		}
 		return ReviveOutcome{Reason: "the world changed before launch: " + d.Reason}, nil
 	}
+	// The last look before the point of no return: outage writers do
+	// not share this arbitration lock, so a mark can land after the
+	// predicate re-ran. Rechecking here shrinks that window to the
+	// consume-and-launch calls themselves; an outage beginning inside
+	// it costs at most one dry revival, which the hint's contract
+	// accepts.
+	if _, standing := outage.StandingAt(repoRoot, time.Now()); standing {
+		reason := "the model provider is overloaded; holding revival until the provider recovers"
+		if err := CancelIntent(repoRoot, it.Nonce, reason); err != nil {
+			return ReviveOutcome{}, err
+		}
+		return ReviveOutcome{Reason: reason}, nil
+	}
 	consumed, err := ConsumeIntent(repoRoot, it.Nonce)
 	if err != nil {
 		return ReviveOutcome{}, err
@@ -184,6 +199,7 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 			others++
 		}
 	}
+	_, providerOutage := outage.StandingAt(repoRoot, time.Now())
 	return Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
@@ -192,6 +208,7 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 		DryRevivals:        ev.DryRevivals,
 		MaxRevivals:        cfg.MaxRevivals,
 		ActiveContinuation: others > 0,
+		ProviderOutage:     providerOutage,
 	}), workReason, nil
 }
 

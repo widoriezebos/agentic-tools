@@ -87,6 +87,9 @@ func narrationLine(repoRoot string, result TickResult, cfg TickConfig, now time.
 		doing = result.OpenWork
 	}
 	var notes []string
+	if result.ProviderOutage {
+		notes = append(notes, "the model provider is overloaded; local work continues; the clocks are paused")
+	}
 	if len(result.Reaped) > 0 {
 		notes = append(notes, fmt.Sprintf("closed %d finished helper run(s)", len(result.Reaped)))
 	}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
 // One tick: read the world, fold the evidence, decide, and put
@@ -43,6 +44,8 @@ type TickResult struct {
 	Evidence Evidence
 	OpenWork string       // the open-work reason, for the report
 	Reaped   []ReapReport // continuations this tick closed
+	// ProviderOutage reports a standing outage mark, for the narration.
+	ProviderOutage bool
 }
 
 // RunTick folds one observation into the persisted evidence and
@@ -78,8 +81,19 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 		return degradedTick(repoRoot, err.Error())
 	}
 	ev := Observe(prev, marks)
+	// A standing provider outage pauses the aging, never the reset:
+	// progress during an outage still counts, but the absence of
+	// progress stops accusing local machinery while the provider is
+	// the one down. The mark lapses on its own horizon, so a paused
+	// clock can never outlive the outage's evidence. ONE sample
+	// governs the whole tick — aging, decision, and narration must
+	// tell the same story even when the mark moves mid-tick.
+	_, providerOutage := outage.StandingAt(repoRoot, time.Now())
+	if providerOutage && marks == prev.Marks {
+		ev = prev
+	}
 
-	d, workReason, err := decideNow(repoRoot, cfg, census, ev)
+	d, workReason, err := decideNow(repoRoot, cfg, census, ev, providerOutage)
 	if err != nil {
 		return TickResult{}, err
 	}
@@ -124,7 +138,8 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	if err := SaveEvidence(evPath, ev); err != nil {
 		return TickResult{}, err
 	}
-	result := TickResult{Decision: d, Evidence: ev, OpenWork: workReason, Reaped: reaped}
+	result := TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
+		Reaped: reaped, ProviderOutage: providerOutage}
 	// The running plain-English account rides every tick, strictly
 	// best-effort: the storyteller never fails the shift. What the
 	// narration notices also reaches the operator, one gated message
@@ -165,9 +180,11 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 
 // decideNow assembles one snapshot over the given evidence and
 // decides — without aging or persisting anything. The tick ages
-// first and calls this; revive's re-arbitration calls it directly,
-// so a re-check can never advance the clock it is checking.
-func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence) (Decision, string, error) {
+// first and calls this; revive's re-arbitration goes through
+// decideForRevival, so a re-check can never advance the clock it is
+// checking. The caller supplies the outage sample so one observation
+// governs its whole decision.
+func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool) (Decision, string, error) {
 	cfg = cfg.withDefaults()
 	work, workReason, err := ReadOpenWork(repoRoot)
 	if err != nil {
@@ -201,5 +218,6 @@ func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence
 		DryRevivals:        ev.DryRevivals,
 		MaxRevivals:        cfg.MaxRevivals,
 		ActiveContinuation: len(live) > 0 || len(activeConsumed) > 0,
+		ProviderOutage:     providerOutage,
 	}), workReason, nil
 }

@@ -65,7 +65,7 @@ func TestCapExhaustedReachesLedger(t *testing.T) {
 		"startedAt": "2026-08-18T00:00:00Z", "endedAt": nil,
 	})
 	detail := "host-cap-exhausted: the adapter's native turn cap ended the turn (error_max_turns)"
-	if _, err := engine.recordFailedTurn(statePath, ledgerPath, state, turnPath, detail, "failed", 1); err != nil {
+	if _, err := engine.recordFailedTurn(statePath, ledgerPath, state, turnPath, detail, "failed", 1, true); err != nil {
 		t.Fatalf("recordFailedTurn: %v", err)
 	}
 	ledger, err := os.ReadFile(ledgerPath)

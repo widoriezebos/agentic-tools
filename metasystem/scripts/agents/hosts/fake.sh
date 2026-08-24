@@ -9,7 +9,8 @@ Usage:
 
 Reads FAKEHOST:<behavior> markers from the assembled prompt. Behaviors:
 return-ok (default), return-malformed, dispatch-ghost, dispatch-terminal, solo-build,
-close-stream, park-request, exit-nonzero, and no-return.
+close-stream, park-request, exit-nonzero, exit-overloaded, overloaded-result, and
+no-return.
 USAGE
 }
 
@@ -34,7 +35,7 @@ if (( behavior_count > 1 )); then
 fi
 behavior=${behaviors:-return-ok}
 case "$behavior" in
-  return-ok|return-malformed|dispatch-ghost|dispatch-terminal|solo-build|close-stream|park-request|exit-nonzero|no-return) ;;
+  return-ok|return-malformed|dispatch-ghost|dispatch-terminal|solo-build|close-stream|park-request|exit-nonzero|exit-overloaded|overloaded-result|no-return) ;;
   *) echo "unknown fake host behavior: $behavior" >&2; exit 3 ;;
 esac
 
@@ -46,6 +47,22 @@ session=${resume_session:-fake-host-session-$mission}
 if [[ "$behavior" == exit-nonzero ]]; then
   "$ms" host fake-result --result "$result" --session "$session" --raw "$raw" --outcome failed
   exit 3
+fi
+
+if [[ "$behavior" == exit-overloaded ]]; then
+  # The provider's 529 as the real CLI leaves it: on stderr (host.log).
+  printf 'API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n' \
+    >"$turn_dir/host.log"
+  "$ms" host fake-result --result "$result" --session "$session" --raw "$raw" --outcome failed
+  exit 3
+fi
+
+if [[ "$behavior" == overloaded-result ]]; then
+  # The other real shape: a clean CLI exit whose result document is the
+  # provider's own error, left under the runtime-neutral name.
+  printf '{"is_error":true,"result":"API Error: 529 Overloaded"}\n' >"$turn_dir/provider-result.json"
+  "$ms" host fake-result --result "$result" --session "$session" --raw "$raw" --outcome completed
+  exit 0
 fi
 
 if [[ "$behavior" == return-malformed ]]; then

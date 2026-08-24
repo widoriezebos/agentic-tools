@@ -360,6 +360,7 @@ func runAdapterAdjudicateTurn(args []string) int {
 	flags.StringVar(&p.ViolationPath, "violation", "", "violation output file")
 	flags.StringVar(&p.RepairPromptPath, "repair-prompt", "", "repair prompt output file")
 	flags.StringVar(&p.NamedRepairPath, "named-repair-path", "", "the repair attempt's named return file (empty-delivery)")
+	flags.StringVar(&p.LogPath, "log", "", "runtime CLI stderr log (provider-overload evidence)")
 	flags.Int64Var(&p.CLIStatus, "cli-status", 0, "adapter CLI exit status")
 	flags.BoolVar(&p.HandshakeDone, "handshake-done", false, "the session correlated")
 	flags.BoolVar(&p.RepairAvailable, "repair-available", false, "a bounded repair turn may run")

@@ -319,17 +319,21 @@ func ConcludeFaultedTurn(root, mission string, state map[string]any, turn Turn, 
 // RecordFailureProposal proposes the state after a turn that produced no
 // usable return: a turn-log entry with no session and no measurement, the
 // ledger cycle advanced (a failed turn still spends its cycle), and — on the
-// second consecutive failure — a host-failure park, because two dead turns in
-// a row need a human, not a third attempt.
-func RecordFailureProposal(root, mission string, state map[string]any, turn Turn, detail, outcome string, consecutiveFailures int) (map[string]any, error) {
+// second consecutive breaker-fed failure — a host-failure park, because two
+// dead turns in a row need a human, not a third attempt. A failure that
+// feeds no blame (feedsBreaker false — a provider-overload exit is the
+// provider's weather, nobody's failure) records the same entry but never
+// parks: the runner backs off and retries instead.
+func RecordFailureProposal(root, mission string, state map[string]any, turn Turn, detail, outcome string, consecutiveFailures int, feedsBreaker bool) (map[string]any, error) {
 	proposed := deepCopyDoc(state)
 	entry := map[string]any{
-		"turnId":      turn.TurnID,
-		"cycle":       turn.Cycle,
-		"outcome":     outcome,
-		"detail":      detail,
-		"sessionId":   nil,
-		"measurement": nil,
+		"turnId":       turn.TurnID,
+		"cycle":        turn.Cycle,
+		"outcome":      outcome,
+		"detail":       detail,
+		"sessionId":    nil,
+		"measurement":  nil,
+		"feedsBreaker": feedsBreaker,
 	}
 	// The entry carries the wall verdict and its consumptions, and the
 	// open-turn marker dies in the same write: acceptance is ONE write,
@@ -351,7 +355,7 @@ func RecordFailureProposal(root, mission string, state map[string]any, turn Turn
 	if err := ProjectFences(root, mission, proposed); err != nil {
 		return nil, err
 	}
-	if consecutiveFailures >= 2 {
+	if feedsBreaker && consecutiveFailures >= 2 {
 		proposed["status"] = "parked"
 		proposed["parkReason"] = "host-failure"
 		proposed["gatePassed"] = false

@@ -128,6 +128,7 @@ func runMissionTurnRecordFailure(args []string) int {
 	detail := flags.String("detail", "", "human-readable failure detail")
 	outcome := flags.String("outcome", "", "turn outcome (failed or unresumable)")
 	failures := flags.Int("consecutive-failures", 0, "consecutive failed turns including this one")
+	feedsBreaker := flags.Bool("feeds-breaker", true, "whether this failure counts toward the host-failure breaker (false for provider overload)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -155,7 +156,7 @@ func runMissionTurnRecordFailure(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	proposed, err := missionrunner.RecordFailureProposal(*root, *mission, state, turn, *detail, *outcome, *failures)
+	proposed, err := missionrunner.RecordFailureProposal(*root, *mission, state, turn, *detail, *outcome, *failures, *feedsBreaker)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

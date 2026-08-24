@@ -306,7 +306,7 @@ func TestRecordFailureProposal(t *testing.T) {
 	root := t.TempDir()
 	turn := testTurn()
 	seedWallEvidence(t, root, "demo", turn.TurnID)
-	proposed, err := RecordFailureProposal(root, "demo", cycleState(activeStreams()), turn, "host exited non-zero (3)", "failed", 1)
+	proposed, err := RecordFailureProposal(root, "demo", cycleState(activeStreams()), turn, "host exited non-zero (3)", "failed", 1, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestRecordFailureProposal(t *testing.T) {
 	}
 
 	seedWallEvidence(t, root, "demo", turn.TurnID)
-	parked, err := RecordFailureProposal(root, "demo", cycleState(activeStreams()), turn, "start-unverified", "failed", 2)
+	parked, err := RecordFailureProposal(root, "demo", cycleState(activeStreams()), turn, "start-unverified", "failed", 2, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +429,7 @@ func TestConclusionsClearTheOpenTurnMarker(t *testing.T) {
 		t.Fatalf("the faulted append must keep the marker for the verification write")
 	}
 	seedWallEvidence(t, root, "demo", turn.TurnID)
-	failed, err := RecordFailureProposal(root, "demo", openState(), turn, "host exited non-zero (3)", "failed", 1)
+	failed, err := RecordFailureProposal(root, "demo", openState(), turn, "host exited non-zero (3)", "failed", 1, true)
 	if err != nil {
 		t.Fatal(err)
 	}

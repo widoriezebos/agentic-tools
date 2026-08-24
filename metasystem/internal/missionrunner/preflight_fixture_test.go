@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
 // The armed-preflight fixture: a real
@@ -1303,6 +1304,13 @@ func TestInternalRunFullCycle(t *testing.T) {
 	root := engine.Root
 	_ = root
 
+	// A standing outage mark rides into the happy path: any provider
+	// success must clear it (provider-outage-posture), witnessed here
+	// rather than in a second full mission run.
+	if _, err := outage.Record(engine.Root, "overloaded", "API Error: 529", "mission-runner", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	if code != 0 {
@@ -1356,6 +1364,9 @@ func TestInternalRunFullCycle(t *testing.T) {
 	ledger := filepath.Join(engine.missionDir(), "ledger.md")
 	if data, err := os.ReadFile(ledger); err != nil || !strings.Contains(string(data), "Cycle 1") {
 		t.Fatalf("the ledger booked nothing: %v", err)
+	}
+	if _, ok := outage.Read(engine.Root); ok {
+		t.Fatal("a completed host turn must clear the seeded outage mark")
 	}
 }
 

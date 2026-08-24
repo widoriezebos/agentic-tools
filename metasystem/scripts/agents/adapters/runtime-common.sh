@@ -322,7 +322,7 @@ adjudicate_turn() { # stage, extra flags...
     --record "$record" --session "${session_id:-}" --schema "$schema" \
     --return "$round_dir/return.json" --markdown "$round_dir/return.md" \
     --violation "$round_dir/protocol-violation.txt" \
-    --repair-prompt "$round_dir/repair-1.prompt.md" "$@"
+    --repair-prompt "$round_dir/repair-1.prompt.md" --log "$log" "$@"
 }
 
 complete_from_cli() { # cli status, usage file, candidate file, optional transcript

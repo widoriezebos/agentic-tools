@@ -95,6 +95,14 @@ not paths.
   only while ownership of that group can be proven (the tag is visible on
   a live member). Lost proof means: stop signaling, let the census surface
   the leftovers. Never kill what you cannot prove is yours.
+- **Outage mark** — the shared record of a model-provider outage
+  (`artifacts/agents/outage.json`; `internal/outage`), written when a
+  provider call comes back overloaded (529/overloaded/5xx) and cleared by
+  any provider success. While it stands, the steward's patience clocks
+  pause, revival is held, and overloaded host exits stay off the
+  mission runner's host-failure breaker — the provider's weather is
+  nobody's failure. A mark nobody feeds lapses on its own horizon, so it
+  can never permanently blind the steward to a real stall.
 
 ## The flight recorder: how a run explains itself
 

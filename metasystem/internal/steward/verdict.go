@@ -71,6 +71,11 @@ type Snapshot struct {
 	// ActiveContinuation is an open continuation job record not yet
 	// reaped; it suppresses any further dispatch.
 	ActiveContinuation bool
+	// ProviderOutage is a standing model-provider outage mark: the
+	// provider's weather, nobody's failure. It holds revival — a
+	// continuation spawned into an outage burns a launch and a
+	// notification on a certain failure — without touching visibility.
+	ProviderOutage bool
 }
 
 // Decision is the tick's outcome: the verdict, the action, and the
@@ -118,6 +123,10 @@ func Decide(s Snapshot) Decision {
 		return Decision{VerdictStalledDead, ActNotify, fmt.Sprintf(
 			"worker provably dead, but %d revivals produced no progress; refusing to spawn again — operator needed",
 			s.DryRevivals)}
+	}
+	if s.ProviderOutage {
+		return Decision{VerdictStalledDead, ActNotify,
+			"worker provably dead, but the model provider is overloaded; holding revival until the provider recovers"}
 	}
 	return Decision{VerdictStalledDead, ActRevive,
 		"worker provably dead with open work; reviving after delivered notification"}
