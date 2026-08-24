@@ -91,28 +91,11 @@ func (w *wallInspection) document() map[string]any {
 // plans/goals/ covers the multi-machine ledger whole — the live
 // set AND the done/ archive: goal files change only
 // through goal verbs, never through a mission's host artifacts.
-var protectedArtifactPrefixes = []string{"scripts/agents/", "plans/goals/"}
-
-var protectedArtifactFiles = map[string]bool{
-	"plans/goals.md":              true,
-	"plans/goals-accepted.json":   true,
-	"plans/instruction-ledger.md": true,
-	"plans/known-issues.md":       true,
-}
-
-// protectedArtifactPath reports whether the wall's protected-path table
-// denies a declaration: exact files, protected prefixes, and the signed
-// mission contracts (plans/mission-*.contract.md).
+// protectedArtifactPath is the wall's protected-path predicate; the
+// one table lives in the mission package so the covenant reader
+// applies the same denial.
 func protectedArtifactPath(path string) bool {
-	if protectedArtifactFiles[path] {
-		return true
-	}
-	for _, prefix := range protectedArtifactPrefixes {
-		if strings.HasPrefix(path, prefix) {
-			return true
-		}
-	}
-	return strings.HasPrefix(path, "plans/mission-") && strings.HasSuffix(path, ".contract.md")
+	return mission.ProtectedArtifactPath(path)
 }
 
 // parseHostArtifacts parses the contract's declared host-artifact files:
@@ -783,7 +766,7 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 		return nil, nil, false, err
 	}
 	declared, declarationViolation := parseHostArtifacts(values["wall.host-artifacts"])
-	guardrails, guardrailViolation := mission.ParseGuardrails(values["wall.guardrails"], protectedArtifactPath)
+	guardrails, guardrailViolation := mission.ParseGuardrails(mission.ContractGuardrailSubject, values["wall.guardrails"], protectedArtifactPath)
 	if declarationViolation == "" && guardrailViolation != "" {
 		declarationViolation = guardrailViolation
 	}

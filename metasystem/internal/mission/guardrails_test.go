@@ -14,7 +14,7 @@ import (
 // cover, everything the host-artifact grammar refuses is refused here
 // too, and the protected predicate binds when supplied.
 func TestParseGuardrailsGrammar(t *testing.T) {
-	class, violation := ParseGuardrails("specs/gate.sh, goldens/, budgets.json, data/v1..v2.json", nil)
+	class, violation := ParseGuardrails(ContractGuardrailSubject, "specs/gate.sh, goldens/, budgets.json, data/v1..v2.json", nil)
 	if violation != "" {
 		t.Fatal(violation)
 	}
@@ -34,7 +34,7 @@ func TestParseGuardrailsGrammar(t *testing.T) {
 	if class.Empty() {
 		t.Fatal("a declared class is not empty")
 	}
-	empty, _ := ParseGuardrails("  ", nil)
+	empty, _ := ParseGuardrails(ContractGuardrailSubject, "  ", nil)
 	if !empty.Empty() || empty.Covers("anything") {
 		t.Fatal("an empty declaration covers nothing")
 	}
@@ -52,15 +52,15 @@ func TestParseGuardrailsGrammar(t *testing.T) {
 		"doubled":     "goldens//deep",
 		"lone dot":    ".",
 	} {
-		if _, violation := ParseGuardrails(value, nil); violation == "" {
+		if _, violation := ParseGuardrails(ContractGuardrailSubject, value, nil); violation == "" {
 			t.Fatalf("%s must refuse", name)
 		}
 	}
 	protected := func(path string) bool { return strings.HasPrefix(path, "sealed/") }
-	if _, violation := ParseGuardrails("sealed/gate.sh", protected); violation == "" {
+	if _, violation := ParseGuardrails(ContractGuardrailSubject, "sealed/gate.sh", protected); violation == "" {
 		t.Fatal("a protected file must refuse")
 	}
-	if _, violation := ParseGuardrails("sealed/", protected); violation == "" {
+	if _, violation := ParseGuardrails(ContractGuardrailSubject, "sealed/", protected); violation == "" {
 		t.Fatal("a protected prefix must refuse")
 	}
 }
@@ -68,7 +68,7 @@ func TestParseGuardrailsGrammar(t *testing.T) {
 // A path declared as both host artifact and guardrail contradicts the
 // contract; disjoint declarations compose.
 func TestGuardrailContradiction(t *testing.T) {
-	guardrails, _ := ParseGuardrails("goldens/", nil)
+	guardrails, _ := ParseGuardrails(ContractGuardrailSubject, "goldens/", nil)
 	declared := map[string]bool{"goldens/case.txt": true, "notes.md": true}
 	if v := GuardrailContradiction(declared, guardrails); !strings.Contains(v, "goldens/case.txt") {
 		t.Fatalf("the contradiction must refuse by name: %q", v)

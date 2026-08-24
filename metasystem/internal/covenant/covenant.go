@@ -12,9 +12,13 @@ package covenant
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -182,9 +186,27 @@ func direction(doc map[string]any, label string) (string, error) {
 
 // Load reads and validates a covenant document. Every refusal names the
 // section and the rule, because the covenant is written by humans at
-// inception and retrofit — a bare "invalid" teaches nothing.
+// inception and retrofit — a bare "invalid" teaches nothing. The read
+// is ONE open with no-follow and the shape judged on the held handle:
+// a check-then-read pair would let a swap serve different bytes than
+// the shape that passed.
 func Load(path string) (*Covenant, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err != nil {
+		if errors.Is(err, unix.ELOOP) {
+			return nil, fail("%s is a symlink, and a symlink is never a covenant — the one home holds the bytes themselves", path)
+		}
+		return nil, fail("cannot read %s: %v", path, err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fail("cannot read %s: %v", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fail("%s must be a regular file, not %s", path, info.Mode().Type())
+	}
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fail("cannot read %s: %v", path, err)
 	}
@@ -278,6 +300,21 @@ func Load(path string) (*Covenant, error) {
 	if !contract.ValidThreshold(c.Battery.Threshold) {
 		return nil, fail("battery.threshold %q is not in the contract's threshold grammar (a comparator then a number, no spaces); a mission contract could never carry it", c.Battery.Threshold)
 	}
+	if !contract.ValidMetricID(c.Battery.Metric) {
+		return nil, fail("battery.metric %q is not in the contract's metric grammar (a lowercase letter or digit first, then lowercase letters, digits, or hyphens); the gate.threshold key it forms could never parse", c.Battery.Metric)
+	}
+	// The command must be carryable as a contract value: one line, no
+	// NUL, no padding the contract's key/value parser would strip or
+	// refuse — an uncarryable command would load here and refuse at
+	// every preflight forever.
+	switch {
+	case strings.ContainsAny(c.Battery.Command, "\n\r"):
+		return nil, fail("battery.command must be a single line; a mission contract value could never carry it")
+	case strings.ContainsRune(c.Battery.Command, 0):
+		return nil, fail("battery.command must not contain NUL; a mission contract value could never carry it")
+	case strings.TrimSpace(c.Battery.Command) != c.Battery.Command:
+		return nil, fail("battery.command must not carry leading or trailing whitespace; the contract's value parser rejects padded values")
+	}
 
 	budgets, ok := doc["budgets"].([]any)
 	if !ok {
@@ -351,7 +388,10 @@ func Load(path string) (*Covenant, error) {
 		}
 		joined += entry
 	}
-	class, violation := mission.ParseGuardrails(joined, nil)
+	// The same protected-path predicate the contract side applies: a
+	// covenant declaring a wall-custodied path would pass here and
+	// refuse at every preflight forever — better named at load.
+	class, violation := mission.ParseGuardrails("covenant guardrails", joined, mission.ProtectedArtifactPath)
 	if violation != "" {
 		return nil, fail("guardrails: %s", violation)
 	}

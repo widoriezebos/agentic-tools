@@ -23,7 +23,7 @@ func TestWallRefusesGuardrailChangeOutsideTheWardenLane(t *testing.T) {
 	pre := snapshotTree(t, root)
 	writeText(t, filepath.Join(root, "goldens", "case.txt"), "weakened\n")
 	reviewed := snapshotTree(t, root)
-	guardrails, gviol := mission.ParseGuardrails("goldens/", protectedArtifactPath)
+	guardrails, gviol := mission.ParseGuardrails(mission.ContractGuardrailSubject, "goldens/", protectedArtifactPath)
 	if gviol != "" {
 		t.Fatal(gviol)
 	}
@@ -62,7 +62,7 @@ func TestWallGuardrailLaneCannotBeForgedAfterIssuance(t *testing.T) {
 	pre := snapshotTree(t, root)
 	writeText(t, filepath.Join(root, "goldens", "case.txt"), "weakened\n")
 	reviewed := snapshotTree(t, root)
-	guardrails, _ := mission.ParseGuardrails("goldens/", protectedArtifactPath)
+	guardrails, _ := mission.ParseGuardrails(mission.ContractGuardrailSubject, "goldens/", protectedArtifactPath)
 
 	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
 	patchRecord(t, root, "demo", digest, map[string]any{"guardrailLane": true})
@@ -78,7 +78,7 @@ func TestWallGuardrailLaneCannotBeForgedAfterIssuance(t *testing.T) {
 
 // Exact files and directory prefixes both cover; unrelated paths do not.
 func TestGuardrailClassCoverage(t *testing.T) {
-	class, violation := mission.ParseGuardrails("specs/gate.sh, goldens/, budgets.json", protectedArtifactPath)
+	class, violation := mission.ParseGuardrails(mission.ContractGuardrailSubject, "specs/gate.sh, goldens/, budgets.json", protectedArtifactPath)
 	if violation != "" {
 		t.Fatal(violation)
 	}
@@ -98,7 +98,7 @@ func TestGuardrailClassCoverage(t *testing.T) {
 	if class.Empty() {
 		t.Fatal("a declared class is not empty")
 	}
-	empty, _ := mission.ParseGuardrails("", protectedArtifactPath)
+	empty, _ := mission.ParseGuardrails(mission.ContractGuardrailSubject, "", protectedArtifactPath)
 	if !empty.Empty() || empty.Covers("anything") {
 		t.Fatal("an empty declaration covers nothing")
 	}
@@ -117,7 +117,7 @@ func TestParseGuardrailsRefusals(t *testing.T) {
 		"lone dot":    ".",
 		"protected":   "scripts/agents/gate.sh",
 	} {
-		if _, violation := mission.ParseGuardrails(value, protectedArtifactPath); violation == "" {
+		if _, violation := mission.ParseGuardrails(mission.ContractGuardrailSubject, value, protectedArtifactPath); violation == "" {
 			t.Fatalf("%s must refuse", name)
 		}
 	}
@@ -130,14 +130,14 @@ func TestWallRefusesGuardrailHostArtifactContradiction(t *testing.T) {
 	if dviol != "" {
 		t.Fatal(dviol)
 	}
-	guardrails, gviol := mission.ParseGuardrails("goldens/", protectedArtifactPath)
+	guardrails, gviol := mission.ParseGuardrails(mission.ContractGuardrailSubject, "goldens/", protectedArtifactPath)
 	if gviol != "" {
 		t.Fatal(gviol)
 	}
 	if v := mission.GuardrailContradiction(declared, guardrails); !strings.Contains(v, "goldens/case.txt") {
 		t.Fatalf("the contradiction must refuse by name: %q", v)
 	}
-	disjoint, _ := mission.ParseGuardrails("specs/", protectedArtifactPath)
+	disjoint, _ := mission.ParseGuardrails(mission.ContractGuardrailSubject, "specs/", protectedArtifactPath)
 	if v := mission.GuardrailContradiction(declared, disjoint); v != "" {
 		t.Fatalf("disjoint declarations must compose: %q", v)
 	}

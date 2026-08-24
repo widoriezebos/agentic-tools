@@ -57,7 +57,16 @@ func (e *Engine) covenantPreflight(values map[string]string) error {
 	if got := strings.TrimSpace(values["gate.direction"]); got != c.Battery.Direction {
 		return failf(3, "mission preflight refused: the contract's gate.direction %q is not the covenant's %q; an inverted direction turns every measurement upside down", got, c.Battery.Direction)
 	}
-	contractNet, violation := mission.ParseGuardrails(values["wall.guardrails"], protectedArtifactPath)
+	// The threshold SET binds, not only the battery's own row: an
+	// extra gate.threshold.* key measures green by a metric the
+	// covenant never declared, which changes what green means just as
+	// surely as weakening the declared one.
+	for key := range values {
+		if strings.HasPrefix(key, "gate.threshold.") && key != thresholdKey {
+			return failf(3, "mission preflight refused: the contract carries %s but the covenant's battery declares only the metric %q; an undeclared threshold changes what earns green", key, c.Battery.Metric)
+		}
+	}
+	contractNet, violation := mission.ParseGuardrails(mission.ContractGuardrailSubject, values["wall.guardrails"], protectedArtifactPath)
 	if violation != "" {
 		return failf(3, "mission preflight refused: %s", violation)
 	}

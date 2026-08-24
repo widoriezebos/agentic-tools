@@ -1,9 +1,10 @@
 package missionrunner
 
-// The covenant gate at preflight: no declaration passes untouched; a
-// declared covenant must exist, its battery must BE the contract's
-// gate, and every contract-custodied guardrail must be one the
-// covenant declares.
+// The covenant gate at preflight: a truly covenant-less repository
+// passes untouched; an app CARRYING a covenant cannot be opted out by
+// omission; a declared covenant must exist, its battery must BE the
+// contract's gate, and every contract-custodied guardrail must be one
+// the covenant declares.
 
 import (
 	"os"
@@ -142,5 +143,36 @@ func TestCovenantPreflight(t *testing.T) {
 	traversal := map[string]string{"covenant.path": "../outside.json"}
 	if err := engine.covenantPreflight(traversal); err == nil || !strings.Contains(err.Error(), "one home") {
 		t.Fatalf("traversal must refuse: %v", err)
+	}
+}
+
+// The threshold SET binds: an extra gate.threshold key for a metric
+// the covenant never declared changes what earns green and refuses.
+func TestCovenantPreflightRefusesUndeclaredThreshold(t *testing.T) {
+	engine, path := covenantGateBed(t)
+	extra := map[string]string{
+		"covenant.path":          path,
+		"gate.command":           "bash gate.sh",
+		"gate.threshold.score":   ">=3",
+		"gate.threshold.latency": "<=200",
+		"gate.direction":         "max",
+		"wall.guardrails":        "gate.sh, goldens/",
+	}
+	if err := engine.covenantPreflight(extra); err == nil ||
+		!strings.Contains(err.Error(), "undeclared threshold") {
+		t.Fatalf("an undeclared threshold metric must refuse: %v", err)
+	}
+}
+
+// The threshold-set binding applies only under a declared covenant: a
+// covenant-less repository keeps its lawful multi-metric gates.
+func TestCovenantlessMultiMetricGateStaysLawful(t *testing.T) {
+	bare := &Engine{Root: t.TempDir(), Mission: "bare"}
+	if err := bare.covenantPreflight(map[string]string{
+		"gate.command":           "bash gate.sh",
+		"gate.threshold.score":   ">=3",
+		"gate.threshold.latency": "<=200",
+	}); err != nil {
+		t.Fatalf("a covenant-less multi-metric gate must pass: %v", err)
 	}
 }

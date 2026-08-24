@@ -122,6 +122,16 @@ func ValidThreshold(value string) bool {
 	return contractThresholdGrammarRe.MatchString(value)
 }
 
+// ValidMetricID reports whether an identifier fits the contract's
+// metric grammar — shared with the covenant reader for the same
+// reason: a covenant metric forms the gate.threshold.<metric> key,
+// and one outside the grammar could never parse in any contract.
+func ValidMetricID(value string) bool {
+	return contractMetricIDRe.MatchString(value)
+}
+
+var contractMetricIDRe = regexp.MustCompile(`^` + contractIDPat + `$`)
+
 // contractIntegerKeys are the scalar keys that must be positive integers.
 var contractIntegerKeys = []string{
 	"guard.cadence", "ledger.cycle-budget", "ledger.no-gain-budget", "fence.cycles",

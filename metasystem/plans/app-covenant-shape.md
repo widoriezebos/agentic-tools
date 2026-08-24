@@ -48,6 +48,7 @@ never invented. What the kit already carries, generalized:
    refuses cross-version reruns and routes them to the documented
    upgrade path; upgrade-time survival is that machinery's obligation,
    proven when it exists. The covenant gate binds at start AND resume,
-   compares the battery whole (command plus the threshold for its
-   metric), demands net equality in both directions, and an app
+   compares the battery whole (command, the threshold for its metric,
+   the direction, and the threshold SET — an undeclared gate.threshold
+   key refuses), demands net equality in both directions, and an app
    carrying covenant.json cannot be opted out by contract omission.

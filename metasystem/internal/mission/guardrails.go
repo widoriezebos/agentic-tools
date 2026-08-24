@@ -23,8 +23,41 @@ type GuardrailClass struct {
 	prefixes []string
 }
 
+// ContractGuardrailSubject names the contract-side declaration in
+// parse refusals; the covenant reader passes its own subject, so a
+// refusal always names the document that carries the offending entry.
+const ContractGuardrailSubject = "contract wall.guardrails"
+
 func (g *GuardrailClass) Empty() bool {
 	return g == nil || (len(g.files) == 0 && len(g.prefixes) == 0)
+}
+
+// The wall's protected-path table: exact files, protected prefixes,
+// and the signed mission contracts. These are denied to every host
+// artifact and to every guardrail declaration — the wall custodies
+// them itself, on both the contract side and the covenant side, so
+// the ONE predicate lives here where both readers can reach it.
+var protectedArtifactPrefixes = []string{"scripts/agents/", "plans/goals/"}
+
+var protectedArtifactFiles = map[string]bool{
+	"plans/goals.md":              true,
+	"plans/goals-accepted.json":   true,
+	"plans/instruction-ledger.md": true,
+	"plans/known-issues.md":       true,
+}
+
+// ProtectedArtifactPath reports whether the wall's protected-path
+// table denies a declaration.
+func ProtectedArtifactPath(path string) bool {
+	if protectedArtifactFiles[path] {
+		return true
+	}
+	for _, prefix := range protectedArtifactPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return strings.HasPrefix(path, "plans/mission-") && strings.HasSuffix(path, ".contract.md")
 }
 
 // covers reports whether a repository-relative path is guardrail-classed.
@@ -51,7 +84,7 @@ func (g *GuardrailClass) Covers(path string) bool {
 // wall refusal, exactly like the host-artifact parser's: a contract
 // declaring an unlawful guardrail set fails the equation, never the
 // process.
-func ParseGuardrails(value string, protected func(string) bool) (*GuardrailClass, string) {
+func ParseGuardrails(subject, value string, protected func(string) bool) (*GuardrailClass, string) {
 	class := &GuardrailClass{files: map[string]bool{}}
 	if strings.TrimSpace(value) == "" {
 		return class, ""
@@ -60,21 +93,21 @@ func ParseGuardrails(value string, protected func(string) bool) (*GuardrailClass
 		path := strings.TrimSpace(raw)
 		switch {
 		case path == "":
-			return nil, "contract wall.guardrails declares an empty path"
+			return nil, fmt.Sprintf("%s declares an empty path", subject)
 		case strings.HasPrefix(path, "/"), containsDotDotSegment(path), strings.Contains(path, "\\"):
-			return nil, fmt.Sprintf("contract wall.guardrails path %q is not a canonical repository-relative path", path)
+			return nil, fmt.Sprintf("%s path %q is not a canonical repository-relative path", subject, path)
 		case strings.ContainsAny(path, "*?["):
-			return nil, fmt.Sprintf("contract wall.guardrails path %q is a glob; only exact files and directory prefixes may be declared", path)
+			return nil, fmt.Sprintf("%s path %q is a glob; only exact files and directory prefixes may be declared", subject, path)
 		}
 		// Coverage compares literal canonical Git paths, so a declaration
 		// that is not already canonical (dot segments, doubled or
 		// trailing-doubled separators) would silently cover nothing.
 		base := strings.TrimSuffix(path, "/")
 		if base == "" || base == "." || gopath.Clean(base) != base {
-			return nil, fmt.Sprintf("contract wall.guardrails path %q is not canonical; declare the exact repository-relative form", path)
+			return nil, fmt.Sprintf("%s path %q is not canonical; declare the exact repository-relative form", subject, path)
 		}
 		if protected != nil && (protected(path) || protected(strings.TrimSuffix(path, "/"))) {
-			return nil, fmt.Sprintf("contract wall.guardrails declares the protected path %q, which the wall already custodies", path)
+			return nil, fmt.Sprintf("%s declares the protected path %q, which the wall already custodies", subject, path)
 		}
 		if strings.HasSuffix(path, "/") {
 			class.prefixes = append(class.prefixes, path)
@@ -123,7 +156,7 @@ func GuardrailContradiction(declared map[string]bool, guardrails *GuardrailClass
 // that IS present and does not match the live contract stays a hard
 // refusal: that is a tamper signal, never an absence.
 func VerifiedGuardrails(repo, missionID string) (*GuardrailClass, error) {
-	empty, _ := ParseGuardrails("", nil)
+	empty, _ := ParseGuardrails(ContractGuardrailSubject, "", nil)
 	if _, fencesPath, _ := fencePaths(repo, missionID); !fileExists(fencesPath) {
 		return empty, nil
 	}
@@ -138,7 +171,7 @@ func VerifiedGuardrails(repo, missionID string) (*GuardrailClass, error) {
 	if err != nil {
 		return nil, fmt.Errorf("guardrail custody cannot trust the contract: %v", err)
 	}
-	class, violation := ParseGuardrails(values["wall.guardrails"], nil)
+	class, violation := ParseGuardrails(ContractGuardrailSubject, values["wall.guardrails"], nil)
 	if violation != "" {
 		return nil, fmt.Errorf("guardrail custody refused: %s", violation)
 	}
