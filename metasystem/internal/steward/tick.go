@@ -44,8 +44,10 @@ type TickResult struct {
 	Evidence Evidence
 	OpenWork string       // the open-work reason, for the report
 	Reaped   []ReapReport // continuations this tick closed
-	// ProviderOutage reports a standing outage mark, for the narration.
+	// ProviderOutage reports a standing outage mark, for the narration
+	// and the long-outage noticing; Outage carries the mark itself.
 	ProviderOutage bool
+	Outage         outage.Mark
 }
 
 // RunTick folds one observation into the persisted evidence and
@@ -88,7 +90,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 	// clock can never outlive the outage's evidence. ONE sample
 	// governs the whole tick — aging, decision, and narration must
 	// tell the same story even when the mark moves mid-tick.
-	_, providerOutage := outage.StandingAt(repoRoot, time.Now())
+	outageMark, providerOutage := outage.StandingAt(repoRoot, time.Now())
 	if providerOutage && marks == prev.Marks {
 		ev = prev
 	}
@@ -139,7 +141,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (TickResult, 
 		return TickResult{}, err
 	}
 	result := TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
-		Reaped: reaped, ProviderOutage: providerOutage}
+		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark}
 	// The running plain-English account rides every tick, strictly
 	// best-effort: the storyteller never fails the shift. What the
 	// narration notices also reaches the operator, one gated message

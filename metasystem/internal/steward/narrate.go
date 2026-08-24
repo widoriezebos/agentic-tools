@@ -128,12 +128,34 @@ func noticingLines(items []Noticing) []string {
 	return out
 }
 
+// longOutageAfter is when a standing provider outage stops being
+// weather to wait out and becomes something the operator should hear
+// about — well inside the mark's own horizon, so the alert fires
+// while the outage is still provably standing.
+const longOutageAfter = 10 * time.Minute
+
 func noticings(result TickResult, cfg TickConfig) []Noticing {
 	cfg = cfg.withDefaults()
-	if result.Decision.Action != ActNone {
-		return nil
-	}
 	var out []Noticing
+	// The long-outage alert is provider-INDEPENDENT by construction:
+	// it rides the durable notify queue, and it must not be silenced
+	// by whatever this tick's decision was — a held revival is exactly
+	// when the operator most needs to hear the outage is still on.
+	if result.ProviderOutage {
+		if since, err := time.Parse(time.RFC3339, result.Outage.Since); err == nil {
+			if age := time.Since(since); age >= longOutageAfter {
+				out = append(out, Noticing{
+					Key: "provider-outage-standing",
+					Line: fmt.Sprintf(
+						"noticing: the model provider has been overloaded for %d minutes (%d failure(s) recorded); local work continues and the clocks stay paused — a long outage is worth a look at the provider's status",
+						int(age.Minutes()), result.Outage.ConsecutiveFailures),
+				})
+			}
+		}
+	}
+	if result.Decision.Action != ActNone {
+		return out
+	}
 	age := result.Evidence.TicksSinceAdvance
 	working := strings.HasPrefix(result.OpenWork, "claimed goal: ") || strings.HasPrefix(result.OpenWork, "current goal: ")
 	if working && age >= (cfg.StaleTicks+1)/2 && age < cfg.StaleTicks {

@@ -132,3 +132,53 @@ func TestTickHoldsRevivalDuringOutage(t *testing.T) {
 		t.Fatalf("clearing the mark releases the revival: %+v", r.Decision)
 	}
 }
+
+// A LONG outage reaches the human: the standing-outage noticing fires
+// once the mark's age crosses the threshold, rides the durable notify
+// queue, and is not silenced by a notify-tick decision. A fresh
+// outage stays quiet.
+func TestLongOutageNoticingReachesTheHuman(t *testing.T) {
+	fresh := TickResult{
+		ProviderOutage: true,
+		Outage: outage.Mark{
+			ConsecutiveFailures: 2,
+			Since:               time.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+	if items := noticings(fresh, TickConfig{}); len(items) != 0 {
+		t.Fatalf("a fresh outage must stay quiet: %v", items)
+	}
+	long := TickResult{
+		ProviderOutage: true,
+		Decision:       Decision{VerdictStalledDead, ActNotify, "holding revival"},
+		Outage: outage.Mark{
+			ConsecutiveFailures: 7,
+			Since:               time.Now().Add(-15 * time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+	items := noticings(long, TickConfig{})
+	if len(items) != 1 || items[0].Key != "provider-outage-standing" {
+		t.Fatalf("a long outage must produce its one noticing even on a notify tick: %v", items)
+	}
+	if !strings.Contains(items[0].Line, "overloaded for 15 minutes") ||
+		!strings.Contains(items[0].Line, "7 failure(s)") {
+		t.Fatalf("the noticing must carry the duration and the count: %q", items[0].Line)
+	}
+}
+
+// The live tick composes the alert end to end: a backdated standing
+// mark carries the noticing into the narration (the queue side rides
+// ReachTheHuman's own pinned mechanics).
+func TestTickCarriesTheLongOutageNoticing(t *testing.T) {
+	root := gitRepoWithCurrentGoal(t)
+	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
+	if _, err := outage.Record(root, "overloaded", "API Error: 529", "test",
+		time.Now().Add(-15*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	tickN(t, root, TickConfig{StaleTicks: 5}, census, 1)
+	narration, err := os.ReadFile(NarrationPath(root))
+	if err != nil || !strings.Contains(string(narration), "provider has been overloaded for") {
+		t.Fatalf("the narration must carry the long-outage noticing: %v\n%s", err, narration)
+	}
+}
