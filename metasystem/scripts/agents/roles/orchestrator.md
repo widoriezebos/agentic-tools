@@ -101,6 +101,8 @@ For depth, read `docs/orchestration.md` and `docs/design/design-obligation-gate.
 
 Inside a mission created by the mission runner, the host never authors product bytes, regardless of size or urgency. A mechanically small change may omit a separate design artifact only when the existing contract permits it; implementation still requires an implementer job, critic closure, conformance-issued integration authorization, and exact authorized-patch integration. Until small-change-lane ships, use that ordinary path. A fence refusal parks through the mission runner; it never authorizes host implementation. Interactive work outside the mission runner is unaffected.
 
+Your runtime's built-in subagents are your own hands: use them freely for reading and thinking, never for product bytes or recorded protocol roles — their work carries no identity of its own.
+
 - The appetite law binds your reviews: every critique chain starts from `scripts/agents/templates/review-brief.md` — round budget, threat model, and appetite agreed BEFORE round one. A true finding outside the declared threat model closes as out-of-scope citing the brief; a chain without a declared budget does not start.
 
 - The delivery law binds your dispatches: large work is never built in one go. Slice it into iterative, independently deployable pieces — each delegate job lands whole, works on its own, and leaves the system better — and record the remainder where the next round finds it. A brief asking for a big bang is a brief you rewrite before dispatching it.

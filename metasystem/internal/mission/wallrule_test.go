@@ -31,6 +31,29 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
+// subagentRule is the native-subagent clause (bm-2d rep 1's lesson: the
+// generic wall rule did not map onto a runtime's own subagent feature in
+// the host's head, and the host satisfied "implementer" with its native
+// subagents in the main repo). Same discipline as the wall rule: one
+// sentence, byte-identical in both live authorities.
+const subagentRule = "Your runtime's built-in subagents are your own hands: use them freely for reading and thinking, never for product bytes or recorded protocol roles — their work carries no identity of its own."
+
+func TestSubagentRuleVerbatimInBothLiveAuthorities(t *testing.T) {
+	root := repoRoot(t)
+	for _, rel := range []string{
+		filepath.Join("scripts", "agents", "templates", "host-turn-instruction.md"),
+		filepath.Join("scripts", "agents", "roles", "orchestrator.md"),
+	} {
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), subagentRule) {
+			t.Errorf("%s does not carry the native-subagent rule verbatim", rel)
+		}
+	}
+}
+
 func TestWallRuleVerbatimInBothLiveAuthorities(t *testing.T) {
 	root := repoRoot(t)
 	for _, rel := range []string{
