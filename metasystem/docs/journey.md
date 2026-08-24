@@ -559,3 +559,24 @@ rather than a silent shrug. And under the corrected ruler, that "failed"
 first run turned out to have been valid all along — the wall had
 worked, the machinery had worked, and only the measurement had been
 wrong about itself.
+
+## The transport earns its flip
+
+The goal that asked for ACP as the delegate transport ended the only
+way this system lets big things end: on evidence, sealed by a human,
+measured by a ruler that had itself been repaired along the way. The
+benchmark built for the question ran twice against a Devin host.
+Twice the plumbing held — jobs dispatched, settled, and closed, every
+fence enforced, every record complete — and twice the host itself
+ignored its one commandment and wrote the product with its own hands,
+which the wall caught both times and the scorecards reported without
+flinching, because a verdict about the measurement was no longer
+allowed to hide a verdict about behavior. On that twice-valid,
+twice-green evidence the default flipped: the shipped configuration
+now speaks ACP to Devin, the standing waiver that auto-approved every
+dangerous tool dies with the old default, and the misbehavior the
+benchmark surfaced becomes the first thing the new transport's graded
+permissions exist to prevent. Fix forward, as ruled: the flip is not
+the end of the questions — a queued probe still owes proof that
+Devin's built-in subagents answer to the same permission channel —
+but the road runs through the flip, and the flip is landed.
