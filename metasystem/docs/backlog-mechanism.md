@@ -86,6 +86,22 @@ A backlog item earns its place from current behavior or current
 pain; losing that, it concludes with a record cheap to reopen from.
 History is preserved in the conclusion note, never in a queue slot.
 
+## Pinning a goal to a machine
+
+A goal may be pinned to one machine's nickname (`goal set-pin --id X
+--pin m2`; `--pin -` clears): only that machine may claim it, because
+it alone has the setup, network, or resources the work needs. The pin
+binds every claim path — an ordinary claim on any other machine
+refuses by name, and even a human steal onto a foreign machine refuses
+until the pin is moved. Pinning directs machines, so set-pin is a
+human act (`--by`), and re-pinning a goal another machine currently
+claims refuses: release it first — or clear the pin, steal, and
+re-pin — so ownership never silently contradicts the pin. One reserved word: "-" is the clear form, so a
+machine enrolled under that literal name can never be a pin target.
+A machine's own frontier (goal next) skips goals pinned elsewhere —
+they are not claimable there, and reporting them ready would hide
+genuinely claimable work.
+
 ## Coordinator ownership
 
 Backlog order — priorities, appetites, item shape, intake — is the

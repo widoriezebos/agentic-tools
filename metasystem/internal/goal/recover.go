@@ -223,6 +223,14 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		return detachRequest(r, target), nil
 	case "set-arc":
 		return setArcRequest(r, target, in.Args["arc"]), nil
+	case "set-pin":
+		if r.Actor.Human == "" {
+			return PublishRequest{}, fmt.Errorf("the stored set-pin carries no human (--by); it cannot be replayed")
+		}
+		if pin := in.Args["pin"]; pin != "-" && !validPinnedNickname(pin) {
+			return PublishRequest{}, fmt.Errorf("the stored set-pin carries the invalid machine %q; close it by hand", pin)
+		}
+		return setPinRequest(r, target, in.Args["pin"]), nil
 	case "prune":
 		keep := 0
 		if _, scanErr := fmt.Sscanf(in.Args["keep"], "%d", &keep); scanErr != nil {

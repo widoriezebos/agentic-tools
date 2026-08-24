@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Actor is the executing identity: the machine+lineage pair always;
@@ -315,6 +316,9 @@ func claimRequest(r VerbRequest, id string) PublishRequest {
 			}
 			if f.State != StateQueued {
 				return nil, fmt.Errorf("goal %s is %s; only a queued goal claims (park and done have their own verbs)", id, f.State)
+			}
+			if f.Pinned != "" && f.Pinned != r.Actor.Machine {
+				return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; only the pinned machine may claim it (a human re-pins with set-pin)", id, f.Pinned, r.Actor.Machine)
 			}
 			for _, dep := range f.Blocked {
 				if depState(t, dep) != StateDone {
@@ -658,6 +662,9 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 							return nil, fmt.Errorf("goal %s rejoins a claimed arc but is blocked by %s, which is not done", id, dep)
 						}
 					}
+					if err := pinRefusal(f, standing.Claimed.Machine, "rejoining the claimed arc"); err != nil {
+						return nil, err
+					}
 					f.State = StateClaimed
 					f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
 				case standing.State == StateParked && standing.Parked != nil:
@@ -858,6 +865,11 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 			// displaced marker.
 			oldPair := f.Claimed
 			members := arcMembers(t, id)
+			for _, member := range members {
+				if member.Pinned != "" && member.Pinned != r.Actor.Machine {
+					return nil, fmt.Errorf("goal %s is pinned to machine %s and this machine is %s; even a steal honors the pin — clear the pin, steal, then re-pin", member.Id, member.Pinned, r.Actor.Machine)
+				}
+			}
 			targets := make([]string, 0, len(members))
 			for _, m := range members {
 				targets = append(targets, m.Id)
@@ -1114,6 +1126,9 @@ func claimArcRequest(r VerbRequest, id string) PublishRequest {
 					if depState(t, dep) != StateDone {
 						return nil, fmt.Errorf("arc member %s is blocked by %s, which is not done", m.Id, dep)
 					}
+				}
+				if err := pinRefusal(m, r.Actor.Machine, "the arc claim"); err != nil {
+					return nil, err
 				}
 				m.State = StateClaimed
 				m.Claimed = &ClaimRecord{Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, At: r.stamp()}
@@ -1396,6 +1411,92 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 // blockers under the STANDING claimant — a stranger refuses, and a
 // human injecting into another machine's claim leaves the
 // displacement signal.
+// SetPin pins a goal to one machine (or clears the pin with "-"): only
+// that machine may claim it afterwards, because it alone has the
+// setup, network, or resources the work needs. Pinning is directive,
+// so it is a human act.
+// pinRefusal is the ONE pin check every claim-assigning path runs: a
+// pinned goal is claimed only by its pinned machine, whatever verb
+// carries the assignment.
+func pinRefusal(f *GoalFile, machine, how string) error {
+	if f.Pinned != "" && f.Pinned != machine {
+		return fmt.Errorf("goal %s is pinned to machine %s and %s would claim it for %s; only the pinned machine may hold it (a human re-pins with set-pin)", f.Id, f.Pinned, how, machine)
+	}
+	return nil
+}
+
+func SetPin(r VerbRequest, id, pin string) (PublishResult, error) {
+	if r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("set-pin is a human act and names its human (--by): pinning directs machines")
+	}
+	if pin == "" {
+		return PublishResult{}, fmt.Errorf("set-pin names its machine; \"-\" clears the pin")
+	}
+	if pin != "-" && !validPinnedNickname(pin) {
+		return PublishResult{}, fmt.Errorf("set-pin machine %q is not a machine nickname (one word, no whitespace of any kind — exactly the vocabulary claims carry)", pin)
+	}
+	return Publish(r.Endpoint, setPinRequest(r, id, pin))
+}
+
+// validPinnedNickname admits what a claim's machine field can carry —
+// any whitespace-free word, Unicode whitespace refused too (the file
+// grammar trims on reparse, so admitting it would let a confirmed pin
+// dissolve into no pin), no length cap — with ONE reserved word: "-"
+// is set-pin's clear form, so a machine enrolled under that name can
+// claim but can never be a pin target; enroll a real name.
+func validPinnedNickname(pin string) bool {
+	if pin == "" || pin == "-" {
+		return false
+	}
+	for _, r := range pin {
+		if unicode.IsSpace(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// setPinRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (recovery rebuilds through the real verb paths).
+func setPinRequest(r VerbRequest, id, pin string) PublishRequest {
+	return PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "set-pin", Targets: []string{id}, Args: intentArgs(r, map[string]string{"pin": pin})},
+		Message: "goal set-pin " + id + " -> " + pin,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f, exists := t.Live[id]
+			if !exists {
+				return nil, fmt.Errorf("goal %s is not live", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			next := pin
+			if pin == "-" {
+				next = ""
+			}
+			if f.Pinned == next {
+				return nil, NothingToDo{Reason: "the pin already reads exactly that"}
+			}
+			// A standing claim on another machine outlives a new pin
+			// only by explicit direction: refuse so the human decides
+			// between waiting, releasing, and stealing.
+			if next != "" && f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine != next {
+				return nil, fmt.Errorf("goal %s is claimed by machine %s; release it first (or clear the pin, steal, and re-pin) before pinning it to %s", id, f.Claimed.Machine, next)
+			}
+			f.Pinned = next
+			touch(f, r, "set-pin", []string{id})
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	}
+}
+
 func SetArc(r VerbRequest, id, arc string) (PublishResult, error) {
 	if arc == "" {
 		return PublishResult{}, fmt.Errorf("set-arc names its arc; detach removes membership")
@@ -1496,6 +1597,9 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 				}
 				// The join auto-claims under the standing claimant: the
 				// arc stays one unit under one pair.
+				if err := pinRefusal(f, standing.Claimed.Machine, "joining the claimed arc"); err != nil {
+					return nil, err
+				}
 				f.State = StateClaimed
 				f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
 			case standing.State == StateParked && standing.Parked != nil:

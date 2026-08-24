@@ -334,6 +334,9 @@ func listSynced(root string, pretty bool) int {
 				if f.Claimed != nil {
 					line += "  [" + f.Claimed.Machine + "+" + f.Claimed.Lineage + "]"
 				}
+				if f.Pinned != "" {
+					line += "  (pinned: " + f.Pinned + ")"
+				}
 				if f.Parked != nil && f.Parked.Because != "" {
 					line += "  (parked: " + f.Parked.Because + ")"
 				}

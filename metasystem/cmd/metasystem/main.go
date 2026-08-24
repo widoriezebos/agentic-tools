@@ -313,6 +313,7 @@ func families() []family {
 				{"steal", "take over another machine's claim (displacement-bearing)", runGoalSteal},
 				{"edit", "edit a goal's intent or next step in place", runGoalEdit},
 				{"set-arc", "move a goal into an arc under the membership rules", runGoalSetArc},
+				{"set-pin", "pin a goal to one machine (\"-\" clears); only that machine may claim it", runGoalSetPin},
 				{"detach", "take a goal out of its arc (releases a riding claim)", runGoalDetach},
 				{"list", "print the parsed ledger as JSON (read-only; --pretty for eyes)", runGoalList},
 				{"show", "print ONE goal whole: fields, claim, park, history (read-only)", runGoalShow},

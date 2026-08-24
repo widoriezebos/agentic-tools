@@ -167,6 +167,9 @@ func ValidateTree(t *TreeGoals) []Problem {
 				addf("%s%s.md: claimed while blocker %s is not done", goalsPrefix, id, dep)
 			}
 		}
+		if f.Pinned != "" && f.Claimed.Machine != f.Pinned {
+			addf("%s%s.md: pinned to machine %s but claimed by %s; ownership contradicts the pin", goalsPrefix, id, f.Pinned, f.Claimed.Machine)
+		}
 	}
 
 	// A done goal's blockers are done: concluding over an open

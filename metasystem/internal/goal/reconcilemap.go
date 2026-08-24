@@ -95,6 +95,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if edited.State != "" && edited.State != StateQueued {
 				return nil, fmt.Errorf("%s: a hand-created goal opens queued; %s is unmappable", d.Path, edited.State)
 			}
+			if edited.Pinned != "" {
+				return nil, fmt.Errorf("%s: a hand-created goal carries no pin; open it, then pin with set-pin", d.Path)
+			}
 			mapped = append(mapped, MappedVerb{Verb: "open", Id: id, Origin: edited.Origin, Fields: EditFields{
 				Intent: &edited.Intent, NextStep: &edited.NextStep,
 				Blocked: &edited.Blocked,
@@ -235,6 +238,10 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		}
 	} else if parkReasonChanged(base, edited) {
 		return nil, fmt.Errorf("%s: Parked is written by the park verb; a changed reason has no hand-edit grammar", p)
+	}
+
+	if edited.Pinned != base.Pinned {
+		return nil, fmt.Errorf("%s: Pinned is written by the set-pin verb; a hand-edited pin has no reconcile grammar", p)
 	}
 
 	// One edit for the field remainder, over the CLOSED surface.

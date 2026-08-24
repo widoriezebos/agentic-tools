@@ -65,10 +65,10 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // syncFlags is the shared flag surface; each verb reads the fields
 // it consumes and ignores the rest.
 type syncFlags struct {
-	root, by, id, intent, next, origin, because, conclude, arc string
-	lineage, digest                                            string
-	claim, refreshOnly                                         bool
-	keep                                                       int
+	root, by, id, intent, next, origin, because, conclude, arc, pin string
+	lineage, digest                                                 string
+	claim, refreshOnly                                              bool
+	keep                                                            int
 }
 
 func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
@@ -83,6 +83,7 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.because, "because", "", "the park's reason")
 	fs.StringVar(&f.conclude, "conclude", "", "the conclusion")
 	fs.StringVar(&f.arc, "arc", "", "the destination arc")
+	fs.StringVar(&f.pin, "pin", "", "the machine nickname a goal is pinned to (\"-\" clears)")
 	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
 	fs.BoolVar(&f.claim, "claim", false, "claim on open")
@@ -224,6 +225,10 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 				fmt.Fprintf(os.Stderr, "goal %s needs --arc\n", name)
 				return 2
 			}
+			if r == "pin" && f.pin == "" {
+				fmt.Fprintf(os.Stderr, "goal %s needs --pin (a machine nickname, or - to clear)\n", name)
+				return 2
+			}
 		}
 		req, err := syncReq(f.root, f.by, f.lineage)
 		if err != nil {
@@ -261,6 +266,9 @@ var (
 		}
 		return goal.Edit(req, f.id, fields)
 	}, "id")
+	runGoalSetPin = runSyncOnly("set-pin", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		return goal.SetPin(req, f.id, f.pin)
+	}, "id", "pin")
 	runGoalSetArc = runSyncOnly("set-arc", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.SetArc(req, f.id, f.arc)
 	}, "id", "arc")

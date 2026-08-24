@@ -473,6 +473,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				// changed.
 				setArcDisplaced = pairMarker(standing.Claimed)
 			}
+			if err := pinRefusal(f, standing.Claimed.Machine, "the reconciled arc join"); err != nil {
+				return nil, err
+			}
 			f.State = StateClaimed
 			f.Claimed = &ClaimRecord{Machine: standing.Claimed.Machine, Lineage: standing.Claimed.Lineage, At: r.stamp()}
 		case standing.State == StateParked && standing.Parked != nil:

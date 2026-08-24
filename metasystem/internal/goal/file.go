@@ -29,10 +29,14 @@ type GoalFile struct {
 	Revision uint64 // 1 at creation, +1 per verb write
 	Blocked  []string
 	Arc      string
-	Claimed  *ClaimRecord
-	Parked   *ParkRecord
-	Legacy   []string // LegacyNotes: verbatim non-field prose from migration
-	History  []HistoryLine
+	// Pinned names the ONE machine that may claim this goal — set when
+	// the work needs a setup, network, or resource only that machine
+	// has. Empty means any machine may claim.
+	Pinned  string
+	Claimed *ClaimRecord
+	Parked  *ParkRecord
+	Legacy  []string // LegacyNotes: verbatim non-field prose from migration
+	History []HistoryLine
 }
 
 // ClaimRecord is the ownership record of a claimed goal.
@@ -169,6 +173,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.State != StateClaimed && f.Claimed != nil {
 		addProblem("Claimed record on a %s goal", f.State)
 	}
+	if f.Pinned != "" && !validPinnedNickname(f.Pinned) {
+		addProblem("Pinned %q is not a machine nickname (one word, no whitespace of any kind)", f.Pinned)
+	}
 	if f.Claimed != nil && !validStamp(f.Claimed.At) {
 		addProblem("Claimed at=%q is not an RFC3339 timestamp", f.Claimed.At)
 	}
@@ -236,6 +243,8 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		}
 	case "Arc":
 		f.Arc = value
+	case "Pinned":
+		f.Pinned = value
 	case "Claimed":
 		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, nil, "")
 		if err != nil {
@@ -346,6 +355,9 @@ func RenderFile(f *GoalFile) []byte {
 	}
 	if f.Arc != "" {
 		fmt.Fprintf(&b, "- Arc: %s\n", f.Arc)
+	}
+	if f.Pinned != "" {
+		fmt.Fprintf(&b, "- Pinned: %s\n", f.Pinned)
 	}
 	if f.Claimed != nil {
 		fmt.Fprintf(&b, "- Claimed: machine=%s lineage=%s at=%s\n", f.Claimed.Machine, f.Claimed.Lineage, f.Claimed.At)

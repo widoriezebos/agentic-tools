@@ -823,3 +823,120 @@ func TestFreshNoOpsAbandonHonestly(t *testing.T) {
 		}
 	}
 }
+
+// The pin: only the named machine may claim a pinned goal — every
+// other machine, and even a human steal onto one, refuses by name.
+// Pinning itself is a human act, refuses over a foreign claim, and
+// "-" clears it.
+func TestMachinePinning(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X0000000000000000000P1", "mac-a"), "gpu-work", "Needs the big machine.", "main", "Train."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+
+	// An agent cannot pin: pinning directs machines, so it names its
+	// human.
+	if _, err := SetPin(verbReq(a, "01J5X0000000000000000000P2", "mac-a"), "gpu-work", "mac-b"); err == nil ||
+		!strings.Contains(err.Error(), "--by") {
+		t.Fatalf("agent set-pin refuses: %v", err)
+	}
+	pinReq := verbReq(a, "01J5X0000000000000000000P3", "mac-a")
+	pinReq.Actor.Human = "wido"
+	pinRes, err := SetPin(pinReq, "gpu-work", "mac-b")
+	if err != nil || pinRes.Outcome != OutcomeConfirmed {
+		t.Fatalf("the attributed pin lands: %+v %v", pinRes, err)
+	}
+	pinnedTree, err := loadTree(a, pinRes.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinnedFile := pinnedTree.Live["gpu-work"]
+	if pinnedFile == nil || pinnedFile.Pinned != "mac-b" {
+		t.Fatalf("the file carries the pin: %+v", pinnedFile)
+	}
+	lastLine := pinnedFile.History[len(pinnedFile.History)-1]
+	if lastLine.Verb != "set-pin" || lastLine.Actor != "human:wido" {
+		t.Fatalf("the pin's history line names its human: %+v", lastLine)
+	}
+
+	// The wrong machine's claim rejects naming both machines.
+	res, err := Claim(verbReq(a, "01J5X0000000000000000000P4", "mac-a"), "gpu-work")
+	if err != nil || res.Outcome != OutcomeRejected ||
+		!strings.Contains(res.Detail, "pinned to machine mac-b") || !strings.Contains(res.Detail, "mac-a") {
+		t.Fatalf("a foreign claim rejects by name: %+v %v", res, err)
+	}
+	// The pinned machine claims normally.
+	if res, err := Claim(verbReq(b, "01J5X0000000000000000000P5", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the pinned machine claims: %+v %v", res, err)
+	}
+
+	// Re-pinning a goal claimed elsewhere refuses: the human decides
+	// between waiting, releasing, and stealing first.
+	repin := verbReq(a, "01J5X0000000000000000000P6", "mac-a")
+	repin.Actor.Human = "wido"
+	if res, err := SetPin(repin, "gpu-work", "mac-a"); err != nil || res.Outcome != OutcomeRejected ||
+		!strings.Contains(res.Detail, "claimed by machine mac-b") {
+		t.Fatalf("re-pin over a foreign claim rejects: %+v %v", res, err)
+	}
+
+	// Even a human steal honors the pin: the stealing machine is not
+	// the pinned one.
+	stealReq := verbReq(a, "01J5X0000000000000000000P7", "mac-a")
+	stealReq.Actor.Human = "wido"
+	if res, err := Steal(stealReq, "gpu-work"); err != nil || res.Outcome != OutcomeRejected ||
+		!strings.Contains(res.Detail, "honors the pin") {
+		t.Fatalf("a steal onto a foreign machine rejects: %+v %v", res, err)
+	}
+
+	// While pinned to mac-b, the goal is invisible to mac-a's frontier
+	// and ready on mac-b's.
+	frontierTree, err := loadTree(a, pinRes.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontierA := Next(Projection{Tree: frontierTree}, "mac-a")
+	for _, id := range frontierA.Ready {
+		if id == "gpu-work" {
+			t.Fatal("a foreign-pinned goal must not be mac-a's ready work")
+		}
+	}
+	frontierB := Next(Projection{Tree: frontierTree}, "mac-b")
+	readyOnB := false
+	for _, id := range frontierB.Ready {
+		if id == "gpu-work" {
+			readyOnB = true
+		}
+	}
+	if !readyOnB {
+		t.Fatal("the pinned machine's frontier must list the goal ready")
+	}
+
+	// A released pin TRANSFERS whole: mac-b's pin moves to mac-a, and
+	// mac-a — refused before — now claims.
+	if res, err := Release(verbReq(b, "01J5X0000000000000000000P8", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("release: %+v %v", res, err)
+	}
+	moveReq := verbReq(a, "01J5X0000000000000000000P9", "mac-a")
+	moveReq.Actor.Human = "wido"
+	if res, err := SetPin(moveReq, "gpu-work", "mac-a"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the transfer lands: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X0000000000000000000PA", "mac-a"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the newly pinned machine claims: %+v %v", res, err)
+	}
+
+	// Clearing with "-" reopens the field: after release, any machine
+	// claims again.
+	if res, err := Release(verbReq(a, "01J5X0000000000000000000PB", "mac-a"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("release for the clear: %+v %v", res, err)
+	}
+	clearReq := verbReq(a, "01J5X0000000000000000000PC", "mac-a")
+	clearReq.Actor.Human = "wido"
+	if res, err := SetPin(clearReq, "gpu-work", "-"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the clear lands: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(b, "01J5X0000000000000000000PD", "mac-b"), "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("an unpinned goal claims anywhere: %+v %v", res, err)
+	}
+}
