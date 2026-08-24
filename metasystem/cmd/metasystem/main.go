@@ -296,6 +296,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "covenant",
+			summary: "the app's covenant: the versioned declaration binding intent to proofs",
+			verbs: []verb{
+				{"validate", "structural check of a covenant document (shape only; adequacy is never a parser's to prove)", runCovenantValidate},
+			},
+		},
+		{
 			name:    "goal",
 			summary: "the goal ledger: the thread of intent that survives every turn (D67)",
 			verbs: []verb{

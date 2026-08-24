@@ -17,15 +17,16 @@ This is the single routing layer. `AGENTS.md` owns always-on behavior; this tabl
 | Adversarial design critique | `skills/design-critique/SKILL.md` | A design is ready to attack before implementation, or a critique loop needs a stop decision |
 | Two-layer implementation critique | `skills/code-critique/SKILL.md` | Implemented work needs conformance review against its brief and computed diff, then adversarial defect review |
 | Behavior-preserving refactor | `skills/refactor/SKILL.md` | Restructuring, readability, or cleanup work whose contract is unchanged behavior |
-| Benchmark-driven improvement | `skills/improve/SKILL.md` | Chasing a measured improvement goal against a runnable evaluation |
+| Benchmark-driven improvement | `skills/improve/SKILL.md` | Chasing a measured goal against a runnable evaluation |
 | Investigation stop-loss | `skills/take-a-step-back/SKILL.md` | Work is stuck, repetitive, expensive, or premise is uncertain |
-| Working modes, explained in plain English | `docs/working-modes.md` | Learning the system, or unsure which mode a task is in |
+| Working modes, explained in plain English | `docs/working-modes.md` | Learning the system, or unsure of a task's mode |
 | The Go engine's architecture | `docs/architecture.md` | Locating a decision in the binary, or judging where new logic belongs |
-| Worked examples | `docs/examples/` | A template above is unclear in practice |
+| Worked examples | `docs/examples/` | A template above is unclear |
 | Adoption and the change gate | `docs/project-adaptation.md` | Starting a new repository, or judging any instruction change |
 | Metasystem retro | `skills/retro/SKILL.md` | `scripts/receipt.sh check` reports a retro due, or the human asks for one |
-| Reconciling an existing repository | `docs/metasystem-reconciliation.md` | Installing or upgrading the metasystem where instructions, skills, or prompts already exist |
-| Opt-in specialist skills | `optional-skills/` | Only when enabled during adaptation (e.g. `debug-java` for JVM repositories) |
-| Metasystem maintenance and rationale | `development/` at the repository toplevel, one level above this directory (template repository only) | Changing the metasystem template itself; absent in adopting projects |
+| Reconciling an existing repository | `docs/metasystem-reconciliation.md` | Installing or upgrading where instructions, skills, or prompts already exist |
+| App inception | `skills/inception/SKILL.md` | Birthing an app: covenant, doctrine, steel thread |
+| Opt-in specialist skills | `optional-skills/` | Only when enabled during adaptation |
+| Metasystem maintenance and rationale | `development/` at the repository toplevel, above this directory (template repository only) | Changing the metasystem template itself; absent in adopted projects |
 
 Task-local plans, ledgers, receipts, benchmark artifacts, and incident notes are evidence. They must not become global policy unless a stable lesson is deliberately promoted into one canonical owner above. Worked examples illustrate templates; they are not policy either.

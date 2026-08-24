@@ -1,0 +1,4 @@
+interface:
+  display_name: "Inception"
+  short_description: "The guided birth of an app: covenant v1, doctrine v1, steel thread"
+  default_prompt: "Use $inception to run the inception interview: vision, criteria, the minimal net, covenant v1, and the steel-thread backlog."

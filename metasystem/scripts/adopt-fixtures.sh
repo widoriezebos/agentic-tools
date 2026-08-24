@@ -621,18 +621,30 @@ fi
 # byte (adopt.sh refuses cross-version reruns outright and routes them
 # to the documented upgrade path — upgrade-time survival is that
 # machinery's obligation, proven when it exists).
-mkdir -p "$tmp/adopt-covenant"
+# The inception products ride the same law: the doctrine and a
+# covenant-referenced net file are app-owned exactly like the covenant.
+mkdir -p "$tmp/adopt-covenant/docs"
 printf '{"identity": {"name": "the-app"}, "guardrails": ["goldens/", "gate.sh"]}\n' >"$tmp/adopt-covenant/covenant.json"
-cp "$tmp/adopt-covenant/covenant.json" "$tmp/adopt-covenant-reference.json"
+printf '# the-app doctrine\npatterns the delegates honor\n' >"$tmp/adopt-covenant/docs/app-doctrine.md"
+printf '| criterion | proof id | command | source | status |\n' >"$tmp/adopt-covenant/docs/covenant-evidence.md"
+printf '#!/usr/bin/env bash\nprintf "metric=score=1\\n"\n' >"$tmp/adopt-covenant/gate.sh"
+for f in covenant.json docs/app-doctrine.md docs/covenant-evidence.md gate.sh; do
+  mkdir -p "$tmp/adopt-covenant-reference/$(dirname "$f")"
+  cp "$tmp/adopt-covenant/$f" "$tmp/adopt-covenant-reference/$f"
+done
 bash "$adopt" "$tmp/adopt-covenant" >/dev/null
-cmp -s "$tmp/adopt-covenant/covenant.json" "$tmp/adopt-covenant-reference.json" || {
-  echo "adopt: adoption altered the app-owned covenant" >&2
-  exit 1
-}
+for f in covenant.json docs/app-doctrine.md docs/covenant-evidence.md gate.sh; do
+  cmp -s "$tmp/adopt-covenant/$f" "$tmp/adopt-covenant-reference/$f" || {
+    echo "adopt: adoption altered the app-owned $f" >&2
+    exit 1
+  }
+done
 bash "$adopt" "$tmp/adopt-covenant" >/dev/null
-cmp -s "$tmp/adopt-covenant/covenant.json" "$tmp/adopt-covenant-reference.json" || {
-  echo "adopt: a same-version re-run altered the app-owned covenant" >&2
-  exit 1
-}
+for f in covenant.json docs/app-doctrine.md docs/covenant-evidence.md gate.sh; do
+  cmp -s "$tmp/adopt-covenant/$f" "$tmp/adopt-covenant-reference/$f" || {
+    echo "adopt: a same-version re-run altered the app-owned $f" >&2
+    exit 1
+  }
+done
 
 echo "adopt fixtures passed"

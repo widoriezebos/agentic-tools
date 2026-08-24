@@ -113,6 +113,8 @@ Clean cutover, per the design principles: the same change that installs a metasy
 
 Reconciliation is complete when the human has accepted or vetoed every ledger row. Moving the files is not what finishes the job.
 
+A reconciled repository with no `covenant.json` is a candidate for the retrofit inception: the guided interview (`skills/inception/SKILL.md`, on the coordinator seat, human present) that harvests the app's existing tests, benchmarks, gates, and design documents into covenant v1 by reference — the moment the iterative game becomes playable here too.
+
 ## Command renames (Go surface consolidation, 2026-08-12)
 
 Binary verb names are internal and may change between versions; the

@@ -448,6 +448,7 @@ echo "adopted at template SHA $sha"
 echo "finish the adoption:"
 echo "  1. Fill docs/project-rules.md with verified project facts (commands, invariants, budgets, reserved decisions)."
 echo "  2. Fill metasystem.conf with verified models, tiers, and the durable evidence root."
+echo "  Or run the guided path for both plus covenant v1 and the first goals: the inception interview (skills/inception/SKILL.md), on the coordinator seat, with the human present."
 # --git-common-dir answers relative to the target, so resolve it there or the
 # hook lands wherever this script happens to be standing (it once created a
 # stray .git inside the template itself).
