@@ -24,15 +24,21 @@ cd "$root"
 # fast mode at the call site or gets the full gate.
 gate_fast=0
 gate_proof_out=
+gate_witness_check_only=0
 while (($#)); do
   case "$1" in
     --fast) gate_fast=1; shift ;;
     --proof-out)
       [[ $# -ge 2 && -n "$2" ]] || { echo "go gate: --proof-out needs a path" >&2; exit 2; }
       gate_proof_out=$2; shift 2 ;;
+    --witness-check-only) gate_witness_check_only=1; shift ;;
     *) echo "go gate: unknown argument $1" >&2; exit 2 ;;
   esac
 done
+if [[ "$gate_witness_check_only" == 1 && ( "$gate_fast" == 1 || -n "$gate_proof_out" ) ]]; then
+  echo "go gate: --witness-check-only is a probe and combines with no other mode" >&2
+  exit 2
+fi
 if [[ -n "$gate_proof_out" && "$gate_fast" != 1 ]]; then
   echo "go gate: --proof-out is a fast-mode flag (the landing boundary's side-effect-free build proof)" >&2
   exit 2
@@ -175,7 +181,12 @@ witness_acceptable() {
   return 0
 }
 
-if [[ "${1:-}" == --witness-check-only ]]; then
+# The probe exit: parsed above with the other arguments — the strict
+# loop landed after this handler once shadowed it (2026-08-24 red:
+# the loop rejected the flag before this line could see it, but only
+# when a witness was armed, so batteries stayed green until a fresh
+# outer gate armed one).
+if [[ "$gate_witness_check_only" == 1 ]]; then
   digest=$(witness_acceptable) || exit 3
   echo "witness acceptable: ${digest:0:8}"
   exit 0
