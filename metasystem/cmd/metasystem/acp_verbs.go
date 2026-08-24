@@ -90,7 +90,7 @@ func runACPTurn(args []string) int {
 	loadSession := f.String("load-session", "", "session id to load instead of creating one")
 	modeID := f.String("mode", "", "dialect-resolved session mode to set (empty: leave default)")
 	expectedProtocol := f.Int64("expected-protocol", 1, "expected ACP protocol version")
-	handshakeSec := f.Int("handshake-timeout-sec", 120, "handshake phase deadline")
+	handshakeSec := f.Int("handshake-timeout-sec", int(acp.DefaultHandshakeTimeout/time.Second), "handshake phase deadline")
 	promptSec := f.Int("prompt-timeout-sec", 1800, "prompt phase deadline")
 	lateMs := f.Int("late-window-ms", 2000, "late-frame drain window")
 	sessionFile := f.String("session-file", "", "receives the session id at setup success (the adapter's early handshake)")

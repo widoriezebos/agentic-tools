@@ -17,6 +17,7 @@ package delegate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -175,10 +176,18 @@ type Turn interface {
 	Result(context.Context) (Result, error)
 }
 
-// Session is one open delegate session.
+// Session is one open delegate session. A Session MAY be one turn
+// wide: PromptTurn reports exhaustion with ErrSessionExhausted, and
+// reopening is the caller's move — the cardinality of TURNS per
+// session is the driver's declaration, never a silent assumption.
 type Session interface {
 	PromptTurn(context.Context, PromptRequest) (Turn, error)
 }
+
+// ErrSessionExhausted is the typed refusal a one-shot Session
+// returns for every PromptTurn after the first CLAIM of the session
+// — the claim is consumed by entry, not by success.
+var ErrSessionExhausted = errors.New("delegate: session exhausted; reopen to prompt again")
 
 // Driver is a COMPLETE delegate-session implementation: it declares
 // its capabilities and opens sessions. Read-side-only runtimes must

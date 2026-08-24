@@ -115,6 +115,30 @@ type Declaration struct {
 // ACPExpectation is the data half of a runtime's ACP support.
 type ACPExpectation struct {
 	ExpectedProtocolVersion int64
+	// ExpectedCapabilities is the registry's expectation of the
+	// NATIVE DRIVER's capability declaration for this runtime over
+	// the acp transport — the seam's registration joins the driver's
+	// claim against this exactly, both ways (a mismatch is an
+	// init-time panic). Field names mirror the delegate seam's
+	// Declaration one-for-one; the mirror is test-pinned from the
+	// delegate side. Nil means no native driver is expected yet.
+	// NOTE the surface: the adapter probe's snapshot describes the
+	// SHELL adapter's offering and may honestly differ (the recorded
+	// convergence residue on acp-adapter-seam).
+	ExpectedCapabilities *ACPCapabilities
+}
+
+// ACPCapabilities mirrors delegate.Declaration as pure data (this
+// package stays a dependency leaf and imports nothing of the seam).
+type ACPCapabilities struct {
+	Resume                   bool
+	SessionEstablishedSignal bool
+	NativeStructuredOutput   bool
+	NativeEvents             bool
+	NativeUsage              bool
+	GracefulCancel           bool
+	ProtocolServer           bool
+	NativeBudget             bool
 }
 
 // SignatureVectors is one runtime's positive/lookalike pair.
@@ -179,8 +203,20 @@ var declarations = []Declaration{
 			"writeRoots": "devin-write-roots-unenforced",
 		},
 		ExpectedCapabilities: []string{CapDeliveryRecollection, CapSelfTestProbe},
-		// Protocol 1 is verified live at devin 3000.4.25.
-		ExpectedACP: &ACPExpectation{ExpectedProtocolVersion: 1},
+		// Protocol 1 is verified live at devin 3000.4.25. The
+		// capability row is the native driver's declared surface
+		// (plans/acp-seam-s2-design.md, "The declaration, earned").
+		ExpectedACP: &ACPExpectation{
+			ExpectedProtocolVersion: 1,
+			ExpectedCapabilities: &ACPCapabilities{
+				Resume:                   true,
+				SessionEstablishedSignal: true,
+				NativeEvents:             true,
+				NativeUsage:              true,
+				GracefulCancel:           true,
+				ProtocolServer:           true,
+			},
+		},
 	},
 	{
 		Name: "claude", HasAdapter: true, HasHostLauncher: true,

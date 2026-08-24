@@ -60,6 +60,29 @@ type Outcome struct {
 	Detail      string
 }
 
+// TapEvent is one advisory beat from the pump to an optional
+// in-process observer (the native driver's event spool). WireSeq is
+// the triggering frame's arrival sequence — the one truthful arrival
+// order conn.go documents; synthetic beats carry the sequence of the
+// frame that triggered them. The tap is advisory acceleration only:
+// the journal remains the evidence, and a nil tap is bit-identical
+// to the pre-tap pump.
+type TapEvent struct {
+	WireSeq   uint64
+	Synthetic bool
+	Kind      string
+	Params    []byte
+}
+
+// Tap beat kinds (the synthetic vocabulary; session/update events
+// carry the wire method instead).
+const (
+	TapSessionUpdate            = "session/update"
+	TapSessionEstablished       = "session-established"
+	TapPermissionRequestRefused = "permission-request-refused"
+	TapSettlementStarted        = "settlement-started"
+)
+
 // TurnConfig drives one prompt attempt. ModeID is the DIALECT-
 // RESOLVED session mode (the adapter maps the envelope's tools
 // grade to its runtime's mode identifier; this package never
@@ -81,6 +104,10 @@ type TurnConfig struct {
 	// adapter can record its handshake inside the dispatcher's
 	// deadline instead of after the turn.
 	SessionFile string
+	// OnEvent, when non-nil, receives advisory TapEvents
+	// synchronously from the pump: every serviced session/update,
+	// plus the synthetic beats. Nil means today's behavior exactly.
+	OnEvent func(TapEvent)
 }
 
 type initializeResult struct {
@@ -107,6 +134,7 @@ type promptResult struct {
 // loop. phase governs the correlation gate.
 type turnDriver struct {
 	conn       *Conn
+	tap        func(TapEvent)
 	assembler  *Assembler
 	sessionID  string
 	violations int
@@ -122,7 +150,7 @@ type turnDriver struct {
 // replay before it and stragglers after it are journaled evidence
 // that arithmetic, not timing, keeps out of the candidate.
 func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
-	driver := &turnDriver{conn: conn}
+	driver := &turnDriver{conn: conn, tap: cfg.OnEvent}
 	handshake, cancelHandshake := context.WithTimeout(ctx, cfg.HandshakeTimeout)
 	defer cancelHandshake()
 
@@ -161,6 +189,7 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 			return *outcome
 		}
 		driver.sessionID = id
+		driver.emit(TapEvent{WireSeq: frame.Seq, Synthetic: true, Kind: TapSessionEstablished, Params: sessionEstablishedParams(id)})
 	} else {
 		// The capability gate: sending load to a server that never
 		// declared it is a client bug, not a wire experiment.
@@ -177,6 +206,7 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 			return *outcome
 		}
 		driver.sessionID = cfg.LoadSessionID
+		driver.emit(TapEvent{WireSeq: frame.Seq, Synthetic: true, Kind: TapSessionEstablished, Params: sessionEstablishedParams(cfg.LoadSessionID)})
 	}
 
 	if cfg.SessionFile != "" {
@@ -227,6 +257,26 @@ func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
 	return driver.settle(respFrame, cfg.LateFrameWindow)
 }
 
+// sessionEstablishedParams builds the pinned beat encoding with real
+// JSON escaping (percent-q is Go syntax, not JSON — a control
+// character in a lawful id must not corrupt the event).
+func sessionEstablishedParams(id string) []byte {
+	b, err := jsonMarshal(map[string]string{"sessionId": id})
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
+}
+
+// emit forwards one advisory beat to the tap when one is armed.
+// Synchronous by design: the spool consumer never blocks the pump
+// (the driver's spool contract), and a nil tap costs one branch.
+func (d *turnDriver) emit(ev TapEvent) {
+	if d.tap != nil {
+		d.tap(ev)
+	}
+}
+
 // call pumps notifications and server requests while one request
 // is in flight, so the read loop never blocks on full queues and
 // servers that demand answers before responding are served.
@@ -245,8 +295,11 @@ func (d *turnDriver) call(ctx context.Context, method string, params any) (Frame
 		case result := <-resultCh:
 			return result.frame, result.err
 		case frame, ok := <-d.conn.Notifications():
-			if ok && frame.Msg.Method == "session/update" && d.assembler != nil {
-				d.assembler.Consume(frame.Seq, frame.Msg.Params)
+			if ok && frame.Msg.Method == "session/update" {
+				if d.assembler != nil {
+					d.assembler.Consume(frame.Seq, frame.Msg.Params)
+				}
+				d.emit(TapEvent{WireSeq: frame.Seq, Kind: TapSessionUpdate, Params: frame.Msg.Params})
 			}
 		case frame, ok := <-d.conn.Requests():
 			if ok {
@@ -289,7 +342,13 @@ func (d *turnDriver) answer(ctx context.Context, frame Frame) error {
 	// normalizer + Decide (no live capture has fired this request in
 	// any envelope-relevant mode, so this is the defensive
 	// backstop, not the enforcement lever).
-	return d.conn.Respond(ctx, request.ID, StrictAnswer(params.Options).WireResult())
+	if err := d.conn.Respond(ctx, request.ID, StrictAnswer(params.Options).WireResult()); err != nil {
+		// The refusal never reached the wire: no beat — a consumer
+		// must not observe a refusal that was not delivered.
+		return err
+	}
+	d.emit(TapEvent{WireSeq: frame.Seq, Synthetic: true, Kind: TapPermissionRequestRefused, Params: request.Params})
+	return nil
 }
 
 // fail maps a transport-level call failure to its matrix row.
@@ -353,6 +412,7 @@ func classifySetup(frame Frame, violations int, phase string) (*Outcome, string)
 // evidence with post-window requests answered as violations.
 func (d *turnDriver) settle(respFrame Frame, lateWindow time.Duration) Outcome {
 	d.inWindow = false
+	d.emit(TapEvent{WireSeq: respFrame.Seq, Synthetic: true, Kind: TapSettlementStarted})
 	settleCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for {
@@ -360,6 +420,7 @@ func (d *turnDriver) settle(respFrame Frame, lateWindow time.Duration) Outcome {
 		case frame, ok := <-d.conn.Notifications():
 			if ok && frame.Msg.Method == "session/update" {
 				d.assembler.Consume(frame.Seq, frame.Msg.Params)
+				d.emit(TapEvent{WireSeq: frame.Seq, Kind: TapSessionUpdate, Params: frame.Msg.Params})
 			}
 			if !ok {
 				goto drained
@@ -449,9 +510,12 @@ func (d *turnDriver) drainLate(window time.Duration, responseSeq uint64) {
 		select {
 		case <-deadline:
 			return
-		case _, ok := <-d.conn.Notifications():
+		case frame, ok := <-d.conn.Notifications():
 			if !ok {
 				return
+			}
+			if frame.Msg.Method == "session/update" {
+				d.emit(TapEvent{WireSeq: frame.Seq, Kind: TapSessionUpdate, Params: frame.Msg.Params})
 			}
 		case frame, ok := <-d.conn.Requests():
 			if !ok {
