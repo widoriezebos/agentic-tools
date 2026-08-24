@@ -73,6 +73,23 @@ where proven. Their native subagent features inherit their session's
 grading the same way, and the same recorded assumption applies when
 their native ACP paths land.
 
+## The flip, executed
+
+2026-08-24: `dispatch.transport.devin=acp` landed in the shipped
+template configuration on Wido's flip-on-valid-green authorization.
+The evidence: the sealed bm-2d cohort's repetition 1 — rescored under
+the corrected measuring kit — VALID with every transport-health gate
+green (jobs terminal, chains closed, zero untracked, fences enforced,
+roster pinned via declared equivalence, evidence complete). Recorded
+residuals, per the opus-window review's standing concern: rep 1 itself
+ran the LEGACY path (its target predates the flip), so the bm-2d green
+proves devin-as-host transport health rather than the ACP wire; the
+ACP delegate path's own proof is the sealed-v1 prototype, post-flip
+provisions exercise ACP end to end by default, and the graded-mode
+subagent question is owned by devin-subagent-permission-probe. Host
+behavior (the solo-build wall park) stays a reported finding under the
+measurement-bar ruling; bm-2dc re-asks it under graded mode.
+
 ## Standing decisions this rationale rests on
 
 - D61 (the dangerous-mode waiver), D81/D82 (the transport selector

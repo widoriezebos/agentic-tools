@@ -224,8 +224,12 @@ runtime_repair_turn() { # prompt file, output file
 }
 
 # The transport selector (D81/D82): metasystem.conf's
-# dispatch.transport.devin. An ABSENT key is legitimately legacy
-# (the pre-flip default); an unreadable configuration or an
+# dispatch.transport.devin. THE FLIP LANDED 2026-08-24 (D82 satisfied
+# by the sealed bm-2d cohort under the corrected kit): the shipped
+# template configuration now declares acp, so the default a fresh
+# checkout resolves is ACP. An ABSENT key still resolves legacy
+# (pre-flip configurations keep their meaning); an unreadable
+# configuration or an
 # unrecognized value REFUSES — a broken config must never fail
 # open into D61's dangerous path (P3 critique F3). Prints legacy
 # or acp; nonzero is the refusal.

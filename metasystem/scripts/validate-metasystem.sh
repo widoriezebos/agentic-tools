@@ -1392,7 +1392,7 @@ if (( template_mode )); then
     || { echo "code-critic dispatch did not require its review relation" >&2; exit 1; }
   [[ $non_critic_reviews_status -eq 2 ]] \
     || { echo "non-critic --reviews dispatch did not use exit 2" >&2; exit 1; }
-  grep -Fq -- '--reviews is only valid for the code-critic role' "$tmp/non-critic-reviews.out" \
+  grep -Fq -- '--reviews is only valid for the code-critic and warden roles' "$tmp/non-critic-reviews.out" \
     || { echo "dispatcher accepted --reviews for a non-critic role" >&2; exit 1; }
 fi
 
