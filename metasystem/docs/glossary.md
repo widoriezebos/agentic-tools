@@ -201,6 +201,16 @@ not paths.
 
 ## Delegation plumbing
 
+- **Delegate seam** — the one generic, ACP-shaped delegate-session
+  contract the core sees (`internal/delegate`): open, prompt turn,
+  event stream, ask, answer, cancel, usage, result — with capability
+  DECLARATION instead of runtime types. Runtime knowledge registers
+  below the seam in its owner packages: a complete `Driver` implements
+  the whole session (the native ACP path), while today's CLI runtimes
+  register read-side `Ports` (usage extraction, result interpretation)
+  — honestly partial, never masquerading as a Driver. The runtime-named
+  CLI verbs remain as the shell's addressing; their bodies route
+  through the seam's registry.
 - **Job (delegate job)** — the unit of delegation: one piece of work
   dispatched to one delegate runtime session. Its record —
   `artifacts/agents/jobs/<jobId>.json` — is the authority on its life:

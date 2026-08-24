@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegate"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -70,7 +71,11 @@ func runAdapterCodexUsage(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter codex-usage --events FILE --output FILE")
 		return 2
 	}
-	if err := adapter.CodexUsage(*events, *output); err != nil {
+	ports, ok := delegatePorts("adapter codex-usage", "codex")
+	if !ok || ports.Usage == nil {
+		return 1
+	}
+	if err := ports.Usage(*events, *output); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -211,7 +216,11 @@ func runAdapterClaudeUsage(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-usage --result FILE --output FILE")
 		return 2
 	}
-	if err := adapter.ClaudeUsage(*result, *output); err != nil {
+	ports, ok := delegatePorts("adapter claude-usage", "claude")
+	if !ok || ports.Usage == nil {
+		return 1
+	}
+	if err := ports.Usage(*result, *output); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -231,7 +240,11 @@ func runAdapterClaudeResultField(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-result-field --result FILE --field NAME")
 		return 2
 	}
-	value, print, err := adapter.ClaudeResultField(*result, *field)
+	ports, ok := delegatePorts("adapter claude-result-field", "claude")
+	if !ok || ports.ResultField == nil {
+		return 1
+	}
+	value, print, err := ports.ResultField(*result, *field)
 	if err != nil {
 		// Named on stderr like every sibling adapter verb: this runs inside
 		// hook plumbing where stderr is the only diagnostic channel.
@@ -402,7 +415,11 @@ func runAdapterDevinSettle(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-settle --transcript F --round-dir D [--snapshot F] [--session SID] [--require-transcript]")
 		return 2
 	}
-	model, certified, err := adapter.DevinSettle(*transcript, *settleSnapshot, *session, *roundDir, *requireTranscript)
+	ports, ok := delegatePorts("adapter devin-settle", "devin")
+	if !ok || ports.Settle == nil {
+		return 1
+	}
+	model, certified, err := ports.Settle(*transcript, *settleSnapshot, *session, *roundDir, *requireTranscript)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -421,7 +438,7 @@ func runAdapterDevinSettle(args []string) int {
 // over the ceiling, 1 mechanical.
 func runAdapterDevinCollect(args []string) int {
 	flags := flag.NewFlagSet("adapter devin-collect", flag.ContinueOnError)
-	params := adapter.CollectParams{}
+	params := delegate.CollectInputs{}
 	flags.StringVar(&params.Root, "root", "", "checkout root")
 	flags.StringVar(&params.Job, "job", "", "job id")
 	flags.StringVar(&params.RoundDir, "round-dir", "", "round evidence directory")
@@ -441,7 +458,11 @@ func runAdapterDevinCollect(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-collect --root D --job ID --round-dir D --record F [--workspace D --stdout F --named F --transcript F --attempt A --session SID | --presence-only]")
 		return 2
 	}
-	verdict, err := adapter.DevinCollect(params)
+	ports, ok := delegatePorts("adapter devin-collect", "devin")
+	if !ok || ports.Collect == nil {
+		return 1
+	}
+	encoded, delivered, err := ports.Collect(params)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		if errors.Is(err, atif.ErrOversize) {
@@ -449,13 +470,8 @@ func runAdapterDevinCollect(args []string) int {
 		}
 		return 1
 	}
-	encoded, err := json.Marshal(verdict)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
 	fmt.Println(string(encoded))
-	if verdict.Delivered || params.PresenceOnly {
+	if delivered || params.PresenceOnly {
 		return 0
 	}
 	return 3
@@ -529,7 +545,11 @@ func runAdapterDevinUsage(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter devin-usage --usage FILE --transcript FILE --cumulative FILE [--snapshot FILE] [--previous FILE] [--expect-previous]")
 		return 2
 	}
-	if err := adapter.DevinTurnUsage(*usage, *transcript, *usageSnapshot, *cumulative, *previous, *expectPrevious); err != nil {
+	ports, ok := delegatePorts("adapter devin-usage", "devin")
+	if !ok || ports.TurnUsage == nil {
+		return 1
+	}
+	if err := ports.TurnUsage(*usage, *transcript, *usageSnapshot, *cumulative, *previous, *expectPrevious); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -550,7 +570,11 @@ func runAdapterFakeReturn(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-return --record FILE --prompt FILE --output FILE")
 		return 2
 	}
-	if err := adapter.WriteFakeReturn(*record, *prompt, *output); err != nil {
+	ports, ok := delegatePorts("adapter fake-return", "fake")
+	if !ok || ports.Return == nil {
+		return 1
+	}
+	if err := ports.Return(*record, *prompt, *output); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -569,7 +593,11 @@ func runAdapterFakeUsage(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem adapter fake-usage --output FILE")
 		return 2
 	}
-	if err := adapter.WriteFakeUsage(*output); err != nil {
+	ports, ok := delegatePorts("adapter fake-usage", "fake")
+	if !ok || ports.Usage == nil {
+		return 1
+	}
+	if err := ports.Usage("", *output); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

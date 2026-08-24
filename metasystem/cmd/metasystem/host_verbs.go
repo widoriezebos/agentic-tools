@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"
 )
 
@@ -75,7 +75,7 @@ func runHostFinish(args []string) int {
 // qualified, 5 transcript over the ceiling, 1 mechanical.
 func runHostDevinCollect(args []string) int {
 	flags := flag.NewFlagSet("host devin-collect", flag.ContinueOnError)
-	params := host.HostCollectParams{}
+	params := delegate.HostCollectInputs{}
 	var rejects rejectList
 	flags.StringVar(&params.Root, "root", "", "checkout root")
 	flags.StringVar(&params.TurnRecordPath, "turn-record", "", "turn record file")
@@ -93,7 +93,11 @@ func runHostDevinCollect(args []string) int {
 		return 2
 	}
 	params.RejectDigests = rejects
-	verdict, err := host.HostDevinCollect(params)
+	ports, ok := delegatePorts("host devin-collect", "devin")
+	if !ok || ports.HostCollect == nil {
+		return 1
+	}
+	encoded, delivered, err := ports.HostCollect(params)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		if errors.Is(err, atif.ErrOversize) {
@@ -101,9 +105,8 @@ func runHostDevinCollect(args []string) int {
 		}
 		return 1
 	}
-	encoded, _ := json.Marshal(verdict)
 	fmt.Println(string(encoded))
-	if verdict.Delivered {
+	if delivered {
 		return 0
 	}
 	return 3
@@ -152,7 +155,11 @@ func runHostClaudeResult(args []string) int {
 		fmt.Fprintln(os.Stderr, "host claude-result: --provider, --return, and --usage are required")
 		return 2
 	}
-	if err := host.ClaudeResult(*provider, *returnPath, *usagePath); err != nil {
+	ports, ok := delegatePorts("host claude-result", "claude")
+	if !ok || ports.HostResult == nil {
+		return 1
+	}
+	if err := ports.HostResult(*provider, *returnPath, *usagePath); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -191,7 +198,11 @@ func runHostDevinReturn(args []string) int {
 		fmt.Fprintln(os.Stderr, "host devin-return: --raw and --output are required")
 		return 2
 	}
-	if err := host.DevinReturn(*raw, *output); err != nil {
+	ports, ok := delegatePorts("host devin-return", "devin")
+	if !ok || ports.HostReturn == nil {
+		return 1
+	}
+	if err := ports.HostReturn(*raw, *output); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -214,7 +225,11 @@ func runHostDevinUsage(args []string) int {
 		fmt.Fprintln(os.Stderr, "host devin-usage: --transcript, --usage, and --cumulative are required")
 		return 2
 	}
-	if err := host.HostDevinUsage(*usage, *transcript, *cumulative, *previous, *expectPrevious); err != nil {
+	ports, ok := delegatePorts("host devin-usage", "devin")
+	if !ok || ports.HostTurnUsage == nil {
+		return 1
+	}
+	if err := ports.HostTurnUsage(*usage, *transcript, *cumulative, *previous, *expectPrevious); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -236,7 +251,11 @@ func runHostFakeReturn(args []string) int {
 		fmt.Fprintln(os.Stderr, "host fake-return: --turn, --state, --output, --behavior, and --root are required")
 		return 2
 	}
-	if err := host.FakeReturn(*turn, *state, *output, *behavior, *root); err != nil {
+	ports, ok := delegatePorts("host fake-return", "fake")
+	if !ok || ports.HostFakeReturn == nil {
+		return 1
+	}
+	if err := ports.HostFakeReturn(*turn, *state, *output, *behavior, *root); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -259,7 +278,11 @@ func runHostFakeResult(args []string) int {
 		fmt.Fprintln(os.Stderr, "host fake-result: --result and --outcome are required")
 		return 2
 	}
-	if err := host.FakeResult(*result, *session, *raw, *returnPath, *outcome); err != nil {
+	ports, ok := delegatePorts("host fake-result", "fake")
+	if !ok || ports.HostFakeResult == nil {
+		return 1
+	}
+	if err := ports.HostFakeResult(*result, *session, *raw, *returnPath, *outcome); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

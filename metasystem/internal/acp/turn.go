@@ -36,6 +36,15 @@ const (
 	RowIncomplete      Row = "incomplete"
 )
 
+// Rows enumerates the whole vocabulary. A new row MUST be added here
+// in the same change — the delegate seam's parity pin compares the
+// two vocabularies as sets in both directions through this list.
+func Rows() []Row {
+	return []Row{RowDelivered, RowVersionMismatch, RowAuthRequired,
+		RowSetupError, RowProtocolError, RowTurnFailed, RowCancelled,
+		RowRefused, RowIncomplete}
+}
+
 // Outcome is the typed result the script acts on. Candidate is
 // nil for every row but delivered; Violations counts correlation-
 // gate and unsolicited-request events (recorded, never fatal by
