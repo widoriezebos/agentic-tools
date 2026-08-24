@@ -3,9 +3,9 @@
 - State: claimed
 - Intent: Guardrail files get distinct custody: no implementation authorization may touch them; changes take their own review lane with the warden at its gate — the net cannot be quietly weakened by the work it judges
 - Origin: human
-- Next step: SLICE ONE LANDED 23053ff (rebased from 90e24e2) on codex AGREE at round 4 (trajectory 5-6-3-0): declared guardrail class (wall.guardrails, files + directory prefixes, one shared grammar in the mission package, sealed-contract validated), two-layer enforcement (issuance refuses a merge touching the class without a CLOSED zero-material warden chain that reviewed exactly the authorized tree; the wall re-refuses any unmarked record at consumption), the lane fact inside the record digest, and the warden role complete (prompt, v2 return schema end to end, dispatch bound to the zero-write preset by absolute path — the no-pen golden pins the refusal). Pilot's bm-kit contract declaration still DEFERRED out of machine 2's benchmark territory — lands with that arc. SLICE TWO (claimable, 1d): the HUMAN TIER — budget loosening, golden replacement, and probe waivers are human rulings, like taint resolutions — PLUS warden-chain critique-exhaustion parity (bounded exhaustions, successor enumeration, second-exhaustion refusal applied to warden chains identically).
+- Next step: SLICE TWO, PARITY HALF LANDED 2d0b7d3 (rebased from efa5374; codex AGREE round one, zero findings): warden chains answer to the critic's critique-exhaustion discipline through one shared judgment — second exhaustion refuses outright, an exhausted warden with open material findings admits nothing, critic path behavior-identical through the extraction. THE HUMAN-TIER HALF WAITS, honestly recorded: budget loosening, golden replacement, and probe waivers rule on COVENANT-DECLARED surfaces (budgets, goldens live in covenant.json; probes are adequacy machinery) — building it on heuristics ahead of the covenant would violate staged minimality. It resumes when Wido's app-covenant decision lands (extend-or-park, raised on that goal; the H2 self-custody ruling would also make covenant-section changes escalate to this tier). Pilot's kit declaration still deferred with m2's arc.
 - OpenedAt: 2026-08-23T16:29:41Z
-- Revision: 6
+- Revision: 7
 - Claimed: machine=m1 lineage=coordinator at=2026-08-24T03:58:04Z
 
 History:
@@ -15,4 +15,5 @@ History:
 - 2026-08-23T22:05:38Z GPHFA7B9FJ080P8ENNWEXMATZK-m1-bf243850 edit actor=m1+coordinator targets=app-guardrail-custody
 - 2026-08-23T22:05:43Z 7SWQ2KQY5GY5RY7CWEV9W1Z17R-m1-bf243850 release actor=m1+coordinator targets=app-guardrail-custody
 - 2026-08-24T03:58:04Z SMXJHKB3C8C46CYCB85FPE2RKE-m1-bf243850 claim actor=m1+coordinator targets=app-guardrail-custody
-Integrity: sha256=1cdb7e66d52181e2367809a8ee32a5d2678ee243307ff05b94af4380f2f0ce99
+- 2026-08-24T04:24:52Z PXKRYYMHJB7SNKGY5JSW2Y0HJZ-m1-bf243850 edit actor=m1+coordinator targets=app-guardrail-custody
+Integrity: sha256=3ca99cad2899cd9be8359fc2f83da934bfa411ca4db59188265363464ae75bbb
