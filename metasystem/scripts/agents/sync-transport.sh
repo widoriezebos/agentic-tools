@@ -1,29 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Transport mirrors origin, never the local branch: this sync pushes
-# origin's own ref, so a commit origin has not accepted structurally
-# cannot reach transport through it. The branch argument is validated
-# before it touches git — an option-shaped or ref-magic string must
-# refuse, not select surprising refs.
+# Transport mirrors origin, never the local branch: this sync fetches
+# origin's branch head by its FULL ref into the exact tracking ref,
+# then pushes that tracking ref — a commit origin has not accepted,
+# a tag shadowing the branch name, or a stale tracking ref cannot
+# select what lands. The branch argument is validated as one whole
+# byte string before git sees it; an explicitly empty argument is an
+# error, not a default.
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 cd "$root"
-branch=${1:-main}
+if (( $# >= 1 )); then
+  branch=$1
+else
+  branch=main
+fi
 
 case "$branch" in
-  -*|*..*|*//*|*' '*|'')
+  ''|-*|*..*|*//*|*' '*|*$'\n'*|*$'\t'*)
     echo "sync-transport refused: branch name '$branch' is not a plain branch" >&2
     exit 2
     ;;
 esac
-printf '%s' "$branch" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]*$' || {
+printf '%s' "$branch" | LC_ALL=C grep -zEq '^[A-Za-z0-9][A-Za-z0-9._/-]*$' || {
   echo "sync-transport refused: branch name '$branch' is not a plain branch" >&2
   exit 2
 }
 
-git fetch --quiet origin -- "$branch"
-git rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null || {
+git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" || {
   echo "sync-transport refused: origin has no branch '$branch'" >&2
   exit 1
 }

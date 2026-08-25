@@ -209,6 +209,26 @@ pushed_head=$(git -C "$fixture_root" rev-parse HEAD)
   || { echo "static re-proof fixture: --push did not land origin" >&2; exit 1; }
 [[ "$(git -C "$transport_bare" rev-parse main)" == "$pushed_head" ]] \
   || { echo "static re-proof fixture: --push did not land transport" >&2; exit 1; }
+# The mirror's own refusals: an explicitly EMPTY branch and a
+# newline-bearing name both die with the named refusal before git
+# runs — an empty argument must never silently become the default.
+sync="$fixture_root/scripts/agents/sync-transport.sh"
+for bad in "" $'main\nevil'; do
+  sync_rc=0
+  sync_out=$(cd "$fixture_root" && bash "$sync" "$bad" 2>&1) || sync_rc=$?
+  [[ $sync_rc == 2 && "$sync_out" == *"is not a plain branch"* ]] \
+    || { echo "static re-proof fixture: the mirror accepted an unlawful branch name (rc=$sync_rc)" >&2; exit 1; }
+done
+# A TAG shadowing the branch name plus a stale tracking ref must not
+# select what lands: the mirror fetches the branch head by full ref,
+# so transport receives origin's true head, never the tag's target.
+git -C "$origin_bare" update-ref refs/tags/main "$(git -C "$origin_bare" rev-parse refs/heads/main)"
+stale=$(git -C "$fixture_root" rev-parse HEAD^ 2>/dev/null || git -C "$fixture_root" rev-parse HEAD)
+git -C "$fixture_root" update-ref refs/remotes/origin/main "$stale"
+( cd "$fixture_root" && bash "$sync" main >/dev/null ) \
+  || { echo "static re-proof fixture: the mirror refused a lawful sync" >&2; exit 1; }
+[[ "$(git -C "$transport_bare" rev-parse main)" == "$(git -C "$origin_bare" rev-parse refs/heads/main)" ]] \
+  || { echo "static re-proof fixture: the mirror pushed something other than origin's branch head" >&2; exit 1; }
 git -C "$fixture_root" remote remove origin
 git -C "$fixture_root" remote remove transport
 
