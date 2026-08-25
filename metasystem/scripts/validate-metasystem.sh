@@ -186,58 +186,33 @@ if (( ! metasystem_go_source )) && [[ -f internal/missionrunner/stoploss.go || -
   echo "metasystem Go source present but go.mod does not declare the metasystem module — damaged template" >&2
   exit 1
 fi
+
+# The covenant evidence gate, EARLY (battery-wall-clock lever 3): the
+# gate is a pure function of files and costs milliseconds, so a broken
+# covenant/table pair refuses here in seconds instead of after the full
+# engine gate. Exit 1 is a real refusal and fails the run; exit 2/127
+# means the present binary predates the verb — deferred, because the
+# LATE gate after the rebuild still enforces on the proven engine, and
+# that late run remains the guarantee this early run only accelerates.
+if [[ -e covenant.json || -L covenant.json ]] && [[ -x bin/metasystem ]]; then
+  early_evidence_rc=0
+  bin/metasystem covenant evidence --root "$root" || early_evidence_rc=$?
+  if [[ $early_evidence_rc == 1 ]]; then
+    echo "the covenant evidence gate refused; the table and the covenant disagree" >&2
+    exit 1
+  fi
+  [[ $early_evidence_rc == 0 ]] && echo "covenant evidence gate passed (pre-rebuild)"
+fi
 if (( ! delegate_scope )) && (( metasystem_go_source )); then
   # The witness-producing gate (D33): when the gate-input roots are clean
   # against HEAD, the full gate runs inside an extracted HEAD snapshot —
   # the exact bytes adoption stages — and its witness is handed to the
   # nested delivery-contract runs this suite spawns. Dirty roots, seed,
   # force, or any refusal fall back to the plain worktree gate, no
-  # witness, exactly as before.
-  witness_state=
-  witness_roots_status=$(git status --porcelain -- cmd internal go.mod go.sum scripts/agents 2>/dev/null) \
-    && witness_roots_clean=1 || witness_roots_clean=0
-  # A failed git status must read as INELIGIBLE, never as clean: an empty
-  # answer from a non-repository is silence, not cleanliness.
-  [[ -n "$witness_roots_status" ]] && witness_roots_clean=0
-  if (( ! delivery_contract && witness_roots_clean )) \
-    && [[ "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" != 1 && "${METASYSTEM_GATE_FORCE:-0}" != 1 ]]; then
-    witness_state=$(mktemp -d)
-    chmod 700 "$witness_state"
-    witness_snap=$(mktemp -d)
-    chmod 700 "$witness_snap"
-    witness_run="run-$$-$RANDOM"
-    witness_toplevel=$(git rev-parse --show-toplevel)
-    witness_prefix=${root#"$witness_toplevel"}; witness_prefix=${witness_prefix#/}
-    if [[ -n "$witness_prefix" ]]; then
-      git -C "$witness_toplevel" archive "HEAD:$witness_prefix" | tar -x -C "$witness_snap"
-    else
-      git -C "$witness_toplevel" archive HEAD | tar -x -C "$witness_snap"
-    fi
-    if ( cd "$witness_snap" \
-        && METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
-           METASYSTEM_GATE_WITNESS_RUN="$witness_run" bash scripts/agents/go-gate.sh ) \
-      && [[ -f "$witness_state/witness.json" ]]; then
-      # Clean roots mean the snapshot's binary IS this tree's binary.
-      # Stage beside the target and rename over it (go-build.sh's
-      # documented pattern): cp over the live inode poisons macOS's
-      # code-signature cache and later execs die SIGKILL — exactly the
-      # silent suite death this line caused on 2026-08-16.
-      mkdir -p bin \
-        && cp "$witness_snap/bin/metasystem" "bin/.metasystem.witness.$$" \
-        && mv -f "bin/.metasystem.witness.$$" bin/metasystem
-      export METASYSTEM_GATE_WITNESS="$witness_state/witness.json"
-      export METASYSTEM_GATE_WITNESS_ROOT="$witness_state"
-      export METASYSTEM_GATE_WITNESS_RUN="$witness_run"
-      echo "gate witness armed for this run's nested validations"
-    else
-      echo "witness gate did not complete; falling back to the plain gate" >&2
-      rm -rf "$witness_state"; witness_state=
-      bash scripts/agents/go-gate.sh
-    fi
-    rm -rf "$witness_snap"
-  else
-    bash scripts/agents/go-gate.sh
-  fi
+  # witness, exactly as before. The machinery lives in the sourced
+  # helper so standalone battery stages (adopt-fixtures) arm the same
+  # witness instead of re-proving identical bytes per nested run.
+  source scripts/agents/witness-gate.sh
   if (( delivery_contract )); then
     # The delivery smoke (D33): the freshly stamped binary answers a
     # decision verb, and when the outer run's witness matches this tree
@@ -623,6 +598,7 @@ fi
 # Validation covers only their static adapter contract.
 bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/fixture-budget.sh
+bash -n scripts/agents/witness-gate.sh
 bash -n scripts/agents/fingerprint-harness.sh
 bash -n scripts/agents/supervision-hook.sh
 bash -n scripts/agents/supervision-fixtures.sh

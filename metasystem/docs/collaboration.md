@@ -32,6 +32,31 @@ Keep reviews small and cheap:
 - Commit messages state intent and observable effect. Follow the project's authorship convention for agent-written changes.
 - Credentials and secrets never enter commits, logs, plans, or handoff notes. If one leaks into history, escalate immediately. Removal is a human-reserved decision.
 
+## The Landing Battery, Tiered
+
+Verification is tiered so iteration stays fast and the guarantee stays
+whole. While a change is still moving (a review loop, a fix round),
+run the TOUCHED-SURFACE tier: the changed packages' tests plus the
+fixture legs the diff touches — minutes, not hours. The FULL battery
+runs ONCE, on the exact final bytes, before anything pushes:
+`scripts/validate-metasystem.sh` followed by any separate fixture
+stages the change touches (`scripts/adopt-fixtures.sh`,
+`scripts/agents/dispatch-fixtures.sh`). Nothing lands without the full
+battery; only its cadence is tiered, never its existence.
+
+Two rules keep the full battery's wall clock honest:
+
+- One suite run, not two. The engine gate (`scripts/agents/go-gate.sh`)
+  runs the race suite with coverage; a separate plain `go test ./...`
+  before it proves nothing the gate does not re-prove. Run the gate.
+- One proof per tree, transferred. The witness gate
+  (`scripts/agents/witness-gate.sh`, D33) proves clean-HEAD bytes once
+  and hands the witness to every nested validation, which then verifies
+  by digest instead of re-running the race suite. validate-metasystem
+  and a standalone adopt-fixtures both arm it automatically on a clean
+  tree; a dirty tree falls back to full re-proving, so the transfer
+  never weakens what a landing must show.
+
 ## Review Guide in Reports
 
 Start every completion report with where to look first: the riskiest hunk, the decision that most needs human confirmation, and which parts are behavior change versus mechanical bulk. A report that buries the one dangerous line under twenty safe ones has failed even if the code is correct.

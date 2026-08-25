@@ -17,8 +17,10 @@ cd "$root"
 # none), judged against the target itself, so these fixtures carry no
 # invocation-shape dependence and no authority-root env hook.
 tmp=$(mktemp -d)
+witness_state=
 cleanup() {
   status=$?
+  [[ -n "$witness_state" ]] && rm -rf "$witness_state" 2>/dev/null
   if [[ $status != 0 && -d "$tmp" ]]; then
     keep="artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-adopt-$$"
     mkdir -p "$(dirname "$keep")"
@@ -28,6 +30,18 @@ cleanup() {
   rm -rf "$tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
+
+# A standalone run arms the D33 witness once (battery-wall-clock lever
+# 1): every nested validate this harness spawns then proves the
+# identical bytes by digest check instead of re-running the race suite.
+# An outer validate's witness is inherited untouched; a dirty tree arms
+# nothing and the nested runs pay their own gates exactly as before
+# (fallback "none": this harness needs no worktree gate of its own).
+if [[ -z "${METASYSTEM_GATE_WITNESS:-}" ]] \
+  && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod; then
+  delivery_contract=0
+  WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh
+fi
 
 fill_harness_conf() { # config path, absolute evidence root
   # Point evidence at the harness sandbox and give every rostered
