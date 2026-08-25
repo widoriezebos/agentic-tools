@@ -500,7 +500,16 @@ class Extractor:
             return_path = round_dir / "return.json"
             if not (round_dir / "prompt.md").is_file():
                 self.evidence_error(f"jobs.{job_id}.prompt", "prompt.md is missing")
-            if not (round_dir / "raw.out").is_file():
+            if (round_dir / "transport-patch.json").is_file() or (round_dir / "acp-outcome.json").is_file():
+                # An ACP round's transcript is the wire journal plus the
+                # typed outcome — the legacy stdout capture does not
+                # exist on this transport (KI-42's sibling drift,
+                # 2026-08-25); the outcome document is the requirement.
+                if not (round_dir / "acp-outcome.json").is_file():
+                    self.evidence_error(f"jobs.{job_id}.transcript", "acp-outcome.json is missing")
+                if not (round_dir / "acp-journal.log").is_file():
+                    self.evidence_error(f"jobs.{job_id}.transcript", "acp-journal.log is missing")
+            elif not (round_dir / "raw.out").is_file():
                 self.evidence_error(f"jobs.{job_id}.transcript", "raw.out is missing")
             schema_name = f"{role}.schema.json"
             if not (EVIDENCE_SCHEMA_DIR / schema_name).is_file():

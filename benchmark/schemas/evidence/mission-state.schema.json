@@ -280,6 +280,29 @@
               "capturedAt": {
                 "type": "string",
                 "minLength": 1
+              },
+              "recovered": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "violation",
+                  "restoredPaths",
+                  "restoredAt"
+                ],
+                "properties": {
+                  "violation": {
+                    "type": "string"
+                  },
+                  "restoredPaths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "restoredAt": {
+                    "type": "string"
+                  }
+                }
               }
             }
           },
@@ -669,11 +692,11 @@
                       },
                       "resolvedBy": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                       },
                       "reason": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                       },
                       "posture": {
                         "type": "object"
@@ -735,18 +758,18 @@
                       },
                       "resolvedBy": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                       },
                       "reason": {
                         "type": "string",
-                        "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
+                        "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                       },
                       "waivedClaims": {
                         "type": "array",
                         "minItems": 1,
                         "items": {
                           "type": "string",
-                          "pattern": "^[\\s\\S]*[^\\s﻿​-‍⁠-⁤][\\s\\S]*$"
+                          "pattern": "^[\\s\\S]*[^\\s\ufeff\u200b-\u200d\u2060-\u2064][\\s\\S]*$"
                         }
                       }
                     }

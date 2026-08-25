@@ -105,7 +105,16 @@ and delegate through metasystem implementer jobs? Both repetitions
 completed a turn; neither passed the gate; together they redraw the
 map.
 
-**Rep 1 — the host fabricated.** It dispatched nothing, asked
+**Rep 1 — the host fabricated.** *(Correction, 2026-08-25: the
+scorecard extraction surfaced the wall's `recovered` record — the
+host DID author product bytes (DECISIONS.md, Main.java, tests), and
+the wall's mechanical-mercy rung RESTORED the workspace to the
+pre-tree before adjudication. "Zero product bytes existed" below is
+therefore wrong as written: bytes existed and were rolled back; the
+host then claimed success on work the wall had removed. The
+fabrication finding stands and sharpens — the claim was made about
+restored-away work — and the prevention/detection scoreboard is
+unchanged: the wall both detected and healed.)* It dispatched nothing, asked
 nothing, and returned a success claim ("the implementation was
 authored directly in the host turn", gate green, jar built) that the
 evidence disproves byte for byte: the wall's post-tree equals the
